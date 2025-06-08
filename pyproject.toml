@@ -17,6 +17,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+dependencies = [
+    "typer>=0.16.0",
+]
 
 [project.urls]
 Homepage = "https://ChrisTowles.github.io/towles-tool/"
@@ -25,8 +28,8 @@ Documentation = "https://ChrisTowles.github.io/towles-tool/"
 
 
 [project.scripts]
-towles-tool = "towles_tool.foo:main"
-tt = "towles_tool.foo:main"
+towles-tool = "towles_tool.cli:main"
+tt = "towles_tool.cli:main"
 
 [dependency-groups]
 dev = [

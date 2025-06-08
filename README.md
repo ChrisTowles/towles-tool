@@ -6,6 +6,7 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/ChrisTowles/towles-tool)](https://img.shields.io/github/commit-activity/m/ChrisTowles/towles-tool)
 [![License](https://img.shields.io/github/license/ChrisTowles/towles-tool)](https://img.shields.io/github/license/ChrisTowles/towles-tool)
 
+
 Helper cli commands from a developer
 
 - **Github repository**: <https://github.com/ChrisTowles/towles-tool/>
@@ -36,6 +37,7 @@ Or using the shortened alias `tt`
 ```bash
 tt --version
 ```
+
 ## Development
 
 Follow the instructions in [docs/development-environment.md](docs/development-environment.md) to set up your development environment.
