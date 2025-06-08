@@ -32,12 +32,6 @@ make install
 Now in vs code you can run `Python: select interpreter` and chose the `.venv` folder in the repo root.
 
 
-### Commit the changes
-
-To finalize the set-up for publishing to PyPI, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/publishing/#set-up-for-pypi).
-For activating the automatic documentation with MkDocs, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/mkdocs/#enabling-the-documentation-on-github).
-To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/codecov/).
-
 ## Releasing a new version
 
 - Create an API Token on [PyPI](https://pypi.org/).
@@ -45,7 +39,6 @@ To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookie
 - Create a [new release](https://github.com/ChrisTowles/towles-tool/releases/new) on Github.
 - Create a new tag in the form `*.*.*`.
 
-For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/cicd/#how-to-trigger-a-release).
 
 ## Brother's Contract
 
