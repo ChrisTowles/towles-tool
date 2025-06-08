@@ -11,41 +11,39 @@ Helper cli commands from a developer
 - **Github repository**: <https://github.com/ChrisTowles/towles-tool/>
 - **Documentation** <https://ChrisTowles.github.io/towles-tool/>
 
-## Getting started with your project
+
+## Installation
+
+These instructions are to install globally using [uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer).
 
 
-### Pre-requisites
+### Install from pypi
 
-- `uv` - https://docs.astral.sh/uv/getting-started/installation/#standalone-installer
-- `make` - https://www.gnu.org/software/make/
-
-### Set Up Your Development Environment
-
-Setup Requires uv . See [here](https://fpgmaas.github.io/cookiecutter-uv/getting-started/#set-up-your-development-environment) for more details.
-
-Then, install the environment and the pre-commit hooks with
+https://pypi.org/project/towles-tool/
 
 ```bash
-make install
+
+uv tool install towles-tool
+
 ```
+Testing the installation was successful:
+```bash
+towles-tool --version
 
-Now in vs code you can run `Python: select interpreter` and chose the `.venv` folder in the repo root.
+```
+Or using the shortened alias `tt`
+
+```bash
+tt --version
+```
+## Development
+
+Follow the instructions in [docs/development-environment.md](docs/development-environment.md) to set up your development environment.
 
 
-### Commit the changes
+## Documentation
 
-To finalize the set-up for publishing to PyPI, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/publishing/#set-up-for-pypi).
-For activating the automatic documentation with MkDocs, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/mkdocs/#enabling-the-documentation-on-github).
-To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/codecov/).
-
-## Releasing a new version
-
-- Create an API Token on [PyPI](https://pypi.org/).
-- Add the API Token to your projects secrets with the name `PYPI_TOKEN` by visiting [this page](https://github.com/ChrisTowles/towles-tool/settings/secrets/actions/new).
-- Create a [new release](https://github.com/ChrisTowles/towles-tool/releases/new) on Github.
-- Create a new tag in the form `*.*.*`.
-
-For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/cicd/#how-to-trigger-a-release).
+- [Releasing a new version](docs/how-to-release.md)
 
 ## Brother's Contract
 
