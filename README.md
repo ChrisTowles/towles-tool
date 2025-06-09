@@ -38,6 +38,14 @@ Or using the shortened alias `tt`
 tt --version
 ```
 
+### Install Autocompletion
+
+To install autocompletion, run the following command:
+
+```bash
+towles-tool --install-completion
+```
+
 ## Development
 
 Follow the instructions in [docs/development-environment.md](docs/development-environment.md) to set up your development environment.
