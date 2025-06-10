@@ -5,6 +5,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from towles_tool.config import create_config_file
+
 console = Console()
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,33 @@ config_file_option = Annotated[
         help="Spectify config location.",
     ),
 ]
+
+
+@app.command()
+def setup(
+    reset: Annotated[
+        bool,
+        typer.Option(
+            "--reset",
+            "-r",
+            help="reset the config file to default. This will overwrite the existing config file.",
+        ),
+    ] = False,
+) -> None:
+    """Configure the tool with a config file."""
+
+    console.log("Setup Command")
+
+    # Here you would typically load a config file or create one if it doesn't exist
+    if not state.config_file:
+        console.log("No config file specified. Using default config file.")
+        # Load the default config file or create one
+        state.config_file = "towles_tool_config.yaml"
+        console.log(f"Using config file: {state.config_file}")
+
+    # Load the config file
+    config_content = create_config_file(state.config_file, reset=reset)
+    console.log(f"Config loaded: {config_content}")
 
 
 @app.command()
