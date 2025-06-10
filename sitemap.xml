@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/development-environment/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/how-to-release/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/install-globally/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/modules/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+    <url>
+         <loc>https://ChrisTowles.github.io/towles-tool/repo-creation/</loc>
+         <lastmod>2025-06-10</lastmod>
+    </url>
+</urlset>
