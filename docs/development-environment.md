@@ -10,3 +10,11 @@ make install
 ```
 
 Now in vs code you can run `Python: select interpreter` and chose the `.venv` folder in the repo root.
+
+
+
+
+```bash
+
+uv sync
+```

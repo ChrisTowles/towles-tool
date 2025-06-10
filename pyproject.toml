@@ -32,8 +32,8 @@ Documentation = "https://ChrisTowles.github.io/towles-tool/"
 
 
 [project.scripts]
-towles-tool = "towles_tool.main:main"
-tt = "towles_tool.cli:main"
+towles-tool = "towles_tool.__main__:__main__"
+tt = "towles_tool.__main__:__main__"
 
 [dependency-groups]
 dev = [
