@@ -36,8 +36,10 @@ publish: ## Publish a release to PyPI.
 	@echo "🚀 Publishing."
 	@uvx twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
 
+
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
+
 
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors

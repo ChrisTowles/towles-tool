@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 
-import appdirs
+import platformdirs
 from rich.console import Console
 
 console = Console()
@@ -15,7 +15,7 @@ def load_config(filename: Optional[str] = None) -> str:
     # Get a path to the file. If it was specified, it should be fine.
     # If it was not specified, assume it's config.ini in the script's dir.
 
-    config_dir = appdirs.user_config_dir("towles-tool")
+    config_dir = platformdirs.user_config_dir("towles-tool")
     console.log(f"Config dir: {config_dir}")
 
     if not filename:
@@ -28,3 +28,13 @@ def load_config(filename: Optional[str] = None) -> str:
             "Alternatively, use --config-file FILE"
         )
         exit(1)
+
+    console.log(f"Loading config from {filename}")
+    # Here you would load the config file, e.g. using PyYAML or similar
+    # For now, just return the filename
+
+    read_config = ""
+    with open(filename) as f:
+        read_config = f.read()
+
+    return read_config

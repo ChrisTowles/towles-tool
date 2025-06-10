@@ -13,18 +13,24 @@ app = typer.Typer(
     name="towles-tool",
 )
 
+
 # Global state to hold options that can be used across commands
-state = {
-    "verbose": False,
-    "config_file": None,
-}
+class State:
+    """Global state to hold options that can be used across commands."""
+
+    def __init__(self) -> None:
+        self.verbose: bool = False
+        self.config_file: Optional[str] = None  # default is None, meaning no config file specified
+
+
+state = State()
 
 # Note: Because we want to use the same option in multiple commands,  we can specify it once and reuse it.
 # I tried serveral ways to do this was from https://github.com/fastapi/typer/issues/405#issuecomment-1555190792
 # the final option was to follow the docs but that means --verbose and --config-file are only available
 # in the main command, NOT in the subcommands.
 verbose_option = Annotated[
-    Optional[bool],
+    bool,
     typer.Option(
         "--verbose",
         "-v",
@@ -66,18 +72,18 @@ def today() -> None:
     console.print(table)
 
     console.log("Today Command")
-    console.log(f"Verbose mode: {state['verbose']}")
-    console.log(f"Config file: {state['config_file']}")
+    console.log(f"Verbose mode: {state.verbose}")
+    console.log(f"Config file: {state.config_file}")
 
 
 @app.command()
 def test01(
     username: Annotated[str, typer.Option(..., help="Fake Username to delete")] = "",
-):
+) -> None:
     """
     This command simulates the deletion of a user by printing a message.
     """
-    if state["verbose"]:
+    if state.verbose:
         console.log(f"Fake: About to delete user: {username}")
     # Perform the delete operation
     console.log(f"Fake: User {username} deleted successfully.")
@@ -85,7 +91,7 @@ def test01(
 
 # not sure invoke_without_command does anything.
 @app.callback(invoke_without_command=False)
-def main(verbose: verbose_option = False, config_file: config_file_option = None) -> None:
+def main(verbose: verbose_option = False, config_file: config_file_option = "") -> None:
     """
     Towles Tool CLI
 
@@ -96,8 +102,11 @@ def main(verbose: verbose_option = False, config_file: config_file_option = None
     # the value of verbose_option and config_file only set when the "towles-tool --verbose today" and not
     #  "towles-tool today --verbose"
 
-    state["verbose"] = verbose
-    state["config_file"] = config_file
+    state.verbose = verbose
+    if config_file:
+        # If a config file is specified, use it
+        console.log(f"Using config file: {config_file}")
+        state.config_file = config_file
 
 
 if __name__ == "__main__":
