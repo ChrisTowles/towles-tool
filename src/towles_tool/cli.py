@@ -1,11 +1,21 @@
 import logging
+import os
+import pathlib
+from datetime import datetime, timedelta
 from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
+from rich.prompt import Prompt
 from rich.table import Table
 
-from towles_tool.config import create_config_file
+from towles_tool.config import (
+    create_config_file,
+    get_cache_file_path,
+    get_config_file_path,
+    load_cache_file,
+    load_config,
+)
 
 console = Console()
 
@@ -22,7 +32,6 @@ class State:
 
     def __init__(self) -> None:
         self.verbose: bool = False
-        self.config_file: Optional[str] = None  # default is None, meaning no config file specified
 
 
 state = State()
@@ -40,18 +49,17 @@ verbose_option = Annotated[
     ),
 ]
 
-config_file_option = Annotated[
-    Optional[str],
-    typer.Option(
-        "--config",
-        "-c",
-        help="Spectify config location.",
-    ),
-]
-
 
 @app.command()
 def setup(
+    config_file: Annotated[
+        Optional[str],
+        typer.Option(
+            "--config",
+            "-c",
+            help="Spectify config location.",
+        ),
+    ] = None,
     reset: Annotated[
         bool,
         typer.Option(
@@ -63,17 +71,42 @@ def setup(
 ) -> None:
     """Configure the tool with a config file."""
 
-    console.log("Setup Command")
+    console.log(f"Verbose mode: {state.verbose}")
+    console.log(f"Config file: {config_file}")
+    console.log(f"Reset config: {reset}")
+
+    if config_file:
+        # If a config file is specified, use it
+        console.log(f"Using config file: {config_file}")
+    if not config_file:
+        console.log("No config file specified. prompting for default config file.")
+        console.log(
+            "   If you have location you backup your config files its recommended to specify file where it will be backed up.",
+            style="bold yellow",
+        )
+        console.log("")
+        default_config_file = get_config_file_path()  # get the default config file path
+        config_file = Prompt.ask("Enter the path to the default config file:", default=default_config_file)
+    # convert to absolute path
+    config_file = str(pathlib.Path(config_file).expanduser().absolute())
+
+    # if invalid path, fail
+    if not os.path.exists(os.path.dirname(config_file)):
+        console.log(
+            f"Invalid config file path: {config_file}. The directory does not exist.",
+            style="bold red",
+        )
+        raise typer.Exit(code=1)
+    console.log(f"Using config file: {config_file}")
+
+    cache_config = load_cache_file(create=True, config_file=config_file)
 
     # Here you would typically load a config file or create one if it doesn't exist
-    if not state.config_file:
-        console.log("No config file specified. Using default config file.")
-        # Load the default config file or create one
-        state.config_file = "towles_tool_config.yaml"
-        console.log(f"Using config file: {state.config_file}")
+
+    # Load the default config file or create one
 
     # Load the config file
-    config_content = create_config_file(state.config_file, reset=reset)
+    config_content = create_config_file(cache_config.location_of_personal_config, reset=reset)
     console.log(f"Config loaded: {config_content}")
 
 
@@ -82,10 +115,73 @@ def doctor() -> None:
     """Check if the config file exists and other dependences"""
 
     console.log("Doctor Command")
+    console.log(f"Verbose mode: {state.verbose}")
+
+    console.log(f"Cache file: {get_cache_file_path()}")
+    cache_file_contents = load_cache_file()
+    console.log(f"Cache File: {cache_file_contents}")
+    console.log(f"Config file: {get_config_file_path()}")
+    config_file_contents = load_config()
+    console.log(f"Config File: {config_file_contents}")
 
 
-@app.command(help="Display a table of the top Star Wars movies released in the last 5 years.")
+@app.command(
+    help="create a markdown file to keep notes for the week in markdown file.",
+    name="today",
+)
 def today() -> None:
+    console.log("Today Command")
+
+    config = load_config()
+
+    if not os.path.exists(config.journal_base_folder_location):
+        logger.warning(f"Journal base folder doesn't exists: {config.journal_base_folder_location}")
+        console.log(
+            "Creating the journal base folder. You can change this in the config file.",
+            style="bold yellow",
+        )
+        os.makedirs(config.journal_base_folder_location, exist_ok=True)
+
+    console.log(f"Journal base folder: {config.journal_base_folder_location}")
+
+    today = datetime.now()
+    # create year folder if it doesn't exist
+    year_folder = os.path.join(config.journal_base_folder_location, str(today.year))
+    if not os.path.exists(year_folder):
+        console.log(f"Creating year folder: {year_folder}")
+        os.makedirs(year_folder, exist_ok=True)
+    console.log(f"Journal year folder: {year_folder}")
+
+    # get the current date and the monday of the current week
+    monday = today - timedelta(days=today.weekday())
+    # create file name based on the current date
+    file_name = f"{monday.strftime('%Y-%m-%d')}_week_notes.md"
+
+    today_file_path = os.path.join(year_folder, file_name)
+
+    if not os.path.exists(today_file_path):
+        console.log(f"Creating today's file: {today_file_path}")
+        with open(today_file_path, "w") as f:
+            f.write(f"# Notes for the week starting {monday.strftime('%Y-%m-%d')}\n\n")
+            f.write("## Monday\n\n")
+            f.write("## Tuesday\n\n")
+            f.write("## Wednesday\n\n")
+            f.write("## Thursday\n\n")
+            f.write("## Friday\n\n")
+            f.write("## Saturday\n\n")
+            f.write("## Sunday\n\n")
+
+    console.log(f"Opening today's file: {today_file_path}")
+
+    # Open the file in VS Code
+    typer.launch(f"code {today_file_path}")
+
+
+@app.command(
+    help="print a rich table",
+    name="table-test",
+)
+def tableTest() -> None:
     table = Table(title="Star Wars Movies")
 
     table.add_column("Released", justify="right", style="cyan", no_wrap=True)
@@ -97,12 +193,10 @@ def today() -> None:
     table.add_row("Dec 15, 2017", "Star Wars Ep. V111: The Last Jedi", "$1,332,539,889")
     table.add_row("Dec 16, 2016", "Rogue One: A Star Wars Story", "$1,332,439,889")
 
-    console = Console()
     console.print(table)
 
     console.log("Today Command")
     console.log(f"Verbose mode: {state.verbose}")
-    console.log(f"Config file: {state.config_file}")
 
 
 @app.command()
@@ -120,7 +214,7 @@ def test01(
 
 # not sure invoke_without_command does anything.
 @app.callback(invoke_without_command=False)
-def main(verbose: verbose_option = False, config_file: config_file_option = "") -> None:
+def main(verbose: verbose_option = False) -> None:
     """
     Towles Tool CLI
 
@@ -132,10 +226,6 @@ def main(verbose: verbose_option = False, config_file: config_file_option = "") 
     #  "towles-tool today --verbose"
 
     state.verbose = verbose
-    if config_file:
-        # If a config file is specified, use it
-        console.log(f"Using config file: {config_file}")
-        state.config_file = config_file
 
 
 if __name__ == "__main__":
