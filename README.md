@@ -1,0 +1,38 @@
+# pkg-placeholder
+
+[![npm version][npm-version-src]][npm-version-href]
+[![npm downloads][npm-downloads-src]][npm-downloads-href]
+[![bundle][bundle-src]][bundle-href]
+[![JSDocs][jsdocs-src]][jsdocs-href]
+[![License][license-src]][license-href]
+
+Creating this repo to move all the little scripts I've created over the years into a single repo to be easier to share with others.
+
+## Tools to add
+- [ ] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
+-
+
+## packages to consider
+- [ansis](https://github.com/webdiscus/ansis/) text colors
+-
+
+## History
+
+I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for this projects codebase.
+
+## License
+
+[MIT](./LICENSE) License © [Chris Towles](https://github.com/ChrisTowles)
+
+<!-- Badges -->
+
+[npm-version-src]: https://img.shields.io/npm/v/pkg-placeholder?style=flat&colorA=080f12&colorB=1fa669
+[npm-version-href]: https://npmjs.com/package/pkg-placeholder
+[npm-downloads-src]: https://img.shields.io/npm/dm/pkg-placeholder?style=flat&colorA=080f12&colorB=1fa669
+[npm-downloads-href]: https://npmjs.com/package/pkg-placeholder
+[bundle-src]: https://img.shields.io/bundlephobia/minzip/pkg-placeholder?style=flat&colorA=080f12&colorB=1fa669&label=minzip
+[bundle-href]: https://bundlephobia.com/result?p=pkg-placeholder
+[license-src]: https://img.shields.io/github/license/antfu/pkg-placeholder.svg?style=flat&colorA=080f12&colorB=1fa669
+[license-href]: https://github.com/ChrisTowles/towles-tool/blob/main/LICENSE
+[jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
+[jsdocs-href]: https://www.jsdocs.io/package/pkg-placeholder
