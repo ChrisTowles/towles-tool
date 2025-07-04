@@ -1,9 +1,9 @@
 {
-  "name": "pkg-placeholder",
+  "name": "@towles/tool",
   "type": "module",
   "version": "0.0.0",
   "packageManager": "pnpm@10.6.2",
-  "description": "_description_",
+  "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
   "license": "MIT",
   "funding": "https://github.com/sponsors/ChrisTowles",

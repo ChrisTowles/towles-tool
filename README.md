@@ -1,4 +1,4 @@
-# pkg-placeholder
+# Towles Tool
 
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
@@ -6,7 +6,7 @@
 [![JSDocs][jsdocs-src]][jsdocs-href]
 [![License][license-src]][license-href]
 
-Creating this repo to move all the little scripts I've created over the years into a single repo to be easier to share with others.
+One off quality of life scripts that I use on a daily basis.
 
 ## Tools to add
 - [ ] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
