@@ -22,51 +22,22 @@ To create a new release:
 
 2. **GitHub Actions takes over**:
    - The tag push triggers the `.github/workflows/release.yml` workflow
-   - The workflow runs automatically on `ubuntu-latest`
 
 ### 2. Automated Release Workflow
 
 When a tag starting with `v*` is pushed, the GitHub Actions workflow:
 
-1. **Checks out the code** with full history (`fetch-depth: 0`)
-2. **Sets up the environment**:
-   - Installs pnpm
-   - Sets up Node.js LTS with npm registry configuration
-3. **Generates changelog** using `changelogithub`
-4. **Publishes to npm**:
+1. **Generates changelog** using `changelogithub`
+2. **Publishes to npm**:
    - Runs `pnpm install`
    - Publishes with `pnpm publish --no-git-checks -r --access public`
    - Uses provenance for enhanced security
-
-### 3. Local Development Release
-
-For local testing, you can use:
-```bash
-pnpm release:local
-```
-This bypasses the GitHub Actions workflow and publishes directly.
 
 ## Release History Pattern
 
 Based on recent commits, the release pattern follows:
 - Version bumps: `v0.0.4` → `v0.0.5` → `v0.0.6`
 - Commit messages: `chore: release v{version}`
-- Each release includes necessary workflow improvements
-
-## Configuration
-
-### Package.json Scripts
-- `release`: Automated release via GitHub Actions
-- `release:local`: Direct local release
-- `prepublishOnly`: Ensures build runs before publishing
-
-### GitHub Actions Permissions
-- `id-token: write` - For npm provenance
-- `contents: write` - For creating releases and changelogs
-
-### Secrets Required
-- `GITHUB_TOKEN` - For changelog generation
-- `NPM_TOKEN` - For npm publishing
 
 ## Best Practices
 
