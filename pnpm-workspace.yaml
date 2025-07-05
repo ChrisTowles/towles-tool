@@ -3,11 +3,14 @@ packages:
   - docs
   - packages/*
   - examples/*
+catalog:
+
 catalogs:
   cli:
     '@antfu/eslint-config': ^4.10.1
     '@antfu/ni': ^24.1.0
     bumpp: ^10.1.0
+    commander: ^14.0.0
     eslint: ^9.22.0
     lint-staged: ^15.5.0
     simple-git-hooks: ^2.11.1
