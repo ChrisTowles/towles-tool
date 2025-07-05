@@ -43,6 +43,10 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 
 - [ansis](https://github.com/webdiscus/ansis/) text colors
 
+## Development
+
+For information on how releases are managed, see the [Release Process](docs/release-process.md) documentation.
+
 ## History
 
 I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for this projects codebase.
