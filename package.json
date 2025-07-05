@@ -1,7 +1,7 @@
 {
   "name": "@towles/tool",
   "type": "module",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "packageManager": "pnpm@10.6.2",
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
@@ -39,7 +39,7 @@
     "lint": "eslint",
     "prepublishOnly": "nr build",
     "release:local": "bumpp && pnpm publish --no-git-checks -r --access public",
-    "release": "bumpp",
+    "release": "bumpp && echo \"github action will run and publish to npm\"",
     "start": "tsx src/index.ts",
     "test": "vitest --run",
     "test:watch": "vitest",
