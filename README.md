@@ -10,11 +10,38 @@ One off quality of life scripts that I use on a daily basis.
 
 ## Tools to add
 - [ ] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
--
+
+## Install from repository
+
+```bash
+pnpm add --global @towles/tool
+
+## followed by
+tt
+
+# or
+towles-tool
+
+```
+
+## Unisntall
+
+```bash
+pnpm remove --global @towles/tool
+```
+
+## If command not found
+
+try running with pnpm
+```bash
+pnpm tt
+```
+
+if that works, then you need to add the pnpm global bin directory to your PATH.
 
 ## packages to consider
+
 - [ansis](https://github.com/webdiscus/ansis/) text colors
--
 
 ## History
 
