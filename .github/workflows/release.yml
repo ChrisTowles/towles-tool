@@ -1,3 +1,5 @@
+# # Important:  this run is triggered by a tag push, so it will not run on every commit.
+
 name: Release
 
 permissions:
@@ -23,13 +25,14 @@ jobs:
           registry-url: https://registry.npmjs.org/
 
       - run: pnpm dlx changelogithub
+        # pnpm dlx changelogithub --dry
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-      # # Uncomment the following lines to publish to npm on CI
-      #
-      # - run: pnpm install
-      # - run: pnpm publish --no-git-checks -r --access public
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
-      #     NPM_CONFIG_PROVENANCE: true
+      # Uncomment the following lines to publish to npm on CI
+
+      - run: pnpm install
+      - run: pnpm publish --no-git-checks -r --access public
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+          NPM_CONFIG_PROVENANCE: true
