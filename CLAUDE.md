@@ -33,3 +33,6 @@ The project uses a catalog-based dependency management system via pnpm workspace
 ## Purpose
 
 This is a cli tool for managing and automating tasks in a development environment.
+
+## Important Notes
+never use the --no-verify flag with git commands in this repository, as it will bypass the pre-commit hooks that ensure code quality and consistency.
