@@ -9,6 +9,7 @@ catalogs:
   cli:
     '@antfu/eslint-config': ^4.10.1
     '@antfu/ni': ^24.1.0
+    ansis: ^4.1.0
     bumpp: ^10.1.0
     commander: ^14.0.0
     eslint: ^9.22.0

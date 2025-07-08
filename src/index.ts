@@ -2,6 +2,7 @@
 
 import process from 'node:process'
 import { Command } from 'commander'
+import { todayCommand } from './commands/today.js'
 
 const program = new Command()
 
@@ -16,6 +17,13 @@ program
   .option('-n, --name <name>', 'name to greet', 'World')
   .action((options) => {
     process.stdout.write(`Hello, ${options.name}!\n`)
+  })
+
+program
+  .command('today')
+  .description('Create and open a weekly journal file based on Monday of current week')
+  .action(async () => {
+    await todayCommand()
   })
 
 program.parse()
