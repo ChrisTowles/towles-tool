@@ -2,31 +2,46 @@
 
 import process from 'node:process'
 import { Command } from 'commander'
+import _consola from 'consola'
+
+import { colors } from 'consola/utils'
+import { version as packageVersion } from '../package.json'
 import { todayCommand } from './commands/today.js'
+import { loadTowlesToolConfig } from './config.js'
+import { constants } from './constants'
+import { printJson } from './utils/print-utils'
 
-const program = new Command()
+async function main() {
+  const consola = _consola.withTag(constants.toolName)
 
-program
-  .name('towles-tool')
-  .description('One off quality of life scripts that I use on a daily basis')
-  .version('0.0.0')
+  // Load configuration
+  const configWrapper = await loadTowlesToolConfig({ cwd: process.cwd() })
 
-program
-  .command('hello')
-  .description('Say hello to the world')
-  .option('-n, --name <name>', 'name to greet', 'World')
-  .action((options) => {
-    process.stdout.write(`Hello, ${options.name}!\n`)
-  })
+  const program = new Command()
 
-program
-  .command('today')
-  .description('Create and open a weekly journal file based on Monday of current week')
-  .action(async () => {
-    await todayCommand()
-  })
+  program
+    .name(constants.toolName)
+    .description('One off quality of life scripts that I use on a daily basis')
+    .version(packageVersion)
 
-program.parse()
+  program
+    .command('today')
+    .description('Create and open a weekly journal file based on Monday of current week')
+    .action(async () => {
+      await todayCommand(configWrapper.config)
+    })
 
-export const one = 1
-export const two = 2
+  program
+    .command('config')
+    .description('set or show configuration file.')
+    .action(async () => {
+      consola.log(colors.green('Showing configuration...'))
+      consola.log('Config File:', configWrapper.configFile)
+      printJson(configWrapper.config)
+    })
+
+  program.parse()
+}
+
+// eslint-disable-next-line antfu/no-top-level-await
+await main()

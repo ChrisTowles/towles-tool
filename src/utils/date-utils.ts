@@ -10,6 +10,33 @@ export function getMondayOfWeek(date: Date): Date {
   return newDate
 }
 
+interface weekInfo {
+  mondayDate: Date
+  tuesdayDate: Date
+  wednesdayDate: Date
+  thursdayDate: Date
+  fridayDate: Date
+}
+
+export function getWeekInfo(mondayDate: Date): weekInfo {
+  const tuesdayDate = new Date(mondayDate)
+  tuesdayDate.setDate(mondayDate.getDate() + 1)
+  const wednesdayDate = new Date(mondayDate)
+  wednesdayDate.setDate(mondayDate.getDate() + 2)
+  const thursdayDate = new Date(mondayDate)
+  thursdayDate.setDate(mondayDate.getDate() + 3)
+  const fridayDate = new Date(mondayDate)
+  fridayDate.setDate(mondayDate.getDate() + 4)
+
+  return {
+    mondayDate,
+    tuesdayDate,
+    wednesdayDate,
+    thursdayDate,
+    fridayDate,
+  }
+}
+
 /**
  * Format date as YYYY-MM-DD
  */

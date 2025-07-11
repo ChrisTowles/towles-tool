@@ -1,0 +1,27 @@
+import type { InputLogObject } from 'consola'
+import process from 'node:process'
+import util from 'node:util'
+import consola from 'consola'
+
+// todo we could use tags.
+// const consola = _consola.withTag('towles-tool')
+
+export function printJson(obj: object): void {
+  consola.log(util.inspect(obj, {
+    depth: 2,
+    colors: true,
+    showHidden: false,
+    compact: false,
+  }))
+}
+
+export function printDebug(message: InputLogObject | any, ...args: any[]): void {
+  if (process.env.DEBUG) {
+    const _consola = consola.withTag('towles-tool')
+    _consola.log(`DEBUG: ${message}`, ...args)
+  }
+}
+
+export function printInfo(message: InputLogObject | any, ...args: any[]): void {
+  consola.log(message, ...args)
+}
