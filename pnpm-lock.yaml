@@ -84,6 +84,9 @@ importers:
       consola:
         specifier: catalog:cli
         version: 3.4.2
+      magicast:
+        specifier: catalog:cli
+        version: 0.3.5
     devDependencies:
       '@antfu/eslint-config':
         specifier: catalog:cli
@@ -106,9 +109,6 @@ importers:
       lint-staged:
         specifier: catalog:cli
         version: 15.5.0
-      magicast:
-        specifier: catalog:cli
-        version: 0.3.5
       simple-git-hooks:
         specifier: catalog:cli
         version: 2.11.1

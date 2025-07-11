@@ -49,7 +49,8 @@
   "dependencies": {
     "c12": "catalog:cli",
     "commander": "catalog:cli",
-    "consola": "catalog:cli"
+    "consola": "catalog:cli",
+    "magicast": "catalog:cli"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:cli",
@@ -59,7 +60,6 @@
     "bumpp": "catalog:cli",
     "eslint": "catalog:cli",
     "lint-staged": "catalog:cli",
-    "magicast": "catalog:cli",
     "simple-git-hooks": "catalog:cli",
     "tinyexec": "catalog:utils",
     "tsx": "catalog:cli",
