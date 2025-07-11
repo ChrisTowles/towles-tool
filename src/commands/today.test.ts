@@ -27,6 +27,7 @@ describe('today command', () => {
   const mockConfig: TowlesToolConfig = {
     journalDir: '/test/journal',
     editor: 'code',
+    claudeAlias: '~/.claude/local/claude',
   }
 
   beforeEach(() => {

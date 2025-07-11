@@ -1,0 +1,15 @@
+{
+  "configurations": [
+    {
+      "name": "Launch via pnpm",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "start",
+        "today"
+      ]
+    }
+  ]
+}

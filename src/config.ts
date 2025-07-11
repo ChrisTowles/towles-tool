@@ -12,8 +12,9 @@ import { constants } from './constants.js'
 import { printDebug } from './utils/print-utils.js'
 
 export interface TowlesToolConfig {
-  journalDir?: string
-  editor?: string
+  journalDir: string
+  editor: string
+  claudeAlias: string
 }
 
 // for now no reason to have a separate types, https://github.com/unjs/changelogen/blob/acdedaaa2d1cfdb37a6e91edf9f30fd654461e22/src/config.ts#L34
@@ -27,7 +28,7 @@ function getDefaultConfig() {
   return <TowlesToolConfig>{
     journalDir: path.join(homedir(), 'journal'),
     editor: 'code',
-    debug: false,
+    claudeAlias: path.join(homedir(), '.claude', 'local', 'claude'),
   }
 }
 
@@ -66,10 +67,13 @@ export async function loadTowlesToolConfig({
 export default  ${JSON.stringify(defaults, null, 2)};
 `
     },
-    // async onUpdate(config) {
-    //   consola.info(`Configuration updated in ${colors.cyan(path.relative('.', configFile))}`)
-    //   return config
-    // },
+    async onUpdate(config) {
+      // update the config to sync with the defaults
+      // TODO: add zod to validate the config
+
+      // consola.info(`Configuration updated in ${colors.cyan(path.relative('.', configFile))}`)
+      return config
+    },
   }).catch((error) => {
     consola.error(`Failed to update config: ${error.message}`)
     return null

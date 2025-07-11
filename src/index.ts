@@ -37,7 +37,7 @@ async function main() {
     .alias('gc')
     .description('Git commit command')
     .action(async () => {
-      await gitCommitCommand()
+      await gitCommitCommand(configWrapper.config)
     })
 
   program
