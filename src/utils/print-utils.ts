@@ -4,7 +4,7 @@ import util from 'node:util'
 import consola from 'consola'
 
 // todo we could use tags.
-// const consola = _consola.withTag('towles-tool')
+// const consola = _consola.withTag(constants.toolName)
 
 export function printJson(obj: object): void {
   consola.log(util.inspect(obj, {
@@ -17,8 +17,7 @@ export function printJson(obj: object): void {
 
 export function printDebug(message: InputLogObject | any, ...args: any[]): void {
   if (process.env.DEBUG) {
-    const _consola = consola.withTag('towles-tool')
-    _consola.log(`DEBUG: ${message}`, ...args)
+    consola.log(`DEBUG: ${message}`, ...args)
   }
 }
 
