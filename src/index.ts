@@ -6,6 +6,7 @@ import _consola from 'consola'
 
 import { colors } from 'consola/utils'
 import { version as packageVersion } from '../package.json'
+import { gitCommitCommand } from './commands/git-commit.js'
 import { todayCommand } from './commands/today.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
@@ -29,6 +30,14 @@ async function main() {
     .description('Create and open a weekly journal file based on Monday of current week')
     .action(async () => {
       await todayCommand(configWrapper.config)
+    })
+
+  program
+    .command('git-commit')
+    .alias('gc')
+    .description('Git commit command')
+    .action(async () => {
+      await gitCommitCommand()
     })
 
   program
