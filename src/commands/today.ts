@@ -1,4 +1,4 @@
-import type { TowlesToolSettings } from '../config'
+import type { UserConfig } from '../config'
 import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -48,25 +48,25 @@ export function createJournalContent({ mondayDate }: { mondayDate: Date }): stri
 /**
  * Open file in default editor
  */
-export async function openInEditor(filePath: string, config: TowlesToolSettings): Promise<void> {
+export async function openInEditor({ editor, filePath }: { editor: string, filePath: string }): Promise<void> {
   try {
-    await execAsync(`"${config.editor}" "${filePath}"`)
+    await execAsync(`"${editor}" "${filePath}"`)
   }
   catch (ex) {
-    consola.warn(`Could not open in editor : '${config.editor}'. Modify your editor in the config: examples include 'code', 'code-insiders',  etc...`, ex)
+    consola.warn(`Could not open in editor : '${editor}'. Modify your editor in the config: examples include 'code', 'code-insiders',  etc...`, ex)
   }
 }
 
 /**
  * Main today command implementation
  */
-export async function todayCommand(config: TowlesToolSettings): Promise<void> {
+export async function todayCommand(userConfig: UserConfig): Promise<void> {
   try {
     const fileInfo = generateJournalFileInfo()
-    const filePath = path.join(config.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
+    const filePath = path.join(userConfig.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
 
     // Ensure journal directory exists
-    ensureDirectoryExists(path.join(config.journalDir!, ...fileInfo.pathPrefix))
+    ensureDirectoryExists(path.join(userConfig.journalDir!, ...fileInfo.pathPrefix))
 
     if (!existsSync(filePath)) {
       const content = createJournalContent({ mondayDate: fileInfo.mondayDate })
@@ -77,10 +77,10 @@ export async function todayCommand(config: TowlesToolSettings): Promise<void> {
       consola.info(`Opening existing journal file: ${colors.cyan(filePath)}`)
     }
 
-    await openInEditor(filePath, config)
+    await openInEditor({ editor: userConfig.editor, filePath })
   }
   catch (error) {
-    consola.error('Error creating journal file:', error)
+    consola.warn('Error creating journal file:', error)
     process.exit(1)
   }
 }

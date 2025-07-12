@@ -16,7 +16,7 @@ async function main() {
   const consola = _consola.withTag(constants.toolName)
 
   // Load configuration
-  const configWrapper = await loadTowlesToolConfig({ cwd: process.cwd() })
+  const config = await loadTowlesToolConfig({ cwd: process.cwd() })
 
   const program = new Command()
 
@@ -29,7 +29,7 @@ async function main() {
     .command('today')
     .description('Create and open a weekly journal file based on Monday of current week')
     .action(async () => {
-      await todayCommand(configWrapper.config)
+      await todayCommand(config.userConfig)
     })
 
   program
@@ -37,7 +37,7 @@ async function main() {
     .alias('gc')
     .description('Git commit command')
     .action(async () => {
-      await gitCommitCommand(configWrapper.config)
+      await gitCommitCommand(config)
     })
 
   program
@@ -45,8 +45,8 @@ async function main() {
     .description('set or show configuration file.')
     .action(async () => {
       consola.log(colors.green('Showing configuration...'))
-      consola.log('Config File:', configWrapper.configFile)
-      printJson(configWrapper.config)
+      consola.log('Settings File:', config.configFile)
+      printJson(config)
     })
 
   program.parse()

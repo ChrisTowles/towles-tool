@@ -1,7 +1,7 @@
 import util from 'node:util'
 import consola from 'consola'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { printDebug, printInfo, printJson } from './print-utils'
+import { printDebug, printJson } from './print-utils'
 
 vi.mock('consola')
 vi.mock('node:util')
@@ -111,42 +111,6 @@ describe('print-utils', () => {
       printDebug(message, ...args)
 
       expect(mockConsola.log).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
-    })
-  })
-
-  describe('printInfo', () => {
-    it('should log message with consola.log', () => {
-      const message = 'test info message'
-      const args = ['arg1', 'arg2']
-
-      printInfo(message, ...args)
-
-      expect(mockConsola.log).toHaveBeenCalledWith(message, ...args)
-    })
-
-    it('should handle object messages', () => {
-      const messageObj = { status: 'success', data: [1, 2, 3] }
-
-      printInfo(messageObj)
-
-      expect(mockConsola.log).toHaveBeenCalledWith(messageObj)
-    })
-
-    it('should handle no additional arguments', () => {
-      const message = 'simple message'
-
-      printInfo(message)
-
-      expect(mockConsola.log).toHaveBeenCalledWith(message)
-    })
-
-    it('should handle multiple arguments of different types', () => {
-      const message = 'info'
-      const args = ['string', 123, { key: 'value' }, null, undefined]
-
-      printInfo(message, ...args)
-
-      expect(mockConsola.log).toHaveBeenCalledWith(message, ...args)
     })
   })
 })

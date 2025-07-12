@@ -17,10 +17,6 @@ export function printJson(obj: object): void {
 
 export function printDebug(message: InputLogObject | any, ...args: any[]): void {
   if (process.env.DEBUG) {
-    consola.log(`DEBUG: ${message}`, ...args)
+    consola.debug(`DEBUG: ${message}`, ...args)
   }
-}
-
-export function printInfo(message: InputLogObject | any, ...args: any[]): void {
-  consola.log(message, ...args)
 }

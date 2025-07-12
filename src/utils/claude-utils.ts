@@ -1,11 +1,12 @@
 import type { SDKMessage } from '@anthropic-ai/claude-code'
-import type { TowlesToolSettings } from '../config'
+import type { Config } from '../config'
 
 import { query } from '@anthropic-ai/claude-code'
 
-import consola from 'consola'
+import { consola } from 'consola'
+import { printJson } from './print-utils'
 
-export async function invokeClaude({ prompt }: { config: TowlesToolSettings, prompt: string }): Promise<string> {
+export async function invokeClaude({ prompt }: { prompt: string }): Promise<string> {
   const messages: SDKMessage[] = []
   for await (const message of query({
     prompt,
@@ -14,14 +15,18 @@ export async function invokeClaude({ prompt }: { config: TowlesToolSettings, pro
       maxTurns: 1,
     },
   })) {
+    printJson(message)
     messages.push(message)
   }
 
-  consola.log(messages)
+  for (const message of messages) {
+    consola.info (`Claude response: `)
+    printJson(message)
+  }
 
   return messages.map(m => m).join('\n') // Assuming messages is an array of objects with a 'text' property
 }
 
-export async function claudeDoctor(_config: TowlesToolSettings): Promise<string> {
-  return 'I\'m Claude, your virtual assistant!'
+export async function claudeDoctor(config: Config): Promise<string> {
+  return `${config.cwd} ${config.userConfig.journalDir}`
 }

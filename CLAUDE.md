@@ -34,5 +34,14 @@ The project uses a catalog-based dependency management system via pnpm workspace
 
 This is a cli tool for managing and automating tasks in a development environment.
 
+## Code Style
+
+- Uses TypeScript with strict type checking
+- destructured object parameters are used for better readability and maintainability
+- async/await is used for asynchronous operations
+- consola is used for logging with different levels (info, warn, error)
+- execAsync is a utility function to execute shell commands asynchronously
+
 ## Important Notes
+
 never use the --no-verify flag with git commands in this repository, as it will bypass the pre-commit hooks that ensure code quality and consistency.

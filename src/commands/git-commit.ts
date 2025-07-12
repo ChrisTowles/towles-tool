@@ -1,6 +1,8 @@
-import type { TowlesToolSettings } from '../config'
+import type { Config } from '../config'
 import consola from 'consola'
-import { getGitDiff, invokeClaude } from '../utils/claude-utils'
+import { invokeClaude } from '../utils/claude-utils'
+import { getGitDiff } from '../utils/git'
+import { printDebug } from '../utils/print-utils'
 
 export function finalPrompt(diff: string, generate_number: number): string {
   // found similar prompt here with MIT license
@@ -71,12 +73,14 @@ export function finalPrompt(diff: string, generate_number: number): string {
 /**
  * Git commit command implementation
  */
-export async function gitCommitCommand(config: TowlesToolSettings): Promise<void> {
+export async function gitCommitCommand(config: Config): Promise<void> {
   consola.info('Generating commit message based on diff...')
-  const diff = await getGitDiff(config)
+  const diff = await getGitDiff(config.cwd)
 
   const prompt = finalPrompt(diff, /* config.generate_number || */ 5)
 
-  const result = await invokeClaude({ config, prompt })
+  printDebug(prompt)
+
+  const result = await invokeClaude({ prompt: 'tell a joke' })
   consola.info('Claude says:', result)
 }
