@@ -44,6 +44,7 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 - [Consola](https://github.com/unjs/consola) console wrapper and colors
 - [c12](https://github.com/unjs/c12) configuration loader and utilities
 - [zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way
+- [@anthropic-ai/claude-code](https://github.com/anthropic-ai/claude-code) - A library for interacting with the Claude code via the Anthropic API.
 
 ## Document verbose and debug options
 

@@ -90,32 +90,6 @@ export async function invokeClaude({ prompt }: { config: TowlesToolSettings, pro
 
   consola.log(messages)
 
-  // let result = ''
-  // try {
-  //   // Ensure zx is initialized
-  //   $.shell = '/bin/zsh'
-
-  //   ensureDirectoryExists(config.claudeAlias)
-
-  //   // const args = ['--print', `${prompt}`, '--output-format', 'json']
-  //   // const args = ['--print', '"tell a joke"']
-  //   const command = [`--print "${prompt}" --output-format json`
-  //   consola.info(`Invoking Claude with command: ${config.claudeAlias}  ${command}`)
-
-  //   const message = await $`${config.claudeAlias}  ${command}`
-
-  //   consola.info('Claude command found at:', config, prompt)
-  //   // const message = await $`${config.claudeAlias} -p "${prompt}" --output-format json`
-  //   // const message = await $`claude -p "${prompt}" --output-format json`
-  //   result = message.stdout
-  // }
-  // catch (error) {
-  //   consola.error('Error invoking:', error)
-  //   process.exit(1)
-  // }
-
-  // // #| jq -r '.result')
-
   return messages.map(m => m).join('\n') // Assuming messages is an array of objects with a 'text' property
 }
 

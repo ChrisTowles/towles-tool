@@ -52,8 +52,7 @@
     "changelogen": "catalog:cli",
     "commander": "catalog:cli",
     "consola": "catalog:cli",
-    "magicast": "catalog:cli",
-    "zx": "catalog:cli"
+    "magicast": "catalog:cli"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:cli",

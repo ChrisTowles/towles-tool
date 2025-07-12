@@ -51,9 +51,6 @@ catalogs:
     vite:
       specifier: ^6.3.5
       version: 6.3.5
-    zx:
-      specifier: ^8.7.0
-      version: 8.7.0
   inlined:
     '@antfu/utils':
       specifier: ^9.2.0
@@ -99,9 +96,6 @@ importers:
       magicast:
         specifier: catalog:cli
         version: 0.3.5
-      zx:
-        specifier: catalog:cli
-        version: 8.7.0
     devDependencies:
       '@antfu/eslint-config':
         specifier: catalog:cli
@@ -2953,11 +2947,6 @@ packages:
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
-
-  zx@8.7.0:
-    resolution: {integrity: sha512-pArftqj5JV/er8p+czFZwF+k6SbCldl7kcfCR+rIiDIh3gUsLB0F3Xh05diP8PzToZ39D/GWeFoVFimjHQkbAg==}
-    engines: {node: '>= 12.17.0'}
-    hasBin: true
 
 snapshots:
 
@@ -5907,5 +5896,3 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   zwitch@2.0.4: {}
-
-  zx@8.7.0: {}
