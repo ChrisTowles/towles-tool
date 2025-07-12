@@ -2,7 +2,7 @@
   "name": "@towles/tool",
   "type": "module",
   "version": "0.0.8",
-  "packageManager": "pnpm@10.6.2",
+  "packageManager": "pnpm@10.13.1",
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
   "license": "MIT",
@@ -47,8 +47,9 @@
     "prepare": "simple-git-hooks"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "catalog:",
+    "@anthropic-ai/claude-code": "catalog:cli",
     "c12": "catalog:cli",
+    "changelogen": "catalog:cli",
     "commander": "catalog:cli",
     "consola": "catalog:cli",
     "magicast": "catalog:cli",
@@ -56,7 +57,6 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:cli",
-    "@antfu/ni": "catalog:cli",
     "@antfu/utils": "catalog:inlined",
     "@types/node": "catalog:types",
     "bumpp": "catalog:cli",

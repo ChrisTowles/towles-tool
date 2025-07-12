@@ -11,24 +11,22 @@ import { colors } from 'consola/utils'
 import { constants } from './constants.js'
 import { printDebug } from './utils/print-utils.js'
 
-export interface TowlesToolConfig {
+export interface TowlesToolSettings {
   journalDir: string
   editor: string
-  claudeAlias: string
 }
 
 // for now no reason to have a separate types, https://github.com/unjs/changelogen/blob/acdedaaa2d1cfdb37a6e91edf9f30fd654461e22/src/config.ts#L34
-interface ResolvedTowlesToolConfig {
-  configFile?: string
+export interface TowlesToolConfig {
+  configFile: string
   cwd: string
-  config: TowlesToolConfig
+  config: TowlesToolSettings
 }
 
 function getDefaultConfig() {
-  return <TowlesToolConfig>{
+  return <TowlesToolSettings>{
     journalDir: path.join(homedir(), 'journal'),
     editor: 'code',
-    claudeAlias: path.join(homedir(), '.claude', 'local', 'claude'),
   }
 }
 
@@ -37,8 +35,8 @@ export async function loadTowlesToolConfig({
   overrides,
 }: {
   cwd: string
-  overrides?: Partial<TowlesToolConfig>
-}): Promise<ResolvedTowlesToolConfig> {
+  overrides?: Partial<TowlesToolSettings>
+}): Promise<TowlesToolConfig> {
   await setupDotenv({ cwd })
   const defaults = getDefaultConfig()
   const defaultConfigFolder = path.join(homedir(), '.config', constants.toolName)
@@ -85,7 +83,7 @@ export default  ${JSON.stringify(defaults, null, 2)};
     process.exit(1)
   }
 
-  const { config, configFile } = await loadConfig<TowlesToolConfig>({
+  const { config, configFile } = await loadConfig<TowlesToolSettings>({
     cwd: cwd || defaultConfigFolder,
     configFile: updateResult.configFile,
     name: constants.toolName,
@@ -94,7 +92,7 @@ export default  ${JSON.stringify(defaults, null, 2)};
     defaults,
     overrides: {
       // cwd,
-      ...(overrides as TowlesToolConfig),
+      ...(overrides as TowlesToolSettings),
     },
   })
 
@@ -104,13 +102,13 @@ export default  ${JSON.stringify(defaults, null, 2)};
 }
 
 export async function resolveTowlesToolConfig(
-  config: TowlesToolConfig,
+  config: TowlesToolSettings,
   configFile: string,
   cwd: string,
-): Promise<ResolvedTowlesToolConfig> {
+): Promise<TowlesToolConfig> {
   return {
     configFile,
     config,
     cwd,
-  } satisfies ResolvedTowlesToolConfig
+  } satisfies TowlesToolConfig
 }

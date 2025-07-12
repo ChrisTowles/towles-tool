@@ -1,4 +1,4 @@
-import type { TowlesToolConfig } from '../config'
+import type { TowlesToolSettings } from '../config'
 import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -48,7 +48,7 @@ export function createJournalContent({ mondayDate }: { mondayDate: Date }): stri
 /**
  * Open file in default editor
  */
-export async function openInEditor(filePath: string, config: TowlesToolConfig): Promise<void> {
+export async function openInEditor(filePath: string, config: TowlesToolSettings): Promise<void> {
   try {
     await execAsync(`"${config.editor}" "${filePath}"`)
   }
@@ -60,7 +60,7 @@ export async function openInEditor(filePath: string, config: TowlesToolConfig): 
 /**
  * Main today command implementation
  */
-export async function todayCommand(config: TowlesToolConfig): Promise<void> {
+export async function todayCommand(config: TowlesToolSettings): Promise<void> {
   try {
     const fileInfo = generateJournalFileInfo()
     const filePath = path.join(config.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)

@@ -1,4 +1,4 @@
-import type { TowlesToolConfig } from '../config'
+import type { TowlesToolSettings } from '../config'
 import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -24,10 +24,9 @@ const mockWriteFileSync = vi.mocked(writeFileSync)
 const mockConsola = vi.mocked(consola)
 
 describe('today command', () => {
-  const mockConfig: TowlesToolConfig = {
+  const mockConfig: TowlesToolSettings = {
     journalDir: '/test/journal',
     editor: 'code',
-    claudeAlias: '~/.claude/local/claude',
   }
 
   beforeEach(() => {
