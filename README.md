@@ -9,8 +9,8 @@
 One off quality of life scripts that I use on a daily basis.
 
 ## Tools to add
-- [ ] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
-- [ ] git commit with message prompt
+- [x] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
+- [ ] use claude code to generate git commits with multiple options for the commit message.
 
 ## Install from repository
 
@@ -40,11 +40,12 @@ pnpm tt
 if that works, then you need to add the pnpm global bin directory to your PATH.
 
 ## packages to consider
-
+- [@anthropic-ai/claude-code](https://github.com/anthropic-ai/claude-code) - A library for interacting with the Claude code
+- [zod](https://github.com/colinhacks/zod) - TypeScript-first schema validation
 - [Consola](https://github.com/unjs/consola) console wrapper and colors
 - [c12](https://github.com/unjs/c12) configuration loader and utilities
-- [zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way
-- [@anthropic-ai/claude-code](https://github.com/anthropic-ai/claude-code) - A library for interacting with the Claude code via the Anthropic API.
+- ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way
+via the Anthropic API.~~
 
 ## Document verbose and debug options
 
