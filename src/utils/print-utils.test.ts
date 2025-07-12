@@ -73,7 +73,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.log).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
+      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
     })
 
     it('should not log when DEBUG env var is not set', () => {
@@ -82,7 +82,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.log).not.toHaveBeenCalled()
+      expect(mockConsola.debug).not.toHaveBeenCalled()
     })
 
     it('should not log when DEBUG env var is empty string', () => {
@@ -91,7 +91,7 @@ describe('print-utils', () => {
 
       printDebug(message)
 
-      expect(mockConsola.log).not.toHaveBeenCalled()
+      expect(mockConsola.debug).not.toHaveBeenCalled()
     })
 
     it('should handle object messages', () => {
@@ -100,7 +100,7 @@ describe('print-utils', () => {
 
       printDebug(messageObj)
 
-      expect(mockConsola.log).toHaveBeenCalledWith(`DEBUG: ${messageObj}`)
+      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${messageObj}`)
     })
 
     it('should handle multiple arguments', () => {
@@ -110,7 +110,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.log).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
+      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
     })
   })
 })
