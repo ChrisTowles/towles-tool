@@ -12,6 +12,9 @@ catalogs:
     '@anthropic-ai/claude-code':
       specifier: ^1.0.51
       version: 1.0.51
+    '@anthropic-ai/sdk':
+      specifier: ^0.56.0
+      version: 0.56.0
     bumpp:
       specifier: ^10.2.0
       version: 10.2.0
@@ -48,6 +51,9 @@ catalogs:
     unbuild:
       specifier: ^3.5.0
       version: 3.5.0
+    zod:
+      specifier: ^4.0.5
+      version: 4.0.5
   inlined:
     '@antfu/utils':
       specifier: ^9.2.0
@@ -81,6 +87,9 @@ importers:
       '@anthropic-ai/claude-code':
         specifier: catalog:cli
         version: 1.0.51
+      '@anthropic-ai/sdk':
+        specifier: catalog:cli
+        version: 0.56.0
       c12:
         specifier: catalog:cli
         version: 3.0.4(magicast@0.3.5)
@@ -96,6 +105,9 @@ importers:
       magicast:
         specifier: catalog:cli
         version: 0.3.5
+      zod:
+        specifier: catalog:cli
+        version: 4.0.5
     devDependencies:
       '@antfu/eslint-config':
         specifier: catalog:cli
@@ -203,6 +215,10 @@ packages:
   '@anthropic-ai/claude-code@1.0.51':
     resolution: {integrity: sha512-annBc4ez7nDPbp+di6bjIQGiAdmdVln4k3gAYioym2MxOEl3py5s7SsoR+dNSmfgfIHUdKBTbtXnXD5rkmO5aA==}
     engines: {node: '>=18.0.0'}
+    hasBin: true
+
+  '@anthropic-ai/sdk@0.56.0':
+    resolution: {integrity: sha512-SLCB8M8+VMg1cpCucnA1XWHGWqVSZtIWzmOdDOEu3eTFZMB+A0sGZ1ESO5MHDnqrNTXz3safMrWx9x4rMZSOqA==}
     hasBin: true
 
   '@babel/code-frame@7.26.2':
@@ -3111,6 +3127,9 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  zod@4.0.5:
+    resolution: {integrity: sha512-/5UuuRPStvHXu7RS+gmvRf4NXrNxpSllGwDnCBcJZtQsKrviYXm54yDGV2KYNLT5kq0lHGcl7lqWJLgSaG+tgA==}
+
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
@@ -3177,6 +3196,8 @@ snapshots:
       '@img/sharp-linux-arm64': 0.33.5
       '@img/sharp-linux-x64': 0.33.5
       '@img/sharp-win32-x64': 0.33.5
+
+  '@anthropic-ai/sdk@0.56.0': {}
 
   '@babel/code-frame@7.26.2':
     dependencies:
@@ -3951,7 +3972,7 @@ snapshots:
       '@vue/shared': 3.5.13
       estree-walker: 2.0.2
       magic-string: 0.30.17
-      postcss: 8.5.3
+      postcss: 8.5.6
       source-map-js: 1.2.1
 
   '@vue/compiler-ssr@3.5.13':
@@ -6208,5 +6229,7 @@ snapshots:
   yaml@2.8.0: {}
 
   yocto-queue@0.1.0: {}
+
+  zod@4.0.5: {}
 
   zwitch@2.0.4: {}

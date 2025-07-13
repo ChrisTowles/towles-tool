@@ -49,11 +49,13 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
+    "@anthropic-ai/sdk": "catalog:cli",
     "c12": "catalog:cli",
     "changelogen": "catalog:cli",
     "commander": "catalog:cli",
     "consola": "catalog:cli",
-    "magicast": "catalog:cli"
+    "magicast": "catalog:cli",
+    "zod": "catalog:cli"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:cli",
@@ -80,11 +82,5 @@
   },
   "directories": {
     "test": "test"
-  },
-  "pnpm": {
-    "overrides": {
-      "vite": "npm:rolldown-vite@latest"
-    }
   }
-
 }

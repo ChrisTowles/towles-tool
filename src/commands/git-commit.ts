@@ -1,6 +1,6 @@
 import type { Config } from '../config'
 import consola from 'consola'
-import { invokeClaude } from '../utils/claude-utils'
+import { invokeClaude } from '../utils/anthropic/claude-utils'
 import { getGitDiff } from '../utils/git'
 import { printDebug } from '../utils/print-utils'
 

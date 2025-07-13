@@ -1,10 +1,9 @@
 import type { SDKMessage } from '@anthropic-ai/claude-code'
-import type { Config } from '../config'
+import type { Config } from '../../config'
 
 import { query } from '@anthropic-ai/claude-code'
 
-import { consola } from 'consola'
-import { printJson } from './print-utils'
+import { printJson } from '../print-utils'
 
 export async function invokeClaude({ prompt }: { prompt: string }): Promise<SDKMessage[]> {
   const messages: SDKMessage[] = []
