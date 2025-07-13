@@ -38,7 +38,5 @@ catalogs:
     '@types/node': ^22.16.3
   utils:
     tinyexec: ^0.3.2
-  conflicts_cli_:
-    neverthrow: ''
 onlyBuiltDependencies:
   - '@anthropic-ai/claude-code'

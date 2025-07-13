@@ -1,6 +1,5 @@
 import type { Config } from '../config'
 import consola from 'consola'
-import { invokeClaude } from '../utils/anthropic/claude-utils'
 import { getGitDiff } from '../utils/git'
 import { printDebug } from '../utils/print-utils'
 
@@ -81,6 +80,6 @@ export async function gitCommitCommand(config: Config): Promise<void> {
 
   printDebug(prompt)
 
-  const result = await invokeClaude({ prompt: 'tell a joke' })
-  consola.info('Claude says:', result)
+  // const result = await invokeClaude({ prompt: 'tell a joke' })
+  consola.info('Claude says:', 'NOT YET IMPLEMENTED')
 }

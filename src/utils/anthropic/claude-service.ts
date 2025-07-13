@@ -1,25 +1,30 @@
-import { query } from "@anthropic-ai/claude-code";
-import { err, ok, type Result } from "neverthrow";
-import type { ClaudeService } from "@/core/domain/claude/ports/claudeService";
+import type { Result } from 'neverthrow'
 import type {
   AssistantContent,
   ChunkData,
   SDKMessage,
   SendMessageInput,
   UserContent,
-} from "@/core/domain/claude/types";
-import { ClaudeError } from "@/lib/error";
-import { jsonValueSchema } from "@/lib/json";
-import { validate } from "@/lib/validation";
+} from './types'
 
+import { query } from '@anthropic-ai/claude-code'
+import { err, ok } from 'neverthrow'
 
+import { ClaudeError } from '../../lib/error'
+import { jsonValueSchema } from '../../lib/json'
+import { validate } from '../../lib/validation'
 
+// This file defines the service for Claude Code access
+// copied from https://github.com/tuanemuy/cc-jsonl/blob/main/src/core/adapters/anthropic/claudeService.ts
+// which is also using the Anthropic claude-code package.
 
-export class AnthropicClaudeService implements ClaudeService {
-  private readonly pathToClaudeCodeExecutable?: string;
+// TODO: make this service have interface to easily mock for tests
+
+export class ClaudeService {
+  private readonly pathToClaudeCodeExecutable?: string
 
   constructor(pathToClaudeCodeExecutable?: string) {
-    this.pathToClaudeCodeExecutable = pathToClaudeCodeExecutable;
+    this.pathToClaudeCodeExecutable = pathToClaudeCodeExecutable
   }
 
   async sendMessageStream(
@@ -29,114 +34,115 @@ export class AnthropicClaudeService implements ClaudeService {
     try {
       // Build options for Claude Code SDK
       const options: {
-        pathToClaudeCodeExecutable?: string;
-        resume?: string;
-        cwd?: string;
-        allowedTools?: string[];
-        permissionMode?: "bypassPermissions";
+        pathToClaudeCodeExecutable?: string
+        resume?: string
+        cwd?: string
+        allowedTools?: string[]
+        permissionMode?: 'bypassPermissions'
       } = {
         pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
-      };
+      }
 
       // Add session resume if Claude session ID is provided
       if (input.sessionId) {
-        options.resume = input.sessionId;
+        options.resume = input.sessionId
       }
 
       // Add working directory if provided
       if (input.cwd) {
-        options.cwd = input.cwd;
+        options.cwd = input.cwd
       }
 
       // Add allowed tools if provided
       if (input.allowedTools) {
-        options.allowedTools = input.allowedTools;
+        options.allowedTools = input.allowedTools
       }
 
       // Add bypass permissions mode if provided
       if (input.bypassPermissions) {
-        options.permissionMode = "bypassPermissions";
+        options.permissionMode = 'bypassPermissions'
       }
 
-      const messages: SDKMessage[] = [];
+      const messages: SDKMessage[] = []
 
       // Simply pass each SDK message directly to onChunk
       for await (const message of query({
         prompt: input.message,
         options,
       })) {
-        const customMessage = message as unknown as SDKMessage;
-        messages.push(customMessage);
+        const customMessage = message as unknown as SDKMessage
+        messages.push(customMessage)
 
         // Send the entire message as a chunk
-        onChunk(customMessage);
+        onChunk(customMessage)
       }
 
       if (messages.length === 0) {
-        throw new Error("No response received from Claude Code SDK");
+        throw new Error('No response received from Claude Code SDK')
       }
 
-      return ok(messages);
-    } catch (error) {
+      return ok(messages)
+    }
+    catch (error) {
       return err(
-        new ClaudeError("Failed to stream message from Claude", error),
-      );
+        new ClaudeError('Failed to stream message from Claude', error),
+      )
     }
   }
 
   parseAssistantContent(rawContent: string) {
-    const parsed = validate(jsonValueSchema, rawContent);
+    const parsed = validate(jsonValueSchema, rawContent)
     if (parsed.isErr()) {
       return err(
-        new ClaudeError("Invalid assistant content format", parsed.error),
-      );
+        new ClaudeError('Invalid assistant content format', parsed.error),
+      )
     }
     if (!Array.isArray(parsed.value)) {
       return err(
-        new ClaudeError("Assistant content must be an array of content blocks"),
-      );
+        new ClaudeError('Assistant content must be an array of content blocks'),
+      )
     }
 
     // Validate that all items are content blocks
     for (const item of parsed.value) {
-      if (typeof item !== "object" || item === null || !("type" in item)) {
+      if (typeof item !== 'object' || item === null || !('type' in item)) {
         return err(
-          new ClaudeError("Assistant content contains invalid content block"),
-        );
+          new ClaudeError('Assistant content contains invalid content block'),
+        )
       }
     }
 
-    return ok(parsed.value as unknown as AssistantContent);
+    return ok(parsed.value as unknown as AssistantContent)
   }
 
   parseUserContent(rawContent: string) {
-    const parsed = validate(jsonValueSchema, rawContent);
+    const parsed = validate(jsonValueSchema, rawContent)
     if (parsed.isErr()) {
-      return err(new ClaudeError("Invalid user content format", parsed.error));
+      return err(new ClaudeError('Invalid user content format', parsed.error))
     }
 
-    if (typeof parsed.value === "string") {
-      return ok(parsed.value as unknown as UserContent);
+    if (typeof parsed.value === 'string') {
+      return ok(parsed.value as unknown as UserContent)
     }
 
     if (Array.isArray(parsed.value)) {
       // Validate that all items in array are content block params
       for (const item of parsed.value) {
-        if (typeof item !== "object" || item === null || !("type" in item)) {
+        if (typeof item !== 'object' || item === null || !('type' in item)) {
           return err(
             new ClaudeError(
-              "User content array contains invalid content block",
+              'User content array contains invalid content block',
             ),
-          );
+          )
         }
       }
-      return ok(parsed.value as unknown as UserContent);
+      return ok(parsed.value as unknown as UserContent)
     }
 
     return err(
       new ClaudeError(
-        "User content must be a string or array of content blocks",
+        'User content must be a string or array of content blocks',
       ),
-    );
+    )
   }
 }
