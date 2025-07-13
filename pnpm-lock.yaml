@@ -39,6 +39,9 @@ catalogs:
     magicast:
       specifier: ^0.3.5
       version: 0.3.5
+    neverthrow:
+      specifier: ^8.2.0
+      version: 8.2.0
     simple-git-hooks:
       specifier: ^2.13.0
       version: 2.13.0
@@ -105,6 +108,9 @@ importers:
       magicast:
         specifier: catalog:cli
         version: 0.3.5
+      neverthrow:
+        specifier: catalog:cli
+        version: 8.2.0
       zod:
         specifier: catalog:cli
         version: 4.0.5
@@ -2365,6 +2371,10 @@ packages:
 
   natural-orderby@5.0.0:
     resolution: {integrity: sha512-kKHJhxwpR/Okycz4HhQKKlhWe4ASEfPgkSWNmKFHd7+ezuQlxkA5cM3+XkBPvm1gmHen3w53qsYAv+8GwRrBlg==}
+    engines: {node: '>=18'}
+
+  neverthrow@8.2.0:
+    resolution: {integrity: sha512-kOCT/1MCPAxY5iUV3wytNFUMUolzuwd/VF/1KCx7kf6CutrOsTie+84zTGTpgQycjvfLdBBdvBvFLqFD2c0wkQ==}
     engines: {node: '>=18'}
 
   node-fetch-native@1.6.6:
@@ -5450,6 +5460,10 @@ snapshots:
   natural-compare@1.4.0: {}
 
   natural-orderby@5.0.0: {}
+
+  neverthrow@8.2.0:
+    optionalDependencies:
+      '@rollup/rollup-linux-x64-gnu': 4.34.9
 
   node-fetch-native@1.6.6: {}
 
