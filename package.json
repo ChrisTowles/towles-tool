@@ -37,6 +37,7 @@
     "build": "unbuild",
     "dev": "unbuild --stub",
     "lint": "eslint",
+    "lint:fix": "eslint --fix",
     "prepublishOnly": "nr build",
     "release:local": "bumpp && pnpm publish --no-git-checks -r --access public",
     "release": "bumpp && echo \"github action will run and publish to npm\"",
@@ -79,5 +80,11 @@
   },
   "directories": {
     "test": "test"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "npm:rolldown-vite@latest"
+    }
   }
+
 }
