@@ -8,7 +8,7 @@ export async function getGitDiff(cwd: string): Promise<string> {
   // https://git-scm.com/docs/pretty-formats
   const r = execCommand(
     // `git --no-pager log "${from ? `${from}...` : ''}${to}"  `,
-    `git diff --staged --no-color`,
+    `git --no-pager diff --staged`,
     // --name-status
     // --pretty="----%n%s|%h|%an|%ae%n%b"
     cwd,

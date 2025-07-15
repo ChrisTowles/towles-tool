@@ -1,5 +1,6 @@
 import type { Result } from 'neverthrow'
 import type { z } from 'zod/v4'
+import consola from 'consola'
 import { err, ok } from 'neverthrow'
 import { AnyError } from '../lib/error'
 
@@ -26,6 +27,7 @@ export function validate<T extends z.ZodType>(
   const result = schema.safeParse(data)
 
   if (!result.success) {
+    consola.error('Validation failed:', result.error)
     return err(new ValidationError(result.error, 'Validation error occurred'))
   }
 

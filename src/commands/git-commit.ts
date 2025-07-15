@@ -9,18 +9,18 @@ import prompts from 'prompts'
 import z from 'zod/v4'
 import { validate } from '../lib/validation'
 import { ClaudeService } from '../utils/anthropic/claude-service'
+import { execCommand } from '../utils/exec'
 import { getGitDiff } from '../utils/git'
 import { printDebug, printJson } from '../utils/print-utils'
 
 const commitTypes = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'revert', 'build', 'ci', 'types', 'wip']
 
-const maxLength = 72 // Conventional commit subject line max length
+const maxSubjectLength = 72
+const llmMaxSubjectLength = maxSubjectLength - 12 // Conventional commit subject line max length
 
 export const gitCommitSuggestionSchema = z.object({
-
-  subject: z.string().min(1).max(72),
+  subject: z.string().min(1).max(maxSubjectLength), // larger than we told the LLM to generate
   body: z.string().optional(),
-
 })
 
 export type GitCommitSuggestion = z.infer<typeof gitCommitSuggestionSchema>
@@ -43,7 +43,8 @@ export function finalPrompt(diff: string, generate_number: number): string {
     '3. Guidelines for writing commit messages:',
     '   - Be specific about what changes were made',
     '   - Use imperative mood ("add feature" not "added feature")',
-    `   - Keep subject line under ${maxLength} characters`,
+    `   - Keep subject line under ${llmMaxSubjectLength} characters`,
+    '   - make each entry more generic and not too specific to the code changes',
     '   - Do not end the subject line with a period',
     '   - Use the body to explain what and why vs. how',
     '4. Focus on:',
@@ -99,7 +100,12 @@ export async function gitCommitCommand(config: Config): Promise<void> {
   consola.info('Generating commit message based on diff...')
   const diff = await getGitDiff(config.cwd)
 
-  const prompt = finalPrompt(diff, /* config.generate_number || */ 3)
+  if (diff.trim().length === 0) {
+    consola.error(`No staged changes found to commit. use '${colors.blue('git add <file>...')}' to stage changes before committing.`)
+    process.exit(1)
+  }
+
+  const prompt = finalPrompt(diff, /* config.generate_number || */ 6)
 
   printDebug(prompt)
   const service = new ClaudeService()
@@ -109,9 +115,10 @@ export async function gitCommitCommand(config: Config): Promise<void> {
 
   }
 
-  const result = await service.sendMessageStream(input, (chunk) => {
-    consola.log(colors.yellow('Received chunk:'))
-    printJson(chunk)
+  const result = await service.sendMessageStream(input, () => {
+    // consola.log(colors.yellow('Received chunk:'))
+    // printJson(chunk)
+
   })
 
   if (result.isErr()) {
@@ -132,7 +139,7 @@ export async function gitCommitCommand(config: Config): Promise<void> {
   }
 
   consola.info('Claude suggestions received!')
-  consola.info('Claude says:', filteredResults[0].result)
+  // consola.info('Claude says:', filteredResults[0].result)
 
   // Hack: TODO: i couldn't figure out how to claude-code to run `--output-format json` via the sdk
   // so we have to parse the result manually.  Extract JSON array from the result string (remove text before '[' and after ']')
@@ -144,24 +151,30 @@ export async function gitCommitCommand(config: Config): Promise<void> {
     process.exit(1)
   }
 
-  const cleanedResult = filteredResults[0].result!.substring(startIndex, endIndex + 1)
-
-  consola.info('Cleaned result:', cleanedResult)
+  const cleanedResultRaw = filteredResults[0].result!.substring(startIndex, endIndex + 1)
+  const cleanedResult = JSON.parse(cleanedResultRaw) // Validate JSON format
 
   const suggestions = validate(z.array(gitCommitSuggestionSchema), cleanedResult)
   if (!suggestions.isOk()) {
     consola.error('Invalid suggestions format:', suggestions.error)
     process.exit(1)
   }
-  consola.info('Suggestions:')
-  printJson(suggestions.value)
+  // consola.info('Suggestions:')
+  // printJson(suggestions.value)
 
-  const choosenSuggestion = promptUserForCommitMessage(suggestions.value)
+  const choosenSuggestion = await promptUserForCommitMessage(suggestions.value)
 
-  // const result = await invokeClaude({ prompt: 'tell a joke' })
+  const commandWithArgs = `git commit -m "${choosenSuggestion.subject}"`
+  consola.info(`Running command: ${colors.bgCyan(commandWithArgs)}`)
 
-  consola.info('Selected commit message:')
-  printJson(choosenSuggestion)
+  try {
+    execCommand(commandWithArgs, config.cwd)
+  }
+  catch (error) {
+    consola.error(`Failed to commit changes:`)
+    printJson(error as unknown as object)
+    process.exit(1)
+  }
 }
 
 async function promptUserForCommitMessage(suggestions: GitCommitSuggestion[]): Promise<GitCommitSuggestion> {
@@ -183,7 +196,7 @@ async function promptUserForCommitMessage(suggestions: GitCommitSuggestion[]): P
   try {
     const { fn } = await prompts({
       name: 'fn',
-      message: 'Choose Aws Profile:',
+      message: 'Choose your git commit:',
       type: 'autocomplete',
       choices: profileChoices,
       async suggest(input: string, choices: Choice[]) {

@@ -79,7 +79,7 @@ catalogs:
       version: 2.8.0
   types:
     '@types/node':
-      specifier: ^22.16.3
+      specifier: catalog:types
       version: 22.16.3
     '@types/prompts':
       specifier: ^2.4.9
