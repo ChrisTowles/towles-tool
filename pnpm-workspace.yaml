@@ -3,9 +3,10 @@ packages:
   - docs
   - packages/*
   - examples/*
+
 overrides:
   vite: npm:rolldown-vite@latest
-catalog:
+catalog: null
 
 catalogs:
   cli:
@@ -18,16 +19,17 @@ catalogs:
     commander: ^14.0.0
     consola: ^3.4.2
     eslint: ^9.31.0
+    fzf: ^0.5.2
     lint-staged: ^15.5.2
     magicast: ^0.3.5
     neverthrow: ^8.2.0
+    prompts: ^2.4.2
     simple-git-hooks: ^2.13.0
     tsx: ^4.20.3
     typescript: ^5.8.3
     unbuild: ^3.5.0
     vite: ^6.3.5
     zod: ^4.0.5
-
   inlined:
     '@antfu/utils': ^9.2.0
   testing:
@@ -36,7 +38,9 @@ catalogs:
     yaml: ^2.8.0
   types:
     '@types/node': ^22.16.3
+    '@types/prompts': ^2.4.9
   utils:
     tinyexec: ^0.3.2
+
 onlyBuiltDependencies:
   - '@anthropic-ai/claude-code'

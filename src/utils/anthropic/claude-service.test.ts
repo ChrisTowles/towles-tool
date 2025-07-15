@@ -2,6 +2,7 @@ import type { SendMessageInput } from './types'
 import consola from 'consola'
 import { describe, expect, it } from 'vitest'
 import { ClaudeService } from './claude-service'
+
 // import { invokeClaude } from './claude-service'
 
 // describe.skip('claude utilities', () => {
@@ -24,8 +25,8 @@ describe('claude-service', () => {
       consola.log('Received chunk:', chunk)
     })
 
-    expect(result.isErr()).toBe(false)
     expect(result.isOk()).toBe(true)
+    expect(Array.isArray(result.unwrapOr(null))).toBe(true)
 
     // const result = await invokeClaude({ prompt: 'tell a joke' })
     // expect(typeof result).toBe('object')

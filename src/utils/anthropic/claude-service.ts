@@ -1,4 +1,6 @@
+import type { Options } from '@anthropic-ai/claude-code'
 import type { Result } from 'neverthrow'
+
 import type {
   AssistantContent,
   ChunkData,
@@ -20,7 +22,18 @@ import { validate } from '../../lib/validation'
 
 // TODO: make this service have interface to easily mock for tests
 
-export class ClaudeService {
+export interface IClaudeService {
+  sendMessageStream: (
+    input: SendMessageInput,
+    onChunk: (chunk: ChunkData) => void,
+  ) => Promise<Result<SDKMessage[], ClaudeError>>
+  parseAssistantContent: (
+    rawContent: string,
+  ) => Result<AssistantContent, ClaudeError>
+  parseUserContent: (rawContent: string) => Result<UserContent, ClaudeError>
+}
+
+export class ClaudeService implements IClaudeService {
   private readonly pathToClaudeCodeExecutable?: string
 
   constructor(pathToClaudeCodeExecutable?: string) {
@@ -33,14 +46,10 @@ export class ClaudeService {
   ): Promise<Result<SDKMessage[], ClaudeError>> {
     try {
       // Build options for Claude Code SDK
-      const options: {
-        pathToClaudeCodeExecutable?: string
-        resume?: string
-        cwd?: string
-        allowedTools?: string[]
-        permissionMode?: 'bypassPermissions'
-      } = {
+      const options: Options = {
         pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
+        permissionMode: 'bypassPermissions',
+
       }
 
       // Add session resume if Claude session ID is provided

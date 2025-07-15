@@ -45,8 +45,9 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 - [Consola](https://github.com/unjs/consola) console wrapper and colors
 - [c12](https://github.com/unjs/c12) configuration loader and utilities
 - [rolldown-vite](https://voidzero.dev/posts/announcing-rolldown-vite) - A Vite plugin for rolling down your code
-- ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way
-via the Anthropic API.~~
+- ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way via the Anthropic API.~~
+- [prompts](https://github.com/terkelg/prompts) - A library for creating beautiful command-line prompts, with fuzzy search and other features.
+- [commander](https://github.com/tj/commander.js) - A library for building command-line interfaces, with support for subcommands, argument parsing, and more.
 
 ## Document verbose and debug options
 
