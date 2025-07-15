@@ -8,7 +8,7 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "start",
-        "today"
+        "git-commit"
       ]
     }
   ]

@@ -41,7 +41,6 @@ A command line tool to automate some tasks. Such as creating a journal document 
   - creates the markdown file at the journal directory from the settings file if it doesn't already exist.
   - opens the file in the editor specified in the settings file
 
-
 #### 3.1.2 Claude Code SDK Integration Function
 
 ##### 3.1.2.1 Existing Session Integration

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Documents
 
 - `docs/requirements.md`: Document requirements and specifications
-<!--- IGNORE 
+<!--- IGNORE
 - TODO `docs/usecase_web.tsv`: Use case definitions for web application
 - TODO `docs/usecase_daemon.tsv`: Use case definitions for watcher
 --->
@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `pnpm lint` - Lint code with Biome
 - `pnpm lint:fix` - Lint code with Biome and fix issues
-<!-- 
+<!--
 - TODO `pnpm format` - Format code with Biome -->
 - `pnpm typecheck` - Type check code with tsc
 - `pnpm test` - Run tests with Vitest
@@ -22,7 +22,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Code Quality
 
 Run `pnpm typecheck` and `pnpm run lint:fix`  after making changes to ensure code quality and consistency.
-
 
 ## Key Architecture Notes
 
@@ -34,7 +33,6 @@ modular architecture and support Domain-Driven Design (DDD) pattern in large sca
 - async/await is used for asynchronous operations
 - execAsync is a utility function to execute shell commands asynchronously
 - never use the --no-verify flag with git commands in this repository, as it will bypass the pre-commit hooks that ensure code quality and consistency.
-
 
 ### Types example
 
@@ -91,7 +89,6 @@ export interface StorageManager {
 
 ### Adapters example
 
-
 ### Application Service example
 
 ```typescript
@@ -135,7 +132,7 @@ export type Env = z.infer<typeof envSchema>
 
 const env = envSchema.safeParse(process.env)
 if (!env.success) {
-  throw new TypeError(/* Zod errors */)
+  throw new TypeError(env.error/* Zod errors */)
 }
 
 const db = getDatabase(env.data.DATABASE_URL, env.data.DATABASE_AUTH_TOKEN)
@@ -158,7 +155,6 @@ commander 14.0.0 application code using:
 - zod
 - neverthrow
 - unbuild
-
 
 ### Server Actions example
 
@@ -188,7 +184,6 @@ export async function createPostAction(params: CreatePostActionParams) {
 - **Error Handling**: neverthrow for Result types
 - **Git Hooks**: simple-git-hooks with lint-staged for pre-commit linting
 
-
 ## Error Handling
 
 - All 'src/utils' functions return `Result<T, E>` or `Promise<Result<T, E>>` types using `neverthrow`
@@ -203,5 +198,3 @@ export async function createPostAction(params: CreatePostActionParams) {
 ### Application Service Tests
 
 - Use `src/${domain}/${usecase}.test.ts` for unit tests of application services
-
-

@@ -49,16 +49,23 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
+    "@anthropic-ai/sdk": "catalog:cli",
+    "@clack/prompts": "catalog:cli",
     "c12": "catalog:cli",
     "changelogen": "catalog:cli",
     "commander": "catalog:cli",
     "consola": "catalog:cli",
-    "magicast": "catalog:cli"
+    "fzf": "catalog:cli",
+    "magicast": "catalog:cli",
+    "neverthrow": "catalog:cli",
+    "prompts": "catalog:cli",
+    "zod": "catalog:cli"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:cli",
     "@antfu/utils": "catalog:inlined",
     "@types/node": "catalog:types",
+    "@types/prompts": "catalog:types",
     "bumpp": "catalog:cli",
     "eslint": "catalog:cli",
     "lint-staged": "catalog:cli",
@@ -80,11 +87,5 @@
   },
   "directories": {
     "test": "test"
-  },
-  "pnpm": {
-    "overrides": {
-      "vite": "npm:rolldown-vite@latest"
-    }
   }
-
 }
