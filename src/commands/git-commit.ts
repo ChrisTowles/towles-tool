@@ -134,7 +134,21 @@ export async function gitCommitCommand(config: Config): Promise<void> {
   consola.info('Claude suggestions received!')
   consola.info('Claude says:', filteredResults[0].result)
 
-  const suggestions = await validate(z.array(gitCommitSuggestionSchema), filteredResults)
+  // Hack: TODO: i couldn't figure out how to claude-code to run `--output-format json` via the sdk
+  // so we have to parse the result manually.  Extract JSON array from the result string (remove text before '[' and after ']')
+  const startIndex = filteredResults[0].result!.indexOf('[')
+  const endIndex = filteredResults[0].result!.lastIndexOf(']')
+
+  if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
+    consola.error('Could not find valid JSON array in Claude response')
+    process.exit(1)
+  }
+
+  const cleanedResult = filteredResults[0].result!.substring(startIndex, endIndex + 1)
+
+  consola.info('Cleaned result:', cleanedResult)
+
+  const suggestions = validate(z.array(gitCommitSuggestionSchema), cleanedResult)
   if (!suggestions.isOk()) {
     consola.error('Invalid suggestions format:', suggestions.error)
     process.exit(1)
