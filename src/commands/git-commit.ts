@@ -13,7 +13,7 @@ import { execCommand } from '../utils/exec'
 import { getGitDiff } from '../utils/git'
 import { printDebug, printJson } from '../utils/print-utils'
 
-const commitTypes = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'revert', 'build', 'ci', 'types', 'wip']
+const commitTypes = ['feat', 'fix', 'docs', 'test', 'wip']
 
 const maxSubjectLength = 72
 const llmMaxSubjectLength = maxSubjectLength - 12 // Conventional commit subject line max length
@@ -35,7 +35,8 @@ export function finalPrompt(diff: string, generate_number: number): string {
     `You are a helpful assistant specializing in writing clear and informative Git commit messages using the conventional style.`,
     `Based on the given code changes or context, generate exactly ${generate_number} conventional Git commit message${generate_number_plural} based on the following guidelines.`,
 
-    `1. Format: follow the conventional commits format following :`,
+    `1. Format: follow the conventional commits format following of one of the following. :`,
+    '<type>: <commit message>',
     '<type>(<optional scope>): <commit message>',
     '',
     `2. Types: use one of the following types:`,
@@ -74,6 +75,10 @@ export function finalPrompt(diff: string, generate_number: number): string {
     '',
     `<result>`,
     `[`,
+    `  {`,
+    `    "subject": "chore: update <file> to handle auth",`,
+    `    "body": "- Update login function to handle edge cases\\n- Add additional error logging for debugging",`,
+    `  }`,
     `  {`,
     `    "subject": "fix(auth): fix bug in user authentication process",`,
     `    "body": "- Update login function to handle edge cases\\n- Add additional error logging for debugging",`,
