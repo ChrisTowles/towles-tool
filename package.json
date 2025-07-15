@@ -50,6 +50,7 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
+    "@clack/prompts": "catalog:cli",
     "c12": "catalog:cli",
     "changelogen": "catalog:cli",
     "commander": "catalog:cli",

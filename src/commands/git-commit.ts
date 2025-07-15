@@ -2,6 +2,7 @@ import type { Choice } from 'prompts'
 import type { Config } from '../config'
 import type { SendMessageInput } from '../utils/anthropic/types'
 import process from 'node:process'
+import { spinner } from '@clack/prompts'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 import { Fzf } from 'fzf'
@@ -11,7 +12,7 @@ import { validate } from '../lib/validation'
 import { ClaudeService } from '../utils/anthropic/claude-service'
 import { execCommand } from '../utils/exec'
 import { getGitDiff } from '../utils/git'
-import { printDebug, printJson } from '../utils/print-utils'
+import { printJson } from '../utils/print-utils'
 
 const commitTypes = ['feat', 'fix', 'docs', 'test', 'wip']
 
@@ -102,7 +103,10 @@ export function finalPrompt(diff: string, generate_number: number): string {
  * Git commit command implementation
  */
 export async function gitCommitCommand(config: Config): Promise<void> {
-  consola.info('Generating commit message based on diff...')
+  const s = spinner()
+  s.start('Generating commit message based on diff...')
+
+  s.message('getting git diff...')
   const diff = await getGitDiff(config.cwd)
 
   if (diff.trim().length === 0) {
@@ -110,15 +114,18 @@ export async function gitCommitCommand(config: Config): Promise<void> {
     process.exit(1)
   }
 
+  s.message('generating prompt...')
   const prompt = finalPrompt(diff, /* config.generate_number || */ 6)
 
-  printDebug(prompt)
+  // printDebug(prompt)
   const service = new ClaudeService()
 
   const input: SendMessageInput = {
     message: prompt,
 
   }
+
+  s.message('sending prompt to claude and waiting answer...')
 
   const result = await service.sendMessageStream(input, () => {
     // consola.log(colors.yellow('Received chunk:'))
@@ -130,8 +137,8 @@ export async function gitCommitCommand(config: Config): Promise<void> {
     consola.error(`Error sending message: ${result.error.message}`)
     process.exit(1)
   }
-
-  printDebug('Received git commit messages:', result.value)
+  s.stop(`Received commit messages from Claude!${colors.green('✓')}`)
+  // printDebug('Received git commit messages:', result.value)
 
   const filteredResults = result.value.filter(msg => msg.type === 'result')
   if (filteredResults.length === 0) {
@@ -143,7 +150,6 @@ export async function gitCommitCommand(config: Config): Promise<void> {
     consola.warn(`Received ${filteredResults.length} commit messages, using the first one`)
   }
 
-  consola.info('Claude suggestions received!')
   // consola.info('Claude says:', filteredResults[0].result)
 
   // Hack: TODO: i couldn't figure out how to claude-code to run `--output-format json` via the sdk
@@ -160,6 +166,7 @@ export async function gitCommitCommand(config: Config): Promise<void> {
   const cleanedResult = JSON.parse(cleanedResultRaw) // Validate JSON format
 
   const suggestions = validate(z.array(gitCommitSuggestionSchema), cleanedResult)
+  consola.success('Claude suggestions validated for format!')
   if (!suggestions.isOk()) {
     consola.error('Invalid suggestions format:', suggestions.error)
     process.exit(1)

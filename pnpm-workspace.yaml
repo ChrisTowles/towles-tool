@@ -13,6 +13,8 @@ catalogs:
     '@antfu/eslint-config': ^4.16.2
     '@anthropic-ai/claude-code': ^1.0.51
     '@anthropic-ai/sdk': ^0.56.0
+    '@clack/prompts': ^0.11.0
+
     bumpp: ^10.2.0
     c12: ^3.0.4
     changelogen: ^0.6.2
@@ -37,7 +39,7 @@ catalogs:
     vitest-package-exports: ^0.1.1
     yaml: ^2.8.0
   types:
-    '@types/node': catalog:types
+    '@types/node': ^22.16.3
     '@types/prompts': ^2.4.9
   utils:
     tinyexec: ^0.3.2

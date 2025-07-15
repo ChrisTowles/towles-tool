@@ -1,6 +1,5 @@
 // unJs/changelogen has some nice utilities for git
 import { execCommand } from './exec'
-import { printDebug } from './print-utils'
 
 // using logic from https://github.com/unjs/changelogen/blob/main/src/git.ts
 
@@ -14,7 +13,7 @@ export async function getGitDiff(cwd: string): Promise<string> {
     cwd,
   )
 
-  printDebug('getGitDiff', r)
+  // printDebug('getGitDiff', r)
 
   return r
 }
