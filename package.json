@@ -38,6 +38,7 @@
     "dev": "unbuild --stub",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
+    "lint:fix_all": "eslint --fix .",
     "prepublishOnly": "nr build",
     "release:local": "bumpp && pnpm publish --no-git-checks -r --access public",
     "release": "bumpp && echo \"github action will run and publish to npm\"",
