@@ -8,8 +8,35 @@
 
 One off quality of life scripts that I use on a daily basis.
 
+## Journal Type System
+
+The journal system supports three types of files with different templates and organization:
+
+### Daily Notes (`journal daily-notes`)
+- **Purpose**: Weekly files with daily sections for ongoing work and notes
+- **File structure**: `YYYY/daily-notes/YYYY-MM-DD-week-log.md` (Monday's date)
+- **Template**: Includes sections for Monday through Friday with date headers
+- **Use case**: Regular daily journaling, work logs, scratch pad for notes
+
+### Meeting Files (`journal meeting [title]`)
+- **Purpose**: Structured meeting notes with agenda and action items
+- **File structure**: `YYYY/meetings/YYYY-MM-DD-HHMM-meeting-[title].md`
+- **Template**: Includes Date, Time, Attendees, Agenda, Notes, Action Items, and Follow-up sections
+- **Use case**: Meeting preparation, note-taking, and action item tracking
+
+### Note Files (`journal note [title]`)
+- **Purpose**: General-purpose notes with structured sections
+- **File structure**: `YYYY/notes/YYYY-MM-DD-HHMM-note-[title].md`
+- **Template**: Includes Summary, Details, and References sections
+- **Use case**: Research notes, documentation, general information capture
+
+### Commands
+- `journal` or `journal daily-notes` - Create/open current week's daily notes
+- `journal meeting [title]` - Create a new meeting file with optional title
+- `journal note [title]` - Create a new note file with optional title
+
 ## Tools to add
-- [x] Today - creates and opens a markdown file, named the current week of the year, for you to keep your daily notes and use a scratch pad for notes.
+- [x] Journal system - creates and opens markdown files with templates for daily-notes, meetings, and notes
 - [ ] use claude code to generate git commits with multiple options for the commit message.
 
 ## Install from repository

@@ -146,7 +146,7 @@ export const context = {
 
 ## CLI Architecture
 
-commander 14.0.0 application code using:
+using:
 
 - typescript
 - consola

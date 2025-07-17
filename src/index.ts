@@ -7,7 +7,7 @@ import _consola from 'consola'
 import { colors } from 'consola/utils'
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
-import { todayCommand } from './commands/today.js'
+import { createJournalFile, JOURNAL_TYPES } from './commands/joural.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
 import { printJson } from './utils/print-utils'
@@ -25,11 +25,33 @@ async function main() {
     .description('One off quality of life scripts that I use on a daily basis')
     .version(packageVersion)
 
-  program
-    .command('today')
-    .description('Create and open a weekly journal file based on Monday of current week')
+  // Journal command with sub commands
+  const journalCmd = program
+    .command('journal')
+    .description('quickly create md files from templates files like daily-notes, meeting, notes, etc.')
+    // .action(async () => {
+    //   // await journalCommand(config.userConfig)
+    // })
+
+  journalCmd
+    .command('daily-notes')
+    .description('Weekly files with daily sections for ongoing work and notes')
     .action(async () => {
-      await todayCommand(config.userConfig)
+      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.DAILY_NOTES })
+    })
+
+  journalCmd
+    .command('meeting [title]')
+    .description('Structured meeting notes with agenda and action items')
+    .action(async (title?: string) => {
+      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.MEETING, title })
+    })
+
+  journalCmd
+    .command('note [title]')
+    .description('General-purpose notes with structured sections')
+    .action(async (title?: string) => {
+      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.NOTE, title })
     })
 
   program

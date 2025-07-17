@@ -8,9 +8,9 @@ import {
   createJournalContent,
   ensureDirectoryExists,
   generateJournalFileInfo,
+  journalCommand,
   openInEditor,
-  todayCommand,
-} from './today'
+} from './joural'
 
 vi.mock('node:fs')
 vi.mock('node:child_process')
@@ -95,39 +95,39 @@ describe('today command', () => {
       it('should generate correct file info for given date', () => {
         const testDate = new Date('2024-02-23')
 
-        const result = generateJournalFileInfo(testDate)
+        const result = generateJournalFileInfo({ date: testDate })
         expect(result.mondayDate).toEqual(getMondayOfWeek(testDate))
 
-        expect(result.pathPrefix).toEqual(['2024', 'journal'])
-        expect(result.fileName).toBe('2024-02-19-week.md')
+        expect(result.pathPrefix).toEqual(['2024', 'daily-notes'])
+        expect(result.fileName).toBe('2024-02-19-week-log.md')
         expect(result.mondayDate).toEqual(getMondayOfWeek(new Date('2024-02-23')))
       })
 
       it('should use current date when no date provided', () => {
         const result = generateJournalFileInfo()
 
-        expect(result.pathPrefix).toEqual([new Date().getFullYear().toString(), 'journal'])
-        expect(result.fileName).toMatch(/^\d{4}-\d{2}-\d{2}-week\.md$/)
+        expect(result.pathPrefix).toEqual([new Date().getFullYear().toString(), 'daily-notes'])
+        expect(result.fileName).toMatch(/^\d{4}-\d{2}-\d{2}-week-log\.md$/)
         expect(result.mondayDate).toBeInstanceOf(Date)
       })
 
       it('should handle different years correctly', () => {
         const testDate = new Date('2025-12-31')
 
-        const result = generateJournalFileInfo(testDate)
+        const result = generateJournalFileInfo({ date: testDate })
 
-        expect(result.pathPrefix).toEqual(['2025', 'journal'])
-        expect(result.fileName).toMatch(/^\d{4}-\d{2}-\d{2}-week\.md$/)
+        expect(result.pathPrefix).toEqual(['2025', 'daily-notes'])
+        expect(result.fileName).toMatch(/^\d{4}-\d{2}-\d{2}-week-log\.md$/)
       })
     })
 
-    describe('todayCommand', () => {
+    describe('journalCommand', () => {
       it('should create new journal file when it does not exist', async () => {
         mockExistsSync
           .mockReturnValueOnce(false) // directory doesn't exist
           .mockReturnValueOnce(false) // file doesn't exist
 
-        await todayCommand(mockConfig)
+        await journalCommand(mockConfig)
 
         expect(mockMkdirSync).toHaveBeenCalled()
         expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -141,7 +141,7 @@ describe('today command', () => {
       it('should open existing journal file without creating new one', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await todayCommand(mockConfig)
+        await journalCommand(mockConfig)
 
         expect(mockWriteFileSync).not.toHaveBeenCalled()
         expect(mockConsola.info).toHaveBeenCalledWith(expect.stringContaining('Opening existing journal file'))
@@ -150,10 +150,10 @@ describe('today command', () => {
       it('should construct correct file path', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await todayCommand(mockConfig)
+        await journalCommand(mockConfig)
 
         expect(mockConsola.info).toHaveBeenCalledWith(
-          expect.stringContaining(path.join(mockConfig.journalDir!, new Date().getFullYear().toString(), 'journal')),
+          expect.stringContaining(path.join(mockConfig.journalDir!, new Date().getFullYear().toString(), 'daily-notes')),
         )
       })
     })
