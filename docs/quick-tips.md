@@ -12,3 +12,9 @@ https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/incre
 
 Lots of useful claude commands files to look into.
 https://github.com/centminmod/my-claude-code-setup/blob/master/.claude/commands/promptengineering/convert-to-test-driven-prompt.md
+
+https://github.com/anthropics/claude-code-action/tree/beta/?tab=readme-ov-file#basic-example-adding-a-sequential-thinking-server
+
+add mcp
+
+mcp__sequential-thinking__sequentialthinking

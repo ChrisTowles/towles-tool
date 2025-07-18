@@ -5,7 +5,7 @@ import { execCommand } from './exec'
 
 export async function getGitDiff(cwd: string): Promise<string> {
   // https://git-scm.com/docs/pretty-formats
-  const r = execCommand(
+  let r = execCommand(
     // `git --no-pager log "${from ? `${from}...` : ''}${to}"  `,
     // using --cached because staged didn't work on MacOS
     `git --no-pager diff --cached`,
@@ -15,6 +15,13 @@ export async function getGitDiff(cwd: string): Promise<string> {
   )
 
   // printDebug('getGitDiff', r)
+
+  // Limit output to 1000 lines maximum
+  const lines = r.split('\n')
+  if (lines.length > 1000) {
+    r = lines.slice(0, 1000).join('\n')
+    r += `\n\n[Output truncated to 1000 lines]`
+  }
 
   return r
 }
