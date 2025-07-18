@@ -7,7 +7,7 @@ import _consola from 'consola'
 import { colors } from 'consola/utils'
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
-import { createJournalFile, JOURNAL_TYPES } from './commands/joural.js'
+import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
 import { printJson } from './utils/print-utils'
@@ -55,11 +55,11 @@ async function main() {
     })
 
   program
-    .command('git-commit')
+    .command('git-commit [message...]')
     .alias('gc')
-    .description('Git commit command')
-    .action(async () => {
-      await gitCommitCommand(config)
+    .description('Git commit command with optional message')
+    .action(async (message: string[]) => {
+      await gitCommitCommand(config, message)
     })
 
   program

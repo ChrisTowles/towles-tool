@@ -10,7 +10,7 @@ import {
   generateJournalFileInfo,
   journalCommand,
   openInEditor,
-} from './joural'
+} from './journal'
 
 vi.mock('node:fs')
 vi.mock('node:child_process')

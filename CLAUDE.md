@@ -4,18 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documents
 
-- `docs/requirements.md`: Document requirements and specifications
-<!--- IGNORE
-- TODO `docs/usecase_web.tsv`: Use case definitions for web application
-- TODO `docs/usecase_daemon.tsv`: Use case definitions for watcher
---->
+- `docs/requirements/command_journal.md`: Journal command requirements and specifications
+- `docs/requirements/command_git-commit.md`: Git commit command requirements and specifications
+
 
 ## Development Commands
 
 - `pnpm lint` - Lint code with oxlint
-- `pnpm lint:fix` - Lint code with oxlint and fix issues
-<!--
-- TODO `pnpm format` - Format code with Biome -->
 - `pnpm typecheck` - Type check code with tsc
 - `pnpm test` - Run tests with Vitest
 
