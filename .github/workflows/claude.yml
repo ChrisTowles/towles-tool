@@ -30,6 +30,8 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Install actions for None and PNPM
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -66,8 +68,11 @@ jobs:
             Bash(npm install)
             Bash(npm run build)
             Bash(npm run test:*)
-            Bash(npm run lint:*)"
-            Bash
+            Bash(npm run lint:*)
+            Bash(pnpm :*)
+            Bash(cat :*)
+            Bash(ls :*)
+            Bash(grep :*)
 
           # Optional: Add custom instructions for Claude to customize its behavior for your project
           # custom_instructions: |

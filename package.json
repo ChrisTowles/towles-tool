@@ -36,9 +36,9 @@
   "scripts": {
     "build": "unbuild",
     "dev": "unbuild --stub",
-    "lint": "eslint",
-    "lint:fix": "eslint --fix",
-    "lint:fix_all": "eslint --fix .",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:fix_all": "oxlint --fix .",
     "prepublishOnly": "nr build",
     "release:local": "bumpp && pnpm publish --no-git-checks -r --access public",
     "release": "bumpp && echo \"github action will run and publish to npm\"",
@@ -63,14 +63,13 @@
     "zod": "catalog:cli"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "catalog:cli",
     "@antfu/ni": "catalog:cli",
     "@antfu/utils": "catalog:inlined",
     "@types/node": "catalog:types",
     "@types/prompts": "catalog:types",
     "bumpp": "catalog:cli",
-    "eslint": "catalog:cli",
     "lint-staged": "catalog:cli",
+    "oxlint": "catalog:testing",
     "simple-git-hooks": "catalog:cli",
     "tinyexec": "catalog:utils",
     "tsx": "catalog:cli",
@@ -85,7 +84,7 @@
     "pre-commit": "pnpm i --frozen-lockfile --ignore-scripts --offline && npx lint-staged"
   },
   "lint-staged": {
-    "*": "eslint --fix"
+    "*": "oxlint --fix"
   },
   "directories": {
     "test": "test"

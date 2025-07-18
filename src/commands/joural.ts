@@ -34,6 +34,8 @@ export function ensureDirectoryExists(folderPath: string): void {
 export function createJournalContent({ mondayDate }: { mondayDate: Date }): string {
   const weekInfo = getWeekInfo(mondayDate)
 
+
+
   // TODO: maybe put holidays in here?
 
   const content = [`# Journal for Week ${formatDate(mondayDate)}`]

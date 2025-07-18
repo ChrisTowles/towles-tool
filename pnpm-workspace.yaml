@@ -6,7 +6,8 @@ packages:
 
 overrides:
   vite: npm:rolldown-vite@latest
-catalog: null
+catalog:
+  
 
 catalogs:
   cli:
@@ -38,11 +39,13 @@ catalogs:
     vitest: ^3.2.4
     vitest-package-exports: ^0.1.1
     yaml: ^2.8.0
+    oxlint: ^1.7.0
   types:
     '@types/node': ^22.16.3
     '@types/prompts': ^2.4.9
   utils:
     tinyexec: ^0.3.2
+    
 
 onlyBuiltDependencies:
   - '@anthropic-ai/claude-code'

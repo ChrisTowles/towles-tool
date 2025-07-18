@@ -12,8 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
-- `pnpm lint` - Lint code with Biome
-- `pnpm lint:fix` - Lint code with Biome and fix issues
+- `pnpm lint` - Lint code with oxlint
+- `pnpm lint:fix` - Lint code with oxlint and fix issues
 <!--
 - TODO `pnpm format` - Format code with Biome -->
 - `pnpm typecheck` - Type check code with tsc
