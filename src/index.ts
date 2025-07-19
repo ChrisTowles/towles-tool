@@ -28,6 +28,7 @@ async function main() {
   // Journal command with sub commands
   const journalCmd = program
     .command('journal')
+    .alias('j')
     .description('quickly create md files from templates files like daily-notes, meeting, notes, etc.')
     // .action(async () => {
     //   // await journalCommand(config.userConfig)
@@ -35,6 +36,7 @@ async function main() {
 
   journalCmd
     .command('daily-notes')
+    .alias('today')
     .description('Weekly files with daily sections for ongoing work and notes')
     .action(async () => {
       await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.DAILY_NOTES })
@@ -42,6 +44,7 @@ async function main() {
 
   journalCmd
     .command('meeting [title]')
+    .alias('m')
     .description('Structured meeting notes with agenda and action items')
     .action(async (title?: string) => {
       await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.MEETING, title })
@@ -49,6 +52,7 @@ async function main() {
 
   journalCmd
     .command('note [title]')
+    .alias('n')
     .description('General-purpose notes with structured sections')
     .action(async (title?: string) => {
       await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.NOTE, title })
@@ -64,6 +68,7 @@ async function main() {
 
   program
     .command('config')
+    .alias('cfg')
     .description('set or show configuration file.')
     .action(async () => {
       consola.log(colors.green('Showing configuration...'))
