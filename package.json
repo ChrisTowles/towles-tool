@@ -44,7 +44,7 @@
     "release": "bumpp && echo \"github action will run and publish to npm\"",
     "start": "tsx src/index.ts",
     "test": "vitest --run",
-    "test:watch": "vitest",
+    "test:watch": "CI=DisableCallingClaude vitest --watch",
     "typecheck": "tsc --noEmit",
     "prepare": "simple-git-hooks"
   },
