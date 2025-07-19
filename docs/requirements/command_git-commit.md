@@ -36,12 +36,42 @@ towles-tool gc
   - Manual staging instruction with specific `git add <file>` guidance
   - Cancel operation if user chooses not to stage
 
-### 4. Commit Message Validation
+### 4. Interactive Hotkeys
+When prompting for commit message input, the following hotkeys must be available:
+
+- **Ctrl+A**: Execute `git add .` to stage all modified and untracked files
+  - Display feedback about files staged
+  - Continue with message input after completion
+  - Handle errors gracefully (e.g., permission issues, git repository errors)
+
+- **Ctrl+S**: Show current git status without exiting prompt
+  - Display color-coded status (staged/modified/untracked files)
+  - Return to message input immediately after display
+  - Use same color scheme as main status display
+
+- **Ctrl+D**: Show git diff of currently staged changes
+  - Display diff output in readable format
+  - Show "No staged changes" if no files are staged
+  - Return to message input after display
+
+- **Ctrl+R**: Refresh and redisplay git status
+  - Re-run git status check
+  - Update display with current repository state
+  - Useful after manual git operations in another terminal
+
+**Hotkey Integration Requirements:**
+- Hotkeys should not interfere with normal text input
+- Clear visual feedback when hotkey is executed
+- Preserve partially typed commit message during hotkey operations
+- Allow user to continue typing message after hotkey completion
+- Display available hotkeys as help text during input prompt
+
+### 5. Commit Message Validation
 - **Non-empty requirement**: Commit messages cannot be empty
 - **Quote escaping**: Handle double quotes in commit messages properly
 - **Interactive prompt**: Validate input during manual entry
 
-### 5. Error Handling
+### 6. Error Handling
 - **Git status failure**: Exit with error if unable to read git status
 - **No changes**: Graceful exit when working tree is clean
 - **Commit failure**: Display error and exit if git commit fails
