@@ -4,6 +4,7 @@ import consola from 'consola'
 import { colors } from 'consola/utils'
 import prompts from 'prompts'
 import { execCommand } from '../utils/exec'
+import { interactiveInput, getGitCommitHotkeys } from '../utils/interactive-input'
 
 /**
  * Git commit command implementation
@@ -16,9 +17,10 @@ export async function gitCommitCommand(config: Config, messageArgs?: string[]): 
   } catch (error) {
     consola.error('Failed to get git status')
     process.exit(1)
+    return // This will never be reached, but helps with type checking
   }
 
-  const lines = statusOutput.trim().split('\n').filter(line => line.length > 0)
+  const lines = statusOutput.split('\n').filter(line => line.trim().length > 0)
   const stagedFiles = lines.filter(line => line[0] !== ' ' && line[0] !== '?')
   const unstagedFiles = lines.filter(line => line[1] !== ' ' && line[1] !== '?')
   const untrackedFiles = lines.filter(line => line.startsWith('??'))
@@ -94,20 +96,20 @@ export async function gitCommitCommand(config: Config, messageArgs?: string[]): 
     // This handles cases where users accidentally include extra quotes
     commitMessage = commitMessage.replace(/^["']+|["']+$/g, '')
   } else {
-    // Prompt for commit message
-    const { message } = await prompts({
-      type: 'text',
-      name: 'message',
-      message: 'Enter commit message:',
+    // Prompt for commit message with hotkey support
+    const result = await interactiveInput({
+      prompt: 'Enter commit message:',
+      config,
+      hotkeys: getGitCommitHotkeys(),
       validate: (value: string) => value.trim().length > 0 || 'Commit message cannot be empty'
     })
 
-    if (!message) {
+    if (result.cancelled || !result.input) {
       consola.info(colors.dim('Commit cancelled'))
       return
     }
 
-    commitMessage = message.trim()
+    commitMessage = result.input
   }
 
   // Execute the commit
