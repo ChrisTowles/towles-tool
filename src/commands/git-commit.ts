@@ -89,6 +89,10 @@ export async function gitCommitCommand(config: Config, messageArgs?: string[]): 
   if (messageArgs && messageArgs.length > 0) {
     // Join all arguments as the commit message
     commitMessage = messageArgs.join(' ')
+    
+    // Remove any additional quotes on the beginning and end
+    // This handles cases where users accidentally include extra quotes
+    commitMessage = commitMessage.replace(/^["']+|["']+$/g, '')
   } else {
     // Prompt for commit message
     const { message } = await prompts({
