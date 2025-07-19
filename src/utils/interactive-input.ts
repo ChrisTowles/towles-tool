@@ -125,7 +125,7 @@ export async function interactiveInput(options: InteractiveInputOptions): Promis
       
       if (!hotkeyMatched && key >= ' ' && key <= '~') { // Printable characters
         currentInput += key
-        process.stdout.write(key)
+        //process.stdout.write(key)
       }
     }
 
