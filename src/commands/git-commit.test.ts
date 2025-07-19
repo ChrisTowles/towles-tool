@@ -276,7 +276,7 @@ describe('git-commit command', () => {
 
     it('should pass hotkeys to interactive input', async () => {
       const mockHotkeys = [
-        { key: '\u0001', description: 'Test hotkey', action: vi.fn() }
+        { key: '\u0001', key_combination: 'Ctrl+A', description: 'Test hotkey', action: vi.fn() }
       ]
       mockGetGitCommitHotkeys.mockReturnValue(mockHotkeys)
       mockExecCommand.mockReturnValueOnce('M  staged.txt') // git status
