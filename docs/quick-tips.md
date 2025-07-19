@@ -18,3 +18,23 @@ https://github.com/anthropics/claude-code-action/tree/beta/?tab=readme-ov-file#b
 add mcp
 
 mcp__sequential-thinking__sequentialthinking
+
+
+
+
+## using ccusage
+
+
+give 
+https://ccusage.com/guide/installation
+
+```bash
+
+## daily summary
+pnpm dlx ccusage
+
+
+## give summary of usage, session and projection 
+pnpm dlx pccusage blocks --live
+
+```
