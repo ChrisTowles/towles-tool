@@ -4,9 +4,11 @@ import consola from 'consola'
 import { colors } from 'consola/utils'
 import { execCommand } from './exec'
 import type { Config } from '../config'
+import { printDiffStatus } from '../commands/git-commit'
 
 export interface HotkeyAction {
   key: string
+  key_combination: string
   description: string
   action: (config: Config) => Promise<void> | void
 }
@@ -45,16 +47,18 @@ export async function interactiveInput(options: InteractiveInputOptions): Promis
 
     const displayPrompt = () => {
       if (!inputInProgress) {
-        process.stdout.write(`\n${prompt} `)
+        
         if (hotkeys.length > 0) {
           process.stdout.write(colors.dim('\n(Hotkeys: '))
           hotkeys.forEach((hotkey, index) => {
             if (index > 0) process.stdout.write(colors.dim(', '))
-            process.stdout.write(colors.dim(`${hotkey.key}: ${hotkey.description}`))
+            process.stdout.write(colors.dim(`${hotkey.key_combination}: ${hotkey.description}`))
           })
           process.stdout.write(colors.dim(')\n'))
-          process.stdout.write(`${prompt} `)
         }
+
+        process.stdout.write(`\n${prompt} `)
+        
         process.stdout.write(currentInput)
       }
     }
@@ -137,80 +141,26 @@ export function getGitCommitHotkeys(): HotkeyAction[] {
   return [
     {
       key: '\u0001', // Ctrl+A
+      key_combination: 'ctrl+a',
       description: 'Stage all files (git add .)',
       action: async (config: Config) => {
         try {
           execCommand('git add .', config.cwd)
           consola.success('All files staged successfully')
+          printDiffStatus(config)
         } catch (error) {
           throw new Error(`Failed to stage files: ${error}`)
         }
       }
     },
-    {
-      key: '\u0013', // Ctrl+S
-      description: 'Show git status',
-      action: async (config: Config) => {
-        try {
-          const statusOutput = execCommand('git status --short', config.cwd)
-          if (statusOutput.trim()) {
-            consola.info('Git status:')
-            consola.log(statusOutput)
-          } else {
-            consola.info('Working tree clean')
-          }
-        } catch (error) {
-          throw new Error(`Failed to get git status: ${error}`)
-        }
-      }
-    },
-    {
-      key: '\u0004', // Ctrl+D
-      description: 'Show git diff (staged)',
-      action: async (config: Config) => {
-        try {
-          const diffOutput = execCommand('git diff --cached', config.cwd)
-          if (diffOutput.trim()) {
-            consola.info('Staged changes:')
-            consola.log(diffOutput)
-          } else {
-            consola.info('No staged changes to show')
-          }
-        } catch (error) {
-          throw new Error(`Failed to get git diff: ${error}`)
-        }
-      }
-    },
+  
     {
       key: '\u0012', // Ctrl+R
+      key_combination: 'ctrl+r',
       description: 'Refresh git status',
       action: async (config: Config) => {
         try {
-          const statusOutput = execCommand('git status --porcelain', config.cwd)
-          const lines = statusOutput.trim().split('\n').filter(line => line.length > 0)
-          
-          if (lines.length === 0) {
-            consola.info('Working tree clean - nothing to commit')
-            return
-          }
-
-          const stagedFiles = lines.filter(line => line[0] !== ' ' && line[0] !== '?')
-          const unstagedFiles = lines.filter(line => line[1] !== ' ' && line[1] !== '?')
-          const untrackedFiles = lines.filter(line => line.startsWith('??'))
-
-          consola.info('Current git status:')
-          if (stagedFiles.length > 0) {
-            consola.info(colors.green('Staged files:'))
-            stagedFiles.forEach(file => consola.info(`  ${colors.green(file)}`))
-          }
-          if (unstagedFiles.length > 0) {
-            consola.info(colors.yellow('Modified files (not staged):'))
-            unstagedFiles.forEach(file => consola.info(`  ${colors.yellow(file)}`))
-          }
-          if (untrackedFiles.length > 0) {
-            consola.info(colors.red('Untracked files:'))
-            untrackedFiles.forEach(file => consola.info(`  ${colors.red(file)}`))
-          }
+          printDiffStatus(config)
         } catch (error) {
           throw new Error(`Failed to refresh git status: ${error}`)
         }

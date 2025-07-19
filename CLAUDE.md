@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/requirements/command_journal.md`: Journal command requirements and specifications with its alias `j` and `journal today`, `journal meeting`, `journal note` and `journal daily`
 - `docs/requirements/command_git-commit.md`: Git commit command requirements and specifications for `git-commit`
 with its alias `gc`
+- `docs/requirements/command_config.md`: Configuration command requirements and specifications with its alias `config` and `cfg`
 
 ## Development Commands
 

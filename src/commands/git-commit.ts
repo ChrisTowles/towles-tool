@@ -91,7 +91,7 @@ export async function gitCommitCommand(config: Config, messageArgs?: string[]): 
   if (messageArgs && messageArgs.length > 0) {
     // Join all arguments as the commit message
     commitMessage = messageArgs.join(' ')
-    
+
     // Remove any additional quotes on the beginning and end
     // This handles cases where users accidentally include extra quotes
     commitMessage = commitMessage.replace(/^["']+|["']+$/g, '')
@@ -123,5 +123,34 @@ export async function gitCommitCommand(config: Config, messageArgs?: string[]): 
     consola.error('Failed to commit changes:')
     consola.error(error)
     process.exit(1)
+  }
+}
+
+
+export function printDiffStatus(config: Config): void {
+  const statusOutput = execCommand('git status --porcelain', config.cwd)
+  const lines = statusOutput.trim().split('\n').filter(line => line.length > 0)
+
+  if (lines.length === 0) {
+    consola.info('Working tree clean - nothing to commit')
+    return
+  }
+
+  const stagedFiles = lines.filter(line => line[0] !== ' ' && line[0] !== '?')
+  const unstagedFiles = lines.filter(line => line[1] !== ' ' && line[1] !== '?')
+  const untrackedFiles = lines.filter(line => line.startsWith('??'))
+
+  consola.info('Current git status:')
+  if (stagedFiles.length > 0) {
+    consola.info(colors.green('Staged files:'))
+    stagedFiles.forEach(file => consola.info(`  ${colors.green(file)}`))
+  }
+  if (unstagedFiles.length > 0) {
+    consola.info(colors.yellow('Modified files (not staged):'))
+    unstagedFiles.forEach(file => consola.info(`  ${colors.yellow(file)}`))
+  }
+  if (untrackedFiles.length > 0) {
+    consola.info(colors.red('Untracked files:'))
+    untrackedFiles.forEach(file => consola.info(`  ${colors.red(file)}`))
   }
 }
