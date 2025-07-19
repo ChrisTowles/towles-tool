@@ -12,7 +12,9 @@ import { ClaudeService } from './claude-service'
 //   }, 15_000)
 // })
 
-describe('claude-service', () => {
+consola.log(`CI Environment: ${process.env.CI}`);
+
+describe.skipIf(process.env.CI)('claude-service', () => {
   it('sendMessageStream should return a string', async () => {
     const service = new ClaudeService()
 
