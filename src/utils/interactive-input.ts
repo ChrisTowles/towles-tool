@@ -153,7 +153,6 @@ export function getGitCommitHotkeys(): HotkeyAction[] {
         }
       }
     },
-  
     {
       key: '\u0012', // Ctrl+R
       key_combination: 'ctrl+r',

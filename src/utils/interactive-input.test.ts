@@ -69,6 +69,7 @@ describe('interactive-input', () => {
       const hotkeys: HotkeyAction[] = [
         {
           key: '\u0001', // Ctrl+A
+          key_combination: 'Ctrl+A',
           description: 'Test action',
           action: vi.fn()
         }
@@ -130,6 +131,7 @@ describe('interactive-input', () => {
       const hotkeys: HotkeyAction[] = [
         {
           key: '\u0001', // Ctrl+A
+          key_combination: 'Ctrl+A',
           description: 'Test action',
           action: mockAction
         }
@@ -163,6 +165,7 @@ describe('interactive-input', () => {
       const hotkeys: HotkeyAction[] = [
         {
           key: '\u0001', // Ctrl+A
+          key_combination: 'Ctrl+A',
           description: 'Test action',
           action: mockAction
         }
@@ -227,15 +230,11 @@ describe('interactive-input', () => {
     it('should return array of hotkey actions', () => {
       const hotkeys = getGitCommitHotkeys()
 
-      expect(hotkeys).toHaveLength(4)
+      expect(hotkeys).toHaveLength(2)
       expect(hotkeys[0].key).toBe('\u0001') // Ctrl+A
       expect(hotkeys[0].description).toBe('Stage all files (git add .)')
-      expect(hotkeys[1].key).toBe('\u0013') // Ctrl+S
-      expect(hotkeys[1].description).toBe('Show git status')
-      expect(hotkeys[2].key).toBe('\u0004') // Ctrl+D
-      expect(hotkeys[2].description).toBe('Show git diff (staged)')
-      expect(hotkeys[3].key).toBe('\u0012') // Ctrl+R
-      expect(hotkeys[3].description).toBe('Refresh git status')
+      expect(hotkeys[1].key).toBe('\u0012') // Ctrl+R
+      expect(hotkeys[1].description).toBe('Refresh git status')
     })
 
     it('should execute git add . for Ctrl+A hotkey', async () => {
@@ -259,51 +258,7 @@ describe('interactive-input', () => {
       await expect(ctrlAHotkey!.action(mockConfig)).rejects.toThrow('Failed to stage files: Error: Git command failed')
     })
 
-    it('should execute git status for Ctrl+S hotkey', async () => {
-      mockExecCommand.mockReturnValue('M  file1.txt\nA  file2.txt')
-      
-      const hotkeys = getGitCommitHotkeys()
-      const ctrlSHotkey = hotkeys.find(h => h.key === '\u0013')
-
-      await ctrlSHotkey!.action(mockConfig)
-
-      expect(mockExecCommand).toHaveBeenCalledWith('git status --short', mockConfig.cwd)
-      expect(mockConsola.info).toHaveBeenCalledWith('Git status:')
-    })
-
-    it('should handle empty git status for Ctrl+S hotkey', async () => {
-      mockExecCommand.mockReturnValue('')
-      
-      const hotkeys = getGitCommitHotkeys()
-      const ctrlSHotkey = hotkeys.find(h => h.key === '\u0013')
-
-      await ctrlSHotkey!.action(mockConfig)
-
-      expect(mockConsola.info).toHaveBeenCalledWith('Working tree clean')
-    })
-
-    it('should execute git diff for Ctrl+D hotkey', async () => {
-      mockExecCommand.mockReturnValue('diff --git a/file.txt b/file.txt\n+some changes')
-      
-      const hotkeys = getGitCommitHotkeys()
-      const ctrlDHotkey = hotkeys.find(h => h.key === '\u0004')
-
-      await ctrlDHotkey!.action(mockConfig)
-
-      expect(mockExecCommand).toHaveBeenCalledWith('git diff --cached', mockConfig.cwd)
-      expect(mockConsola.info).toHaveBeenCalledWith('Staged changes:')
-    })
-
-    it('should handle empty git diff for Ctrl+D hotkey', async () => {
-      mockExecCommand.mockReturnValue('')
-      
-      const hotkeys = getGitCommitHotkeys()
-      const ctrlDHotkey = hotkeys.find(h => h.key === '\u0004')
-
-      await ctrlDHotkey!.action(mockConfig)
-
-      expect(mockConsola.info).toHaveBeenCalledWith('No staged changes to show')
-    })
+   
 
     it('should execute git status refresh for Ctrl+R hotkey', async () => {
       mockExecCommand.mockReturnValue('M  file1.txt\n?? file2.txt\nA  file3.txt')
