@@ -36,12 +36,23 @@ towles-tool gc
   - Manual staging instruction with specific `git add <file>` guidance
   - Cancel operation if user chooses not to stage
 
-### 4. Commit Message Validation
+### 4. Interactive Message Input Hotkeys
+- **Hotkey support**: Enable keyboard shortcuts during message input prompt
+- **Available hotkeys**:
+  - **Ctrl+A**: Execute `git add .` to stage all modified and untracked files
+  - **Ctrl+S**: Show current git status without exiting prompt
+  - **Ctrl+D**: Show git diff of staged changes
+  - **Ctrl+R**: Refresh and redisplay git status
+- **Hotkey feedback**: Display confirmation message when hotkey actions complete
+- **Input continuation**: After hotkey execution, return to message input prompt
+- **Error handling**: Display errors from hotkey commands and continue prompt
+
+### 5. Commit Message Validation
 - **Non-empty requirement**: Commit messages cannot be empty
 - **Quote escaping**: Handle double quotes in commit messages properly
 - **Interactive prompt**: Validate input during manual entry
 
-### 5. Error Handling
+### 6. Error Handling
 - **Git status failure**: Exit with error if unable to read git status
 - **No changes**: Graceful exit when working tree is clean
 - **Commit failure**: Display error and exit if git commit fails
@@ -57,7 +68,7 @@ towles-tool gc
 
 1. **Status Check**: Display current git repository status
 2. **Staging Check**: If no staged files, offer to stage files
-3. **Message Input**: Use provided arguments or prompt for message
+3. **Message Input**: Use provided arguments or prompt for message (with hotkey support)
 4. **Commit Execution**: Execute git commit with proper error handling
 5. **Success Confirmation**: Display success message upon completion
 
@@ -80,4 +91,9 @@ towles-tool gc fix resolve authentication bug
 # Interactive mode
 towles-tool gc
 # Prompts for staging and message input
+# During message input, use:
+#   Ctrl+A - stage all files
+#   Ctrl+S - show git status  
+#   Ctrl+D - show git diff
+#   Ctrl+R - refresh status
 ```
