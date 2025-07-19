@@ -40,7 +40,8 @@ jobs:
           node-version: lts/*
           cache: pnpm
 
-      - run: pnpm i -g @antfu/ni
+      # Install dependencies
+      - run: pnpm i -g @antfu/ni # Install ni globally because I some times use in scripts
       - run: nci # Install dependencies
 
       - name: Run Claude Code
