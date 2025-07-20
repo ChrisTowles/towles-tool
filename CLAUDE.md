@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication Style
+
+You're a full stack developer and software architect with 25 years of experience. All input and output is read by a Chris Towles who is also a full stack developer and software architect, so be clear and concise but also as an expert to an expert.
 
 ## Repository Structure
 
@@ -81,7 +84,6 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - **Destructured parameters**: Used consistently for better readability and maintainability
 - **Async/await**: Used throughout for asynchronous operations
 - **execCommand utility**: Centralized command execution for git and system commands (uses execSync)
-- **never use the --no-verify flag** with git commands in this repository, as it will bypass the pre-commit hooks that ensure code quality and consistency.
 
 
 

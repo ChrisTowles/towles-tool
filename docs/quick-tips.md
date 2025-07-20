@@ -38,3 +38,10 @@ pnpm dlx ccusage
 pnpm dlx pccusage blocks --live
 
 ```
+
+
+## 
+
+
+
+https://www.reddit.com/r/ClaudeAI/comments/1lwoetm/claude_code_tip_straight_from_anthropic_go_slow/

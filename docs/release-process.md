@@ -41,7 +41,6 @@ Based on recent commits, the release pattern follows:
 
 ## Best Practices
 
-1. **Never use `--no-verify`** - Pre-commit hooks ensure code quality
 2. **Test before releasing** - Run `pnpm test` and `pnpm build` locally
 3. **Use semantic versioning** - The project follows semver conventions
 4. **Review changes** - Check git status before running release commands
