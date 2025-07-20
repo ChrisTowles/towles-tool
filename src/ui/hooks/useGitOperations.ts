@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { execCommand } from '../utils/exec.js'
+import { execCommand } from '../../utils/exec.js'
 
 export interface GitStatus {
   staged: string[]
@@ -17,11 +17,11 @@ export function useGitOperations(cwd: string) {
       setError(null)
       
       const statusOutput = execCommand('git status --porcelain', cwd)
-      const lines = statusOutput.trim().split('\n').filter(line => line.length > 0)
+      const lines = statusOutput.trim().split('\n').filter((line: string) => line.length > 0)
       
-      const staged = lines.filter(line => line[0] !== ' ' && line[0] !== '?').map(line => line.slice(3))
-      const unstaged = lines.filter(line => line[1] !== ' ' && line[1] !== '?').map(line => line.slice(3))
-      const untracked = lines.filter(line => line.startsWith('??')).map(line => line.slice(3))
+      const staged = lines.filter((line: string) => line[0] !== ' ' && line[0] !== '?').map((line: string) => line.slice(3))
+      const unstaged = lines.filter((line: string) => line[1] !== ' ' && line[1] !== '?').map((line: string) => line.slice(3))
+      const untracked = lines.filter((line: string) => line.startsWith('??')).map((line: string) => line.slice(3))
       
       return { staged, unstaged, untracked }
     } catch (err) {
