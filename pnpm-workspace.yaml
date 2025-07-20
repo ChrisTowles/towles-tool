@@ -10,7 +10,8 @@ catalog:
   
 
 catalogs:
-  cli:    
+  cli:
+  
     '@antfu/eslint-config': ^4.16.2
     '@antfu/ni': ^25.0.0
     '@anthropic-ai/claude-code': ^1.0.51
@@ -20,7 +21,6 @@ catalogs:
     bumpp: ^10.2.0
     c12: ^3.0.4
     changelogen: ^0.6.2
-    commander: ^14.0.0
     consola: ^3.4.2
     eslint: ^9.31.0
     fzf: ^0.5.2
@@ -35,6 +35,8 @@ catalogs:
     tsx: ^4.20.3
     typescript: ^5.8.3
     unbuild: ^3.5.0
+    yargs: ^17.7.2
+
     vite: ^6.3.5
     zod: ^4.0.5
   inlined:
@@ -49,6 +51,7 @@ catalogs:
     '@types/node': ^22.16.3
     '@types/prompts': ^2.4.9
     '@types/react': ^18.3.12
+    '@types/yargs': ^17.0.32
   utils:
     tinyexec: ^0.3.2
     

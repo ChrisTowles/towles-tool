@@ -58,7 +58,7 @@ with its alias `gc`
 - **Utilities**: Shared functionality lives in `src/utils/` organized by domain or feature
 - **Libraries**: Core reusable components in `src/lib/` that could be extracted to separate packages
 - **Configuration**: Centralized config management using c12 library in `src/config.ts`
-- **Entry Point**: Single entry point at `src/index.ts` that registers all commands using commander.js
+- **Entry Point**: Single entry point at `src/index.ts` that registers all commands using yargs
 - **Documentation**: Requirements and implementation guides in `docs/` to guide development
 - **Testing**: Co-located test files using `.test.ts` suffix for easy discovery and maintenance
 
@@ -78,7 +78,7 @@ Run `pnpm typecheck` and `pnpm lint:fix` after making changes to ensure code qua
 Towles-tool follows a modular CLI architecture with clear separation of concerns:
 
 - **Commands Layer** (`src/commands/`): Individual command implementations (git-commit.ts, journal.ts, config.ts)
-- **CLI Entry Point** (`src/index.ts`): Commander.js setup and command registration
+- **CLI Entry Point** (`src/index.ts`): yargs setup and command registration
 - **Utils Layer** (`src/utils/`): Shared utilities for execution, formatting, and interactive input
 - **Config Management** (`src/config.ts`): Configuration loading with c12 library
 - **Destructured parameters**: Used consistently for better readability and maintainability
@@ -94,7 +94,7 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - **Runtime**: Node.js 22.x
 - **Build System**: unbuild for TypeScript compilation
 - **Testing**: Vitest for unit tests
-- **CLI Framework**: commander.js for command parsing
+- **CLI Framework**: yargs for command parsing
 - **UI Framework**: ink for React-based console interfaces
 - **UI Components**: @inkjs/ui for pre-built console components
 - **Logging**: consola for user-friendly output

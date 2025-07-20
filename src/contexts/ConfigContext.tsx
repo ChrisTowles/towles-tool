@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import type { Config } from '../../config.js'
+import type { Config } from '../config/config'
 
 interface ConfigContextValue {
   config: Config

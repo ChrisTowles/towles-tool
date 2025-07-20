@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Box, Text, useInput} from 'ink'
 import type { Key as InkKeyType } from 'ink'
-import type { Config } from '../../config.js'
 import { useGitOperations } from '../hooks/useGitOperations.js'
+import type { Config } from '../config/config.js'
 interface GitCommitProps {
   config: Config
   messageArgs?: string[]

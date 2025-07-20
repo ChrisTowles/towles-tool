@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink'
-import type { Config } from '../../config.js'
+import type { Config } from '../config/config'
 
 interface ConfigDisplayProps {
   config: Config
