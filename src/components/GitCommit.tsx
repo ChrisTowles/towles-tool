@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput} from 'ink'
+import type { Key as InkKeyType } from 'ink'
 import type { Config } from '../config.js'
 import { useGitOperations } from '../hooks/useGitOperations.js'
-
 interface GitCommitProps {
   config: Config
   messageArgs?: string[]
@@ -46,7 +46,7 @@ export function GitCommit({ config, messageArgs, onExit }: GitCommitProps) {
   }, [])
 
   // Handle keyboard input
-  useInput((input, key) => {
+  useInput((input, key: InkKeyType) => {
     if (key.escape) {
       onExit()
       return
