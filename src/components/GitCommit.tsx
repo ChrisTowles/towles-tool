@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Box, Text, useInput} from 'ink'
 import type { Key as InkKeyType } from 'ink'
-import type { Config } from '../../config.js'
+
 import { useGitOperations } from '../hooks/useGitOperations.js'
+import { useConfig } from '../contexts/ConfigContext.js'
+
 interface GitCommitProps {
-  config: Config
   messageArgs?: string[]
   onExit: () => void
 }
 
 type Step = 'loading' | 'status' | 'staging' | 'message' | 'commit' | 'success' | 'error'
 
-export function GitCommit({ config, messageArgs, onExit }: GitCommitProps) {
+export function GitCommit({ messageArgs, onExit }: GitCommitProps) {
+  const config = useConfig()
   const { getGitStatus, stageFiles, commit, loading, error } = useGitOperations(config.cwd)
   const [step, setStep] = useState<Step>('loading')
   const [gitStatus, setGitStatus] = useState<{ staged: string[], unstaged: string[], untracked: string[] } | null>(null)
@@ -45,14 +47,19 @@ export function GitCommit({ config, messageArgs, onExit }: GitCommitProps) {
     init()
   }, [])
 
+  
   // Handle keyboard input
-  useInput((input, key: InkKeyType) => {
+  useInput((input: string, key: InkKeyType) => {
     if (key.escape) {
       onExit()
       return
-    }
+    }else if (key.ctrl && input === 'a') {
 
-    if (step === 'staging' && waitingForInput) {
+      stageFiles(['.'])
+      getGitStatus()
+      
+        
+    } else if (step === 'staging' && waitingForInput) {
       if (input === 'y' || input === 'Y' || key.return) {
         handleStageFiles()
       } else if (input === 'n' || input === 'N') {

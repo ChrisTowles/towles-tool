@@ -1,78 +1,88 @@
 #!/usr/bin/env node
 
 import process from 'node:process'
-import { Command } from 'commander'
 import { version as packageVersion } from '../package.json'
-import { gitCommitCommand } from './commands/git-commit.js'
-import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
-import { configCommand } from './commands/config'
+import { renderApp } from './App.js'
+import type { AppView } from './types.js'
 
+function parseArgs() {
+  const args = process.argv.slice(2)
+  
+  if (args.length === 0) {
+    return { view: 'default' as AppView, commandArgs: [] }
+  }
 
-async function main() {
+  const command = args[0]
+  const commandArgs = args.slice(1)
 
-  // Load configuration
-  const config = await loadTowlesToolConfig({ cwd: process.cwd() })
+  // Map command line arguments to views
+  switch (command) {
+    case 'journal':
+    case 'j':
+      return { view: 'journal' as AppView, commandArgs }
+    case 'git-commit':
+    case 'gc':
+      return { view: 'git-commit' as AppView, commandArgs }
+    case 'config':
+    case 'cfg':
+      return { view: 'config' as AppView, commandArgs }
+    case 'chat':
+    case 'c':
+      return { view: 'chat' as AppView, commandArgs }
+    case '--version':
+    case '-v':
+      // eslint-disable-next-line no-console
+      console.log(packageVersion)
+      process.exit(0)
+      break
+    case '--help':
+    case '-h':
+      // eslint-disable-next-line no-console
+      console.log(`${constants.toolName} - One off quality of life scripts
+      
+Usage: ${constants.toolName} [command] [options]
 
-  const program = new Command()
-
-  program
-    .name(constants.toolName)
-    .description('One off quality of life scripts that I use on a daily basis')
-    .version(packageVersion)
-
-  // Journal command with sub commands
-  const journalCmd = program
-    .command('journal')
-    .alias('j')
-    .description('quickly create md files from templates files like daily-notes, meeting, notes, etc.')
-    // .action(async () => {
-    //   // await journalCommand(config.userConfig)
-    // })
-
-  journalCmd
-    .command('daily-notes')
-    .alias('today')
-    .description('Weekly files with daily sections for ongoing work and notes')
-    .action(async () => {
-      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.DAILY_NOTES })
-    })
-
-  journalCmd
-    .command('meeting [title]')
-    .alias('m')
-    .description('Structured meeting notes with agenda and action items')
-    .action(async (title?: string) => {
-      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.MEETING, title })
-    })
-
-  journalCmd
-    .command('note [title]')
-    .alias('n')
-    .description('General-purpose notes with structured sections')
-    .action(async (title?: string) => {
-      await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.NOTE, title })
-    })
-
-  program
-    .command('git-commit [message...]')
-    .alias('gc')
-    .description('Git commit command with optional message')
-    .action(async (message: string[]) => {
-      await gitCommitCommand(config, message)
-    })
-
-  program
-    .command('config')
-    .alias('cfg')
-    .description('set or show configuration file.')
-    .action(async () => {
-      configCommand(config)
-    })
-
-  program.parse()
+Commands:
+  journal, j     Create journal files (daily-notes, meeting, note)
+  git-commit, gc Git commit with optional message
+  config, cfg    Show or set configuration
+  chat, c        Interactive chat mode
+  
+Options:
+  --version, -v  Show version
+  --help, -h     Show help`)
+      process.exit(0)
+      break
+    default:
+      return { view: 'default' as AppView, commandArgs: [command, ...commandArgs] }
+  }
 }
 
-// eslint-disable-next-line antfu/no-top-level-await
-await main()
+async function main() {
+  const workspaceDir = process.cwd()
+  const config = await loadTowlesToolConfig({ cwd: workspaceDir })
+  const { view, commandArgs } = parseArgs()
+
+  renderApp({
+    config,
+    command: view === 'default' ? undefined : view,
+    commandArgs,
+    initialView: view,
+    initialArgs: commandArgs
+  })
+}
+
+main().catch((error) => {
+  // eslint-disable-next-line no-console
+  console.error('An unexpected critical error occurred:');
+  if (error instanceof Error) {
+    // eslint-disable-next-line no-console
+    console.error(error.stack);
+  } else {
+    // eslint-disable-next-line no-console
+    console.error(String(error));
+  }
+  process.exit(1);
+});

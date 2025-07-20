@@ -1,11 +1,8 @@
 import { Box, Text } from 'ink'
-import type { Config } from '../../config.js'
+import { useConfig } from '../contexts/ConfigContext.js'
 
-interface ConfigDisplayProps {
-  config: Config
-}
-
-export function ConfigDisplay({ config }: ConfigDisplayProps) {
+export function ConfigDisplay() {
+  const config = useConfig()
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold color="green">Configuration</Text>

@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import type { Config } from '../../config.js'
+import type { Config } from '../config.js'
 
 interface ConfigContextValue {
   config: Config
@@ -26,5 +26,5 @@ export function useConfig() {
   if (!context) {
     throw new Error('useConfig must be used within a ConfigProvider')
   }
-  return context
+  return context.config
 }

@@ -1,7 +1,26 @@
+export type AppView = 'journal' | 'git-commit' | 'config' | 'chat' | 'default'
+
 export interface AppState {
   isLoading: boolean
   error: string | null
   currentCommand: string | null
+  currentView: AppView
+  navigationArgs?: any[]
+}
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+  isStreaming?: boolean
+}
+
+export interface ChatState {
+  messages: Message[]
+  isStreaming: boolean
+  currentInput: string
+  streamingMessageId: string | null
 }
 
 export interface TerminalSize {
