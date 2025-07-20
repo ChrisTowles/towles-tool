@@ -32,6 +32,10 @@ If there are things you are not sure about, use parallel subagents to do some we
 
 If there are things you still do not understand or questions you have for the user, pause here to ask them before continuing.
 
+Write the plan in the `plan-file` in the plan-folder.
+
+### Ask Questions
+
   - Generate the 3 to 5 of most important questions to understand the problem space:
    - Questions informed by codebase structure
    - Questions about user interactions and workflows
@@ -64,6 +68,9 @@ If there are things you still do not understand or questions you have for the us
 Write initial plan to `docs/.plan/plan-[slug].md`:
     - ONLY yes/no questions with smart defaults
 
+### Re-read Plan
+- you may be asked to reread the plan-file at any time
+- If you are asked to reread the plan, read the `plan-file` and update your understanding of the plan
 
 ## Confirm
 

@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
-import * as fs from 'fs';
-import * as path from 'path';
-import { homedir } from 'os';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { homedir } from 'node:os';
 import { AppInfo } from '../constants';
 import stripJsonComments from 'strip-json-comments';
 import { getErrorMessage } from '../lib/error';
