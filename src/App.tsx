@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, Text, render } from 'ink'
-import type { Config } from '../config.js'
+import type { Config } from './config.js'
 import { AppProvider } from './contexts/AppContext.js'
 import { ConfigProvider } from './contexts/ConfigContext.js'
 import { ErrorBoundary } from './components/ErrorBoundary.js'

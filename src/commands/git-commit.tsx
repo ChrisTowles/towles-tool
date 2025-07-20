@@ -1,5 +1,5 @@
 import type { Config } from '../config.js'
-import { renderApp } from '../ui/App.js'
+import { renderApp } from '../App.js'
 
 /**
  * Git commit command implementation with enhanced ink interface

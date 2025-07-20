@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { execCommand } from '../../utils/exec.js'
+import { execCommand } from '../utils/exec.js'
 
 export interface GitStatus {
   staged: string[]
