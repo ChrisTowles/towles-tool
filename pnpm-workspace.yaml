@@ -16,6 +16,7 @@ catalogs:
     '@anthropic-ai/claude-code': ^1.0.51
     '@anthropic-ai/sdk': ^0.56.0
     '@clack/prompts': ^0.11.0
+    '@inkjs/ui': ^2.0.0
     bumpp: ^10.2.0
     c12: ^3.0.4
     changelogen: ^0.6.2
@@ -23,10 +24,12 @@ catalogs:
     consola: ^3.4.2
     eslint: ^9.31.0
     fzf: ^0.5.2
+    ink: ^5.0.1
     lint-staged: ^15.5.2
     magicast: ^0.3.5
     neverthrow: ^8.2.0
     prompts: ^2.4.2
+    react: ^18.3.1
     simple-git-hooks: ^2.13.0
     tsx: ^4.20.3
     typescript: ^5.8.3
@@ -36,6 +39,7 @@ catalogs:
   inlined:
     '@antfu/utils': ^9.2.0
   testing:
+    ink-testing-library: ^4.0.0
     vitest: ^3.2.4
     vitest-package-exports: ^0.1.1
     yaml: ^2.8.0
@@ -43,6 +47,7 @@ catalogs:
   types:
     '@types/node': ^22.16.3
     '@types/prompts': ^2.4.9
+    '@types/react': ^18.3.12
   utils:
     tinyexec: ^0.3.2
     

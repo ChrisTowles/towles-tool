@@ -2,18 +2,16 @@
 
 import process from 'node:process'
 import { Command } from 'commander'
-import _consola from 'consola'
+import { render } from 'ink'
 
-import { colors } from 'consola/utils'
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
-import { printJson } from './utils/print-utils'
+import { ConfigDisplay } from './components/ConfigDisplay.js'
 
 async function main() {
-  const consola = _consola.withTag(constants.toolName)
 
   // Load configuration
   const config = await loadTowlesToolConfig({ cwd: process.cwd() })
@@ -71,9 +69,8 @@ async function main() {
     .alias('cfg')
     .description('set or show configuration file.')
     .action(async () => {
-      consola.log(colors.green('Showing configuration...'))
-      consola.log('Settings File:', config.configFile)
-      printJson(config)
+      const { waitUntilExit } = render(<ConfigDisplay config={config} />)
+      await waitUntilExit()
     })
 
   program.parse()
