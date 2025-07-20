@@ -113,3 +113,7 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - Mock external dependencies (`execCommand`)
 - Test both success and error cases
 - Use `vi.mocked()` for typed mocks
+
+## MCP Servers
+
+- Make sure to use Context7 to search about frameworks, libraries, and tools.
