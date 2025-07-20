@@ -4,7 +4,7 @@ import util from 'node:util'
 import consola from 'consola'
 
 // todo we could use tags.
-// const consola = _consola.withTag(constants.toolName)
+// const consola = _consola.withTag(AppInfo.toolName)
 
 export function printJson(obj: object): void {
   consola.log(util.inspect(obj, {

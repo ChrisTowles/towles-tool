@@ -1,8 +1,8 @@
 import type { UITheme } from "./types"
 
-export const constants = {
+export const AppInfo = {
   toolName: 'towles-tool',
-}
+} as const
 
 export const DEFAULT_THEME: UITheme = {
   primary: 'cyan',

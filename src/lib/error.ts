@@ -39,3 +39,17 @@ export function fromUnknown(error: unknown): AnyError {
 
   return new AnyError('Unknown error occurred', error)
 }
+
+
+
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  try {
+    return String(error);
+  } catch {
+    return 'Failed to get error details';
+  }
+}

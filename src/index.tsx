@@ -5,20 +5,38 @@ import { Command } from 'commander'
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
-import { loadTowlesToolConfig } from './config.js'
-import { constants } from './constants'
+import { loadTowlesToolConfig } from './config/config.js'
+import { AppInfo } from './constants'
 import { configCommand } from './commands/config'
+import { loadSettings } from './config/settings'
+import consola from 'consola'
 
 
 async function main() {
 
-  // Load configuration
+
+  // Load the configuration
   const config = await loadTowlesToolConfig({ cwd: process.cwd() })
+  // const workspaceRoot = process.cwd();
+  // const loadedSettings = loadSettings();
+
+    
+  // const argv = await parseArguments();
+  
+  // const config = await loadCliConfig(
+  //   settings.merged,
+    
+  //   sessionId,
+  //   argv,
+  // );
+
+
+
 
   const program = new Command()
 
   program
-    .name(constants.toolName)
+    .name(AppInfo.toolName)
     .description('One off quality of life scripts that I use on a daily basis')
     .version(packageVersion)
 
@@ -74,5 +92,13 @@ async function main() {
   program.parse()
 }
 
-// eslint-disable-next-line antfu/no-top-level-await
-await main()
+main().catch((error) => {
+  consola.error('An unexpected critical error occurred:');
+  if (error instanceof Error) {
+    consola.error(error.stack);
+  } else {
+    consola.error(String(error));
+  }
+  process.exit(1);
+});
+

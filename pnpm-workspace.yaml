@@ -10,7 +10,7 @@ catalog:
   
 
 catalogs:
-  cli:
+  cli:    
     '@antfu/eslint-config': ^4.16.2
     '@antfu/ni': ^25.0.0
     '@anthropic-ai/claude-code': ^1.0.51
@@ -31,6 +31,7 @@ catalogs:
     prompts: ^2.4.2
     react: ^18.3.1
     simple-git-hooks: ^2.13.0
+    strip-json-comments: ^5.0.2
     tsx: ^4.20.3
     typescript: ^5.8.3
     unbuild: ^3.5.0

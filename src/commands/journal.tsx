@@ -1,4 +1,4 @@
-import type { UserConfig } from '../config'
+import type { UserConfig } from '../config/config'
 import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'

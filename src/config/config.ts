@@ -8,8 +8,8 @@ import { updateConfig } from 'c12/update'
 import consola from 'consola'
 
 import { colors } from 'consola/utils'
-import { constants } from './constants.js'
-import { printDebug } from './utils/print-utils.js'
+import { AppInfo } from '../constants.js'
+import { printDebug } from '../utils/print-utils.js'
 
 export interface UserConfig {
   journalDir: string
@@ -39,12 +39,12 @@ export async function loadTowlesToolConfig({
 }): Promise<Config> {
   await setupDotenv({ cwd })
   const defaults = getDefaultUserConfig()
-  const defaultConfigFolder = path.join(homedir(), '.config', constants.toolName)
+  const defaultConfigFolder = path.join(homedir(), '.config', AppInfo.toolName)
 
   const updateResult = await updateConfig({
     cwd: defaultConfigFolder,
 
-    configFile: `${constants.toolName}.config`,
+    configFile: `${AppInfo.toolName}.config`,
     createExtension: '.ts',
 
     async onCreate({ configFile }) {
@@ -86,7 +86,7 @@ export default  ${JSON.stringify(defaults, null, 2)};
   const { config: userConfig, configFile } = await loadConfig<UserConfig>({
     cwd: cwd || defaultConfigFolder,
     configFile: updateResult.configFile,
-    name: constants.toolName,
+    name: AppInfo.toolName,
     packageJson: true,
 
     defaults,

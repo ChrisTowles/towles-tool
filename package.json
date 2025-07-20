@@ -53,7 +53,6 @@
     "@anthropic-ai/sdk": "catalog:cli",
     "@clack/prompts": "catalog:cli",
     "@inkjs/ui": "catalog:cli",
-    
     "c12": "catalog:cli",
     "changelogen": "catalog:cli",
     "commander": "catalog:cli",
@@ -62,6 +61,7 @@
     "ink": "catalog:cli",
     "magicast": "catalog:cli",
     "neverthrow": "catalog:cli",
+    "strip-json-comments": "catalog:cli",
     "prompts": "catalog:cli",
     "react": "catalog:cli",
     "zod": "catalog:cli"

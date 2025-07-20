@@ -1,4 +1,4 @@
-import type { UserConfig } from '../config'
+import type { UserConfig } from '../config/config'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import consola from 'consola'
