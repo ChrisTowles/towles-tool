@@ -13,6 +13,11 @@ towles-tool/
 │   ├── commands/                  # Individual CLI command implementations
 │   │   ├── {command-name}.tsx     # Command logic (e.g., git-commit.ts, config.ts)
 │   │   └── {command-name}.test.tsx # Unit tests for each command
+│   ├── components/                # React components for UI functionality
+│   │   ├── {react-component-name}.tsx      # react component to be rendered with ink
+│   │   ├── {react-component-name}.test.tsx      # Unit tests for each component
+│   ├── hooks/                     # React hooks for shared logic
+│   │   └── {react-hook-name}.ts   # Custom hooks (e.g., useConfig.ts)
 │   ├── utils/                     # Reusable utility functions
 │   │   ├── {feature}/            # Feature-specific utilities (e.g., anthropic/)
 │   │   ├── {name}-utils.ts       # Utility modules (e.g., date-utils.ts, print-utils.ts)
@@ -88,6 +93,8 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - **Build System**: unbuild for TypeScript compilation
 - **Testing**: Vitest for unit tests
 - **CLI Framework**: commander.js for command parsing
+- **UI Framework**: ink for React-based console interfaces
+- **UI Components**: @inkjs/ui for pre-built console components
 - **Logging**: consola for user-friendly output
 - **Config Management**: c12 for configuration loading
 - **Validation**: Zod 4 schemas with branded types
