@@ -2,14 +2,13 @@
 
 import process from 'node:process'
 import { Command } from 'commander'
-import { render } from 'ink'
-
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import { loadTowlesToolConfig } from './config.js'
 import { constants } from './constants'
-import { ConfigDisplay } from './components/ConfigDisplay.js'
+import { configCommand } from './commands/config'
+
 
 async function main() {
 
@@ -69,8 +68,7 @@ async function main() {
     .alias('cfg')
     .description('set or show configuration file.')
     .action(async () => {
-      const { waitUntilExit } = render(<ConfigDisplay config={config} />)
-      await waitUntilExit()
+      configCommand(config)
     })
 
   program.parse()

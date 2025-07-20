@@ -105,14 +105,6 @@ I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for t
 [bundle-src]: https://img.shields.io/bundlephobia/minzip/@towles/tool?style=flat&colorA=080f12&colorB=1fa669&label=minzip
 [bundle-href]: https://bundlephobia.com/result?p=@towles/tool
 [license-src]: https://img.shields.io/github/license/ChrisTowles/towles-tool.svg?style=flat&colorA=080f12&colorB=1fa669
-
-
 [license-href]: https://github.com/ChrisTowles/towles-tool/blob/main/LICENSE.md
 [jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
 [jsdocs-href]: https://www.jsdocs.io/package/@towles/tool
-
-
-
-
-
-We want to compare token usage before and after loading brave_search as the MCP. 

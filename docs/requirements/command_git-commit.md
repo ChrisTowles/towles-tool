@@ -36,12 +36,21 @@ towles-tool gc
   - Manual staging instruction with specific `git add <file>` guidance
   - Cancel operation if user chooses not to stage
 
-### 4. Commit Message Validation
+
+### 4. Interactive Hotkey Support
+- **Ctrl+A**: Execute `git add .` to stage all modified and untracked files without exiting prompt
+- **Ctrl+R**: Refresh and redisplay current git status without exiting prompt
+- **Ctrl+C**: Cancel commit operation and exit
+- **Message preservation**: Partially typed commit message is preserved during hotkey operations
+- **Real-time feedback**: Show execution status and results for each hotkey action
+- **Error handling**: Display errors if hotkey actions fail, allow user to continue
+
+### 5. Commit Message Validation
 - **Non-empty requirement**: Commit messages cannot be empty
 - **Quote escaping**: Handle double quotes in commit messages properly
 - **Interactive prompt**: Validate input during manual entry
 
-### 5. Error Handling
+### 6. Error Handling
 - **Git status failure**: Exit with error if unable to read git status
 - **No changes**: Graceful exit when working tree is clean
 - **Commit failure**: Display error and exit if git commit fails
