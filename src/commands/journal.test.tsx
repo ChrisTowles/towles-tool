@@ -1,4 +1,4 @@
-import type { UserConfig } from '../config/config'
+import type { Context } from '../config/context'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import consola from 'consola'
@@ -25,9 +25,18 @@ const mockWriteFileSync = vi.mocked(writeFileSync)
 const mockConsola = vi.mocked(consola)
 
 describe('today command', () => {
-  const mockConfig: UserConfig = {
-    journalDir: '/test/journal',
-    editor: 'code',
+  const mockContext: Context = {
+    settingsFile: {
+      settings: {
+        journalSettings: {
+          journalDir: '/test/journal',
+        },
+        preferredEditor: 'code',
+      },
+      path: '/test/settings.json',
+    },
+    cwd: '/test',
+    args: [],
   }
 
   beforeEach(() => {
@@ -86,7 +95,7 @@ describe('today command', () => {
 
   describe('openInEditor', () => {
     it('should execute editor command with file path', async () => {
-      await openInEditor({ editor: mockConfig.editor, filePath: '/test/file.md' })
+      await openInEditor({ editor: mockContext.settingsFile.settings.preferredEditor, filePath: '/test/file.md' })
       // The promisify mock will handle the execution
       expect(true).toBe(true) // Placeholder assertion
     })
@@ -127,7 +136,7 @@ describe('today command', () => {
           .mockReturnValueOnce(false) // directory doesn't exist
           .mockReturnValueOnce(false) // file doesn't exist
 
-        await journalCommand(mockConfig)
+        await journalCommand(mockContext)
 
         expect(mockMkdirSync).toHaveBeenCalled()
         expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -141,7 +150,7 @@ describe('today command', () => {
       it('should open existing journal file without creating new one', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await journalCommand(mockConfig)
+        await journalCommand(mockContext)
 
         expect(mockWriteFileSync).not.toHaveBeenCalled()
         expect(mockConsola.info).toHaveBeenCalledWith(expect.stringContaining('Opening existing journal file'))
@@ -150,10 +159,10 @@ describe('today command', () => {
       it('should construct correct file path', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await journalCommand(mockConfig)
+        await journalCommand(mockContext)
 
         expect(mockConsola.info).toHaveBeenCalledWith(
-          expect.stringContaining(path.join(mockConfig.journalDir!, new Date().getFullYear().toString(), 'daily-notes')),
+          expect.stringContaining(path.join(mockContext.settingsFile.settings.journalSettings.journalDir, new Date().getFullYear().toString(), 'daily-notes')),
         )
       })
     })

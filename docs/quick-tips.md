@@ -45,3 +45,8 @@ pnpm dlx pccusage blocks --live
 
 
 https://www.reddit.com/r/ClaudeAI/comments/1lwoetm/claude_code_tip_straight_from_anthropic_go_slow/
+
+
+One of the most important things to ask claude make small changes, review and continue. Human in the looptrying to debug large changes takes more time and is more error prone, you'll glimse and miss things. Then spend more time debugging. Ask me how i know......
+
+

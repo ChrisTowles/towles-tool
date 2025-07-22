@@ -2,17 +2,17 @@ import { useState, useEffect } from 'react'
 import { Box, Text, useInput} from 'ink'
 import type { Key as InkKeyType } from 'ink'
 import { useGitOperations } from '../hooks/useGitOperations.js'
-import type { Config } from '../config/config.js'
+import type { Context } from '../config/context.js'
 interface GitCommitProps {
-  config: Config
+  context: Context
   messageArgs?: string[]
   onExit: () => void
 }
 
 type Step = 'loading' | 'status' | 'staging' | 'message' | 'commit' | 'success' | 'error'
 
-export function GitCommit({ config, messageArgs, onExit }: GitCommitProps) {
-  const { getGitStatus, stageFiles, commit, loading, error } = useGitOperations(config.cwd)
+export function GitCommit({ context, messageArgs, onExit }: GitCommitProps) {
+  const { getGitStatus, stageFiles, commit, loading, error } = useGitOperations(context.cwd)
   const [step, setStep] = useState<Step>('loading')
   const [gitStatus, setGitStatus] = useState<{ staged: string[], unstaged: string[], untracked: string[] } | null>(null)
   const [commitMessage, setCommitMessage] = useState(messageArgs?.join(' ') || '')

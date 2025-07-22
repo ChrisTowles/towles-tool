@@ -1,12 +1,12 @@
-import type { Config } from '../config/config.js'
+import type { Context } from '../config/context.js'
 import { renderApp } from '../App.js'
 
 /**
  * Git commit command implementation with enhanced ink interface
  */
-export async function gitCommitCommand(config: Config, messageArgs?: string[]): Promise<void> {
+export async function gitCommitCommand(context: Context, messageArgs?: string[]): Promise<void> {
   const { waitUntilExit } = renderApp({
-    config,
+    context,
     command: 'git-commit',
     commandArgs: messageArgs
   })

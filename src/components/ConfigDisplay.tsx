@@ -1,17 +1,17 @@
 import { Box, Text } from 'ink'
-import type { Config } from '../config/config'
+import type { Context } from '../config/context'
 
 interface ConfigDisplayProps {
-  config: Config
+  context: Context
 }
 
-export function ConfigDisplay({ config }: ConfigDisplayProps) {
+export function ConfigDisplay({ context }: ConfigDisplayProps) {
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold color="green">Configuration</Text>
       <Box marginTop={1}>
         <Text color="cyan">Settings File: </Text>
-        <Text>{config.configFile}</Text>
+        <Text>{context.settingsFile.path}</Text>
       </Box>
       
       <Box marginTop={1} flexDirection="column">
@@ -19,11 +19,11 @@ export function ConfigDisplay({ config }: ConfigDisplayProps) {
         <Box marginLeft={2} marginTop={1} flexDirection="column">
           <Box>
             <Text color="cyan">Journal Directory: </Text>
-            <Text>{config.userConfig.journalDir}</Text>
+            <Text>{context.settingsFile.settings.journalSettings.journalDir}</Text>
           </Box>
           <Box>
             <Text color="cyan">Editor: </Text>
-            <Text>{config.userConfig.editor}</Text>
+            <Text>{context.settingsFile.settings.preferredEditor}</Text>
           </Box>
         </Box>
       </Box>
@@ -31,7 +31,7 @@ export function ConfigDisplay({ config }: ConfigDisplayProps) {
       <Box marginTop={1} flexDirection="column">
         <Text bold color="yellow">Working Directory:</Text>
         <Box marginLeft={2} marginTop={1}>
-          <Text>{config.cwd}</Text>
+          <Text>{context.cwd}</Text>
         </Box>
       </Box>
     </Box>

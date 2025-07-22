@@ -1,21 +1,21 @@
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import type { Config } from '../config/config'
+import type { Context } from '../config/context'
 
 interface ConfigContextValue {
-  config: Config
+  context: Context
 }
 
 const ConfigContext = createContext<ConfigContextValue | null>(null)
 
 interface ConfigProviderProps {
   children: ReactNode
-  config: Config
+  context: Context
 }
 
-export function ConfigProvider({ children, config }: ConfigProviderProps) {
+export function ConfigProvider({ children, context }: ConfigProviderProps) {
   return (
-    <ConfigContext.Provider value={{ config }}>
+    <ConfigContext.Provider value={{ context }}>
       {children}
     </ConfigContext.Provider>
   )

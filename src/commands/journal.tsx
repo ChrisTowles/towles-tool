@@ -1,4 +1,4 @@
-import type { UserConfig } from '../config/config'
+import type { Context } from '../config/context'
 import { exec } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -119,13 +119,13 @@ export async function openInEditor({ editor, filePath }: { editor: string, fileP
 /**
  * Main journal command implementation
  */
-export async function journalCommand(userConfig: UserConfig, journalType: JournalType = JOURNAL_TYPES.DAILY_NOTES): Promise<void> {
+export async function journalCommand(context: Context, journalType: JournalType = JOURNAL_TYPES.DAILY_NOTES): Promise<void> {
   try {
     const fileInfo = generateJournalFileInfo({ journalType })
-    const filePath = path.join(userConfig.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
+    const filePath = path.join(context.settingsFile.settings.journalSettings.journalDir, ...fileInfo.pathPrefix, fileInfo.fileName)
 
     // Ensure journal directory exists
-    ensureDirectoryExists(path.join(userConfig.journalDir!, ...fileInfo.pathPrefix))
+    ensureDirectoryExists(path.join(context.settingsFile.settings.journalSettings.journalDir, ...fileInfo.pathPrefix))
 
     if (!existsSync(filePath)) {
       const content = createJournalContent({ mondayDate: fileInfo.mondayDate })
@@ -136,7 +136,7 @@ export async function journalCommand(userConfig: UserConfig, journalType: Journa
       consola.info(`Opening existing journal file: ${colors.cyan(filePath)}`)
     }
 
-    await openInEditor({ editor: userConfig.editor, filePath })
+    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath })
   }
   catch (error) {
     consola.warn('Error creating journal file:', error)
@@ -219,14 +219,14 @@ export function generateJournalFileInfoByType({ date = new Date(), type = JOURNA
 /**
  * Create journal file for specific type
  */
-export async function createJournalFile({ userConfig, type, title }: { userConfig: UserConfig, type: JournalType, title?: string }): Promise<void> {
+export async function createJournalFile({ context, type, title }: { context: Context, type: JournalType, title?: string }): Promise<void> {
   try {
     const currentDate = new Date()
     const fileInfo = generateJournalFileInfoByType({ date: currentDate, type, title })
-    const filePath = path.join(userConfig.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
+    const filePath = path.join(context.settingsFile.settings.journalSettings.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
 
     // Ensure journal directory exists
-    ensureDirectoryExists(path.join(userConfig.journalDir!, ...fileInfo.pathPrefix))
+    ensureDirectoryExists(path.join(context.settingsFile.settings.journalSettings.journalDir!, ...fileInfo.pathPrefix))
 
     if (existsSync(filePath)) {
       consola.info(`Opening existing ${type} file: ${colors.cyan(filePath)}`)
@@ -251,7 +251,7 @@ export async function createJournalFile({ userConfig, type, title }: { userConfi
       consola.info(`Created new ${type} file: ${colors.cyan(filePath)}`)
     }
 
-    await openInEditor({ editor: userConfig.editor, filePath })
+    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath })
   }
   catch (error) {
     consola.warn(`Error creating ${type} file:`, error)

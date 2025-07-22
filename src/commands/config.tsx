@@ -1,10 +1,10 @@
 
-import type { Config } from '../config/config.js'
+import type { Context } from '../config/context.js'
 import { renderApp } from '../App.js'
 
-export async function configCommand(config: Config) {
+export async function configCommand(context: Context) {
   const { waitUntilExit } = renderApp({
-    config,
+    context,
     command: 'config'
   })
   await waitUntilExit()

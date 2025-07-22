@@ -4,8 +4,8 @@ import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { AppInfo } from '../constants';
 import stripJsonComments from 'strip-json-comments';
-import { getErrorMessage } from '../lib/error';
 import consola from 'consola';
+import { colors } from 'consola/utils';
 
 export const USER_SETTINGS_DIR = path.join(homedir(), '.config', AppInfo.toolName);
 export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, `${AppInfo.toolName}.settings.json`);
@@ -19,9 +19,7 @@ export type JournalSettings = z.infer<typeof JournalSettingsSchema>
 export const UserSettingsSchema = z.object({
 
   preferredEditor: z.string().default('code'),
-  journalSettings: JournalSettingsSchema,
-
-
+  journalSettings: JournalSettingsSchema
 })
 
 export type UserSettings = z.infer<typeof UserSettingsSchema>
@@ -39,15 +37,12 @@ export interface SettingsFile {
 export class LoadedSettings {
   constructor(
     settingsFile: SettingsFile,
-    errors: SettingsError[],
   ) {
     this.settingsFile = settingsFile;
-    this.errors = errors;
-   
+
   }
 
   readonly settingsFile: SettingsFile;
-  readonly errors: SettingsError[];
 
   // When we need to update a setting, we use this method
   // to ensure the settings file is updated and saved but comments are preserved.
@@ -63,34 +58,24 @@ export class LoadedSettings {
 
 
 
-export function loadSettings(): LoadedSettings {
 
-  let userSettings: UserSettings = UserSettingsSchema.parse({});
-  const settingsErrors: SettingsError[] = [];
+function createSettingsFile(): UserSettings {
 
-  // Load user settings
-  try {
-    if (fs.existsSync(USER_SETTINGS_PATH)) {
-      const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-      const parsedUserSettings = JSON.parse(
-        stripJsonComments(userContent),
-      ) as UserSettings;
-    
-    }
-  } catch (error: unknown) {
-    settingsErrors.push({
-      message: getErrorMessage(error),
-      path: USER_SETTINGS_PATH,
-    });
-  }
 
-  return new LoadedSettings(
-    {
-      path: USER_SETTINGS_PATH,
-      settings: userSettings,
-    },
-    settingsErrors,
-  );
+  const defaultSettings: UserSettings = UserSettingsSchema.parse({
+    // its odd, but but we have to get default value from each schema object, if we don't it failes.
+    // https://github.com/colinhacks/zod/discussions/1953
+    journalSettings: JournalSettingsSchema.parse({})
+  })
+
+  const settingsFile: SettingsFile = {
+    path: USER_SETTINGS_PATH,
+    settings: defaultSettings,
+  };
+  saveSettings(settingsFile);
+  consola.success(`Created settings file: ${USER_SETTINGS_PATH}`);
+
+  return defaultSettings
 }
 
 export function saveSettings(settingsFile: SettingsFile): void {
@@ -110,3 +95,41 @@ export function saveSettings(settingsFile: SettingsFile): void {
     consola.error('Error saving user settings file:', error);
   }
 }
+
+export async function loadSettings(): Promise<LoadedSettings> {
+
+  let userSettings: UserSettings | null = null
+
+
+  // Load user settings
+  if (fs.existsSync(USER_SETTINGS_PATH)) {
+    const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
+    const parsedUserSettings = JSON.parse(stripJsonComments(userContent)) as UserSettings;
+
+
+    userSettings = UserSettingsSchema.parse(parsedUserSettings);
+    // made add a save here if the default values differ from the current values
+    if (JSON.stringify(parsedUserSettings) !== JSON.stringify(userSettings)) {
+      consola.warn(`Settings file ${USER_SETTINGS_PATH} has been updated with default values.`);
+      // TODO: save the updated settings file
+    }
+  } else {
+    // Settings file doesn't exist, ask user if they want to create it
+
+    const confirmed = await consola.prompt(`Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`, {
+      type: "confirm",
+    });
+    if (!confirmed) {
+      throw new Error(`Settings file not found and user chose not to create it.`);
+    }
+    userSettings = createSettingsFile();
+  }
+
+  return new LoadedSettings(
+    {
+      path: USER_SETTINGS_PATH,
+      settings: userSettings!,
+    }
+  );
+}
+

@@ -7,10 +7,11 @@ import { hideBin } from 'yargs/helpers'
 import { version as packageVersion } from '../package.json'
 import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
-import { loadTowlesToolConfig } from './config/config.js'
+import { loadTowlesToolContext } from './config/context.js'
 import { AppInfo } from './constants'
 import { configCommand } from './commands/config'
 import consola from 'consola'
+import { loadSettings } from './config/settings'
 
 
 // Define TypeScript interfaces for better type safety
@@ -24,8 +25,14 @@ interface GitCommitArgs {
 
 async function main() {
   // Load the configuration
-  const config = await loadTowlesToolConfig({ cwd: process.cwd() })
+  const settings = await loadSettings()
+  const context = await loadTowlesToolContext({ cwd: process.cwd(), settingsFile: settings.settingsFile })
 
+
+  consola.info(`Using configuration from ${settings.settingsFile.path}`)
+
+
+  // TODO: move to config file
   // Create yargs parser with enhanced error handling
   const parser = yargs(hideBin(process.argv))
     .scriptName(AppInfo.toolName)
@@ -48,7 +55,7 @@ async function main() {
           'Weekly files with daily sections for ongoing work and notes',
           {},
           async () => {
-            await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.DAILY_NOTES })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.DAILY_NOTES })
           }
         )
         .command(
@@ -61,7 +68,7 @@ async function main() {
             })
           },
           async (argv: JournalArgs) => {
-            await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.MEETING, title: argv.title })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.MEETING, title: argv.title })
           }
         )
         .command(
@@ -74,7 +81,7 @@ async function main() {
             })
           },
           async (argv: JournalArgs) => {
-            await createJournalFile({ userConfig: config.userConfig, type: JOURNAL_TYPES.NOTE, title: argv.title })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.NOTE, title: argv.title })
           }
         )
         .demandCommand(1, 'You need to specify a journal subcommand')
@@ -98,7 +105,7 @@ async function main() {
       })
     },
     async (argv: GitCommitArgs) => {
-      await gitCommitCommand(config, argv.message || [])
+      await gitCommitCommand(context, argv.message || [])
     }
   )
 
@@ -108,7 +115,7 @@ async function main() {
     'set or show configuration file.',
     {},
     async () => {
-      await configCommand(config)
+      await configCommand(context)
     }
   )
 

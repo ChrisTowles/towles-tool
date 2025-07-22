@@ -13,6 +13,9 @@ Will create a plan folder and initial files to track the requirements and creati
    - in the folder create file "plan.md" with the user's request.
    - we will refer to this file as "plan-file"
 4. Read and update `docs/.plan/.current-plan` with folder name
+5. After each phase, announce: "Phase complete. Starting [next phase]..."
+6. Save all work before moving to next phase
+
 
 ## Explore
 
@@ -92,19 +95,9 @@ Read all the files in the plan-folder and use them to inform the implementation.
 - If you need to ask questions, do so in the plan-file and ask
 
 
-### Post Steps
+## Final Step
 
-Generate comprehensive requirements spec in `/docs/requirements` folder
+Create or update product requirement documents in `/docs/requirements` folder.
 
-- Problem statement and solution overview
-- Functional requirements based on all answers
-- Technical requirements with specific file paths
-- Implementation hints and patterns to follow
-- Acceptance criteria
-- Assumptions for any unanswered questions
-
-
-## Phase Transitions
-
-- After each phase, announce: "Phase complete. Starting [next phase]..."
-- Save all work before moving to next phase
+- create a new file if it does not exist or update existing file
+- Focus purely on requirements and high-level specifications, keeping only the error scenarios which are part of the functional requirements rather than implementation details.

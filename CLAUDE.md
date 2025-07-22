@@ -46,22 +46,26 @@ towles-tool/
 
 ## Documents
 
+These `docs/requirements/*` files provide detailed requirements but purposely exclude implementation details
+
 - `docs/requirements/command_journal.md`: Journal command requirements and specifications with its alias `j` and `journal today`, `journal meeting`, `journal note` and `journal daily`
 - `docs/requirements/command_git-commit.md`: Git commit command requirements and specifications for `git-commit`
 with its alias `gc`
 - `docs/requirements/command_config.md`: Configuration command requirements and specifications with its alias `config` and `cfg`
-- `docs/implementation_patterns/commands.md`: CLI architecture patterns and command registration
+- `docs/requirements/settings_management.md`: Settings management system requirements including user confirmation, file creation, and schema validation
+
 
 ### Key Architectural Principles
 
 - **Commands**: Each CLI command is a separate module in `src/commands/` with its own test file
 - **Utilities**: Shared functionality lives in `src/utils/` organized by domain or feature
 - **Libraries**: Core reusable components in `src/lib/` that could be extracted to separate packages
-- **Configuration**: Centralized config management using c12 library in `src/config.ts`
+- **Configuration**: Centralized `src/config/` used for settings and configuration management
+- **Hooks**: Centralized `src/hooks/` used for shared logic and state management
+- **Components**: React components in `src/components/` for UI functionality, using Ink for terminal interfaces
 - **Entry Point**: Single entry point at `src/index.ts` that registers all commands using yargs
 - **Documentation**: Requirements and implementation guides in `docs/` to guide development
 - **Testing**: Co-located test files using `.test.ts` suffix for easy discovery and maintenance
-
 
 ## Development Commands
 
@@ -118,4 +122,5 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 
 ## MCP Servers
 
-- Make sure to use Context7 to search about frameworks, libraries, and tools.
+- Make sure to use Context7 to search about frameworks, libraries, and tools before WebSearch.
+- 

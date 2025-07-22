@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, Text, render } from 'ink'
-import type { Config } from './config/config.js'
+import type { Context } from './config/context.js'
 import { AppProvider } from './contexts/AppContext.js'
 import { ConfigProvider } from './contexts/ConfigContext.js'
 import { ErrorBoundary } from './components/ErrorBoundary.js'
@@ -9,13 +9,14 @@ import { ConfigDisplay } from './components/ConfigDisplay.js'
 import { useTerminalSize } from './hooks/useTerminalSize.js'
 import { DEFAULT_THEME } from './constants.js'
 
+
 interface AppProps {
-  config: Config
+  context: Context
   command?: string
   commandArgs?: any[]
 }
 
-function AppContent({ config, command, commandArgs }: AppProps) {
+function AppContent({ context, command, commandArgs }: AppProps) {
   const [isExiting, setIsExiting] = useState(false)
   const terminalSize = useTerminalSize()
 
@@ -32,7 +33,7 @@ function AppContent({ config, command, commandArgs }: AppProps) {
   if (command === 'git-commit') {
     return (
       <GitCommit 
-        config={config} 
+        context={context} 
         messageArgs={commandArgs as string[]} 
         onExit={handleExit} 
       />
@@ -40,7 +41,7 @@ function AppContent({ config, command, commandArgs }: AppProps) {
   }
 
   if (command === 'config') {
-    return <ConfigDisplay config={config} />
+    return <ConfigDisplay context={context} />
   }
 
   // Default view
@@ -57,7 +58,7 @@ export function App(props: AppProps) {
   return (
     <ErrorBoundary>
       <AppProvider>
-        <ConfigProvider config={props.config}>
+        <ConfigProvider context={props.context}>
           <AppContent {...props} />
         </ConfigProvider>
       </AppProvider>
