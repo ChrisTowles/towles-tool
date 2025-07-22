@@ -6,7 +6,7 @@
 [![JSDocs][jsdocs-src]][jsdocs-href]
 [![License][license-src]][license-href]
 
-One off quality of life scripts that I use on a daily basis.
+One-off quality of life scripts that I use on a daily basis.
 
 ## Journal Type System
 
@@ -51,7 +51,7 @@ tt
 towles-tool
 ```
 
-## Unisntall
+## Uninstall
 
 ```bash
 pnpm remove --global @towles/tool
@@ -59,12 +59,12 @@ pnpm remove --global @towles/tool
 
 ## If command not found
 
-try running with pnpm
+Try running with pnpm
 ```bash
 pnpm tt
 ```
 
-if that works, then you need to add the pnpm global bin directory to your PATH.
+If that works, then you need to add the pnpm global bin directory to your PATH.
 
 ## packages to consider
 - [@anthropic-ai/claude-code](https://github.com/anthropic-ai/claude-code) - A library for interacting with the Claude code
@@ -72,7 +72,7 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 - [Consola](https://github.com/unjs/consola) console wrapper and colors
 - [c12](https://github.com/unjs/c12) configuration loader and utilities
 - [rolldown-vite](https://voidzero.dev/posts/announcing-rolldown-vite) - A Vite plugin for rolling down your code
-- ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way via the Anthropic API.~~
+- ~~[zx](https://github.com/google/zx) - Google created library to write shell scripts in a more powerful and expressive way.~~
 - [prompts](https://github.com/terkelg/prompts) - A library for creating beautiful command-line prompts, with fuzzy search and other features.
 - [yargs](https://github.com/yargs/yargs) - A modern, feature-rich command-line argument parser with enhanced error handling, TypeScript support, and flexible command configuration.
 
@@ -94,7 +94,7 @@ I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for t
 
 ## License
 
-[MIT](./LICENSE) License © [Chris Towles](https://github.com/ChrisTowles)
+[MIT](./LICENSE.md) License © [Chris Towles](https://github.com/ChrisTowles)
 
 <!-- Badges -->
 

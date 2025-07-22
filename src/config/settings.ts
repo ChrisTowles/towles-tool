@@ -75,7 +75,7 @@ export function loadSettings(): LoadedSettings {
       const parsedUserSettings = JSON.parse(
         stripJsonComments(userContent),
       ) as UserSettings;
-    
+      userSettings = parsedUserSettings;
     }
   } catch (error: unknown) {
     settingsErrors.push({

@@ -1,8 +1,8 @@
-## some times you need to think like the model
+## Sometimes you need to think like the model
 
-- already copied latest to blog post.
+- Already copied latest to blog post.
 
-found a nother good instuctrion file. https://github.com/google-gemini/gemini-cli/blob/main/GEMINI.md
+Found another good instruction file: https://github.com/google-gemini/gemini-cli/blob/main/GEMINI.md
 
 https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/increase-consistency#example-generating-consistent-market-intelligence
 
@@ -35,7 +35,7 @@ pnpm dlx ccusage
 
 
 ## give summary of usage, session and projection 
-pnpm dlx pccusage blocks --live
+pnpm dlx ccusage blocks --live
 
 ```
 

@@ -35,7 +35,7 @@ towles-tool/
 ├── docs/                          # Project documentation
 │   ├── requirements/              # Detailed command specifications
 │   │   └── command_{name}.md     # Individual command requirements
-│   └── Implementation_patterns/   # Development guides and patterns
+│   └── implementation_patterns/   # Development guides and patterns
 ├── package.json                   # NPM dependencies, scripts, and project metadata
 ├── tsconfig.json                  # TypeScript compiler configuration
 ├── vitest.config.ts              # Test framework configuration
@@ -85,9 +85,6 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - **Async/await**: Used throughout for asynchronous operations
 - **execCommand utility**: Centralized command execution for git and system commands (uses execSync)
 
-
-
-
 ## Tech Stack
 
 - **Package Manager**: pnpm
@@ -105,7 +102,7 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 
 ## Error Handling
 
-- handle errors by having functions return return `Result<T, E>` or or `Promise<Result<T, E>>` types using `neverthrow` for complex error scenarios.
+- handle errors by having functions return `Result<T, E>` or `Promise<Result<T, E>>` types using `neverthrow` for complex error scenarios.
 - Simple utilities like `execCommand` throw errors that commands should catch
 - Error types extend base `AnyError` class (`src/lib/error.ts`): `RepositoryError`, `ApplicationError`, `ClaudeError`
 
