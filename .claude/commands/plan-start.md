@@ -48,7 +48,7 @@ Write the plan in the `plan-file` in the plan-folder.
    - Questions about performance or scale expectations
    - Begin asking questions one at a time proposing the question with a smart default option
    - ONE question at a time
-   - Only after all questions are asked, record answers in the plan-file under `discovery answers`
+   - you don't have to write the question in the plan-file, just include the responses impact to the plan.
 
 
 ### Write the plan file

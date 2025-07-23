@@ -26,6 +26,7 @@ catalogs:
     fzf: ^0.5.2
     ink: ^5.0.1
     lint-staged: ^15.5.2
+    luxon: ^3.7.1
     magicast: ^0.3.5
     neverthrow: ^8.2.0
     prompts: ^2.4.2
@@ -36,7 +37,6 @@ catalogs:
     typescript: ^5.8.3
     unbuild: ^3.5.0
     yargs: ^17.7.2
-
     vite: ^6.3.5
     zod: ^4.0.5
   inlined:

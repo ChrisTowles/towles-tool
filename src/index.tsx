@@ -26,7 +26,9 @@ interface GitCommitArgs {
 async function main() {
   // Load the configuration
   const settings = await loadSettings()
-  const context = await loadTowlesToolContext({ cwd: process.cwd(), settingsFile: settings.settingsFile })
+  const context = await loadTowlesToolContext({ cwd: process.cwd(), settingsFile: settings.settingsFile,
+     debug: true // later can be set to false in production or when not debugging
+     })
 
 
   consola.info(`Using configuration from ${settings.settingsFile.path}`)
@@ -55,7 +57,7 @@ async function main() {
           'Weekly files with daily sections for ongoing work and notes',
           {},
           async () => {
-            await createJournalFile({ context: context, type: JOURNAL_TYPES.DAILY_NOTES })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.DAILY_NOTES, title: '' })
           }
         )
         .command(
@@ -68,7 +70,7 @@ async function main() {
             })
           },
           async (argv: JournalArgs) => {
-            await createJournalFile({ context: context, type: JOURNAL_TYPES.MEETING, title: argv.title })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.MEETING, title: argv.title || '' })
           }
         )
         .command(
@@ -81,7 +83,7 @@ async function main() {
             })
           },
           async (argv: JournalArgs) => {
-            await createJournalFile({ context: context, type: JOURNAL_TYPES.NOTE, title: argv.title })
+            await createJournalFile({ context: context, type: JOURNAL_TYPES.NOTE, title: argv.title  || '' })
           }
         )
         .demandCommand(1, 'You need to specify a journal subcommand')

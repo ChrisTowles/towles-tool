@@ -11,7 +11,11 @@ export const USER_SETTINGS_DIR = path.join(homedir(), '.config', AppInfo.toolNam
 export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, `${AppInfo.toolName}.settings.json`);
 
 export const JournalSettingsSchema = z.object({
-  journalDir: z.string().default(path.join(homedir(), 'journal')),
+    // https://moment.github.io/luxon/#/formatting?id=table-of-tokens
+    dailyPathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md')),
+    meetingPathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md')),
+    notePathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md')),
+  
 })
 
 export type JournalSettings = z.infer<typeof JournalSettingsSchema>
@@ -34,6 +38,8 @@ export interface SettingsFile {
   path: string;
 }
 
+
+// TODO refactor this.
 export class LoadedSettings {
   constructor(
     settingsFile: SettingsFile,
@@ -44,16 +50,21 @@ export class LoadedSettings {
 
   readonly settingsFile: SettingsFile;
 
-  // When we need to update a setting, we use this method
-  // to ensure the settings file is updated and saved but comments are preserved.
-  setValue<K extends keyof UserSettings>(
-    key: K,
-    value: UserSettings[K],
-  ): void {
-    this.settingsFile.settings[key] = value;
-    saveSettings(this.settingsFile);
-  }
+
 }
+
+//   // When we need to update a setting, we use this method
+//   // to ensure the settings file is updated and saved but comments are preserved.
+
+// function setValue<K extends keyof UserSettings>(
+//   settingsFile: SettingsFile,
+//   key: K,
+//   value: UserSettings[K],
+// ): void {
+//   settingsFile.settings[key] = value;
+//   saveSettings(settingsFile);
+  
+// }
 
 
 
@@ -111,7 +122,11 @@ export async function loadSettings(): Promise<LoadedSettings> {
     // made add a save here if the default values differ from the current values
     if (JSON.stringify(parsedUserSettings) !== JSON.stringify(userSettings)) {
       consola.warn(`Settings file ${USER_SETTINGS_PATH} has been updated with default values.`);
-      // TODO: save the updated settings file
+      const tempSettingsFile: SettingsFile = {
+        path: USER_SETTINGS_PATH,
+        settings: userSettings,
+      };
+      saveSettings(tempSettingsFile);
     }
   } else {
     // Settings file doesn't exist, ask user if they want to create it

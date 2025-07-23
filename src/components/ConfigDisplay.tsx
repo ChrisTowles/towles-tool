@@ -18,8 +18,16 @@ export function ConfigDisplay({ context }: ConfigDisplayProps) {
         <Text bold color="yellow">User Config:</Text>
         <Box marginLeft={2} marginTop={1} flexDirection="column">
           <Box>
-            <Text color="cyan">Journal Directory: </Text>
-            <Text>{context.settingsFile.settings.journalSettings.journalDir}</Text>
+            <Text color="cyan">Daily Path Template: </Text>
+            <Text>{context.settingsFile.settings.journalSettings.dailyPathTemplate}</Text>
+          </Box>
+          <Box>
+            <Text color="cyan">Meeting Path Template: </Text>
+            <Text>{context.settingsFile.settings.journalSettings.meetingPathTemplate}</Text>
+          </Box>
+          <Box>
+            <Text color="cyan">Note Path Template: </Text>
+            <Text>{context.settingsFile.settings.journalSettings.notePathTemplate}</Text>
           </Box>
           <Box>
             <Text color="cyan">Editor: </Text>

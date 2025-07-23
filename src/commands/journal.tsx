@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 import { formatDate, getMondayOfWeek, getWeekInfo } from '../utils/date-utils'
+import { DateTime } from 'luxon'
+import type { JournalSettings } from '../config/settings'
 
 const execAsync = promisify(exec)
 
@@ -121,22 +123,29 @@ export async function openInEditor({ editor, filePath }: { editor: string, fileP
  */
 export async function journalCommand(context: Context, journalType: JournalType = JOURNAL_TYPES.DAILY_NOTES): Promise<void> {
   try {
-    const fileInfo = generateJournalFileInfo({ journalType })
-    const filePath = path.join(context.settingsFile.settings.journalSettings.journalDir, ...fileInfo.pathPrefix, fileInfo.fileName)
+    const fileInfo = generateJournalFileInfoByType({ 
+      type: journalType,
+      date: new Date(),
+      title: '', // Default title, can be modified later
+      journalSettings: context.settingsFile.settings.journalSettings,
+    })
 
+    if(context.debug) {
+      consola.info(`Debug mode: Journal file info:`, fileInfo)
+    }
     // Ensure journal directory exists
-    ensureDirectoryExists(path.join(context.settingsFile.settings.journalSettings.journalDir, ...fileInfo.pathPrefix))
+    ensureDirectoryExists(path.dirname(fileInfo.fullPath))
 
-    if (!existsSync(filePath)) {
+    if (!existsSync(fileInfo.fullPath)) {
       const content = createJournalContent({ mondayDate: fileInfo.mondayDate })
-      writeFileSync(filePath, content, 'utf8')
-      consola.info(`Created new journal file: ${colors.cyan(filePath)}`)
+      writeFileSync(fileInfo.fullPath, content, 'utf8')
+      consola.info(`Created new journal file: ${colors.cyan(fileInfo.fullPath)}`)
     }
     else {
-      consola.info(`Opening existing journal file: ${colors.cyan(filePath)}`)
+      consola.info(`Opening existing journal file: ${colors.cyan(fileInfo.fullPath)}`)
     }
 
-    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath })
+    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath: fileInfo.fullPath })
   }
   catch (error) {
     consola.warn('Error creating journal file:', error)
@@ -145,91 +154,108 @@ export async function journalCommand(context: Context, journalType: JournalType 
 }
 
 interface generateJournalFileResult {
-  pathPrefix: string[]
-  fileName: string
+  fullPath: string
   mondayDate: Date
+  currentDate: Date
 }
 
 interface generateJournalFileParams {
-  date?: Date
-  type?: JournalType
-  title?: string
+  date: Date
+  type: JournalType
+  title: string
+  journalSettings: JournalSettings
 }
 
-/**
- * Generate journal filename based on the type and Monday of the current week
- */
-export function generateJournalFileInfo({ date = new Date(), journalType = JOURNAL_TYPES.DAILY_NOTES }: { date?: Date, journalType?: JournalType } = {}): generateJournalFileResult {
-  const monday = getMondayOfWeek(new Date(date))
 
-  const fileName = `${formatDate(monday)}-week-log.md`
-  let pathPrefix = []
-  switch (journalType) {
-    case JOURNAL_TYPES.DAILY_NOTES:
-      pathPrefix = [`${date.getFullYear()}`, 'daily-notes']
-      break
-    case JOURNAL_TYPES.MEETING:
-      pathPrefix = [`${date.getFullYear()}`, 'meetings']
-      break
-    case JOURNAL_TYPES.NOTE:
-      pathPrefix = [`${date.getFullYear()}`, 'notes']
-      break
-    default:
-      throw new Error(`Unknown journal type: ${journalType}`)
-  }
+export function resolvePathTemplate(template: string, title: string, date: Date): string {
+  const dateTime = DateTime.fromJSDate(date, { zone: 'utc' })
+  
+  // Replace Luxon format tokens wrapped in curly braces
+  return template.replace(/\{([^}]+)\}/g, (match, token) => {
+    try {
 
-  return { pathPrefix, fileName, mondayDate: monday }
+      if (token === 'title') {
+        return title.toLowerCase().replace(/\s+/g, '-')
+      }
+      const result = dateTime.toFormat(token)
+      // Check if the result contains suspicious patterns that indicate invalid tokens
+      // This is a heuristic to detect when Luxon produces garbage output for invalid tokens
+      const isLikelyInvalid = token.includes('invalid') || 
+                             result.length > 20 || // Very long results are likely garbage
+                             (result.length > token.length * 2 && /\d{10,}/.test(result)) || // Contains very long numbers
+                             result.includes('UTC')
+                             
+      if (isLikelyInvalid) {
+        consola.warn(`Invalid date format token: ${token}`)
+        return match
+      }
+      return result
+    } catch (error) {
+      consola.warn(`Invalid date format token: ${token}`)
+      return match // Return original token if format is invalid
+    }
+  })
 }
 
+
 /**
- * Generate journal file info for different types
+ * Generate journal file info for different types using individual path templates
  */
-export function generateJournalFileInfoByType({ date = new Date(), type = JOURNAL_TYPES.DAILY_NOTES, title }: generateJournalFileParams): generateJournalFileResult {
+export function generateJournalFileInfoByType({ journalSettings, date = new Date(), type = JOURNAL_TYPES.DAILY_NOTES, title }: generateJournalFileParams ): generateJournalFileResult {
   const currentDate = new Date(date)
-  const year = currentDate.getFullYear().toString()
+  
+
+  let templatePath: string = ""
+  let mondayDate: Date = getMondayOfWeek(currentDate)
 
   switch (type) {
     case JOURNAL_TYPES.DAILY_NOTES: {
       const monday = getMondayOfWeek(currentDate)
-      const fileName = `${formatDate(monday)}-week-log.md`
-      const pathPrefix = [year, 'daily-notes']
-      return { pathPrefix, fileName, mondayDate: monday }
+      templatePath = journalSettings.dailyPathTemplate
+      mondayDate = monday
+      break
     }
     case JOURNAL_TYPES.MEETING: {
-      const dateStr = formatDate(currentDate)
-      const timeStr = currentDate.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(':', '')
-      const titleSlug = title ? `-${title.toLowerCase().replace(/\s+/g, '-')}` : ''
-      const fileName = `${dateStr}-${timeStr}-meeting${titleSlug}.md`
-      const pathPrefix = [year, 'meetings']
-      return { pathPrefix, fileName, mondayDate: currentDate }
+      
+      templatePath = journalSettings.meetingPathTemplate
+      mondayDate = currentDate
+      break
     }
     case JOURNAL_TYPES.NOTE: {
-      const dateStr = formatDate(currentDate)
-      const timeStr = currentDate.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(':', '')
-      const titleSlug = title ? `-${title.toLowerCase().replace(/\s+/g, '-')}` : ''
-      const fileName = `${dateStr}-${timeStr}-note${titleSlug}.md`
-      const pathPrefix = [year, 'notes']
-      return { pathPrefix, fileName, mondayDate: currentDate }
+      templatePath = journalSettings.notePathTemplate
+      mondayDate = currentDate
+      break
     }
     default:
       throw new Error(`Unknown journal type: ${type}`)
   }
+
+  // Resolve the path template and extract directory structure
+  const resolvedPath = resolvePathTemplate(templatePath, title, currentDate)
+
+  return { 
+    currentDate: currentDate, fullPath: resolvedPath,  mondayDate
+   } satisfies generateJournalFileResult
 }
 
 /**
  * Create journal file for specific type
  */
-export async function createJournalFile({ context, type, title }: { context: Context, type: JournalType, title?: string }): Promise<void> {
+export async function createJournalFile({ context, type, title }: { context: Context, type: JournalType, title: string }): Promise<void> {
   try {
     const currentDate = new Date()
-    const fileInfo = generateJournalFileInfoByType({ date: currentDate, type, title })
-    const filePath = path.join(context.settingsFile.settings.journalSettings.journalDir!, ...fileInfo.pathPrefix, fileInfo.fileName)
+    const fileInfo = generateJournalFileInfoByType({ 
+      journalSettings: context.settingsFile.settings.journalSettings,
+      date: currentDate, 
+      type: type,
+      title: title
+    })
 
     // Ensure journal directory exists
-    ensureDirectoryExists(path.join(context.settingsFile.settings.journalSettings.journalDir!, ...fileInfo.pathPrefix))
+    ensureDirectoryExists(path.dirname(fileInfo.fullPath))
 
-    if (existsSync(filePath)) {
-      consola.info(`Opening existing ${type} file: ${colors.cyan(filePath)}`)
+    if (existsSync(fileInfo.fullPath)) {
+      consola.info(`Opening existing ${type} file: ${colors.cyan(fileInfo.fullPath)}`)
     }
     else {
       let content: string
@@ -246,12 +272,12 @@ export async function createJournalFile({ context, type, title }: { context: Con
         default:
           throw new Error(`Unknown journal type: ${type}`)
       }
-
-      writeFileSync(filePath, content, 'utf8')
-      consola.info(`Created new ${type} file: ${colors.cyan(filePath)}`)
+      consola.info(`Creating new ${type} file: ${colors.cyan(fileInfo.fullPath)}`)
+      writeFileSync(fileInfo.fullPath, content, 'utf8')
+      
     }
 
-    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath })
+    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath: fileInfo.fullPath })
   }
   catch (error) {
     consola.warn(`Error creating ${type} file:`, error)
