@@ -9,7 +9,7 @@ import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import { loadTowlesToolContext } from './config/context.js'
 import { AppInfo } from './constants'
-import { configCommand } from './commands/config'
+import { configCommand } from './commands/config.js'
 import consola from 'consola'
 import { loadSettings } from './config/settings'
 
