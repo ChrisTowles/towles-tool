@@ -11,6 +11,7 @@ import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import type { JournalType } from './commands/journal.js'
 import { configCommand } from './commands/config.js'
 import { jokesCommand } from './commands/jokes.js'
+import { tylerJokesCommand } from './commands/tyler-jokes.js'
 
 async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<void> {
   switch (parsedArgs.command) {
@@ -47,6 +48,10 @@ async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<voi
       
     case 'jokes':
       await jokesCommand(context)
+      break
+    
+    case 'tyler-jokes':
+      await tylerJokesCommand(context)
       break
       
     default:

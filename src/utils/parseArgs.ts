@@ -22,12 +22,17 @@ interface JokesArgs {
   // Jokes command has no specific args for now
 }
 
+interface TylerJokesArgs {
+  // Tyler jokes command has no specific args
+}
+
 // Union type for all possible parsed arguments
 export type ParsedArgs = 
   | { command: 'journal'; args: JournalArgs }
   | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'config'; args: ConfigArgs }
   | { command: 'jokes'; args: JokesArgs }
+  | { command: 'tyler-jokes'; args: TylerJokesArgs }
 
 /**
  * Parse command line arguments and return parsed result
@@ -128,6 +133,16 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     {},
     () => {
       parsedResult = { command: 'jokes', args: {} }
+    }
+  )
+
+  // Tyler jokes command
+  parser.command(
+    ['tyler-jokes', 'tj'],
+    'Tell 5 jokes with "Tyler small" prompts between them.',
+    {},
+    () => {
+      parsedResult = { command: 'tyler-jokes', args: {} }
     }
   )
 
