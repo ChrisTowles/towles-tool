@@ -26,7 +26,7 @@ The settings are defined using Zod schemas and process with zod for validation.
 - **JSON Comments**: Support JSON with comments using `strip-json-comments`
 
 ### 2. Settings Creation Confirmation
-- **Interactive prompt**: Use `@inkjs/ui` ConfirmInput component
+- **Interactive prompt**: Use `consola` library for user confirmation
 - **User choice**: Allow user to confirm or decline settings file creation
 - **Clear messaging**: Display settings file path in confirmation prompt
 - **Graceful handling**: Continue operation even if user declines creation
@@ -56,9 +56,9 @@ The settings are defined using Zod schemas and process with zod for validation.
 - **Graceful degradation**: Use defaults when settings loading fails
 
 ### 3. UI Integration
-- **React components**: Use Ink-based UI components for confirmations
-- **Async rendering**: Handle async UI operations for confirmations
-- **Component separation**: Keep UI logic separate from core settings logic
+- **Console prompts**: Use prompts library for user interactions
+- **Async operations**: Handle async prompt operations for confirmations
+- **Separation of concerns**: Keep UI logic separate from core settings logic
 
 ## Error Scenarios
 - **File parsing errors**: Invalid JSON syntax

@@ -14,13 +14,8 @@ This CLI tool follows a standard TypeScript project structure with clear separat
 towles-tool/
 ├── src/                           # All source code
 │   ├── commands/                  # Individual CLI command implementations
-│   │   ├── {command-name}.tsx     # Command logic (e.g., git-commit.ts, config.ts)
-│   │   └── {command-name}.test.tsx # Unit tests for each command
-│   ├── components/                # React components for UI functionality
-│   │   ├── {react-component-name}.tsx      # react component to be rendered with ink
-│   │   ├── {react-component-name}.test.tsx      # Unit tests for each component
-│   ├── hooks/                     # React hooks for shared logic
-│   │   └── {react-hook-name}.ts   # Custom hooks (e.g., useConfig.ts)
+│   │   ├── {command-name}.ts      # Command logic (e.g., git-commit.ts, config.ts)
+│   │   └── {command-name}.test.ts # Unit tests for each command
 │   ├── utils/                     # Reusable utility functions
 │   │   ├── {feature}/            # Feature-specific utilities (e.g., anthropic/)
 │   │   ├── {name}-utils.ts       # Utility modules (e.g., date-utils.ts, print-utils.ts)
@@ -61,8 +56,6 @@ with its alias `gc`
 - **Utilities**: Shared functionality lives in `src/utils/` organized by domain or feature
 - **Libraries**: Core reusable components in `src/lib/` that could be extracted to separate packages
 - **Configuration**: Centralized `src/config/` used for settings and configuration management
-- **Hooks**: Centralized `src/hooks/` used for shared logic and state management
-- **Components**: React components in `src/components/` for UI functionality, using Ink for terminal interfaces
 - **Entry Point**: Single entry point at `src/index.ts` that registers all commands using yargs
 - **Documentation**: Requirements and implementation guides in `docs/` to guide development
 - **Testing**: Co-located test files using `.test.ts` suffix for easy discovery and maintenance
@@ -99,8 +92,7 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - **Build System**: unbuild for TypeScript compilation
 - **Testing**: Vitest for unit tests
 - **CLI Framework**: yargs for command parsing
-- **UI Framework**: ink for React-based console interfaces
-- **UI Components**: @inkjs/ui for pre-built console components
+- **Interactive UI**: prompts for user input and consola for formatted output
 - **Logging**: consola for user-friendly output
 - **Config Management**: c12 for configuration loading
 - **Validation**: Zod 4 schemas with branded types
