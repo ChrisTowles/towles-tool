@@ -33,6 +33,10 @@ describe('eat command', () => {
     vi.restoreAllMocks()
   })
 
+  it('should execute without errors', async () => {
+    await expect(eatCommand(mockContext)).resolves.not.toThrow()
+  })
+
   it('should display puppy art and jokes', async () => {
     await eatCommand(mockContext)
 
@@ -51,6 +55,17 @@ describe('eat command', () => {
     
     // Check that closing message was displayed
     expect(mockConsola.info).toHaveBeenCalledWith('Hope that made you smile! 😊')
+  })
+
+  it('should log exactly five jokes', async () => {
+    await eatCommand(mockContext)
+    
+    // Count the number of calls to consola.success that contain joke numbers (1. 2. 3. 4. 5.)
+    const jokeCalls = mockConsola.success.mock.calls.filter(call => 
+      call[0] && typeof call[0] === 'string' && /^\d+\.\s/.test(call[0])
+    )
+    
+    expect(jokeCalls).toHaveLength(5)
   })
 
   it('should handle errors gracefully', async () => {
