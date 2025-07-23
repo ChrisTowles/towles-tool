@@ -10,6 +10,7 @@ import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
 import type { JournalType } from './commands/journal.js'
 import { configCommand } from './commands/config.js'
+import { eatCommand } from './commands/eat.js'
 
 async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<void> {
   switch (parsedArgs.command) {
@@ -42,6 +43,10 @@ async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<voi
       
     case 'config':
       await configCommand(context)
+      break
+      
+    case 'eat':
+      await eatCommand(context)
       break
       
     default:
