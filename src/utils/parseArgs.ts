@@ -18,11 +18,16 @@ interface ConfigArgs {
   // Config command has no specific args for now
 }
 
+interface JokesArgs {
+  // Jokes command has no specific args for now
+}
+
 // Union type for all possible parsed arguments
 export type ParsedArgs = 
   | { command: 'journal'; args: JournalArgs }
   | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'config'; args: ConfigArgs }
+  | { command: 'jokes'; args: JokesArgs }
 
 /**
  * Parse command line arguments and return parsed result
@@ -113,6 +118,16 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     {},
     () => {
       parsedResult = { command: 'config', args: {} }
+    }
+  )
+
+  // Jokes command
+  parser.command(
+    'jokes',
+    'Display 5 random programming jokes to brighten your day',
+    {},
+    () => {
+      parsedResult = { command: 'jokes', args: {} }
     }
   )
 
