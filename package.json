@@ -39,6 +39,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "lint:fix_all": "oxlint --fix .",
+    "lint:package": "pnpm dlx publint --fix && pnpm dlx knip",
     "prepublishOnly": "nr build",
     "release:local": "bumpp && pnpm publish --no-git-checks -r --access public",
     "release": "bumpp && echo \"github action will run and publish to npm\"",
@@ -47,11 +48,12 @@
     "test:watch": "CI=DisableCallingClaude vitest --watch",
     "typecheck": "tsc --noEmit",
     "prepare": "simple-git-hooks"
+
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
-    "changelogen": "catalog:cli",
+
     "consola": "catalog:cli",
     "fzf": "catalog:cli",
     "luxon": "catalog:cli",
@@ -63,7 +65,6 @@
   },
   "devDependencies": {
     "@antfu/ni": "catalog:cli",
-    "@antfu/utils": "catalog:inlined",
     "@types/luxon": "catalog:types",
     "@types/node": "catalog:types",
     "@types/prompts": "catalog:types",

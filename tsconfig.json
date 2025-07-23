@@ -12,7 +12,5 @@
     "verbatimModuleSyntax": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react"
   }
 }

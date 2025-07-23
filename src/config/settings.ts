@@ -26,12 +26,12 @@ export const UserSettingsSchema = z.object({
   journalSettings: JournalSettingsSchema
 })
 
-export type UserSettings = z.infer<typeof UserSettingsSchema>
+type UserSettings = z.infer<typeof UserSettingsSchema>
 
-export interface SettingsError {
-  message: string;
-  path: string;
-}
+// interface SettingsError {
+//   message: string;
+//   path: string;
+// }
 
 export interface SettingsFile {
   settings: UserSettings;
