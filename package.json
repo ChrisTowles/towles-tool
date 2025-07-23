@@ -1,7 +1,7 @@
 {
   "name": "@towles/tool",
   "type": "module",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "packageManager": "pnpm@10.13.1",
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
@@ -53,12 +53,13 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
-    "consola": "catalog:cli",
+    "@clack/prompts": "catalog:cli",
+    "comment-json": "catalog:cli",
     "fzf": "catalog:cli",
     "luxon": "catalog:cli",
     "neverthrow": "catalog:cli",
     "prompts": "catalog:cli",
-    "strip-json-comments": "catalog:cli",
+    "consola": "catalog:cli", 
     "yargs": "catalog:cli",
     "zod": "catalog:cli"
   },
