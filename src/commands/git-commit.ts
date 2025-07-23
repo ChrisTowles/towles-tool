@@ -6,7 +6,7 @@ import { execCommand } from '../utils/exec.js'
 /**
  * Git commit command implementation with consola interface
  */
-export async function gitCommitCommand(context: Context, messageArgs?: string[]): Promise<void> {
+export async function gitCommitCommand(context: Context, commitMessage: string | undefined): Promise<void> {
   try {
     // Get git status
     const status = await getGitStatus(context.cwd)
@@ -39,7 +39,6 @@ export async function gitCommitCommand(context: Context, messageArgs?: string[])
     }
 
     // Get commit message
-    let commitMessage = messageArgs?.join(' ') || ''
     if (!commitMessage) {
       const response = await prompts({
         type: 'text',

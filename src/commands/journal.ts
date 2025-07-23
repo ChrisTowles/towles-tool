@@ -18,7 +18,7 @@ export const JOURNAL_TYPES = {
   NOTE: 'note',
 } as const
 
-type JournalType = typeof JOURNAL_TYPES[keyof typeof JOURNAL_TYPES]
+export type JournalType = typeof JOURNAL_TYPES[keyof typeof JOURNAL_TYPES]
 
 /**
  * Create journal directory if it doesn't exist
