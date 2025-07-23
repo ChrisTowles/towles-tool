@@ -53,12 +53,13 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
-    "consola": "catalog:cli",
+    "@clack/prompts": "catalog:cli",
+    "comment-json": "catalog:cli",
     "fzf": "catalog:cli",
     "luxon": "catalog:cli",
     "neverthrow": "catalog:cli",
     "prompts": "catalog:cli",
-    "strip-json-comments": "catalog:cli",
+    "consola": "catalog:cli", 
     "yargs": "catalog:cli",
     "zod": "catalog:cli"
   },

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { AppInfo } from '../constants';
-import stripJsonComments from 'strip-json-comments';
+import * as commentJson from 'comment-json';
 import consola from 'consola';
 import { colors } from 'consola/utils';
 
@@ -53,40 +53,22 @@ export class LoadedSettings {
 
 }
 
-//   // When we need to update a setting, we use this method
-//   // to ensure the settings file is updated and saved but comments are preserved.
-
-// function setValue<K extends keyof UserSettings>(
-//   settingsFile: SettingsFile,
-//   key: K,
-//   value: UserSettings[K],
-// ): void {
-//   settingsFile.settings[key] = value;
-//   saveSettings(settingsFile);
-  
-// }
-
-
-
 
 
 function createSettingsFile(): UserSettings {
 
+  let userSettings: UserSettings = UserSettingsSchema.parse({});
 
-  const defaultSettings: UserSettings = UserSettingsSchema.parse({
-    // its odd, but but we have to get default value from each schema object, if we don't it failes.
-    // https://github.com/colinhacks/zod/discussions/1953
-    journalSettings: JournalSettingsSchema.parse({})
-  })
 
-  const settingsFile: SettingsFile = {
-    path: USER_SETTINGS_PATH,
-    settings: defaultSettings,
-  };
-  saveSettings(settingsFile);
-  consola.success(`Created settings file: ${USER_SETTINGS_PATH}`);
-
-  return defaultSettings
+  // Load user settings
+  
+    if (fs.existsSync(USER_SETTINGS_PATH)) {
+      const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
+      const parsedUserSettings = commentJson.parse(userContent) as unknown as UserSettings;
+      userSettings = UserSettingsSchema.parse(parsedUserSettings);
+    }
+  
+    return userSettings
 }
 
 export function saveSettings(settingsFile: SettingsFile): void {
@@ -99,7 +81,7 @@ export function saveSettings(settingsFile: SettingsFile): void {
 
     fs.writeFileSync(
       settingsFile.path,
-      JSON.stringify(settingsFile.settings, null, 2),
+      commentJson.stringify(settingsFile.settings, null, 2),
       'utf-8',
     );
   } catch (error) {
@@ -115,7 +97,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
   // Load user settings
   if (fs.existsSync(USER_SETTINGS_PATH)) {
     const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-    const parsedUserSettings = JSON.parse(stripJsonComments(userContent)) as UserSettings;
+    const parsedUserSettings = commentJson.parse(userContent) as unknown as UserSettings;
 
 
     userSettings = UserSettingsSchema.parse(parsedUserSettings);
@@ -126,6 +108,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
         path: USER_SETTINGS_PATH,
         settings: userSettings,
       };
+      
       saveSettings(tempSettingsFile);
     }
   } else {
