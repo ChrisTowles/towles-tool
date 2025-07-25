@@ -167,7 +167,7 @@ interface generateJournalFileParams {
 }
 
 
-export function resolvePathTemplate(template: string, title: string, date: Date): string {
+export function resolvePathTemplate(template: string, title: string, date: Date, mondayDate: Date): string {
   const dateTime = DateTime.fromJSDate(date, { zone: 'utc' })
   
   // Replace Luxon format tokens wrapped in curly braces
@@ -175,8 +175,18 @@ export function resolvePathTemplate(template: string, title: string, date: Date)
     try {
 
       if (token === 'title') {
+        
+
+
         return title.toLowerCase().replace(/\s+/g, '-')
       }
+
+      if (token.startsWith('monday:')) {
+        const mondayToken = token.substring(7) // Remove 'monday:' prefix
+        const mondayDateTime = DateTime.fromJSDate(mondayDate, { zone: 'utc' })
+        return mondayDateTime.toFormat(mondayToken)
+      }
+
       const result = dateTime.toFormat(token)
       // Check if the result contains suspicious patterns that indicate invalid tokens
       // This is a heuristic to detect when Luxon produces garbage output for invalid tokens
@@ -231,7 +241,7 @@ export function generateJournalFileInfoByType({ journalSettings, date = new Date
   }
 
   // Resolve the path template and extract directory structure
-  const resolvedPath = resolvePathTemplate(templatePath, title, currentDate)
+  const resolvedPath = resolvePathTemplate(templatePath, title, currentDate, mondayDate)
 
   return { 
     currentDate: currentDate, fullPath: resolvedPath,  mondayDate
@@ -243,6 +253,16 @@ export function generateJournalFileInfoByType({ journalSettings, date = new Date
  */
 export async function createJournalFile({ context, type, title }: { context: Context, type: JournalType, title: string }): Promise<void> {
   try {
+
+    // Prompt for title if empty and type requires it
+    if (title.trim().length === 0 && (type === JOURNAL_TYPES.MEETING || type === JOURNAL_TYPES.NOTE)) {
+      
+      title = await consola.prompt(`Enter ${type} title:` , {
+        type: "text",
+      });
+
+    }
+
     const currentDate = new Date()
     const fileInfo = generateJournalFileInfoByType({ 
       journalSettings: context.settingsFile.settings.journalSettings,

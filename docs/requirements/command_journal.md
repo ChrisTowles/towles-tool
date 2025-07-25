@@ -102,7 +102,7 @@ All date format tokens **must be wrapped in curly braces** `{}` to be processed.
 ```json
 {
   "journalSettings": {
-    "dailyPathTemplate": "~/journal/{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md",
+    "dailyPathTemplate": "~/journal/{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md",
     "meetingPathTemplate": "~/journal/{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md",
     "notePathTemplate": "~/journal/{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md"
   }
@@ -110,7 +110,7 @@ All date format tokens **must be wrapped in curly braces** `{}` to be processed.
 ```
 
 ### Default Configuration
-- **Daily Path**: `~/journal/{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md`
+- **Daily Path**: `~/journal/{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md`
 - **Meeting Path**: `~/journal/{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md`
 - **Note Path**: `~/journal/{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md`
 

@@ -144,92 +144,105 @@ describe('today command', () => {
 
     describe('resolvePathTemplate', () => {
       const testDate = new Date('2024-03-15T14:30:45Z')
+      const testMondayDate = new Date('2024-03-11T00:00:00Z') // Monday of that week
       const title = 'Test Journal Entry'
 
       it('should resolve year format tokens in curly braces', () => {
-        expect(resolvePathTemplate('{yyyy}', title, testDate)).toBe('2024')
-        expect(resolvePathTemplate('{yy}', title, testDate)).toBe('24')
-        expect(resolvePathTemplate('{y}', title, testDate)).toBe('2024')
+        expect(resolvePathTemplate('{yyyy}', title, testDate, testMondayDate)).toBe('2024')
+        expect(resolvePathTemplate('{yy}', title, testDate, testMondayDate)).toBe('24')
+        expect(resolvePathTemplate('{y}', title, testDate, testMondayDate)).toBe('2024')
       })
 
       it('should resolve month format tokens in curly braces', () => {
-        expect(resolvePathTemplate('{MM}', title, testDate)).toBe('03')
-        expect(resolvePathTemplate('{M}', title, testDate)).toBe('3')
-        expect(resolvePathTemplate('{LLL}', title, testDate)).toBe('Mar')
-        expect(resolvePathTemplate('{LLLL}', title, testDate)).toBe('March')
+        expect(resolvePathTemplate('{MM}', title, testDate, testMondayDate)).toBe('03')
+        expect(resolvePathTemplate('{M}', title, testDate, testMondayDate)).toBe('3')
+        expect(resolvePathTemplate('{LLL}', title, testDate, testMondayDate)).toBe('Mar')
+        expect(resolvePathTemplate('{LLLL}', title, testDate, testMondayDate)).toBe('March')
       })
 
       it('should resolve day format tokens in curly braces', () => {
-        expect(resolvePathTemplate('{dd}', title, testDate)).toBe('15')
-        expect(resolvePathTemplate('{d}', title, testDate)).toBe('15')
-        expect(resolvePathTemplate('{EEE}', title, testDate)).toBe('Fri')
-        expect(resolvePathTemplate('{EEEE}', title, testDate)).toBe('Friday')
+        expect(resolvePathTemplate('{dd}', title, testDate, testMondayDate)).toBe('15')
+        expect(resolvePathTemplate('{d}', title, testDate, testMondayDate)).toBe('15')
+        expect(resolvePathTemplate('{EEE}', title, testDate, testMondayDate)).toBe('Fri')
+        expect(resolvePathTemplate('{EEEE}', title, testDate, testMondayDate)).toBe('Friday')
       })
 
       it('should resolve time format tokens in curly braces', () => {
-        expect(resolvePathTemplate('{HH}', title, testDate)).toBe('14')
-        expect(resolvePathTemplate('{H}', title, testDate)).toBe('14')
-        expect(resolvePathTemplate('{mm}', title, testDate)).toBe('30')
-        expect(resolvePathTemplate('{m}', title, testDate)).toBe('30')
-        expect(resolvePathTemplate('{ss}', title, testDate)).toBe('45')
-        expect(resolvePathTemplate('{s}', title, testDate)).toBe('45')
+        expect(resolvePathTemplate('{HH}', title, testDate, testMondayDate)).toBe('14')
+        expect(resolvePathTemplate('{H}', title, testDate, testMondayDate)).toBe('14')
+        expect(resolvePathTemplate('{mm}', title, testDate, testMondayDate)).toBe('30')
+        expect(resolvePathTemplate('{m}', title, testDate, testMondayDate)).toBe('30')
+        expect(resolvePathTemplate('{ss}', title, testDate, testMondayDate)).toBe('45')
+        expect(resolvePathTemplate('{s}', title, testDate, testMondayDate)).toBe('45')
       })
 
       it('should resolve quarter and week format tokens in curly braces', () => {
-        expect(resolvePathTemplate('{q}', title, testDate)).toBe('1')
-        expect(resolvePathTemplate('{qq}', title, testDate)).toBe('01')
-        expect(resolvePathTemplate('{W}', title, testDate)).toBe('11') // Week of year
+        expect(resolvePathTemplate('{q}', title, testDate, testMondayDate)).toBe('1')
+        expect(resolvePathTemplate('{qq}', title, testDate, testMondayDate)).toBe('01')
+        expect(resolvePathTemplate('{W}', title, testDate, testMondayDate)).toBe('11') // Week of year
       })
 
       it('should handle complex path templates with mixed literal text and tokens', () => {
-        expect(resolvePathTemplate('{yyyy}/{MM}/{dd}', title, testDate)).toBe('2024/03/15')
-        expect(resolvePathTemplate('{yyyy}-{MM}-{dd}-{HH}-{mm}', title, testDate)).toBe('2024-03-15-14-30')
-        expect(resolvePathTemplate('{yyyy}/{LLL}/daily-notes', title, testDate)).toBe('2024/Mar/daily-notes')
-        expect(resolvePathTemplate('journal/{yyyy}/meetings/{MM}', title, testDate)).toBe('journal/2024/meetings/03')
+        expect(resolvePathTemplate('{yyyy}/{MM}/{dd}', title, testDate, testMondayDate)).toBe('2024/03/15')
+        expect(resolvePathTemplate('{yyyy}-{MM}-{dd}-{HH}-{mm}', title, testDate, testMondayDate)).toBe('2024-03-15-14-30')
+        expect(resolvePathTemplate('{yyyy}/{LLL}/daily-notes', title, testDate, testMondayDate)).toBe('2024/Mar/daily-notes')
+        expect(resolvePathTemplate('journal/{yyyy}/meetings/{MM}', title, testDate, testMondayDate)).toBe('journal/2024/meetings/03')
       })
 
       it('should handle file paths with extensions and mixed content', () => {
-        expect(resolvePathTemplate('{yyyy}/{MM}/{dd}.md', title, testDate)).toBe('2024/03/15.md')
-        expect(resolvePathTemplate('notes-{yyyy}-{LLL}-{dd}.txt', title, testDate)).toBe('notes-2024-Mar-15.txt')
-        expect(resolvePathTemplate('meeting-{yyyy}-{MM}-{dd}-{HH}{mm}.md', title, testDate)).toBe('meeting-2024-03-15-1430.md')
+        expect(resolvePathTemplate('{yyyy}/{MM}/{dd}.md', title, testDate, testMondayDate)).toBe('2024/03/15.md')
+        expect(resolvePathTemplate('notes-{yyyy}-{LLL}-{dd}.txt', title, testDate, testMondayDate)).toBe('notes-2024-Mar-15.txt')
+        expect(resolvePathTemplate('meeting-{yyyy}-{MM}-{dd}-{HH}{mm}.md', title, testDate, testMondayDate)).toBe('meeting-2024-03-15-1430.md')
       })
 
       it('should preserve literal text without curly braces', () => {
-        expect(resolvePathTemplate('static/path', title, testDate)).toBe('static/path')
-        expect(resolvePathTemplate('notes.md', title, testDate)).toBe('notes.md')
-        expect(resolvePathTemplate('daily-notes/folder', title, testDate)).toBe('daily-notes/folder')
+        expect(resolvePathTemplate('static/path', title, testDate, testMondayDate)).toBe('static/path')
+        expect(resolvePathTemplate('notes.md', title, testDate, testMondayDate)).toBe('notes.md')
+        expect(resolvePathTemplate('daily-notes/folder', title, testDate, testMondayDate)).toBe('daily-notes/folder')
       })
 
       it('should handle mixed tokens and literal text', () => {
-        expect(resolvePathTemplate('journal/{yyyy}/daily-notes/{MM}', title, testDate)).toBe('journal/2024/daily-notes/03')
-        expect(resolvePathTemplate('logs/{yyyy}/week-{W}', title, testDate)).toBe('logs/2024/week-11')
-        expect(resolvePathTemplate('{EEEE}-{yyyy}-{MM}-{dd}.log', title, testDate)).toBe('Friday-2024-03-15.log')
+        expect(resolvePathTemplate('journal/{yyyy}/daily-notes/{MM}', title, testDate, testMondayDate)).toBe('journal/2024/daily-notes/03')
+        expect(resolvePathTemplate('logs/{yyyy}/week-{W}', title, testDate, testMondayDate)).toBe('logs/2024/week-11')
+        expect(resolvePathTemplate('{EEEE}-{yyyy}-{MM}-{dd}.log', title, testDate, testMondayDate)).toBe('Friday-2024-03-15.log')
       })
 
       it('should handle edge cases with mixed content', () => {
         const newYearDate = new Date('2024-01-01T00:00:00Z')
-        expect(resolvePathTemplate('archive/{yyyy}/{MM}/{dd}', title, newYearDate)).toBe('archive/2024/01/01')
+        const newYearMondayDate = new Date('2024-01-01T00:00:00Z')
+        expect(resolvePathTemplate('archive/{yyyy}/{MM}/{dd}', title, newYearDate, newYearMondayDate)).toBe('archive/2024/01/01')
 
         const endOfYearDate = new Date('2024-12-31T23:59:59Z')
-        expect(resolvePathTemplate('backup-{yyyy}-{MM}-{dd}-{HH}-{mm}-{ss}.zip', title, endOfYearDate)).toBe('backup-2024-12-31-23-59-59.zip')
+        const endOfYearMondayDate = new Date('2024-12-30T00:00:00Z')
+        expect(resolvePathTemplate('backup-{yyyy}-{MM}-{dd}-{HH}-{mm}-{ss}.zip', title, endOfYearDate, endOfYearMondayDate)).toBe('backup-2024-12-31-23-59-59.zip')
       })
 
       it('should handle title included', () => {
         const newYearDate = new Date('2024-01-01T00:00:00Z')
-        expect(resolvePathTemplate('archive/{yyyy}/{MM}/{dd}-{title}.md', title, newYearDate)).toBe('archive/2024/01/01-test-journal-entry.md')
+        const newYearMondayDate = new Date('2024-01-01T00:00:00Z')
+        expect(resolvePathTemplate('archive/{yyyy}/{MM}/{dd}-{title}.md', title, newYearDate, newYearMondayDate)).toBe('archive/2024/01/01-test-journal-entry.md')
 
         const endOfYearDate = new Date('2024-12-31T23:59:59Z')
-        expect(resolvePathTemplate('backup-{yyyy}-{MM}-{dd}-{HH}-{mm}-{ss}-{title}.zip', title, endOfYearDate)).toBe('backup-2024-12-31-23-59-59-test-journal-entry.zip')
+        const endOfYearMondayDate = new Date('2024-12-30T00:00:00Z')
+        expect(resolvePathTemplate('backup-{yyyy}-{MM}-{dd}-{HH}-{mm}-{ss}-{title}.zip', title, endOfYearDate, endOfYearMondayDate)).toBe('backup-2024-12-31-23-59-59-test-journal-entry.zip')
       })
 
       it('should handle invalid tokens gracefully', () => {
-        expect(resolvePathTemplate('{invalid_token}/notes', title, testDate)).toBe('{invalid_token}/notes')
-        expect(resolvePathTemplate('path/{xyz}/file.md', title, testDate)).toBe('path/{xyz}/file.md')
+        expect(resolvePathTemplate('{invalid_token}/notes', title, testDate, testMondayDate)).toBe('{invalid_token}/notes')
+        expect(resolvePathTemplate('path/{xyz}/file.md', title, testDate, testMondayDate)).toBe('path/{xyz}/file.md')
       })
 
       it('should handle multiple tokens in complex patterns', () => {
-        expect(resolvePathTemplate('Q{q}-{yyyy}/M{MM}/W{W}', title, testDate)).toBe('Q1-2024/M03/W11')
-        expect(resolvePathTemplate('{EEE}_{dd}_{LLL}_{yyyy}', title, testDate)).toBe('Fri_15_Mar_2024')
+        expect(resolvePathTemplate('Q{q}-{yyyy}/M{MM}/W{W}', title, testDate, testMondayDate)).toBe('Q1-2024/M03/W11')
+        expect(resolvePathTemplate('{EEE}_{dd}_{LLL}_{yyyy}', title, testDate, testMondayDate)).toBe('Fri_15_Mar_2024')
+      })
+
+      it('should handle monday: prefix for date tokens', () => {
+        expect(resolvePathTemplate('{monday:yyyy}', title, testDate, testMondayDate)).toBe('2024')
+        expect(resolvePathTemplate('{monday:MM}', title, testDate, testMondayDate)).toBe('03')
+        expect(resolvePathTemplate('{monday:dd}', title, testDate, testMondayDate)).toBe('11')
+        expect(resolvePathTemplate('{monday:EEE}', title, testDate, testMondayDate)).toBe('Mon')
+        expect(resolvePathTemplate('week-{monday:yyyy}-{monday:MM}-{monday:dd}.md', title, testDate, testMondayDate)).toBe('week-2024-03-11.md')
       })
     })
 

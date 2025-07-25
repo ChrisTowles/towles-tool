@@ -12,7 +12,7 @@ export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, `${AppInfo.toolNa
 
 export const JournalSettingsSchema = z.object({
     // https://moment.github.io/luxon/#/formatting?id=table-of-tokens
-    dailyPathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md')),
+    dailyPathTemplate: z.string().default(path.join(homedir(), 'journal', '{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md')),
     meetingPathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md')),
     notePathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md')),
   
@@ -53,11 +53,18 @@ export class LoadedSettings {
 
 }
 
+function createDefaultSettings(): UserSettings {
+  return UserSettingsSchema.parse({
+    // NOTE: yes its odd zod can't use defaults from objects nested but it appears to be the case. 
+    journalSettings: JournalSettingsSchema.parse({})
+    
+  });
+}
 
 
 function createSettingsFile(): UserSettings {
 
-  let userSettings: UserSettings = UserSettingsSchema.parse({});
+  let userSettings = createDefaultSettings()
 
 
   // Load user settings
@@ -66,6 +73,11 @@ function createSettingsFile(): UserSettings {
       const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
       const parsedUserSettings = commentJson.parse(userContent) as unknown as UserSettings;
       userSettings = UserSettingsSchema.parse(parsedUserSettings);
+    } else {
+      saveSettings({
+        path: USER_SETTINGS_PATH,
+        settings: userSettings
+      })
     }
   
     return userSettings
