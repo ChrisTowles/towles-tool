@@ -9,9 +9,13 @@ alwaysApply: false
 
 You are an AI assistant tasked with creating well-structured GitHub issues for feature requests, bug reports, or improvement ideas. Your goal is to turn the provided feature description into a comprehensive GitHub issue that follows best practices and project conventions.
 
-First, you will be given a feature description and a repository URL. Here they are:
+
+
+First, you will likely be given a feature description
 
 <feature_description> #$ARGUMENTS </feature_description>
+
+If the feature_description is empty ask the user to provide a issue or feature description. The work that into the new feature description.
 
 Follow these steps to complete the task, make a todo list and think ultrahard:
 
