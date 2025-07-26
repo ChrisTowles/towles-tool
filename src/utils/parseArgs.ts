@@ -4,17 +4,30 @@ import { hideBin } from 'yargs/helpers'
 import { version as packageVersion } from '../../package.json'
 import { AppInfo } from '../constants.js'
 
+export const JOURNAL_TYPES = {
+  DAILY_NOTES: 'daily-notes',
+  MEETING: 'meeting',
+  NOTE: 'note',
+} as const
+
+export type JournalType = typeof JOURNAL_TYPES[keyof typeof JOURNAL_TYPES]
+
 // Define TypeScript interfaces for better type safety
-interface JournalArgs {
+export interface JournalArgs {
   title?: string
-  subcommand: 'daily-notes' | 'today' | 'meeting' | 'note'
+  jouralType: JournalType
 }
 
-interface GitCommitArgs {
+export interface GitCommitArgs {
   message?: string 
 }
 
-interface ConfigArgs {
+export interface GitHubBranchArgs {
+  assignedToMe?: boolean 
+}
+
+
+export interface ConfigArgs {
   // Config command has no specific args for now
 }
 
@@ -22,6 +35,7 @@ interface ConfigArgs {
 export type ParsedArgs = 
   | { command: 'journal'; args: JournalArgs }
   | { command: 'git-commit'; args: GitCommitArgs }
+  | { command: 'gh-branch'; args: GitHubBranchArgs }
   | { command: 'config'; args: ConfigArgs }
 
 /**
@@ -52,7 +66,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
           'Weekly files with daily sections for ongoing work and notes',
           {},
           (argv) => {
-            parsedResult = { command: 'journal', args: { subcommand: 'daily-notes', title: '' } }
+            parsedResult = { command: 'journal', args: { jouralType: 'daily-notes', title: '' } }
           }
         )
         .command(
@@ -65,7 +79,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
             }
           },
           (argv: any) => {
-            parsedResult = { command: 'journal', args: { subcommand: 'meeting', title: argv.title || '' } }
+            parsedResult = { command: 'journal', args: { jouralType: 'meeting', title: argv.title || '' } }
           }
         )
         .command(
@@ -78,7 +92,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
             }
           },
           (argv: any) => {
-            parsedResult = { command: 'journal', args: { subcommand: 'note', title: argv.title || '' } }
+            parsedResult = { command: 'journal', args: { jouralType: 'note', title: argv.title || '' } }
           }
         )
         .demandCommand(1, 'You need to specify a journal subcommand')
@@ -103,6 +117,22 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     },
     (argv: any) => {
       parsedResult = { command: 'git-commit', args: { message: argv.message } }
+    }
+  )
+
+  // Git commit command
+  parser.command(
+    ['gh-branch [assignedToMe...]', 'branch', 'br'],
+    'Create git branch from github issue',
+    {
+      assignedToMe: {
+        type: 'boolean',
+        describe: 'filter issues based on if assigned to you by default',
+        default: false
+      }
+    },
+    (argv: any) => {
+      parsedResult = { command: 'gh-branch', args: { assignedToMe: argv.assignedToMe } }
     }
   )
 

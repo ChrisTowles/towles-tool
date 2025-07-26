@@ -1,4 +1,5 @@
-import { createBranchNameFromIssue } from './branchCommand'
+import { describe, expect, it } from "vitest"
+import { createBranchNameFromIssue } from "./github-branch-command"
 
 describe('gh-cli-wrapper', () => {
   it('get issues', async () => {

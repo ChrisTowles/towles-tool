@@ -1,11 +1,12 @@
-import { $ } from 'zx'
+
 import stripAnsi from 'strip-ansi'
+import {exec} from 'tinyexec'
 
 export const isGithubCliInstalled = async (): Promise<boolean> => {
   try {
-    $.verbose = false
-    const result = await $`gh --version`
-    return result.stdout.indexOf('https://github.com/cli/cli') > 0
+
+    const proc = await exec(`gh`, ['--version'])
+    return proc.stdout.indexOf('https://github.com/cli/cli') > 0
   }
   catch (e) {
     return false
@@ -22,11 +23,11 @@ export interface Issue {
   state: string
 }
 
-export const getIssues = async ({ assignedToMe = false }: { assignedToMe: boolean }): Promise<Issue[]> => {
+export const getIssues = async ({ assignedToMe, cwd }: { assignedToMe: boolean, cwd: string }): Promise<Issue[]> => {
   let issues: Issue[] = []
 
-  $.verbose = false
   const flags = [
+    'issue', 'list',
     '--json', 'labels,number,title,state',
   ]
 
@@ -34,10 +35,10 @@ export const getIssues = async ({ assignedToMe = false }: { assignedToMe: boolea
     flags.push('--assignee')
     flags.push('@me')
   }
-  const cwd = await $`pwd`
+
   //console.log('Current working directory:', cwd.stdout.trim())
 
-  const result = await $`gh issue list ${flags}`
+  const result = await exec(`gh`, flags)
   // Setting NO_COLOR=1 didn't remove colors so had to use stripAnsi
   const striped = stripAnsi(result.stdout)
   issues = JSON.parse(striped)

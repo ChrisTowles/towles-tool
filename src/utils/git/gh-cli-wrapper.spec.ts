@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { getIssues, isGithubCliInstalled } from './gh-cli-wrapper'
 
 describe('gh-cli-wrapper', () => {
@@ -7,7 +8,7 @@ describe('gh-cli-wrapper', () => {
   })
 
   it('get issues', async () => {
-    const issues = await getIssues({ assignedToMe: false })
+    const issues = await getIssues({ assignedToMe: false, cwd: "." })
     expect(issues.length).toBeGreaterThan(0)
   })
 })

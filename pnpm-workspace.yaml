@@ -4,10 +4,7 @@ packages:
   - packages/*
   - examples/*
 
-overrides:
-  vite: npm:rolldown-vite@latest
-catalog:
-  
+catalog: null
 
 catalogs:
   cli:
@@ -15,38 +12,43 @@ catalogs:
     '@anthropic-ai/claude-code': ^1.0.51
     '@anthropic-ai/sdk': ^0.56.0
     '@clack/prompts': ^0.11.0
-    comment-json: ^4.2.5
     bumpp: ^10.2.0
+    comment-json: ^4.2.5
     consola: ^3.4.2
     eslint: ^9.31.0
     fzf: ^0.5.2
+    kuler: ^2.0.0
     lint-staged: ^15.5.2
     luxon: ^3.7.1
     neverthrow: ^8.2.0
     prompts: ^2.4.2
     simple-git-hooks: ^2.13.0
+    strip-ansi: ^7.1.0
     strip-json-comments: ^5.0.2
+    tinyexec: ^0.3.2
     tsx: ^4.20.3
     typescript: ^5.8.3
     unbuild: ^3.5.0
-    yargs: ^17.7.2
     vite: ^6.3.5
+    yargs: ^17.7.2
     zod: ^4.0.5
-    
   testing:
+    oxlint: ^1.7.0
     vitest: ^3.2.4
     vitest-package-exports: ^0.1.1
     yaml: ^2.8.0
-    oxlint: ^1.7.0
   types:
+    '@types/luxon': ^3.6.2
     '@types/node': ^22.16.3
     '@types/prompts': ^2.4.9
     '@types/react': ^18.3.12
     '@types/yargs': ^17.0.32
-    '@types/luxon': ^3.6.2
-  utils:
-    tinyexec: ^0.3.2
-    
 
 onlyBuiltDependencies:
   - '@anthropic-ai/claude-code'
+
+overrides:
+  vite: npm:rolldown-vite@latest
+
+patchedDependencies:
+  prompts: patches/prompts.patch

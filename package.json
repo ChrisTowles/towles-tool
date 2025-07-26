@@ -48,18 +48,20 @@
     "test:watch": "CI=DisableCallingClaude vitest --watch",
     "typecheck": "tsc --noEmit",
     "prepare": "simple-git-hooks"
-
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
     "@clack/prompts": "catalog:cli",
     "comment-json": "catalog:cli",
+    "consola": "catalog:cli",
     "fzf": "catalog:cli",
+    "kuler": "catalog:cli",
     "luxon": "catalog:cli",
     "neverthrow": "catalog:cli",
     "prompts": "catalog:cli",
-    "consola": "catalog:cli", 
+    "strip-ansi": "catalog:cli",
+    "tinyexec": "catalog:cli",
     "yargs": "catalog:cli",
     "zod": "catalog:cli"
   },
@@ -73,7 +75,6 @@
     "lint-staged": "catalog:cli",
     "oxlint": "catalog:testing",
     "simple-git-hooks": "catalog:cli",
-    "tinyexec": "catalog:utils",
     "tsx": "catalog:cli",
     "typescript": "catalog:cli",
     "unbuild": "catalog:cli",

@@ -1,5 +1,5 @@
 // unJs/changelogen has some nice utilities for git
-import { execCommand } from './exec'
+import { execCommand } from '../exec'
 
 // using logic from https://github.com/unjs/changelogen/blob/main/src/git.ts
 

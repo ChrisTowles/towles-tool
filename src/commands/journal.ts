@@ -9,16 +9,10 @@ import { colors } from 'consola/utils'
 import { formatDate, getMondayOfWeek, getWeekInfo } from '../utils/date-utils'
 import { DateTime } from 'luxon'
 import type { JournalSettings } from '../config/settings'
+import { JOURNAL_TYPES } from '../utils/parseArgs'
+import type {  JournalArgs, JournalType } from '../utils/parseArgs'
 
 const execAsync = promisify(exec)
-
-export const JOURNAL_TYPES = {
-  DAILY_NOTES: 'daily-notes',
-  MEETING: 'meeting',
-  NOTE: 'note',
-} as const
-
-export type JournalType = typeof JOURNAL_TYPES[keyof typeof JOURNAL_TYPES]
 
 /**
  * Create journal directory if it doesn't exist
@@ -36,10 +30,7 @@ export function ensureDirectoryExists(folderPath: string): void {
 export function createJournalContent({ mondayDate }: { mondayDate: Date }): string {
   const weekInfo = getWeekInfo(mondayDate)
 
-
-
   // TODO: maybe put holidays in here?
-
   const content = [`# Journal for Week ${formatDate(mondayDate)}`]
   content.push(``)
   content.push(`## ${formatDate(weekInfo.mondayDate)} Monday`)
@@ -121,10 +112,10 @@ export async function openInEditor({ editor, filePath }: { editor: string, fileP
 /**
  * Main journal command implementation
  */
-export async function journalCommand(context: Context, journalType: JournalType = JOURNAL_TYPES.DAILY_NOTES): Promise<void> {
+export async function journalCommand(context: Context, args: JournalArgs): Promise<void> {
   try {
     const fileInfo = generateJournalFileInfoByType({ 
-      type: journalType,
+      type: args.jouralType,
       date: new Date(),
       title: '', // Default title, can be modified later
       journalSettings: context.settingsFile.settings.journalSettings,
@@ -211,7 +202,7 @@ export function resolvePathTemplate(template: string, title: string, date: Date,
 /**
  * Generate journal file info for different types using individual path templates
  */
-export function generateJournalFileInfoByType({ journalSettings, date = new Date(), type = JOURNAL_TYPES.DAILY_NOTES, title }: generateJournalFileParams ): generateJournalFileResult {
+export function generateJournalFileInfoByType({ journalSettings, date = new Date(), type, title }: generateJournalFileParams ): generateJournalFileResult {
   const currentDate = new Date(date)
   
 
@@ -237,7 +228,7 @@ export function generateJournalFileInfoByType({ journalSettings, date = new Date
       break
     }
     default:
-      throw new Error(`Unknown journal type: ${type}`)
+      throw new Error(`Unknown JournalType: ${type}`)
   }
 
   // Resolve the path template and extract directory structure

@@ -7,39 +7,23 @@ import { loadSettings } from './config/settings.js'
 import { parseArguments} from './utils/parseArgs.js'
 import type { ParsedArgs } from './utils/parseArgs.js'
 import { gitCommitCommand } from './commands/git-commit.js'
-import { createJournalFile, JOURNAL_TYPES } from './commands/journal.js'
-import type { JournalType } from './commands/journal.js'
+import { createJournalFile } from './commands/journal.js'
+
 import { configCommand } from './commands/config.js'
+import { githubBranchCommand } from './commands/github-branch-command.js'
 
 async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<void> {
   switch (parsedArgs.command) {
     case 'journal': {
-      const { subcommand, title } = parsedArgs.args
-      let journalType: JournalType
-      
-      switch (subcommand) {
-        case 'daily-notes':
-        case 'today':
-          journalType = JOURNAL_TYPES.DAILY_NOTES
-          break
-        case 'meeting':
-          journalType = JOURNAL_TYPES.MEETING
-          break
-        case 'note':
-          journalType = JOURNAL_TYPES.NOTE
-          break
-        default:
-          throw new Error(`Unknown journal subcommand: ${subcommand}`)
-      }
-      
-      await createJournalFile({ context, type: journalType, title: title || '' })
+      await createJournalFile({ context, type: parsedArgs.args.jouralType, title: parsedArgs.args.title || '' })
       break
     }
-    
     case 'git-commit':
       await gitCommitCommand(context, parsedArgs.args.message)
       break
-      
+    case 'gh-branch':
+      await githubBranchCommand(context, parsedArgs.args)
+      break
     case 'config':
       await configCommand(context)
       break

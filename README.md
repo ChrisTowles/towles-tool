@@ -75,6 +75,7 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 - [rolldown-vite](https://voidzero.dev/posts/announcing-rolldown-vite) - A Vite plugin for rolling down your code
 - ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way via the Anthropic API.~~
 - [prompts](https://github.com/terkelg/prompts) - A library for creating beautiful command-line prompts, with fuzzy search and other features.
+  - had to patch it so `esc` cancels the selection with [pnpm-patch-i](https://github.com/antfu/pnpm-patch-i)
 - [yargs](https://github.com/yargs/yargs) - A modern, feature-rich command-line argument parser with enhanced error handling, TypeScript support, and flexible command configuration.
 - ~~[ink](https://github.com/vadimdemedes/ink) - React for interactive command-line apps~~
     - wanted hotkey support and more complex UI but this was overkill for this project.
