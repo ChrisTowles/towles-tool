@@ -4,7 +4,7 @@ note: orginally from https://github.com/steipete/agent-rules/blob/main/project-r
 ---
 # Commit
 
-Create well-formatted commits with conventional commit messages and emojis.
+Create well-formatted commits with conventional commit messages and **NO emojis**.
 
 ## Features:
 - Runs pre-commit checks by default (lint, build, generate docs)
@@ -36,7 +36,8 @@ Create well-formatted commits with conventional commit messages and emojis.
 5. Generate descriptive commit message
 6. Include scope if applicable: `type(scope): description`
 7. Add body for complex changes explaining why
-8. Execute commit
+8. show me 5 possible commit messages
+9. ask which, labled 1, 2, 3, 4, 5 and commit with that message
 
 ## Best Practices:
 - Keep commits atomic and focused

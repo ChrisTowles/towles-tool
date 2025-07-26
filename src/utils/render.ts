@@ -1,17 +1,8 @@
 import { inspect } from 'node:util'
-import kuler from 'kuler'
 import { colors } from 'consola/utils'
 import consola from 'consola'
+import stripAnsi from 'strip-ansi'
 
-const ansiRegex = ({ onlyFirst = false } = {}) => {
-  const pattern = [
-    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
-    '(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))',
-  ].join('|')
-
-  return new RegExp(pattern, onlyFirst ? undefined : 'g')
-}
-const stripAnsi = (str: string) => typeof str === 'string' ? str.replace(ansiRegex(), '') : str
 
 export function prettyPrintJson(obj: any) {
   consola.log(inspect(obj, { colors: true, depth: Infinity }))
@@ -78,8 +69,27 @@ export const limitText = (text: string, maxWidth: number): string => {
   return `${text.slice(0, maxWidth - 1)}${colors.dim('…')}`
 }
 
+/**
+ * Convert hex color to RGB values
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const cleanHex = hex.replace('#', '')
+  const r = Number.parseInt(cleanHex.slice(0, 2), 16)
+  const g = Number.parseInt(cleanHex.slice(2, 4), 16)
+  const b = Number.parseInt(cleanHex.slice(4, 6), 16)
+  return { r, g, b }
+}
+
+/**
+ * Apply hex color to text using ANSI 24-bit color codes
+ */
 export function printWithHexColor({ msg, hex }: { msg: string; hex: string }): string {
   const colorWithHex = hex.startsWith('#') ? hex : `#${hex}`
-  const text = kuler(msg, colorWithHex).toString()
-  return text
+  const { r, g, b } = hexToRgb(colorWithHex)
+  
+  // Use ANSI 24-bit color: \x1B[38;2;r;g;bm for foreground color
+  const colorStart = `\x1B[38;2;${r};${g};${b}m`
+  const colorEnd = '\x1B[0m' // Reset color
+  
+  return `${colorStart}${msg}${colorEnd}`
 }

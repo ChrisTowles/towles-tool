@@ -56,7 +56,6 @@
     "comment-json": "catalog:cli",
     "consola": "catalog:cli",
     "fzf": "catalog:cli",
-    "kuler": "catalog:cli",
     "luxon": "catalog:cli",
     "neverthrow": "catalog:cli",
     "prompts": "catalog:cli",

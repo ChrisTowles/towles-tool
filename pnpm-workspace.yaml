@@ -17,7 +17,6 @@ catalogs:
     consola: ^3.4.2
     eslint: ^9.31.0
     fzf: ^0.5.2
-    kuler: ^2.0.0
     lint-staged: ^15.5.2
     luxon: ^3.7.1
     neverthrow: ^8.2.0

@@ -96,7 +96,7 @@ export async function githubBranchCommand(context: Context, args: GitHubBranchAr
     // Note: I had to patch prompts so that escape exits the prompt
     const result = await prompts({
       name: 'issueNumber',
-      message: 'script to run',
+      message: 'Github issue to create branch for:',
       type: 'autocomplete',
       choices,
       async suggest(input: string, choices: Choice[]) {
