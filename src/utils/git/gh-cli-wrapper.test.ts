@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getIssues, isGithubCliInstalled } from './gh-cli-wrapper'
 
-describe('gh-cli-wrapper', () => {
+describe.skipIf(process.env.CI)('gh-cli-wrapper', () => {
   it('should return true if gh is installed', async () => {
     const result = await isGithubCliInstalled()
     expect(result).toBe(true)
