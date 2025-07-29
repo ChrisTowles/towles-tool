@@ -31,12 +31,17 @@ export interface ConfigArgs {
   // Config command has no specific args for now
 }
 
+export interface WeatherArgs {
+  // Weather command has no specific args for now
+}
+
 // Union type for all possible parsed arguments
 export type ParsedArgs = 
   | { command: 'journal'; args: JournalArgs }
   | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'gh-branch'; args: GitHubBranchArgs }
   | { command: 'config'; args: ConfigArgs }
+  | { command: 'weather'; args: WeatherArgs }
 
 /**
  * Parse command line arguments and return parsed result
@@ -143,6 +148,16 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     {},
     () => {
       parsedResult = { command: 'config', args: {} }
+    }
+  )
+
+  // Weather command
+  parser.command(
+    ['weather', 'w'],
+    'Show current weather for Cincinnati, OH',
+    {},
+    () => {
+      parsedResult = { command: 'weather', args: {} }
     }
   )
 
