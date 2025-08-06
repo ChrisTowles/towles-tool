@@ -16,7 +16,6 @@ Will create a plan folder and initial files to track the requirements and creati
 5. After each phase, announce: "Phase complete. Starting [next phase]..."
 6. Save all work before moving to next phase
 
-
 ## Explore
 
 Use parallel subagents to find and read all files that may be useful for implementing the change, either as examples or as edit targets. The subagents should return relevant file paths, and any other info that may be useful.
@@ -39,17 +38,16 @@ Write the plan in the `plan-file` in the plan-folder.
 
 ### Ask Questions
 
-  - Generate the 3 to 5 of most important questions to understand the problem space:
-   - Questions informed by codebase structure
-   - Questions about user interactions and workflows
-   - Questions about similar features users currently use
-   - Questions about data/content being worked with
-   - Questions about external integrations or third-party services
-   - Questions about performance or scale expectations
-   - Begin asking questions one at a time proposing the question with a smart default option
-   - ONE question at a time
-   - you don't have to write the question in the plan-file, just include the responses impact to the plan.
-
+- Generate the 3 to 5 of most important questions to understand the problem space:
+- Questions informed by codebase structure
+- Questions about user interactions and workflows
+- Questions about similar features users currently use
+- Questions about data/content being worked with
+- Questions about external integrations or third-party services
+- Questions about performance or scale expectations
+- Begin asking questions one at a time proposing the question with a smart default option
+- ONE question at a time
+- you don't have to write the question in the plan-file, just include the responses impact to the plan.
 
 ### Write the plan file
 
@@ -72,6 +70,7 @@ Write initial plan to `docs/.plan/plan-[slug].md`:
     - ONLY yes/no questions with smart defaults
 
 ### Re-read Plan
+
 - you may be asked to reread the plan-file at any time
 - If you are asked to reread the plan, read the `plan-file` and update your understanding of the plan
 
@@ -83,17 +82,16 @@ Write initial plan to `docs/.plan/plan-[slug].md`:
 
 ## Code
 
-Read all the files in the plan-folder and use them to inform the implementation. 
+Read all the files in the plan-folder and use them to inform the implementation.
 
 - work through the plan step by step
 - ask me to confirm after each step before proceeding
-- write red/green unit tests first. 
-    - Mock as little as possible. You will need to commit here using `git commit -m <message> --no-verify`in order commit them in without triggering pre-commit hooks.
+- write red/green unit tests first.
+  - Mock as little as possible. You will need to commit here using `git commit -m <message> --no-verify`in order commit them in without triggering pre-commit hooks.
 
 - after each step commit your changes with a clear message
 - If you need to make changes to the plan, do so in the plan-file and ask
 - If you need to ask questions, do so in the plan-file and ask
-
 
 ## Final Step
 
