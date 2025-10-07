@@ -11,11 +11,13 @@ export const USER_SETTINGS_DIR = path.join(homedir(), '.config', AppInfo.toolNam
 export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, `${AppInfo.toolName}.settings.json`);
 
 export const JournalSettingsSchema = z.object({
+    // Base folder where all journal files are stored
+    baseFolder: z.string().default(path.join(homedir(), 'journal')),
     // https://moment.github.io/luxon/#/formatting?id=table-of-tokens
-    dailyPathTemplate: z.string().default(path.join(homedir(), 'journal', '{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md')),
-    meetingPathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md')),
-    notePathTemplate: z.string().default(path.join(homedir(), 'journal', '{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md')),
-  
+    dailyPathTemplate: z.string().default(path.join('{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md')),
+    meetingPathTemplate: z.string().default(path.join('{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md')),
+    notePathTemplate: z.string().default(path.join('{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md')),
+
 })
 
 export type JournalSettings = z.infer<typeof JournalSettingsSchema>

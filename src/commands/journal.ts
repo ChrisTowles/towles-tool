@@ -204,7 +204,7 @@ export function resolvePathTemplate(template: string, title: string, date: Date,
  */
 export function generateJournalFileInfoByType({ journalSettings, date = new Date(), type, title }: generateJournalFileParams ): generateJournalFileResult {
   const currentDate = new Date(date)
-  
+
 
   let templatePath: string = ""
   let mondayDate: Date = getMondayOfWeek(currentDate)
@@ -217,7 +217,7 @@ export function generateJournalFileInfoByType({ journalSettings, date = new Date
       break
     }
     case JOURNAL_TYPES.MEETING: {
-      
+
       templatePath = journalSettings.meetingPathTemplate
       mondayDate = currentDate
       break
@@ -234,8 +234,11 @@ export function generateJournalFileInfoByType({ journalSettings, date = new Date
   // Resolve the path template and extract directory structure
   const resolvedPath = resolvePathTemplate(templatePath, title, currentDate, mondayDate)
 
-  return { 
-    currentDate: currentDate, fullPath: resolvedPath,  mondayDate
+  // Join baseFolder with the resolved path
+  const fullPath = path.join(journalSettings.baseFolder, resolvedPath)
+
+  return {
+    currentDate: currentDate, fullPath: fullPath,  mondayDate
    } satisfies generateJournalFileResult
 }
 
