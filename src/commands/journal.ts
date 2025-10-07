@@ -98,11 +98,17 @@ export function createNoteContent({ title, date }: { title?: string, date: Date 
 }
 
 /**
- * Open file in default editor
+ * Open file in default editor with folder context
  */
-export async function openInEditor({ editor, filePath }: { editor: string, filePath: string }): Promise<void> {
+export async function openInEditor({ editor, filePath, folderPath }: { editor: string, filePath: string, folderPath?: string }): Promise<void> {
   try {
-    await execAsync(`"${editor}" "${filePath}"`)
+    if (folderPath) {
+      // Open both folder and file - this works with VS Code and similar editors
+      // the purpose is to open the folder context for better navigation
+      await execAsync(`"${editor}" "${folderPath}" "${filePath}"`)
+    } else {
+      await execAsync(`"${editor}" "${filePath}"`)
+    }
   }
   catch (ex) {
     consola.warn(`Could not open in editor : '${editor}'. Modify your editor in the config: examples include 'code', 'code-insiders',  etc...`, ex)
@@ -136,7 +142,11 @@ export async function journalCommand(context: Context, args: JournalArgs): Promi
       consola.info(`Opening existing journal file: ${colors.cyan(fileInfo.fullPath)}`)
     }
 
-    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath: fileInfo.fullPath })
+    await openInEditor({
+      editor: context.settingsFile.settings.preferredEditor,
+      filePath: fileInfo.fullPath,
+      folderPath: context.settingsFile.settings.journalSettings.baseFolder
+    })
   }
   catch (error) {
     consola.warn('Error creating journal file:', error)
@@ -291,7 +301,11 @@ export async function createJournalFile({ context, type, title }: { context: Con
       
     }
 
-    await openInEditor({ editor: context.settingsFile.settings.preferredEditor, filePath: fileInfo.fullPath })
+    await openInEditor({
+      editor: context.settingsFile.settings.preferredEditor,
+      filePath: fileInfo.fullPath,
+      folderPath: context.settingsFile.settings.journalSettings.baseFolder
+    })
   }
   catch (error) {
     consola.warn(`Error creating ${type} file:`, error)

@@ -17,6 +17,7 @@ describe('weather command', () => {
       settings: {
         preferredEditor: 'code',
         journalSettings: {
+          baseFolder: '/test',
           dailyPathTemplate: '/test/path',
           meetingPathTemplate: '/test/path',
           notePathTemplate: '/test/path'
