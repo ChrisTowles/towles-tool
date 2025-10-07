@@ -20,7 +20,6 @@ describe.skipIf(process.env.CI)('claude-service', () => {
 
     const input: SendMessageInput = {
       message: 'tell me a joke',
-
     }
 
     const result = await service.sendMessageStream(input, (chunk) => {

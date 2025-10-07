@@ -30,9 +30,10 @@ describe('today command', () => {
     settingsFile: {
       settings: {
         journalSettings: {
-          dailyPathTemplate: "/test/journal/{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md",
-          meetingPathTemplate: "/test/journal/{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md",
-          notePathTemplate: "/test/journal/{yyyy}/notes/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md"
+          baseFolder: "/test/journal",
+          dailyPathTemplate: "{yyyy}/{MM}/daily-notes/{yyyy}-{MM}-{dd}-daily-notes.md",
+          meetingPathTemplate: "{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md",
+          notePathTemplate: "{yyyy}/notes/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md"
         },
         preferredEditor: 'code',
       },
@@ -285,7 +286,7 @@ describe('today command', () => {
           date,
           title: 'Weekly Log',
           type: JOURNAL_TYPES.DAILY_NOTES,
-          journalSettings: { notePathTemplate: '', dailyPathTemplate: '{yyyy}/daily/{MM}/{dd}-{title}.md', meetingPathTemplate: '' }
+          journalSettings: { baseFolder: '/base', notePathTemplate: '', dailyPathTemplate: '{yyyy}/daily/{MM}/{dd}-{title}.md', meetingPathTemplate: '' }
         })
 
         // Verify that the function uses the template from journalSettings
@@ -299,7 +300,7 @@ describe('today command', () => {
           date,
           type: JOURNAL_TYPES.MEETING,
           title: 'Sprint Planning',
-          journalSettings: { notePathTemplate: '', dailyPathTemplate: '', meetingPathTemplate: '{yyyy}/meetings/{MM}/{yyyy}-{MM}-{dd}-{title}.md' }
+          journalSettings: { baseFolder: '/base', notePathTemplate: '', dailyPathTemplate: '', meetingPathTemplate: '{yyyy}/meetings/{MM}/{yyyy}-{MM}-{dd}-{title}.md' }
         })
         expect(result.fullPath).toContain('sprint-planning.md')
       })
@@ -311,9 +312,22 @@ describe('today command', () => {
           date,
           type: JOURNAL_TYPES.NOTE,
           title: 'Important Note',
-          journalSettings: { notePathTemplate: '{yyyy}/notes/{MM}/{dd}-{title}.md', dailyPathTemplate: '', meetingPathTemplate: '' }
+          journalSettings: { baseFolder: '/base', notePathTemplate: '{yyyy}/notes/{MM}/{dd}-{title}.md', dailyPathTemplate: '', meetingPathTemplate: '' }
         })
         expect(result.fullPath).toContain('important-note.md')
+      })
+
+      it('should join baseFolder with resolved path', () => {
+        const date = new Date('2024-03-15T10:30:00Z')
+
+        const result = generateJournalFileInfoByType({
+          date,
+          type: JOURNAL_TYPES.DAILY_NOTES,
+          title: 'Weekly Log',
+          journalSettings: { baseFolder: '/my/journal/root', notePathTemplate: '', dailyPathTemplate: '{yyyy}/{MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md', meetingPathTemplate: '' }
+        })
+        expect(result.fullPath).toMatch(/^\/my\/journal\/root\//)
+        expect(result.fullPath).toContain('2024/03/daily-notes')
       })
     })
   })
