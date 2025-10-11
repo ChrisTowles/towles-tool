@@ -27,9 +27,26 @@ towles-tool/
 │   ├── config.ts                  # Application configuration management
 │   ├── constants.ts               # Global constants and configuration values
 │   └── index.ts                   # Main entry point - CLI setup and command registration
+├── mcp/                           # MCP (Model Context Protocol) server
+│   ├── index.ts                   # MCP server entry point
+│   ├── tools/                     # MCP tool implementations
+│   │   ├── journal.ts            # Journal management tools
+│   │   ├── git.ts                # Git operations tools
+│   │   └── config.ts             # Configuration tools
+│   ├── lib/                       # MCP-specific utilities (future)
+│   └── README.md                  # MCP server documentation
+├── .claude/                       # Claude Code integration
+│   └── commands/                  # Slash commands for Claude Code
+│       ├── journal-daily.md      # Create daily journal entry
+│       ├── journal-meeting.md    # Create meeting note
+│       ├── journal-note.md       # Create quick note
+│       └── git-commit.md         # Generate commit message
 ├── docs/                          # Project documentation
 │   ├── requirements/              # Detailed command specifications
 │   │   └── command_{name}.md     # Individual command requirements
+│   ├── research/                  # Research and architecture docs
+│   │   └── claude-code-plugin-system.md  # MCP integration research
+│   ├── mcp-setup.md              # MCP server setup guide
 │   └── Implementation_patterns/   # Development guides and patterns
 ├── package.json                   # NPM dependencies, scripts, and project metadata
 ├── tsconfig.json                  # TypeScript compiler configuration
@@ -57,6 +74,8 @@ with its alias `gc`
 - **Libraries**: Core reusable components in `src/lib/` that could be extracted to separate packages
 - **Configuration**: Centralized `src/config/` used for settings and configuration management
 - **Entry Point**: Single entry point at `src/index.ts` that registers all commands using yargs
+- **MCP Server**: Separate MCP server in `mcp/` that exposes tools to Claude Code and other MCP clients
+- **Dual Distribution**: Package exports both CLI (`towles-tool`) and MCP server (`towles-tool-mcp`)
 - **Documentation**: Requirements and implementation guides in `docs/` to guide development
 - **Testing**: Co-located test files using `.test.ts` suffix for easy discovery and maintenance
 
@@ -112,7 +131,40 @@ Towles-tool follows a modular CLI architecture with clear separation of concerns
 - Test both success and error cases
 - Use `vi.mocked()` for typed mocks
 
-## MCP Servers
+## MCP Integration
+
+This repository includes an MCP (Model Context Protocol) server that exposes towles-tool functionality to Claude Code.
+
+### MCP Server Architecture
+
+- **Location**: `mcp/` directory
+- **Entry Point**: `mcp/index.ts` - Server initialization and tool registration
+- **Tools**: Individual tool modules in `mcp/tools/` (journal.ts, git.ts, config.ts)
+- **Binary**: `towles-tool-mcp` - MCP server executable
+- **Documentation**: See `mcp/README.md` and `docs/mcp-setup.md`
+
+### Available MCP Tools
+
+1. **Journal Tools**: `journal_create` - Create daily notes, meeting notes, or quick notes
+2. **Git Tools**: `git_status`, `git_diff`, `git_commit_generate` - Git operations and commit message generation
+3. **Config Tools**: `config_get`, `config_set`, `config_init` - Configuration management
+
+### Slash Commands
+
+Example slash commands in `.claude/commands/`:
+- `/journal-daily` - Create daily journal entry
+- `/journal-meeting <title>` - Create meeting note
+- `/journal-note <title>` - Create quick note
+- `/git-commit` - Generate commit message
+
+### MCP Development Guidelines
+
+- Tool handlers return structured JSON responses with `success` field
+- Use `as unknown as TypeName` for MCP SDK type conversions
+- All tools should have proper error handling
+- Console statements in MCP server require `eslint-disable-next-line no-console`
+- Reuse existing business logic from CLI commands when possible
+
+## General Guidelines
 
 - Make sure to use Context7 to search about frameworks, libraries, and tools before WebSearch.
-- 
