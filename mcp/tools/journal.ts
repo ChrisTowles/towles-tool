@@ -1,6 +1,6 @@
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import {
   createJournalContent,
@@ -10,14 +10,7 @@ import {
 } from '../../src/commands/journal.js'
 import { JOURNAL_TYPES } from '../../src/utils/parseArgs.js'
 import type { JournalType } from '../../src/utils/parseArgs.js'
-
-// Default settings - will be enhanced to load from config later
-const DEFAULT_JOURNAL_SETTINGS = {
-  baseFolder: path.join(process.env.HOME || process.env.USERPROFILE || '', 'Documents', 'journals'),
-  dailyPathTemplate: '{yyyy}/{monday:yyyy-MM-dd}.md',
-  meetingPathTemplate: 'meetings/{yyyy}/{yyyy-MM-dd}-{title}.md',
-  notePathTemplate: 'notes/{yyyy}/{yyyy-MM-dd}-{title}.md',
-}
+import { loadJournalSettings } from '../lib/load-settings.js'
 
 interface JournalCreateArgs {
   type: JournalType
@@ -33,6 +26,10 @@ export function registerJournalTools(server: Server): void {
 
     if (name === 'journal_create') {
       return handleJournalCreate(args as unknown as JournalCreateArgs)
+    }
+
+    if (name === 'journal_list') {
+      return handleJournalList(args as unknown as { count?: number, type?: string })
     }
 
     // Let other handlers deal with other tools
@@ -65,8 +62,10 @@ async function handleJournalCreate(args: JournalCreateArgs) {
     }
 
     const currentDate = new Date()
+    const journalSettings = loadJournalSettings()
+
     const fileInfo = generateJournalFileInfoByType({
-      journalSettings: DEFAULT_JOURNAL_SETTINGS,
+      journalSettings,
       date: currentDate,
       type: type as JournalType,
       title: title,
@@ -113,6 +112,112 @@ async function handleJournalCreate(args: JournalCreateArgs) {
             message: isNew
               ? `Created new ${type} journal entry at: ${fileInfo.fullPath}`
               : `Journal entry already exists at: ${fileInfo.fullPath}`,
+          }, null, 2),
+        },
+      ],
+    }
+  }
+  catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: errorMessage,
+          }, null, 2),
+        },
+      ],
+      isError: true,
+    }
+  }
+}
+
+/**
+ * Handle listing recent journal entries
+ */
+async function handleJournalList(args: { count?: number, type?: string }) {
+  try {
+    const count = args.count || 10
+    const type = args.type || 'all'
+
+    const journalSettings = loadJournalSettings()
+    const baseFolder = journalSettings.baseFolder
+
+    if (!existsSync(baseFolder)) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              entries: [],
+              message: `Journal base folder does not exist: ${baseFolder}`,
+            }, null, 2),
+          },
+        ],
+      }
+    }
+
+    // Recursively find all markdown files
+    const files: Array<{ path: string, mtime: Date }> = []
+
+    function findMarkdownFiles(dir: string) {
+      try {
+        const items = readdirSync(dir)
+
+        for (const item of items) {
+          const fullPath = path.join(dir, item)
+          const stats = statSync(fullPath)
+
+          if (stats.isDirectory()) {
+            findMarkdownFiles(fullPath)
+          }
+          else if (stats.isFile() && item.endsWith('.md')) {
+            // Filter by type if specified
+            if (type !== 'all') {
+              if (type === 'daily' && !fullPath.includes('daily-notes'))
+                continue
+              if (type === 'meeting' && !fullPath.includes('meetings'))
+                continue
+              if (type === 'note' && !fullPath.includes('notes'))
+                continue
+            }
+
+            files.push({
+              path: fullPath,
+              mtime: stats.mtime,
+            })
+          }
+        }
+      }
+      catch {
+        // Skip directories we can't read
+      }
+    }
+
+    findMarkdownFiles(baseFolder)
+
+    // Sort by modification time (newest first) and limit
+    const recentFiles = files
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+      .slice(0, count)
+      .map(f => ({
+        path: f.path,
+        relativePath: path.relative(baseFolder, f.path),
+        modified: f.mtime.toISOString(),
+      }))
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            count: recentFiles.length,
+            entries: recentFiles,
+            baseFolder,
           }, null, 2),
         },
       ],

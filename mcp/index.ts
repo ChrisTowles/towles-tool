@@ -51,6 +51,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'journal_list',
+        description: 'List recent journal entries',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            count: {
+              type: 'number',
+              description: 'Number of entries to return (default: 10)',
+            },
+            type: {
+              type: 'string',
+              enum: ['all', 'daily', 'meeting', 'note'],
+              description: 'Filter by journal type (default: all)',
+            },
+          },
+        },
+      },
+      {
         name: 'git_status',
         description: 'Get the current git repository status',
         inputSchema: {
