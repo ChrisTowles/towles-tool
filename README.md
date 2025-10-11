@@ -131,6 +131,10 @@ TODO add verbose option.
 
 For information on how releases are managed, see the [Release Process](docs/release-process.md) documentation.
 
+## 
+- working backwards from goal to implementation
+- want to learn, go to the source. ranked on the most impactful by fewest number of humans. It was produced by a 
+
 ## History
 
 I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for this projects codebase.

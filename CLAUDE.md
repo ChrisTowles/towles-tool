@@ -165,6 +165,32 @@ Example slash commands in `.claude/commands/`:
 - Console statements in MCP server require `eslint-disable-next-line no-console`
 - Reuse existing business logic from CLI commands when possible
 
+## Subagents
+
+This repository includes specialized subagents for specific tasks:
+
+### Code Reviewer Agent
+
+- **Location**: `.claude/agents/code-reviewer.md`
+- **Purpose**: Expert code review focused on towles-tool architecture and conventions
+- **Tools**: Read, Grep, Glob
+- **Documentation**: See `docs/agents/code-reviewer.md`
+
+**Usage:**
+```
+Use the code-reviewer to review my changes
+Review these changes before I commit
+```
+
+**Focus Areas:**
+- Architecture & separation of concerns
+- TypeScript quality and type safety
+- Error handling patterns
+- Testing coverage and quality
+- MCP integration standards
+- Project conventions adherence
+
 ## General Guidelines
 
 - Make sure to use Context7 to search about frameworks, libraries, and tools before WebSearch.
+- Use the code-reviewer agent for code quality checks before committing
