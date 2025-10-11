@@ -28,7 +28,8 @@
   "types": "./dist/index.d.mts",
   "bin": {
     "towles-tool": "./dist/index.mjs",
-    "tt": "./dist/index.mjs"
+    "tt": "./dist/index.mjs",
+    "towles-tool-mcp": "./dist/mcp/index.mjs"
   },
   "files": [
     "dist"
@@ -53,6 +54,7 @@
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
     "@clack/prompts": "catalog:cli",
+    "@modelcontextprotocol/sdk": "^1.20.0",
     "comment-json": "catalog:cli",
     "consola": "catalog:cli",
     "fzf": "catalog:cli",

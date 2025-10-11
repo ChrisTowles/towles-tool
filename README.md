@@ -8,6 +8,13 @@
 
 One off quality of life scripts that I use on a daily basis.
 
+## Features
+
+- **Journal Management**: Create and organize daily notes, meeting notes, and quick notes
+- **Git Commit Assistant**: Generate conventional commit messages with AI
+- **MCP Server**: Expose tools to Claude Code and other MCP clients
+- **Configuration Management**: Customize paths, templates, and preferences
+
 ## Journal Type System
 
 The journal system supports three types of files with different templates and organization:
@@ -35,9 +42,39 @@ The journal system supports three types of files with different templates and or
 - `journal meeting [title]` - Create a new meeting file with optional title
 - `journal note [title]` - Create a new note file with optional title
 
-## Tools to add
-- [x] Journal system - creates and opens markdown files with templates for daily-notes, meetings, and notes
-- [ ] use claude code to generate git commits with multiple options for the commit message.
+## MCP Server
+
+Towles-tool includes an MCP (Model Context Protocol) server that exposes its functionality to Claude Code and other MCP clients.
+
+### Quick Setup
+
+Add to your `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "towles-tool": {
+      "command": "towles-tool-mcp"
+    }
+  }
+}
+```
+
+### Available Tools
+
+- **Journal Tools**: `journal_create` - Create daily notes, meeting notes, or quick notes
+- **Git Tools**: `git_status`, `git_diff`, `git_commit_generate` - Analyze repos and generate commit messages
+- **Config Tools**: `config_get`, `config_set`, `config_init` - Manage towles-tool settings
+
+### Documentation
+
+See [MCP Server Documentation](./mcp/README.md) for full details on:
+- Tool schemas and parameters
+- Slash command examples
+- Development guide
+- Troubleshooting
+
+## CLI Usage
 
 ## Install from repository
 
