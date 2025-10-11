@@ -88,7 +88,7 @@ tt
 towles-tool
 ```
 
-## Unisntall
+## Uninstall
 
 ```bash
 pnpm remove --global @towles/tool
@@ -108,7 +108,7 @@ if that works, then you need to add the pnpm global bin directory to your PATH.
 - [zod](https://github.com/colinhacks/zod) - TypeScript-first schema validation
 - [Consola](https://github.com/unjs/consola) console wrapper and colors
 - ~~[c12](https://github.com/unjs/c12) configuration loader and utilities~~
-    - referted stayed to json config
+    - reverted, stayed with JSON config
 - [rolldown-vite](https://voidzero.dev/posts/announcing-rolldown-vite) - A Vite plugin for rolling down your code
 - ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way via the Anthropic API.~~
 - [prompts](https://github.com/terkelg/prompts) - A library for creating beautiful command-line prompts, with fuzzy search and other features.
@@ -131,14 +131,13 @@ TODO add verbose option.
 
 For information on how releases are managed, see the [Release Process](docs/release-process.md) documentation.
 
-## 
-- working backwards from goal to implementation
-- want to learn, go to the source. ranked on the most impactful by fewest number of humans. It was produced by a human, so go to the source. How is it that we've created the most dense form of exact knowledge transfer that is code. To craft by a Craft that is to code. To me that back and foruth of though. From white, black, up, down, left, right...... building on the idea before. Going from dimention to diminition. That while readhing this the act of sharing the thought is the closes. By a dimention. For Sound is add. Like what am i Hearing.........  Tthan the code. to explain in such detail to comunicate with a nother human piece of knowledge. That this image that i saved by by mistake is the cloases i can git to comunicationg with you. This (i just pushed this image down 20 words because i dind't. ![alt text](image.png)
-(song end).
+## Philosophy
 
-And with that its hard to shared the bandwith of thought from one human to another. But code is the closest we have. So code you can follow. But working with AI is Singing in near perfect harmony. 
+- Working backwards from goal to implementation
+- When you want to learn, go to the source. Code is one of the most dense forms of exact knowledge transfer that humans have created. It communicates intent and implementation with precision that few other mediums can match.
+- The act of reading code is one of the closest forms of thought-sharing between humans—building on ideas, iterating from one dimension to another, communicating complex concepts with clarity.
 
-![](the-preffterred-way-to-learn-is-to-read-the-source-code.%250A.png)
+
 
 ## Dedication
 
