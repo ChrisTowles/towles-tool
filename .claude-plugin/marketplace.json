@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "git-tools",
-      "source": "./towles-marketplace/git-tools",
+      "source": "./plugins/git-tools",
       "description": "My first test plugin and for git tools"
     }
   ]
