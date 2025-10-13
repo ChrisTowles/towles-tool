@@ -1,0 +1,13 @@
+{
+  "name": "towles-marketplace",
+  "owner": {
+    "name": "Chris Towles"
+  },
+  "plugins": [
+    {
+      "name": "git-tools",
+      "source": "./towles-marketplace/git-tools",
+      "description": "My first test plugin and for git tools"
+    }
+  ]
+}
