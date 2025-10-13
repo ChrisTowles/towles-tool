@@ -39,6 +39,36 @@ The journal system supports three types of files with different templates and or
 - [x] Journal system - creates and opens markdown files with templates for daily-notes, meetings, and notes
 - [ ] use claude code to generate git commits with multiple options for the commit message.
 
+
+## Claude Code Plugins
+
+- https://www.anthropic.com/news/claude-code-plugins
+- `/plugins marketplace add anthropics/claude-code`
+- you can get an idea
+  - https://github.com/anthropics/claude-code/tree/main/plugins
+
+```bash
+/plugins marketplace add anthropics/claude-code
+/plugin install commit-commands@anthropics/claude-code
+/plugin install feature-dev@anthropics/claude-code
+```
+- engineer [Dan Ávila's plugin marketplace](https://www.aitmpl.com/plugins) 
+
+```bash
+
+# validate the plugin
+claude plugin validate .
+```
+
+###  How to use this repo as a marketplace
+
+```
+/plugins marketplace add ChrisTowles/towles-tool
+/plugin install notifications@ChrisTowles/towles-tool
+```
+
+
+
 ## Install from repository
 
 ```bash

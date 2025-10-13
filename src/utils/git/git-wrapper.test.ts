@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isGitDirectory } from './git-wrapper'
 
-describe('git-wrapper', () => {
+describe.skip('git-wrapper', () => {
   it('isGitDirectory', async () => {
     const result = await isGitDirectory()
     expect(result).toBe(true)

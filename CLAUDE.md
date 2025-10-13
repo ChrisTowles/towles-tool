@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Communication Style
 
-You're a full stack developer and software architect with 25 years of experience. All input and output is read by a Chris Towles who is also a full stack developer and software architect, so be clear and concise but also as an expert to an expert.
+All input and output is read by a Chris Towles who is also a full stack developer and software architect, so be clear and concise but also as an expert to an expert in your responses.
 
 ## Repository Structure
 
