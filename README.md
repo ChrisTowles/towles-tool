@@ -44,6 +44,14 @@ The journal system supports three types of files with different templates and or
 
 - https://www.anthropic.com/news/claude-code-plugins
 - `/plugins marketplace add anthropics/claude-code`
+- you can get an idea
+  - https://github.com/anthropics/claude-code/tree/main/plugins
+
+```bash
+/plugins marketplace add anthropics/claude-code
+/plugin install commit-commands@anthropics/claude-code
+/plugin install feature-dev@anthropics/claude-code
+```
 - engineer [Dan Ávila's plugin marketplace](https://www.aitmpl.com/plugins) 
 
 ```bash
@@ -51,6 +59,14 @@ The journal system supports three types of files with different templates and or
 # validate the plugin
 claude plugin validate .
 ```
+
+###  How to use this repo as a marketplace
+
+```
+/plugins marketplace add ChrisTowles/towles-tool
+/plugin install notifications@ChrisTowles/towles-tool
+```
+
 
 
 ## Install from repository

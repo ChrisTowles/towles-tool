@@ -5,8 +5,13 @@
   },
   "plugins": [
     {
-      "name": "git-tools",
-      "source": "./plugins/git-tools",
+      "name": "notifications",
+      "source": "./plugins/notifications",
+      "description": "Adds an audio notification when Claude Stops."
+    },
+      {
+      "name": "playground",
+      "source": "./plugins/playground",
       "description": "My first test plugin and for git tools"
     }
   ]
