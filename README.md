@@ -8,6 +8,22 @@ Collection of quality-of-life tools and Claude Code plugins for daily developmen
 
 The project evolved from a private toolbox of personal scripts to a public Node.js package and now also serves as a Claude Code plugin marketplace.
 
+## Reminders for me
+
+- Use plan mode!
+  - in plan mode tell claude your problems.
+  - in edit mode tell claude its problems.
+- use `/context` to see what is using context and if you need to trim anything down.
+  - Only add context Claude doesn’t already have but needs
+- use a tool to write your prompts and evaluate them.
+  - These models are smart. Less is more. don't be too verbose
+  - https://console.anthropic.com/workbench/
+  - 
+- read source code from primary sources like:
+  - [anthropic repos](https://github.com/anthropics)
+- [Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices#core-principles)
+
+
 ## Installation
 
 ### Claude Code Plugins
