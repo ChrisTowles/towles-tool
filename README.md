@@ -1,146 +1,182 @@
 # Towles Tool
 
-[![npm version][npm-version-src]][npm-version-href]
-[![npm downloads][npm-downloads-src]][npm-downloads-href]
-[![bundle][bundle-src]][bundle-href]
-[![JSDocs][jsdocs-src]][jsdocs-href]
-[![License][license-src]][license-href]
+Collection of quality-of-life tools and Claude Code plugins for daily development workflows.
 
-One off quality of life scripts that I use on a daily basis.
+## Overview
 
-## Journal Type System
+This is a dual-purpose repository:
+1. **CLI tool** (`@towles/tool`) - Quality-of-life scripts for daily development tasks
+2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
 
-The journal system supports three types of files with different templates and organization:
+The project evolved from a private toolbox of personal scripts to a public Node.js package and now also serves as a Claude Code plugin marketplace.
 
-### Daily Notes (`journal daily-notes`)
-- **Purpose**: Weekly files with daily sections for ongoing work and notes
-- **File structure**: `YYYY/daily-notes/YYYY-MM-DD-week-log.md` (Monday's date)
-- **Template**: Includes sections for Monday through Friday with date headers
-- **Use case**: Regular daily journaling, work logs, scratch pad for notes
+## Installation
 
-### Meeting Files (`journal meeting [title]`)
-- **Purpose**: Structured meeting notes with agenda and action items
-- **File structure**: `YYYY/meetings/YYYY-MM-DD-HHMM-meeting-[title].md`
-- **Template**: Includes Date, Time, Attendees, Agenda, Notes, Action Items, and Follow-up sections
-- **Use case**: Meeting preparation, note-taking, and action item tracking
+### CLI Tool
 
-### Note Files (`journal note [title]`)
-- **Purpose**: General-purpose notes with structured sections
-- **File structure**: `YYYY/notes/YYYY-MM-DD-HHMM-note-[title].md`
-- **Template**: Includes Summary, Details, and References sections
-- **Use case**: Research notes, documentation, general information capture
-
-### Commands
-- `journal` or `journal daily-notes` - Create/open current week's daily notes
-- `journal meeting [title]` - Create a new meeting file with optional title
-- `journal note [title]` - Create a new note file with optional title
-
-## Tools to add
-- [x] Journal system - creates and opens markdown files with templates for daily-notes, meetings, and notes
-- [ ] use claude code to generate git commits with multiple options for the commit message.
-
-
-## Claude Code Plugins
-
-- https://www.anthropic.com/news/claude-code-plugins
-- `/plugins marketplace add anthropics/claude-code`
-- you can get an idea
-  - https://github.com/anthropics/claude-code/tree/main/plugins
+Install globally via npm:
 
 ```bash
-/plugins marketplace add anthropics/claude-code
-/plugin install commit-commands@anthropics/claude-code
-/plugin install feature-dev@anthropics/claude-code
+npm install -g @towles/tool
 ```
-- engineer [Dan Ávila's plugin marketplace](https://www.aitmpl.com/plugins) 
+
+Use with either command:
 
 ```bash
-
-# validate the plugin
-claude plugin validate .
+towles-tool <command>
+tt <command>  # Short alias
 ```
 
-###  How to use this repo as a marketplace
+### Claude Code Plugins
 
-```
+Install plugins from this marketplace:
+
+```bash
 /plugins marketplace add ChrisTowles/towles-tool
 /plugin install notifications@ChrisTowles/towles-tool
+/plugin install git-tools@ChrisTowles/towles-tool
 ```
 
+## CLI Commands
 
+### Available Commands
 
-## Install from repository
+- `journal` - Create journal entries (daily-notes, meetings, notes)
+- `git-commit` - Generate AI-powered commit messages using Anthropic API
+- `gh-branch` - GitHub branch operations
+- `config` - Manage configuration settings
+- `weather` - Weather information
 
-```bash
-pnpm add --global @towles/tool
+### Configuration
 
-## followed by
-tt
+Settings are stored in `~/.config/towles-tool/towles-tool.settings.json` with automatic creation on first run.
 
-# or
-towles-tool
-```
+## Available Plugins
 
-## Unisntall
+This repository contains the following Claude Code plugins:
 
-```bash
-pnpm remove --global @towles/tool
-```
-
-## If command not found
-
-try running with pnpm
-```bash
-pnpm tt
-```
-
-if that works, then you need to add the pnpm global bin directory to your PATH.
-
-## packages to consider
-- [@anthropic-ai/claude-code](https://github.com/anthropic-ai/claude-code) - A library for interacting with the Claude code
-- [zod](https://github.com/colinhacks/zod) - TypeScript-first schema validation
-- [Consola](https://github.com/unjs/consola) console wrapper and colors
-- ~~[c12](https://github.com/unjs/c12) configuration loader and utilities~~
-    - referted stayed to json config
-- [rolldown-vite](https://voidzero.dev/posts/announcing-rolldown-vite) - A Vite plugin for rolling down your code
-- ~~[zx](https://github.com/google/zx) google created library to write shell scripts in a more powerful and expressive way via the Anthropic API.~~
-- [prompts](https://github.com/terkelg/prompts) - A library for creating beautiful command-line prompts, with fuzzy search and other features.
-  - had to patch it so `esc` cancels the selection with [pnpm-patch-i](https://github.com/antfu/pnpm-patch-i)
-- [yargs](https://github.com/yargs/yargs) - A modern, feature-rich command-line argument parser with enhanced error handling, TypeScript support, and flexible command configuration.
-- ~~[ink](https://github.com/vadimdemedes/ink) - React for interactive command-line apps~~
-    - wanted hotkey support and more complex UI but this was overkill for this project.
-- [publint](https://publint.dev/)
-- [e18e.dev](https://e18e.dev/guide/resources.html)
-
-## Document verbose and debug options
-
-```bash
-export DEBUG=1
-```
-
-TODO add verbose option.
+- **notifications** - Audio notifications when Claude stops
+- **git-tools** - Git workflow automation (commit messages, etc.)
 
 ## Development
 
-For information on how releases are managed, see the [Release Process](docs/release-process.md) documentation.
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/ChrisTowles/towles-tool.git
+cd towles-tool
+
+# Install dependencies
+pnpm install
+```
+
+### Commands
+
+**Development**:
+```bash
+pnpm build              # Build the project using unbuild
+pnpm dev                # Development mode with unbuild --stub
+pnpm start              # Run the CLI with tsx src/index.ts
+pnpm typecheck          # Run TypeScript type checking (no emit)
+```
+
+**Testing**:
+```bash
+pnpm test               # Run all tests with vitest
+pnpm test:watch         # Run tests in watch mode (sets CI=DisableCallingClaude)
+```
+
+**Linting**:
+```bash
+pnpm lint               # Run oxlint
+pnpm lint:fix           # Auto-fix linting issues in changed files
+pnpm lint:fix_all       # Auto-fix linting issues in all files
+pnpm lint:package       # Validate package with publint and knip
+```
+
+**Release**:
+```bash
+pnpm release            # Bump version and create tag (GitHub Actions publishes to npm)
+pnpm release:local      # Bump version and publish directly (for local testing)
+```
+
+**Plugin Validation**:
+```bash
+claude plugin validate .  # Validate Claude Code plugins before publishing
+```
+
+### Architecture
+
+**Entry point**: `src/index.ts` - Sets up the command router and context
+- Loads settings from `~/.config/towles-tool/towles-tool.settings.json`
+- Parses arguments via `yargs`
+- Routes to command handlers in `src/commands/`
+
+**Configuration System**:
+- `src/config/settings.ts` - User settings management with Zod validation
+- `src/config/context.ts` - Context object passed to all commands
+- Settings are stored in JSON with comment support via `comment-json`
+
+**Key Utilities**:
+- `src/utils/anthropic/` - Claude API integration for AI-powered features
+- `src/utils/git/` - Git and GitHub CLI wrappers
+- `src/utils/date-utils.ts` - Date formatting using Luxon
+- `src/utils/exec.ts` - Command execution utilities with `tinyexec`
+
+**Plugin Marketplace**: `.claude-plugin/marketplace.json`
+- Defines available plugins for installation
+
+### Technology Stack
+
+- **Build**: unbuild for compilation
+- **Testing**: Vitest with vitest-package-exports
+- **Linting**: oxlint
+- **Package Manager**: pnpm with catalog dependencies
+- **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
+
+### Important Notes
+
+- Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
+- Settings file automatically creates with defaults on first run (prompts user)
+- Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files
+- The release process is automated via GitHub Actions when a tag starting with `v*` is pushed
+
+## Roadmap
+
+### Planned Features
+
+**Journal Type System**:
+- [ ] daily-notes
+- [ ] meeting
+- [ ] note
+- [ ] task (todo)
+
+**Git Tools**:
+- [ ] commit-message-generator
+- [ ] pull-request-generator
+- [ ] issue-generator
+- [ ] pull-request-reviewer
+- [ ] branch-from-issue
+
+## Resources
+
+### Claude Code Plugin Development
+
+- [Claude Code Plugins Announcement](https://www.anthropic.com/news/claude-code-plugins)
+- [Official Claude Code Plugins](https://github.com/anthropics/claude-code/tree/main/plugins)
+- [Skills Guide](https://docs.claude.com/en/api/skills-guide)
+- [Best Practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices)
+
+### Project Documentation
+
+- [Release Process](docs/release-process.md) - How releases are managed
+- [TypeScript Configuration](docs/typescript.md) - TypeScript setup and configuration
 
 ## History
 
-I'm using a lot of inspiration from [Anthony Fu](https://github.com/antfu) for this projects codebase.
+This project started as a collection of personal scripts and utilities built up over time in a private toolbox. The original goal was to consolidate these into a public Node.js package. With the release of Claude Code Skills and plugins, the project evolved to package these command-line tools as Claude Code plugins, making them more accessible and reusable within the Claude Code ecosystem.
 
 ## License
 
 [MIT](./LICENSE) License © [Chris Towles](https://github.com/ChrisTowles)
-
-<!-- Badges -->
-
-[npm-version-src]: https://img.shields.io/npm/v/@towles/tool?style=flat&colorA=080f12&colorB=1fa669
-[npm-version-href]: https://npmjs.com/package/@towles/tool
-[npm-downloads-src]: https://img.shields.io/npm/dm/@towles/tool?style=flat&colorA=080f12&colorB=1fa669
-[npm-downloads-href]: https://npmjs.com/package/@towles/tool
-[bundle-src]: https://img.shields.io/bundlephobia/minzip/@towles/tool?style=flat&colorA=080f12&colorB=1fa669&label=minzip
-[bundle-href]: https://bundlephobia.com/result?p=@towles/tool
-[license-src]: https://img.shields.io/github/license/ChrisTowles/towles-tool.svg?style=flat&colorA=080f12&colorB=1fa669
-[license-href]: https://github.com/ChrisTowles/towles-tool/blob/main/LICENSE.md
-[jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
-[jsdocs-href]: https://www.jsdocs.io/package/@towles/tool

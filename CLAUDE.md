@@ -2,117 +2,102 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Communication Style
+## Project Overview
 
-All input and output is read by a Chris Towles who is also a full stack developer and software architect, so be clear and concise but also as an expert to an expert in your responses.
+This is a dual-purpose repository:
+1. **CLI tool** (`@towles/tool`) - Collection of quality-of-life scripts for daily development workflows
+2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
 
-## Repository Structure
+The project evolved from a private toolbox of personal scripts to a public Node.js package and now also serves as a Claude Code plugin marketplace.
 
-This CLI tool follows a standard TypeScript project structure with clear separation of concerns:
+## Commands
 
-```
-towles-tool/
-├── src/                           # All source code
-│   ├── commands/                  # Individual CLI command implementations
-│   │   ├── {command-name}.ts      # Command logic (e.g., git-commit.ts, config.ts)
-│   │   └── {command-name}.test.ts # Unit tests for each command
-│   ├── utils/                     # Reusable utility functions
-│   │   ├── {feature}/            # Feature-specific utilities (e.g., anthropic/)
-│   │   ├── {name}-utils.ts       # Utility modules (e.g., date-utils.ts, print-utils.ts)
-│   │   └── {name}.ts             # Core utilities (e.g., exec.ts, interactive-input.ts)
-│   ├── lib/                       # Core library code
-│   │   ├── error.ts              # Custom error classes and error handling
-│   │   ├── json.ts               # JSON processing utilities
-│   │   └── validation.ts         # Input validation logic
-│   ├── config.ts                  # Application configuration management
-│   ├── constants.ts               # Global constants and configuration values
-│   └── index.ts                   # Main entry point - CLI setup and command registration
-├── docs/                          # Project documentation
-│   ├── requirements/              # Detailed command specifications
-│   │   └── command_{name}.md     # Individual command requirements
-│   └── Implementation_patterns/   # Development guides and patterns
-├── package.json                   # NPM dependencies, scripts, and project metadata
-├── tsconfig.json                  # TypeScript compiler configuration
-├── vitest.config.ts              # Test framework configuration
-└── build.config.ts               # Build system configuration (unbuild)
+### Development
+```bash
+pnpm build              # Build the project using unbuild
+pnpm dev                # Development mode with unbuild --stub
+pnpm start              # Run the CLI with tsx src/index.ts
+pnpm typecheck          # Run TypeScript type checking (no emit)
 ```
 
+### Testing
+```bash
+pnpm test               # Run all tests with vitest
+pnpm test:watch         # Run tests in watch mode (sets CI=DisableCallingClaude)
+```
+
+### Linting
+```bash
+pnpm lint               # Run oxlint
+pnpm lint:fix           # Auto-fix linting issues in changed files
+pnpm lint:fix_all       # Auto-fix linting issues in all files
+pnpm lint:package       # Validate package with publint and knip
+```
+
+### Release
+```bash
+pnpm release            # Bump version and create tag (GitHub Actions publishes to npm)
+pnpm release:local      # Bump version and publish directly (for local testing)
+```
+
+The release process is automated via GitHub Actions when a tag starting with `v*` is pushed.
+
+### Plugin Validation
+```bash
+claude plugin validate .  # Validate Claude Code plugins before publishing
+```
+
+## Architecture
+
+### CLI Application Structure
+
+**Entry point**: `src/index.ts` - Sets up the command router and context
+- Loads settings from `~/.config/towles-tool/towles-tool.settings.json`
+- Parses arguments via `yargs`
+- Routes to command handlers in `src/commands/`
+
+**Configuration System**:
+- `src/config/settings.ts` - User settings management with Zod validation
+- `src/config/context.ts` - Context object passed to all commands
+- Settings are stored in JSON with comment support via `comment-json`
+
+**Available CLI Commands**:
+- `journal` - Create journal entries (daily-notes, meetings, notes)
+- `git-commit` - Generate AI-powered commit messages using Anthropic API
+- `gh-branch` - GitHub branch operations
+- `config` - Manage configuration settings
+- `weather` - Weather information
+
+**Key Utilities**:
+- `src/utils/anthropic/` - Claude API integration for AI-powered features
+- `src/utils/git/` - Git and GitHub CLI wrappers
+- `src/utils/date-utils.ts` - Date formatting using Luxon
+- `src/utils/exec.ts` - Command execution utilities with `tinyexec`
+
+### Claude Code Plugin Architecture
+
+**Plugin Marketplace**: `.claude-plugin/marketplace.json`
+- Defines available plugins for installation via `/plugins marketplace add`
+
+**Available Plugins**:
+- `notifications` - Audio notifications when Claude stops
+- `git-tools` - Git workflow automation (commit messages, etc.)
+
+Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json` manifest.
+
+### Technology Stack
+
+- **TypeScript**: ESNext target with strict mode, bundler module resolution
+- **Build**: unbuild for compilation
+- **Testing**: Vitest with vitest-package-exports
+- **Linting**: oxlint
+- **Package Manager**: pnpm with catalog dependencies
+- **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
 
 
-## Documents
+## Important Notes
 
-These `docs/requirements/*` files provide detailed requirements but purposely exclude implementation details
-
-- `docs/requirements/command_journal.md`: Journal command requirements and specifications with its alias `j` and `journal today`, `journal meeting`, `journal note` and `journal daily`
-- `docs/requirements/command_git-commit.md`: Git commit command requirements and specifications for `git-commit`
-with its alias `gc`
-- `docs/requirements/command_config.md`: Configuration command requirements and specifications with its alias `config` and `cfg`
-- `docs/requirements/settings_management.md`: Settings management system requirements including user confirmation, file creation, and schema validation
-
-
-### Key Architectural Principles
-
-- **Commands**: Each CLI command is a separate module in `src/commands/` with its own test file
-- **Utilities**: Shared functionality lives in `src/utils/` organized by domain or feature
-- **Libraries**: Core reusable components in `src/lib/` that could be extracted to separate packages
-- **Configuration**: Centralized `src/config/` used for settings and configuration management
-- **Entry Point**: Single entry point at `src/index.ts` that registers all commands using yargs
-- **Documentation**: Requirements and implementation guides in `docs/` to guide development
-- **Testing**: Co-located test files using `.test.ts` suffix for easy discovery and maintenance
-
-## Development Commands
-
-- `pnpm lint` - Lint code with oxlint
-- `pnpm typecheck` - Type check code with tsc
-- `pnpm test` - Run tests with Vitest
-
-## Code Quality
-
-Run `pnpm typecheck` and `pnpm lint:fix` after making changes to ensure code quality and consistency.
-
-## Key Architecture Notes
-
-Towles-tool follows a modular CLI architecture with clear separation of concerns:
-
-- **Commands Layer** (`src/commands/`): Individual command implementations (git-commit.ts, journal.ts, config.ts)
-- **CLI Entry Point** (`src/index.ts`): yargs setup and command registration
-- **Utils Layer** (`src/utils/`): Shared utilities for execution, formatting, and interactive input
-- **Config Management** (`src/config.ts`): Configuration loading with c12 library
-- **Destructured parameters**: Used consistently for better readability and maintainability
-- **Async/await**: Used throughout for asynchronous operations
-- **execCommand utility**: Centralized command execution for git and system commands (uses execSync)
-
-
-
-
-## Tech Stack
-
-- **Package Manager**: pnpm
-- **Runtime**: Node.js 22.x
-- **Build System**: unbuild for TypeScript compilation
-- **Testing**: Vitest for unit tests
-- **CLI Framework**: yargs for command parsing
-- **Interactive UI**: prompts for user input and consola for formatted output
-- **Logging**: consola for user-friendly output
-- **Config Management**: c12 for configuration loading
-- **Validation**: Zod 4 schemas with branded types
-- **Error Handling**: neverthrow for Result types (utilities only)
-- **Git Hooks**: simple-git-hooks with lint-staged for pre-commit linting
-
-## Error Handling
-
-- handle errors by having functions return return `Result<T, E>` or or `Promise<Result<T, E>>` types using `neverthrow` for complex error scenarios.
-- Simple utilities like `execCommand` throw errors that commands should catch
-- Error types extend base `AnyError` class (`src/lib/error.ts`): `RepositoryError`, `ApplicationError`, `ClaudeError`
-
-## Testing Patterns
-
-- Use `pnpm test` for running tests
-- Mock external dependencies (`execCommand`)
-- Test both success and error cases
-- Use `vi.mocked()` for typed mocks
-
-## MCP Servers
-
-- Make sure to use Context7 to search about frameworks, libraries, and tools before WebSearch.
-- 
+- Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
+- Settings file automatically creates with defaults on first run (prompts user)
+- Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files
+- The CLI is available as both `towles-tool` and `tt` commands when installed
