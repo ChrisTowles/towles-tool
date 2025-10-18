@@ -6,12 +6,12 @@ description: Create git commit
 ## Context
 
 - Current git status: !`git status`
-- Current git diff (staged and unstaged changes): !`git diff HEAD`
+- Current git diff (staged changes): !`git diff HEAD`
 - Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -10`
 
 ## Your task
 
-Based on the above changes, create five commit messages, use AskUserQuestion to ask the user which of these, or their own. Then create a single git commit with it.
+Based on the above changes, generate 5 single commit messages with conventional commits, then ask the user to which of those, or their own to use. Then create a single git commit with it.
 
 You have the capability to call multiple tools in a single response. Stage and create the commit using a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.
