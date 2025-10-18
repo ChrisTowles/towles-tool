@@ -83,10 +83,10 @@
     "yaml": "catalog:testing"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm i --frozen-lockfile --ignore-scripts --offline && npx lint-staged"
+    "pre-commit": "pnpm dlx lint-staged -q"
   },
   "lint-staged": {
-    "*": "oxlint --fix"
+    "*": "oxlint --quiet --fix"
   },
   "directories": {
     "test": "test"
