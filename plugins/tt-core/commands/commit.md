@@ -14,6 +14,5 @@ description: Create git commit
 
 1. generate 5 single commit messages with conventional commits
 2. **Use AskUserQuestion tool** to chose which of those, or their own to use.
-3. Then create a single git commit with it
-
-You have the capability to call multiple tools in a single response. Do not use any other tools or do anything else. Do not send any other text or messages besides AskUserQuestion and these tool calls.
+   - if there are no staged changes, also ask if they want to git add .
+3. Then create a single git commit with it, also staging any changes if they agreed to that.
