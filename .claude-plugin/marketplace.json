@@ -1,18 +1,13 @@
 {
-  "name": "towles-marketplace",
+  "name": "towles-tool",
   "owner": {
     "name": "Chris Towles"
   },
   "plugins": [
     {
-      "name": "notifications",
-      "source": "./plugins/notifications",
-      "description": "Adds an audio notification when Claude Stops."
-    },
-      {
-      "name": "playground",
-      "source": "./plugins/playground",
-      "description": "My first test plugin and for git tools"
+      "name": "towles-tools",
+      "source": "./plugins/tt-core",
+      "description": "git and github skills to generate commit messages and other git operations."
     }
   ]
 }
