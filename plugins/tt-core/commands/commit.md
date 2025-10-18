@@ -14,5 +14,5 @@ description: Create git commit
 
 1. generate 5 single commit messages with conventional commits
 2. **Use AskUserQuestion tool** to chose which of those, or their own to use.
-   - if there are no staged changes, also ask if they want to git add .
+   - if there are no staged changes, **Use AskUserQuestion tool** if they want the files added.
 3. Then create a single git commit with it, also staging any changes if they agreed to that.
