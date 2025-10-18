@@ -1,0 +1,8 @@
+{
+    "name": "tt",
+    "description": "Git workflow automation (commit messages, etc.)",
+    "version": "1.0.1",
+    "author": {
+        "name": "Chris Towles"
+    }
+}
