@@ -1,10 +1,9 @@
 ## Installed Plugins
 
-My current favorite installed plugins from the marketplace.
 
+DOn't install any plugins by default. ensure its a plugin you'd use all the time because its always in context. also use the `/context` to see how much context everything is using.
 
 ```bash
 /plugin marketplace add anthropics/skills
-/plugin install document-skills
 
 ```
