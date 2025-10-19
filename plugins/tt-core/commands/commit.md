@@ -13,5 +13,5 @@ description: Create git commit
 ## Your task
 
 1. generate 5 **single line** commit messages with conventional commits format.
-2. **Use AskUserQuestion tool** to choose which of those, or their own to use.
-3. Then create a single git commit with it, also staging any changes if they agreed to that.
+2. **Use AskUserQuestion tool** to ask which of those, or their own to use, to create the commit.
+3. Create a single git commit with that message using `git commit -m "<message>"`.
