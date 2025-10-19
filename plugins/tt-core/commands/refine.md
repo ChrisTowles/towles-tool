@@ -1,10 +1,10 @@
 ---
 #allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), AskUserQuestion(*)
-description: Create git commit 
+description: Analyze writing and fix grammar and spelling
 ---
  # Refine Text
 
-  Improve the grammar, spelling, and wording of the provided text while maintaining:
+  Improve the grammar, spelling, and wording of the selected text while maintaining:
   - **Conciseness**: Keep it brief and to the point
   - **Clarity**: Use simple, direct language
   - **Professional tone**: Semi-formal, appropriate for technical/business contexts
