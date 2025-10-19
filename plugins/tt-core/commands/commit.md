@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), AskUserQuestion(*)
+#allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), AskUserQuestion(*)
 description: Create git commit 
 ---
 
@@ -12,7 +12,6 @@ description: Create git commit
 
 ## Your task
 
-1. generate 5 single commit messages with conventional commits
-2. **Use AskUserQuestion tool** to chose which of those, or their own to use.
-   - if there are no staged changes, **Use AskUserQuestion tool** if they want the files added. Must enter plan mode before AskUserQuestion works?
-3. Then create a single git commit with it, also staging any changes if they agreed to that.
+1. generate 5 **single line** commit messages with conventional commits format.
+2. **Use AskUserQuestion tool** to ask which of those, or their own to use, to create the commit.
+3. Create a single git commit with that message using `git commit -m "<message>"`.

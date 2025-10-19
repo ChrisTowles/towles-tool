@@ -1,6 +1,6 @@
 {
     "name": "tt",
-    "description": "Git workflow automation (commit messages, etc.)",
+    "description": "Few useful personal commands to generate commit messages, and note taking",
     "version": "1.0.1",
     "author": {
         "name": "Chris Towles"
