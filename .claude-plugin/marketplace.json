@@ -7,7 +7,7 @@
     {
       "name": "towles-tools",
       "source": "./plugins/tt-core",
-      "description": "git and github skills to generate commit messages and other git operations."
+      "description": "useful daily commands like generate git messages and note taking"
     }
   ]
 }

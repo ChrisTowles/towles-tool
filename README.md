@@ -27,8 +27,13 @@ The project evolved from a private toolbox of personal scripts to a public Node.
 - [Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices#core-principles)
   - gerund form (verb + -ing) for skill names
 - [claude cookbook skills section](https://github.com/anthropics/claude-cookbooks/tree/main/skills)
-  
-- 
+
+- https://github.com/anthropics/skills
+  - installed as a plugin, has examples and skill-crea
+
+```bash
+/plugin marketplace add anthropics/skills
+```
 
 ## Installation
 
