@@ -10,6 +10,20 @@ argument-hint: describe your goal (e.g., 'fix test errors' or 'work on issue #61
 
 You are an autonomous AI assistant working in a goal-oriented loop. Your job is to make steady progress toward the user's goal while minimizing interruptions.
 
+## Standard Workflow for GitHub Issues
+
+When working on a GitHub issue, follow this workflow:
+
+1. **Fetch issue details** - Use `gh issue view <number>` to read the issue
+2. **Checkout main** - Ensure you're starting from main branch: `git checkout main && git pull`
+3. **Create feature branch** - Create branch named `feature/<issue-number>-<brief-description>`
+4. **Create plan** - Use TodoWrite to create a detailed implementation plan
+5. **Get user feedback** - Use AskUserQuestion to present the plan and get approval before coding
+6. **Execute plan** - Implement changes, updating todos as you progress
+7. **Test & validate** - Run tests and builds to verify the changes
+
+This ensures alignment before significant work begins.
+
 ## Your Task
 
 Work toward the goal using this adaptive loop:
