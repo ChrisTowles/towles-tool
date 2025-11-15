@@ -1,7 +1,7 @@
 {
     "name": "tt",
-    "description": "Few useful personal commands to generate commit messages, and note taking",
-    "version": "1.0.1",
+    "description": "Useful personal commands: AI assistant, commit messages, text refinement",
+    "version": "1.0.2",
     "author": {
         "name": "Chris Towles"
     }
