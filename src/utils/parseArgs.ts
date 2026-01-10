@@ -35,13 +35,18 @@ export interface WeatherArgs {
   // Weather command has no specific args for now
 }
 
+export interface RalphArgs {
+  rawArgs: string[]
+}
+
 // Union type for all possible parsed arguments
-export type ParsedArgs = 
+export type ParsedArgs =
   | { command: 'journal'; args: JournalArgs }
   | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'gh-branch'; args: GitHubBranchArgs }
   | { command: 'config'; args: ConfigArgs }
   | { command: 'weather'; args: WeatherArgs }
+  | { command: 'ralph'; args: RalphArgs }
 
 /**
  * Parse command line arguments and return parsed result
@@ -158,6 +163,18 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     {},
     () => {
       parsedResult = { command: 'weather', args: {} }
+    }
+  )
+
+  // Ralph command - autonomous Claude Code runner
+  parser.command(
+    'ralph',
+    'Run Claude Code in autonomous loop for task completion',
+    {},
+    (argv: any) => {
+      // Pass remaining args to ralph's citty parser
+      const rawArgs = argv._.slice(1) as string[]
+      parsedResult = { command: 'ralph', args: { rawArgs } }
     }
   )
 

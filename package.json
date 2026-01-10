@@ -55,6 +55,8 @@
     "@anthropic-ai/claude-code": "catalog:cli",
     "@anthropic-ai/sdk": "catalog:cli",
     "@clack/prompts": "catalog:cli",
+    "chalk": "^5.6.2",
+    "citty": "^0.1.6",
     "comment-json": "catalog:cli",
     "consola": "catalog:cli",
     "fzf": "catalog:cli",
@@ -64,7 +66,8 @@
     "strip-ansi": "catalog:cli",
     "tinyexec": "catalog:cli",
     "yargs": "catalog:cli",
-    "zod": "catalog:cli"
+    "zod": "catalog:cli",
+    "zx": "^8.8.5"
   },
   "devDependencies": {
     "@antfu/ni": "catalog:cli",
