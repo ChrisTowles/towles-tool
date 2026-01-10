@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "If the user's request is ambiguous, has multiple valid interpretations, or lacks key details needed to implement correctly - interview them with focused questions before building. Don't guess. Ask one question at a time and build on their answers."
+          }
+        ]
+      }
+    ]
+  }
+}
