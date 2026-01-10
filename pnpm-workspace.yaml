@@ -33,7 +33,7 @@ catalogs:
     zod: ^4.0.5
   testing:
     oxlint: ^1.7.0
-    vitest: ^3.2.4
+    vitest: catalog:testing
     vitest-package-exports: ^0.1.1
     yaml: ^2.8.0
   types:
