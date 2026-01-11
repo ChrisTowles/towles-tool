@@ -105,5 +105,14 @@
   },
   "directories": {
     "test": "test"
+  },
+  "oclif": {
+    "bin": "tt",
+    "dirname": "towles-tool",
+    "commands": {
+      "strategy": "pattern",
+      "target": "./src/oclif-commands"
+    },
+    "topicSeparator": " "
   }
 }
