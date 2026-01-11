@@ -3,42 +3,6 @@ import chalk from 'chalk'
 import { z } from 'zod'
 
 // ============================================================================
-// Types
-// ============================================================================
-
-export interface IterationHistory {
-    iteration: number
-    startedAt: string
-    completedAt: string
-    durationMs: number
-    durationHuman: string
-    outputSummary: string
-    markerFound: boolean
-    contextUsedPercent?: number
-}
-
-export type TaskStatus = 'pending' | 'in_progress' | 'done'
-
-export interface RalphTask {
-    id: number
-    description: string
-    status: TaskStatus
-    addedAt: string
-    completedAt?: string
-}
-
-export interface RalphState {
-    version: number
-    tasks: RalphTask[]
-    startedAt: string
-    iteration: number
-    maxIterations: number
-    status: 'running' | 'completed' | 'max_iterations_reached' | 'error'
-    sessionId?: string // Claude session ID for --resume continuity
-    // history removed in v2 - now stored as JSON lines in ralph-history.log
-}
-
-// ============================================================================
 // Constants
 // ============================================================================
 
@@ -51,10 +15,10 @@ export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
 export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
 // ============================================================================
-// State Validation Schema
+// State Validation Schemas
 // ============================================================================
 
-const TaskStatusSchema = z.enum(['pending', 'in_progress', 'done'])
+const TaskStatusSchema = z.enum(['pending', 'in_progress', 'done', 'hold'])
 
 const RalphTaskSchema = z.object({
     id: z.number(),
@@ -73,6 +37,25 @@ const RalphStateSchema = z.object({
     status: z.enum(['running', 'completed', 'max_iterations_reached', 'error']),
     sessionId: z.string().optional(),
 })
+
+// ============================================================================
+// Types (derived from Zod schemas)
+// ============================================================================
+
+export interface IterationHistory {
+    iteration: number
+    startedAt: string
+    completedAt: string
+    durationMs: number
+    durationHuman: string
+    outputSummary: string
+    markerFound: boolean
+    contextUsedPercent?: number
+}
+
+export type TaskStatus = z.infer<typeof TaskStatusSchema>
+export type RalphTask = z.infer<typeof RalphTaskSchema>
+export type RalphState = z.infer<typeof RalphStateSchema>
 
 // ============================================================================
 // Arg Validation Schema

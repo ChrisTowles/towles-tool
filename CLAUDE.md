@@ -119,6 +119,7 @@ tt ralph plan                       # Show plan with mermaid graph
 
 ## Important Notes
 
+- **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
 - When modifying CLI commands (`src/commands/`), also update the corresponding skill in `plugins/tt-core/skills/`
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead

@@ -42,6 +42,7 @@ export function formatTasksForPrompt(tasks: RalphTask[]): string {
             case 'done': return '✓'
             case 'in_progress': return '→'
             case 'pending': return '○'
+            case 'hold': return '⏸'
         }
     }
 
@@ -68,6 +69,7 @@ export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
             case 'done': return '`✓ done`'
             case 'in_progress': return '`→ in_progress`'
             case 'pending': return '`○ pending`'
+            case 'hold': return '`⏸ hold`'
         }
     }
 
