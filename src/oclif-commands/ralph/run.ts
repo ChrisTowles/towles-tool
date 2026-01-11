@@ -22,14 +22,21 @@ import {
 import { checkClaudeCli, runIteration } from '../../commands/ralph/execution.js'
 
 /**
- * Read last N lines from a file. Returns empty string if file doesn't exist.
+ * Read last N tasks from progress file. Tasks are delimited by "### Iteration" headers.
+ * Returns empty string if file doesn't exist or has no tasks.
  */
-function readLastLines(filePath: string, lineCount: number): string {
+function readLastTasks(filePath: string, taskCount: number): string {
   if (!fs.existsSync(filePath)) return ''
   try {
     const content = fs.readFileSync(filePath, 'utf-8')
-    const lines = content.split('\n')
-    return lines.slice(-lineCount).join('\n').trim()
+    // Split by task headers, keeping the delimiter
+    const parts = content.split(/(?=### Iteration)/g)
+    // First part is header content before any tasks
+    const header = parts[0] || ''
+    const tasks = parts.slice(1)
+    if (tasks.length === 0) return ''
+    const lastTasks = tasks.slice(-taskCount)
+    return (header.trim() + '\n\n' + lastTasks.join('').trim()).trim()
   } catch {
     return ''
   }
@@ -174,7 +181,7 @@ export default class Run extends BaseCommand {
       }
 
       // Show prompt preview
-      const progressContent = readLastLines(DEFAULT_PROGRESS_FILE, 100)
+      const progressContent = readLastTasks(DEFAULT_PROGRESS_FILE, 3)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         stateFile: flags.stateFile,
@@ -251,7 +258,7 @@ export default class Run extends BaseCommand {
       logStream.write(iterHeader)
 
       const iterationStart = new Date().toISOString()
-      const progressContent = readLastLines(DEFAULT_PROGRESS_FILE, 100)
+      const progressContent = readLastTasks(DEFAULT_PROGRESS_FILE, 3)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         stateFile: flags.stateFile,
@@ -276,6 +283,11 @@ export default class Run extends BaseCommand {
         iterClaudeArgs.push('--fork-session', taskSessionId)
         console.log(pc.dim(`Forking session: ${taskSessionId.slice(0, 8)}...`))
       }
+
+      // Output the prompt being sent
+      console.log(pc.dim('--- Prompt ---'))
+      console.log(prompt)
+      console.log(pc.dim('--- End Prompt ---\n'))
 
       const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
 

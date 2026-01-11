@@ -249,10 +249,9 @@ export function buildIterationPrompt({ completionMarker, stateFile, progressFile
     let step = 1
 
     const progressSection = progressContent
-        ? `## Recent Progress (last 100 lines of ${progressFile})
-\`\`\`
-${progressContent}
-\`\`\``
+        ? `## Recent Progress (last 3 tasks from ${progressFile})
+
+${progressContent}`
         : `(Progress file ${progressFile} not found or empty)`
 
 
@@ -263,7 +262,9 @@ Review the state file and recent progress.
 
 state_file: @${stateFile}
 
-Steps:
+---
+
+## Steps
 
 ${step++}. ${focusedTaskId
         ? `**Work on Task #${focusedTaskId}** (you've been asked to focus on this one).`
@@ -277,6 +278,8 @@ ${skipCommit ? '' : `${step++}. Make a git commit.`}
 **ONE TASK PER ITERATION**
 
 When ALL tasks are done, Output: <promise>${completionMarker}</promise>
+
+---
 
 ${progressSection}
 `
