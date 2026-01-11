@@ -48,6 +48,20 @@ Install plugins from this marketplace:
 
 I do find myself editing `~/.claude/settings.json` a lot to directly modify settings around plugins.
 
+### Shell Completions
+
+Generate shell completions for tab completion support:
+
+```bash
+# Bash - add to ~/.bashrc
+tt completion >> ~/.bashrc
+
+# Zsh - add to ~/.zshrc
+tt completion >> ~/.zshrc
+
+# Fish
+tt completion > ~/.config/fish/completions/tt.fish
+```
 
 ## Development
 

@@ -61,6 +61,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     .help()
     .wrap(yargs().terminalWidth())
     .showHelpOnFail(true)
+    .completion('completion', 'Generate shell completion script')
     .fail((msg, err, yargs) => {
       if (msg) {
         yargs.showHelp()
