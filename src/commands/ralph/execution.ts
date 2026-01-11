@@ -121,7 +121,7 @@ export async function runIteration(
     logStream?: WriteStream,
 ): Promise<IterationResult> {
     // Pass task context as system prompt, use simple trigger as user message
-    const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, '--append-system-prompt', prompt, 'go']
+    const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, '--append-system-prompt', prompt, 'continue']
 
     let output = ''
     let lineBuffer = ''

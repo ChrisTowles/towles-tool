@@ -33,6 +33,13 @@ interface JournalEntry {
   uuid?: string
 }
 
+interface ToolData {
+  name: string
+  count: number
+  inputTokens: number
+  outputTokens: number
+}
+
 interface TreemapNode {
   name: string
   value?: number
@@ -48,6 +55,8 @@ interface TreemapNode {
   // Waste metrics
   repeatedReads?: number
   modelEfficiency?: number // Opus tokens / total tokens
+  // Tool data
+  tools?: ToolData[]
 }
 
 /**
