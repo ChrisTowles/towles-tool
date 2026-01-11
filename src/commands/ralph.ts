@@ -1056,6 +1056,18 @@ const runCommand = defineCommand({
 
             const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
 
+            // Reload state from disk to pick up changes made by child claude process
+            // (e.g., `tt ralph task done <id>` marks tasks complete)
+            const freshState = loadState(args.stateFile)
+            if (freshState) {
+                // Adopt child's task changes, keep parent-managed fields
+                state.tasks = freshState.tasks
+                // Keep session ID from child if it set one
+                if (freshState.sessionId) {
+                    state.sessionId = freshState.sessionId
+                }
+            }
+
             // Store session ID for future iterations (only if resume mode enabled)
             if (args.resume && sessionId && !state.sessionId) {
                 state.sessionId = sessionId
@@ -1649,6 +1661,19 @@ const main = defineCommand({
 
                 const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
 
+                // Reload state from disk to pick up changes made by child claude process
+                // (e.g., `tt ralph task done <id>` marks tasks complete)
+                const freshState = loadState(validatedArgs.stateFile)
+                if (freshState) {
+                    // Adopt child's task changes, keep parent-managed fields
+                    state.tasks = freshState.tasks
+                    // Keep session ID from child if it set one
+                    if (freshState.sessionId) {
+                        state.sessionId = freshState.sessionId
+                    }
+                }
+
+                // Store session ID for future iterations (only if resume mode enabled)
                 if (validatedArgs.resume && sessionId && !state.sessionId) {
                     state.sessionId = sessionId
                     console.log(chalk.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
