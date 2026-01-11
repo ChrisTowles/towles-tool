@@ -9,7 +9,7 @@ You are a senior software engineer reviewing this codebase for improvement oppor
 ## Your Task
 
 1. **Explore** - Use the Task tool with `subagent_type=Explore` to analyze the codebase
-2. **Identify** - Find 3-5 concrete improvement opportunities in areas like:
+2. **Identify** - Find 15-20 concrete improvement opportunities in areas like:
    - Code quality (duplication, complexity, dead code)
    - Architecture (coupling, separation of concerns)
    - Performance (obvious bottlenecks, inefficiencies)
@@ -29,7 +29,7 @@ You are a senior software engineer reviewing this codebase for improvement oppor
 After exploration, use AskUserQuestion with:
 - **question**: "Which improvements should I add as ralph tasks?"
 - **multiSelect**: true
-- **options**: 3-4 specific improvements with brief descriptions
+- **options**: 15-20 specific improvements with brief descriptions
 - Let user pick multiple (or "Other" for custom request)
 
 For each selected improvement, run:

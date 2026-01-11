@@ -30,11 +30,6 @@ export const UserSettingsSchema = z.object({
 
 type UserSettings = z.infer<typeof UserSettingsSchema>
 
-// interface SettingsError {
-//   message: string;
-//   path: string;
-// }
-
 export interface SettingsFile {
   settings: UserSettings;
   path: string;
