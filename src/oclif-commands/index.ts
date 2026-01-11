@@ -45,4 +45,6 @@ export default {
   'observe:report': ObserveReport,
   'observe:flamegraph': ObserveFlamegraph,
   'observe:session': ObserveSession,
+  // Aliases
+  flame: ObserveFlamegraph,
 }
