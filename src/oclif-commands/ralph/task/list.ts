@@ -15,6 +15,7 @@ export default class TaskList extends BaseCommand {
   static override examples = [
     '<%= config.bin %> ralph task list',
     '<%= config.bin %> ralph task list --format markdown',
+    '<%= config.bin %> ralph task list --label backend',
   ]
 
   static override flags = {
@@ -30,6 +31,10 @@ export default class TaskList extends BaseCommand {
       default: 'default',
       options: ['default', 'markdown'],
     }),
+    label: Flags.string({
+      char: 'l',
+      description: 'Filter tasks by label',
+    }),
   }
 
   async run(): Promise<void> {
@@ -42,27 +47,39 @@ export default class TaskList extends BaseCommand {
       return
     }
 
-    if (state.tasks.length === 0) {
+    // Filter by label if specified
+    let tasks = state.tasks
+    if (flags.label) {
+      tasks = tasks.filter(t => t.label === flags.label)
+      if (tasks.length === 0) {
+        console.log(pc.yellow(`No tasks with label: ${flags.label}`))
+        return
+      }
+    }
+
+    if (tasks.length === 0) {
       console.log(pc.yellow('No tasks in state file.'))
       console.log(pc.dim('Use: tt ralph task add "description"'))
       return
     }
 
     if (flags.format === 'markdown') {
-      console.log(formatTasksAsMarkdown(state.tasks))
+      console.log(formatTasksAsMarkdown(tasks))
       return
     }
 
     // Default format output
-    console.log(pc.bold('\nTasks:\n'))
-    for (const task of state.tasks) {
+    const header = flags.label ? `Tasks (label: ${flags.label})` : 'Tasks'
+    console.log(pc.bold(`\n${header}:\n`))
+    for (const task of tasks) {
       const statusColor = task.status === 'done' ? pc.green
         : task.status === 'in_progress' ? pc.yellow
         : pc.dim
       const icon = task.status === 'done' ? '✓'
         : task.status === 'in_progress' ? '→'
         : '○'
-      console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`))
+      const labelSuffix = task.label && !flags.label ? pc.dim(` [${task.label}]`) : ''
+      console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`) + labelSuffix)
     }
     console.log()
   }

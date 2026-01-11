@@ -255,6 +255,9 @@ ${progressContent}
 \`\`\``
         : `(Progress file ${progressFile} not found or empty)`
 
+
+    //IMPORTANT Always tell it to APPEND to progress file, save a lot of tokens by not reading it to update.
+
     return `
 Review the state file and recent progress.
 
@@ -272,7 +275,8 @@ ${step++}. ${focusedTaskId
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
 ${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`
-${step++}. Update @${progressFile} with what you did.
+
+${step++}. Append @${progressFile} with what you did.
 ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**

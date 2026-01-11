@@ -51,6 +51,7 @@ export default class Run extends BaseCommand {
     '<%= config.bin %> ralph run --noResume',
     '<%= config.bin %> ralph run --dryRun',
     '<%= config.bin %> ralph run --addIterations 5',
+    '<%= config.bin %> ralph run --label backend',
   ]
 
   static override flags = {
@@ -98,6 +99,10 @@ export default class Run extends BaseCommand {
       description: 'Completion marker',
       default: DEFAULT_COMPLETION_MARKER,
     }),
+    label: Flags.string({
+      char: 'l',
+      description: 'Only run tasks with this label',
+    }),
   }
 
   async run(): Promise<void> {
@@ -121,9 +126,15 @@ export default class Run extends BaseCommand {
       console.log(pc.cyan(`Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`))
     }
 
-    const pendingTasks = state.tasks.filter(t => t.status !== 'done')
+    // Filter by label if specified
+    const labelFilter = flags.label
+    let pendingTasks = state.tasks.filter(t => t.status !== 'done')
+    if (labelFilter) {
+      pendingTasks = pendingTasks.filter(t => t.label === labelFilter)
+    }
     if (pendingTasks.length === 0) {
-      console.log(pc.green('✅ All tasks are done!'))
+      const msg = labelFilter ? `All tasks with label '${labelFilter}' are done!` : 'All tasks are done!'
+      console.log(pc.green(`✅ ${msg}`))
       return
     }
 
@@ -144,6 +155,7 @@ export default class Run extends BaseCommand {
       console.log(pc.bold('\n=== DRY RUN ===\n'))
       console.log(pc.cyan('Config:'))
       console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`)
+      console.log(`  Label filter: ${labelFilter || '(none)'}`)
       console.log(`  Max iterations: ${maxIterations}`)
       console.log(`  State file: ${flags.stateFile}`)
       console.log(`  Log file: ${flags.logFile}`)
@@ -186,6 +198,9 @@ export default class Run extends BaseCommand {
 
     console.log(pc.bold(pc.blue('\nRalph Loop Starting\n')))
     console.log(pc.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
+    if (labelFilter) {
+      console.log(pc.dim(`Label filter: ${labelFilter}`))
+    }
     console.log(pc.dim(`Max iterations: ${maxIterations}`))
     console.log(pc.dim(`Log file: ${flags.logFile}`))
     console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`))

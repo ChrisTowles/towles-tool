@@ -23,6 +23,7 @@ export default class TaskAdd extends BaseCommand {
     '<%= config.bin %> ralph task add "Fix the login bug"',
     '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
     '<%= config.bin %> ralph task add "Implement feature X" --findMarker RALPH_MARKER_abc123',
+    '<%= config.bin %> ralph task add "Backend refactor" --label backend',
   ]
 
   static override args = {
@@ -45,6 +46,10 @@ export default class TaskAdd extends BaseCommand {
     findMarker: Flags.string({
       char: 'm',
       description: 'Find session by full marker (e.g., RALPH_MARKER_abc123)',
+    }),
+    label: Flags.string({
+      char: 'l',
+      description: 'Label for grouping/filtering tasks',
     }),
   }
 
@@ -79,10 +84,13 @@ export default class TaskAdd extends BaseCommand {
       state = createInitialState(DEFAULT_MAX_ITERATIONS)
     }
 
-    const newTask = addTaskToState(state, description, sessionId, marker)
+    const newTask = addTaskToState(state, description, sessionId, marker, flags.label)
     saveState(state, flags.stateFile)
 
     console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+    if (flags.label) {
+      console.log(pc.cyan(`  Label: ${flags.label}`))
+    }
     if (sessionId) {
       console.log(pc.cyan(`  Session: ${sessionId.slice(0, 8)}...`))
     }
