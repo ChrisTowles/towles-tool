@@ -1,5 +1,5 @@
 import * as fs from 'node:fs'
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { defineCommand } from 'citty'
 import {
     DEFAULT_STATE_FILE,
@@ -101,20 +101,20 @@ export const runCommand = defineCommand({
         let state = loadState(args.stateFile)
 
         if (!state) {
-            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
-            console.error(chalk.dim('Use: tt ralph task add "description"'))
+            console.error(pc.red(`Error: No state file found at: ${args.stateFile}`))
+            console.error(pc.dim('Use: tt ralph task add "description"'))
             process.exit(2)
         }
 
         // Handle --addIterations: extend max from current iteration
         if (addIterations !== null) {
             maxIterations = state.iteration + addIterations
-            console.log(chalk.cyan(`Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`))
+            console.log(pc.cyan(`Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`))
         }
 
         const pendingTasks = state.tasks.filter(t => t.status !== 'done')
         if (pendingTasks.length === 0) {
-            console.log(chalk.green('✅ All tasks are done!'))
+            console.log(pc.green('✅ All tasks are done!'))
             process.exit(0)
         }
 
@@ -122,20 +122,20 @@ export const runCommand = defineCommand({
         if (focusedTaskId !== null) {
             const focusedTask = state.tasks.find(t => t.id === focusedTaskId)
             if (!focusedTask) {
-                console.error(chalk.red(`Error: Task #${focusedTaskId} not found`))
-                console.error(chalk.dim('Use: tt ralph task list'))
+                console.error(pc.red(`Error: Task #${focusedTaskId} not found`))
+                console.error(pc.dim('Use: tt ralph task list'))
                 process.exit(2)
             }
             if (focusedTask.status === 'done') {
-                console.log(chalk.yellow(`Task #${focusedTaskId} is already done.`))
+                console.log(pc.yellow(`Task #${focusedTaskId} is already done.`))
                 process.exit(0)
             }
         }
 
         // Dry run mode
         if (args.dryRun) {
-            console.log(chalk.bold('\n=== DRY RUN ===\n'))
-            console.log(chalk.cyan('Config:'))
+            console.log(pc.bold('\n=== DRY RUN ===\n'))
+            console.log(pc.cyan('Config:'))
             console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`)
             console.log(`  Max iterations: ${maxIterations}`)
             console.log(`  State file: ${args.stateFile}`)
@@ -147,21 +147,21 @@ export const runCommand = defineCommand({
             console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
             console.log(`  Pending tasks: ${pendingTasks.length}`)
 
-            console.log(chalk.cyan('\nTasks:'))
+            console.log(pc.cyan('\nTasks:'))
             for (const t of state.tasks) {
                 const icon = t.status === 'done' ? '✓' : t.status === 'in_progress' ? '→' : '○'
-                const focus = focusedTaskId === t.id ? chalk.cyan(' ← FOCUS') : ''
+                const focus = focusedTaskId === t.id ? pc.cyan(' ← FOCUS') : ''
                 console.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`)
             }
 
-            console.log(chalk.bold('\n=== END DRY RUN ===\n'))
+            console.log(pc.bold('\n=== END DRY RUN ===\n'))
             process.exit(0)
         }
 
         // Check claude CLI is available
         if (!await checkClaudeCli()) {
-            console.error(chalk.red('Error: claude CLI not found in PATH'))
-            console.error(chalk.yellow('Install Claude Code: https://docs.anthropic.com/en/docs/claude-code'))
+            console.error(pc.red('Error: claude CLI not found in PATH'))
+            console.error(pc.yellow('Install Claude Code: https://docs.anthropic.com/en/docs/claude-code'))
             process.exit(2)
         }
 
@@ -179,13 +179,13 @@ export const runCommand = defineCommand({
         logStream.write(`Ralph Loop Started: ${new Date().toISOString()}\n`)
         logStream.write(`${'='.repeat(60)}\n\n`)
 
-        console.log(chalk.bold.blue('\n🔄 Ralph Loop Starting\n'))
-        console.log(chalk.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
-        console.log(chalk.dim(`Max iterations: ${maxIterations}`))
-        console.log(chalk.dim(`Log file: ${args.logFile}`))
-        console.log(chalk.dim(`Auto-commit: ${args.autoCommit}`))
-        console.log(chalk.dim(`Resume mode: ${args.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
-        console.log(chalk.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
+        console.log(pc.bold(pc.blue('\nRalph Loop Starting\n')))
+        console.log(pc.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
+        console.log(pc.dim(`Max iterations: ${maxIterations}`))
+        console.log(pc.dim(`Log file: ${args.logFile}`))
+        console.log(pc.dim(`Auto-commit: ${args.autoCommit}`))
+        console.log(pc.dim(`Resume mode: ${args.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
+        console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
         console.log()
 
         logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}\n`)
@@ -201,7 +201,7 @@ export const runCommand = defineCommand({
             }
             interrupted = true
             const msg = '\n\nInterrupted. Press Ctrl+C again to force exit.\n'
-            console.log(chalk.yellow(msg))
+            console.log(pc.yellow(msg))
             logStream.write(msg)
             state.status = 'error'
             saveState(state, args.stateFile)
@@ -212,7 +212,7 @@ export const runCommand = defineCommand({
             state.iteration++
 
             const iterHeader = `\n━━━ Iteration ${state.iteration}/${maxIterations} ━━━\n`
-            console.log(chalk.bold.cyan(iterHeader))
+            console.log(pc.bold(pc.cyan(iterHeader)))
             logStream.write(iterHeader)
 
             const iterationStart = new Date().toISOString()
@@ -250,7 +250,7 @@ export const runCommand = defineCommand({
             // Store session ID for future iterations (only if resume mode enabled)
             if (args.resume && sessionId && !state.sessionId) {
                 state.sessionId = sessionId
-                console.log(chalk.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
+                console.log(pc.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
             }
 
             const iterationEnd = new Date().toISOString()
@@ -280,9 +280,9 @@ export const runCommand = defineCommand({
             // Log iteration summary
             const contextInfo = contextUsedPercent !== undefined ? ` | Context: ${contextUsedPercent}%` : ''
             const summaryMsg = `\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? 'yes' : 'no'}\n`
-            console.log(chalk.dim(`\n━━━ Iteration ${state.iteration} Summary ━━━`))
-            console.log(chalk.dim(`Duration: ${durationHuman}${contextInfo}`))
-            console.log(chalk.dim(`Marker found: ${markerFound ? chalk.green('yes') : chalk.yellow('no')}`))
+            console.log(pc.dim(`\n━━━ Iteration ${state.iteration} Summary ━━━`))
+            console.log(pc.dim(`Duration: ${durationHuman}${contextInfo}`))
+            console.log(pc.dim(`Marker found: ${markerFound ? pc.green('yes') : pc.yellow('no')}`))
             logStream.write(summaryMsg)
 
             // Check completion
@@ -290,7 +290,7 @@ export const runCommand = defineCommand({
                 state.status = 'completed'
                 saveState(state, args.stateFile)
                 const doneMsg = `\n✅ Task completed after ${state.iteration} iteration(s)\n`
-                console.log(chalk.bold.green(doneMsg))
+                console.log(pc.bold(pc.green(doneMsg)))
                 logStream.write(doneMsg)
                 logStream.end()
                 process.exit(0)
@@ -302,8 +302,8 @@ export const runCommand = defineCommand({
             state.status = 'max_iterations_reached'
             saveState(state, args.stateFile)
             const maxMsg = `\n⚠️  Max iterations (${maxIterations}) reached without completion\n`
-            console.log(chalk.bold.yellow(maxMsg))
-            console.log(chalk.dim(`State saved to: ${args.stateFile}`))
+            console.log(pc.bold(pc.yellow(maxMsg)))
+            console.log(pc.dim(`State saved to: ${args.stateFile}`))
             logStream.write(maxMsg)
             logStream.end()
             process.exit(1)

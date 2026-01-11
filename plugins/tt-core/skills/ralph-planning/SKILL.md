@@ -13,11 +13,12 @@ For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.m
 
 ```bash
 # Task management
-tt ralph task add "description"       # Add task
-tt ralph task list                    # View tasks (default format)
-tt ralph task list --format markdown  # View tasks as markdown
-tt ralph task done 1                  # Mark task #1 complete
-tt ralph task remove 1                # Remove task #1
+tt ralph task add "description"               # Add task
+tt ralph task add "desc" --sessionId <id>     # Add task with session ID for resume
+tt ralph task list                            # View tasks (default format)
+tt ralph task list --format markdown          # View tasks as markdown
+tt ralph task done 1                          # Mark task #1 complete
+tt ralph task remove 1                        # Remove task #1
 
 # Plan view
 tt ralph plan                         # Show plan with mermaid graph
@@ -25,9 +26,11 @@ tt ralph plan --format json           # Show plan as JSON
 tt ralph plan --copy                  # Show plan and copy to clipboard
 
 # Execution
-tt ralph run                          # Execute (no auto-commit)
-tt ralph run --autoCommit             # Execute with commits
+tt ralph run                          # Execute (auto-commits by default)
+tt ralph run --no-autoCommit          # Execute without auto-commits
 tt ralph run --maxIterations 10       # Safety limit
+tt ralph run --taskId 5               # Focus on specific task (auto-resumes if task has sessionId)
+tt ralph run --resume                 # Resume using state's session ID
 
 # Cleanup
 tt ralph clear                        # Clean up files

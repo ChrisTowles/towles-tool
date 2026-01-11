@@ -1,5 +1,5 @@
 import * as fs from 'node:fs'
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { z } from 'zod'
 
 // ============================================================================
@@ -26,6 +26,7 @@ const RalphTaskSchema = z.object({
     status: TaskStatusSchema,
     addedAt: z.string(),
     completedAt: z.string().optional(),
+    sessionId: z.string().optional(),
 })
 
 const RalphStateSchema = z.object({
@@ -101,7 +102,7 @@ export function validateArgs(args: unknown): RalphArgs {
     const result = ArgsSchema.safeParse(filtered)
     if (!result.success) {
         const errors = result.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n')
-        console.error(chalk.red('Invalid arguments:\n' + errors))
+        console.error(pc.red('Invalid arguments:\n' + errors))
         process.exit(2)
     }
     return result.data
@@ -153,18 +154,18 @@ export function loadState(stateFile: string): RalphState | null {
         const result = RalphStateSchema.safeParse(parsed)
         if (!result.success) {
             const errors = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')
-            console.warn(chalk.yellow(`Warning: Invalid state file ${stateFile}: ${errors}`))
+            console.warn(pc.yellow(`Warning: Invalid state file ${stateFile}: ${errors}`))
             return null
         }
         return result.data
     }
     catch (err) {
-        console.warn(chalk.yellow(`Warning: Failed to load state file ${stateFile}: ${err}`))
+        console.warn(pc.yellow(`Warning: Failed to load state file ${stateFile}: ${err}`))
         return null
     }
 }
 
-export function addTaskToState(state: RalphState, description: string): RalphTask {
+export function addTaskToState(state: RalphState, description: string, sessionId?: string): RalphTask {
     const nextId = state.tasks.length > 0
         ? Math.max(...state.tasks.map(t => t.id)) + 1
         : 1
@@ -174,6 +175,7 @@ export function addTaskToState(state: RalphState, description: string): RalphTas
         description,
         status: 'pending',
         addedAt: new Date().toISOString(),
+        ...(sessionId && { sessionId }),
     }
 
     state.tasks.push(newTask)

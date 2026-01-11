@@ -16,7 +16,7 @@
  * See also: /tt:plan command for interactive task planning
  */
 
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { defineCommand, runMain } from 'citty'
 
 // Import types
@@ -135,7 +135,7 @@ const main = defineCommand({
     },
     run() {
         // No subcommand specified - show help
-        console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
+        console.log(pc.bold('Ralph - Autonomous Claude Code Runner\n'))
         console.log('Commands:')
         console.log('  tt ralph task add "..."     Add a task')
         console.log('  tt ralph task list          List all tasks')
@@ -145,7 +145,7 @@ const main = defineCommand({
         console.log('  tt ralph run --resume       Start with session continuity')
         console.log('  tt ralph plan               Show plan summary with graph')
         console.log()
-        console.log(chalk.dim('Use "tt ralph <command> --help" for command options.'))
+        console.log(pc.dim('Use "tt ralph <command> --help" for command options.'))
     },
 })
 

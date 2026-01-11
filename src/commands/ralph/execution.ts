@@ -1,6 +1,6 @@
 import type { WriteStream } from 'node:fs'
 import { spawn } from 'node:child_process'
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { exec } from 'tinyexec'
 import { CLAUDE_DEFAULT_ARGS } from './state'
 
@@ -194,7 +194,7 @@ export async function runIteration(
         })
 
         proc.on('error', (err: Error) => {
-            console.error(chalk.red(`Error running claude: ${err}`))
+            console.error(pc.red(`Error running claude: ${err}`))
             logStream?.write(`Error running claude: ${err}\n`)
             resolve({ output, exitCode: 1 })
         })

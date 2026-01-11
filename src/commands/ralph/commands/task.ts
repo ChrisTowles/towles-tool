@@ -1,4 +1,4 @@
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { defineCommand } from 'citty'
 import {
     DEFAULT_STATE_FILE,
@@ -50,7 +50,7 @@ export const taskAddCommand = defineCommand({
         const description = String(args.description).trim()
 
         if (!description || description.length < 3) {
-            console.error(chalk.red('Error: Task description too short (min 3 chars)'))
+            console.error(pc.red('Error: Task description too short (min 3 chars)'))
             process.exit(2)
         }
 
@@ -64,9 +64,9 @@ export const taskAddCommand = defineCommand({
         const newTask = addTaskToState(state, description)
         saveState(state, args.stateFile)
 
-        console.log(chalk.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
-        console.log(chalk.dim(`State saved to: ${args.stateFile}`))
-        console.log(chalk.dim(`Total tasks: ${state.tasks.length}`))
+        console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+        console.log(pc.dim(`State saved to: ${args.stateFile}`))
+        console.log(pc.dim(`Total tasks: ${state.tasks.length}`))
     },
 })
 
@@ -92,13 +92,13 @@ export const taskListCommand = defineCommand({
         const state = loadState(args.stateFile)
 
         if (!state) {
-            console.log(chalk.yellow(`No state file found at: ${args.stateFile}`))
+            console.log(pc.yellow(`No state file found at: ${args.stateFile}`))
             process.exit(0)
         }
 
         if (state.tasks.length === 0) {
-            console.log(chalk.yellow('No tasks in state file.'))
-            console.log(chalk.dim(`Use: tt ralph task add "description"`))
+            console.log(pc.yellow('No tasks in state file.'))
+            console.log(pc.dim(`Use: tt ralph task add "description"`))
             process.exit(0)
         }
 
@@ -108,11 +108,11 @@ export const taskListCommand = defineCommand({
         }
 
         // Default format output
-        console.log(chalk.bold('\nTasks:\n'))
+        console.log(pc.bold('\nTasks:\n'))
         for (const task of state.tasks) {
-            const statusColor = task.status === 'done' ? chalk.green
-                : task.status === 'in_progress' ? chalk.yellow
-                : chalk.dim
+            const statusColor = task.status === 'done' ? pc.green
+                : task.status === 'in_progress' ? pc.yellow
+                : pc.dim
             const icon = task.status === 'done' ? '✓'
                 : task.status === 'in_progress' ? '→'
                 : '○'
@@ -143,22 +143,22 @@ export const taskRemoveCommand = defineCommand({
         const taskId = Number.parseInt(String(args.id), 10)
 
         if (Number.isNaN(taskId) || taskId < 1) {
-            console.error(chalk.red('Error: Invalid task ID'))
+            console.error(pc.red('Error: Invalid task ID'))
             process.exit(2)
         }
 
         const state = loadState(args.stateFile)
 
         if (!state) {
-            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
+            console.error(pc.red(`Error: No state file found at: ${args.stateFile}`))
             process.exit(2)
         }
 
         const taskIndex = state.tasks.findIndex(t => t.id === taskId)
 
         if (taskIndex === -1) {
-            console.error(chalk.red(`Error: Task #${taskId} not found`))
-            console.error(chalk.dim('Use: tt ralph task list'))
+            console.error(pc.red(`Error: Task #${taskId} not found`))
+            console.error(pc.dim('Use: tt ralph task list'))
             process.exit(2)
         }
 
@@ -166,8 +166,8 @@ export const taskRemoveCommand = defineCommand({
         state.tasks.splice(taskIndex, 1)
         saveState(state, args.stateFile)
 
-        console.log(chalk.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
-        console.log(chalk.dim(`Remaining tasks: ${state.tasks.length}`))
+        console.log(pc.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
+        console.log(pc.dim(`Remaining tasks: ${state.tasks.length}`))
     },
 })
 
@@ -192,27 +192,27 @@ export const taskDoneCommand = defineCommand({
         const taskId = Number.parseInt(String(args.id), 10)
 
         if (Number.isNaN(taskId) || taskId < 1) {
-            console.error(chalk.red('Error: Invalid task ID'))
+            console.error(pc.red('Error: Invalid task ID'))
             process.exit(2)
         }
 
         const state = loadState(args.stateFile)
 
         if (!state) {
-            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
+            console.error(pc.red(`Error: No state file found at: ${args.stateFile}`))
             process.exit(2)
         }
 
         const task = state.tasks.find(t => t.id === taskId)
 
         if (!task) {
-            console.error(chalk.red(`Error: Task #${taskId} not found`))
-            console.error(chalk.dim('Use: tt ralph task list'))
+            console.error(pc.red(`Error: Task #${taskId} not found`))
+            console.error(pc.dim('Use: tt ralph task list'))
             process.exit(2)
         }
 
         if (task.status === 'done') {
-            console.log(chalk.yellow(`Task #${taskId} is already done.`))
+            console.log(pc.yellow(`Task #${taskId} is already done.`))
             process.exit(0)
         }
 
@@ -220,13 +220,13 @@ export const taskDoneCommand = defineCommand({
         task.completedAt = new Date().toISOString()
         saveState(state, args.stateFile)
 
-        console.log(chalk.green(`✓ Marked task #${taskId} as done: ${task.description}`))
+        console.log(pc.green(`✓ Marked task #${taskId} as done: ${task.description}`))
 
         const remaining = state.tasks.filter(t => t.status !== 'done').length
         if (remaining === 0) {
-            console.log(chalk.bold.green('🎉 All tasks complete!'))
+            console.log(pc.bold(pc.green('All tasks complete!')))
         } else {
-            console.log(chalk.dim(`Remaining tasks: ${remaining}`))
+            console.log(pc.dim(`Remaining tasks: ${remaining}`))
         }
     },
 })

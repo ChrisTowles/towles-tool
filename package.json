@@ -69,6 +69,7 @@
     "fzf": "catalog:cli",
     "luxon": "catalog:cli",
     "neverthrow": "catalog:cli",
+    "picocolors": "^1.1.1",
     "prompts": "catalog:cli",
     "strip-ansi": "catalog:cli",
     "tinyexec": "catalog:cli",

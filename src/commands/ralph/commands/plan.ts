@@ -1,4 +1,4 @@
-import chalk from 'chalk'
+import pc from 'picocolors'
 import { defineCommand } from 'citty'
 import { DEFAULT_STATE_FILE, loadState } from '../state'
 import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from '../formatter'
@@ -43,13 +43,13 @@ export const planCommand = defineCommand({
         const state = loadState(args.stateFile)
 
         if (!state) {
-            console.log(chalk.yellow(`No state file found at: ${args.stateFile}`))
+            console.log(pc.yellow(`No state file found at: ${args.stateFile}`))
             process.exit(0)
         }
 
         if (state.tasks.length === 0) {
-            console.log(chalk.yellow('No tasks in state file.'))
-            console.log(chalk.dim(`Use: tt ralph task add "description"`))
+            console.log(pc.yellow('No tasks in state file.'))
+            console.log(pc.dim(`Use: tt ralph task add "description"`))
             process.exit(0)
         }
 
@@ -65,9 +65,9 @@ export const planCommand = defineCommand({
 
         if (args.copy) {
             if (copyToClipboard(output)) {
-                console.log(chalk.green('✓ Copied to clipboard'))
+                console.log(pc.green('✓ Copied to clipboard'))
             } else {
-                console.log(chalk.yellow('⚠ Could not copy to clipboard (xclip/xsel not installed?)'))
+                console.log(pc.yellow('⚠ Could not copy to clipboard (xclip/xsel not installed?)'))
             }
         }
     },

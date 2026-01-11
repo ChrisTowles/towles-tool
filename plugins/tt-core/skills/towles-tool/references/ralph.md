@@ -177,7 +177,8 @@ After 10 iterations if not complete:
       "id": 2,
       "description": "Write validation tests",
       "status": "in_progress",
-      "addedAt": "2025-01-10T12:00:00Z"
+      "addedAt": "2025-01-10T12:00:00Z",
+      "sessionId": "abc123..."
     },
     {
       "id": 3,
@@ -198,6 +199,17 @@ Task statuses:
 - `pending` - Not started (○)
 - `in_progress` - Currently working (→)
 - `done` - Completed (✓)
+- `hold` - On hold (⏸)
+- `cancelled` - Cancelled (✗)
+
+### Task-Level Session IDs
+
+Tasks can have their own `sessionId` for resumable execution:
+```bash
+tt ralph task add "Complex task" --sessionId abc123
+```
+
+When running with `--taskId`, the run command auto-resumes using the task's sessionId if present.
 
 ### Viewing Tasks
 

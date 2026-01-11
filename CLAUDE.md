@@ -121,7 +121,7 @@ tt ralph plan                       # Show plan with mermaid graph
 
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
-- When modifying CLI commands (`src/commands/`), also update the corresponding skill in `plugins/tt-core/skills/`
+- When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)

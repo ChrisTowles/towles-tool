@@ -63,11 +63,16 @@ Use `AskUserQuestion` to confirm or adjust.
 Once approved, clear any old tasks and add new ones:
 
 ```bash
-tt ralph --clear  # Only if starting fresh
-tt ralph --addTask "Task 1: [full description with context and success criteria]"
-tt ralph --addTask "Task 2: [full description with context and success criteria]"
+tt ralph clear  # Only if starting fresh
+tt ralph task add "Task 1: [full description with context and success criteria]"
+tt ralph task add "Task 2: [full description with context and success criteria]"
 # ... continue for all tasks
-tt ralph --showPlan
+tt ralph plan
+```
+
+For resumable tasks, attach a session ID:
+```bash
+tt ralph task add "Task description" --sessionId <session-id>
 ```
 
 ## Phase 6: Instruct User
@@ -76,32 +81,41 @@ Tell user:
 ```
 Tasks ready! Start autonomous execution:
 
-  tt ralph --run --maxIterations 20
+  tt ralph run --maxIterations 20
 
 Or with auto-commits after each task:
 
-  tt ralph --run --autoCommit --maxIterations 20
+  tt ralph run --maxIterations 20
+
+To run without auto-commits:
+
+  tt ralph run --no-autoCommit --maxIterations 20
 
 Monitor progress:
-  tt ralph --showPlan                    # Full overview with mermaid graph
-  tt ralph --showPlan --copy             # Copy to clipboard
-  tt ralph --listTasks --format markdown # Task list with checkboxes
+  tt ralph plan                       # Full overview with mermaid graph
+  tt ralph plan --copy                # Copy to clipboard
+  tt ralph task list --format markdown # Task list with checkboxes
 ```
 
 ## Task Examples
 
 **Good:**
 ```bash
-tt ralph --addTask "Add UserProfile type to src/types/user.ts with id: string, email: string, name: string, createdAt: Date fields. Success: typecheck passes"
-tt ralph --addTask "Create getUserById(id: string) in src/services/user.ts following patterns in src/services/post.ts. Success: function exists, typecheck passes"
-tt ralph --addTask "Add unit tests for getUserById in src/services/user.test.ts covering: valid id returns user, invalid id throws, missing id returns null. Success: pnpm test passes"
+tt ralph task add "Add UserProfile type to src/types/user.ts with id: string, email: string, name: string, createdAt: Date fields. Success: typecheck passes"
+tt ralph task add "Create getUserById(id: string) in src/services/user.ts following patterns in src/services/post.ts. Success: function exists, typecheck passes"
+tt ralph task add "Add unit tests for getUserById in src/services/user.test.ts covering: valid id returns user, invalid id throws, missing id returns null. Success: pnpm test passes"
+```
+
+**With session ID for resumable execution:**
+```bash
+tt ralph task add "Complex task requiring multiple sessions" --sessionId abc123
 ```
 
 **Bad:**
 ```bash
-tt ralph --addTask "Implement user feature"           # Too vague
-tt ralph --addTask "Add types, service, and tests"   # Multiple things
-tt ralph --addTask "Make it work"                    # No criteria
+tt ralph task add "Implement user feature"           # Too vague
+tt ralph task add "Add types, service, and tests"   # Multiple things
+tt ralph task add "Make it work"                    # No criteria
 ```
 
 ## Optional: GitHub Issue
