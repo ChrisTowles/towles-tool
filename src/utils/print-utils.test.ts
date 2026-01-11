@@ -10,7 +10,9 @@ describe('print-utils', () => {
 
   beforeEach(() => {
     inspectSpy = spyOn(util, 'inspect').mockReturnValue('mocked-inspect-output')
+    // @ts-expect-error - consola LogFn type requires 'raw' property but mock works fine at runtime
     consolaLogSpy = spyOn(consola, 'log').mockImplementation(() => {})
+    // @ts-expect-error - consola LogFn type requires 'raw' property but mock works fine at runtime
     consolaDebugSpy = spyOn(consola, 'debug').mockImplementation(() => {})
   })
 
