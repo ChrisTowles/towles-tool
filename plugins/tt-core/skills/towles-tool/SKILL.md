@@ -115,7 +115,7 @@ tt ralph --dryRun           # Preview config without running
 | `--autoCommit` | Git commit after each task |
 | `--maxIterations N` | Safety limit (default: 10) |
 | `--taskId N` | Focus on specific task |
-| `--resume` | Continue with session context |
+| `--noFork` | Don't fork from prior session (start fresh) |
 
 ### Files Created
 

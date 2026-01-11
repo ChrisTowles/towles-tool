@@ -110,8 +110,8 @@ When using `tt ralph` for autonomous task execution:
 
 The `--findMarker` flag searches ~/.claude for the session containing the marker, attaches the session ID to the task, and stores the full marker.
 
-- **Auto-resume is ON by default** - ralph automatically resumes from task's sessionId
-- Use `--noResume` only when you want a fresh start (rare)
+- **Session forking is ON by default** - ralph forks from task's sessionId
+- Use `--noFork` only when you want a fresh start (rare)
 - Session IDs are stored per-task and persist across runs
 
 ```bash
@@ -127,9 +127,9 @@ tt ralph task done 1                                 # Mark task #1 complete
 tt ralph task remove 1                               # Remove task #1
 
 # Execution
-tt ralph run                        # Run (auto-commits, auto-resumes by default)
+tt ralph run                        # Run (auto-commits, forks session by default)
 tt ralph run --no-autoCommit        # Run without auto-commits
-tt ralph run --noResume             # Start fresh session (no resume)
+tt ralph run --noFork               # Start fresh session (no fork)
 
 # Plan
 tt ralph plan                       # Show plan with mermaid graph

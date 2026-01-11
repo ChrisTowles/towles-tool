@@ -48,7 +48,7 @@ export default class Run extends BaseCommand {
     '<%= config.bin %> ralph run --maxIterations 20',
     '<%= config.bin %> ralph run --taskId 5',
     '<%= config.bin %> ralph run --no-autoCommit',
-    '<%= config.bin %> ralph run --noResume',
+    '<%= config.bin %> ralph run --noFork',
     '<%= config.bin %> ralph run --dryRun',
     '<%= config.bin %> ralph run --addIterations 5',
     '<%= config.bin %> ralph run --label backend',
@@ -79,8 +79,8 @@ export default class Run extends BaseCommand {
       default: true,
       allowNo: true,
     }),
-    noResume: Flags.boolean({
-      description: 'Disable auto-resume (start fresh session)',
+    noFork: Flags.boolean({
+      description: 'Disable session forking (start fresh session)',
       default: false,
     }),
     dryRun: Flags.boolean({
@@ -161,7 +161,7 @@ export default class Run extends BaseCommand {
       console.log(`  Log file: ${flags.logFile}`)
       console.log(`  Completion marker: ${flags.completionMarker}`)
       console.log(`  Auto-commit: ${flags.autoCommit}`)
-      console.log(`  Auto-resume: ${!flags.noResume}`)
+      console.log(`  Fork session: ${!flags.noFork}`)
       console.log(`  Session ID: ${state.sessionId || '(none)'}`)
       console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
       console.log(`  Pending tasks: ${pendingTasks.length}`)
@@ -204,7 +204,7 @@ export default class Run extends BaseCommand {
     console.log(pc.dim(`Max iterations: ${maxIterations}`))
     console.log(pc.dim(`Log file: ${flags.logFile}`))
     console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`))
-    console.log(pc.dim(`Auto-resume: ${!flags.noResume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
+    console.log(pc.dim(`Fork session: ${!flags.noFork}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
     console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
     console.log()
 
@@ -255,11 +255,11 @@ export default class Run extends BaseCommand {
         ? state.tasks.find(t => t.id === focusedTaskId)
         : state.tasks.find(t => t.status === 'in_progress' || t.status === 'pending')
 
-      // Auto-resume from task's sessionId (or state-level fallback) unless disabled
+      // Fork from task's sessionId (or state-level fallback) unless disabled
       const taskSessionId = currentTask?.sessionId || state.sessionId
-      if (!flags.noResume && taskSessionId) {
-        iterClaudeArgs.push('--resume', taskSessionId)
-        console.log(pc.dim(`Resuming session: ${taskSessionId.slice(0, 8)}...`))
+      if (!flags.noFork && taskSessionId) {
+        iterClaudeArgs.push('--fork-session', taskSessionId)
+        console.log(pc.dim(`Forking session: ${taskSessionId.slice(0, 8)}...`))
       }
 
       const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)

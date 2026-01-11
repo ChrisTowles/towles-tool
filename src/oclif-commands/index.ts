@@ -5,6 +5,7 @@ import BranchClean from './branch/clean.js'
 import Config from './config.js'
 import Doctor from './doctor.js'
 import GhBranch from './gh-branch.js'
+import Install from './install.js'
 import Pr from './pr.js'
 import RalphRun from './ralph/run.js'
 import RalphPlan from './ralph/plan.js'
@@ -22,6 +23,7 @@ export default {
   config: Config,
   doctor: Doctor,
   'gh-branch': GhBranch,
+  install: Install,
   pr: Pr,
   'ralph:run': RalphRun,
   'ralph:plan': RalphPlan,

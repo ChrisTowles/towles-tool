@@ -275,7 +275,7 @@ Autonomous loops burn tokens rapidly:
 Mitigate with:
 - `--maxIterations` - Always set a reasonable limit
 - Smaller, focused tasks - Less context per iteration
-- `--resume` - Maintains session context, reduces re-loading
+- Session forking (default) - Forks from prior session context
 
 ## Troubleshooting
 
@@ -295,18 +295,18 @@ Success: pnpm test passes, pnpm typecheck passes
 
 ### Context growing too large
 
-1. Use `--resume` for session continuity
+1. Session forking is on by default - forks from prior session
 2. Clear completed tasks: manually remove `done` tasks from state
 3. Split into separate ralph runs
 
 ### Interrupted loop
 
-State is saved after each iteration. Resume with:
+State is saved after each iteration. Just resume:
 ```bash
-tt ralph run --resume
+tt ralph run
 ```
 
-Or start fresh:
+Or start completely fresh:
 ```bash
 tt ralph clear
 tt ralph task add "..."
