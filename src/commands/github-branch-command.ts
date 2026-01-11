@@ -26,24 +26,13 @@ const checkPreqrequisites = async () => {
   }
 }
 
-function customTrimEnd(str: string, charsToTrim: string[]) {
-  let i = str.length - 1;
-  while (i >= 0 && charsToTrim.includes(str[i])) {
-    i--;
-  }
-  return str.substring(0, i + 1);
-}
-
 export const createBranchNameFromIssue = (selectedIssue: Issue): string => {
   let slug = selectedIssue.title.toLowerCase()
   slug = slug.trim()
   slug = slug.replaceAll(' ', '-')
-  slug = slug.replace(/[^0-9a-zA-Z_]/g, '-')
-  slug = slug.replaceAll('--', '-')
-  slug = slug.replaceAll('--', '-') // in case there are multiple spaces
-  slug = slug.replaceAll('--', '-') // in case there are multiple spaces
-  slug = customTrimEnd(slug, ['-']) // take off any extra dashes at the end
-
+  slug = slug.replace(/[^0-9a-zA-Z_-]/g, '-')
+  slug = slug.replace(/-+/g, '-') // collapse multiple dashes to single
+  slug = slug.replace(/-+$/, '') // trim trailing dashes
 
   const branchName = `feature/${selectedIssue.number}-${slug}`
   return branchName
