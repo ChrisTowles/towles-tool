@@ -56,7 +56,7 @@ export const runCommand = defineCommand({
         },
         autoCommit: {
             type: 'boolean' as const,
-            default: false,
+            default: true,
             description: 'Auto-commit after each completed task',
         },
         resume: {

@@ -68,7 +68,7 @@ export const ArgsSchema = z.object({
     format: z.enum(['default', 'markdown', 'json']).default('default'),
     copy: z.boolean().default(false),
     clear: z.boolean().default(false),
-    autoCommit: z.boolean().default(false),
+    autoCommit: z.boolean().default(true),
     resume: z.boolean().default(false),
     maxIterations: z.string().default(String(DEFAULT_MAX_ITERATIONS))
         .refine((val: string) => /^\d+$/.test(val) && Number.parseInt(val, 10) > 0, 'maxIterations must be a positive integer'),

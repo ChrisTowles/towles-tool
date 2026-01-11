@@ -63,7 +63,6 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 
 **Available CLI Commands**:
 - `journal` - Create journal entries (daily-notes, meetings, notes)
-- `git-commit` - Generate AI-powered commit messages using Anthropic API
 - `gh-branch` - GitHub branch operations
 - `config` - Manage configuration settings
 - `ralph` - Autonomous Claude Code runner for task execution
@@ -98,8 +97,8 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 ## Ralph Usage
 
 When using `tt ralph` for autonomous task execution:
-- By default, ralph does **not** auto-commit (user commits manually)
-- Use `--autoCommit` if you want ralph to commit after each task
+- By default, ralph **auto-commits** after each completed task
+- Use `--no-autoCommit` to disable auto-commits
 - Use `--maxIterations` to limit token burn
 - Use `--dryRun` to preview config before running
 
@@ -111,16 +110,16 @@ tt ralph task done 1                # Mark task #1 complete
 tt ralph task remove 1              # Remove task #1
 
 # Execution
-tt ralph run                        # Run (no auto-commits by default)
-tt ralph run --autoCommit           # Run with auto-commits
+tt ralph run                        # Run (auto-commits by default)
+tt ralph run --no-autoCommit        # Run without auto-commits
 
-# Plan & cleanup
+# Plan
 tt ralph plan                       # Show plan with mermaid graph
-tt ralph clear                      # Clean up ralph files
 ```
 
 ## Important Notes
 
+- **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
 - When modifying CLI commands (`src/commands/`), also update the corresponding skill in `plugins/tt-core/skills/`
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
