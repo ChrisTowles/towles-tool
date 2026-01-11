@@ -145,17 +145,6 @@ my-nuxt-app/
 - Route middleware runs on server by default
 - App manifest enabled by default
 
-## Fallback References
-
-If WebFetch fails or for offline use, this skill includes local reference files:
-
-- `references/composables.md` - Composable patterns
-- `references/data-fetching.md` - Data fetching guide
-- `references/server.md` - Server route patterns
-- `references/hydration.md` - SSR hydration best practices
-- `references/performance.md` - Performance optimization
-- `references/deployment-cloudflare.md` - Cloudflare deployment
-- `references/testing-vitest.md` - Vitest testing patterns
 
 ---
 
