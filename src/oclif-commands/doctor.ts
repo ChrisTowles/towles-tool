@@ -1,3 +1,5 @@
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { exec } from 'tinyexec'
 import pc from 'picocolors'
 import { BaseCommand } from '../commands/base.js'
@@ -58,13 +60,22 @@ export default class Doctor extends BaseCommand {
       }
     }
 
+    // Check ralph files in .gitignore
+    this.log('')
+    const gitignoreCheck = this.checkRalphGitignore()
+    const gitignoreIcon = gitignoreCheck.ok ? pc.green('✓') : pc.yellow('⚠')
+    this.log(`${gitignoreIcon} .gitignore: ${gitignoreCheck.ok ? 'ralph-* excluded' : 'ralph-* NOT excluded'}`)
+    if (!gitignoreCheck.ok) {
+      this.log(`  ${pc.dim('Add "ralph-*" to .gitignore to exclude local ralph state files')}`)
+    }
+
     // Summary
-    const allOk = checks.every((c) => c.ok) && ghAuth.ok
+    const allOk = checks.every((c) => c.ok) && ghAuth.ok && gitignoreCheck.ok
     this.log('')
     if (allOk) {
       this.log(pc.green('All checks passed!'))
     } else {
-      this.log(pc.yellow('Some checks failed. Install missing dependencies.'))
+      this.log(pc.yellow('Some checks failed. See above for details.'))
     }
   }
 
@@ -93,6 +104,24 @@ export default class Doctor extends BaseCommand {
       // tinyexec is safe - uses execFile internally, no shell injection risk
       const result = await exec('gh', ['auth', 'status'])
       return { ok: result.exitCode === 0 }
+    } catch {
+      return { ok: false }
+    }
+  }
+
+  private checkRalphGitignore(): { ok: boolean } {
+    const gitignorePath = path.join(process.cwd(), '.gitignore')
+    try {
+      if (!fs.existsSync(gitignorePath)) {
+        return { ok: false }
+      }
+      const content = fs.readFileSync(gitignorePath, 'utf-8')
+      // Check for ralph-* pattern or specific ralph files
+      const hasRalphPattern = content.split('\n').some((line) => {
+        const trimmed = line.trim()
+        return trimmed === 'ralph-*' || trimmed === 'ralph-*.json' || trimmed === 'ralph-state.json'
+      })
+      return { ok: hasRalphPattern }
     } catch {
       return { ok: false }
     }

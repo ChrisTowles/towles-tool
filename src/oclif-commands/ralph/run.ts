@@ -22,6 +22,20 @@ import {
 import { checkClaudeCli, runIteration } from '../../commands/ralph/execution.js'
 
 /**
+ * Read last N lines from a file. Returns empty string if file doesn't exist.
+ */
+function readLastLines(filePath: string, lineCount: number): string {
+  if (!fs.existsSync(filePath)) return ''
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const lines = content.split('\n')
+    return lines.slice(-lineCount).join('\n').trim()
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Run the autonomous ralph loop
  */
 export default class Run extends BaseCommand {
@@ -207,12 +221,14 @@ export default class Run extends BaseCommand {
       logStream.write(iterHeader)
 
       const iterationStart = new Date().toISOString()
+      const progressContent = readLastLines(DEFAULT_PROGRESS_FILE, 100)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         stateFile: flags.stateFile,
         progressFile: DEFAULT_PROGRESS_FILE,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
+        progressContent: progressContent || undefined,
       })
 
       // Log the prompt

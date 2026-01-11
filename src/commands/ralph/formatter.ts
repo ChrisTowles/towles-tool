@@ -240,18 +240,27 @@ export interface BuildPromptOptions {
     progressFile: string
     focusedTaskId: number | null
     skipCommit?: boolean
+    progressContent?: string
 }
 
-export function buildIterationPrompt({ completionMarker, stateFile, progressFile, focusedTaskId, skipCommit = false }: BuildPromptOptions): string {
+export function buildIterationPrompt({ completionMarker, stateFile, progressFile, focusedTaskId, skipCommit = false, progressContent }: BuildPromptOptions): string {
     // prompt inspired by https://www.aihero.dev/tips-for-ai-coding-with-ralph-wiggum#2-start-with-hitl-then-go-afk
 
     let step = 1
 
+    const progressSection = progressContent
+        ? `## Recent Progress (last 100 lines of ${progressFile})
+\`\`\`
+${progressContent}
+\`\`\``
+        : `(Progress file ${progressFile} not found or empty)`
+
     return `
-Review the state and progress files.
+Review the state file and recent progress.
 
 state_file: @${stateFile}
-progress_file: @${progressFile}
+
+${progressSection}
 
 Then:
 
