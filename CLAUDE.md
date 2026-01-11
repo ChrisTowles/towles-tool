@@ -98,14 +98,16 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 ## Ralph Usage
 
 When using `tt ralph` for autonomous task execution:
-- **Always use `--noCommit`** - Let the user decide when to commit, not ralph
+- By default, ralph does **not** auto-commit (user commits manually)
+- Use `--autoCommit` if you want ralph to commit after each task
 - Use `--maxIterations` to limit token burn
 - Use `--dryRun` to preview config before running
 
 ```bash
 tt ralph --addTask "description"    # Add a task
 tt ralph --listTasks                # View tasks
-tt ralph --run --noCommit           # Run without auto-commits
+tt ralph --run                      # Run (no auto-commits by default)
+tt ralph --run --autoCommit         # Run with auto-commits
 tt ralph --clear                    # Clean up ralph files
 ```
 
@@ -115,4 +117,3 @@ tt ralph --clear                    # Clean up ralph files
 - Settings file automatically creates with defaults on first run (prompts user)
 - Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files
 - The CLI is available as both `towles-tool` and `tt` commands when installed
-- **Ralph should always use `--noCommit`** to avoid unexpected commits

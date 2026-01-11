@@ -87,7 +87,7 @@ export const ArgsSchema = z.object({
         .refine((val: string | undefined) => !val || val.trim().length >= 3, 'Task description must be at least 3 characters'),
     listTasks: z.boolean().default(false),
     clear: z.boolean().default(false),
-    noCommit: z.boolean().default(false),
+    autoCommit: z.boolean().default(false),
     maxIterations: z.string().default(String(DEFAULT_MAX_ITERATIONS))
         .refine((val: string) => /^\d+$/.test(val) && Number.parseInt(val, 10) > 0, 'maxIterations must be a positive integer'),
     dryRun: z.boolean().default(false),
@@ -476,10 +476,10 @@ const main = defineCommand({
             default: false,
             description: 'Clear all ralph files (state, log, progress)',
         },
-        noCommit: {
+        autoCommit: {
             type: 'boolean',
             default: false,
-            description: 'Skip git commit after each task',
+            description: 'Auto-commit after each completed task',
         },
         maxIterations: {
             type: 'string',
@@ -647,7 +647,7 @@ const main = defineCommand({
             console.log(`  State file: ${validatedArgs.stateFile}`)
             console.log(`  Log file: ${validatedArgs.logFile}`)
             console.log(`  Completion marker: ${validatedArgs.completionMarker}`)
-            console.log(`  No commit: ${validatedArgs.noCommit}`)
+            console.log(`  Auto-commit: ${validatedArgs.autoCommit}`)
             console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
             console.log(`  Pending tasks: ${pendingTasks.length}`)
 
@@ -687,7 +687,7 @@ const main = defineCommand({
         console.log(chalk.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
         console.log(chalk.dim(`Max iterations: ${maxIterations}`))
         console.log(chalk.dim(`Log file: ${validatedArgs.logFile}`))
-        console.log(chalk.dim(`No commit: ${validatedArgs.noCommit}`))
+        console.log(chalk.dim(`Auto-commit: ${validatedArgs.autoCommit}`))
         console.log(chalk.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
         console.log()
 
@@ -724,7 +724,7 @@ const main = defineCommand({
                 stateFile: validatedArgs.stateFile,
                 progressFile: DEFAULT_PROGRESS_FILE,
                 focusedTaskId,
-                skipCommit: validatedArgs.noCommit,
+                skipCommit: !validatedArgs.autoCommit,
             })
 
             // Log the prompt
