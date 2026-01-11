@@ -40,8 +40,13 @@ export const getIssues = async ({ assignedToMe, cwd }: { assignedToMe: boolean, 
 
   const result = await exec(`gh`, flags)
   // Setting NO_COLOR=1 didn't remove colors so had to use stripAnsi
-  const striped = stripAnsi(result.stdout)
-  issues = JSON.parse(striped)
+  const stripped = stripAnsi(result.stdout)
+
+  try {
+    issues = JSON.parse(stripped)
+  } catch {
+    throw new Error(`Failed to parse GitHub CLI output as JSON. Raw output: ${stripped.slice(0, 200)}${stripped.length > 200 ? '...' : ''}`)
+  }
 
   return issues
 }
