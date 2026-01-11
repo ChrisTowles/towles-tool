@@ -171,6 +171,13 @@ export async function runIteration(
                 }
             }
 
+            // Ensure output ends with newline for clean terminal display
+            if (output && !output.endsWith('\n')) {
+                process.stdout.write('\n')
+                logStream?.write('\n')
+                output += '\n'
+            }
+
             // Calculate context usage percent
             let contextUsedPercent: number | undefined
             if (finalUsage) {
