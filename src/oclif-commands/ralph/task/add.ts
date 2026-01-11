@@ -22,7 +22,7 @@ export default class TaskAdd extends BaseCommand {
   static override examples = [
     '<%= config.bin %> ralph task add "Fix the login bug"',
     '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
-    '<%= config.bin %> ralph task add "Implement feature X" --findMarker abc123',
+    '<%= config.bin %> ralph task add "Implement feature X" --findMarker RALPH_MARKER_abc123',
   ]
 
   static override args = {
@@ -44,7 +44,7 @@ export default class TaskAdd extends BaseCommand {
     }),
     findMarker: Flags.string({
       char: 'm',
-      description: 'Find session by marker (searches ~/.claude for RALPH_MARKER_<value>)',
+      description: 'Find session by full marker (e.g., RALPH_MARKER_abc123)',
     }),
   }
 
@@ -68,7 +68,7 @@ export default class TaskAdd extends BaseCommand {
       console.log(pc.dim(`Searching for marker: ${marker}...`))
       sessionId = await findSessionByMarker(marker) ?? undefined
       if (!sessionId) {
-        this.error(`Marker not found: RALPH_MARKER_${marker}\nMake sure Claude output this marker during research.`)
+        this.error(`Marker not found: ${marker}\nMake sure Claude output this marker during research.`)
       }
       console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`))
     }

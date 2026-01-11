@@ -47,15 +47,14 @@ function getProjectDir(): string | null {
 }
 
 /**
- * Search for a marker in session files and return the session ID
+ * Search for a marker in session files and return the session ID.
+ * Expects the full marker (e.g., RALPH_MARKER_abc123).
  */
 export async function findSessionByMarker(marker: string): Promise<string | null> {
   const projectDir = getProjectDir()
   if (!projectDir) {
     return null
   }
-
-  const fullMarker = marker.startsWith(MARKER_PREFIX) ? marker : `${MARKER_PREFIX}${marker}`
 
   // Get all .jsonl files in the project directory
   const files = fs.readdirSync(projectDir)
@@ -69,7 +68,7 @@ export async function findSessionByMarker(marker: string): Promise<string | null
     .sort((a, b) => b.mtime - a.mtime)
 
   for (const file of files) {
-    const found = await searchFileForMarker(file.path, fullMarker)
+    const found = await searchFileForMarker(file.path, marker)
     if (found) {
       // Session ID is the filename without .jsonl
       return file.name.replace('.jsonl', '')

@@ -106,9 +106,9 @@ When using `tt ralph` for autonomous task execution:
 **Marker Workflow (preferred):**
 1. Generate marker: `tt ralph marker create` → `RALPH_MARKER_abc123`
 2. Tell Claude to output the marker during research
-3. Add tasks with marker: `tt ralph task add "desc" --findMarker abc123`
+3. Add tasks with marker: `tt ralph task add "desc" --findMarker RALPH_MARKER_abc123`
 
-The `--findMarker` flag searches ~/.claude for the session containing the marker and attaches that session ID to the task.
+The `--findMarker` flag searches ~/.claude for the session containing the marker, attaches the session ID to the task, and stores the full marker.
 
 - **Auto-resume is ON by default** - ralph automatically resumes from task's sessionId
 - Use `--noResume` only when you want a fresh start (rare)
