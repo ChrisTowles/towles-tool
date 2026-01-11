@@ -659,8 +659,10 @@ export default class ObserveGraph extends BaseCommand {
         ratio: tool.outputTokens > 0 ? tool.inputTokens / tool.outputTokens : 0,
       }))
 
+      // Format: "Turn N: Claude (X tools)" when tools present
+      const toolSuffix = tools.length > 0 ? ` (${tools.length} tool${tools.length > 1 ? 's' : ''})` : ''
       children.push({
-        name: `Turn ${turnNumber}: ${role === 'user' ? 'User' : 'Claude'}`,
+        name: `Turn ${turnNumber}: ${role === 'user' ? 'User' : 'Claude'}${toolSuffix}`,
         value: toolChildren.length > 0 ? undefined : totalTokens, // Let children sum if present
         children: toolChildren.length > 0 ? toolChildren : undefined,
         sessionId: sessionId.slice(0, 8),
