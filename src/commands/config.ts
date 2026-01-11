@@ -18,4 +18,10 @@ export async function configCommand(context: Context) {
   
   consola.warn('Working Directory:')
   consola.log(`  ${context.cwd}`)
+  consola.log('')
+
+  consola.info('Shell Completions:')
+  consola.log('  Run `tt completion` to generate shell completions')
+  consola.log('  Bash/Zsh: tt completion >> ~/.bashrc (or ~/.zshrc)')
+  consola.log('  Fish: tt completion > ~/.config/fish/completions/tt.fish')
 }

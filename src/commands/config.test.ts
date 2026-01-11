@@ -173,4 +173,23 @@ describe('config command', () => {
 
     expect(consola.default.warn).toHaveBeenCalledWith('User Config:')
   })
+
+  it('displays shell completions info', async () => {
+    const consola = await import('consola')
+    const { configCommand } = await import('./config')
+
+    const context = createMockContext()
+    await configCommand(context)
+
+    expect(consola.default.info).toHaveBeenCalledWith('Shell Completions:')
+    expect(consola.default.log).toHaveBeenCalledWith(
+      '  Run `tt completion` to generate shell completions'
+    )
+    expect(consola.default.log).toHaveBeenCalledWith(
+      '  Bash/Zsh: tt completion >> ~/.bashrc (or ~/.zshrc)'
+    )
+    expect(consola.default.log).toHaveBeenCalledWith(
+      '  Fish: tt completion > ~/.config/fish/completions/tt.fish'
+    )
+  })
 })

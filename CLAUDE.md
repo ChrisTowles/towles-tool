@@ -113,6 +113,8 @@ tt ralph --clear                    # Clean up ralph files
 
 ## Important Notes
 
+- When modifying CLI commands (`src/commands/`), also update the corresponding skill in `plugins/tt-core/skills/`
+- When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)
 - Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files

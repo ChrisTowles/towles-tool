@@ -87,6 +87,10 @@ export const ArgsSchema = z.object({
         .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'taskId must be a positive integer'),
     addTask: z.string().optional()
         .refine((val: string | undefined) => !val || val.trim().length >= 3, 'Task description must be at least 3 characters'),
+    markDone: z.string().optional()
+        .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'markDone must be a positive integer (task ID)'),
+    removeTask: z.string().optional()
+        .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'removeTask must be a positive integer (task ID)'),
     listTasks: z.boolean().default(false),
     clear: z.boolean().default(false),
     autoCommit: z.boolean().default(false),
@@ -103,7 +107,7 @@ export const ArgsSchema = z.object({
 }).strict()
 
 // citty internal keys to filter out before validation
-const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n']
+const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n', 'd', 'rm']
 
 export function validateArgs(args: unknown): RalphArgs {
     // Filter out citty internal keys (aliases and positionals)
@@ -239,7 +243,7 @@ ${step++}. ${focusedTaskId
         : `**Choose** which pending task to work on next based on YOUR judgment of priority/dependencies.`}
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
-${step++}. Mark the task "done" in @${stateFile} (update status field).
+${step++}. Mark the task done using CLI: \`tt ralph --markDone <id>\`
 ${step++}. Update @${progressFile} with what you did.
 ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
@@ -480,6 +484,16 @@ const main = defineCommand({
             alias: 'a',
             description: 'Add a sub-task to the state file',
         },
+        markDone: {
+            type: 'string',
+            alias: 'd',
+            description: 'Mark a task as done by ID',
+        },
+        removeTask: {
+            type: 'string',
+            alias: 'rm',
+            description: 'Remove a task by ID',
+        },
         listTasks: {
             type: 'boolean',
             alias: 'l',
@@ -583,6 +597,87 @@ const main = defineCommand({
             process.exit(0)
         }
 
+        // Handle --markDone: mark a task as done by ID
+        if (validatedArgs.markDone !== undefined) {
+            const taskId = Number.parseInt(String(validatedArgs.markDone), 10)
+
+            if (Number.isNaN(taskId) || taskId < 1) {
+                console.error(chalk.red('Error: Invalid task ID'))
+                console.error(chalk.dim('Usage: --markDone <id> or -d <id>'))
+                process.exit(2)
+            }
+
+            let state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(2)
+            }
+
+            const task = state.tasks.find(t => t.id === taskId)
+
+            if (!task) {
+                console.error(chalk.red(`Error: Task #${taskId} not found`))
+                console.error(chalk.dim('Use --listTasks to see available tasks.'))
+                process.exit(2)
+            }
+
+            if (task.status === 'done') {
+                console.log(chalk.yellow(`Task #${taskId} is already done.`))
+                process.exit(0)
+            }
+
+            task.status = 'done'
+            task.completedAt = new Date().toISOString()
+            saveState(state, validatedArgs.stateFile)
+
+            console.log(chalk.green(`✓ Marked task #${taskId} as done: ${task.description}`))
+            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
+
+            const remaining = state.tasks.filter(t => t.status !== 'done').length
+            if (remaining === 0) {
+                console.log(chalk.bold.green('🎉 All tasks complete!'))
+            } else {
+                console.log(chalk.dim(`Remaining tasks: ${remaining}`))
+            }
+            process.exit(0)
+        }
+
+        // Handle --removeTask: remove a task by ID
+        if (validatedArgs.removeTask !== undefined) {
+            const taskId = Number.parseInt(String(validatedArgs.removeTask), 10)
+
+            if (Number.isNaN(taskId) || taskId < 1) {
+                console.error(chalk.red('Error: Invalid task ID'))
+                console.error(chalk.dim('Usage: --removeTask <id> or -rm <id>'))
+                process.exit(2)
+            }
+
+            let state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(2)
+            }
+
+            const taskIndex = state.tasks.findIndex(t => t.id === taskId)
+
+            if (taskIndex === -1) {
+                console.error(chalk.red(`Error: Task #${taskId} not found`))
+                console.error(chalk.dim('Use --listTasks to see available tasks.'))
+                process.exit(2)
+            }
+
+            const removedTask = state.tasks[taskIndex]
+            state.tasks.splice(taskIndex, 1)
+            saveState(state, validatedArgs.stateFile)
+
+            console.log(chalk.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
+            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
+            console.log(chalk.dim(`Remaining tasks: ${state.tasks.length}`))
+            process.exit(0)
+        }
+
         // Handle --listTasks: show all tasks
         if (validatedArgs.listTasks) {
             const state = loadState(validatedArgs.stateFile)
@@ -619,6 +714,8 @@ const main = defineCommand({
             console.log('  tt ralph --run              Start the autonomous loop')
             console.log('  tt ralph --run --resume     Start with session continuity')
             console.log('  tt ralph --addTask "..."    Add a task')
+            console.log('  tt ralph --markDone <id>    Mark a task as done')
+            console.log('  tt ralph --removeTask <id>  Remove a task')
             console.log('  tt ralph --listTasks        List all tasks')
             console.log('  tt ralph --clear            Clear all ralph files')
             console.log('  tt ralph --dryRun           Show config without running')

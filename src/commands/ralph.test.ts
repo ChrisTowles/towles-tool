@@ -492,5 +492,68 @@ describe('ralph-loop', () => {
             const result = ArgsSchema.safeParse({ unknownKey: 'value' })
             expect(result.success).toBe(false)
         })
+
+        it('should accept valid markDone', () => {
+            const result = ArgsSchema.safeParse({ markDone: '5' })
+            expect(result.success).toBe(true)
+        })
+
+        it('should reject non-numeric markDone', () => {
+            const result = ArgsSchema.safeParse({ markDone: 'abc' })
+            expect(result.success).toBe(false)
+        })
+    })
+
+    describe('markDone functionality', () => {
+        it('should mark task as done and add completedAt', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+            addTaskToState(state, 'task 2')
+
+            // Simulate marking task 1 as done
+            const task = state.tasks.find(t => t.id === 1)
+            expect(task).toBeDefined()
+            expect(task?.status).toBe('pending')
+
+            task!.status = 'done'
+            task!.completedAt = new Date().toISOString()
+
+            expect(task?.status).toBe('done')
+            expect(task?.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+        })
+
+        it('should find task by ID', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+            addTaskToState(state, 'task 2')
+            addTaskToState(state, 'task 3')
+
+            const task = state.tasks.find(t => t.id === 2)
+            expect(task).toBeDefined()
+            expect(task?.description).toBe('task 2')
+        })
+
+        it('should return undefined for non-existent task ID', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+
+            const task = state.tasks.find(t => t.id === 99)
+            expect(task).toBeUndefined()
+        })
+
+        it('should persist marked-done task to file', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+
+            const task = state.tasks.find(t => t.id === 1)!
+            task.status = 'done'
+            task.completedAt = new Date().toISOString()
+
+            saveState(state, testStateFile)
+            const loaded = loadState(testStateFile)
+
+            expect(loaded?.tasks[0].status).toBe('done')
+            expect(loaded?.tasks[0].completedAt).toBeDefined()
+        })
     })
 })
