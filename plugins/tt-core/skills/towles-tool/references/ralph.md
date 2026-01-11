@@ -308,7 +308,6 @@ tt ralph run
 
 Or start completely fresh:
 ```bash
-tt ralph clear
 tt ralph task add "..."
 tt ralph run
 ```

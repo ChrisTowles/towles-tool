@@ -86,6 +86,10 @@ export default class ObserveGraph extends BaseCommand {
       description: 'Port for local server',
       default: 8765,
     }),
+    days: Flags.integer({
+      description: 'Filter to sessions from last N days (0=no limit)',
+      default: 7,
+    }),
   }
 
   async run(): Promise<void> {
@@ -101,12 +105,13 @@ export default class ObserveGraph extends BaseCommand {
 
     if (!sessionId) {
       // All sessions mode
-      const sessions = this.findRecentSessions(projectsDir, 100)
+      const sessions = this.findRecentSessions(projectsDir, 100, flags.days)
       if (sessions.length === 0) {
         this.error('No sessions found')
       }
 
-      this.log(`📊 Generating treemap for ${sessions.length} sessions...`)
+      const daysMsg = flags.days > 0 ? ` (last ${flags.days} days)` : ''
+      this.log(`📊 Generating treemap for ${sessions.length} sessions${daysMsg}...`)
       treemapData = this.buildAllSessionsTreemap(sessions)
     } else {
       // Single session mode
@@ -489,7 +494,8 @@ export default class ObserveGraph extends BaseCommand {
 
   private findRecentSessions(
     projectsDir: string,
-    limit: number
+    limit: number,
+    days: number
   ): Array<{ sessionId: string; path: string; date: string; tokens: number; project: string }> {
     const sessions: Array<{
       sessionId: string
@@ -500,6 +506,9 @@ export default class ObserveGraph extends BaseCommand {
       mtime: number
     }> = []
 
+    // Calculate cutoff time if days > 0
+    const cutoffMs = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : 0
+
     const projectDirs = fs.readdirSync(projectsDir)
     for (const project of projectDirs) {
       const projectPath = path.join(projectsDir, project)
@@ -509,6 +518,10 @@ export default class ObserveGraph extends BaseCommand {
       for (const file of files) {
         const filePath = path.join(projectPath, file)
         const stat = fs.statSync(filePath)
+
+        // Filter by days if cutoff is set
+        if (cutoffMs > 0 && stat.mtimeMs < cutoffMs) continue
+
         const sessionId = file.replace('.jsonl', '')
 
         // Quick token count from file
