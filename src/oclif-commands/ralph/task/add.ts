@@ -59,14 +59,16 @@ export default class TaskAdd extends BaseCommand {
 
     // Resolve session ID from --sessionId or --findMarker
     let sessionId = flags.sessionId
+    let marker: string | undefined
     if (flags.findMarker) {
       if (sessionId) {
         this.error('Cannot use both --sessionId and --findMarker')
       }
-      console.log(pc.dim(`Searching for marker: ${flags.findMarker}...`))
-      sessionId = await findSessionByMarker(flags.findMarker) ?? undefined
+      marker = flags.findMarker
+      console.log(pc.dim(`Searching for marker: ${marker}...`))
+      sessionId = await findSessionByMarker(marker) ?? undefined
       if (!sessionId) {
-        this.error(`Marker not found: RALPH_MARKER_${flags.findMarker}\nMake sure Claude output this marker during research.`)
+        this.error(`Marker not found: RALPH_MARKER_${marker}\nMake sure Claude output this marker during research.`)
       }
       console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`))
     }
@@ -77,12 +79,15 @@ export default class TaskAdd extends BaseCommand {
       state = createInitialState(DEFAULT_MAX_ITERATIONS)
     }
 
-    const newTask = addTaskToState(state, description, sessionId)
+    const newTask = addTaskToState(state, description, sessionId, marker)
     saveState(state, flags.stateFile)
 
     console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
     if (sessionId) {
       console.log(pc.cyan(`  Session: ${sessionId.slice(0, 8)}...`))
+    }
+    if (marker) {
+      console.log(pc.dim(`  Marker: ${marker}`))
     }
     console.log(pc.dim(`State saved to: ${flags.stateFile}`))
     console.log(pc.dim(`Total tasks: ${state.tasks.length}`))
