@@ -34,6 +34,7 @@ export default class Run extends BaseCommand {
     '<%= config.bin %> ralph run --maxIterations 20',
     '<%= config.bin %> ralph run --taskId 5',
     '<%= config.bin %> ralph run --no-autoCommit',
+    '<%= config.bin %> ralph run --noResume',
     '<%= config.bin %> ralph run --dryRun',
     '<%= config.bin %> ralph run --addIterations 5',
   ]
@@ -63,8 +64,8 @@ export default class Run extends BaseCommand {
       default: true,
       allowNo: true,
     }),
-    resume: Flags.boolean({
-      description: 'Resume from previous session (uses stored session_id)',
+    noResume: Flags.boolean({
+      description: 'Disable auto-resume (start fresh session)',
       default: false,
     }),
     dryRun: Flags.boolean({
@@ -134,7 +135,7 @@ export default class Run extends BaseCommand {
       console.log(`  Log file: ${flags.logFile}`)
       console.log(`  Completion marker: ${flags.completionMarker}`)
       console.log(`  Auto-commit: ${flags.autoCommit}`)
-      console.log(`  Resume mode: ${flags.resume}`)
+      console.log(`  Auto-resume: ${!flags.noResume}`)
       console.log(`  Session ID: ${state.sessionId || '(none)'}`)
       console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
       console.log(`  Pending tasks: ${pendingTasks.length}`)
@@ -174,7 +175,7 @@ export default class Run extends BaseCommand {
     console.log(pc.dim(`Max iterations: ${maxIterations}`))
     console.log(pc.dim(`Log file: ${flags.logFile}`))
     console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`))
-    console.log(pc.dim(`Resume mode: ${flags.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
+    console.log(pc.dim(`Auto-resume: ${!flags.noResume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
     console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
     console.log()
 
@@ -217,10 +218,17 @@ export default class Run extends BaseCommand {
       // Log the prompt
       logStream.write(`\n--- Prompt ---\n${prompt}\n--- End Prompt ---\n\n`)
 
-      // Build claude args, adding --resume if we have a session ID
+      // Build claude args, adding --resume if task has a session ID
       const iterClaudeArgs = [...extraClaudeArgs]
-      if (flags.resume && state.sessionId) {
-        iterClaudeArgs.push('--resume', state.sessionId)
+      const currentTask = focusedTaskId
+        ? state.tasks.find(t => t.id === focusedTaskId)
+        : state.tasks.find(t => t.status === 'in_progress' || t.status === 'pending')
+
+      // Auto-resume from task's sessionId (or state-level fallback) unless disabled
+      const taskSessionId = currentTask?.sessionId || state.sessionId
+      if (!flags.noResume && taskSessionId) {
+        iterClaudeArgs.push('--resume', taskSessionId)
+        console.log(pc.dim(`Resuming session: ${taskSessionId.slice(0, 8)}...`))
       }
 
       const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
@@ -237,10 +245,11 @@ export default class Run extends BaseCommand {
         }
       }
 
-      // Store session ID for future iterations (only if resume mode enabled)
-      if (flags.resume && sessionId && !state.sessionId) {
-        state.sessionId = sessionId
-        console.log(pc.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
+      // Store session ID on the current task for future resumption
+      if (sessionId && currentTask && !currentTask.sessionId) {
+        currentTask.sessionId = sessionId
+        state.sessionId = sessionId  // Also store at state level as fallback
+        console.log(pc.dim(`Session ID stored on task #${currentTask.id}: ${sessionId.slice(0, 8)}...`))
       }
 
       const iterationEnd = new Date().toISOString()

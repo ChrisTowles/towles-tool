@@ -20,7 +20,7 @@ export default class TaskAdd extends BaseCommand {
 
   static override examples = [
     '<%= config.bin %> ralph task add "Fix the login bug"',
-    '<%= config.bin %> ralph task add "Implement feature X"',
+    '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
   ]
 
   static override args = {
@@ -36,6 +36,9 @@ export default class TaskAdd extends BaseCommand {
       char: 's',
       description: 'State file path',
       default: DEFAULT_STATE_FILE,
+    }),
+    sessionId: Flags.string({
+      description: 'Claude session ID for resuming from prior research',
     }),
   }
 
@@ -54,10 +57,13 @@ export default class TaskAdd extends BaseCommand {
       state = createInitialState(DEFAULT_MAX_ITERATIONS)
     }
 
-    const newTask = addTaskToState(state, description)
+    const newTask = addTaskToState(state, description, flags.sessionId)
     saveState(state, flags.stateFile)
 
     console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+    if (flags.sessionId) {
+      console.log(pc.cyan(`  Session: ${flags.sessionId.slice(0, 8)}...`))
+    }
     console.log(pc.dim(`State saved to: ${flags.stateFile}`))
     console.log(pc.dim(`Total tasks: ${state.tasks.length}`))
   }

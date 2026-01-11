@@ -2,13 +2,24 @@ import { z } from 'zod/v4'
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
-import { AppInfo } from '../constants';
 import * as commentJson from 'comment-json';
+import { AppInfo } from '../constants';
 import consola from 'consola';
 import { colors } from 'consola/utils';
 
-export const USER_SETTINGS_DIR = path.join(homedir(), '.config', AppInfo.toolName);
-export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, `${AppInfo.toolName}.settings.json`);
+/** Default config directory */
+export const DEFAULT_CONFIG_DIR = path.join(homedir(), '.config', AppInfo.toolName);
+
+/** User settings file path */
+export const USER_SETTINGS_PATH = path.join(DEFAULT_CONFIG_DIR, `${AppInfo.toolName}.settings.json`);
+
+/** Settings filename used within configDir */
+export const SETTINGS_FILENAME = `${AppInfo.toolName}.settings.json`;
+
+/** Get settings file path for a given configDir */
+export function getSettingsPath(configDir: string): string {
+  return path.join(configDir, SETTINGS_FILENAME);
+}
 
 export const JournalSettingsSchema = z.object({
     // Base folder where all journal files are stored

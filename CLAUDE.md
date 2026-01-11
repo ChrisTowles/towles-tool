@@ -99,16 +99,30 @@ When using `tt ralph` for autonomous task execution:
 - Use `--dryRun` to preview config before running
 - **Iterations are a run-level concern** - task commands should not accept iteration params
 
+### CRITICAL: Session IDs Prevent Token Burn
+
+**Every task should have a sessionId** to enable resumption from prior research. This is the most important optimization to prevent ralph from burning through tokens re-discovering context.
+
+- **Auto-resume is ON by default** - ralph automatically resumes from task's sessionId
+- When adding tasks after research, **always include the sessionId**:
+  ```bash
+  tt ralph task add "implement X" --sessionId <session-from-research>
+  ```
+- Use `--noResume` only when you want a fresh start (rare)
+- Session IDs are stored per-task and persist across runs
+
 ```bash
 # Task management
-tt ralph task add "description"     # Add a task
-tt ralph task list                  # View tasks
-tt ralph task done 1                # Mark task #1 complete
-tt ralph task remove 1              # Remove task #1
+tt ralph task add "description"                      # Add task (no session)
+tt ralph task add "description" --sessionId abc123   # Add task with session (preferred)
+tt ralph task list                                   # View tasks
+tt ralph task done 1                                 # Mark task #1 complete
+tt ralph task remove 1                               # Remove task #1
 
 # Execution
-tt ralph run                        # Run (auto-commits by default)
+tt ralph run                        # Run (auto-commits, auto-resumes by default)
 tt ralph run --no-autoCommit        # Run without auto-commits
+tt ralph run --noResume             # Start fresh session (no resume)
 
 # Plan
 tt ralph plan                       # Show plan with mermaid graph
