@@ -66,7 +66,7 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 - `git-commit` - Generate AI-powered commit messages using Anthropic API
 - `gh-branch` - GitHub branch operations
 - `config` - Manage configuration settings
-- `weather` - Weather information
+- `ralph` - Autonomous Claude Code runner for task execution
 
 **Key Utilities**:
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
@@ -95,9 +95,24 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
 
 
+## Ralph Usage
+
+When using `tt ralph` for autonomous task execution:
+- **Always use `--noCommit`** - Let the user decide when to commit, not ralph
+- Use `--maxIterations` to limit token burn
+- Use `--dryRun` to preview config before running
+
+```bash
+tt ralph --addTask "description"    # Add a task
+tt ralph --listTasks                # View tasks
+tt ralph --run --noCommit           # Run without auto-commits
+tt ralph --clear                    # Clean up ralph files
+```
+
 ## Important Notes
 
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)
 - Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files
 - The CLI is available as both `towles-tool` and `tt` commands when installed
+- **Ralph should always use `--noCommit`** to avoid unexpected commits
