@@ -1,4 +1,3 @@
-import pc from 'picocolors'
 import { BaseCommand } from '../../../commands/base.js'
 import { generateMarker, MARKER_PREFIX } from '../../../commands/ralph/marker.js'
 
@@ -23,11 +22,6 @@ export default class MarkerCreate extends BaseCommand {
     await this.parse(MarkerCreate)
 
     const marker = generateMarker()
-    const fullMarker = `${MARKER_PREFIX}${marker}`
-
-    console.log(pc.green(fullMarker))
-    console.log()
-    console.log(pc.dim('Tell Claude to output this marker during research.'))
-    console.log(pc.dim('Then add task with: tt ralph task add "desc" --findMarker ' + marker))
+    console.log(`${MARKER_PREFIX}${marker}`)
   }
 }
