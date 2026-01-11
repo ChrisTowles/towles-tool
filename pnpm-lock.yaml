@@ -123,9 +123,6 @@ importers:
       '@oclif/core':
         specifier: catalog:cli
         version: 4.8.0
-      chalk:
-        specifier: ^5.6.2
-        version: 5.6.2
       citty:
         specifier: ^0.1.6
         version: 0.1.6
