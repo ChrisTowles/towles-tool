@@ -12,6 +12,7 @@ const REPORTS_DIR = path.join(CLAUDE_DIR, 'reports')
 interface ClaudeSettings {
   cleanupPeriodDays?: number
   alwaysThinkingEnabled?: boolean
+  env?: Record<string, string>
   hooks?: {
     SubagentStop?: Array<{
       matcher?: Record<string, unknown>
@@ -23,6 +24,13 @@ interface ClaudeSettings {
     [key: string]: unknown
   }
   [key: string]: unknown
+}
+
+const OTEL_ENV_VARS: Record<string, string> = {
+  CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+  OTEL_METRICS_EXPORTER: 'otlp',
+  OTEL_LOGS_EXPORTER: 'otlp',
+  OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
 }
 
 /**
@@ -92,13 +100,37 @@ export default class ObserveSetup extends BaseCommand {
       this.log(pc.dim('✓ SubagentStop hook already configured'))
     }
 
+    // 3. Add OTEL environment variables to settings
+    if (!claudeSettings.env) {
+      claudeSettings.env = {}
+    }
+
+    const addedVars: string[] = []
+    const skippedVars: string[] = []
+    for (const [key, value] of Object.entries(OTEL_ENV_VARS)) {
+      if (claudeSettings.env[key] === undefined) {
+        claudeSettings.env[key] = value
+        addedVars.push(key)
+        modified = true
+      } else {
+        skippedVars.push(key)
+      }
+    }
+
+    if (addedVars.length > 0) {
+      this.log(pc.green(`✓ Added env vars: ${addedVars.join(', ')}`))
+    }
+    if (skippedVars.length > 0) {
+      this.log(pc.dim(`✓ Env vars already set: ${skippedVars.join(', ')}`))
+    }
+
     // Save settings if modified
     if (modified) {
       this.saveClaudeSettings(claudeSettings)
       this.log(pc.green(`\n✓ Saved settings to ${CLAUDE_SETTINGS_PATH}`))
     }
 
-    // 3. Create reports directory
+    // 4. Create reports directory
     if (!fs.existsSync(REPORTS_DIR)) {
       fs.mkdirSync(REPORTS_DIR, { recursive: true })
       this.log(pc.green(`✓ Created reports directory at ${REPORTS_DIR}`))
@@ -106,7 +138,7 @@ export default class ObserveSetup extends BaseCommand {
       this.log(pc.dim(`✓ Reports directory exists at ${REPORTS_DIR}`))
     }
 
-    // 4. Show OTEL environment variables setup
+    // 5. Show OTEL environment variables setup
     this.log(pc.bold('\n🔧 OTEL Environment Variables\n'))
     this.log(pc.cyan('Add these to your shell profile (~/.bashrc, ~/.zshrc, etc.):\n'))
 
