@@ -12,7 +12,7 @@ To create a new release:
 
 1. **Run the release command**:
    ```bash
-   pnpm release
+   bun run release
    ```
    This command:
    - Uses `bumpp` to increment the version in `package.json`
@@ -29,8 +29,8 @@ When a tag starting with `v*` is pushed, the GitHub Actions workflow:
 
 1. **Generates changelog** using `changelogithub`
 2. **Publishes to npm**:
-   - Runs `pnpm install`
-   - Publishes with `pnpm publish --no-git-checks -r --access public`
+   - Runs `bun install`
+   - Publishes with `npm publish --no-git-checks --access public`
    - Uses provenance for enhanced security
 
 ## Release History Pattern
@@ -41,6 +41,6 @@ Based on recent commits, the release pattern follows:
 
 ## Best Practices
 
-2. **Test before releasing** - Run `pnpm test` and `pnpm build` locally
+2. **Test before releasing** - Run `bun run test` and `bun run build` locally
 3. **Use semantic versioning** - The project follows semver conventions
 4. **Review changes** - Check git status before running release commands

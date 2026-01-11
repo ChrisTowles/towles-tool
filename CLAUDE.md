@@ -14,30 +14,30 @@ The project evolved from a private toolbox of personal scripts to a public Node.
 
 ### Development
 ```bash
-pnpm build              # Build the project using unbuild
-pnpm dev                # Development mode with unbuild --stub
-pnpm start              # Run the CLI with bun src/index.ts
-pnpm typecheck          # Run TypeScript type checking (no emit)
+bun run build           # Build the project using unbuild
+bun run dev             # Development mode with unbuild --stub
+bun run start           # Run the CLI with bun src/index.ts
+bun run typecheck       # Run TypeScript type checking (no emit)
 ```
 
 ### Testing
 ```bash
-pnpm test               # Run all tests with vitest
-pnpm test:watch         # Run tests in watch mode (sets CI=DisableCallingClaude)
+bun run test            # Run all tests with vitest
+bun run test:watch      # Run tests in watch mode (sets CI=DisableCallingClaude)
 ```
 
 ### Linting
 ```bash
-pnpm lint               # Run oxlint
-pnpm lint:fix           # Auto-fix linting issues in changed files
-pnpm lint:fix_all       # Auto-fix linting issues in all files
-pnpm lint:package       # Validate package with publint and knip
+bun run lint            # Run oxlint
+bun run lint:fix        # Auto-fix linting issues in changed files
+bun run lint:fix_all    # Auto-fix linting issues in all files
+bun run lint:package    # Validate package with publint and knip
 ```
 
 ### Release
 ```bash
-pnpm release            # Bump version and create tag (GitHub Actions publishes to npm)
-pnpm release:local      # Bump version and publish directly (for local testing)
+bun run release         # Bump version and create tag (GitHub Actions publishes to npm)
+bun run release:local   # Bump version and publish directly (for local testing)
 ```
 
 The release process is automated via GitHub Actions when a tag starting with `v*` is pushed.
@@ -88,9 +88,10 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 
 - **TypeScript**: ESNext target with strict mode, bundler module resolution
 - **Build**: unbuild for compilation
+- **Runtime**: Bun (runs TypeScript natively, no tsx needed)
 - **Testing**: Vitest with vitest-package-exports
 - **Linting**: oxlint
-- **Package Manager**: pnpm with catalog dependencies
+- **Package Manager**: Bun
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
 
 
@@ -120,12 +121,12 @@ tt ralph plan                       # Show plan with mermaid graph
 
 ## Important Notes
 
-- **Use bun for TypeScript**: Run `.ts` files directly with `bun file.ts` - no tsx/ts-node needed. Bun has native TypeScript support.
+- **Use bun for everything**: Run `.ts` files with `bun file.ts`, use `bunx` instead of `npx`, use `bun install/add/remove` for packages
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
 - When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)
-- Pre-commit hooks run `pnpm i --frozen-lockfile` and `oxlint --fix` on staged files
+- Pre-commit hooks run oxlint via lint-staged
 - The CLI is available as both `towles-tool` and `tt` commands when installed

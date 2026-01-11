@@ -1,4 +1,4 @@
-# # Important:  this run is triggered by a tag push, so it will not run on every commit.
+# Important: this run is triggered by a tag push, so it will not run on every commit.
 
 name: Release
 
@@ -18,21 +18,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
           registry-url: https://registry.npmjs.org/
 
-      - run: pnpm dlx changelogithub
-        # pnpm dlx changelogithub --dry
+      - run: bunx changelogithub
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-      # Uncomment the following lines to publish to npm on CI
-
-      - run: pnpm install
-      - run: pnpm publish --no-git-checks -r --access public
+      - run: bun install
+      - run: npm publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
           NPM_CONFIG_PROVENANCE: true
