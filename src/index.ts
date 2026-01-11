@@ -11,7 +11,6 @@ import { createJournalFile } from './commands/journal.js'
 
 import { configCommand } from './commands/config.js'
 import { githubBranchCommand } from './commands/github-branch-command.js'
-import { weatherCommand } from './commands/weather.js'
 import { ralphCommand } from './commands/ralph.js'
 
 async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<void> {
@@ -28,9 +27,6 @@ async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<voi
       break
     case 'config':
       await configCommand(context)
-      break
-    case 'weather':
-      await weatherCommand(context)
       break
     case 'ralph':
       await ralphCommand(parsedArgs.args.rawArgs)

@@ -31,10 +31,6 @@ export interface ConfigArgs {
   // Config command has no specific args for now
 }
 
-export interface WeatherArgs {
-  // Weather command has no specific args for now
-}
-
 export interface RalphArgs {
   rawArgs: string[]
 }
@@ -45,7 +41,6 @@ export type ParsedArgs =
   | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'gh-branch'; args: GitHubBranchArgs }
   | { command: 'config'; args: ConfigArgs }
-  | { command: 'weather'; args: WeatherArgs }
   | { command: 'ralph'; args: RalphArgs }
 
 /**
@@ -156,24 +151,16 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     }
   )
 
-  // Weather command
-  parser.command(
-    ['weather', 'w'],
-    'Show current weather for Cincinnati, OH',
-    {},
-    () => {
-      parsedResult = { command: 'weather', args: {} }
-    }
-  )
-
   // Ralph command - autonomous Claude Code runner
+  // Uses strict(false) to pass through args to citty
   parser.command(
     'ralph',
     'Run Claude Code in autonomous loop for task completion',
-    {},
+    (yargs) => yargs.strict(false).strictOptions(false).strictCommands(false),
     (argv: any) => {
-      // Pass remaining args to ralph's citty parser
-      const rawArgs = argv._.slice(1) as string[]
+      // Pass all args after 'ralph' to citty parser
+      const ralphIndex = process.argv.indexOf('ralph')
+      const rawArgs = ralphIndex >= 0 ? process.argv.slice(ralphIndex + 1) : []
       parsedResult = { command: 'ralph', args: { rawArgs } }
     }
   )

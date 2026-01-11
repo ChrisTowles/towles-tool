@@ -73,7 +73,7 @@ export const DEFAULT_STATE_FILE = 'ralph-state.json'
 export const DEFAULT_LOG_FILE = 'ralph-log.md'
 export const DEFAULT_PROGRESS_FILE = 'ralph-progress.md'
 export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
-export const CLAUDE_DEFAULT_ARGS = ['--print', '--output-format', 'stream-json', '--include-partial-messages', '--dangerously-skip-permissions']
+export const CLAUDE_DEFAULT_ARGS = ['--print', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
 // ============================================================================
 // Arg Validation Schema
@@ -591,8 +591,8 @@ const main = defineCommand({
             process.exit(0)
         }
 
-        // Require --run flag to start the loop
-        if (!validatedArgs.run) {
+        // Require --run or --dryRun flag to proceed
+        if (!validatedArgs.run && !validatedArgs.dryRun) {
             console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
             console.log('Usage:')
             console.log('  tt ralph --run              Start the autonomous loop')
