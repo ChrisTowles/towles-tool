@@ -50,6 +50,30 @@ export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
 export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
 // ============================================================================
+// State Validation Schema
+// ============================================================================
+
+const TaskStatusSchema = z.enum(['pending', 'in_progress', 'done'])
+
+const RalphTaskSchema = z.object({
+    id: z.number(),
+    description: z.string(),
+    status: TaskStatusSchema,
+    addedAt: z.string(),
+    completedAt: z.string().optional(),
+})
+
+const RalphStateSchema = z.object({
+    version: z.number(),
+    tasks: z.array(RalphTaskSchema),
+    startedAt: z.string(),
+    iteration: z.number(),
+    maxIterations: z.number(),
+    status: z.enum(['running', 'completed', 'max_iterations_reached', 'error']),
+    sessionId: z.string().optional(),
+})
+
+// ============================================================================
 // Arg Validation Schema
 // ============================================================================
 
@@ -131,20 +155,29 @@ export function saveState(state: RalphState, stateFile: string): void {
 
 export function loadState(stateFile: string): RalphState | null {
     try {
-        if (fs.existsSync(stateFile)) {
-            const content = fs.readFileSync(stateFile, 'utf-8')
-            const state = JSON.parse(content) as RalphState
-            // Ensure tasks array exists for backwards compatibility
-            if (!state.tasks) {
-                state.tasks = []
-            }
-            return state
+        if (!fs.existsSync(stateFile)) {
+            return null
         }
+        const content = fs.readFileSync(stateFile, 'utf-8')
+        const parsed = JSON.parse(content)
+
+        // Ensure tasks array exists for backwards compatibility
+        if (!parsed.tasks) {
+            parsed.tasks = []
+        }
+
+        const result = RalphStateSchema.safeParse(parsed)
+        if (!result.success) {
+            const errors = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')
+            console.warn(chalk.yellow(`Warning: Invalid state file ${stateFile}: ${errors}`))
+            return null
+        }
+        return result.data
     }
-    catch {
+    catch (err) {
+        console.warn(chalk.yellow(`Warning: Failed to load state file ${stateFile}: ${err}`))
         return null
     }
-    return null
 }
 
 export function addTaskToState(state: RalphState, description: string): RalphTask {
