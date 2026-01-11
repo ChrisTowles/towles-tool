@@ -7,8 +7,7 @@ import type { SettingsFile } from './settings'
 export interface Context {
   cwd: string
   settingsFile: SettingsFile
-  args: string[],
-  debug: boolean // useful for debugging purposes, can be toggled on or off
+  debug: boolean
 }
 export async function loadTowlesToolContext({
   cwd,
@@ -20,11 +19,9 @@ export async function loadTowlesToolContext({
   debug: boolean
 }): Promise<Context> {
 
-  // Load environment variables
   return {
-    cwd: cwd!,
+    cwd,
     settingsFile,
-    args: [], // TODO: Load args from yargs
-    debug: debug 
+    debug,
   } satisfies Context
 }

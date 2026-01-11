@@ -42,7 +42,6 @@ describe('today command', () => {
       path: '/test/settings.json',
     },
     cwd: '/test',
-    args: [],
     debug: false,
   }
 

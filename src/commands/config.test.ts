@@ -32,7 +32,6 @@ describe('config command', () => {
         path: '/home/user/.config/towles-tool/towles-tool.settings.json',
         settings: { ...defaultSettings, ...overrides },
       },
-      args: [],
       debug: false,
     }
   }
@@ -144,7 +143,6 @@ describe('config command', () => {
           },
         },
       },
-      args: [],
       debug: false,
     }
 
