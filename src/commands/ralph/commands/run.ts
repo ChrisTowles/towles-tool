@@ -55,6 +55,11 @@ export const runCommand = defineCommand({
             default: String(DEFAULT_MAX_ITERATIONS),
             description: `Max iterations (default: ${DEFAULT_MAX_ITERATIONS})`,
         },
+        addIterations: {
+            type: 'string' as const,
+            alias: 'a',
+            description: 'Add iterations to current count (e.g., at 5/10, --addIterations 10 makes it 5/20)',
+        },
         autoCommit: {
             type: 'boolean' as const,
             default: true,
@@ -87,7 +92,8 @@ export const runCommand = defineCommand({
         },
     },
     async run({ args }) {
-        const maxIterations = Number.parseInt(args.maxIterations, 10)
+        let maxIterations = Number.parseInt(args.maxIterations, 10)
+        const addIterations = args.addIterations ? Number.parseInt(args.addIterations, 10) : null
         const extraClaudeArgs = args.claudeArgs?.split(' ').filter(Boolean) || []
         const focusedTaskId = args.taskId ? Number.parseInt(args.taskId, 10) : null
 
@@ -98,6 +104,12 @@ export const runCommand = defineCommand({
             console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
             console.error(chalk.dim('Use: tt ralph task add "description"'))
             process.exit(2)
+        }
+
+        // Handle --addIterations: extend max from current iteration
+        if (addIterations !== null) {
+            maxIterations = state.iteration + addIterations
+            console.log(chalk.cyan(`Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`))
         }
 
         const pendingTasks = state.tasks.filter(t => t.status !== 'done')
