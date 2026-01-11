@@ -46,6 +46,5 @@ export default {
   'observe:graph': ObserveGraph,
   'observe:session': ObserveSession,
   // Aliases
-  'observe:flamegraph': ObserveGraph,
-  flame: ObserveGraph,
+  graph: ObserveGraph,
 }

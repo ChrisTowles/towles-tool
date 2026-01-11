@@ -157,7 +157,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`)
     this.log(pc.dim('  tt observe status     # Check current config'))
     this.log(pc.dim('  tt observe report     # Token/cost breakdown'))
     this.log(pc.dim('  tt observe session    # List sessions'))
-    this.log(pc.dim('  tt observe flamegraph # Visualize token usage'))
+    this.log(pc.dim('  tt observe graph     # Visualize token usage'))
     this.log('')
 
     this.log(pc.bold(pc.green('✅ Observability setup complete!\n')))

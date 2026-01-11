@@ -1,5 +1,6 @@
 import { Flags } from '@oclif/core'
 import * as fs from 'node:fs'
+import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { x } from 'tinyexec'
@@ -44,6 +45,9 @@ interface TreemapNode {
   ratio?: number
   date?: string
   project?: string
+  // Waste metrics
+  repeatedReads?: number
+  modelEfficiency?: number // Opus tokens / total tokens
 }
 
 /**
@@ -52,7 +56,7 @@ interface TreemapNode {
 export default class ObserveGraph extends BaseCommand {
   static override description = 'Generate interactive HTML treemap from session token data'
 
-  static override aliases = ['observe:flamegraph', 'flame']
+  static override aliases = ['observe:graph', 'graph']
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
@@ -69,6 +73,18 @@ export default class ObserveGraph extends BaseCommand {
     open: Flags.boolean({
       char: 'o',
       description: 'Open treemap in browser after generating',
+      default: true,
+      allowNo: true,
+    }),
+    serve: Flags.boolean({
+      description: 'Start local HTTP server to serve treemap (default: true)',
+      default: true,
+      allowNo: true,
+    }),
+    port: Flags.integer({
+      char: 'p',
+      description: 'Port for local server',
+      default: 8765,
     }),
   }
 
@@ -122,7 +138,40 @@ export default class ObserveGraph extends BaseCommand {
     fs.writeFileSync(outputPath, html)
     this.log(`✓ Saved to ${outputPath}`)
 
-    if (flags.open) {
+    if (flags.serve) {
+      // Start local HTTP server
+      const server = http.createServer((req, res) => {
+        // Serve the generated HTML file
+        if (req.url === '/' || req.url === `/${filename}`) {
+          res.writeHead(200, { 'Content-Type': 'text/html' })
+          res.end(html)
+        } else {
+          res.writeHead(404)
+          res.end('Not found')
+        }
+      })
+
+      const port = flags.port
+      server.listen(port, () => {
+        const url = `http://localhost:${port}/`
+        this.log(`\n🌐 Server running at ${url}`)
+        this.log('   Press Ctrl+C to stop\n')
+
+        if (flags.open) {
+          const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+          x(openCmd, [url])
+        }
+      })
+
+      // Keep server running until Ctrl+C
+      await new Promise<void>((resolve) => {
+        process.on('SIGINT', () => {
+          this.log('\n👋 Stopping server...')
+          server.close()
+          resolve()
+        })
+      })
+    } else if (flags.open) {
       this.log('\n📈 Opening treemap...')
       const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
       await x(openCmd, [outputPath])
@@ -162,6 +211,8 @@ export default class ObserveGraph extends BaseCommand {
       ratio: d.data.ratio,
       date: d.data.date,
       project: d.data.project,
+      repeatedReads: d.data.repeatedReads,
+      modelEfficiency: d.data.modelEfficiency,
       hasChildren: !!d.children?.length,
     }))
 
@@ -408,6 +459,12 @@ export default class ObserveGraph extends BaseCommand {
       if (r.ratio !== undefined && r.ratio !== null) {
         addRow('Ratio (in:out):', r.ratio.toFixed(1) + ':1', getRatioClass(r.ratio));
       }
+      if (r.repeatedReads !== undefined && r.repeatedReads > 0) {
+        addRow('Repeated reads:', r.repeatedReads.toString());
+      }
+      if (r.modelEfficiency !== undefined && r.modelEfficiency > 0) {
+        addRow('Opus usage:', (r.modelEfficiency * 100).toFixed(0) + '%');
+      }
 
       tooltip.style.display = 'block';
       moveTooltip(e);
@@ -614,9 +671,10 @@ export default class ObserveGraph extends BaseCommand {
         for (const session of dateSessions) {
           const entries = this.parseJsonl(session.path)
           const analysis = this.analyzeSession(entries)
+          const label = this.extractSessionLabel(entries, session.sessionId)
 
           sessionChildren.push({
-            name: session.sessionId.slice(0, 8),
+            name: label,
             value: session.tokens,
             sessionId: session.sessionId.slice(0, 8),
             model: this.getPrimaryModel(analysis),
@@ -625,6 +683,8 @@ export default class ObserveGraph extends BaseCommand {
             ratio: analysis.outputTokens > 0 ? analysis.inputTokens / analysis.outputTokens : 0,
             date: session.date,
             project: projectName,
+            repeatedReads: analysis.repeatedReads,
+            modelEfficiency: analysis.modelEfficiency,
           })
         }
 
@@ -670,6 +730,89 @@ export default class ObserveGraph extends BaseCommand {
     return projectParts.join('-')
   }
 
+  /**
+   * Extract a meaningful label from session entries.
+   * Priority: first user text > first assistant response > git branch > slug > short ID
+   */
+  private extractSessionLabel(entries: JournalEntry[], sessionId: string): string {
+    let firstUserText: string | undefined
+    let firstAssistantText: string | undefined
+    let gitBranch: string | undefined
+    let slug: string | undefined
+
+    for (const entry of entries) {
+      // Extract metadata from any entry
+      if (!gitBranch && (entry as any).gitBranch) {
+        gitBranch = (entry as any).gitBranch
+      }
+      if (!slug && (entry as any).slug) {
+        slug = (entry as any).slug
+      }
+
+      if (!entry.message) continue
+
+      // Look for first user message with actual text (not UUID reference)
+      if (!firstUserText && entry.type === 'user' && entry.message.role === 'user') {
+        const content = entry.message.content
+        if (typeof content === 'string') {
+          // Check if it's a UUID (skip those) or actual text
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(content)
+          if (!isUuid && content.length > 0) {
+            firstUserText = content
+          }
+        } else if (Array.isArray(content)) {
+          // Look for text blocks in array content
+          for (const block of content) {
+            if (block.type === 'text' && block.text && block.text.length > 0) {
+              firstUserText = block.text
+              break
+            }
+          }
+        }
+      }
+
+      // Look for first assistant text response
+      if (!firstAssistantText && entry.type === 'assistant' && entry.message.role === 'assistant') {
+        const content = entry.message.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && block.text && block.text.length > 0) {
+              firstAssistantText = block.text
+              break
+            }
+          }
+        }
+      }
+
+      // Stop early if we have user text
+      if (firstUserText) break
+    }
+
+    // Priority: user text > assistant text > git branch > slug > short ID
+    let label = firstUserText || firstAssistantText || gitBranch || slug || sessionId.slice(0, 8)
+
+    // Clean up the label
+    label = label
+      .replace(/^\/\S+\s*/, '') // Remove /command prefixes
+      .replace(/<[^>]+>[^<]*<\/[^>]+>/g, '') // Remove XML-style tags with content
+      .replace(/<[^>]+>/g, '') // Remove remaining XML tags
+      .replace(/^\s*Caveat:.*$/m, '') // Remove caveat lines
+      .replace(/\n.*/g, '') // Take only first line
+      .trim()
+
+    // If still empty or too short, use fallback
+    if (label.length < 3) {
+      label = slug || sessionId.slice(0, 8)
+    }
+
+    // Truncate very long labels (will be smart-truncated in UI based on box size)
+    if (label.length > 80) {
+      label = label.slice(0, 77) + '...'
+    }
+
+    return label
+  }
+
   private analyzeSession(entries: JournalEntry[]): {
     inputTokens: number
     outputTokens: number
@@ -677,6 +820,8 @@ export default class ObserveGraph extends BaseCommand {
     sonnetTokens: number
     haikuTokens: number
     cacheHitRate: number
+    repeatedReads: number
+    modelEfficiency: number
   } {
     let inputTokens = 0
     let outputTokens = 0
@@ -685,8 +830,21 @@ export default class ObserveGraph extends BaseCommand {
     let haikuTokens = 0
     let cacheRead = 0
     let totalInput = 0
+    const fileReadCounts = new Map<string, number>()
 
     for (const entry of entries) {
+      // Count file reads for repeatedReads metric
+      if (entry.message?.content && Array.isArray(entry.message.content)) {
+        for (const block of entry.message.content) {
+          if (block.type === 'tool_use' && block.name === 'Read' && block.input) {
+            const filePath = (block.input as { file_path?: string }).file_path
+            if (filePath) {
+              fileReadCounts.set(filePath, (fileReadCounts.get(filePath) || 0) + 1)
+            }
+          }
+        }
+      }
+
       if (!entry.message?.usage) continue
       const usage = entry.message.usage
       const model = entry.message.model || ''
@@ -702,6 +860,14 @@ export default class ObserveGraph extends BaseCommand {
       else if (model.includes('haiku')) haikuTokens += tokens
     }
 
+    // Count files read more than once
+    let repeatedReads = 0
+    for (const count of fileReadCounts.values()) {
+      if (count > 1) repeatedReads += count - 1
+    }
+
+    const totalTokens = opusTokens + sonnetTokens + haikuTokens
+
     return {
       inputTokens,
       outputTokens,
@@ -709,6 +875,8 @@ export default class ObserveGraph extends BaseCommand {
       sonnetTokens,
       haikuTokens,
       cacheHitRate: totalInput > 0 ? cacheRead / totalInput : 0,
+      repeatedReads,
+      modelEfficiency: totalTokens > 0 ? opusTokens / totalTokens : 0,
     }
   }
 
