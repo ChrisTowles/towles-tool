@@ -125,6 +125,7 @@ export default class ObserveSession extends BaseCommand {
     }
 
     const session = this.analyzeSession(sessionPath, sessionId)
+    const turns = this.parseTurns(sessionPath)
 
     this.log(pc.cyan(`\n📊 Session: ${sessionId}\n`))
     this.log(`Project: ${pc.dim(session.project)}`)
@@ -159,7 +160,76 @@ export default class ObserveSession extends BaseCommand {
           `  ${icon} ${model.padEnd(25)} ${this.formatTokens(total).padEnd(10)} (${pct}%)`
         )
       }
+      this.log('')
     }
+
+    // Turn-by-turn breakdown
+    if (turns.length > 0) {
+      this.log(pc.bold('Turn-by-Turn'))
+      this.log(
+        pc.dim(
+          `${'#'.padStart(4)} ${'Role'.padEnd(10)} ${'Model'.padEnd(28)} ${'Input'.padEnd(8)} ${'Output'.padEnd(8)}`
+        )
+      )
+      this.log(pc.dim('─'.repeat(68)))
+
+      for (const turn of turns) {
+        const icon = this.getModelIcon(turn.model)
+        const roleColor = turn.role === 'user' ? pc.green : pc.blue
+        const modelName = turn.model.length > 26 ? turn.model.slice(0, 26) + '..' : turn.model
+        this.log(
+          `${turn.num.toString().padStart(4)} ${roleColor(turn.role.padEnd(10))} ${icon} ${modelName.padEnd(26)} ${this.formatTokens(turn.input).padEnd(8)} ${this.formatTokens(turn.output).padEnd(8)}`
+        )
+      }
+    }
+  }
+
+  private parseTurns(filePath: string): Array<{
+    num: number
+    role: 'user' | 'assistant'
+    model: string
+    input: number
+    output: number
+  }> {
+    const turns: Array<{
+      num: number
+      role: 'user' | 'assistant'
+      model: string
+      input: number
+      output: number
+    }> = []
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8')
+      let turnNum = 0
+
+      for (const line of content.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const entry = JSON.parse(line) as JournalEntry
+          if (entry.type === 'user') {
+            turnNum++
+          }
+
+          if (entry.message?.role) {
+            const usage = entry.message.usage || {}
+            turns.push({
+              num: turnNum,
+              role: entry.message.role,
+              model: entry.message.model || 'unknown',
+              input: usage.input_tokens || 0,
+              output: usage.output_tokens || 0,
+            })
+          }
+        } catch {
+          // Skip invalid lines
+        }
+      }
+    } catch {
+      // Return empty on error
+    }
+
+    return turns
   }
 
   private findSessions(projectsDir: string, limit: number): SessionInfo[] {
