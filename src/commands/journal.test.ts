@@ -137,8 +137,9 @@ describe('today command', () => {
 
         await journalCommand(mockContext,  {jouralType:  JOURNAL_TYPES.DAILY_NOTES })
 
+        const currentYear = new Date().getFullYear().toString()
         expect(mockConsola.info).toHaveBeenCalledWith(
-          expect.stringContaining('2025'),
+          expect.stringContaining(currentYear),
         )
       })
     })

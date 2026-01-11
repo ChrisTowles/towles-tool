@@ -73,7 +73,7 @@ export const DEFAULT_STATE_FILE = 'ralph-state.json'
 export const DEFAULT_LOG_FILE = 'ralph-log.md'
 export const DEFAULT_PROGRESS_FILE = 'ralph-progress.md'
 export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
-export const CLAUDE_DEFAULT_ARGS = ['--print', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
+export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
 // ============================================================================
 // Arg Validation Schema

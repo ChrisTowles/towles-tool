@@ -12,9 +12,9 @@ import { ClaudeService } from './claude-service'
 //   }, 15_000)
 // })
 
-consola.log(`CI Environment: ${process.env.CI}`);
+const skipApiTests = process.env.CI === 'DisableCallingClaude' || !process.env.ANTHROPIC_API_KEY
 
-describe.skipIf(process.env.CI)('claude-service', () => {
+describe.skipIf(skipApiTests)('claude-service', () => {
   it('sendMessageStream should return a string', async () => {
     const service = new ClaudeService()
 
