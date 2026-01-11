@@ -2,7 +2,6 @@ import { z } from 'zod/v4'
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
-import * as commentJson from 'comment-json';
 import { AppInfo } from '../constants';
 import consola from 'consola';
 import { colors } from 'consola/utils';
@@ -80,7 +79,7 @@ function createSettingsFile(): UserSettings {
   
     if (fs.existsSync(USER_SETTINGS_PATH)) {
       const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-      const parsedUserSettings = commentJson.parse(userContent) as unknown as UserSettings;
+      const parsedUserSettings = JSON.parse(userContent) as unknown as UserSettings;
       userSettings = UserSettingsSchema.parse(parsedUserSettings);
     } else {
       saveSettings({
@@ -102,7 +101,7 @@ export function saveSettings(settingsFile: SettingsFile): void {
 
     fs.writeFileSync(
       settingsFile.path,
-      commentJson.stringify(settingsFile.settings, null, 2),
+      JSON.stringify(settingsFile.settings, null, 2),
       'utf-8',
     );
   } catch (error) {
@@ -118,7 +117,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
   // Load user settings
   if (fs.existsSync(USER_SETTINGS_PATH)) {
     const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-    const parsedUserSettings = commentJson.parse(userContent) as unknown as UserSettings;
+    const parsedUserSettings = JSON.parse(userContent) as unknown as UserSettings;
 
 
     userSettings = UserSettingsSchema.parse(parsedUserSettings);

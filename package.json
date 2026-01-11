@@ -34,7 +34,6 @@
     "@anthropic-ai/claude-code": "^2.1.4",
     "@anthropic-ai/sdk": "^0.56.0",
     "@oclif/core": "^4.3.2",
-    "comment-json": "^4.2.5",
     "consola": "^3.4.2",
     "fzf": "^0.5.2",
     "luxon": "^3.7.1",
