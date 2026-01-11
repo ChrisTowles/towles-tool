@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { RalphTask } from './ralph'
+import type { RalphTask, IterationHistory } from './ralph'
 import {
     createInitialState,
     saveState,
@@ -15,20 +15,26 @@ import {
     buildIterationPrompt,
     extractOutputSummary,
     detectCompletionMarker,
+    appendHistory,
     ArgsSchema,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_STATE_FILE,
+    DEFAULT_HISTORY_FILE,
     DEFAULT_COMPLETION_MARKER,
     CLAUDE_DEFAULT_ARGS,
 } from './ralph'
 
 describe('ralph-loop', () => {
     const testStateFile = join(tmpdir(), `ralph-test-${Date.now()}.json`)
+    const testHistoryFile = join(tmpdir(), `ralph-history-${Date.now()}.log`)
 
     afterEach(() => {
         // Cleanup test files
         if (existsSync(testStateFile)) {
             unlinkSync(testStateFile)
+        }
+        if (existsSync(testHistoryFile)) {
+            unlinkSync(testHistoryFile)
         }
     })
 
@@ -36,6 +42,7 @@ describe('ralph-loop', () => {
         it('should have correct default values', () => {
             expect(DEFAULT_MAX_ITERATIONS).toBe(10)
             expect(DEFAULT_STATE_FILE).toBe('ralph-state.json')
+            expect(DEFAULT_HISTORY_FILE).toBe('ralph-history.log')
             expect(DEFAULT_COMPLETION_MARKER).toBe('RALPH_DONE')
             expect(CLAUDE_DEFAULT_ARGS).toEqual(['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions'])
         })
@@ -49,7 +56,6 @@ describe('ralph-loop', () => {
             expect(state.iteration).toBe(0)
             expect(state.maxIterations).toBe(5)
             expect(state.status).toBe('running')
-            expect(state.history).toEqual([])
             expect(state.tasks).toEqual([])
             expect(state.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
         })
@@ -64,23 +70,15 @@ describe('ralph-loop', () => {
         it('should save and load state correctly', () => {
             const state = createInitialState(10)
             state.iteration = 3
-            state.history.push({
-                iteration: 1,
-                startedAt: '2026-01-08T10:00:00Z',
-                completedAt: '2026-01-08T10:01:00Z',
-                durationMs: 60000,
-                durationHuman: '1m 0s',
-                outputSummary: 'test output',
-                markerFound: false,
-            })
+            addTaskToState(state, 'test task')
 
             saveState(state, testStateFile)
             const loaded = loadState(testStateFile)
 
             expect(loaded).not.toBeNull()
             expect(loaded?.iteration).toBe(3)
-            expect(loaded?.history).toHaveLength(1)
-            expect(loaded?.history[0].outputSummary).toBe('test output')
+            expect(loaded?.tasks).toHaveLength(1)
+            expect(loaded?.tasks[0].description).toBe('test task')
         })
 
         it('should return null for non-existent file', () => {
@@ -207,18 +205,6 @@ describe('ralph-loop', () => {
 
             state.iteration++
             expect(state.iteration).toBe(1)
-
-            state.history.push({
-                iteration: 1,
-                startedAt: new Date().toISOString(),
-                completedAt: new Date().toISOString(),
-                durationMs: 1000,
-                durationHuman: '1s',
-                outputSummary: 'first iteration',
-                markerFound: false,
-            })
-
-            expect(state.history).toHaveLength(1)
         })
 
         it('should update status correctly', () => {
@@ -234,6 +220,64 @@ describe('ralph-loop', () => {
 
             state.status = 'error'
             expect(state.status).toBe('error')
+        })
+    })
+
+    describe('appendHistory', () => {
+        it('should append history as JSON line', () => {
+            const history: IterationHistory = {
+                iteration: 1,
+                startedAt: '2026-01-08T10:00:00Z',
+                completedAt: '2026-01-08T10:01:00Z',
+                durationMs: 60000,
+                durationHuman: '1m 0s',
+                outputSummary: 'test output',
+                markerFound: false,
+            }
+
+            appendHistory(history, testHistoryFile)
+
+            const content = require('node:fs').readFileSync(testHistoryFile, 'utf-8')
+            const lines = content.trim().split('\n')
+            expect(lines).toHaveLength(1)
+
+            const parsed = JSON.parse(lines[0])
+            expect(parsed.iteration).toBe(1)
+            expect(parsed.outputSummary).toBe('test output')
+        })
+
+        it('should append multiple entries', () => {
+            const history1: IterationHistory = {
+                iteration: 1,
+                startedAt: '2026-01-08T10:00:00Z',
+                completedAt: '2026-01-08T10:01:00Z',
+                durationMs: 60000,
+                durationHuman: '1m 0s',
+                outputSummary: 'first',
+                markerFound: false,
+            }
+            const history2: IterationHistory = {
+                iteration: 2,
+                startedAt: '2026-01-08T10:02:00Z',
+                completedAt: '2026-01-08T10:03:00Z',
+                durationMs: 60000,
+                durationHuman: '1m 0s',
+                outputSummary: 'second',
+                markerFound: true,
+            }
+
+            appendHistory(history1, testHistoryFile)
+            appendHistory(history2, testHistoryFile)
+
+            const content = require('node:fs').readFileSync(testHistoryFile, 'utf-8')
+            const lines = content.trim().split('\n')
+            expect(lines).toHaveLength(2)
+
+            const parsed1 = JSON.parse(lines[0])
+            const parsed2 = JSON.parse(lines[1])
+            expect(parsed1.outputSummary).toBe('first')
+            expect(parsed2.outputSummary).toBe('second')
+            expect(parsed2.markerFound).toBe(true)
         })
     })
 

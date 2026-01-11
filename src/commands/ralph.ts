@@ -61,7 +61,7 @@ export interface RalphState {
     iteration: number
     maxIterations: number
     status: 'running' | 'completed' | 'max_iterations_reached' | 'error'
-    history: IterationHistory[]
+    // history removed in v2 - now stored as JSON lines in ralph-history.log
 }
 
 // ============================================================================
@@ -72,6 +72,7 @@ export const DEFAULT_MAX_ITERATIONS = 10
 export const DEFAULT_STATE_FILE = 'ralph-state.json'
 export const DEFAULT_LOG_FILE = 'ralph-log.md'
 export const DEFAULT_PROGRESS_FILE = 'ralph-progress.md'
+export const DEFAULT_HISTORY_FILE = 'ralph-history.log'
 export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
 export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
@@ -131,8 +132,16 @@ export function createInitialState(maxIterations: number): RalphState {
         iteration: 0,
         maxIterations,
         status: 'running',
-        history: [],
     }
+}
+
+/**
+ * Append iteration history as a JSON line to the history log file.
+ * Each line is a complete JSON object for easy parsing.
+ */
+export function appendHistory(history: IterationHistory, historyFile: string = DEFAULT_HISTORY_FILE): void {
+    const line = JSON.stringify(history) + '\n'
+    fs.appendFileSync(historyFile, line)
 }
 
 export function saveState(state: RalphState, stateFile: string): void {
@@ -520,7 +529,7 @@ const main = defineCommand({
 
         // Handle --clear: remove all ralph files
         if (validatedArgs.clear) {
-            const files = [validatedArgs.stateFile, validatedArgs.logFile, DEFAULT_PROGRESS_FILE]
+            const files = [validatedArgs.stateFile, validatedArgs.logFile, DEFAULT_PROGRESS_FILE, DEFAULT_HISTORY_FILE]
             let deleted = 0
 
             for (const file of files) {
@@ -741,8 +750,8 @@ const main = defineCommand({
             const durationMs = endTime - startTime
             const durationHuman = formatDuration(durationMs)
 
-            // Record history
-            state.history.push({
+            // Record history to JSON lines file
+            appendHistory({
                 iteration: state.iteration,
                 startedAt: iterationStart,
                 completedAt: iterationEnd,
