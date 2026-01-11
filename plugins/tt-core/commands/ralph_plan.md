@@ -1,59 +1,78 @@
 ---
-title: ralph-plan
-description: "Interview user and create concise tasks for ralph-loop"
+description: Interview user and create tasks for ralph autonomous loop
 allowed-tools: AskUserQuestion(*), Task(*), Bash(*), Read(*), Write(*), Edit(*)
 ---
 
 # Ralph Task Planning
 
-Interview the user and create actionable tasks for `ralph-state.json`.
+Interview the user and create well-structured tasks for autonomous execution via `tt ralph`.
 
 ## Interview Phase
 
 Use `AskUserQuestion` to gather:
 
-1. **Goal**: What do you want to accomplish?
-2. **Scope**: What files/areas will this touch?
-3. **Constraints**: Any requirements, patterns to follow, or things to avoid?
-4. **Testing**: How should this be verified?
+1. **Goal**: What are you trying to build or accomplish?
+2. **Done State**: What does "done" look like? How do we verify?
+3. **Scope**: What files/areas will this touch?
+4. **Constraints**: Patterns to follow, things to avoid?
 
-For any codebase questions, use `Task` with `subagent_type=Explore` to research.
+For codebase questions, use `Task` with `subagent_type=Explore` to research existing patterns.
 
 Keep interview focused - 3-5 questions max.
 
-## Task Creation
+## Task Structure
 
-After gathering info, break down into **small, atomic tasks**:
+Each task must have:
 
-- Each task should be completable in 1 iteration
-- Tasks should be specific and actionable
-- Include test/verify steps as separate tasks
-- Order by dependencies
+1. **Clear completion criteria** - How does Claude know it's done?
+2. **Verifiable success** - Tests pass, typecheck passes, build works
+3. **Single responsibility** - One focused outcome
+4. **Self-contained context** - References specific files
 
-Example good tasks:
-- "Add UserProfile type to types/user.ts"
-- "Create getUserById function in services/user.ts"
-- "Add unit test for getUserById"
-- "Run typecheck and fix any errors"
+### Task Template
 
-Example bad tasks:
+```
+[Imperative description of what to do]
+
+Context:
+- Files: [specific paths to modify]
+- Patterns: [reference existing code]
+
+Success Criteria:
+- [ ] [Specific outcome]
+- [ ] Tests pass: pnpm test
+- [ ] Types pass: pnpm typecheck
+
+When complete, output: <promise>TASK_DONE</promise>
+```
+
+### Good vs Bad Tasks
+
+Good:
+- "Add UserProfile type to src/types/user.ts with id, email, name fields"
+- "Create getUserById in src/services/user.ts following existing service patterns"
+- "Add unit tests for getUserById covering success and not-found cases"
+
+Bad:
 - "Implement user feature" (too vague)
-- "Add types, service, and tests for user" (multiple things)
+- "Add types, service, and tests" (multiple things)
+- "Make it work like the other module" (unclear reference)
 
 ## Output
 
-1. Show the user the proposed task list
-2. Ask for approval/modifications using `AskUserQuestion`
-3. Once approved, add tasks to `ralph-state.json` using:
+1. Present proposed task list with full prompts
+2. Ask for approval/modifications via `AskUserQuestion`
+3. Once approved, add tasks:
 
 ```bash
-./scripts/ralph-loop.ts --addTask "task description"
+tt ralph --addTask "Task 1: [full task prompt]"
+tt ralph --addTask "Task 2: [full task prompt]"
 ```
 
-Add each approved task, then show final task list:
+4. Show final list:
 
 ```bash
-./scripts/ralph-loop.ts --listTasks
+tt ralph --listTasks
 ```
 
-Tell user they can now run `./scripts/ralph-loop.ts` to start.
+5. Tell user to run `tt ralph` to start autonomous execution.

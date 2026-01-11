@@ -80,6 +80,7 @@ export const CLAUDE_DEFAULT_ARGS = ['--print', '--output-format', 'stream-json',
 // ============================================================================
 
 export const ArgsSchema = z.object({
+    run: z.boolean().default(false),
     taskId: z.string().optional()
         .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'taskId must be a positive integer'),
     addTask: z.string().optional()
@@ -99,7 +100,7 @@ export const ArgsSchema = z.object({
 }).strict()
 
 // citty internal keys to filter out before validation
-const CITTY_INTERNAL_KEYS = ['_', 't', 'a', 'l', 'c', 'm', 'n']
+const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n']
 
 export function validateArgs(args: unknown): RalphArgs {
     // Filter out citty internal keys (aliases and positionals)
@@ -447,6 +448,12 @@ const main = defineCommand({
         description: 'Run Claude Code CLI in a loop until task completion',
     },
     args: {
+        run: {
+            type: 'boolean',
+            alias: 'r',
+            default: false,
+            description: 'Start the ralph loop (required to run)',
+        },
         taskId: {
             type: 'string',
             alias: 't',
@@ -581,6 +588,20 @@ const main = defineCommand({
                 console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`))
             }
             console.log()
+            process.exit(0)
+        }
+
+        // Require --run flag to start the loop
+        if (!validatedArgs.run) {
+            console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
+            console.log('Usage:')
+            console.log('  tt ralph --run              Start the autonomous loop')
+            console.log('  tt ralph --addTask "..."    Add a task')
+            console.log('  tt ralph --listTasks        List all tasks')
+            console.log('  tt ralph --clear            Clear all ralph files')
+            console.log('  tt ralph --dryRun           Show config without running')
+            console.log()
+            console.log(chalk.dim('Use --run (-r) to start the loop.'))
             process.exit(0)
         }
 
