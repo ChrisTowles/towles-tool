@@ -14,8 +14,6 @@ export async function getGitDiff(cwd: string): Promise<string> {
     cwd,
   )
 
-  // printDebug('getGitDiff', r)
-
   // Limit output to 1000 lines maximum
   const lines = r.split('\n')
   if (lines.length > 1000) {
