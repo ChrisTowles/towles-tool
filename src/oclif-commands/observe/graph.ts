@@ -245,6 +245,7 @@ export default class ObserveGraph extends BaseCommand {
       project: d.data.project,
       repeatedReads: d.data.repeatedReads,
       modelEfficiency: d.data.modelEfficiency,
+      tools: d.data.tools,
       hasChildren: !!d.children?.length,
     }))
 
@@ -356,6 +357,34 @@ export default class ObserveGraph extends BaseCommand {
     .ratio-good { color: #4ade80; }
     .ratio-moderate { color: #fbbf24; }
     .ratio-high { color: #f87171; }
+    .tool-table {
+      margin-top: 8px;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    .tool-table th {
+      text-align: left;
+      color: #888;
+      font-weight: 500;
+      padding: 3px 6px 3px 0;
+      border-bottom: 1px solid #444;
+    }
+    .tool-table td {
+      padding: 3px 6px 3px 0;
+      color: #ccc;
+    }
+    .tool-table td:last-child,
+    .tool-table th:last-child {
+      text-align: right;
+      padding-right: 0;
+    }
+    .tool-table-header {
+      color: #888;
+      font-size: 0.75rem;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
     .stats {
       margin-top: 15px;
       font-size: 0.85rem;
@@ -496,6 +525,44 @@ export default class ObserveGraph extends BaseCommand {
       }
       if (r.modelEfficiency !== undefined && r.modelEfficiency > 0) {
         addRow('Opus usage:', (r.modelEfficiency * 100).toFixed(0) + '%');
+      }
+
+      // Tool breakdown table
+      if (r.tools && r.tools.length > 0) {
+        const header = document.createElement('div');
+        header.className = 'tool-table-header';
+        header.textContent = 'Tool Usage';
+        tooltip.appendChild(header);
+
+        const table = document.createElement('table');
+        table.className = 'tool-table';
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        ['Tool', 'Calls', 'Tokens'].forEach(text => {
+          const th = document.createElement('th');
+          th.textContent = text;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        r.tools.forEach(tool => {
+          const tr = document.createElement('tr');
+          const tdName = document.createElement('td');
+          tdName.textContent = tool.name;
+          const tdCount = document.createElement('td');
+          tdCount.textContent = tool.count + 'x';
+          const tdTokens = document.createElement('td');
+          tdTokens.textContent = formatTokens(tool.inputTokens + tool.outputTokens);
+          tr.appendChild(tdName);
+          tr.appendChild(tdCount);
+          tr.appendChild(tdTokens);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        tooltip.appendChild(table);
       }
 
       tooltip.style.display = 'block';
