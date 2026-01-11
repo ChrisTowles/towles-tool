@@ -17,6 +17,11 @@ import RalphTaskRemove from './ralph/task/remove.js'
 import JournalDailyNotes from './journal/daily-notes.js'
 import JournalMeeting from './journal/meeting.js'
 import JournalNote from './journal/note.js'
+import ObserveSetup from './observe/setup.js'
+import ObserveStatus from './observe/status.js'
+import ObserveReport from './observe/report.js'
+import ObserveFlamegraph from './observe/flamegraph.js'
+import ObserveSession from './observe/session.js'
 
 export default {
   'branch:clean': BranchClean,
@@ -35,4 +40,9 @@ export default {
   'journal:daily-notes': JournalDailyNotes,
   'journal:meeting': JournalMeeting,
   'journal:note': JournalNote,
+  'observe:setup': ObserveSetup,
+  'observe:status': ObserveStatus,
+  'observe:report': ObserveReport,
+  'observe:flamegraph': ObserveFlamegraph,
+  'observe:session': ObserveSession,
 }
