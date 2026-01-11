@@ -63,6 +63,8 @@ interface TreemapNode {
   children?: TreemapNode[]
   // Metadata for tooltips
   sessionId?: string
+  fullSessionId?: string
+  filePath?: string
   model?: string
   inputTokens?: number
   outputTokens?: number
@@ -263,8 +265,69 @@ export default class ObserveGraph extends BaseCommand {
       color: #fff;
     }
     .container {
-      max-width: 1240px;
+      max-width: 1540px;
       margin: 0 auto;
+    }
+    .main-content {
+      display: flex;
+      gap: 20px;
+    }
+    .treemap-wrapper {
+      flex: 1;
+    }
+    .detail-panel {
+      width: 280px;
+      flex-shrink: 0;
+      background: #16213e;
+      border-radius: 8px;
+      padding: 16px;
+      height: fit-content;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    .detail-panel.empty {
+      color: #666;
+      font-size: 0.9rem;
+      text-align: center;
+      padding: 40px 16px;
+    }
+    .detail-title {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 12px;
+      color: #fff;
+      word-break: break-word;
+    }
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 6px 0;
+      font-size: 0.85rem;
+    }
+    .detail-label { color: #888; }
+    .detail-value { font-weight: 500; color: #ccc; }
+    .detail-actions {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .detail-btn {
+      background: #2a2a4a;
+      border: 1px solid #444;
+      color: #6b9fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+    .detail-btn:hover {
+      background: #3a3a5a;
+      border-color: #666;
     }
     .legend {
       display: flex;
@@ -348,6 +411,22 @@ export default class ObserveGraph extends BaseCommand {
     .ratio-good { color: #4ade80; }
     .ratio-moderate { color: #fbbf24; }
     .ratio-high { color: #f87171; }
+    .tooltip-link {
+      color: #6b9fff;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .tooltip-link:hover {
+      text-decoration: underline;
+    }
+    .tooltip-actions {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid #444;
+      display: flex;
+      gap: 12px;
+      font-size: 0.8rem;
+    }
     .tool-table {
       margin-top: 8px;
       width: 100%;
@@ -453,21 +532,27 @@ export default class ObserveGraph extends BaseCommand {
       <div class="min-tokens">
         <label for="minTokens">Min tokens:</label>
         <select id="minTokens">
-          <option value="0" selected>All</option>
+          <option value="0">All</option>
           <option value="100">100+</option>
           <option value="500">500+</option>
-          <option value="1000">1K+</option>
+          <option value="1000" selected>1K+</option>
           <option value="5000">5K+</option>
           <option value="10000">10K+</option>
         </select>
       </div>
     </div>
 
-    <div id="treemap"></div>
-    <div class="tooltip" id="tooltip"></div>
-
-    <div class="breadcrumb" id="breadcrumb"></div>
-    <div class="stats" id="stats"></div>
+    <div class="main-content">
+      <div class="treemap-wrapper">
+        <div id="treemap"></div>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="stats" id="stats"></div>
+      </div>
+      <div class="detail-panel empty" id="detailPanel">
+        Click a tile to see details
+      </div>
+    </div>
   </div>
 
   <script>
@@ -476,6 +561,7 @@ export default class ObserveGraph extends BaseCommand {
     const tooltip = document.getElementById('tooltip');
     const stats = document.getElementById('stats');
     const breadcrumb = document.getElementById('breadcrumb');
+    const detailPanel = document.getElementById('detailPanel');
     const WIDTH = ${width};
     const HEIGHT = ${height};
 
@@ -569,6 +655,8 @@ export default class ObserveGraph extends BaseCommand {
         value: d.value || 0,
         hasChildren: !!d.children?.length,
         sessionId: d.data.sessionId,
+        fullSessionId: d.data.fullSessionId,
+        filePath: d.data.filePath,
         model: d.data.model,
         inputTokens: d.data.inputTokens,
         outputTokens: d.data.outputTokens,
@@ -646,13 +734,14 @@ export default class ObserveGraph extends BaseCommand {
           node.appendChild(label);
         }
 
-        // Click to zoom
-        if (r.hasChildren && r.nodeRef) {
-          node.addEventListener('click', (e) => {
-            e.stopPropagation();
+        // Click to zoom and/or show detail
+        node.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showDetail(r);
+          if (r.hasChildren && r.nodeRef) {
             zoomTo(r.nodeRef);
-          });
-        }
+          }
+        });
 
         node.addEventListener('mouseenter', (e) => showTooltip(e, r));
         node.addEventListener('mousemove', (e) => moveTooltip(e));
@@ -719,7 +808,27 @@ export default class ObserveGraph extends BaseCommand {
         tooltip.appendChild(row);
       }
 
-      if (r.sessionId) addRow('Session:', r.sessionId);
+      function addLinkRow(label, text, onClick, title) {
+        const row = document.createElement('div');
+        row.className = 'tooltip-row';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'tooltip-label';
+        labelEl.textContent = label;
+        const link = document.createElement('span');
+        link.className = 'tooltip-link';
+        link.textContent = text;
+        if (title) link.title = title;
+        link.onclick = (e) => { e.stopPropagation(); onClick(); };
+        row.appendChild(labelEl);
+        row.appendChild(link);
+        tooltip.appendChild(row);
+      }
+
+      if (r.sessionId) {
+        addLinkRow('Session:', r.sessionId, () => {
+          navigator.clipboard.writeText(r.fullSessionId || r.sessionId);
+        }, 'Click to copy full session ID');
+      }
       if (r.date) addRow('Date:', r.date);
       if (r.model) addRow('Model:', r.model);
       if (r.value > 0) addRow('Total tokens:', formatTokens(r.value));
@@ -773,6 +882,38 @@ export default class ObserveGraph extends BaseCommand {
         tooltip.appendChild(table);
       }
 
+      // Actions section with links
+      if (r.fullSessionId || r.filePath) {
+        const actions = document.createElement('div');
+        actions.className = 'tooltip-actions';
+
+        if (r.filePath) {
+          const fileLink = document.createElement('span');
+          fileLink.className = 'tooltip-link';
+          fileLink.textContent = '📄 Copy path';
+          fileLink.title = r.filePath;
+          fileLink.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(r.filePath);
+          };
+          actions.appendChild(fileLink);
+        }
+
+        if (r.fullSessionId) {
+          const transcriptLink = document.createElement('span');
+          transcriptLink.className = 'tooltip-link';
+          transcriptLink.textContent = '📜 View transcript';
+          transcriptLink.title = 'Copy command to view with claude-code-transcripts';
+          transcriptLink.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText('uvx claude-code-transcripts ' + r.fullSessionId);
+          };
+          actions.appendChild(transcriptLink);
+        }
+
+        tooltip.appendChild(actions);
+      }
+
       tooltip.style.display = 'block';
       moveTooltip(e);
     }
@@ -788,6 +929,82 @@ export default class ObserveGraph extends BaseCommand {
 
     function hideTooltip() {
       tooltip.style.display = 'none';
+    }
+
+    function showDetail(r) {
+      detailPanel.className = 'detail-panel';
+      detailPanel.replaceChildren();
+
+      const title = document.createElement('div');
+      title.className = 'detail-title';
+      title.textContent = r.name;
+      detailPanel.appendChild(title);
+
+      function addDetailRow(label, value, extraClass) {
+        const row = document.createElement('div');
+        row.className = 'detail-row';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'detail-label';
+        labelEl.textContent = label;
+        const valueEl = document.createElement('span');
+        valueEl.className = 'detail-value' + (extraClass ? ' ' + extraClass : '');
+        valueEl.textContent = value;
+        row.appendChild(labelEl);
+        row.appendChild(valueEl);
+        detailPanel.appendChild(row);
+      }
+
+      if (r.sessionId) addDetailRow('Session:', r.fullSessionId || r.sessionId);
+      if (r.date) addDetailRow('Date:', r.date);
+      if (r.model) addDetailRow('Model:', r.model);
+      if (r.value > 0) addDetailRow('Total tokens:', formatTokens(r.value));
+      if (r.inputTokens !== undefined) addDetailRow('Input:', formatTokens(r.inputTokens));
+      if (r.outputTokens !== undefined) addDetailRow('Output:', formatTokens(r.outputTokens));
+      if (r.ratio !== undefined && r.ratio !== null) {
+        addDetailRow('Ratio (in:out):', r.ratio.toFixed(1) + ':1', getRatioClass(r.ratio));
+      }
+
+      // Action buttons
+      if (r.fullSessionId || r.filePath) {
+        const actions = document.createElement('div');
+        actions.className = 'detail-actions';
+
+        if (r.filePath) {
+          const fileBtn = document.createElement('button');
+          fileBtn.className = 'detail-btn';
+          fileBtn.textContent = '📄 Copy file path';
+          fileBtn.onclick = () => {
+            navigator.clipboard.writeText(r.filePath);
+            fileBtn.textContent = '✓ Copied!';
+            setTimeout(() => fileBtn.textContent = '📄 Copy file path', 1500);
+          };
+          actions.appendChild(fileBtn);
+        }
+
+        if (r.fullSessionId) {
+          const copyIdBtn = document.createElement('button');
+          copyIdBtn.className = 'detail-btn';
+          copyIdBtn.textContent = '🔗 Copy session ID';
+          copyIdBtn.onclick = () => {
+            navigator.clipboard.writeText(r.fullSessionId);
+            copyIdBtn.textContent = '✓ Copied!';
+            setTimeout(() => copyIdBtn.textContent = '🔗 Copy session ID', 1500);
+          };
+          actions.appendChild(copyIdBtn);
+
+          const transcriptBtn = document.createElement('button');
+          transcriptBtn.className = 'detail-btn';
+          transcriptBtn.textContent = '📜 Copy transcript command';
+          transcriptBtn.onclick = () => {
+            navigator.clipboard.writeText('uvx claude-code-transcripts ' + r.fullSessionId);
+            transcriptBtn.textContent = '✓ Copied!';
+            setTimeout(() => transcriptBtn.textContent = '📜 Copy transcript command', 1500);
+          };
+          actions.appendChild(transcriptBtn);
+        }
+
+        detailPanel.appendChild(actions);
+      }
     }
   </script>
 </body>
@@ -907,7 +1124,7 @@ export default class ObserveGraph extends BaseCommand {
    * Build turn-level nodes from session entries.
    * Used by both single-session and all-sessions views.
    */
-  private buildTurnNodes(sessionId: string, entries: JournalEntry[]): TreemapNode[] {
+  private buildTurnNodes(sessionId: string, entries: JournalEntry[], filePath?: string): TreemapNode[] {
     const children: TreemapNode[] = []
     let turnNumber = 0
 
@@ -965,6 +1182,8 @@ export default class ObserveGraph extends BaseCommand {
         value: toolChildren.length > 0 ? undefined : totalTokens, // Let children sum if present
         children: toolChildren.length > 0 ? toolChildren : undefined,
         sessionId: sessionId.slice(0, 8),
+        fullSessionId: sessionId,
+        filePath,
         model: this.getModelName(model),
         inputTokens,
         outputTokens,
@@ -1146,7 +1365,7 @@ export default class ObserveGraph extends BaseCommand {
           const tools = this.aggregateSessionTools(entries)
 
           // Build turn-level children for drill-down
-          const turnChildren = this.buildTurnNodes(session.sessionId, entries)
+          const turnChildren = this.buildTurnNodes(session.sessionId, entries, session.path)
 
           sessionChildren.push({
             name: label,
@@ -1154,6 +1373,8 @@ export default class ObserveGraph extends BaseCommand {
             value: turnChildren.length > 0 ? undefined : session.tokens,
             children: turnChildren.length > 0 ? turnChildren : undefined,
             sessionId: session.sessionId.slice(0, 8),
+            fullSessionId: session.sessionId,
+            filePath: session.path,
             model: this.getPrimaryModel(analysis),
             inputTokens: analysis.inputTokens,
             outputTokens: analysis.outputTokens,
