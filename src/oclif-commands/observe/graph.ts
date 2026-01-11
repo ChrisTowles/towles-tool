@@ -52,7 +52,7 @@ interface JournalEntry {
 
 interface ToolData {
   name: string
-  count: number
+  detail?: string // file path, command, etc.
   inputTokens: number
   outputTokens: number
 }
@@ -379,16 +379,8 @@ export default class ObserveGraph extends BaseCommand {
 
     <div class="legend">
       <div class="legend-item">
-        <div class="legend-color" style="background: linear-gradient(90deg, #22c55e, #86efac);"></div>
-        <span>Efficient (&lt;2:1 ratio)</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background: linear-gradient(90deg, #eab308, #fde047);"></div>
-        <span>Moderate (2-5:1 ratio)</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background: linear-gradient(90deg, #ef4444, #fca5a5);"></div>
-        <span>High waste (&gt;5:1 ratio)</span>
+        <div class="legend-color" style="background: linear-gradient(90deg, hsl(120,70%,50%), hsl(90,70%,50%), hsl(60,70%,50%), hsl(30,70%,50%), hsl(0,70%,50%)); width: 120px;"></div>
+        <span>Ratio: 1:1 → 10:1+ (green=efficient, red=wasteful)</span>
       </div>
     </div>
 
@@ -593,9 +585,21 @@ export default class ObserveGraph extends BaseCommand {
 
     function getColor(ratio) {
       if (ratio === undefined || ratio === null) return '#4a5568';
-      if (ratio < 2) return '#22c55e'; // Green - efficient
-      if (ratio < 5) return '#eab308'; // Yellow - moderate
-      return '#ef4444'; // Red - high waste
+      // Gradient from green (hue 120) through yellow (60) to red (0)
+      // ratio 0-1 = green, 1-3 = green→yellow, 3-10 = yellow→red, 10+ = red
+      let hue;
+      if (ratio <= 1) {
+        hue = 120; // Pure green
+      } else if (ratio <= 3) {
+        // Green to yellow (120 → 60)
+        hue = 120 - ((ratio - 1) / 2) * 60;
+      } else if (ratio <= 10) {
+        // Yellow to red (60 → 0)
+        hue = 60 - ((ratio - 3) / 7) * 60;
+      } else {
+        hue = 0; // Pure red
+      }
+      return 'hsl(' + Math.round(hue) + ', 70%, 50%)';
     }
 
     function getRatioClass(ratio) {
@@ -662,7 +666,7 @@ export default class ObserveGraph extends BaseCommand {
 
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        ['Tool', 'Calls', 'Tokens'].forEach(text => {
+        ['Tool', 'Detail', 'Tokens'].forEach(text => {
           const th = document.createElement('th');
           th.textContent = text;
           headerRow.appendChild(th);
@@ -675,12 +679,12 @@ export default class ObserveGraph extends BaseCommand {
           const tr = document.createElement('tr');
           const tdName = document.createElement('td');
           tdName.textContent = tool.name;
-          const tdCount = document.createElement('td');
-          tdCount.textContent = tool.count + 'x';
+          const tdDetail = document.createElement('td');
+          tdDetail.textContent = tool.detail || '';
           const tdTokens = document.createElement('td');
           tdTokens.textContent = formatTokens(tool.inputTokens + tool.outputTokens);
           tr.appendChild(tdName);
-          tr.appendChild(tdCount);
+          tr.appendChild(tdDetail);
           tr.appendChild(tdTokens);
           tbody.appendChild(tr);
         });
@@ -848,12 +852,12 @@ export default class ObserveGraph extends BaseCommand {
 
       const ratio = outputTokens > 0 ? inputTokens / outputTokens : inputTokens > 0 ? 999 : 0
 
-      // Extract tool usage from content blocks
+      // Extract individual tool calls from content blocks
       const tools = this.extractToolData(entry.message.content, inputTokens, outputTokens)
 
-      // Create tool children nodes for nested treemap display
+      // Create individual tool children nodes
       const toolChildren: TreemapNode[] = tools.map((tool) => ({
-        name: `${tool.name} (${tool.count}x)`,
+        name: tool.detail ? `${tool.name}: ${tool.detail}` : tool.name,
         value: tool.inputTokens + tool.outputTokens,
         inputTokens: tool.inputTokens,
         outputTokens: tool.outputTokens,
@@ -879,8 +883,8 @@ export default class ObserveGraph extends BaseCommand {
   }
 
   /**
-   * Extract tool usage data from message content blocks.
-   * Aggregates counts per tool name and distributes tokens proportionally.
+   * Extract individual tool calls from message content blocks.
+   * Returns each tool call with its detail (file path, command, etc.).
    */
   private extractToolData(
     content: ContentBlock[] | string | undefined,
@@ -889,40 +893,75 @@ export default class ObserveGraph extends BaseCommand {
   ): ToolData[] {
     if (!content || typeof content === 'string') return []
 
-    // Count tool_use blocks by name
-    const toolCounts = new Map<string, number>()
+    // Collect individual tool_use blocks
+    const toolBlocks: Array<{ name: string; detail?: string }> = []
     for (const block of content) {
       if (block.type === 'tool_use' && block.name) {
-        toolCounts.set(block.name, (toolCounts.get(block.name) || 0) + 1)
+        const detail = this.extractToolDetail(block.name, block.input)
+        toolBlocks.push({ name: block.name, detail })
       }
     }
 
-    if (toolCounts.size === 0) return []
+    if (toolBlocks.length === 0) return []
 
-    // Calculate total tool calls for token distribution
-    const totalCalls = [...toolCounts.values()].reduce((sum, c) => sum + c, 0)
-
-    // Create ToolData array with proportional token distribution
-    const tools: ToolData[] = []
-    for (const [name, count] of toolCounts) {
-      const proportion = count / totalCalls
-      tools.push({
-        name,
-        count,
-        inputTokens: Math.round(turnInputTokens * proportion),
-        outputTokens: Math.round(turnOutputTokens * proportion),
-      })
+    // Distribute tokens proportionally across individual calls
+    const tokensPerCall = {
+      input: Math.round(turnInputTokens / toolBlocks.length),
+      output: Math.round(turnOutputTokens / toolBlocks.length),
     }
 
-    // Sort by count descending
-    tools.sort((a, b) => b.count - a.count)
+    return toolBlocks.map((tool) => ({
+      name: tool.name,
+      detail: tool.detail,
+      inputTokens: tokensPerCall.input,
+      outputTokens: tokensPerCall.output,
+    }))
+  }
 
-    return tools
+  /**
+   * Extract a meaningful detail string from tool input.
+   */
+  private extractToolDetail(toolName: string, input?: Record<string, unknown>): string | undefined {
+    if (!input) return undefined
+
+    switch (toolName) {
+      case 'Read':
+        return this.truncateDetail(input.file_path as string)
+      case 'Write':
+      case 'Edit':
+        return this.truncateDetail(input.file_path as string)
+      case 'Bash':
+        return this.truncateDetail(input.command as string, 50)
+      case 'Glob':
+        return input.pattern as string
+      case 'Grep':
+        return input.pattern as string
+      case 'Task':
+        return input.description as string
+      case 'WebFetch':
+        return this.truncateDetail(input.url as string, 40)
+      default:
+        return undefined
+    }
+  }
+
+  /**
+   * Truncate a string and extract just the filename for paths.
+   */
+  private truncateDetail(str: string | undefined, maxLen = 30): string | undefined {
+    if (!str) return undefined
+    // For file paths, show just the filename
+    if (str.includes('/')) {
+      const parts = str.split('/')
+      const filename = parts[parts.length - 1]
+      return filename.length > maxLen ? filename.slice(0, maxLen - 3) + '...' : filename
+    }
+    return str.length > maxLen ? str.slice(0, maxLen - 3) + '...' : str
   }
 
   /**
    * Aggregate tool usage across all entries in a session.
-   * Returns combined tool data for session-level tooltips.
+   * Returns combined tool data for session-level tooltips (aggregated by name).
    */
   private aggregateSessionTools(entries: JournalEntry[]): ToolData[] {
     const toolAgg = new Map<string, { count: number; inputTokens: number; outputTokens: number }>()
@@ -938,12 +977,12 @@ export default class ObserveGraph extends BaseCommand {
       for (const tool of turnTools) {
         const existing = toolAgg.get(tool.name)
         if (existing) {
-          existing.count += tool.count
+          existing.count += 1
           existing.inputTokens += tool.inputTokens
           existing.outputTokens += tool.outputTokens
         } else {
           toolAgg.set(tool.name, {
-            count: tool.count,
+            count: 1,
             inputTokens: tool.inputTokens,
             outputTokens: tool.outputTokens,
           })
@@ -951,12 +990,14 @@ export default class ObserveGraph extends BaseCommand {
       }
     }
 
-    // Convert to array and sort by count
+    // Convert to array and sort by token usage
     const tools: ToolData[] = [...toolAgg.entries()].map(([name, data]) => ({
       name,
-      ...data,
+      detail: `${data.count}x`,
+      inputTokens: data.inputTokens,
+      outputTokens: data.outputTokens,
     }))
-    tools.sort((a, b) => b.count - a.count)
+    tools.sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
 
     return tools
   }
