@@ -371,16 +371,66 @@ export default class ObserveGraph extends BaseCommand {
       color: #666;
       margin: 0 4px;
     }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    .tile-selector, .min-tokens {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tile-selector label, .min-tokens label {
+      color: #888;
+      font-size: 0.85rem;
+    }
+    .tile-selector select, .min-tokens select {
+      background: #2a2a4a;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .tile-selector select:hover, .min-tokens select:hover {
+      border-color: #666;
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/d3-hierarchy@3"></script>
 </head>
 <body>
   <div class="container">
     <h1>Claude Token Usage Treemap</h1>
 
-    <div class="legend">
-      <div class="legend-item">
-        <div class="legend-color" style="background: linear-gradient(90deg, hsl(120,70%,50%), hsl(90,70%,50%), hsl(60,70%,50%), hsl(30,70%,50%), hsl(0,70%,50%)); width: 120px;"></div>
-        <span>Ratio: 1:1 → 10:1+ (green=efficient, red=wasteful)</span>
+    <div class="controls">
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background: linear-gradient(90deg, hsl(120,70%,50%), hsl(90,70%,50%), hsl(60,70%,50%), hsl(30,70%,50%), hsl(0,70%,50%)); width: 120px;"></div>
+          <span>Ratio: 1:1 → 10:1+ (green=efficient, red=wasteful)</span>
+        </div>
+      </div>
+      <div class="tile-selector">
+        <label for="tileMethod">Layout:</label>
+        <select id="tileMethod">
+          <option value="squarify" selected>Squarify (readable)</option>
+          <option value="binary">Binary (balanced)</option>
+          <option value="sliceDice">Slice & Dice (alternating)</option>
+        </select>
+      </div>
+      <div class="min-tokens">
+        <label for="minTokens">Min tokens:</label>
+        <select id="minTokens">
+          <option value="0" selected>All</option>
+          <option value="100">100+</option>
+          <option value="500">500+</option>
+          <option value="1000">1K+</option>
+          <option value="5000">5K+</option>
+          <option value="10000">10K+</option>
+        </select>
       </div>
     </div>
 
@@ -399,6 +449,10 @@ export default class ObserveGraph extends BaseCommand {
     const breadcrumb = document.getElementById('breadcrumb');
     const WIDTH = ${width};
     const HEIGHT = ${height};
+
+    // Controls
+    const tileMethodSelect = document.getElementById('tileMethod');
+    const minTokensSelect = document.getElementById('minTokens');
 
     // Navigation stack for zoom
     let navStack = [treeData];
@@ -419,91 +473,89 @@ export default class ObserveGraph extends BaseCommand {
       render();
     }
 
-    function computeLayout(data) {
-      // Simple treemap layout using squarified algorithm
-      function sumValues(node) {
-        if (node.value !== undefined && node.value > 0) return node.value;
-        if (!node.children) return 0;
-        return node.children.reduce((sum, c) => sum + sumValues(c), 0);
+    // Filter nodes below minTokens threshold
+    function filterByMinTokens(node, minTokens) {
+      if (minTokens <= 0) return node;
+
+      function sumValue(n) {
+        if (n.value !== undefined && n.value > 0) return n.value;
+        if (!n.children) return 0;
+        return n.children.reduce((sum, c) => sum + sumValue(c), 0);
       }
 
-      function layoutNode(node, x, y, w, h, depth) {
-        const result = {
-          x, y, width: w, height: h, depth,
-          name: node.name,
-          value: sumValues(node),
-          hasChildren: !!node.children?.length,
-          sessionId: node.sessionId,
-          model: node.model,
-          inputTokens: node.inputTokens,
-          outputTokens: node.outputTokens,
-          ratio: node.ratio,
-          date: node.date,
-          project: node.project,
-          repeatedReads: node.repeatedReads,
-          modelEfficiency: node.modelEfficiency,
-          tools: node.tools,
-          nodeRef: node
-        };
+      function filterNode(n) {
+        const val = sumValue(n);
+        if (val < minTokens && !n.children) return null;
 
-        const rects = [result];
+        if (!n.children) return n;
 
-        if (node.children && node.children.length > 0) {
-          const padding = 3;
-          const headerH = 19;
-          const innerX = x + padding;
-          const innerY = y + headerH;
-          const innerW = w - padding * 2;
-          const innerH = h - headerH - padding;
+        const filteredChildren = n.children
+          .map(filterNode)
+          .filter(c => c !== null);
 
-          if (innerW > 0 && innerH > 0) {
-            const childRects = squarify(node.children, innerX, innerY, innerW, innerH, depth + 1);
-            rects.push(...childRects);
-          }
-        }
+        if (filteredChildren.length === 0 && val < minTokens) return null;
 
-        return rects;
+        return { ...n, children: filteredChildren.length > 0 ? filteredChildren : undefined };
       }
 
-      function squarify(children, x, y, w, h, depth) {
-        if (!children || children.length === 0) return [];
-
-        const total = children.reduce((sum, c) => sum + sumValues(c), 0);
-        if (total === 0) return [];
-
-        const sorted = [...children].sort((a, b) => sumValues(b) - sumValues(a));
-        const rects = [];
-
-        let cx = x, cy = y, cw = w, ch = h;
-
-        for (const child of sorted) {
-          const childVal = sumValues(child);
-          const ratio = childVal / total;
-          const area = ratio * w * h;
-
-          let childW, childH;
-          if (cw > ch) {
-            childW = Math.min(cw, area / ch);
-            childH = ch;
-            const childRects = layoutNode(child, cx, cy, childW, childH, depth);
-            rects.push(...childRects);
-            cx += childW;
-            cw -= childW;
-          } else {
-            childH = Math.min(ch, area / cw);
-            childW = cw;
-            const childRects = layoutNode(child, cx, cy, childW, childH, depth);
-            rects.push(...childRects);
-            cy += childH;
-            ch -= childH;
-          }
-        }
-
-        return rects;
-      }
-
-      return layoutNode(data, 0, 0, WIDTH, HEIGHT, 0);
+      return filterNode(node) || node;
     }
+
+    // Get d3 tile method
+    function getTileMethod() {
+      const method = tileMethodSelect.value;
+      switch (method) {
+        case 'binary': return d3.treemapBinary;
+        case 'sliceDice': return d3.treemapSliceDice;
+        default: return d3.treemapSquarify;
+      }
+    }
+
+    function computeLayout(data) {
+      const minTokens = parseInt(minTokensSelect.value) || 0;
+      const filteredData = filterByMinTokens(data, minTokens);
+
+      // Use d3-hierarchy for layout
+      const root = d3.hierarchy(filteredData)
+        .sum(d => d.value || 0)
+        .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+      const layout = d3.treemap()
+        .size([WIDTH, HEIGHT])
+        .paddingOuter(3)
+        .paddingTop(19)
+        .paddingInner(1)
+        .tile(getTileMethod());
+
+      layout(root);
+
+      // Convert to rect array
+      return root.descendants().map(d => ({
+        x: d.x0,
+        y: d.y0,
+        width: d.x1 - d.x0,
+        height: d.y1 - d.y0,
+        depth: d.depth,
+        name: d.data.name,
+        value: d.value || 0,
+        hasChildren: !!d.children?.length,
+        sessionId: d.data.sessionId,
+        model: d.data.model,
+        inputTokens: d.data.inputTokens,
+        outputTokens: d.data.outputTokens,
+        ratio: d.data.ratio,
+        date: d.data.date,
+        project: d.data.project,
+        repeatedReads: d.data.repeatedReads,
+        modelEfficiency: d.data.modelEfficiency,
+        tools: d.data.tools,
+        nodeRef: d.data
+      }));
+    }
+
+    // Re-render on control changes
+    tileMethodSelect.addEventListener('change', render);
+    minTokensSelect.addEventListener('change', render);
 
     function render() {
       // Clear container using replaceChildren (safe)

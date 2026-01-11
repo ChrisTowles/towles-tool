@@ -171,6 +171,8 @@ Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5
 
 **Troubleshooting treemap**: Use Chrome MCP tools (`mcp__claude-in-chrome__*`) to view and interact with the treemap in browser. Run `tt observe graph` then use `tabs_context_mcp`, `navigate`, and `computer screenshot` to inspect the visualization.
 
+**Treemap reference**: https://d3js.org/d3-hierarchy/treemap - d3-hierarchy treemap tiling algorithms and layout options.
+
 ## Important Notes
 
 - **Use bun for everything**: Run `.ts` files with `bun file.ts`, use `bunx` instead of `npx`, use `bun install/add/remove` for packages
