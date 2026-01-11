@@ -39,12 +39,6 @@ export const taskAddCommand = defineCommand({
             description: 'Task description',
             required: true,
         },
-        maxIterations: {
-            type: 'string' as const,
-            alias: 'm',
-            default: String(DEFAULT_MAX_ITERATIONS),
-            description: `Max iterations for new state (default: ${DEFAULT_MAX_ITERATIONS})`,
-        },
     },
     run({ args }) {
         const description = String(args.description).trim()
@@ -57,8 +51,7 @@ export const taskAddCommand = defineCommand({
         let state = loadState(args.stateFile)
 
         if (!state) {
-            const maxIterations = Number.parseInt(args.maxIterations, 10)
-            state = createInitialState(maxIterations)
+            state = createInitialState(DEFAULT_MAX_ITERATIONS)
         }
 
         const newTask = addTaskToState(state, description)

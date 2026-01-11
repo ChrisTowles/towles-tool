@@ -20,7 +20,7 @@ export default class TaskAdd extends BaseCommand {
 
   static override examples = [
     '<%= config.bin %> ralph task add "Fix the login bug"',
-    '<%= config.bin %> ralph task add "Implement feature X" --maxIterations 20',
+    '<%= config.bin %> ralph task add "Implement feature X"',
   ]
 
   static override args = {
@@ -37,11 +37,6 @@ export default class TaskAdd extends BaseCommand {
       description: 'State file path',
       default: DEFAULT_STATE_FILE,
     }),
-    maxIterations: Flags.integer({
-      char: 'm',
-      description: 'Max iterations for new state',
-      default: DEFAULT_MAX_ITERATIONS,
-    }),
   }
 
   async run(): Promise<void> {
@@ -56,7 +51,7 @@ export default class TaskAdd extends BaseCommand {
     let state = loadState(flags.stateFile)
 
     if (!state) {
-      state = createInitialState(flags.maxIterations)
+      state = createInitialState(DEFAULT_MAX_ITERATIONS)
     }
 
     const newTask = addTaskToState(state, description)

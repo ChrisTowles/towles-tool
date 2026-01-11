@@ -101,6 +101,7 @@ When using `tt ralph` for autonomous task execution:
 - Use `--no-autoCommit` to disable auto-commits
 - Use `--maxIterations` to limit token burn
 - Use `--dryRun` to preview config before running
+- **Iterations are a run-level concern** - task commands should not accept iteration params
 
 ```bash
 # Task management
