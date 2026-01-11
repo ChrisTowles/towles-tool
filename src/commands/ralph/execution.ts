@@ -120,7 +120,10 @@ export async function runIteration(
     claudeArgs: string[],
     logStream?: WriteStream,
 ): Promise<IterationResult> {
-    const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, prompt]
+    // Pass task context as system prompt, use simple trigger as user message
+    const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, '--append-system-prompt', prompt,
+
+    ]
 
     let output = ''
     let lineBuffer = ''
