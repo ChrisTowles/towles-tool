@@ -182,17 +182,46 @@ export default class ObserveGraph extends BaseCommand {
         }
       })
 
-      const port = flags.port
-      server.listen(port, () => {
-        const url = `http://localhost:${port}/`
-        this.log(`\n🌐 Server running at ${url}`)
-        this.log('   Press Ctrl+C to stop\n')
+      // Try to start server, fallback to next port if in use
+      const startPort = flags.port
+      const maxAttempts = 10
 
-        if (flags.open) {
-          const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
-          x(openCmd, [url])
-        }
-      })
+      const tryPort = (port: number): Promise<number> => {
+        return new Promise((resolve, reject) => {
+          const onError = (err: NodeJS.ErrnoException) => {
+            server.removeListener('listening', onListening)
+            if (err.code === 'EADDRINUSE' && port < startPort + maxAttempts - 1) {
+              resolve(tryPort(port + 1))
+            } else {
+              reject(err)
+            }
+          }
+
+          const onListening = () => {
+            server.removeListener('error', onError)
+            resolve(port)
+          }
+
+          server.once('error', onError)
+          server.once('listening', onListening)
+          server.listen(port)
+        })
+      }
+
+      const tryListen = (): Promise<number> => tryPort(startPort)
+
+      const actualPort = await tryListen()
+      const url = `http://localhost:${actualPort}/`
+      if (actualPort !== startPort) {
+        this.log(`\n⚠️  Port ${startPort} in use, using ${actualPort}`)
+      }
+      this.log(`🌐 Server running at ${url}`)
+      this.log('   Press Ctrl+C to stop\n')
+
+      if (flags.open) {
+        const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+        x(openCmd, [url])
+      }
 
       // Keep server running until Ctrl+C
       await new Promise<void>((resolve) => {
