@@ -1,7 +1,7 @@
 import type { WriteStream } from 'node:fs'
 import { spawn } from 'node:child_process'
 import pc from 'picocolors'
-import { exec } from 'tinyexec'
+import { x } from 'tinyexec'
 import { CLAUDE_DEFAULT_ARGS } from './state'
 
 // ============================================================================
@@ -64,7 +64,7 @@ interface ParsedLine {
 
 export async function checkClaudeCli(): Promise<boolean> {
     try {
-        const result = await exec('which', ['claude'])
+        const result = await x('which', ['claude'])
         return result.exitCode === 0
     }
     catch {

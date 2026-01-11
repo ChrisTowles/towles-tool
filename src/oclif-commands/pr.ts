@@ -1,5 +1,5 @@
 import { Flags } from '@oclif/core'
-import { exec } from 'tinyexec'
+import { x } from 'tinyexec'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 
@@ -48,7 +48,7 @@ export default class Pr extends BaseCommand {
     }
 
     // Get current branch
-    const branchResult = await exec('git', ['branch', '--show-current'])
+    const branchResult = await x('git', ['branch', '--show-current'])
     const currentBranch = branchResult.stdout.trim()
 
     if (!currentBranch) {
@@ -65,7 +65,7 @@ export default class Pr extends BaseCommand {
     consola.info(`Base branch: ${colors.cyan(flags.base)}`)
 
     // Get commits between base and current branch
-    const logResult = await exec('git', [
+    const logResult = await x('git', [
       'log',
       `${flags.base}..HEAD`,
       '--pretty=format:%s',
@@ -102,12 +102,12 @@ export default class Pr extends BaseCommand {
     }
 
     // Push branch if needed
-    const statusResult = await exec('git', ['status', '-sb'])
+    const statusResult = await x('git', ['status', '-sb'])
     const needsPush = !statusResult.stdout.includes('origin/')
 
     if (needsPush) {
       consola.info('Pushing branch to remote...')
-      await exec('git', ['push', '-u', 'origin', currentBranch])
+      await x('git', ['push', '-u', 'origin', currentBranch])
     }
 
     // Create PR
@@ -122,7 +122,7 @@ export default class Pr extends BaseCommand {
       prArgs.push('--draft')
     }
 
-    const prResult = await exec('gh', prArgs)
+    const prResult = await x('gh', prArgs)
     const prUrl = prResult.stdout.trim()
 
     consola.success(`PR created: ${colors.cyan(prUrl)}`)

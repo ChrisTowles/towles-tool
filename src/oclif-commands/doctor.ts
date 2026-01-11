@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { exec } from 'tinyexec'
+import { x } from 'tinyexec'
 import pc from 'picocolors'
 import { BaseCommand } from '../commands/base.js'
 
@@ -86,7 +86,7 @@ export default class Doctor extends BaseCommand {
   ): Promise<CheckResult> {
     try {
       // tinyexec is safe - uses execFile internally, no shell injection risk
-      const result = await exec(name, args)
+      const result = await x(name, args)
       const output = result.stdout + result.stderr
       const match = output.match(versionPattern)
       return {
@@ -102,7 +102,7 @@ export default class Doctor extends BaseCommand {
   private async checkGhAuth(): Promise<{ ok: boolean }> {
     try {
       // tinyexec is safe - uses execFile internally, no shell injection risk
-      const result = await exec('gh', ['auth', 'status'])
+      const result = await x('gh', ['auth', 'status'])
       return { ok: result.exitCode === 0 }
     } catch {
       return { ok: false }

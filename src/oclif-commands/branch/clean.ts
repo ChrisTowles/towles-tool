@@ -1,7 +1,7 @@
 import { Flags } from '@oclif/core'
 import { colors } from 'consola/utils'
 import consola from 'consola'
-import { exec } from 'tinyexec'
+import { x } from 'tinyexec'
 
 import { BaseCommand } from '../../commands/base.js'
 
@@ -45,11 +45,11 @@ export default class BranchClean extends BaseCommand {
     const dryRun = flags['dry-run']
 
     // Get current branch
-    const currentResult = await exec('git', ['branch', '--show-current'])
+    const currentResult = await x('git', ['branch', '--show-current'])
     const currentBranch = currentResult.stdout.trim()
 
     // Get merged branches
-    const mergedResult = await exec('git', ['branch', '--merged', baseBranch])
+    const mergedResult = await x('git', ['branch', '--merged', baseBranch])
     const allMerged = mergedResult.stdout
       .split('\n')
       .map(b => b.trim().replace(/^\* /, ''))
@@ -92,7 +92,7 @@ export default class BranchClean extends BaseCommand {
 
     for (const branch of toDelete) {
       try {
-        await exec('git', ['branch', '-d', branch])
+        await x('git', ['branch', '-d', branch])
         consola.log(colors.green(`✓ Deleted ${branch}`))
         deleted++
       } catch {
