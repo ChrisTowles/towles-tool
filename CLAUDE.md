@@ -43,21 +43,24 @@ bun run lint:fix        # Auto-fix linting issues
 
 ### CLI Application Structure
 
-**Entry point**: `src/index.ts` - Sets up the command router and context
+**Entry point**: `bin/run.ts` - oclif command router
 - Loads settings from `~/.config/towles-tool/towles-tool.settings.json`
-- Parses arguments via `yargs`
-- Routes to command handlers in `src/commands/`
+- Routes to oclif commands in `src/oclif-commands/`
 
 **Configuration System**:
 - `src/config/settings.ts` - User settings management with Zod validation
-- `src/config/context.ts` - Context object passed to all commands
-- Settings are stored in JSON with comment support via `comment-json`
+- `src/config/context.ts` - Context object passed to commands
+- `src/commands/base.ts` - BaseCommand class extending oclif Command with shared flags/settings
 
 **Available CLI Commands**:
-- `journal` - Create journal entries (daily-notes, meetings, notes)
-- `gh-branch` - GitHub branch operations
-- `config` - Manage configuration settings
-- `ralph` - Autonomous Claude Code runner for task execution
+- `config` (alias: `cfg`) - Display current configuration settings
+- `gh-branch` (aliases: `branch`, `br`) - Create git branch from GitHub issue
+- `journal daily-notes` (alias: `today`) - Weekly files with daily sections
+- `journal meeting` (alias: `m`) - Structured meeting notes
+- `journal note` (alias: `n`) - General-purpose notes
+- `ralph task add/list/done/remove` - Task management
+- `ralph run` - Autonomous Claude Code runner
+- `ralph plan` - Show plan with mermaid graph
 
 **Key Utilities**:
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
@@ -79,8 +82,9 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 ### Technology Stack
 
 - **Runtime**: Bun (runs TypeScript natively)
+- **CLI Framework**: oclif (commands in `src/oclif-commands/`)
 - **Build**: `bun build --compile` for standalone executables
-- **Testing**: `bun test`
+- **Testing**: `bun test` with `@oclif/test` for command testing
 - **Linting**: oxlint
 - **Package Manager**: Bun
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
@@ -115,7 +119,7 @@ tt ralph plan                       # Show plan with mermaid graph
 - **Use bun for everything**: Run `.ts` files with `bun file.ts`, use `bunx` instead of `npx`, use `bun install/add/remove` for packages
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
-- When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
+- When modifying CLI commands (`src/oclif-commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)
