@@ -2,6 +2,7 @@
 // oclif's pattern-based discovery doesn't work with bundled executables
 
 import Config from './config.js'
+import Doctor from './doctor.js'
 import GhBranch from './gh-branch.js'
 import RalphRun from './ralph/run.js'
 import RalphPlan from './ralph/plan.js'
@@ -15,6 +16,7 @@ import JournalNote from './journal/note.js'
 
 export default {
   config: Config,
+  doctor: Doctor,
   'gh-branch': GhBranch,
   'ralph:run': RalphRun,
   'ralph:plan': RalphPlan,
