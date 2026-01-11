@@ -16,11 +16,7 @@ export type JournalType = typeof JOURNAL_TYPES[keyof typeof JOURNAL_TYPES]
 // Define TypeScript interfaces for better type safety
 export interface JournalArgs {
   title?: string
-  jouralType: JournalType
-}
-
-export interface GitCommitArgs {
-  message?: string 
+  journalType: JournalType
 }
 
 export interface GitHubBranchArgs {
@@ -39,7 +35,6 @@ export interface RalphArgs {
 // Union type for all possible parsed arguments
 export type ParsedArgs =
   | { command: 'journal'; args: JournalArgs }
-  | { command: 'git-commit'; args: GitCommitArgs }
   | { command: 'gh-branch'; args: GitHubBranchArgs }
   | { command: 'config'; args: ConfigArgs }
   | { command: 'ralph'; args: RalphArgs }
@@ -81,7 +76,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
           'Weekly files with daily sections for ongoing work and notes',
           {},
           (argv) => {
-            parsedResult = { command: 'journal', args: { jouralType: 'daily-notes', title: '' } }
+            parsedResult = { command: 'journal', args: { journalType: 'daily-notes', title: '' } }
           }
         )
         .command(
@@ -94,7 +89,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
             }
           },
           (argv: any) => {
-            parsedResult = { command: 'journal', args: { jouralType: 'meeting', title: argv.title || '' } }
+            parsedResult = { command: 'journal', args: { journalType: 'meeting', title: argv.title || '' } }
           }
         )
         .command(
@@ -107,7 +102,7 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
             }
           },
           (argv: any) => {
-            parsedResult = { command: 'journal', args: { jouralType: 'note', title: argv.title || '' } }
+            parsedResult = { command: 'journal', args: { journalType: 'note', title: argv.title || '' } }
           }
         )
         .demandCommand(1, 'You need to specify a journal subcommand')
@@ -119,23 +114,6 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     }
   )
 
-  // Git commit command
-  parser.command(
-    ['git-commit [message...]', 'gc'],
-    'Git commit command with optional message',
-    {
-      message: {
-        type: 'string',
-        array: true,
-        describe: 'Commit message words'
-      }
-    },
-    (argv: any) => {
-      parsedResult = { command: 'git-commit', args: { message: argv.message } }
-    }
-  )
-
-  // Git commit command
   parser.command(
     ['gh-branch [assignedToMe...]', 'branch', 'br'],
     'Create git branch from github issue',

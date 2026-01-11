@@ -121,7 +121,7 @@ export async function openInEditor({ editor, filePath, folderPath }: { editor: s
 export async function journalCommand(context: Context, args: JournalArgs): Promise<void> {
   try {
     const fileInfo = generateJournalFileInfoByType({ 
-      type: args.jouralType,
+      type: args.journalType,
       date: new Date(),
       title: '', // Default title, can be modified later
       journalSettings: context.settingsFile.settings.journalSettings,

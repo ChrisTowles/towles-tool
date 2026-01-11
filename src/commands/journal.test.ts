@@ -158,7 +158,7 @@ describe('today command', () => {
           .mockReturnValueOnce(false) // directory doesn't exist
           .mockReturnValueOnce(false) // file doesn't exist
 
-        await journalCommand(mockContext, {jouralType:  JOURNAL_TYPES.DAILY_NOTES })
+        await journalCommand(mockContext, {journalType:  JOURNAL_TYPES.DAILY_NOTES })
 
         expect(mockMkdirSync).toHaveBeenCalled()
         expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -172,7 +172,7 @@ describe('today command', () => {
       it('should open existing journal file without creating new one', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await journalCommand(mockContext,  {jouralType:  JOURNAL_TYPES.DAILY_NOTES })
+        await journalCommand(mockContext,  {journalType:  JOURNAL_TYPES.DAILY_NOTES })
 
         expect(mockWriteFileSync).not.toHaveBeenCalled()
         expect(mockConsola.info).toHaveBeenCalledWith(expect.stringContaining('Opening existing journal file'))
@@ -181,7 +181,7 @@ describe('today command', () => {
       it('should construct correct file path', async () => {
         mockExistsSync.mockReturnValue(true)
 
-        await journalCommand(mockContext,  {jouralType:  JOURNAL_TYPES.DAILY_NOTES })
+        await journalCommand(mockContext,  {journalType:  JOURNAL_TYPES.DAILY_NOTES })
 
         const currentYear = new Date().getFullYear().toString()
         expect(mockConsola.info).toHaveBeenCalledWith(

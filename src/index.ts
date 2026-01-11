@@ -6,7 +6,6 @@ import consola from 'consola'
 import { loadSettings } from './config/settings.js'
 import { parseArguments} from './utils/parseArgs.js'
 import type { ParsedArgs } from './utils/parseArgs.js'
-import { gitCommitCommand } from './commands/git-commit.js'
 import { createJournalFile } from './commands/journal.js'
 
 import { configCommand } from './commands/config.js'
@@ -16,12 +15,9 @@ import { ralphCommand } from './commands/ralph.js'
 async function executeCommand(parsedArgs: ParsedArgs, context: any): Promise<void> {
   switch (parsedArgs.command) {
     case 'journal': {
-      await createJournalFile({ context, type: parsedArgs.args.jouralType, title: parsedArgs.args.title || '' })
+      await createJournalFile({ context, type: parsedArgs.args.journalType, title: parsedArgs.args.title || '' })
       break
     }
-    case 'git-commit':
-      await gitCommitCommand(context, parsedArgs.args.message)
-      break
     case 'gh-branch':
       await githubBranchCommand(context, parsedArgs.args)
       break
