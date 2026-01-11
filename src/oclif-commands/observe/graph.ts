@@ -65,6 +65,7 @@ interface TreemapNode {
   sessionId?: string
   fullSessionId?: string
   filePath?: string
+  startTime?: string
   model?: string
   inputTokens?: number
   outputTokens?: number
@@ -76,6 +77,7 @@ interface TreemapNode {
   modelEfficiency?: number // Opus tokens / total tokens
   // Tool data
   tools?: ToolData[]
+  toolName?: string // For coloring by tool type
 }
 
 /**
@@ -162,10 +164,17 @@ export default class ObserveGraph extends BaseCommand {
       fs.mkdirSync(reportsDir, { recursive: true })
     }
 
-    const timestamp = new Date().toISOString().split('T')[0]
+    const now = new Date()
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const tzOffset = -now.getTimezoneOffset()
+    const tzSign = tzOffset >= 0 ? '+' : '-'
+    const tzHours = pad(Math.floor(Math.abs(tzOffset) / 60))
+    const tzMins = pad(Math.abs(tzOffset) % 60)
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}${tzSign}${tzHours}${tzMins}`
+    const daysLabel = flags.days > 0 ? `${flags.days}d` : 'all'
     const filename = sessionId
       ? `treemap-${sessionId.slice(0, 8)}-${timestamp}.html`
-      : `treemap-all-${timestamp}.html`
+      : `treemap-${daysLabel}-${timestamp}.html`
     const outputPath = path.join(reportsDir, filename)
 
     fs.writeFileSync(outputPath, html)
@@ -516,10 +525,14 @@ export default class ObserveGraph extends BaseCommand {
 
     <div class="controls">
       <div class="legend">
-        <div class="legend-item">
-          <div class="legend-color" style="background: linear-gradient(90deg, hsl(120,70%,50%), hsl(90,70%,50%), hsl(60,70%,50%), hsl(30,70%,50%), hsl(0,70%,50%)); width: 120px;"></div>
-          <span>Ratio: 1:1 → 10:1+ (green=efficient, red=wasteful)</span>
-        </div>
+        <div class="legend-item"><div class="legend-color" style="background: #4ade80;"></div><span>Read</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #f87171;"></div><span>Write</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #fb923c;"></div><span>Edit</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #a78bfa;"></div><span>Bash</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #38bdf8;"></div><span>Glob</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #22d3ee;"></div><span>Grep</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #facc15;"></div><span>Task</span></div>
+        <div class="legend-item"><div class="legend-color" style="background: #60a5fa;"></div><span>MCP</span></div>
       </div>
       <div class="tile-selector">
         <label for="tileMethod">Layout:</label>
@@ -657,6 +670,7 @@ export default class ObserveGraph extends BaseCommand {
         sessionId: d.data.sessionId,
         fullSessionId: d.data.fullSessionId,
         filePath: d.data.filePath,
+        startTime: d.data.startTime,
         model: d.data.model,
         inputTokens: d.data.inputTokens,
         outputTokens: d.data.outputTokens,
@@ -666,6 +680,7 @@ export default class ObserveGraph extends BaseCommand {
         repeatedReads: d.data.repeatedReads,
         modelEfficiency: d.data.modelEfficiency,
         tools: d.data.tools,
+        toolName: d.data.toolName,
         nodeRef: d.data
       }));
     }
@@ -723,8 +738,8 @@ export default class ObserveGraph extends BaseCommand {
         node.style.width = r.width + 'px';
         node.style.height = r.height + 'px';
 
-        if (!r.hasChildren && r.depth > 0) {
-          node.style.background = getColor(r.ratio);
+        if (r.toolName && r.depth > 0) {
+          node.style.background = getColor(r.toolName);
         }
 
         if (r.width > 30 && r.height > 15) {
@@ -753,23 +768,27 @@ export default class ObserveGraph extends BaseCommand {
 
     render();
 
-    function getColor(ratio) {
-      if (ratio === undefined || ratio === null) return '#4a5568';
-      // Gradient from green (hue 120) through yellow (60) to red (0)
-      // ratio 0-1 = green, 1-3 = green→yellow, 3-10 = yellow→red, 10+ = red
-      let hue;
-      if (ratio <= 1) {
-        hue = 120; // Pure green
-      } else if (ratio <= 3) {
-        // Green to yellow (120 → 60)
-        hue = 120 - ((ratio - 1) / 2) * 60;
-      } else if (ratio <= 10) {
-        // Yellow to red (60 → 0)
-        hue = 60 - ((ratio - 3) / 7) * 60;
-      } else {
-        hue = 0; // Pure red
-      }
-      return 'hsl(' + Math.round(hue) + ', 70%, 50%)';
+    const toolColors = {
+      Read: '#4ade80',      // green
+      Write: '#f87171',     // red
+      Edit: '#fb923c',      // orange
+      MultiEdit: '#f97316', // darker orange
+      Bash: '#a78bfa',      // purple
+      Glob: '#38bdf8',      // sky blue
+      Grep: '#22d3ee',      // cyan
+      Task: '#facc15',      // yellow
+      WebFetch: '#2dd4bf',  // teal
+      WebSearch: '#14b8a6', // darker teal
+      TodoWrite: '#e879f9', // pink
+      LSP: '#818cf8',       // indigo
+      default: '#94a3b8'    // gray
+    };
+
+    function getColor(toolName) {
+      if (!toolName) return '#4a5568';
+      // Check for MCP tools (mcp__*)
+      if (toolName.startsWith('mcp__')) return '#60a5fa'; // blue for MCP
+      return toolColors[toolName] || toolColors.default;
     }
 
     function getRatioClass(ratio) {
@@ -830,6 +849,7 @@ export default class ObserveGraph extends BaseCommand {
         }, 'Click to copy full session ID');
       }
       if (r.date) addRow('Date:', r.date);
+      if (r.startTime) addRow('Started:', r.startTime);
       if (r.model) addRow('Model:', r.model);
       if (r.value > 0) addRow('Total tokens:', formatTokens(r.value));
       if (r.inputTokens !== undefined) addRow('Input:', formatTokens(r.inputTokens));
@@ -956,6 +976,7 @@ export default class ObserveGraph extends BaseCommand {
 
       if (r.sessionId) addDetailRow('Session:', r.fullSessionId || r.sessionId);
       if (r.date) addDetailRow('Date:', r.date);
+      if (r.startTime) addDetailRow('Started:', r.startTime);
       if (r.model) addDetailRow('Model:', r.model);
       if (r.value > 0) addDetailRow('Total tokens:', formatTokens(r.value));
       if (r.inputTokens !== undefined) addDetailRow('Input:', formatTokens(r.inputTokens));
@@ -994,11 +1015,12 @@ export default class ObserveGraph extends BaseCommand {
 
           const transcriptBtn = document.createElement('button');
           transcriptBtn.className = 'detail-btn';
-          transcriptBtn.textContent = '📜 Copy transcript command';
+          transcriptBtn.textContent = '📜 View transcript';
+          transcriptBtn.title = 'Copy command - use start time above when prompted';
           transcriptBtn.onclick = () => {
             navigator.clipboard.writeText('uvx claude-code-transcripts ' + r.fullSessionId);
             transcriptBtn.textContent = '✓ Copied!';
-            setTimeout(() => transcriptBtn.textContent = '📜 Copy transcript command', 1500);
+            setTimeout(() => transcriptBtn.textContent = '📜 View transcript', 1500);
           };
           actions.appendChild(transcriptBtn);
         }
@@ -1160,20 +1182,24 @@ export default class ObserveGraph extends BaseCommand {
         inputTokens: tool.inputTokens,
         outputTokens: tool.outputTokens,
         ratio: tool.outputTokens > 0 ? tool.inputTokens / tool.outputTokens : 0,
+        toolName: tool.name,
       }))
 
       // Format turn name based on tools used
       let turnName: string
+      let primaryToolName: string | undefined
       if (role === 'user') {
         turnName = `Turn ${turnNumber}: User`
       } else if (tools.length === 1) {
         // Single tool: show tool name and detail
         const t = tools[0]
         turnName = t.detail ? `${t.name}: ${t.detail}` : t.name
+        primaryToolName = t.name
       } else if (tools.length > 1) {
-        // Multiple tools: list unique tool names
+        // Multiple tools: list unique tool names, primary is most common
         const uniqueNames = [...new Set(tools.map((t) => t.name))]
         turnName = uniqueNames.slice(0, 3).join(', ') + (uniqueNames.length > 3 ? '...' : '')
+        primaryToolName = tools[0].name // Use first tool as primary
       } else {
         turnName = `Turn ${turnNumber}: Response`
       }
@@ -1184,6 +1210,7 @@ export default class ObserveGraph extends BaseCommand {
         sessionId: sessionId.slice(0, 8),
         fullSessionId: sessionId,
         filePath,
+        toolName: primaryToolName,
         model: this.getModelName(model),
         inputTokens,
         outputTokens,
@@ -1363,6 +1390,9 @@ export default class ObserveGraph extends BaseCommand {
           const analysis = this.analyzeSession(entries)
           const label = this.extractSessionLabel(entries, session.sessionId)
           const tools = this.aggregateSessionTools(entries)
+          const startTime = entries[0]?.timestamp
+            ? new Date(entries[0].timestamp).toLocaleTimeString()
+            : undefined
 
           // Build turn-level children for drill-down
           const turnChildren = this.buildTurnNodes(session.sessionId, entries, session.path)
@@ -1375,6 +1405,7 @@ export default class ObserveGraph extends BaseCommand {
             sessionId: session.sessionId.slice(0, 8),
             fullSessionId: session.sessionId,
             filePath: session.path,
+            startTime,
             model: this.getPrimaryModel(analysis),
             inputTokens: analysis.inputTokens,
             outputTokens: analysis.outputTokens,
