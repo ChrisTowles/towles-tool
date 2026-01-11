@@ -17,7 +17,8 @@ export const JournalSettingsSchema = z.object({
     dailyPathTemplate: z.string().default(path.join('journal/{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md')),
     meetingPathTemplate: z.string().default(path.join('journal/{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md')),
     notePathTemplate: z.string().default(path.join('journal/{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md')),
-
+    // Directory for external templates (fallback to hardcoded if not found)
+    templateDir: z.string().default(path.join(homedir(), '.config', AppInfo.toolName, 'templates')),
 })
 
 export type JournalSettings = z.infer<typeof JournalSettingsSchema>
