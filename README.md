@@ -4,38 +4,29 @@ Collection of quality-of-life tools and Claude Code plugins for daily developmen
 
 ## Overview
 
+**CLI tool** (`tt`) - Distributed as a compiled Bun executable for daily development tasks.
+
 **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use.
 
-The project evolved from a private toolbox of personal scripts to a public Node.js package and now also serves as a Claude Code plugin marketplace.
-
-## Reminders for me
-
-- 
-- Use plan mode!
-  - in plan mode tell claude your problems.
-  - in edit mode tell claude its problems.
-- use `/context` to see what is using context and if you need to trim anything down.
-  - Only add context Claude doesn’t already have but needs
-- Always write in third person for prompts
-- 
-- use a tool to write your prompts and evaluate them.
-  - These models are smart. Less is more. don't be too verbose
-  - https://console.anthropic.com/workbench/
-  - 
-- read source code from primary sources like:
-  - [anthropic repos](https://github.com/anthropics)
-- [Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices#core-principles)
-  - gerund form (verb + -ing) for skill names
-- [claude cookbook skills section](https://github.com/anthropics/claude-cookbooks/tree/main/skills)
-
-- https://github.com/anthropics/skills
-  - installed as a plugin, has examples and skill-crea
-
-```bash
-/plugin marketplace add anthropics/skills
-```
+The project evolved from a private toolbox of personal scripts to a compiled Bun executable and Claude Code plugin marketplace.
 
 ## Installation
+
+### CLI Tool
+
+Download the pre-built executable for your platform from [Releases](https://github.com/ChrisTowles/towles-tool/releases), or build from source:
+
+```bash
+# Clone and build
+git clone https://github.com/ChrisTowles/towles-tool.git
+cd towles-tool
+bun install
+bun run build
+
+# The executable is at dist/tt
+# Move it somewhere in your PATH
+mv dist/tt ~/.local/bin/tt
+```
 
 ### Claude Code Plugins
 
@@ -71,7 +62,18 @@ tt completion > ~/.config/fish/completions/tt.fish
 # Clone the repository
 git clone https://github.com/ChrisTowles/towles-tool.git
 cd towles-tool
+bun install
+```
 
+### Commands
+
+```bash
+bun run start           # Run the CLI directly
+bun run build           # Build executable for current platform
+bun run build:all       # Build for all platforms (Linux, macOS, Windows)
+bun run test            # Run tests
+bun run lint            # Run linter
+bun run typecheck       # Type check
 ```
 
 ### Plugin Validation
@@ -83,6 +85,28 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
 - Defines available plugins for installation
 
+## Reminders for me
+
+- Use plan mode!
+  - in plan mode tell claude your problems.
+  - in edit mode tell claude its problems.
+- use `/context` to see what is using context and if you need to trim anything down.
+  - Only add context Claude doesn't already have but needs
+- Always write in third person for prompts
+- use a tool to write your prompts and evaluate them.
+  - These models are smart. Less is more. don't be too verbose
+  - https://console.anthropic.com/workbench/
+- read source code from primary sources like:
+  - [anthropic repos](https://github.com/anthropics)
+- [Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices#core-principles)
+  - gerund form (verb + -ing) for skill names
+- [claude cookbook skills section](https://github.com/anthropics/claude-cookbooks/tree/main/skills)
+- https://github.com/anthropics/skills
+  - installed as a plugin, has examples and skill-creator
+
+```bash
+/plugin marketplace add anthropics/skills
+```
 
 ## Roadmap
 
@@ -112,12 +136,11 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 
 ### Project Documentation
 
-- [Release Process](docs/release-process.md) - How releases are managed
 - [Node Package](./docs/node-package.md) - How the repo worked when it was a node package
-- 
+
 ## History
 
-This project started as a collection of personal scripts and utilities built up over time in a private toolbox. The original goal was to consolidate these into a public Node.js package. With the release of Claude Code Skills and plugins, the project evolved to package these command-line tools as Claude Code plugins, making them more accessible and reusable within the Claude Code ecosystem.
+This project started as a collection of personal scripts and utilities built up over time in a private toolbox. It was initially published as an npm package, but has since evolved to be distributed as a compiled Bun executable. With the release of Claude Code Skills and plugins, the project also serves as a Claude Code plugin marketplace.
 
 ## License
 

@@ -1,7 +1,7 @@
 /**
  * Unit tests for ralph-loop script
  */
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'bun:test'
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

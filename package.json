@@ -16,43 +16,17 @@
   "bugs": {
     "url": "https://github.com/ChrisTowles/towles-tool/issues"
   },
-  "keywords": [],
-  "sideEffects": false,
-  "exports": {
-    ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
-  },
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
-  "bin": {
-    "towles-tool": "./bin/run.js",
-    "tt": "./bin/run.js"
-  },
-  "files": [
-    "bin",
-    "dist",
-    "src"
-  ],
   "scripts": {
-    "build": "unbuild",
-    "build:bin": "bun build src/index.ts --compile --minify --outfile dist/tt",
-    "build:bin:linux": "bun build src/index.ts --compile --minify --target=bun-linux-x64 --outfile dist/tt-linux-x64",
-    "build:bin:macos": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/tt-darwin-arm64",
-    "build:bin:windows": "bun build src/index.ts --compile --minify --target=bun-windows-x64 --outfile dist/tt-windows-x64.exe",
-    "build:bin:all": "bun run build:bin:linux && bun run build:bin:macos && bun run build:bin:windows",
-    "dev": "unbuild --stub",
+    "build": "bun build src/index.ts --compile --minify --outfile dist/tt",
+    "build:linux": "bun build src/index.ts --compile --minify --target=bun-linux-x64 --outfile dist/tt-linux-x64",
+    "build:macos": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/tt-darwin-arm64",
+    "build:windows": "bun build src/index.ts --compile --minify --target=bun-windows-x64 --outfile dist/tt-windows-x64.exe",
+    "build:all": "bun run build:linux && bun run build:macos && bun run build:windows",
+    "start": "bun src/index.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "lint:fix_all": "oxlint --fix .",
-    "lint:package": "bunx publint --fix && bunx knip",
-    "prepublishOnly": "bun run build",
-    "release:local": "changelogen --bump && npm publish --no-git-checks --access public",
-    "release": "changelogen --bump && echo \"github action will run and publish to npm\"",
-    "changelog": "changelogen",
-    "start": "bun src/index.ts",
-    "test": "vitest --run",
-    "test:watch": "CI=DisableCallingClaude vitest --watch",
+    "test": "bun test",
+    "test:watch": "CI=DisableCallingClaude bun test --watch",
     "typecheck": "tsc --noEmit",
     "prepare": "simple-git-hooks"
   },
@@ -80,20 +54,10 @@
     "@types/node": "^22.16.3",
     "@types/prompts": "^2.4.9",
     "@types/yargs": "^17.0.32",
-    "bumpp": "^10.2.0",
-    "changelogen": "^0.6.2",
     "lint-staged": "^15.5.2",
     "oxlint": "^1.7.0",
     "simple-git-hooks": "^2.13.0",
-    "typescript": "^5.8.3",
-    "unbuild": "^3.5.0",
-    "vite": "^6.3.5",
-    "vitest": "^3.2.4",
-    "vitest-package-exports": "^0.1.1",
-    "yaml": "^2.8.0"
-  },
-  "overrides": {
-    "vite": "npm:rolldown-vite@latest"
+    "typescript": "^5.8.3"
   },
   "patchedDependencies": {
     "prompts": "patches/prompts.patch"
@@ -106,9 +70,6 @@
   },
   "lint-staged": {
     "*": "oxlint --quiet --fix"
-  },
-  "directories": {
-    "test": "test"
   },
   "oclif": {
     "bin": "tt",

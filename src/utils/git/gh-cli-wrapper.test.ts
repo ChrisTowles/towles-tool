@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 import { getIssues, isGithubCliInstalled } from './gh-cli-wrapper'
 
 describe.skipIf(process.env.CI)('gh-cli-wrapper', () => {

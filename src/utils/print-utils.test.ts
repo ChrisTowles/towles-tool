@@ -1,21 +1,23 @@
 import util from 'node:util'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import consola from 'consola'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { printDebug, printJson } from './print-utils'
 
-vi.mock('consola')
-vi.mock('node:util')
-
 describe('print-utils', () => {
-  const mockConsola = vi.mocked(consola)
-  const mockInspect = vi.mocked(util.inspect)
+  let inspectSpy: ReturnType<typeof spyOn>
+  let consolaLogSpy: ReturnType<typeof spyOn>
+  let consolaDebugSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
-    vi.clearAllMocks()
-    mockInspect.mockReturnValue('mocked-inspect-output')
+    inspectSpy = spyOn(util, 'inspect').mockReturnValue('mocked-inspect-output')
+    consolaLogSpy = spyOn(consola, 'log').mockImplementation(() => {})
+    consolaDebugSpy = spyOn(consola, 'debug').mockImplementation(() => {})
   })
 
   afterEach(() => {
+    inspectSpy.mockRestore()
+    consolaLogSpy.mockRestore()
+    consolaDebugSpy.mockRestore()
     delete process.env.DEBUG
   })
 
@@ -25,13 +27,13 @@ describe('print-utils', () => {
 
       printJson(testObj)
 
-      expect(mockInspect).toHaveBeenCalledWith(testObj, {
+      expect(inspectSpy).toHaveBeenCalledWith(testObj, {
         depth: 2,
         colors: true,
         showHidden: false,
         compact: false,
       })
-      expect(mockConsola.log).toHaveBeenCalledWith('mocked-inspect-output')
+      expect(consolaLogSpy).toHaveBeenCalledWith('mocked-inspect-output')
     })
 
     it('should handle empty objects', () => {
@@ -39,8 +41,8 @@ describe('print-utils', () => {
 
       printJson(emptyObj)
 
-      expect(mockInspect).toHaveBeenCalledWith(emptyObj, expect.any(Object))
-      expect(mockConsola.log).toHaveBeenCalledWith('mocked-inspect-output')
+      expect(inspectSpy).toHaveBeenCalledWith(emptyObj, expect.any(Object))
+      expect(consolaLogSpy).toHaveBeenCalledWith('mocked-inspect-output')
     })
 
     it('should handle complex nested objects', () => {
@@ -56,7 +58,7 @@ describe('print-utils', () => {
 
       printJson(complexObj)
 
-      expect(mockInspect).toHaveBeenCalledWith(complexObj, {
+      expect(inspectSpy).toHaveBeenCalledWith(complexObj, {
         depth: 2,
         colors: true,
         showHidden: false,
@@ -73,7 +75,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
+      expect(consolaDebugSpy).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
     })
 
     it('should not log when DEBUG env var is not set', () => {
@@ -82,7 +84,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.debug).not.toHaveBeenCalled()
+      expect(consolaDebugSpy).not.toHaveBeenCalled()
     })
 
     it('should not log when DEBUG env var is empty string', () => {
@@ -91,7 +93,7 @@ describe('print-utils', () => {
 
       printDebug(message)
 
-      expect(mockConsola.debug).not.toHaveBeenCalled()
+      expect(consolaDebugSpy).not.toHaveBeenCalled()
     })
 
     it('should handle object messages', () => {
@@ -100,7 +102,7 @@ describe('print-utils', () => {
 
       printDebug(messageObj)
 
-      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${messageObj}`)
+      expect(consolaDebugSpy).toHaveBeenCalledWith(`DEBUG: ${messageObj}`)
     })
 
     it('should handle multiple arguments', () => {
@@ -110,7 +112,7 @@ describe('print-utils', () => {
 
       printDebug(message, ...args)
 
-      expect(mockConsola.debug).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
+      expect(consolaDebugSpy).toHaveBeenCalledWith(`DEBUG: ${message}`, ...args)
     })
   })
 })
