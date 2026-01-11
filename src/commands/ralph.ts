@@ -16,7 +16,7 @@
  * See also: /tt:plan command for interactive task planning
  */
 
-import 'zx/globals'
+import chalk from 'chalk'
 import { defineCommand, runMain } from 'citty'
 
 // Import types

@@ -1,4 +1,5 @@
-import 'zx/globals'
+import * as fs from 'node:fs'
+import chalk from 'chalk'
 import { defineCommand } from 'citty'
 import {
     DEFAULT_STATE_FILE,

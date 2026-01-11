@@ -159,9 +159,6 @@ importers:
       zod:
         specifier: catalog:cli
         version: 4.0.5
-      zx:
-        specifier: ^8.8.5
-        version: 8.8.5
     devDependencies:
       '@antfu/ni':
         specifier: catalog:cli
@@ -3188,11 +3185,6 @@ packages:
   zod@4.0.5:
     resolution: {integrity: sha512-/5UuuRPStvHXu7RS+gmvRf4NXrNxpSllGwDnCBcJZtQsKrviYXm54yDGV2KYNLT5kq0lHGcl7lqWJLgSaG+tgA==}
 
-  zx@8.8.5:
-    resolution: {integrity: sha512-SNgDF5L0gfN7FwVOdEFguY3orU5AkfFZm9B5YSHog/UDHv+lvmd82ZAsOenOkQixigwH2+yyH198AwNdKhj+RA==}
-    engines: {node: '>= 12.17.0'}
-    hasBin: true
-
 snapshots:
 
   '@ai-sdk/provider@2.0.0':
@@ -6035,5 +6027,3 @@ snapshots:
   zod@3.25.76: {}
 
   zod@4.0.5: {}
-
-  zx@8.8.5: {}

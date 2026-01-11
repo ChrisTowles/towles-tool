@@ -1,6 +1,7 @@
-import 'zx/globals'
 import type { WriteStream } from 'node:fs'
 import { spawn } from 'node:child_process'
+import chalk from 'chalk'
+import { exec } from 'tinyexec'
 import { CLAUDE_DEFAULT_ARGS } from './state'
 
 // ============================================================================
@@ -63,8 +64,8 @@ interface ParsedLine {
 
 export async function checkClaudeCli(): Promise<boolean> {
     try {
-        await $`which claude`.quiet()
-        return true
+        const result = await exec('which', ['claude'])
+        return result.exitCode === 0
     }
     catch {
         return false

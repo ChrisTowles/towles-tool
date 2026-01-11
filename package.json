@@ -73,8 +73,7 @@
     "strip-ansi": "catalog:cli",
     "tinyexec": "catalog:cli",
     "yargs": "catalog:cli",
-    "zod": "catalog:cli",
-    "zx": "^8.8.5"
+    "zod": "catalog:cli"
   },
   "devDependencies": {
     "@antfu/ni": "catalog:cli",

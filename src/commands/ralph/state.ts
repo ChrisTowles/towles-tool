@@ -1,4 +1,5 @@
-import 'zx/globals'
+import * as fs from 'node:fs'
+import chalk from 'chalk'
 import { z } from 'zod'
 
 // ============================================================================
