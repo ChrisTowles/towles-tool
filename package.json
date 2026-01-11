@@ -53,7 +53,7 @@
     "release:local": "changelogen --bump && pnpm publish --no-git-checks -r --access public",
     "release": "changelogen --bump && echo \"github action will run and publish to npm\"",
     "changelog": "changelogen",
-    "start": "tsx src/index.ts",
+    "start": "bun src/index.ts",
     "test": "vitest --run",
     "test:watch": "CI=DisableCallingClaude vitest --watch",
     "typecheck": "tsc --noEmit",
@@ -74,7 +74,6 @@
     "prompts": "catalog:cli",
     "strip-ansi": "catalog:cli",
     "tinyexec": "catalog:cli",
-    "tsx": "catalog:cli",
     "yargs": "catalog:cli",
     "zod": "catalog:cli"
   },

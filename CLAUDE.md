@@ -16,7 +16,7 @@ The project evolved from a private toolbox of personal scripts to a public Node.
 ```bash
 pnpm build              # Build the project using unbuild
 pnpm dev                # Development mode with unbuild --stub
-pnpm start              # Run the CLI with tsx src/index.ts
+pnpm start              # Run the CLI with bun src/index.ts
 pnpm typecheck          # Run TypeScript type checking (no emit)
 ```
 
@@ -120,6 +120,7 @@ tt ralph plan                       # Show plan with mermaid graph
 
 ## Important Notes
 
+- **Use bun for TypeScript**: Run `.ts` files directly with `bun file.ts` - no tsx/ts-node needed. Bun has native TypeScript support.
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
 - When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes

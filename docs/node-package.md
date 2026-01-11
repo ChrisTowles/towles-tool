@@ -60,7 +60,7 @@ pnpm install
 ```bash
 pnpm build              # Build the project using unbuild
 pnpm dev                # Development mode with unbuild --stub
-pnpm start              # Run the CLI with tsx src/index.ts
+pnpm start              # Run the CLI with bun src/index.ts
 pnpm typecheck          # Run TypeScript type checking (no emit)
 ```
 

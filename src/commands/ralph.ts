@@ -1,4 +1,4 @@
-#!/usr/bin/env -S pnpx tsx
+#!/usr/bin/env bun
 
 /**
  * Ralph - Autonomous Claude Code runner for task execution
