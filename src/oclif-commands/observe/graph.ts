@@ -789,6 +789,47 @@ export default class ObserveGraph extends BaseCommand {
     return tools
   }
 
+  /**
+   * Aggregate tool usage across all entries in a session.
+   * Returns combined tool data for session-level tooltips.
+   */
+  private aggregateSessionTools(entries: JournalEntry[]): ToolData[] {
+    const toolAgg = new Map<string, { count: number; inputTokens: number; outputTokens: number }>()
+
+    for (const entry of entries) {
+      if (!entry.message?.content || typeof entry.message.content === 'string') continue
+      if (!entry.message.usage) continue
+
+      const inputTokens = entry.message.usage.input_tokens || 0
+      const outputTokens = entry.message.usage.output_tokens || 0
+      const turnTools = this.extractToolData(entry.message.content, inputTokens, outputTokens)
+
+      for (const tool of turnTools) {
+        const existing = toolAgg.get(tool.name)
+        if (existing) {
+          existing.count += tool.count
+          existing.inputTokens += tool.inputTokens
+          existing.outputTokens += tool.outputTokens
+        } else {
+          toolAgg.set(tool.name, {
+            count: tool.count,
+            inputTokens: tool.inputTokens,
+            outputTokens: tool.outputTokens,
+          })
+        }
+      }
+    }
+
+    // Convert to array and sort by count
+    const tools: ToolData[] = [...toolAgg.entries()].map(([name, data]) => ({
+      name,
+      ...data,
+    }))
+    tools.sort((a, b) => b.count - a.count)
+
+    return tools
+  }
+
   private buildAllSessionsTreemap(
     sessions: Array<{ sessionId: string; path: string; date: string; tokens: number; project: string }>
   ): TreemapNode {
@@ -836,6 +877,7 @@ export default class ObserveGraph extends BaseCommand {
           const entries = this.parseJsonl(session.path)
           const analysis = this.analyzeSession(entries)
           const label = this.extractSessionLabel(entries, session.sessionId)
+          const tools = this.aggregateSessionTools(entries)
 
           sessionChildren.push({
             name: label,
@@ -849,6 +891,7 @@ export default class ObserveGraph extends BaseCommand {
             project: projectName,
             repeatedReads: analysis.repeatedReads,
             modelEfficiency: analysis.modelEfficiency,
+            tools: tools.length > 0 ? tools : undefined,
           })
         }
 
