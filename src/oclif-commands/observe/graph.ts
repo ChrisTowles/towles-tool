@@ -5,7 +5,6 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { x } from 'tinyexec'
 import { BaseCommand } from '../../commands/base.js'
-import { treemap, hierarchy, treemapSquarify } from 'd3-hierarchy'
 
 /**
  * Calculate cutoff timestamp for days filtering.
@@ -132,7 +131,7 @@ export default class ObserveGraph extends BaseCommand {
 
     if (!sessionId) {
       // All sessions mode
-      const sessions = this.findRecentSessions(projectsDir, 100, flags.days)
+      const sessions = this.findRecentSessions(projectsDir, 500, flags.days)
       if (sessions.length === 0) {
         this.error('No sessions found')
       }
@@ -211,45 +210,8 @@ export default class ObserveGraph extends BaseCommand {
   }
 
   private generateTreemapHtml(data: TreemapNode): string {
-    // Calculate treemap layout using d3-hierarchy
-    const root = hierarchy(data)
-      .sum(d => d.value || 0)
-      .sort((a, b) => (b.value || 0) - (a.value || 0))
-
     const width = 1200
     const height = 800
-
-    const layout = treemap<TreemapNode>()
-      .size([width, height])
-      .paddingOuter(3)
-      .paddingTop(19)
-      .paddingInner(1)
-      .tile(treemapSquarify)
-    layout(root)
-
-    // Generate rectangle data for HTML
-    const rects = root.descendants().map(d => ({
-      x: (d as any).x0,
-      y: (d as any).y0,
-      width: (d as any).x1 - (d as any).x0,
-      height: (d as any).y1 - (d as any).y0,
-      depth: d.depth,
-      name: d.data.name,
-      value: d.value || 0,
-      sessionId: d.data.sessionId,
-      model: d.data.model,
-      inputTokens: d.data.inputTokens,
-      outputTokens: d.data.outputTokens,
-      ratio: d.data.ratio,
-      date: d.data.date,
-      project: d.data.project,
-      repeatedReads: d.data.repeatedReads,
-      modelEfficiency: d.data.modelEfficiency,
-      tools: d.data.tools,
-      hasChildren: !!d.children?.length,
-    }))
-
-    const rectsJson = JSON.stringify(rects)
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -390,6 +352,25 @@ export default class ObserveGraph extends BaseCommand {
       font-size: 0.85rem;
       color: #888;
     }
+    .breadcrumb {
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+    .crumb {
+      color: #6b9fff;
+    }
+    .crumb:hover:not(.current) {
+      text-decoration: underline;
+    }
+    .crumb.current {
+      color: #fff;
+      cursor: default;
+    }
+    .crumb-sep {
+      color: #666;
+      margin: 0 4px;
+    }
   </style>
 </head>
 <body>
@@ -414,59 +395,201 @@ export default class ObserveGraph extends BaseCommand {
     <div id="treemap"></div>
     <div class="tooltip" id="tooltip"></div>
 
+    <div class="breadcrumb" id="breadcrumb"></div>
     <div class="stats" id="stats"></div>
   </div>
 
   <script>
-    const rects = ${rectsJson};
+    const treeData = ${JSON.stringify(data)};
     const container = document.getElementById('treemap');
     const tooltip = document.getElementById('tooltip');
     const stats = document.getElementById('stats');
+    const breadcrumb = document.getElementById('breadcrumb');
+    const WIDTH = ${width};
+    const HEIGHT = ${height};
 
-    // Calculate totals
-    let totalTokens = 0;
-    let totalInput = 0;
-    let totalOutput = 0;
-    rects.forEach(r => {
-      if (!r.hasChildren && r.depth > 0) {
-        totalTokens += r.value;
-        totalInput += r.inputTokens || 0;
-        totalOutput += r.outputTokens || 0;
+    // Navigation stack for zoom
+    let navStack = [treeData];
+
+    function getCurrentNode() {
+      return navStack[navStack.length - 1];
+    }
+
+    function zoomTo(node) {
+      if (node.children && node.children.length > 0) {
+        navStack.push(node);
+        render();
       }
-    });
+    }
 
-    const overallRatio = totalOutput > 0 ? (totalInput / totalOutput).toFixed(1) : 'N/A';
-    stats.textContent = 'Total: ' + formatTokens(totalTokens) + ' tokens | Input: ' + formatTokens(totalInput) + ' | Output: ' + formatTokens(totalOutput) + ' | Overall ratio: ' + overallRatio + ':1';
+    function zoomOut(index) {
+      navStack = navStack.slice(0, index + 1);
+      render();
+    }
 
-    // Render nodes
-    rects.forEach((r, i) => {
-      if (r.width < 1 || r.height < 1) return;
-
-      const node = document.createElement('div');
-      node.className = 'node' + (r.hasChildren ? ' node-group' : '');
-      node.style.left = r.x + 'px';
-      node.style.top = r.y + 'px';
-      node.style.width = r.width + 'px';
-      node.style.height = r.height + 'px';
-
-      if (!r.hasChildren && r.depth > 0) {
-        node.style.background = getColor(r.ratio);
-      }
-
-      if (r.width > 30 && r.height > 15) {
-        const label = document.createElement('div');
-        label.className = 'node-label';
-        label.textContent = r.name + (r.value > 0 && !r.hasChildren ? ' (' + formatTokens(r.value) + ')' : '');
-        node.appendChild(label);
+    function computeLayout(data) {
+      // Simple treemap layout using squarified algorithm
+      function sumValues(node) {
+        if (node.value !== undefined && node.value > 0) return node.value;
+        if (!node.children) return 0;
+        return node.children.reduce((sum, c) => sum + sumValues(c), 0);
       }
 
-      // Tooltip events
-      node.addEventListener('mouseenter', (e) => showTooltip(e, r));
-      node.addEventListener('mousemove', (e) => moveTooltip(e));
-      node.addEventListener('mouseleave', hideTooltip);
+      function layoutNode(node, x, y, w, h, depth) {
+        const result = {
+          x, y, width: w, height: h, depth,
+          name: node.name,
+          value: sumValues(node),
+          hasChildren: !!node.children?.length,
+          sessionId: node.sessionId,
+          model: node.model,
+          inputTokens: node.inputTokens,
+          outputTokens: node.outputTokens,
+          ratio: node.ratio,
+          date: node.date,
+          project: node.project,
+          repeatedReads: node.repeatedReads,
+          modelEfficiency: node.modelEfficiency,
+          tools: node.tools,
+          nodeRef: node
+        };
 
-      container.appendChild(node);
-    });
+        const rects = [result];
+
+        if (node.children && node.children.length > 0) {
+          const padding = 3;
+          const headerH = 19;
+          const innerX = x + padding;
+          const innerY = y + headerH;
+          const innerW = w - padding * 2;
+          const innerH = h - headerH - padding;
+
+          if (innerW > 0 && innerH > 0) {
+            const childRects = squarify(node.children, innerX, innerY, innerW, innerH, depth + 1);
+            rects.push(...childRects);
+          }
+        }
+
+        return rects;
+      }
+
+      function squarify(children, x, y, w, h, depth) {
+        if (!children || children.length === 0) return [];
+
+        const total = children.reduce((sum, c) => sum + sumValues(c), 0);
+        if (total === 0) return [];
+
+        const sorted = [...children].sort((a, b) => sumValues(b) - sumValues(a));
+        const rects = [];
+
+        let cx = x, cy = y, cw = w, ch = h;
+
+        for (const child of sorted) {
+          const childVal = sumValues(child);
+          const ratio = childVal / total;
+          const area = ratio * w * h;
+
+          let childW, childH;
+          if (cw > ch) {
+            childW = Math.min(cw, area / ch);
+            childH = ch;
+            const childRects = layoutNode(child, cx, cy, childW, childH, depth);
+            rects.push(...childRects);
+            cx += childW;
+            cw -= childW;
+          } else {
+            childH = Math.min(ch, area / cw);
+            childW = cw;
+            const childRects = layoutNode(child, cx, cy, childW, childH, depth);
+            rects.push(...childRects);
+            cy += childH;
+            ch -= childH;
+          }
+        }
+
+        return rects;
+      }
+
+      return layoutNode(data, 0, 0, WIDTH, HEIGHT, 0);
+    }
+
+    function render() {
+      // Clear container using replaceChildren (safe)
+      container.replaceChildren();
+      const currentNode = getCurrentNode();
+      const rects = computeLayout(currentNode);
+
+      // Update breadcrumb using DOM methods (safe)
+      breadcrumb.replaceChildren();
+      navStack.forEach((node, i) => {
+        const crumb = document.createElement('span');
+        crumb.className = 'crumb' + (i === navStack.length - 1 ? ' current' : '');
+        crumb.textContent = node.name;
+        if (i < navStack.length - 1) {
+          crumb.style.cursor = 'pointer';
+          crumb.onclick = () => zoomOut(i);
+        }
+        breadcrumb.appendChild(crumb);
+        if (i < navStack.length - 1) {
+          const sep = document.createElement('span');
+          sep.className = 'crumb-sep';
+          sep.textContent = ' > ';
+          breadcrumb.appendChild(sep);
+        }
+      });
+
+      // Calculate totals for current view
+      let totalTokens = 0, totalInput = 0, totalOutput = 0;
+      rects.forEach(r => {
+        if (!r.hasChildren && r.depth > 0) {
+          totalTokens += r.value || 0;
+          totalInput += r.inputTokens || 0;
+          totalOutput += r.outputTokens || 0;
+        }
+      });
+
+      const overallRatio = totalOutput > 0 ? (totalInput / totalOutput).toFixed(1) : 'N/A';
+      stats.textContent = 'Total: ' + formatTokens(totalTokens) + ' tokens | Input: ' + formatTokens(totalInput) + ' | Output: ' + formatTokens(totalOutput) + ' | Ratio: ' + overallRatio + ':1';
+
+      // Render nodes
+      rects.forEach((r) => {
+        if (r.width < 1 || r.height < 1) return;
+
+        const node = document.createElement('div');
+        node.className = 'node' + (r.hasChildren ? ' node-group' : '');
+        node.style.left = r.x + 'px';
+        node.style.top = r.y + 'px';
+        node.style.width = r.width + 'px';
+        node.style.height = r.height + 'px';
+
+        if (!r.hasChildren && r.depth > 0) {
+          node.style.background = getColor(r.ratio);
+        }
+
+        if (r.width > 30 && r.height > 15) {
+          const label = document.createElement('div');
+          label.className = 'node-label';
+          label.textContent = r.name + (r.value > 0 && !r.hasChildren ? ' (' + formatTokens(r.value) + ')' : '');
+          node.appendChild(label);
+        }
+
+        // Click to zoom
+        if (r.hasChildren && r.nodeRef) {
+          node.addEventListener('click', (e) => {
+            e.stopPropagation();
+            zoomTo(r.nodeRef);
+          });
+        }
+
+        node.addEventListener('mouseenter', (e) => showTooltip(e, r));
+        node.addEventListener('mousemove', (e) => moveTooltip(e));
+        node.addEventListener('mouseleave', hideTooltip);
+
+        container.appendChild(node);
+      });
+    }
+
+    render();
 
     function getColor(ratio) {
       if (ratio === undefined || ratio === null) return '#4a5568';
@@ -689,6 +812,17 @@ export default class ObserveGraph extends BaseCommand {
   }
 
   private buildSessionTreemap(sessionId: string, entries: JournalEntry[]): TreemapNode {
+    return {
+      name: `Session ${sessionId.slice(0, 8)}`,
+      children: this.buildTurnNodes(sessionId, entries),
+    }
+  }
+
+  /**
+   * Build turn-level nodes from session entries.
+   * Used by both single-session and all-sessions views.
+   */
+  private buildTurnNodes(sessionId: string, entries: JournalEntry[]): TreemapNode[] {
     const children: TreemapNode[] = []
     let turnNumber = 0
 
@@ -741,10 +875,7 @@ export default class ObserveGraph extends BaseCommand {
       })
     }
 
-    return {
-      name: `Session ${sessionId.slice(0, 8)}`,
-      children,
-    }
+    return children
   }
 
   /**
@@ -879,9 +1010,14 @@ export default class ObserveGraph extends BaseCommand {
           const label = this.extractSessionLabel(entries, session.sessionId)
           const tools = this.aggregateSessionTools(entries)
 
+          // Build turn-level children for drill-down
+          const turnChildren = this.buildTurnNodes(session.sessionId, entries)
+
           sessionChildren.push({
             name: label,
-            value: session.tokens,
+            // If we have turn children, let them sum; otherwise use session total
+            value: turnChildren.length > 0 ? undefined : session.tokens,
+            children: turnChildren.length > 0 ? turnChildren : undefined,
             sessionId: session.sessionId.slice(0, 8),
             model: this.getPrimaryModel(analysis),
             inputTokens: analysis.inputTokens,
