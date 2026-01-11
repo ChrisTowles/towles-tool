@@ -173,6 +173,21 @@ export default class Run extends BaseCommand {
         console.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`)
       }
 
+      // Show prompt preview
+      const progressContent = readLastLines(DEFAULT_PROGRESS_FILE, 100)
+      const prompt = buildIterationPrompt({
+        completionMarker: flags.completionMarker,
+        stateFile: flags.stateFile,
+        progressFile: DEFAULT_PROGRESS_FILE,
+        focusedTaskId,
+        skipCommit: !flags.autoCommit,
+        progressContent: progressContent || undefined,
+      })
+      console.log(pc.cyan('\nPrompt preview:'))
+      console.log(pc.dim('---'))
+      console.log(prompt)
+      console.log(pc.dim('---'))
+
       console.log(pc.bold('\n=== END DRY RUN ===\n'))
       return
     }

@@ -258,16 +258,12 @@ ${progressContent}
 
     //IMPORTANT Always tell it to APPEND to progress file, save a lot of tokens by not reading it to update.
 
-    return `
+    const prompt = `
 Review the state file and recent progress.
 
 state_file: @${stateFile}
 
-${progressSection}
-
-Then:
-
-
+Steps:
 
 ${step++}. ${focusedTaskId
         ? `**Work on Task #${focusedTaskId}** (you've been asked to focus on this one).`
@@ -275,14 +271,16 @@ ${step++}. ${focusedTaskId
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
 ${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`
-
 ${step++}. Append @${progressFile} with what you did.
 ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**
 
 When ALL tasks are done, Output: <promise>${completionMarker}</promise>
+
+${progressSection}
 `
+    return prompt.trim()
 }
 
 // ============================================================================
