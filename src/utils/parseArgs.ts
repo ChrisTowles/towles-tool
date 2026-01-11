@@ -1,3 +1,4 @@
+import process from 'node:process'
 import yargs from 'yargs'
 import type { Argv } from 'yargs'
 import { hideBin } from 'yargs/helpers'
@@ -59,6 +60,14 @@ export async function parseArguments(argv: string[]): Promise<ParsedArgs> {
     .strict()
     .help()
     .wrap(yargs().terminalWidth())
+    .showHelpOnFail(true)
+    .fail((msg, err, yargs) => {
+      if (msg) {
+        yargs.showHelp()
+        console.error('\n' + msg)
+      }
+      process.exit(0)
+    })
 
   // Journal command with subcommands
   parser.command(
