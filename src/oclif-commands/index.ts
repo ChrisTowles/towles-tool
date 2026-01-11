@@ -1,6 +1,7 @@
 // Explicit command exports for Bun compiled binaries
 // oclif's pattern-based discovery doesn't work with bundled executables
 
+import BranchClean from './branch/clean.js'
 import Config from './config.js'
 import Doctor from './doctor.js'
 import GhBranch from './gh-branch.js'
@@ -15,6 +16,7 @@ import JournalMeeting from './journal/meeting.js'
 import JournalNote from './journal/note.js'
 
 export default {
+  'branch:clean': BranchClean,
   config: Config,
   doctor: Doctor,
   'gh-branch': GhBranch,
