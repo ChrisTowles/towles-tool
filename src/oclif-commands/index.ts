@@ -8,6 +8,7 @@ import GhBranch from './gh-branch.js'
 import Pr from './pr.js'
 import RalphRun from './ralph/run.js'
 import RalphPlan from './ralph/plan.js'
+import RalphMarkerCreate from './ralph/marker/create.js'
 import RalphTaskAdd from './ralph/task/add.js'
 import RalphTaskDone from './ralph/task/done.js'
 import RalphTaskList from './ralph/task/list.js'
@@ -24,6 +25,7 @@ export default {
   pr: Pr,
   'ralph:run': RalphRun,
   'ralph:plan': RalphPlan,
+  'ralph:marker:create': RalphMarkerCreate,
   'ralph:task:add': RalphTaskAdd,
   'ralph:task:done': RalphTaskDone,
   'ralph:task:list': RalphTaskList,

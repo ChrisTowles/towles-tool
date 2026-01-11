@@ -60,20 +60,27 @@ Use `AskUserQuestion` to confirm or adjust.
 
 ## Phase 5: Add Tasks
 
-Once approved, clear any old tasks and add new ones:
+**CRITICAL: Always use markers to link tasks to research sessions.**
+
+Before starting research, generate a marker:
+```bash
+tt ralph marker create
+# Outputs: RALPH_MARKER_abc123
+```
+
+Then tell Claude: "Output this marker: RALPH_MARKER_abc123"
+
+Once approved, clear any old tasks and add new ones with the marker:
 
 ```bash
 tt ralph clear  # Only if starting fresh
-tt ralph task add "Task 1: [full description with context and success criteria]"
-tt ralph task add "Task 2: [full description with context and success criteria]"
+tt ralph task add "Task 1: [full description]" --findMarker abc123
+tt ralph task add "Task 2: [full description]" --findMarker abc123
 # ... continue for all tasks
 tt ralph plan
 ```
 
-For resumable tasks, attach a session ID:
-```bash
-tt ralph task add "Task description" --sessionId <session-id>
-```
+The `--findMarker` flag searches ~/.claude for the session containing `RALPH_MARKER_abc123` and attaches that session ID to the task. This prevents ralph from burning tokens re-discovering context.
 
 ## Phase 6: Instruct User
 
