@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createJournalContent,
+  createMeetingContent,
+  createNoteContent,
   ensureDirectoryExists,
   generateJournalFileInfoByType,
   journalCommand,
@@ -95,6 +97,50 @@ describe('today command', () => {
 
       expect(content).toMatch(/^# Journal for Week[\s\S]*## 2024-01-01 Monday[\s\S]*## 2024-01-02 Tuesday/)
       expect(content.split('\n')).toHaveLength(12)
+    })
+  })
+
+  describe('createMeetingContent', () => {
+    it('should create meeting content with title and date', () => {
+      const date = new Date('2024-03-15T14:30:00Z')
+      const content = createMeetingContent({ title: 'Sprint Planning', date })
+
+      expect(content).toContain('# Meeting: Sprint Planning')
+      expect(content).toContain('**Date:** 2024-03-15')
+      expect(content).toContain('**Time:**')
+      expect(content).toContain('**Attendees:**')
+      expect(content).toContain('## Agenda')
+      expect(content).toContain('## Notes')
+      expect(content).toContain('## Action Items')
+      expect(content).toContain('- [ ]')
+      expect(content).toContain('## Follow-up')
+    })
+
+    it('should use default title when not provided', () => {
+      const date = new Date('2024-03-15T14:30:00Z')
+      const content = createMeetingContent({ date })
+
+      expect(content).toContain('# Meeting: Meeting')
+    })
+  })
+
+  describe('createNoteContent', () => {
+    it('should create note content with title and date', () => {
+      const date = new Date('2024-03-15T14:30:00Z')
+      const content = createNoteContent({ title: 'Important Note', date })
+
+      expect(content).toContain('# Important Note')
+      expect(content).toContain('**Created:** 2024-03-15')
+      expect(content).toContain('## Summary')
+      expect(content).toContain('## Details')
+      expect(content).toContain('## References')
+    })
+
+    it('should use default title when not provided', () => {
+      const date = new Date('2024-03-15T14:30:00Z')
+      const content = createNoteContent({ date })
+
+      expect(content).toContain('# Note')
     })
   })
 
