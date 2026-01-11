@@ -153,6 +153,9 @@ importers:
       tinyexec:
         specifier: catalog:cli
         version: 0.3.2
+      tsx:
+        specifier: catalog:cli
+        version: 4.20.3
       yargs:
         specifier: catalog:cli
         version: 17.7.2
@@ -199,9 +202,6 @@ importers:
       simple-git-hooks:
         specifier: catalog:cli
         version: 2.13.0
-      tsx:
-        specifier: catalog:cli
-        version: 4.20.3
       typescript:
         specifier: catalog:cli
         version: 5.8.3

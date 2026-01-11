@@ -27,11 +27,13 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "bin": {
-    "towles-tool": "./dist/index.mjs",
-    "tt": "./dist/index.mjs"
+    "towles-tool": "./bin/run.js",
+    "tt": "./bin/run.js"
   },
   "files": [
-    "dist"
+    "bin",
+    "dist",
+    "src"
   ],
   "scripts": {
     "build": "unbuild",
@@ -72,6 +74,7 @@
     "prompts": "catalog:cli",
     "strip-ansi": "catalog:cli",
     "tinyexec": "catalog:cli",
+    "tsx": "catalog:cli",
     "yargs": "catalog:cli",
     "zod": "catalog:cli"
   },
@@ -89,7 +92,6 @@
     "lint-staged": "catalog:cli",
     "oxlint": "catalog:testing",
     "simple-git-hooks": "catalog:cli",
-    "tsx": "catalog:cli",
     "typescript": "catalog:cli",
     "unbuild": "catalog:cli",
     "vite": "catalog:cli",
