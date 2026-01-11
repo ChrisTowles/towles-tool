@@ -12,6 +12,9 @@ import {
     loadState,
     addTaskToState,
     formatTasksForPrompt,
+    formatTasksAsMarkdown,
+    formatPlanAsMarkdown,
+    formatPlanAsJson,
     buildIterationPrompt,
     extractOutputSummary,
     detectCompletionMarker,
@@ -402,6 +405,77 @@ describe('ralph-loop', () => {
         })
     })
 
+    describe('formatTasksAsMarkdown', () => {
+        it('should return placeholder for empty tasks', () => {
+            const formatted = formatTasksAsMarkdown([])
+            expect(formatted).toContain('# Tasks')
+            expect(formatted).toContain('No tasks.')
+        })
+
+        it('should include summary counts', () => {
+            const tasks: RalphTask[] = [
+                { id: 1, description: 'task 1', status: 'done', addedAt: '' },
+                { id: 2, description: 'task 2', status: 'pending', addedAt: '' },
+            ]
+
+            const formatted = formatTasksAsMarkdown(tasks)
+
+            expect(formatted).toContain('**Total:** 2')
+            expect(formatted).toContain('**Done:** 1')
+            expect(formatted).toContain('**Pending:** 1')
+        })
+
+        it('should format done tasks with checked boxes', () => {
+            const tasks: RalphTask[] = [
+                { id: 1, description: 'completed task', status: 'done', addedAt: '' },
+            ]
+
+            const formatted = formatTasksAsMarkdown(tasks)
+
+            expect(formatted).toContain('## Done')
+            expect(formatted).toContain('- [x] **#1** completed task')
+            expect(formatted).toContain('`✓ done`')
+        })
+
+        it('should format pending tasks with unchecked boxes', () => {
+            const tasks: RalphTask[] = [
+                { id: 2, description: 'pending task', status: 'pending', addedAt: '' },
+            ]
+
+            const formatted = formatTasksAsMarkdown(tasks)
+
+            expect(formatted).toContain('## Pending')
+            expect(formatted).toContain('- [ ] **#2** pending task')
+            expect(formatted).toContain('`○ pending`')
+        })
+
+        it('should format in_progress tasks with unchecked boxes', () => {
+            const tasks: RalphTask[] = [
+                { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
+            ]
+
+            const formatted = formatTasksAsMarkdown(tasks)
+
+            expect(formatted).toContain('## In Progress')
+            expect(formatted).toContain('- [ ] **#3** working task')
+            expect(formatted).toContain('`→ in_progress`')
+        })
+
+        it('should group tasks by status section', () => {
+            const tasks: RalphTask[] = [
+                { id: 1, description: 'done task', status: 'done', addedAt: '' },
+                { id: 2, description: 'pending task', status: 'pending', addedAt: '' },
+                { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
+            ]
+
+            const formatted = formatTasksAsMarkdown(tasks)
+
+            expect(formatted).toContain('## In Progress')
+            expect(formatted).toContain('## Pending')
+            expect(formatted).toContain('## Done')
+        })
+    })
+
     describe('loadState backwards compatibility', () => {
         it('should add empty tasks array if missing', () => {
             // Simulate old state without tasks
@@ -501,6 +575,219 @@ describe('ralph-loop', () => {
         it('should reject non-numeric markDone', () => {
             const result = ArgsSchema.safeParse({ markDone: 'abc' })
             expect(result.success).toBe(false)
+        })
+
+        it('should accept format default', () => {
+            const result = ArgsSchema.safeParse({})
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.format).toBe('default')
+            }
+        })
+
+        it('should accept format markdown', () => {
+            const result = ArgsSchema.safeParse({ format: 'markdown' })
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.format).toBe('markdown')
+            }
+        })
+
+        it('should reject invalid format', () => {
+            const result = ArgsSchema.safeParse({ format: 'invalid' })
+            expect(result.success).toBe(false)
+        })
+
+        it('should accept format json', () => {
+            const result = ArgsSchema.safeParse({ format: 'json' })
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.format).toBe('json')
+            }
+        })
+
+        it('should accept showPlan flag', () => {
+            const result = ArgsSchema.safeParse({ showPlan: true })
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.showPlan).toBe(true)
+            }
+        })
+
+        it('should accept copy flag', () => {
+            const result = ArgsSchema.safeParse({ copy: true })
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.copy).toBe(true)
+            }
+        })
+
+        it('should default showPlan and copy to false', () => {
+            const result = ArgsSchema.safeParse({})
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.showPlan).toBe(false)
+                expect(result.data.copy).toBe(false)
+            }
+        })
+    })
+
+    describe('formatPlanAsMarkdown', () => {
+        it('should include plan header and summary', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('# Ralph Plan')
+            expect(formatted).toContain('## Summary')
+            expect(formatted).toContain('**Status:** running')
+            expect(formatted).toContain('**Total Tasks:** 1')
+        })
+
+        it('should include tasks section', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'implement feature')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('## Tasks')
+            expect(formatted).toContain('**#1** implement feature')
+        })
+
+        it('should include mermaid graph section', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+            addTaskToState(state, 'task 2')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('## Progress Graph')
+            expect(formatted).toContain('```mermaid')
+            expect(formatted).toContain('graph LR')
+            expect(formatted).toContain('classDef done fill:#22c55e')
+            expect(formatted).toContain('classDef pending fill:#94a3b8')
+        })
+
+        it('should format done tasks correctly in mermaid', () => {
+            const state = createInitialState(10)
+            const task = addTaskToState(state, 'done task')
+            task.status = 'done'
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('T1["#1: done task"]:::done')
+        })
+
+        it('should format in_progress tasks correctly in mermaid', () => {
+            const state = createInitialState(10)
+            const task = addTaskToState(state, 'working task')
+            task.status = 'in_progress'
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('T1["#1: working task"]:::inProgress')
+        })
+
+        it('should truncate long descriptions in mermaid', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'This is a very long task description that should be truncated for the mermaid graph')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            // Mermaid section should have truncated description
+            expect(formatted).toContain('T1["#1: This is a very long task de..."]')
+            // But the Tasks section should have full description
+            expect(formatted).toContain('**#1** This is a very long task description that should be truncated for the mermaid graph')
+        })
+
+        it('should include session ID if present', () => {
+            const state = createInitialState(10)
+            state.sessionId = 'test-session-id-1234567890'
+            addTaskToState(state, 'task')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('**Session ID:** test-ses...')
+        })
+
+        it('should show iteration progress', () => {
+            const state = createInitialState(10)
+            state.iteration = 3
+            addTaskToState(state, 'task')
+
+            const formatted = formatPlanAsMarkdown(state.tasks, state)
+
+            expect(formatted).toContain('**Iteration:** 3/10')
+        })
+    })
+
+    describe('formatPlanAsJson', () => {
+        it('should return valid JSON', () => {
+            const state = createInitialState(10)
+            addTaskToState(state, 'task 1')
+
+            const json = formatPlanAsJson(state.tasks, state)
+            const parsed = JSON.parse(json)
+
+            expect(parsed.status).toBe('running')
+            expect(parsed.tasks).toHaveLength(1)
+        })
+
+        it('should include summary counts', () => {
+            const state = createInitialState(10)
+            const task1 = addTaskToState(state, 'done task')
+            task1.status = 'done'
+            addTaskToState(state, 'pending task')
+            const task3 = addTaskToState(state, 'in progress task')
+            task3.status = 'in_progress'
+
+            const json = formatPlanAsJson(state.tasks, state)
+            const parsed = JSON.parse(json)
+
+            expect(parsed.summary.total).toBe(3)
+            expect(parsed.summary.done).toBe(1)
+            expect(parsed.summary.pending).toBe(1)
+            expect(parsed.summary.inProgress).toBe(1)
+        })
+
+        it('should include all task fields', () => {
+            const state = createInitialState(10)
+            const task = addTaskToState(state, 'test task')
+            task.status = 'done'
+            task.completedAt = '2026-01-10T12:00:00Z'
+
+            const json = formatPlanAsJson(state.tasks, state)
+            const parsed = JSON.parse(json)
+
+            expect(parsed.tasks[0].id).toBe(1)
+            expect(parsed.tasks[0].description).toBe('test task')
+            expect(parsed.tasks[0].status).toBe('done')
+            expect(parsed.tasks[0].addedAt).toBeDefined()
+            expect(parsed.tasks[0].completedAt).toBe('2026-01-10T12:00:00Z')
+        })
+
+        it('should include iteration and maxIterations', () => {
+            const state = createInitialState(15)
+            state.iteration = 5
+            addTaskToState(state, 'task')
+
+            const json = formatPlanAsJson(state.tasks, state)
+            const parsed = JSON.parse(json)
+
+            expect(parsed.iteration).toBe(5)
+            expect(parsed.maxIterations).toBe(15)
+        })
+
+        it('should include sessionId if present', () => {
+            const state = createInitialState(10)
+            state.sessionId = 'test-session-uuid'
+            addTaskToState(state, 'task')
+
+            const json = formatPlanAsJson(state.tasks, state)
+            const parsed = JSON.parse(json)
+
+            expect(parsed.sessionId).toBe('test-session-uuid')
         })
     })
 

@@ -104,11 +104,19 @@ When using `tt ralph` for autonomous task execution:
 - Use `--dryRun` to preview config before running
 
 ```bash
-tt ralph --addTask "description"    # Add a task
-tt ralph --listTasks                # View tasks
-tt ralph --run                      # Run (no auto-commits by default)
-tt ralph --run --autoCommit         # Run with auto-commits
-tt ralph --clear                    # Clean up ralph files
+# Task management
+tt ralph task add "description"     # Add a task
+tt ralph task list                  # View tasks
+tt ralph task done 1                # Mark task #1 complete
+tt ralph task remove 1              # Remove task #1
+
+# Execution
+tt ralph run                        # Run (no auto-commits by default)
+tt ralph run --autoCommit           # Run with auto-commits
+
+# Plan & cleanup
+tt ralph plan                       # Show plan with mermaid graph
+tt ralph clear                      # Clean up ralph files
 ```
 
 ## Important Notes

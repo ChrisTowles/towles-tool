@@ -53,7 +53,7 @@ Then:
 1. Choose which pending task to work on (or focus on Task #N if specified)
 2. Work on that single task
 3. Run type checks and tests
-4. Mark the task "done" in @ralph-state.json
+4. Mark the task done using CLI: tt ralph task done <id>
 5. Update @ralph-progress.md with what you did
 6. Make a git commit (if autoCommit enabled)
 
@@ -107,17 +107,17 @@ Success Criteria:
 
 **Good tasks:**
 ```bash
-tt ralph --addTask "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
-tt ralph --addTask "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
-tt ralph --addTask "Add unit tests for getUserById covering success, not-found, and invalid-id cases"
+tt ralph task add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
+tt ralph task add "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
+tt ralph task add "Add unit tests for getUserById covering success, not-found, and invalid-id cases"
 ```
 
 **Bad tasks:**
 ```bash
-tt ralph --addTask "Implement user feature"           # Too vague
-tt ralph --addTask "Add types, service, and tests"   # Multiple things
-tt ralph --addTask "Make it work like the other one" # Unclear reference
-tt ralph --addTask "Refactor the whole auth system"  # Too broad
+tt ralph task add "Implement user feature"           # Too vague
+tt ralph task add "Add types, service, and tests"   # Multiple things
+tt ralph task add "Make it work like the other one" # Unclear reference
+tt ralph task add "Refactor the whole auth system"  # Too broad
 ```
 
 ## Prompt Patterns
@@ -126,10 +126,10 @@ tt ralph --addTask "Refactor the whole auth system"  # Too broad
 
 Break large features into phases:
 ```bash
-tt ralph --addTask "Phase 1: Add auth types and JWT validation util"
-tt ralph --addTask "Phase 2: Create auth middleware with token verification"
-tt ralph --addTask "Phase 3: Add login/logout endpoints with tests"
-tt ralph --addTask "Phase 4: Integrate auth middleware with protected routes"
+tt ralph task add "Phase 1: Add auth types and JWT validation util"
+tt ralph task add "Phase 2: Create auth middleware with token verification"
+tt ralph task add "Phase 3: Add login/logout endpoints with tests"
+tt ralph task add "Phase 4: Integrate auth middleware with protected routes"
 ```
 
 ### Self-Correction Pattern
@@ -148,7 +148,7 @@ Implement feature X using TDD:
 
 Always use `--maxIterations`:
 ```bash
-tt ralph --run --maxIterations 20
+tt ralph run --maxIterations 20
 ```
 
 In complex tasks, include fallback:
@@ -198,6 +198,30 @@ Task statuses:
 - `pending` - Not started (○)
 - `in_progress` - Currently working (→)
 - `done` - Completed (✓)
+
+### Viewing Tasks
+
+Use `task list` to view all tasks:
+```bash
+tt ralph task list                    # Default format (colored terminal output)
+tt ralph task list --format markdown  # Markdown with checkboxes and status badges
+```
+
+Markdown format groups tasks by status (In Progress, Pending, Done) with summary counts.
+
+### Viewing Plan Summary
+
+Use `plan` subcommand to get a comprehensive plan overview:
+```bash
+tt ralph plan                         # Markdown with summary, tasks, and mermaid graph
+tt ralph plan --format json           # JSON format for programmatic use
+tt ralph plan --copy                  # Also copy output to clipboard
+```
+
+The markdown format includes:
+- Summary section with status, iteration progress, and task counts
+- Tasks section with checkbox indicators
+- Progress graph as a mermaid diagram showing task status
 
 Loop statuses:
 - `running` - Loop active
@@ -267,14 +291,14 @@ Success: pnpm test passes, pnpm typecheck passes
 
 State is saved after each iteration. Resume with:
 ```bash
-tt ralph --run --resume
+tt ralph run --resume
 ```
 
 Or start fresh:
 ```bash
-tt ralph --clear
-tt ralph --addTask "..."
-tt ralph --run
+tt ralph clear
+tt ralph task add "..."
+tt ralph run
 ```
 
 ## Resources

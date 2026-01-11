@@ -25,9 +25,36 @@
 
 import 'zx/globals'
 import type { WriteStream } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { defineCommand, runMain } from 'citty'
 import { z } from 'zod'
+
+// ============================================================================
+// Clipboard Utility
+// ============================================================================
+
+function copyToClipboard(text: string): boolean {
+    try {
+        const platform = process.platform
+        if (platform === 'darwin') {
+            execFileSync('pbcopy', [], { input: text })
+        } else if (platform === 'linux') {
+            // Try xclip first, then xsel
+            try {
+                execFileSync('xclip', ['-selection', 'clipboard'], { input: text })
+            } catch {
+                execFileSync('xsel', ['--clipboard', '--input'], { input: text })
+            }
+        } else if (platform === 'win32') {
+            execFileSync('clip', [], { input: text })
+        } else {
+            return false
+        }
+        return true
+    } catch {
+        return false
+    }
+}
 
 // ============================================================================
 // Types
@@ -92,6 +119,9 @@ export const ArgsSchema = z.object({
     removeTask: z.string().optional()
         .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'removeTask must be a positive integer (task ID)'),
     listTasks: z.boolean().default(false),
+    showPlan: z.boolean().default(false),
+    format: z.enum(['default', 'markdown', 'json']).default('default'),
+    copy: z.boolean().default(false),
     clear: z.boolean().default(false),
     autoCommit: z.boolean().default(false),
     resume: z.boolean().default(false),
@@ -107,7 +137,7 @@ export const ArgsSchema = z.object({
 }).strict()
 
 // citty internal keys to filter out before validation
-const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n', 'd', 'rm']
+const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n', 'd', 'rm', 'f', 's', 'p']
 
 export function validateArgs(args: unknown): RalphArgs {
     // Filter out citty internal keys (aliases and positionals)
@@ -211,6 +241,142 @@ Track progress on these sub-tasks. Mark them as done when completed.
 ${lines.join('\n')}`
 }
 
+/**
+ * Format tasks as markdown with checkboxes and status badges.
+ */
+export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
+    if (tasks.length === 0) {
+        return '# Tasks\n\nNo tasks.\n'
+    }
+
+    const statusBadge = (status: TaskStatus): string => {
+        switch (status) {
+            case 'done': return '`✓ done`'
+            case 'in_progress': return '`→ in_progress`'
+            case 'pending': return '`○ pending`'
+        }
+    }
+
+    const pending = tasks.filter(t => t.status === 'pending')
+    const inProgress = tasks.filter(t => t.status === 'in_progress')
+    const done = tasks.filter(t => t.status === 'done')
+
+    const lines: string[] = ['# Tasks', '']
+    lines.push(`**Total:** ${tasks.length} | **Done:** ${done.length} | **Pending:** ${pending.length + inProgress.length}`, '')
+
+    if (inProgress.length > 0) {
+        lines.push('## In Progress', '')
+        for (const t of inProgress) {
+            lines.push(`- [ ] **#${t.id}** ${t.description} ${statusBadge(t.status)}`)
+        }
+        lines.push('')
+    }
+
+    if (pending.length > 0) {
+        lines.push('## Pending', '')
+        for (const t of pending) {
+            lines.push(`- [ ] **#${t.id}** ${t.description} ${statusBadge(t.status)}`)
+        }
+        lines.push('')
+    }
+
+    if (done.length > 0) {
+        lines.push('## Done', '')
+        for (const t of done) {
+            lines.push(`- [x] **#${t.id}** ${t.description} ${statusBadge(t.status)}`)
+        }
+        lines.push('')
+    }
+
+    return lines.join('\n')
+}
+
+/**
+ * Format tasks as a plan with markdown and optional mermaid graph.
+ */
+export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): string {
+    const lines: string[] = ['# Ralph Plan', '']
+
+    // Summary section
+    const pending = tasks.filter(t => t.status === 'pending').length
+    const inProgress = tasks.filter(t => t.status === 'in_progress').length
+    const done = tasks.filter(t => t.status === 'done').length
+
+    lines.push('## Summary', '')
+    lines.push(`- **Status:** ${state.status}`)
+    lines.push(`- **Iteration:** ${state.iteration}/${state.maxIterations}`)
+    lines.push(`- **Total Tasks:** ${tasks.length}`)
+    lines.push(`- **Done:** ${done} | **In Progress:** ${inProgress} | **Pending:** ${pending}`)
+    if (state.sessionId) {
+        lines.push(`- **Session ID:** ${state.sessionId.slice(0, 8)}...`)
+    }
+    lines.push('')
+
+    // Tasks section with checkboxes
+    lines.push('## Tasks', '')
+    for (const t of tasks) {
+        const checkbox = t.status === 'done' ? '[x]' : '[ ]'
+        const status = t.status === 'done' ? '`done`' : t.status === 'in_progress' ? '`in_progress`' : '`pending`'
+        lines.push(`- ${checkbox} **#${t.id}** ${t.description} ${status}`)
+    }
+    lines.push('')
+
+    // Mermaid graph section
+    lines.push('## Progress Graph', '')
+    lines.push('```mermaid')
+    lines.push('graph LR')
+    lines.push(`    subgraph Progress["Tasks: ${done}/${tasks.length} done"]`)
+
+    for (const t of tasks) {
+        const shortDesc = t.description.length > 30 ? t.description.slice(0, 27) + '...' : t.description
+        // Escape quotes in descriptions
+        const safeDesc = shortDesc.replace(/"/g, "'")
+        const nodeId = `T${t.id}`
+
+        if (t.status === 'done') {
+            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::done`)
+        } else if (t.status === 'in_progress') {
+            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::inProgress`)
+        } else {
+            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::pending`)
+        }
+    }
+
+    lines.push('    end')
+    lines.push('    classDef done fill:#22c55e,color:#fff')
+    lines.push('    classDef inProgress fill:#eab308,color:#000')
+    lines.push('    classDef pending fill:#94a3b8,color:#000')
+    lines.push('```')
+    lines.push('')
+
+    return lines.join('\n')
+}
+
+/**
+ * Format tasks as JSON for programmatic consumption.
+ */
+export function formatPlanAsJson(tasks: RalphTask[], state: RalphState): string {
+    return JSON.stringify({
+        status: state.status,
+        iteration: state.iteration,
+        maxIterations: state.maxIterations,
+        sessionId: state.sessionId,
+        summary: {
+            total: tasks.length,
+            done: tasks.filter(t => t.status === 'done').length,
+            inProgress: tasks.filter(t => t.status === 'in_progress').length,
+            pending: tasks.filter(t => t.status === 'pending').length,
+        },
+        tasks: tasks.map(t => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+            addedAt: t.addedAt,
+            completedAt: t.completedAt,
+        })),
+    }, null, 2)
+}
+
 // ============================================================================
 // Prompt Building
 // ============================================================================
@@ -243,7 +409,7 @@ ${step++}. ${focusedTaskId
         : `**Choose** which pending task to work on next based on YOUR judgment of priority/dependencies.`}
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
-${step++}. Mark the task done using CLI: \`tt ralph --markDone <id>\`
+${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`
 ${step++}. Update @${progressFile} with what you did.
 ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
@@ -318,6 +484,16 @@ interface StreamEvent {
         type: string
         delta?: { text?: string }
     }
+    // New format: assistant message
+    message?: {
+        content?: Array<{ type: string; text?: string }>
+        usage?: {
+            input_tokens?: number
+            output_tokens?: number
+            cache_read_input_tokens?: number
+            cache_creation_input_tokens?: number
+        }
+    }
     result?: string
     total_cost_usd?: number
     num_turns?: number
@@ -356,13 +532,22 @@ function parseStreamLine(line: string): ParsedLine {
     if (!line.trim()) return { text: null }
     try {
         const data = JSON.parse(line) as StreamEvent
-        // Extract text from streaming deltas
+        // Extract text from streaming deltas (legacy format)
         if (data.type === 'stream_event' && data.event?.type === 'content_block_delta') {
             return { text: data.event.delta?.text || null }
         }
-        // Add newline after content block ends
+        // Add newline after content block ends (legacy format)
         if (data.type === 'stream_event' && data.event?.type === 'content_block_stop') {
             return { text: '\n' }
+        }
+        // NEW FORMAT: Handle assistant messages with content array
+        if (data.type === 'assistant' && data.message) {
+            // Extract text from content blocks
+            const texts = data.message.content
+                ?.filter(c => c.type === 'text' && c.text)
+                .map(c => c.text)
+                .join('') || null
+            return { text: texts, usage: data.message.usage || data.usage, sessionId: data.session_id }
         }
         // Capture final result with usage and session_id
         if (data.type === 'result') {
@@ -458,283 +643,293 @@ export async function runIteration(
 }
 
 // ============================================================================
-// Main Command
+// Shared Args (used by multiple subcommands)
 // ============================================================================
 
-const main = defineCommand({
+const sharedArgs = {
+    stateFile: {
+        type: 'string' as const,
+        alias: 's',
+        default: DEFAULT_STATE_FILE,
+        description: `State file path (default: ${DEFAULT_STATE_FILE})`,
+    },
+}
+
+// ============================================================================
+// Task Subcommand
+// ============================================================================
+
+const taskAddCommand = defineCommand({
     meta: {
-        name: 'ralph-loop',
-        version: '1.0.0',
-        description: 'Run Claude Code CLI in a loop until task completion',
+        name: 'add',
+        description: 'Add a new task',
     },
     args: {
-        run: {
-            type: 'boolean',
-            alias: 'r',
-            default: false,
-            description: 'Start the ralph loop (required to run)',
-        },
-        taskId: {
-            type: 'string',
-            alias: 't',
-            description: 'Force focus on a specific task ID (optional - ralph picks otherwise)',
-        },
-        addTask: {
-            type: 'string',
-            alias: 'a',
-            description: 'Add a sub-task to the state file',
-        },
-        markDone: {
-            type: 'string',
-            alias: 'd',
-            description: 'Mark a task as done by ID',
-        },
-        removeTask: {
-            type: 'string',
-            alias: 'rm',
-            description: 'Remove a task by ID',
-        },
-        listTasks: {
-            type: 'boolean',
-            alias: 'l',
-            default: false,
-            description: 'List all tasks in the state file',
-        },
-        clear: {
-            type: 'boolean',
-            alias: 'c',
-            default: false,
-            description: 'Clear all ralph files (state, log, progress)',
-        },
-        autoCommit: {
-            type: 'boolean',
-            default: false,
-            description: 'Auto-commit after each completed task',
-        },
-        resume: {
-            type: 'boolean',
-            default: false,
-            description: 'Resume from previous session (uses stored session_id)',
+        ...sharedArgs,
+        description: {
+            type: 'positional' as const,
+            description: 'Task description',
+            required: true,
         },
         maxIterations: {
-            type: 'string',
+            type: 'string' as const,
+            alias: 'm',
+            default: String(DEFAULT_MAX_ITERATIONS),
+            description: `Max iterations for new state (default: ${DEFAULT_MAX_ITERATIONS})`,
+        },
+    },
+    run({ args }) {
+        const description = String(args.description).trim()
+
+        if (!description || description.length < 3) {
+            console.error(chalk.red('Error: Task description too short (min 3 chars)'))
+            process.exit(2)
+        }
+
+        let state = loadState(args.stateFile)
+
+        if (!state) {
+            const maxIterations = Number.parseInt(args.maxIterations, 10)
+            state = createInitialState(maxIterations)
+        }
+
+        const newTask = addTaskToState(state, description)
+        saveState(state, args.stateFile)
+
+        console.log(chalk.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+        console.log(chalk.dim(`State saved to: ${args.stateFile}`))
+        console.log(chalk.dim(`Total tasks: ${state.tasks.length}`))
+    },
+})
+
+const taskListCommand = defineCommand({
+    meta: {
+        name: 'list',
+        description: 'List all tasks',
+    },
+    args: {
+        ...sharedArgs,
+        format: {
+            type: 'string' as const,
+            alias: 'f',
+            default: 'default',
+            description: 'Output format: default, markdown',
+        },
+    },
+    run({ args }) {
+        const state = loadState(args.stateFile)
+
+        if (!state) {
+            console.log(chalk.yellow(`No state file found at: ${args.stateFile}`))
+            process.exit(0)
+        }
+
+        if (state.tasks.length === 0) {
+            console.log(chalk.yellow('No tasks in state file.'))
+            console.log(chalk.dim(`Use: tt ralph task add "description"`))
+            process.exit(0)
+        }
+
+        if (args.format === 'markdown') {
+            console.log(formatTasksAsMarkdown(state.tasks))
+            return
+        }
+
+        // Default format output
+        console.log(chalk.bold('\nTasks:\n'))
+        for (const task of state.tasks) {
+            const statusColor = task.status === 'done' ? chalk.green
+                : task.status === 'in_progress' ? chalk.yellow
+                : chalk.dim
+            const icon = task.status === 'done' ? '✓'
+                : task.status === 'in_progress' ? '→'
+                : '○'
+            console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`))
+        }
+        console.log()
+    },
+})
+
+const taskRemoveCommand = defineCommand({
+    meta: {
+        name: 'remove',
+        description: 'Remove a task by ID',
+    },
+    args: {
+        ...sharedArgs,
+        id: {
+            type: 'positional' as const,
+            description: 'Task ID to remove',
+            required: true,
+        },
+    },
+    run({ args }) {
+        const taskId = Number.parseInt(String(args.id), 10)
+
+        if (Number.isNaN(taskId) || taskId < 1) {
+            console.error(chalk.red('Error: Invalid task ID'))
+            process.exit(2)
+        }
+
+        const state = loadState(args.stateFile)
+
+        if (!state) {
+            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
+            process.exit(2)
+        }
+
+        const taskIndex = state.tasks.findIndex(t => t.id === taskId)
+
+        if (taskIndex === -1) {
+            console.error(chalk.red(`Error: Task #${taskId} not found`))
+            console.error(chalk.dim('Use: tt ralph task list'))
+            process.exit(2)
+        }
+
+        const removedTask = state.tasks[taskIndex]
+        state.tasks.splice(taskIndex, 1)
+        saveState(state, args.stateFile)
+
+        console.log(chalk.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
+        console.log(chalk.dim(`Remaining tasks: ${state.tasks.length}`))
+    },
+})
+
+const taskDoneCommand = defineCommand({
+    meta: {
+        name: 'done',
+        description: 'Mark a task as done by ID',
+    },
+    args: {
+        ...sharedArgs,
+        id: {
+            type: 'positional' as const,
+            description: 'Task ID to mark done',
+            required: true,
+        },
+    },
+    run({ args }) {
+        const taskId = Number.parseInt(String(args.id), 10)
+
+        if (Number.isNaN(taskId) || taskId < 1) {
+            console.error(chalk.red('Error: Invalid task ID'))
+            process.exit(2)
+        }
+
+        const state = loadState(args.stateFile)
+
+        if (!state) {
+            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
+            process.exit(2)
+        }
+
+        const task = state.tasks.find(t => t.id === taskId)
+
+        if (!task) {
+            console.error(chalk.red(`Error: Task #${taskId} not found`))
+            console.error(chalk.dim('Use: tt ralph task list'))
+            process.exit(2)
+        }
+
+        if (task.status === 'done') {
+            console.log(chalk.yellow(`Task #${taskId} is already done.`))
+            process.exit(0)
+        }
+
+        task.status = 'done'
+        task.completedAt = new Date().toISOString()
+        saveState(state, args.stateFile)
+
+        console.log(chalk.green(`✓ Marked task #${taskId} as done: ${task.description}`))
+
+        const remaining = state.tasks.filter(t => t.status !== 'done').length
+        if (remaining === 0) {
+            console.log(chalk.bold.green('🎉 All tasks complete!'))
+        } else {
+            console.log(chalk.dim(`Remaining tasks: ${remaining}`))
+        }
+    },
+})
+
+const taskCommand = defineCommand({
+    meta: {
+        name: 'task',
+        description: 'Task management commands',
+    },
+    subCommands: {
+        add: taskAddCommand,
+        list: taskListCommand,
+        remove: taskRemoveCommand,
+        done: taskDoneCommand,
+        ls: taskListCommand, // alias
+        rm: taskRemoveCommand, // alias
+    },
+})
+
+// ============================================================================
+// Run Subcommand
+// ============================================================================
+
+const runCommand = defineCommand({
+    meta: {
+        name: 'run',
+        description: 'Start the autonomous ralph loop',
+    },
+    args: {
+        ...sharedArgs,
+        taskId: {
+            type: 'string' as const,
+            alias: 't',
+            description: 'Focus on specific task ID (optional)',
+        },
+        maxIterations: {
+            type: 'string' as const,
             alias: 'm',
             default: String(DEFAULT_MAX_ITERATIONS),
             description: `Max iterations (default: ${DEFAULT_MAX_ITERATIONS})`,
         },
+        autoCommit: {
+            type: 'boolean' as const,
+            default: false,
+            description: 'Auto-commit after each completed task',
+        },
+        resume: {
+            type: 'boolean' as const,
+            default: false,
+            description: 'Resume from previous session (uses stored session_id)',
+        },
         dryRun: {
-            type: 'boolean',
+            type: 'boolean' as const,
             alias: 'n',
             default: false,
             description: 'Show config without executing',
         },
         claudeArgs: {
-            type: 'string',
+            type: 'string' as const,
             description: 'Extra args to pass to claude CLI (space-separated)',
         },
-        stateFile: {
-            type: 'string',
-            default: DEFAULT_STATE_FILE,
-            description: `State file path (default: ${DEFAULT_STATE_FILE})`,
-        },
         logFile: {
-            type: 'string',
+            type: 'string' as const,
             default: DEFAULT_LOG_FILE,
             description: `Log file path (default: ${DEFAULT_LOG_FILE})`,
         },
         completionMarker: {
-            type: 'string',
+            type: 'string' as const,
             default: DEFAULT_COMPLETION_MARKER,
             description: `Completion marker (default: ${DEFAULT_COMPLETION_MARKER})`,
         },
     },
     async run({ args }) {
-        const validatedArgs = validateArgs(args)
-        const maxIterations = Number.parseInt(validatedArgs.maxIterations, 10)
-        const extraClaudeArgs = validatedArgs.claudeArgs?.split(' ').filter(Boolean) || []
-
-        // Handle --clear: remove all ralph files
-        if (validatedArgs.clear) {
-            const files = [validatedArgs.stateFile, validatedArgs.logFile, DEFAULT_PROGRESS_FILE, DEFAULT_HISTORY_FILE]
-            let deleted = 0
-
-            for (const file of files) {
-                if (fs.existsSync(file)) {
-                    fs.unlinkSync(file)
-                    console.log(chalk.green(`✓ Deleted ${file}`))
-                    deleted++
-                } else {
-                    console.log(chalk.dim(`  Skipped ${file} (not found)`))
-                }
-            }
-
-            console.log(chalk.dim(`\nCleared ${deleted} file(s)`))
-            process.exit(0)
-        }
-
-        // Handle --addTask: add a task to state file
-        if (validatedArgs.addTask !== undefined) {
-            const description = String(validatedArgs.addTask).trim()
-
-            if (!description || description.length < 3) {
-                console.error(chalk.red('Error: Task description too short (min 3 chars)'))
-                console.error(chalk.dim('Usage: --addTask "description" or -a "description"'))
-                process.exit(2)
-            }
-
-            let state = loadState(validatedArgs.stateFile)
-
-            if (!state) {
-                state = createInitialState(maxIterations)
-            }
-
-            const newTask = addTaskToState(state, description)
-            saveState(state, validatedArgs.stateFile)
-
-            console.log(chalk.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
-            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
-            console.log(chalk.dim(`Total tasks: ${state.tasks.length}`))
-            process.exit(0)
-        }
-
-        // Handle --markDone: mark a task as done by ID
-        if (validatedArgs.markDone !== undefined) {
-            const taskId = Number.parseInt(String(validatedArgs.markDone), 10)
-
-            if (Number.isNaN(taskId) || taskId < 1) {
-                console.error(chalk.red('Error: Invalid task ID'))
-                console.error(chalk.dim('Usage: --markDone <id> or -d <id>'))
-                process.exit(2)
-            }
-
-            let state = loadState(validatedArgs.stateFile)
-
-            if (!state) {
-                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
-                process.exit(2)
-            }
-
-            const task = state.tasks.find(t => t.id === taskId)
-
-            if (!task) {
-                console.error(chalk.red(`Error: Task #${taskId} not found`))
-                console.error(chalk.dim('Use --listTasks to see available tasks.'))
-                process.exit(2)
-            }
-
-            if (task.status === 'done') {
-                console.log(chalk.yellow(`Task #${taskId} is already done.`))
-                process.exit(0)
-            }
-
-            task.status = 'done'
-            task.completedAt = new Date().toISOString()
-            saveState(state, validatedArgs.stateFile)
-
-            console.log(chalk.green(`✓ Marked task #${taskId} as done: ${task.description}`))
-            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
-
-            const remaining = state.tasks.filter(t => t.status !== 'done').length
-            if (remaining === 0) {
-                console.log(chalk.bold.green('🎉 All tasks complete!'))
-            } else {
-                console.log(chalk.dim(`Remaining tasks: ${remaining}`))
-            }
-            process.exit(0)
-        }
-
-        // Handle --removeTask: remove a task by ID
-        if (validatedArgs.removeTask !== undefined) {
-            const taskId = Number.parseInt(String(validatedArgs.removeTask), 10)
-
-            if (Number.isNaN(taskId) || taskId < 1) {
-                console.error(chalk.red('Error: Invalid task ID'))
-                console.error(chalk.dim('Usage: --removeTask <id> or -rm <id>'))
-                process.exit(2)
-            }
-
-            let state = loadState(validatedArgs.stateFile)
-
-            if (!state) {
-                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
-                process.exit(2)
-            }
-
-            const taskIndex = state.tasks.findIndex(t => t.id === taskId)
-
-            if (taskIndex === -1) {
-                console.error(chalk.red(`Error: Task #${taskId} not found`))
-                console.error(chalk.dim('Use --listTasks to see available tasks.'))
-                process.exit(2)
-            }
-
-            const removedTask = state.tasks[taskIndex]
-            state.tasks.splice(taskIndex, 1)
-            saveState(state, validatedArgs.stateFile)
-
-            console.log(chalk.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
-            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
-            console.log(chalk.dim(`Remaining tasks: ${state.tasks.length}`))
-            process.exit(0)
-        }
-
-        // Handle --listTasks: show all tasks
-        if (validatedArgs.listTasks) {
-            const state = loadState(validatedArgs.stateFile)
-
-            if (!state) {
-                console.log(chalk.yellow(`No state file found at: ${validatedArgs.stateFile}`))
-                process.exit(0)
-            }
-
-            if (state.tasks.length === 0) {
-                console.log(chalk.yellow('No tasks in state file.'))
-                console.log(chalk.dim(`Use --addTask "description" to add tasks.`))
-                process.exit(0)
-            }
-
-            console.log(chalk.bold('\nTasks:\n'))
-            for (const task of state.tasks) {
-                const statusColor = task.status === 'done' ? chalk.green
-                    : task.status === 'in_progress' ? chalk.yellow
-                    : chalk.dim
-                const icon = task.status === 'done' ? '✓'
-                    : task.status === 'in_progress' ? '→'
-                    : '○'
-                console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`))
-            }
-            console.log()
-            process.exit(0)
-        }
-
-        // Require --run or --dryRun flag to proceed
-        if (!validatedArgs.run && !validatedArgs.dryRun) {
-            console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
-            console.log('Usage:')
-            console.log('  tt ralph --run              Start the autonomous loop')
-            console.log('  tt ralph --run --resume     Start with session continuity')
-            console.log('  tt ralph --addTask "..."    Add a task')
-            console.log('  tt ralph --markDone <id>    Mark a task as done')
-            console.log('  tt ralph --removeTask <id>  Remove a task')
-            console.log('  tt ralph --listTasks        List all tasks')
-            console.log('  tt ralph --clear            Clear all ralph files')
-            console.log('  tt ralph --dryRun           Show config without running')
-            console.log()
-            console.log(chalk.dim('Use --run (-r) to start the loop.'))
-            console.log(chalk.dim('Use --resume to maintain context across iterations.'))
-            process.exit(0)
-        }
-
-        // Parse taskId if provided
-        const focusedTaskId = validatedArgs.taskId ? Number.parseInt(validatedArgs.taskId, 10) : null
+        const maxIterations = Number.parseInt(args.maxIterations, 10)
+        const extraClaudeArgs = args.claudeArgs?.split(' ').filter(Boolean) || []
+        const focusedTaskId = args.taskId ? Number.parseInt(args.taskId, 10) : null
 
         // Load existing state
-        let state = loadState(validatedArgs.stateFile)
+        let state = loadState(args.stateFile)
 
-        // Validate state and tasks exist
         if (!state) {
-            console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
-            console.error(chalk.dim('Use --addTask "description" to add tasks first.'))
+            console.error(chalk.red(`Error: No state file found at: ${args.stateFile}`))
+            console.error(chalk.dim('Use: tt ralph task add "description"'))
             process.exit(2)
         }
 
@@ -744,12 +939,12 @@ const main = defineCommand({
             process.exit(0)
         }
 
-        // Validate focused task exists if specified
+        // Validate focused task if specified
         if (focusedTaskId !== null) {
             const focusedTask = state.tasks.find(t => t.id === focusedTaskId)
             if (!focusedTask) {
                 console.error(chalk.red(`Error: Task #${focusedTaskId} not found`))
-                console.error(chalk.dim('Use --listTasks to see available tasks.'))
+                console.error(chalk.dim('Use: tt ralph task list'))
                 process.exit(2)
             }
             if (focusedTask.status === 'done') {
@@ -759,16 +954,16 @@ const main = defineCommand({
         }
 
         // Dry run mode
-        if (validatedArgs.dryRun) {
+        if (args.dryRun) {
             console.log(chalk.bold('\n=== DRY RUN ===\n'))
             console.log(chalk.cyan('Config:'))
             console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`)
             console.log(`  Max iterations: ${maxIterations}`)
-            console.log(`  State file: ${validatedArgs.stateFile}`)
-            console.log(`  Log file: ${validatedArgs.logFile}`)
-            console.log(`  Completion marker: ${validatedArgs.completionMarker}`)
-            console.log(`  Auto-commit: ${validatedArgs.autoCommit}`)
-            console.log(`  Resume mode: ${validatedArgs.resume}`)
+            console.log(`  State file: ${args.stateFile}`)
+            console.log(`  Log file: ${args.logFile}`)
+            console.log(`  Completion marker: ${args.completionMarker}`)
+            console.log(`  Auto-commit: ${args.autoCommit}`)
+            console.log(`  Resume mode: ${args.resume}`)
             console.log(`  Session ID: ${state.sessionId || '(none)'}`)
             console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
             console.log(`  Pending tasks: ${pendingTasks.length}`)
@@ -796,7 +991,7 @@ const main = defineCommand({
         state.status = 'running'
 
         // Create log stream (append mode)
-        const logStream = fs.createWriteStream(validatedArgs.logFile, { flags: 'a' })
+        const logStream = fs.createWriteStream(args.logFile, { flags: 'a' })
 
         const pending = state.tasks.filter(t => t.status === 'pending').length
         const done = state.tasks.filter(t => t.status === 'done').length
@@ -808,9 +1003,9 @@ const main = defineCommand({
         console.log(chalk.bold.blue('\n🔄 Ralph Loop Starting\n'))
         console.log(chalk.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
         console.log(chalk.dim(`Max iterations: ${maxIterations}`))
-        console.log(chalk.dim(`Log file: ${validatedArgs.logFile}`))
-        console.log(chalk.dim(`Auto-commit: ${validatedArgs.autoCommit}`))
-        console.log(chalk.dim(`Resume mode: ${validatedArgs.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
+        console.log(chalk.dim(`Log file: ${args.logFile}`))
+        console.log(chalk.dim(`Auto-commit: ${args.autoCommit}`))
+        console.log(chalk.dim(`Resume mode: ${args.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
         console.log(chalk.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
         console.log()
 
@@ -830,7 +1025,7 @@ const main = defineCommand({
             console.log(chalk.yellow(msg))
             logStream.write(msg)
             state.status = 'error'
-            saveState(state, validatedArgs.stateFile)
+            saveState(state, args.stateFile)
         })
 
         // Main loop
@@ -843,11 +1038,11 @@ const main = defineCommand({
 
             const iterationStart = new Date().toISOString()
             const prompt = buildIterationPrompt({
-                completionMarker: validatedArgs.completionMarker,
-                stateFile: validatedArgs.stateFile,
+                completionMarker: args.completionMarker,
+                stateFile: args.stateFile,
                 progressFile: DEFAULT_PROGRESS_FILE,
                 focusedTaskId,
-                skipCommit: !validatedArgs.autoCommit,
+                skipCommit: !args.autoCommit,
             })
 
             // Log the prompt
@@ -855,20 +1050,20 @@ const main = defineCommand({
 
             // Build claude args, adding --resume if we have a session ID
             const iterClaudeArgs = [...extraClaudeArgs]
-            if (validatedArgs.resume && state.sessionId) {
+            if (args.resume && state.sessionId) {
                 iterClaudeArgs.push('--resume', state.sessionId)
             }
 
             const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
 
             // Store session ID for future iterations (only if resume mode enabled)
-            if (validatedArgs.resume && sessionId && !state.sessionId) {
+            if (args.resume && sessionId && !state.sessionId) {
                 state.sessionId = sessionId
                 console.log(chalk.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
             }
 
             const iterationEnd = new Date().toISOString()
-            const markerFound = detectCompletionMarker(output, validatedArgs.completionMarker)
+            const markerFound = detectCompletionMarker(output, args.completionMarker)
 
             // Calculate duration
             const startTime = new Date(iterationStart).getTime()
@@ -889,7 +1084,7 @@ const main = defineCommand({
             })
 
             // Save state after each iteration
-            saveState(state, validatedArgs.stateFile)
+            saveState(state, args.stateFile)
 
             // Log iteration summary
             const contextInfo = contextUsedPercent !== undefined ? ` | Context: ${contextUsedPercent}%` : ''
@@ -902,7 +1097,7 @@ const main = defineCommand({
             // Check completion
             if (markerFound) {
                 state.status = 'completed'
-                saveState(state, validatedArgs.stateFile)
+                saveState(state, args.stateFile)
                 const doneMsg = `\n✅ Task completed after ${state.iteration} iteration(s)\n`
                 console.log(chalk.bold.green(doneMsg))
                 logStream.write(doneMsg)
@@ -914,14 +1109,616 @@ const main = defineCommand({
         // Max iterations reached
         if (!interrupted) {
             state.status = 'max_iterations_reached'
-            saveState(state, validatedArgs.stateFile)
+            saveState(state, args.stateFile)
             const maxMsg = `\n⚠️  Max iterations (${maxIterations}) reached without completion\n`
             console.log(chalk.bold.yellow(maxMsg))
-            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
+            console.log(chalk.dim(`State saved to: ${args.stateFile}`))
             logStream.write(maxMsg)
             logStream.end()
             process.exit(1)
         }
+    },
+})
+
+// ============================================================================
+// Plan Subcommand
+// ============================================================================
+
+const planCommand = defineCommand({
+    meta: {
+        name: 'plan',
+        description: 'Show plan summary with status, tasks, and mermaid graph',
+    },
+    args: {
+        ...sharedArgs,
+        format: {
+            type: 'string' as const,
+            alias: 'f',
+            default: 'default',
+            description: 'Output format: default, markdown, json',
+        },
+        copy: {
+            type: 'boolean' as const,
+            default: false,
+            description: 'Copy output to clipboard',
+        },
+    },
+    run({ args }) {
+        const state = loadState(args.stateFile)
+
+        if (!state) {
+            console.log(chalk.yellow(`No state file found at: ${args.stateFile}`))
+            process.exit(0)
+        }
+
+        if (state.tasks.length === 0) {
+            console.log(chalk.yellow('No tasks in state file.'))
+            console.log(chalk.dim(`Use: tt ralph task add "description"`))
+            process.exit(0)
+        }
+
+        let output: string
+
+        if (args.format === 'json') {
+            output = formatPlanAsJson(state.tasks, state)
+        } else {
+            output = formatPlanAsMarkdown(state.tasks, state)
+        }
+
+        console.log(output)
+
+        if (args.copy) {
+            if (copyToClipboard(output)) {
+                console.log(chalk.green('✓ Copied to clipboard'))
+            } else {
+                console.log(chalk.yellow('⚠ Could not copy to clipboard (xclip/xsel not installed?)'))
+            }
+        }
+    },
+})
+
+// ============================================================================
+// Clear Subcommand
+// ============================================================================
+
+const clearCommand = defineCommand({
+    meta: {
+        name: 'clear',
+        description: 'Clear all ralph files (state, log, progress, history)',
+    },
+    args: {
+        ...sharedArgs,
+        logFile: {
+            type: 'string' as const,
+            default: DEFAULT_LOG_FILE,
+            description: `Log file path (default: ${DEFAULT_LOG_FILE})`,
+        },
+    },
+    run({ args }) {
+        const files = [args.stateFile, args.logFile, DEFAULT_PROGRESS_FILE, DEFAULT_HISTORY_FILE]
+        let deleted = 0
+
+        for (const file of files) {
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file)
+                console.log(chalk.green(`✓ Deleted ${file}`))
+                deleted++
+            } else {
+                console.log(chalk.dim(`  Skipped ${file} (not found)`))
+            }
+        }
+
+        console.log(chalk.dim(`\nCleared ${deleted} file(s)`))
+    },
+})
+
+// ============================================================================
+// Main Command (with subcommands)
+// ============================================================================
+
+const main = defineCommand({
+    meta: {
+        name: 'ralph',
+        version: '2.0.0',
+        description: 'Autonomous Claude Code runner for task execution',
+    },
+    args: {
+        // Legacy flags for backwards compatibility
+        run: {
+            type: 'boolean' as const,
+            alias: 'r',
+            default: false,
+            description: '[Legacy] Use "tt ralph run" instead',
+        },
+        addTask: {
+            type: 'string' as const,
+            alias: 'a',
+            description: '[Legacy] Use "tt ralph task add" instead',
+        },
+        markDone: {
+            type: 'string' as const,
+            alias: 'd',
+            description: '[Legacy] Use "tt ralph task done" instead',
+        },
+        removeTask: {
+            type: 'string' as const,
+            alias: 'rm',
+            description: '[Legacy] Use "tt ralph task remove" instead',
+        },
+        listTasks: {
+            type: 'boolean' as const,
+            alias: 'l',
+            default: false,
+            description: '[Legacy] Use "tt ralph task list" instead',
+        },
+        showPlan: {
+            type: 'boolean' as const,
+            alias: 'p',
+            default: false,
+            description: '[Legacy] Use "tt ralph plan" instead',
+        },
+        clear: {
+            type: 'boolean' as const,
+            alias: 'c',
+            default: false,
+            description: '[Legacy] Use "tt ralph clear" instead',
+        },
+        // Legacy run options
+        taskId: {
+            type: 'string' as const,
+            alias: 't',
+            description: '[Legacy] Use "tt ralph run --taskId" instead',
+        },
+        maxIterations: {
+            type: 'string' as const,
+            alias: 'm',
+            default: String(DEFAULT_MAX_ITERATIONS),
+            description: '[Legacy] Use "tt ralph run --maxIterations" instead',
+        },
+        autoCommit: {
+            type: 'boolean' as const,
+            default: false,
+            description: '[Legacy] Use "tt ralph run --autoCommit" instead',
+        },
+        resume: {
+            type: 'boolean' as const,
+            default: false,
+            description: '[Legacy] Use "tt ralph run --resume" instead',
+        },
+        dryRun: {
+            type: 'boolean' as const,
+            alias: 'n',
+            default: false,
+            description: '[Legacy] Use "tt ralph run --dryRun" instead',
+        },
+        claudeArgs: {
+            type: 'string' as const,
+            description: '[Legacy] Use "tt ralph run --claudeArgs" instead',
+        },
+        format: {
+            type: 'string' as const,
+            alias: 'f',
+            default: 'default',
+            description: '[Legacy] Use "tt ralph plan --format" instead',
+        },
+        copy: {
+            type: 'boolean' as const,
+            default: false,
+            description: '[Legacy] Use "tt ralph plan --copy" instead',
+        },
+        stateFile: {
+            type: 'string' as const,
+            default: DEFAULT_STATE_FILE,
+            description: `State file path (default: ${DEFAULT_STATE_FILE})`,
+        },
+        logFile: {
+            type: 'string' as const,
+            default: DEFAULT_LOG_FILE,
+            description: `Log file path (default: ${DEFAULT_LOG_FILE})`,
+        },
+        completionMarker: {
+            type: 'string' as const,
+            default: DEFAULT_COMPLETION_MARKER,
+            description: `Completion marker (default: ${DEFAULT_COMPLETION_MARKER})`,
+        },
+    },
+    subCommands: {
+        task: taskCommand,
+        run: runCommand,
+        plan: planCommand,
+        clear: clearCommand,
+    },
+    async run({ args }) {
+        const validatedArgs = validateArgs(args)
+        const maxIterations = Number.parseInt(validatedArgs.maxIterations, 10)
+        const extraClaudeArgs = validatedArgs.claudeArgs?.split(' ').filter(Boolean) || []
+
+        // Handle legacy --clear flag
+        if (validatedArgs.clear) {
+            const files = [validatedArgs.stateFile, validatedArgs.logFile, DEFAULT_PROGRESS_FILE, DEFAULT_HISTORY_FILE]
+            let deleted = 0
+
+            for (const file of files) {
+                if (fs.existsSync(file)) {
+                    fs.unlinkSync(file)
+                    console.log(chalk.green(`✓ Deleted ${file}`))
+                    deleted++
+                } else {
+                    console.log(chalk.dim(`  Skipped ${file} (not found)`))
+                }
+            }
+
+            console.log(chalk.dim(`\nCleared ${deleted} file(s)`))
+            console.log(chalk.yellow('\nNote: Use "tt ralph clear" instead of --clear'))
+            process.exit(0)
+        }
+
+        // Handle legacy --addTask flag
+        if (validatedArgs.addTask !== undefined) {
+            const description = String(validatedArgs.addTask).trim()
+
+            if (!description || description.length < 3) {
+                console.error(chalk.red('Error: Task description too short (min 3 chars)'))
+                process.exit(2)
+            }
+
+            let state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                state = createInitialState(maxIterations)
+            }
+
+            const newTask = addTaskToState(state, description)
+            saveState(state, validatedArgs.stateFile)
+
+            console.log(chalk.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+            console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
+            console.log(chalk.dim(`Total tasks: ${state.tasks.length}`))
+            console.log(chalk.yellow('\nNote: Use "tt ralph task add" instead of --addTask'))
+            process.exit(0)
+        }
+
+        // Handle legacy --markDone flag
+        if (validatedArgs.markDone !== undefined) {
+            const taskId = Number.parseInt(String(validatedArgs.markDone), 10)
+
+            if (Number.isNaN(taskId) || taskId < 1) {
+                console.error(chalk.red('Error: Invalid task ID'))
+                process.exit(2)
+            }
+
+            const state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(2)
+            }
+
+            const task = state.tasks.find(t => t.id === taskId)
+
+            if (!task) {
+                console.error(chalk.red(`Error: Task #${taskId} not found`))
+                process.exit(2)
+            }
+
+            if (task.status === 'done') {
+                console.log(chalk.yellow(`Task #${taskId} is already done.`))
+                process.exit(0)
+            }
+
+            task.status = 'done'
+            task.completedAt = new Date().toISOString()
+            saveState(state, validatedArgs.stateFile)
+
+            console.log(chalk.green(`✓ Marked task #${taskId} as done: ${task.description}`))
+
+            const remaining = state.tasks.filter(t => t.status !== 'done').length
+            if (remaining === 0) {
+                console.log(chalk.bold.green('🎉 All tasks complete!'))
+            } else {
+                console.log(chalk.dim(`Remaining tasks: ${remaining}`))
+            }
+            console.log(chalk.yellow('\nNote: Use "tt ralph task done" instead of --markDone'))
+            process.exit(0)
+        }
+
+        // Handle legacy --removeTask flag
+        if (validatedArgs.removeTask !== undefined) {
+            const taskId = Number.parseInt(String(validatedArgs.removeTask), 10)
+
+            if (Number.isNaN(taskId) || taskId < 1) {
+                console.error(chalk.red('Error: Invalid task ID'))
+                process.exit(2)
+            }
+
+            const state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(2)
+            }
+
+            const taskIndex = state.tasks.findIndex(t => t.id === taskId)
+
+            if (taskIndex === -1) {
+                console.error(chalk.red(`Error: Task #${taskId} not found`))
+                process.exit(2)
+            }
+
+            const removedTask = state.tasks[taskIndex]
+            state.tasks.splice(taskIndex, 1)
+            saveState(state, validatedArgs.stateFile)
+
+            console.log(chalk.green(`✓ Removed task #${taskId}: ${removedTask.description}`))
+            console.log(chalk.dim(`Remaining tasks: ${state.tasks.length}`))
+            console.log(chalk.yellow('\nNote: Use "tt ralph task remove" instead of --removeTask'))
+            process.exit(0)
+        }
+
+        // Handle legacy --listTasks flag
+        if (validatedArgs.listTasks) {
+            const state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.log(chalk.yellow(`No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(0)
+            }
+
+            if (state.tasks.length === 0) {
+                console.log(chalk.yellow('No tasks in state file.'))
+                process.exit(0)
+            }
+
+            if (validatedArgs.format === 'markdown') {
+                console.log(formatTasksAsMarkdown(state.tasks))
+            } else {
+                console.log(chalk.bold('\nTasks:\n'))
+                for (const task of state.tasks) {
+                    const statusColor = task.status === 'done' ? chalk.green
+                        : task.status === 'in_progress' ? chalk.yellow
+                        : chalk.dim
+                    const icon = task.status === 'done' ? '✓'
+                        : task.status === 'in_progress' ? '→'
+                        : '○'
+                    console.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`))
+                }
+                console.log()
+            }
+            console.log(chalk.yellow('Note: Use "tt ralph task list" instead of --listTasks'))
+            process.exit(0)
+        }
+
+        // Handle legacy --showPlan flag
+        if (validatedArgs.showPlan) {
+            const state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.log(chalk.yellow(`No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(0)
+            }
+
+            if (state.tasks.length === 0) {
+                console.log(chalk.yellow('No tasks in state file.'))
+                process.exit(0)
+            }
+
+            let output: string
+
+            if (validatedArgs.format === 'json') {
+                output = formatPlanAsJson(state.tasks, state)
+            } else {
+                output = formatPlanAsMarkdown(state.tasks, state)
+            }
+
+            console.log(output)
+
+            if (validatedArgs.copy) {
+                if (copyToClipboard(output)) {
+                    console.log(chalk.green('✓ Copied to clipboard'))
+                } else {
+                    console.log(chalk.yellow('⚠ Could not copy to clipboard'))
+                }
+            }
+            console.log(chalk.yellow('\nNote: Use "tt ralph plan" instead of --showPlan'))
+            process.exit(0)
+        }
+
+        // Handle legacy --run flag
+        if (validatedArgs.run || validatedArgs.dryRun) {
+            const focusedTaskId = validatedArgs.taskId ? Number.parseInt(validatedArgs.taskId, 10) : null
+
+            let state = loadState(validatedArgs.stateFile)
+
+            if (!state) {
+                console.error(chalk.red(`Error: No state file found at: ${validatedArgs.stateFile}`))
+                process.exit(2)
+            }
+
+            const pendingTasks = state.tasks.filter(t => t.status !== 'done')
+            if (pendingTasks.length === 0) {
+                console.log(chalk.green('✅ All tasks are done!'))
+                process.exit(0)
+            }
+
+            if (focusedTaskId !== null) {
+                const focusedTask = state.tasks.find(t => t.id === focusedTaskId)
+                if (!focusedTask) {
+                    console.error(chalk.red(`Error: Task #${focusedTaskId} not found`))
+                    process.exit(2)
+                }
+                if (focusedTask.status === 'done') {
+                    console.log(chalk.yellow(`Task #${focusedTaskId} is already done.`))
+                    process.exit(0)
+                }
+            }
+
+            if (validatedArgs.dryRun) {
+                console.log(chalk.bold('\n=== DRY RUN ===\n'))
+                console.log(chalk.cyan('Config:'))
+                console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`)
+                console.log(`  Max iterations: ${maxIterations}`)
+                console.log(`  State file: ${validatedArgs.stateFile}`)
+                console.log(`  Log file: ${validatedArgs.logFile}`)
+                console.log(`  Completion marker: ${validatedArgs.completionMarker}`)
+                console.log(`  Auto-commit: ${validatedArgs.autoCommit}`)
+                console.log(`  Resume mode: ${validatedArgs.resume}`)
+                console.log(`  Session ID: ${state.sessionId || '(none)'}`)
+                console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
+                console.log(`  Pending tasks: ${pendingTasks.length}`)
+
+                console.log(chalk.cyan('\nTasks:'))
+                for (const t of state.tasks) {
+                    const icon = t.status === 'done' ? '✓' : t.status === 'in_progress' ? '→' : '○'
+                    const focus = focusedTaskId === t.id ? chalk.cyan(' ← FOCUS') : ''
+                    console.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`)
+                }
+
+                console.log(chalk.bold('\n=== END DRY RUN ===\n'))
+                console.log(chalk.yellow('Note: Use "tt ralph run --dryRun" instead of --dryRun'))
+                process.exit(0)
+            }
+
+            if (!await checkClaudeCli()) {
+                console.error(chalk.red('Error: claude CLI not found in PATH'))
+                console.error(chalk.yellow('Install Claude Code: https://docs.anthropic.com/en/docs/claude-code'))
+                process.exit(2)
+            }
+
+            state.maxIterations = maxIterations
+            state.status = 'running'
+
+            const logStream = fs.createWriteStream(validatedArgs.logFile, { flags: 'a' })
+
+            const pending = state.tasks.filter(t => t.status === 'pending').length
+            const done = state.tasks.filter(t => t.status === 'done').length
+
+            logStream.write(`\n${'='.repeat(60)}\n`)
+            logStream.write(`Ralph Loop Started: ${new Date().toISOString()}\n`)
+            logStream.write(`${'='.repeat(60)}\n\n`)
+
+            console.log(chalk.bold.blue('\n🔄 Ralph Loop Starting\n'))
+            console.log(chalk.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}`))
+            console.log(chalk.dim(`Max iterations: ${maxIterations}`))
+            console.log(chalk.dim(`Log file: ${validatedArgs.logFile}`))
+            console.log(chalk.dim(`Auto-commit: ${validatedArgs.autoCommit}`))
+            console.log(chalk.dim(`Resume mode: ${validatedArgs.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
+            console.log(chalk.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
+            console.log(chalk.yellow('Note: Use "tt ralph run" instead of --run'))
+            console.log()
+
+            logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}\n`)
+            logStream.write(`Max iterations: ${maxIterations}\n`)
+            logStream.write(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)\n\n`)
+
+            let interrupted = false
+            process.on('SIGINT', () => {
+                if (interrupted) {
+                    logStream.end()
+                    process.exit(130)
+                }
+                interrupted = true
+                const msg = '\n\nInterrupted. Press Ctrl+C again to force exit.\n'
+                console.log(chalk.yellow(msg))
+                logStream.write(msg)
+                state.status = 'error'
+                saveState(state, validatedArgs.stateFile)
+            })
+
+            while (state.iteration < maxIterations && !interrupted) {
+                state.iteration++
+
+                const iterHeader = `\n━━━ Iteration ${state.iteration}/${maxIterations} ━━━\n`
+                console.log(chalk.bold.cyan(iterHeader))
+                logStream.write(iterHeader)
+
+                const iterationStart = new Date().toISOString()
+                const prompt = buildIterationPrompt({
+                    completionMarker: validatedArgs.completionMarker,
+                    stateFile: validatedArgs.stateFile,
+                    progressFile: DEFAULT_PROGRESS_FILE,
+                    focusedTaskId,
+                    skipCommit: !validatedArgs.autoCommit,
+                })
+
+                logStream.write(`\n--- Prompt ---\n${prompt}\n--- End Prompt ---\n\n`)
+
+                const iterClaudeArgs = [...extraClaudeArgs]
+                if (validatedArgs.resume && state.sessionId) {
+                    iterClaudeArgs.push('--resume', state.sessionId)
+                }
+
+                const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
+
+                if (validatedArgs.resume && sessionId && !state.sessionId) {
+                    state.sessionId = sessionId
+                    console.log(chalk.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
+                }
+
+                const iterationEnd = new Date().toISOString()
+                const markerFound = detectCompletionMarker(output, validatedArgs.completionMarker)
+
+                const startTime = new Date(iterationStart).getTime()
+                const endTime = new Date(iterationEnd).getTime()
+                const durationMs = endTime - startTime
+                const durationHuman = formatDuration(durationMs)
+
+                appendHistory({
+                    iteration: state.iteration,
+                    startedAt: iterationStart,
+                    completedAt: iterationEnd,
+                    durationMs,
+                    durationHuman,
+                    outputSummary: extractOutputSummary(output),
+                    markerFound,
+                    contextUsedPercent,
+                })
+
+                saveState(state, validatedArgs.stateFile)
+
+                const contextInfo = contextUsedPercent !== undefined ? ` | Context: ${contextUsedPercent}%` : ''
+                const summaryMsg = `\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? 'yes' : 'no'}\n`
+                console.log(chalk.dim(`\n━━━ Iteration ${state.iteration} Summary ━━━`))
+                console.log(chalk.dim(`Duration: ${durationHuman}${contextInfo}`))
+                console.log(chalk.dim(`Marker found: ${markerFound ? chalk.green('yes') : chalk.yellow('no')}`))
+                logStream.write(summaryMsg)
+
+                if (markerFound) {
+                    state.status = 'completed'
+                    saveState(state, validatedArgs.stateFile)
+                    const doneMsg = `\n✅ Task completed after ${state.iteration} iteration(s)\n`
+                    console.log(chalk.bold.green(doneMsg))
+                    logStream.write(doneMsg)
+                    logStream.end()
+                    process.exit(0)
+                }
+            }
+
+            if (!interrupted) {
+                state.status = 'max_iterations_reached'
+                saveState(state, validatedArgs.stateFile)
+                const maxMsg = `\n⚠️  Max iterations (${maxIterations}) reached without completion\n`
+                console.log(chalk.bold.yellow(maxMsg))
+                console.log(chalk.dim(`State saved to: ${validatedArgs.stateFile}`))
+                logStream.write(maxMsg)
+                logStream.end()
+                process.exit(1)
+            }
+            return
+        }
+
+        // No subcommand or legacy flag - show help
+        console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
+        console.log('Commands:')
+        console.log('  tt ralph task add "..."     Add a task')
+        console.log('  tt ralph task list          List all tasks')
+        console.log('  tt ralph task done <id>     Mark a task as done')
+        console.log('  tt ralph task remove <id>   Remove a task')
+        console.log('  tt ralph run                Start the autonomous loop')
+        console.log('  tt ralph run --resume       Start with session continuity')
+        console.log('  tt ralph plan               Show plan summary with graph')
+        console.log('  tt ralph clear              Clear all ralph files')
+        console.log()
+        console.log(chalk.dim('Use "tt ralph <command> --help" for command options.'))
     },
 })
 

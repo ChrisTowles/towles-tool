@@ -67,7 +67,7 @@ tt ralph --clear  # Only if starting fresh
 tt ralph --addTask "Task 1: [full description with context and success criteria]"
 tt ralph --addTask "Task 2: [full description with context and success criteria]"
 # ... continue for all tasks
-tt ralph --listTasks
+tt ralph --showPlan
 ```
 
 ## Phase 6: Instruct User
@@ -82,9 +82,10 @@ Or with auto-commits after each task:
 
   tt ralph --run --autoCommit --maxIterations 20
 
-Monitor progress in:
-  - ralph-progress.md (Claude's notes)
-  - ralph-log.md (full output)
+Monitor progress:
+  tt ralph --showPlan                    # Full overview with mermaid graph
+  tt ralph --showPlan --copy             # Copy to clipboard
+  tt ralph --listTasks --format markdown # Task list with checkboxes
 ```
 
 ## Task Examples

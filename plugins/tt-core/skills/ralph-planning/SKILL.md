@@ -12,12 +12,25 @@ For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.m
 ## tt ralph Quick Reference
 
 ```bash
-tt ralph --addTask "description"  # Add task
-tt ralph --listTasks              # View tasks
-tt ralph --run                    # Execute (no auto-commit)
-tt ralph --run --autoCommit       # Execute with commits
-tt ralph --run --maxIterations 10 # Safety limit
-tt ralph --clear                  # Clean up files
+# Task management
+tt ralph task add "description"       # Add task
+tt ralph task list                    # View tasks (default format)
+tt ralph task list --format markdown  # View tasks as markdown
+tt ralph task done 1                  # Mark task #1 complete
+tt ralph task remove 1                # Remove task #1
+
+# Plan view
+tt ralph plan                         # Show plan with mermaid graph
+tt ralph plan --format json           # Show plan as JSON
+tt ralph plan --copy                  # Show plan and copy to clipboard
+
+# Execution
+tt ralph run                          # Execute (no auto-commit)
+tt ralph run --autoCommit             # Execute with commits
+tt ralph run --maxIterations 10       # Safety limit
+
+# Cleanup
+tt ralph clear                        # Clean up files
 ```
 
 ## Task Requirements
@@ -53,16 +66,16 @@ Success Criteria:
 
 **Good:**
 ```bash
-tt ralph --addTask "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
-tt ralph --addTask "Create getUserById in src/services/user.ts following patterns in src/services/post.ts"
-tt ralph --addTask "Add unit tests for getUserById covering success and not-found cases"
+tt ralph task add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
+tt ralph task add "Create getUserById in src/services/user.ts following patterns in src/services/post.ts"
+tt ralph task add "Add unit tests for getUserById covering success and not-found cases"
 ```
 
 **Bad:**
 ```bash
-tt ralph --addTask "Implement user feature"           # Too vague
-tt ralph --addTask "Add types, service, and tests"   # Multiple things
-tt ralph --addTask "Make it work like the other one" # Unclear reference
+tt ralph task add "Implement user feature"           # Too vague
+tt ralph task add "Add types, service, and tests"   # Multiple things
+tt ralph task add "Make it work like the other one" # Unclear reference
 ```
 
 ## Planning Process
@@ -78,14 +91,15 @@ tt ralph --addTask "Make it work like the other one" # Unclear reference
 After planning, add tasks via CLI:
 
 ```bash
-tt ralph --addTask "Phase 1: [description with context and success criteria]"
-tt ralph --addTask "Phase 2: [description with context and success criteria]"
-tt ralph --listTasks  # Verify
+tt ralph task add "Phase 1: [description with context and success criteria]"
+tt ralph task add "Phase 2: [description with context and success criteria]"
+tt ralph plan                           # Review plan with mermaid graph
+tt ralph plan --copy                    # Copy plan to clipboard for review
 ```
 
 Then run:
 ```bash
-tt ralph --run --maxIterations 20
+tt ralph run --maxIterations 20
 ```
 
 ## Red Flags
