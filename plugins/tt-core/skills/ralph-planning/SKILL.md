@@ -1,94 +1,96 @@
 ---
-description: Plan and structure tasks for ralph autonomous loops
+name: ralph-planning
+description: Plan and structure tasks for ralph autonomous loops. Use when breaking down features into autonomous tasks, planning ralph runs, or structuring work for tt ralph execution.
 ---
 
-# Ralph Planning Skill
+# Ralph Task Planning
 
-You are an expert at breaking down work into tasks that Claude Code can execute autonomously using the ralph loop methodology.
+Break down work into tasks for autonomous execution via `tt ralph`.
 
-## What Makes a Good Ralph Task
+For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.md) and [ralph reference](../towles-tool/references/ralph.md).
 
-### Must Have:
+## tt ralph Quick Reference
+
+```bash
+tt ralph --addTask "description"  # Add task
+tt ralph --listTasks              # View tasks
+tt ralph --run                    # Execute (no auto-commit)
+tt ralph --run --autoCommit       # Execute with commits
+tt ralph --run --maxIterations 10 # Safety limit
+tt ralph --clear                  # Clean up files
+```
+
+## Task Requirements
+
+Each task **must have**:
 1. **Clear completion criteria** - How does Claude know it's done?
-2. **Verifiable success** - Tests pass, typecheck passes, build works
-3. **Single responsibility** - One focused outcome per task
-4. **Self-contained context** - References specific files or patterns
+2. **Verifiable success** - Tests pass, typecheck passes
+3. **Single responsibility** - One focused outcome
+4. **Self-contained context** - References specific files
 
-### Must Avoid:
-- Vague goals ("make it better", "improve performance")
-- Tasks requiring human judgment or design decisions
-- Multiple unrelated changes in one task
-- Dependencies on external systems without mocking
+Each task **must avoid**:
+- Vague goals ("make it better")
+- Human judgment requirements
+- Multiple unrelated changes
+- Missing verification steps
 
-## Task Structure Template
+## Task Template
 
 ```
-Task: [Brief imperative description]
+[Imperative description]
 
 Context:
-- [What files/areas to focus on]
-- [What patterns to follow]
+- Files: [specific paths]
+- Patterns: [reference existing code]
 
 Success Criteria:
-- [ ] [Specific verifiable outcome]
-- [ ] [Tests pass: pnpm test]
-- [ ] [Types pass: pnpm typecheck]
+- [ ] [Specific outcome]
+- [ ] Tests pass: pnpm test
+- [ ] Types pass: pnpm typecheck
+```
 
-Completion: Output <promise>TASK_DONE</promise> when criteria met.
+## Good vs Bad Tasks
+
+**Good:**
+```bash
+tt ralph --addTask "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
+tt ralph --addTask "Create getUserById in src/services/user.ts following patterns in src/services/post.ts"
+tt ralph --addTask "Add unit tests for getUserById covering success and not-found cases"
+```
+
+**Bad:**
+```bash
+tt ralph --addTask "Implement user feature"           # Too vague
+tt ralph --addTask "Add types, service, and tests"   # Multiple things
+tt ralph --addTask "Make it work like the other one" # Unclear reference
 ```
 
 ## Planning Process
 
-When helping plan ralph tasks:
-
-1. **Understand the goal** - What's the end state?
-2. **Identify phases** - What are the logical chunks?
+1. **Understand goal** - What's the end state?
+2. **Identify phases** - Logical chunks of work
 3. **Order by dependency** - What must come first?
-4. **Add verification** - How do we know each step worked?
-5. **Write clear prompts** - Each task is a standalone instruction
-
-## Example Breakdown
-
-**User Goal:** "Add user authentication to the app"
-
-**Ralph Tasks:**
-
-1. Add auth dependencies and types
-   - Success: packages installed, types defined, typecheck passes
-
-2. Create auth service with login/logout
-   - Success: service exists, unit tests pass
-
-3. Add auth middleware
-   - Success: middleware protects routes, integration tests pass
-
-4. Create login UI component
-   - Success: component renders, form validates, tests pass
-
-5. Wire up auth flow end-to-end
-   - Success: can login/logout, all tests pass, manual smoke test
-
-## Red Flags to Watch For
-
-- "Refactor the whole..." - Too broad, break it down
-- "Make it work like..." - Needs specific requirements
-- "Fix all the..." - Each fix should be a task
-- No test command - How do we verify?
+4. **Add verification** - How to confirm each step?
+5. **Write clear prompts** - Standalone instructions
 
 ## Output Format
 
-When generating tasks for ralph, output them as:
+After planning, add tasks via CLI:
 
-```
-## Ralph Task Plan
-
-### Task 1: [Name]
-[Full task prompt with context and success criteria]
-
-### Task 2: [Name]
-[Full task prompt with context and success criteria]
-
-...
+```bash
+tt ralph --addTask "Phase 1: [description with context and success criteria]"
+tt ralph --addTask "Phase 2: [description with context and success criteria]"
+tt ralph --listTasks  # Verify
 ```
 
-Each task should be copy-pasteable into `tt ralph --addTask "..."` or directly into a ralph loop prompt.
+Then run:
+```bash
+tt ralph --run --maxIterations 20
+```
+
+## Red Flags
+
+- "Refactor the whole..." → Break it down
+- "Make it work like..." → Specify requirements
+- "Fix all the..." → One fix per task
+- No test command → Add verification

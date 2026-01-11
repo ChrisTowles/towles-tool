@@ -1,50 +1,108 @@
 ---
 title: plan
-description: "Interview user and create implementation plan"
-
-# created based on Thariq Shihipar prompt in blog post
-# https://x.com/trq212/status/2005315275026260309
-
+description: "Interview user and create implementation plan as ralph tasks"
+allowed-tools: AskUserQuestion(*), Task(*), Bash(*), Read(*), Write(*), Edit(*)
 ---
 
+Interview user, research codebase, create `tt ralph` tasks for autonomous execution.
 
-Interview me in detail using `AskUserQuestion` about:
-- Technical implementation
-- UI & UX
+For detailed ralph documentation, see skill `towles-tool` and its `references/ralph.md`.
+
+## Phase 1: Interview
+
+Use `AskUserQuestion` to gather details about:
+- Technical implementation requirements
+- UI & UX considerations
 - Concerns and tradeoffs
 - Edge cases
 
-Any questions about current codebase or architecture use `Explore` subagent to research.
+Ask non-obvious questions. Continue until requirements are clear (3-7 questions typically).
 
-Ask non-obvious questions. Continue interviewing until complete.
+## Phase 2: Research
 
-## Explore
-
-### Codebase Research
-
-Use Task agents (subagent_type=Explore) to:
+Use Task agents (`subagent_type=Explore`) to:
 - Find relevant files, patterns, conventions
 - Understand existing architecture
 - Identify dependencies and conflicts
 
+## Phase 3: Plan
 
-## Output
+Based on interview + research, design implementation as ordered tasks.
 
-DO NOT write code yet.
+Each task must have:
+- **Clear completion criteria** - How does Claude know it's done?
+- **Verifiable success** - Tests pass, typecheck passes
+- **Single responsibility** - One focused outcome
+- **Self-contained context** - References specific files/patterns
 
-Write the Plan to implement with TODOS and if large phases to `docs/tasks/{YYYY-MM-DD}-{topic}/plan.md`
+Task template:
+```
+[Imperative description]
 
+Context:
+- Files: [specific paths to modify]
+- Patterns: [reference existing code]
 
-1. Codebase context
-2. Expert recommendations
-   1. include citations/links
-3. Recommended approach based on research
-4. Mermaid diagram of architecture
+Success Criteria:
+- [ ] [Specific outcome]
+- [ ] Tests pass: pnpm test
+- [ ] Types pass: pnpm typecheck
+```
 
-Then update `.current-plan` in repo root with the task folder path.
+## Phase 4: Present & Confirm
 
+Present the task list to user with:
+1. Brief summary of approach
+2. Mermaid diagram if helpful
+3. Numbered task list with descriptions
 
-## Finally
+Use `AskUserQuestion` to confirm or adjust.
 
-Lasty ask the user if they want to create a GitHub issue from the plan. If yes, create issue in relevant repo with title and body from plan.
+## Phase 5: Add Tasks
 
+Once approved, clear any old tasks and add new ones:
+
+```bash
+tt ralph --clear  # Only if starting fresh
+tt ralph --addTask "Task 1: [full description with context and success criteria]"
+tt ralph --addTask "Task 2: [full description with context and success criteria]"
+# ... continue for all tasks
+tt ralph --listTasks
+```
+
+## Phase 6: Instruct User
+
+Tell user:
+```
+Tasks ready! Start autonomous execution:
+
+  tt ralph --run --maxIterations 20
+
+Or with auto-commits after each task:
+
+  tt ralph --run --autoCommit --maxIterations 20
+
+Monitor progress in:
+  - ralph-progress.md (Claude's notes)
+  - ralph-log.md (full output)
+```
+
+## Task Examples
+
+**Good:**
+```bash
+tt ralph --addTask "Add UserProfile type to src/types/user.ts with id: string, email: string, name: string, createdAt: Date fields. Success: typecheck passes"
+tt ralph --addTask "Create getUserById(id: string) in src/services/user.ts following patterns in src/services/post.ts. Success: function exists, typecheck passes"
+tt ralph --addTask "Add unit tests for getUserById in src/services/user.test.ts covering: valid id returns user, invalid id throws, missing id returns null. Success: pnpm test passes"
+```
+
+**Bad:**
+```bash
+tt ralph --addTask "Implement user feature"           # Too vague
+tt ralph --addTask "Add types, service, and tests"   # Multiple things
+tt ralph --addTask "Make it work"                    # No criteria
+```
+
+## Optional: GitHub Issue
+
+After tasks are added, ask if user wants a GitHub issue created summarizing the plan.
