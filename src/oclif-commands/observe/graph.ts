@@ -7,6 +7,24 @@ import { x } from 'tinyexec'
 import { BaseCommand } from '../../commands/base.js'
 import { treemap, hierarchy, treemapSquarify } from 'd3-hierarchy'
 
+/**
+ * Calculate cutoff timestamp for days filtering.
+ * Returns 0 if days <= 0 (no filtering).
+ */
+export function calculateCutoffMs(days: number): number {
+  return days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : 0
+}
+
+/**
+ * Filter items by mtime against a days cutoff.
+ * Returns all items if days <= 0.
+ */
+export function filterByDays<T extends { mtime: number }>(items: T[], days: number): T[] {
+  const cutoff = calculateCutoffMs(days)
+  if (cutoff === 0) return items
+  return items.filter((item) => item.mtime >= cutoff)
+}
+
 interface ContentBlock {
   type: string
   text?: string
@@ -515,8 +533,7 @@ export default class ObserveGraph extends BaseCommand {
       mtime: number
     }> = []
 
-    // Calculate cutoff time if days > 0
-    const cutoffMs = days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : 0
+    const cutoffMs = calculateCutoffMs(days)
 
     const projectDirs = fs.readdirSync(projectsDir)
     for (const project of projectDirs) {
@@ -633,9 +650,19 @@ export default class ObserveGraph extends BaseCommand {
       // Extract tool usage from content blocks
       const tools = this.extractToolData(entry.message.content, inputTokens, outputTokens)
 
+      // Create tool children nodes for nested treemap display
+      const toolChildren: TreemapNode[] = tools.map((tool) => ({
+        name: `${tool.name} (${tool.count}x)`,
+        value: tool.inputTokens + tool.outputTokens,
+        inputTokens: tool.inputTokens,
+        outputTokens: tool.outputTokens,
+        ratio: tool.outputTokens > 0 ? tool.inputTokens / tool.outputTokens : 0,
+      }))
+
       children.push({
         name: `Turn ${turnNumber}: ${role === 'user' ? 'User' : 'Claude'}`,
-        value: totalTokens,
+        value: toolChildren.length > 0 ? undefined : totalTokens, // Let children sum if present
+        children: toolChildren.length > 0 ? toolChildren : undefined,
         sessionId: sessionId.slice(0, 8),
         model: this.getModelName(model),
         inputTokens,

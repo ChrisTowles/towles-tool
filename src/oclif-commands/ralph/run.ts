@@ -292,22 +292,21 @@ export default class Run extends BaseCommand {
       const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
 
       // Reload state from disk to pick up changes made by child claude process
-      // (e.g., `tt ralph task done <id>` marks tasks complete)
+      // (e.g., `tt ralph task done <id>` marks tasks complete, or user edits state file)
       const freshState = loadState(flags.stateFile)
       if (freshState) {
-        // Adopt child's task changes, keep parent-managed fields
-        state.tasks = freshState.tasks
-        // Keep session ID from child if it set one
-        if (freshState.sessionId) {
-          state.sessionId = freshState.sessionId
-        }
+        // Preserve current iteration (managed by this loop), adopt everything else
+        const currentIteration = state.iteration
+        Object.assign(state, freshState, { iteration: currentIteration })
       }
 
       // Store session ID on the current task for future resumption
-      if (sessionId && currentTask && !currentTask.sessionId) {
-        currentTask.sessionId = sessionId
+      // Re-find task in reloaded state since reference changed
+      const taskToUpdate = currentTask ? state.tasks.find(t => t.id === currentTask.id) : undefined
+      if (sessionId && taskToUpdate && !taskToUpdate.sessionId) {
+        taskToUpdate.sessionId = sessionId
         state.sessionId = sessionId  // Also store at state level as fallback
-        console.log(pc.dim(`Session ID stored on task #${currentTask.id}: ${sessionId.slice(0, 8)}...`))
+        console.log(pc.dim(`Session ID stored on task #${taskToUpdate.id}: ${sessionId.slice(0, 8)}...`))
       }
 
       const iterationEnd = new Date().toISOString()
