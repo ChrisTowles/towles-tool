@@ -27,7 +27,7 @@
     "lint:fix": "oxlint --fix",
     "test": "bun test",
     "test:watch": "CI=DisableCallingClaude bun test --watch",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit --incremental",
     "prepare": "simple-git-hooks"
   },
   "dependencies": {
