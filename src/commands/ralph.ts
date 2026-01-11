@@ -61,6 +61,7 @@ export interface RalphState {
     iteration: number
     maxIterations: number
     status: 'running' | 'completed' | 'max_iterations_reached' | 'error'
+    sessionId?: string // Claude session ID for --resume continuity
     // history removed in v2 - now stored as JSON lines in ralph-history.log
 }
 
@@ -89,6 +90,7 @@ export const ArgsSchema = z.object({
     listTasks: z.boolean().default(false),
     clear: z.boolean().default(false),
     autoCommit: z.boolean().default(false),
+    resume: z.boolean().default(false),
     maxIterations: z.string().default(String(DEFAULT_MAX_ITERATIONS))
         .refine((val: string) => /^\d+$/.test(val) && Number.parseInt(val, 10) > 0, 'maxIterations must be a positive integer'),
     dryRun: z.boolean().default(false),
@@ -337,11 +339,13 @@ export interface IterationResult {
     output: string
     exitCode: number
     contextUsedPercent?: number
+    sessionId?: string
 }
 
 interface ParsedLine {
     text: string | null
     usage?: StreamEvent['usage']
+    sessionId?: string
 }
 
 function parseStreamLine(line: string): ParsedLine {
@@ -356,12 +360,12 @@ function parseStreamLine(line: string): ParsedLine {
         if (data.type === 'stream_event' && data.event?.type === 'content_block_stop') {
             return { text: '\n' }
         }
-        // Capture final result with usage
+        // Capture final result with usage and session_id
         if (data.type === 'result') {
             const resultText = data.result
                 ? `\n[Result: ${data.result.substring(0, 100)}${data.result.length > 100 ? '...' : ''}]\n`
                 : null
-            return { text: resultText, usage: data.usage }
+            return { text: resultText, usage: data.usage, sessionId: data.session_id }
         }
     } catch {
         // Not JSON, return raw
@@ -380,6 +384,7 @@ export async function runIteration(
     let output = ''
     let lineBuffer = ''
     let finalUsage: StreamEvent['usage'] | undefined
+    let sessionId: string | undefined
 
     return new Promise((resolve) => {
         const proc = spawn('claude', allArgs, {
@@ -395,8 +400,9 @@ export async function runIteration(
             lineBuffer = lines.pop() || '' // Keep incomplete line in buffer
 
             for (const line of lines) {
-                const { text: parsed, usage } = parseStreamLine(line)
+                const { text: parsed, usage, sessionId: sid } = parseStreamLine(line)
                 if (usage) finalUsage = usage
+                if (sid) sessionId = sid
                 if (parsed) {
                     process.stdout.write(parsed)
                     logStream?.write(parsed)
@@ -415,8 +421,9 @@ export async function runIteration(
         proc.on('close', (code: number | null) => {
             // Process any remaining buffer
             if (lineBuffer) {
-                const { text: parsed, usage } = parseStreamLine(lineBuffer)
+                const { text: parsed, usage, sessionId: sid } = parseStreamLine(lineBuffer)
                 if (usage) finalUsage = usage
+                if (sid) sessionId = sid
                 if (parsed) {
                     process.stdout.write(parsed)
                     logStream?.write(parsed)
@@ -435,7 +442,7 @@ export async function runIteration(
                 contextUsedPercent = Math.round((totalTokens / maxContext) * 100)
             }
 
-            resolve({ output, exitCode: code ?? 0, contextUsedPercent })
+            resolve({ output, exitCode: code ?? 0, contextUsedPercent, sessionId })
         })
 
         proc.on('error', (err: Error) => {
@@ -489,6 +496,11 @@ const main = defineCommand({
             type: 'boolean',
             default: false,
             description: 'Auto-commit after each completed task',
+        },
+        resume: {
+            type: 'boolean',
+            default: false,
+            description: 'Resume from previous session (uses stored session_id)',
         },
         maxIterations: {
             type: 'string',
@@ -605,12 +617,14 @@ const main = defineCommand({
             console.log(chalk.bold('Ralph - Autonomous Claude Code Runner\n'))
             console.log('Usage:')
             console.log('  tt ralph --run              Start the autonomous loop')
+            console.log('  tt ralph --run --resume     Start with session continuity')
             console.log('  tt ralph --addTask "..."    Add a task')
             console.log('  tt ralph --listTasks        List all tasks')
             console.log('  tt ralph --clear            Clear all ralph files')
             console.log('  tt ralph --dryRun           Show config without running')
             console.log()
             console.log(chalk.dim('Use --run (-r) to start the loop.'))
+            console.log(chalk.dim('Use --resume to maintain context across iterations.'))
             process.exit(0)
         }
 
@@ -657,6 +671,8 @@ const main = defineCommand({
             console.log(`  Log file: ${validatedArgs.logFile}`)
             console.log(`  Completion marker: ${validatedArgs.completionMarker}`)
             console.log(`  Auto-commit: ${validatedArgs.autoCommit}`)
+            console.log(`  Resume mode: ${validatedArgs.resume}`)
+            console.log(`  Session ID: ${state.sessionId || '(none)'}`)
             console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
             console.log(`  Pending tasks: ${pendingTasks.length}`)
 
@@ -697,6 +713,7 @@ const main = defineCommand({
         console.log(chalk.dim(`Max iterations: ${maxIterations}`))
         console.log(chalk.dim(`Log file: ${validatedArgs.logFile}`))
         console.log(chalk.dim(`Auto-commit: ${validatedArgs.autoCommit}`))
+        console.log(chalk.dim(`Resume mode: ${validatedArgs.resume}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
         console.log(chalk.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
         console.log()
 
@@ -739,7 +756,19 @@ const main = defineCommand({
             // Log the prompt
             logStream.write(`\n--- Prompt ---\n${prompt}\n--- End Prompt ---\n\n`)
 
-            const { output, contextUsedPercent } = await runIteration(prompt, extraClaudeArgs, logStream)
+            // Build claude args, adding --resume if we have a session ID
+            const iterClaudeArgs = [...extraClaudeArgs]
+            if (validatedArgs.resume && state.sessionId) {
+                iterClaudeArgs.push('--resume', state.sessionId)
+            }
+
+            const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
+
+            // Store session ID for future iterations (only if resume mode enabled)
+            if (validatedArgs.resume && sessionId && !state.sessionId) {
+                state.sessionId = sessionId
+                console.log(chalk.dim(`Session ID stored: ${sessionId.slice(0, 8)}...`))
+            }
 
             const iterationEnd = new Date().toISOString()
             const markerFound = detectCompletionMarker(output, validatedArgs.completionMarker)

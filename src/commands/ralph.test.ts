@@ -58,11 +58,33 @@ describe('ralph-loop', () => {
             expect(state.status).toBe('running')
             expect(state.tasks).toEqual([])
             expect(state.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+            expect(state.sessionId).toBeUndefined()
         })
 
         it('should use provided maxIterations', () => {
             const state = createInitialState(20)
             expect(state.maxIterations).toBe(20)
+        })
+    })
+
+    describe('state sessionId', () => {
+        it('should allow setting and persisting sessionId', () => {
+            const state = createInitialState(10)
+            state.sessionId = 'test-session-uuid-123'
+
+            saveState(state, testStateFile)
+            const loaded = loadState(testStateFile)
+
+            expect(loaded?.sessionId).toBe('test-session-uuid-123')
+        })
+
+        it('should preserve sessionId as undefined when not set', () => {
+            const state = createInitialState(10)
+
+            saveState(state, testStateFile)
+            const loaded = loadState(testStateFile)
+
+            expect(loaded?.sessionId).toBeUndefined()
         })
     })
 
@@ -409,6 +431,15 @@ describe('ralph-loop', () => {
                 expect(result.data.maxIterations).toBe('10')
                 expect(result.data.stateFile).toBe('ralph-state.json')
                 expect(result.data.completionMarker).toBe('RALPH_DONE')
+                expect(result.data.resume).toBe(false)
+            }
+        })
+
+        it('should accept resume flag', () => {
+            const result = ArgsSchema.safeParse({ resume: true })
+            expect(result.success).toBe(true)
+            if (result.success) {
+                expect(result.data.resume).toBe(true)
             }
         })
 
