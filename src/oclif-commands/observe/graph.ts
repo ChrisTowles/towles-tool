@@ -49,10 +49,10 @@ interface TreemapNode {
 /**
  * Generate interactive HTML treemap from session token data
  */
-export default class ObserveFlamegraph extends BaseCommand {
+export default class ObserveGraph extends BaseCommand {
   static override description = 'Generate interactive HTML treemap from session token data'
 
-  static override aliases = ['flame']
+  static override aliases = ['observe:flamegraph', 'flame']
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
@@ -73,7 +73,7 @@ export default class ObserveFlamegraph extends BaseCommand {
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ObserveFlamegraph)
+    const { flags } = await this.parse(ObserveGraph)
 
     const projectsDir = path.join(os.homedir(), '.claude', 'projects')
     if (!fs.existsSync(projectsDir)) {

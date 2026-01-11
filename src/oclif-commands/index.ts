@@ -20,7 +20,7 @@ import JournalNote from './journal/note.js'
 import ObserveSetup from './observe/setup.js'
 import ObserveStatus from './observe/status.js'
 import ObserveReport from './observe/report.js'
-import ObserveFlamegraph from './observe/flamegraph.js'
+import ObserveGraph from './observe/graph.js'
 import ObserveSession from './observe/session.js'
 
 export default {
@@ -43,8 +43,9 @@ export default {
   'observe:setup': ObserveSetup,
   'observe:status': ObserveStatus,
   'observe:report': ObserveReport,
-  'observe:flamegraph': ObserveFlamegraph,
+  'observe:graph': ObserveGraph,
   'observe:session': ObserveSession,
   // Aliases
-  flame: ObserveFlamegraph,
+  'observe:flamegraph': ObserveGraph,
+  flame: ObserveGraph,
 }
