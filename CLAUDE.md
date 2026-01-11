@@ -54,13 +54,18 @@ bun run lint:fix        # Auto-fix linting issues
 
 **Available CLI Commands**:
 - `config` (alias: `cfg`) - Display current configuration settings
+- `doctor` - Check system dependencies and environment
 - `gh-branch` (aliases: `branch`, `br`) - Create git branch from GitHub issue
+- `install` - Configure Claude Code settings
 - `journal daily-notes` (alias: `today`) - Weekly files with daily sections
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
+- `observe setup/status/report/graph/session` - Claude Code observability
+- `pr` - Create PR from current branch
 - `ralph task add/list/done/remove` - Task management
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
+- `branch clean` - Delete merged branches
 
 **Key Utilities**:
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
@@ -134,6 +139,35 @@ tt ralph run --noFork               # Start fresh session (no fork)
 # Plan
 tt ralph plan                       # Show plan with mermaid graph
 ```
+
+## Observability
+
+The `observe` command provides Claude Code session analysis and cost tracking.
+
+```bash
+# Setup (run once)
+tt observe setup                # Configure settings.json, add hooks
+
+# Status
+tt observe status               # Show current config and OTEL vars
+
+# Session analysis
+tt observe session              # List recent sessions with cost estimates
+tt observe session <id>         # Detailed turn-by-turn breakdown
+
+# Reports
+tt observe report               # Daily token/cost report via ccusage
+tt observe report --weekly      # Weekly report
+tt observe report --output      # Save JSON to ~/.claude/reports/
+
+# Visualization
+tt observe graph                # Generate HTML treemap of all sessions
+tt observe graph --session <id> # Single session treemap
+tt observe graph --open         # Auto-open in browser
+tt flame                        # Alias for observe graph
+```
+
+Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5:1, red >5:1.
 
 ## Important Notes
 

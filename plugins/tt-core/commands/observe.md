@@ -13,7 +13,7 @@ The `tt observe` command provides observability into Claude Code token usage and
 |---------|-------------|
 | `tt observe status` | Show current observability config (OTEL env vars, hooks, cleanup settings) |
 | `tt observe report` | Run ccusage for cost/token breakdown (flags: --daily, --weekly, --monthly, --output) |
-| `tt observe flamegraph` | Generate Speedscope-compatible flamegraph JSON (flags: --session, --open) |
+| `tt observe graph` | Generate Speedscope-compatible treemap graph HTML (flags: --session, --open) |
 | `tt observe session` | List recent sessions with token counts and costs |
 | `tt observe session <id>` | Show turn-by-turn breakdown for specific session |
 | `tt observe setup` | Configure observability (set cleanupPeriodDays, add SubagentStop hook, show OTEL env vars) |
