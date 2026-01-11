@@ -4,7 +4,7 @@ import { colors } from 'consola/utils'
 import { Fzf } from 'fzf'
 
 
-import type { GitHubBranchArgs } from '../utils/parseArgs'
+import type { GitHubBranchArgs } from '../types/github'
 import { getIssues, isGithubCliInstalled } from '../utils/git/gh-cli-wrapper'
 import type { Issue } from '../utils/git/gh-cli-wrapper'
 import { createBranch } from '../utils/git/git-wrapper'

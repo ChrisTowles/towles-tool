@@ -1,7 +1,7 @@
 import { Args } from '@oclif/core'
 import { BaseCommand } from '../../commands/base.js'
 import { createJournalFile } from '../../commands/journal.js'
-import { JOURNAL_TYPES } from '../../utils/parseArgs.js'
+import { JOURNAL_TYPES } from '../../types/journal.js'
 
 /**
  * Create or open general-purpose note file

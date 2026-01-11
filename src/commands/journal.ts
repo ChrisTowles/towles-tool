@@ -9,8 +9,8 @@ import { colors } from 'consola/utils'
 import { formatDate, getMondayOfWeek, getWeekInfo } from '../utils/date-utils'
 import { DateTime } from 'luxon'
 import type { JournalSettings } from '../config/settings'
-import { JOURNAL_TYPES } from '../utils/parseArgs'
-import type {  JournalArgs, JournalType } from '../utils/parseArgs'
+import { JOURNAL_TYPES } from '../types/journal'
+import type { JournalArgs, JournalType } from '../types/journal'
 
 const execAsync = promisify(exec)
 
