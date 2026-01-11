@@ -945,10 +945,23 @@ export default class ObserveGraph extends BaseCommand {
         ratio: tool.outputTokens > 0 ? tool.inputTokens / tool.outputTokens : 0,
       }))
 
-      // Format: "Turn N: Claude (X tools)" when tools present
-      const toolSuffix = tools.length > 0 ? ` (${tools.length} tool${tools.length > 1 ? 's' : ''})` : ''
+      // Format turn name based on tools used
+      let turnName: string
+      if (role === 'user') {
+        turnName = `Turn ${turnNumber}: User`
+      } else if (tools.length === 1) {
+        // Single tool: show tool name and detail
+        const t = tools[0]
+        turnName = t.detail ? `${t.name}: ${t.detail}` : t.name
+      } else if (tools.length > 1) {
+        // Multiple tools: list unique tool names
+        const uniqueNames = [...new Set(tools.map((t) => t.name))]
+        turnName = uniqueNames.slice(0, 3).join(', ') + (uniqueNames.length > 3 ? '...' : '')
+      } else {
+        turnName = `Turn ${turnNumber}: Response`
+      }
       children.push({
-        name: `Turn ${turnNumber}: ${role === 'user' ? 'User' : 'Claude'}${toolSuffix}`,
+        name: turnName,
         value: toolChildren.length > 0 ? undefined : totalTokens, // Let children sum if present
         children: toolChildren.length > 0 ? toolChildren : undefined,
         sessionId: sessionId.slice(0, 8),
