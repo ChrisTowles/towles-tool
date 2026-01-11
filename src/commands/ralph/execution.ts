@@ -120,7 +120,8 @@ export async function runIteration(
     claudeArgs: string[],
     logStream?: WriteStream,
 ): Promise<IterationResult> {
-    // Pass task context as system prompt, use simple trigger as user message
+    // Pass task context as system prompt via --append-system-prompt
+    // 'continue' is the user prompt - required by claude CLI when using --print
     const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, '--append-system-prompt', prompt, 'continue']
 
     let output = ''

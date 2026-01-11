@@ -630,6 +630,9 @@ export default class ObserveGraph extends BaseCommand {
 
       const ratio = outputTokens > 0 ? inputTokens / outputTokens : inputTokens > 0 ? 999 : 0
 
+      // Extract tool usage from content blocks
+      const tools = this.extractToolData(entry.message.content, inputTokens, outputTokens)
+
       children.push({
         name: `Turn ${turnNumber}: ${role === 'user' ? 'User' : 'Claude'}`,
         value: totalTokens,
@@ -638,6 +641,7 @@ export default class ObserveGraph extends BaseCommand {
         inputTokens,
         outputTokens,
         ratio,
+        tools: tools.length > 0 ? tools : undefined,
       })
     }
 
@@ -645,6 +649,48 @@ export default class ObserveGraph extends BaseCommand {
       name: `Session ${sessionId.slice(0, 8)}`,
       children,
     }
+  }
+
+  /**
+   * Extract tool usage data from message content blocks.
+   * Aggregates counts per tool name and distributes tokens proportionally.
+   */
+  private extractToolData(
+    content: ContentBlock[] | string | undefined,
+    turnInputTokens: number,
+    turnOutputTokens: number
+  ): ToolData[] {
+    if (!content || typeof content === 'string') return []
+
+    // Count tool_use blocks by name
+    const toolCounts = new Map<string, number>()
+    for (const block of content) {
+      if (block.type === 'tool_use' && block.name) {
+        toolCounts.set(block.name, (toolCounts.get(block.name) || 0) + 1)
+      }
+    }
+
+    if (toolCounts.size === 0) return []
+
+    // Calculate total tool calls for token distribution
+    const totalCalls = [...toolCounts.values()].reduce((sum, c) => sum + c, 0)
+
+    // Create ToolData array with proportional token distribution
+    const tools: ToolData[] = []
+    for (const [name, count] of toolCounts) {
+      const proportion = count / totalCalls
+      tools.push({
+        name,
+        count,
+        inputTokens: Math.round(turnInputTokens * proportion),
+        outputTokens: Math.round(turnOutputTokens * proportion),
+      })
+    }
+
+    // Sort by count descending
+    tools.sort((a, b) => b.count - a.count)
+
+    return tools
   }
 
   private buildAllSessionsTreemap(
