@@ -125,7 +125,6 @@ jobs:
           files: |
             dist/tt-linux-x64
             dist/tt-darwin-arm64
-            # dist/tt-windows-x64.exe  # TODO: Re-enable when Windows builds work
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
