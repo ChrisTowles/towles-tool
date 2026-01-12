@@ -277,6 +277,7 @@ ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**
 
+**Before ending:** Run \`tt ralph task list\` to check remaining tasks.
 **ONLY if ALL TASKS are done** then Output: <promise>${completionMarker}</promise>
 
 ---
