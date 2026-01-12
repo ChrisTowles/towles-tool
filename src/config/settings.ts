@@ -132,15 +132,23 @@ export async function loadSettings(): Promise<LoadedSettings> {
       saveSettings(tempSettingsFile);
     }
   } else {
-    // Settings file doesn't exist, ask user if they want to create it
+    // Settings file doesn't exist
+    const isNonInteractive = process.env.CI || !process.stdout.isTTY;
 
-    const confirmed = await consola.prompt(`Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`, {
-      type: "confirm",
-    });
-    if (!confirmed) {
-      throw new Error(`Settings file not found and user chose not to create it.`);
+    if (isNonInteractive) {
+      // Auto-create in CI/non-TTY environments
+      consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
+      userSettings = createSettingsFile();
+    } else {
+      // Interactive: ask user if they want to create it
+      const confirmed = await consola.prompt(`Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`, {
+        type: "confirm",
+      });
+      if (!confirmed) {
+        throw new Error(`Settings file not found and user chose not to create it.`);
+      }
+      userSettings = createSettingsFile();
     }
-    userSettings = createSettingsFile();
   }
 
   return new LoadedSettings(

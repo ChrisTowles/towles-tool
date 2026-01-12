@@ -1,6 +1,9 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
+// Listr2 imports reserved for task #4
+// import { Listr } from 'listr2'
+// import { ListrStreamHandler } from '../../commands/ralph/listr-stream.js'
 import { BaseCommand } from '../../commands/base.js'
 import {
   DEFAULT_STATE_FILE,
