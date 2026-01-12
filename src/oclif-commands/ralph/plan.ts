@@ -1,8 +1,8 @@
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import { BaseCommand } from '../base.js'
-import { DEFAULT_STATE_FILE, loadState } from '../../commands/ralph/state.js'
-import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from '../../commands/ralph/formatter.js'
+import { DEFAULT_STATE_FILE, loadState } from './lib/state.js'
+import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from './lib/formatter.js'
 
 /**
  * Show plan summary with status, tasks, and mermaid graph

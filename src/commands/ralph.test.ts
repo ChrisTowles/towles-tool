@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { RalphTask, IterationHistory } from './ralph/index'
+import type { RalphTask, IterationHistory } from '../oclif-commands/ralph/lib/index'
 import {
     createInitialState,
     saveState,
@@ -24,7 +24,7 @@ import {
     DEFAULT_HISTORY_FILE,
     DEFAULT_COMPLETION_MARKER,
     CLAUDE_DEFAULT_ARGS,
-} from './ralph/index'
+} from '../oclif-commands/ralph/lib/index'
 
 describe('ralph-loop', () => {
     const testStateFile = join(tmpdir(), `ralph-test-${Date.now()}.json`)

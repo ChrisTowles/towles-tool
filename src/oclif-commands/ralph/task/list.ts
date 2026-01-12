@@ -1,8 +1,8 @@
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import { BaseCommand } from '../../base.js'
-import { DEFAULT_STATE_FILE, loadState } from '../../../commands/ralph/state.js'
-import { formatTasksAsMarkdown } from '../../../commands/ralph/formatter.js'
+import { DEFAULT_STATE_FILE, loadState } from '../lib/state.js'
+import { formatTasksAsMarkdown } from '../lib/formatter.js'
 
 /**
  * List all ralph tasks

@@ -8,8 +8,8 @@ import {
   saveState,
   createInitialState,
   addTaskToState,
-} from '../../../commands/ralph/state.js'
-import { findSessionByMarker } from '../../../commands/ralph/marker.js'
+} from '../lib/state.js'
+import { findSessionByMarker } from '../lib/marker.js'
 
 /**
  * Add a new task to ralph state

@@ -1,5 +1,5 @@
 import { BaseCommand } from '../../base.js'
-import { generateMarker, MARKER_PREFIX } from '../../../commands/ralph/marker.js'
+import { generateMarker, MARKER_PREFIX } from '../lib/marker.js'
 
 /**
  * Generate a random marker for session tracking.

@@ -2,7 +2,7 @@ import type { WriteStream } from 'node:fs'
 import { spawn } from 'node:child_process'
 import pc from 'picocolors'
 import { x } from 'tinyexec'
-import { CLAUDE_DEFAULT_ARGS } from './state'
+import { CLAUDE_DEFAULT_ARGS } from './state.js'
 
 // ============================================================================
 // Types

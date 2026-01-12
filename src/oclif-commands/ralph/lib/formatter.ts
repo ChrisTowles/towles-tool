@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import type { RalphTask, TaskStatus, RalphState } from './state'
+import type { RalphTask, TaskStatus, RalphState } from './state.js'
 
 // ============================================================================
 // Clipboard Utility

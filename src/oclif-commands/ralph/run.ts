@@ -12,14 +12,14 @@ import {
   loadState,
   saveState,
   appendHistory,
-} from '../../commands/ralph/state.js'
+} from './lib/state.js'
 import {
   buildIterationPrompt,
   formatDuration,
   extractOutputSummary,
   detectCompletionMarker,
-} from '../../commands/ralph/formatter.js'
-import { checkClaudeCli, runIteration } from '../../commands/ralph/execution.js'
+} from './lib/formatter.js'
+import { checkClaudeCli, runIteration } from './lib/execution.js'
 
 /**
  * Read last N tasks from progress file. Tasks are delimited by "### Iteration" headers.

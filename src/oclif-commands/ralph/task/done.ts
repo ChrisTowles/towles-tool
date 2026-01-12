@@ -1,7 +1,7 @@
 import { Args, Flags } from '@oclif/core'
 import pc from 'picocolors'
 import { BaseCommand } from '../../base.js'
-import { DEFAULT_STATE_FILE, loadState, saveState } from '../../../commands/ralph/state.js'
+import { DEFAULT_STATE_FILE, loadState, saveState } from '../lib/state.js'
 
 /**
  * Mark a ralph task as done
