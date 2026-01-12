@@ -67,7 +67,7 @@
     "@anthropic-ai/claude-code"
   ],
   "simple-git-hooks": {
-    "pre-commit": "bunx lint-staged -q"
+    "pre-commit": "bunx lint-staged -q && claude plugin validate plugins/"
   },
   "lint-staged": {
     "*": "oxlint --quiet --fix"
