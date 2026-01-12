@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import type { Issue } from '../utils/git/gh-cli-wrapper'
-import { createBranchNameFromIssue } from './github-branch-command'
+import GhBranch from './gh-branch'
 
-describe('github-branch-command', () => {
+const createBranchNameFromIssue = GhBranch.createBranchNameFromIssue
+
+describe('gh-branch', () => {
   describe('createBranchNameFromIssue', () => {
     it('creates branch name from issue with basic title', () => {
       const issue: Issue = {

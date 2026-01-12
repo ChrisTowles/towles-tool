@@ -106,14 +106,14 @@ export default class GhBranch extends BaseCommand {
       const selectedIssue = currentIssues.find(i => i.number === result.issueNumber)!
       consola.log(`Selected issue ${colors.green(selectedIssue.number)} - ${colors.green(selectedIssue.title)}`)
 
-      const branchName = this.createBranchNameFromIssue(selectedIssue)
+      const branchName = GhBranch.createBranchNameFromIssue(selectedIssue)
       createBranch({ branchName })
     } catch {
       this.exit(1)
     }
   }
 
-  private createBranchNameFromIssue(selectedIssue: Issue): string {
+  static createBranchNameFromIssue(selectedIssue: Issue): string {
     let slug = selectedIssue.title.toLowerCase()
     slug = slug.trim()
     slug = slug.replaceAll(' ', '-')
