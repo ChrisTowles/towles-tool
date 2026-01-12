@@ -48,8 +48,6 @@ function readLastTasks(filePath: string, taskCount: number): string {
 export default class Run extends BaseCommand {
   static override description = 'Start the autonomous ralph loop'
 
-  static override aliases = ['ralph:run']
-
   static override examples = [
     '<%= config.bin %> ralph run',
     '<%= config.bin %> ralph run --maxIterations 20',

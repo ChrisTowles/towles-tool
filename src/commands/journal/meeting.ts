@@ -7,7 +7,7 @@ import { colors } from 'consola/utils'
 import { BaseCommand } from '../base.js'
 import { JOURNAL_TYPES } from '../../types/journal.js'
 import {
-  createNoteContent,
+  createMeetingContent,
   ensureDirectoryExists,
   ensureTemplatesExist,
   generateJournalFileInfoByType,
@@ -15,28 +15,26 @@ import {
 } from './utils.js'
 
 /**
- * Create or open general-purpose note file
+ * Create or open meeting notes file
  */
-export default class Note extends BaseCommand {
-  static override description = 'General-purpose notes with structured sections'
-
-  static override aliases = ['journal:n']
+export default class Meeting extends BaseCommand {
+  static override description = 'Structured meeting notes with agenda and action items'
 
   static override args = {
     title: Args.string({
-      description: 'Note title',
+      description: 'Meeting title',
       required: false,
     }),
   }
 
   static override examples = [
-    '<%= config.bin %> journal note',
-    '<%= config.bin %> journal note "Research Notes"',
-    '<%= config.bin %> journal n "Ideas"',
+    '<%= config.bin %> journal meeting',
+    '<%= config.bin %> journal meeting "Sprint Planning"',
+    '<%= config.bin %> journal m "Standup"',
   ]
 
   async run(): Promise<void> {
-    const { args } = await this.parse(Note)
+    const { args } = await this.parse(Meeting)
 
     try {
       const journalSettings = this.settings.settingsFile.settings.journalSettings
@@ -48,7 +46,7 @@ export default class Note extends BaseCommand {
       // Prompt for title if not provided
       let title = args.title || ''
       if (title.trim().length === 0) {
-        title = await consola.prompt(`Enter note title:`, {
+        title = await consola.prompt(`Enter meeting title:`, {
           type: "text",
         })
       }
@@ -57,7 +55,7 @@ export default class Note extends BaseCommand {
       const fileInfo = generateJournalFileInfoByType({
         journalSettings,
         date: currentDate,
-        type: JOURNAL_TYPES.NOTE,
+        type: JOURNAL_TYPES.MEETING,
         title
       })
 
@@ -65,11 +63,11 @@ export default class Note extends BaseCommand {
       ensureDirectoryExists(path.dirname(fileInfo.fullPath))
 
       if (existsSync(fileInfo.fullPath)) {
-        consola.info(`Opening existing note file: ${colors.cyan(fileInfo.fullPath)}`)
+        consola.info(`Opening existing meeting file: ${colors.cyan(fileInfo.fullPath)}`)
       }
       else {
-        const content = createNoteContent({ title, date: currentDate, templateDir })
-        consola.info(`Creating new note file: ${colors.cyan(fileInfo.fullPath)}`)
+        const content = createMeetingContent({ title, date: currentDate, templateDir })
+        consola.info(`Creating new meeting file: ${colors.cyan(fileInfo.fullPath)}`)
         writeFileSync(fileInfo.fullPath, content, 'utf8')
       }
 
@@ -80,7 +78,7 @@ export default class Note extends BaseCommand {
       })
     }
     catch (error) {
-      consola.warn(`Error creating note file:`, error)
+      consola.warn(`Error creating meeting file:`, error)
       process.exit(1)
     }
   }

@@ -10,8 +10,6 @@ import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from './lib/f
 export default class Plan extends BaseCommand {
   static override description = 'Show plan summary with status, tasks, and mermaid graph'
 
-  static override aliases = ['ralph:plan']
-
   static override examples = [
     '<%= config.bin %> ralph plan',
     '<%= config.bin %> ralph plan --format json',

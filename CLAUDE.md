@@ -45,7 +45,7 @@ bun run lint:fix        # Auto-fix linting issues
 
 **Entry point**: `bin/run.ts` - oclif command router
 - Loads settings from `~/.config/towles-tool/towles-tool.settings.json`
-- Routes to oclif commands in `src/oclif-commands/`
+- Routes to oclif commands in `src/commands/`
 
 **Configuration System**:
 - `src/config/settings.ts` - User settings management with Zod validation
@@ -55,17 +55,17 @@ bun run lint:fix        # Auto-fix linting issues
 **Available CLI Commands**:
 - `config` (alias: `cfg`) - Display current configuration settings
 - `doctor` - Check system dependencies and environment
-- `gh-branch` (aliases: `branch`, `br`) - Create git branch from GitHub issue
+- `gh branch` - Create git branch from GitHub issue
+- `gh pr` - Create PR from current branch
+- `gh branch-clean` - Delete merged branches
 - `install` - Configure Claude Code settings
 - `journal daily-notes` (alias: `today`) - Weekly files with daily sections
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
 - `observe setup/status/report/graph/session` - Claude Code observability
-- `pr` - Create PR from current branch
 - `ralph task add/list/done/remove` - Task management
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
-- `branch clean` - Delete merged branches
 
 **Key Utilities**:
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
@@ -87,7 +87,7 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 ### Technology Stack
 
 - **Runtime**: Bun (runs TypeScript natively)
-- **CLI Framework**: oclif (commands in `src/oclif-commands/`)
+- **CLI Framework**: oclif (commands in `src/commands/`)
 - **Build**: `bun build --compile` for standalone executables
 - **Testing**: `bun test` with `@oclif/test` for command testing
 - **Linting**: oxlint
@@ -178,7 +178,7 @@ Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5
 - **Use bun for everything**: Run `.ts` files with `bun file.ts`, use `bunx` instead of `npx`, use `bun install/add/remove` for packages
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
-- When modifying CLI commands (`src/oclif-commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
+- When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
 - When tempted to directly edit ralph-state.json or similar state files, use `AskUserQuestion` to ask if it should be added as a CLI feature instead
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)

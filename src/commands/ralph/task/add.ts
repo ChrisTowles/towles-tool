@@ -17,8 +17,6 @@ import { findSessionByMarker } from '../lib/marker.js'
 export default class TaskAdd extends BaseCommand {
   static override description = 'Add a new task'
 
-  static override aliases = ['ralph:task:add']
-
   static override examples = [
     '<%= config.bin %> ralph task add "Fix the login bug"',
     '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',

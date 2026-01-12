@@ -13,8 +13,4 @@ describe('config command', () => {
     expect(stderr).toContain('Working Directory')
   })
 
-  it('runs config alias (cfg)', async () => {
-    const { stderr } = await runCommand(['cfg'])
-    expect(stderr).toContain('User Config')
-  })
 })

@@ -1,13 +1,12 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { Args } from '@oclif/core'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 import { BaseCommand } from '../base.js'
 import { JOURNAL_TYPES } from '../../types/journal.js'
 import {
-  createMeetingContent,
+  createJournalContent,
   ensureDirectoryExists,
   ensureTemplatesExist,
   generateJournalFileInfoByType,
@@ -15,28 +14,18 @@ import {
 } from './utils.js'
 
 /**
- * Create or open meeting notes file
+ * Create or open daily notes journal file
  */
-export default class Meeting extends BaseCommand {
-  static override description = 'Structured meeting notes with agenda and action items'
-
-  static override aliases = ['journal:m']
-
-  static override args = {
-    title: Args.string({
-      description: 'Meeting title',
-      required: false,
-    }),
-  }
+export default class DailyNotes extends BaseCommand {
+  static override description = 'Weekly files with daily sections for ongoing work and notes'
 
   static override examples = [
-    '<%= config.bin %> journal meeting',
-    '<%= config.bin %> journal meeting "Sprint Planning"',
-    '<%= config.bin %> journal m "Standup"',
+    '<%= config.bin %> journal daily-notes',
+    '<%= config.bin %> journal today',
   ]
 
   async run(): Promise<void> {
-    const { args } = await this.parse(Meeting)
+    await this.parse(DailyNotes)
 
     try {
       const journalSettings = this.settings.settingsFile.settings.journalSettings
@@ -45,31 +34,23 @@ export default class Meeting extends BaseCommand {
       // Ensure templates exist on first run
       ensureTemplatesExist(templateDir)
 
-      // Prompt for title if not provided
-      let title = args.title || ''
-      if (title.trim().length === 0) {
-        title = await consola.prompt(`Enter meeting title:`, {
-          type: "text",
-        })
-      }
-
       const currentDate = new Date()
       const fileInfo = generateJournalFileInfoByType({
         journalSettings,
         date: currentDate,
-        type: JOURNAL_TYPES.MEETING,
-        title
+        type: JOURNAL_TYPES.DAILY_NOTES,
+        title: ''
       })
 
       // Ensure journal directory exists
       ensureDirectoryExists(path.dirname(fileInfo.fullPath))
 
       if (existsSync(fileInfo.fullPath)) {
-        consola.info(`Opening existing meeting file: ${colors.cyan(fileInfo.fullPath)}`)
+        consola.info(`Opening existing daily-notes file: ${colors.cyan(fileInfo.fullPath)}`)
       }
       else {
-        const content = createMeetingContent({ title, date: currentDate, templateDir })
-        consola.info(`Creating new meeting file: ${colors.cyan(fileInfo.fullPath)}`)
+        const content = createJournalContent({ mondayDate: fileInfo.mondayDate, templateDir })
+        consola.info(`Creating new daily-notes file: ${colors.cyan(fileInfo.fullPath)}`)
         writeFileSync(fileInfo.fullPath, content, 'utf8')
       }
 
@@ -80,7 +61,7 @@ export default class Meeting extends BaseCommand {
       })
     }
     catch (error) {
-      consola.warn(`Error creating meeting file:`, error)
+      consola.warn(`Error creating daily-notes file:`, error)
       process.exit(1)
     }
   }

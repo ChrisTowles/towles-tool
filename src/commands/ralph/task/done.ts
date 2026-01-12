@@ -9,8 +9,6 @@ import { DEFAULT_STATE_FILE, loadState, saveState } from '../lib/state.js'
 export default class TaskDone extends BaseCommand {
   static override description = 'Mark a task as done by ID'
 
-  static override aliases = ['ralph:task:done']
-
   static override examples = [
     '<%= config.bin %> ralph task done 1',
     '<%= config.bin %> ralph task done 5 --stateFile custom-state.json',

@@ -3,8 +3,8 @@ import { x } from 'tinyexec'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 
-import { BaseCommand } from './base.js'
-import { isGithubCliInstalled } from '../utils/git/gh-cli-wrapper.js'
+import { BaseCommand } from '../base.js'
+import { isGithubCliInstalled } from '../../utils/git/gh-cli-wrapper.js'
 
 /**
  * Create a pull request from the current branch
@@ -14,9 +14,9 @@ export default class Pr extends BaseCommand {
   static override description = 'Create a pull request from the current branch'
 
   static override examples = [
-    '<%= config.bin %> <%= command.id %>',
-    '<%= config.bin %> pr --draft',
-    '<%= config.bin %> pr --base develop',
+    '<%= config.bin %> gh pr',
+    '<%= config.bin %> gh pr --draft',
+    '<%= config.bin %> gh pr --base develop',
   ]
 
   static override flags = {

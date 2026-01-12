@@ -1,12 +1,13 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { Args } from '@oclif/core'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 import { BaseCommand } from '../base.js'
 import { JOURNAL_TYPES } from '../../types/journal.js'
 import {
-  createJournalContent,
+  createNoteContent,
   ensureDirectoryExists,
   ensureTemplatesExist,
   generateJournalFileInfoByType,
@@ -14,20 +15,26 @@ import {
 } from './utils.js'
 
 /**
- * Create or open daily notes journal file
+ * Create or open general-purpose note file
  */
-export default class DailyNotes extends BaseCommand {
-  static override description = 'Weekly files with daily sections for ongoing work and notes'
+export default class Note extends BaseCommand {
+  static override description = 'General-purpose notes with structured sections'
 
-  static override aliases = ['journal:today']
+  static override args = {
+    title: Args.string({
+      description: 'Note title',
+      required: false,
+    }),
+  }
 
   static override examples = [
-    '<%= config.bin %> journal daily-notes',
-    '<%= config.bin %> journal today',
+    '<%= config.bin %> journal note',
+    '<%= config.bin %> journal note "Research Notes"',
+    '<%= config.bin %> journal n "Ideas"',
   ]
 
   async run(): Promise<void> {
-    await this.parse(DailyNotes)
+    const { args } = await this.parse(Note)
 
     try {
       const journalSettings = this.settings.settingsFile.settings.journalSettings
@@ -36,23 +43,31 @@ export default class DailyNotes extends BaseCommand {
       // Ensure templates exist on first run
       ensureTemplatesExist(templateDir)
 
+      // Prompt for title if not provided
+      let title = args.title || ''
+      if (title.trim().length === 0) {
+        title = await consola.prompt(`Enter note title:`, {
+          type: "text",
+        })
+      }
+
       const currentDate = new Date()
       const fileInfo = generateJournalFileInfoByType({
         journalSettings,
         date: currentDate,
-        type: JOURNAL_TYPES.DAILY_NOTES,
-        title: ''
+        type: JOURNAL_TYPES.NOTE,
+        title
       })
 
       // Ensure journal directory exists
       ensureDirectoryExists(path.dirname(fileInfo.fullPath))
 
       if (existsSync(fileInfo.fullPath)) {
-        consola.info(`Opening existing daily-notes file: ${colors.cyan(fileInfo.fullPath)}`)
+        consola.info(`Opening existing note file: ${colors.cyan(fileInfo.fullPath)}`)
       }
       else {
-        const content = createJournalContent({ mondayDate: fileInfo.mondayDate, templateDir })
-        consola.info(`Creating new daily-notes file: ${colors.cyan(fileInfo.fullPath)}`)
+        const content = createNoteContent({ title, date: currentDate, templateDir })
+        consola.info(`Creating new note file: ${colors.cyan(fileInfo.fullPath)}`)
         writeFileSync(fileInfo.fullPath, content, 'utf8')
       }
 
@@ -63,7 +78,7 @@ export default class DailyNotes extends BaseCommand {
       })
     }
     catch (error) {
-      consola.warn(`Error creating daily-notes file:`, error)
+      consola.warn(`Error creating note file:`, error)
       process.exit(1)
     }
   }

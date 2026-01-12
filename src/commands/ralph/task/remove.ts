@@ -9,8 +9,6 @@ import { DEFAULT_STATE_FILE, loadState, saveState } from '../lib/state.js'
 export default class TaskRemove extends BaseCommand {
   static override description = 'Remove a task by ID'
 
-  static override aliases = ['ralph:task:remove', 'ralph:task:rm']
-
   static override examples = [
     '<%= config.bin %> ralph task remove 1',
     '<%= config.bin %> ralph task remove 5 --stateFile custom-state.json',

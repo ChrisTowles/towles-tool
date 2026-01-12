@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import type { Issue } from '../utils/git/gh-cli-wrapper'
-import GhBranch from './gh-branch'
+import type { Issue } from '../../utils/git/gh-cli-wrapper'
+import GhBranch from './branch'
 
 const createBranchNameFromIssue = GhBranch.createBranchNameFromIssue
 

@@ -5,11 +5,11 @@ import { colors } from 'consola/utils'
 import { Fzf } from 'fzf'
 import consola from 'consola'
 
-import { BaseCommand } from './base.js'
-import { getIssues, isGithubCliInstalled } from '../utils/git/gh-cli-wrapper.js'
-import type { Issue } from '../utils/git/gh-cli-wrapper.js'
-import { createBranch } from '../utils/git/git-wrapper.js'
-import { getTerminalColumns, limitText, printWithHexColor } from '../utils/render.js'
+import { BaseCommand } from '../base.js'
+import { getIssues, isGithubCliInstalled } from '../../utils/git/gh-cli-wrapper.js'
+import type { Issue } from '../../utils/git/gh-cli-wrapper.js'
+import { createBranch } from '../../utils/git/git-wrapper.js'
+import { getTerminalColumns, limitText, printWithHexColor } from '../../utils/render.js'
 
 /**
  * Create a git branch from a GitHub issue
@@ -17,13 +17,10 @@ import { getTerminalColumns, limitText, printWithHexColor } from '../utils/rende
 export default class GhBranch extends BaseCommand {
   static override description = 'Create a git branch from a GitHub issue'
 
-  static override aliases = ['branch', 'br']
-
   static override examples = [
-    '<%= config.bin %> <%= command.id %>',
-    '<%= config.bin %> gh-branch --assignedToMe',
-    '<%= config.bin %> branch -a',
-    '<%= config.bin %> br',
+    '<%= config.bin %> gh branch',
+    '<%= config.bin %> gh branch --assignedToMe',
+    '<%= config.bin %> gh branch -a',
   ]
 
   static override flags = {

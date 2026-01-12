@@ -11,13 +11,11 @@ import { BaseCommand } from '../base.js'
 export default class BranchClean extends BaseCommand {
   static override description = 'Delete local branches that have been merged into main'
 
-  static override aliases = ['branch:clean']
-
   static override examples = [
-    '<%= config.bin %> branch clean',
-    '<%= config.bin %> branch clean --dry-run',
-    '<%= config.bin %> branch clean --force',
-    '<%= config.bin %> branch clean --base develop',
+    '<%= config.bin %> gh branch-clean',
+    '<%= config.bin %> gh branch-clean --dry-run',
+    '<%= config.bin %> gh branch-clean --force',
+    '<%= config.bin %> gh branch-clean --base develop',
   ]
 
   static override flags = {

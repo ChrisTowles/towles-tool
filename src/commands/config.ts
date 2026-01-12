@@ -7,8 +7,6 @@ import { BaseCommand } from './base.js'
 export default class Config extends BaseCommand {
   static override description = 'Display current configuration settings'
 
-  static override aliases = ['cfg']
-
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> cfg',

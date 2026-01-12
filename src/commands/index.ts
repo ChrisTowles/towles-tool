@@ -1,12 +1,12 @@
 // Explicit command exports for Bun compiled binaries
 // oclif's pattern-based discovery doesn't work with bundled executables
 
-import BranchClean from './branch/clean.js'
+import GhBranchClean from './gh/branch-clean.js'
 import Config from './config.js'
 import Doctor from './doctor.js'
-import GhBranch from './gh-branch.js'
+import GhBranch from './gh/branch.js'
+import GhPr from './gh/pr.js'
 import Install from './install.js'
-import Pr from './pr.js'
 import RalphRun from './ralph/run.js'
 import RalphPlan from './ralph/plan.js'
 import RalphMarkerCreate from './ralph/marker/create.js'
@@ -24,12 +24,13 @@ import ObserveGraph from './observe/graph.js'
 import ObserveSession from './observe/session.js'
 
 export default {
-  'branch:clean': BranchClean,
-  config: Config,
-  doctor: Doctor,
-  'gh-branch': GhBranch,
-  install: Install,
-  pr: Pr,
+
+  'config': Config,
+  'doctor': Doctor,
+  'gh:branch': GhBranch,
+  'gh:branch-clean': GhBranchClean,
+  'gh:pr': GhPr,
+  'install': Install,
   'ralph:run': RalphRun,
   'ralph:plan': RalphPlan,
   'ralph:marker:create': RalphMarkerCreate,
@@ -46,5 +47,8 @@ export default {
   'observe:graph': ObserveGraph,
   'observe:session': ObserveSession,
   // Aliases
-  graph: ObserveGraph,
+  'graph': ObserveGraph,
+  'today': JournalDailyNotes,
+  'pr': GhPr,
+  'run': RalphRun,
 }

@@ -86,8 +86,6 @@ interface TreemapNode {
 export default class ObserveGraph extends BaseCommand {
   static override description = 'Generate interactive HTML treemap from session token data'
 
-  static override aliases = ['observe:graph', 'graph']
-
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --session abc123',
