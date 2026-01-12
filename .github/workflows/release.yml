@@ -114,17 +114,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - run: bunx changelogithub
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.prepare.outputs.version }}
-          files: |
-            dist/tt-linux-x64
-            dist/tt-darwin-arm64
-          generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v${{ needs.prepare.outputs.version }} \
+            --generate-notes \
+            dist/tt-linux-x64 \
+            dist/tt-darwin-arm64
