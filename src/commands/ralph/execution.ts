@@ -250,8 +250,8 @@ export async function runIteration(
                     logStream?.write(`⚡ ${tool.name}: ${tool.summary}`)
                 }
                 if (parsed) {
-                    process.stdout.write(parsed)
-                    logStream?.write(parsed)
+                    process.stdout.write(parsed + '\n')
+                    logStream?.write(parsed )
                     output += parsed
                 }
             }
