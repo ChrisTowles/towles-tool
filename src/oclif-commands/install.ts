@@ -5,8 +5,11 @@ import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import consola from 'consola'
 import { BaseCommand } from '../commands/base.js'
+import { getEmbeddedPluginPath } from '../embedded-assets.js'
+import { extractPlugin } from '../utils/plugin-extract.js'
 
 const CLAUDE_SETTINGS_PATH = path.join(homedir(), '.claude', 'settings.json')
+const PLUGINS_DIR = path.join(homedir(), '.config', 'towles-tool', 'plugins')
 
 interface ClaudeSettings {
   cleanupPeriodDays?: number
@@ -24,6 +27,7 @@ export default class Install extends BaseCommand {
   static override examples = [
     '<%= config.bin %> install',
     '<%= config.bin %> install --observability',
+    '<%= config.bin %> install --no-plugins',
   ]
 
   static override flags = {
@@ -32,6 +36,11 @@ export default class Install extends BaseCommand {
       char: 'o',
       description: 'Show OTEL setup instructions and configure SubagentStop hook',
       default: false,
+    }),
+    plugins: Flags.boolean({
+      description: 'Extract bundled tt-core plugin',
+      default: true,
+      allowNo: true,
     }),
   }
 
@@ -87,7 +96,18 @@ export default class Install extends BaseCommand {
       this.showOtelInstructions()
     }
 
+    // Extract bundled plugin if requested
+    if (flags.plugins) {
+      this.log(pc.bold('\n📦 Plugin Installation\n'))
+      await this.extractBundledPlugin()
+    }
+
     this.log(pc.bold(pc.green('\n✅ Installation complete!\n')))
+
+    // Show marketplace instructions
+    this.log(pc.cyan('To install tt-core plugin into Claude Code, run:'))
+    this.log(pc.dim(`  /plugins marketplace add file://${path.join(PLUGINS_DIR, 'tt-core')}`))
+    this.log('')
   }
 
   private saveClaudeSettings(settings: ClaudeSettings): void {
@@ -111,5 +131,21 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`)
     this.log('')
     this.log(pc.cyan('Quick cost analysis (no setup required):'))
     this.log(pc.dim('  npx ccusage@latest --breakdown'))
+  }
+
+  private async extractBundledPlugin(): Promise<void> {
+    const zipPath = getEmbeddedPluginPath()
+    const destDir = path.join(PLUGINS_DIR, 'tt-core')
+
+    if (!fs.existsSync(zipPath)) {
+      this.log(pc.yellow(`Plugin zip not found at ${zipPath}`))
+      this.log(pc.dim('Run "bun run scripts/zip-plugin.ts" to create it'))
+      return
+    }
+
+    const extracted = await extractPlugin(zipPath, destDir)
+    if (extracted) {
+      this.log(pc.green(`✓ Extracted tt-core plugin to ${destDir}`))
+    }
   }
 }
