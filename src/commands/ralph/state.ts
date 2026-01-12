@@ -61,59 +61,6 @@ export type RalphTask = z.infer<typeof RalphTaskSchema>
 export type RalphState = z.infer<typeof RalphStateSchema>
 
 // ============================================================================
-// Arg Validation Schema
-// ============================================================================
-
-// TDOO, is this still used?
-export const ArgsSchema = z.object({
-    run: z.boolean().default(false),
-    taskId: z.string().optional()
-        .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'taskId must be a positive integer'),
-    addTask: z.string().optional()
-        .refine((val: string | undefined) => !val || val.trim().length >= 3, 'Task description must be at least 3 characters'),
-    markDone: z.string().optional()
-        .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'markDone must be a positive integer (task ID)'),
-    removeTask: z.string().optional()
-        .refine((val: string | undefined) => !val || /^\d+$/.test(val), 'removeTask must be a positive integer (task ID)'),
-    listTasks: z.boolean().default(false),
-    showPlan: z.boolean().default(false),
-    format: z.enum(['default', 'markdown', 'json']).default('default'),
-    copy: z.boolean().default(false),
-    clear: z.boolean().default(false),
-    autoCommit: z.boolean().default(true),
-    resume: z.boolean().default(false),
-    maxIterations: z.string().default(String(DEFAULT_MAX_ITERATIONS))
-        .refine((val: string) => /^\d+$/.test(val) && Number.parseInt(val, 10) > 0, 'maxIterations must be a positive integer'),
-    dryRun: z.boolean().default(false),
-    claudeArgs: z.string().optional(),
-    stateFile: z.string().default(DEFAULT_STATE_FILE)
-        .refine((val: string) => val.endsWith('.json'), 'stateFile must be a .json file'),
-    logFile: z.string().default(DEFAULT_LOG_FILE),
-    completionMarker: z.string().default(DEFAULT_COMPLETION_MARKER)
-        .refine((val: string) => val.length >= 3, 'completionMarker must be at least 3 characters'),
-}).strict()
-
-// citty internal keys to filter out before validation
-const CITTY_INTERNAL_KEYS = ['_', 'r', 't', 'a', 'l', 'c', 'm', 'n', 'd', 'rm', 'f', 's', 'p']
-
-export function validateArgs(args: unknown): RalphArgs {
-    // Filter out citty internal keys (aliases and positionals)
-    const filtered = Object.fromEntries(
-        Object.entries(args as Record<string, unknown>)
-            .filter(([k]) => !CITTY_INTERNAL_KEYS.includes(k))
-    )
-    const result = ArgsSchema.safeParse(filtered)
-    if (!result.success) {
-        const errors = result.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n')
-        console.error(pc.red('Invalid arguments:\n' + errors))
-        process.exit(2)
-    }
-    return result.data
-}
-
-export type RalphArgs = z.infer<typeof ArgsSchema>
-
-// ============================================================================
 // State Management
 // ============================================================================
 
