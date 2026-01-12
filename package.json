@@ -1,7 +1,7 @@
 {
   "name": "@towles/tool",
   "type": "module",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
   "license": "UNLICENSED",
