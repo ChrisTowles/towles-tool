@@ -779,6 +779,8 @@ export default class ObserveGraph extends BaseCommand {
       WebSearch: '#14b8a6', // darker teal
       TodoWrite: '#e879f9', // pink
       LSP: '#818cf8',       // indigo
+      Response: '#cbd5e1',  // light gray for text-only responses
+      AskUserQuestion: '#f472b6', // pink
       default: '#94a3b8'    // gray
     };
 
@@ -1202,6 +1204,7 @@ export default class ObserveGraph extends BaseCommand {
         primaryToolName = tools[0].name // Use first tool as primary
       } else {
         turnName = `Turn ${turnNumber}: Response`
+        primaryToolName = 'Response'
       }
       children.push({
         name: turnName,
