@@ -17,11 +17,12 @@
     "url": "https://github.com/ChrisTowles/towles-tool/issues"
   },
   "scripts": {
-    "build": "bun build bin/run.ts --compile --minify --outfile dist/tt",
-    "build:linux": "bun build bin/run.ts --compile --minify --target=bun-linux-x64 --outfile dist/tt-linux-x64",
-    "build:macos": "bun build bin/run.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/tt-darwin-arm64",
-    "build:windows": "bun build bin/run.ts --compile --minify --target=bun-windows-x64 --outfile dist/tt-windows-x64.exe",
-    "build:all": "bun run build:linux && bun run build:macos && bun run build:windows",
+    "prebuild": "bun scripts/zip-plugin.ts",
+    "build": "bun run prebuild && bun build bin/run.ts --compile --minify --outfile dist/tt",
+    "build:linux": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-linux-x64 --outfile dist/tt-linux-x64",
+    "build:macos": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/tt-darwin-arm64",
+    "build:windows": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-windows-x64 --outfile dist/tt-windows-x64.exe",
+    "build:all": "bun run prebuild && bun run build:linux && bun run build:macos && bun run build:windows",
     "start": "bun bin/run.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
@@ -43,7 +44,6 @@
     "prompts": "^2.4.2",
     "strip-ansi": "^7.1.0",
     "tinyexec": "^0.3.2",
-    "unzipper": "^0.12.3",
     "zod": "^4.0.5"
   },
   "devDependencies": {
@@ -53,7 +53,6 @@
     "@types/luxon": "^3.6.2",
     "@types/node": "^22.16.3",
     "@types/prompts": "^2.4.9",
-    "@types/unzipper": "^0.10.11",
     "@typescript/native-preview": "^7.0.0-dev.20260111.1",
     "lint-staged": "^15.5.2",
     "oxlint": "^1.7.0",

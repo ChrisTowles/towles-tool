@@ -1,9 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { createReadStream } from 'node:fs'
-import { pipeline } from 'node:stream/promises'
-import unzipper from 'unzipper'
 import consola from 'consola'
+import { exec } from 'tinyexec'
 
 /**
  * Extracts a plugin zip to destination directory.
@@ -31,11 +29,11 @@ export async function extractPlugin(zipPath: string, destDir: string): Promise<b
     fs.mkdirSync(parentDir, { recursive: true })
   }
 
-  // Extract zip
-  await pipeline(
-    createReadStream(zipPath),
-    unzipper.Extract({ path: destDir })
-  )
+  // Extract zip using system unzip command (tinyexec uses execFile internally - safe from injection)
+  const result = await exec('unzip', ['-o', '-q', zipPath, '-d', destDir])
+  if (result.exitCode !== 0) {
+    throw new Error(`Failed to extract: ${result.stderr}`)
+  }
 
   consola.success(`Extracted plugin to ${destDir}`)
   return true
