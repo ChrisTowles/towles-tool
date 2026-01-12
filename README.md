@@ -87,7 +87,7 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 
 ### Releasing
 
-Trigger release via GitHub Actions:
+See [docs/releasing.md](./docs/releasing.md) for full details.
 
 ```bash
 gh workflow run release.yml -f bump_type=patch  # or minor/major

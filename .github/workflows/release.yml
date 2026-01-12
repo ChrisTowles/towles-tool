@@ -1,3 +1,4 @@
+# Release workflow - see docs/releasing.md for manual commands
 name: Release
 
 permissions:
