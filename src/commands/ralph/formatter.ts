@@ -272,7 +272,7 @@ ${step++}. ${focusedTaskId
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
 ${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`
-${step++}. Append @${progressFile} with what you did.
+${step++}. Append to @${progressFile} with what you did.
 ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**

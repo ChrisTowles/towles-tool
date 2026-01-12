@@ -77,6 +77,16 @@ export async function checkClaudeCli(): Promise<boolean> {
 // Stream Parsing
 // ============================================================================
 
+// Track accumulated text from assistant messages to compute deltas
+let lastAssistantText = ''
+
+/**
+ * Reset stream parsing state between iterations.
+ */
+export function resetStreamState(): void {
+    lastAssistantText = ''
+}
+
 function parseStreamLine(line: string): ParsedLine {
     if (!line.trim()) return { text: null }
     try {
@@ -91,12 +101,23 @@ function parseStreamLine(line: string): ParsedLine {
         }
         // NEW FORMAT: Handle assistant messages with content array
         if (data.type === 'assistant' && data.message) {
-            // Extract text from content blocks
-            const texts = data.message.content
+            // Extract full text from content blocks
+            const fullText = data.message.content
                 ?.filter(c => c.type === 'text' && c.text)
                 .map(c => c.text)
-                .join('') || null
-            return { text: texts, usage: data.message.usage || data.usage, sessionId: data.session_id }
+                .join('') || ''
+
+            // Compute delta (only new portion) to avoid duplicate output
+            let delta: string | null = null
+            if (fullText.startsWith(lastAssistantText)) {
+                delta = fullText.slice(lastAssistantText.length) || null
+            } else {
+                // Text doesn't match prefix - emit full (shouldn't happen normally)
+                delta = fullText || null
+            }
+            lastAssistantText = fullText
+
+            return { text: delta, usage: data.message.usage || data.usage, sessionId: data.session_id }
         }
         // Capture final result with usage and session_id
         if (data.type === 'result') {
@@ -122,6 +143,9 @@ export async function runIteration(
     logStream?: WriteStream,
     streamHandler?: ListrStreamHandler,
 ): Promise<IterationResult> {
+    // Reset accumulated text state from previous iteration
+    resetStreamState()
+
     // Pass task context as system prompt via --append-system-prompt
     // 'continue' is the user prompt - required by claude CLI when using --print
     const allArgs = [...CLAUDE_DEFAULT_ARGS, ...claudeArgs, '--append-system-prompt', prompt, 'continue']
