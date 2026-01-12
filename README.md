@@ -85,6 +85,22 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
 - Defines available plugins for installation
 
+### Releasing
+
+Trigger release via GitHub Actions:
+
+```bash
+gh workflow run release.yml -f bump_type=patch  # or minor/major
+gh run watch  # monitor progress
+```
+
+**Known issue**: The `softprops/action-gh-release` finalization step sometimes fails with "Too many retries" even after assets upload successfully. If this happens, manually upload:
+
+```bash
+gh run download <run-id> --dir /tmp/release-assets
+gh release upload v<version> /tmp/release-assets/tt-linux-x64/tt-linux-x64 /tmp/release-assets/tt-darwin-arm64/tt-darwin-arm64
+```
+
 ## Reminders for me
 
 - Use plan mode!
