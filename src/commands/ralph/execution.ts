@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import pc from 'picocolors'
 import { x } from 'tinyexec'
 import { CLAUDE_DEFAULT_ARGS } from './state'
+import type { ListrStreamHandler } from './listr-stream'
 
 // ============================================================================
 // Types
@@ -119,6 +120,7 @@ export async function runIteration(
     prompt: string,
     claudeArgs: string[],
     logStream?: WriteStream,
+    streamHandler?: ListrStreamHandler,
 ): Promise<IterationResult> {
     // Pass task context as system prompt via --append-system-prompt
     // 'continue' is the user prompt - required by claude CLI when using --print
@@ -147,7 +149,11 @@ export async function runIteration(
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
                 if (parsed) {
-                    process.stdout.write(parsed)
+                    if (streamHandler) {
+                        streamHandler.addDelta(parsed)
+                    } else {
+                        process.stdout.write(parsed)
+                    }
                     logStream?.write(parsed)
                     output += parsed
                 }
@@ -168,7 +174,11 @@ export async function runIteration(
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
                 if (parsed) {
-                    process.stdout.write(parsed)
+                    if (streamHandler) {
+                        streamHandler.addDelta(parsed)
+                    } else {
+                        process.stdout.write(parsed)
+                    }
                     logStream?.write(parsed)
                     output += parsed
                 }
@@ -176,7 +186,9 @@ export async function runIteration(
 
             // Ensure output ends with newline for clean terminal display
             if (output && !output.endsWith('\n')) {
-                process.stdout.write('\n')
+                if (!streamHandler) {
+                    process.stdout.write('\n')
+                }
                 logStream?.write('\n')
                 output += '\n'
             }
