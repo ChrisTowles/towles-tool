@@ -766,8 +766,6 @@ export default class ObserveGraph extends BaseCommand {
       });
     }
 
-    render();
-
     const toolColors = {
       Read: '#4ade80',      // green
       Write: '#f87171',     // red
@@ -1028,6 +1026,8 @@ export default class ObserveGraph extends BaseCommand {
         detailPanel.appendChild(actions);
       }
     }
+
+    render();
   </script>
 </body>
 </html>`
