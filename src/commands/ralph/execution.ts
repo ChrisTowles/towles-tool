@@ -200,6 +200,26 @@ export async function runIteration(
     let lineBuffer = ''
     let finalUsage: StreamEvent['usage'] | undefined
     let sessionId: string | undefined
+    let lastCharWasNewline = true
+
+    const processLine = (line: string) => {
+        const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(line)
+        if (usage) finalUsage = usage
+        if (sid) sessionId = sid
+        if (tool) {
+            const prefix = lastCharWasNewline ? '' : '\n'
+            const toolLine = `${prefix}${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
+            process.stdout.write(toolLine)
+            logStream?.write(`${prefix}⚡ ${tool.name}: ${tool.summary}\n`)
+            lastCharWasNewline = true
+        }
+        if (parsed) {
+            process.stdout.write(parsed)
+            logStream?.write(parsed)
+            output += parsed
+            lastCharWasNewline = parsed.endsWith('\n')
+        }
+    }
 
     return new Promise((resolve) => {
         const proc = spawn('claude', allArgs, {
@@ -210,24 +230,11 @@ export async function runIteration(
             const text = chunk.toString()
             lineBuffer += text
 
-            // Process complete lines
             const lines = lineBuffer.split('\n')
-            lineBuffer = lines.pop() || '' // Keep incomplete line in buffer
+            lineBuffer = lines.pop() || ''
 
             for (const line of lines) {
-                const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(line)
-                if (usage) finalUsage = usage
-                if (sid) sessionId = sid
-                if (tool) {
-                    const toolLine = `\n${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
-                    process.stdout.write(toolLine)
-                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}`)
-                }
-                if (parsed) {
-                    process.stdout.write(parsed)
-                    logStream?.write(parsed)
-                    output += parsed
-                }
+                processLine(line)
             }
         })
 
@@ -239,24 +246,10 @@ export async function runIteration(
         })
 
         proc.on('close', (code: number | null) => {
-            // Process any remaining buffer
             if (lineBuffer) {
-                const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(lineBuffer)
-                if (usage) finalUsage = usage
-                if (sid) sessionId = sid
-                if (tool) {
-                    const toolLine = `\n${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}`
-                    process.stdout.write(toolLine)
-                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}`)
-                }
-                if (parsed) {
-                    process.stdout.write(parsed + '\n')
-                    logStream?.write(parsed )
-                    output += parsed
-                }
+                processLine(lineBuffer)
             }
 
-            // Ensure output ends with newline for clean terminal display
             if (output && !output.endsWith('\n')) {
                 process.stdout.write('\n')
                 logStream?.write('\n')
