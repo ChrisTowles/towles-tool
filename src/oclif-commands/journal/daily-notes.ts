@@ -3,7 +3,7 @@ import path from 'node:path'
 import process from 'node:process'
 import consola from 'consola'
 import { colors } from 'consola/utils'
-import { BaseCommand } from '../../commands/base.js'
+import { BaseCommand } from '../base.js'
 import { JOURNAL_TYPES } from '../../types/journal.js'
 import {
   createJournalContent,

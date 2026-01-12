@@ -3,7 +3,7 @@ import { x } from 'tinyexec'
 import consola from 'consola'
 import { colors } from 'consola/utils'
 
-import { BaseCommand } from '../commands/base.js'
+import { BaseCommand } from './base.js'
 import { isGithubCliInstalled } from '../utils/git/gh-cli-wrapper.js'
 
 /**

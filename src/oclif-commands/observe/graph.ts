@@ -4,7 +4,7 @@ import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { x } from 'tinyexec'
-import { BaseCommand } from '../../commands/base.js'
+import { BaseCommand } from '../base.js'
 
 /**
  * Calculate cutoff timestamp for days filtering.

@@ -3,7 +3,7 @@ import { colors } from 'consola/utils'
 import consola from 'consola'
 import { x } from 'tinyexec'
 
-import { BaseCommand } from '../../commands/base.js'
+import { BaseCommand } from '../base.js'
 
 /**
  * Clean up merged branches

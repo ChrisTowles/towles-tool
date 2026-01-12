@@ -1,5 +1,5 @@
 import { Command, Flags } from '@oclif/core'
-import { LoadedSettings, loadSettings } from '../config/settings'
+import { LoadedSettings, loadSettings } from '../config/settings.js'
 
 /**
  * Base command that all towles-tool commands extend.

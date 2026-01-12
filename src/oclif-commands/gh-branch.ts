@@ -5,7 +5,7 @@ import { colors } from 'consola/utils'
 import { Fzf } from 'fzf'
 import consola from 'consola'
 
-import { BaseCommand } from '../commands/base.js'
+import { BaseCommand } from './base.js'
 import { getIssues, isGithubCliInstalled } from '../utils/git/gh-cli-wrapper.js'
 import type { Issue } from '../utils/git/gh-cli-wrapper.js'
 import { createBranch } from '../utils/git/git-wrapper.js'

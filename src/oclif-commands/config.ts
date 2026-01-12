@@ -1,5 +1,5 @@
 import consola from 'consola'
-import { BaseCommand } from '../commands/base.js'
+import { BaseCommand } from './base.js'
 
 /**
  * Display current configuration settings

@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { x } from 'tinyexec'
 import pc from 'picocolors'
-import { BaseCommand } from '../commands/base.js'
+import { BaseCommand } from './base.js'
 
 interface CheckResult {
   name: string

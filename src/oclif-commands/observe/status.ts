@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { homedir } from 'node:os'
 import pc from 'picocolors'
-import { BaseCommand } from '../../commands/base.js'
+import { BaseCommand } from '../base.js'
 
 const CLAUDE_DIR = path.join(homedir(), '.claude')
 const CLAUDE_SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json')

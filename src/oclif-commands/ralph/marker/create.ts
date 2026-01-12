@@ -1,4 +1,4 @@
-import { BaseCommand } from '../../../commands/base.js'
+import { BaseCommand } from '../../base.js'
 import { generateMarker, MARKER_PREFIX } from '../../../commands/ralph/marker.js'
 
 /**

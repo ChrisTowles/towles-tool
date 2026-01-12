@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import consola from 'consola'
-import { BaseCommand } from '../commands/base.js'
+import { BaseCommand } from './base.js'
 import { getEmbeddedPluginsPath } from '../embedded-assets.js'
 import { extractPlugin } from '../utils/plugin-extract.js'
 

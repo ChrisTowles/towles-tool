@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
-import { BaseCommand } from '../../commands/base.js'
+import { BaseCommand } from '../base.js'
 import {
   DEFAULT_STATE_FILE,
   DEFAULT_LOG_FILE,
