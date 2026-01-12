@@ -55,6 +55,7 @@ export interface IterationResult {
 
 interface ParsedLine {
     text: string | null
+    tool?: { name: string; summary: string }
     usage?: StreamEvent['usage']
     sessionId?: string
 }
@@ -87,10 +88,48 @@ export function resetStreamState(): void {
     lastAssistantText = ''
 }
 
+function summarizeTool(name: string, input: Record<string, unknown>): string {
+    switch (name) {
+        case 'Read':
+            return String(input.file_path || input.path || '').split('/').pop() || 'file'
+        case 'Write':
+        case 'Edit':
+            return String(input.file_path || input.path || '').split('/').pop() || 'file'
+        case 'Glob':
+            return String(input.pattern || '')
+        case 'Grep':
+            return String(input.pattern || '')
+        case 'Bash':
+            return String(input.command || '').substring(0, 40)
+        case 'TodoWrite':
+            return 'updating todos'
+        default:
+            return Object.values(input)[0]?.toString().substring(0, 30) || ''
+    }
+}
+
 function parseStreamLine(line: string): ParsedLine {
     if (!line.trim()) return { text: null }
     try {
-        const data = JSON.parse(line) as StreamEvent
+        const data = JSON.parse(line) as StreamEvent & {
+            tool_use?: { name: string; input: Record<string, unknown> }
+            content_block?: { type: string; name?: string; input?: Record<string, unknown> }
+        }
+
+        // Handle tool_use events
+        if (data.type === 'tool_use' && data.tool_use) {
+            const name = data.tool_use.name
+            const summary = summarizeTool(name, data.tool_use.input || {})
+            return { text: null, tool: { name, summary } }
+        }
+
+        // Handle content_block with tool_use (streaming format)
+        if (data.type === 'content_block' && data.content_block?.type === 'tool_use') {
+            const name = data.content_block.name || 'Tool'
+            const summary = summarizeTool(name, data.content_block.input || {})
+            return { text: null, tool: { name, summary } }
+        }
+
         // Extract text from streaming deltas (legacy format)
         if (data.type === 'stream_event' && data.event?.type === 'content_block_delta') {
             return { text: data.event.delta?.text || null }
@@ -101,6 +140,15 @@ function parseStreamLine(line: string): ParsedLine {
         }
         // NEW FORMAT: Handle assistant messages with content array
         if (data.type === 'assistant' && data.message) {
+            // Check for tool_use in content blocks
+            const toolBlocks = data.message.content?.filter(c => c.type === 'tool_use') || []
+            if (toolBlocks.length > 0) {
+                const tb = toolBlocks[toolBlocks.length - 1] as { name?: string; input?: Record<string, unknown> }
+                const name = tb.name || 'Tool'
+                const summary = summarizeTool(name, tb.input || {})
+                return { text: null, tool: { name, summary }, usage: data.message.usage || data.usage, sessionId: data.session_id }
+            }
+
             // Extract full text from content blocks
             const fullText = data.message.content
                 ?.filter(c => c.type === 'text' && c.text)
@@ -112,7 +160,7 @@ function parseStreamLine(line: string): ParsedLine {
             if (fullText.startsWith(lastAssistantText)) {
                 delta = fullText.slice(lastAssistantText.length) || null
             } else {
-                // Text doesn't match prefix - emit full (shouldn't happen normally)
+                // Text doesn't match prefix - new context
                 delta = fullText || null
             }
             lastAssistantText = fullText
@@ -169,12 +217,15 @@ export async function runIteration(
             lineBuffer = lines.pop() || '' // Keep incomplete line in buffer
 
             for (const line of lines) {
-                const { text: parsed, usage, sessionId: sid } = parseStreamLine(line)
+                const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(line)
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
+                if (tool && streamHandler) {
+                    streamHandler.addTool(tool.name, tool.summary)
+                }
                 if (parsed) {
                     if (streamHandler) {
-                        streamHandler.addDelta(parsed)
+                        streamHandler.addText(parsed)
                     } else {
                         process.stdout.write(parsed)
                     }
@@ -194,12 +245,15 @@ export async function runIteration(
         proc.on('close', (code: number | null) => {
             // Process any remaining buffer
             if (lineBuffer) {
-                const { text: parsed, usage, sessionId: sid } = parseStreamLine(lineBuffer)
+                const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(lineBuffer)
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
+                if (tool && streamHandler) {
+                    streamHandler.addTool(tool.name, tool.summary)
+                }
                 if (parsed) {
                     if (streamHandler) {
-                        streamHandler.addDelta(parsed)
+                        streamHandler.addText(parsed)
                     } else {
                         process.stdout.write(parsed)
                     }

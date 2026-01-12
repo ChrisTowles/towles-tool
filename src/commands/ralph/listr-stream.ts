@@ -7,59 +7,74 @@ interface TaskWithOutput {
 
 /**
  * Handler for streaming Claude output into Listr2 tasks.
- * Updates the task output with each delta received from the Claude CLI.
+ * Shows tools and text as separate output lines.
  */
 export class ListrStreamHandler {
     private task: TaskWithOutput
     private buffer: string = ''
-    private maxTitleLength: number
+    private outputLines: string[] = []
+    private maxLineLength: number
+    private maxLines: number
 
     constructor(
         task: TaskWithOutput,
-        maxTitleLength = 80,
+        maxLineLength = 80,
+        maxLines = 8,
     ) {
         this.task = task
-        this.maxTitleLength = maxTitleLength
+        this.maxLineLength = maxLineLength
+        this.maxLines = maxLines
+    }
+
+    private truncate(text: string): string {
+        if (text.length <= this.maxLineLength) return text
+        return text.substring(0, this.maxLineLength - 3) + '...'
+    }
+
+    private updateOutput(): void {
+        // Show last N lines
+        const visible = this.outputLines.slice(-this.maxLines)
+        this.task.output = visible.join('\n')
     }
 
     /**
-     * Truncate text to maxLength chars with ellipsis suffix.
+     * Add a tool use event to output.
      */
-    private truncateTitle(text: string): string {
-        if (text.length <= this.maxTitleLength) return text
-        return text.substring(0, this.maxTitleLength - 3) + '...'
+    addTool(toolName: string, summary: string): void {
+        const line = `⚡ ${toolName}: ${this.truncate(summary)}`
+        this.outputLines.push(line)
+        this.updateOutput()
     }
 
     /**
-     * Add a streaming delta to the task output.
-     * The output replaces the previous line, showing the most recent text.
+     * Add text output (appends to buffer, shows last line).
      */
-    addDelta(text: string): void {
+    addText(text: string): void {
         if (!text) return
-
-        // Append to buffer
         this.buffer += text
 
-        // Get last line for display (most recent activity)
+        // Update last text line in output
         const lines = this.buffer.split('\n').filter(l => l.trim())
-        const lastLine = lines[lines.length - 1] || ''
-
-        // Update task output with truncated last line
-        this.task.output = this.truncateTitle(lastLine)
+        if (lines.length > 0) {
+            const lastLine = this.truncate(lines[lines.length - 1])
+            // Find and update or add text line
+            const textIdx = this.outputLines.findIndex(l => !l.startsWith('⚡'))
+            if (textIdx >= 0) {
+                this.outputLines[textIdx] = lastLine
+            } else {
+                this.outputLines.push(lastLine)
+            }
+            this.updateOutput()
+        }
     }
 
-    /**
-     * Get the full accumulated output.
-     */
     getOutput(): string {
         return this.buffer
     }
 
-    /**
-     * Clear the buffer.
-     */
     clear(): void {
         this.buffer = ''
+        this.outputLines = []
         this.task.output = ''
     }
 }
