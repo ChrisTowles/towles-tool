@@ -277,7 +277,7 @@ ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**
 
-When ALL tasks are done, Output: <promise>${completionMarker}</promise>
+**ONLY if ALL TASKS are done** then Output: <promise>${completionMarker}</promise>
 
 ---
 
