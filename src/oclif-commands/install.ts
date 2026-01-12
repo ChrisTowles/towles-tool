@@ -5,7 +5,7 @@ import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import consola from 'consola'
 import { BaseCommand } from '../commands/base.js'
-import { getEmbeddedPluginPath } from '../embedded-assets.js'
+import { getEmbeddedPluginsPath } from '../embedded-assets.js'
 import { extractPlugin } from '../utils/plugin-extract.js'
 
 const CLAUDE_SETTINGS_PATH = path.join(homedir(), '.claude', 'settings.json')
@@ -38,7 +38,7 @@ export default class Install extends BaseCommand {
       default: false,
     }),
     plugins: Flags.boolean({
-      description: 'Extract bundled tt-core plugin',
+      description: 'Extract bundled plugins',
       default: true,
       allowNo: true,
     }),
@@ -104,9 +104,48 @@ export default class Install extends BaseCommand {
 
     this.log(pc.bold(pc.green('\n✅ Installation complete!\n')))
 
-    // Show marketplace instructions
-    this.log(pc.cyan('To install tt-core plugin into Claude Code, run:'))
-    this.log(pc.dim(`  /plugins marketplace add file://${path.join(PLUGINS_DIR, 'tt-core')}`))
+    // Offer to run marketplace add
+    const marketplaceCmd = `claude plugin marketplace add ${PLUGINS_DIR}`
+    this.log(pc.cyan('To add plugins to Claude Code marketplace:'))
+    this.log(pc.dim(`  ${marketplaceCmd}`))
+    this.log('')
+
+    const answer = await consola.prompt('Run this command now?', {
+      type: 'confirm',
+      initial: true,
+    })
+
+    if (answer) {
+      const { x } = await import('tinyexec')
+      this.log('')
+
+      // Try to add; if already exists, remove first then re-add
+      let result = await x('claude', ['plugin', 'marketplace', 'add', PLUGINS_DIR])
+      const output = result.stdout + result.stderr
+      if (result.exitCode !== 0 && output.includes('already installed')) {
+        this.log(pc.dim('Marketplace already installed, updating...'))
+        await x('claude', ['plugin', 'marketplace', 'remove', 'towles-tool'])
+        result = await x('claude', ['plugin', 'marketplace', 'add', PLUGINS_DIR])
+      }
+
+      if (result.stdout) this.log(result.stdout)
+      if (result.stderr) this.log(pc.dim(result.stderr))
+      if (result.exitCode === 0) {
+        this.log(pc.green('✓ Plugins added to marketplace'))
+
+        // Install tt-core plugin from marketplace
+        this.log('')
+        const installResult = await x('claude', ['plugin', 'install', 'tt@towles-tool', '--scope', 'user'])
+        if (installResult.stdout) this.log(installResult.stdout)
+        if (installResult.stderr) this.log(pc.dim(installResult.stderr))
+        if (installResult.exitCode === 0) {
+          this.log(pc.green('✓ tt-core plugin installed'))
+        }
+      } else {
+        this.log(pc.yellow(`Command exited with code ${result.exitCode}`))
+      }
+    }
+
     this.log('')
   }
 
@@ -134,18 +173,17 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`)
   }
 
   private async extractBundledPlugin(): Promise<void> {
-    const zipPath = getEmbeddedPluginPath()
-    const destDir = path.join(PLUGINS_DIR, 'tt-core')
+    const zipPath = getEmbeddedPluginsPath()
 
     if (!fs.existsSync(zipPath)) {
-      this.log(pc.yellow(`Plugin zip not found at ${zipPath}`))
+      this.log(pc.yellow(`Plugins zip not found at ${zipPath}`))
       this.log(pc.dim('Run "bun run scripts/zip-plugin.ts" to create it'))
       return
     }
 
-    const extracted = await extractPlugin(zipPath, destDir)
+    const extracted = await extractPlugin(zipPath, PLUGINS_DIR)
     if (extracted) {
-      this.log(pc.green(`✓ Extracted tt-core plugin to ${destDir}`))
+      this.log(pc.green(`✓ Extracted plugins to ${PLUGINS_DIR}`))
     }
   }
 }

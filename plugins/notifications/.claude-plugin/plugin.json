@@ -1,8 +1,8 @@
 {
-"name": "notifications",
-"description": "Adds audio notification when Claude Stops.",
-"version": "1.0.1",
-"author": {
-"name": "Chris Towles"
-}
+    "name": "notifications",
+    "description": "Adds audio notification when Claude Stops.",
+    "version": "0.0.21",
+    "author": {
+        "name": "Chris Towles"
+    }
 }

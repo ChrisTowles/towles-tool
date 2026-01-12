@@ -1,11 +1,12 @@
 {
   "name": "towles-tool",
+  "description": "Personal plugins for daily development workflows",
   "owner": {
     "name": "Chris Towles"
   },
   "plugins": [
     {
-      "name": "towles-tools",
+      "name": "tt",
       "source": "./tt-core",
       "description": "useful daily commands like generate git messages and note taking"
     }
