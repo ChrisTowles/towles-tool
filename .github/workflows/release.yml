@@ -46,7 +46,7 @@ jobs:
       - run: bun install
 
       - name: Bump version
-        run: bunx bumpp ${{ inputs.bump_type }} --yes --no-push
+        run: bunx bumpp ${{ inputs.bump_type }} --yes --no-commit --no-tag --no-push
 
       - name: Sync plugin versions
         run: bun run version:sync

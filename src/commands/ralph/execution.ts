@@ -219,9 +219,9 @@ export async function runIteration(
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
                 if (tool) {
-                    const toolLine = `${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
+                    const toolLine = `\n${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
                     process.stdout.write(toolLine)
-                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}\n`)
+                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}`)
                 }
                 if (parsed) {
                     process.stdout.write(parsed)
@@ -245,9 +245,9 @@ export async function runIteration(
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
                 if (tool) {
-                    const toolLine = `${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
+                    const toolLine = `\n${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}`
                     process.stdout.write(toolLine)
-                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}\n`)
+                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}`)
                 }
                 if (parsed) {
                     process.stdout.write(parsed)
