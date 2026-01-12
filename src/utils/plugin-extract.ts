@@ -1,11 +1,13 @@
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import consola from 'consola'
-import { exec } from 'tinyexec'
+import { x } from 'tinyexec'
 
 /**
  * Extracts a plugin zip to destination directory.
  * Prompts user for confirmation if dest already exists.
+ * Handles Bun's virtual $bunfs paths by copying to temp first.
  * @returns true if extracted, false if user cancelled
  */
 export async function extractPlugin(zipPath: string, destDir: string): Promise<boolean> {
@@ -29,12 +31,32 @@ export async function extractPlugin(zipPath: string, destDir: string): Promise<b
     fs.mkdirSync(parentDir, { recursive: true })
   }
 
-  // Extract zip using system unzip command (tinyexec uses execFile internally - safe from injection)
-  const result = await exec('unzip', ['-o', '-q', zipPath, '-d', destDir])
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to extract: ${result.stderr}`)
+  // Handle Bun's virtual $bunfs paths (embedded files in compiled binary)
+  // System unzip can't access these, so copy to temp first
+  let actualZipPath = zipPath
+  let tempFile: string | null = null
+
+  if (zipPath.includes('$bunfs') || zipPath.startsWith('/$bunfs')) {
+    tempFile = path.join(os.tmpdir(), `tt-plugin-${Date.now()}.zip`)
+    const bunFile = Bun.file(zipPath)
+    const content = await bunFile.arrayBuffer()
+    fs.writeFileSync(tempFile, Buffer.from(content))
+    actualZipPath = tempFile
   }
 
-  consola.success(`Extracted plugin to ${destDir}`)
-  return true
+  try {
+    // Extract zip using system unzip command (tinyexec x() uses execFile internally - safe)
+    const result = await x('unzip', ['-o', '-q', actualZipPath, '-d', destDir])
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to extract: ${result.stderr}`)
+    }
+
+    consola.success(`Extracted plugin to ${destDir}`)
+    return true
+  } finally {
+    // Clean up temp file if created
+    if (tempFile && fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile)
+    }
+  }
 }

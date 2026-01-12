@@ -45,9 +45,9 @@ async function main() {
   console.log(`Found ${files.length} files in plugins/tt-core/`);
 
   // Create zip using Bun shell (leverages system zip)
-  // Change to plugin parent dir to get correct relative paths
-  const pluginsDir = join(ROOT, "plugins");
-  await $`cd ${pluginsDir} && zip -r ${OUTPUT_ZIP} tt-core -x "*.DS_Store"`.quiet();
+  // Change to plugin dir and zip contents (not the folder itself)
+  // This way extraction creates files directly in destDir, not destDir/tt-core/
+  await $`cd ${PLUGIN_DIR} && zip -r ${OUTPUT_ZIP} . -x "*.DS_Store"`.quiet();
 
   const zipStat = await stat(OUTPUT_ZIP);
   console.log(`Created: ${OUTPUT_ZIP} (${(zipStat.size / 1024).toFixed(1)} KB)`);
