@@ -6,8 +6,8 @@
   "plugins": [
     {
       "name": "towles-tools",
-      "source": "./plugins/tt-core",
+      "source": "./tt-core",
       "description": "useful daily commands like generate git messages and note taking"
     }
   ]
-}
+} 
