@@ -1,6 +1,9 @@
 {
   "name": "towles-tool",
   "description": "Personal plugins for daily development workflows",
+  "metadata": {
+    "description": "Personal Claude Code plugins for daily development workflows including git automation, note-taking, and observability tools"
+  },
   "owner": {
     "name": "Chris Towles"
   },
