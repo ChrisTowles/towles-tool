@@ -1,9 +1,8 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
-// Listr2 imports reserved for task #4
-// import { Listr } from 'listr2'
-// import { ListrStreamHandler } from '../../commands/ralph/listr-stream.js'
+import { Listr } from 'listr2'
+import { ListrStreamHandler } from '../../commands/ralph/listr-stream.js'
 import { BaseCommand } from '../../commands/base.js'
 import {
   DEFAULT_STATE_FILE,
@@ -252,13 +251,15 @@ export default class Run extends BaseCommand {
       saveState(state, flags.stateFile)
     })
 
-    // Main loop
-    while (state.iteration < maxIterations && !interrupted) {
-      state.iteration++
+    // Main loop with listr2
+    let completed = false
 
-      const iterHeader = `\n━━━ Iteration ${state.iteration}/${maxIterations} ━━━\n`
-      console.log(pc.bold(pc.cyan(iterHeader)))
-      logStream.write(iterHeader)
+    while (state.iteration < maxIterations && !interrupted && !completed) {
+      state.iteration++
+      const currentIteration = state.iteration
+
+      const iterHeader = `Iteration ${currentIteration}/${maxIterations}`
+      logStream.write(`\n━━━ ${iterHeader} ━━━\n`)
 
       const iterationStart = new Date().toISOString()
       const progressContent = readLastTasks(DEFAULT_PROGRESS_FILE, 3)
@@ -274,7 +275,7 @@ export default class Run extends BaseCommand {
       // Log the prompt
       logStream.write(`\n--- Prompt ---\n${prompt}\n--- End Prompt ---\n\n`)
 
-      // Build claude args, adding --resume if task has a session ID
+      // Build claude args
       const iterClaudeArgs = [...extraClaudeArgs]
       const currentTask = focusedTaskId
         ? state.tasks.find(t => t.id === focusedTaskId)
@@ -284,36 +285,50 @@ export default class Run extends BaseCommand {
       const taskSessionId = currentTask?.sessionId || state.sessionId
       if (!flags.noFork && taskSessionId) {
         iterClaudeArgs.push('--fork-session', taskSessionId)
-        console.log(pc.dim(`Forking session: ${taskSessionId.slice(0, 8)}...`))
       }
 
-      // Output the prompt being sent
-      console.log(pc.dim('--- Prompt ---'))
-      console.log(prompt)
-      console.log(pc.dim('--- End Prompt ---\n'))
+      // Capture iteration result
+      let iterResult: { output: string, contextUsedPercent?: number, sessionId?: string } = { output: '' }
 
-      const { output, contextUsedPercent, sessionId } = await runIteration(prompt, iterClaudeArgs, logStream)
+      // Create listr2 task for this iteration
+      const listr = new Listr([
+        {
+          title: pc.cyan(iterHeader) + (taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''),
+          task: async (_ctx, task) => {
+            const streamHandler = new ListrStreamHandler(task)
+            iterResult = await runIteration(prompt, iterClaudeArgs, logStream, streamHandler)
+          },
+          rendererOptions: {
+            outputBar: Infinity,
+            persistentOutput: false,
+          },
+        },
+      ], {
+        concurrent: false,
+        exitOnError: false,
+        rendererOptions: {
+          collapseSubtasks: false,
+        },
+      })
+
+      await listr.run()
 
       // Reload state from disk to pick up changes made by child claude process
-      // (e.g., `tt ralph task done <id>` marks tasks complete, or user edits state file)
       const freshState = loadState(flags.stateFile)
       if (freshState) {
-        // Preserve current iteration (managed by this loop), adopt everything else
-        const currentIteration = state.iteration
-        Object.assign(state, freshState, { iteration: currentIteration })
+        const currentIter = state.iteration
+        Object.assign(state, freshState, { iteration: currentIter })
       }
 
       // Store session ID on the current task for future resumption
-      // Re-find task in reloaded state since reference changed
       const taskToUpdate = currentTask ? state.tasks.find(t => t.id === currentTask.id) : undefined
-      if (sessionId && taskToUpdate && !taskToUpdate.sessionId) {
-        taskToUpdate.sessionId = sessionId
-        state.sessionId = sessionId  // Also store at state level as fallback
-        console.log(pc.dim(`Session ID stored on task #${taskToUpdate.id}: ${sessionId.slice(0, 8)}...`))
+      if (iterResult.sessionId && taskToUpdate && !taskToUpdate.sessionId) {
+        taskToUpdate.sessionId = iterResult.sessionId
+        state.sessionId = iterResult.sessionId
       }
 
       const iterationEnd = new Date().toISOString()
-      const markerFound = detectCompletionMarker(output, flags.completionMarker)
+      const markerFound = detectCompletionMarker(iterResult.output, flags.completionMarker)
 
       // Calculate duration
       const startTime = new Date(iterationStart).getTime()
@@ -321,50 +336,49 @@ export default class Run extends BaseCommand {
       const durationMs = endTime - startTime
       const durationHuman = formatDuration(durationMs)
 
-      // Record history to JSON lines file
+      // Record history
       appendHistory({
         iteration: state.iteration,
         startedAt: iterationStart,
         completedAt: iterationEnd,
         durationMs,
         durationHuman,
-        outputSummary: extractOutputSummary(output),
+        outputSummary: extractOutputSummary(iterResult.output),
         markerFound,
-        contextUsedPercent,
+        contextUsedPercent: iterResult.contextUsedPercent,
       })
 
-      // Save state after each iteration
+      // Save state
       saveState(state, flags.stateFile)
 
-      // Log iteration summary
-      const contextInfo = contextUsedPercent !== undefined ? ` | Context: ${contextUsedPercent}%` : ''
-      const summaryMsg = `\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? 'yes' : 'no'}\n`
-      console.log(pc.dim(`\n━━━ Iteration ${state.iteration} Summary ━━━`))
-      console.log(pc.dim(`Duration: ${durationHuman}${contextInfo}`))
-      console.log(pc.dim(`Marker found: ${markerFound ? pc.green('yes') : pc.yellow('no')}`))
-      logStream.write(summaryMsg)
+      // Log summary
+      const contextInfo = iterResult.contextUsedPercent !== undefined ? ` | Context: ${iterResult.contextUsedPercent}%` : ''
+      logStream.write(`\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? 'yes' : 'no'}\n`)
+      console.log(pc.dim(`Duration: ${durationHuman}${contextInfo} | Marker: ${markerFound ? pc.green('yes') : pc.yellow('no')}`))
 
       // Check completion
       if (markerFound) {
+        completed = true
         state.status = 'completed'
         saveState(state, flags.stateFile)
-        const doneMsg = `\n✅ Task completed after ${state.iteration} iteration(s)\n`
-        console.log(pc.bold(pc.green(doneMsg)))
-        logStream.write(doneMsg)
-        logStream.end()
-        return
+        console.log(pc.bold(pc.green(`\n✅ Task completed after ${state.iteration} iteration(s)`)))
+        logStream.write(`\n✅ Task completed after ${state.iteration} iteration(s)\n`)
       }
     }
 
-    // Max iterations reached
-    if (!interrupted) {
+    logStream.end()
+
+    // Final status
+    if (completed) {
+      return
+    }
+
+    if (!interrupted && state.iteration >= maxIterations) {
       state.status = 'max_iterations_reached'
       saveState(state, flags.stateFile)
-      const maxMsg = `\n⚠️  Max iterations (${maxIterations}) reached without completion\n`
-      console.log(pc.bold(pc.yellow(maxMsg)))
+      console.log(pc.bold(pc.yellow(`\n⚠️  Max iterations (${maxIterations}) reached without completion`)))
       console.log(pc.dim(`State saved to: ${flags.stateFile}`))
-      logStream.write(maxMsg)
-      logStream.end()
+      logStream.write(`\n⚠️  Max iterations (${maxIterations}) reached without completion\n`)
       this.exit(1)
     }
   }

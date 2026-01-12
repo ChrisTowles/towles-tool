@@ -1,16 +1,21 @@
-import type { ListrTaskWrapper, ListrDefaultRenderer } from 'listr2'
+/**
+ * Minimal task interface - only needs output property
+ */
+interface TaskWithOutput {
+    output: string
+}
 
 /**
  * Handler for streaming Claude output into Listr2 tasks.
  * Updates the task output with each delta received from the Claude CLI.
  */
 export class ListrStreamHandler {
-    private task: ListrTaskWrapper<unknown, ListrDefaultRenderer, ListrDefaultRenderer>
+    private task: TaskWithOutput
     private buffer: string = ''
     private maxTitleLength: number
 
     constructor(
-        task: ListrTaskWrapper<unknown, ListrDefaultRenderer, ListrDefaultRenderer>,
+        task: TaskWithOutput,
         maxTitleLength = 80,
     ) {
         this.task = task

@@ -70,25 +70,13 @@ function createDefaultSettings(): UserSettings {
 }
 
 
-function createSettingsFile(): UserSettings {
-
-  let userSettings = createDefaultSettings()
-
-
-  // Load user settings
-  
-    if (fs.existsSync(USER_SETTINGS_PATH)) {
-      const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-      const parsedUserSettings = JSON.parse(userContent) as unknown as UserSettings;
-      userSettings = UserSettingsSchema.parse(parsedUserSettings);
-    } else {
-      saveSettings({
-        path: USER_SETTINGS_PATH,
-        settings: userSettings
-      })
-    }
-  
-    return userSettings
+function createAndSaveDefaultSettings(): UserSettings {
+  const userSettings = createDefaultSettings()
+  saveSettings({
+    path: USER_SETTINGS_PATH,
+    settings: userSettings
+  })
+  return userSettings
 }
 
 export function saveSettings(settingsFile: SettingsFile): void {
@@ -138,7 +126,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
     if (isNonInteractive) {
       // Auto-create in CI/non-TTY environments
       consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
-      userSettings = createSettingsFile();
+      userSettings = createAndSaveDefaultSettings();
     } else {
       // Interactive: ask user if they want to create it
       const confirmed = await consola.prompt(`Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`, {
@@ -147,7 +135,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
       if (!confirmed) {
         throw new Error(`Settings file not found and user chose not to create it.`);
       }
-      userSettings = createSettingsFile();
+      userSettings = createAndSaveDefaultSettings();
     }
   }
 
