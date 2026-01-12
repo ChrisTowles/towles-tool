@@ -3,7 +3,6 @@ import { spawn } from 'node:child_process'
 import pc from 'picocolors'
 import { x } from 'tinyexec'
 import { CLAUDE_DEFAULT_ARGS } from './state'
-import type { ListrStreamHandler } from './listr-stream'
 
 // ============================================================================
 // Types
@@ -189,7 +188,6 @@ export async function runIteration(
     prompt: string,
     claudeArgs: string[],
     logStream?: WriteStream,
-    streamHandler?: ListrStreamHandler,
 ): Promise<IterationResult> {
     // Reset accumulated text state from previous iteration
     resetStreamState()
@@ -220,15 +218,13 @@ export async function runIteration(
                 const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(line)
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
-                if (tool && streamHandler) {
-                    streamHandler.addTool(tool.name, tool.summary)
+                if (tool) {
+                    const toolLine = `${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
+                    process.stdout.write(toolLine)
+                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}\n`)
                 }
                 if (parsed) {
-                    if (streamHandler) {
-                        streamHandler.addText(parsed)
-                    } else {
-                        process.stdout.write(parsed)
-                    }
+                    process.stdout.write(parsed)
                     logStream?.write(parsed)
                     output += parsed
                 }
@@ -248,15 +244,13 @@ export async function runIteration(
                 const { text: parsed, tool, usage, sessionId: sid } = parseStreamLine(lineBuffer)
                 if (usage) finalUsage = usage
                 if (sid) sessionId = sid
-                if (tool && streamHandler) {
-                    streamHandler.addTool(tool.name, tool.summary)
+                if (tool) {
+                    const toolLine = `${pc.yellow('⚡')} ${pc.cyan(tool.name)}: ${tool.summary}\n`
+                    process.stdout.write(toolLine)
+                    logStream?.write(`⚡ ${tool.name}: ${tool.summary}\n`)
                 }
                 if (parsed) {
-                    if (streamHandler) {
-                        streamHandler.addText(parsed)
-                    } else {
-                        process.stdout.write(parsed)
-                    }
+                    process.stdout.write(parsed)
                     logStream?.write(parsed)
                     output += parsed
                 }
@@ -264,9 +258,7 @@ export async function runIteration(
 
             // Ensure output ends with newline for clean terminal display
             if (output && !output.endsWith('\n')) {
-                if (!streamHandler) {
-                    process.stdout.write('\n')
-                }
+                process.stdout.write('\n')
                 logStream?.write('\n')
                 output += '\n'
             }

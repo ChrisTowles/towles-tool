@@ -39,12 +39,10 @@
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
     "fzf": "^0.5.2",
-    "listr2": "^9.0.5",
     "luxon": "^3.7.1",
     "neverthrow": "^8.2.0",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
-    "rxjs": "^7.8.2",
     "strip-ansi": "^7.1.0",
     "tinyexec": "^0.3.2",
     "zod": "^4.0.5"

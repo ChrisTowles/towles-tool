@@ -1,8 +1,6 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
-import { Listr } from 'listr2'
-import { ListrStreamHandler } from '../../commands/ralph/listr-stream.js'
 import { BaseCommand } from '../../commands/base.js'
 import {
   DEFAULT_STATE_FILE,
@@ -251,7 +249,7 @@ export default class Run extends BaseCommand {
       saveState(state, flags.stateFile)
     })
 
-    // Main loop with listr2
+    // Main loop
     let completed = false
 
     while (state.iteration < maxIterations && !interrupted && !completed) {
@@ -287,31 +285,17 @@ export default class Run extends BaseCommand {
         iterClaudeArgs.push('--fork-session', taskSessionId)
       }
 
-      // Capture iteration result
-      let iterResult: { output: string, contextUsedPercent?: number, sessionId?: string } = { output: '' }
+      // Print iteration header
+      const sessionInfo = taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''
+      console.log(pc.cyan(`\n━━━ ${iterHeader}${sessionInfo} ━━━`))
 
-      // Create listr2 task for this iteration
-      const listr = new Listr([
-        {
-          title: pc.cyan(iterHeader) + (taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''),
-          task: async (_ctx, task) => {
-            const streamHandler = new ListrStreamHandler(task)
-            iterResult = await runIteration(prompt, iterClaudeArgs, logStream, streamHandler)
-          },
-          rendererOptions: {
-            outputBar: Infinity,
-            persistentOutput: false,
-          },
-        },
-      ], {
-        concurrent: false,
-        exitOnError: false,
-        rendererOptions: {
-          collapseSubtasks: false,
-        },
-      })
+      // Print system prompt being appended
+      console.log(pc.dim('System prompt:'))
+      console.log(pc.dim(prompt))
+      console.log()
 
-      await listr.run()
+      // Run iteration - output goes directly to stdout
+      const iterResult = await runIteration(prompt, iterClaudeArgs, logStream)
 
       // Reload state from disk to pick up changes made by child claude process
       const freshState = loadState(flags.stateFile)
