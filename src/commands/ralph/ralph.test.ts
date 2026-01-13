@@ -368,14 +368,14 @@ describe('ralph-loop', () => {
         it('should format multiple tasks as markdown list', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'task 1', status: 'done', addedAt: '' },
-                { id: 2, description: 'task 2', status: 'in_progress', addedAt: '' },
+                { id: 2, description: 'task 2', status: 'ready', addedAt: '' },
                 { id: 3, description: 'task 3', status: 'ready', addedAt: '' },
             ]
 
             const formatted = formatTasksForPrompt(tasks)
 
             expect(formatted).toContain('- [x] #1 task 1 `✓ done`')
-            expect(formatted).toContain('- [ ] #2 task 2 `→ in_progress`')
+            expect(formatted).toContain('- [ ] #2 task 2 `○ ready`')
             expect(formatted).toContain('- [ ] #3 task 3 `○ ready`')
         })
     })
@@ -424,28 +424,14 @@ describe('ralph-loop', () => {
             expect(formatted).toContain('`○ ready`')
         })
 
-        it('should format in_progress tasks with unchecked boxes', () => {
-            const tasks: RalphTask[] = [
-                { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
-            ]
-
-            const formatted = formatTasksAsMarkdown(tasks)
-
-            expect(formatted).toContain('## In Progress')
-            expect(formatted).toContain('- [ ] **#3** working task')
-            expect(formatted).toContain('`→ in_progress`')
-        })
-
         it('should group tasks by status section', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'done task', status: 'done', addedAt: '' },
                 { id: 2, description: 'ready task', status: 'ready', addedAt: '' },
-                { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
             ]
 
             const formatted = formatTasksAsMarkdown(tasks)
 
-            expect(formatted).toContain('## In Progress')
             expect(formatted).toContain('## Ready')
             expect(formatted).toContain('## Done')
         })
@@ -519,16 +505,6 @@ describe('ralph-loop', () => {
             expect(formatted).toContain('T1["#1: done task"]:::done')
         })
 
-        it('should format in_progress tasks correctly in mermaid', () => {
-            const state = createInitialState(10)
-            const task = addTaskToState(state, 'working task')
-            task.status = 'in_progress'
-
-            const formatted = formatPlanAsMarkdown(state.tasks, state)
-
-            expect(formatted).toContain('T1["#1: working task"]:::inProgress')
-        })
-
         it('should truncate long descriptions in mermaid', () => {
             const state = createInitialState(10)
             addTaskToState(state, 'This is a very long task description that should be truncated for the mermaid graph')
@@ -579,16 +555,13 @@ describe('ralph-loop', () => {
             const task1 = addTaskToState(state, 'done task')
             task1.status = 'done'
             addTaskToState(state, 'ready task')
-            const task3 = addTaskToState(state, 'in progress task')
-            task3.status = 'in_progress'
 
             const json = formatPlanAsJson(state.tasks, state)
             const parsed = JSON.parse(json)
 
-            expect(parsed.summary.total).toBe(3)
+            expect(parsed.summary.total).toBe(2)
             expect(parsed.summary.done).toBe(1)
             expect(parsed.summary.ready).toBe(1)
-            expect(parsed.summary.inProgress).toBe(1)
         })
 
         it('should include all task fields', () => {

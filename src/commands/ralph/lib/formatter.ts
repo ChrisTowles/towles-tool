@@ -40,7 +40,6 @@ export function formatTasksForPrompt(tasks: RalphTask[]): string {
     const statusIcon = (status: TaskStatus): string => {
         switch (status) {
             case 'done': return '✓'
-            case 'in_progress': return '→'
             case 'ready': return '○'
             case 'blocked': return '⏸'
             case 'cancelled': return '✗'
@@ -67,7 +66,6 @@ export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
     const statusBadge = (status: TaskStatus): string => {
         switch (status) {
             case 'done': return '`✓ done`'
-            case 'in_progress': return '`→ in_progress`'
             case 'ready': return '`○ ready`'
             case 'blocked': return '`⏸ blocked`'
             case 'cancelled': return '`✗ cancelled`'
@@ -75,19 +73,10 @@ export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
     }
 
     const ready = tasks.filter(t => t.status === 'ready')
-    const inProgress = tasks.filter(t => t.status === 'in_progress')
     const done = tasks.filter(t => t.status === 'done')
 
     const lines: string[] = ['# Tasks', '']
-    lines.push(`**Total:** ${tasks.length} | **Done:** ${done.length} | **Ready:** ${ready.length + inProgress.length}`, '')
-
-    if (inProgress.length > 0) {
-        lines.push('## In Progress', '')
-        for (const t of inProgress) {
-            lines.push(`- [ ] **#${t.id}** ${t.description} ${statusBadge(t.status)}`)
-        }
-        lines.push('')
-    }
+    lines.push(`**Total:** ${tasks.length} | **Done:** ${done.length} | **Ready:** ${ready.length}`, '')
 
     if (ready.length > 0) {
         lines.push('## Ready', '')
@@ -116,14 +105,13 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
 
     // Summary section
     const ready = tasks.filter(t => t.status === 'ready').length
-    const inProgress = tasks.filter(t => t.status === 'in_progress').length
     const done = tasks.filter(t => t.status === 'done').length
 
     lines.push('## Summary', '')
     lines.push(`- **Status:** ${state.status}`)
     lines.push(`- **Iteration:** ${state.iteration}/${state.maxIterations}`)
     lines.push(`- **Total Tasks:** ${tasks.length}`)
-    lines.push(`- **Done:** ${done} | **In Progress:** ${inProgress} | **Ready:** ${ready}`)
+    lines.push(`- **Done:** ${done} | **Ready:** ${ready}`)
     if (state.sessionId) {
         lines.push(`- **Session ID:** ${state.sessionId.slice(0, 8)}...`)
     }
@@ -133,7 +121,7 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
     lines.push('## Tasks', '')
     for (const t of tasks) {
         const checkbox = t.status === 'done' ? '[x]' : '[ ]'
-        const status = t.status === 'done' ? '`done`' : t.status === 'in_progress' ? '`in_progress`' : '`ready`'
+        const status = t.status === 'done' ? '`done`' : '`ready`'
         lines.push(`- ${checkbox} **#${t.id}** ${t.description} ${status}`)
     }
     lines.push('')
@@ -152,8 +140,6 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
 
         if (t.status === 'done') {
             lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::done`)
-        } else if (t.status === 'in_progress') {
-            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::inProgress`)
         } else {
             lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::ready`)
         }
@@ -161,7 +147,6 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
 
     lines.push('    end')
     lines.push('    classDef done fill:#22c55e,color:#fff')
-    lines.push('    classDef inProgress fill:#eab308,color:#000')
     lines.push('    classDef ready fill:#94a3b8,color:#000')
     lines.push('```')
     lines.push('')
@@ -181,7 +166,6 @@ export function formatPlanAsJson(tasks: RalphTask[], state: RalphState): string 
         summary: {
             total: tasks.length,
             done: tasks.filter(t => t.status === 'done').length,
-            inProgress: tasks.filter(t => t.status === 'in_progress').length,
             ready: tasks.filter(t => t.status === 'ready').length,
         },
         tasks: tasks.map(t => ({

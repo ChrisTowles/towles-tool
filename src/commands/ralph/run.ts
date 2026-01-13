@@ -173,7 +173,7 @@ export default class Run extends BaseCommand {
 
       console.log(pc.cyan('\nTasks:'))
       for (const t of state.tasks) {
-        const icon = t.status === 'done' ? '✓' : t.status === 'in_progress' ? '→' : '○'
+        const icon = t.status === 'done' ? '✓' : '○'
         const focus = focusedTaskId === t.id ? pc.cyan(' ← FOCUS') : ''
         console.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`)
       }
@@ -279,7 +279,7 @@ export default class Run extends BaseCommand {
       const iterClaudeArgs = [...extraClaudeArgs]
       const currentTask = focusedTaskId
         ? state.tasks.find(t => t.id === focusedTaskId)
-        : state.tasks.find(t => t.status === 'in_progress' || t.status === 'ready')
+        : state.tasks.find(t => t.status === 'ready')
 
       // Fork from task's sessionId (or state-level fallback) unless disabled
       const taskSessionId = currentTask?.sessionId || state.sessionId

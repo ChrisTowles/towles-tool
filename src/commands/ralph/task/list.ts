@@ -67,7 +67,7 @@ export default class TaskList extends BaseCommand {
     }
 
     // Default format output - compact with truncation
-    const ready = tasks.filter(t => t.status === 'ready' || t.status === 'in_progress')
+    const ready = tasks.filter(t => t.status === 'ready')
     const done = tasks.filter(t => t.status === 'done')
 
     const truncate = (s: string, len: number) => s.length > len ? s.slice(0, len - 1) + '…' : s
@@ -84,7 +84,7 @@ export default class TaskList extends BaseCommand {
 
     if (ready.length > 0) {
       for (const task of ready) {
-        const icon = task.status === 'in_progress' ? pc.yellow('→') : pc.dim('○')
+        const icon = pc.dim('○')
         const id = pc.cyan(`#${task.id}`)
         const desc = truncate(task.description, descWidth)
         this.log(`  ${icon} ${id} ${desc}`)

@@ -196,7 +196,6 @@ After 10 iterations if not complete:
 
 Task statuses:
 - `ready` - Ready to start (○)
-- `in_progress` - Currently working (→)
 - `done` - Completed (✓)
 - `blocked` - Blocked (⏸)
 - `cancelled` - Cancelled (✗)
@@ -218,7 +217,7 @@ tt ralph task list                    # Default format (colored terminal output)
 tt ralph task list --format markdown  # Markdown with checkboxes and status badges
 ```
 
-Markdown format groups tasks by status (In Progress, Pending, Done) with summary counts.
+Markdown format groups tasks by status (Read, Done, Blocked) with summary counts.
 
 ### Viewing Plan Summary
 
