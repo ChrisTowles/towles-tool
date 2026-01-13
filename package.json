@@ -5,6 +5,19 @@
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
   "license": "MIT",
+  "bin": {
+    "tt": "./bin/run.ts",
+    "towles-tool": "./bin/run.ts"
+  },
+  "files": [
+    "bin",
+    "src",
+    "plugins",
+    "patches"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "funding": {
     "url": "https://github.com/sponsors/ChrisTowles"
   },
@@ -18,12 +31,7 @@
   },
   "scripts": {
     "version:sync": "bun scripts/sync-versions.ts",
-    "prebuild": "bun run version:sync && bun scripts/zip-plugin.ts",
-    "build": "bun run prebuild && bun build bin/run.ts --compile --minify --outfile dist/tt",
-    "build:linux": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-linux-x64 --outfile dist/tt-linux-x64",
-    "build:macos": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/tt-darwin-arm64",
-    "build:windows": "bun run prebuild && bun build bin/run.ts --compile --minify --target=bun-windows-x64 --outfile dist/tt-windows-x64.exe",
-    "build:all": "bun run prebuild && bun run build:linux && bun run build:macos && bun run build:windows",
+    "prepublishOnly": "bun run version:sync && bun scripts/zip-plugin.ts",
     "start": "bun bin/run.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",

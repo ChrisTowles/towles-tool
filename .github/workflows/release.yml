@@ -1,4 +1,4 @@
-# Release workflow - see docs/releasing.md for manual commands
+# Release workflow - publishes to npm
 name: Release
 
 permissions:
@@ -26,16 +26,13 @@ jobs:
       - run: bun install
       - run: bun run lint
       - run: bun run typecheck
-      - run: bun run prebuild
       - run: bun run test
         env:
           CI: DisableCallingClaude
 
-  prepare:
+  release:
     needs: ci
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,64 +63,12 @@ jobs:
           git push
           git push --tags
 
-  build:
-    needs: prepare
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            artifact: tt-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            artifact: tt-darwin-arm64
-       # TODO: Sorry windows users!
-       #  - os: windows-latest
-       #     target: bun-windows-x64
-       #     artifact: tt-windows-x64.exe
+      - name: Publish to npm
+        run: bun publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
-
-      - uses: oven-sh/setup-bun@v2
-
-      - run: bun install
-      - run: bun run prebuild
-      - run: bun build bin/run.ts --compile --minify --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
-
-      - name: Sign macOS binary
-        if: matrix.os == 'macos-latest'
-        run: codesign --force --deep -s - dist/${{ matrix.artifact }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
-
-  release:
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
-          fetch-depth: 0
-
-      - uses: oven-sh/setup-bun@v2
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Create Release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create v${{ needs.prepare.outputs.version }} \
-            --generate-notes \
-            dist/tt-linux-x64 \
-            dist/tt-darwin-arm64
+        run: gh release create v${{ steps.version.outputs.version }} --generate-notes
