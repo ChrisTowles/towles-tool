@@ -133,11 +133,11 @@ export default class Run extends BaseCommand {
 
     // Filter by label if specified
     const labelFilter = flags.label
-    let pendingTasks = state.tasks.filter(t => t.status !== 'done')
+    let remainingTasks = state.tasks.filter(t => t.status !== 'done')
     if (labelFilter) {
-      pendingTasks = pendingTasks.filter(t => t.label === labelFilter)
+      remainingTasks = remainingTasks.filter(t => t.label === labelFilter)
     }
-    if (pendingTasks.length === 0) {
+    if (remainingTasks.length === 0) {
       const msg = labelFilter ? `All tasks with label '${labelFilter}' are done!` : 'All tasks are done!'
       console.log(pc.green(`✅ ${msg}`))
       return
@@ -169,7 +169,7 @@ export default class Run extends BaseCommand {
       console.log(`  Fork session: ${!flags.noFork}`)
       console.log(`  Session ID: ${state.sessionId || '(none)'}`)
       console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(' ')}`)
-      console.log(`  Pending tasks: ${pendingTasks.length}`)
+      console.log(`  Remaining tasks: ${remainingTasks.length}`)
 
       console.log(pc.cyan('\nTasks:'))
       for (const t of state.tasks) {
@@ -180,7 +180,7 @@ export default class Run extends BaseCommand {
 
       // Show prompt preview
       const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3)
-      const taskList = formatTasksForPrompt(pendingTasks)
+      const taskList = formatTasksForPrompt(remainingTasks)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         progressFile: DEFAULT_PROGRESS_FILE,
@@ -210,7 +210,7 @@ export default class Run extends BaseCommand {
     // Create log stream (append mode)
     const logStream = fs.createWriteStream(flags.logFile, { flags: 'a' })
 
-    const pending = state.tasks.filter(t => t.status === 'pending').length
+    const ready = state.tasks.filter(t => t.status === 'ready').length
     const done = state.tasks.filter(t => t.status === 'done').length
 
     logStream.write(`\n${'='.repeat(60)}\n`)
@@ -226,12 +226,12 @@ export default class Run extends BaseCommand {
     console.log(pc.dim(`Log file: ${flags.logFile}`))
     console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`))
     console.log(pc.dim(`Fork session: ${!flags.noFork}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ''}`))
-    console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)`))
+    console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)`))
     console.log()
 
     logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : 'Ralph picks'}\n`)
     logStream.write(`Max iterations: ${maxIterations}\n`)
-    logStream.write(`Tasks: ${state.tasks.length} (${done} done, ${pending} pending)\n\n`)
+    logStream.write(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)\n\n`)
 
     // Handle SIGINT gracefully
     let interrupted = false
@@ -260,9 +260,9 @@ export default class Run extends BaseCommand {
 
       const iterationStart = new Date().toISOString()
       const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3)
-      // Reload pending tasks for current state
-      const currentPendingTasks = state.tasks.filter(t => t.status !== 'done')
-      const taskList = formatTasksForPrompt(labelFilter ? currentPendingTasks.filter(t => t.label === labelFilter) : currentPendingTasks)
+      // Reload remaining tasks for current state
+      const currentRemainingTasks = state.tasks.filter(t => t.status !== 'done')
+      const taskList = formatTasksForPrompt(labelFilter ? currentRemainingTasks.filter(t => t.label === labelFilter) : currentRemainingTasks)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         progressFile: DEFAULT_PROGRESS_FILE,
@@ -279,7 +279,7 @@ export default class Run extends BaseCommand {
       const iterClaudeArgs = [...extraClaudeArgs]
       const currentTask = focusedTaskId
         ? state.tasks.find(t => t.id === focusedTaskId)
-        : state.tasks.find(t => t.status === 'in_progress' || t.status === 'pending')
+        : state.tasks.find(t => t.status === 'in_progress' || t.status === 'ready')
 
       // Fork from task's sessionId (or state-level fallback) unless disabled
       const taskSessionId = currentTask?.sessionId || state.sessionId

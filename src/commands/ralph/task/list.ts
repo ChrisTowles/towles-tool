@@ -67,7 +67,7 @@ export default class TaskList extends BaseCommand {
     }
 
     // Default format output - compact with truncation
-    const pending = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress')
+    const ready = tasks.filter(t => t.status === 'ready' || t.status === 'in_progress')
     const done = tasks.filter(t => t.status === 'done')
 
     const truncate = (s: string, len: number) => s.length > len ? s.slice(0, len - 1) + '…' : s
@@ -75,15 +75,15 @@ export default class TaskList extends BaseCommand {
 
     // Summary header
     const labelInfo = flags.label ? ` [${flags.label}]` : ''
-    this.log(pc.bold(`\nTasks${labelInfo}: `) + pc.green(`${done.length} done`) + pc.dim(' / ') + pc.yellow(`${pending.length} pending`))
+    this.log(pc.bold(`\nTasks${labelInfo}: `) + pc.green(`${done.length} done`) + pc.dim(' / ') + pc.yellow(`${ready.length} ready`))
     this.log()
 
-    // Show pending tasks first (these are actionable)
+    // Show ready tasks first (these are actionable)
     // Reserve ~10 chars for "  ○ #XX " prefix
     const descWidth = Math.max(40, termWidth - 12)
 
-    if (pending.length > 0) {
-      for (const task of pending) {
+    if (ready.length > 0) {
+      for (const task of ready) {
         const icon = task.status === 'in_progress' ? pc.yellow('→') : pc.dim('○')
         const id = pc.cyan(`#${task.id}`)
         const desc = truncate(task.description, descWidth)

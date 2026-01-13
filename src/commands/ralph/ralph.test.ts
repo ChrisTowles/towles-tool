@@ -122,7 +122,7 @@ describe('ralph-loop', () => {
             completionMarker: 'RALPH_DONE',
             progressFile: 'ralph-progress.md',
             focusedTaskId: null as number | null,
-            taskList: JSON.stringify([{ id: 1, description: 'First task', status: 'pending' }], null, 2),
+            taskList: JSON.stringify([{ id: 1, description: 'First task', status: 'ready' }], null, 2),
         }
 
         it('should include completion marker', () => {
@@ -142,13 +142,13 @@ describe('ralph-loop', () => {
 
         it('should default to choosing task when no focusedTaskId', () => {
             const prompt = buildIterationPrompt(defaultOpts)
-            expect(prompt).toContain('**Choose** which pending task')
+            expect(prompt).toContain('**Choose** which ready task')
         })
 
         it('should focus on specific task when focusedTaskId provided', () => {
             const prompt = buildIterationPrompt({ ...defaultOpts, focusedTaskId: 3 })
             expect(prompt).toContain('**Work on Task #3**')
-            expect(prompt).not.toContain('**Choose** which pending task')
+            expect(prompt).not.toContain('**Choose** which ready task')
         })
 
         it('should include custom completion marker', () => {
@@ -312,7 +312,7 @@ describe('ralph-loop', () => {
 
             expect(task.id).toBe(1)
             expect(task.description).toBe('implement feature')
-            expect(task.status).toBe('pending')
+            expect(task.status).toBe('ready')
             expect(task.addedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
             expect(task.completedAt).toBeUndefined()
         })
@@ -355,28 +355,28 @@ describe('ralph-loop', () => {
             const tasks: RalphTask[] = [{
                 id: 1,
                 description: 'implement feature',
-                status: 'pending',
+                status: 'ready',
                 addedAt: new Date().toISOString(),
             }]
 
             const formatted = formatTasksForPrompt(tasks)
 
             expect(formatted).toContain('- [ ] #1 implement feature')
-            expect(formatted).toContain('`○ pending`')
+            expect(formatted).toContain('`○ ready`')
         })
 
         it('should format multiple tasks as markdown list', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'task 1', status: 'done', addedAt: '' },
                 { id: 2, description: 'task 2', status: 'in_progress', addedAt: '' },
-                { id: 3, description: 'task 3', status: 'pending', addedAt: '' },
+                { id: 3, description: 'task 3', status: 'ready', addedAt: '' },
             ]
 
             const formatted = formatTasksForPrompt(tasks)
 
             expect(formatted).toContain('- [x] #1 task 1 `✓ done`')
             expect(formatted).toContain('- [ ] #2 task 2 `→ in_progress`')
-            expect(formatted).toContain('- [ ] #3 task 3 `○ pending`')
+            expect(formatted).toContain('- [ ] #3 task 3 `○ ready`')
         })
     })
 
@@ -390,14 +390,14 @@ describe('ralph-loop', () => {
         it('should include summary counts', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'task 1', status: 'done', addedAt: '' },
-                { id: 2, description: 'task 2', status: 'pending', addedAt: '' },
+                { id: 2, description: 'task 2', status: 'ready', addedAt: '' },
             ]
 
             const formatted = formatTasksAsMarkdown(tasks)
 
             expect(formatted).toContain('**Total:** 2')
             expect(formatted).toContain('**Done:** 1')
-            expect(formatted).toContain('**Pending:** 1')
+            expect(formatted).toContain('**Ready:** 1')
         })
 
         it('should format done tasks with checked boxes', () => {
@@ -412,16 +412,16 @@ describe('ralph-loop', () => {
             expect(formatted).toContain('`✓ done`')
         })
 
-        it('should format pending tasks with unchecked boxes', () => {
+        it('should format ready tasks with unchecked boxes', () => {
             const tasks: RalphTask[] = [
-                { id: 2, description: 'pending task', status: 'pending', addedAt: '' },
+                { id: 2, description: 'pending task', status: 'ready', addedAt: '' },
             ]
 
             const formatted = formatTasksAsMarkdown(tasks)
 
-            expect(formatted).toContain('## Pending')
+            expect(formatted).toContain('## Ready')
             expect(formatted).toContain('- [ ] **#2** pending task')
-            expect(formatted).toContain('`○ pending`')
+            expect(formatted).toContain('`○ ready`')
         })
 
         it('should format in_progress tasks with unchecked boxes', () => {
@@ -439,14 +439,14 @@ describe('ralph-loop', () => {
         it('should group tasks by status section', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'done task', status: 'done', addedAt: '' },
-                { id: 2, description: 'pending task', status: 'pending', addedAt: '' },
+                { id: 2, description: 'pending task', status: 'ready', addedAt: '' },
                 { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
             ]
 
             const formatted = formatTasksAsMarkdown(tasks)
 
             expect(formatted).toContain('## In Progress')
-            expect(formatted).toContain('## Pending')
+            expect(formatted).toContain('## Ready')
             expect(formatted).toContain('## Done')
         })
     })
@@ -506,7 +506,7 @@ describe('ralph-loop', () => {
             expect(formatted).toContain('```mermaid')
             expect(formatted).toContain('graph LR')
             expect(formatted).toContain('classDef done fill:#22c55e')
-            expect(formatted).toContain('classDef pending fill:#94a3b8')
+            expect(formatted).toContain('classDef ready fill:#94a3b8')
         })
 
         it('should format done tasks correctly in mermaid', () => {
@@ -587,7 +587,7 @@ describe('ralph-loop', () => {
 
             expect(parsed.summary.total).toBe(3)
             expect(parsed.summary.done).toBe(1)
-            expect(parsed.summary.pending).toBe(1)
+            expect(parsed.summary.ready).toBe(1)
             expect(parsed.summary.inProgress).toBe(1)
         })
 
@@ -640,7 +640,7 @@ describe('ralph-loop', () => {
             // Simulate marking task 1 as done
             const task = state.tasks.find(t => t.id === 1)
             expect(task).toBeDefined()
-            expect(task?.status).toBe('pending')
+            expect(task?.status).toBe('ready')
 
             task!.status = 'done'
             task!.completedAt = new Date().toISOString()

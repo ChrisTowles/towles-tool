@@ -41,8 +41,8 @@ export function formatTasksForPrompt(tasks: RalphTask[]): string {
         switch (status) {
             case 'done': return '✓'
             case 'in_progress': return '→'
-            case 'pending': return '○'
-            case 'hold': return '⏸'
+            case 'ready': return '○'
+            case 'blocked': return '⏸'
             case 'cancelled': return '✗'
         }
     }
@@ -68,18 +68,18 @@ export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
         switch (status) {
             case 'done': return '`✓ done`'
             case 'in_progress': return '`→ in_progress`'
-            case 'pending': return '`○ pending`'
-            case 'hold': return '`⏸ hold`'
+            case 'ready': return '`○ ready`'
+            case 'blocked': return '`⏸ blocked`'
             case 'cancelled': return '`✗ cancelled`'
         }
     }
 
-    const pending = tasks.filter(t => t.status === 'pending')
+    const ready = tasks.filter(t => t.status === 'ready')
     const inProgress = tasks.filter(t => t.status === 'in_progress')
     const done = tasks.filter(t => t.status === 'done')
 
     const lines: string[] = ['# Tasks', '']
-    lines.push(`**Total:** ${tasks.length} | **Done:** ${done.length} | **Pending:** ${pending.length + inProgress.length}`, '')
+    lines.push(`**Total:** ${tasks.length} | **Done:** ${done.length} | **Ready:** ${ready.length + inProgress.length}`, '')
 
     if (inProgress.length > 0) {
         lines.push('## In Progress', '')
@@ -89,9 +89,9 @@ export function formatTasksAsMarkdown(tasks: RalphTask[]): string {
         lines.push('')
     }
 
-    if (pending.length > 0) {
-        lines.push('## Pending', '')
-        for (const t of pending) {
+    if (ready.length > 0) {
+        lines.push('## Ready', '')
+        for (const t of ready) {
             lines.push(`- [ ] **#${t.id}** ${t.description} ${statusBadge(t.status)}`)
         }
         lines.push('')
@@ -115,7 +115,7 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
     const lines: string[] = ['# Ralph Plan', '']
 
     // Summary section
-    const pending = tasks.filter(t => t.status === 'pending').length
+    const ready = tasks.filter(t => t.status === 'ready').length
     const inProgress = tasks.filter(t => t.status === 'in_progress').length
     const done = tasks.filter(t => t.status === 'done').length
 
@@ -123,7 +123,7 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
     lines.push(`- **Status:** ${state.status}`)
     lines.push(`- **Iteration:** ${state.iteration}/${state.maxIterations}`)
     lines.push(`- **Total Tasks:** ${tasks.length}`)
-    lines.push(`- **Done:** ${done} | **In Progress:** ${inProgress} | **Pending:** ${pending}`)
+    lines.push(`- **Done:** ${done} | **In Progress:** ${inProgress} | **Ready:** ${ready}`)
     if (state.sessionId) {
         lines.push(`- **Session ID:** ${state.sessionId.slice(0, 8)}...`)
     }
@@ -133,7 +133,7 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
     lines.push('## Tasks', '')
     for (const t of tasks) {
         const checkbox = t.status === 'done' ? '[x]' : '[ ]'
-        const status = t.status === 'done' ? '`done`' : t.status === 'in_progress' ? '`in_progress`' : '`pending`'
+        const status = t.status === 'done' ? '`done`' : t.status === 'in_progress' ? '`in_progress`' : '`ready`'
         lines.push(`- ${checkbox} **#${t.id}** ${t.description} ${status}`)
     }
     lines.push('')
@@ -155,14 +155,14 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
         } else if (t.status === 'in_progress') {
             lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::inProgress`)
         } else {
-            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::pending`)
+            lines.push(`        ${nodeId}["#${t.id}: ${safeDesc}"]:::ready`)
         }
     }
 
     lines.push('    end')
     lines.push('    classDef done fill:#22c55e,color:#fff')
     lines.push('    classDef inProgress fill:#eab308,color:#000')
-    lines.push('    classDef pending fill:#94a3b8,color:#000')
+    lines.push('    classDef ready fill:#94a3b8,color:#000')
     lines.push('```')
     lines.push('')
 
@@ -182,7 +182,7 @@ export function formatPlanAsJson(tasks: RalphTask[], state: RalphState): string 
             total: tasks.length,
             done: tasks.filter(t => t.status === 'done').length,
             inProgress: tasks.filter(t => t.status === 'in_progress').length,
-            pending: tasks.filter(t => t.status === 'pending').length,
+            ready: tasks.filter(t => t.status === 'ready').length,
         },
         tasks: tasks.map(t => ({
             id: t.id,
@@ -257,7 +257,7 @@ ${taskList}
 <instructions>
 ${step++}. ${focusedTaskId
         ? `**Work on Task #${focusedTaskId}** (you've been asked to focus on this one).`
-        : `**Choose** which pending task to work on next based on YOUR judgment of priority/dependencies.`}
+        : `**Choose** which ready task to work on next based on YOUR judgment of priority/dependencies.`}
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
 ${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`

@@ -28,7 +28,7 @@ The fundamental insight: rather than step-by-step human guidance, define success
 ```
 ┌─────────────────────────────────────────┐
 │  1. Read ralph-state.json               │
-│  2. Pick pending task (or use --taskId) │
+│  2. Pick ready task (or use --taskId)   │
 │  3. Work on single task                 │
 │  4. Run tests/typecheck                 │
 │  5. Mark task done: tt ralph task done  │
@@ -48,7 +48,7 @@ Review the state file.
 state_file: @ralph-state.json
 
 Then:
-1. Choose which pending task to work on (or focus on Task #N if specified)
+1. Choose which ready task to work on (or focus on Task #N if specified)
 2. Work on that single task
 3. Run type checks and tests
 4. Mark the task done using CLI: tt ralph task done <id>
@@ -182,7 +182,7 @@ After 10 iterations if not complete:
     {
       "id": 3,
       "description": "Update API docs",
-      "status": "pending",
+      "status": "ready",
       "addedAt": "2025-01-10T12:00:00Z"
     }
   ],
@@ -195,10 +195,10 @@ After 10 iterations if not complete:
 ```
 
 Task statuses:
-- `pending` - Not started (○)
+- `ready` - Ready to start (○)
 - `in_progress` - Currently working (→)
 - `done` - Completed (✓)
-- `hold` - On hold (⏸)
+- `blocked` - Blocked (⏸)
 - `cancelled` - Cancelled (✗)
 
 ### Task-Level Session IDs

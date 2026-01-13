@@ -18,7 +18,7 @@ export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', '
 // State Validation Schemas
 // ============================================================================
 
-const TaskStatusSchema = z.enum(['pending', 'in_progress', 'done', 'hold', 'cancelled'])
+const TaskStatusSchema = z.enum(['ready', 'in_progress', 'done', 'blocked', 'cancelled'])
 
 const RalphTaskSchema = z.object({
     id: z.number(),
@@ -123,7 +123,7 @@ export function addTaskToState(state: RalphState, description: string, sessionId
     const newTask: RalphTask = {
         id: nextId,
         description,
-        status: 'pending',
+        status: 'ready',
         addedAt: new Date().toISOString(),
         ...(sessionId && { sessionId }),
         ...(marker && { marker }),
