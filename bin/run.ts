@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { Errors } from '@oclif/core'
-import commands from '../src/oclif-commands/index.js'
+import commands from '../src/commands/index.js'
 import pjson from '../package.json'
 
 // Direct command execution for Bun compiled binaries

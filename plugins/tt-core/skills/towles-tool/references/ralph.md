@@ -28,15 +28,14 @@ The fundamental insight: rather than step-by-step human guidance, define success
 ```
 ┌─────────────────────────────────────────┐
 │  1. Read ralph-state.json               │
-│  2. Read ralph-progress.md              │
-│  3. Pick pending task (or use --taskId) │
-│  4. Work on single task                 │
-│  5. Run tests/typecheck                 │
-│  6. Update state file (mark done)       │
-│  7. Update progress file                │
-│  8. Commit (if --autoCommit)            │
-│  9. Check for RALPH_DONE marker         │
-│  10. Loop or exit                       │
+│  2. Pick ready task (or use --taskId)   │
+│  3. Work on single task                 │
+│  4. Run tests/typecheck                 │
+│  5. Mark task done: tt ralph task done  │
+│  6. Log progress: tt ralph progress     │
+│  7. Commit (if --autoCommit)            │
+│  8. Check for RALPH_DONE marker         │
+│  9. Loop or exit                        │
 └─────────────────────────────────────────┘
 ```
 
@@ -44,17 +43,16 @@ The fundamental insight: rather than step-by-step human guidance, define success
 
 Each iteration, Claude receives:
 ```
-Review the state and progress files.
+Review the state file.
 
 state_file: @ralph-state.json
-progress_file: @ralph-progress.md
 
 Then:
-1. Choose which pending task to work on (or focus on Task #N if specified)
+1. Choose which ready task to work on (or focus on Task #N if specified)
 2. Work on that single task
 3. Run type checks and tests
 4. Mark the task done using CLI: tt ralph task done <id>
-5. Update @ralph-progress.md with what you did
+5. Log progress using CLI: tt ralph progress "what you did"
 6. Make a git commit (if autoCommit enabled)
 
 ONE TASK PER ITERATION
@@ -62,13 +60,14 @@ ONE TASK PER ITERATION
 When ALL tasks are done, Output: <promise>RALPH_DONE</promise>
 ```
 
+**IMPORTANT**: Never read ralph-progress.md. Use `tt ralph progress "message"` to append (write-only). This saves tokens.
+
 ### Self-Referential Feedback
 
 Each iteration sees:
 - Modified files from previous work
 - Git history of changes
 - Updated state file with task statuses
-- Progress notes from prior iterations
 
 This creates a feedback loop where Claude builds on its own work.
 
@@ -183,7 +182,7 @@ After 10 iterations if not complete:
     {
       "id": 3,
       "description": "Update API docs",
-      "status": "pending",
+      "status": "ready",
       "addedAt": "2025-01-10T12:00:00Z"
     }
   ],
@@ -196,10 +195,9 @@ After 10 iterations if not complete:
 ```
 
 Task statuses:
-- `pending` - Not started (○)
-- `in_progress` - Currently working (→)
+- `ready` - Ready to start (○)
 - `done` - Completed (✓)
-- `hold` - On hold (⏸)
+- `blocked` - Blocked (⏸)
 - `cancelled` - Cancelled (✗)
 
 ### Task-Level Session IDs
@@ -219,7 +217,7 @@ tt ralph task list                    # Default format (colored terminal output)
 tt ralph task list --format markdown  # Markdown with checkboxes and status badges
 ```
 
-Markdown format groups tasks by status (In Progress, Pending, Done) with summary counts.
+Markdown format groups tasks by status (Read, Done, Blocked) with summary counts.
 
 ### Viewing Plan Summary
 

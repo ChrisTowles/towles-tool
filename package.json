@@ -77,7 +77,7 @@
     "dirname": "towles-tool",
     "commands": {
       "strategy": "explicit",
-      "target": "./src/oclif-commands/index.ts",
+      "target": "./src/commands/index.ts",
       "identifier": "default"
     },
     "topicSeparator": " "

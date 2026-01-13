@@ -1,0 +1,101 @@
+import { Args, Flags } from '@oclif/core'
+import pc from 'picocolors'
+import { BaseCommand } from '../../base.js'
+import {
+  DEFAULT_STATE_FILE,
+  DEFAULT_MAX_ITERATIONS,
+  loadState,
+  saveState,
+  createInitialState,
+  addTaskToState,
+} from '../lib/state.js'
+import { findSessionByMarker } from '../lib/marker.js'
+
+/**
+ * Add a new task to ralph state
+ */
+export default class TaskAdd extends BaseCommand {
+  static override description = 'Add a new task'
+
+  static override examples = [
+    '<%= config.bin %> ralph task add "Fix the login bug"',
+    '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
+    '<%= config.bin %> ralph task add "Implement feature X" --findMarker RALPH_MARKER_abc123',
+    '<%= config.bin %> ralph task add "Backend refactor" --label backend',
+  ]
+
+  static override args = {
+    description: Args.string({
+      description: 'Task description',
+      required: true,
+    }),
+  }
+
+  static override flags = {
+    ...BaseCommand.baseFlags,
+    stateFile: Flags.string({
+      char: 's',
+      description: 'State file path',
+      default: DEFAULT_STATE_FILE,
+    }),
+    sessionId: Flags.string({
+      description: 'Claude session ID for resuming from prior research',
+    }),
+    findMarker: Flags.string({
+      char: 'm',
+      description: 'Find session by full marker (e.g., RALPH_MARKER_abc123)',
+    }),
+    label: Flags.string({
+      char: 'l',
+      description: 'Label for grouping/filtering tasks',
+    }),
+  }
+
+  async run(): Promise<void> {
+    const { args, flags } = await this.parse(TaskAdd)
+
+    const description = args.description.trim()
+
+    if (!description || description.length < 3) {
+      this.error('Task description too short (min 3 chars)')
+    }
+
+    // Resolve session ID from --sessionId or --findMarker
+    let sessionId = flags.sessionId
+    let marker: string | undefined
+    if (flags.findMarker) {
+      if (sessionId) {
+        this.error('Cannot use both --sessionId and --findMarker')
+      }
+      marker = flags.findMarker
+      console.log(pc.dim(`Searching for marker: ${marker}...`))
+      sessionId = await findSessionByMarker(marker) ?? undefined
+      if (!sessionId) {
+        this.error(`Marker not found: ${marker}\nMake sure Claude output this marker during research.`)
+      }
+      console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`))
+    }
+
+    let state = loadState(flags.stateFile)
+
+    if (!state) {
+      state = createInitialState(DEFAULT_MAX_ITERATIONS)
+    }
+
+    const newTask = addTaskToState(state, description, sessionId, marker, flags.label)
+    saveState(state, flags.stateFile)
+
+    console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`))
+    if (flags.label) {
+      console.log(pc.cyan(`  Label: ${flags.label}`))
+    }
+    if (sessionId) {
+      console.log(pc.cyan(`  Session: ${sessionId.slice(0, 8)}...`))
+    }
+    if (marker) {
+      console.log(pc.dim(`  Marker: ${marker}`))
+    }
+    console.log(pc.dim(`State saved to: ${flags.stateFile}`))
+    console.log(pc.dim(`Total tasks: ${state.tasks.length}`))
+  }
+}

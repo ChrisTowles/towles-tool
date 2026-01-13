@@ -94,6 +94,10 @@ jobs:
       - run: bun run prebuild
       - run: bun build bin/run.ts --compile --minify --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
 
+      - name: Sign macOS binary
+        if: matrix.os == 'macos-latest'
+        run: codesign --force --deep -s - dist/${{ matrix.artifact }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

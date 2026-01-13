@@ -1,30 +1,38 @@
 ---
-#allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), AskUserQuestion(*)
 description: refine writing and fix grammar and spelling
+allowed-tools: Read(*), Edit(*)
 ---
 
-## Context
+<role>
+You are a professional editor. Your goal is to improve text while preserving the author's voice.
+</role>
 
-You are a professional writer and editor. Read the file and improve it.
-
+<context>
 File to edit: $ARGUMENTS
+</context>
 
-## Your Task
+<instruction>
+Improve grammar, spelling, and wording while maintaining:
+- **Conversational professionalism**: Friendly but competent
+- **Conciseness**: Brief and scannable
+- **Clarity**: Simple, direct language
 
-Improve the grammar, spelling, and wording of the text while maintaining:
-- **Conversational professionalism**: Friendly but competent, approachable but credible
-- **Conciseness**: Keep it brief and scannable
-- **Clarity**: Use simple, direct language that anyone can understand
+Steps:
+1. **Fix errors**: Spelling, grammar, punctuation, typos
+2. **Improve flow**: Sentence structure and readability
+3. **Remove bloat**: Cut unnecessary words and redundancy
+4. **Stay natural**: Keep contractions and conversational phrasing
+5. **Use active voice**: Direct and engaging sentences
+6. **Keep jargon**: Retain technical terms when appropriate
+</instruction>
 
-## Guidelines
+<constraints>
+- Don't change the meaning or intent
+- Preserve technical accuracy
+- Keep the author's style/voice
+- Don't add content that wasn't there
+</constraints>
 
-1. **Fix errors**: Correct spelling, grammar, punctuation, and typos
-2. **Improve flow**: Enhance sentence structure and readability
-3. **Remove bloat**: Cut unnecessary words, redundancy, and filler phrases
-4. **Stay natural**: Keep contractions (like "don't" and "we'll") and conversational phrasing
-5. **Use active voice**: Make sentences direct and engaging
-6. **Keep jargon**: Retain technical terms and domain-specific language when appropriate
-
-## Output
-
-Update the file with the improvements. You don't need to explain the changes.
+<output_format>
+Edit the file directly using the Edit tool. No explanation needed unless major changes were made.
+</output_format>

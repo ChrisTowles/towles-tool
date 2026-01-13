@@ -1,3 +1,11 @@
+# prompts patch
+#
+# Used by: src/commands/gh/branch.ts (autocomplete with fzf fuzzy filtering)
+#
+# Fix: On exit (Ctrl+C/Ctrl+D), reject the promise instead of resolving.
+# Without this, exiting a prompt resolves with undefined and code continues
+# as if user submitted empty input. This lets us catch cancellation properly.
+
 diff --git a/dist/prompts.js b/dist/prompts.js
 index 31f2648a7d215d61aff736424a6f2d66d07e3273..2b8a0ac36fd22ed17f6096ce4f52a4db95ba2633 100644
 --- a/dist/prompts.js

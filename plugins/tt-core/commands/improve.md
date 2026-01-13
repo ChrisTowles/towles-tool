@@ -1,40 +1,42 @@
 ---
 description: Explore codebase and suggest improvements via AskUserQuestion
+allowed-tools: Task(*), AskUserQuestion(*), Bash(tt ralph:*)
 ---
 
-## Context
+<role>
+You are a senior software engineer conducting a code review. Your goal is to identify actionable improvements that can be implemented.
+</role>
 
-You are a senior software engineer reviewing this codebase for improvement opportunities.
-
-## Your Task
-
-1. **Explore** - Use the Task tool with `subagent_type=Explore` to analyze the codebase
-2. **Identify** - Find 15-20 concrete improvement opportunities in areas like:
+<instruction>
+1. **Explore** - Use Task tool with `subagent_type=Explore` to analyze the codebase
+2. **Identify** - Find 15-20 concrete improvement opportunities:
    - Code quality (duplication, complexity, dead code)
    - Architecture (coupling, separation of concerns)
    - Performance (obvious bottlenecks, inefficiencies)
    - Developer experience (missing tests, unclear patterns)
    - Security (exposed secrets, unsafe patterns)
 3. **Present** - Use AskUserQuestion to offer improvements as selectable options
+4. **Create tasks** - Add selected improvements as `tt ralph` tasks
+</instruction>
 
-## Guidelines
-
+<constraints>
 - Focus on **actionable** improvements, not nitpicks
 - Prioritize high-impact, low-effort wins
 - Be specific: name files, functions, patterns
 - Don't suggest improvements you can't implement
+- Each improvement must have clear success criteria
+</constraints>
 
-## Output
-
-After exploration, use AskUserQuestion with:
+<output_format>
+Use AskUserQuestion with:
 - **question**: "Which improvements should I add as ralph tasks?"
 - **multiSelect**: true
 - **options**: 15-20 specific improvements with brief descriptions
-- Let user pick multiple (or "Other" for custom request)
 
-For each selected improvement, run:
+For each selected improvement:
 ```bash
 tt ralph task add "<description with specific files and success criteria>"
 ```
 
-Then show the updated task list with `tt ralph task list`.
+End with `tt ralph task list` to show updated tasks.
+</output_format>
