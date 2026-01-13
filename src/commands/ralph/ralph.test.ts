@@ -120,9 +120,9 @@ describe('ralph-loop', () => {
     describe('buildIterationPrompt', () => {
         const defaultOpts = {
             completionMarker: 'RALPH_DONE',
-            stateFile: 'ralph-state.json',
             progressFile: 'ralph-progress.md',
             focusedTaskId: null as number | null,
+            taskList: JSON.stringify([{ id: 1, description: 'First task', status: 'pending' }], null, 2),
         }
 
         it('should include completion marker', () => {
@@ -130,9 +130,9 @@ describe('ralph-loop', () => {
             expect(prompt).toContain('RALPH_DONE')
         })
 
-        it('should include state file reference', () => {
+        it('should include task list as JSON', () => {
             const prompt = buildIterationPrompt(defaultOpts)
-            expect(prompt).toContain('@ralph-state.json')
+            expect(prompt).toContain('"description": "First task"')
         })
 
         it('should include progress file reference', () => {
@@ -347,11 +347,11 @@ describe('ralph-loop', () => {
     })
 
     describe('formatTasksForPrompt', () => {
-        it('should return empty string for no tasks', () => {
-            expect(formatTasksForPrompt([])).toBe('')
+        it('should return placeholder for no tasks', () => {
+            expect(formatTasksForPrompt([])).toBe('No tasks.')
         })
 
-        it('should format pending tasks correctly', () => {
+        it('should format tasks as markdown', () => {
             const tasks: RalphTask[] = [{
                 id: 1,
                 description: 'implement feature',
@@ -361,35 +361,11 @@ describe('ralph-loop', () => {
 
             const formatted = formatTasksForPrompt(tasks)
 
-            expect(formatted).toContain('## Sub-Tasks')
-            expect(formatted).toContain('[○] 1. implement feature (pending)')
+            expect(formatted).toContain('- [ ] #1 implement feature')
+            expect(formatted).toContain('`○ pending`')
         })
 
-        it('should format in_progress tasks correctly', () => {
-            const tasks: RalphTask[] = [{
-                id: 1,
-                description: 'working on it',
-                status: 'in_progress',
-                addedAt: new Date().toISOString(),
-            }]
-
-            const formatted = formatTasksForPrompt(tasks)
-            expect(formatted).toContain('[→] 1. working on it (in_progress)')
-        })
-
-        it('should format done tasks correctly', () => {
-            const tasks: RalphTask[] = [{
-                id: 1,
-                description: 'completed task',
-                status: 'done',
-                addedAt: new Date().toISOString(),
-            }]
-
-            const formatted = formatTasksForPrompt(tasks)
-            expect(formatted).toContain('[✓] 1. completed task (done)')
-        })
-
-        it('should format multiple tasks', () => {
+        it('should format multiple tasks as markdown list', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'task 1', status: 'done', addedAt: '' },
                 { id: 2, description: 'task 2', status: 'in_progress', addedAt: '' },
@@ -398,9 +374,9 @@ describe('ralph-loop', () => {
 
             const formatted = formatTasksForPrompt(tasks)
 
-            expect(formatted).toContain('[✓] 1. task 1')
-            expect(formatted).toContain('[→] 2. task 2')
-            expect(formatted).toContain('[○] 3. task 3')
+            expect(formatted).toContain('- [x] #1 task 1 `✓ done`')
+            expect(formatted).toContain('- [ ] #2 task 2 `→ in_progress`')
+            expect(formatted).toContain('- [ ] #3 task 3 `○ pending`')
         })
     })
 

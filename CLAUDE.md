@@ -93,6 +93,7 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 - **Linting**: oxlint
 - **Package Manager**: Bun
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
+- **Terminal Graphics**: consola - use `consola.box({ title, message })` for styled boxes, `consola.info/warn/error` for styled logs
 
 
 ## Ralph Usage

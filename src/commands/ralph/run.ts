@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
+import { consola } from 'consola'
 import { BaseCommand } from '../base.js'
 import {
   DEFAULT_STATE_FILE,
@@ -18,25 +19,24 @@ import {
   formatDuration,
   extractOutputSummary,
   detectCompletionMarker,
+  formatTasksForPrompt,
 } from './lib/formatter.js'
 import { checkClaudeCli, runIteration } from './lib/execution.js'
 
 /**
- * Read last N tasks from progress file. Tasks are delimited by "### Iteration" headers.
- * Returns empty string if file doesn't exist or has no tasks.
+ * Read last N iterations from progress file. Only returns iteration entries,
+ * excluding headers/status sections that could confuse the model.
  */
-function readLastTasks(filePath: string, taskCount: number): string {
+function readLastIterations(filePath: string, count: number): string {
   if (!fs.existsSync(filePath)) return ''
   try {
     const content = fs.readFileSync(filePath, 'utf-8')
-    // Split by task headers, keeping the delimiter
+    // Split by iteration headers, keeping the delimiter
     const parts = content.split(/(?=### Iteration)/g)
-    // First part is header content before any tasks
-    const header = parts[0] || ''
-    const tasks = parts.slice(1)
-    if (tasks.length === 0) return ''
-    const lastTasks = tasks.slice(-taskCount)
-    return (header.trim() + '\n\n' + lastTasks.join('').trim()).trim()
+    // Skip first part (header/status content) - only want iteration entries
+    const iterations = parts.filter(p => p.startsWith('### Iteration'))
+    if (iterations.length === 0) return ''
+    return iterations.slice(-count).join('\n').trim()
   } catch {
     return ''
   }
@@ -179,19 +179,20 @@ export default class Run extends BaseCommand {
       }
 
       // Show prompt preview
-      const progressContent = readLastTasks(DEFAULT_PROGRESS_FILE, 3)
+      const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3)
+      const taskList = formatTasksForPrompt(pendingTasks)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        stateFile: flags.stateFile,
         progressFile: DEFAULT_PROGRESS_FILE,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
         progressContent: progressContent || undefined,
+        taskList,
       })
-      console.log(pc.cyan('\nPrompt preview:'))
-      console.log(pc.dim('---'))
-      console.log(prompt)
-      console.log(pc.dim('---'))
+      consola.box({
+        title: 'Prompt Preview',
+        message: prompt,
+      })
 
       console.log(pc.bold('\n=== END DRY RUN ===\n'))
       return
@@ -258,14 +259,17 @@ export default class Run extends BaseCommand {
       logStream.write(`\n━━━ ${iterHeader} ━━━\n`)
 
       const iterationStart = new Date().toISOString()
-      const progressContent = readLastTasks(DEFAULT_PROGRESS_FILE, 3)
+      const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3)
+      // Reload pending tasks for current state
+      const currentPendingTasks = state.tasks.filter(t => t.status !== 'done')
+      const taskList = formatTasksForPrompt(labelFilter ? currentPendingTasks.filter(t => t.label === labelFilter) : currentPendingTasks)
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        stateFile: flags.stateFile,
         progressFile: DEFAULT_PROGRESS_FILE,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
         progressContent: progressContent || undefined,
+        taskList,
       })
 
       // Log the prompt
@@ -284,13 +288,11 @@ export default class Run extends BaseCommand {
       }
 
       // Print iteration header
-      const sessionInfo = taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''
-      console.log(pc.cyan(`\n━━━ ${iterHeader}${sessionInfo} ━━━`))
-
-      // Print system prompt being appended
-      console.log(pc.dim('System prompt:'))
-      console.log(pc.dim(prompt))
-      console.log()
+      const sessionInfo = taskSessionId ? ` (fork: ${taskSessionId.slice(0, 8)}...)` : ''
+      consola.box({
+        title: `${iterHeader}${sessionInfo}`,
+        message: prompt,
+      })
 
       // Run iteration - output goes directly to stdout
       const iterResult = await runIteration(prompt, iterClaudeArgs, logStream)

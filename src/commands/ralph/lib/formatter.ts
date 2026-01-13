@@ -34,7 +34,7 @@ export function copyToClipboard(text: string): boolean {
 
 export function formatTasksForPrompt(tasks: RalphTask[]): string {
     if (tasks.length === 0) {
-        return ''
+        return 'No tasks.'
     }
 
     const statusIcon = (status: TaskStatus): string => {
@@ -47,14 +47,13 @@ export function formatTasksForPrompt(tasks: RalphTask[]): string {
         }
     }
 
-    const lines = tasks.map(t =>
-        `[${statusIcon(t.status)}] ${t.id}. ${t.description} (${t.status})`
-    )
+    const lines: string[] = []
+    for (const t of tasks) {
+        const checkbox = t.status === 'done' ? '[x]' : '[ ]'
+        lines.push(`- ${checkbox} #${t.id} ${t.description} \`${statusIcon(t.status)} ${t.status}\``)
+    }
 
-    return `## Sub-Tasks
-Track progress on these sub-tasks. Mark them as done when completed.
-
-${lines.join('\n')}`
+    return lines.join('\n')
 }
 
 /**
@@ -236,36 +235,26 @@ export function extractOutputSummary(output: string, maxLength: number = 2000): 
 
 export interface BuildPromptOptions {
     completionMarker: string
-    stateFile: string
     progressFile: string
     focusedTaskId: number | null
     skipCommit?: boolean
     progressContent?: string
+    taskList: string
 }
 
-export function buildIterationPrompt({ completionMarker, stateFile, progressFile, focusedTaskId, skipCommit = false, progressContent }: BuildPromptOptions): string {
+export function buildIterationPrompt({ completionMarker, progressFile, focusedTaskId, skipCommit = false, progressContent, taskList }: BuildPromptOptions): string {
     // prompt inspired by https://www.aihero.dev/tips-for-ai-coding-with-ralph-wiggum#2-start-with-hitl-then-go-afk
 
     let step = 1
 
-    const progressSection = progressContent
-        ? `## Recent Progress (last 3 tasks from ${progressFile})
-
-${progressContent}`
-        : `(Progress file ${progressFile} not found or empty)`
-
-
     //IMPORTANT Always tell it to APPEND to progress file, save a lot of tokens by not reading it to update.
 
     const prompt = `
-Review the state file and recent progress.
+<input-current-tasks>
+${taskList}
+</input-current-tasks>
 
-state_file: @${stateFile}
-
----
-
-## Steps
-
+<instructions>
 ${step++}. ${focusedTaskId
         ? `**Work on Task #${focusedTaskId}** (you've been asked to focus on this one).`
         : `**Choose** which pending task to work on next based on YOUR judgment of priority/dependencies.`}
@@ -279,10 +268,11 @@ ${skipCommit ? '' : `${step++}. Make a git commit.`}
 
 **Before ending:** Run \`tt ralph task list\` to check remaining tasks.
 **ONLY if ALL TASKS are done** then Output: <promise>${completionMarker}</promise>
+</instructions>
 
----
-
-${progressSection}
+<prior-context note="Reference only - these tasks are already completed, do not work on them">
+${progressContent || '(No prior progress)'}
+</prior-context>
 `
     return prompt.trim()
 }

@@ -66,18 +66,38 @@ export default class TaskList extends BaseCommand {
       return
     }
 
-    // Default format output
-    const header = flags.label ? `Tasks (label: ${flags.label})` : 'Tasks'
-    this.log(pc.bold(`\n${header}:\n`))
-    for (const task of tasks) {
-      const statusColor = task.status === 'done' ? pc.green
-        : task.status === 'in_progress' ? pc.yellow
-        : pc.dim
-      const icon = task.status === 'done' ? '✓'
-        : task.status === 'in_progress' ? '→'
-        : '○'
-      const labelSuffix = task.label && !flags.label ? pc.dim(` [${task.label}]`) : ''
-      this.log(statusColor(`  ${icon} ${task.id}. ${task.description} (${task.status})`) + labelSuffix)
+    // Default format output - compact with truncation
+    const pending = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress')
+    const done = tasks.filter(t => t.status === 'done')
+
+    const truncate = (s: string, len: number) => s.length > len ? s.slice(0, len - 1) + '…' : s
+    const termWidth = process.stdout.columns || 120
+
+    // Summary header
+    const labelInfo = flags.label ? ` [${flags.label}]` : ''
+    this.log(pc.bold(`\nTasks${labelInfo}: `) + pc.green(`${done.length} done`) + pc.dim(' / ') + pc.yellow(`${pending.length} pending`))
+    this.log()
+
+    // Show pending tasks first (these are actionable)
+    // Reserve ~10 chars for "  ○ #XX " prefix
+    const descWidth = Math.max(40, termWidth - 12)
+
+    if (pending.length > 0) {
+      for (const task of pending) {
+        const icon = task.status === 'in_progress' ? pc.yellow('→') : pc.dim('○')
+        const id = pc.cyan(`#${task.id}`)
+        const desc = truncate(task.description, descWidth)
+        this.log(`  ${icon} ${id} ${desc}`)
+      }
+    }
+
+    // Show done tasks collapsed
+    if (done.length > 0) {
+      this.log(pc.dim(`  ─── ${done.length} completed ───`))
+      for (const task of done) {
+        const desc = truncate(task.description, descWidth - 5)
+        this.log(pc.dim(`  ✓ #${task.id} ${desc}`))
+      }
     }
     this.log()
   }
