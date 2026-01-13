@@ -104,26 +104,72 @@ Monitor progress:
   tt ralph task list --format markdown # Task list with checkboxes
 ```
 
-## Task Examples
+<examples>
+**Task descriptions should read like a half-page GitHub issue** - detailed enough that Claude can execute autonomously without asking questions.
 
-**Good:**
+<good_task>
 ```bash
-tt ralph task add "Add UserProfile type to src/types/user.ts with id: string, email: string, name: string, createdAt: Date fields. Success: typecheck passes"
-tt ralph task add "Create getUserById(id: string) in src/services/user.ts following patterns in src/services/post.ts. Success: function exists, typecheck passes"
-tt ralph task add "Add unit tests for getUserById in src/services/user.test.ts covering: valid id returns user, invalid id throws, missing id returns null. Success: pnpm test passes"
+tt ralph task add "Add UserProfile type to src/types/user.ts
+
+## Background
+Shared type for profile data used across services and API responses.
+
+## Requirements
+- Fields: id (string, UUID), email (string), name (string), createdAt (Date)
+- Export for use in other modules
+- Follow patterns in src/types/post.ts
+
+## Files
+- src/types/user.ts (create)
+- src/types/index.ts (add export)"
+
+tt ralph task add "Create getUserById service function
+
+## Background
+Service function to fetch user profiles by ID.
+
+## Requirements
+- Signature: getUserById(id: string): Promise<UserProfile | null>
+- Use db client from src/lib/db.ts
+- Return null for non-existent users (don't throw)
+- Follow patterns in src/services/post.ts
+
+## Files
+- src/services/user.ts (create)
+- src/services/index.ts (add export)"
+
+tt ralph task add "Add unit tests for getUserById
+
+## Test Cases
+1. Valid ID returns user profile
+2. Non-existent ID returns null
+3. Empty string returns null
+4. DB error propagates
+
+## Files
+- src/services/user.test.ts (create)
+
+## Patterns
+- Use vitest mocking from src/services/post.test.ts
+- Mock db client"
 ```
+</good_task>
 
-**With session ID for resumable execution:**
+<with_session>
 ```bash
-tt ralph task add "Complex task requiring multiple sessions" --sessionId abc123
+tt ralph task add "Complex task requiring prior research context" --findMarker RALPH_MARKER_abc123
 ```
+</with_session>
 
-**Bad:**
+<bad_task>
 ```bash
-tt ralph task add "Implement user feature"           # Too vague
-tt ralph task add "Add types, service, and tests"   # Multiple things
+tt ralph task add "Implement user feature"           # Too vague - no context
+tt ralph task add "Add types, service, and tests"   # Multiple things in one
 tt ralph task add "Make it work"                    # No criteria
+tt ralph task add "Add UserProfile type"            # Too terse - missing details
 ```
+</bad_task>
+</examples>
 
 ## Optional: GitHub Issue
 

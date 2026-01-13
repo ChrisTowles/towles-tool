@@ -66,6 +66,7 @@ bun run lint:fix        # Auto-fix linting issues
 - `ralph task add/list/done/remove` - Task management
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
+- `ralph progress` - Append progress message (write-only)
 
 **Key Utilities**:
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
@@ -88,6 +89,7 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 
 - **Runtime**: Bun (runs TypeScript natively)
 - **CLI Framework**: oclif (commands in `src/commands/`)
+- **Command Registration**: Explicit in `src/commands/index.ts` (oclif auto-discovery doesn't work with Bun compiled binaries)
 - **Build**: `bun build --compile` for standalone executables
 - **Testing**: `bun test` with `@oclif/test` for command testing
 - **Linting**: oxlint
@@ -139,7 +141,12 @@ tt ralph run --noFork               # Start fresh session (no fork)
 
 # Plan
 tt ralph plan                       # Show plan with mermaid graph
+
+# Progress (write-only - never read the file)
+tt ralph progress "message"         # Append to ralph-progress.md
 ```
+
+**IMPORTANT**: Never read `ralph-progress.md`. Use `tt ralph progress "message"` to append. This saves tokens.
 
 ## Observability
 

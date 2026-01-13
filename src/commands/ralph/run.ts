@@ -288,11 +288,10 @@ export default class Run extends BaseCommand {
       }
 
       // Print iteration header
-      const sessionInfo = taskSessionId ? ` (fork: ${taskSessionId.slice(0, 8)}...)` : ''
-      consola.box({
-        title: `${iterHeader}${sessionInfo}`,
-        message: prompt,
-      })
+      const sessionInfo = taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''
+      console.log()
+      console.log(pc.bold(pc.blue(`━━━ ${iterHeader}${sessionInfo} ━━━`)))
+      consola.box({ title: 'Prompt', message: prompt })
 
       // Run iteration - output goes directly to stdout
       const iterResult = await runIteration(prompt, iterClaudeArgs, logStream)

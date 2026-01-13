@@ -9,6 +9,7 @@ import GhPr from './gh/pr.js'
 import Install from './install.js'
 import RalphRun from './ralph/run.js'
 import RalphPlan from './ralph/plan.js'
+import RalphProgress from './ralph/progress.js'
 import RalphMarkerCreate from './ralph/marker/create.js'
 import RalphTaskAdd from './ralph/task/add.js'
 import RalphTaskDone from './ralph/task/done.js'
@@ -33,6 +34,7 @@ export default {
   'install': Install,
   'ralph:run': RalphRun,
   'ralph:plan': RalphPlan,
+  'ralph:progress': RalphProgress,
   'ralph:marker:create': RalphMarkerCreate,
   'ralph:task:add': RalphTaskAdd,
   'ralph:task:done': RalphTaskDone,

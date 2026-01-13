@@ -1,6 +1,14 @@
+---
+name: hosting
+description: GCP Cloud Run deployment for blog. Use when deploying, checking logs, managing env vars, or rolling back the blog service.
+allowed-tools: Bash(gcloud:*)
+---
+
 # Hosting Skill - GCP Cloud Run Deployment
 
-This skill helps deploy and manage the blog on Google Cloud Platform Cloud Run.
+<context>
+This skill helps deploy and manage the blog on Google Cloud Platform with Cloud Run and Cloud SQL.
+</context>
 
 ## Commands
 

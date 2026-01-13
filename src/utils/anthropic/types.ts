@@ -109,60 +109,57 @@ export function isToolResult(obj: unknown): obj is ToolResult {
   )
 }
 
+// Type guard helpers for parseSDKMessage - use unknown input to allow type narrowing
+function isValidAssistantMessage(obj: unknown): obj is AssistantMessage {
+  if (typeof obj !== 'object' || obj === null) return false
+  const o = obj as Record<string, unknown>
+  return (
+    o.type === 'assistant'
+    && o.message !== null
+    && typeof o.message === 'object'
+    && typeof o.session_id === 'string'
+  )
+}
+
+function isValidUserMessage(obj: unknown): obj is UserMessage {
+  if (typeof obj !== 'object' || obj === null) return false
+  const o = obj as Record<string, unknown>
+  return (
+    o.type === 'user'
+    && o.message !== null
+    && typeof o.message === 'object'
+    && typeof o.session_id === 'string'
+  )
+}
+
+function isValidResultMessage(obj: unknown): obj is ResultMessage {
+  if (typeof obj !== 'object' || obj === null) return false
+  const o = obj as Record<string, unknown>
+  return (
+    o.type === 'result'
+    && typeof o.session_id === 'string'
+    && typeof o.subtype === 'string'
+    && typeof o.duration_ms === 'number'
+    && typeof o.is_error === 'boolean'
+  )
+}
+
+function isValidSystemMessage(obj: unknown): obj is SystemMessage {
+  if (typeof obj !== 'object' || obj === null) return false
+  const o = obj as Record<string, unknown>
+  return (
+    o.type === 'system'
+    && typeof o.session_id === 'string'
+    && typeof o.subtype === 'string'
+    && typeof o.cwd === 'string'
+  )
+}
+
 // Helper function to safely parse SDKMessage
 export function parseSDKMessage(data: unknown): SDKMessage | null {
-  if (typeof data !== 'object' || data === null) {
-    return null
-  }
-
-  const obj = data as Record<string, unknown>
-
-  if (typeof obj.type !== 'string') {
-    return null
-  }
-
-  // Basic validation for different message types
-  switch (obj.type) {
-    case 'assistant':
-      if (
-        obj.message
-        && typeof obj.message === 'object'
-        && obj.message !== null
-        && typeof obj.session_id === 'string'
-      ) {
-        return obj as unknown as AssistantMessage
-      }
-      break
-    case 'user':
-      if (
-        obj.message
-        && typeof obj.message === 'object'
-        && obj.message !== null
-        && typeof obj.session_id === 'string'
-      ) {
-        return obj as unknown as UserMessage
-      }
-      break
-    case 'result':
-      if (
-        typeof obj.session_id === 'string'
-        && typeof obj.subtype === 'string'
-        && typeof obj.duration_ms === 'number'
-        && typeof obj.is_error === 'boolean'
-      ) {
-        return obj as unknown as ResultMessage
-      }
-      break
-    case 'system':
-      if (
-        typeof obj.session_id === 'string'
-        && typeof obj.subtype === 'string'
-        && typeof obj.cwd === 'string'
-      ) {
-        return obj as unknown as SystemMessage
-      }
-      break
-  }
-
+  if (isValidAssistantMessage(data)) return data
+  if (isValidUserMessage(data)) return data
+  if (isValidResultMessage(data)) return data
+  if (isValidSystemMessage(data)) return data
   return null
 }

@@ -105,7 +105,7 @@ export async function loadSettings(): Promise<LoadedSettings> {
   // Load user settings
   if (fs.existsSync(USER_SETTINGS_PATH)) {
     const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-    const parsedUserSettings = JSON.parse(userContent) as unknown as UserSettings;
+    const parsedUserSettings: unknown = JSON.parse(userContent);
 
 
     userSettings = UserSettingsSchema.parse(parsedUserSettings);

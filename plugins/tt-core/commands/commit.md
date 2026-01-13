@@ -1,21 +1,33 @@
 ---
 description: Create git commit
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), AskUserQuestion(*)
+allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git push:*), AskUserQuestion(*)
 ---
 
-## Context
-
+<context>
 - Current git status: !`git status`
 - Current git diff (staged changes): !`git diff HEAD`
 - Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -10`
+</context>
 
-## Your task
+<instruction>
+Generate commit message options and guide user through commit workflow.
 
-1. generate 5 **single line** commit messages with conventional commits format.
-2. **Use AskUserQuestion tool** to ask
-   1. :which of those, or their own to use, to create the commit.
-   2. whether to push the commit to the remote repository.
-   3. open a new PR if pushed.
-3. Create a single git commit with that message using `git commit -m "<message>"`.
-4. Ask the user if they want to push or 
+1. Generate 5 **single line** commit messages using conventional commits format
+2. Use **AskUserQuestion** to ask the following:
+   1. Chosen commit message from options
+   2. Whether to stage all changes or select files
+   3. Whether to push after commit
+   4. Whether to create a PR after push
+3. Create commit with that message
+4. If user wants to push, run `git push`
+5. If user wants PR, provide `gh pr create --web` command
+6. After commit, show success message with commit hash.
+</instruction>
+
+<constraints>
+- Always use conventional commits format (feat:, fix:, chore:, etc.)
+- Never commit without user selecting/confirming message
+- Don't push without explicit permission
+</constraints>
+
