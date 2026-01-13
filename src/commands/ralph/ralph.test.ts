@@ -414,13 +414,13 @@ describe('ralph-loop', () => {
 
         it('should format ready tasks with unchecked boxes', () => {
             const tasks: RalphTask[] = [
-                { id: 2, description: 'pending task', status: 'ready', addedAt: '' },
+                { id: 2, description: 'ready task', status: 'ready', addedAt: '' },
             ]
 
             const formatted = formatTasksAsMarkdown(tasks)
 
             expect(formatted).toContain('## Ready')
-            expect(formatted).toContain('- [ ] **#2** pending task')
+            expect(formatted).toContain('- [ ] **#2** ready task')
             expect(formatted).toContain('`○ ready`')
         })
 
@@ -439,7 +439,7 @@ describe('ralph-loop', () => {
         it('should group tasks by status section', () => {
             const tasks: RalphTask[] = [
                 { id: 1, description: 'done task', status: 'done', addedAt: '' },
-                { id: 2, description: 'pending task', status: 'ready', addedAt: '' },
+                { id: 2, description: 'ready task', status: 'ready', addedAt: '' },
                 { id: 3, description: 'working task', status: 'in_progress', addedAt: '' },
             ]
 
@@ -578,7 +578,7 @@ describe('ralph-loop', () => {
             const state = createInitialState(10)
             const task1 = addTaskToState(state, 'done task')
             task1.status = 'done'
-            addTaskToState(state, 'pending task')
+            addTaskToState(state, 'ready task')
             const task3 = addTaskToState(state, 'in progress task')
             task3.status = 'in_progress'
 
