@@ -4,7 +4,7 @@
   "version": "0.0.31",
   "description": "One off quality of life scripts that I use on a daily basis.",
   "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "funding": {
     "url": "https://github.com/sponsors/ChrisTowles"
   },
