@@ -12,7 +12,6 @@
   "files": [
     "bin",
     "src",
-    "plugins",
     "patches"
   ],
   "publishConfig": {

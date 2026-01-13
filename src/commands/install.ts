@@ -5,11 +5,8 @@ import { Flags } from '@oclif/core'
 import pc from 'picocolors'
 import consola from 'consola'
 import { BaseCommand } from './base.js'
-import { getEmbeddedPluginsPath } from '../embedded-assets.js'
-import { extractPlugin } from '../utils/plugin-extract.js'
 
 const CLAUDE_SETTINGS_PATH = path.join(homedir(), '.claude', 'settings.json')
-const PLUGINS_DIR = path.join(homedir(), '.config', 'towles-tool', 'plugins')
 
 interface ClaudeSettings {
   cleanupPeriodDays?: number
@@ -27,7 +24,6 @@ export default class Install extends BaseCommand {
   static override examples = [
     '<%= config.bin %> install',
     '<%= config.bin %> install --observability',
-    '<%= config.bin %> install --no-plugins',
   ]
 
   static override flags = {
@@ -36,11 +32,6 @@ export default class Install extends BaseCommand {
       char: 'o',
       description: 'Show OTEL setup instructions and configure SubagentStop hook',
       default: false,
-    }),
-    plugins: Flags.boolean({
-      description: 'Extract bundled plugins',
-      default: true,
-      allowNo: true,
     }),
   }
 
@@ -96,21 +87,14 @@ export default class Install extends BaseCommand {
       this.showOtelInstructions()
     }
 
-    // Extract bundled plugin if requested
-    if (flags.plugins) {
-      this.log(pc.bold('\n📦 Plugin Installation\n'))
-      await this.extractBundledPlugin()
-    }
-
     this.log(pc.bold(pc.green('\n✅ Installation complete!\n')))
 
-    // Offer to run marketplace add
-    const marketplaceCmd = `claude plugin marketplace add ${PLUGINS_DIR}`
-    this.log(pc.cyan('To add plugins to Claude Code marketplace:'))
-    this.log(pc.dim(`  ${marketplaceCmd}`))
+    // Offer to install plugins from marketplace
+    this.log(pc.cyan('To install plugins from the Claude Code marketplace:'))
+    this.log(pc.dim('  claude /plugins marketplace add https://github.com/ChrisTowles/towles-tool'))
     this.log('')
 
-    const answer = await consola.prompt('Run this command now?', {
+    const answer = await consola.prompt('Install tt-core plugin from marketplace now?', {
       type: 'confirm',
       initial: true,
     })
@@ -119,28 +103,11 @@ export default class Install extends BaseCommand {
       const { x } = await import('tinyexec')
       this.log('')
 
-      // Try to add; if already exists, remove first then re-add
-      let result = await x('claude', ['plugin', 'marketplace', 'add', PLUGINS_DIR])
-      const output = result.stdout + result.stderr
-      if (result.exitCode !== 0 && output.includes('already installed')) {
-        this.log(pc.dim('Marketplace already installed, updating...'))
-        await x('claude', ['plugin', 'marketplace', 'remove', 'towles-tool'])
-        result = await x('claude', ['plugin', 'marketplace', 'add', PLUGINS_DIR])
-      }
-
+      const result = await x('claude', ['plugin', 'install', 'tt@towles-tool', '--scope', 'user'])
       if (result.stdout) this.log(result.stdout)
       if (result.stderr) this.log(pc.dim(result.stderr))
       if (result.exitCode === 0) {
-        this.log(pc.green('✓ Plugins added to marketplace'))
-
-        // Install tt-core plugin from marketplace
-        this.log('')
-        const installResult = await x('claude', ['plugin', 'install', 'tt@towles-tool', '--scope', 'user'])
-        if (installResult.stdout) this.log(installResult.stdout)
-        if (installResult.stderr) this.log(pc.dim(installResult.stderr))
-        if (installResult.exitCode === 0) {
-          this.log(pc.green('✓ tt-core plugin installed'))
-        }
+        this.log(pc.green('✓ tt-core plugin installed'))
       } else {
         this.log(pc.yellow(`Command exited with code ${result.exitCode}`))
       }
@@ -170,20 +137,5 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`)
     this.log('')
     this.log(pc.cyan('Quick cost analysis (no setup required):'))
     this.log(pc.dim('  npx ccusage@latest --breakdown'))
-  }
-
-  private async extractBundledPlugin(): Promise<void> {
-    const zipPath = getEmbeddedPluginsPath()
-
-    if (!fs.existsSync(zipPath)) {
-      this.log(pc.yellow(`Plugins zip not found at ${zipPath}`))
-      this.log(pc.dim('Run "bun run scripts/zip-plugin.ts" to create it'))
-      return
-    }
-
-    const extracted = await extractPlugin(zipPath, PLUGINS_DIR)
-    if (extracted) {
-      this.log(pc.green(`✓ Extracted plugins to ${PLUGINS_DIR}`))
-    }
   }
 }
