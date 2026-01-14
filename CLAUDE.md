@@ -9,39 +9,31 @@ This is a dual-purpose repository:
 1. **CLI tool** (`tt`) - Collection of quality-of-life scripts for daily development workflows (distributed as compiled executable)
 2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
 
-The project evolved from a private toolbox of personal scripts to a compiled Bun executable and Claude Code plugin marketplace.
+The project evolved from a private toolbox of personal scripts to a CLI tool and Claude Code plugin marketplace.
 
 ## Commands
 
 ### Development
 
 ```bash
-bun run start           # Run the CLI directly with bun
-bun run typecheck       # Run TypeScript type checking (no emit)
-```
-
-### Build
-
-```bash
-bun run build           # Build executable for current platform
-bun run build:linux     # Build for Linux x64
-bun run build:macos     # Build for macOS ARM64
-bun run build:windows   # Build for Windows x64
-bun run build:all       # Build for all platforms
+pnpm start              # Run the CLI directly with tsx
+pnpm typecheck          # Run TypeScript type checking (no emit)
 ```
 
 ### Testing
 
 ```bash
-bun run test            # Run all tests with bun test
-bun run test:watch      # Run tests in watch mode
+pnpm test               # Run all tests with vitest
+pnpm test:watch         # Run tests in watch mode
 ```
 
-### Linting
+### Linting & Formatting
 
 ```bash
-bun run lint            # Run oxlint
-bun run lint:fix        # Auto-fix linting issues
+pnpm lint               # Run oxlint
+pnpm lint:fix           # Auto-fix linting issues
+pnpm format             # Format code with oxfmt
+pnpm format:check       # Check formatting without writing
 ```
 
 ## Architecture
@@ -98,14 +90,14 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 
 ### Technology Stack
 
-- **Runtime**: Bun (runs TypeScript natively)
+- **Runtime**: Node.js + tsx (runs TypeScript via tsx loader)
 - **CLI Framework**: oclif (commands in `src/commands/`)
-- **Command Registration**: Explicit in `src/commands/index.ts` (oclif auto-discovery doesn't work with Bun compiled binaries)
-- **Build**: `bun build --compile` for standalone executables
-- **Testing**: `bun test` with `@oclif/test` for command testing
+- **Command Registration**: Explicit in `src/commands/index.ts`
+- **Testing**: vitest with `@oclif/test` for command testing
 - **Linting**: oxlint
-- **Package Manager**: Bun
-- **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
+- **Formatting**: oxfmt
+- **Package Manager**: pnpm
+- **Git Hooks**: simple-git-hooks with lint-staged (runs oxfmt + oxlint on pre-commit)
 - **Terminal Graphics**: consola - use `consola.box({ title, message })` for styled boxes, `consola.info/warn/error` for styled logs
 
 ## Ralph Usage
@@ -195,7 +187,7 @@ Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5
 
 ## Important Notes
 
-- **Use bun for everything**: Run `.ts` files with `bun file.ts`, use `bunx` instead of `npx`, use `bun install/add/remove` for packages
+- **Use pnpm/tsx**: Run `.ts` files with `tsx file.ts`, use `pnpm dlx` instead of `npx`, use `pnpm install/add/remove` for packages
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility
 - When modifying CLI commands (`src/commands/`), also update the corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/` to reflect any argument/flag changes
