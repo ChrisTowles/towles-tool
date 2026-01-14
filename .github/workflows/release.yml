@@ -72,7 +72,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm
-        run: bun publish --access public --ignore-scripts
+        run: npm publish --access public
 
       - name: Create GitHub Release
         env:
