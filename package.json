@@ -88,6 +88,7 @@
     "dirname": "towles-tool",
     "topicSeparator": " "
   },
+  "packageManager": "pnpm@10.27.0",
   "pnpm": {
     "patchedDependencies": {
       "prompts@2.4.2": "patches/prompts.patch"
