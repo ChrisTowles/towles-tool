@@ -2,7 +2,7 @@
  * Integration tests for oclif config command
  * Note: consola outputs to stderr with different log levels
  */
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect } from 'vitest'
 import { runCommand } from '@oclif/test'
 
 describe('config command', () => {

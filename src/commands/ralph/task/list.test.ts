@@ -2,7 +2,7 @@
  * Integration tests for oclif ralph task list command
  * Note: --help output goes through oclif's own routing
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { runCommand } from '@oclif/test'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

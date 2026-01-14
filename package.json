@@ -34,8 +34,8 @@
     "start": "bun bin/run.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "test": "bun test",
-    "test:watch": "CI=DisableCallingClaude bun test --watch",
+    "test": "vitest run",
+    "test:watch": "CI=DisableCallingClaude vitest watch",
     "typecheck": "tsgo --noEmit --incremental",
     "prepare": "simple-git-hooks"
   },
@@ -65,7 +65,8 @@
     "oxlint": "^1.7.0",
     "simple-git-hooks": "^2.13.0",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.17"
   },
   "pnpm": {
     "patchedDependencies": {

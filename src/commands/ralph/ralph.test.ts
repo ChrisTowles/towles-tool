@@ -1,7 +1,7 @@
 /**
  * Unit tests for ralph-loop script
  */
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, afterEach } from 'vitest'
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -43,8 +43,8 @@ describe('ralph-loop', () => {
     describe('constants', () => {
         it('should have correct default values', () => {
             expect(DEFAULT_MAX_ITERATIONS).toBe(10)
-            expect(DEFAULT_STATE_FILE).toBe('ralph-state.json')
-            expect(DEFAULT_HISTORY_FILE).toBe('ralph-history.log')
+            expect(DEFAULT_STATE_FILE).toBe('./.claude/.ralph/ralph-state.local.json')
+            expect(DEFAULT_HISTORY_FILE).toBe('./.claude/.ralph/ralph-history.local.log')
             expect(DEFAULT_COMPLETION_MARKER).toBe('RALPH_DONE')
             expect(CLAUDE_DEFAULT_ARGS).toEqual(['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions'])
         })

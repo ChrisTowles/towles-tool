@@ -1,7 +1,7 @@
 /**
  * Tests for observe graph command --days filtering
  */
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect } from 'vitest'
 import { calculateCutoffMs, filterByDays } from './graph.js'
 
 describe('observe graph --days filtering', () => {
