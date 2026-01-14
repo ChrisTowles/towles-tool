@@ -1,10 +1,10 @@
-#!/usr/bin/env bun
+#!/usr/bin/env tsx
 /**
  * Creates dist/plugins.zip from plugins/
- * Run via: bun run scripts/zip-plugin.ts
+ * Run via: pnpm tsx scripts/zip-plugin.ts
  */
 
-import { $ } from "bun";
+import { x } from "tinyexec";
 import { join } from "node:path";
 import { mkdir, readdir, stat } from "node:fs/promises";
 
@@ -44,10 +44,12 @@ async function main() {
   const files = await getAllFiles(PLUGINS_DIR);
   console.log(`Found ${files.length} files in plugins/`);
 
-  // Create zip using Bun shell (leverages system zip)
+  // Create zip using tinyexec (leverages system zip)
   // Change to plugins dir and zip contents
   // Extraction preserves folder structure (tt-core/, notifications/, etc.)
-  await $`cd ${PLUGINS_DIR} && zip -r ${OUTPUT_ZIP} . -x "*.DS_Store"`.quiet();
+  await x("zip", ["-r", OUTPUT_ZIP, ".", "-x", "*.DS_Store"], {
+    nodeOptions: { cwd: PLUGINS_DIR },
+  });
 
   const zipStat = await stat(OUTPUT_ZIP);
   console.log(`Created: ${OUTPUT_ZIP} (${(zipStat.size / 1024).toFixed(1)} KB)`);

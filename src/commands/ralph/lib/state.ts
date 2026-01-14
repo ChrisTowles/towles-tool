@@ -8,10 +8,10 @@ import { z } from 'zod'
 // ============================================================================
 
 export const DEFAULT_MAX_ITERATIONS = 10
-export const DEFAULT_STATE_FILE = './claude/ralph/ralph-state.local.json'
-export const DEFAULT_LOG_FILE = './claude/ralph/ralph-log.local.md'
-export const DEFAULT_PROGRESS_FILE = './claude/ralph/ralph-progress.local.md'
-export const DEFAULT_HISTORY_FILE = './claude/ralph/ralph-history.local.log'
+export const DEFAULT_STATE_FILE = './.claude/.ralph/ralph-state.local.json'
+export const DEFAULT_LOG_FILE = './.claude/.ralph/ralph-log.local.md'
+export const DEFAULT_PROGRESS_FILE = './.claude/.ralph/ralph-progress.local.md'
+export const DEFAULT_HISTORY_FILE = './.claude/.ralph/ralph-history.local.log'
 export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
 export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 

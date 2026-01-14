@@ -1,19 +1,28 @@
-#!/usr/bin/env bun
+#!/usr/bin/env tsx
 /**
  * Syncs version from package.json to all plugin.json files
- * Run via: bun run scripts/sync-versions.ts
+ * Run via: pnpm tsx scripts/sync-versions.ts
  */
 
 import { join } from "node:path";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, access } from "node:fs/promises";
 
 const ROOT = join(import.meta.dirname, "..");
 const PLUGINS_DIR = join(ROOT, "plugins");
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   // Read version from package.json
   const pkgPath = join(ROOT, "package.json");
-  const pkgJson = await Bun.file(pkgPath).json();
+  const pkgJson = JSON.parse(await readFile(pkgPath, "utf-8"));
   const version = pkgJson.version;
   console.log(`Package version: ${version}`);
 
@@ -23,14 +32,13 @@ async function main() {
 
   for (const pluginName of pluginDirs) {
     const pluginJsonPath = join(PLUGINS_DIR, pluginName, ".claude-plugin", "plugin.json");
-    const file = Bun.file(pluginJsonPath);
 
-    if (!(await file.exists())) {
+    if (!(await fileExists(pluginJsonPath))) {
       console.log(`  Skipping ${pluginName} (no plugin.json)`);
       continue;
     }
 
-    const pluginJson = await file.json();
+    const pluginJson = JSON.parse(await readFile(pluginJsonPath, "utf-8"));
     const oldVersion = pluginJson.version;
 
     if (oldVersion === version) {
@@ -39,7 +47,7 @@ async function main() {
     }
 
     pluginJson.version = version;
-    await Bun.write(pluginJsonPath, JSON.stringify(pluginJson, null, 4) + "\n");
+    await writeFile(pluginJsonPath, JSON.stringify(pluginJson, null, 4) + "\n");
     console.log(`  ${pluginName}: ${oldVersion} -> ${version}`);
   }
 

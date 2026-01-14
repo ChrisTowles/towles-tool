@@ -1,7 +1,6 @@
 import * as fs from 'node:fs'
 import { Flags } from '@oclif/core'
 import pc from 'picocolors'
-import { consola } from 'consola'
 import { BaseCommand } from '../base.js'
 import {
   DEFAULT_STATE_FILE,
@@ -189,10 +188,11 @@ export default class Run extends BaseCommand {
         progressContent: progressContent || undefined,
         taskList,
       })
-      consola.box({
-        title: 'Prompt Preview',
-        message: prompt,
-      })
+      console.log(pc.dim('─'.repeat(60)))
+      console.log(pc.bold('Prompt Preview'))
+      console.log(pc.dim('─'.repeat(60)))
+      console.log(prompt)
+      console.log(pc.dim('─'.repeat(60)))
 
       console.log(pc.bold('\n=== END DRY RUN ===\n'))
       return
@@ -291,7 +291,11 @@ export default class Run extends BaseCommand {
       const sessionInfo = taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : ''
       console.log()
       console.log(pc.bold(pc.blue(`━━━ ${iterHeader}${sessionInfo} ━━━`)))
-      consola.box({ title: 'Prompt', message: prompt })
+      console.log(pc.dim('─'.repeat(60)))
+      console.log(pc.bold('Prompt'))
+      console.log(pc.dim('─'.repeat(60)))
+      console.log(prompt)
+      console.log(pc.dim('─'.repeat(60)))
 
       // Run iteration - output goes directly to stdout
       const iterResult = await runIteration(prompt, iterClaudeArgs, logStream)
