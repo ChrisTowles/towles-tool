@@ -1,8 +1,8 @@
 {
-    "name": "tt",
-    "description": "Useful personal commands: Around Claude code and building using Agentic patterns.",
-    "version": "0.0.32",
-    "author": {
-        "name": "Chris Towles"
-    }
+  "name": "tt",
+  "description": "Useful personal commands: Around Claude code and building using Agentic patterns.",
+  "version": "0.0.32",
+  "author": {
+    "name": "Chris Towles"
+  }
 }

@@ -9,12 +9,14 @@ Core workflow automation commands for Claude Code.
 Generate conventional commit messages with AI assistance.
 
 **What it does:**
+
 1. Analyzes current git status and changes
 2. Generates 5 single-line commit message options
 3. Prompts you to select one (or write your own)
 4. Creates the commit with the selected message
 
 **Usage:**
+
 ```
 /tt:commit
 ```
@@ -26,6 +28,7 @@ The command automatically reviews staged and unstaged changes, recent commit his
 Improve grammar, spelling, and wording while maintaining conciseness and clarity.
 
 **What it does:**
+
 - Fixes spelling and grammar errors
 - Improves sentence structure and flow
 - Removes unnecessary words and redundancy
@@ -33,6 +36,7 @@ Improve grammar, spelling, and wording while maintaining conciseness and clarity
 - Preserves original meaning and intent
 
 **Usage:**
+
 ```
 /tt:refine @path/to/file.md
 ```
@@ -42,7 +46,6 @@ Improve grammar, spelling, and wording while maintaining conciseness and clarity
 ## Installation
 
 This plugin is part of the towles-tool project and can be installed via the Claude Code plugin marketplace.
-
 
 ## Author
 

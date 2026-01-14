@@ -79,6 +79,7 @@ Use the `/tt:one-off` command to create a new one-off folder:
 ```
 
 The command will:
+
 1. Create the folder structure
 2. Generate README.md with template
 3. Open in your editor

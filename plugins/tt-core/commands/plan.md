@@ -11,6 +11,7 @@ For detailed ralph documentation, see skill `towles-tool` and its `references/ra
 ## Phase 1: Research
 
 Use Task agents (`subagent_type=Explore`) to:
+
 - Find relevant files, patterns, conventions
 - Understand existing architecture
 - Identify dependencies and conflicts
@@ -19,6 +20,7 @@ Use Task agents (`subagent_type=Explore`) to:
 ## Phase 2: Interview
 
 Use `AskUserQuestion` to gather details about:
+
 - Technical implementation requirements
 - UI & UX considerations
 - Concerns and tradeoffs
@@ -31,12 +33,14 @@ Ask non-obvious questions. Continue until requirements are clear (3-7 questions 
 Based on interview + research, design implementation as ordered tasks.
 
 Each task must have:
+
 - **Clear completion criteria** - How does Claude know it's done?
 - **Verifiable success** - Tests pass, typecheck passes
 - **Single responsibility** - One focused outcome
 - **Self-contained context** - References specific files/patterns
 
 Task template:
+
 ```
 [Imperative description]
 
@@ -53,6 +57,7 @@ Success Criteria:
 ## Phase 4: Present & Confirm
 
 Present the task list to user with:
+
 1. Brief summary of approach
 2. Mermaid diagram if helpful
 3. Numbered task list with descriptions
@@ -69,6 +74,7 @@ Before starting research, generate a random marker in the chat we'll then use to
 tt ralph marker create
 # Outputs: "RALPH_MARKER_{RANDOM}"
 ```
+
 for each task, add it with the `--findMarker` flag:
 
 ```bash
@@ -87,7 +93,7 @@ Tasks ready! Start autonomous execution:
 
 Or with auto-commits after each task:
 
- `tt ralph run --maxIterations 20`
+`tt ralph run --maxIterations 20`
 
 To run without auto-commits:
 
@@ -156,16 +162,18 @@ tt ralph task add "Add unit tests for getUserById
 - Use vitest mocking from src/services/post.test.ts
 - Mock db client" --findMarker "RALPH_MARKER_{RANDOM}"
 ```
+
 </good_tasks>
 
-
 <bad_tasks>
+
 ```bash
 tt ralph task add "Implement user feature"           # Too vague - no context
 tt ralph task add "Add types, service, and tests"   # Multiple things in one
 tt ralph task add "Make it work"                    # No criteria
 tt ralph task add "Add UserProfile type"            # Too terse - missing details
 ```
+
 </bad_tasks>
 </examples>
 

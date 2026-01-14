@@ -56,12 +56,14 @@ This workflow prevents ralph from burning tokens re-discovering context that was
 ## Task Requirements
 
 Each task **must have**:
+
 1. **Clear completion criteria** - How does Claude know it's done?
 2. **Verifiable success** - Tests pass, typecheck passes
 3. **Single responsibility** - One focused outcome
 4. **Self-contained context** - References specific files
 
 Each task **must avoid**:
+
 - Vague goals ("make it better")
 - Human judgment requirements
 - Multiple unrelated changes
@@ -86,6 +88,7 @@ Success Criteria:
 **Task descriptions should read like a half-page GitHub issue** - detailed enough that Claude can execute autonomously without asking questions.
 
 <good_task>
+
 ```bash
 tt ralph task add "Add UserProfile type to src/types/user.ts
 
@@ -127,15 +130,18 @@ tt ralph task add "Add unit tests for getUserById
 ## Files
 - src/services/user.test.ts (create)"
 ```
+
 </good_task>
 
 <bad_task>
+
 ```bash
 tt ralph task add "Implement user feature"           # Too vague - no context
 tt ralph task add "Add types, service, and tests"   # Multiple things in one
 tt ralph task add "Make it work like the other one" # Unclear reference
 tt ralph task add "Add UserProfile type"            # Too terse - missing details
 ```
+
 </bad_task>
 </examples>
 
@@ -159,6 +165,7 @@ tt ralph plan --copy                    # Copy plan to clipboard for review
 ```
 
 Then run:
+
 ```bash
 tt ralph run --maxIterations 20
 ```

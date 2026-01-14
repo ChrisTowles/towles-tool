@@ -1,37 +1,39 @@
 {
   "name": "@towles/tool",
-  "type": "module",
   "version": "0.0.32",
   "description": "One off quality of life scripts that I use on a daily basis.",
-  "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
-  "license": "MIT",
-  "bin": {
-    "tt": "./bin/run.ts",
-    "towles-tool": "./bin/run.ts"
-  },
-  "files": [
-    "bin",
-    "src",
-    "patches"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "funding": {
-    "url": "https://github.com/sponsors/ChrisTowles"
-  },
   "homepage": "https://github.com/ChrisTowles/towles-tool#readme",
+  "bugs": {
+    "url": "https://github.com/ChrisTowles/towles-tool/issues"
+  },
+  "license": "MIT",
+  "author": "Chris Towles <Chris.Towles.Dev@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ChrisTowles/towles-tool.git"
   },
-  "bugs": {
-    "url": "https://github.com/ChrisTowles/towles-tool/issues"
+  "funding": {
+    "url": "https://github.com/sponsors/ChrisTowles"
+  },
+  "bin": {
+    "towles-tool": "./bin/run.ts",
+    "tt": "./bin/run.ts"
+  },
+  "files": [
+    "bin",
+    "patches",
+    "src"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "version:sync": "pnpm tsx scripts/sync-versions.ts",
     "prepublishOnly": "pnpm run version:sync && pnpm tsx scripts/zip-plugin.ts",
     "start": "tsx bin/run.ts",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "test": "vitest run",
@@ -62,11 +64,29 @@
     "@types/prompts": "^2.4.9",
     "@typescript/native-preview": "^7.0.0-dev.20260111.1",
     "lint-staged": "^15.5.2",
+    "oxfmt": "^0.24.0",
     "oxlint": "^1.7.0",
     "simple-git-hooks": "^2.13.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^4.0.17"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged -q && claude plugin validate ."
+  },
+  "lint-staged": {
+    "*.{js,ts,jsx,tsx,json,md}": "oxfmt --write",
+    "*": "oxlint --quiet --fix"
+  },
+  "oclif": {
+    "bin": "tt",
+    "commands": {
+      "identifier": "default",
+      "strategy": "explicit",
+      "target": "./src/commands/index.ts"
+    },
+    "dirname": "towles-tool",
+    "topicSeparator": " "
   },
   "pnpm": {
     "patchedDependencies": {
@@ -75,21 +95,5 @@
   },
   "trustedDependencies": [
     "@anthropic-ai/claude-code"
-  ],
-  "simple-git-hooks": {
-    "pre-commit": "pnpm exec lint-staged -q && claude plugin validate ."
-  },
-  "lint-staged": {
-    "*": "oxlint --quiet --fix"
-  },
-  "oclif": {
-    "bin": "tt",
-    "dirname": "towles-tool",
-    "commands": {
-      "strategy": "explicit",
-      "target": "./src/commands/index.ts",
-      "identifier": "default"
-    },
-    "topicSeparator": " "
-  }
+  ]
 }

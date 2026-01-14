@@ -10,6 +10,7 @@ gh run watch  # monitor progress
 ```
 
 The workflow:
+
 1. Runs CI (lint, typecheck, test)
 2. Bumps version in package.json
 3. Syncs plugin versions

@@ -18,13 +18,14 @@ Improve grammar, spelling, and wording while maintaining:
 - **Clarity**: Simple, direct language
 
 Steps:
+
 1. **Fix errors**: Spelling, grammar, punctuation, typos
 2. **Improve flow**: Sentence structure and readability
 3. **Remove bloat**: Cut unnecessary words and redundancy
 4. **Stay natural**: Keep contractions and conversational phrasing
 5. **Use active voice**: Direct and engaging sentences
 6. **Keep jargon**: Retain technical terms when appropriate
-</instruction>
+   </instruction>
 
 <constraints>
 - Don't change the meaning or intent

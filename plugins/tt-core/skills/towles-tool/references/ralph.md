@@ -1,6 +1,7 @@
 # Ralph Wiggum Autonomous Loop - Complete Guide
 
 ## Table of Contents
+
 - [Philosophy](#philosophy)
 - [How It Works](#how-it-works)
 - [Writing Good Tasks](#writing-good-tasks)
@@ -42,6 +43,7 @@ The fundamental insight: rather than step-by-step human guidance, define success
 ### Iteration Prompt
 
 Each iteration, Claude receives:
+
 ```
 Review the state file.
 
@@ -65,6 +67,7 @@ When ALL tasks are done, Output: <promise>RALPH_DONE</promise>
 ### Self-Referential Feedback
 
 Each iteration sees:
+
 - Modified files from previous work
 - Git history of changes
 - Updated state file with task statuses
@@ -105,6 +108,7 @@ Success Criteria:
 ### Examples
 
 **Good tasks:**
+
 ```bash
 tt ralph task add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
 tt ralph task add "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
@@ -112,6 +116,7 @@ tt ralph task add "Add unit tests for getUserById covering success, not-found, a
 ```
 
 **Bad tasks:**
+
 ```bash
 tt ralph task add "Implement user feature"           # Too vague
 tt ralph task add "Add types, service, and tests"   # Multiple things
@@ -124,6 +129,7 @@ tt ralph task add "Refactor the whole auth system"  # Too broad
 ### Incremental Goals
 
 Break large features into phases:
+
 ```bash
 tt ralph task add "Phase 1: Add auth types and JWT validation util"
 tt ralph task add "Phase 2: Create auth middleware with token verification"
@@ -134,6 +140,7 @@ tt ralph task add "Phase 4: Integrate auth middleware with protected routes"
 ### Self-Correction Pattern
 
 Include retry logic in task description:
+
 ```
 Implement feature X using TDD:
 1. Write failing tests first
@@ -146,11 +153,13 @@ Implement feature X using TDD:
 ### Escape Hatch
 
 Always use `--maxIterations`:
+
 ```bash
 tt ralph run --maxIterations 20
 ```
 
 In complex tasks, include fallback:
+
 ```
 After 10 iterations if not complete:
 - Document what's blocking progress
@@ -161,6 +170,7 @@ After 10 iterations if not complete:
 ## State File Format
 
 `ralph-state.json`:
+
 ```json
 {
   "version": 1,
@@ -195,6 +205,7 @@ After 10 iterations if not complete:
 ```
 
 Task statuses:
+
 - `ready` - Ready to start (○)
 - `done` - Completed (✓)
 - `blocked` - Blocked (⏸)
@@ -203,6 +214,7 @@ Task statuses:
 ### Task-Level Session IDs
 
 Tasks can have their own `sessionId` for resumable execution:
+
 ```bash
 tt ralph task add "Complex task" --sessionId abc123
 ```
@@ -212,6 +224,7 @@ When running with `--taskId`, the run command auto-resumes using the task's sess
 ### Viewing Tasks
 
 Use `task list` to view all tasks:
+
 ```bash
 tt ralph task list                    # Default format (colored terminal output)
 tt ralph task list --format markdown  # Markdown with checkboxes and status badges
@@ -222,6 +235,7 @@ Markdown format groups tasks by status (Read, Done, Blocked) with summary counts
 ### Viewing Plan Summary
 
 Use `plan` subcommand to get a comprehensive plan overview:
+
 ```bash
 tt ralph plan                         # Markdown with summary, tasks, and mermaid graph
 tt ralph plan --format json           # JSON format for programmatic use
@@ -229,11 +243,13 @@ tt ralph plan --copy                  # Also copy output to clipboard
 ```
 
 The markdown format includes:
+
 - Summary section with status, iteration progress, and task counts
 - Tasks section with checkbox indicators
 - Progress graph as a mermaid diagram showing task status
 
 Loop statuses:
+
 - `running` - Loop active
 - `completed` - All tasks done (RALPH_DONE found)
 - `max_iterations_reached` - Hit limit without completion
@@ -250,6 +266,7 @@ Loop statuses:
 - **Tasks with automatic verification** (tests, linters, typecheck)
 
 Examples:
+
 - "Add validation to all form inputs"
 - "Migrate from library X to Y"
 - "Increase test coverage to 80%"
@@ -267,10 +284,12 @@ Examples:
 ## Cost Considerations
 
 Autonomous loops burn tokens rapidly:
+
 - 50-iteration loop on large codebase: $50-100+ API credits
 - On Claude Code subscription: hits usage limits faster
 
 Mitigate with:
+
 - `--maxIterations` - Always set a reasonable limit
 - Smaller, focused tasks - Less context per iteration
 - Session forking (default) - Forks from prior session context
@@ -287,6 +306,7 @@ Mitigate with:
 ### Tasks not being marked done
 
 Ensure tasks include verifiable criteria:
+
 ```
 Success: pnpm test passes, pnpm typecheck passes
 ```
@@ -300,11 +320,13 @@ Success: pnpm test passes, pnpm typecheck passes
 ### Interrupted loop
 
 State is saved after each iteration. Just resume:
+
 ```bash
 tt ralph run
 ```
 
 Or start completely fresh:
+
 ```bash
 tt ralph task add "..."
 tt ralph run

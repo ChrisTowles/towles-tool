@@ -11,14 +11,14 @@ Config: `~/.config/towles-tool/towles-tool.settings.json`
 
 ## Commands Quick Reference
 
-| Command | Alias | Purpose |
-|---------|-------|---------|
-| `tt journal` | `j` | Create markdown journal files |
-| `tt git-commit` | `gc` | Generate/use commit messages |
-| `tt gh-branch` | `br` | Create branch from GitHub issue |
-| `tt config` | `cfg` | Manage settings |
-| `tt ralph` | - | Autonomous task runner |
-| `tt completion` | - | Shell completions |
+| Command         | Alias | Purpose                         |
+| --------------- | ----- | ------------------------------- |
+| `tt journal`    | `j`   | Create markdown journal files   |
+| `tt git-commit` | `gc`  | Generate/use commit messages    |
+| `tt gh-branch`  | `br`  | Create branch from GitHub issue |
+| `tt config`     | `cfg` | Manage settings                 |
+| `tt ralph`      | -     | Autonomous task runner          |
+| `tt completion` | -     | Shell completions               |
 
 ## Journal (`tt j`)
 
@@ -33,6 +33,7 @@ tt j note TITLE     # General notes (alias: n)
 Path templates in config use Luxon tokens: `{yyyy}`, `{MM}`, `{dd}`, `{monday:yyyy}` etc.
 
 Default paths:
+
 - Daily: `journal/{monday:yyyy}/{monday:MM}/daily-notes/{monday:yyyy}-{monday:MM}-{monday:dd}-daily-notes.md`
 - Meeting: `journal/{yyyy}/{MM}/meetings/{yyyy}-{MM}-{dd}-{title}.md`
 - Note: `journal/{yyyy}/{MM}/notes/{yyyy}-{MM}-{dd}-{title}.md`
@@ -45,6 +46,7 @@ tt gc "message"    # Direct commit with message
 ```
 
 Workflow:
+
 1. Shows staged/unstaged/untracked files
 2. If nothing staged, offers to `git add .`
 3. Prompts for message if not provided
@@ -66,6 +68,7 @@ Branch format: `feature/{issue-number}-{slugified-title}`
 Opens settings file in editor. Creates defaults on first run.
 
 Settings schema:
+
 ```json
 {
   "preferredEditor": "code",
@@ -109,13 +112,13 @@ tt ralph --dryRun           # Preview config without running
 
 ### Execution Options
 
-| Flag | Description |
-|------|-------------|
-| `--run` | Start loop (required) |
-| `--autoCommit` | Git commit after each task |
-| `--maxIterations N` | Safety limit (default: 10) |
-| `--taskId N` | Focus on specific task |
-| `--noFork` | Don't fork from prior session (start fresh) |
+| Flag                | Description                                 |
+| ------------------- | ------------------------------------------- |
+| `--run`             | Start loop (required)                       |
+| `--autoCommit`      | Git commit after each task                  |
+| `--maxIterations N` | Safety limit (default: 10)                  |
+| `--taskId N`        | Focus on specific task                      |
+| `--noFork`          | Don't fork from prior session (start fresh) |
 
 ### Files Created
 

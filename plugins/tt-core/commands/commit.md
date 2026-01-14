@@ -23,11 +23,10 @@ Generate commit message options and guide user through commit workflow.
 4. If user wants to push, run `git push`
 5. If user wants PR, provide `gh pr create --web` command
 6. After commit, show success message with commit hash.
-</instruction>
+   </instruction>
 
 <constraints>
 - Always use conventional commits format (feat:, fix:, chore:, etc.)
 - Never commit without user selecting/confirming message
 - Don't push without explicit permission
 </constraints>
-

@@ -1,16 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "node",
-    "jsdoc",
-    "import",
-    "typescript",
-    "unicorn",
-    "vitest",
-    "promise"
-
-
-  ],
+  "plugins": ["node", "jsdoc", "import", "typescript", "unicorn", "vitest", "promise"],
   "categories": {
     "correctness": "off"
   },
@@ -64,10 +54,7 @@
     "array-callback-return": "error",
     "block-scoped-var": "error",
     "default-case-last": "error",
-    "eqeqeq": [
-      "error",
-      "smart"
-    ],
+    "eqeqeq": ["error", "smart"],
     "new-cap": [
       "error",
       {
@@ -83,10 +70,7 @@
     "no-case-declarations": "error",
     "no-class-assign": "error",
     "no-compare-neg-zero": "error",
-    "no-cond-assign": [
-      "error",
-      "always"
-    ],
+    "no-cond-assign": ["error", "always"],
     "no-console": "warn",
     "no-const-assign": "error",
     "no-control-regex": "error",
@@ -200,10 +184,7 @@
     "prefer-rest-params": "error",
     "prefer-spread": "error",
     "symbol-description": "error",
-    "unicode-bom": [
-      "error",
-      "never"
-    ],
+    "unicode-bom": ["error", "never"],
     "use-isnan": [
       "error",
       {
@@ -218,10 +199,7 @@
       }
     ],
     "vars-on-top": "error",
-    "yoda": [
-      "error",
-      "never"
-    ],
+    "yoda": ["error", "never"],
     "node/no-exports-assign": "error",
     "node/no-new-require": "error",
     "jsdoc/check-access": "warn",
@@ -234,10 +212,7 @@
     "jsdoc/require-property-description": "warn",
     "jsdoc/require-property-name": "warn",
     "jsdoc/require-returns-description": "warn",
-    "import/consistent-type-specifier-style": [
-      "error",
-      "top-level"
-    ],
+    "import/consistent-type-specifier-style": ["error", "top-level"],
     "import/first": "error",
     "import/no-duplicates": "error",
     "import/no-mutable-exports": "error",
@@ -260,10 +235,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "**/*.?([cm])ts",
-        "**/*.?([cm])tsx"
-      ],
+      "files": ["**/*.?([cm])ts", "**/*.?([cm])tsx"],
       "rules": {
         "no-class-assign": "off",
         "no-const-assign": "off",
@@ -297,9 +269,7 @@
       }
     },
     {
-      "files": [
-        "**/*.md/**/*.?([cm])[jt]s?(x)"
-      ],
+      "files": ["**/*.md/**/*.?([cm])[jt]s?(x)"],
       "rules": {
         "no-alert": "off",
         "no-console": "off",
@@ -312,27 +282,19 @@
       }
     },
     {
-      "files": [
-        "**/scripts/**/*.?([cm])[jt]s?(x)"
-      ],
+      "files": ["**/scripts/**/*.?([cm])[jt]s?(x)"],
       "rules": {
         "no-console": "off"
       }
     },
     {
-      "files": [
-        "**/cli/**/*.?([cm])[jt]s?(x)",
-        "**/cli.?([cm])[jt]s?(x)"
-      ],
+      "files": ["**/cli/**/*.?([cm])[jt]s?(x)", "**/cli.?([cm])[jt]s?(x)"],
       "rules": {
         "no-console": "off"
       }
     },
     {
-      "files": [
-        "**/*.config.?([cm])[jt]s?(x)",
-        "**/*.config.*.?([cm])[jt]s?(x)"
-      ],
+      "files": ["**/*.config.?([cm])[jt]s?(x)", "**/*.config.*.?([cm])[jt]s?(x)"],
       "rules": {
         "no-console": "off"
       }

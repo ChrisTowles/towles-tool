@@ -83,6 +83,7 @@ claude plugin validate .  # Validate Claude Code plugins before publishing
 ```
 
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
+
 - Defines available plugins for installation
 
 ### Releasing
@@ -122,12 +123,14 @@ gh run watch  # monitor progress
 ### Planned Features
 
 **Journal Type System**:
+
 - [ ] daily-notes
 - [ ] meeting
 - [ ] note
 - [ ] task (todo)
 
 **Git Tools**:
+
 - [ ] commit-message-generator
 - [ ] pull-request-generator
 - [ ] issue-generator

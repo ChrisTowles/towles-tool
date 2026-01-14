@@ -34,15 +34,18 @@ tt flame --open               # Generate and open in browser
 ## Setup Checklist
 
 1. **Run setup command:**
+
    ```bash
    tt observe setup
    ```
+
    This configures:
    - `cleanupPeriodDays: 99999` (prevents log deletion)
    - SubagentStop hook for lineage tracking
    - OTEL environment variables in `~/.claude/settings.json`
 
 2. **Verify status:**
+
    ```bash
    tt observe status
    ```
@@ -71,11 +74,13 @@ These are added to `~/.claude/settings.json` by `tt observe setup`:
 ## Session Data Location
 
 Claude Code stores JSONL session files at:
+
 ```
 ~/.claude/projects/<encoded-directory>/<session-uuid>.jsonl
 ```
 
 Each file contains:
+
 - Full message content (user and assistant)
 - Tool invocations with inputs/outputs
 - Token counts per message (input_tokens, output_tokens)
@@ -91,11 +96,13 @@ The `tt flame` command generates interactive HTML treemaps:
 **Hierarchy:** Project → Date → Session
 
 **Colors indicate waste level (input/output ratio):**
+
 - 🟢 Green (<2:1) - Efficient, good cache utilization
 - 🟡 Yellow (2-5:1) - Moderate, some optimization possible
 - 🔴 Red (>5:1) - High waste, lots of input tokens per output
 
 **Tips:**
+
 - Large rectangles = high token sessions (investigate for optimization)
 - Red rectangles = high input/output ratio (poor cache hits or verbose prompts)
 - Hover for details: session ID, model, tokens, ratio
@@ -104,11 +111,11 @@ The `tt flame` command generates interactive HTML treemaps:
 
 Use for cost estimation:
 
-| Model | Input/1M | Output/1M |
-|-------|----------|-----------|
-| claude-opus-4-5-20251101 | $15 | $75 |
-| claude-sonnet-4-20250514 | $3 | $15 |
-| claude-haiku-3-5-20241022 | $0.80 | $4 |
+| Model                     | Input/1M | Output/1M |
+| ------------------------- | -------- | --------- |
+| claude-opus-4-5-20251101  | $15      | $75       |
+| claude-sonnet-4-20250514  | $3       | $15       |
+| claude-haiku-3-5-20241022 | $0.80    | $4        |
 
 ## Subagent Tracking
 
@@ -117,12 +124,16 @@ Claude Code spawns subagents via the Task tool. Track them with the SubagentStop
 ```json
 {
   "hooks": {
-    "SubagentStop": [{
-      "hooks": [{
-        "type": "command",
-        "command": "jq -c '. + {parent: env.SESSION_ID, timestamp: now}' >> ~/.claude/reports/subagent-log.jsonl"
-      }]
-    }]
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c '. + {parent: env.SESSION_ID, timestamp: now}' >> ~/.claude/reports/subagent-log.jsonl"
+          }
+        ]
+      }
+    ]
   }
 }
 ```
@@ -131,26 +142,29 @@ Claude Code spawns subagents via the Task tool. Track them with the SubagentStop
 
 ## Community Tools
 
-| Tool | Install | Use |
-|------|---------|-----|
-| ccusage | `npx ccusage@latest` | Cost/token analytics |
-| claude-conversation-extractor | `pipx install claude-conversation-extractor` | Export to Markdown |
-| sniffly | `pip install sniffly` | Dashboard on :8081 |
-| claude-code-log | `pip install claude-code-log` | TUI session browser |
+| Tool                          | Install                                      | Use                  |
+| ----------------------------- | -------------------------------------------- | -------------------- |
+| ccusage                       | `npx ccusage@latest`                         | Cost/token analytics |
+| claude-conversation-extractor | `pipx install claude-conversation-extractor` | Export to Markdown   |
+| sniffly                       | `pip install sniffly`                        | Dashboard on :8081   |
+| claude-code-log               | `pip install claude-code-log`                | TUI session browser  |
 
 ## Optimization Patterns
 
 **High input/output ratio (>5:1):**
+
 - Too much context in prompts
 - Reading large files unnecessarily
 - Poor cache utilization
 
 **Solutions:**
+
 - Use `--resume` to fork from prior sessions
 - Enable cache via OTEL metrics
 - Focus reads on specific line ranges
 
 **Repeated file reads:**
+
 - Same file read multiple times in session
 - Use session detail view to identify patterns:
   ```bash
@@ -158,6 +172,7 @@ Claude Code spawns subagents via the Task tool. Track them with the SubagentStop
   ```
 
 **Model costs:**
+
 - Opus is 5x more expensive than Sonnet
 - Use session breakdown to see model distribution
 - Consider when Haiku could handle simpler tasks

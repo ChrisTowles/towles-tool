@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 This is a dual-purpose repository:
+
 1. **CLI tool** (`tt`) - Collection of quality-of-life scripts for daily development workflows (distributed as compiled executable)
 2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
 
@@ -13,12 +14,14 @@ The project evolved from a private toolbox of personal scripts to a compiled Bun
 ## Commands
 
 ### Development
+
 ```bash
 bun run start           # Run the CLI directly with bun
 bun run typecheck       # Run TypeScript type checking (no emit)
 ```
 
 ### Build
+
 ```bash
 bun run build           # Build executable for current platform
 bun run build:linux     # Build for Linux x64
@@ -28,12 +31,14 @@ bun run build:all       # Build for all platforms
 ```
 
 ### Testing
+
 ```bash
 bun run test            # Run all tests with bun test
 bun run test:watch      # Run tests in watch mode
 ```
 
 ### Linting
+
 ```bash
 bun run lint            # Run oxlint
 bun run lint:fix        # Auto-fix linting issues
@@ -44,15 +49,18 @@ bun run lint:fix        # Auto-fix linting issues
 ### CLI Application Structure
 
 **Entry point**: `bin/run.ts` - oclif command router
+
 - Loads settings from `~/.config/towles-tool/towles-tool.settings.json`
 - Routes to oclif commands in `src/commands/`
 
 **Configuration System**:
+
 - `src/config/settings.ts` - User settings management with Zod validation
 - `src/config/context.ts` - Context object passed to commands
 - `src/commands/base.ts` - BaseCommand class extending oclif Command with shared flags/settings
 
 **Available CLI Commands**:
+
 - `config` (alias: `cfg`) - Display current configuration settings
 - `doctor` - Check system dependencies and environment
 - `gh branch` - Create git branch from GitHub issue
@@ -69,6 +77,7 @@ bun run lint:fix        # Auto-fix linting issues
 - `ralph progress` - Append progress message (write-only)
 
 **Key Utilities**:
+
 - `src/utils/anthropic/` - Claude API integration for AI-powered features
 - `src/utils/git/` - Git and GitHub CLI wrappers
 - `src/utils/date-utils.ts` - Date formatting using Luxon
@@ -77,9 +86,11 @@ bun run lint:fix        # Auto-fix linting issues
 ### Claude Code Plugin Architecture
 
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
+
 - Defines available plugins for installation via `/plugins marketplace add`
 
 **Available Plugins**:
+
 - `notifications` - Audio notifications when Claude stops
 - `git-tools` - Git workflow automation (commit messages, etc.)
 
@@ -97,10 +108,10 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxlint on pre-commit)
 - **Terminal Graphics**: consola - use `consola.box({ title, message })` for styled boxes, `consola.info/warn/error` for styled logs
 
-
 ## Ralph Usage
 
 When using `tt ralph` for autonomous task execution:
+
 - By default, ralph **auto-commits** after each completed task
 - Use `--no-autoCommit` to disable auto-commits
 - Use `--maxIterations` to limit token burn
@@ -112,6 +123,7 @@ When using `tt ralph` for autonomous task execution:
 **Every task should have a sessionId** to enable resumption from prior research. This is the most important optimization to prevent ralph from burning through tokens re-discovering context.
 
 **Marker Workflow (preferred):**
+
 1. Generate marker: `tt ralph marker create` → `RALPH_MARKER_abc123`
 2. Tell Claude to output the marker during research
 3. Add tasks with marker: `tt ralph task add "desc" --findMarker RALPH_MARKER_abc123`

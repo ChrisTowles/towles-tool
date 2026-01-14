@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { isGitDirectory } from './git-wrapper'
+import { describe, expect, it } from "vitest";
+import { isGitDirectory } from "./git-wrapper";
 
-describe.skip('git-wrapper', () => {
-  it('isGitDirectory', async () => {
-    const result = await isGitDirectory()
-    expect(result).toBe(true)
-  })
+describe.skip("git-wrapper", () => {
+  it("isGitDirectory", async () => {
+    const result = await isGitDirectory();
+    expect(result).toBe(true);
+  });
 
   // it('getMergedBranches', async () => {
   //   const result = await getMergedBranches()
@@ -23,4 +23,4 @@ describe.skip('git-wrapper', () => {
   //   const result = await getDefaultMainBranchName()
   //   expect(result).toBe('main')
   // })
-})
+});

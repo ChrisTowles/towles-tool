@@ -1,3 +1,3 @@
 export const AppInfo = {
-  toolName: 'towles-tool',
-} as const
+  toolName: "towles-tool",
+} as const;
