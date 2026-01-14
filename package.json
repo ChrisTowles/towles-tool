@@ -56,7 +56,6 @@
   },
   "devDependencies": {
     "@oclif/test": "^4.1.10",
-    "@types/bun": "^1.3.5",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/luxon": "^3.6.2",
     "@types/node": "^22.16.3",
@@ -65,10 +64,13 @@
     "lint-staged": "^15.5.2",
     "oxlint": "^1.7.0",
     "simple-git-hooks": "^2.13.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
-  "patchedDependencies": {
-    "prompts": "patches/prompts.patch"
+  "pnpm": {
+    "patchedDependencies": {
+      "prompts@2.4.2": "patches/prompts.patch"
+    }
   },
   "trustedDependencies": [
     "@anthropic-ai/claude-code"
