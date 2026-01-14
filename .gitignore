@@ -11,6 +11,5 @@ node_modules
 temp/
 .temp/
 
-
-ralph-*
+*.local.*
 tsconfig.tsbuildinfo

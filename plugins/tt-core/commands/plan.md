@@ -8,7 +8,15 @@ Interview user, research codebase, create `tt ralph` tasks for autonomous execut
 
 For detailed ralph documentation, see skill `towles-tool` and its `references/ralph.md`.
 
-## Phase 1: Interview
+## Phase 1: Research
+
+Use Task agents (`subagent_type=Explore`) to:
+- Find relevant files, patterns, conventions
+- Understand existing architecture
+- Identify dependencies and conflicts
+- Gather context for implementation
+
+## Phase 2: Interview
 
 Use `AskUserQuestion` to gather details about:
 - Technical implementation requirements
@@ -17,13 +25,6 @@ Use `AskUserQuestion` to gather details about:
 - Edge cases
 
 Ask non-obvious questions. Continue until requirements are clear (3-7 questions typically).
-
-## Phase 2: Research
-
-Use Task agents (`subagent_type=Explore`) to:
-- Find relevant files, patterns, conventions
-- Understand existing architecture
-- Identify dependencies and conflicts
 
 ## Phase 3: Plan
 
@@ -62,52 +63,50 @@ Use `AskUserQuestion` to confirm or adjust.
 
 **CRITICAL: Always use markers to link tasks to research sessions.**
 
-Before starting research, generate a marker:
+Before starting research, generate a random marker in the chat we'll then use to find this conversation to fork the session to avoid token burn.
+
 ```bash
 tt ralph marker create
-# Outputs: RALPH_MARKER_abc123
+# Outputs: "RALPH_MARKER_{RANDOM}"
 ```
-
-Then tell Claude: "Output this marker: RALPH_MARKER_abc123"
-
-Once approved, clear any old tasks and add new ones with the marker:
+for each task, add it with the `--findMarker` flag:
 
 ```bash
-tt ralph clear  # Only if starting fresh
-tt ralph task add "Task 1: [full description]" --findMarker abc123
-tt ralph task add "Task 2: [full description]" --findMarker abc123
-# ... continue for all tasks
-tt ralph plan
+tt ralph task add "[full description]" --findMarker "RALPH_MARKER_{RANDOM}"
 ```
 
-The `--findMarker` flag searches ~/.claude for the session containing `RALPH_MARKER_abc123` and attaches that session ID to the task. This prevents ralph from burning tokens re-discovering context.
+The `--findMarker` flag searches ~/.claude for the session containing `RALPH_MARKER_{RANDOM}` and attaches that session ID to the task. This prevents ralph from burning tokens re-discovering context.
 
 ## Phase 6: Instruct User
 
 Tell user:
-```
+
 Tasks ready! Start autonomous execution:
 
-  tt ralph run --maxIterations 20
+`tt ralph run --maxIterations 20`
 
 Or with auto-commits after each task:
 
-  tt ralph run --maxIterations 20
+ `tt ralph run --maxIterations 20`
 
 To run without auto-commits:
 
-  tt ralph run --no-autoCommit --maxIterations 20
+`tt ralph run --no-autoCommit --maxIterations 20`
 
 Monitor progress:
-  tt ralph plan                       # Full overview with mermaid graph
-  tt ralph plan --copy                # Copy to clipboard
-  tt ralph task list --format markdown # Task list with checkboxes
+
+```bash
+tt ralph plan                        # Full overview with mermaid graph
+tt ralph plan --copy                 # Copy to clipboard
+tt ralph task list --format markdown # Task list with checkboxes
 ```
 
 <examples>
+
 **Task descriptions should read like a half-page GitHub issue** - detailed enough that Claude can execute autonomously without asking questions.
 
-<good_task>
+<good_tasks>
+
 ```bash
 tt ralph task add "Add UserProfile type to src/types/user.ts
 
@@ -121,8 +120,10 @@ Shared type for profile data used across services and API responses.
 
 ## Files
 - src/types/user.ts (create)
-- src/types/index.ts (add export)"
+- src/types/index.ts (add export)" --findMarker "RALPH_MARKER_{RANDOM}"
+```
 
+```bash
 tt ralph task add "Create getUserById service function
 
 ## Background
@@ -136,8 +137,10 @@ Service function to fetch user profiles by ID.
 
 ## Files
 - src/services/user.ts (create)
-- src/services/index.ts (add export)"
+- src/services/index.ts (add export)" --findMarker "RALPH_MARKER_{RANDOM}"
+```
 
+```bash
 tt ralph task add "Add unit tests for getUserById
 
 ## Test Cases
@@ -151,24 +154,19 @@ tt ralph task add "Add unit tests for getUserById
 
 ## Patterns
 - Use vitest mocking from src/services/post.test.ts
-- Mock db client"
+- Mock db client" --findMarker "RALPH_MARKER_{RANDOM}"
 ```
-</good_task>
+</good_tasks>
 
-<with_session>
-```bash
-tt ralph task add "Complex task requiring prior research context" --findMarker RALPH_MARKER_abc123
-```
-</with_session>
 
-<bad_task>
+<bad_tasks>
 ```bash
 tt ralph task add "Implement user feature"           # Too vague - no context
 tt ralph task add "Add types, service, and tests"   # Multiple things in one
 tt ralph task add "Make it work"                    # No criteria
 tt ralph task add "Add UserProfile type"            # Too terse - missing details
 ```
-</bad_task>
+</bad_tasks>
 </examples>
 
 ## Optional: GitHub Issue

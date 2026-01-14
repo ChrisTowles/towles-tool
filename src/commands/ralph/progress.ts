@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { Args, Flags } from '@oclif/core'
 import { BaseCommand } from '../base.js'
 import { DEFAULT_PROGRESS_FILE } from './lib/state.js'
@@ -36,6 +37,7 @@ export default class Progress extends BaseCommand {
     const timestamp = new Date().toISOString()
     const line = `- [${timestamp}] ${args.message}\n`
 
+    fs.mkdirSync(path.dirname(flags.file), { recursive: true })
     fs.appendFileSync(flags.file, line)
   }
 }

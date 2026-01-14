@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import * as path from 'node:path'
 import pc from 'picocolors'
 import { z } from 'zod'
 
@@ -7,10 +8,10 @@ import { z } from 'zod'
 // ============================================================================
 
 export const DEFAULT_MAX_ITERATIONS = 10
-export const DEFAULT_STATE_FILE = 'ralph-state.json'
-export const DEFAULT_LOG_FILE = 'ralph-log.md'
-export const DEFAULT_PROGRESS_FILE = 'ralph-progress.md'
-export const DEFAULT_HISTORY_FILE = 'ralph-history.log'
+export const DEFAULT_STATE_FILE = './claude/ralph/ralph-state.local.json'
+export const DEFAULT_LOG_FILE = './claude/ralph/ralph-log.local.md'
+export const DEFAULT_PROGRESS_FILE = './claude/ralph/ralph-progress.local.md'
+export const DEFAULT_HISTORY_FILE = './claude/ralph/ralph-history.local.log'
 export const DEFAULT_COMPLETION_MARKER = 'RALPH_DONE'
 export const CLAUDE_DEFAULT_ARGS = ['--print', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'bypassPermissions']
 
@@ -80,11 +81,13 @@ export function createInitialState(maxIterations: number): RalphState {
  * Each line is a complete JSON object for easy parsing.
  */
 export function appendHistory(history: IterationHistory, historyFile: string = DEFAULT_HISTORY_FILE): void {
+    fs.mkdirSync(path.dirname(historyFile), { recursive: true })
     const line = JSON.stringify(history) + '\n'
     fs.appendFileSync(historyFile, line)
 }
 
 export function saveState(state: RalphState, stateFile: string): void {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true })
     fs.writeFileSync(stateFile, JSON.stringify(state, null, 2))
 }
 
