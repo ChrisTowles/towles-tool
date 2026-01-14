@@ -22,11 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bun run lint
-      - run: bun run typecheck
-      - run: bun run test
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
         env:
           CI: DisableCallingClaude
 
@@ -39,15 +45,19 @@ jobs:
           persist-credentials: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
 
-      - run: bun install --ignore-scripts
+      - run: pnpm install --ignore-scripts
 
       - name: Bump version
-        run: bunx bumpp ${{ inputs.bump_type }} --yes --no-commit --no-tag --no-push
+        run: pnpm exec bumpp ${{ inputs.bump_type }} --yes --no-commit --no-tag --no-push
 
       - name: Sync plugin versions
-        run: bun run version:sync
+        run: pnpm version:sync
 
       - name: Get version
         id: version
@@ -64,7 +74,7 @@ jobs:
           git push --tags
 
       - name: Zip plugins
-        run: bun scripts/zip-plugin.ts
+        run: pnpm tsx scripts/zip-plugin.ts
 
       - name: Setup npm auth
         run: echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > .npmrc
