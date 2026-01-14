@@ -41,7 +41,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - run: bun install
+      - run: bun install --ignore-scripts
 
       - name: Bump version
         run: bunx bumpp ${{ inputs.bump_type }} --yes --no-commit --no-tag --no-push
@@ -67,7 +67,7 @@ jobs:
         run: bun scripts/zip-plugin.ts
 
       - name: Publish to npm
-        run: bun publish --access public
+        run: bun publish --access public --ignore-scripts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
