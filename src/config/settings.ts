@@ -55,8 +55,12 @@ export type JournalSettings = z.infer<typeof JournalSettingsSchema>;
 
 export const UserSettingsSchema = z.object({
   preferredEditor: z.string().default("code"),
-  journalSettings: JournalSettingsSchema.default({}),
-  ralphSettings: RalphSettingsSchema.default({}),
+  journalSettings: JournalSettingsSchema.optional().transform(
+    (v) => v ?? JournalSettingsSchema.parse({}),
+  ),
+  ralphSettings: RalphSettingsSchema.optional().transform(
+    (v) => v ?? RalphSettingsSchema.parse({}),
+  ),
 });
 
 type UserSettings = z.infer<typeof UserSettingsSchema>;
