@@ -66,9 +66,6 @@ jobs:
           git push
           git push --tags
 
-      - name: Zip plugins
-        run: pnpm tsx scripts/zip-plugin.ts
-
       - name: Publish to npm
         run: npm publish --access public --provenance
         env:
@@ -77,4 +74,4 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create v${{ steps.version.outputs.version }} --generate-notes dist/plugins.zip
+        run: gh release create v${{ steps.version.outputs.version }} --generate-notes

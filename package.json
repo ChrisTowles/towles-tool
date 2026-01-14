@@ -30,7 +30,7 @@
   },
   "scripts": {
     "version:sync": "pnpm tsx scripts/sync-versions.ts",
-    "prepublishOnly": "pnpm run version:sync && pnpm tsx scripts/zip-plugin.ts",
+    "prepublishOnly": "pnpm run version:sync",
     "start": "tsx bin/run.ts",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
