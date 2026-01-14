@@ -1,7 +1,7 @@
 import { Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_STATE_FILE, loadState } from "./lib/state.js";
+import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "./lib/state.js";
 import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from "./lib/formatter.js";
 
 /**
@@ -20,8 +20,7 @@ export default class Plan extends BaseCommand {
     ...BaseCommand.baseFlags,
     stateFile: Flags.string({
       char: "s",
-      description: "State file path",
-      default: DEFAULT_STATE_FILE,
+      description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
     format: Flags.string({
       char: "f",
@@ -37,11 +36,13 @@ export default class Plan extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Plan);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
-    const state = loadState(flags.stateFile);
+    const state = loadState(stateFile);
 
     if (!state) {
-      console.log(pc.yellow(`No state file found at: ${flags.stateFile}`));
+      console.log(pc.yellow(`No state file found at: ${stateFile}`));
       return;
     }
 

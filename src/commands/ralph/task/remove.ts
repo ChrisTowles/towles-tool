@@ -1,7 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, saveState } from "../lib/state.js";
+import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../lib/state.js";
 
 /**
  * Remove a ralph task by ID
@@ -25,13 +25,14 @@ export default class TaskRemove extends BaseCommand {
     ...BaseCommand.baseFlags,
     stateFile: Flags.string({
       char: "s",
-      description: "State file path",
-      default: DEFAULT_STATE_FILE,
+      description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
   };
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskRemove);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const taskId = args.id;
 
@@ -39,10 +40,10 @@ export default class TaskRemove extends BaseCommand {
       this.error("Invalid task ID");
     }
 
-    const state = loadState(flags.stateFile);
+    const state = loadState(stateFile);
 
     if (!state) {
-      this.error(`No state file found at: ${flags.stateFile}`);
+      this.error(`No state file found at: ${stateFile}`);
     }
 
     const taskIndex = state.tasks.findIndex((t) => t.id === taskId);
@@ -53,7 +54,7 @@ export default class TaskRemove extends BaseCommand {
 
     const removedTask = state.tasks[taskIndex];
     state.tasks.splice(taskIndex, 1);
-    saveState(state, flags.stateFile);
+    saveState(state, stateFile);
 
     console.log(pc.green(`✓ Removed task #${taskId}: ${removedTask.description}`));
     console.log(pc.dim(`Remaining tasks: ${state.tasks.length}`));

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Args, Flags } from "@oclif/core";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_PROGRESS_FILE } from "./lib/state.js";
+import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "./lib/state.js";
 
 /**
  * Append progress message to ralph-progress.md (write-only, no read)
@@ -26,18 +26,19 @@ export default class Progress extends BaseCommand {
     ...BaseCommand.baseFlags,
     file: Flags.string({
       char: "f",
-      description: "Progress file path",
-      default: DEFAULT_PROGRESS_FILE,
+      description: `Progress file path (default: ${DEFAULT_PROGRESS_FILE})`,
     }),
   };
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Progress);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const progressFile = resolveRalphPath(flags.file, "progressFile", ralphSettings);
 
     const timestamp = new Date().toISOString();
     const line = `- [${timestamp}] ${args.message}\n`;
 
-    fs.mkdirSync(path.dirname(flags.file), { recursive: true });
-    fs.appendFileSync(flags.file, line);
+    fs.mkdirSync(path.dirname(progressFile), { recursive: true });
+    fs.appendFileSync(progressFile, line);
   }
 }

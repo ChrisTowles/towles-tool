@@ -2,17 +2,57 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import pc from "picocolors";
 import { z } from "zod";
+import type { RalphSettings } from "../../../config/settings";
+import { RalphSettingsSchema } from "../../../config/settings";
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 export const DEFAULT_MAX_ITERATIONS = 10;
-export const DEFAULT_STATE_FILE = "./.claude/.ralph/ralph-state.local.json";
-export const DEFAULT_LOG_FILE = "./.claude/.ralph/ralph-log.local.md";
-export const DEFAULT_PROGRESS_FILE = "./.claude/.ralph/ralph-progress.local.md";
-export const DEFAULT_HISTORY_FILE = "./.claude/.ralph/ralph-history.local.log";
+export const DEFAULT_STATE_DIR = "./.claude/.ralph";
 export const DEFAULT_COMPLETION_MARKER = "RALPH_DONE";
+
+// File names within stateDir
+const STATE_FILE_NAME = "ralph-state.local.json";
+const LOG_FILE_NAME = "ralph-log.local.md";
+const PROGRESS_FILE_NAME = "ralph-progress.local.md";
+const HISTORY_FILE_NAME = "ralph-history.local.log";
+
+// ============================================================================
+// Path Helpers (use stateDir from settings)
+// ============================================================================
+
+export function getRalphPaths(settings?: RalphSettings) {
+  const stateDir = settings?.stateDir ?? RalphSettingsSchema.parse({}).stateDir;
+  return {
+    stateFile: path.join(stateDir, STATE_FILE_NAME),
+    logFile: path.join(stateDir, LOG_FILE_NAME),
+    progressFile: path.join(stateDir, PROGRESS_FILE_NAME),
+    historyFile: path.join(stateDir, HISTORY_FILE_NAME),
+  };
+}
+
+// Legacy defaults for backwards compatibility (used in flag descriptions)
+export const DEFAULT_STATE_FILE = `${DEFAULT_STATE_DIR}/${STATE_FILE_NAME}`;
+export const DEFAULT_LOG_FILE = `${DEFAULT_STATE_DIR}/${LOG_FILE_NAME}`;
+export const DEFAULT_PROGRESS_FILE = `${DEFAULT_STATE_DIR}/${PROGRESS_FILE_NAME}`;
+export const DEFAULT_HISTORY_FILE = `${DEFAULT_STATE_DIR}/${HISTORY_FILE_NAME}`;
+
+/**
+ * Resolve ralph file path - uses flag value if provided, otherwise computes from settings
+ */
+export function resolveRalphPath(
+  flagValue: string | undefined,
+  pathType: "stateFile" | "logFile" | "progressFile" | "historyFile",
+  settings?: RalphSettings,
+): string {
+  if (flagValue !== undefined) {
+    return flagValue;
+  }
+  const paths = getRalphPaths(settings);
+  return paths[pathType];
+}
 export const CLAUDE_DEFAULT_ARGS = [
   "--print",
   "--verbose",

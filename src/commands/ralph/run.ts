@@ -5,13 +5,14 @@ import { BaseCommand } from "../base.js";
 import {
   DEFAULT_STATE_FILE,
   DEFAULT_LOG_FILE,
-  DEFAULT_PROGRESS_FILE,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_COMPLETION_MARKER,
   CLAUDE_DEFAULT_ARGS,
   loadState,
   saveState,
   appendHistory,
+  resolveRalphPath,
+  getRalphPaths,
 } from "./lib/state.js";
 import {
   buildIterationPrompt,
@@ -62,8 +63,7 @@ export default class Run extends BaseCommand {
     ...BaseCommand.baseFlags,
     stateFile: Flags.string({
       char: "s",
-      description: "State file path",
-      default: DEFAULT_STATE_FILE,
+      description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
     taskId: Flags.integer({
       char: "t",
@@ -97,8 +97,7 @@ export default class Run extends BaseCommand {
       description: "Extra args to pass to claude CLI (space-separated)",
     }),
     logFile: Flags.string({
-      description: "Log file path",
-      default: DEFAULT_LOG_FILE,
+      description: `Log file path (default: ${DEFAULT_LOG_FILE})`,
     }),
     completionMarker: Flags.string({
       description: "Completion marker",
@@ -112,6 +111,10 @@ export default class Run extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Run);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
+    const logFile = resolveRalphPath(flags.logFile, "logFile", ralphSettings);
+    const ralphPaths = getRalphPaths(ralphSettings);
 
     let maxIterations = flags.maxIterations;
     const addIterations = flags.addIterations;
@@ -119,12 +122,10 @@ export default class Run extends BaseCommand {
     const focusedTaskId = flags.taskId ?? null;
 
     // Load existing state
-    let state = loadState(flags.stateFile);
+    let state = loadState(stateFile);
 
     if (!state) {
-      this.error(
-        `No state file found at: ${flags.stateFile}\nUse: tt ralph task add "description"`,
-      );
+      this.error(`No state file found at: ${stateFile}\nUse: tt ralph task add "description"`);
     }
 
     // Handle --addIterations: extend max from current iteration
@@ -170,8 +171,8 @@ export default class Run extends BaseCommand {
       console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`);
       console.log(`  Label filter: ${labelFilter || "(none)"}`);
       console.log(`  Max iterations: ${maxIterations}`);
-      console.log(`  State file: ${flags.stateFile}`);
-      console.log(`  Log file: ${flags.logFile}`);
+      console.log(`  State file: ${stateFile}`);
+      console.log(`  Log file: ${logFile}`);
       console.log(`  Completion marker: ${flags.completionMarker}`);
       console.log(`  Auto-commit: ${flags.autoCommit}`);
       console.log(`  Fork session: ${!flags.noFork}`);
@@ -187,11 +188,11 @@ export default class Run extends BaseCommand {
       }
 
       // Show prompt preview
-      const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3);
+      const progressContent = readLastIterations(ralphPaths.progressFile, 3);
       const taskList = formatTasksForPrompt(remainingTasks);
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        progressFile: DEFAULT_PROGRESS_FILE,
+        progressFile: ralphPaths.progressFile,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
         progressContent: progressContent || undefined,
@@ -219,7 +220,7 @@ export default class Run extends BaseCommand {
     state.status = "running";
 
     // Create log stream (append mode)
-    const logStream = fs.createWriteStream(flags.logFile, { flags: "a" });
+    const logStream = fs.createWriteStream(logFile, { flags: "a" });
 
     const ready = state.tasks.filter((t) => t.status === "ready").length;
     const done = state.tasks.filter((t) => t.status === "done").length;
@@ -234,7 +235,7 @@ export default class Run extends BaseCommand {
       console.log(pc.dim(`Label filter: ${labelFilter}`));
     }
     console.log(pc.dim(`Max iterations: ${maxIterations}`));
-    console.log(pc.dim(`Log file: ${flags.logFile}`));
+    console.log(pc.dim(`Log file: ${logFile}`));
     console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`));
     console.log(
       pc.dim(
@@ -260,7 +261,7 @@ export default class Run extends BaseCommand {
       console.log(pc.yellow(msg));
       logStream.write(msg);
       state.status = "error";
-      saveState(state, flags.stateFile);
+      saveState(state, stateFile);
     });
 
     // Main loop
@@ -274,7 +275,7 @@ export default class Run extends BaseCommand {
       logStream.write(`\n━━━ ${iterHeader} ━━━\n`);
 
       const iterationStart = new Date().toISOString();
-      const progressContent = readLastIterations(DEFAULT_PROGRESS_FILE, 3);
+      const progressContent = readLastIterations(ralphPaths.progressFile, 3);
       // Reload remaining tasks for current state
       const currentRemainingTasks = state.tasks.filter((t) => t.status !== "done");
       const taskList = formatTasksForPrompt(
@@ -284,7 +285,7 @@ export default class Run extends BaseCommand {
       );
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        progressFile: DEFAULT_PROGRESS_FILE,
+        progressFile: ralphPaths.progressFile,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
         progressContent: progressContent || undefined,
@@ -320,7 +321,7 @@ export default class Run extends BaseCommand {
       const iterResult = await runIteration(prompt, iterClaudeArgs, logStream);
 
       // Reload state from disk to pick up changes made by child claude process
-      const freshState = loadState(flags.stateFile);
+      const freshState = loadState(stateFile);
       if (freshState) {
         const currentIter = state.iteration;
         Object.assign(state, freshState, { iteration: currentIter });
@@ -345,19 +346,22 @@ export default class Run extends BaseCommand {
       const durationHuman = formatDuration(durationMs);
 
       // Record history
-      appendHistory({
-        iteration: state.iteration,
-        startedAt: iterationStart,
-        completedAt: iterationEnd,
-        durationMs,
-        durationHuman,
-        outputSummary: extractOutputSummary(iterResult.output),
-        markerFound,
-        contextUsedPercent: iterResult.contextUsedPercent,
-      });
+      appendHistory(
+        {
+          iteration: state.iteration,
+          startedAt: iterationStart,
+          completedAt: iterationEnd,
+          durationMs,
+          durationHuman,
+          outputSummary: extractOutputSummary(iterResult.output),
+          markerFound,
+          contextUsedPercent: iterResult.contextUsedPercent,
+        },
+        ralphPaths.historyFile,
+      );
 
       // Save state
-      saveState(state, flags.stateFile);
+      saveState(state, stateFile);
 
       // Log summary
       const contextInfo =
@@ -377,7 +381,7 @@ export default class Run extends BaseCommand {
       if (markerFound) {
         completed = true;
         state.status = "completed";
-        saveState(state, flags.stateFile);
+        saveState(state, stateFile);
         console.log(pc.bold(pc.green(`\n✅ Task completed after ${state.iteration} iteration(s)`)));
         logStream.write(`\n✅ Task completed after ${state.iteration} iteration(s)\n`);
       }
@@ -392,11 +396,11 @@ export default class Run extends BaseCommand {
 
     if (!interrupted && state.iteration >= maxIterations) {
       state.status = "max_iterations_reached";
-      saveState(state, flags.stateFile);
+      saveState(state, stateFile);
       console.log(
         pc.bold(pc.yellow(`\n⚠️  Max iterations (${maxIterations}) reached without completion`)),
       );
-      console.log(pc.dim(`State saved to: ${flags.stateFile}`));
+      console.log(pc.dim(`State saved to: ${stateFile}`));
       logStream.write(`\n⚠️  Max iterations (${maxIterations}) reached without completion\n`);
       this.exit(1);
     }

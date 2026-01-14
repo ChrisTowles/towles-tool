@@ -23,6 +23,13 @@ export function getSettingsPath(configDir: string): string {
   return path.join(configDir, SETTINGS_FILENAME);
 }
 
+export const RalphSettingsSchema = z.object({
+  // Base directory for ralph files (relative to cwd or absolute)
+  stateDir: z.string().default("./.claude/.ralph"),
+});
+
+export type RalphSettings = z.infer<typeof RalphSettingsSchema>;
+
 export const JournalSettingsSchema = z.object({
   // Base folder where all journal files are stored
   baseFolder: z.string().default(path.join(homedir())),
@@ -48,7 +55,8 @@ export type JournalSettings = z.infer<typeof JournalSettingsSchema>;
 
 export const UserSettingsSchema = z.object({
   preferredEditor: z.string().default("code"),
-  journalSettings: JournalSettingsSchema,
+  journalSettings: JournalSettingsSchema.default({}),
+  ralphSettings: RalphSettingsSchema.default({}),
 });
 
 type UserSettings = z.infer<typeof UserSettingsSchema>;
@@ -68,10 +76,7 @@ export class LoadedSettings {
 }
 
 function createDefaultSettings(): UserSettings {
-  return UserSettingsSchema.parse({
-    // NOTE: yes its odd zod can't use defaults from objects nested but it appears to be the case.
-    journalSettings: JournalSettingsSchema.parse({}),
-  });
+  return UserSettingsSchema.parse({});
 }
 
 function createAndSaveDefaultSettings(): UserSettings {

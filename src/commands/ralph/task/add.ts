@@ -8,6 +8,7 @@ import {
   saveState,
   createInitialState,
   addTaskToState,
+  resolveRalphPath,
 } from "../lib/state.js";
 import { findSessionByMarker } from "../lib/marker.js";
 
@@ -35,8 +36,7 @@ export default class TaskAdd extends BaseCommand {
     ...BaseCommand.baseFlags,
     stateFile: Flags.string({
       char: "s",
-      description: "State file path",
-      default: DEFAULT_STATE_FILE,
+      description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
     sessionId: Flags.string({
       description: "Claude session ID for resuming from prior research",
@@ -53,6 +53,8 @@ export default class TaskAdd extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskAdd);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const description = args.description.trim();
 
@@ -78,14 +80,14 @@ export default class TaskAdd extends BaseCommand {
       console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`));
     }
 
-    let state = loadState(flags.stateFile);
+    let state = loadState(stateFile);
 
     if (!state) {
       state = createInitialState(DEFAULT_MAX_ITERATIONS);
     }
 
     const newTask = addTaskToState(state, description, sessionId, marker, flags.label);
-    saveState(state, flags.stateFile);
+    saveState(state, stateFile);
 
     console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
     if (flags.label) {
@@ -97,7 +99,7 @@ export default class TaskAdd extends BaseCommand {
     if (marker) {
       console.log(pc.dim(`  Marker: ${marker}`));
     }
-    console.log(pc.dim(`State saved to: ${flags.stateFile}`));
+    console.log(pc.dim(`State saved to: ${stateFile}`));
     console.log(pc.dim(`Total tasks: ${state.tasks.length}`));
   }
 }

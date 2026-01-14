@@ -1,7 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, saveState } from "../lib/state.js";
+import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../lib/state.js";
 
 /**
  * Mark a ralph task as done
@@ -25,13 +25,14 @@ export default class TaskDone extends BaseCommand {
     ...BaseCommand.baseFlags,
     stateFile: Flags.string({
       char: "s",
-      description: "State file path",
-      default: DEFAULT_STATE_FILE,
+      description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
   };
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskDone);
+    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const taskId = args.id;
 
@@ -39,10 +40,10 @@ export default class TaskDone extends BaseCommand {
       this.error("Invalid task ID");
     }
 
-    const state = loadState(flags.stateFile);
+    const state = loadState(stateFile);
 
     if (!state) {
-      this.error(`No state file found at: ${flags.stateFile}`);
+      this.error(`No state file found at: ${stateFile}`);
     }
 
     const task = state.tasks.find((t) => t.id === taskId);
@@ -58,7 +59,7 @@ export default class TaskDone extends BaseCommand {
 
     task.status = "done";
     task.completedAt = new Date().toISOString();
-    saveState(state, flags.stateFile);
+    saveState(state, stateFile);
 
     console.log(pc.green(`✓ Marked task #${taskId} as done: ${task.description}`));
 
