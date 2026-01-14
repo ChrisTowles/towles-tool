@@ -66,10 +66,13 @@ jobs:
       - name: Zip plugins
         run: bun scripts/zip-plugin.ts
 
-      - name: Publish to npm
-        run: bun publish --access public --ignore-scripts
+      - name: Setup npm auth
+        run: echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        run: bun publish --access public --ignore-scripts
 
       - name: Create GitHub Release
         env:
