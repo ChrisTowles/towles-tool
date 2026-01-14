@@ -29,9 +29,9 @@
     "url": "https://github.com/ChrisTowles/towles-tool/issues"
   },
   "scripts": {
-    "version:sync": "bun scripts/sync-versions.ts",
-    "prepublishOnly": "bun run version:sync && bun scripts/zip-plugin.ts",
-    "start": "bun bin/run.ts",
+    "version:sync": "pnpm tsx scripts/sync-versions.ts",
+    "prepublishOnly": "pnpm run version:sync && pnpm tsx scripts/zip-plugin.ts",
+    "start": "tsx bin/run.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "test": "vitest run",
@@ -77,7 +77,7 @@
     "@anthropic-ai/claude-code"
   ],
   "simple-git-hooks": {
-    "pre-commit": "bunx lint-staged -q && claude plugin validate ."
+    "pre-commit": "pnpm exec lint-staged -q && claude plugin validate ."
   },
   "lint-staged": {
     "*": "oxlint --quiet --fix"
