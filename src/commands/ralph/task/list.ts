@@ -11,9 +11,15 @@ export default class TaskList extends BaseCommand {
   static override description = "List all tasks";
 
   static override examples = [
-    "<%= config.bin %> ralph task list",
-    "<%= config.bin %> ralph task list --format markdown",
-    "<%= config.bin %> ralph task list --label backend",
+    { description: "List all tasks", command: "<%= config.bin %> ralph task list" },
+    {
+      description: "Output as markdown",
+      command: "<%= config.bin %> ralph task list --format markdown",
+    },
+    {
+      description: "Filter tasks by label",
+      command: "<%= config.bin %> ralph task list --label backend",
+    },
   ];
 
   static override flags = {

@@ -16,8 +16,11 @@ export default class TaskRemove extends BaseCommand {
   static override description = "Remove a task by ID";
 
   static override examples = [
-    "<%= config.bin %> ralph task remove 1",
-    "<%= config.bin %> ralph task remove 5 --stateFile custom-state.json",
+    { description: "Remove task #1", command: "<%= config.bin %> ralph task remove 1" },
+    {
+      description: "Remove from custom state file",
+      command: "<%= config.bin %> ralph task remove 5 --stateFile custom-state.json",
+    },
   ];
 
   static override args = {
