@@ -11,7 +11,6 @@ import { isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
  * Note: Uses tinyexec which is safe (execFile-based, no shell injection)
  */
 export default class Pr extends BaseCommand {
-  static override aliases = ["pr"];
   static override description = "Create a pull request from the current branch";
 
   static override examples = [

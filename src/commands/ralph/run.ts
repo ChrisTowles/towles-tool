@@ -47,7 +47,6 @@ function readLastIterations(filePath: string, count: number): string {
  * Run the autonomous ralph loop
  */
 export default class Run extends BaseCommand {
-  static override aliases = ["run"];
   static override description = "Start the autonomous ralph loop";
 
   static override examples = [
