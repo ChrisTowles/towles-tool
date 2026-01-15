@@ -35,27 +35,32 @@ pnpm start  # Run directly with tsx
 ## Commands
 
 **Ralph (autonomous runner)**
+
 - `tt ralph task add` - Add task
 - `tt ralph run` - Run autonomous loop
 - `tt ralph plan` - Show plan with graph
 - `tt ralph progress` - Append progress (write-only)
 
 **Observability**
+
 - `tt observe graph` (alias: `tt graph`) - Token usage treemap
 - `tt observe session` - Session analysis
 - `tt observe report` - Daily/weekly reports
 
 **Git**
+
 - `tt gh branch` - Create branch from issue
 - `tt gh pr` (alias: `tt pr`) - Create pull request
 - `tt gh branch-clean` - Delete merged branches
 
 **Journaling**
+
 - `tt journal daily-notes` (alias: `tt today`) - Weekly files with daily sections
 - `tt journal meeting` - Meeting notes
 - `tt journal note` - General notes
 
 **Utilities**
+
 - `tt config` - Show config
 - `tt doctor` - Check dependencies
 - `tt install` - Configure Claude Code settings
