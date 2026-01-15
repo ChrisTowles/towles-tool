@@ -40,6 +40,7 @@ export default class Plan extends BaseCommand {
       options: ["default", "markdown", "json"],
     }),
     copy: Flags.boolean({
+      char: "c",
       description: "Copy output to clipboard",
       default: false,
     }),
