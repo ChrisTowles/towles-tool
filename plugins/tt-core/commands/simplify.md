@@ -1,5 +1,5 @@
 ---
-description: Simplify and refine code using code-simplifier agent
+description: Simplify and refine code using code-simplifier agent, command exists to make it easier to invoke code simplification from the CLI and target specific code areas.
 allowed-tools: AskUserQuestion(*), Task(code-simplifier:*), Bash(git diff*)
 ---
 
