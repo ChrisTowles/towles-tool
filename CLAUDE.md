@@ -6,10 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a dual-purpose repository:
 
-1. **CLI tool** (`tt`) - Collection of quality-of-life scripts for daily development workflows (distributed as compiled executable)
+1. **CLI tool** (`tt`) - Ralph autonomous task runner, observability, git workflows, and journaling (distributed via npm, runs with tsx)
 2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
-
-The project evolved from a private toolbox of personal scripts to a CLI tool and Claude Code plugin marketplace.
 
 ## Commands
 

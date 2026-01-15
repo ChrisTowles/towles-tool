@@ -1,6 +1,6 @@
 {
     "name": "tt",
-    "description": "Useful personal commands: Around Claude code and building using Agentic patterns.",
+    "description": "Ralph autonomous task runner, observability (token treemaps), git workflows, and journaling",
     "version": "0.0.40",
     "author": {
         "name": "Chris Towles"

@@ -1,98 +1,80 @@
 # Towles Tool
 
-Collection of quality-of-life tools and Claude Code plugins for daily development workflows.
+CLI tool with autonomous task runner, observability, and quality-of-life commands for daily development.
 
-## Overview
+## Features
 
-**CLI tool** (`tt`) - Distributed as a compiled Bun executable for daily development tasks.
+**Ralph** - Autonomous task runner with session forking and context reuse
 
-**Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use.
+**Observability** - Token usage visualization with interactive treemaps
 
-The project evolved from a private toolbox of personal scripts to a compiled Bun executable and Claude Code plugin marketplace.
+**Git workflows** - Branch creation, PR generation, and cleanup
+
+**Journaling** - Daily notes, meeting notes, and general notes
+
+**Claude Code plugins** - Personal plugin marketplace for Claude Code integration
 
 ## Installation
 
-### CLI Tool
-
-Download the pre-built executable for your platform from [Releases](https://github.com/ChrisTowles/towles-tool/releases), or build from source:
+### From Source
 
 ```bash
-# Clone and build
 git clone https://github.com/ChrisTowles/towles-tool.git
 cd towles-tool
-bun install
-bun run build
-
-# The executable is at dist/tt
-# Move it somewhere in your PATH
-mv dist/tt ~/.local/bin/tt
+pnpm install
+pnpm start  # Run directly with tsx
 ```
 
 ### Claude Code Plugins
-
-Install plugins from this marketplace:
 
 ```bash
 /plugins marketplace add ChrisTowles/towles-tool
 /plugin install tt@ChrisTowles/towles-tool
 ```
 
-I do find myself editing `~/.claude/settings.json` a lot to directly modify settings around plugins.
+## Commands
 
-### Shell Completions
+**Ralph (autonomous runner)**
+- `tt ralph task add` - Add task
+- `tt ralph run` - Run autonomous loop
+- `tt ralph plan` - Show plan with graph
+- `tt ralph progress` - Append progress (write-only)
 
-Generate shell completions for tab completion support:
+**Observability**
+- `tt observe graph` (alias: `tt graph`) - Token usage treemap
+- `tt observe session` - Session analysis
+- `tt observe report` - Daily/weekly reports
 
-```bash
-# Bash - add to ~/.bashrc
-tt completion >> ~/.bashrc
+**Git**
+- `tt gh branch` - Create branch from issue
+- `tt gh pr` (alias: `tt pr`) - Create pull request
+- `tt gh branch-clean` - Delete merged branches
 
-# Zsh - add to ~/.zshrc
-tt completion >> ~/.zshrc
+**Journaling**
+- `tt journal daily-notes` (alias: `tt today`) - Weekly files with daily sections
+- `tt journal meeting` - Meeting notes
+- `tt journal note` - General notes
 
-# Fish
-tt completion > ~/.config/fish/completions/tt.fish
-```
+**Utilities**
+- `tt config` - Show config
+- `tt doctor` - Check dependencies
+- `tt install` - Configure Claude Code settings
 
 ## Development
 
-### Setup
-
 ```bash
-# Clone the repository
-git clone https://github.com/ChrisTowles/towles-tool.git
-cd towles-tool
-bun install
+pnpm start              # Run CLI with tsx
+pnpm test               # Run tests
+pnpm lint               # Run oxlint
+pnpm format             # Format with oxfmt
+pnpm typecheck          # Type check
 ```
-
-### Commands
-
-```bash
-bun run start           # Run the CLI directly
-bun run build           # Build executable for current platform
-bun run build:all       # Build for all platforms (Linux, macOS, Windows)
-bun run test            # Run tests
-bun run lint            # Run linter
-bun run typecheck       # Type check
-```
-
-### Plugin Validation
-
-```bash
-claude plugin validate .  # Validate Claude Code plugins before publishing
-```
-
-**Plugin Marketplace**: `.claude-plugin/marketplace.json`
-
-- Defines available plugins for installation
 
 ### Releasing
 
-See [docs/releasing.md](./docs/releasing.md) for full details.
-
 ```bash
 gh workflow run release.yml -f bump_type=patch  # or minor/major
-gh run watch  # monitor progress
+gh run watch
 ```
 
 ## Reminders for me
