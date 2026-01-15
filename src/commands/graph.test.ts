@@ -1,10 +1,10 @@
 /**
- * Tests for observe graph command --days filtering
+ * Tests for graph command --days filtering
  */
 import { describe, it, expect } from "vitest";
 import { calculateCutoffMs, filterByDays } from "./graph.js";
 
-describe("observe graph --days filtering", () => {
+describe("graph --days filtering", () => {
   describe("calculateCutoffMs", () => {
     it("returns 0 when days <= 0", () => {
       expect(calculateCutoffMs(0)).toBe(0);

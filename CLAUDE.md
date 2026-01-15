@@ -60,7 +60,7 @@ pnpm format:check       # Check formatting without writing
 - `journal daily-notes` (alias: `today`) - Weekly files with daily sections
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
-- `observe setup/status/report/graph/session` - Claude Code observability
+- `graph` - Claude Code token visualization treemap
 - `ralph task add/list/done/remove` - Task management
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
@@ -68,10 +68,8 @@ pnpm format:check       # Check formatting without writing
 
 **Key Utilities**:
 
-- `src/utils/anthropic/` - Claude API integration for AI-powered features
 - `src/utils/git/` - Git and GitHub CLI wrappers
 - `src/utils/date-utils.ts` - Date formatting using Luxon
-- `src/utils/exec.ts` - Command execution utilities with `tinyexec`
 
 ### Claude Code Plugin Architecture
 
@@ -151,36 +149,13 @@ tt ralph progress "message"         # Append to ralph-progress.md
 
 ## Observability
 
-The `observe` command provides Claude Code session analysis and cost tracking.
-
 ```bash
-# Setup (run once)
-tt observe setup                # Configure settings.json, add hooks
-
-# Status
-tt observe status               # Show current config and OTEL vars
-
-# Session analysis
-tt observe session              # List recent sessions with cost estimates
-tt observe session <id>         # Detailed turn-by-turn breakdown
-
-# Reports
-tt observe report               # Daily token/cost report via ccusage
-tt observe report --weekly      # Weekly report
-tt observe report --output      # Save JSON to ~/.claude/reports/
-
-# Visualization
-tt observe graph                # Generate HTML treemap of all sessions
-tt observe graph --session <id> # Single session treemap
-tt observe graph --open         # Auto-open in browser
-tt flame                        # Alias for observe graph
+tt graph                        # Generate HTML treemap of all sessions
+tt graph --session <id>         # Single session treemap
+tt graph --open                 # Auto-open in browser
 ```
 
 Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5:1, red >5:1.
-
-**Troubleshooting treemap**: Use Chrome MCP tools (`mcp__claude-in-chrome__*`) to view and interact with the treemap in browser. Run `tt observe graph` then use `tabs_context_mcp`, `navigate`, and `computer screenshot` to inspect the visualization.
-
-**Treemap reference**: https://d3js.org/d3-hierarchy/treemap - d3-hierarchy treemap tiling algorithms and layout options.
 
 ## Important Notes
 

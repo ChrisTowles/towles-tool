@@ -76,7 +76,15 @@
   },
   "oclif": {
     "bin": "tt",
-    "commands": "./src/commands",
+    "commands": {
+      "globPatterns": [
+        "**/*.+(js|cjs|mjs|ts|tsx|mts|cts)",
+        "!**/_lib/**",
+        "!**/*.test.*"
+      ],
+      "strategy": "pattern",
+      "target": "./src/commands"
+    },
     "dirname": "towles-tool",
     "topicSeparator": " "
   },

@@ -1,6 +1,6 @@
 import consola from "consola";
 import { BaseCommand } from "../../base.js";
-import { generateMarker, MARKER_PREFIX } from "../../../lib/ralph/marker.js";
+import { generateMarker, MARKER_PREFIX } from "../_lib/marker.js";
 
 /**
  * Generate a random marker for session tracking.

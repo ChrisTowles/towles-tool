@@ -15,12 +15,11 @@ For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.m
 # Marker workflow (CRITICAL for token efficiency)
 tt ralph marker create                        # Generate marker for session tracking
 # Then tell Claude to output the marker during research
-tt ralph task add "desc" --findMarker <marker> # Find session by marker
+tt ralph task add "{detailed-description}" --findMarker <marker> # Find session by marker
 
 # Task management
-tt ralph task add "description"               # Add task (no session)
-tt ralph task add "desc" --sessionId <id>     # Add task with explicit session ID
-tt ralph task add "desc" --findMarker <m>     # Add task, find session by marker
+tt ralph task add "{detailed-description}"               # Add task (no session)
+tt ralph task add "{detailed-description}" --findMarker <m>     # Add task, find session by marker
 tt ralph task list                            # View tasks (default format)
 tt ralph task list --format markdown          # View tasks as markdown
 tt ralph task done 1                          # Mark task #1 complete
@@ -37,9 +36,6 @@ tt ralph run --no-autoCommit          # Execute without auto-commits
 tt ralph run --maxIterations 10       # Safety limit
 tt ralph run --taskId 5               # Focus on specific task
 tt ralph run --noResume               # Start fresh session (rare)
-
-# Cleanup
-tt ralph clear                        # Clean up files
 ```
 
 ## CRITICAL: Session Markers Prevent Token Burn

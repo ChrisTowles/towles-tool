@@ -2,12 +2,7 @@ import { Args, Flags } from "@oclif/core";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
-import {
-  DEFAULT_STATE_FILE,
-  loadState,
-  saveState,
-  resolveRalphPath,
-} from "../../../lib/ralph/state.js";
+import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../_lib/state.js";
 
 /**
  * Remove a ralph task by ID

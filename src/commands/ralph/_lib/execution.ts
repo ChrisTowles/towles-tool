@@ -1,4 +1,7 @@
 import type { WriteStream } from "node:fs";
+// NOTE: We use spawn instead of tinyexec for runIteration because we need
+// real-time streaming of stdout/stderr. tinyexec waits for command completion
+// before returning output, which doesn't work for long-running claude sessions.
 import { spawn } from "node:child_process";
 import pc from "picocolors";
 import { x } from "tinyexec";
