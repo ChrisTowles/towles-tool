@@ -23,8 +23,11 @@ export default class Install extends BaseCommand {
     "Configure Claude Code settings and optionally enable observability";
 
   static override examples = [
-    "<%= config.bin %> install",
-    "<%= config.bin %> install --observability",
+    { description: "Configure Claude Code settings", command: "<%= config.bin %> install" },
+    {
+      description: "Include OTEL setup instructions",
+      command: "<%= config.bin %> install --observability",
+    },
   ];
 
   static override flags = {
