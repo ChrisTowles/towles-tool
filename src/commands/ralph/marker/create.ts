@@ -14,6 +14,11 @@ export default class MarkerCreate extends BaseCommand {
       description: "Generate a random session marker",
       command: "<%= config.bin %> ralph marker create",
     },
+    {
+      description: "Generate marker then add task with it",
+      command:
+        '<%= config.bin %> ralph marker create && tt ralph task add "desc" --findMarker RALPH_MARKER_xxx',
+    },
   ];
 
   static override flags = {

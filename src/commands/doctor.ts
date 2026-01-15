@@ -19,6 +19,7 @@ export default class Doctor extends BaseCommand {
 
   static override examples = [
     { description: "Check system dependencies", command: "<%= config.bin %> <%= command.id %>" },
+    { description: "Verify environment after setup", command: "<%= config.bin %> doctor" },
   ];
 
   async run(): Promise<void> {
