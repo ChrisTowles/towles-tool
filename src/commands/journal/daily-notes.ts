@@ -21,8 +21,11 @@ export default class DailyNotes extends BaseCommand {
   static override description = "Weekly files with daily sections for ongoing work and notes";
 
   static override examples = [
-    "<%= config.bin %> journal daily-notes",
-    "<%= config.bin %> journal today",
+    {
+      description: "Open weekly notes for today",
+      command: "<%= config.bin %> journal daily-notes",
+    },
+    { description: "Using alias", command: "<%= config.bin %> today" },
   ];
 
   async run(): Promise<void> {

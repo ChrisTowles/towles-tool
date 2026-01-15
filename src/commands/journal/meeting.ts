@@ -28,9 +28,15 @@ export default class Meeting extends BaseCommand {
   };
 
   static override examples = [
-    "<%= config.bin %> journal meeting",
-    '<%= config.bin %> journal meeting "Sprint Planning"',
-    '<%= config.bin %> journal m "Standup"',
+    {
+      description: "Create meeting note (prompts for title)",
+      command: "<%= config.bin %> journal meeting",
+    },
+    {
+      description: "Create with title",
+      command: '<%= config.bin %> journal meeting "Sprint Planning"',
+    },
+    { description: "Using alias", command: '<%= config.bin %> m "Standup"' },
   ];
 
   async run(): Promise<void> {
