@@ -1,7 +1,13 @@
 import { Args, Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../lib/state.js";
+import {
+  DEFAULT_STATE_FILE,
+  loadState,
+  saveState,
+  resolveRalphPath,
+} from "../../../lib/ralph/state.js";
 
 /**
  * Remove a ralph task by ID
@@ -56,7 +62,7 @@ export default class TaskRemove extends BaseCommand {
     state.tasks.splice(taskIndex, 1);
     saveState(state, stateFile);
 
-    console.log(pc.green(`✓ Removed task #${taskId}: ${removedTask.description}`));
-    console.log(pc.dim(`Remaining tasks: ${state.tasks.length}`));
+    consola.log(colors.green(`✓ Removed task #${taskId}: ${removedTask.description}`));
+    consola.log(colors.dim(`Remaining tasks: ${state.tasks.length}`));
   }
 }

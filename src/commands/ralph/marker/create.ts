@@ -1,5 +1,6 @@
+import consola from "consola";
 import { BaseCommand } from "../../base.js";
-import { generateMarker, MARKER_PREFIX } from "../lib/marker.js";
+import { generateMarker, MARKER_PREFIX } from "../../../lib/ralph/marker.js";
 
 /**
  * Generate a random marker for session tracking.
@@ -18,6 +19,6 @@ export default class MarkerCreate extends BaseCommand {
     await this.parse(MarkerCreate);
 
     const marker = generateMarker();
-    console.log(`${MARKER_PREFIX}${marker}`);
+    consola.log(`${MARKER_PREFIX}${marker}`);
   }
 }
