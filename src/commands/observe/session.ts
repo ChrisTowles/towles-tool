@@ -35,15 +35,6 @@ interface SessionInfo {
   modelBreakdown: Map<string, { input: number; output: number }>;
 }
 
-// Approximate costs per 1M tokens (USD)
-const MODEL_COSTS: Record<string, { input: number; output: number }> = {
-  "claude-opus-4": { input: 15, output: 75 },
-  "claude-sonnet-4": { input: 3, output: 15 },
-  "claude-3-5-sonnet": { input: 3, output: 15 },
-  "claude-3-haiku": { input: 0.25, output: 1.25 },
-  default: { input: 3, output: 15 }, // Assume sonnet
-};
-
 /**
  * List and analyze Claude Code sessions
  */
@@ -98,22 +89,17 @@ export default class ObserveSession extends BaseCommand {
 
     // Table header
     this.log(
-      pc.dim(
-        `${"Session ID".padEnd(12)} ${"Date".padEnd(12)} ${"Tokens".padEnd(10)} ${"Est. Cost".padEnd(10)} Project`,
-      ),
+      pc.dim(`${"Session ID".padEnd(12)} ${"Date".padEnd(12)} ${"Tokens".padEnd(10)} Project`),
     );
-    this.log(pc.dim("─".repeat(80)));
+    this.log(pc.dim("─".repeat(70)));
 
     for (const s of sessions) {
-      const cost = this.estimateCost(s);
-      const costStr = cost > 0 ? `$${cost.toFixed(2)}` : "-";
-
       this.log(
-        `${pc.bold(s.sessionId.slice(0, 10))}  ${s.date.padEnd(12)} ${this.formatTokens(s.totalTokens).padEnd(10)} ${costStr.padEnd(10)} ${pc.dim(s.project)}`,
+        `${pc.bold(s.sessionId.slice(0, 10))}  ${s.date.padEnd(12)} ${this.formatTokens(s.totalTokens).padEnd(10)} ${pc.dim(s.project)}`,
       );
     }
 
-    this.log(pc.dim("─".repeat(80)));
+    this.log(pc.dim("─".repeat(70)));
     this.log(pc.dim(`\nShowing ${sessions.length} sessions. Use --limit to show more.`));
     this.log(pc.dim("Run with session ID for detailed breakdown: tt observe session <id>"));
   }
@@ -141,12 +127,6 @@ export default class ObserveSession extends BaseCommand {
     if (session.cacheReadTokens > 0) {
       this.log(`  Cache Read:   ${this.formatTokens(session.cacheReadTokens)}`);
     }
-    this.log("");
-
-    // Cost estimate
-    const cost = this.estimateCost(session);
-    this.log(pc.bold("Estimated Cost"));
-    this.log(`  Total: ${pc.yellow(`$${cost.toFixed(2)}`)}`);
     this.log("");
 
     // Model breakdown
@@ -351,23 +331,6 @@ export default class ObserveSession extends BaseCommand {
   private decodeProjectPath(encoded: string): string {
     // Project dirs are encoded with - for / and other chars
     return encoded.replace(/-/g, "/").slice(0, 35);
-  }
-
-  private estimateCost(session: SessionInfo): number {
-    let total = 0;
-    for (const [model, usage] of session.modelBreakdown) {
-      const rates = this.getModelRates(model);
-      total += (usage.input / 1_000_000) * rates.input;
-      total += (usage.output / 1_000_000) * rates.output;
-    }
-    return total;
-  }
-
-  private getModelRates(model: string): { input: number; output: number } {
-    if (model.includes("opus")) return MODEL_COSTS["claude-opus-4"];
-    if (model.includes("haiku")) return MODEL_COSTS["claude-3-haiku"];
-    if (model.includes("sonnet")) return MODEL_COSTS["claude-sonnet-4"];
-    return MODEL_COSTS["default"];
   }
 
   private getModelIcon(model: string): string {
