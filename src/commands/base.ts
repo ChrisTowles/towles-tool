@@ -1,5 +1,6 @@
 import { Command, Flags } from "@oclif/core";
-import { LoadedSettings, loadSettings } from "../config/settings.js";
+import type { SettingsFile } from "../config/settings.js";
+import { loadSettings } from "../config/settings.js";
 
 /**
  * Base command that all towles-tool commands extend.
@@ -14,7 +15,7 @@ export abstract class BaseCommand extends Command {
     }),
   };
 
-  protected settings!: LoadedSettings;
+  protected settings!: SettingsFile;
 
   /**
    * Called before run(). Loads user settings.

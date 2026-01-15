@@ -81,11 +81,7 @@
   },
   "oclif": {
     "bin": "tt",
-    "commands": {
-      "identifier": "default",
-      "strategy": "explicit",
-      "target": "./src/commands/index.ts"
-    },
+    "commands": "./src/commands",
     "dirname": "towles-tool",
     "topicSeparator": " "
   },

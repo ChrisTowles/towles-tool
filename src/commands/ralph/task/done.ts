@@ -37,7 +37,7 @@ export default class TaskDone extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskDone);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const taskId = args.id;

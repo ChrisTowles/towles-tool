@@ -1,8 +1,8 @@
 import { Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../lib/state.js";
-import { formatTasksAsMarkdown } from "../lib/formatter.js";
+import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../../../lib/ralph/state.js";
+import { formatTasksAsMarkdown } from "../../../lib/ralph/formatter.js";
 
 /**
  * List all ralph tasks
@@ -36,7 +36,7 @@ export default class TaskList extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(TaskList);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const state = loadState(stateFile);

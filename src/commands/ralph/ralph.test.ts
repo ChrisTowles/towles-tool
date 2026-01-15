@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { RalphTask, IterationHistory } from "./lib/index";
+import type { RalphTask, IterationHistory } from "../../lib/ralph/index.js";
 import {
   createInitialState,
   saveState,
@@ -24,7 +24,7 @@ import {
   DEFAULT_HISTORY_FILE,
   DEFAULT_COMPLETION_MARKER,
   CLAUDE_DEFAULT_ARGS,
-} from "./lib/index";
+} from "../../lib/ralph/index.js";
 
 describe("ralph-loop", () => {
   const testStateFile = join(tmpdir(), `ralph-test-${Date.now()}.json`);

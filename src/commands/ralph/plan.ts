@@ -41,7 +41,7 @@ export default class Plan extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Plan);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const state = loadState(stateFile);

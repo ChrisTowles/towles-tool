@@ -113,7 +113,7 @@ export default class Run extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Run);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
     const logFile = resolveRalphPath(flags.logFile, "logFile", ralphSettings);
     const ralphPaths = getRalphPaths(ralphSettings);

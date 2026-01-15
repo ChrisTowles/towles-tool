@@ -12,7 +12,7 @@ import {
   ensureTemplatesExist,
   generateJournalFileInfoByType,
   openInEditor,
-} from "./utils.js";
+} from "../../lib/journal/utils.js";
 
 /**
  * Create or open meeting notes file
@@ -37,7 +37,7 @@ export default class Meeting extends BaseCommand {
     const { args } = await this.parse(Meeting);
 
     try {
-      const journalSettings = this.settings.settingsFile.settings.journalSettings;
+      const journalSettings = this.settings.settings.journalSettings;
       const templateDir = journalSettings.templateDir;
 
       // Ensure templates exist on first run
@@ -71,7 +71,7 @@ export default class Meeting extends BaseCommand {
       }
 
       await openInEditor({
-        editor: this.settings.settingsFile.settings.preferredEditor,
+        editor: this.settings.settings.preferredEditor,
         filePath: fileInfo.fullPath,
         folderPath: journalSettings.baseFolder,
       });
