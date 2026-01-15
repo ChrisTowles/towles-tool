@@ -18,9 +18,12 @@ export default class GhBranch extends BaseCommand {
   static override description = "Create a git branch from a GitHub issue";
 
   static override examples = [
-    "<%= config.bin %> gh branch",
-    "<%= config.bin %> gh branch --assignedToMe",
-    "<%= config.bin %> gh branch -a",
+    { description: "Browse all open issues", command: "<%= config.bin %> gh branch" },
+    {
+      description: "Only issues assigned to me",
+      command: "<%= config.bin %> gh branch --assignedToMe",
+    },
+    { description: "Short flag for assigned", command: "<%= config.bin %> gh branch -a" },
   ];
 
   static override flags = {
