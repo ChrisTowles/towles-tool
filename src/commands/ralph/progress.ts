@@ -13,11 +13,11 @@ export default class Progress extends BaseCommand {
   static override examples = [
     {
       description: "Append a progress message",
-      command: '<%= config.bin %> ralph progress "Completed user service implementation"',
+      command: '<%= config.bin %> <%= command.id %> "Completed user service implementation"',
     },
     {
       description: "Append to custom progress file",
-      command: '<%= config.bin %> ralph progress "Starting tests" --file custom-progress.md',
+      command: '<%= config.bin %> <%= command.id %> "Starting tests" --file custom-progress.md',
     },
   ];
 

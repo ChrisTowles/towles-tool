@@ -31,7 +31,7 @@
   "scripts": {
     "version:sync": "pnpm tsx scripts/sync-versions.ts",
     "prepublishOnly": "pnpm run version:sync",
-    "start": "tsx bin/run.ts",
+    "dev": "tsx bin/run.ts",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint",
@@ -64,7 +64,6 @@
     "@types/prompts": "^2.4.9",
     "@typescript/native-preview": "^7.0.0-dev.20260111.1",
     "bumpp": "^10.4.0",
-    "lint-staged": "^15.5.2",
     "oxfmt": "^0.24.0",
     "oxlint": "^1.7.0",
     "simple-git-hooks": "^2.13.0",
@@ -73,11 +72,7 @@
     "vitest": "^4.0.17"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm exec lint-staged -q && claude plugin validate ."
-  },
-  "lint-staged": {
-    "*.{js,ts,jsx,tsx,json,md}": "oxfmt --write",
-    "*": "oxlint --quiet --fix"
+    "pre-commit": "pnpm format && pnpm lint:fix && pnpm typecheck && claude plugin validate ."
   },
   "oclif": {
     "bin": "tt",

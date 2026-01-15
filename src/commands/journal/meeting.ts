@@ -30,11 +30,11 @@ export default class Meeting extends BaseCommand {
   static override examples = [
     {
       description: "Create meeting note (prompts for title)",
-      command: "<%= config.bin %> journal meeting",
+      command: "<%= config.bin %> <%= command.id %>",
     },
     {
       description: "Create with title",
-      command: '<%= config.bin %> journal meeting "Sprint Planning"',
+      command: '<%= config.bin %> <%= command.id %> "Sprint Planning"',
     },
     { description: "Using alias", command: '<%= config.bin %> m "Standup"' },
   ];

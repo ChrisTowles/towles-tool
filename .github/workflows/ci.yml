@@ -36,4 +36,3 @@ jobs:
       - run: pnpm test
         env:
           CI: DisableCallingClaude
-
