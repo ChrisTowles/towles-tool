@@ -28,8 +28,14 @@ export default class ObserveStatus extends BaseCommand {
   static override description = "Display current observability configuration status";
 
   static override examples = [
-    "<%= config.bin %> observe status",
-    "<%= config.bin %> observe status  # Check if observability is properly configured",
+    {
+      description: "Display observability config status",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
+    {
+      description: "Check if observability is properly configured",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
   ];
 
   async run(): Promise<void> {

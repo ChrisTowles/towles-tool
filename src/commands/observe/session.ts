@@ -42,9 +42,15 @@ export default class ObserveSession extends BaseCommand {
   static override description = "List and analyze Claude Code sessions";
 
   static override examples = [
-    "<%= config.bin %> <%= command.id %>",
-    "<%= config.bin %> <%= command.id %> abc123",
-    "<%= config.bin %> <%= command.id %> --limit 20",
+    { description: "List recent sessions", command: "<%= config.bin %> <%= command.id %>" },
+    {
+      description: "Show detailed breakdown for a session",
+      command: "<%= config.bin %> <%= command.id %> abc123",
+    },
+    {
+      description: "List more sessions",
+      command: "<%= config.bin %> <%= command.id %> --limit 20",
+    },
   ];
 
   static override flags = {

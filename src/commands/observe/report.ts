@@ -12,9 +12,15 @@ export default class ObserveReport extends BaseCommand {
   static override description = "Generate token/cost usage report via ccusage";
 
   static override examples = [
-    "<%= config.bin %> <%= command.id %>",
-    "<%= config.bin %> <%= command.id %> --weekly",
-    "<%= config.bin %> <%= command.id %> --monthly --output",
+    { description: "Show daily token/cost report", command: "<%= config.bin %> <%= command.id %>" },
+    {
+      description: "Show weekly breakdown",
+      command: "<%= config.bin %> <%= command.id %> --weekly",
+    },
+    {
+      description: "Save monthly report to file",
+      command: "<%= config.bin %> <%= command.id %> --monthly --output",
+    },
   ];
 
   static override flags = {
