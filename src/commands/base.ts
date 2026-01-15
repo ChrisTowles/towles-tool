@@ -23,20 +23,4 @@ export abstract class BaseCommand extends Command {
     await super.init();
     this.settings = await loadSettings();
   }
-
-  /**
-   * Helper to log debug messages when --debug flag is set.
-   */
-  protected logDebug(message: string, ...args: unknown[]): void {
-    // Access flags via parse() - oclif guarantees flags exist after init()
-    void (this.parse as () => Promise<{ flags: { debug?: boolean } }>)()
-      .then((parsed) => {
-        if (parsed.flags?.debug) {
-          this.log(`[DEBUG] ${message}`, ...args);
-        }
-      })
-      .catch(() => {
-        /* ignore parse errors in debug logging */
-      });
-  }
 }
