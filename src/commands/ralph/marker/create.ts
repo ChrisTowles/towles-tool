@@ -9,7 +9,12 @@ import { generateMarker, MARKER_PREFIX } from "../../../lib/ralph/marker.js";
 export default class MarkerCreate extends BaseCommand {
   static override description = "Generate a random marker for session tracking";
 
-  static override examples = ["<%= config.bin %> ralph marker create"];
+  static override examples = [
+    {
+      description: "Generate a random session marker",
+      command: "<%= config.bin %> ralph marker create",
+    },
+  ];
 
   static override flags = {
     ...BaseCommand.baseFlags,

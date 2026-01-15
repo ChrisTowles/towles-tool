@@ -51,14 +51,32 @@ export default class Run extends BaseCommand {
   static override description = "Start the autonomous ralph loop";
 
   static override examples = [
-    "<%= config.bin %> ralph run",
-    "<%= config.bin %> ralph run --maxIterations 20",
-    "<%= config.bin %> ralph run --taskId 5",
-    "<%= config.bin %> ralph run --no-autoCommit",
-    "<%= config.bin %> ralph run --noFork",
-    "<%= config.bin %> ralph run --dryRun",
-    "<%= config.bin %> ralph run --addIterations 5",
-    "<%= config.bin %> ralph run --label backend",
+    { description: "Start the autonomous loop", command: "<%= config.bin %> ralph run" },
+    {
+      description: "Limit to 20 iterations",
+      command: "<%= config.bin %> ralph run --maxIterations 20",
+    },
+    { description: "Focus on specific task", command: "<%= config.bin %> ralph run --taskId 5" },
+    {
+      description: "Run without auto-committing",
+      command: "<%= config.bin %> ralph run --no-autoCommit",
+    },
+    {
+      description: "Start fresh session (no fork)",
+      command: "<%= config.bin %> ralph run --noFork",
+    },
+    {
+      description: "Preview config without executing",
+      command: "<%= config.bin %> ralph run --dryRun",
+    },
+    {
+      description: "Add 5 iterations to current count",
+      command: "<%= config.bin %> ralph run --addIterations 5",
+    },
+    {
+      description: "Run only tasks with label",
+      command: "<%= config.bin %> ralph run --label backend",
+    },
   ];
 
   static override flags = {

@@ -16,9 +16,15 @@ export default class Plan extends BaseCommand {
   static override description = "Show plan summary with status, tasks, and mermaid graph";
 
   static override examples = [
-    "<%= config.bin %> ralph plan",
-    "<%= config.bin %> ralph plan --format json",
-    "<%= config.bin %> ralph plan --copy",
+    {
+      description: "Show plan summary with mermaid graph",
+      command: "<%= config.bin %> ralph plan",
+    },
+    { description: "Output plan as JSON", command: "<%= config.bin %> ralph plan --format json" },
+    {
+      description: "Copy plan output to clipboard",
+      command: "<%= config.bin %> ralph plan --copy",
+    },
   ];
 
   static override flags = {
