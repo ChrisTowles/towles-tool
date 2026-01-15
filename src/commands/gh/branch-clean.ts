@@ -12,15 +12,15 @@ export default class BranchClean extends BaseCommand {
   static override description = "Delete local branches that have been merged into main";
 
   static override examples = [
-    { description: "Clean merged branches", command: "<%= config.bin %> gh branch-clean" },
+    { description: "Clean merged branches", command: "<%= config.bin %> <%= command.id %>" },
     {
       description: "Preview without deleting",
-      command: "<%= config.bin %> gh branch-clean --dry-run",
+      command: "<%= config.bin %> <%= command.id %> --dry-run",
     },
-    { description: "Skip confirmation", command: "<%= config.bin %> gh branch-clean --force" },
+    { description: "Skip confirmation", command: "<%= config.bin %> <%= command.id %> --force" },
     {
       description: "Check against develop",
-      command: "<%= config.bin %> gh branch-clean --base develop",
+      command: "<%= config.bin %> <%= command.id %> --base develop",
     },
   ];
 

@@ -23,7 +23,7 @@ export default class DailyNotes extends BaseCommand {
   static override examples = [
     {
       description: "Open weekly notes for today",
-      command: "<%= config.bin %> journal daily-notes",
+      command: "<%= config.bin %> <%= command.id %>",
     },
     { description: "Using alias", command: "<%= config.bin %> today" },
   ];

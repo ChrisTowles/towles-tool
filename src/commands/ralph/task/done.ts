@@ -16,10 +16,10 @@ export default class TaskDone extends BaseCommand {
   static override description = "Mark a task as done by ID";
 
   static override examples = [
-    { description: "Mark task #1 as done", command: "<%= config.bin %> ralph task done 1" },
+    { description: "Mark task #1 as done", command: "<%= config.bin %> <%= command.id %> 1" },
     {
       description: "Mark done using custom state file",
-      command: "<%= config.bin %> ralph task done 5 --stateFile custom-state.json",
+      command: "<%= config.bin %> <%= command.id %> 5 --stateFile custom-state.json",
     },
   ];
 

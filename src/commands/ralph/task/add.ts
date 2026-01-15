@@ -22,20 +22,20 @@ export default class TaskAdd extends BaseCommand {
   static override examples = [
     {
       description: "Add a simple task",
-      command: '<%= config.bin %> ralph task add "Fix the login bug"',
+      command: '<%= config.bin %> <%= command.id %> "Fix the login bug"',
     },
     {
       description: "Add task with session for resumption",
-      command: '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
+      command: '<%= config.bin %> <%= command.id %> "Implement feature X" --sessionId abc123',
     },
     {
       description: "Add task by finding session via marker",
       command:
-        '<%= config.bin %> ralph task add "Implement feature X" --findMarker RALPH_MARKER_abc123',
+        '<%= config.bin %> <%= command.id %> "Implement feature X" --findMarker RALPH_MARKER_abc123',
     },
     {
       description: "Add task with label for filtering",
-      command: '<%= config.bin %> ralph task add "Backend refactor" --label backend',
+      command: '<%= config.bin %> <%= command.id %> "Backend refactor" --label backend',
     },
   ];
 
