@@ -1,5 +1,6 @@
 import { Args, Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
 import {
   DEFAULT_STATE_FILE,
@@ -9,8 +10,8 @@ import {
   createInitialState,
   addTaskToState,
   resolveRalphPath,
-} from "../lib/state.js";
-import { findSessionByMarker } from "../lib/marker.js";
+} from "../../../lib/ralph/state.js";
+import { findSessionByMarker } from "../../../lib/ralph/marker.js";
 
 /**
  * Add a new task to ralph state
@@ -70,14 +71,14 @@ export default class TaskAdd extends BaseCommand {
         this.error("Cannot use both --sessionId and --findMarker");
       }
       marker = flags.findMarker;
-      console.log(pc.dim(`Searching for marker: ${marker}...`));
+      consola.log(colors.dim(`Searching for marker: ${marker}...`));
       sessionId = (await findSessionByMarker(marker)) ?? undefined;
       if (!sessionId) {
         this.error(
           `Marker not found: ${marker}\nMake sure Claude output this marker during research.`,
         );
       }
-      console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`));
+      consola.log(colors.cyan(`Found session: ${sessionId.slice(0, 8)}...`));
     }
 
     let state = loadState(stateFile);
@@ -89,17 +90,17 @@ export default class TaskAdd extends BaseCommand {
     const newTask = addTaskToState(state, description, sessionId, marker, flags.label);
     saveState(state, stateFile);
 
-    console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
+    consola.log(colors.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
     if (flags.label) {
-      console.log(pc.cyan(`  Label: ${flags.label}`));
+      consola.log(colors.cyan(`  Label: ${flags.label}`));
     }
     if (sessionId) {
-      console.log(pc.cyan(`  Session: ${sessionId.slice(0, 8)}...`));
+      consola.log(colors.cyan(`  Session: ${sessionId.slice(0, 8)}...`));
     }
     if (marker) {
-      console.log(pc.dim(`  Marker: ${marker}`));
+      consola.log(colors.dim(`  Marker: ${marker}`));
     }
-    console.log(pc.dim(`State saved to: ${stateFile}`));
-    console.log(pc.dim(`Total tasks: ${state.tasks.length}`));
+    consola.log(colors.dim(`State saved to: ${stateFile}`));
+    consola.log(colors.dim(`Total tasks: ${state.tasks.length}`));
   }
 }

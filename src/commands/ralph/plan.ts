@@ -1,8 +1,13 @@
 import { Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "./lib/state.js";
-import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from "./lib/formatter.js";
+import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../../lib/ralph/state.js";
+import {
+  formatPlanAsMarkdown,
+  formatPlanAsJson,
+  copyToClipboard,
+} from "../../lib/ralph/formatter.js";
 
 /**
  * Show plan summary with status, tasks, and mermaid graph
@@ -42,13 +47,13 @@ export default class Plan extends BaseCommand {
     const state = loadState(stateFile);
 
     if (!state) {
-      console.log(pc.yellow(`No state file found at: ${stateFile}`));
+      consola.log(colors.yellow(`No state file found at: ${stateFile}`));
       return;
     }
 
     if (state.tasks.length === 0) {
-      console.log(pc.yellow("No tasks in state file."));
-      console.log(pc.dim('Use: tt ralph task add "description"'));
+      consola.log(colors.yellow("No tasks in state file."));
+      consola.log(colors.dim('Use: tt ralph task add "description"'));
       return;
     }
 
@@ -60,13 +65,13 @@ export default class Plan extends BaseCommand {
       output = formatPlanAsMarkdown(state.tasks, state);
     }
 
-    console.log(output);
+    consola.log(output);
 
     if (flags.copy) {
       if (copyToClipboard(output)) {
-        console.log(pc.green("✓ Copied to clipboard"));
+        consola.log(colors.green("✓ Copied to clipboard"));
       } else {
-        console.log(pc.yellow("⚠ Could not copy to clipboard (xclip/xsel not installed?)"));
+        consola.log(colors.yellow("⚠ Could not copy to clipboard (xclip/xsel not installed?)"));
       }
     }
   }

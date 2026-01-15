@@ -1,7 +1,13 @@
 import { Args, Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../lib/state.js";
+import {
+  DEFAULT_STATE_FILE,
+  loadState,
+  saveState,
+  resolveRalphPath,
+} from "../../../lib/ralph/state.js";
 
 /**
  * Mark a ralph task as done
@@ -53,7 +59,7 @@ export default class TaskDone extends BaseCommand {
     }
 
     if (task.status === "done") {
-      console.log(pc.yellow(`Task #${taskId} is already done.`));
+      consola.log(colors.yellow(`Task #${taskId} is already done.`));
       return;
     }
 
@@ -61,13 +67,13 @@ export default class TaskDone extends BaseCommand {
     task.completedAt = new Date().toISOString();
     saveState(state, stateFile);
 
-    console.log(pc.green(`✓ Marked task #${taskId} as done: ${task.description}`));
+    consola.log(colors.green(`✓ Marked task #${taskId} as done: ${task.description}`));
 
     const remaining = state.tasks.filter((t) => t.status !== "done").length;
     if (remaining === 0) {
-      console.log(pc.bold(pc.green("All tasks complete!")));
+      consola.log(colors.bold(colors.green("All tasks complete!")));
     } else {
-      console.log(pc.dim(`Remaining tasks: ${remaining}`));
+      consola.log(colors.dim(`Remaining tasks: ${remaining}`));
     }
   }
 }
