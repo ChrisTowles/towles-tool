@@ -89,9 +89,18 @@ export default class ObserveGraph extends BaseCommand {
   static override description = "Generate interactive HTML treemap from session token data";
 
   static override examples = [
-    "<%= config.bin %> <%= command.id %>",
-    "<%= config.bin %> <%= command.id %> --session abc123",
-    "<%= config.bin %> <%= command.id %> --open",
+    {
+      description: "Generate treemap for all recent sessions",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
+    {
+      description: "Generate treemap for a specific session",
+      command: "<%= config.bin %> <%= command.id %> --session abc123",
+    },
+    {
+      description: "Generate and auto-open in browser",
+      command: "<%= config.bin %> <%= command.id %> --open",
+    },
   ];
 
   static override flags = {

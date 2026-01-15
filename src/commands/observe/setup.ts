@@ -40,8 +40,14 @@ export default class ObserveSetup extends BaseCommand {
   static override description = "Configure Claude Code observability settings";
 
   static override examples = [
-    "<%= config.bin %> observe setup",
-    "<%= config.bin %> observe setup  # Adds SubagentStop hook for lineage tracking",
+    {
+      description: "Configure observability settings",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
+    {
+      description: "Adds SubagentStop hook for lineage tracking",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
   ];
 
   async run(): Promise<void> {
