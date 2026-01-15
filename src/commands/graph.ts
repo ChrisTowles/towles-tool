@@ -262,11 +262,12 @@ export default class Graph extends BaseCommand {
     const height = 800;
 
     // Read template from file and replace placeholders
+    // Use function replacement to avoid special $& $' $` patterns in data being interpreted
     const template = fs.readFileSync(TEMPLATE_PATH, "utf-8");
     return template
       .replace(/\{\{WIDTH\}\}/g, String(width))
       .replace(/\{\{HEIGHT\}\}/g, String(height))
-      .replace(/\{\{DATA\}\}/g, JSON.stringify(data));
+      .replace(/\{\{DATA\}\}/g, () => JSON.stringify(data));
   }
 
   private findRecentSessions(
@@ -514,11 +515,11 @@ export default class Graph extends BaseCommand {
       case "Bash":
         return this.truncateDetail(input.command as string, 50);
       case "Glob":
-        return input.pattern as string;
+        return this.truncateDetail(input.pattern as string, 50);
       case "Grep":
-        return input.pattern as string;
+        return this.truncateDetail(input.pattern as string, 50);
       case "Task":
-        return input.description as string;
+        return this.truncateDetail(input.description as string, 50);
       case "WebFetch":
         return this.truncateDetail(input.url as string, 40);
       default:
@@ -527,17 +528,28 @@ export default class Graph extends BaseCommand {
   }
 
   /**
+   * Sanitize string by replacing control characters (newlines, tabs, etc.) with spaces.
+   */
+  private sanitizeString(str: string): string {
+    // Replace all control characters (ASCII 0-31) with space, collapse multiple spaces
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/[\x00-\x1F]+/g, " ").trim();
+  }
+
+  /**
    * Truncate a string and extract just the filename for paths.
    */
   private truncateDetail(str: string | undefined, maxLen = 30): string | undefined {
     if (!str) return undefined;
+    // Sanitize control characters first
+    const sanitized = this.sanitizeString(str);
     // For file paths, show just the filename
-    if (str.includes("/")) {
-      const parts = str.split("/");
+    if (sanitized.includes("/")) {
+      const parts = sanitized.split("/");
       const filename = parts[parts.length - 1];
       return filename.length > maxLen ? filename.slice(0, maxLen - 3) + "..." : filename;
     }
-    return str.length > maxLen ? str.slice(0, maxLen - 3) + "..." : str;
+    return sanitized.length > maxLen ? sanitized.slice(0, maxLen - 3) + "..." : sanitized;
   }
 
   /**
@@ -777,6 +789,8 @@ export default class Graph extends BaseCommand {
       .replace(/<[^>]+>/g, "") // Remove remaining XML tags
       .replace(/^\s*Caveat:.*$/m, "") // Remove caveat lines
       .replace(/\n.*/g, "") // Take only first line
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1F]+/g, " ") // Replace control characters with space
       .trim();
 
     // If still empty or too short, use fallback

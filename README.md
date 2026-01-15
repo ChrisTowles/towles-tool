@@ -1,12 +1,10 @@
 # Towles Tool
 
-CLI tool with autonomous task runner, observability, and quality-of-life commands for daily development.
+CLI tool with autonomous task runner and quality-of-life commands for daily development.
 
 ## Features
 
 **Ralph** - Autonomous task runner with session forking and context reuse
-
-**Observability** - Token usage visualization with interactive treemaps
 
 **Git workflows** - Branch creation, PR generation, and cleanup
 
@@ -16,20 +14,11 @@ CLI tool with autonomous task runner, observability, and quality-of-life command
 
 ## Installation
 
-### From Source
-
-```bash
-git clone https://github.com/ChrisTowles/towles-tool.git
-cd towles-tool
-pnpm install
-pnpm start  # Run directly with tsx
-```
-
 ### Claude Code Plugins
 
 ```bash
-/plugins marketplace add ChrisTowles/towles-tool
-/plugin install tt@ChrisTowles/towles-tool
+claude plugin marketplace add ChrisTowles/towles-tool
+claude plugin enable tt@towles-tool
 ```
 
 ## Commands
@@ -40,12 +29,6 @@ pnpm start  # Run directly with tsx
 - `tt ralph run` - Run autonomous loop
 - `tt ralph plan` - Show plan with graph
 - `tt ralph progress` - Append progress (write-only)
-
-**Observability**
-
-- `tt observe graph` (alias: `tt graph`) - Token usage treemap
-- `tt observe session` - Session analysis
-- `tt observe report` - Daily/weekly reports
 
 **Git**
 
@@ -64,6 +47,15 @@ pnpm start  # Run directly with tsx
 - `tt config` - Show config
 - `tt doctor` - Check dependencies
 - `tt install` - Configure Claude Code settings
+
+### From Source
+
+```bash
+git clone https://github.com/ChrisTowles/towles-tool.git
+cd towles-tool
+pnpm install
+pnpm start  # Run directly with tsx
+```
 
 ## Development
 

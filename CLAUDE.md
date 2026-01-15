@@ -62,6 +62,7 @@ pnpm format:check       # Check formatting without writing
 - `journal note` (alias: `n`) - General-purpose notes
 - `graph` - Claude Code token visualization treemap
 - `ralph task add/list/done/remove` - Task management
+- `ralph marker create` - Generate session marker
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
 - `ralph progress` - Append progress message (write-only)
@@ -75,14 +76,21 @@ pnpm format:check       # Check formatting without writing
 
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
 
-- Defines available plugins for installation via `/plugins marketplace add`
+```bash
+claude plugin marketplace add ChrisTowles/towles-tool
+claude plugin enable tt@towles-tool
+```
 
-**Available Plugins**:
+**Available Plugin**: `tt-core` (named `tt`)
 
-- `notifications` - Audio notifications when Claude stops
-- `git-tools` - Git workflow automation (commit messages, etc.)
+Plugin commands (invoked as `/tt:<command>`):
 
-Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json` manifest.
+- `commit` - AI-powered conventional commit messages
+- `plan` - Interview user and create implementation plan
+- `improve` - Explore codebase and suggest improvements
+- `refine` - Fix grammar/spelling in files
+
+Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 
 ### Technology Stack
 
