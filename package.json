@@ -1,16 +1,7 @@
 {
   "name": "@towles/tool",
-  "version": "0.0.62",
-  "description": "CLI tool with auto-claude pipeline, developer tools, and journaling via markdown.",
-  "keywords": [
-    "auto-claude",
-    "autonomic",
-    "claude",
-    "cli",
-    "git",
-    "journal",
-    "oclif"
-  ],
+  "version": "0.0.40",
+  "description": "One off quality of life scripts that I use on a daily basis.",
   "homepage": "https://github.com/ChrisTowles/towles-tool#readme",
   "bugs": {
     "url": "https://github.com/ChrisTowles/towles-tool/issues"
@@ -34,79 +25,68 @@
     "src"
   ],
   "type": "module",
-  "main": "bin/run.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "start": "tsx ./bin/run.ts",
-    "typecheck": "tsc --noEmit",
+    "version:sync": "pnpm tsx scripts/sync-versions.ts",
+    "prepublishOnly": "pnpm run version:sync",
+    "dev": "tsx bin/run.ts",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "format": "oxfmt --write",
-    "format:check": "oxfmt --check",
     "test": "vitest run",
-    "test:watch": "vitest watch",
-    "prepare": "simple-git-hooks",
-    "version:sync": "tsx scripts/sync-versions.ts"
+    "test:watch": "CI=DisableCallingClaude vitest watch",
+    "typecheck": "tsgo --noEmit --incremental",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
-    "@oclif/core": "^4.3.16",
+    "@anthropic-ai/claude-code": "^2.1.4",
+    "@anthropic-ai/sdk": "^0.56.0",
+    "@oclif/core": "^4.3.2",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
     "fzf": "^0.5.2",
-    "globby": "^14.1.0",
-    "luxon": "^3.5.0",
-    "open": "^10.1.1",
+    "luxon": "^3.7.1",
+    "neverthrow": "^8.2.0",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
-    "strip-ansi": "^7.1.2",
-    "tinyexec": "^1.0.2",
-    "zod": "^3.25.67"
+    "strip-ansi": "^7.1.0",
+    "tinyexec": "^0.3.2",
+    "zod": "^4.0.5"
   },
   "devDependencies": {
-    "@oclif/test": "^4.1.13",
-    "@total-typescript/tsconfig": "^1.0.4",
-    "@tsconfig/strictest": "^2.0.5",
+    "@oclif/test": "^4.1.10",
     "@types/d3-hierarchy": "^3.1.7",
-    "@types/luxon": "^3.4.2",
-    "@types/node": "^22.10.10",
+    "@types/luxon": "^3.6.2",
+    "@types/node": "^22.16.3",
     "@types/prompts": "^2.4.9",
+    "@typescript/native-preview": "^7.0.0-dev.20260111.1",
     "bumpp": "^10.4.0",
-    "lint-staged": "^15.5.1",
     "oxfmt": "^0.24.0",
-    "oxlint": "^1.2.0",
-    "simple-git-hooks": "^2.11.1",
-    "tsx": "^4.19.2",
+    "oxlint": "^1.7.0",
+    "simple-git-hooks": "^2.13.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.3"
+    "vitest": "^4.0.17"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged && pnpm format && pnpm typecheck"
-  },
-  "lint-staged": {
-    "package.json": "oxfmt --write",
-    "*.{ts,tsx,mts,cts,js,cjs,mjs}": [
-      "oxlint --fix"
-    ],
-    "*.*": [
-      "oxfmt --write"
-    ]
+    "pre-commit": "pnpm format && pnpm lint:fix && pnpm typecheck && claude plugin validate ."
   },
   "oclif": {
     "bin": "tt",
-    "commands": {
-      "strategy": "pattern",
-      "target": "./src/commands"
-    },
+    "commands": "./src/commands",
     "dirname": "towles-tool",
-    "plugins": [],
     "topicSeparator": " "
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.27.0",
   "pnpm": {
     "patchedDependencies": {
       "prompts@2.4.2": "patches/prompts.patch"
     }
-  }
+  },
+  "trustedDependencies": [
+    "@anthropic-ai/claude-code"
+  ]
 }
