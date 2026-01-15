@@ -28,9 +28,12 @@ export default class Note extends BaseCommand {
   };
 
   static override examples = [
-    "<%= config.bin %> journal note",
-    '<%= config.bin %> journal note "Research Notes"',
-    '<%= config.bin %> journal n "Ideas"',
+    { description: "Create note (prompts for title)", command: "<%= config.bin %> journal note" },
+    {
+      description: "Create with title",
+      command: '<%= config.bin %> journal note "Research Notes"',
+    },
+    { description: "Using alias", command: '<%= config.bin %> n "Ideas"' },
   ];
 
   async run(): Promise<void> {
