@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Token Treemap</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #1a1a2e;
+        color: #eee;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 15px;
+        color: #fff;
+      }
+      .container {
+        max-width: 1540px;
+        margin: 0 auto;
+      }
+      .main-content {
+        display: flex;
+        gap: 20px;
+      }
+      .treemap-wrapper {
+        flex: 1;
+      }
+      .detail-panel {
+        width: 280px;
+        flex-shrink: 0;
+        background: #16213e;
+        border-radius: 8px;
+        padding: 16px;
+        height: fit-content;
+        max-height: 800px;
+        overflow-y: auto;
+      }
+      .detail-panel.empty {
+        color: #666;
+        font-size: 0.9rem;
+        text-align: center;
+        padding: 40px 16px;
+      }
+      .detail-title {
+        font-weight: 600;
+        font-size: 1rem;
+        margin-bottom: 12px;
+        color: #fff;
+        word-break: break-word;
+      }
+      .detail-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 6px 0;
+        font-size: 0.85rem;
+      }
+      .detail-label { color: #888; }
+      .detail-value { font-weight: 500; color: #ccc; }
+      .detail-actions {
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1px solid #333;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .detail-btn {
+        background: #2a2a4a;
+        border: 1px solid #444;
+        color: #6b9fff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        text-align: left;
+      }
+      .detail-btn:hover {
+        background: #3a3a5a;
+        border-color: #666;
+      }
+      .legend {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 15px;
+        font-size: 0.85rem;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend-color {
+        width: 20px;
+        height: 14px;
+        border-radius: 3px;
+      }
+      #treemap {
+        position: relative;
+        width: {{WIDTH}}px;
+        height: {{HEIGHT}}px;
+        background: #16213e;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .node {
+        position: absolute;
+        overflow: hidden;
+        border-radius: 3px;
+        transition: opacity 0.15s;
+        cursor: pointer;
+      }
+      .node:hover {
+        opacity: 0.85;
+      }
+      .node-label {
+        font-size: 11px;
+        padding: 2px 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      }
+      .node-group {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      .node-group .node-label {
+        font-weight: 600;
+        font-size: 12px;
+        color: rgba(255,255,255,0.9);
+      }
+      .tooltip {
+        position: fixed;
+        background: #2a2a4a;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 0.85rem;
+        pointer-events: none;
+        z-index: 1000;
+        max-width: 300px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        display: none;
+      }
+      .tooltip-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #fff;
+      }
+      .tooltip-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        margin: 4px 0;
+        color: #ccc;
+      }
+      .tooltip-label { color: #888; }
+      .tooltip-value { font-weight: 500; }
+      .ratio-good { color: #4ade80; }
+      .ratio-moderate { color: #fbbf24; }
+      .ratio-high { color: #f87171; }
+      .tooltip-link {
+        color: #6b9fff;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .tooltip-link:hover {
+        text-decoration: underline;
+      }
+      .tooltip-actions {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid #444;
+        display: flex;
+        gap: 12px;
+        font-size: 0.8rem;
+      }
+      .tool-table {
+        margin-top: 8px;
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+      .tool-table th {
+        text-align: left;
+        color: #888;
+        font-weight: 500;
+        padding: 3px 6px 3px 0;
+        border-bottom: 1px solid #444;
+      }
+      .tool-table td {
+        padding: 3px 6px 3px 0;
+        color: #ccc;
+      }
+      .tool-table td:last-child,
+      .tool-table th:last-child {
+        text-align: right;
+        padding-right: 0;
+      }
+      .tool-table-header {
+        color: #888;
+        font-size: 0.75rem;
+        margin-top: 10px;
+        margin-bottom: 4px;
+      }
+      .stats {
+        margin-top: 15px;
+        font-size: 0.85rem;
+        color: #888;
+      }
+      .breadcrumb {
+        margin-bottom: 10px;
+        font-size: 0.9rem;
+        color: #aaa;
+      }
+      .crumb {
+        color: #6b9fff;
+      }
+      .crumb:hover:not(.current) {
+        text-decoration: underline;
+      }
+      .crumb.current {
+        color: #fff;
+        cursor: default;
+      }
+      .crumb-sep {
+        color: #666;
+        margin: 0 4px;
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 30px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+      }
+      .tile-selector, .min-tokens {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tile-selector label, .min-tokens label {
+        color: #888;
+        font-size: 0.85rem;
+      }
+      .tile-selector select, .min-tokens select {
+        background: #2a2a4a;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .tile-selector select:hover, .min-tokens select:hover {
+        border-color: #666;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/d3-hierarchy@3"></script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Claude Token Usage Treemap</h1>
+
+      <div class="controls">
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-color" style="background: #4ade80"></div>
+            <span>Read</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #f87171"></div>
+            <span>Write</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #fb923c"></div>
+            <span>Edit</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #a78bfa"></div>
+            <span>Bash</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #38bdf8"></div>
+            <span>Glob</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #22d3ee"></div>
+            <span>Grep</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #facc15"></div>
+            <span>Task</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #60a5fa"></div>
+            <span>MCP</span>
+          </div>
+        </div>
+        <div class="tile-selector">
+          <label for="tileMethod">Layout:</label>
+          <select id="tileMethod">
+            <option value="squarify" selected>Squarify (readable)</option>
+            <option value="binary">Binary (balanced)</option>
+            <option value="sliceDice">Slice & Dice (alternating)</option>
+          </select>
+        </div>
+        <div class="min-tokens">
+          <label for="minTokens">Min tokens:</label>
+          <select id="minTokens">
+            <option value="0">All</option>
+            <option value="100">100+</option>
+            <option value="500">500+</option>
+            <option value="1000" selected>1K+</option>
+            <option value="5000">5K+</option>
+            <option value="10000">10K+</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="treemap-wrapper">
+          <div id="treemap"></div>
+          <div class="tooltip" id="tooltip"></div>
+          <div class="breadcrumb" id="breadcrumb"></div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="detail-panel empty" id="detailPanel">Click a tile to see details</div>
+      </div>
+    </div>
+
+    <script>
+      const treeData = {{DATA}};
+      const container = document.getElementById('treemap');
+      const tooltip = document.getElementById('tooltip');
+      const stats = document.getElementById('stats');
+      const breadcrumb = document.getElementById('breadcrumb');
+      const detailPanel = document.getElementById('detailPanel');
+      const WIDTH = {{WIDTH}};
+      const HEIGHT = {{HEIGHT}};
+
+      // Controls
+      const tileMethodSelect = document.getElementById('tileMethod');
+      const minTokensSelect = document.getElementById('minTokens');
+
+      // Navigation stack for zoom
+      let navStack = [treeData];
+
+      function getCurrentNode() {
+        return navStack[navStack.length - 1];
+      }
+
+      function zoomTo(node) {
+        if (node.children && node.children.length > 0) {
+          navStack.push(node);
+          render();
+        }
+      }
+
+      function zoomOut(index) {
+        navStack = navStack.slice(0, index + 1);
+        render();
+      }
+
+      // Filter nodes below minTokens threshold
+      function filterByMinTokens(node, minTokens) {
+        if (minTokens <= 0) return node;
+
+        function sumValue(n) {
+          if (n.value !== undefined && n.value > 0) return n.value;
+          if (!n.children) return 0;
+          return n.children.reduce((sum, c) => sum + sumValue(c), 0);
+        }
+
+        function filterNode(n) {
+          const val = sumValue(n);
+          if (val < minTokens && !n.children) return null;
+
+          if (!n.children) return n;
+
+          const filteredChildren = n.children
+            .map(filterNode)
+            .filter(c => c !== null);
+
+          if (filteredChildren.length === 0 && val < minTokens) return null;
+
+          return { ...n, children: filteredChildren.length > 0 ? filteredChildren : undefined };
+        }
+
+        return filterNode(node) || node;
+      }
+
+      // Get d3 tile method
+      function getTileMethod() {
+        const method = tileMethodSelect.value;
+        switch (method) {
+          case 'binary': return d3.treemapBinary;
+          case 'sliceDice': return d3.treemapSliceDice;
+          default: return d3.treemapSquarify;
+        }
+      }
+
+      function computeLayout(data) {
+        const minTokens = parseInt(minTokensSelect.value) || 0;
+        const filteredData = filterByMinTokens(data, minTokens);
+
+        // Use d3-hierarchy for layout
+        const root = d3.hierarchy(filteredData)
+          .sum(d => d.value || 0)
+          .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+        const layout = d3.treemap()
+          .size([WIDTH, HEIGHT])
+          .paddingOuter(3)
+          .paddingTop(19)
+          .paddingInner(1)
+          .tile(getTileMethod());
+
+        layout(root);
+
+        // Convert to rect array
+        return root.descendants().map(d => ({
+          x: d.x0,
+          y: d.y0,
+          width: d.x1 - d.x0,
+          height: d.y1 - d.y0,
+          depth: d.depth,
+          name: d.data.name,
+          value: d.value || 0,
+          hasChildren: !!d.children?.length,
+          sessionId: d.data.sessionId,
+          fullSessionId: d.data.fullSessionId,
+          filePath: d.data.filePath,
+          startTime: d.data.startTime,
+          model: d.data.model,
+          inputTokens: d.data.inputTokens,
+          outputTokens: d.data.outputTokens,
+          ratio: d.data.ratio,
+          date: d.data.date,
+          project: d.data.project,
+          repeatedReads: d.data.repeatedReads,
+          modelEfficiency: d.data.modelEfficiency,
+          tools: d.data.tools,
+          toolName: d.data.toolName,
+          nodeRef: d.data
+        }));
+      }
+
+      // Re-render on control changes
+      tileMethodSelect.addEventListener('change', render);
+      minTokensSelect.addEventListener('change', render);
+
+      function render() {
+        // Clear container using replaceChildren (safe)
+        container.replaceChildren();
+        const currentNode = getCurrentNode();
+        const rects = computeLayout(currentNode);
+
+        // Update breadcrumb using DOM methods (safe)
+        breadcrumb.replaceChildren();
+        navStack.forEach((node, i) => {
+          const crumb = document.createElement('span');
+          crumb.className = 'crumb' + (i === navStack.length - 1 ? ' current' : '');
+          crumb.textContent = node.name;
+          if (i < navStack.length - 1) {
+            crumb.style.cursor = 'pointer';
+            crumb.onclick = () => zoomOut(i);
+          }
+          breadcrumb.appendChild(crumb);
+          if (i < navStack.length - 1) {
+            const sep = document.createElement('span');
+            sep.className = 'crumb-sep';
+            sep.textContent = ' > ';
+            breadcrumb.appendChild(sep);
+          }
+        });
+
+        // Calculate totals for current view
+        let totalTokens = 0, totalInput = 0, totalOutput = 0;
+        rects.forEach(r => {
+          if (!r.hasChildren && r.depth > 0) {
+            totalTokens += r.value || 0;
+            totalInput += r.inputTokens || 0;
+            totalOutput += r.outputTokens || 0;
+          }
+        });
+
+        const overallRatio = totalOutput > 0 ? (totalInput / totalOutput).toFixed(1) : 'N/A';
+        stats.textContent = 'Total: ' + formatTokens(totalTokens) + ' tokens | Input: ' + formatTokens(totalInput) + ' | Output: ' + formatTokens(totalOutput) + ' | Ratio: ' + overallRatio + ':1';
+
+        // Render nodes
+        rects.forEach((r) => {
+          if (r.width < 1 || r.height < 1) return;
+
+          const node = document.createElement('div');
+          node.className = 'node' + (r.hasChildren ? ' node-group' : '');
+          node.style.left = r.x + 'px';
+          node.style.top = r.y + 'px';
+          node.style.width = r.width + 'px';
+          node.style.height = r.height + 'px';
+
+          if (r.toolName && r.depth > 0) {
+            node.style.background = getColor(r.toolName);
+          }
+
+          if (r.width > 30 && r.height > 15) {
+            const label = document.createElement('div');
+            label.className = 'node-label';
+            label.textContent = r.name + (r.value > 0 && !r.hasChildren ? ' (' + formatTokens(r.value) + ')' : '');
+            node.appendChild(label);
+          }
+
+          // Click to zoom and/or show detail
+          node.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showDetail(r);
+            if (r.hasChildren && r.nodeRef) {
+              zoomTo(r.nodeRef);
+            }
+          });
+
+          node.addEventListener('mouseenter', (e) => showTooltip(e, r));
+          node.addEventListener('mousemove', (e) => moveTooltip(e));
+          node.addEventListener('mouseleave', hideTooltip);
+
+          container.appendChild(node);
+        });
+      }
+
+      const toolColors = {
+        Read: '#4ade80',      // green
+        Write: '#f87171',     // red
+        Edit: '#fb923c',      // orange
+        MultiEdit: '#f97316', // darker orange
+        Bash: '#a78bfa',      // purple
+        Glob: '#38bdf8',      // sky blue
+        Grep: '#22d3ee',      // cyan
+        Task: '#facc15',      // yellow
+        WebFetch: '#2dd4bf',  // teal
+        WebSearch: '#14b8a6', // darker teal
+        TodoWrite: '#e879f9', // pink
+        LSP: '#818cf8',       // indigo
+        Response: '#cbd5e1',  // light gray for text-only responses
+        AskUserQuestion: '#f472b6', // pink
+        default: '#94a3b8'    // gray
+      };
+
+      function getColor(toolName) {
+        if (!toolName) return '#4a5568';
+        // Check for MCP tools (mcp__*)
+        if (toolName.startsWith('mcp__')) return '#60a5fa'; // blue for MCP
+        return toolColors[toolName] || toolColors.default;
+      }
+
+      function getRatioClass(ratio) {
+        if (ratio === undefined || ratio === null) return '';
+        if (ratio < 2) return 'ratio-good';
+        if (ratio < 5) return 'ratio-moderate';
+        return 'ratio-high';
+      }
+
+      function formatTokens(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+        return n.toString();
+      }
+
+      function showTooltip(e, r) {
+        // Build tooltip using DOM methods (safe from XSS)
+        tooltip.replaceChildren();
+
+        const title = document.createElement('div');
+        title.className = 'tooltip-title';
+        title.textContent = r.name;
+        tooltip.appendChild(title);
+
+        function addRow(label, value, extraClass) {
+          const row = document.createElement('div');
+          row.className = 'tooltip-row';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'tooltip-label';
+          labelEl.textContent = label;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'tooltip-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.textContent = value;
+          row.appendChild(labelEl);
+          row.appendChild(valueEl);
+          tooltip.appendChild(row);
+        }
+
+        function addLinkRow(label, text, onClick, title) {
+          const row = document.createElement('div');
+          row.className = 'tooltip-row';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'tooltip-label';
+          labelEl.textContent = label;
+          const link = document.createElement('span');
+          link.className = 'tooltip-link';
+          link.textContent = text;
+          if (title) link.title = title;
+          link.onclick = (e) => { e.stopPropagation(); onClick(); };
+          row.appendChild(labelEl);
+          row.appendChild(link);
+          tooltip.appendChild(row);
+        }
+
+        if (r.sessionId) {
+          addLinkRow('Session:', r.sessionId, () => {
+            navigator.clipboard.writeText(r.fullSessionId || r.sessionId);
+          }, 'Click to copy full session ID');
+        }
+        if (r.date) addRow('Date:', r.date);
+        if (r.startTime) addRow('Started:', r.startTime);
+        if (r.model) addRow('Model:', r.model);
+        if (r.value > 0) addRow('Total tokens:', formatTokens(r.value));
+        if (r.inputTokens !== undefined) addRow('Input:', formatTokens(r.inputTokens));
+        if (r.outputTokens !== undefined) addRow('Output:', formatTokens(r.outputTokens));
+        if (r.ratio !== undefined && r.ratio !== null) {
+          addRow('Ratio (in:out):', r.ratio.toFixed(1) + ':1', getRatioClass(r.ratio));
+        }
+        if (r.repeatedReads !== undefined && r.repeatedReads > 0) {
+          addRow('Repeated reads:', r.repeatedReads.toString());
+        }
+        if (r.modelEfficiency !== undefined && r.modelEfficiency > 0) {
+          addRow('Opus usage:', (r.modelEfficiency * 100).toFixed(0) + '%');
+        }
+
+        // Tool breakdown table
+        if (r.tools && r.tools.length > 0) {
+          const header = document.createElement('div');
+          header.className = 'tool-table-header';
+          header.textContent = 'Tool Usage';
+          tooltip.appendChild(header);
+
+          const table = document.createElement('table');
+          table.className = 'tool-table';
+
+          const thead = document.createElement('thead');
+          const headerRow = document.createElement('tr');
+          ['Tool', 'Detail', 'Tokens'].forEach(text => {
+            const th = document.createElement('th');
+            th.textContent = text;
+            headerRow.appendChild(th);
+          });
+          thead.appendChild(headerRow);
+          table.appendChild(thead);
+
+          const tbody = document.createElement('tbody');
+          r.tools.forEach(tool => {
+            const tr = document.createElement('tr');
+            const tdName = document.createElement('td');
+            tdName.textContent = tool.name;
+            const tdDetail = document.createElement('td');
+            tdDetail.textContent = tool.detail || '';
+            const tdTokens = document.createElement('td');
+            tdTokens.textContent = formatTokens(tool.inputTokens + tool.outputTokens);
+            tr.appendChild(tdName);
+            tr.appendChild(tdDetail);
+            tr.appendChild(tdTokens);
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          tooltip.appendChild(table);
+        }
+
+        // Actions section with links
+        if (r.fullSessionId || r.filePath) {
+          const actions = document.createElement('div');
+          actions.className = 'tooltip-actions';
+
+          if (r.filePath) {
+            const fileLink = document.createElement('span');
+            fileLink.className = 'tooltip-link';
+            fileLink.textContent = '📄 Copy path';
+            fileLink.title = r.filePath;
+            fileLink.onclick = (e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(r.filePath);
+            };
+            actions.appendChild(fileLink);
+          }
+
+          if (r.fullSessionId) {
+            const transcriptLink = document.createElement('span');
+            transcriptLink.className = 'tooltip-link';
+            transcriptLink.textContent = '📜 View transcript';
+            transcriptLink.title = 'Copy command to view with claude-code-transcripts';
+            transcriptLink.onclick = (e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText('uvx claude-code-transcripts ' + r.fullSessionId);
+            };
+            actions.appendChild(transcriptLink);
+          }
+
+          tooltip.appendChild(actions);
+        }
+
+        tooltip.style.display = 'block';
+        moveTooltip(e);
+      }
+
+      function moveTooltip(e) {
+        const x = e.clientX + 15;
+        const y = e.clientY + 15;
+        const rect = tooltip.getBoundingClientRect();
+
+        tooltip.style.left = (x + rect.width > window.innerWidth ? e.clientX - rect.width - 15 : x) + 'px';
+        tooltip.style.top = (y + rect.height > window.innerHeight ? e.clientY - rect.height - 15 : y) + 'px';
+      }
+
+      function hideTooltip() {
+        tooltip.style.display = 'none';
+      }
+
+      function showDetail(r) {
+        detailPanel.className = 'detail-panel';
+        detailPanel.replaceChildren();
+
+        const title = document.createElement('div');
+        title.className = 'detail-title';
+        title.textContent = r.name;
+        detailPanel.appendChild(title);
+
+        function addDetailRow(label, value, extraClass) {
+          const row = document.createElement('div');
+          row.className = 'detail-row';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'detail-label';
+          labelEl.textContent = label;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'detail-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.textContent = value;
+          row.appendChild(labelEl);
+          row.appendChild(valueEl);
+          detailPanel.appendChild(row);
+        }
+
+        if (r.sessionId) addDetailRow('Session:', r.fullSessionId || r.sessionId);
+        if (r.date) addDetailRow('Date:', r.date);
+        if (r.startTime) addDetailRow('Started:', r.startTime);
+        if (r.model) addDetailRow('Model:', r.model);
+        if (r.value > 0) addDetailRow('Total tokens:', formatTokens(r.value));
+        if (r.inputTokens !== undefined) addDetailRow('Input:', formatTokens(r.inputTokens));
+        if (r.outputTokens !== undefined) addDetailRow('Output:', formatTokens(r.outputTokens));
+        if (r.ratio !== undefined && r.ratio !== null) {
+          addDetailRow('Ratio (in:out):', r.ratio.toFixed(1) + ':1', getRatioClass(r.ratio));
+        }
+
+        // Action buttons
+        if (r.fullSessionId || r.filePath) {
+          const actions = document.createElement('div');
+          actions.className = 'detail-actions';
+
+          if (r.filePath) {
+            const fileBtn = document.createElement('button');
+            fileBtn.className = 'detail-btn';
+            fileBtn.textContent = '📄 Copy file path';
+            fileBtn.onclick = () => {
+              navigator.clipboard.writeText(r.filePath);
+              fileBtn.textContent = '✓ Copied!';
+              setTimeout(() => fileBtn.textContent = '📄 Copy file path', 1500);
+            };
+            actions.appendChild(fileBtn);
+          }
+
+          if (r.fullSessionId) {
+            const copyIdBtn = document.createElement('button');
+            copyIdBtn.className = 'detail-btn';
+            copyIdBtn.textContent = '🔗 Copy session ID';
+            copyIdBtn.onclick = () => {
+              navigator.clipboard.writeText(r.fullSessionId);
+              copyIdBtn.textContent = '✓ Copied!';
+              setTimeout(() => copyIdBtn.textContent = '🔗 Copy session ID', 1500);
+            };
+            actions.appendChild(copyIdBtn);
+
+            const transcriptBtn = document.createElement('button');
+            transcriptBtn.className = 'detail-btn';
+            transcriptBtn.textContent = '📜 View transcript';
+            transcriptBtn.title = 'Copy command - use start time above when prompted';
+            transcriptBtn.onclick = () => {
+              navigator.clipboard.writeText('uvx claude-code-transcripts ' + r.fullSessionId);
+              transcriptBtn.textContent = '✓ Copied!';
+              setTimeout(() => transcriptBtn.textContent = '📜 View transcript', 1500);
+            };
+            actions.appendChild(transcriptBtn);
+          }
+
+          detailPanel.appendChild(actions);
+        }
+      }
+
+      render();
+    </script>
+  </body>
+</html>

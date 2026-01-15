@@ -14,14 +14,21 @@ export default class Pr extends BaseCommand {
   static override description = "Create a pull request from the current branch";
 
   static override examples = [
-    "<%= config.bin %> gh pr",
-    "<%= config.bin %> gh pr --draft",
-    "<%= config.bin %> gh pr --base develop",
+    {
+      description: "Create PR from current branch",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
+    { description: "Create draft PR", command: "<%= config.bin %> <%= command.id %> --draft" },
+    {
+      description: "PR against develop branch",
+      command: "<%= config.bin %> <%= command.id %> --base develop",
+    },
   ];
 
   static override flags = {
     ...BaseCommand.baseFlags,
     draft: Flags.boolean({
+      char: "D",
       description: "Create as draft PR",
       default: false,
     }),

@@ -1,8 +1,8 @@
 {
   "name": "towles-tool",
-  "description": "Personal plugins for daily development workflows",
+  "description": "Claude Code plugins for autonomous task execution, observability, and development workflows",
   "metadata": {
-    "description": "commands to build ralph wiggum tasks and run them as much reused context by forking the Claude Code planning session"
+    "description": "Ralph autonomous runner with session forking, token usage visualization, and daily development commands"
   },
   "owner": {
     "name": "Chris Towles"
@@ -11,7 +11,7 @@
     {
       "name": "tt",
       "source": "./plugins/tt-core",
-      "description": "useful daily commands like generate git messages and note taking"
+      "description": "Ralph autonomous runner, observability tools, git workflows, and journaling commands"
     }
   ]
 }

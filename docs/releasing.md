@@ -15,6 +15,5 @@ The workflow:
 2. Bumps version in package.json
 3. Syncs plugin versions
 4. Commits and tags
-5. Builds executables for Linux and macOS
-6. Creates GitHub release with assets
-7. Publishes to npm
+5. Creates GitHub release
+6. Publishes to npm

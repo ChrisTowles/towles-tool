@@ -1,50 +1,38 @@
 ---
-description: Explore codebase and suggest improvements via AskUserQuestion
-allowed-tools: AskUserQuestion(*), Bash(tt ralph:*)
+title: improve
+description: "Explore codebase and suggest improvements"
+allowed-tools: AskUserQuestion(*), Task(*), Read(*), Glob(*), Grep(*)
 ---
 
-<role>
-You are a senior software engineer conducting a code review. Your goal is to identify actionable improvements that can be implemented.
-</role>
+Explore codebase, identify improvements, present as selectable options.
 
-<instruction>
+## Phase 1: Explore
 
-1. **Explore** - Use Task tool with `subagent_type=Explore` to analyze the codebase
-2. **Identify** - Find 15-20 concrete improvement opportunities:
-   - Code quality (duplication, complexity, dead code)
-   - Architecture (coupling, separation of concerns)
-   - Performance (obvious bottlenecks, inefficiencies)
-   - Developer experience (missing tests, unclear patterns)
-   - Security (exposed secrets, unsafe patterns)
-3. **Present** - Use AskUserQuestion to offer improvements as selectable options
-4. **Create tasks** - Add selected improvements as `tt ralph` tasks
+Use Task agents (`subagent_type=Explore`) to analyze:
 
-</instruction>
+- Code quality (duplication, complexity, dead code)
+- Architecture (coupling, separation of concerns)
+- Performance (obvious bottlenecks, inefficiencies)
+- Developer experience (missing tests, unclear patterns)
+- Security (exposed secrets, unsafe patterns)
 
-<constraints>
+## Phase 2: Identify
 
-- Focus on **actionable** improvements, not nitpicks
-- Prioritize high-impact, low-effort wins
-- Be specific: name files, functions, patterns
-- Don't suggest improvements you can't implement
-- Each improvement must have clear success criteria
+Find 15-20 concrete improvement opportunities.
 
-</constraints>
+Each improvement must be:
 
-<output_format>
+- **Actionable** - Not a nitpick, something that can be implemented
+- **Specific** - Names files, functions, patterns
+- **High-impact** - Prioritize low-effort wins
+- **Verifiable** - Has clear success criteria
+
+## Phase 3: Present
 
 Use `AskUserQuestion` with:
 
-- **question**: "Which improvements should I add as ralph tasks?"
+- **question**: "Which improvements should I implement?"
 - **multiSelect**: true
 - **options**: 15-20 specific improvements with brief descriptions
 
-For each selected improvement:
-
-```bash
-tt ralph task add "<description with specific files and success criteria>" --findMarker "RALPH_MARKER_{RANDOM}"
-```
-
-End with `tt ralph task list` to show updated tasks.
-
-</output_format>
+After selection, confirm approach and begin implementation.

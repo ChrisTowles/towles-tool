@@ -1,5 +1,6 @@
 import { Args, Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
 import {
   DEFAULT_STATE_FILE,
@@ -9,8 +10,8 @@ import {
   createInitialState,
   addTaskToState,
   resolveRalphPath,
-} from "../lib/state.js";
-import { findSessionByMarker } from "../lib/marker.js";
+} from "../_lib/state.js";
+import { findSessionByMarker } from "../_lib/marker.js";
 
 /**
  * Add a new task to ralph state
@@ -19,10 +20,23 @@ export default class TaskAdd extends BaseCommand {
   static override description = "Add a new task";
 
   static override examples = [
-    '<%= config.bin %> ralph task add "Fix the login bug"',
-    '<%= config.bin %> ralph task add "Implement feature X" --sessionId abc123',
-    '<%= config.bin %> ralph task add "Implement feature X" --findMarker RALPH_MARKER_abc123',
-    '<%= config.bin %> ralph task add "Backend refactor" --label backend',
+    {
+      description: "Add a simple task",
+      command: '<%= config.bin %> <%= command.id %> "Fix the login bug"',
+    },
+    {
+      description: "Add task with session for resumption",
+      command: '<%= config.bin %> <%= command.id %> "Implement feature X" --sessionId abc123',
+    },
+    {
+      description: "Add task by finding session via marker",
+      command:
+        '<%= config.bin %> <%= command.id %> "Implement feature X" --findMarker RALPH_MARKER_abc123',
+    },
+    {
+      description: "Add task with label for filtering",
+      command: '<%= config.bin %> <%= command.id %> "Backend refactor" --label backend',
+    },
   ];
 
   static override args = {
@@ -53,7 +67,7 @@ export default class TaskAdd extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskAdd);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const description = args.description.trim();
@@ -70,14 +84,14 @@ export default class TaskAdd extends BaseCommand {
         this.error("Cannot use both --sessionId and --findMarker");
       }
       marker = flags.findMarker;
-      console.log(pc.dim(`Searching for marker: ${marker}...`));
+      consola.log(colors.dim(`Searching for marker: ${marker}...`));
       sessionId = (await findSessionByMarker(marker)) ?? undefined;
       if (!sessionId) {
         this.error(
           `Marker not found: ${marker}\nMake sure Claude output this marker during research.`,
         );
       }
-      console.log(pc.cyan(`Found session: ${sessionId.slice(0, 8)}...`));
+      consola.log(colors.cyan(`Found session: ${sessionId.slice(0, 8)}...`));
     }
 
     let state = loadState(stateFile);
@@ -89,17 +103,17 @@ export default class TaskAdd extends BaseCommand {
     const newTask = addTaskToState(state, description, sessionId, marker, flags.label);
     saveState(state, stateFile);
 
-    console.log(pc.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
+    consola.log(colors.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
     if (flags.label) {
-      console.log(pc.cyan(`  Label: ${flags.label}`));
+      consola.log(colors.cyan(`  Label: ${flags.label}`));
     }
     if (sessionId) {
-      console.log(pc.cyan(`  Session: ${sessionId.slice(0, 8)}...`));
+      consola.log(colors.cyan(`  Session: ${sessionId.slice(0, 8)}...`));
     }
     if (marker) {
-      console.log(pc.dim(`  Marker: ${marker}`));
+      consola.log(colors.dim(`  Marker: ${marker}`));
     }
-    console.log(pc.dim(`State saved to: ${stateFile}`));
-    console.log(pc.dim(`Total tasks: ${state.tasks.length}`));
+    consola.log(colors.dim(`State saved to: ${stateFile}`));
+    consola.log(colors.dim(`Total tasks: ${state.tasks.length}`));
   }
 }

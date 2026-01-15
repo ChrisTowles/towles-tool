@@ -1,8 +1,8 @@
 import { Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../lib/state.js";
-import { formatTasksAsMarkdown } from "../lib/formatter.js";
+import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../_lib/state.js";
+import { formatTasksAsMarkdown } from "../_lib/formatter.js";
 
 /**
  * List all ralph tasks
@@ -11,9 +11,15 @@ export default class TaskList extends BaseCommand {
   static override description = "List all tasks";
 
   static override examples = [
-    "<%= config.bin %> ralph task list",
-    "<%= config.bin %> ralph task list --format markdown",
-    "<%= config.bin %> ralph task list --label backend",
+    { description: "List all tasks", command: "<%= config.bin %> <%= command.id %>" },
+    {
+      description: "Output as markdown",
+      command: "<%= config.bin %> <%= command.id %> --format markdown",
+    },
+    {
+      description: "Filter tasks by label",
+      command: "<%= config.bin %> <%= command.id %> --label backend",
+    },
   ];
 
   static override flags = {
@@ -36,7 +42,7 @@ export default class TaskList extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(TaskList);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const state = loadState(stateFile);

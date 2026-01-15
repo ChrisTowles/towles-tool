@@ -6,10 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a dual-purpose repository:
 
-1. **CLI tool** (`tt`) - Collection of quality-of-life scripts for daily development workflows (distributed as compiled executable)
+1. **CLI tool** (`tt`) - Ralph autonomous task runner, observability, git workflows, and journaling (distributed via npm, runs with tsx)
 2. **Claude Code Plugin Marketplace** - Hosts Claude Code plugins for personal use
-
-The project evolved from a private toolbox of personal scripts to a CLI tool and Claude Code plugin marketplace.
 
 ## Commands
 
@@ -62,37 +60,42 @@ pnpm format:check       # Check formatting without writing
 - `journal daily-notes` (alias: `today`) - Weekly files with daily sections
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
-- `observe setup/status/report/graph/session` - Claude Code observability
+- `graph` - Claude Code token visualization treemap
 - `ralph task add/list/done/remove` - Task management
+- `ralph marker create` - Generate session marker
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
 - `ralph progress` - Append progress message (write-only)
 
 **Key Utilities**:
 
-- `src/utils/anthropic/` - Claude API integration for AI-powered features
 - `src/utils/git/` - Git and GitHub CLI wrappers
 - `src/utils/date-utils.ts` - Date formatting using Luxon
-- `src/utils/exec.ts` - Command execution utilities with `tinyexec`
 
 ### Claude Code Plugin Architecture
 
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
 
-- Defines available plugins for installation via `/plugins marketplace add`
+```bash
+claude plugin marketplace add ChrisTowles/towles-tool
+claude plugin enable tt@towles-tool
+```
 
-**Available Plugins**:
+**Available Plugin**: `tt-core` (named `tt`)
 
-- `notifications` - Audio notifications when Claude stops
-- `git-tools` - Git workflow automation (commit messages, etc.)
+Plugin commands (invoked as `/tt:<command>`):
 
-Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json` manifest.
+- `commit` - AI-powered conventional commit messages
+- `plan` - Interview user and create implementation plan
+- `improve` - Explore codebase and suggest improvements
+- `refine` - Fix grammar/spelling in files
+
+Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 
 ### Technology Stack
 
 - **Runtime**: Node.js + tsx (runs TypeScript via tsx loader)
-- **CLI Framework**: oclif (commands in `src/commands/`)
-- **Command Registration**: Explicit in `src/commands/index.ts`
+- **CLI Framework**: oclif (commands auto-discovered in `src/commands/`)
 - **Testing**: vitest with `@oclif/test` for command testing
 - **Linting**: oxlint
 - **Formatting**: oxfmt
@@ -154,36 +157,13 @@ tt ralph progress "message"         # Append to ralph-progress.md
 
 ## Observability
 
-The `observe` command provides Claude Code session analysis and cost tracking.
-
 ```bash
-# Setup (run once)
-tt observe setup                # Configure settings.json, add hooks
-
-# Status
-tt observe status               # Show current config and OTEL vars
-
-# Session analysis
-tt observe session              # List recent sessions with cost estimates
-tt observe session <id>         # Detailed turn-by-turn breakdown
-
-# Reports
-tt observe report               # Daily token/cost report via ccusage
-tt observe report --weekly      # Weekly report
-tt observe report --output      # Save JSON to ~/.claude/reports/
-
-# Visualization
-tt observe graph                # Generate HTML treemap of all sessions
-tt observe graph --session <id> # Single session treemap
-tt observe graph --open         # Auto-open in browser
-tt flame                        # Alias for observe graph
+tt graph                        # Generate HTML treemap of all sessions
+tt graph --session <id>         # Single session treemap
+tt graph --open                 # Auto-open in browser
 ```
 
 Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5:1, red >5:1.
-
-**Troubleshooting treemap**: Use Chrome MCP tools (`mcp__claude-in-chrome__*`) to view and interact with the treemap in browser. Run `tt observe graph` then use `tabs_context_mcp`, `navigate`, and `computer screenshot` to inspect the visualization.
-
-**Treemap reference**: https://d3js.org/d3-hierarchy/treemap - d3-hierarchy treemap tiling algorithms and layout options.
 
 ## Important Notes
 

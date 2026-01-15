@@ -17,7 +17,10 @@ interface CheckResult {
 export default class Doctor extends BaseCommand {
   static override description = "Check system dependencies and environment";
 
-  static override examples = ["<%= config.bin %> <%= command.id %>"];
+  static override examples = [
+    { description: "Check system dependencies", command: "<%= config.bin %> <%= command.id %>" },
+    { description: "Verify environment after setup", command: "<%= config.bin %> doctor" },
+  ];
 
   async run(): Promise<void> {
     await this.parse(Doctor);

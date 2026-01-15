@@ -1,7 +1,8 @@
 import { Args, Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
-import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../lib/state.js";
+import { DEFAULT_STATE_FILE, loadState, saveState, resolveRalphPath } from "../_lib/state.js";
 
 /**
  * Mark a ralph task as done
@@ -10,8 +11,11 @@ export default class TaskDone extends BaseCommand {
   static override description = "Mark a task as done by ID";
 
   static override examples = [
-    "<%= config.bin %> ralph task done 1",
-    "<%= config.bin %> ralph task done 5 --stateFile custom-state.json",
+    { description: "Mark task #1 as done", command: "<%= config.bin %> <%= command.id %> 1" },
+    {
+      description: "Mark done using custom state file",
+      command: "<%= config.bin %> <%= command.id %> 5 --stateFile custom-state.json",
+    },
   ];
 
   static override args = {
@@ -31,7 +35,7 @@ export default class TaskDone extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskDone);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const taskId = args.id;
@@ -53,7 +57,7 @@ export default class TaskDone extends BaseCommand {
     }
 
     if (task.status === "done") {
-      console.log(pc.yellow(`Task #${taskId} is already done.`));
+      consola.log(colors.yellow(`Task #${taskId} is already done.`));
       return;
     }
 
@@ -61,13 +65,13 @@ export default class TaskDone extends BaseCommand {
     task.completedAt = new Date().toISOString();
     saveState(state, stateFile);
 
-    console.log(pc.green(`✓ Marked task #${taskId} as done: ${task.description}`));
+    consola.log(colors.green(`✓ Marked task #${taskId} as done: ${task.description}`));
 
     const remaining = state.tasks.filter((t) => t.status !== "done").length;
     if (remaining === 0) {
-      console.log(pc.bold(pc.green("All tasks complete!")));
+      consola.log(colors.bold(colors.green("All tasks complete!")));
     } else {
-      console.log(pc.dim(`Remaining tasks: ${remaining}`));
+      consola.log(colors.dim(`Remaining tasks: ${remaining}`));
     }
   }
 }

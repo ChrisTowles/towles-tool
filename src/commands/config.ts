@@ -7,7 +7,10 @@ import { BaseCommand } from "./base.js";
 export default class Config extends BaseCommand {
   static override description = "Display current configuration settings";
 
-  static override examples = ["<%= config.bin %> <%= command.id %>", "<%= config.bin %> cfg"];
+  static override examples = [
+    { description: "Display configuration", command: "<%= config.bin %> <%= command.id %>" },
+    { description: "Use alias", command: "<%= config.bin %> cfg" },
+  ];
 
   async run(): Promise<void> {
     await this.parse(Config);
@@ -15,20 +18,18 @@ export default class Config extends BaseCommand {
     consola.info("Configuration");
     consola.log("");
 
-    consola.info(`Settings File: ${this.settings.settingsFile.path}`);
+    consola.info(`Settings File: ${this.settings.path}`);
     consola.log("");
 
     consola.warn("User Config:");
     consola.log(
-      `  Daily Path Template: ${this.settings.settingsFile.settings.journalSettings.dailyPathTemplate}`,
+      `  Daily Path Template: ${this.settings.settings.journalSettings.dailyPathTemplate}`,
     );
     consola.log(
-      `  Meeting Path Template: ${this.settings.settingsFile.settings.journalSettings.meetingPathTemplate}`,
+      `  Meeting Path Template: ${this.settings.settings.journalSettings.meetingPathTemplate}`,
     );
-    consola.log(
-      `  Note Path Template: ${this.settings.settingsFile.settings.journalSettings.notePathTemplate}`,
-    );
-    consola.log(`  Editor: ${this.settings.settingsFile.settings.preferredEditor}`);
+    consola.log(`  Note Path Template: ${this.settings.settings.journalSettings.notePathTemplate}`);
+    consola.log(`  Editor: ${this.settings.settings.preferredEditor}`);
     consola.log("");
 
     consola.warn("Working Directory:");

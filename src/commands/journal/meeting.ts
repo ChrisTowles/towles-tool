@@ -12,7 +12,7 @@ import {
   ensureTemplatesExist,
   generateJournalFileInfoByType,
   openInEditor,
-} from "./utils.js";
+} from "./_lib/utils.js";
 
 /**
  * Create or open meeting notes file
@@ -28,16 +28,22 @@ export default class Meeting extends BaseCommand {
   };
 
   static override examples = [
-    "<%= config.bin %> journal meeting",
-    '<%= config.bin %> journal meeting "Sprint Planning"',
-    '<%= config.bin %> journal m "Standup"',
+    {
+      description: "Create meeting note (prompts for title)",
+      command: "<%= config.bin %> <%= command.id %>",
+    },
+    {
+      description: "Create with title",
+      command: '<%= config.bin %> <%= command.id %> "Sprint Planning"',
+    },
+    { description: "Using alias", command: '<%= config.bin %> m "Standup"' },
   ];
 
   async run(): Promise<void> {
     const { args } = await this.parse(Meeting);
 
     try {
-      const journalSettings = this.settings.settingsFile.settings.journalSettings;
+      const journalSettings = this.settings.settings.journalSettings;
       const templateDir = journalSettings.templateDir;
 
       // Ensure templates exist on first run
@@ -71,7 +77,7 @@ export default class Meeting extends BaseCommand {
       }
 
       await openInEditor({
-        editor: this.settings.settingsFile.settings.preferredEditor,
+        editor: this.settings.settings.preferredEditor,
         filePath: fileInfo.fullPath,
         folderPath: journalSettings.baseFolder,
       });

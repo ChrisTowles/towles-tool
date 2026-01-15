@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Args, Flags } from "@oclif/core";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "./lib/state.js";
+import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "./_lib/state.js";
 
 /**
  * Append progress message to ralph-progress.md (write-only, no read)
@@ -11,8 +11,14 @@ export default class Progress extends BaseCommand {
   static override description = "Append progress message (write-only, never reads file)";
 
   static override examples = [
-    '<%= config.bin %> ralph progress "Completed user service implementation"',
-    '<%= config.bin %> ralph progress "Starting tests" --file custom-progress.md',
+    {
+      description: "Append a progress message",
+      command: '<%= config.bin %> <%= command.id %> "Completed user service implementation"',
+    },
+    {
+      description: "Append to custom progress file",
+      command: '<%= config.bin %> <%= command.id %> "Starting tests" --file custom-progress.md',
+    },
   ];
 
   static override args = {
@@ -32,7 +38,7 @@ export default class Progress extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Progress);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const progressFile = resolveRalphPath(flags.file, "progressFile", ralphSettings);
 
     const timestamp = new Date().toISOString();

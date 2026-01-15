@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { Flags } from "@oclif/core";
-import pc from "picocolors";
+import consola from "consola";
+import { colors } from "consola/utils";
 import { BaseCommand } from "../base.js";
 import {
   DEFAULT_STATE_FILE,
@@ -13,15 +14,15 @@ import {
   appendHistory,
   resolveRalphPath,
   getRalphPaths,
-} from "./lib/state.js";
+} from "./_lib/state.js";
 import {
   buildIterationPrompt,
   formatDuration,
   extractOutputSummary,
   detectCompletionMarker,
   formatTasksForPrompt,
-} from "./lib/formatter.js";
-import { checkClaudeCli, runIteration } from "./lib/execution.js";
+} from "./_lib/formatter.js";
+import { checkClaudeCli, runIteration } from "./_lib/execution.js";
 
 /**
  * Read last N iterations from progress file. Only returns iteration entries,
@@ -49,14 +50,35 @@ export default class Run extends BaseCommand {
   static override description = "Start the autonomous ralph loop";
 
   static override examples = [
-    "<%= config.bin %> ralph run",
-    "<%= config.bin %> ralph run --maxIterations 20",
-    "<%= config.bin %> ralph run --taskId 5",
-    "<%= config.bin %> ralph run --no-autoCommit",
-    "<%= config.bin %> ralph run --noFork",
-    "<%= config.bin %> ralph run --dryRun",
-    "<%= config.bin %> ralph run --addIterations 5",
-    "<%= config.bin %> ralph run --label backend",
+    { description: "Start the autonomous loop", command: "<%= config.bin %> <%= command.id %>" },
+    {
+      description: "Limit to 20 iterations",
+      command: "<%= config.bin %> <%= command.id %> --maxIterations 20",
+    },
+    {
+      description: "Focus on specific task",
+      command: "<%= config.bin %> <%= command.id %> --taskId 5",
+    },
+    {
+      description: "Run without auto-committing",
+      command: "<%= config.bin %> <%= command.id %> --no-autoCommit",
+    },
+    {
+      description: "Start fresh session (no fork)",
+      command: "<%= config.bin %> <%= command.id %> --noFork",
+    },
+    {
+      description: "Preview config without executing",
+      command: "<%= config.bin %> <%= command.id %> --dryRun",
+    },
+    {
+      description: "Add 5 iterations to current count",
+      command: "<%= config.bin %> <%= command.id %> --addIterations 5",
+    },
+    {
+      description: "Run only tasks with label",
+      command: "<%= config.bin %> <%= command.id %> --label backend",
+    },
   ];
 
   static override flags = {
@@ -111,7 +133,7 @@ export default class Run extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Run);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
     const logFile = resolveRalphPath(flags.logFile, "logFile", ralphSettings);
     const ralphPaths = getRalphPaths(ralphSettings);
@@ -131,8 +153,8 @@ export default class Run extends BaseCommand {
     // Handle --addIterations: extend max from current iteration
     if (addIterations !== undefined) {
       maxIterations = state.iteration + addIterations;
-      console.log(
-        pc.cyan(
+      consola.log(
+        colors.cyan(
           `Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`,
         ),
       );
@@ -148,7 +170,7 @@ export default class Run extends BaseCommand {
       const msg = labelFilter
         ? `All tasks with label '${labelFilter}' are done!`
         : "All tasks are done!";
-      console.log(pc.green(`✅ ${msg}`));
+      consola.log(colors.green(`✅ ${msg}`));
       return;
     }
 
@@ -159,32 +181,32 @@ export default class Run extends BaseCommand {
         this.error(`Task #${focusedTaskId} not found. Use: tt ralph task list`);
       }
       if (focusedTask.status === "done") {
-        console.log(pc.yellow(`Task #${focusedTaskId} is already done.`));
+        consola.log(colors.yellow(`Task #${focusedTaskId} is already done.`));
         return;
       }
     }
 
     // Dry run mode
     if (flags.dryRun) {
-      console.log(pc.bold("\n=== DRY RUN ===\n"));
-      console.log(pc.cyan("Config:"));
-      console.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`);
-      console.log(`  Label filter: ${labelFilter || "(none)"}`);
-      console.log(`  Max iterations: ${maxIterations}`);
-      console.log(`  State file: ${stateFile}`);
-      console.log(`  Log file: ${logFile}`);
-      console.log(`  Completion marker: ${flags.completionMarker}`);
-      console.log(`  Auto-commit: ${flags.autoCommit}`);
-      console.log(`  Fork session: ${!flags.noFork}`);
-      console.log(`  Session ID: ${state.sessionId || "(none)"}`);
-      console.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
-      console.log(`  Remaining tasks: ${remainingTasks.length}`);
+      consola.log(colors.bold("\n=== DRY RUN ===\n"));
+      consola.log(colors.cyan("Config:"));
+      consola.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`);
+      consola.log(`  Label filter: ${labelFilter || "(none)"}`);
+      consola.log(`  Max iterations: ${maxIterations}`);
+      consola.log(`  State file: ${stateFile}`);
+      consola.log(`  Log file: ${logFile}`);
+      consola.log(`  Completion marker: ${flags.completionMarker}`);
+      consola.log(`  Auto-commit: ${flags.autoCommit}`);
+      consola.log(`  Fork session: ${!flags.noFork}`);
+      consola.log(`  Session ID: ${state.sessionId || "(none)"}`);
+      consola.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
+      consola.log(`  Remaining tasks: ${remainingTasks.length}`);
 
-      console.log(pc.cyan("\nTasks:"));
+      consola.log(colors.cyan("\nTasks:"));
       for (const t of state.tasks) {
         const icon = t.status === "done" ? "✓" : "○";
-        const focus = focusedTaskId === t.id ? pc.cyan(" ← FOCUS") : "";
-        console.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`);
+        const focus = focusedTaskId === t.id ? colors.cyan(" ← FOCUS") : "";
+        consola.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`);
       }
 
       // Show prompt preview
@@ -198,13 +220,13 @@ export default class Run extends BaseCommand {
         progressContent: progressContent || undefined,
         taskList,
       });
-      console.log(pc.dim("─".repeat(60)));
-      console.log(pc.bold("Prompt Preview"));
-      console.log(pc.dim("─".repeat(60)));
-      console.log(prompt);
-      console.log(pc.dim("─".repeat(60)));
+      consola.log(colors.dim("─".repeat(60)));
+      consola.log(colors.bold("Prompt Preview"));
+      consola.log(colors.dim("─".repeat(60)));
+      consola.log(prompt);
+      consola.log(colors.dim("─".repeat(60)));
 
-      console.log(pc.bold("\n=== END DRY RUN ===\n"));
+      consola.log(colors.bold("\n=== END DRY RUN ===\n"));
       return;
     }
 
@@ -229,21 +251,21 @@ export default class Run extends BaseCommand {
     logStream.write(`Ralph Loop Started: ${new Date().toISOString()}\n`);
     logStream.write(`${"=".repeat(60)}\n\n`);
 
-    console.log(pc.bold(pc.blue("\nRalph Loop Starting\n")));
-    console.log(pc.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`));
+    consola.log(colors.bold(colors.blue("\nRalph Loop Starting\n")));
+    consola.log(colors.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`));
     if (labelFilter) {
-      console.log(pc.dim(`Label filter: ${labelFilter}`));
+      consola.log(colors.dim(`Label filter: ${labelFilter}`));
     }
-    console.log(pc.dim(`Max iterations: ${maxIterations}`));
-    console.log(pc.dim(`Log file: ${logFile}`));
-    console.log(pc.dim(`Auto-commit: ${flags.autoCommit}`));
-    console.log(
-      pc.dim(
+    consola.log(colors.dim(`Max iterations: ${maxIterations}`));
+    consola.log(colors.dim(`Log file: ${logFile}`));
+    consola.log(colors.dim(`Auto-commit: ${flags.autoCommit}`));
+    consola.log(
+      colors.dim(
         `Fork session: ${!flags.noFork}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ""}`,
       ),
     );
-    console.log(pc.dim(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)`));
-    console.log();
+    consola.log(colors.dim(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)`));
+    consola.log("");
 
     logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}\n`);
     logStream.write(`Max iterations: ${maxIterations}\n`);
@@ -258,7 +280,7 @@ export default class Run extends BaseCommand {
       }
       interrupted = true;
       const msg = "\n\nInterrupted. Press Ctrl+C again to force exit.\n";
-      console.log(pc.yellow(msg));
+      consola.log(colors.yellow(msg));
       logStream.write(msg);
       state.status = "error";
       saveState(state, stateFile);
@@ -308,14 +330,16 @@ export default class Run extends BaseCommand {
       }
 
       // Print iteration header
-      const sessionInfo = taskSessionId ? pc.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`) : "";
-      console.log();
-      console.log(pc.bold(pc.blue(`━━━ ${iterHeader}${sessionInfo} ━━━`)));
-      console.log(pc.dim("─".repeat(60)));
-      console.log(pc.bold("Prompt"));
-      console.log(pc.dim("─".repeat(60)));
-      console.log(prompt);
-      console.log(pc.dim("─".repeat(60)));
+      const sessionInfo = taskSessionId
+        ? colors.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`)
+        : "";
+      consola.log("");
+      consola.log(colors.bold(colors.blue(`━━━ ${iterHeader}${sessionInfo} ━━━`)));
+      consola.log(colors.dim("─".repeat(60)));
+      consola.log(colors.bold("Prompt"));
+      consola.log(colors.dim("─".repeat(60)));
+      consola.log(prompt);
+      consola.log(colors.dim("─".repeat(60)));
 
       // Run iteration - output goes directly to stdout
       const iterResult = await runIteration(prompt, iterClaudeArgs, logStream);
@@ -371,9 +395,9 @@ export default class Run extends BaseCommand {
       logStream.write(
         `\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? "yes" : "no"}\n`,
       );
-      console.log(
-        pc.dim(
-          `Duration: ${durationHuman}${contextInfo} | Marker: ${markerFound ? pc.green("yes") : pc.yellow("no")}`,
+      consola.log(
+        colors.dim(
+          `Duration: ${durationHuman}${contextInfo} | Marker: ${markerFound ? colors.green("yes") : colors.yellow("no")}`,
         ),
       );
 
@@ -382,7 +406,9 @@ export default class Run extends BaseCommand {
         completed = true;
         state.status = "completed";
         saveState(state, stateFile);
-        console.log(pc.bold(pc.green(`\n✅ Task completed after ${state.iteration} iteration(s)`)));
+        consola.log(
+          colors.bold(colors.green(`\n✅ Task completed after ${state.iteration} iteration(s)`)),
+        );
         logStream.write(`\n✅ Task completed after ${state.iteration} iteration(s)\n`);
       }
     }
@@ -397,10 +423,12 @@ export default class Run extends BaseCommand {
     if (!interrupted && state.iteration >= maxIterations) {
       state.status = "max_iterations_reached";
       saveState(state, stateFile);
-      console.log(
-        pc.bold(pc.yellow(`\n⚠️  Max iterations (${maxIterations}) reached without completion`)),
+      consola.log(
+        colors.bold(
+          colors.yellow(`\n⚠️  Max iterations (${maxIterations}) reached without completion`),
+        ),
       );
-      console.log(pc.dim(`State saved to: ${stateFile}`));
+      consola.log(colors.dim(`State saved to: ${stateFile}`));
       logStream.write(`\n⚠️  Max iterations (${maxIterations}) reached without completion\n`);
       this.exit(1);
     }
