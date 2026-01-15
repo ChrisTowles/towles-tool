@@ -54,7 +54,7 @@ export default class TaskAdd extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(TaskAdd);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
     const description = args.description.trim();

@@ -91,8 +91,7 @@ Plugins are located in `plugins/` with each having a `.claude-plugin/plugin.json
 ### Technology Stack
 
 - **Runtime**: Node.js + tsx (runs TypeScript via tsx loader)
-- **CLI Framework**: oclif (commands in `src/commands/`)
-- **Command Registration**: Explicit in `src/commands/index.ts`
+- **CLI Framework**: oclif (commands auto-discovered in `src/commands/`)
 - **Testing**: vitest with `@oclif/test` for command testing
 - **Linting**: oxlint
 - **Formatting**: oxfmt

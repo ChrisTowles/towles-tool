@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Args, Flags } from "@oclif/core";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "./lib/state.js";
+import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "../../lib/ralph/state.js";
 
 /**
  * Append progress message to ralph-progress.md (write-only, no read)
@@ -32,7 +32,7 @@ export default class Progress extends BaseCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Progress);
-    const ralphSettings = this.settings.settingsFile.settings.ralphSettings;
+    const ralphSettings = this.settings.settings.ralphSettings;
     const progressFile = resolveRalphPath(flags.file, "progressFile", ralphSettings);
 
     const timestamp = new Date().toISOString();

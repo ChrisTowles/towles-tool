@@ -70,15 +70,6 @@ export interface SettingsFile {
   path: string;
 }
 
-// TODO refactor this.
-export class LoadedSettings {
-  constructor(settingsFile: SettingsFile) {
-    this.settingsFile = settingsFile;
-  }
-
-  readonly settingsFile: SettingsFile;
-}
-
 function createDefaultSettings(): UserSettings {
   return UserSettingsSchema.parse({});
 }
@@ -106,7 +97,7 @@ export function saveSettings(settingsFile: SettingsFile): void {
   }
 }
 
-export async function loadSettings(): Promise<LoadedSettings> {
+export async function loadSettings(): Promise<SettingsFile> {
   let userSettings: UserSettings | null = null;
 
   // Load user settings
@@ -148,8 +139,8 @@ export async function loadSettings(): Promise<LoadedSettings> {
     }
   }
 
-  return new LoadedSettings({
+  return {
     path: USER_SETTINGS_PATH,
     settings: userSettings!,
-  });
+  };
 }
