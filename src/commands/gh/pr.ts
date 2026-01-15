@@ -22,6 +22,7 @@ export default class Pr extends BaseCommand {
   static override flags = {
     ...BaseCommand.baseFlags,
     draft: Flags.boolean({
+      char: "D",
       description: "Create as draft PR",
       default: false,
     }),
