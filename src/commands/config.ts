@@ -7,7 +7,10 @@ import { BaseCommand } from "./base.js";
 export default class Config extends BaseCommand {
   static override description = "Display current configuration settings";
 
-  static override examples = ["<%= config.bin %> <%= command.id %>", "<%= config.bin %> cfg"];
+  static override examples = [
+    { description: "Display configuration", command: "<%= config.bin %> <%= command.id %>" },
+    { description: "Use alias", command: "<%= config.bin %> cfg" },
+  ];
 
   async run(): Promise<void> {
     await this.parse(Config);
