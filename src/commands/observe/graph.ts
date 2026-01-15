@@ -1,4 +1,5 @@
 import { Flags } from "@oclif/core";
+import { DateTime } from "luxon";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as os from "node:os";
@@ -163,13 +164,7 @@ export default class ObserveGraph extends BaseCommand {
       fs.mkdirSync(reportsDir, { recursive: true });
     }
 
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, "0");
-    const tzOffset = -now.getTimezoneOffset();
-    const tzSign = tzOffset >= 0 ? "+" : "-";
-    const tzHours = pad(Math.floor(Math.abs(tzOffset) / 60));
-    const tzMins = pad(Math.abs(tzOffset) % 60);
-    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}${tzSign}${tzHours}${tzMins}`;
+    const timestamp = DateTime.now().toFormat("yyyy-MM-dd'T'HH-mmZZZ");
     const daysLabel = flags.days > 0 ? `${flags.days}d` : "all";
     const filename = sessionId
       ? `treemap-${sessionId.slice(0, 8)}-${timestamp}.html`
