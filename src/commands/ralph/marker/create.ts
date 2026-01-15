@@ -15,6 +15,11 @@ export default class MarkerCreate extends BaseCommand {
         "Generate a random session marker, to later use with --findMarker when adding tasks",
       command: "<%= config.bin %> <%= command.id %>",
     },
+    {
+      description: "Typical workflow: generate marker then add task with it",
+      command:
+        '<%= config.bin %> ralph marker create && tt ralph task add "implement feature" --findMarker RALPH_MARKER_xxx',
+    },
   ];
 
   static override flags = {
