@@ -43,7 +43,6 @@ jobs:
 
       - uses: ./.github/actions/setup
         with:
-          registry-url: "https://registry.npmjs.org"
           install-args: "--ignore-scripts"
 
       - name: Bump version
