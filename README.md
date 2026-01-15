@@ -110,10 +110,8 @@ gh run watch
 
 **Git Tools**:
 
-- [ ] commit-message-generator
+- [ ] Clean merged branches
 - [ ] pull-request-generator
-- [ ] issue-generator
-- [ ] pull-request-reviewer
 - [ ] branch-from-issue
 
 ## Resources
@@ -131,7 +129,7 @@ gh run watch
 
 ## History
 
-This project started as a collection of personal scripts and utilities built up over time in a private toolbox. It was initially published as an npm package, but has since evolved to be distributed as a compiled Bun executable. With the release of Claude Code Skills and plugins, the project also serves as a Claude Code plugin marketplace.
+This project started as a collection of personal scripts and utilities built up over time in a private toolbox. It was then initially privite bash scripts, then published as an npm package. With the release of Claude Code Skills and plugins, the project also serves as a Claude Code plugin marketplace.
 
 ## License
 
