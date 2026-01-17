@@ -71,6 +71,8 @@ pnpm format:check       # Check formatting without writing
 
 - `src/utils/git/` - Git and GitHub CLI wrappers
 - `src/utils/date-utils.ts` - Date formatting using Luxon
+- `src/lib/ralph/` - Ralph state, formatting, execution helpers
+- `src/lib/journal/` - Journal template and file generation utilities
 
 ### Claude Code Plugin Architecture
 
