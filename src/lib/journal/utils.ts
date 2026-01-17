@@ -5,10 +5,10 @@ import { promisify } from "node:util";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { DateTime } from "luxon";
-import { formatDate, getMondayOfWeek, getWeekInfo } from "../../../utils/date-utils.js";
-import type { JournalSettings } from "../../../config/settings.js";
-import { JOURNAL_TYPES } from "../../../types/journal.js";
-import type { JournalType } from "../../../types/journal.js";
+import { formatDate, getMondayOfWeek, getWeekInfo } from "../../utils/date-utils.js";
+import type { JournalSettings } from "../../config/settings.js";
+import { JOURNAL_TYPES } from "../../types/journal.js";
+import type { JournalType } from "../../types/journal.js";
 
 // Default template file names
 const TEMPLATE_FILES = {

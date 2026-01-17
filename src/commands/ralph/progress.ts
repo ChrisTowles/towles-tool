@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Args, Flags } from "@oclif/core";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "./_lib/state.js";
+import { DEFAULT_PROGRESS_FILE, resolveRalphPath } from "../../lib/ralph/state.js";
 
 /**
  * Append progress message to ralph-progress.md (write-only, no read)

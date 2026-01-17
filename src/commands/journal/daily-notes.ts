@@ -11,7 +11,7 @@ import {
   ensureTemplatesExist,
   generateJournalFileInfoByType,
   openInEditor,
-} from "./_lib/utils.js";
+} from "../../lib/journal/utils.js";
 
 /**
  * Create or open daily notes journal file

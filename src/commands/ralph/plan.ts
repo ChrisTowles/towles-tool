@@ -2,8 +2,12 @@ import { Flags } from "@oclif/core";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { BaseCommand } from "../base.js";
-import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "./_lib/state.js";
-import { formatPlanAsMarkdown, formatPlanAsJson, copyToClipboard } from "./_lib/formatter.js";
+import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../../lib/ralph/state.js";
+import {
+  formatPlanAsMarkdown,
+  formatPlanAsJson,
+  copyToClipboard,
+} from "../../lib/ralph/formatter.js";
 
 /**
  * Show plan summary with status, tasks, and mermaid graph

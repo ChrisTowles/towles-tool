@@ -14,15 +14,15 @@ import {
   appendHistory,
   resolveRalphPath,
   getRalphPaths,
-} from "./_lib/state.js";
+} from "../../lib/ralph/state.js";
 import {
   buildIterationPrompt,
   formatDuration,
   extractOutputSummary,
   detectCompletionMarker,
   formatTasksForPrompt,
-} from "./_lib/formatter.js";
-import { checkClaudeCli, runIteration } from "./_lib/execution.js";
+} from "../../lib/ralph/formatter.js";
+import { checkClaudeCli, runIteration } from "../../lib/ralph/execution.js";
 
 /**
  * Read last N iterations from progress file. Only returns iteration entries,

@@ -12,7 +12,7 @@ import {
   ensureTemplatesExist,
   generateJournalFileInfoByType,
   openInEditor,
-} from "./_lib/utils.js";
+} from "../../lib/journal/utils.js";
 
 /**
  * Create or open general-purpose note file

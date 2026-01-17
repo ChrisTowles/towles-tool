@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import pc from "picocolors";
 import { z } from "zod";
-import type { RalphSettings } from "../../../config/settings.js";
-import { RalphSettingsSchema } from "../../../config/settings.js";
+import type { RalphSettings } from "../../config/settings.js";
+import { RalphSettingsSchema } from "../../config/settings.js";
 
 // ============================================================================
 // Constants
