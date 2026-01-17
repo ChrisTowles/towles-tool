@@ -46,6 +46,35 @@ interface ToolData {
   outputTokens: number;
 }
 
+// Bar chart types for stacked bar visualization
+export interface SessionBar {
+  label: string;
+  sessionId: string;
+  opusTokens: number;
+  sonnetTokens: number;
+  haikuTokens: number;
+  totalTokens: number;
+  startTime: string; // ISO timestamp for sorting
+}
+
+export interface BarChartDay {
+  date: string; // YYYY-MM-DD format
+  sessions: SessionBar[];
+}
+
+export interface BarChartData {
+  days: BarChartDay[];
+}
+
+export interface SessionResult {
+  sessionId: string;
+  path: string;
+  date: string;
+  tokens: number;
+  project: string;
+  mtime: number;
+}
+
 /**
  * Calculate cutoff timestamp for days filtering.
  * Returns 0 if days <= 0 (no filtering).
@@ -62,6 +91,233 @@ export function filterByDays<T extends { mtime: number }>(items: T[], days: numb
   const cutoff = calculateCutoffMs(days);
   if (cutoff === 0) return items;
   return items.filter((item) => item.mtime >= cutoff);
+}
+
+/**
+ * Parse JSONL file into JournalEntry array.
+ */
+export function parseJsonl(filePath: string): JournalEntry[] {
+  const content = fs.readFileSync(filePath, "utf-8");
+  const entries: JournalEntry[] = [];
+
+  for (const line of content.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as JournalEntry);
+    } catch {
+      // Skip invalid lines
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Analyze session entries to get token breakdown by model.
+ */
+export function analyzeSession(entries: JournalEntry[]): {
+  inputTokens: number;
+  outputTokens: number;
+  opusTokens: number;
+  sonnetTokens: number;
+  haikuTokens: number;
+  cacheHitRate: number;
+  repeatedReads: number;
+  modelEfficiency: number;
+} {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let opusTokens = 0;
+  let sonnetTokens = 0;
+  let haikuTokens = 0;
+  let cacheRead = 0;
+  let totalInput = 0;
+  const fileReadCounts = new Map<string, number>();
+
+  for (const entry of entries) {
+    // Count file reads for repeatedReads metric
+    if (entry.message?.content && Array.isArray(entry.message.content)) {
+      for (const block of entry.message.content) {
+        if (block.type === "tool_use" && block.name === "Read" && block.input) {
+          const filePath = (block.input as { file_path?: string }).file_path;
+          if (filePath) {
+            fileReadCounts.set(filePath, (fileReadCounts.get(filePath) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    if (!entry.message?.usage) continue;
+    const usage = entry.message.usage;
+    const model = entry.message.model || "";
+    const tokens = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+
+    inputTokens += usage.input_tokens || 0;
+    outputTokens += usage.output_tokens || 0;
+    cacheRead += usage.cache_read_input_tokens || 0;
+    totalInput += usage.input_tokens || 0;
+
+    if (model.includes("opus")) opusTokens += tokens;
+    else if (model.includes("sonnet")) sonnetTokens += tokens;
+    else if (model.includes("haiku")) haikuTokens += tokens;
+  }
+
+  // Count files read more than once
+  let repeatedReads = 0;
+  for (const count of fileReadCounts.values()) {
+    if (count > 1) repeatedReads += count - 1;
+  }
+
+  const totalTokens = opusTokens + sonnetTokens + haikuTokens;
+
+  return {
+    inputTokens,
+    outputTokens,
+    opusTokens,
+    sonnetTokens,
+    haikuTokens,
+    cacheHitRate: totalInput > 0 ? cacheRead / totalInput : 0,
+    repeatedReads,
+    modelEfficiency: totalTokens > 0 ? opusTokens / totalTokens : 0,
+  };
+}
+
+/**
+ * Extract a meaningful label from session entries.
+ */
+export function extractSessionLabel(entries: JournalEntry[], sessionId: string): string {
+  let firstUserText: string | undefined;
+  let firstAssistantText: string | undefined;
+  let gitBranch: string | undefined;
+  let slug: string | undefined;
+
+  for (const entry of entries) {
+    // Extract metadata from any entry
+    if (!gitBranch && (entry as any).gitBranch) {
+      gitBranch = (entry as any).gitBranch;
+    }
+    if (!slug && (entry as any).slug) {
+      slug = (entry as any).slug;
+    }
+
+    if (!entry.message) continue;
+
+    // Look for first user message with actual text (not UUID reference)
+    if (!firstUserText && entry.type === "user" && entry.message.role === "user") {
+      const content = entry.message.content;
+      if (typeof content === "string") {
+        // Check if it's a UUID (skip those) or actual text
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          content,
+        );
+        if (!isUuid && content.length > 0) {
+          firstUserText = content;
+        }
+      } else if (Array.isArray(content)) {
+        // Look for text blocks in array content
+        for (const block of content) {
+          if (block.type === "text" && block.text && block.text.length > 0) {
+            firstUserText = block.text;
+            break;
+          }
+        }
+      }
+    }
+
+    // Look for first assistant text response
+    if (!firstAssistantText && entry.type === "assistant" && entry.message.role === "assistant") {
+      const content = entry.message.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "text" && block.text && block.text.length > 0) {
+            firstAssistantText = block.text;
+            break;
+          }
+        }
+      }
+    }
+
+    // Stop early if we have user text
+    if (firstUserText) break;
+  }
+
+  // Priority: user text > assistant text > git branch > slug > short ID
+  let label = firstUserText || firstAssistantText || gitBranch || slug || sessionId.slice(0, 8);
+
+  // Clean up the label
+  label = label
+    .replace(/^\/\S+\s*/, "") // Remove /command prefixes
+    .replace(/<[^>]+>[^<]*<\/[^>]+>/g, "") // Remove XML-style tags with content
+    .replace(/<[^>]+>/g, "") // Remove remaining XML tags
+    .replace(/^\s*Caveat:.*$/m, "") // Remove caveat lines
+    .replace(/\n.*/g, "") // Take only first line
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1F]+/g, " ") // Replace control characters with space
+    .trim();
+
+  // If still empty or too short, use fallback
+  if (label.length < 3) {
+    label = slug || sessionId.slice(0, 8);
+  }
+
+  // Truncate very long labels (will be smart-truncated in UI based on box size)
+  if (label.length > 80) {
+    label = label.slice(0, 77) + "...";
+  }
+
+  return label;
+}
+
+/**
+ * Build bar chart data structure from session results.
+ * Groups sessions by date, sorts days chronologically (oldest first),
+ * and sessions within each day by start time.
+ */
+export function buildBarChartData(sessions: SessionResult[]): BarChartData {
+  if (sessions.length === 0) {
+    return { days: [] };
+  }
+
+  // Group sessions by date
+  const byDate = new Map<string, SessionBar[]>();
+
+  for (const session of sessions) {
+    const entries = parseJsonl(session.path);
+    const analysis = analyzeSession(entries);
+    const label = extractSessionLabel(entries, session.sessionId);
+
+    // Get start time from first entry
+    const startTime = entries[0]?.timestamp || new Date(session.mtime).toISOString();
+
+    const bar: SessionBar = {
+      label,
+      sessionId: session.sessionId,
+      opusTokens: analysis.opusTokens,
+      sonnetTokens: analysis.sonnetTokens,
+      haikuTokens: analysis.haikuTokens,
+      totalTokens: analysis.opusTokens + analysis.sonnetTokens + analysis.haikuTokens,
+      startTime,
+    };
+
+    if (!byDate.has(session.date)) {
+      byDate.set(session.date, []);
+    }
+    byDate.get(session.date)!.push(bar);
+  }
+
+  // Sort sessions within each day by start time (earliest first)
+  for (const bars of byDate.values()) {
+    bars.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
+
+  // Build days array sorted chronologically (oldest first for x-axis)
+  const sortedDates = [...byDate.keys()].sort();
+  const days: BarChartDay[] = sortedDates.map((date) => ({
+    date,
+    sessions: byDate.get(date)!,
+  }));
+
+  return { days };
 }
 
 interface TreemapNode {
@@ -357,19 +613,7 @@ export default class Graph extends BaseCommand {
   }
 
   private parseJsonl(filePath: string): JournalEntry[] {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const entries: JournalEntry[] = [];
-
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        entries.push(JSON.parse(line) as JournalEntry);
-      } catch {
-        // Skip invalid lines
-      }
-    }
-
-    return entries;
+    return parseJsonl(filePath);
   }
 
   private buildSessionTreemap(sessionId: string, entries: JournalEntry[]): TreemapNode {
@@ -719,158 +963,12 @@ export default class Graph extends BaseCommand {
     return projectParts.join("-");
   }
 
-  /**
-   * Extract a meaningful label from session entries.
-   * Priority: first user text > first assistant response > git branch > slug > short ID
-   */
   private extractSessionLabel(entries: JournalEntry[], sessionId: string): string {
-    let firstUserText: string | undefined;
-    let firstAssistantText: string | undefined;
-    let gitBranch: string | undefined;
-    let slug: string | undefined;
-
-    for (const entry of entries) {
-      // Extract metadata from any entry
-      if (!gitBranch && (entry as any).gitBranch) {
-        gitBranch = (entry as any).gitBranch;
-      }
-      if (!slug && (entry as any).slug) {
-        slug = (entry as any).slug;
-      }
-
-      if (!entry.message) continue;
-
-      // Look for first user message with actual text (not UUID reference)
-      if (!firstUserText && entry.type === "user" && entry.message.role === "user") {
-        const content = entry.message.content;
-        if (typeof content === "string") {
-          // Check if it's a UUID (skip those) or actual text
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            content,
-          );
-          if (!isUuid && content.length > 0) {
-            firstUserText = content;
-          }
-        } else if (Array.isArray(content)) {
-          // Look for text blocks in array content
-          for (const block of content) {
-            if (block.type === "text" && block.text && block.text.length > 0) {
-              firstUserText = block.text;
-              break;
-            }
-          }
-        }
-      }
-
-      // Look for first assistant text response
-      if (!firstAssistantText && entry.type === "assistant" && entry.message.role === "assistant") {
-        const content = entry.message.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "text" && block.text && block.text.length > 0) {
-              firstAssistantText = block.text;
-              break;
-            }
-          }
-        }
-      }
-
-      // Stop early if we have user text
-      if (firstUserText) break;
-    }
-
-    // Priority: user text > assistant text > git branch > slug > short ID
-    let label = firstUserText || firstAssistantText || gitBranch || slug || sessionId.slice(0, 8);
-
-    // Clean up the label
-    label = label
-      .replace(/^\/\S+\s*/, "") // Remove /command prefixes
-      .replace(/<[^>]+>[^<]*<\/[^>]+>/g, "") // Remove XML-style tags with content
-      .replace(/<[^>]+>/g, "") // Remove remaining XML tags
-      .replace(/^\s*Caveat:.*$/m, "") // Remove caveat lines
-      .replace(/\n.*/g, "") // Take only first line
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1F]+/g, " ") // Replace control characters with space
-      .trim();
-
-    // If still empty or too short, use fallback
-    if (label.length < 3) {
-      label = slug || sessionId.slice(0, 8);
-    }
-
-    // Truncate very long labels (will be smart-truncated in UI based on box size)
-    if (label.length > 80) {
-      label = label.slice(0, 77) + "...";
-    }
-
-    return label;
+    return extractSessionLabel(entries, sessionId);
   }
 
-  private analyzeSession(entries: JournalEntry[]): {
-    inputTokens: number;
-    outputTokens: number;
-    opusTokens: number;
-    sonnetTokens: number;
-    haikuTokens: number;
-    cacheHitRate: number;
-    repeatedReads: number;
-    modelEfficiency: number;
-  } {
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let opusTokens = 0;
-    let sonnetTokens = 0;
-    let haikuTokens = 0;
-    let cacheRead = 0;
-    let totalInput = 0;
-    const fileReadCounts = new Map<string, number>();
-
-    for (const entry of entries) {
-      // Count file reads for repeatedReads metric
-      if (entry.message?.content && Array.isArray(entry.message.content)) {
-        for (const block of entry.message.content) {
-          if (block.type === "tool_use" && block.name === "Read" && block.input) {
-            const filePath = (block.input as { file_path?: string }).file_path;
-            if (filePath) {
-              fileReadCounts.set(filePath, (fileReadCounts.get(filePath) || 0) + 1);
-            }
-          }
-        }
-      }
-
-      if (!entry.message?.usage) continue;
-      const usage = entry.message.usage;
-      const model = entry.message.model || "";
-      const tokens = (usage.input_tokens || 0) + (usage.output_tokens || 0);
-
-      inputTokens += usage.input_tokens || 0;
-      outputTokens += usage.output_tokens || 0;
-      cacheRead += usage.cache_read_input_tokens || 0;
-      totalInput += usage.input_tokens || 0;
-
-      if (model.includes("opus")) opusTokens += tokens;
-      else if (model.includes("sonnet")) sonnetTokens += tokens;
-      else if (model.includes("haiku")) haikuTokens += tokens;
-    }
-
-    // Count files read more than once
-    let repeatedReads = 0;
-    for (const count of fileReadCounts.values()) {
-      if (count > 1) repeatedReads += count - 1;
-    }
-
-    const totalTokens = opusTokens + sonnetTokens + haikuTokens;
-
-    return {
-      inputTokens,
-      outputTokens,
-      opusTokens,
-      sonnetTokens,
-      haikuTokens,
-      cacheHitRate: totalInput > 0 ? cacheRead / totalInput : 0,
-      repeatedReads,
-      modelEfficiency: totalTokens > 0 ? opusTokens / totalTokens : 0,
-    };
+  private analyzeSession(entries: JournalEntry[]): ReturnType<typeof analyzeSession> {
+    return analyzeSession(entries);
   }
 
   private getPrimaryModel(analysis: ReturnType<typeof this.analyzeSession>): string {
