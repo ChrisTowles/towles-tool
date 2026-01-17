@@ -107,6 +107,39 @@
         border-radius: 8px;
         overflow: hidden;
       }
+      #barchart {
+        display: none;
+        width: {{WIDTH}}px;
+        height: {{HEIGHT}}px;
+        background: #16213e;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      #barchart svg {
+        display: block;
+      }
+      .bar-segment {
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .bar-segment:hover {
+        opacity: 0.85;
+      }
+      .bar-segment.selected {
+        stroke: #fff;
+        stroke-width: 2;
+      }
+      .axis text {
+        fill: #888;
+        font-size: 11px;
+      }
+      .axis line, .axis path {
+        stroke: #444;
+      }
+      .axis-label {
+        fill: #888;
+        font-size: 12px;
+      }
       .node {
         position: absolute;
         overflow: hidden;
@@ -327,6 +360,7 @@
       <div class="main-content">
         <div class="treemap-wrapper">
           <div id="treemap"></div>
+          <div id="barchart"></div>
           <div class="tooltip" id="tooltip"></div>
           <div class="breadcrumb" id="breadcrumb"></div>
           <div class="stats" id="stats"></div>
@@ -337,7 +371,9 @@
 
     <script>
       const treeData = {{DATA}};
+      const barChartData = {{BAR_CHART_DATA}};
       const container = document.getElementById('treemap');
+      const barChartContainer = document.getElementById('barchart');
       const tooltip = document.getElementById('tooltip');
       const stats = document.getElementById('stats');
       const breadcrumb = document.getElementById('breadcrumb');
@@ -797,6 +833,348 @@
       }
 
       render();
+
+      // Model colors for bar chart
+      const modelColors = {
+        opus: '#a78bfa',   // purple
+        sonnet: '#60a5fa', // blue
+        haiku: '#4ade80'   // green
+      };
+
+      // Selected bar segment state
+      let selectedBarSegment = null;
+
+      /**
+       * Render stacked bar chart visualization.
+       * Each day is a group of stacked bars, each bar representing a session.
+       * Within each session bar, segments show Opus/Sonnet/Haiku token proportions.
+       */
+      function renderBarChart(data) {
+        barChartContainer.replaceChildren();
+
+        if (!data || !data.days || data.days.length === 0) {
+          const msg = document.createElement('div');
+          msg.style.cssText = 'color: #666; text-align: center; padding: 40px;';
+          msg.textContent = 'No bar chart data available';
+          barChartContainer.appendChild(msg);
+          return;
+        }
+
+        const margin = { top: 30, right: 30, bottom: 60, left: 70 };
+        const width = WIDTH - margin.left - margin.right;
+        const height = HEIGHT - margin.top - margin.bottom;
+
+        // Create SVG
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', WIDTH);
+        svg.setAttribute('height', HEIGHT);
+        barChartContainer.appendChild(svg);
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(${margin.left},${margin.top})`);
+        svg.appendChild(g);
+
+        // Calculate max tokens per day for y-axis scale
+        let maxDayTokens = 0;
+        for (const day of data.days) {
+          let dayTotal = 0;
+          for (const session of day.sessions) {
+            dayTotal += session.totalTokens;
+          }
+          if (dayTotal > maxDayTokens) maxDayTokens = dayTotal;
+        }
+
+        // X scale: dates
+        const xDomain = data.days.map(d => d.date);
+        const xBandWidth = width / xDomain.length;
+        const xScale = (date) => xDomain.indexOf(date) * xBandWidth + xBandWidth / 2;
+
+        // Y scale: tokens
+        const yScale = (tokens) => height - (tokens / maxDayTokens) * height;
+        const yHeight = (tokens) => (tokens / maxDayTokens) * height;
+
+        // Draw axes
+        // X axis
+        const xAxisG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        xAxisG.setAttribute('class', 'axis');
+        xAxisG.setAttribute('transform', `translate(0,${height})`);
+        g.appendChild(xAxisG);
+
+        // X axis line
+        const xLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        xLine.setAttribute('x1', 0);
+        xLine.setAttribute('x2', width);
+        xLine.setAttribute('stroke', '#444');
+        xAxisG.appendChild(xLine);
+
+        // X axis labels
+        for (const date of xDomain) {
+          const x = xScale(date);
+          const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          tick.setAttribute('x1', x);
+          tick.setAttribute('x2', x);
+          tick.setAttribute('y1', 0);
+          tick.setAttribute('y2', 6);
+          tick.setAttribute('stroke', '#444');
+          xAxisG.appendChild(tick);
+
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('x', x);
+          label.setAttribute('y', 20);
+          label.setAttribute('text-anchor', 'middle');
+          label.setAttribute('fill', '#888');
+          label.setAttribute('font-size', '11');
+          // Format date as MM/DD
+          const parts = date.split('-');
+          label.textContent = parts[1] + '/' + parts[2];
+          xAxisG.appendChild(label);
+        }
+
+        // Y axis
+        const yAxisG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        yAxisG.setAttribute('class', 'axis');
+        g.appendChild(yAxisG);
+
+        // Y axis line
+        const yLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        yLine.setAttribute('y1', 0);
+        yLine.setAttribute('y2', height);
+        yLine.setAttribute('stroke', '#444');
+        yAxisG.appendChild(yLine);
+
+        // Y axis ticks (5 ticks)
+        const yTicks = 5;
+        for (let i = 0; i <= yTicks; i++) {
+          const tokens = (maxDayTokens / yTicks) * i;
+          const y = yScale(tokens);
+
+          const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          tick.setAttribute('x1', -6);
+          tick.setAttribute('x2', 0);
+          tick.setAttribute('y1', y);
+          tick.setAttribute('y2', y);
+          tick.setAttribute('stroke', '#444');
+          yAxisG.appendChild(tick);
+
+          // Grid line
+          const grid = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          grid.setAttribute('x1', 0);
+          grid.setAttribute('x2', width);
+          grid.setAttribute('y1', y);
+          grid.setAttribute('y2', y);
+          grid.setAttribute('stroke', '#333');
+          grid.setAttribute('stroke-dasharray', '2,2');
+          yAxisG.appendChild(grid);
+
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('x', -10);
+          label.setAttribute('y', y + 4);
+          label.setAttribute('text-anchor', 'end');
+          label.setAttribute('fill', '#888');
+          label.setAttribute('font-size', '11');
+          label.textContent = formatTokens(Math.round(tokens));
+          yAxisG.appendChild(label);
+        }
+
+        // Y axis label
+        const yLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        yLabel.setAttribute('transform', `rotate(-90)`);
+        yLabel.setAttribute('x', -height / 2);
+        yLabel.setAttribute('y', -50);
+        yLabel.setAttribute('text-anchor', 'middle');
+        yLabel.setAttribute('fill', '#888');
+        yLabel.setAttribute('font-size', '12');
+        yLabel.textContent = 'Tokens';
+        yAxisG.appendChild(yLabel);
+
+        // Bar width (leave gaps between days)
+        const barWidth = Math.min(xBandWidth * 0.7, 60);
+
+        // Draw stacked bars for each day
+        for (const day of data.days) {
+          const x = xScale(day.date) - barWidth / 2;
+          let yOffset = 0; // Stack from bottom
+
+          for (const session of day.sessions) {
+            const sessionHeight = yHeight(session.totalTokens);
+            if (sessionHeight < 1) continue;
+
+            // Calculate segment heights within this session bar
+            const segments = [
+              { key: 'opus', tokens: session.opusTokens, color: modelColors.opus },
+              { key: 'sonnet', tokens: session.sonnetTokens, color: modelColors.sonnet },
+              { key: 'haiku', tokens: session.haikuTokens, color: modelColors.haiku }
+            ].filter(s => s.tokens > 0);
+
+            let segmentOffset = 0;
+            for (const seg of segments) {
+              const segHeight = (seg.tokens / session.totalTokens) * sessionHeight;
+              if (segHeight < 0.5) continue;
+
+              const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+              rect.setAttribute('class', 'bar-segment');
+              rect.setAttribute('x', x);
+              rect.setAttribute('y', height - yOffset - sessionHeight + segmentOffset);
+              rect.setAttribute('width', barWidth);
+              rect.setAttribute('height', segHeight);
+              rect.setAttribute('fill', seg.color);
+              rect.setAttribute('data-session-id', session.sessionId);
+              rect.setAttribute('data-model', seg.key);
+
+              // Store session data for click/hover
+              rect._sessionData = {
+                ...session,
+                date: day.date,
+                modelKey: seg.key,
+                modelTokens: seg.tokens
+              };
+
+              // Hover events
+              rect.addEventListener('mouseenter', (e) => showBarTooltip(e, rect._sessionData));
+              rect.addEventListener('mousemove', (e) => moveTooltip(e));
+              rect.addEventListener('mouseleave', hideTooltip);
+
+              // Click to show detail
+              rect.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Clear previous selection
+                if (selectedBarSegment) {
+                  selectedBarSegment.classList.remove('selected');
+                }
+                selectedBarSegment = rect;
+                rect.classList.add('selected');
+                showBarDetail(rect._sessionData);
+              });
+
+              g.appendChild(rect);
+              segmentOffset += segHeight;
+            }
+
+            yOffset += sessionHeight;
+          }
+        }
+
+        // Click elsewhere to clear selection
+        svg.addEventListener('click', () => {
+          if (selectedBarSegment) {
+            selectedBarSegment.classList.remove('selected');
+            selectedBarSegment = null;
+            detailPanel.className = 'detail-panel empty';
+            detailPanel.textContent = 'Click a bar segment to see details';
+          }
+        });
+      }
+
+      /**
+       * Show tooltip for bar chart segment.
+       */
+      function showBarTooltip(e, data) {
+        tooltip.replaceChildren();
+
+        const title = document.createElement('div');
+        title.className = 'tooltip-title';
+        title.textContent = data.label;
+        tooltip.appendChild(title);
+
+        function addRow(label, value, extraClass) {
+          const row = document.createElement('div');
+          row.className = 'tooltip-row';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'tooltip-label';
+          labelEl.textContent = label;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'tooltip-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.textContent = value;
+          row.appendChild(labelEl);
+          row.appendChild(valueEl);
+          tooltip.appendChild(row);
+        }
+
+        addRow('Session:', data.sessionId.slice(0, 8));
+        addRow('Date:', data.date);
+        addRow('Total tokens:', formatTokens(data.totalTokens));
+
+        // Model breakdown
+        if (data.opusTokens > 0) addRow('Opus:', formatTokens(data.opusTokens));
+        if (data.sonnetTokens > 0) addRow('Sonnet:', formatTokens(data.sonnetTokens));
+        if (data.haikuTokens > 0) addRow('Haiku:', formatTokens(data.haikuTokens));
+
+        tooltip.style.display = 'block';
+        moveTooltip(e);
+      }
+
+      /**
+       * Show detail panel for bar chart segment.
+       */
+      function showBarDetail(data) {
+        detailPanel.className = 'detail-panel';
+        detailPanel.replaceChildren();
+
+        const title = document.createElement('div');
+        title.className = 'detail-title';
+        title.textContent = data.label;
+        detailPanel.appendChild(title);
+
+        function addDetailRow(label, value, extraClass) {
+          const row = document.createElement('div');
+          row.className = 'detail-row';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'detail-label';
+          labelEl.textContent = label;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'detail-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.textContent = value;
+          row.appendChild(labelEl);
+          row.appendChild(valueEl);
+          detailPanel.appendChild(row);
+        }
+
+        addDetailRow('Session:', data.sessionId);
+        addDetailRow('Date:', data.date);
+        addDetailRow('Total tokens:', formatTokens(data.totalTokens));
+
+        // Model breakdown section
+        const breakdownHeader = document.createElement('div');
+        breakdownHeader.style.cssText = 'margin-top: 12px; margin-bottom: 6px; color: #888; font-size: 0.8rem;';
+        breakdownHeader.textContent = 'Model Breakdown';
+        detailPanel.appendChild(breakdownHeader);
+
+        if (data.opusTokens > 0) {
+          addDetailRow('Opus:', formatTokens(data.opusTokens) + ' (' + Math.round(data.opusTokens / data.totalTokens * 100) + '%)');
+        }
+        if (data.sonnetTokens > 0) {
+          addDetailRow('Sonnet:', formatTokens(data.sonnetTokens) + ' (' + Math.round(data.sonnetTokens / data.totalTokens * 100) + '%)');
+        }
+        if (data.haikuTokens > 0) {
+          addDetailRow('Haiku:', formatTokens(data.haikuTokens) + ' (' + Math.round(data.haikuTokens / data.totalTokens * 100) + '%)');
+        }
+
+        // Action buttons
+        const actions = document.createElement('div');
+        actions.className = 'detail-actions';
+
+        const copyIdBtn = document.createElement('button');
+        copyIdBtn.className = 'detail-btn';
+        copyIdBtn.textContent = '🔗 Copy session ID';
+        copyIdBtn.onclick = () => {
+          navigator.clipboard.writeText(data.sessionId);
+          copyIdBtn.textContent = '✓ Copied!';
+          setTimeout(() => copyIdBtn.textContent = '🔗 Copy session ID', 1500);
+        };
+        actions.appendChild(copyIdBtn);
+
+        const transcriptBtn = document.createElement('button');
+        transcriptBtn.className = 'detail-btn';
+        transcriptBtn.textContent = '📜 View transcript';
+        transcriptBtn.onclick = () => {
+          navigator.clipboard.writeText('uvx claude-code-transcripts ' + data.sessionId);
+          transcriptBtn.textContent = '✓ Copied!';
+          setTimeout(() => transcriptBtn.textContent = '📜 View transcript', 1500);
+        };
+        actions.appendChild(transcriptBtn);
+
+        detailPanel.appendChild(actions);
+      }
     </script>
   </body>
 </html>

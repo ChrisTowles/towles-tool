@@ -402,6 +402,7 @@ export default class Graph extends BaseCommand {
 
     const sessionId = flags.session;
     let treemapData: TreemapNode;
+    let barChartData: BarChartData = { days: [] };
 
     if (!sessionId) {
       // All sessions mode
@@ -413,6 +414,7 @@ export default class Graph extends BaseCommand {
       const daysMsg = flags.days > 0 ? ` (last ${flags.days} days)` : "";
       this.log(`📊 Generating treemap for ${sessions.length} sessions${daysMsg}...`);
       treemapData = this.buildAllSessionsTreemap(sessions);
+      barChartData = buildBarChartData(sessions);
     } else {
       // Single session mode
       const sessionPath = this.findSessionPath(projectsDir, sessionId);
@@ -423,10 +425,11 @@ export default class Graph extends BaseCommand {
       this.log(`📊 Generating treemap for session ${sessionId}...`);
       const entries = this.parseJsonl(sessionPath);
       treemapData = this.buildSessionTreemap(sessionId, entries);
+      // Bar chart not meaningful for single session, leave empty
     }
 
     // Generate HTML
-    const html = this.generateTreemapHtml(treemapData);
+    const html = this.generateTreemapHtml(treemapData, barChartData);
 
     // Write output file
     const reportsDir = path.join(os.homedir(), ".claude", "reports");
@@ -513,7 +516,7 @@ export default class Graph extends BaseCommand {
     }
   }
 
-  private generateTreemapHtml(data: TreemapNode): string {
+  private generateTreemapHtml(data: TreemapNode, barChartData: BarChartData): string {
     const width = 1200;
     const height = 800;
 
@@ -523,14 +526,11 @@ export default class Graph extends BaseCommand {
     return template
       .replace(/\{\{WIDTH\}\}/g, String(width))
       .replace(/\{\{HEIGHT\}\}/g, String(height))
-      .replace(/\{\{DATA\}\}/g, () => JSON.stringify(data));
+      .replace(/\{\{DATA\}\}/g, () => JSON.stringify(data))
+      .replace(/\{\{BAR_CHART_DATA\}\}/g, () => JSON.stringify(barChartData));
   }
 
-  private findRecentSessions(
-    projectsDir: string,
-    limit: number,
-    days: number,
-  ): Array<{ sessionId: string; path: string; date: string; tokens: number; project: string }> {
+  private findRecentSessions(projectsDir: string, limit: number, days: number): SessionResult[] {
     const sessions: Array<{
       sessionId: string;
       path: string;
