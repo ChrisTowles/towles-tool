@@ -899,23 +899,41 @@
 
       render();
 
-      // Model colors for bar chart
-      const modelColors = {
-        opus: '#a78bfa',   // purple
-        sonnet: '#60a5fa', // blue
-        haiku: '#4ade80'   // green
-      };
+      // Project colors for bar chart (distinct colors for different projects)
+      const projectColorPalette = [
+        '#60a5fa', // blue
+        '#4ade80', // green
+        '#a78bfa', // purple
+        '#f87171', // red
+        '#fbbf24', // amber
+        '#22d3ee', // cyan
+        '#f472b6', // pink
+        '#fb923c', // orange
+        '#2dd4bf', // teal
+        '#818cf8', // indigo
+      ];
+      const projectColorMap = new Map();
+      let nextColorIndex = 0;
+
+      function getProjectColor(project) {
+        if (!projectColorMap.has(project)) {
+          projectColorMap.set(project, projectColorPalette[nextColorIndex % projectColorPalette.length]);
+          nextColorIndex++;
+        }
+        return projectColorMap.get(project);
+      }
 
       // Selected bar segment state
       let selectedBarSegment = null;
 
       /**
        * Render stacked bar chart visualization.
-       * Each day is a group of stacked bars, each bar representing a session.
-       * Within each session bar, segments show Opus/Sonnet/Haiku token proportions.
+       * Each day shows stacked bars by project folder.
        */
       function renderBarChart(data) {
         barChartContainer.replaceChildren();
+        projectColorMap.clear();
+        nextColorIndex = 0;
 
         if (!data || !data.days || data.days.length === 0) {
           const msg = document.createElement('div');
@@ -943,8 +961,8 @@
         let maxDayTokens = 0;
         for (const day of data.days) {
           let dayTotal = 0;
-          for (const session of day.sessions) {
-            dayTotal += session.totalTokens;
+          for (const proj of day.projects) {
+            dayTotal += proj.totalTokens;
           }
           if (dayTotal > maxDayTokens) maxDayTokens = dayTotal;
         }
@@ -1055,67 +1073,50 @@
         // Bar width (leave gaps between days)
         const barWidth = Math.min(xBandWidth * 0.7, 60);
 
-        // Draw stacked bars for each day
+        // Draw stacked bars for each day (by project)
         for (const day of data.days) {
           const x = xScale(day.date) - barWidth / 2;
           let yOffset = 0; // Stack from bottom
 
-          for (const session of day.sessions) {
-            const sessionHeight = yHeight(session.totalTokens);
-            if (sessionHeight < 1) continue;
+          for (const proj of day.projects) {
+            const projHeight = yHeight(proj.totalTokens);
+            if (projHeight < 1) continue;
 
-            // Calculate segment heights within this session bar
-            const segments = [
-              { key: 'opus', tokens: session.opusTokens, color: modelColors.opus },
-              { key: 'sonnet', tokens: session.sonnetTokens, color: modelColors.sonnet },
-              { key: 'haiku', tokens: session.haikuTokens, color: modelColors.haiku }
-            ].filter(s => s.tokens > 0);
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('class', 'bar-segment');
+            rect.setAttribute('x', x);
+            rect.setAttribute('y', height - yOffset - projHeight);
+            rect.setAttribute('width', barWidth);
+            rect.setAttribute('height', projHeight);
+            rect.setAttribute('fill', getProjectColor(proj.project));
+            rect.setAttribute('data-project', proj.project);
 
-            let segmentOffset = 0;
-            for (const seg of segments) {
-              const segHeight = (seg.tokens / session.totalTokens) * sessionHeight;
-              if (segHeight < 0.5) continue;
+            // Store project data for click/hover
+            rect._projectData = {
+              project: proj.project,
+              totalTokens: proj.totalTokens,
+              date: day.date
+            };
 
-              const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-              rect.setAttribute('class', 'bar-segment');
-              rect.setAttribute('x', x);
-              rect.setAttribute('y', height - yOffset - sessionHeight + segmentOffset);
-              rect.setAttribute('width', barWidth);
-              rect.setAttribute('height', segHeight);
-              rect.setAttribute('fill', seg.color);
-              rect.setAttribute('data-session-id', session.sessionId);
-              rect.setAttribute('data-model', seg.key);
+            // Hover events
+            rect.addEventListener('mouseenter', (e) => showBarTooltip(e, rect._projectData));
+            rect.addEventListener('mousemove', (e) => moveTooltip(e));
+            rect.addEventListener('mouseleave', hideTooltip);
 
-              // Store session data for click/hover
-              rect._sessionData = {
-                ...session,
-                date: day.date,
-                modelKey: seg.key,
-                modelTokens: seg.tokens
-              };
+            // Click to show detail
+            rect.addEventListener('click', (e) => {
+              e.stopPropagation();
+              // Clear previous selection
+              if (selectedBarSegment) {
+                selectedBarSegment.classList.remove('selected');
+              }
+              selectedBarSegment = rect;
+              rect.classList.add('selected');
+              showBarDetail(rect._projectData);
+            });
 
-              // Hover events
-              rect.addEventListener('mouseenter', (e) => showBarTooltip(e, rect._sessionData));
-              rect.addEventListener('mousemove', (e) => moveTooltip(e));
-              rect.addEventListener('mouseleave', hideTooltip);
-
-              // Click to show detail
-              rect.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // Clear previous selection
-                if (selectedBarSegment) {
-                  selectedBarSegment.classList.remove('selected');
-                }
-                selectedBarSegment = rect;
-                rect.classList.add('selected');
-                showBarDetail(rect._sessionData);
-              });
-
-              g.appendChild(rect);
-              segmentOffset += segHeight;
-            }
-
-            yOffset += sessionHeight;
+            g.appendChild(rect);
+            yOffset += projHeight;
           }
         }
 
@@ -1128,6 +1129,15 @@
             detailPanel.textContent = 'Click a bar segment to see details';
           }
         });
+
+        // Update stats for bar chart view
+        let totalTokens = 0;
+        for (const day of data.days) {
+          for (const proj of day.projects) {
+            totalTokens += proj.totalTokens;
+          }
+        }
+        stats.textContent = 'Total: ' + formatTokens(totalTokens) + ' tokens';
       }
 
       /**
@@ -1138,31 +1148,25 @@
 
         const title = document.createElement('div');
         title.className = 'tooltip-title';
-        title.textContent = data.label;
+        title.textContent = data.project;
         tooltip.appendChild(title);
 
-        function addRow(label, value, extraClass) {
+        function addRow(label, value) {
           const row = document.createElement('div');
           row.className = 'tooltip-row';
           const labelEl = document.createElement('span');
           labelEl.className = 'tooltip-label';
           labelEl.textContent = label;
           const valueEl = document.createElement('span');
-          valueEl.className = 'tooltip-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.className = 'tooltip-value';
           valueEl.textContent = value;
           row.appendChild(labelEl);
           row.appendChild(valueEl);
           tooltip.appendChild(row);
         }
 
-        addRow('Session:', data.sessionId.slice(0, 8));
         addRow('Date:', data.date);
-        addRow('Total tokens:', formatTokens(data.totalTokens));
-
-        // Model breakdown
-        if (data.opusTokens > 0) addRow('Opus:', formatTokens(data.opusTokens));
-        if (data.sonnetTokens > 0) addRow('Sonnet:', formatTokens(data.sonnetTokens));
-        if (data.haikuTokens > 0) addRow('Haiku:', formatTokens(data.haikuTokens));
+        addRow('Tokens:', formatTokens(data.totalTokens));
 
         tooltip.style.display = 'block';
         moveTooltip(e);
@@ -1177,68 +1181,25 @@
 
         const title = document.createElement('div');
         title.className = 'detail-title';
-        title.textContent = data.label;
+        title.textContent = data.project;
         detailPanel.appendChild(title);
 
-        function addDetailRow(label, value, extraClass) {
+        function addDetailRow(label, value) {
           const row = document.createElement('div');
           row.className = 'detail-row';
           const labelEl = document.createElement('span');
           labelEl.className = 'detail-label';
           labelEl.textContent = label;
           const valueEl = document.createElement('span');
-          valueEl.className = 'detail-value' + (extraClass ? ' ' + extraClass : '');
+          valueEl.className = 'detail-value';
           valueEl.textContent = value;
           row.appendChild(labelEl);
           row.appendChild(valueEl);
           detailPanel.appendChild(row);
         }
 
-        addDetailRow('Session:', data.sessionId);
         addDetailRow('Date:', data.date);
         addDetailRow('Total tokens:', formatTokens(data.totalTokens));
-
-        // Model breakdown section
-        const breakdownHeader = document.createElement('div');
-        breakdownHeader.style.cssText = 'margin-top: 12px; margin-bottom: 6px; color: #888; font-size: 0.8rem;';
-        breakdownHeader.textContent = 'Model Breakdown';
-        detailPanel.appendChild(breakdownHeader);
-
-        if (data.opusTokens > 0) {
-          addDetailRow('Opus:', formatTokens(data.opusTokens) + ' (' + Math.round(data.opusTokens / data.totalTokens * 100) + '%)');
-        }
-        if (data.sonnetTokens > 0) {
-          addDetailRow('Sonnet:', formatTokens(data.sonnetTokens) + ' (' + Math.round(data.sonnetTokens / data.totalTokens * 100) + '%)');
-        }
-        if (data.haikuTokens > 0) {
-          addDetailRow('Haiku:', formatTokens(data.haikuTokens) + ' (' + Math.round(data.haikuTokens / data.totalTokens * 100) + '%)');
-        }
-
-        // Action buttons
-        const actions = document.createElement('div');
-        actions.className = 'detail-actions';
-
-        const copyIdBtn = document.createElement('button');
-        copyIdBtn.className = 'detail-btn';
-        copyIdBtn.textContent = '🔗 Copy session ID';
-        copyIdBtn.onclick = () => {
-          navigator.clipboard.writeText(data.sessionId);
-          copyIdBtn.textContent = '✓ Copied!';
-          setTimeout(() => copyIdBtn.textContent = '🔗 Copy session ID', 1500);
-        };
-        actions.appendChild(copyIdBtn);
-
-        const transcriptBtn = document.createElement('button');
-        transcriptBtn.className = 'detail-btn';
-        transcriptBtn.textContent = '📜 View transcript';
-        transcriptBtn.onclick = () => {
-          navigator.clipboard.writeText('uvx claude-code-transcripts ' + data.sessionId);
-          transcriptBtn.textContent = '✓ Copied!';
-          setTimeout(() => transcriptBtn.textContent = '📜 View transcript', 1500);
-        };
-        actions.appendChild(transcriptBtn);
-
-        detailPanel.appendChild(actions);
       }
     </script>
   </body>

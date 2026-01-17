@@ -36,7 +36,8 @@ describe("date utilities", () => {
   });
 
   it("should format date correctly", () => {
-    const date = new Date("2025-07-07");
+    // Use local date constructor (year, month-1, day), not ISO string which is UTC
+    const date = new Date(2025, 6, 7); // July 7, 2025 in local time
     expect(formatDate(date)).toBe("2025-07-07");
   });
 

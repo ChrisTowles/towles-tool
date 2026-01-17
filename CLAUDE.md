@@ -169,6 +169,7 @@ Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5
 
 ## Important Notes
 
+- **Dates in local timezone**: Always use local time for user-facing dates. Use `toLocaleDateString("en-CA")` for YYYY-MM-DD format or Luxon with local zone. Never use `toISOString()` for date grouping/display - it converts to UTC and causes dates to shift (e.g., 11pm local becomes next day in UTC).
 - **Use pnpm/tsx**: Run `.ts` files with `tsx file.ts`, use `pnpm dlx` instead of `npx`, use `pnpm install/add/remove` for packages
 - **Zod types**: Always derive TypeScript types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas
 - **Breaking changes are fine** - this is a personal tool; don't worry about backwards compatibility

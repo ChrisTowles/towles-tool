@@ -38,10 +38,10 @@ export function getWeekInfo(mondayDate: Date): weekInfo {
 }
 
 /**
- * Format date as YYYY-MM-DD
+ * Format date as YYYY-MM-DD in local timezone
  */
 export function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0];
+  return date.toLocaleDateString("en-CA");
 }
 
 /**

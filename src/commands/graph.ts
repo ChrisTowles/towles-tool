@@ -46,20 +46,15 @@ interface ToolData {
   outputTokens: number;
 }
 
-// Bar chart types for stacked bar visualization
-export interface SessionBar {
-  label: string;
-  sessionId: string;
-  opusTokens: number;
-  sonnetTokens: number;
-  haikuTokens: number;
+// Bar chart types for stacked bar visualization - aggregated by project
+export interface ProjectBar {
+  project: string;
   totalTokens: number;
-  startTime: string; // ISO timestamp for sorting
 }
 
 export interface BarChartDay {
   date: string; // YYYY-MM-DD format
-  sessions: SessionBar[];
+  projects: ProjectBar[];
 }
 
 export interface BarChartData {
@@ -270,52 +265,39 @@ export function extractSessionLabel(entries: JournalEntry[], sessionId: string):
 
 /**
  * Build bar chart data structure from session results.
- * Groups sessions by date, sorts days chronologically (oldest first),
- * and sessions within each day by start time.
+ * Groups sessions by date and project folder, aggregating tokens per project per day.
  */
-export function buildBarChartData(sessions: SessionResult[]): BarChartData {
+export function buildBarChartData(
+  sessions: SessionResult[],
+  extractProjectName: (encoded: string) => string,
+): BarChartData {
   if (sessions.length === 0) {
     return { days: [] };
   }
 
-  // Group sessions by date
-  const byDate = new Map<string, SessionBar[]>();
+  // Group sessions by date, then by project
+  const byDateProject = new Map<string, Map<string, number>>();
 
   for (const session of sessions) {
-    const entries = parseJsonl(session.path);
-    const analysis = analyzeSession(entries);
-    const label = extractSessionLabel(entries, session.sessionId);
+    const project = extractProjectName(session.project);
 
-    // Get start time from first entry
-    const startTime = entries[0]?.timestamp || new Date(session.mtime).toISOString();
-
-    const bar: SessionBar = {
-      label,
-      sessionId: session.sessionId,
-      opusTokens: analysis.opusTokens,
-      sonnetTokens: analysis.sonnetTokens,
-      haikuTokens: analysis.haikuTokens,
-      totalTokens: analysis.opusTokens + analysis.sonnetTokens + analysis.haikuTokens,
-      startTime,
-    };
-
-    if (!byDate.has(session.date)) {
-      byDate.set(session.date, []);
+    if (!byDateProject.has(session.date)) {
+      byDateProject.set(session.date, new Map());
     }
-    byDate.get(session.date)!.push(bar);
-  }
-
-  // Sort sessions within each day by start time (earliest first)
-  for (const bars of byDate.values()) {
-    bars.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const projectMap = byDateProject.get(session.date)!;
+    projectMap.set(project, (projectMap.get(project) || 0) + session.tokens);
   }
 
   // Build days array sorted chronologically (oldest first for x-axis)
-  const sortedDates = [...byDate.keys()].sort();
-  const days: BarChartDay[] = sortedDates.map((date) => ({
-    date,
-    sessions: byDate.get(date)!,
-  }));
+  const sortedDates = [...byDateProject.keys()].sort();
+  const days: BarChartDay[] = sortedDates.map((date) => {
+    const projectMap = byDateProject.get(date)!;
+    // Sort projects by total tokens descending
+    const projects: ProjectBar[] = [...projectMap.entries()]
+      .map(([project, totalTokens]) => ({ project, totalTokens }))
+      .sort((a, b) => b.totalTokens - a.totalTokens);
+    return { date, projects };
+  });
 
   return { days };
 }
@@ -414,7 +396,7 @@ export default class Graph extends BaseCommand {
       const daysMsg = flags.days > 0 ? ` (last ${flags.days} days)` : "";
       this.log(`📊 Generating treemap for ${sessions.length} sessions${daysMsg}...`);
       treemapData = this.buildAllSessionsTreemap(sessions);
-      barChartData = buildBarChartData(sessions);
+      barChartData = buildBarChartData(sessions, this.extractProjectName.bind(this));
     } else {
       // Single session mode
       const sessionPath = this.findSessionPath(projectsDir, sessionId);
@@ -563,7 +545,7 @@ export default class Graph extends BaseCommand {
         sessions.push({
           sessionId,
           path: filePath,
-          date: stat.mtime.toISOString().split("T")[0],
+          date: stat.mtime.toLocaleDateString("en-CA"), // YYYY-MM-DD in local timezone
           tokens,
           project,
           mtime: stat.mtimeMs,
