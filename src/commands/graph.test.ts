@@ -1,8 +1,8 @@
 /**
- * Tests for graph command --days filtering
+ * Tests for graph command --days filtering and bar chart data
  */
 import { describe, it, expect } from "vitest";
-import { calculateCutoffMs, filterByDays } from "./graph.js";
+import { calculateCutoffMs, filterByDays, analyzeSession } from "./graph.js";
 
 describe("graph --days filtering", () => {
   describe("calculateCutoffMs", () => {
@@ -85,5 +85,92 @@ describe("graph --days filtering", () => {
       expect(filtered[0].sessionId).toBe("abc");
       expect(filtered[0].tokens).toBe(100);
     });
+  });
+});
+
+describe("analyzeSession (bar chart token aggregation)", () => {
+  // Helper to create JournalEntry with message.usage structure
+  function makeEntry(model: string, inputTokens: number, outputTokens: number) {
+    return {
+      type: "assistant",
+      sessionId: "test-session",
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "assistant" as const,
+        model,
+        usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+      },
+    };
+  }
+
+  it("returns zeros for empty entries array", () => {
+    const result = analyzeSession([]);
+    expect(result.opusTokens).toBe(0);
+    expect(result.sonnetTokens).toBe(0);
+    expect(result.haikuTokens).toBe(0);
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
+  });
+
+  it("aggregates Opus tokens correctly", () => {
+    const entries = [
+      makeEntry("claude-opus-4-20250514", 100, 50),
+      makeEntry("claude-opus-4-20250514", 200, 100),
+    ];
+    const result = analyzeSession(entries);
+    expect(result.opusTokens).toBe(450); // 100+50+200+100
+    expect(result.sonnetTokens).toBe(0);
+    expect(result.haikuTokens).toBe(0);
+  });
+
+  it("aggregates Sonnet tokens correctly", () => {
+    const entries = [makeEntry("claude-sonnet-4-20250514", 500, 200)];
+    const result = analyzeSession(entries);
+    expect(result.sonnetTokens).toBe(700);
+    expect(result.opusTokens).toBe(0);
+    expect(result.haikuTokens).toBe(0);
+  });
+
+  it("aggregates Haiku tokens correctly", () => {
+    const entries = [makeEntry("claude-3-5-haiku-20241022", 1000, 500)];
+    const result = analyzeSession(entries);
+    expect(result.haikuTokens).toBe(1500);
+    expect(result.opusTokens).toBe(0);
+    expect(result.sonnetTokens).toBe(0);
+  });
+
+  it("aggregates mixed model tokens correctly", () => {
+    const entries = [
+      makeEntry("claude-opus-4-20250514", 100, 50),
+      makeEntry("claude-sonnet-4-20250514", 200, 100),
+      makeEntry("claude-3-5-haiku-20241022", 300, 150),
+    ];
+    const result = analyzeSession(entries);
+    expect(result.opusTokens).toBe(150);
+    expect(result.sonnetTokens).toBe(300);
+    expect(result.haikuTokens).toBe(450);
+    expect(result.inputTokens).toBe(600);
+    expect(result.outputTokens).toBe(300);
+  });
+
+  it("ignores entries without message.usage", () => {
+    const entries = [
+      { type: "user", sessionId: "x", timestamp: "", message: { role: "user" as const } },
+      makeEntry("claude-opus-4-20250514", 100, 50),
+      { type: "tool_result", sessionId: "x", timestamp: "" },
+    ];
+    const result = analyzeSession(entries);
+    expect(result.opusTokens).toBe(150);
+  });
+
+  it("calculates modelEfficiency as opus ratio", () => {
+    const entries = [
+      makeEntry("claude-opus-4-20250514", 100, 100),
+      makeEntry("claude-sonnet-4-20250514", 200, 200),
+    ];
+    const result = analyzeSession(entries);
+    // Opus: 200, Sonnet: 400, Total: 600
+    // modelEfficiency = 200/600 = 0.333...
+    expect(result.modelEfficiency).toBeCloseTo(0.333, 2);
   });
 });
