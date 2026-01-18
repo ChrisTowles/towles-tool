@@ -1,6 +1,6 @@
 # Towles Tool
 
-CLI tool with autonomous task runner and quality-of-life commands for daily development.
+Personal CLI toolkit with autonomous task runner and quality-of-life commands for daily development.
 
 ## Features
 
