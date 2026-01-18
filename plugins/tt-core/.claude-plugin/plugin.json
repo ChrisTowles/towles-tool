@@ -1,8 +1,8 @@
 {
-  "name": "tt",
-  "description": "Ralph autonomous task runner, observability (token treemaps), git workflows, and journaling",
-  "version": "0.0.47",
-  "author": {
-    "name": "Chris Towles"
-  }
+    "name": "tt",
+    "description": "Ralph autonomous task runner, observability (token treemaps), git workflows, and journaling",
+    "version": "0.0.48",
+    "author": {
+        "name": "Chris Towles"
+    }
 }
