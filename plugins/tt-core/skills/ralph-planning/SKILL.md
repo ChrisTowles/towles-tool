@@ -12,14 +12,8 @@ For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.m
 ## tt ralph Quick Reference
 
 ```bash
-# Marker workflow (CRITICAL for token efficiency)
-tt ralph marker create                        # Generate marker for session tracking
-# Then tell Claude to output the marker during research
-tt ralph task add "{detailed-description}" --findMarker <marker> # Find session by marker
-
 # Task management
-tt ralph task add "{detailed-description}"               # Add task (no session)
-tt ralph task add "{detailed-description}" --findMarker <m>     # Add task, find session by marker
+tt ralph task add "{detailed-description}"    # Add task
 tt ralph task list                            # View tasks (default format)
 tt ralph task list --format markdown          # View tasks as markdown
 tt ralph task done 1                          # Mark task #1 complete
@@ -31,23 +25,11 @@ tt ralph plan --format json           # Show plan as JSON
 tt ralph plan --copy                  # Show plan and copy to clipboard
 
 # Execution
-tt ralph run                          # Execute (auto-commits, auto-resumes by default)
+tt ralph run                          # Execute (auto-commits by default)
 tt ralph run --no-autoCommit          # Execute without auto-commits
 tt ralph run --maxIterations 10       # Safety limit
 tt ralph run --taskId 5               # Focus on specific task
-tt ralph run --noResume               # Start fresh session (rare)
 ```
-
-## CRITICAL: Session Markers Prevent Token Burn
-
-**Every task should have a sessionId** to resume from prior research. Use markers to link research sessions to tasks:
-
-1. **Generate marker before research**: `tt ralph marker create` → outputs `RALPH_MARKER_abc123`
-2. **Tell Claude to output the marker** during research (Claude will echo it in conversation)
-3. **Add task with marker**: `tt ralph task add "implement X" --findMarker abc123`
-4. This finds the session containing the marker and attaches it to the task
-
-This workflow prevents ralph from burning tokens re-discovering context that was already researched.
 
 ## Task Requirements
 

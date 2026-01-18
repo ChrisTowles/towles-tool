@@ -185,9 +185,8 @@ After 10 iterations if not complete:
     {
       "id": 2,
       "description": "Write validation tests",
-      "status": "in_progress",
-      "addedAt": "2025-01-10T12:00:00Z",
-      "sessionId": "abc123..."
+      "status": "ready",
+      "addedAt": "2025-01-10T12:00:00Z"
     },
     {
       "id": 3,
@@ -199,8 +198,7 @@ After 10 iterations if not complete:
   "startedAt": "2025-01-10T12:00:00Z",
   "iteration": 5,
   "maxIterations": 10,
-  "status": "running",
-  "sessionId": "abc123..."
+  "status": "running"
 }
 ```
 
@@ -210,16 +208,6 @@ Task statuses:
 - `done` - Completed (✓)
 - `blocked` - Blocked (⏸)
 - `cancelled` - Cancelled (✗)
-
-### Task-Level Session IDs
-
-Tasks can have their own `sessionId` for resumable execution:
-
-```bash
-tt ralph task add "Complex task" --sessionId abc123
-```
-
-When running with `--taskId`, the run command auto-resumes using the task's sessionId if present.
 
 ### Viewing Tasks
 
@@ -292,7 +280,6 @@ Mitigate with:
 
 - `--maxIterations` - Always set a reasonable limit
 - Smaller, focused tasks - Less context per iteration
-- Session forking (default) - Forks from prior session context
 
 ## Troubleshooting
 
@@ -313,9 +300,8 @@ Success: pnpm test passes, pnpm typecheck passes
 
 ### Context growing too large
 
-1. Session forking is on by default - forks from prior session
-2. Clear completed tasks: manually remove `done` tasks from state
-3. Split into separate ralph runs
+1. Clear completed tasks: manually remove `done` tasks from state
+2. Split into separate ralph runs
 
 ### Interrupted loop
 

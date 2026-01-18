@@ -14,23 +14,18 @@ Config: `~/.config/towles-tool/towles-tool.settings.json`
 ### Task Management
 
 ```bash
-tt ralph task add "description"                    # Add task
-tt ralph task add "desc" --sessionId abc123        # Add with session ID
-tt ralph task add "desc" --findMarker RALPH_...    # Find session by marker
-tt ralph task add "desc" --label backend           # Add with label
-tt ralph task list                                 # View tasks
-tt ralph task done 1                               # Mark complete
-tt ralph task remove 1                             # Remove task
+tt ralph task add "description"     # Add task
+tt ralph task list                  # View tasks
+tt ralph task done 1                # Mark complete
+tt ralph task remove 1              # Remove task
 ```
 
 ### Execution
 
 ```bash
-tt ralph run                        # Run (auto-commits, forks session)
+tt ralph run                        # Run (auto-commits by default)
 tt ralph run --no-autoCommit        # No auto-commits
-tt ralph run --noFork               # Fresh session (no fork)
 tt ralph run --taskId 5             # Focus on specific task
-tt ralph run --label backend        # Run only tasks with label
 tt ralph run --maxIterations 20     # Limit iterations
 tt ralph run --addIterations 5      # Add 5 to current count
 tt ralph run --dryRun               # Preview config
@@ -41,7 +36,6 @@ tt ralph run --dryRun               # Preview config
 ```bash
 tt ralph progress "message"         # Append to progress (write-only)
 tt ralph plan                       # Show plan with mermaid graph
-tt ralph marker create              # Generate session marker
 ```
 
 ## Observability
@@ -80,21 +74,7 @@ tt doctor   # Check dependencies
 tt install  # Configure Claude Code settings
 ```
 
-## Session Markers
-
-**Markers prevent token burn** by enabling ralph to resume from prior research.
-
-Workflow:
-
-1. Generate marker: `tt ralph marker create` → `RALPH_MARKER_abc123`
-2. Tell Claude to output marker during research
-3. Add task with marker: `tt ralph task add "desc" --findMarker RALPH_MARKER_abc123`
-
-The `--findMarker` flag searches `~/.claude` for the session containing the marker.
-
 ## Critical Rules
 
 1. **Never read `ralph-progress.md`** - use `tt ralph progress "msg"` to append
 2. **Always use CLI** for ralph state - never edit `ralph-state.json` directly
-3. **Session markers save tokens** - use `--findMarker` to reuse research
-4. **Session forking ON by default** - ralph forks from task's sessionId

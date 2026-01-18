@@ -16,10 +16,6 @@ export default class TaskList extends BaseCommand {
       description: "Output as markdown",
       command: "<%= config.bin %> <%= command.id %> --format markdown",
     },
-    {
-      description: "Filter tasks by label",
-      command: "<%= config.bin %> <%= command.id %> --label backend",
-    },
   ];
 
   static override flags = {
@@ -33,10 +29,6 @@ export default class TaskList extends BaseCommand {
       description: "Output format: default, markdown",
       default: "default",
       options: ["default", "markdown"],
-    }),
-    label: Flags.string({
-      char: "l",
-      description: "Filter tasks by label",
     }),
   };
 
@@ -52,15 +44,7 @@ export default class TaskList extends BaseCommand {
       return;
     }
 
-    // Filter by label if specified
-    let tasks = state.tasks;
-    if (flags.label) {
-      tasks = tasks.filter((t) => t.label === flags.label);
-      if (tasks.length === 0) {
-        this.log(pc.yellow(`No tasks with label: ${flags.label}`));
-        return;
-      }
-    }
+    const tasks = state.tasks;
 
     if (tasks.length === 0) {
       this.log(pc.yellow("No tasks in state file."));
@@ -81,9 +65,8 @@ export default class TaskList extends BaseCommand {
     const termWidth = process.stdout.columns || 120;
 
     // Summary header
-    const labelInfo = flags.label ? ` [${flags.label}]` : "";
     this.log(
-      pc.bold(`\nTasks${labelInfo}: `) +
+      pc.bold("\nTasks: ") +
         pc.green(`${done.length} done`) +
         pc.dim(" / ") +
         pc.yellow(`${ready.length} ready`),

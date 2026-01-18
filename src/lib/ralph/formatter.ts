@@ -123,9 +123,6 @@ export function formatPlanAsMarkdown(tasks: RalphTask[], state: RalphState): str
   lines.push(`- **Iteration:** ${state.iteration}/${state.maxIterations}`);
   lines.push(`- **Total Tasks:** ${tasks.length}`);
   lines.push(`- **Done:** ${done} | **Ready:** ${ready}`);
-  if (state.sessionId) {
-    lines.push(`- **Session ID:** ${state.sessionId.slice(0, 8)}...`);
-  }
   lines.push("");
 
   // Tasks section with checkboxes
@@ -175,7 +172,6 @@ export function formatPlanAsJson(tasks: RalphTask[], state: RalphState): string 
       status: state.status,
       iteration: state.iteration,
       maxIterations: state.maxIterations,
-      sessionId: state.sessionId,
       summary: {
         total: tasks.length,
         done: tasks.filter((t) => t.status === "done").length,

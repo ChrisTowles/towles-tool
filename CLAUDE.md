@@ -62,7 +62,6 @@ pnpm format:check       # Check formatting without writing
 - `journal note` (alias: `n`) - General-purpose notes
 - `graph` - Claude Code token visualization treemap
 - `ralph task add/list/done/remove` - Task management
-- `ralph marker create` - Generate session marker
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
 - `ralph progress` - Append progress message (write-only)
@@ -113,40 +112,17 @@ When using `tt ralph` for autonomous task execution:
 - Use `--no-autoCommit` to disable auto-commits
 - Use `--maxIterations` to limit token burn
 - Use `--dryRun` to preview config before running
-- **Iterations are a run-level concern** - task commands should not accept iteration params
-
-### CRITICAL: Session Markers Prevent Token Burn
-
-**Every task should have a sessionId** to enable resumption from prior research. This is the most important optimization to prevent ralph from burning through tokens re-discovering context.
-
-**Marker Workflow (preferred):**
-
-1. Generate marker: `tt ralph marker create` → `RALPH_MARKER_abc123`
-2. Tell Claude to output the marker during research
-3. Add tasks with marker: `tt ralph task add "desc" --findMarker RALPH_MARKER_abc123`
-
-The `--findMarker` flag searches ~/.claude for the session containing the marker, attaches the session ID to the task, and stores the full marker.
-
-- **Session forking is ON by default** - ralph forks from task's sessionId
-- Use `--noFork` only when you want a fresh start (rare)
-- Session IDs are stored per-task and persist across runs
 
 ```bash
-# Marker workflow
-tt ralph marker create                               # Generate marker
-tt ralph task add "desc" --findMarker abc123         # Find session by marker
-
 # Task management
-tt ralph task add "description"                      # Add task (no session)
-tt ralph task add "description" --sessionId abc123   # Add task with explicit session
-tt ralph task list                                   # View tasks
-tt ralph task done 1                                 # Mark task #1 complete
-tt ralph task remove 1                               # Remove task #1
+tt ralph task add "description"     # Add task
+tt ralph task list                  # View tasks
+tt ralph task done 1                # Mark task #1 complete
+tt ralph task remove 1              # Remove task #1
 
 # Execution
-tt ralph run                        # Run (auto-commits, forks session by default)
+tt ralph run                        # Run (auto-commits by default)
 tt ralph run --no-autoCommit        # Run without auto-commits
-tt ralph run --noFork               # Start fresh session (no fork)
 
 # Plan
 tt ralph plan                       # Show plan with mermaid graph

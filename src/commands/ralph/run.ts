@@ -64,20 +64,12 @@ export default class Run extends BaseCommand {
       command: "<%= config.bin %> <%= command.id %> --no-autoCommit",
     },
     {
-      description: "Start fresh session (no fork)",
-      command: "<%= config.bin %> <%= command.id %> --noFork",
-    },
-    {
       description: "Preview config without executing",
       command: "<%= config.bin %> <%= command.id %> --dryRun",
     },
     {
       description: "Add 5 iterations to current count",
       command: "<%= config.bin %> <%= command.id %> --addIterations 5",
-    },
-    {
-      description: "Run only tasks with label",
-      command: "<%= config.bin %> <%= command.id %> --label backend",
     },
   ];
 
@@ -106,10 +98,6 @@ export default class Run extends BaseCommand {
       default: true,
       allowNo: true,
     }),
-    noFork: Flags.boolean({
-      description: "Disable session forking (start fresh session)",
-      default: false,
-    }),
     dryRun: Flags.boolean({
       char: "n",
       description: "Show config without executing",
@@ -124,10 +112,6 @@ export default class Run extends BaseCommand {
     completionMarker: Flags.string({
       description: "Completion marker",
       default: DEFAULT_COMPLETION_MARKER,
-    }),
-    label: Flags.string({
-      char: "l",
-      description: "Only run tasks with this label",
     }),
   };
 
@@ -160,17 +144,9 @@ export default class Run extends BaseCommand {
       );
     }
 
-    // Filter by label if specified
-    const labelFilter = flags.label;
-    let remainingTasks = state.tasks.filter((t) => t.status !== "done");
-    if (labelFilter) {
-      remainingTasks = remainingTasks.filter((t) => t.label === labelFilter);
-    }
+    const remainingTasks = state.tasks.filter((t) => t.status !== "done");
     if (remainingTasks.length === 0) {
-      const msg = labelFilter
-        ? `All tasks with label '${labelFilter}' are done!`
-        : "All tasks are done!";
-      consola.log(colors.green(`✅ ${msg}`));
+      consola.log(colors.green("✅ All tasks are done!"));
       return;
     }
 
@@ -191,14 +167,11 @@ export default class Run extends BaseCommand {
       consola.log(colors.bold("\n=== DRY RUN ===\n"));
       consola.log(colors.cyan("Config:"));
       consola.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`);
-      consola.log(`  Label filter: ${labelFilter || "(none)"}`);
       consola.log(`  Max iterations: ${maxIterations}`);
       consola.log(`  State file: ${stateFile}`);
       consola.log(`  Log file: ${logFile}`);
       consola.log(`  Completion marker: ${flags.completionMarker}`);
       consola.log(`  Auto-commit: ${flags.autoCommit}`);
-      consola.log(`  Fork session: ${!flags.noFork}`);
-      consola.log(`  Session ID: ${state.sessionId || "(none)"}`);
       consola.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
       consola.log(`  Remaining tasks: ${remainingTasks.length}`);
 
@@ -253,17 +226,9 @@ export default class Run extends BaseCommand {
 
     consola.log(colors.bold(colors.blue("\nRalph Loop Starting\n")));
     consola.log(colors.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`));
-    if (labelFilter) {
-      consola.log(colors.dim(`Label filter: ${labelFilter}`));
-    }
     consola.log(colors.dim(`Max iterations: ${maxIterations}`));
     consola.log(colors.dim(`Log file: ${logFile}`));
     consola.log(colors.dim(`Auto-commit: ${flags.autoCommit}`));
-    consola.log(
-      colors.dim(
-        `Fork session: ${!flags.noFork}${state.sessionId ? ` (session: ${state.sessionId.slice(0, 8)}...)` : ""}`,
-      ),
-    );
     consola.log(colors.dim(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)`));
     consola.log("");
 
@@ -300,11 +265,7 @@ export default class Run extends BaseCommand {
       const progressContent = readLastIterations(ralphPaths.progressFile, 3);
       // Reload remaining tasks for current state
       const currentRemainingTasks = state.tasks.filter((t) => t.status !== "done");
-      const taskList = formatTasksForPrompt(
-        labelFilter
-          ? currentRemainingTasks.filter((t) => t.label === labelFilter)
-          : currentRemainingTasks,
-      );
+      const taskList = formatTasksForPrompt(currentRemainingTasks);
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         progressFile: ralphPaths.progressFile,
@@ -319,22 +280,10 @@ export default class Run extends BaseCommand {
 
       // Build claude args
       const iterClaudeArgs = [...extraClaudeArgs];
-      const currentTask = focusedTaskId
-        ? state.tasks.find((t) => t.id === focusedTaskId)
-        : state.tasks.find((t) => t.status === "ready");
-
-      // Fork from task's sessionId (or state-level fallback) unless disabled
-      const taskSessionId = currentTask?.sessionId || state.sessionId;
-      if (!flags.noFork && taskSessionId) {
-        iterClaudeArgs.push("--fork-session", taskSessionId);
-      }
 
       // Print iteration header
-      const sessionInfo = taskSessionId
-        ? colors.dim(` (fork: ${taskSessionId.slice(0, 8)}...)`)
-        : "";
       consola.log("");
-      consola.log(colors.bold(colors.blue(`━━━ ${iterHeader}${sessionInfo} ━━━`)));
+      consola.log(colors.bold(colors.blue(`━━━ ${iterHeader} ━━━`)));
       consola.log(colors.dim("─".repeat(60)));
       consola.log(colors.bold("Prompt"));
       consola.log(colors.dim("─".repeat(60)));
@@ -349,15 +298,6 @@ export default class Run extends BaseCommand {
       if (freshState) {
         const currentIter = state.iteration;
         Object.assign(state, freshState, { iteration: currentIter });
-      }
-
-      // Store session ID on the current task for future resumption
-      const taskToUpdate = currentTask
-        ? state.tasks.find((t) => t.id === currentTask.id)
-        : undefined;
-      if (iterResult.sessionId && taskToUpdate && !taskToUpdate.sessionId) {
-        taskToUpdate.sessionId = iterResult.sessionId;
-        state.sessionId = iterResult.sessionId;
       }
 
       const iterationEnd = new Date().toISOString();

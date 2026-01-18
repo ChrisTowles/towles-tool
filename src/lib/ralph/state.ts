@@ -74,9 +74,6 @@ const RalphTaskSchema = z.object({
   status: TaskStatusSchema,
   addedAt: z.string(),
   completedAt: z.string().optional(),
-  sessionId: z.string().optional(),
-  marker: z.string().optional(),
-  label: z.string().optional(),
 });
 
 const RalphStateSchema = z.object({
@@ -86,7 +83,6 @@ const RalphStateSchema = z.object({
   iteration: z.number(),
   maxIterations: z.number(),
   status: z.enum(["running", "completed", "max_iterations_reached", "error"]),
-  sessionId: z.string().optional(),
 });
 
 // ============================================================================
@@ -167,13 +163,7 @@ export function loadState(stateFile: string): RalphState | null {
   }
 }
 
-export function addTaskToState(
-  state: RalphState,
-  description: string,
-  sessionId?: string,
-  marker?: string,
-  label?: string,
-): RalphTask {
+export function addTaskToState(state: RalphState, description: string): RalphTask {
   const nextId = state.tasks.length > 0 ? Math.max(...state.tasks.map((t) => t.id)) + 1 : 1;
 
   const newTask: RalphTask = {
@@ -181,9 +171,6 @@ export function addTaskToState(
     description,
     status: "ready",
     addedAt: new Date().toISOString(),
-    ...(sessionId && { sessionId }),
-    ...(marker && { marker }),
-    ...(label && { label }),
   };
 
   state.tasks.push(newTask);

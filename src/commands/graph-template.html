@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Claude Token Treemap</title>
+    <title>Claude Code Usage</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
@@ -328,43 +328,10 @@
   </head>
   <body>
     <div class="container">
-      <h1>Claude Token Usage Treemap</h1>
+      <h1>Claude Code Usage</h1>
 
       <div class="controls">
-        <div class="legend">
-          <div class="legend-item">
-            <div class="legend-color" style="background: #4ade80"></div>
-            <span>Read</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #f87171"></div>
-            <span>Write</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #fb923c"></div>
-            <span>Edit</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #a78bfa"></div>
-            <span>Bash</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #38bdf8"></div>
-            <span>Glob</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #22d3ee"></div>
-            <span>Grep</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #facc15"></div>
-            <span>Task</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background: #60a5fa"></div>
-            <span>MCP</span>
-          </div>
-        </div>
+        <div class="legend" id="legend"></div>
         <div class="tile-selector">
           <label for="tileMethod">Layout:</label>
           <select id="tileMethod">
@@ -386,8 +353,8 @@
         </div>
         <div class="view-toggle">
           <label>View:</label>
-          <button id="viewTreemap" class="view-toggle-btn active">Treemap</button>
-          <button id="viewBarChart" class="view-toggle-btn">Bar Chart</button>
+          <button id="viewTreemap" class="view-toggle-btn">Treemap</button>
+          <button id="viewBarChart" class="view-toggle-btn active">Bar Chart</button>
         </div>
       </div>
 
@@ -420,9 +387,38 @@
       const minTokensSelect = document.getElementById('minTokens');
       const viewTreemapBtn = document.getElementById('viewTreemap');
       const viewBarChartBtn = document.getElementById('viewBarChart');
+      const legendContainer = document.getElementById('legend');
+
+      // Tool colors for treemap legend
+      const toolLegendItems = [
+        { color: '#4ade80', label: 'Read' },
+        { color: '#f87171', label: 'Write' },
+        { color: '#fb923c', label: 'Edit' },
+        { color: '#a78bfa', label: 'Bash' },
+        { color: '#38bdf8', label: 'Glob' },
+        { color: '#22d3ee', label: 'Grep' },
+        { color: '#facc15', label: 'Task' },
+        { color: '#60a5fa', label: 'MCP' },
+      ];
+
+      function renderLegend(items) {
+        legendContainer.replaceChildren();
+        for (const item of items) {
+          const div = document.createElement('div');
+          div.className = 'legend-item';
+          const colorBox = document.createElement('div');
+          colorBox.className = 'legend-color';
+          colorBox.style.background = item.color;
+          const label = document.createElement('span');
+          label.textContent = item.label;
+          div.appendChild(colorBox);
+          div.appendChild(label);
+          legendContainer.appendChild(div);
+        }
+      }
 
       // View state: 'treemap' | 'bar'
-      let currentView = 'treemap';
+      let currentView = 'bar';
 
       function showTreemap() {
         currentView = 'treemap';
@@ -432,6 +428,7 @@
         viewBarChartBtn.classList.remove('active');
         // Show treemap-specific controls
         tileMethodSelect.parentElement.style.display = 'flex';
+        renderLegend(toolLegendItems);
         render();
       }
 
@@ -443,6 +440,7 @@
         viewBarChartBtn.classList.add('active');
         // Hide treemap-specific controls (layout doesn't apply to bar chart)
         tileMethodSelect.parentElement.style.display = 'none';
+        // Legend will be populated after rendering with actual projects
         renderBarChart(barChartData);
       }
 
@@ -899,6 +897,9 @@
 
       render();
 
+      // Initialize bar chart view after defining renderBarChart below
+      setTimeout(() => showBarChart(), 0);
+
       // Project colors for bar chart (distinct colors for different projects)
       const projectColorPalette = [
         '#60a5fa', // blue
@@ -1138,6 +1139,13 @@
           }
         }
         stats.textContent = 'Total: ' + formatTokens(totalTokens) + ' tokens';
+
+        // Update legend with project colors
+        const legendItems = [...projectColorMap.entries()].map(([project, color]) => ({
+          color,
+          label: project
+        }));
+        renderLegend(legendItems);
       }
 
       /**

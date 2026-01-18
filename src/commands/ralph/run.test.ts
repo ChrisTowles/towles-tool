@@ -67,33 +67,11 @@ describe("ralph-loop", () => {
       expect(state.status).toBe("running");
       expect(state.tasks).toEqual([]);
       expect(state.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-      expect(state.sessionId).toBeUndefined();
     });
 
     it("should use provided maxIterations", () => {
       const state = createInitialState(20);
       expect(state.maxIterations).toBe(20);
-    });
-  });
-
-  describe("state sessionId", () => {
-    it("should allow setting and persisting sessionId", () => {
-      const state = createInitialState(10);
-      state.sessionId = "test-session-uuid-123";
-
-      saveState(state, testStateFile);
-      const loaded = loadState(testStateFile);
-
-      expect(loaded?.sessionId).toBe("test-session-uuid-123");
-    });
-
-    it("should preserve sessionId as undefined when not set", () => {
-      const state = createInitialState(10);
-
-      saveState(state, testStateFile);
-      const loaded = loadState(testStateFile);
-
-      expect(loaded?.sessionId).toBeUndefined();
     });
   });
 
@@ -531,16 +509,6 @@ describe("ralph-loop", () => {
       );
     });
 
-    it("should include session ID if present", () => {
-      const state = createInitialState(10);
-      state.sessionId = "test-session-id-1234567890";
-      addTaskToState(state, "task");
-
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
-
-      expect(formatted).toContain("**Session ID:** test-ses...");
-    });
-
     it("should show iteration progress", () => {
       const state = createInitialState(10);
       state.iteration = 3;
@@ -604,17 +572,6 @@ describe("ralph-loop", () => {
 
       expect(parsed.iteration).toBe(5);
       expect(parsed.maxIterations).toBe(15);
-    });
-
-    it("should include sessionId if present", () => {
-      const state = createInitialState(10);
-      state.sessionId = "test-session-uuid";
-      addTaskToState(state, "task");
-
-      const json = formatPlanAsJson(state.tasks, state);
-      const parsed = JSON.parse(json);
-
-      expect(parsed.sessionId).toBe("test-session-uuid");
     });
   });
 
