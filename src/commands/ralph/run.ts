@@ -110,7 +110,7 @@ export default class Run extends BaseCommand {
     let state = loadState(stateFile);
 
     if (!state) {
-      this.error(`No state file found at: ${stateFile}\nUse: tt ralph plan add "description"`);
+      this.error(`No state file found at: ${stateFile}\nUse: tt ralph plan add --file path.md`);
     }
 
     const remainingPlans = state.plans.filter((t) => t.status !== "done");

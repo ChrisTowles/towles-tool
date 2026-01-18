@@ -41,4 +41,4 @@ After selection, confirm approach and begin implementation.
 
 Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
 
-Then run `tt ralph plan "${plan-file}"` to create a Ralph task for tracking.
+Then run `tt ralph plan add --file docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md` to create a Ralph task for tracking.

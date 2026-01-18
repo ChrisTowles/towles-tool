@@ -103,34 +103,47 @@ Success Criteria:
 
 ### Examples
 
-**Good tasks:**
+**Good tasks** (write to files, then add):
 
 ```bash
-tt ralph plan add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
-tt ralph plan add "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
-tt ralph plan add "Add unit tests for getUserById covering success, not-found, and invalid-id cases"
+# Write task files to docs/plans/tasks/ with detailed descriptions, then:
+tt ralph plan add --file docs/plans/tasks/user-profile-type.md
+tt ralph plan add --file docs/plans/tasks/get-user-service.md
+tt ralph plan add --file docs/plans/tasks/user-service-tests.md
 ```
 
-**Bad tasks:**
+**Bad tasks** (files with vague content):
 
-```bash
-tt ralph plan add "Implement user feature"           # Too vague
-tt ralph plan add "Add types, service, and tests"   # Multiple things
-tt ralph plan add "Make it work like the other one" # Unclear reference
-tt ralph plan add "Refactor the whole auth system"  # Too broad
+```markdown
+# Too vague
+
+Implement user feature
+
+# Multiple things in one
+
+Add types, service, and tests
+
+# Unclear reference
+
+Make it work like the other one
+
+# Too broad
+
+Refactor the whole auth system
 ```
 
 ## Prompt Patterns
 
 ### Incremental Goals
 
-Break large features into phases:
+Break large features into phases - write each to a file, then add:
 
 ```bash
-tt ralph plan add "Phase 1: Add auth types and JWT validation util"
-tt ralph plan add "Phase 2: Create auth middleware with token verification"
-tt ralph plan add "Phase 3: Add login/logout endpoints with tests"
-tt ralph plan add "Phase 4: Integrate auth middleware with protected routes"
+# Write phase files to docs/plans/tasks/ with detailed descriptions
+tt ralph plan add --file docs/plans/tasks/01-auth-types.md
+tt ralph plan add --file docs/plans/tasks/02-auth-middleware.md
+tt ralph plan add --file docs/plans/tasks/03-auth-endpoints.md
+tt ralph plan add --file docs/plans/tasks/04-auth-integration.md
 ```
 
 ### Self-Correction Pattern
@@ -309,7 +322,7 @@ tt ralph run
 Or start completely fresh:
 
 ```bash
-tt ralph plan add "..."
+tt ralph plan add --file docs/plans/tasks/new-task.md
 tt ralph run
 ```
 

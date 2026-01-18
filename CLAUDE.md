@@ -120,10 +120,10 @@ When using `tt ralph` for autonomous task execution:
 
 ```bash
 # Plan management
-tt ralph plan add "description"     # Add task to plan
-tt ralph plan list                  # View tasks
-tt ralph plan done 1                # Mark task #1 complete
-tt ralph plan remove 1              # Remove task #1
+tt ralph plan add --file path.md    # Add plan from file
+tt ralph plan list                  # View plans
+tt ralph plan done 1                # Mark plan #1 complete
+tt ralph plan remove 1              # Remove plan #1
 
 # Execution
 tt ralph run                        # Run (auto-commits by default)

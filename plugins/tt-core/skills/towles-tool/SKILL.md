@@ -14,10 +14,10 @@ Config: `~/.config/towles-tool/towles-tool.settings.json`
 ### Plan Management
 
 ```bash
-tt ralph plan add "description"     # Add task to plan
-tt ralph plan list                  # View tasks
-tt ralph plan done 1                # Mark complete
-tt ralph plan remove 1              # Remove task
+tt ralph plan add --file path.md    # Add plan from file
+tt ralph plan list                  # View plans
+tt ralph plan done 1                # Mark plan complete
+tt ralph plan remove 1              # Remove plan
 ```
 
 ### Execution

@@ -1,4 +1,6 @@
-import { Args, Flags } from "@oclif/core";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { Flags } from "@oclif/core";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
@@ -12,27 +14,25 @@ import {
 } from "../../../lib/ralph/state.js";
 
 /**
- * Add a new plan to ralph state
+ * Add a new plan to ralph state from a file
  */
 export default class PlanAdd extends BaseCommand {
-  static override description = "Add a new plan";
+  static override description = "Add a new plan from a file";
 
   static override examples = [
     {
-      description: "Add a simple plan",
-      command: '<%= config.bin %> <%= command.id %> "Fix the login bug"',
+      description: "Add a plan from a markdown file",
+      command: "<%= config.bin %> <%= command.id %> --file docs/plans/2025-01-18-feature.md",
     },
   ];
 
-  static override args = {
-    description: Args.string({
-      description: "Task description",
-      required: true,
-    }),
-  };
-
   static override flags = {
     ...BaseCommand.baseFlags,
+    file: Flags.string({
+      char: "f",
+      description: "Path to plan file (markdown)",
+      required: true,
+    }),
     stateFile: Flags.string({
       char: "s",
       description: `State file path (default: ${DEFAULT_STATE_FILE})`,
@@ -40,14 +40,20 @@ export default class PlanAdd extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(PlanAdd);
+    const { flags } = await this.parse(PlanAdd);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
-    const description = args.description.trim();
+    const filePath = resolve(flags.file);
+
+    if (!existsSync(filePath)) {
+      this.error(`Plan file not found: ${filePath}`);
+    }
+
+    const description = readFileSync(filePath, "utf-8").trim();
 
     if (!description || description.length < 3) {
-      this.error("Plan description too short (min 3 chars)");
+      this.error("Plan file is empty or too short (min 3 chars)");
     }
 
     let state = loadState(stateFile);
@@ -59,7 +65,10 @@ export default class PlanAdd extends BaseCommand {
     const newPlan = addPlanToState(state, description);
     saveState(state, stateFile);
 
-    consola.log(colors.green(`✓ Added plan #${newPlan.id}: ${newPlan.description}`));
+    // Show truncated description for display
+    const displayDesc = description.length > 80 ? `${description.slice(0, 80)}...` : description;
+    consola.log(colors.green(`✓ Added plan #${newPlan.id} from ${flags.file}`));
+    consola.log(colors.dim(`  ${displayDesc.split("\n")[0]}`));
     consola.log(colors.dim(`State saved to: ${stateFile}`));
     consola.log(colors.dim(`Total plans: ${state.plans.length}`));
   }
