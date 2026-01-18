@@ -4,49 +4,20 @@ CLI tool with autonomous task runner and quality-of-life commands for daily deve
 
 ## Features
 
-**Ralph** - Autonomous task runner with session forking and context reuse
-
-**Git workflows** - Branch creation, PR generation, and cleanup
-
-**Journaling** - Daily notes, meeting notes, and general notes
-
-**Claude Code plugins** - Personal plugin marketplace for Claude Code integration
+- **Ralph** - Autonomous task runner with session forking and context reuse
+- **Observability** - Token usage visualization with interactive treemaps
+- **Git workflows** - Branch creation, PR generation, and cleanup
+- **Journaling** - Daily notes, meeting notes, and general notes
+- **Claude Code plugins** - Personal plugin marketplace for Claude Code integration
 
 ## Installation
 
-### Claude Code Plugins
+### Claude Code Plugin
 
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
-claude plugin enable tt@towles-tool
+claude plugin install tt@towles-tool
 ```
-
-## Commands
-
-**Ralph (autonomous runner)**
-
-- `tt ralph plan add` - Add task to plan
-- `tt ralph run` - Run autonomous loop
-- `tt ralph show` - Show plan with graph
-- `tt ralph progress` - Append progress (write-only)
-
-**Git**
-
-- `tt gh branch` - Create branch from issue
-- `tt gh pr` (alias: `tt pr`) - Create pull request
-- `tt gh branch-clean` - Delete merged branches
-
-**Journaling**
-
-- `tt journal daily-notes` (alias: `tt today`) - Weekly files with daily sections
-- `tt journal meeting` - Meeting notes
-- `tt journal note` - General notes
-
-**Utilities**
-
-- `tt config` - Show config
-- `tt doctor` - Check dependencies
-- `tt install` - Configure Claude Code settings
 
 ### From Source
 
@@ -56,6 +27,64 @@ cd towles-tool
 pnpm install
 pnpm start  # Run directly with tsx
 ```
+
+## CLI Commands
+
+### Ralph (autonomous runner)
+
+| Command                     | Description                                   |
+| --------------------------- | --------------------------------------------- |
+| `tt ralph plan add <desc>`  | Add task to plan                              |
+| `tt ralph plan list`        | View tasks                                    |
+| `tt ralph plan done <id>`   | Mark task complete                            |
+| `tt ralph plan remove <id>` | Remove task                                   |
+| `tt ralph run`              | Run autonomous loop (auto-commits by default) |
+| `tt ralph show`             | Show plan with mermaid graph                  |
+
+### Observability
+
+| Command                   | Description                           |
+| ------------------------- | ------------------------------------- |
+| `tt graph`                | Generate HTML treemap of all sessions |
+| `tt graph --session <id>` | Single session treemap                |
+| `tt graph --open`         | Auto-open in browser                  |
+
+Treemap colors indicate input/output token ratio: green <2:1, yellow 2-5:1, red >5:1.
+
+### Git
+
+| Command              | Alias   | Description                     |
+| -------------------- | ------- | ------------------------------- |
+| `tt gh branch`       |         | Create branch from GitHub issue |
+| `tt gh pr`           | `tt pr` | Create pull request             |
+| `tt gh branch-clean` |         | Delete merged branches          |
+
+### Journaling
+
+| Command                  | Alias      | Description                      |
+| ------------------------ | ---------- | -------------------------------- |
+| `tt journal daily-notes` | `tt today` | Weekly files with daily sections |
+| `tt journal meeting`     | `tt m`     | Meeting notes                    |
+| `tt journal note`        | `tt n`     | General notes                    |
+
+### Utilities
+
+| Command      | Alias    | Description                    |
+| ------------ | -------- | ------------------------------ |
+| `tt config`  | `tt cfg` | Show configuration             |
+| `tt doctor`  |          | Check dependencies             |
+| `tt install` |          | Configure Claude Code settings |
+
+## Claude Code Plugin Skills
+
+Available via `/tt:<command>`:
+
+| Command       | Description                                   |
+| ------------- | --------------------------------------------- |
+| `/tt:commit`  | AI-powered conventional commit messages       |
+| `/tt:plan`    | Interview user and create implementation plan |
+| `/tt:improve` | Explore codebase and suggest improvements     |
+| `/tt:refine`  | Fix grammar/spelling in files                 |
 
 ## Development
 
@@ -74,46 +103,6 @@ gh workflow run release.yml -f bump_type=patch  # or minor/major
 gh run watch
 ```
 
-## Reminders for me
-
-- Use plan mode!
-  - in plan mode tell claude your problems.
-  - in edit mode tell claude its problems.
-- use `/context` to see what is using context and if you need to trim anything down.
-  - Only add context Claude doesn't already have but needs
-- Always write in third person for prompts
-- use a tool to write your prompts and evaluate them.
-  - These models are smart. Less is more. don't be too verbose
-  - https://console.anthropic.com/workbench/
-- read source code from primary sources like:
-  - [anthropic repos](https://github.com/anthropics)
-- [Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices#core-principles)
-  - gerund form (verb + -ing) for skill names
-- [claude cookbook skills section](https://github.com/anthropics/claude-cookbooks/tree/main/skills)
-- https://github.com/anthropics/skills
-  - installed as a plugin, has examples and skill-creator
-
-```bash
-/plugin marketplace add anthropics/skills
-```
-
-## Roadmap
-
-### Planned Features
-
-**Journal Type System**:
-
-- [ ] daily-notes
-- [ ] meeting
-- [ ] note
-- [ ] task (todo)
-
-**Git Tools**:
-
-- [ ] Clean merged branches
-- [ ] pull-request-generator
-- [ ] branch-from-issue
-
 ## Resources
 
 ### Claude Code Plugin Development
@@ -122,14 +111,6 @@ gh run watch
 - [Official Claude Code Plugins](https://github.com/anthropics/claude-code/tree/main/plugins)
 - [Skills Guide](https://docs.claude.com/en/api/skills-guide)
 - [Best Practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices)
-
-### Project Documentation
-
-- [Node Package](./docs/node-package.md) - How the repo worked when it was a node package
-
-## History
-
-This project started as a collection of personal scripts and utilities built up over time in a private toolbox. It was then initially privite bash scripts, then published as an npm package. With the release of Claude Code Skills and plugins, the project also serves as a Claude Code plugin marketplace.
 
 ## License
 
