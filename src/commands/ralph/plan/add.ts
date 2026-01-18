@@ -12,21 +12,21 @@ import {
 } from "../../../lib/ralph/state.js";
 
 /**
- * Add a new task to ralph state
+ * Add a new plan to ralph state
  */
 export default class PlanAdd extends BaseCommand {
-  static override description = "Add a new task";
+  static override description = "Add a new plan";
 
   static override examples = [
     {
-      description: "Add a simple task",
+      description: "Add a simple plan",
       command: '<%= config.bin %> <%= command.id %> "Fix the login bug"',
     },
   ];
 
   static override args = {
     description: Args.string({
-      description: "Task description",
+      description: "Plan description",
       required: true,
     }),
   };
@@ -47,7 +47,7 @@ export default class PlanAdd extends BaseCommand {
     const description = args.description.trim();
 
     if (!description || description.length < 3) {
-      this.error("Task description too short (min 3 chars)");
+      this.error("Plan description too short (min 3 chars)");
     }
 
     let state = loadState(stateFile);
@@ -56,10 +56,10 @@ export default class PlanAdd extends BaseCommand {
       state = createInitialState();
     }
 
-    const newTask = addPlanToState(state, description);
+    const newPlan = addPlanToState(state, description);
     saveState(state, stateFile);
 
-    consola.log(colors.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
+    consola.log(colors.green(`✓ Added plan #${newPlan.id}: ${newPlan.description}`));
     consola.log(colors.dim(`State saved to: ${stateFile}`));
     consola.log(colors.dim(`Total plans: ${state.plans.length}`));
   }

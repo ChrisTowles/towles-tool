@@ -24,12 +24,12 @@ import {
 import { checkClaudeCli, runIteration } from "../../lib/ralph/execution.js";
 import type { RalphPlan } from "../../lib/ralph/state.js";
 
-/** Get the task to work on: focused task or first incomplete */
-function getCurrentTask(tasks: RalphPlan[], focusedTaskId: number | null): RalphPlan | undefined {
-  if (focusedTaskId !== null) {
-    return tasks.find((t) => t.id === focusedTaskId);
+/** Get the plan to work on: focused plan or first incomplete */
+function getCurrentPlan(plans: RalphPlan[], focusedPlanId: number | null): RalphPlan | undefined {
+  if (focusedPlanId !== null) {
+    return plans.find((p) => p.id === focusedPlanId);
   }
-  return tasks.find((t) => t.status !== "done");
+  return plans.find((p) => p.status !== "done");
 }
 
 /**
@@ -45,8 +45,8 @@ export default class Run extends BaseCommand {
       command: "<%= config.bin %> <%= command.id %> --maxIterations 20",
     },
     {
-      description: "Focus on specific task",
-      command: "<%= config.bin %> <%= command.id %> --taskId 5",
+      description: "Focus on specific plan",
+      command: "<%= config.bin %> <%= command.id %> --planId 5",
     },
     {
       description: "Run without auto-committing",
@@ -64,9 +64,9 @@ export default class Run extends BaseCommand {
       char: "s",
       description: `State file path (default: ${DEFAULT_STATE_FILE})`,
     }),
-    taskId: Flags.integer({
-      char: "t",
-      description: "Focus on specific task ID",
+    planId: Flags.integer({
+      char: "p",
+      description: "Focus on specific plan ID",
     }),
     maxIterations: Flags.integer({
       char: "m",
@@ -74,7 +74,7 @@ export default class Run extends BaseCommand {
       default: DEFAULT_MAX_ITERATIONS,
     }),
     autoCommit: Flags.boolean({
-      description: "Auto-commit after each completed task",
+      description: "Auto-commit after each completed plan",
       default: true,
       allowNo: true,
     }),
@@ -104,7 +104,7 @@ export default class Run extends BaseCommand {
 
     const maxIterations = flags.maxIterations;
     const extraClaudeArgs = flags.claudeArgs?.split(" ").filter(Boolean) || [];
-    const focusedTaskId = flags.taskId ?? null;
+    const focusedPlanId = flags.planId ?? null;
 
     // Load existing state
     let state = loadState(stateFile);
@@ -113,28 +113,28 @@ export default class Run extends BaseCommand {
       this.error(`No state file found at: ${stateFile}\nUse: tt ralph plan add "description"`);
     }
 
-    const remainingTasks = state.plans.filter((t) => t.status !== "done");
-    if (remainingTasks.length === 0) {
-      consola.log(colors.green("✅ All tasks are done!"));
+    const remainingPlans = state.plans.filter((t) => t.status !== "done");
+    if (remainingPlans.length === 0) {
+      consola.log(colors.green("✅ All plans are done!"));
       return;
     }
 
-    // Validate focused task if specified
-    if (focusedTaskId !== null) {
-      const focusedTask = state.plans.find((t) => t.id === focusedTaskId);
-      if (!focusedTask) {
-        this.error(`Task #${focusedTaskId} not found. Use: tt ralph plan list`);
+    // Validate focused plan if specified
+    if (focusedPlanId !== null) {
+      const focusedPlan = state.plans.find((t) => t.id === focusedPlanId);
+      if (!focusedPlan) {
+        this.error(`Plan #${focusedPlanId} not found. Use: tt ralph plan list`);
       }
-      if (focusedTask.status === "done") {
-        consola.log(colors.yellow(`Task #${focusedTaskId} is already done.`));
+      if (focusedPlan.status === "done") {
+        consola.log(colors.yellow(`Plan #${focusedPlanId} is already done.`));
         return;
       }
     }
 
-    // Get current task to work on
-    const currentTask = getCurrentTask(state.plans, focusedTaskId);
-    if (!currentTask) {
-      consola.log(colors.green("✅ All tasks are done!"));
+    // Get current plan to work on
+    const currentPlan = getCurrentPlan(state.plans, focusedPlanId);
+    if (!currentPlan) {
+      consola.log(colors.green("✅ All plans are done!"));
       return;
     }
 
@@ -148,15 +148,15 @@ export default class Run extends BaseCommand {
       consola.log(`  Completion marker: ${flags.completionMarker}`);
       consola.log(`  Auto-commit: ${flags.autoCommit}`);
       consola.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
-      consola.log(`  Remaining tasks: ${remainingTasks.length}`);
+      consola.log(`  Remaining plans: ${remainingPlans.length}`);
 
-      consola.log(colors.cyan("\nCurrent task:"));
-      consola.log(`  #${currentTask.id}: ${currentTask.description}`);
+      consola.log(colors.cyan("\nCurrent plan:"));
+      consola.log(`  #${currentPlan.id}: ${currentPlan.description}`);
 
       // Show prompt preview
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        plan: currentTask,
+        plan: currentPlan,
         skipCommit: !flags.autoCommit,
       });
       consola.log(colors.dim("─".repeat(60)));
@@ -190,16 +190,16 @@ export default class Run extends BaseCommand {
     logStream.write(`${"=".repeat(60)}\n\n`);
 
     consola.log(colors.bold(colors.blue("\nRalph Loop Starting\n")));
-    consola.log(colors.dim(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`));
+    consola.log(colors.dim(`Focus: ${focusedPlanId ? `Plan #${focusedPlanId}` : "Ralph picks"}`));
     consola.log(colors.dim(`Max iterations: ${maxIterations}`));
     consola.log(colors.dim(`Log file: ${logFile}`));
     consola.log(colors.dim(`Auto-commit: ${flags.autoCommit}`));
-    consola.log(colors.dim(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)`));
+    consola.log(colors.dim(`Plans: ${state.plans.length} (${done} done, ${ready} ready)`));
     consola.log("");
 
-    logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}\n`);
+    logStream.write(`Focus: ${focusedPlanId ? `Plan #${focusedPlanId}` : "Ralph picks"}\n`);
     logStream.write(`Max iterations: ${maxIterations}\n`);
-    logStream.write(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)\n\n`);
+    logStream.write(`Plans: ${state.plans.length} (${done} done, ${ready} ready)\n\n`);
 
     // Handle SIGINT gracefully
     let interrupted = false;
@@ -227,16 +227,16 @@ export default class Run extends BaseCommand {
       logStream.write(`\n━━━ ${iterHeader} ━━━\n`);
 
       const iterationStart = new Date().toISOString();
-      // Get current task for this iteration
-      const task = getCurrentTask(state.plans, focusedTaskId);
+      // Get current plan for this iteration
+      const task = getCurrentPlan(state.plans, focusedPlanId);
       if (!task) {
         completed = true;
         state.status = "completed";
         saveState(state, stateFile);
         consola.log(
-          colors.bold(colors.green(`\n✅ All tasks completed after ${iteration} iteration(s)`)),
+          colors.bold(colors.green(`\n✅ All plans completed after ${iteration} iteration(s)`)),
         );
-        logStream.write(`\n✅ All tasks completed after ${iteration} iteration(s)\n`);
+        logStream.write(`\n✅ All plans completed after ${iteration} iteration(s)\n`);
         break;
       }
       const prompt = buildIterationPrompt({
@@ -316,9 +316,9 @@ export default class Run extends BaseCommand {
         state.status = "completed";
         saveState(state, stateFile);
         consola.log(
-          colors.bold(colors.green(`\n✅ Task completed after ${iteration} iteration(s)`)),
+          colors.bold(colors.green(`\n✅ Plan completed after ${iteration} iteration(s)`)),
         );
-        logStream.write(`\n✅ Task completed after ${iteration} iteration(s)\n`);
+        logStream.write(`\n✅ Plan completed after ${iteration} iteration(s)\n`);
       }
     }
 

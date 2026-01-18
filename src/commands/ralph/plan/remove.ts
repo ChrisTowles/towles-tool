@@ -10,13 +10,13 @@ import {
 } from "../../../lib/ralph/state.js";
 
 /**
- * Remove a ralph task by ID
+ * Remove a ralph plan by ID
  */
 export default class PlanRemove extends BaseCommand {
-  static override description = "Remove a task by ID";
+  static override description = "Remove a plan by ID";
 
   static override examples = [
-    { description: "Remove task #1", command: "<%= config.bin %> <%= command.id %> 1" },
+    { description: "Remove plan #1", command: "<%= config.bin %> <%= command.id %> 1" },
     {
       description: "Remove from custom state file",
       command: "<%= config.bin %> <%= command.id %> 5 --stateFile custom-state.json",
@@ -25,7 +25,7 @@ export default class PlanRemove extends BaseCommand {
 
   static override args = {
     id: Args.integer({
-      description: "Task ID to remove",
+      description: "Plan ID to remove",
       required: true,
     }),
   };
@@ -43,10 +43,10 @@ export default class PlanRemove extends BaseCommand {
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
-    const taskId = args.id;
+    const planId = args.id;
 
-    if (taskId < 1) {
-      this.error("Invalid task ID");
+    if (planId < 1) {
+      this.error("Invalid plan ID");
     }
 
     const state = loadState(stateFile);
@@ -55,17 +55,17 @@ export default class PlanRemove extends BaseCommand {
       this.error(`No state file found at: ${stateFile}`);
     }
 
-    const taskIndex = state.plans.findIndex((t) => t.id === taskId);
+    const planIndex = state.plans.findIndex((t) => t.id === planId);
 
-    if (taskIndex === -1) {
-      this.error(`Task #${taskId} not found. Use: tt ralph plan list`);
+    if (planIndex === -1) {
+      this.error(`Plan #${planId} not found. Use: tt ralph plan list`);
     }
 
-    const removedTask = state.plans[taskIndex];
-    state.plans.splice(taskIndex, 1);
+    const removedPlan = state.plans[planIndex];
+    state.plans.splice(planIndex, 1);
     saveState(state, stateFile);
 
-    consola.log(colors.green(`✓ Removed task #${taskId}: ${removedTask.description}`));
-    consola.log(colors.dim(`Remaining tasks: ${state.plans.length}`));
+    consola.log(colors.green(`✓ Removed plan #${planId}: ${removedPlan.description}`));
+    consola.log(colors.dim(`Remaining plans: ${state.plans.length}`));
   }
 }

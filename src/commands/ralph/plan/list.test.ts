@@ -12,7 +12,7 @@ describe("ralph plan list command", () => {
   const tempStateFile = join(tmpdir(), `ralph-test-list-${Date.now()}.json`);
 
   beforeAll(() => {
-    // Create state file with one task to minimize output during tests
+    // Create state file with one plan to minimize output during tests
     writeFileSync(
       tempStateFile,
       JSON.stringify({
@@ -20,7 +20,7 @@ describe("ralph plan list command", () => {
         iteration: 0,
         maxIterations: 10,
         status: "running",
-        tasks: [{ id: 1, description: "test", status: "done", addedAt: new Date().toISOString() }],
+        plans: [{ id: 1, description: "test", status: "done", addedAt: new Date().toISOString() }],
         startedAt: new Date().toISOString(),
       }),
     );
@@ -30,7 +30,7 @@ describe("ralph plan list command", () => {
     if (existsSync(tempStateFile)) unlinkSync(tempStateFile);
   });
 
-  it("runs task list without error", async () => {
+  it("runs plan list without error", async () => {
     const { error } = await runCommand(["ralph:plan:list", "-s", tempStateFile]);
     expect(error).toBeUndefined();
   });
