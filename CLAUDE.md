@@ -61,9 +61,9 @@ pnpm format:check       # Check formatting without writing
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
 - `graph` - Claude Code token visualization treemap
-- `ralph task add/list/done/remove` - Task management
+- `ralph plan add/list/done/remove` - Plan task management
 - `ralph run` - Autonomous Claude Code runner
-- `ralph plan` - Show plan with mermaid graph
+- `ralph show` - Show plan with mermaid graph
 
 **Key Utilities**:
 
@@ -113,18 +113,18 @@ When using `tt ralph` for autonomous task execution:
 - Use `--dryRun` to preview config before running
 
 ```bash
-# Task management
-tt ralph task add "description"     # Add task
-tt ralph task list                  # View tasks
-tt ralph task done 1                # Mark task #1 complete
-tt ralph task remove 1              # Remove task #1
+# Plan management
+tt ralph plan add "description"     # Add task to plan
+tt ralph plan list                  # View tasks
+tt ralph plan done 1                # Mark task #1 complete
+tt ralph plan remove 1              # Remove task #1
 
 # Execution
 tt ralph run                        # Run (auto-commits by default)
 tt ralph run --no-autoCommit        # Run without auto-commits
 
-# Plan
-tt ralph plan                       # Show plan with mermaid graph
+# Show
+tt ralph show                       # Show plan with mermaid graph
 ```
 
 ## Observability

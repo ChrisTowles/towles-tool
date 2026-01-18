@@ -12,7 +12,7 @@ import {
 /**
  * Mark a ralph task as done
  */
-export default class TaskDone extends BaseCommand {
+export default class PlanDone extends BaseCommand {
   static override description = "Mark a task as done by ID";
 
   static override examples = [
@@ -39,7 +39,7 @@ export default class TaskDone extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(TaskDone);
+    const { args, flags } = await this.parse(PlanDone);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
@@ -58,7 +58,7 @@ export default class TaskDone extends BaseCommand {
     const task = state.tasks.find((t) => t.id === taskId);
 
     if (!task) {
-      this.error(`Task #${taskId} not found. Use: tt ralph task list`);
+      this.error(`Task #${taskId} not found. Use: tt ralph plan list`);
     }
 
     if (task.status === "done") {

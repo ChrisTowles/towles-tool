@@ -262,12 +262,12 @@ ${step++}. ${
   }
 ${step++}. Work on that single task.
 ${step++}. Run type checks and tests.
-${step++}. Mark the task done using CLI: \`tt ralph task done <id>\`
+${step++}. Mark the task done using CLI: \`tt ralph plan done <id>\`
 ${skipCommit ? "" : `${step++}. Make a git commit.`}
 
 **ONE TASK PER ITERATION**
 
-**Before ending:** Run \`tt ralph task list\` to check remaining tasks.
+**Before ending:** Run \`tt ralph plan list\` to check remaining tasks.
 **ONLY if ALL TASKS are done** then Output: <promise>${completionMarker}</promise>
 </instructions>
 `;

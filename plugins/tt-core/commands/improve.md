@@ -36,3 +36,9 @@ Use `AskUserQuestion` with:
 - **options**: 15-20 specific improvements with brief descriptions
 
 After selection, confirm approach and begin implementation.
+
+## FINAL STEP: Save Plan
+
+Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
+
+Then run `tt ralph add "${plan-file}"` to create a Ralph task for tracking.

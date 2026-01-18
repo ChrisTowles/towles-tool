@@ -112,7 +112,7 @@ export default class Run extends BaseCommand {
     let state = loadState(stateFile);
 
     if (!state) {
-      this.error(`No state file found at: ${stateFile}\nUse: tt ralph task add "description"`);
+      this.error(`No state file found at: ${stateFile}\nUse: tt ralph plan add "description"`);
     }
 
     // Handle --addIterations: extend max from current iteration
@@ -135,7 +135,7 @@ export default class Run extends BaseCommand {
     if (focusedTaskId !== null) {
       const focusedTask = state.tasks.find((t) => t.id === focusedTaskId);
       if (!focusedTask) {
-        this.error(`Task #${focusedTaskId} not found. Use: tt ralph task list`);
+        this.error(`Task #${focusedTaskId} not found. Use: tt ralph plan list`);
       }
       if (focusedTask.status === "done") {
         consola.log(colors.yellow(`Task #${focusedTaskId} is already done.`));

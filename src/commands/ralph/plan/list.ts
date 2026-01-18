@@ -7,7 +7,7 @@ import { formatTasksAsMarkdown } from "../../../lib/ralph/formatter.js";
 /**
  * List all ralph tasks
  */
-export default class TaskList extends BaseCommand {
+export default class PlanList extends BaseCommand {
   static override description = "List all tasks";
 
   static override examples = [
@@ -33,7 +33,7 @@ export default class TaskList extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(TaskList);
+    const { flags } = await this.parse(PlanList);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
@@ -48,7 +48,7 @@ export default class TaskList extends BaseCommand {
 
     if (tasks.length === 0) {
       this.log(pc.yellow("No tasks in state file."));
-      this.log(pc.dim('Use: tt ralph task add "description"'));
+      this.log(pc.dim('Use: tt ralph plan add "description"'));
       return;
     }
 

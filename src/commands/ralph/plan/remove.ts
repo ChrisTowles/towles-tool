@@ -12,7 +12,7 @@ import {
 /**
  * Remove a ralph task by ID
  */
-export default class TaskRemove extends BaseCommand {
+export default class PlanRemove extends BaseCommand {
   static override description = "Remove a task by ID";
 
   static override examples = [
@@ -39,7 +39,7 @@ export default class TaskRemove extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(TaskRemove);
+    const { args, flags } = await this.parse(PlanRemove);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
@@ -58,7 +58,7 @@ export default class TaskRemove extends BaseCommand {
     const taskIndex = state.tasks.findIndex((t) => t.id === taskId);
 
     if (taskIndex === -1) {
-      this.error(`Task #${taskId} not found. Use: tt ralph task list`);
+      this.error(`Task #${taskId} not found. Use: tt ralph plan list`);
     }
 
     const removedTask = state.tasks[taskIndex];

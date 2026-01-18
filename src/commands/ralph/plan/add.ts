@@ -15,7 +15,7 @@ import {
 /**
  * Add a new task to ralph state
  */
-export default class TaskAdd extends BaseCommand {
+export default class PlanAdd extends BaseCommand {
   static override description = "Add a new task";
 
   static override examples = [
@@ -41,7 +41,7 @@ export default class TaskAdd extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(TaskAdd);
+    const { args, flags } = await this.parse(PlanAdd);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 

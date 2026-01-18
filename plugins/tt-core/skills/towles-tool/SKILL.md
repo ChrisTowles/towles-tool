@@ -11,13 +11,13 @@ Config: `~/.config/towles-tool/towles-tool.settings.json`
 
 ## Ralph (Autonomous Runner)
 
-### Task Management
+### Plan Management
 
 ```bash
-tt ralph task add "description"     # Add task
-tt ralph task list                  # View tasks
-tt ralph task done 1                # Mark complete
-tt ralph task remove 1              # Remove task
+tt ralph plan add "description"     # Add task to plan
+tt ralph plan list                  # View tasks
+tt ralph plan done 1                # Mark complete
+tt ralph plan remove 1              # Remove task
 ```
 
 ### Execution
@@ -31,10 +31,10 @@ tt ralph run --addIterations 5      # Add 5 to current count
 tt ralph run --dryRun               # Preview config
 ```
 
-### Planning
+### Show Plan
 
 ```bash
-tt ralph plan                       # Show plan with mermaid graph
+tt ralph show                       # Show plan with mermaid graph
 ```
 
 ## Observability

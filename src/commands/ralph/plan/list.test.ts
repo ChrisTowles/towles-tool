@@ -1,5 +1,5 @@
 /**
- * Integration tests for oclif ralph task list command
+ * Integration tests for oclif ralph plan list command
  * Note: --help output goes through oclif's own routing
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 
-describe("ralph task list command", () => {
+describe("ralph plan list command", () => {
   const tempStateFile = join(tmpdir(), `ralph-test-list-${Date.now()}.json`);
 
   beforeAll(() => {
@@ -31,13 +31,13 @@ describe("ralph task list command", () => {
   });
 
   it("runs task list without error", async () => {
-    const { error } = await runCommand(["ralph:task:list", "-s", tempStateFile]);
+    const { error } = await runCommand(["ralph:plan:list", "-s", tempStateFile]);
     expect(error).toBeUndefined();
   });
 
   it("supports --format flag", async () => {
     const { error } = await runCommand([
-      "ralph:task:list",
+      "ralph:plan:list",
       "--format",
       "markdown",
       "-s",

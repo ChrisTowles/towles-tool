@@ -25,9 +25,9 @@ claude plugin enable tt@towles-tool
 
 **Ralph (autonomous runner)**
 
-- `tt ralph task add` - Add task
+- `tt ralph plan add` - Add task to plan
 - `tt ralph run` - Run autonomous loop
-- `tt ralph plan` - Show plan with graph
+- `tt ralph show` - Show plan with graph
 - `tt ralph progress` - Append progress (write-only)
 
 **Git**

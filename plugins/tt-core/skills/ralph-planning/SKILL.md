@@ -13,16 +13,16 @@ For full ralph documentation, see the [towles-tool skill](../towles-tool/SKILL.m
 
 ```bash
 # Task management
-tt ralph task add "{detailed-description}"    # Add task
-tt ralph task list                            # View tasks (default format)
-tt ralph task list --format markdown          # View tasks as markdown
-tt ralph task done 1                          # Mark task #1 complete
-tt ralph task remove 1                        # Remove task #1
+tt ralph plan add "{detailed-description}"    # Add task
+tt ralph plan list                            # View tasks (default format)
+tt ralph plan list --format markdown          # View tasks as markdown
+tt ralph plan done 1                          # Mark task #1 complete
+tt ralph plan remove 1                        # Remove task #1
 
 # Plan view
-tt ralph plan                         # Show plan with mermaid graph
-tt ralph plan --format json           # Show plan as JSON
-tt ralph plan --copy                  # Show plan and copy to clipboard
+tt ralph show                         # Show plan with mermaid graph
+tt ralph show --format json           # Show plan as JSON
+tt ralph show --copy                  # Show plan and copy to clipboard
 
 # Execution
 tt ralph run                          # Execute (auto-commits by default)
@@ -68,7 +68,7 @@ Success Criteria:
 <good_task>
 
 ```bash
-tt ralph task add "Add UserProfile type to src/types/user.ts
+tt ralph plan add "Add UserProfile type to src/types/user.ts
 
 ## Background
 Shared type for profile data used across services and API responses.
@@ -82,7 +82,7 @@ Shared type for profile data used across services and API responses.
 - src/types/user.ts (create)
 - src/types/index.ts (add export)"
 
-tt ralph task add "Create getUserById service function
+tt ralph plan add "Create getUserById service function
 
 ## Background
 Service function to fetch user profiles by ID.
@@ -97,7 +97,7 @@ Service function to fetch user profiles by ID.
 - src/services/user.ts (create)
 - src/services/index.ts (add export)"
 
-tt ralph task add "Add unit tests for getUserById
+tt ralph plan add "Add unit tests for getUserById
 
 ## Test Cases
 1. Valid ID returns user profile
@@ -114,10 +114,10 @@ tt ralph task add "Add unit tests for getUserById
 <bad_task>
 
 ```bash
-tt ralph task add "Implement user feature"           # Too vague - no context
-tt ralph task add "Add types, service, and tests"   # Multiple things in one
-tt ralph task add "Make it work like the other one" # Unclear reference
-tt ralph task add "Add UserProfile type"            # Too terse - missing details
+tt ralph plan add "Implement user feature"           # Too vague - no context
+tt ralph plan add "Add types, service, and tests"   # Multiple things in one
+tt ralph plan add "Make it work like the other one" # Unclear reference
+tt ralph plan add "Add UserProfile type"            # Too terse - missing details
 ```
 
 </bad_task>
@@ -136,10 +136,10 @@ tt ralph task add "Add UserProfile type"            # Too terse - missing detail
 After planning, add tasks via CLI:
 
 ```bash
-tt ralph task add "Phase 1: [description with context and success criteria]"
-tt ralph task add "Phase 2: [description with context and success criteria]"
-tt ralph plan                           # Review plan with mermaid graph
-tt ralph plan --copy                    # Copy plan to clipboard for review
+tt ralph plan add "Phase 1: [description with context and success criteria]"
+tt ralph plan add "Phase 2: [description with context and success criteria]"
+tt ralph show                           # Review plan with mermaid graph
+tt ralph show --copy                    # Copy plan to clipboard for review
 ```
 
 Then run:

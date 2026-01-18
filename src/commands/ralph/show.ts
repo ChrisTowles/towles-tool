@@ -12,7 +12,7 @@ import {
 /**
  * Show plan summary with status, tasks, and mermaid graph
  */
-export default class Plan extends BaseCommand {
+export default class Show extends BaseCommand {
   static override description = "Show plan summary with status, tasks, and mermaid graph";
 
   static override examples = [
@@ -50,7 +50,7 @@ export default class Plan extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(Plan);
+    const { flags } = await this.parse(Show);
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
@@ -63,7 +63,7 @@ export default class Plan extends BaseCommand {
 
     if (state.tasks.length === 0) {
       consola.log(colors.yellow("No tasks in state file."));
-      consola.log(colors.dim('Use: tt ralph task add "description"'));
+      consola.log(colors.dim('Use: tt ralph plan add "description"'));
       return;
     }
 

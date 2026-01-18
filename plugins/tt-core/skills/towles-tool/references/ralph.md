@@ -32,7 +32,7 @@ The fundamental insight: rather than step-by-step human guidance, define success
 │  2. Pick ready task (or use --taskId)   │
 │  3. Work on single task                 │
 │  4. Run tests/typecheck                 │
-│  5. Mark task done: tt ralph task done  │
+│  5. Mark task done: tt ralph plan done  │
 │  6. Commit (if --autoCommit)            │
 │  7. Check for RALPH_DONE marker         │
 │  8. Loop or exit                        │
@@ -52,7 +52,7 @@ Then:
 1. Choose which ready task to work on (or focus on Task #N if specified)
 2. Work on that single task
 3. Run type checks and tests
-4. Mark the task done using CLI: tt ralph task done <id>
+4. Mark the task done using CLI: tt ralph plan done <id>
 5. Make a git commit (if autoCommit enabled)
 
 ONE TASK PER ITERATION
@@ -106,18 +106,18 @@ Success Criteria:
 **Good tasks:**
 
 ```bash
-tt ralph task add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
-tt ralph task add "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
-tt ralph task add "Add unit tests for getUserById covering success, not-found, and invalid-id cases"
+tt ralph plan add "Add UserProfile type to src/types/user.ts with id, email, name, createdAt fields"
+tt ralph plan add "Create getUserById in src/services/user.ts following existing service patterns in src/services/post.ts"
+tt ralph plan add "Add unit tests for getUserById covering success, not-found, and invalid-id cases"
 ```
 
 **Bad tasks:**
 
 ```bash
-tt ralph task add "Implement user feature"           # Too vague
-tt ralph task add "Add types, service, and tests"   # Multiple things
-tt ralph task add "Make it work like the other one" # Unclear reference
-tt ralph task add "Refactor the whole auth system"  # Too broad
+tt ralph plan add "Implement user feature"           # Too vague
+tt ralph plan add "Add types, service, and tests"   # Multiple things
+tt ralph plan add "Make it work like the other one" # Unclear reference
+tt ralph plan add "Refactor the whole auth system"  # Too broad
 ```
 
 ## Prompt Patterns
@@ -127,10 +127,10 @@ tt ralph task add "Refactor the whole auth system"  # Too broad
 Break large features into phases:
 
 ```bash
-tt ralph task add "Phase 1: Add auth types and JWT validation util"
-tt ralph task add "Phase 2: Create auth middleware with token verification"
-tt ralph task add "Phase 3: Add login/logout endpoints with tests"
-tt ralph task add "Phase 4: Integrate auth middleware with protected routes"
+tt ralph plan add "Phase 1: Add auth types and JWT validation util"
+tt ralph plan add "Phase 2: Create auth middleware with token verification"
+tt ralph plan add "Phase 3: Add login/logout endpoints with tests"
+tt ralph plan add "Phase 4: Integrate auth middleware with protected routes"
 ```
 
 ### Self-Correction Pattern
@@ -207,23 +207,23 @@ Task statuses:
 
 ### Viewing Tasks
 
-Use `task list` to view all tasks:
+Use `plan list` to view all tasks:
 
 ```bash
-tt ralph task list                    # Default format (colored terminal output)
-tt ralph task list --format markdown  # Markdown with checkboxes and status badges
+tt ralph plan list                    # Default format (colored terminal output)
+tt ralph plan list --format markdown  # Markdown with checkboxes and status badges
 ```
 
 Markdown format groups tasks by status (Read, Done, Blocked) with summary counts.
 
 ### Viewing Plan Summary
 
-Use `plan` subcommand to get a comprehensive plan overview:
+Use `show` subcommand to get a comprehensive plan overview:
 
 ```bash
-tt ralph plan                         # Markdown with summary, tasks, and mermaid graph
-tt ralph plan --format json           # JSON format for programmatic use
-tt ralph plan --copy                  # Also copy output to clipboard
+tt ralph show                         # Markdown with summary, tasks, and mermaid graph
+tt ralph show --format json           # JSON format for programmatic use
+tt ralph show --copy                  # Also copy output to clipboard
 ```
 
 The markdown format includes:
@@ -309,7 +309,7 @@ tt ralph run
 Or start completely fresh:
 
 ```bash
-tt ralph task add "..."
+tt ralph plan add "..."
 tt ralph run
 ```
 

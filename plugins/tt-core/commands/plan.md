@@ -65,3 +65,9 @@ Present the plan to user with:
 3. Numbered task list with descriptions
 
 Use `AskUserQuestion` to confirm or adjust before implementation.
+
+## FINAL STEP: Save Plan
+
+Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
+
+Then run `tt ralph add "${plan-file}"` to create a Ralph task for tracking.
