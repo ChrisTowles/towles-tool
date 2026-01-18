@@ -1,6 +1,6 @@
 {
   "name": "@towles/tool",
-  "version": "0.0.45",
+  "version": "0.0.46",
   "description": "CLI tool with autonomous task runner (ralph), observability, and quality-of-life commands for daily development.",
   "keywords": [
     "autonomic",
