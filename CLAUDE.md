@@ -154,3 +154,4 @@ Treemap colors indicate input/output token ratio (waste): green <2:1, yellow 2-5
 - Tests that call the Anthropic API are skipped when `CI=DisableCallingClaude` is set
 - Settings file automatically creates with defaults on first run (prompts user)
 - Pre-commit hooks run oxlint via lint-staged
+- **Version syncing**: Run `pnpm version:sync` after bumping package.json version to sync all plugin versions (uses `scripts/sync-versions.ts`)
