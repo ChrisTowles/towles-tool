@@ -10,7 +10,7 @@ on:
       - main
 
 jobs:
-  lint:
+  pr-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
