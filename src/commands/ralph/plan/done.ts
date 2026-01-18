@@ -70,7 +70,7 @@ export default class PlanDone extends BaseCommand {
     plan.completedAt = new Date().toISOString();
     saveState(state, stateFile);
 
-    consola.log(colors.green(`✓ Marked plan #${planId} as done: ${plan.description}`));
+    consola.log(colors.green(`✓ Marked plan #${planId} as done: ${plan.planFilePath}`));
 
     const remaining = state.plans.filter((p) => p.status !== "done").length;
     if (remaining === 0) {

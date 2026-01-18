@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Flags } from "@oclif/core";
 import consola from "consola";
@@ -44,16 +44,10 @@ export default class PlanAdd extends BaseCommand {
     const ralphSettings = this.settings.settings.ralphSettings;
     const stateFile = resolveRalphPath(flags.stateFile, "stateFile", ralphSettings);
 
-    const filePath = resolve(flags.file);
+    const planFilePath = resolve(flags.file);
 
-    if (!existsSync(filePath)) {
-      this.error(`Plan file not found: ${filePath}`);
-    }
-
-    const description = readFileSync(filePath, "utf-8").trim();
-
-    if (!description || description.length < 3) {
-      this.error("Plan file is empty or too short (min 3 chars)");
+    if (!existsSync(planFilePath)) {
+      this.error(`Plan file not found: ${planFilePath}`);
     }
 
     let state = loadState(stateFile);
@@ -62,13 +56,11 @@ export default class PlanAdd extends BaseCommand {
       state = createInitialState();
     }
 
-    const newPlan = addPlanToState(state, description);
+    const newPlan = addPlanToState(state, planFilePath);
     saveState(state, stateFile);
 
-    // Show truncated description for display
-    const displayDesc = description.length > 80 ? `${description.slice(0, 80)}...` : description;
-    consola.log(colors.green(`✓ Added plan #${newPlan.id} from ${flags.file}`));
-    consola.log(colors.dim(`  ${displayDesc.split("\n")[0]}`));
+    consola.log(colors.green(`✓ Added plan #${newPlan.id}`));
+    consola.log(colors.dim(`  File: ${planFilePath}`));
     consola.log(colors.dim(`State saved to: ${stateFile}`));
     consola.log(colors.dim(`Total plans: ${state.plans.length}`));
   }

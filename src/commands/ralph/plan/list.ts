@@ -75,14 +75,15 @@ export default class PlanList extends BaseCommand {
 
     // Show ready plans first (these are actionable)
     // Reserve ~10 chars for "  ○ #XX " prefix
-    const descWidth = Math.max(40, termWidth - 12);
+    const pathWidth = Math.max(40, termWidth - 12);
 
     if (ready.length > 0) {
       for (const plan of ready) {
         const icon = pc.dim("○");
         const id = pc.cyan(`#${plan.id}`);
-        const desc = truncate(plan.description, descWidth);
-        this.log(`  ${icon} ${id} ${desc}`);
+        const filePath = truncate(plan.planFilePath, pathWidth);
+        const errorSuffix = plan.error ? pc.red(` ⚠ ${truncate(plan.error, 30)}`) : "";
+        this.log(`  ${icon} ${id} ${filePath}${errorSuffix}`);
       }
     }
 
@@ -90,8 +91,8 @@ export default class PlanList extends BaseCommand {
     if (done.length > 0) {
       this.log(pc.dim(`  ─── ${done.length} completed ───`));
       for (const plan of done) {
-        const desc = truncate(plan.description, descWidth - 5);
-        this.log(pc.dim(`  ✓ #${plan.id} ${desc}`));
+        const filePath = truncate(plan.planFilePath, pathWidth - 5);
+        this.log(pc.dim(`  ✓ #${plan.id} ${filePath}`));
       }
     }
     this.log();

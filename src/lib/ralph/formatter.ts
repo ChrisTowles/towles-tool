@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import * as path from "node:path";
 import type { RalphPlan, PlanStatus, RalphState } from "./state.js";
 
 // ============================================================================
@@ -61,7 +62,8 @@ export function formatPlansAsMarkdown(plans: RalphPlan[]): string {
   if (ready.length > 0) {
     lines.push("## Ready", "");
     for (const p of ready) {
-      lines.push(`- [ ] **#${p.id}** ${p.description} ${statusBadge(p.status)}`);
+      const errorSuffix = p.error ? ` ⚠️ ${p.error}` : "";
+      lines.push(`- [ ] **#${p.id}** ${p.planFilePath} ${statusBadge(p.status)}${errorSuffix}`);
     }
     lines.push("");
   }
@@ -69,7 +71,7 @@ export function formatPlansAsMarkdown(plans: RalphPlan[]): string {
   if (done.length > 0) {
     lines.push("## Done", "");
     for (const p of done) {
-      lines.push(`- [x] **#${p.id}** ${p.description} ${statusBadge(p.status)}`);
+      lines.push(`- [x] **#${p.id}** ${p.planFilePath} ${statusBadge(p.status)}`);
     }
     lines.push("");
   }
@@ -98,7 +100,8 @@ export function formatPlanAsMarkdown(plans: RalphPlan[], state: RalphState): str
   for (const p of plans) {
     const checkbox = p.status === "done" ? "[x]" : "[ ]";
     const status = p.status === "done" ? "`done`" : "`ready`";
-    lines.push(`- ${checkbox} **#${p.id}** ${p.description} ${status}`);
+    const errorSuffix = p.error ? ` ⚠️ ${p.error}` : "";
+    lines.push(`- ${checkbox} **#${p.id}** ${p.planFilePath} ${status}${errorSuffix}`);
   }
   lines.push("");
 
@@ -109,16 +112,16 @@ export function formatPlanAsMarkdown(plans: RalphPlan[], state: RalphState): str
   lines.push(`    subgraph Progress["Plans: ${done}/${plans.length} done"]`);
 
   for (const p of plans) {
-    const shortDesc =
-      p.description.length > 30 ? p.description.slice(0, 27) + "..." : p.description;
-    // Escape quotes in descriptions
-    const safeDesc = shortDesc.replace(/"/g, "'");
+    const filename = path.basename(p.planFilePath);
+    const shortName = filename.length > 30 ? filename.slice(0, 27) + "..." : filename;
+    // Escape quotes in filenames
+    const safeName = shortName.replace(/"/g, "'");
     const nodeId = `P${p.id}`;
 
     if (p.status === "done") {
-      lines.push(`        ${nodeId}["#${p.id}: ${safeDesc}"]:::done`);
+      lines.push(`        ${nodeId}["#${p.id}: ${safeName}"]:::done`);
     } else {
-      lines.push(`        ${nodeId}["#${p.id}: ${safeDesc}"]:::ready`);
+      lines.push(`        ${nodeId}["#${p.id}: ${safeName}"]:::ready`);
     }
   }
 
@@ -145,10 +148,11 @@ export function formatPlanAsJson(plans: RalphPlan[], state: RalphState): string 
       },
       plans: plans.map((p) => ({
         id: p.id,
-        description: p.description,
+        planFilePath: p.planFilePath,
         status: p.status,
         addedAt: p.addedAt,
         completedAt: p.completedAt,
+        error: p.error,
       })),
     },
     null,
@@ -201,19 +205,21 @@ export function extractOutputSummary(output: string, maxLength: number = 2000): 
 export interface BuildPromptOptions {
   completionMarker: string;
   plan: RalphPlan;
+  planContent: string;
   skipCommit?: boolean;
 }
 
 export function buildIterationPrompt({
   completionMarker,
   plan,
+  planContent,
   skipCommit = false,
 }: BuildPromptOptions): string {
   let step = 1;
 
   const prompt = `
 <plan>
-#${plan.id}: ${plan.description}
+${planContent}
 </plan>
 
 <instructions>

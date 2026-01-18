@@ -14,6 +14,7 @@ import {
   appendHistory,
   resolveRalphPath,
   getRalphPaths,
+  readPlanContent,
 } from "../../lib/ralph/state.js";
 import {
   buildIterationPrompt,
@@ -151,12 +152,19 @@ export default class Run extends BaseCommand {
       consola.log(`  Remaining plans: ${remainingPlans.length}`);
 
       consola.log(colors.cyan("\nCurrent plan:"));
-      consola.log(`  #${currentPlan.id}: ${currentPlan.description}`);
+      consola.log(`  #${currentPlan.id}: ${currentPlan.planFilePath}`);
+
+      // Read plan content
+      const planContent = readPlanContent(currentPlan, state, stateFile);
+      if (!planContent) {
+        this.error(`Cannot read plan file: ${currentPlan.planFilePath}`);
+      }
 
       // Show prompt preview
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         plan: currentPlan,
+        planContent,
         skipCommit: !flags.autoCommit,
       });
       consola.log(colors.dim("─".repeat(60)));
@@ -239,9 +247,19 @@ export default class Run extends BaseCommand {
         logStream.write(`\n✅ All plans completed after ${iteration} iteration(s)\n`);
         break;
       }
+
+      // Read plan content
+      const planContent = readPlanContent(plan, state, stateFile);
+      if (!planContent) {
+        consola.log(colors.yellow(`⚠ Skipping plan #${plan.id}: cannot read file`));
+        logStream.write(`⚠ Skipping plan #${plan.id}: cannot read file\n`);
+        continue;
+      }
+
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
         plan: plan,
+        planContent,
         skipCommit: !flags.autoCommit,
       });
 

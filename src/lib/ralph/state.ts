@@ -67,10 +67,11 @@ const PlanStatusSchema = z.enum(["ready", "done", "blocked", "cancelled"]);
 
 const RalphPlanSchema = z.object({
   id: z.number(),
-  description: z.string(),
+  planFilePath: z.string(),
   status: PlanStatusSchema,
   addedAt: z.string(),
   completedAt: z.string().optional(),
+  error: z.string().optional(),
 });
 
 const RalphStateSchema = z.object({
@@ -151,16 +152,48 @@ export function loadState(stateFile: string): RalphState | null {
   }
 }
 
-export function addPlanToState(state: RalphState, description: string): RalphPlan {
+export function addPlanToState(state: RalphState, planFilePath: string): RalphPlan {
   const nextId = state.plans.length > 0 ? Math.max(...state.plans.map((p) => p.id)) + 1 : 1;
 
   const newPlan: RalphPlan = {
     id: nextId,
-    description,
+    planFilePath,
     status: "ready",
     addedAt: new Date().toISOString(),
   };
 
   state.plans.push(newPlan);
   return newPlan;
+}
+
+/**
+ * Read plan content from file. Updates plan error field and logs warning if file missing.
+ * @returns File content on success, null if file missing/error
+ */
+export function readPlanContent(
+  plan: RalphPlan,
+  state: RalphState,
+  stateFile: string,
+): string | null {
+  try {
+    if (!fs.existsSync(plan.planFilePath)) {
+      const errorMsg = `Plan file not found: ${plan.planFilePath}`;
+      console.warn(pc.yellow(`Warning: ${errorMsg}`));
+      plan.error = errorMsg;
+      saveState(state, stateFile);
+      return null;
+    }
+    // Clear any previous error
+    if (plan.error) {
+      plan.error = undefined;
+      saveState(state, stateFile);
+    }
+    return fs.readFileSync(plan.planFilePath, "utf-8").trim();
+  } catch (err) {
+    const errorMsg = `Failed to read plan file: ${err}`;
+    console.warn(pc.yellow(`Warning: ${errorMsg}`));
+    plan.error = errorMsg;
+    saveState(state, stateFile);
+    return null;
+  }
 }

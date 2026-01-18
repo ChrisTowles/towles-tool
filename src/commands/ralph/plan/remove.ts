@@ -65,7 +65,7 @@ export default class PlanRemove extends BaseCommand {
     state.plans.splice(planIndex, 1);
     saveState(state, stateFile);
 
-    consola.log(colors.green(`✓ Removed plan #${planId}: ${removedPlan.description}`));
+    consola.log(colors.green(`✓ Removed plan #${planId}: ${removedPlan.planFilePath}`));
     consola.log(colors.dim(`Remaining plans: ${state.plans.length}`));
   }
 }
