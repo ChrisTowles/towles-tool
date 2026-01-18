@@ -31,7 +31,7 @@ export function getRalphPaths(settings?: RalphSettings) {
   };
 }
 
-// Legacy defaults for backwards compatibility (used in flag descriptions)
+// Defaults used in flag descriptions
 export const DEFAULT_STATE_FILE = `${DEFAULT_STATE_DIR}/${STATE_FILE_NAME}`;
 export const DEFAULT_LOG_FILE = `${DEFAULT_STATE_DIR}/${LOG_FILE_NAME}`;
 export const DEFAULT_HISTORY_FILE = `${DEFAULT_STATE_DIR}/${HISTORY_FILE_NAME}`;
@@ -137,15 +137,6 @@ export function loadState(stateFile: string): RalphState | null {
     }
     const content = fs.readFileSync(stateFile, "utf-8");
     const parsed = JSON.parse(content);
-
-    // Backwards compatibility: migrate tasks → plans
-    if (!parsed.plans && parsed.tasks) {
-      parsed.plans = parsed.tasks;
-      delete parsed.tasks;
-    }
-    if (!parsed.plans) {
-      parsed.plans = [];
-    }
 
     const result = RalphStateSchema.safeParse(parsed);
     if (!result.success) {

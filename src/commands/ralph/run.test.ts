@@ -302,10 +302,10 @@ describe("ralph-loop", () => {
   });
 
   describe("formatPlansAsMarkdown", () => {
-    it("should return placeholder for empty tasks", () => {
+    it("should return placeholder for empty plans", () => {
       const formatted = formatPlansAsMarkdown([]);
-      expect(formatted).toContain("# Tasks");
-      expect(formatted).toContain("No tasks.");
+      expect(formatted).toContain("# Plans");
+      expect(formatted).toContain("No plans.");
     });
 
     it("should include summary counts", () => {
@@ -358,25 +358,6 @@ describe("ralph-loop", () => {
     });
   });
 
-  describe("loadState backwards compatibility", () => {
-    it("should add empty tasks array if missing", () => {
-      // Simulate old state without tasks
-      const oldState = {
-        version: 1,
-        task: "old task", // legacy field
-        startedAt: new Date().toISOString(),
-        status: "running",
-        history: [],
-      };
-      writeFileSync(testStateFile, JSON.stringify(oldState));
-
-      const loaded = loadState(testStateFile);
-
-      expect(loaded).not.toBeNull();
-      expect(loaded?.plans).toEqual([]);
-    });
-  });
-
   describe("formatPlanAsMarkdown", () => {
     it("should include plan header and summary", () => {
       const state = createInitialState();
@@ -387,7 +368,7 @@ describe("ralph-loop", () => {
       expect(formatted).toContain("# Ralph Plan");
       expect(formatted).toContain("## Summary");
       expect(formatted).toContain("**Status:** running");
-      expect(formatted).toContain("**Total Tasks:** 1");
+      expect(formatted).toContain("**Total:** 1");
     });
 
     it("should include tasks section", () => {
@@ -396,7 +377,7 @@ describe("ralph-loop", () => {
 
       const formatted = formatPlanAsMarkdown(state.plans, state);
 
-      expect(formatted).toContain("## Tasks");
+      expect(formatted).toContain("## Plans");
       expect(formatted).toContain("**#1** implement feature");
     });
 
@@ -421,7 +402,7 @@ describe("ralph-loop", () => {
 
       const formatted = formatPlanAsMarkdown(state.plans, state);
 
-      expect(formatted).toContain('T1["#1: done task"]:::done');
+      expect(formatted).toContain('P1["#1: done task"]:::done');
     });
 
     it("should truncate long descriptions in mermaid", () => {
@@ -434,7 +415,7 @@ describe("ralph-loop", () => {
       const formatted = formatPlanAsMarkdown(state.plans, state);
 
       // Mermaid section should have truncated description
-      expect(formatted).toContain('T1["#1: This is a very long task de..."]');
+      expect(formatted).toContain('P1["#1: This is a very long task de..."]');
       // But the Tasks section should have full description
       expect(formatted).toContain(
         "**#1** This is a very long task description that should be truncated for the mermaid graph",
