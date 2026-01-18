@@ -5,6 +5,8 @@ permissions:
   contents: write
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       bump_type:
@@ -19,6 +21,8 @@ on:
 
 jobs:
   ci:
+    # Skip release commits to avoid infinite loop
+    if: "!startsWith(github.event.head_commit.message, 'chore: release')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +54,7 @@ jobs:
         run: npm install -g npm@latest && npm --version
 
       - name: Bump version
-        run: pnpm exec bumpp ${{ inputs.bump_type }} --yes --no-commit --no-tag --no-push
+        run: pnpm exec bumpp ${{ inputs.bump_type || 'patch' }} --yes --no-commit --no-tag --no-push
 
       - name: Sync plugin versions
         run: pnpm version:sync
