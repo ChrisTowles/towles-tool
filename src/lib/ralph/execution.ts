@@ -13,11 +13,6 @@ import { CLAUDE_DEFAULT_ARGS } from "./state.js";
 
 interface StreamEvent {
   type: string;
-  event?: {
-    type: string;
-    delta?: { text?: string };
-  };
-  // New format: assistant message
   message?: {
     content?: Array<{ type: string; text?: string }>;
     usage?: {
@@ -139,15 +134,7 @@ function parseStreamLine(line: string): ParsedLine {
       return { text: null, tool: { name, summary } };
     }
 
-    // Extract text from streaming deltas (legacy format)
-    if (data.type === "stream_event" && data.event?.type === "content_block_delta") {
-      return { text: data.event.delta?.text || null };
-    }
-    // Add newline after content block ends (legacy format)
-    if (data.type === "stream_event" && data.event?.type === "content_block_stop") {
-      return { text: "\n" };
-    }
-    // NEW FORMAT: Handle assistant messages with content array
+    // Handle assistant messages with content array
     if (data.type === "assistant" && data.message) {
       // Check for tool_use in content blocks
       const toolBlocks = data.message.content?.filter((c) => c.type === "tool_use") || [];
