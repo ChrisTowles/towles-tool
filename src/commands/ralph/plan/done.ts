@@ -55,7 +55,7 @@ export default class PlanDone extends BaseCommand {
       this.error(`No state file found at: ${stateFile}`);
     }
 
-    const plan = state.plans.find((t) => t.id === planId);
+    const plan = state.plans.find((p) => p.id === planId);
 
     if (!plan) {
       this.error(`Plan #${planId} not found. Use: tt ralph plan list`);
@@ -72,7 +72,7 @@ export default class PlanDone extends BaseCommand {
 
     consola.log(colors.green(`✓ Marked plan #${planId} as done: ${plan.description}`));
 
-    const remaining = state.plans.filter((t) => t.status !== "done").length;
+    const remaining = state.plans.filter((p) => p.status !== "done").length;
     if (remaining === 0) {
       consola.log(colors.bold(colors.green("All plans complete!")));
     } else {

@@ -162,11 +162,11 @@ describe("ralph-loop", () => {
 
   describe("detectCompletionMarker", () => {
     it("should detect marker in output", () => {
-      expect(detectCompletionMarker("Plan complete RALPH_DONE", "RALPH_DONE")).toBe(true);
+      expect(detectCompletionMarker("Task complete RALPH_DONE", "RALPH_DONE")).toBe(true);
     });
 
     it("should return false when marker not present", () => {
-      expect(detectCompletionMarker("Plan still in progress", "RALPH_DONE")).toBe(false);
+      expect(detectCompletionMarker("Task still in progress", "RALPH_DONE")).toBe(false);
     });
 
     it("should detect marker anywhere in output", () => {
@@ -296,7 +296,7 @@ describe("ralph-loop", () => {
         addedAt: new Date().toISOString(),
       });
 
-      const newPlan = addPlanToState(state, "new task");
+      const newPlan = addPlanToState(state, "new plan");
       expect(newPlan.id).toBe(6);
     });
   });
@@ -473,7 +473,7 @@ describe("ralph-loop", () => {
       addPlanToState(state, "plan 2");
 
       // Simulate marking plan 1 as done
-      const plan = state.plans.find((p) => p.id === 1);
+      const plan = state.plans.find((t) => t.id === 1);
       expect(plan).toBeDefined();
       expect(plan?.status).toBe("ready");
 
@@ -499,7 +499,7 @@ describe("ralph-loop", () => {
       const state = createInitialState();
       addPlanToState(state, "plan 1");
 
-      const plan = state.plans.find((p) => p.id === 99);
+      const plan = state.plans.find((t) => t.id === 99);
       expect(plan).toBeUndefined();
     });
 
@@ -507,7 +507,7 @@ describe("ralph-loop", () => {
       const state = createInitialState();
       addPlanToState(state, "plan 1");
 
-      const plan = state.plans.find((p) => p.id === 1)!;
+      const plan = state.plans.find((t) => t.id === 1)!;
       plan.status = "done";
       plan.completedAt = new Date().toISOString();
 

@@ -26,7 +26,7 @@ export default class PlanAdd extends BaseCommand {
 
   static override args = {
     description: Args.string({
-      description: "Plan description",
+      description: "Task description",
       required: true,
     }),
   };

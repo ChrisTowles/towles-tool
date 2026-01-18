@@ -58,8 +58,8 @@ export default class PlanList extends BaseCommand {
     }
 
     // Default format output - compact with truncation
-    const ready = plans.filter((t) => t.status === "ready");
-    const done = plans.filter((t) => t.status === "done");
+    const ready = plans.filter((p) => p.status === "ready");
+    const done = plans.filter((p) => p.status === "done");
 
     const truncate = (s: string, len: number) => (s.length > len ? s.slice(0, len - 1) + "…" : s);
     const termWidth = process.stdout.columns || 120;

@@ -194,12 +194,12 @@ export default class Run extends BaseCommand {
     consola.log(colors.dim(`Max iterations: ${maxIterations}`));
     consola.log(colors.dim(`Log file: ${logFile}`));
     consola.log(colors.dim(`Auto-commit: ${flags.autoCommit}`));
-    consola.log(colors.dim(`Plans: ${state.plans.length} (${done} done, ${ready} ready)`));
+    consola.log(colors.dim(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)`));
     consola.log("");
 
     logStream.write(`Focus: ${focusedPlanId ? `Plan #${focusedPlanId}` : "Ralph picks"}\n`);
     logStream.write(`Max iterations: ${maxIterations}\n`);
-    logStream.write(`Plans: ${state.plans.length} (${done} done, ${ready} ready)\n\n`);
+    logStream.write(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)\n\n`);
 
     // Handle SIGINT gracefully
     let interrupted = false;
@@ -228,8 +228,8 @@ export default class Run extends BaseCommand {
 
       const iterationStart = new Date().toISOString();
       // Get current plan for this iteration
-      const task = getCurrentPlan(state.plans, focusedPlanId);
-      if (!task) {
+      const plan = getCurrentPlan(state.plans, focusedPlanId);
+      if (!plan) {
         completed = true;
         state.status = "completed";
         saveState(state, stateFile);
@@ -241,7 +241,7 @@ export default class Run extends BaseCommand {
       }
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        plan: task,
+        plan: plan,
         skipCommit: !flags.autoCommit,
       });
 

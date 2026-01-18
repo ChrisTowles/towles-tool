@@ -1,7 +1,7 @@
 ---
 title: improve
 description: "Explore codebase and suggest improvements"
-allowed-tools: AskUserQuestion(*), Task(*), Read(*), Glob(*), Grep(*)
+allowed-tools: AskUserQuestion(*), Read(*), Glob(*), Grep(*), Task(*)
 ---
 
 Explore codebase, identify improvements, present as selectable options.
@@ -41,4 +41,4 @@ After selection, confirm approach and begin implementation.
 
 Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
 
-Then run `tt ralph add "${plan-file}"` to create a Ralph task for tracking.
+Then run `tt ralph plan "${plan-file}"` to create a Ralph task for tracking.

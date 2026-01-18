@@ -55,7 +55,7 @@ export default class PlanRemove extends BaseCommand {
       this.error(`No state file found at: ${stateFile}`);
     }
 
-    const planIndex = state.plans.findIndex((t) => t.id === planId);
+    const planIndex = state.plans.findIndex((p) => p.id === planId);
 
     if (planIndex === -1) {
       this.error(`Plan #${planId} not found. Use: tt ralph plan list`);

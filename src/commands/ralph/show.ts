@@ -10,10 +10,10 @@ import {
 } from "../../lib/ralph/formatter.js";
 
 /**
- * Show plan summary with status, plans, and mermaid graph
+ * Show plan summary with status, tasks, and mermaid graph
  */
 export default class Show extends BaseCommand {
-  static override description = "Show plan summary with status, plans, and mermaid graph";
+  static override description = "Show plan summary with status, tasks, and mermaid graph";
 
   static override examples = [
     {
@@ -62,7 +62,7 @@ export default class Show extends BaseCommand {
     }
 
     if (state.plans.length === 0) {
-      consola.log(colors.yellow("No plans in state file."));
+      consola.log(colors.yellow("No tasks in state file."));
       consola.log(colors.dim('Use: tt ralph plan add "description"'));
       return;
     }
