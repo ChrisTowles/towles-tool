@@ -105,7 +105,6 @@ describe("ralph-loop", () => {
   describe("buildIterationPrompt", () => {
     const defaultOpts = {
       completionMarker: "RALPH_DONE",
-      progressFile: "ralph-progress.md",
       focusedTaskId: null as number | null,
       taskList: JSON.stringify([{ id: 1, description: "First task", status: "ready" }], null, 2),
     };
@@ -118,11 +117,6 @@ describe("ralph-loop", () => {
     it("should include task list as JSON", () => {
       const prompt = buildIterationPrompt(defaultOpts);
       expect(prompt).toContain('"description": "First task"');
-    });
-
-    it("should include progress file reference", () => {
-      const prompt = buildIterationPrompt(defaultOpts);
-      expect(prompt).toContain("@ralph-progress.md");
     });
 
     it("should default to choosing task when no focusedTaskId", () => {

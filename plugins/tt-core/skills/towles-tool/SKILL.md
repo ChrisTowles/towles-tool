@@ -31,10 +31,9 @@ tt ralph run --addIterations 5      # Add 5 to current count
 tt ralph run --dryRun               # Preview config
 ```
 
-### Progress & Planning
+### Planning
 
 ```bash
-tt ralph progress "message"         # Append to progress (write-only)
 tt ralph plan                       # Show plan with mermaid graph
 ```
 
@@ -76,5 +75,4 @@ tt install  # Configure Claude Code settings
 
 ## Critical Rules
 
-1. **Never read `ralph-progress.md`** - use `tt ralph progress "msg"` to append
-2. **Always use CLI** for ralph state - never edit `ralph-state.json` directly
+1. **Always use CLI** for ralph state - never edit `ralph-state.json` directly

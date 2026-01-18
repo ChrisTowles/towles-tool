@@ -16,7 +16,6 @@ export const DEFAULT_COMPLETION_MARKER = "RALPH_DONE";
 // File names within stateDir
 const STATE_FILE_NAME = "ralph-state.local.json";
 const LOG_FILE_NAME = "ralph-log.local.md";
-const PROGRESS_FILE_NAME = "ralph-progress.local.md";
 const HISTORY_FILE_NAME = "ralph-history.local.log";
 
 // ============================================================================
@@ -28,7 +27,6 @@ export function getRalphPaths(settings?: RalphSettings) {
   return {
     stateFile: path.join(stateDir, STATE_FILE_NAME),
     logFile: path.join(stateDir, LOG_FILE_NAME),
-    progressFile: path.join(stateDir, PROGRESS_FILE_NAME),
     historyFile: path.join(stateDir, HISTORY_FILE_NAME),
   };
 }
@@ -36,7 +34,6 @@ export function getRalphPaths(settings?: RalphSettings) {
 // Legacy defaults for backwards compatibility (used in flag descriptions)
 export const DEFAULT_STATE_FILE = `${DEFAULT_STATE_DIR}/${STATE_FILE_NAME}`;
 export const DEFAULT_LOG_FILE = `${DEFAULT_STATE_DIR}/${LOG_FILE_NAME}`;
-export const DEFAULT_PROGRESS_FILE = `${DEFAULT_STATE_DIR}/${PROGRESS_FILE_NAME}`;
 export const DEFAULT_HISTORY_FILE = `${DEFAULT_STATE_DIR}/${HISTORY_FILE_NAME}`;
 
 /**
@@ -44,7 +41,7 @@ export const DEFAULT_HISTORY_FILE = `${DEFAULT_STATE_DIR}/${HISTORY_FILE_NAME}`;
  */
 export function resolveRalphPath(
   flagValue: string | undefined,
-  pathType: "stateFile" | "logFile" | "progressFile" | "historyFile",
+  pathType: "stateFile" | "logFile" | "historyFile",
   settings?: RalphSettings,
 ): string {
   if (flagValue !== undefined) {

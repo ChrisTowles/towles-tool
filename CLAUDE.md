@@ -64,7 +64,6 @@ pnpm format:check       # Check formatting without writing
 - `ralph task add/list/done/remove` - Task management
 - `ralph run` - Autonomous Claude Code runner
 - `ralph plan` - Show plan with mermaid graph
-- `ralph progress` - Append progress message (write-only)
 
 **Key Utilities**:
 
@@ -126,12 +125,7 @@ tt ralph run --no-autoCommit        # Run without auto-commits
 
 # Plan
 tt ralph plan                       # Show plan with mermaid graph
-
-# Progress (write-only - never read the file)
-tt ralph progress "message"         # Append to ralph-progress.md
 ```
-
-**IMPORTANT**: Never read `ralph-progress.md`. Use `tt ralph progress "message"` to append. This saves tokens.
 
 ## Observability
 

@@ -25,25 +25,6 @@ import {
 import { checkClaudeCli, runIteration } from "../../lib/ralph/execution.js";
 
 /**
- * Read last N iterations from progress file. Only returns iteration entries,
- * excluding headers/status sections that could confuse the model.
- */
-function readLastIterations(filePath: string, count: number): string {
-  if (!fs.existsSync(filePath)) return "";
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    // Split by iteration headers, keeping the delimiter
-    const parts = content.split(/(?=### Iteration)/g);
-    // Skip first part (header/status content) - only want iteration entries
-    const iterations = parts.filter((p) => p.startsWith("### Iteration"));
-    if (iterations.length === 0) return "";
-    return iterations.slice(-count).join("\n").trim();
-  } catch {
-    return "";
-  }
-}
-
-/**
  * Run the autonomous ralph loop
  */
 export default class Run extends BaseCommand {
@@ -183,14 +164,11 @@ export default class Run extends BaseCommand {
       }
 
       // Show prompt preview
-      const progressContent = readLastIterations(ralphPaths.progressFile, 3);
       const taskList = formatTasksForPrompt(remainingTasks);
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        progressFile: ralphPaths.progressFile,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
-        progressContent: progressContent || undefined,
         taskList,
       });
       consola.log(colors.dim("─".repeat(60)));
@@ -262,16 +240,13 @@ export default class Run extends BaseCommand {
       logStream.write(`\n━━━ ${iterHeader} ━━━\n`);
 
       const iterationStart = new Date().toISOString();
-      const progressContent = readLastIterations(ralphPaths.progressFile, 3);
       // Reload remaining tasks for current state
       const currentRemainingTasks = state.tasks.filter((t) => t.status !== "done");
       const taskList = formatTasksForPrompt(currentRemainingTasks);
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        progressFile: ralphPaths.progressFile,
         focusedTaskId,
         skipCommit: !flags.autoCommit,
-        progressContent: progressContent || undefined,
         taskList,
       });
 

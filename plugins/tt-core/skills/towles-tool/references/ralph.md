@@ -33,10 +33,9 @@ The fundamental insight: rather than step-by-step human guidance, define success
 │  3. Work on single task                 │
 │  4. Run tests/typecheck                 │
 │  5. Mark task done: tt ralph task done  │
-│  6. Log progress: tt ralph progress     │
-│  7. Commit (if --autoCommit)            │
-│  8. Check for RALPH_DONE marker         │
-│  9. Loop or exit                        │
+│  6. Commit (if --autoCommit)            │
+│  7. Check for RALPH_DONE marker         │
+│  8. Loop or exit                        │
 └─────────────────────────────────────────┘
 ```
 
@@ -54,15 +53,12 @@ Then:
 2. Work on that single task
 3. Run type checks and tests
 4. Mark the task done using CLI: tt ralph task done <id>
-5. Log progress using CLI: tt ralph progress "what you did"
-6. Make a git commit (if autoCommit enabled)
+5. Make a git commit (if autoCommit enabled)
 
 ONE TASK PER ITERATION
 
 When ALL tasks are done, Output: <promise>RALPH_DONE</promise>
 ```
-
-**IMPORTANT**: Never read ralph-progress.md. Use `tt ralph progress "message"` to append (write-only). This saves tokens.
 
 ### Self-Referential Feedback
 
@@ -162,7 +158,7 @@ In complex tasks, include fallback:
 
 ```
 After 10 iterations if not complete:
-- Document what's blocking progress
+- Document what's blocking
 - List approaches attempted
 - Suggest alternatives
 ```
@@ -232,9 +228,9 @@ tt ralph plan --copy                  # Also copy output to clipboard
 
 The markdown format includes:
 
-- Summary section with status, iteration progress, and task counts
+- Summary section with status, iteration count, and task counts
 - Tasks section with checkbox indicators
-- Progress graph as a mermaid diagram showing task status
+- Mermaid diagram showing task status
 
 Loop statuses:
 
@@ -286,9 +282,8 @@ Mitigate with:
 ### Loop won't complete
 
 1. Check if tasks have clear completion criteria
-2. Review `ralph-progress.md` for what's blocking
-3. Try `--taskId N` to focus on specific stuck task
-4. Reduce scope of remaining tasks
+2. Try `--taskId N` to focus on specific stuck task
+3. Reduce scope of remaining tasks
 
 ### Tasks not being marked done
 
