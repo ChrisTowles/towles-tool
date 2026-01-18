@@ -5,14 +5,13 @@ import { describe, it, expect, afterEach } from "vitest";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { RalphTask, IterationHistory } from "../../lib/ralph/index.js";
+import type { RalphPlan, IterationHistory } from "../../lib/ralph/index.js";
 import {
   createInitialState,
   saveState,
   loadState,
-  addTaskToState,
-  formatTasksForPrompt,
-  formatTasksAsMarkdown,
+  addPlanToState,
+  formatPlansAsMarkdown,
   formatPlanAsMarkdown,
   formatPlanAsJson,
   buildIterationPrompt,
@@ -59,35 +58,26 @@ describe("ralph-loop", () => {
 
   describe("createInitialState", () => {
     it("should create state with correct structure", () => {
-      const state = createInitialState(5);
+      const state = createInitialState();
 
       expect(state.version).toBe(1);
-      expect(state.iteration).toBe(0);
-      expect(state.maxIterations).toBe(5);
       expect(state.status).toBe("running");
-      expect(state.tasks).toEqual([]);
+      expect(state.plans).toEqual([]);
       expect(state.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    });
-
-    it("should use provided maxIterations", () => {
-      const state = createInitialState(20);
-      expect(state.maxIterations).toBe(20);
     });
   });
 
   describe("saveState and loadState", () => {
     it("should save and load state correctly", () => {
-      const state = createInitialState(10);
-      state.iteration = 3;
-      addTaskToState(state, "test task");
+      const state = createInitialState();
+      addPlanToState(state, "test task");
 
       saveState(state, testStateFile);
       const loaded = loadState(testStateFile);
 
       expect(loaded).not.toBeNull();
-      expect(loaded?.iteration).toBe(3);
-      expect(loaded?.tasks).toHaveLength(1);
-      expect(loaded?.tasks[0].description).toBe("test task");
+      expect(loaded?.plans).toHaveLength(1);
+      expect(loaded?.plans[0].description).toBe("test task");
     });
 
     it("should return null for non-existent file", () => {
@@ -103,35 +93,30 @@ describe("ralph-loop", () => {
   });
 
   describe("buildIterationPrompt", () => {
-    const defaultOpts = {
-      completionMarker: "RALPH_DONE",
-      focusedTaskId: null as number | null,
-      taskList: JSON.stringify([{ id: 1, description: "First task", status: "ready" }], null, 2),
+    const testTask: RalphPlan = {
+      id: 1,
+      description: "First task",
+      status: "ready",
+      addedAt: new Date().toISOString(),
     };
 
     it("should include completion marker", () => {
-      const prompt = buildIterationPrompt(defaultOpts);
+      const prompt = buildIterationPrompt({ completionMarker: "RALPH_DONE", plan: testTask });
       expect(prompt).toContain("RALPH_DONE");
     });
 
-    it("should include task list as JSON", () => {
-      const prompt = buildIterationPrompt(defaultOpts);
-      expect(prompt).toContain('"description": "First task"');
+    it("should include task id and description", () => {
+      const prompt = buildIterationPrompt({ completionMarker: "RALPH_DONE", plan: testTask });
+      expect(prompt).toContain("#1: First task");
     });
 
-    it("should default to choosing task when no focusedTaskId", () => {
-      const prompt = buildIterationPrompt(defaultOpts);
-      expect(prompt).toContain("**Choose** which ready task");
-    });
-
-    it("should focus on specific task when focusedTaskId provided", () => {
-      const prompt = buildIterationPrompt({ ...defaultOpts, focusedTaskId: 3 });
-      expect(prompt).toContain("**Work on Task #3**");
-      expect(prompt).not.toContain("**Choose** which ready task");
+    it("should include mark done command with task id", () => {
+      const prompt = buildIterationPrompt({ completionMarker: "RALPH_DONE", plan: testTask });
+      expect(prompt).toContain("tt ralph plan done 1");
     });
 
     it("should include custom completion marker", () => {
-      const prompt = buildIterationPrompt({ ...defaultOpts, completionMarker: "CUSTOM_MARKER" });
+      const prompt = buildIterationPrompt({ completionMarker: "CUSTOM_MARKER", plan: testTask });
       expect(prompt).toContain("CUSTOM_MARKER");
     });
   });
@@ -201,17 +186,8 @@ describe("ralph-loop", () => {
   });
 
   describe("state transitions", () => {
-    it("should track iteration progress", () => {
-      const state = createInitialState(5);
-
-      expect(state.iteration).toBe(0);
-
-      state.iteration++;
-      expect(state.iteration).toBe(1);
-    });
-
     it("should update status correctly", () => {
-      const state = createInitialState(5);
+      const state = createInitialState();
 
       expect(state.status).toBe("running");
 
@@ -284,10 +260,10 @@ describe("ralph-loop", () => {
     });
   });
 
-  describe("addTaskToState", () => {
+  describe("addPlanToState", () => {
     it("should add task with correct structure", () => {
-      const state = createInitialState(10);
-      const task = addTaskToState(state, "implement feature");
+      const state = createInitialState();
+      const task = addPlanToState(state, "implement feature");
 
       expect(task.id).toBe(1);
       expect(task.description).toBe("implement feature");
@@ -297,84 +273,48 @@ describe("ralph-loop", () => {
     });
 
     it("should increment task IDs", () => {
-      const state = createInitialState(10);
+      const state = createInitialState();
 
-      const task1 = addTaskToState(state, "task 1");
-      const task2 = addTaskToState(state, "task 2");
-      const task3 = addTaskToState(state, "task 3");
+      const task1 = addPlanToState(state, "task 1");
+      const task2 = addPlanToState(state, "task 2");
+      const task3 = addPlanToState(state, "task 3");
 
       expect(task1.id).toBe(1);
       expect(task2.id).toBe(2);
       expect(task3.id).toBe(3);
-      expect(state.tasks).toHaveLength(3);
+      expect(state.plans).toHaveLength(3);
     });
 
     it("should handle non-sequential IDs", () => {
-      const state = createInitialState(10);
+      const state = createInitialState();
 
       // Simulate deleted task by adding with gap
-      state.tasks.push({
+      state.plans.push({
         id: 5,
         description: "existing task",
         status: "done",
         addedAt: new Date().toISOString(),
       });
 
-      const newTask = addTaskToState(state, "new task");
+      const newTask = addPlanToState(state, "new task");
       expect(newTask.id).toBe(6);
     });
   });
 
-  describe("formatTasksForPrompt", () => {
-    it("should return placeholder for no tasks", () => {
-      expect(formatTasksForPrompt([])).toBe("No tasks.");
-    });
-
-    it("should format tasks as markdown", () => {
-      const tasks: RalphTask[] = [
-        {
-          id: 1,
-          description: "implement feature",
-          status: "ready",
-          addedAt: new Date().toISOString(),
-        },
-      ];
-
-      const formatted = formatTasksForPrompt(tasks);
-
-      expect(formatted).toContain("- [ ] #1 implement feature");
-      expect(formatted).toContain("`○ ready`");
-    });
-
-    it("should format multiple tasks as markdown list", () => {
-      const tasks: RalphTask[] = [
-        { id: 1, description: "task 1", status: "done", addedAt: "" },
-        { id: 2, description: "task 2", status: "ready", addedAt: "" },
-        { id: 3, description: "task 3", status: "ready", addedAt: "" },
-      ];
-
-      const formatted = formatTasksForPrompt(tasks);
-
-      expect(formatted).toContain("- [x] #1 task 1 `✓ done`");
-      expect(formatted).toContain("- [ ] #2 task 2 `○ ready`");
-      expect(formatted).toContain("- [ ] #3 task 3 `○ ready`");
-    });
-  });
-
-  describe("formatTasksAsMarkdown", () => {
+  describe("formatPlansAsMarkdown", () => {
     it("should return placeholder for empty tasks", () => {
-      const formatted = formatTasksAsMarkdown([]);
+      const formatted = formatPlansAsMarkdown([]);
       expect(formatted).toContain("# Tasks");
       expect(formatted).toContain("No tasks.");
     });
 
     it("should include summary counts", () => {
-      const tasks: RalphTask[] = [
+      const tasks: RalphPlan[] = [
         { id: 1, description: "task 1", status: "done", addedAt: "" },
         { id: 2, description: "task 2", status: "ready", addedAt: "" },
       ];
 
-      const formatted = formatTasksAsMarkdown(tasks);
+      const formatted = formatPlansAsMarkdown(tasks);
 
       expect(formatted).toContain("**Total:** 2");
       expect(formatted).toContain("**Done:** 1");
@@ -382,11 +322,11 @@ describe("ralph-loop", () => {
     });
 
     it("should format done tasks with checked boxes", () => {
-      const tasks: RalphTask[] = [
+      const tasks: RalphPlan[] = [
         { id: 1, description: "completed task", status: "done", addedAt: "" },
       ];
 
-      const formatted = formatTasksAsMarkdown(tasks);
+      const formatted = formatPlansAsMarkdown(tasks);
 
       expect(formatted).toContain("## Done");
       expect(formatted).toContain("- [x] **#1** completed task");
@@ -394,11 +334,11 @@ describe("ralph-loop", () => {
     });
 
     it("should format ready tasks with unchecked boxes", () => {
-      const tasks: RalphTask[] = [
+      const tasks: RalphPlan[] = [
         { id: 2, description: "ready task", status: "ready", addedAt: "" },
       ];
 
-      const formatted = formatTasksAsMarkdown(tasks);
+      const formatted = formatPlansAsMarkdown(tasks);
 
       expect(formatted).toContain("## Ready");
       expect(formatted).toContain("- [ ] **#2** ready task");
@@ -406,12 +346,12 @@ describe("ralph-loop", () => {
     });
 
     it("should group tasks by status section", () => {
-      const tasks: RalphTask[] = [
+      const tasks: RalphPlan[] = [
         { id: 1, description: "done task", status: "done", addedAt: "" },
         { id: 2, description: "ready task", status: "ready", addedAt: "" },
       ];
 
-      const formatted = formatTasksAsMarkdown(tasks);
+      const formatted = formatPlansAsMarkdown(tasks);
 
       expect(formatted).toContain("## Ready");
       expect(formatted).toContain("## Done");
@@ -425,8 +365,6 @@ describe("ralph-loop", () => {
         version: 1,
         task: "old task", // legacy field
         startedAt: new Date().toISOString(),
-        iteration: 0,
-        maxIterations: 10,
         status: "running",
         history: [],
       };
@@ -435,16 +373,16 @@ describe("ralph-loop", () => {
       const loaded = loadState(testStateFile);
 
       expect(loaded).not.toBeNull();
-      expect(loaded?.tasks).toEqual([]);
+      expect(loaded?.plans).toEqual([]);
     });
   });
 
   describe("formatPlanAsMarkdown", () => {
     it("should include plan header and summary", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
 
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
+      const formatted = formatPlanAsMarkdown(state.plans, state);
 
       expect(formatted).toContain("# Ralph Plan");
       expect(formatted).toContain("## Summary");
@@ -453,21 +391,21 @@ describe("ralph-loop", () => {
     });
 
     it("should include tasks section", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "implement feature");
+      const state = createInitialState();
+      addPlanToState(state, "implement feature");
 
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
+      const formatted = formatPlanAsMarkdown(state.plans, state);
 
       expect(formatted).toContain("## Tasks");
       expect(formatted).toContain("**#1** implement feature");
     });
 
     it("should include mermaid graph section", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
-      addTaskToState(state, "task 2");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
+      addPlanToState(state, "task 2");
 
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
+      const formatted = formatPlanAsMarkdown(state.plans, state);
 
       expect(formatted).toContain("## Progress Graph");
       expect(formatted).toContain("```mermaid");
@@ -477,23 +415,23 @@ describe("ralph-loop", () => {
     });
 
     it("should format done tasks correctly in mermaid", () => {
-      const state = createInitialState(10);
-      const task = addTaskToState(state, "done task");
+      const state = createInitialState();
+      const task = addPlanToState(state, "done task");
       task.status = "done";
 
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
+      const formatted = formatPlanAsMarkdown(state.plans, state);
 
       expect(formatted).toContain('T1["#1: done task"]:::done');
     });
 
     it("should truncate long descriptions in mermaid", () => {
-      const state = createInitialState(10);
-      addTaskToState(
+      const state = createInitialState();
+      addPlanToState(
         state,
         "This is a very long task description that should be truncated for the mermaid graph",
       );
 
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
+      const formatted = formatPlanAsMarkdown(state.plans, state);
 
       // Mermaid section should have truncated description
       expect(formatted).toContain('T1["#1: This is a very long task de..."]');
@@ -502,37 +440,27 @@ describe("ralph-loop", () => {
         "**#1** This is a very long task description that should be truncated for the mermaid graph",
       );
     });
-
-    it("should show iteration progress", () => {
-      const state = createInitialState(10);
-      state.iteration = 3;
-      addTaskToState(state, "task");
-
-      const formatted = formatPlanAsMarkdown(state.tasks, state);
-
-      expect(formatted).toContain("**Iteration:** 3/10");
-    });
   });
 
   describe("formatPlanAsJson", () => {
     it("should return valid JSON", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
 
-      const json = formatPlanAsJson(state.tasks, state);
+      const json = formatPlanAsJson(state.plans, state);
       const parsed = JSON.parse(json);
 
       expect(parsed.status).toBe("running");
-      expect(parsed.tasks).toHaveLength(1);
+      expect(parsed.plans).toHaveLength(1);
     });
 
     it("should include summary counts", () => {
-      const state = createInitialState(10);
-      const task1 = addTaskToState(state, "done task");
+      const state = createInitialState();
+      const task1 = addPlanToState(state, "done task");
       task1.status = "done";
-      addTaskToState(state, "ready task");
+      addPlanToState(state, "ready task");
 
-      const json = formatPlanAsJson(state.tasks, state);
+      const json = formatPlanAsJson(state.plans, state);
       const parsed = JSON.parse(json);
 
       expect(parsed.summary.total).toBe(2);
@@ -541,42 +469,30 @@ describe("ralph-loop", () => {
     });
 
     it("should include all task fields", () => {
-      const state = createInitialState(10);
-      const task = addTaskToState(state, "test task");
+      const state = createInitialState();
+      const task = addPlanToState(state, "test task");
       task.status = "done";
       task.completedAt = "2026-01-10T12:00:00Z";
 
-      const json = formatPlanAsJson(state.tasks, state);
+      const json = formatPlanAsJson(state.plans, state);
       const parsed = JSON.parse(json);
 
-      expect(parsed.tasks[0].id).toBe(1);
-      expect(parsed.tasks[0].description).toBe("test task");
-      expect(parsed.tasks[0].status).toBe("done");
-      expect(parsed.tasks[0].addedAt).toBeDefined();
-      expect(parsed.tasks[0].completedAt).toBe("2026-01-10T12:00:00Z");
-    });
-
-    it("should include iteration and maxIterations", () => {
-      const state = createInitialState(15);
-      state.iteration = 5;
-      addTaskToState(state, "task");
-
-      const json = formatPlanAsJson(state.tasks, state);
-      const parsed = JSON.parse(json);
-
-      expect(parsed.iteration).toBe(5);
-      expect(parsed.maxIterations).toBe(15);
+      expect(parsed.plans[0].id).toBe(1);
+      expect(parsed.plans[0].description).toBe("test task");
+      expect(parsed.plans[0].status).toBe("done");
+      expect(parsed.plans[0].addedAt).toBeDefined();
+      expect(parsed.plans[0].completedAt).toBe("2026-01-10T12:00:00Z");
     });
   });
 
   describe("markDone functionality", () => {
     it("should mark task as done and add completedAt", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
-      addTaskToState(state, "task 2");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
+      addPlanToState(state, "task 2");
 
       // Simulate marking task 1 as done
-      const task = state.tasks.find((t) => t.id === 1);
+      const task = state.plans.find((t) => t.id === 1);
       expect(task).toBeDefined();
       expect(task?.status).toBe("ready");
 
@@ -588,37 +504,37 @@ describe("ralph-loop", () => {
     });
 
     it("should find task by ID", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
-      addTaskToState(state, "task 2");
-      addTaskToState(state, "task 3");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
+      addPlanToState(state, "task 2");
+      addPlanToState(state, "task 3");
 
-      const task = state.tasks.find((t) => t.id === 2);
+      const task = state.plans.find((t) => t.id === 2);
       expect(task).toBeDefined();
       expect(task?.description).toBe("task 2");
     });
 
     it("should return undefined for non-existent task ID", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
 
-      const task = state.tasks.find((t) => t.id === 99);
+      const task = state.plans.find((t) => t.id === 99);
       expect(task).toBeUndefined();
     });
 
     it("should persist marked-done task to file", () => {
-      const state = createInitialState(10);
-      addTaskToState(state, "task 1");
+      const state = createInitialState();
+      addPlanToState(state, "task 1");
 
-      const task = state.tasks.find((t) => t.id === 1)!;
+      const task = state.plans.find((t) => t.id === 1)!;
       task.status = "done";
       task.completedAt = new Date().toISOString();
 
       saveState(state, testStateFile);
       const loaded = loadState(testStateFile);
 
-      expect(loaded?.tasks[0].status).toBe("done");
-      expect(loaded?.tasks[0].completedAt).toBeDefined();
+      expect(loaded?.plans[0].status).toBe("done");
+      expect(loaded?.plans[0].completedAt).toBeDefined();
     });
   });
 });

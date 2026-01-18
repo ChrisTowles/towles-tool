@@ -55,17 +55,17 @@ export default class PlanRemove extends BaseCommand {
       this.error(`No state file found at: ${stateFile}`);
     }
 
-    const taskIndex = state.tasks.findIndex((t) => t.id === taskId);
+    const taskIndex = state.plans.findIndex((t) => t.id === taskId);
 
     if (taskIndex === -1) {
       this.error(`Task #${taskId} not found. Use: tt ralph plan list`);
     }
 
-    const removedTask = state.tasks[taskIndex];
-    state.tasks.splice(taskIndex, 1);
+    const removedTask = state.plans[taskIndex];
+    state.plans.splice(taskIndex, 1);
     saveState(state, stateFile);
 
     consola.log(colors.green(`✓ Removed task #${taskId}: ${removedTask.description}`));
-    consola.log(colors.dim(`Remaining tasks: ${state.tasks.length}`));
+    consola.log(colors.dim(`Remaining tasks: ${state.plans.length}`));
   }
 }

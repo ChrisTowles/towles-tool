@@ -63,22 +63,20 @@ export const CLAUDE_DEFAULT_ARGS = [
 // State Validation Schemas
 // ============================================================================
 
-const TaskStatusSchema = z.enum(["ready", "done", "blocked", "cancelled"]);
+const PlanStatusSchema = z.enum(["ready", "done", "blocked", "cancelled"]);
 
-const RalphTaskSchema = z.object({
+const RalphPlanSchema = z.object({
   id: z.number(),
   description: z.string(),
-  status: TaskStatusSchema,
+  status: PlanStatusSchema,
   addedAt: z.string(),
   completedAt: z.string().optional(),
 });
 
 const RalphStateSchema = z.object({
   version: z.number(),
-  tasks: z.array(RalphTaskSchema),
+  plans: z.array(RalphPlanSchema),
   startedAt: z.string(),
-  iteration: z.number(),
-  maxIterations: z.number(),
   status: z.enum(["running", "completed", "max_iterations_reached", "error"]),
 });
 
@@ -97,21 +95,19 @@ export interface IterationHistory {
   contextUsedPercent?: number;
 }
 
-export type TaskStatus = z.infer<typeof TaskStatusSchema>;
-export type RalphTask = z.infer<typeof RalphTaskSchema>;
+export type PlanStatus = z.infer<typeof PlanStatusSchema>;
+export type RalphPlan = z.infer<typeof RalphPlanSchema>;
 export type RalphState = z.infer<typeof RalphStateSchema>;
 
 // ============================================================================
 // State Management
 // ============================================================================
 
-export function createInitialState(maxIterations: number): RalphState {
+export function createInitialState(): RalphState {
   return {
     version: 1,
-    tasks: [],
+    plans: [],
     startedAt: new Date().toISOString(),
-    iteration: 0,
-    maxIterations,
     status: "running",
   };
 }
@@ -142,9 +138,13 @@ export function loadState(stateFile: string): RalphState | null {
     const content = fs.readFileSync(stateFile, "utf-8");
     const parsed = JSON.parse(content);
 
-    // Ensure tasks array exists for backwards compatibility
-    if (!parsed.tasks) {
-      parsed.tasks = [];
+    // Backwards compatibility: migrate tasks → plans
+    if (!parsed.plans && parsed.tasks) {
+      parsed.plans = parsed.tasks;
+      delete parsed.tasks;
+    }
+    if (!parsed.plans) {
+      parsed.plans = [];
     }
 
     const result = RalphStateSchema.safeParse(parsed);
@@ -160,16 +160,16 @@ export function loadState(stateFile: string): RalphState | null {
   }
 }
 
-export function addTaskToState(state: RalphState, description: string): RalphTask {
-  const nextId = state.tasks.length > 0 ? Math.max(...state.tasks.map((t) => t.id)) + 1 : 1;
+export function addPlanToState(state: RalphState, description: string): RalphPlan {
+  const nextId = state.plans.length > 0 ? Math.max(...state.plans.map((p) => p.id)) + 1 : 1;
 
-  const newTask: RalphTask = {
+  const newPlan: RalphPlan = {
     id: nextId,
     description,
     status: "ready",
     addedAt: new Date().toISOString(),
   };
 
-  state.tasks.push(newTask);
-  return newTask;
+  state.plans.push(newPlan);
+  return newPlan;
 }

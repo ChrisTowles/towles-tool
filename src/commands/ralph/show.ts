@@ -61,7 +61,7 @@ export default class Show extends BaseCommand {
       return;
     }
 
-    if (state.tasks.length === 0) {
+    if (state.plans.length === 0) {
       consola.log(colors.yellow("No tasks in state file."));
       consola.log(colors.dim('Use: tt ralph plan add "description"'));
       return;
@@ -70,9 +70,9 @@ export default class Show extends BaseCommand {
     let output: string;
 
     if (flags.format === "json") {
-      output = formatPlanAsJson(state.tasks, state);
+      output = formatPlanAsJson(state.plans, state);
     } else {
-      output = formatPlanAsMarkdown(state.tasks, state);
+      output = formatPlanAsMarkdown(state.plans, state);
     }
 
     consola.log(output);

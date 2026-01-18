@@ -4,11 +4,10 @@ import { colors } from "consola/utils";
 import { BaseCommand } from "../../base.js";
 import {
   DEFAULT_STATE_FILE,
-  DEFAULT_MAX_ITERATIONS,
   loadState,
   saveState,
   createInitialState,
-  addTaskToState,
+  addPlanToState,
   resolveRalphPath,
 } from "../../../lib/ralph/state.js";
 
@@ -54,14 +53,14 @@ export default class PlanAdd extends BaseCommand {
     let state = loadState(stateFile);
 
     if (!state) {
-      state = createInitialState(DEFAULT_MAX_ITERATIONS);
+      state = createInitialState();
     }
 
-    const newTask = addTaskToState(state, description);
+    const newTask = addPlanToState(state, description);
     saveState(state, stateFile);
 
     consola.log(colors.green(`✓ Added task #${newTask.id}: ${newTask.description}`));
     consola.log(colors.dim(`State saved to: ${stateFile}`));
-    consola.log(colors.dim(`Total tasks: ${state.tasks.length}`));
+    consola.log(colors.dim(`Total plans: ${state.plans.length}`));
   }
 }

@@ -2,7 +2,7 @@ import { Flags } from "@oclif/core";
 import pc from "picocolors";
 import { BaseCommand } from "../../base.js";
 import { DEFAULT_STATE_FILE, loadState, resolveRalphPath } from "../../../lib/ralph/state.js";
-import { formatTasksAsMarkdown } from "../../../lib/ralph/formatter.js";
+import { formatPlansAsMarkdown } from "../../../lib/ralph/formatter.js";
 
 /**
  * List all ralph tasks
@@ -44,7 +44,7 @@ export default class PlanList extends BaseCommand {
       return;
     }
 
-    const tasks = state.tasks;
+    const tasks = state.plans;
 
     if (tasks.length === 0) {
       this.log(pc.yellow("No tasks in state file."));
@@ -53,7 +53,7 @@ export default class PlanList extends BaseCommand {
     }
 
     if (flags.format === "markdown") {
-      this.log(formatTasksAsMarkdown(tasks));
+      this.log(formatPlansAsMarkdown(tasks));
       return;
     }
 

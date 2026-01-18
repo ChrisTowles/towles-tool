@@ -20,9 +20,17 @@ import {
   formatDuration,
   extractOutputSummary,
   detectCompletionMarker,
-  formatTasksForPrompt,
 } from "../../lib/ralph/formatter.js";
 import { checkClaudeCli, runIteration } from "../../lib/ralph/execution.js";
+import type { RalphPlan } from "../../lib/ralph/state.js";
+
+/** Get the task to work on: focused task or first incomplete */
+function getCurrentTask(tasks: RalphPlan[], focusedTaskId: number | null): RalphPlan | undefined {
+  if (focusedTaskId !== null) {
+    return tasks.find((t) => t.id === focusedTaskId);
+  }
+  return tasks.find((t) => t.status !== "done");
+}
 
 /**
  * Run the autonomous ralph loop
@@ -48,10 +56,6 @@ export default class Run extends BaseCommand {
       description: "Preview config without executing",
       command: "<%= config.bin %> <%= command.id %> --dryRun",
     },
-    {
-      description: "Add 5 iterations to current count",
-      command: "<%= config.bin %> <%= command.id %> --addIterations 5",
-    },
   ];
 
   static override flags = {
@@ -68,11 +72,6 @@ export default class Run extends BaseCommand {
       char: "m",
       description: "Max iterations",
       default: DEFAULT_MAX_ITERATIONS,
-    }),
-    addIterations: Flags.integer({
-      char: "a",
-      description:
-        "Add iterations to current count (e.g., at 5/10, --addIterations 10 makes it 5/20)",
     }),
     autoCommit: Flags.boolean({
       description: "Auto-commit after each completed task",
@@ -103,8 +102,7 @@ export default class Run extends BaseCommand {
     const logFile = resolveRalphPath(flags.logFile, "logFile", ralphSettings);
     const ralphPaths = getRalphPaths(ralphSettings);
 
-    let maxIterations = flags.maxIterations;
-    const addIterations = flags.addIterations;
+    const maxIterations = flags.maxIterations;
     const extraClaudeArgs = flags.claudeArgs?.split(" ").filter(Boolean) || [];
     const focusedTaskId = flags.taskId ?? null;
 
@@ -115,17 +113,7 @@ export default class Run extends BaseCommand {
       this.error(`No state file found at: ${stateFile}\nUse: tt ralph plan add "description"`);
     }
 
-    // Handle --addIterations: extend max from current iteration
-    if (addIterations !== undefined) {
-      maxIterations = state.iteration + addIterations;
-      consola.log(
-        colors.cyan(
-          `Adding ${addIterations} iterations: ${state.iteration}/${state.maxIterations} → ${state.iteration}/${maxIterations}`,
-        ),
-      );
-    }
-
-    const remainingTasks = state.tasks.filter((t) => t.status !== "done");
+    const remainingTasks = state.plans.filter((t) => t.status !== "done");
     if (remainingTasks.length === 0) {
       consola.log(colors.green("✅ All tasks are done!"));
       return;
@@ -133,7 +121,7 @@ export default class Run extends BaseCommand {
 
     // Validate focused task if specified
     if (focusedTaskId !== null) {
-      const focusedTask = state.tasks.find((t) => t.id === focusedTaskId);
+      const focusedTask = state.plans.find((t) => t.id === focusedTaskId);
       if (!focusedTask) {
         this.error(`Task #${focusedTaskId} not found. Use: tt ralph plan list`);
       }
@@ -143,11 +131,17 @@ export default class Run extends BaseCommand {
       }
     }
 
+    // Get current task to work on
+    const currentTask = getCurrentTask(state.plans, focusedTaskId);
+    if (!currentTask) {
+      consola.log(colors.green("✅ All tasks are done!"));
+      return;
+    }
+
     // Dry run mode
     if (flags.dryRun) {
       consola.log(colors.bold("\n=== DRY RUN ===\n"));
       consola.log(colors.cyan("Config:"));
-      consola.log(`  Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}`);
       consola.log(`  Max iterations: ${maxIterations}`);
       consola.log(`  State file: ${stateFile}`);
       consola.log(`  Log file: ${logFile}`);
@@ -156,20 +150,14 @@ export default class Run extends BaseCommand {
       consola.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
       consola.log(`  Remaining tasks: ${remainingTasks.length}`);
 
-      consola.log(colors.cyan("\nTasks:"));
-      for (const t of state.tasks) {
-        const icon = t.status === "done" ? "✓" : "○";
-        const focus = focusedTaskId === t.id ? colors.cyan(" ← FOCUS") : "";
-        consola.log(`  ${icon} ${t.id}. ${t.description} (${t.status})${focus}`);
-      }
+      consola.log(colors.cyan("\nCurrent task:"));
+      consola.log(`  #${currentTask.id}: ${currentTask.description}`);
 
       // Show prompt preview
-      const taskList = formatTasksForPrompt(remainingTasks);
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        focusedTaskId,
+        plan: currentTask,
         skipCommit: !flags.autoCommit,
-        taskList,
       });
       consola.log(colors.dim("─".repeat(60)));
       consola.log(colors.bold("Prompt Preview"));
@@ -189,14 +177,13 @@ export default class Run extends BaseCommand {
     }
 
     // Update state for this run
-    state.maxIterations = maxIterations;
     state.status = "running";
 
     // Create log stream (append mode)
     const logStream = fs.createWriteStream(logFile, { flags: "a" });
 
-    const ready = state.tasks.filter((t) => t.status === "ready").length;
-    const done = state.tasks.filter((t) => t.status === "done").length;
+    const ready = state.plans.filter((t) => t.status === "ready").length;
+    const done = state.plans.filter((t) => t.status === "done").length;
 
     logStream.write(`\n${"=".repeat(60)}\n`);
     logStream.write(`Ralph Loop Started: ${new Date().toISOString()}\n`);
@@ -207,12 +194,12 @@ export default class Run extends BaseCommand {
     consola.log(colors.dim(`Max iterations: ${maxIterations}`));
     consola.log(colors.dim(`Log file: ${logFile}`));
     consola.log(colors.dim(`Auto-commit: ${flags.autoCommit}`));
-    consola.log(colors.dim(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)`));
+    consola.log(colors.dim(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)`));
     consola.log("");
 
     logStream.write(`Focus: ${focusedTaskId ? `Task #${focusedTaskId}` : "Ralph picks"}\n`);
     logStream.write(`Max iterations: ${maxIterations}\n`);
-    logStream.write(`Tasks: ${state.tasks.length} (${done} done, ${ready} ready)\n\n`);
+    logStream.write(`Tasks: ${state.plans.length} (${done} done, ${ready} ready)\n\n`);
 
     // Handle SIGINT gracefully
     let interrupted = false;
@@ -231,23 +218,31 @@ export default class Run extends BaseCommand {
 
     // Main loop
     let completed = false;
+    let iteration = 0;
 
-    while (state.iteration < maxIterations && !interrupted && !completed) {
-      state.iteration++;
-      const currentIteration = state.iteration;
+    while (iteration < maxIterations && !interrupted && !completed) {
+      iteration++;
 
-      const iterHeader = `Iteration ${currentIteration}/${maxIterations}`;
+      const iterHeader = `Iteration ${iteration}/${maxIterations}`;
       logStream.write(`\n━━━ ${iterHeader} ━━━\n`);
 
       const iterationStart = new Date().toISOString();
-      // Reload remaining tasks for current state
-      const currentRemainingTasks = state.tasks.filter((t) => t.status !== "done");
-      const taskList = formatTasksForPrompt(currentRemainingTasks);
+      // Get current task for this iteration
+      const task = getCurrentTask(state.plans, focusedTaskId);
+      if (!task) {
+        completed = true;
+        state.status = "completed";
+        saveState(state, stateFile);
+        consola.log(
+          colors.bold(colors.green(`\n✅ All tasks completed after ${iteration} iteration(s)`)),
+        );
+        logStream.write(`\n✅ All tasks completed after ${iteration} iteration(s)\n`);
+        break;
+      }
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
-        focusedTaskId,
+        plan: task,
         skipCommit: !flags.autoCommit,
-        taskList,
       });
 
       // Log the prompt
@@ -271,8 +266,7 @@ export default class Run extends BaseCommand {
       // Reload state from disk to pick up changes made by child claude process
       const freshState = loadState(stateFile);
       if (freshState) {
-        const currentIter = state.iteration;
-        Object.assign(state, freshState, { iteration: currentIter });
+        Object.assign(state, freshState);
       }
 
       const iterationEnd = new Date().toISOString();
@@ -287,7 +281,7 @@ export default class Run extends BaseCommand {
       // Record history
       appendHistory(
         {
-          iteration: state.iteration,
+          iteration,
           startedAt: iterationStart,
           completedAt: iterationEnd,
           durationMs,
@@ -308,7 +302,7 @@ export default class Run extends BaseCommand {
           ? ` | Context: ${iterResult.contextUsedPercent}%`
           : "";
       logStream.write(
-        `\n━━━ Iteration ${state.iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? "yes" : "no"}\n`,
+        `\n━━━ Iteration ${iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? "yes" : "no"}\n`,
       );
       consola.log(
         colors.dim(
@@ -322,9 +316,9 @@ export default class Run extends BaseCommand {
         state.status = "completed";
         saveState(state, stateFile);
         consola.log(
-          colors.bold(colors.green(`\n✅ Task completed after ${state.iteration} iteration(s)`)),
+          colors.bold(colors.green(`\n✅ Task completed after ${iteration} iteration(s)`)),
         );
-        logStream.write(`\n✅ Task completed after ${state.iteration} iteration(s)\n`);
+        logStream.write(`\n✅ Task completed after ${iteration} iteration(s)\n`);
       }
     }
 
@@ -335,7 +329,7 @@ export default class Run extends BaseCommand {
       return;
     }
 
-    if (!interrupted && state.iteration >= maxIterations) {
+    if (!interrupted && iteration >= maxIterations) {
       state.status = "max_iterations_reached";
       saveState(state, stateFile);
       consola.log(
