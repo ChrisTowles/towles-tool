@@ -44,7 +44,8 @@
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks",
+    "version:sync": "tsx scripts/sync-versions.ts"
   },
   "dependencies": {
     "@oclif/core": "^4.3.16",
