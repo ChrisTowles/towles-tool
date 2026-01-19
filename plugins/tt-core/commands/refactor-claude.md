@@ -1,5 +1,5 @@
 ---
-name: refactor-claude-md
+title: refactor-claude
 description: Analyzes CLAUDE.md files, identifies contradictions, extracts essentials, and reorganizes into a progressive disclosure structure. Use when agent instructions are too long or disorganized.
 allowed-tools: AskUserQuestion(*), Read(*), Glob(*), Grep(*), Task(*)
 ---

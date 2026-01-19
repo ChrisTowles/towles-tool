@@ -17,6 +17,7 @@ Personal CLI toolkit with autonomous task runner and quality-of-life commands fo
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin install tt@towles-tool
+claude plugin update tt@towles-tool
 ```
 
 ### From Source
