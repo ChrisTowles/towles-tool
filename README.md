@@ -70,7 +70,6 @@ pnpm start
 
 | Skill                    | Description                   |
 | ------------------------ | ----------------------------- |
-| `/tt:commit`             | Conventional commit messages  |
 | `/tt:plan`               | Create implementation plan    |
 | `/tt:improve`            | Suggest codebase improvements |
 | `/tt:refactor-claude-md` | Fix grammar/spelling          |

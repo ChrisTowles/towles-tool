@@ -6,7 +6,6 @@ Core workflow automation commands for Claude Code.
 
 | Command       | Description                                   |
 | ------------- | --------------------------------------------- |
-| `/tt:commit`  | AI-powered conventional commit messages       |
 | `/tt:plan`    | Interview user and create implementation plan |
 | `/tt:improve` | Explore codebase and suggest improvements     |
 | `/tt:refine`  | Fix grammar/spelling in files                 |
