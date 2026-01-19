@@ -22,7 +22,6 @@ pnpm start
 ```
 
 ## CLI Commands
-
 ### Ralph (autonomous runner)
 
 | Command                       | Description            |
