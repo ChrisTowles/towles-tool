@@ -13,7 +13,7 @@ The workflow:
 
 1. Runs CI (lint, typecheck, test)
 2. Bumps version in package.json
-3. Syncs plugin versions
+3. Syncs plugin versions via `pnpm version:sync` (uses `scripts/sync-versions.ts`)
 4. Commits and tags
 5. Creates GitHub release
 6. Publishes to npm

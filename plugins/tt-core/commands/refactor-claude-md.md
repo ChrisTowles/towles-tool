@@ -1,5 +1,5 @@
 ---
-title: refactor-claude
+title: refactor-claude-md
 description: Analyzes CLAUDE.md files, identifies contradictions, extracts essentials, and reorganizes into a progressive disclosure structure. Use when agent instructions are too long or disorganized.
 allowed-tools: AskUserQuestion(*), Read(*), Glob(*), Grep(*), Task(*)
 ---
@@ -21,19 +21,24 @@ Copy this checklist and track progress:
 ## Workflow
 
 ### 1. Find Contradictions
+
 Identify instructions that conflict with each other. For each contradiction, ask the user which version to keep.
 
 ### 2. Extract Essentials
-Pull only what belongs in the root AGENTS.md:
+
+Pull only what belongs in the root CLAUDE.md:
+
 - One-sentence project description
 - Package manager (if not npm)
 - Non-standard build/typecheck commands
 - Anything truly relevant to every single task
 
 ### 3. Group the Rest
+
 Organize remaining instructions into logical categories.
 
 **Common categories:**
+
 - TypeScript/language conventions
 - Testing patterns
 - Git/PR workflow
@@ -44,13 +49,17 @@ Organize remaining instructions into logical categories.
 - Performance considerations
 
 ### 4. Create File Structure
+
 Output:
+
 - A minimal root CLAUDE.md with markdown links to separate files
-- Each separate file with its relevant instructions stored where it belongs, API or db information with 
+- Each separate file with its relevant instructions stored where it belongs, API or db information with
 - A suggested docs/ folder structure
 
 ### 5. Flag for Deletion
+
 Identify instructions that are:
+
 - Redundant (Claude already knows this)
 - Too vague to be actionable
 - Overly obvious (like "write clean code")
@@ -63,11 +72,13 @@ Identify instructions that are:
 One-sentence description.
 
 ## Quick Reference
+
 - Package manager: pnpm
 - Build: `pnpm build`
 - Test: `pnpm test`
 
 ## Guidelines
+
 - [TypeScript conventions](docs/typescript.md)
 - [Testing patterns](docs/testing.md)
 - [Git workflow](docs/git-workflow.md)
@@ -76,11 +87,13 @@ One-sentence description.
 ## Example Output
 
 **Before** (monolithic CLAUDE.md):
+
 - 200 lines mixing project info, TypeScript rules, testing, git workflow...
 
 **After**:
+
 ```
-AGENTS.md              (15 lines) - project summary + links
+CLAUDE.md              (15 lines) - project summary + links
 docs/
   typescript.md        - TS conventions
   testing.md           - test patterns
@@ -88,6 +101,7 @@ docs/
 ```
 
 ## When NOT to Split
+
 - Project has <50 lines of instructions
 - Instructions are already well-organized
 - Only one domain (e.g., pure TypeScript, no testing/git guidance)

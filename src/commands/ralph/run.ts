@@ -8,13 +8,13 @@ import {
   DEFAULT_LOG_FILE,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_COMPLETION_MARKER,
+  DEFAULT_TASK_DONE_MARKER,
   CLAUDE_DEFAULT_ARGS,
   loadState,
   saveState,
   appendHistory,
   resolveRalphPath,
   getRalphPaths,
-  readPlanContent,
 } from "../../lib/ralph/state.js";
 import {
   buildIterationPrompt,
@@ -94,6 +94,10 @@ export default class Run extends BaseCommand {
       description: "Completion marker",
       default: DEFAULT_COMPLETION_MARKER,
     }),
+    taskDoneMarker: Flags.string({
+      description: "Task done marker",
+      default: DEFAULT_TASK_DONE_MARKER,
+    }),
   };
 
   async run(): Promise<void> {
@@ -147,6 +151,7 @@ export default class Run extends BaseCommand {
       consola.log(`  State file: ${stateFile}`);
       consola.log(`  Log file: ${logFile}`);
       consola.log(`  Completion marker: ${flags.completionMarker}`);
+      consola.log(`  Task done marker: ${flags.taskDoneMarker}`);
       consola.log(`  Auto-commit: ${flags.autoCommit}`);
       consola.log(`  Claude args: ${[...CLAUDE_DEFAULT_ARGS, ...extraClaudeArgs].join(" ")}`);
       consola.log(`  Remaining plans: ${remainingPlans.length}`);
@@ -154,17 +159,11 @@ export default class Run extends BaseCommand {
       consola.log(colors.cyan("\nCurrent plan:"));
       consola.log(`  #${currentPlan.id}: ${currentPlan.planFilePath}`);
 
-      // Read plan content
-      const planContent = readPlanContent(currentPlan, state, stateFile);
-      if (!planContent) {
-        this.error(`Cannot read plan file: ${currentPlan.planFilePath}`);
-      }
-
       // Show prompt preview
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
+        taskDoneMarker: flags.taskDoneMarker,
         plan: currentPlan,
-        planContent,
         skipCommit: !flags.autoCommit,
       });
       consola.log(colors.dim("─".repeat(60)));
@@ -248,18 +247,10 @@ export default class Run extends BaseCommand {
         break;
       }
 
-      // Read plan content
-      const planContent = readPlanContent(plan, state, stateFile);
-      if (!planContent) {
-        consola.log(colors.yellow(`⚠ Skipping plan #${plan.id}: cannot read file`));
-        logStream.write(`⚠ Skipping plan #${plan.id}: cannot read file\n`);
-        continue;
-      }
-
       const prompt = buildIterationPrompt({
         completionMarker: flags.completionMarker,
+        taskDoneMarker: flags.taskDoneMarker,
         plan: plan,
-        planContent,
         skipCommit: !flags.autoCommit,
       });
 
@@ -288,7 +279,8 @@ export default class Run extends BaseCommand {
       }
 
       const iterationEnd = new Date().toISOString();
-      const markerFound = detectCompletionMarker(iterResult.output, flags.completionMarker);
+      const taskMarkerFound = detectCompletionMarker(iterResult.output, flags.taskDoneMarker);
+      const planMarkerFound = detectCompletionMarker(iterResult.output, flags.completionMarker);
 
       // Calculate duration
       const startTime = new Date(iterationStart).getTime();
@@ -305,7 +297,8 @@ export default class Run extends BaseCommand {
           durationMs,
           durationHuman,
           outputSummary: extractOutputSummary(iterResult.output),
-          markerFound,
+          markerFound: planMarkerFound,
+          taskMarkerFound,
           contextUsedPercent: iterResult.contextUsedPercent,
         },
         ralphPaths.historyFile,
@@ -314,29 +307,35 @@ export default class Run extends BaseCommand {
       // Save state
       saveState(state, stateFile);
 
+      // Log marker status
+      if (taskMarkerFound) {
+        consola.log(colors.cyan(`Task marker found - current plan done, checking for more plans`));
+        logStream.write(`Task marker found - continuing to next plan\n`);
+      }
+
       // Log summary
       const contextInfo =
         iterResult.contextUsedPercent !== undefined
           ? ` | Context: ${iterResult.contextUsedPercent}%`
           : "";
       logStream.write(
-        `\n━━━ Iteration ${iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nMarker found: ${markerFound ? "yes" : "no"}\n`,
+        `\n━━━ Iteration ${iteration} Summary ━━━\nDuration: ${durationHuman}${contextInfo}\nTask marker: ${taskMarkerFound ? "yes" : "no"}\nPlan marker: ${planMarkerFound ? "yes" : "no"}\n`,
       );
       consola.log(
         colors.dim(
-          `Duration: ${durationHuman}${contextInfo} | Marker: ${markerFound ? colors.green("yes") : colors.yellow("no")}`,
+          `Duration: ${durationHuman}${contextInfo} | Task: ${taskMarkerFound ? colors.green("yes") : colors.yellow("no")} | Plan: ${planMarkerFound ? colors.green("yes") : colors.yellow("no")}`,
         ),
       );
 
-      // Check completion
-      if (markerFound) {
+      // Check completion (only when ALL plans done marker found)
+      if (planMarkerFound) {
         completed = true;
         state.status = "completed";
         saveState(state, stateFile);
         consola.log(
-          colors.bold(colors.green(`\n✅ Plan completed after ${iteration} iteration(s)`)),
+          colors.bold(colors.green(`\n✅ All plans completed after ${iteration} iteration(s)`)),
         );
-        logStream.write(`\n✅ Plan completed after ${iteration} iteration(s)\n`);
+        logStream.write(`\n✅ All plans completed after ${iteration} iteration(s)\n`);
       }
     }
 

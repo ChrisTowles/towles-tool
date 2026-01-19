@@ -204,32 +204,28 @@ export function extractOutputSummary(output: string, maxLength: number = 2000): 
 
 export interface BuildPromptOptions {
   completionMarker: string;
+  taskDoneMarker: string;
   plan: RalphPlan;
-  planContent: string;
   skipCommit?: boolean;
 }
 
 export function buildIterationPrompt({
   completionMarker,
+  taskDoneMarker,
   plan,
-  planContent,
   skipCommit = false,
 }: BuildPromptOptions): string {
   let step = 1;
 
   const prompt = `
-<plan>
-${planContent}
-</plan>
-
-<instructions>
-${step++}. Work on the plan above.
-${step++}. Run type checks and tests.
-${step++}. Mark done: \`tt ralph plan done ${plan.id}\`
+  <instructions>
+${step++}. Read Plan: \`${plan.planFilePath}\`
+${step++}. Choose next best task to work on.
+${step++}. Complete that task.
+${step++}. Update the plan \`${plan.planFilePath}\` to mark that task Done with any notes.
 ${skipCommit ? "" : `${step++}. Make a git commit.`}
+${step++}. If any tasks remain return <promise>${taskDoneMarker}</promise> else if plan is complete return <promise>${completionMarker}</promise>.
 
-**Before ending:** Run \`tt ralph plan list\` to check remaining plans.
-**ONLY if ALL PLANS are done** then Output: <promise>${completionMarker}</promise>
 </instructions>
 `;
   return prompt.trim();

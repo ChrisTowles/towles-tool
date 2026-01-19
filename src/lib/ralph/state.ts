@@ -12,6 +12,7 @@ import { RalphSettingsSchema } from "../../config/settings.js";
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_STATE_DIR = "./.claude/.ralph";
 export const DEFAULT_COMPLETION_MARKER = "RALPH_DONE";
+export const DEFAULT_TASK_DONE_MARKER = "TASK_DONE";
 
 // File names within stateDir
 const STATE_FILE_NAME = "ralph-state.local.json";
@@ -93,6 +94,7 @@ export interface IterationHistory {
   durationHuman: string;
   outputSummary: string;
   markerFound: boolean;
+  taskMarkerFound?: boolean;
   contextUsedPercent?: number;
 }
 
