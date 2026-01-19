@@ -1,6 +1,6 @@
 ---
 name: towles-tool
-description: Use towles-tool (`tt`) CLI for ralph autonomous task runner, observability (token treemaps), git workflows, and journaling. Triggers when user wants ralph execution, session analysis, journal entries, git branches/PRs, or tt config.
+description: Use towles-tool (`tt`) CLI for create plans to run claude code in a headless autonomous fashion.
 ---
 
 # towles-tool CLI
@@ -11,43 +11,33 @@ Config: `~/.config/towles-tool/towles-tool.settings.json`
 
 ## Ralph (Autonomous Runner)
 
-### Plan Management
+Ralph is a Claude Code autonomous runner built into `tt` for planning and executing tasks.'
+
+It uses "plans" defined in markdown files and calls Claude Code to complete tasks iteratively in a headless manner.
+
+### Commands
 
 ```bash
-tt ralph plan add --file path.md    # Add plan from file
+# Plan management
+tt ralph plan add "path.md"         # Add plan from file
 tt ralph plan list                  # View plans
-tt ralph plan done 1                # Mark plan complete
+tt ralph plan done 1                # Mark complete
 tt ralph plan remove 1              # Remove plan
-```
 
-### Execution
+# View
+tt ralph show                       # Show plan with mermaid graph
+tt ralph show --copy                # Copy to clipboard
 
-```bash
+# Execution
 tt ralph run                        # Run (auto-commits by default)
 tt ralph run --no-autoCommit        # No auto-commits
-tt ralph run --taskId 5             # Focus on specific task
+tt ralph run --planId 5             # Focus on specific plan
 tt ralph run --maxIterations 20     # Limit iterations
-tt ralph run --addIterations 5      # Add 5 to current count
-tt ralph run --dryRun               # Preview config
 ```
 
-### Show Plan
+### Plan Files
 
-```bash
-tt ralph show                       # Show plan with mermaid graph
-```
-
-## Observability
-
-```bash
-tt graph                    # Token treemap (auto-opens browser)
-tt graph --session <id>     # Single session treemap
-tt graph --days 14          # Filter to last N days (default: 7)
-tt graph --no-open          # Don't auto-open browser
-tt graph --no-serve         # Don't start HTTP server
-```
-
-Treemap colors indicate input/output ratio: green <2:1, yellow 2-5:1, red >5:1.
+Usally in `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
 
 ## Git
 
@@ -72,7 +62,3 @@ tt config   # Show config (alias: cfg)
 tt doctor   # Check dependencies
 tt install  # Configure Claude Code settings
 ```
-
-## Critical Rules
-
-1. **Always use CLI** for ralph state - never edit `ralph-state.json` directly
