@@ -222,7 +222,7 @@ export function buildIterationPrompt({
 ${step++}. Read Plan: \`${plan.planFilePath}\`
 ${step++}. Choose next best task to work on.
 ${step++}. Complete that task.
-${step++}. Update the plan \`${plan.planFilePath}\` to mark that task as done.
+${step++}. Update the plan \`${plan.planFilePath}\` to mark that task Done with any notes.
 ${skipCommit ? "" : `${step++}. Make a git commit.`}
 ${step++}. If any tasks remain return <promise>${taskDoneMarker}</promise> else if plan is complete return <promise>${completionMarker}</promise>.
 
