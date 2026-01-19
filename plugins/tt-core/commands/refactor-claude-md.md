@@ -1,5 +1,5 @@
 ---
-title: refactor-claude
+title: refactor-claude-md
 description: Analyzes CLAUDE.md files, identifies contradictions, extracts essentials, and reorganizes into a progressive disclosure structure. Use when agent instructions are too long or disorganized.
 allowed-tools: AskUserQuestion(*), Read(*), Glob(*), Grep(*), Task(*)
 ---
@@ -24,7 +24,7 @@ Copy this checklist and track progress:
 Identify instructions that conflict with each other. For each contradiction, ask the user which version to keep.
 
 ### 2. Extract Essentials
-Pull only what belongs in the root AGENTS.md:
+Pull only what belongs in the root CLAUDE.md:
 - One-sentence project description
 - Package manager (if not npm)
 - Non-standard build/typecheck commands
@@ -80,7 +80,7 @@ One-sentence description.
 
 **After**:
 ```
-AGENTS.md              (15 lines) - project summary + links
+CLAUDE.md              (15 lines) - project summary + links
 docs/
   typescript.md        - TS conventions
   testing.md           - test patterns
