@@ -36,4 +36,3 @@ pnpm format             # Format with oxfmt
 - **Zod types**: Always derive types from Zod schemas using `z.infer<typeof Schema>` - never define types manually alongside schemas.
 - **Breaking changes are fine** - personal tool, no backwards compatibility concerns.
 - When modifying CLI commands (`src/commands/`), also update corresponding skills in `plugins/tt-core/skills/` and `plugins/tt-core/commands/`.
-
