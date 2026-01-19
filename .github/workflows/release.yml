@@ -48,8 +48,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - name: Setup SSH for deploy key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Configure git for SSH
+        run: git remote set-url origin git@github.com:ChrisTowles/towles-tool.git
 
       - uses: ./.github/actions/setup
         with:
