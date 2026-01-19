@@ -22,6 +22,7 @@ import {
   DEFAULT_STATE_FILE,
   DEFAULT_HISTORY_FILE,
   DEFAULT_COMPLETION_MARKER,
+  DEFAULT_TASK_DONE_MARKER,
   CLAUDE_DEFAULT_ARGS,
 } from "../../lib/ralph/index.js";
 
@@ -45,6 +46,7 @@ describe("ralph-loop", () => {
       expect(DEFAULT_STATE_FILE).toBe("./.claude/.ralph/ralph-state.local.json");
       expect(DEFAULT_HISTORY_FILE).toBe("./.claude/.ralph/ralph-history.local.log");
       expect(DEFAULT_COMPLETION_MARKER).toBe("RALPH_DONE");
+      expect(DEFAULT_TASK_DONE_MARKER).toBe("TASK_DONE");
       expect(CLAUDE_DEFAULT_ARGS).toEqual([
         "--print",
         "--verbose",
@@ -104,6 +106,7 @@ describe("ralph-loop", () => {
     it("should include completion marker", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
         plan: testPlan,
         planContent: testPlanContent,
       });
@@ -113,6 +116,7 @@ describe("ralph-loop", () => {
     it("should include plan content", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
         plan: testPlan,
         planContent: testPlanContent,
       });
@@ -122,6 +126,7 @@ describe("ralph-loop", () => {
     it("should include mark done command with plan id", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
         plan: testPlan,
         planContent: testPlanContent,
       });
@@ -131,10 +136,33 @@ describe("ralph-loop", () => {
     it("should include custom completion marker", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "CUSTOM_MARKER",
+        taskDoneMarker: "TASK_DONE",
         plan: testPlan,
         planContent: testPlanContent,
       });
       expect(prompt).toContain("CUSTOM_MARKER");
+    });
+
+    it("should include TASK_DONE instruction", () => {
+      const prompt = buildIterationPrompt({
+        completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
+        plan: testPlan,
+        planContent: testPlanContent,
+      });
+      expect(prompt).toContain("TASK_DONE");
+      expect(prompt).toContain("after marking plan done");
+    });
+
+    it("should include RALPH_DONE only for all-plans-done", () => {
+      const prompt = buildIterationPrompt({
+        completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
+        plan: testPlan,
+        planContent: testPlanContent,
+      });
+      expect(prompt).toContain("RALPH_DONE");
+      expect(prompt).toContain("ALL PLANS are done");
     });
   });
 
@@ -199,6 +227,18 @@ describe("ralph-loop", () => {
 
     it("should be case-sensitive", () => {
       expect(detectCompletionMarker("ralph_done", "RALPH_DONE")).toBe(false);
+    });
+
+    it("should detect TASK_DONE marker", () => {
+      expect(detectCompletionMarker("finished <promise>TASK_DONE</promise>", "TASK_DONE")).toBe(
+        true,
+      );
+    });
+
+    it("should distinguish TASK_DONE from RALPH_DONE", () => {
+      const output = "<promise>TASK_DONE</promise>";
+      expect(detectCompletionMarker(output, "TASK_DONE")).toBe(true);
+      expect(detectCompletionMarker(output, "RALPH_DONE")).toBe(false);
     });
   });
 
@@ -274,6 +314,26 @@ describe("ralph-loop", () => {
       expect(parsed1.outputSummary).toBe("first");
       expect(parsed2.outputSummary).toBe("second");
       expect(parsed2.markerFound).toBe(true);
+    });
+
+    it("should include taskMarkerFound field", () => {
+      const history: IterationHistory = {
+        iteration: 1,
+        startedAt: "2026-01-19T10:00:00Z",
+        completedAt: "2026-01-19T10:01:00Z",
+        durationMs: 60000,
+        durationHuman: "1m 0s",
+        outputSummary: "test output",
+        markerFound: false,
+        taskMarkerFound: true,
+      };
+
+      appendHistory(history, testHistoryFile);
+
+      const content = require("node:fs").readFileSync(testHistoryFile, "utf-8");
+      const parsed = JSON.parse(content.trim());
+      expect(parsed.taskMarkerFound).toBe(true);
+      expect(parsed.markerFound).toBe(false);
     });
   });
 

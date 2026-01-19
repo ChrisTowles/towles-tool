@@ -204,6 +204,7 @@ export function extractOutputSummary(output: string, maxLength: number = 2000): 
 
 export interface BuildPromptOptions {
   completionMarker: string;
+  taskDoneMarker: string;
   plan: RalphPlan;
   planContent: string;
   skipCommit?: boolean;
@@ -211,6 +212,7 @@ export interface BuildPromptOptions {
 
 export function buildIterationPrompt({
   completionMarker,
+  taskDoneMarker,
   plan,
   planContent,
   skipCommit = false,
@@ -226,6 +228,7 @@ ${planContent}
 ${step++}. Work on the plan above.
 ${step++}. Run type checks and tests.
 ${step++}. Mark done: \`tt ralph plan done ${plan.id}\`
+${step++}. Output: <promise>${taskDoneMarker}</promise> (after marking plan done)
 ${skipCommit ? "" : `${step++}. Make a git commit.`}
 
 **Before ending:** Run \`tt ralph plan list\` to check remaining plans.
