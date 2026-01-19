@@ -101,36 +101,34 @@ describe("ralph-loop", () => {
       status: "ready",
       addedAt: new Date().toISOString(),
     };
-    const testPlanContent = "First plan content";
 
     it("should include completion marker", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
       expect(prompt).toContain("RALPH_DONE");
     });
 
-    it("should include plan content", () => {
+    it("should include plan file path for reading", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
-      expect(prompt).toContain("First plan content");
+      expect(prompt).toContain("/tmp/first-plan.md");
+      expect(prompt).toContain("Read Plan:");
     });
 
-    it("should include mark done command with plan id", () => {
+    it("should include instruction to update plan file", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
-      expect(prompt).toContain("tt ralph plan done 1");
+      expect(prompt).toContain("Update the plan");
+      expect(prompt).toContain("/tmp/first-plan.md");
     });
 
     it("should include custom completion marker", () => {
@@ -138,31 +136,45 @@ describe("ralph-loop", () => {
         completionMarker: "CUSTOM_MARKER",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
       expect(prompt).toContain("CUSTOM_MARKER");
     });
 
-    it("should include TASK_DONE instruction", () => {
+    it("should include TASK_DONE for tasks remaining", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
       expect(prompt).toContain("TASK_DONE");
-      expect(prompt).toContain("after marking plan done");
+      expect(prompt).toContain("tasks remain");
     });
 
-    it("should include RALPH_DONE only for all-plans-done", () => {
+    it("should include RALPH_DONE for plan complete", () => {
       const prompt = buildIterationPrompt({
         completionMarker: "RALPH_DONE",
         taskDoneMarker: "TASK_DONE",
         plan: testPlan,
-        planContent: testPlanContent,
       });
       expect(prompt).toContain("RALPH_DONE");
-      expect(prompt).toContain("ALL PLANS are done");
+      expect(prompt).toContain("plan is complete");
+    });
+
+    it("should skip commit step when skipCommit is true", () => {
+      const promptWithCommit = buildIterationPrompt({
+        completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
+        plan: testPlan,
+        skipCommit: false,
+      });
+      const promptWithoutCommit = buildIterationPrompt({
+        completionMarker: "RALPH_DONE",
+        taskDoneMarker: "TASK_DONE",
+        plan: testPlan,
+        skipCommit: true,
+      });
+      expect(promptWithCommit).toContain("git commit");
+      expect(promptWithoutCommit).not.toContain("git commit");
     });
   });
 
