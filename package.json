@@ -85,6 +85,9 @@
     "package.json": "oxfmt --write",
     "*.{ts,tsx,mts,cts,js,cjs,mjs}": [
       "oxlint --fix"
+    ],
+    "*.*": [
+      "oxfmt --write"
     ]
   },
   "oclif": {
