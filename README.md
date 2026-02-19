@@ -7,8 +7,12 @@ Personal CLI toolkit with autonomous task runner and developer utilities.
 ### Claude Code Plugin
 
 ```bash
+# Install
 claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin install tt@towles-tool
+
+# Update
+claude plugin marketplace update towles-tool
 claude plugin update tt@towles-tool
 ```
 

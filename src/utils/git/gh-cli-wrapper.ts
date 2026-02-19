@@ -1,6 +1,44 @@
 import stripAnsi from "strip-ansi";
 import { x } from "tinyexec";
 
+export interface MergedPrInfo {
+  number: number;
+  title: string;
+  mergedAt: string;
+}
+
+export const getMergedPrForBranch = async ({
+  branch,
+  cwd,
+}: {
+  branch: string;
+  cwd: string;
+}): Promise<MergedPrInfo | null> => {
+  try {
+    const result = await x(
+      "gh",
+      [
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "merged",
+        "--json",
+        "number,title,mergedAt",
+        "--limit",
+        "1",
+      ],
+      { nodeOptions: { cwd } },
+    );
+    const stripped = stripAnsi(result.stdout);
+    const parsed = JSON.parse(stripped) as MergedPrInfo[];
+    return parsed.length > 0 ? parsed[0] : null;
+  } catch {
+    return null;
+  }
+};
+
 export const isGithubCliInstalled = async (): Promise<boolean> => {
   try {
     const proc = await x(`gh`, ["--version"]);

@@ -82,7 +82,6 @@
     "pre-commit": "pnpm lint-staged && pnpm format && pnpm typecheck"
   },
   "lint-staged": {
-    "package.json": "oxfmt --write",
     "*.{ts,tsx,mts,cts,js,cjs,mjs}": [
       "oxlint --fix"
     ],
