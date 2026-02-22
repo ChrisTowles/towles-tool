@@ -14,6 +14,7 @@ import {
   git,
   initConfig,
   log,
+  logBanner,
   runPipeline,
   sleep,
   stepRefresh,
@@ -140,7 +141,7 @@ export default class AutoClaude extends BaseCommand {
       iteration++;
 
       if (loopMode) {
-        consola.box({ title: `Iteration #${iteration}`, message: new Date().toISOString() });
+        logBanner(`Iteration #${iteration} — ${new Date().toISOString()}`);
       }
 
       try {

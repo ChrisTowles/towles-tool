@@ -4,7 +4,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS } from "../prompt-templates/index.js";
-import { fileExists, ghRaw, git, log, logStep, readFile } from "../utils.js";
+import { fileExists, ghRaw, git, log, logStep, readFile, writeFile } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
@@ -62,7 +62,9 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
   ]);
 
   if (prUrl) {
-    log(`PR created: ${prUrl}`);
+    const url = prUrl.trim();
+    writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), url);
+    log(`PR created: ${url}`);
   } else {
     consola.error("Failed to create PR");
     return false;

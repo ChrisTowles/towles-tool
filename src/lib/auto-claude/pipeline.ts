@@ -11,7 +11,7 @@ import { stepPlan } from "./steps/plan.js";
 import { stepRemoveLabel } from "./steps/remove-label.js";
 import { stepResearch } from "./steps/research.js";
 import { stepReview } from "./steps/review.js";
-import { ensureDir, fileExists, git, log, writeFile } from "./utils.js";
+import { ensureDir, fileExists, git, log, readFile, writeFile } from "./utils.js";
 import type { IssueContext } from "./utils.js";
 
 const STEP_RUNNERS: Record<StepName, (ctx: IssueContext) => Promise<boolean>> = {
@@ -55,7 +55,10 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
     }
   }
 
-  log(`Pipeline complete for ${ctx.repo}#${ctx.number}`);
+  const prUrlPath = join(ctx.issueDir, ARTIFACTS.prUrl);
+  const prUrl = fileExists(prUrlPath) ? readFile(prUrlPath).trim() : "";
+  const prSuffix = prUrl ? ` — ${prUrl}` : "";
+  log(`Pipeline complete for ${ctx.repo}#${ctx.number}${prSuffix}`);
   await checkoutMain();
 }
 

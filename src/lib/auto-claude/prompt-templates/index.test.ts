@@ -134,12 +134,13 @@ describe("ARTIFACTS", () => {
       "planImplementation",
       "completedSummary",
       "review",
+      "prUrl",
     ]);
   });
 
-  it("all values should be .md filenames", () => {
+  it("all values should be valid filenames", () => {
     for (const filename of Object.values(ARTIFACTS)) {
-      expect(filename).toMatch(/^[\w-]+\.md$/);
+      expect(filename).toMatch(/^[\w-]+\.\w+$/);
     }
   });
 });
