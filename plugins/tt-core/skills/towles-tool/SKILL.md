@@ -1,6 +1,6 @@
 ---
 name: towles-tool
-description: Use towles-tool (`tt`) CLI for create plans to run claude code in a headless autonomous fashion.
+description: Use towles-tool (`tt`) CLI for developer utilities, journaling, and the auto-claude pipeline for automated issue-to-PR workflows.
 ---
 
 # towles-tool CLI
@@ -9,35 +9,33 @@ Personal CLI toolkit. Alias: `tt`
 
 Config: `~/.config/towles-tool/towles-tool.settings.json`
 
-## Ralph (Autonomous Runner)
+## Auto-Claude Pipeline
 
-Ralph is a Claude Code autonomous runner built into `tt` for planning and executing tasks.'
-
-It uses "plans" defined in markdown files and calls Claude Code to complete tasks iteratively in a headless manner.
+Automated issue-to-PR pipeline using Claude Code. Label a GitHub issue with `auto-claude` and the pipeline handles research, planning, implementation, review, and PR creation. Auto-detects repo and main branch from cwd.
 
 ### Commands
 
 ```bash
-# Plan management
-tt ralph plan add "path.md"         # Add plan from file
-tt ralph plan list                  # View plans
-tt ralph plan done 1                # Mark complete
-tt ralph plan remove 1              # Remove plan
+# Process specific issue
+tt auto-claude --issue 42
 
-# View
-tt ralph show                       # Show plan with mermaid graph
-tt ralph show --copy                # Copy to clipboard
+# Stop after planning step (review before implementation)
+tt auto-claude --issue 42 --until plan
 
-# Execution
-tt ralph run                        # Run (auto-commits by default)
-tt ralph run --no-autoCommit        # No auto-commits
-tt ralph run --planId 5             # Focus on specific plan
-tt ralph run --maxIterations 20     # Limit iterations
+# Rebase stale PR branch onto current main
+tt auto-claude --refresh --issue 42
+
+# Reset state for an issue (force restart)
+tt auto-claude --reset 42
+
+# Start polling loop
+tt auto-claude --loop
+
+# Custom interval and limit
+tt auto-claude --loop --interval 15 --limit 3
 ```
 
-### Plan Files
-
-Usally in `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
+Alias: `tt ac --issue 42`
 
 ## Git
 
