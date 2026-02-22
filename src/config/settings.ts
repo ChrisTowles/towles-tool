@@ -13,13 +13,6 @@ export const DEFAULT_CONFIG_DIR = path.join(homedir(), ".config", TOOL_NAME);
 /** User settings file path */
 export const USER_SETTINGS_PATH = path.join(DEFAULT_CONFIG_DIR, `${TOOL_NAME}.settings.json`);
 
-export const RalphSettingsSchema = z.object({
-  // Base directory for ralph files (relative to cwd or absolute)
-  stateDir: z.string().default("./.claude/.ralph"),
-});
-
-export type RalphSettings = z.infer<typeof RalphSettingsSchema>;
-
 export const JournalSettingsSchema = z.object({
   // Base folder where all journal files are stored
   baseFolder: z.string().default(path.join(homedir())),
@@ -47,9 +40,6 @@ export const UserSettingsSchema = z.object({
   preferredEditor: z.string().default("code"),
   journalSettings: JournalSettingsSchema.optional().transform(
     (v) => v ?? JournalSettingsSchema.parse({}),
-  ),
-  ralphSettings: RalphSettingsSchema.optional().transform(
-    (v) => v ?? RalphSettingsSchema.parse({}),
   ),
 });
 

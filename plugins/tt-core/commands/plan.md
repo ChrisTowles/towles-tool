@@ -70,4 +70,4 @@ Use `AskUserQuestion` to confirm or adjust before implementation.
 
 Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
 
-Then run `tt ralph plan add  "docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md"` to create a Ralph task for tracking.
+Consider creating a GitHub issue with the `auto-claude` label to have the auto-claude pipeline (`tt ac`) implement the plan automatically.
