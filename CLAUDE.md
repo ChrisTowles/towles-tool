@@ -21,14 +21,38 @@ pnpm start              # Run CLI with tsx
 pnpm typecheck          # TypeScript type checking
 pnpm test               # Run vitest tests
 pnpm lint               # Run oxlint
+pnpm lint:fix            # Auto-fix lint issues
 pnpm format             # Format with oxfmt
+pnpm format:check        # Check formatting without writing
 ```
 
 ## Guidelines
 
 - [Architecture](docs/architecture.md) - CLI structure, plugin system, tech stack
+- **Plugin dev reinstall**: `claude plugin uninstall tt@towles-tool && claude plugin marketplace remove towles-tool && claude plugin marketplace add /home/ctowles/code/p/towles-tool && claude plugin install tt@towles-tool`
 - [CICD via GitHub Actions](docs/github-actions.md) - Automated release workflow
-- [Testing](docs/testings.md) - Info about Tests
+- [Testing](docs/testing.md) - Info about Tests
+
+## Auto-Claude Pipeline
+
+Automated issue-to-PR pipeline (`tt auto-claude` / `tt ac`). Runs Claude Code CLI locally per issue through: research → plan → plan-annotations → plan-implementation → implement → review → create-pr → remove-label.
+
+**Key files:**
+
+- `src/commands/auto-claude.ts` — oclif command entry point (alias: `ac`)
+- `src/lib/auto-claude/config.ts` — Zod config schema, auto-detects repo and main branch from cwd
+- `src/lib/auto-claude/utils.ts` — shared helpers: `runClaude()`, `resolveTemplate()`, `IssueContext`, `ensureBranch()`, `runStepWithArtifact()`
+- `src/lib/auto-claude/pipeline.ts` — step orchestration with `--until` support
+- `src/lib/auto-claude/steps/` — one file per step, most use `runStepWithArtifact()` helper
+- `src/lib/auto-claude/prompt-templates/` — 7 `.md` files with `{{TOKEN}}` placeholders
+
+**Conventions:**
+
+- Artifacts go in `.auto-claude/issue-{N}/` (gitignored)
+- Branch naming: `auto-claude/issue-{N}`
+- Steps are idempotent — check for output artifact before running
+- Trigger label: `auto-claude` (removed after PR creation)
+- `runStepWithArtifact()` encapsulates the common pattern of check → run Claude → validate → commit
 
 ## Important Notes
 

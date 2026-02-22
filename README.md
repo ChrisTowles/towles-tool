@@ -41,7 +41,40 @@ tt auto-claude --loop                    # Start polling loop
 
 **Slot-based workflow:** Run auto-claude in a dedicated clone of the repo — not the one you're actively editing. Keep 3-5 clones (e.g. `slot-1`, `slot-2`, `slot-primary`) so each issue gets its own isolated environment. `slot-primary` is typically the one open in VS Code for manual work; the numbered slots run auto-claude independently. Each slot has its own `.env` so services and ports don't collide between slots. Claude Code's worktree feature may replace this approach in the future, but full repo clones have been more reliable in practice.
 
-Pipeline steps: research → plan → plan-annotations → plan-implementation → implement → review → create-pr → remove-label
+#### Pipeline Steps
+
+| Step                    | What it does                                                                                     | Artifact produced        |
+| ----------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ |
+| **research**            | Deep-reads the codebase for context relevant to the issue                                        | `research.md`            |
+| **plan**                | High-level technical plan with architectural decisions and alternatives                          | `plan.md`                |
+| **plan-annotations**    | _(optional)_ Addresses reviewer feedback if `plan-annotations.md` exists                         | updates `plan.md`        |
+| **plan-implementation** | Breaks plan into an ordered checkbox task list                                                   | `plan-implementation.md` |
+| **implement**           | Executes tasks one-by-one, checking boxes and committing as it goes (loops up to 100 iterations) | `completed-summary.md`   |
+| **review**              | Self-reviews the diff, fixes issues, rates confidence                                            | `review.md`              |
+| **create-pr**           | Pushes branch and opens a PR with artifact links and review summary                              | GitHub PR                |
+| **remove-label**        | Removes the `auto-claude` label so the issue isn't picked up again                               | —                        |
+
+All artifacts are written to `.auto-claude/issue-{N}/`. Use `--until <step>` to pause after any step (e.g. `--until plan` to review before implementation). The plan-annotations step lets you drop feedback into `plan-annotations.md` and re-run — the pipeline will revise the plan before continuing.
+
+#### How it works under the hood
+
+1. **Auto-detects** repo (`gh repo view`) and main branch (`git symbolic-ref`) from cwd — no config file needed
+2. **Creates a branch** `auto-claude/issue-{N}` from main
+3. **Runs Claude Code CLI** (`claude -p`) in print mode with JSON output for each step, using prompt templates with token replacement (`{{ISSUE_DIR}}`, `{{SCOPE_PATH}}`, `{{MAIN_BRANCH}}`)
+4. **Artifacts drive state** — each step checks if its output file exists before running (idempotent). Resume after a crash by re-running the same command
+5. **Returns to main** after each issue completes or fails
+
+#### Code layout
+
+```
+src/commands/auto-claude.ts          # oclif command (alias: ac)
+src/lib/auto-claude/
+  config.ts                          # Zod schema, initConfig(), getConfig()
+  utils.ts                           # exec helpers, runClaude, templates, IssueContext
+  pipeline.ts                        # step orchestration
+  steps/                             # one file per pipeline step
+  prompt-templates/                  # 7 .md prompt files with {{TOKEN}} placeholders
+```
 
 ### Observability
 
