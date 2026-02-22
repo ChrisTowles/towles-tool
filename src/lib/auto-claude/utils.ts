@@ -83,15 +83,15 @@ export async function runClaude(opts: {
 
       try {
         const parsed = JSON.parse(stdout) as ClaudeResult;
-        consola.success(`Done — $${parsed.total_cost_usd.toFixed(4)} | ${parsed.num_turns} turns`);
+        consola.success(`Done — ${parsed.num_turns} turns`);
         if (parsed.result) {
-          consola.box(parsed.result);
+          consola.log(parsed.result);
         }
         return parsed;
       } catch {
         consola.warn("Done — failed to parse Claude output");
         if (stdout.trim()) {
-          consola.box(stdout.trim());
+          consola.log(stdout.trim());
         }
         return { result: stdout.trim(), is_error: false, total_cost_usd: 0, num_turns: 0 };
       }
@@ -246,9 +246,18 @@ export function log(msg: string): void {
   consola.info(`[auto-claude] ${msg}`);
 }
 
+export function logBanner(label: string, width = 60): void {
+  const inner = `  ${label}  `;
+  const totalDashes = Math.max(0, width - inner.length - 2);
+  const left = Math.ceil(totalDashes / 2);
+  const right = Math.floor(totalDashes / 2);
+  consola.log(`#${"-".repeat(left)}${inner}${"-".repeat(right)}#`);
+}
+
 export function logStep(step: string, ctx: IssueContext, skipped = false): void {
   const tag = skipped ? "SKIP" : "RUN";
-  consola.box({ title: `[${tag}] ${step}`, message: `${ctx.repo}#${ctx.number} — ${ctx.title}` });
+  logBanner(`[${tag}] ${step}`);
+  consola.log(`${ctx.repo}#${ctx.number} — ${ctx.title}`);
 }
 
 // ── Git branch helpers ──

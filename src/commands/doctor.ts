@@ -30,6 +30,7 @@ export default class Doctor extends BaseCommand {
       this.checkCommand("gh", ["--version"], /gh version ([\d.]+)/),
       this.checkCommand("node", ["--version"], /v?([\d.]+)/),
       this.checkCommand("bun", ["--version"], /([\d.]+)/),
+      this.checkCommand("pnpm", ["--version"], /([\d.]+)/),
     ]);
 
     // Display results
