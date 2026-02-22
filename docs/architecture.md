@@ -25,16 +25,13 @@
 - `journal meeting` (alias: `m`) - Structured meeting notes
 - `journal note` (alias: `n`) - General-purpose notes
 - `graph` - Claude Code token visualization
-- `ralph plan add/list/done/remove` - Plan task management
-- `ralph run` - Autonomous Claude Code runner
-- `ralph show` - Show plan with mermaid graph
-
-**Key Utilities**:
+  **Key Utilities**:
 
 - `src/utils/git/` - Git and GitHub CLI wrappers
 - `src/utils/date-utils.ts` - Date formatting using Luxon
-- `src/lib/ralph/` - Ralph state, formatting, execution helpers
 - `src/lib/journal/` - Journal template and file generation utilities
+
+- `auto-claude` - Automated issue-to-PR pipeline using Claude Code (research → plan → implement → review → PR)
 
 ## Claude Code Plugin Architecture
 

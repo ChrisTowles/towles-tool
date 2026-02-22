@@ -1,15 +1,15 @@
 {
   "name": "@towles/tool",
   "version": "0.0.54",
-  "description": "CLI tool with autonomous task runner (ralph), observability, and quality-of-life commands for daily development.",
+  "description": "CLI tool with auto-claude pipeline, developer tools, and journaling via markdown.",
   "keywords": [
+    "auto-claude",
     "autonomic",
     "claude",
     "cli",
     "git",
     "journal",
-    "oclif",
-    "ralph"
+    "oclif"
   ],
   "homepage": "https://github.com/ChrisTowles/towles-tool#readme",
   "bugs": {

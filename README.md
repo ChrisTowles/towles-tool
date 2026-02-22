@@ -1,6 +1,6 @@
 # Towles Tool
 
-Personal CLI toolkit with autonomous task runner and developer utilities.
+Personal CLI toolkit with auto-claude pipeline and developer utilities.
 
 ## Installation
 
@@ -23,17 +23,25 @@ pnpm start
 
 ## CLI Commands
 
-### Ralph (autonomous runner)
+### Auto-Claude (issue-to-PR pipeline)
 
-| Command                       | Description            |
-| ----------------------------- | ---------------------- |
-| `tt ralph plan add "path.md"` | Add plan from file     |
-| `tt ralph plan list`          | View plans             |
-| `tt ralph plan done <id>`     | Mark complete          |
-| `tt ralph plan remove <id>`   | Remove plan            |
-| `tt ralph show`               | Show plan with mermaid |
-| `tt ralph run`                | Run (auto-commits)     |
-| `tt ralph run --planId 5`     | Run specific plan      |
+A fully autonomous issue-to-PR pipeline — what a more productizable version of the ralph planning/execution loop looks like. Cloud-based agents (GitHub Copilot, Anthropic agents) can create PRs but can't run your full stack — Docker, Postgres, Playwright, Chrome DevTools MCP, etc. Running locally gives Claude access to the complete environment to run, test, and iterate.
+
+Label issues with `auto-claude`, start the loop, and walk away. Queue up multiple issues during the day and let them run overnight, or tag an issue from your phone or the Claude mobile app and have it waiting as a PR by morning.
+
+Inspired by [Boris Tane's workflow](https://boristane.com/blog/how-i-use-claude-code/) and [Francisco Hermida's auto-pr](https://github.com/franciscohermida/auto-pr).
+
+```bash
+tt auto-claude --issue 42                # Process specific issue
+tt auto-claude --issue 42 --until plan   # Stop after planning step
+tt auto-claude --refresh --issue 42      # Rebase stale PR branch
+tt auto-claude --reset 42               # Reset state for an issue
+tt auto-claude --loop                    # Start polling loop
+```
+
+**Slot-based workflow:** Run auto-claude in a dedicated clone of the repo — not the one you're actively editing. Keep 3-5 clones (e.g. `slot-1`, `slot-2`, `slot-primary`) so each issue gets its own isolated environment. `slot-primary` is typically the one open in VS Code for manual work; the numbered slots run auto-claude independently. Each slot has its own `.env` so services and ports don't collide between slots. Claude Code's worktree feature may replace this approach in the future, but full repo clones have been more reliable in practice.
+
+Pipeline steps: research → plan → plan-annotations → plan-implementation → implement → review → create-pr → remove-label
 
 ### Observability
 
@@ -79,7 +87,6 @@ pnpm start
 ## Guidelines
 
 - [Architecture](docs/architecture.md) - CLI structure, plugin system, tech stack
-- [Claude Code Planning and Running Usage](docs/ralph-tools-for-claude-code.md) - "Claude Code" autonomous runner
 - [CICD via GitHub Actions](docs/github-actions.md) - Automated release workflow
 - [Testing](docs/testings.md) - Info about Tests
 
