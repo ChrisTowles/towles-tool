@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import consola from "consola";
+import pc from "picocolors";
 import { x } from "tinyexec";
 
 import { getConfig } from "./config.js";
@@ -251,13 +252,16 @@ export function logBanner(label: string, width = 60): void {
   const totalDashes = Math.max(0, width - inner.length - 2);
   const left = Math.ceil(totalDashes / 2);
   const right = Math.floor(totalDashes / 2);
-  consola.log(`#${"-".repeat(left)}${inner}${"-".repeat(right)}#`);
+  const dashes = pc.cyan;
+  consola.log(
+    `${dashes("#" + "-".repeat(left))}${pc.bold(inner)}${dashes("-".repeat(right) + "#")}`,
+  );
 }
 
 export function logStep(step: string, ctx: IssueContext, skipped = false): void {
-  const tag = skipped ? "SKIP" : "RUN";
+  const tag = skipped ? pc.yellow("SKIP") : pc.green("RUN");
   logBanner(`[${tag}] ${step}`);
-  consola.log(`${ctx.repo}#${ctx.number} — ${ctx.title}`);
+  consola.log(pc.dim(`${ctx.repo}#${ctx.number} — ${ctx.title}`));
 }
 
 // ── Git branch helpers ──
