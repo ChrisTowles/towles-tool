@@ -41,4 +41,5 @@ export const ARTIFACTS = {
   planImplementation: "plan-implementation.md",
   completedSummary: "completed-summary.md",
   review: "review.md",
+  prUrl: "pr-url.txt",
 } as const;
