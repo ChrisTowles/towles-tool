@@ -96,35 +96,76 @@ export default class Install extends BaseCommand {
       this.showOtelInstructions();
     }
 
+    // Install Claude plugins
+    this.log(pc.bold("\n📦 Claude Plugins\n"));
+    await this.ensureClaudePlugins();
+
     this.log(pc.bold(pc.green("\n✅ Installation complete!\n")));
+  }
 
-    // Offer to install plugins from marketplace
-    this.log(pc.cyan("To install plugins from the Claude Code marketplace:"));
-    this.log(
-      pc.dim("  claude /plugins marketplace add https://github.com/ChrisTowles/towles-tool"),
-    );
-    this.log("");
+  private async ensureClaudePlugins(): Promise<void> {
+    const { x } = await import("tinyexec");
 
-    const answer = await consola.prompt("Install tt-core plugin from marketplace now?", {
-      type: "confirm",
-      initial: true,
-    });
+    const requiredPlugins = [
+      {
+        id: "tt@towles-tool",
+        name: "tt-core",
+        marketplaceUrl: "https://github.com/ChrisTowles/towles-tool",
+        marketplace: "towles-tool",
+      },
+      {
+        id: "code-simplifier@claude-plugins-official",
+        name: "code-simplifier",
+      },
+    ];
 
-    if (answer) {
-      const { x } = await import("tinyexec");
-      this.log("");
+    // Get installed plugins
+    let installedIds = new Set<string>();
+    try {
+      const result = await x("claude", ["plugin", "list", "--json"]);
+      const plugins: { id: string }[] = JSON.parse(result.stdout);
+      installedIds = new Set(plugins.map((p) => p.id));
+    } catch {
+      this.log(pc.yellow("⚠ Could not list Claude plugins"));
+    }
 
-      const result = await x("claude", ["plugin", "install", "tt@towles-tool", "--scope", "user"]);
-      if (result.stdout) this.log(result.stdout);
-      if (result.stderr) this.log(pc.dim(result.stderr));
-      if (result.exitCode === 0) {
-        this.log(pc.green("✓ tt-core plugin installed"));
-      } else {
-        this.log(pc.yellow(`Command exited with code ${result.exitCode}`));
+    // Ensure marketplaces are added first
+    for (const plugin of requiredPlugins) {
+      if (plugin.marketplaceUrl && !installedIds.has(plugin.id)) {
+        try {
+          await x("claude", ["plugin", "marketplace", "add", plugin.marketplaceUrl]);
+          this.log(pc.dim(`  Added marketplace: ${plugin.marketplace}`));
+        } catch {
+          // marketplace may already be added
+        }
       }
     }
 
-    this.log("");
+    // Install missing plugins
+    for (const plugin of requiredPlugins) {
+      if (installedIds.has(plugin.id)) {
+        this.log(pc.dim(`✓ ${plugin.name} already installed`));
+        continue;
+      }
+
+      const answer = await consola.prompt(`Install ${plugin.name} plugin?`, {
+        type: "confirm",
+        initial: true,
+      });
+
+      if (answer) {
+        const result = await x("claude", ["plugin", "install", plugin.id, "--scope", "user"]);
+        if (result.exitCode === 0) {
+          this.log(pc.green(`✓ ${plugin.name} installed`));
+        } else {
+          if (result.stdout) this.log(result.stdout);
+          if (result.stderr) this.log(pc.dim(result.stderr));
+          this.log(pc.yellow(`⚠ ${plugin.name} install exited with code ${result.exitCode}`));
+        }
+      } else {
+        this.log(pc.dim(`  Skipped ${plugin.name}`));
+      }
+    }
   }
 
   private saveClaudeSettings(settings: ClaudeSettings): void {
