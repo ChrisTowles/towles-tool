@@ -62,8 +62,20 @@ export default class Doctor extends BaseCommand {
       }
     }
 
+    // Claude plugin checks
+    this.log("");
+    const pluginChecks = await this.checkClaudePlugins();
+    for (const check of pluginChecks) {
+      const icon = check.ok ? pc.green("✓") : pc.red("✗");
+      const status = check.ok ? "installed" : "not installed";
+      this.log(`${icon} claude plugin ${check.name}: ${status}`);
+      if (!check.ok && check.installHint) {
+        this.log(`  ${pc.dim(check.installHint)}`);
+      }
+    }
+
     // Summary
-    const allOk = checks.every((c) => c.ok) && ghAuth.ok;
+    const allOk = checks.every((c) => c.ok) && ghAuth.ok && pluginChecks.every((c) => c.ok);
     this.log("");
     if (allOk) {
       this.log(pc.green("All checks passed!"));
@@ -99,6 +111,36 @@ export default class Doctor extends BaseCommand {
       return { ok: result.exitCode === 0 };
     } catch {
       return { ok: false };
+    }
+  }
+
+  private async checkClaudePlugins(): Promise<
+    { name: string; ok: boolean; installHint?: string }[]
+  > {
+    const requiredPlugins = [
+      {
+        id: "code-simplifier@claude-plugins-official",
+        name: "code-simplifier",
+        installCmd: "claude plugin install code-simplifier@claude-plugins-official --scope user",
+      },
+    ];
+
+    try {
+      const result = await x("claude", ["plugin", "list", "--json"]);
+      const plugins: { id: string }[] = JSON.parse(result.stdout);
+      const installedIds = new Set(plugins.map((p) => p.id));
+
+      return requiredPlugins.map((p) => ({
+        name: p.name,
+        ok: installedIds.has(p.id),
+        installHint: installedIds.has(p.id) ? undefined : `Run: ${p.installCmd}`,
+      }));
+    } catch {
+      return requiredPlugins.map((p) => ({
+        name: p.name,
+        ok: false,
+        installHint: `Run: ${p.installCmd}`,
+      }));
     }
   }
 }
