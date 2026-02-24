@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Flags } from "@oclif/core";
 import consola from "consola";
 
-import { BaseCommand } from "./base.js";
+import { BaseCommand } from "../base.js";
 import {
   STEP_NAMES,
   buildIssueContext,
@@ -18,8 +18,8 @@ import {
   runPipeline,
   sleep,
   stepRefresh,
-} from "../lib/auto-claude/index.js";
-import type { IssueContext, StepName } from "../lib/auto-claude/index.js";
+} from "../../lib/auto-claude/index.js";
+import type { IssueContext, StepName } from "../../lib/auto-claude/index.js";
 
 export default class AutoClaude extends BaseCommand {
   static override aliases = ["ac"];
