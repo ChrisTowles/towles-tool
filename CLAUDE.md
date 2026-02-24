@@ -32,6 +32,7 @@ pnpm format:check        # Check formatting without writing
 - **Plugin dev reinstall**: `claude plugin uninstall tt@towles-tool && claude plugin marketplace remove towles-tool && claude plugin marketplace add /home/ctowles/code/p/towles-tool && claude plugin install tt@towles-tool`
 - [CICD via GitHub Actions](docs/github-actions.md) - Automated release workflow
 - [Testing](docs/testing.md) - Info about Tests
+- [Skill & Prompt Guide](docs/skill-and-prompt-guide.md) - Rules for writing skills, prompts, and CLAUDE.md
 
 ## Auto-Claude Pipeline
 
