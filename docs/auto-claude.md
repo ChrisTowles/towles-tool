@@ -4,7 +4,7 @@ Automated issue-to-PR pipeline (`tt auto-claude` / `tt ac`). Runs Claude Code CL
 
 ## Key Files
 
-- `src/commands/auto-claude.ts` — oclif command entry point (alias: `ac`)
+- `src/commands/auto-claude/index.ts` — oclif command entry point (alias: `ac`)
 - `src/lib/auto-claude/config.ts` — Zod config schema, auto-detects repo and main branch from cwd
 - `src/lib/auto-claude/utils.ts` — shared helpers: `runClaude()`, `resolveTemplate()`, `IssueContext`, `ensureBranch()`, `runStepWithArtifact()`
 - `src/lib/auto-claude/pipeline.ts` — step orchestration with `--until` support
@@ -17,4 +17,4 @@ Automated issue-to-PR pipeline (`tt auto-claude` / `tt ac`). Runs Claude Code CL
 - Branch naming: `auto-claude/issue-{N}`
 - Steps are idempotent — check for output artifact before running
 - Trigger label: `auto-claude` (removed after PR creation)
-- `runStepWithArtifact()` encapsulates the common pattern of check → run Claude → validate → commit
+- `runStepWithArtifact()` encapsulates the common pattern of check → run Claude → validate output
