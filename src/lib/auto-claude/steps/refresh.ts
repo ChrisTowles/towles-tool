@@ -5,16 +5,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
-import {
-  buildTokens,
-  execSafe,
-  fileExists,
-  git,
-  log,
-  logStep,
-  resolveTemplate,
-  runClaude,
-} from "../utils.js";
+import { buildTokens, execSafe, git, log, logStep, resolveTemplate, runClaude } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
@@ -98,8 +89,6 @@ async function invalidateStaleArtifacts(ctx: IssueContext): Promise<void> {
   ];
 
   for (const p of paths) {
-    if (fileExists(p)) {
-      rmSync(p);
-    }
+    rmSync(p, { force: true });
   }
 }
