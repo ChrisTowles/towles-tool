@@ -1,6 +1,6 @@
 {
   "name": "@towles/tool",
-  "version": "0.0.60",
+  "version": "0.0.61",
   "description": "CLI tool with auto-claude pipeline, developer tools, and journaling via markdown.",
   "keywords": [
     "auto-claude",
