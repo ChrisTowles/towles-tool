@@ -179,24 +179,10 @@ function logToolUse(block: Record<string, unknown>): void {
 }
 
 function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: number) => void): void {
-  // Complete assistant turn: { type: "assistant", message: { content: [...] } }
-  if (event.type === "assistant" && typeof event.message === "object" && event.message !== null) {
-    const msg = event.message as Record<string, unknown>;
-    const content = Array.isArray(msg.content) ? msg.content : [];
-    for (const block of content) {
-      if (
-        typeof block === "object" &&
-        block !== null &&
-        (block as Record<string, unknown>).type === "tool_use"
-      ) {
-        logToolUse(block as Record<string, unknown>);
-      }
-    }
-  }
-
-  // Streaming: { type: "stream_event", event: { type: "content_block_start", content_block: { ... } } }
+  // Only handle stream_event — assistant turn events duplicate the same tools
   if (event.type === "stream_event" && typeof event.event === "object" && event.event !== null) {
     const inner = event.event as Record<string, unknown>;
+
     if (
       inner.type === "content_block_start" &&
       typeof inner.content_block === "object" &&
@@ -205,6 +191,8 @@ function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: numbe
       const block = inner.content_block as Record<string, unknown>;
       if (block.type === "tool_use") {
         logToolUse(block);
+      } else if (block.type === "thinking") {
+        consola.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking\u2026")}`);
       }
     }
   }
