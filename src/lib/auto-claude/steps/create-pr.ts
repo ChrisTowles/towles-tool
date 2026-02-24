@@ -61,19 +61,18 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
     cfg.triggerLabel,
   ]);
 
-  if (prUrl) {
-    const url = prUrl.trim();
-    writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), url);
-    log(`PR created: ${url}`);
-
-    try {
-      await attachArtifacts(ctx, url);
-    } catch (e) {
-      consola.warn(`Artifact upload failed (non-blocking): ${e}`);
-    }
-  } else {
+  if (!prUrl) {
     consola.error("Failed to create PR");
     return false;
+  }
+
+  writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), prUrl);
+  log(`PR created: ${prUrl}`);
+
+  try {
+    await attachArtifacts(ctx, prUrl);
+  } catch (e) {
+    consola.warn(`Artifact upload failed (non-blocking): ${e}`);
   }
 
   return true;
@@ -133,7 +132,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
   const comment = [
     "## Pipeline Artifacts",
     "",
-    `[Download artifacts (tar.gz)](${assetUrl.trim()})`,
+    `[Download artifacts (tar.gz)](${assetUrl})`,
     "",
     "Contains: research.md, plan.md, plan-implementation.md, review.md, completed-summary.md",
   ].join("\n");
