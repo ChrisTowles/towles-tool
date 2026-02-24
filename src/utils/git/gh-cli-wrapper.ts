@@ -23,9 +23,11 @@ export interface Issue {
 export const getIssues = async ({
   assignedToMe,
   cwd,
+  label,
 }: {
-  assignedToMe: boolean;
+  assignedToMe?: boolean;
   cwd: string;
+  label?: string;
 }): Promise<Issue[]> => {
   let issues: Issue[] = [];
 
@@ -34,6 +36,10 @@ export const getIssues = async ({
   if (assignedToMe) {
     flags.push("--assignee");
     flags.push("@me");
+  }
+
+  if (label) {
+    flags.push("--label", label);
   }
 
   //console.log('Current working directory:', cwd.stdout.trim())
