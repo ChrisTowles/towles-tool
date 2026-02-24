@@ -47,7 +47,7 @@ async function main() {
     }
 
     pluginJson.version = version;
-    await writeFile(pluginJsonPath, JSON.stringify(pluginJson, null, 4) + "\n");
+    await writeFile(pluginJsonPath, JSON.stringify(pluginJson, null, 2) + "\n");
     console.log(`  ${pluginName}: ${oldVersion} -> ${version}`);
   }
 

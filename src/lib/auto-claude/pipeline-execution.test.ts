@@ -9,19 +9,21 @@ import { initConfig } from "./config";
 import { ARTIFACTS } from "./prompt-templates/index";
 import {
   buildTestContext,
+  createSpawnClaudeMock,
   createTestRepoWithRemote,
   errorClaudeJson,
   successClaudeJson,
 } from "./test-helpers";
-import type { TestRepo } from "./test-helpers";
+import type { MockClaudeImpl, TestRepo } from "./test-helpers";
 import type { IssueContext } from "./utils";
 
 consola.level = -999;
 
-// ── Mock tinyexec: intercept "claude" and "gh" calls, pass through git ──
+let mockClaudeImpl: MockClaudeImpl = null;
+vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
-let mockClaudeImpl: ((args: string[]) => Promise<{ stdout: string; exitCode: number }>) | null =
-  null;
+// ── Mock tinyexec: intercept "gh" calls, pass through git ──
+
 let mockGhImpl: ((args: string[]) => Promise<{ stdout: string; exitCode: number }>) | null = null;
 
 vi.mock("tinyexec", async (importOriginal) => {
@@ -34,12 +36,6 @@ vi.mock("tinyexec", async (importOriginal) => {
         args: string[],
         opts?: Record<string, unknown>,
       ): Promise<{ stdout: string; exitCode: number }> => {
-        if (cmd === "claude" && mockClaudeImpl) {
-          return mockClaudeImpl(args);
-        }
-        if (cmd === "claude") {
-          throw new Error("Unexpected claude call -- set mockClaudeImpl");
-        }
         if (cmd === "gh" && mockGhImpl) {
           return mockGhImpl(args);
         }
@@ -82,7 +78,7 @@ describe("runPipeline", () => {
   it("writes initial-ramblings.md on first run", async () => {
     const { runPipeline } = await import("./pipeline");
 
-    mockClaudeImpl = async () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
     await runPipeline(ctx);
 
@@ -101,7 +97,7 @@ describe("runPipeline", () => {
     const ramblingsPath = join(ctx.issueDir, ARTIFACTS.initialRamblings);
     writeFileSync(ramblingsPath, "# Existing ramblings");
 
-    mockClaudeImpl = async () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
     await runPipeline(ctx);
 
@@ -115,7 +111,7 @@ describe("runPipeline", () => {
     let claudeCallCount = 0;
     const researchPath = join(ctx.issueDir, ARTIFACTS.research);
 
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       claudeCallCount++;
       mkdirSync(ctx.issueDir, { recursive: true });
       writeFileSync(researchPath, "x".repeat(250));
@@ -130,7 +126,7 @@ describe("runPipeline", () => {
   it("stops and checks out main on step failure", async () => {
     const { runPipeline } = await import("./pipeline");
 
-    mockClaudeImpl = async () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
     await runPipeline(ctx);
 
@@ -145,7 +141,7 @@ describe("runPipeline", () => {
     const { runPipeline } = await import("./pipeline");
 
     let claudeCallCount = 0;
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       claudeCallCount++;
       mkdirSync(ctx.issueDir, { recursive: true });
 
