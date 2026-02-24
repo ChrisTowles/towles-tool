@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import consola from "consola";
@@ -9,6 +10,7 @@ import { x } from "tinyexec";
 import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
 import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
+import { spawnClaude } from "./spawn-claude.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES_DIR = join(__dirname, "prompt-templates");
@@ -64,7 +66,8 @@ export async function runClaude(opts: {
   const args = [
     "-p",
     "--output-format",
-    "json",
+    "stream-json",
+    "--verbose",
     "--permission-mode",
     opts.permissionMode,
     ...(opts.maxTurns ? ["--max-turns", String(opts.maxTurns)] : []),
@@ -77,26 +80,12 @@ export async function runClaude(opts: {
 
   while (true) {
     try {
-      const proc = await x("claude", args, {
-        nodeOptions: { cwd: process.cwd(), stdio: ["ignore", "pipe", "inherit"] },
-        throwOnError: true,
-      });
-      const stdout = proc.stdout;
-
-      try {
-        const parsed = JSON.parse(stdout) as ClaudeResult;
-        consola.success(`Done — ${parsed.num_turns} turns`);
-        if (parsed.result) {
-          consola.log(parsed.result);
-        }
-        return parsed;
-      } catch {
-        consola.warn("Done — failed to parse Claude output");
-        if (stdout.trim()) {
-          consola.log(stdout.trim());
-        }
-        return { result: stdout.trim(), is_error: false, total_cost_usd: 0, num_turns: 0 };
+      const result = await runClaudeStreaming(args);
+      consola.success(`Done — ${result.num_turns} turns`);
+      if (result.result) {
+        consola.log(result.result);
       }
+      return result;
     } catch (e) {
       const shouldRetry = opts.retry ?? cfg.loopRetryEnabled ?? false;
       if (!shouldRetry) throw e;
@@ -111,6 +100,94 @@ export async function runClaude(opts: {
       await sleep(retryDelay);
       retryDelay = Math.min(retryDelay * 2, cfg.maxRetryDelayMs);
     }
+  }
+}
+
+function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
+  return new Promise((resolve, reject) => {
+    const proc = spawnClaude(args);
+    let capturedResult: ClaudeResult | null = null;
+    let turnCount = 0;
+
+    if (!proc.stdout) {
+      reject(new Error("Claude process has no stdout"));
+      return;
+    }
+
+    const rl = createInterface({ input: proc.stdout });
+
+    rl.on("line", (line) => {
+      if (!line.trim()) return;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        handleStreamEvent(event, (turns) => {
+          turnCount = turns;
+        });
+
+        if ("result" in event && "is_error" in event && "num_turns" in event) {
+          capturedResult = {
+            result: String(event.result ?? ""),
+            is_error: Boolean(event.is_error),
+            total_cost_usd: Number(event.total_cost_usd ?? 0),
+            num_turns: Number(event.num_turns),
+          };
+        }
+      } catch {
+        // Skip non-JSON lines
+      }
+    });
+
+    proc.on("error", (err) => {
+      rl.close();
+      reject(err);
+    });
+
+    proc.on("close", (code) => {
+      rl.close();
+      if (capturedResult) {
+        resolve(capturedResult);
+      } else if (code !== 0) {
+        reject(new Error(`Claude process exited with code ${code}`));
+      } else {
+        resolve({ result: "", is_error: false, total_cost_usd: 0, num_turns: turnCount });
+      }
+    });
+  });
+}
+
+function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: number) => void): void {
+  // Tool use events: look for content blocks with tool_use type
+  if (event.type === "assistant" && Array.isArray(event.message)) {
+    for (const block of event.message) {
+      if (
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        (block as Record<string, unknown>).type === "tool_use"
+      ) {
+        const name = (block as Record<string, unknown>).name;
+        if (typeof name === "string") {
+          consola.info(`  ${pc.dim("\u21B3")} ${name}`);
+        }
+      }
+    }
+  }
+
+  // Content block with tool_use (alternative format)
+  if (
+    event.type === "content_block_start" &&
+    typeof event.content_block === "object" &&
+    event.content_block !== null
+  ) {
+    const block = event.content_block as Record<string, unknown>;
+    if (block.type === "tool_use" && typeof block.name === "string") {
+      consola.info(`  ${pc.dim("\u21B3")} ${block.name}`);
+    }
+  }
+
+  // Turn count tracking
+  if (typeof event.num_turns === "number" && !("result" in event)) {
+    onTurn(event.num_turns as number);
   }
 }
 

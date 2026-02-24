@@ -1,7 +1,12 @@
+import type { ChildProcess } from "node:child_process";
 import { execSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
+
+import { vi } from "vitest";
 
 import type { ClaudeResult, IssueContext } from "./utils";
 
@@ -62,7 +67,7 @@ export function buildTestContext(dir: string, issueNumber = 1): IssueContext {
 }
 
 /**
- * Returns a JSON string matching a successful ClaudeResult.
+ * Returns a stream-json result line for a successful ClaudeResult.
  */
 export function successClaudeJson(result = "done"): string {
   return JSON.stringify({
@@ -74,7 +79,7 @@ export function successClaudeJson(result = "done"): string {
 }
 
 /**
- * Returns a JSON string matching a failed ClaudeResult.
+ * Returns a stream-json result line for a failed ClaudeResult.
  */
 export function errorClaudeJson(result = "failed"): string {
   return JSON.stringify({
@@ -83,4 +88,52 @@ export function errorClaudeJson(result = "failed"): string {
     total_cost_usd: 0,
     num_turns: 0,
   } satisfies ClaudeResult);
+}
+
+/**
+ * Creates a fake ChildProcess with PassThrough stdout for testing
+ * the streaming runClaude implementation.
+ *
+ * Writes `stdout` content to the stream, then emits `close` with `exitCode`.
+ */
+export function createMockClaudeProcess(stdout: string, exitCode = 0): ChildProcess {
+  const proc = new EventEmitter() as ChildProcess;
+  const stdoutStream = new PassThrough();
+  (proc as unknown as { stdout: PassThrough }).stdout = stdoutStream;
+  (proc as unknown as { stderr: null }).stderr = null;
+  (proc as unknown as { stdin: null }).stdin = null;
+
+  // Write and close asynchronously so listeners can attach first
+  queueMicrotask(() => {
+    if (stdout) {
+      stdoutStream.write(`${stdout}\n`);
+    }
+    stdoutStream.end();
+    proc.emit("close", exitCode);
+  });
+
+  return proc;
+}
+
+export type MockClaudeImpl = ((args: string[]) => { stdout: string; exitCode: number }) | null;
+
+/**
+ * Creates the mock object for vi.mock("./spawn-claude").
+ * Must be called inside the vi.mock factory arrow (lazy) to avoid hoisting issues.
+ *
+ * Usage:
+ *   let mockClaudeImpl: MockClaudeImpl = null;
+ *   vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
+ */
+export function createSpawnClaudeMock(getImpl: () => MockClaudeImpl) {
+  return {
+    spawnClaude: vi.fn((args: string[]) => {
+      const impl = getImpl();
+      if (impl) {
+        const { stdout, exitCode } = impl(args);
+        return createMockClaudeProcess(stdout, exitCode);
+      }
+      throw new Error("Unexpected spawnClaude call -- set mockClaudeImpl");
+    }),
+  };
 }

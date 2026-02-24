@@ -2,23 +2,15 @@ import consola from "consola";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initConfig } from "./config";
-import { createTestRepo } from "./test-helpers";
-import type { TestRepo } from "./test-helpers";
+import { createSpawnClaudeMock, createTestRepo } from "./test-helpers";
+import type { MockClaudeImpl, TestRepo } from "./test-helpers";
 
 consola.level = -999;
 
-// ── File-level tinyexec mock -- intercepts all x() calls ──
+let mockSpawnImpl: MockClaudeImpl = null;
+vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockSpawnImpl));
 
-let mockXImpl: ((...args: unknown[]) => unknown) | null = null;
-
-vi.mock("tinyexec", () => ({
-  x: vi.fn((...args: unknown[]) => {
-    if (mockXImpl) return mockXImpl(...args);
-    throw new Error("mockXImpl not set");
-  }),
-}));
-
-describe("runClaude (mocked tinyexec)", () => {
+describe("runClaude (mocked spawn-claude)", () => {
   let originalCwd: string;
   let repo: TestRepo;
 
@@ -34,12 +26,12 @@ describe("runClaude (mocked tinyexec)", () => {
   });
 
   beforeEach(() => {
-    mockXImpl = null;
+    mockSpawnImpl = null;
     vi.clearAllMocks();
   });
 
-  it("constructs correct args and parses JSON result", async () => {
-    mockXImpl = vi.fn().mockResolvedValue({
+  it("parses stream-json result event", async () => {
+    mockSpawnImpl = () => ({
       stdout: JSON.stringify({
         result: "All done",
         is_error: false,
@@ -63,24 +55,27 @@ describe("runClaude (mocked tinyexec)", () => {
     expect(result.is_error).toBe(false);
     expect(result.num_turns).toBe(3);
 
-    expect(mockXImpl).toHaveBeenCalledWith(
-      "claude",
+    const { spawnClaude } = await import("./spawn-claude");
+    expect(spawnClaude).toHaveBeenCalledWith(
       expect.arrayContaining([
         "-p",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--permission-mode",
         "plan",
         "--max-turns",
         "10",
         "@test-prompt.md",
       ]),
-      expect.any(Object),
     );
   });
 
-  it("returns fallback when JSON parsing fails", async () => {
-    mockXImpl = vi.fn().mockResolvedValue({ stdout: "not json output", exitCode: 0 });
+  it("returns fallback when no result event in stream", async () => {
+    mockSpawnImpl = () => ({
+      stdout: '{"type":"system","message":"starting"}',
+      exitCode: 0,
+    });
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
@@ -91,19 +86,19 @@ describe("runClaude (mocked tinyexec)", () => {
       permissionMode: "acceptEdits",
     });
 
-    expect(result.result).toBe("not json output");
+    expect(result.result).toBe("");
     expect(result.is_error).toBe(false);
     expect(result.total_cost_usd).toBe(0);
   });
 
   it("retries on failure when retry is enabled", async () => {
     let callCount = 0;
-    mockXImpl = vi.fn().mockImplementation(() => {
+    mockSpawnImpl = () => {
       callCount++;
       if (callCount < 3) {
-        throw new Error("Claude process failed");
+        return { stdout: "", exitCode: 1 };
       }
-      return Promise.resolve({
+      return {
         stdout: JSON.stringify({
           result: "ok",
           is_error: false,
@@ -111,8 +106,8 @@ describe("runClaude (mocked tinyexec)", () => {
           num_turns: 1,
         }),
         exitCode: 0,
-      });
-    });
+      };
+    };
 
     await initConfig({
       repo: "test/repo",
@@ -136,7 +131,7 @@ describe("runClaude (mocked tinyexec)", () => {
   }, 10_000);
 
   it("throws after max retries exhausted", async () => {
-    mockXImpl = vi.fn().mockRejectedValue(new Error("Claude crash"));
+    mockSpawnImpl = () => ({ stdout: "", exitCode: 1 });
 
     await initConfig({
       repo: "test/repo",

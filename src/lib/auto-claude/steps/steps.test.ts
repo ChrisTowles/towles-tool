@@ -9,44 +9,18 @@ import { initConfig } from "../config";
 import { ARTIFACTS } from "../prompt-templates/index";
 import {
   buildTestContext,
+  createSpawnClaudeMock,
   createTestRepoWithRemote,
   errorClaudeJson,
   successClaudeJson,
 } from "../test-helpers";
-import type { TestRepo } from "../test-helpers";
+import type { MockClaudeImpl, TestRepo } from "../test-helpers";
 import type { IssueContext } from "../utils";
 
 consola.level = -999;
 
-// ── Mock tinyexec: intercept "claude" calls, pass through everything else ──
-
-let mockClaudeImpl: ((args: string[]) => Promise<{ stdout: string; exitCode: number }>) | null =
-  null;
-
-vi.mock("tinyexec", async (importOriginal) => {
-  const original = await importOriginal<typeof import("tinyexec")>();
-  return {
-    ...original,
-    x: vi.fn(
-      async (
-        cmd: string,
-        args: string[],
-        opts?: Record<string, unknown>,
-      ): Promise<{ stdout: string; exitCode: number }> => {
-        if (cmd === "claude" && mockClaudeImpl) {
-          return mockClaudeImpl(args);
-        }
-        if (cmd === "claude") {
-          throw new Error("Unexpected claude call -- set mockClaudeImpl before running");
-        }
-        return original.x(cmd, args, opts as never) as unknown as Promise<{
-          stdout: string;
-          exitCode: number;
-        }>;
-      },
-    ),
-  };
-});
+let mockClaudeImpl: MockClaudeImpl = null;
+vi.mock("../spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
 // ── Shared setup/teardown for all step tests ──
 
@@ -95,7 +69,7 @@ describe("runStepWithArtifact", () => {
   });
 
   it("returns false when Claude returns is_error", async () => {
-    mockClaudeImpl = async () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "missing-artifact.md");
@@ -111,7 +85,7 @@ describe("runStepWithArtifact", () => {
   });
 
   it("returns false when artifact not produced after Claude run", async () => {
-    mockClaudeImpl = async () => ({ stdout: successClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: successClaudeJson(), exitCode: 0 });
 
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "never-created.md");
@@ -130,7 +104,7 @@ describe("runStepWithArtifact", () => {
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "plan.md");
 
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       writeFileSync(artifactPath, "# Plan\n\nDetailed plan content here.");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
@@ -179,7 +153,7 @@ describe("stepResearch", () => {
     writeFileSync(researchPath, "short");
 
     let claudeCalled = false;
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       claudeCalled = true;
       writeFileSync(researchPath, "x".repeat(250));
       return { stdout: successClaudeJson(), exitCode: 0 };
@@ -194,7 +168,7 @@ describe("stepResearch", () => {
     const { stepResearch } = await import("./research");
 
     const researchPath = join(ctx.issueDir, ARTIFACTS.research);
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       writeFileSync(researchPath, "x".repeat(250));
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
@@ -244,7 +218,7 @@ describe("stepPlanAnnotations", () => {
     const addressedPath = join(ctx.issueDir, ARTIFACTS.planAnnotationsAddressed);
     writeFileSync(annotationsPath, "# Annotations\n\nSome feedback here.");
 
-    mockClaudeImpl = async () => ({ stdout: successClaudeJson(), exitCode: 0 });
+    mockClaudeImpl = () => ({ stdout: successClaudeJson(), exitCode: 0 });
 
     const result = await stepPlanAnnotations(ctx);
 
@@ -288,7 +262,7 @@ describe("stepImplement", () => {
     const { stepImplement } = await import("./implement");
 
     let callCount = 0;
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       callCount++;
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
@@ -304,7 +278,7 @@ describe("stepImplement", () => {
     let callCount = 0;
     const completedPath = join(ctx.issueDir, ARTIFACTS.completedSummary);
 
-    mockClaudeImpl = async () => {
+    mockClaudeImpl = () => {
       callCount++;
       if (callCount === 2) {
         writeFileSync(completedPath, "# Implementation Complete\n\nAll tasks done.");

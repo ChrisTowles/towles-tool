@@ -202,7 +202,11 @@ async function syncWithRemote(): Promise<void> {
   }
   const status = await git(["status", "--porcelain"]);
   if (status.length > 0) {
-    throw new Error("Working tree has uncommitted changes. Commit or stash them first.");
+    const files = status.trim().split("\n");
+    consola.warn(`Working tree has ${files.length} uncommitted change(s):`);
+    for (const file of files) {
+      consola.warn(`  ${file.trim()}`);
+    }
   }
   await git(["pull", cfg.remote, cfg.mainBranch]);
 }
