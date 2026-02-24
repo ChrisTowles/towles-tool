@@ -46,7 +46,6 @@ export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
   const promptFile = resolveTemplate(TEMPLATES.refresh, tokens, ctx.issueDir);
   const result = await runClaude({
     promptFile,
-    permissionMode: "acceptEdits",
     maxTurns: getConfig().maxTurns,
   });
 

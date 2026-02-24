@@ -11,7 +11,7 @@ import { stepPlan } from "./steps/plan.js";
 import { stepRemoveLabel } from "./steps/remove-label.js";
 import { stepResearch } from "./steps/research.js";
 import { stepReview } from "./steps/review.js";
-import { ensureDir, fileExists, git, log, readFile, writeFile } from "./utils.js";
+import { ensureDir, execSafe, fileExists, git, log, readFile, writeFile } from "./utils.js";
 import type { IssueContext } from "./utils.js";
 
 const STEP_RUNNERS: Record<StepName, (ctx: IssueContext) => Promise<boolean>> = {
@@ -64,4 +64,11 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
 
 async function checkoutMain(): Promise<void> {
   await git(["checkout", getConfig().mainBranch]).catch(() => {});
+
+  // Restore any stash created by ensureBranch
+  const stashList = await execSafe("git", ["stash", "list", "--max-count=1"]);
+  if (stashList.ok && stashList.stdout.includes("auto-claude: before switching to")) {
+    await execSafe("git", ["stash", "pop"]);
+    log("Restored stashed changes");
+  }
 }

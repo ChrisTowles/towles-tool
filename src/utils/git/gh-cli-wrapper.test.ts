@@ -63,3 +63,26 @@ describe("gh-cli-wrapper", () => {
     });
   });
 });
+
+describe("getIssues label filter", () => {
+  it("passes --label flag when label provided", async () => {
+    const { x } = await import("tinyexec");
+    vi.mocked(x).mockResolvedValueOnce({
+      stdout: "[]",
+      stderr: "",
+      exitCode: 0,
+    } as never);
+
+    await getIssues({ cwd: ".", label: "auto-claude" });
+
+    expect(x).toHaveBeenCalledWith("gh", expect.arrayContaining(["--label", "auto-claude"]));
+  });
+});
+
+vi.mock("tinyexec", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("tinyexec")>();
+  return {
+    ...actual,
+    x: vi.fn(actual.x),
+  };
+});
