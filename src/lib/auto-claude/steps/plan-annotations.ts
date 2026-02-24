@@ -29,7 +29,6 @@ export async function stepPlanAnnotations(ctx: IssueContext): Promise<boolean> {
 
   const result = await runClaude({
     promptFile,
-    permissionMode: "acceptEdits",
     maxTurns: getConfig().maxTurns,
   });
 

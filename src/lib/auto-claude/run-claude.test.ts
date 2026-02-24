@@ -47,7 +47,6 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     const result = await runClaude({
       promptFile: "test-prompt.md",
-      permissionMode: "plan",
       maxTurns: 10,
     });
 
@@ -62,13 +61,60 @@ describe("runClaude (mocked spawn-claude)", () => {
         "--output-format",
         "stream-json",
         "--verbose",
-        "--permission-mode",
-        "plan",
+        "--include-partial-messages",
+        "--dangerously-skip-permissions",
         "--max-turns",
         "10",
         "@test-prompt.md",
       ]),
     );
+  });
+
+  it("logs tool names from assistant turn events with object message format", async () => {
+    const infoSpy = vi.spyOn(consola, "info");
+
+    const assistantEvent = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "Let me read the file." },
+          { type: "tool_use", id: "t1", name: "Read", input: {} },
+        ],
+      },
+    };
+    const streamEvent = {
+      type: "stream_event",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "Edit" },
+      },
+    };
+    const resultEvent = {
+      result: "Done",
+      is_error: false,
+      total_cost_usd: 0.01,
+      num_turns: 1,
+    };
+
+    mockSpawnImpl = () => ({
+      stdout: [assistantEvent, streamEvent, resultEvent].map((e) => JSON.stringify(e)).join("\n"),
+      exitCode: 0,
+    });
+
+    await initConfig({ repo: "test/repo", mainBranch: "main" });
+
+    const { runClaude } = await import("./utils");
+    const result = await runClaude({ promptFile: "test.md" });
+
+    expect(result.result).toBe("Done");
+    expect(result.num_turns).toBe(1);
+
+    // Verify consola.info was called with tool names (Read from assistant turn, Edit from stream_event)
+    const infoCalls = infoSpy.mock.calls.map((c) => String(c[0]));
+    expect(infoCalls.some((msg) => msg.includes("Read"))).toBe(true);
+    expect(infoCalls.some((msg) => msg.includes("Edit"))).toBe(true);
+
+    infoSpy.mockRestore();
   });
 
   it("returns fallback when no result event in stream", async () => {
@@ -83,7 +129,6 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     const result = await runClaude({
       promptFile: "test.md",
-      permissionMode: "acceptEdits",
     });
 
     expect(result.result).toBe("");
@@ -122,7 +167,6 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     const result = await runClaude({
       promptFile: "test.md",
-      permissionMode: "plan",
       retry: true,
     });
 
@@ -147,7 +191,6 @@ describe("runClaude (mocked spawn-claude)", () => {
     await expect(
       runClaude({
         promptFile: "test.md",
-        permissionMode: "plan",
         retry: true,
       }),
     ).rejects.toThrow("Claude failed after 2 retries");

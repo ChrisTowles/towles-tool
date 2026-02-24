@@ -59,7 +59,6 @@ export interface ClaudeResult {
 
 export async function runClaude(opts: {
   promptFile: string;
-  permissionMode: "plan" | "acceptEdits";
   maxTurns?: number;
   retry?: boolean;
 }): Promise<ClaudeResult> {
@@ -68,8 +67,8 @@ export async function runClaude(opts: {
     "--output-format",
     "stream-json",
     "--verbose",
-    "--permission-mode",
-    opts.permissionMode,
+    "--include-partial-messages",
+    "--dangerously-skip-permissions",
     ...(opts.maxTurns ? ["--max-turns", String(opts.maxTurns)] : []),
     `@${opts.promptFile}`,
   ];
@@ -155,33 +154,58 @@ function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
   });
 }
 
+function toolDetail(block: Record<string, unknown>): string {
+  const input =
+    typeof block.input === "object" && block.input !== null
+      ? (block.input as Record<string, unknown>)
+      : null;
+  if (!input) return "";
+
+  const filePath = input.file_path ?? input.path;
+  if (typeof filePath === "string") return pc.dim(` ${filePath}`);
+  if (typeof input.pattern === "string") return pc.dim(` ${input.pattern}`);
+  if (typeof input.command === "string") {
+    const cmd = input.command as string;
+    return pc.dim(` ${cmd.length > 60 ? cmd.slice(0, 60) + "\u2026" : cmd}`);
+  }
+  return "";
+}
+
+function logToolUse(block: Record<string, unknown>): void {
+  const name = block.name;
+  if (typeof name === "string") {
+    consola.info(`  ${pc.dim("\u21B3")} ${name}${toolDetail(block)}`);
+  }
+}
+
 function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: number) => void): void {
-  // Tool use events: look for content blocks with tool_use type
-  if (event.type === "assistant" && Array.isArray(event.message)) {
-    for (const block of event.message) {
+  // Complete assistant turn: { type: "assistant", message: { content: [...] } }
+  if (event.type === "assistant" && typeof event.message === "object" && event.message !== null) {
+    const msg = event.message as Record<string, unknown>;
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    for (const block of content) {
       if (
         typeof block === "object" &&
         block !== null &&
-        "type" in block &&
         (block as Record<string, unknown>).type === "tool_use"
       ) {
-        const name = (block as Record<string, unknown>).name;
-        if (typeof name === "string") {
-          consola.info(`  ${pc.dim("\u21B3")} ${name}`);
-        }
+        logToolUse(block as Record<string, unknown>);
       }
     }
   }
 
-  // Content block with tool_use (alternative format)
-  if (
-    event.type === "content_block_start" &&
-    typeof event.content_block === "object" &&
-    event.content_block !== null
-  ) {
-    const block = event.content_block as Record<string, unknown>;
-    if (block.type === "tool_use" && typeof block.name === "string") {
-      consola.info(`  ${pc.dim("\u21B3")} ${block.name}`);
+  // Streaming: { type: "stream_event", event: { type: "content_block_start", content_block: { ... } } }
+  if (event.type === "stream_event" && typeof event.event === "object" && event.event !== null) {
+    const inner = event.event as Record<string, unknown>;
+    if (
+      inner.type === "content_block_start" &&
+      typeof inner.content_block === "object" &&
+      inner.content_block !== null
+    ) {
+      const block = inner.content_block as Record<string, unknown>;
+      if (block.type === "tool_use") {
+        logToolUse(block);
+      }
     }
   }
 
@@ -339,16 +363,22 @@ export function logStep(step: string, ctx: IssueContext, skipped = false): void 
 export async function ensureBranch(branch: string): Promise<void> {
   const { mainBranch, remote } = getConfig();
 
-  try {
-    const branches = await git(["branch", "--list", branch]);
-    if (branches.includes(branch)) {
-      await git(["checkout", branch]);
-      return;
-    }
-  } catch {
-    /* ignore */
+  // Stash uncommitted changes so branch switching works from a dirty tree
+  const status = await execSafe("git", ["status", "--porcelain"]);
+  const hadDirtyTree = status.ok && status.stdout.length > 0;
+  if (hadDirtyTree) {
+    await git(["stash", "push", "-m", `auto-claude: before switching to ${branch}`]);
+    log("Stashed uncommitted changes");
   }
 
+  // Check if branch exists locally (rev-parse is reliable, no output parsing)
+  const local = await execSafe("git", ["rev-parse", "--verify", `refs/heads/${branch}`]);
+  if (local.ok) {
+    await git(["checkout", branch]);
+    return;
+  }
+
+  // Check if branch exists on remote
   try {
     await git(["fetch", remote, branch]);
     await git(["checkout", branch]);
@@ -357,6 +387,7 @@ export async function ensureBranch(branch: string): Promise<void> {
     /* doesn't exist remotely */
   }
 
+  // Create new branch from main
   await git(["checkout", mainBranch]);
   await git(["pull", remote, mainBranch]);
   await git(["checkout", "-b", branch]);
@@ -395,7 +426,6 @@ export async function runStepWithArtifact(opts: StepRunnerOptions): Promise<bool
 
   const result = await runClaude({
     promptFile,
-    permissionMode: "acceptEdits",
     maxTurns: getConfig().maxTurns,
   });
 
