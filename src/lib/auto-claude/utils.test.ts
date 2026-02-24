@@ -32,12 +32,12 @@ describe("buildIssueContext", () => {
     expect(ctx.scopePath).toBe("src/");
     expect(ctx.issueDirRel).toBe(".auto-claude/issue-42");
     expect(ctx.issueDir).toContain(".auto-claude/issue-42");
-    expect(ctx.branch).toBe("auto-claude/issue-42");
+    expect(ctx.branch).toBe("feature/42-fix-the-bug");
   });
 
-  it("should derive branch name from issue number", () => {
+  it("should derive branch name from issue title", () => {
     const ctx = buildIssueContext({ number: 7, title: "t", body: "" }, "r", ".");
-    expect(ctx.branch).toBe("auto-claude/issue-7");
+    expect(ctx.branch).toBe("feature/7-t");
   });
 });
 
@@ -120,7 +120,7 @@ describe("buildContextFromArtifacts", () => {
     expect(ctx.title).toBe("My Great Feature");
     expect(ctx.body).toContain("This is the body of the issue.");
     expect(ctx.repo).toBe("test/repo");
-    expect(ctx.branch).toBe("auto-claude/issue-77");
+    expect(ctx.branch).toBe("feature/77-my-great-feature");
   });
 
   it("should fallback title when heading is missing", async () => {

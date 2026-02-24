@@ -6,10 +6,45 @@ import { Fzf } from "fzf";
 import consola from "consola";
 
 import { BaseCommand } from "../base.js";
-import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
+import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import { createBranch } from "../../utils/git/git-wrapper.js";
+import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
 import { getTerminalColumns, limitText, printWithHexColor } from "../../utils/render.js";
+
+export interface ColumnLayout {
+  longestNumber: number;
+  longestLabels: number;
+  descriptionLength: number;
+}
+
+export function computeColumnLayout(issues: Issue[], terminalColumns: number): ColumnLayout {
+  const longestNumber = Math.max(...issues.map((i) => i.number.toString().length));
+  const longestLabels = Math.max(
+    ...issues.map((i) => i.labels.map((x) => x.name).join(", ").length),
+  );
+  const lineMaxLength = Math.min(terminalColumns, 130);
+  const descriptionLength = lineMaxLength - longestNumber - longestLabels - 15;
+
+  return { longestNumber, longestLabels, descriptionLength };
+}
+
+export function buildIssueChoices(issues: Issue[], layout: ColumnLayout): Choice[] {
+  const choices: Choice[] = issues.map((i) => {
+    const labelText = i.labels
+      .map((l) => printWithHexColor({ msg: l.name, hex: l.color }))
+      .join(", ");
+    const labelTextNoColor = i.labels.map((l) => l.name).join(", ");
+    const labelStartpad = layout.longestLabels - labelTextNoColor.length;
+    return {
+      title: i.number.toString(),
+      value: i.number,
+      description: `${limitText(i.title, layout.descriptionLength).padEnd(layout.descriptionLength)} ${"".padStart(labelStartpad)}${labelText}`,
+    } as Choice;
+  });
+  choices.push({ title: "Cancel", value: "cancel" });
+  return choices;
+}
 
 /**
  * Create a git branch from a GitHub issue
@@ -55,29 +90,8 @@ export default class GhBranch extends BaseCommand {
       consola.log(colors.green(`${currentIssues.length} Issues found assigned to you`));
     }
 
-    // Format table with nice labels
-    let lineMaxLength = getTerminalColumns();
-    const longestNumber = Math.max(...currentIssues.map((i) => i.number.toString().length));
-    const longestLabels = Math.max(
-      ...currentIssues.map((i) => i.labels.map((x) => x.name).join(", ").length),
-    );
-
-    lineMaxLength = lineMaxLength > 130 ? 130 : lineMaxLength;
-    const descriptionLength = lineMaxLength - longestNumber - longestLabels - 15;
-
-    const choices: Choice[] = currentIssues.map((i) => {
-      const labelText = i.labels
-        .map((l) => printWithHexColor({ msg: l.name, hex: l.color }))
-        .join(", ");
-      const labelTextNoColor = i.labels.map((l) => l.name).join(", ");
-      const labelStartpad = longestLabels - labelTextNoColor.length;
-      return {
-        title: i.number.toString(),
-        value: i.number,
-        description: `${limitText(i.title, descriptionLength).padEnd(descriptionLength)} ${"".padStart(labelStartpad)}${labelText}`,
-      } as Choice;
-    });
-    choices.push({ title: "Cancel", value: "cancel" });
+    const layout = computeColumnLayout(currentIssues, getTerminalColumns());
+    const choices = buildIssueChoices(currentIssues, layout);
 
     const fzf = new Fzf(choices, {
       selector: (item) => `${item.value} ${item.description}`,
@@ -115,21 +129,10 @@ export default class GhBranch extends BaseCommand {
         `Selected issue ${colors.green(selectedIssue.number)} - ${colors.green(selectedIssue.title)}`,
       );
 
-      const branchName = GhBranch.createBranchNameFromIssue(selectedIssue);
+      const branchName = createBranchNameFromIssue(selectedIssue);
       createBranch({ branchName });
     } catch {
       this.exit(1);
     }
-  }
-
-  static createBranchNameFromIssue(selectedIssue: Issue): string {
-    let slug = selectedIssue.title.toLowerCase();
-    slug = slug.trim();
-    slug = slug.replaceAll(" ", "-");
-    slug = slug.replace(/[^0-9a-zA-Z_-]/g, "-");
-    slug = slug.replace(/-+/g, "-");
-    slug = slug.replace(/-+$/, "");
-
-    return `feature/${selectedIssue.number}-${slug}`;
   }
 }
