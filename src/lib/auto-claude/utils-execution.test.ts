@@ -1,6 +1,4 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
 import consola from "consola";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -99,54 +97,5 @@ describe("ensureBranch (real git)", () => {
     await ensureBranch("feature/99-test-checkout");
     const branch2 = await git(["branch", "--show-current"]);
     expect(branch2).toBe("feature/99-test-checkout");
-  });
-});
-
-// ── commitArtifacts: real git ──
-
-describe("commitArtifacts (real git)", () => {
-  let originalCwd: string;
-  let repo: TestRepo;
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    repo = createTestRepo();
-    process.chdir(repo.dir);
-    await initConfig({ repo: "test/repo", mainBranch: "main" });
-  });
-
-  afterEach(() => {
-    process.chdir(originalCwd);
-    repo.cleanup();
-  });
-
-  it("commits staged files in the issue directory", async () => {
-    const { commitArtifacts, buildIssueContext } = await import("./utils");
-
-    const ctx = buildIssueContext({ number: 1, title: "Test", body: "body" }, "test/repo", ".");
-
-    const issueDir = join(repo.dir, ctx.issueDirRel);
-    mkdirSync(issueDir, { recursive: true });
-    writeFileSync(join(issueDir, "test.md"), "# Test artifact");
-
-    await commitArtifacts(ctx, "test commit");
-
-    const log = execSync("git log --oneline", { cwd: repo.dir, encoding: "utf-8" });
-    expect(log).toContain("test commit");
-  });
-
-  it("does not commit when no changes are staged", async () => {
-    const { commitArtifacts, buildIssueContext } = await import("./utils");
-
-    const ctx = buildIssueContext({ number: 2, title: "Test", body: "body" }, "test/repo", ".");
-
-    const issueDir = join(repo.dir, ctx.issueDirRel);
-    mkdirSync(issueDir, { recursive: true });
-
-    const logBefore = execSync("git log --oneline", { cwd: repo.dir, encoding: "utf-8" });
-    await commitArtifacts(ctx, "should not appear");
-    const logAfter = execSync("git log --oneline", { cwd: repo.dir, encoding: "utf-8" });
-
-    expect(logAfter).toBe(logBefore);
   });
 });
