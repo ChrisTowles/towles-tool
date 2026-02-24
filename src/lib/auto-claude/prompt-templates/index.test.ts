@@ -28,9 +28,9 @@ describe("TEMPLATES", () => {
     }
   });
 
-  it("filenames should follow XX-prompt-*.md pattern", () => {
+  it("filenames should follow NN_step.prompt.md pattern", () => {
     for (const filename of Object.values(TEMPLATES)) {
-      expect(filename).toMatch(/^\d{2}-prompt-.+\.md$/);
+      expect(filename).toMatch(/^\d{2}_.+\.prompt\.md$/);
     }
   });
 
