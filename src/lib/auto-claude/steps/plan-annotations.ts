@@ -5,15 +5,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
-import {
-  buildTokens,
-  commitArtifacts,
-  fileExists,
-  log,
-  logStep,
-  resolveTemplate,
-  runClaude,
-} from "../utils.js";
+import { buildTokens, fileExists, log, logStep, resolveTemplate, runClaude } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepPlanAnnotations(ctx: IssueContext): Promise<boolean> {
@@ -37,7 +29,6 @@ export async function stepPlanAnnotations(ctx: IssueContext): Promise<boolean> {
 
   const result = await runClaude({
     promptFile,
-    permissionMode: "acceptEdits",
     maxTurns: getConfig().maxTurns,
   });
 
@@ -49,6 +40,5 @@ export async function stepPlanAnnotations(ctx: IssueContext): Promise<boolean> {
   renameSync(annotationsPath, addressedPath);
   log("Annotations addressed — renamed to plan-annotations-addressed.md");
 
-  await commitArtifacts(ctx, `chore(auto-claude): plan annotations for ${ctx.repo}#${ctx.number}`);
   return true;
 }

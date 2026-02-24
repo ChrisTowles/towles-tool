@@ -1,14 +1,14 @@
 import stripAnsi from "strip-ansi";
 import { x } from "tinyexec";
 
-export const isGithubCliInstalled = async (): Promise<boolean> => {
+export async function isGithubCliInstalled(): Promise<boolean> {
   try {
-    const proc = await x(`gh`, ["--version"]);
-    return proc.stdout.indexOf("https://github.com/cli/cli") > 0;
-  } catch (e) {
+    const proc = await x("gh", ["--version"]);
+    return proc.stdout.includes("https://github.com/cli/cli");
+  } catch {
     return false;
   }
-};
+}
 
 export interface Issue {
   labels: {
@@ -20,35 +20,34 @@ export interface Issue {
   state: string;
 }
 
-export const getIssues = async ({
+export async function getIssues({
   assignedToMe,
   cwd,
+  label,
 }: {
-  assignedToMe: boolean;
+  assignedToMe?: boolean;
   cwd: string;
-}): Promise<Issue[]> => {
-  let issues: Issue[] = [];
-
-  const flags = ["issue", "list", "--json", "labels,number,title,state"];
+  label?: string;
+}): Promise<Issue[]> {
+  const args = ["issue", "list", "--json", "labels,number,title,state"];
 
   if (assignedToMe) {
-    flags.push("--assignee");
-    flags.push("@me");
+    args.push("--assignee", "@me");
   }
 
-  //console.log('Current working directory:', cwd.stdout.trim())
+  if (label) {
+    args.push("--label", label);
+  }
 
-  const result = await x(`gh`, flags);
+  const result = await x("gh", args);
   // Setting NO_COLOR=1 didn't remove colors so had to use stripAnsi
   const stripped = stripAnsi(result.stdout);
 
   try {
-    issues = JSON.parse(stripped);
+    return JSON.parse(stripped) as Issue[];
   } catch {
     throw new Error(
       `Failed to parse GitHub CLI output as JSON. Raw output: ${stripped.slice(0, 200)}${stripped.length > 200 ? "..." : ""}`,
     );
   }
-
-  return issues;
-};
+}

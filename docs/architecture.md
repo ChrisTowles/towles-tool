@@ -31,7 +31,8 @@
 - `src/utils/date-utils.ts` - Date formatting using Luxon
 - `src/lib/journal/` - Journal template and file generation utilities
 
-- `auto-claude` - Automated issue-to-PR pipeline using Claude Code (research → plan → implement → review → PR)
+- `auto-claude` (alias: `ac`) - Automated issue-to-PR pipeline using Claude Code (research → plan → implement → review → PR)
+- `auto-claude list` - Interactively pick an auto-claude labeled issue to process
 
 ## Claude Code Plugin Architecture
 

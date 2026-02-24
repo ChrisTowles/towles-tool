@@ -117,9 +117,6 @@ describe("runStepWithArtifact", () => {
     });
 
     expect(result).toBe(true);
-
-    const log = execSync("git log --oneline", { cwd: repo.dir, encoding: "utf-8" });
-    expect(log).toContain("chore(auto-claude)");
   });
 });
 

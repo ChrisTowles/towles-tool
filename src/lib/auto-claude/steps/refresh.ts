@@ -5,17 +5,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
-import {
-  buildTokens,
-  commitArtifacts,
-  execSafe,
-  fileExists,
-  git,
-  log,
-  logStep,
-  resolveTemplate,
-  runClaude,
-} from "../utils.js";
+import { buildTokens, execSafe, git, log, logStep, resolveTemplate, runClaude } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
@@ -47,7 +37,6 @@ export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
   const promptFile = resolveTemplate(TEMPLATES.refresh, tokens, ctx.issueDir);
   const result = await runClaude({
     promptFile,
-    permissionMode: "acceptEdits",
     maxTurns: getConfig().maxTurns,
   });
 
@@ -57,7 +46,6 @@ export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
     return false;
   }
 
-  await commitArtifacts(ctx, `chore(auto-claude): refresh for ${ctx.repo}#${ctx.number}`);
   await invalidateStaleArtifacts(ctx);
 
   await git(["push", "--force-with-lease", "-u", remote, ctx.branch]);
@@ -100,15 +88,7 @@ async function invalidateStaleArtifacts(ctx: IssueContext): Promise<void> {
     join(ctx.issueDir, ARTIFACTS.completedSummary),
   ];
 
-  const removed = paths.filter((p) => {
-    if (fileExists(p)) {
-      rmSync(p);
-      return true;
-    }
-    return false;
-  });
-
-  if (removed.length > 0) {
-    await commitArtifacts(ctx, "chore(auto-claude): invalidate stale artifacts after refresh");
+  for (const p of paths) {
+    rmSync(p, { force: true });
   }
 }
