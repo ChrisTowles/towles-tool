@@ -355,6 +355,7 @@ Use when skill adds specialized knowledge beyond tool access. Key techniques: do
    > "For critical validations, consider bundling a script that performs the checks programmatically rather than relying on language instructions. **Code is deterministic; language interpretation isn't.**"
 
 5. **Model laziness** — Add explicit encouragement:
+
    ```markdown
    ## Performance Notes
 
@@ -362,6 +363,7 @@ Use when skill adds specialized knowledge beyond tool access. Key techniques: do
    - Quality is more important than speed
    - Do not skip validation steps
    ```
+
    > Note: "Adding this to user prompts is more effective than in SKILL.md"
 
 ### 4.8 Troubleshooting: Large Context Issues
