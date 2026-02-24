@@ -70,19 +70,17 @@ describe("runClaude (mocked spawn-claude)", () => {
     );
   });
 
-  it("logs tool names from assistant turn events with object message format", async () => {
+  it("logs tool names from stream_event and shows thinking indicator", async () => {
     const infoSpy = vi.spyOn(consola, "info");
 
-    const assistantEvent = {
-      type: "assistant",
-      message: {
-        content: [
-          { type: "text", text: "Let me read the file." },
-          { type: "tool_use", id: "t1", name: "Read", input: {} },
-        ],
+    const thinkingEvent = {
+      type: "stream_event",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "thinking" },
       },
     };
-    const streamEvent = {
+    const toolEvent = {
       type: "stream_event",
       event: {
         type: "content_block_start",
@@ -97,7 +95,7 @@ describe("runClaude (mocked spawn-claude)", () => {
     };
 
     mockSpawnImpl = () => ({
-      stdout: [assistantEvent, streamEvent, resultEvent].map((e) => JSON.stringify(e)).join("\n"),
+      stdout: [thinkingEvent, toolEvent, resultEvent].map((e) => JSON.stringify(e)).join("\n"),
       exitCode: 0,
     });
 
@@ -109,9 +107,8 @@ describe("runClaude (mocked spawn-claude)", () => {
     expect(result.result).toBe("Done");
     expect(result.num_turns).toBe(1);
 
-    // Verify consola.info was called with tool names (Read from assistant turn, Edit from stream_event)
     const infoCalls = infoSpy.mock.calls.map((c) => String(c[0]));
-    expect(infoCalls.some((msg) => msg.includes("Read"))).toBe(true);
+    expect(infoCalls.some((msg) => msg.includes("thinking"))).toBe(true);
     expect(infoCalls.some((msg) => msg.includes("Edit"))).toBe(true);
 
     infoSpy.mockRestore();
