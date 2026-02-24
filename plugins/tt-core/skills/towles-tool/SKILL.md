@@ -33,9 +33,12 @@ tt auto-claude --loop
 
 # Custom interval and limit
 tt auto-claude --loop --interval 15 --limit 3
+
+# Interactively pick an auto-claude issue to process
+tt auto-claude list
 ```
 
-Alias: `tt ac --issue 42`
+Alias: `tt ac --issue 42`, `tt ac list`
 
 ## Git
 
