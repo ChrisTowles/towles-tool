@@ -13,24 +13,18 @@ Create a GitHub issue in the current repository with the `auto-claude` label, de
    gh repo view --json nameWithOwner --jq '.nameWithOwner'
    ```
 
-2. **Ensure the `auto-claude` label exists** in the repo. Try to create it — if it already exists the command will fail silently, which is fine:
-
-   ```
-   gh label create "auto-claude" --repo <repo> --description "Issue created or worked by Claude Code" --color "7C3AED" 2>/dev/null || true
-   ```
-
-3. **Fetch existing labels** from the repo:
+2. **Fetch existing labels** from the repo:
 
    ```
    gh label list --repo <repo> --json name --jq '.[].name'
    ```
 
-4. **Gather information** using AskUserQuestion. Ask up to 4 questions at a time:
+3. **Gather information** using AskUserQuestion. Ask up to 4 questions at a time:
    - **Title**: What should the issue title be?
    - **Description**: Describe what needs to be done.
    - **Extra Labels** (optional, multi-select): Additional labels to apply? Use the labels fetched from the repo as options (exclude `auto-claude` since it's always added).
 
-5. **Create the issue** using `gh issue create`:
+4. **Create the issue** using `gh issue create`:
    - Always include the `auto-claude` label
    - Add any extra labels the user selected
    - Prefix the title with the conventional type (`feat:`, `fix:`, `refactor:`, `research:`, `chore:`)
@@ -56,8 +50,16 @@ Create a GitHub issue in the current repository with the `auto-claude` label, de
    )"
    ```
 
-6. **Support batch creation**: If the user provides multiple issues (e.g. a list of bullets), create all issues in parallel using separate `gh issue create` calls. Choose the appropriate conventional prefix and labels for each based on the title and description.
+   If issue creation fails because the `auto-claude` label doesn't exist, create it and retry:
 
-7. **Report back** with all issue URLs, ideally in a table format.
+   ```
+   gh label create "auto-claude" --repo <repo> --description "Issue created or worked by Claude Code" --color "7C3AED"
+   ```
+
+   Then re-run the `gh issue create` command.
+
+5. **Support batch creation**: If the user provides multiple issues (e.g. a list of bullets), create all issues in parallel using separate `gh issue create` calls. Choose the appropriate conventional prefix and labels for each based on the title and description.
+
+6. **Report back** with all issue URLs, ideally in a table format.
 
 $ARGUMENTS
