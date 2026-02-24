@@ -1,11 +1,11 @@
 export const TEMPLATES = {
-  research: "01-prompt-research.md",
-  plan: "02-prompt-plan.md",
-  planAnnotations: "03-prompt-plan-annotations.md",
-  planImplementation: "04-prompt-plan-implementation.md",
-  implement: "05-prompt-implement.md",
-  review: "06-prompt-review.md",
-  refresh: "07-prompt-refresh.md",
+  research: "01_research.prompt.md",
+  plan: "02_plan.prompt.md",
+  planAnnotations: "03_plan-annotations.prompt.md",
+  planImplementation: "04_plan-implementation.prompt.md",
+  implement: "05_implement.prompt.md",
+  review: "06_review.prompt.md",
+  refresh: "07_refresh.prompt.md",
 } as const;
 
 export const PIPELINE_STEPS = [

@@ -6,6 +6,7 @@ import consola from "consola";
 import pc from "picocolors";
 import { x } from "tinyexec";
 
+import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
 import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
 
@@ -196,7 +197,7 @@ export function buildIssueContext(
     scopePath,
     issueDir: join(process.cwd(), issueDirRel),
     issueDirRel,
-    branch: `auto-claude/issue-${issue.number}`,
+    branch: createBranchNameFromIssue({ number: issue.number, title: issue.title }),
   };
 }
 

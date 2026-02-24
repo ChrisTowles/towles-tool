@@ -32,12 +32,12 @@ describe("buildIssueContext", () => {
     expect(ctx.scopePath).toBe("src/");
     expect(ctx.issueDirRel).toBe(".auto-claude/issue-42");
     expect(ctx.issueDir).toContain(".auto-claude/issue-42");
-    expect(ctx.branch).toBe("auto-claude/issue-42");
+    expect(ctx.branch).toBe("feature/42-fix-the-bug");
   });
 
-  it("should derive branch name from issue number", () => {
+  it("should derive branch name from issue title", () => {
     const ctx = buildIssueContext({ number: 7, title: "t", body: "" }, "r", ".");
-    expect(ctx.branch).toBe("auto-claude/issue-7");
+    expect(ctx.branch).toBe("feature/7-t");
   });
 });
 
@@ -69,14 +69,14 @@ describe("resolveTemplate", () => {
     const issueDir = join(tmpDir, "issue-99");
     mkdirSync(issueDir, { recursive: true });
 
-    const result = resolveTemplate("01-prompt-research.md", tokens, issueDir);
+    const result = resolveTemplate("01_research.prompt.md", tokens, issueDir);
 
     // Should return a relative path
     expect(result).toContain("issue-99");
-    expect(result).toContain("01-prompt-research.md");
+    expect(result).toContain("01_research.prompt.md");
 
     // Resolved file should exist and have tokens replaced
-    const content = readFileSync(join(issueDir, "01-prompt-research.md"), "utf-8");
+    const content = readFileSync(join(issueDir, "01_research.prompt.md"), "utf-8");
     expect(content).toContain("src/");
     expect(content).toContain(".auto-claude/issue-99");
     expect(content).not.toContain("{{SCOPE_PATH}}");
@@ -120,7 +120,7 @@ describe("buildContextFromArtifacts", () => {
     expect(ctx.title).toBe("My Great Feature");
     expect(ctx.body).toContain("This is the body of the issue.");
     expect(ctx.repo).toBe("test/repo");
-    expect(ctx.branch).toBe("auto-claude/issue-77");
+    expect(ctx.branch).toBe("feature/77-my-great-feature");
   });
 
   it("should fallback title when heading is missing", async () => {

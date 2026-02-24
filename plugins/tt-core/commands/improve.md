@@ -1,6 +1,6 @@
 ---
 title: improve
-description: "Explore codebase and suggest improvements"
+description: " only used when called explistatly to eplore codebase and suggest improvements"
 allowed-tools: AskUserQuestion(*), Read(*), Glob(*), Grep(*), Task(*)
 ---
 
@@ -37,8 +37,4 @@ Use `AskUserQuestion` with:
 
 After selection, confirm approach and begin implementation.
 
-## FINAL STEP: Save Plan
-
-Write PRD to `docs/plans/{YYYY}-{MM}-{DD}-{plan-goal}.md`
-
-Consider creating a GitHub issue with the `auto-claude` label to have the auto-claude pipeline (`tt ac`) implement the plan automatically.
+Consider creating a GitHub issue with the `auto-claude` label to have the auto-claude pipeline implement the plan automatically.
