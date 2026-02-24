@@ -239,14 +239,6 @@ export function writeFile(path: string, content: string): void {
 
 // ── Git helpers ──
 
-export async function commitArtifacts(ctx: IssueContext, message: string): Promise<void> {
-  await git(["add", ctx.issueDirRel]);
-  const staged = await execSafe("git", ["diff", "--cached", "--name-only"]);
-  if (staged.ok && staged.stdout.length > 0) {
-    await git(["commit", "-m", message]);
-  }
-}
-
 // ── Issue context ──
 
 export interface IssueContext {
@@ -417,9 +409,5 @@ export async function runStepWithArtifact(opts: StepRunnerOptions): Promise<bool
     return false;
   }
 
-  await commitArtifacts(
-    ctx,
-    `chore(auto-claude): ${stepName.toLowerCase()} for ${ctx.repo}#${ctx.number}`,
-  );
   return true;
 }

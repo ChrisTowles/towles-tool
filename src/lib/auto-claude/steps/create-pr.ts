@@ -4,7 +4,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS } from "../prompt-templates/index.js";
-import { fileExists, ghRaw, git, log, logStep, readFile, writeFile } from "../utils.js";
+import { execSafe, fileExists, ghRaw, git, log, logStep, readFile, writeFile } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
@@ -65,12 +65,80 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
     const url = prUrl.trim();
     writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), url);
     log(`PR created: ${url}`);
+
+    try {
+      await attachArtifacts(ctx, url);
+    } catch (e) {
+      consola.warn(`Artifact upload failed (non-blocking): ${e}`);
+    }
   } else {
     consola.error("Failed to create PR");
     return false;
   }
 
   return true;
+}
+
+async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> {
+  const archivePath = join(ctx.issueDir, "artifacts.tar.gz");
+  const tag = `ac-issue-${ctx.number}`;
+  const cfg = getConfig();
+
+  // Create tar.gz (exclude resolved prompt templates and the archive itself)
+  await execSafe("tar", [
+    "czf",
+    archivePath,
+    "-C",
+    ctx.issueDir,
+    "--exclude=*.prompt.md",
+    "--exclude=artifacts.tar.gz",
+    ".",
+  ]);
+
+  // Delete old release if exists (idempotent)
+  await execSafe("gh", ["release", "delete", tag, "--yes", "--repo", cfg.repo]);
+
+  // Create pre-release with asset
+  await execSafe("gh", [
+    "release",
+    "create",
+    tag,
+    "--prerelease",
+    "--title",
+    `Artifacts: #${ctx.number}`,
+    "--repo",
+    cfg.repo,
+    archivePath,
+  ]);
+
+  // Get asset download URL
+  const { stdout: assetUrl } = await execSafe("gh", [
+    "release",
+    "view",
+    tag,
+    "--json",
+    "assets",
+    "--jq",
+    ".assets[0].url",
+    "--repo",
+    cfg.repo,
+  ]);
+
+  if (!assetUrl) {
+    consola.warn("Could not get artifact download URL — skipping PR comment");
+    return;
+  }
+
+  // Add PR comment with download link
+  const comment = [
+    "## Pipeline Artifacts",
+    "",
+    `[Download artifacts (tar.gz)](${assetUrl.trim()})`,
+    "",
+    "Contains: research.md, plan.md, plan-implementation.md, review.md, completed-summary.md",
+  ].join("\n");
+
+  await execSafe("gh", ["pr", "comment", prUrl, "--body", comment]);
 }
 
 async function hasOpenPR(branch: string): Promise<boolean> {

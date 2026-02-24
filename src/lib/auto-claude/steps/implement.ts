@@ -6,7 +6,6 @@ import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
 import {
   buildTokens,
-  commitArtifacts,
   fileExists,
   git,
   log,
@@ -48,10 +47,6 @@ export async function stepImplement(ctx: IssueContext): Promise<boolean> {
 
     if (fileExists(completedPath)) {
       log(`Implementation complete after ${i} iteration(s)`);
-      await commitArtifacts(
-        ctx,
-        `chore(auto-claude): implementation complete for ${ctx.repo}#${ctx.number}`,
-      );
       return true;
     }
 
