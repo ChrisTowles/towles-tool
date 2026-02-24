@@ -165,7 +165,7 @@ function toolDetail(block: Record<string, unknown>): string {
   if (typeof filePath === "string") return pc.dim(` ${filePath}`);
   if (typeof input.pattern === "string") return pc.dim(` ${input.pattern}`);
   if (typeof input.command === "string") {
-    const cmd = input.command as string;
+    const cmd = input.command;
     return pc.dim(` ${cmd.length > 60 ? cmd.slice(0, 60) + "\u2026" : cmd}`);
   }
   return "";
