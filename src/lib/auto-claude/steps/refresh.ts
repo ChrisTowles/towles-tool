@@ -7,7 +7,6 @@ import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
 import {
   buildTokens,
-  commitArtifacts,
   execSafe,
   fileExists,
   git,
@@ -57,7 +56,6 @@ export async function stepRefresh(ctx: IssueContext): Promise<boolean> {
     return false;
   }
 
-  await commitArtifacts(ctx, `chore(auto-claude): refresh for ${ctx.repo}#${ctx.number}`);
   await invalidateStaleArtifacts(ctx);
 
   await git(["push", "--force-with-lease", "-u", remote, ctx.branch]);
@@ -100,15 +98,9 @@ async function invalidateStaleArtifacts(ctx: IssueContext): Promise<void> {
     join(ctx.issueDir, ARTIFACTS.completedSummary),
   ];
 
-  const removed = paths.filter((p) => {
+  for (const p of paths) {
     if (fileExists(p)) {
       rmSync(p);
-      return true;
     }
-    return false;
-  });
-
-  if (removed.length > 0) {
-    await commitArtifacts(ctx, "chore(auto-claude): invalidate stale artifacts after refresh");
   }
 }
