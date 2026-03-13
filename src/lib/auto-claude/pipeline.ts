@@ -38,37 +38,42 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
     log("Saved initial-ramblings.md");
   }
 
-  for (const step of PIPELINE_STEPS) {
-    const runner = STEP_RUNNERS[step.name];
-    const success = await runner(ctx);
+  try {
+    for (const step of PIPELINE_STEPS) {
+      const runner = STEP_RUNNERS[step.name];
+      const success = await runner(ctx);
 
-    if (!success) {
-      log(`Pipeline stopped at "${step.name}" for ${ctx.repo}#${ctx.number}`);
-      await checkoutMain();
-      return;
+      if (!success) {
+        log(`Pipeline stopped at "${step.name}" for ${ctx.repo}#${ctx.number}`);
+        return;
+      }
+
+      if (untilStep && step.name === untilStep) {
+        log(`Pipeline paused after "${step.name}" (--until ${untilStep})`);
+        return;
+      }
     }
 
-    if (untilStep && step.name === untilStep) {
-      log(`Pipeline paused after "${step.name}" (--until ${untilStep})`);
-      await checkoutMain();
-      return;
-    }
+    const prUrlPath = join(ctx.issueDir, ARTIFACTS.prUrl);
+    const prUrl = fileExists(prUrlPath) ? readFile(prUrlPath).trim() : "";
+    const prSuffix = prUrl ? ` — ${prUrl}` : "";
+    log(`Pipeline complete for ${ctx.repo}#${ctx.number}${prSuffix}`);
+  } finally {
+    await checkoutMain();
   }
-
-  const prUrlPath = join(ctx.issueDir, ARTIFACTS.prUrl);
-  const prUrl = fileExists(prUrlPath) ? readFile(prUrlPath).trim() : "";
-  const prSuffix = prUrl ? ` — ${prUrl}` : "";
-  log(`Pipeline complete for ${ctx.repo}#${ctx.number}${prSuffix}`);
-  await checkoutMain();
 }
 
 async function checkoutMain(): Promise<void> {
   await git(["checkout", getConfig().mainBranch]).catch(() => {});
 
-  // Restore any stash created by ensureBranch
-  const stashList = await execSafe("git", ["stash", "list", "--max-count=1"]);
-  if (stashList.ok && stashList.stdout.includes("auto-claude: before switching to")) {
-    await execSafe("git", ["stash", "pop"]);
-    log("Restored stashed changes");
+  // Restore any stash created by ensureBranch, searching by message instead of assuming top
+  const stashList = await execSafe("git", ["stash", "list"]);
+  if (stashList.ok) {
+    const lines = stashList.stdout.split("\n");
+    const idx = lines.findIndex((l) => l.includes("auto-claude: before switching to"));
+    if (idx >= 0) {
+      await execSafe("git", ["stash", "pop", `stash@{${idx}}`]);
+      log("Restored stashed changes");
+    }
   }
 }

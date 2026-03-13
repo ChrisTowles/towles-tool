@@ -95,10 +95,10 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
   ]);
 
   // Delete old release if exists (idempotent)
-  await execSafe("gh", ["release", "delete", tag, "--yes", "--repo", cfg.repo]);
+  await ghRaw(["release", "delete", tag, "--yes", "--repo", cfg.repo]);
 
   // Create pre-release with asset
-  await execSafe("gh", [
+  await ghRaw([
     "release",
     "create",
     tag,
@@ -111,7 +111,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
   ]);
 
   // Get asset download URL
-  const { stdout: assetUrl } = await execSafe("gh", [
+  const assetUrl = await ghRaw([
     "release",
     "view",
     tag,
@@ -137,7 +137,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
     "Contains: research.md, plan.md, plan-implementation.md, review.md, completed-summary.md",
   ].join("\n");
 
-  await execSafe("gh", ["pr", "comment", prUrl, "--body", comment]);
+  await ghRaw(["pr", "comment", prUrl, "--body", comment]);
 }
 
 async function hasOpenPR(branch: string): Promise<boolean> {
