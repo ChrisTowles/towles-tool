@@ -91,19 +91,12 @@ claude --yes "Complete the tasks in docs/plans/2026-01-28-my-feature.md"
 ## Context Management
 
 ```bash
-# Add files to context explicitly
-claude --add-file src/api/routes.ts "Review the error handling"
+# Add directories to context explicitly
+claude --add-dir src/api "Review the error handling"
 
-# Ignore certain paths
-echo "node_modules/\ndist/\n*.log" >> .claudeignore
-```
-
-## Model Selection
-
-```bash
-# Use a specific model
-claude --model claude-sonnet-4-20250514 "Quick task"
-claude --model claude-opus-4-20250514 "Complex refactor"
+# Model selection
+claude --model sonnet "Quick task"
+claude --model opus "Complex refactor"
 ```
 
 ## Tips

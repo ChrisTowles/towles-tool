@@ -105,38 +105,8 @@ QMD exposes an MCP server for Claude Code/Desktop:
 - `qmd_multi_get` — Retrieve multiple documents
 - `qmd_status` — Index health and collection info
 
-## Search Architecture
+## Notes
 
-```
-Query → Query Expansion (Qwen3-1.7B)
-      → Parallel: BM25 (FTS5) + Vector Search
-      → RRF Fusion
-      → LLM Re-ranking (qwen3-reranker)
-      → Position-Aware Blending
-```
-
-## Score Interpretation
-
-| Score     | Meaning             |
-| --------- | ------------------- |
-| 0.8 - 1.0 | Highly relevant     |
-| 0.5 - 0.8 | Moderately relevant |
-| 0.2 - 0.5 | Somewhat relevant   |
-| 0.0 - 0.2 | Low relevance       |
-
-## Models (auto-downloaded)
-
-| Model               | Purpose           | Size   |
-| ------------------- | ----------------- | ------ |
-| embeddinggemma-300M | Vector embeddings | ~300MB |
-| qwen3-reranker-0.6b | Re-ranking        | ~640MB |
-| Qwen3-1.7B          | Query expansion   | ~2.2GB |
-
-Cached in `~/.cache/qmd/models/`
-
-## Use Cases
-
-- Search meeting notes and transcripts
-- Find relevant docs for coding tasks
-- RAG pipeline for local knowledge bases
-- Agentic workflows with `--json` output
+- Uses BM25 + vector search + LLM re-ranking locally via GGUF models (~3GB total, auto-downloaded to `~/.cache/qmd/models/`)
+- Scores: 0.8+ highly relevant, 0.5-0.8 moderate, below 0.5 low
+- Use `--json` output for agentic workflows
