@@ -32,7 +32,7 @@ export default class DailyNotes extends BaseCommand {
     await this.parse(DailyNotes);
 
     try {
-      const journalSettings = this.settings.settings.journalSettings;
+      const journalSettings = this.userSettings.journalSettings;
       const templateDir = journalSettings.templateDir;
 
       // Ensure templates exist on first run
@@ -58,7 +58,7 @@ export default class DailyNotes extends BaseCommand {
       }
 
       await openInEditor({
-        editor: this.settings.settings.preferredEditor,
+        editor: this.userSettings.preferredEditor,
         filePath: fileInfo.fullPath,
         folderPath: journalSettings.baseFolder,
       });

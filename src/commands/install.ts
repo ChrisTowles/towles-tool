@@ -56,7 +56,9 @@ export default class Install extends BaseCommand {
         this.log(colors.dim(`Found existing Claude settings at ${CLAUDE_SETTINGS_PATH}`));
       } catch {
         this.log(
-          colors.yellow(`Warning: Could not parse ${CLAUDE_SETTINGS_PATH}, will create fresh settings`),
+          colors.yellow(
+            `Warning: Could not parse ${CLAUDE_SETTINGS_PATH}, will create fresh settings`,
+          ),
         );
       }
     } else {
