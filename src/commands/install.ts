@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { Flags } from "@oclif/core";
-import pc from "picocolors";
+import { colors } from "consola/utils";
 import consola from "consola";
 import { BaseCommand } from "./base.js";
 
@@ -45,7 +45,7 @@ export default class Install extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(Install);
 
-    this.log(pc.bold("\n🔧 towles-tool install\n"));
+    this.log(colors.bold("\n🔧 towles-tool install\n"));
 
     // Load or create Claude settings
     let claudeSettings: ClaudeSettings = {};
@@ -53,14 +53,14 @@ export default class Install extends BaseCommand {
       try {
         const content = fs.readFileSync(CLAUDE_SETTINGS_PATH, "utf-8");
         claudeSettings = JSON.parse(content);
-        this.log(pc.dim(`Found existing Claude settings at ${CLAUDE_SETTINGS_PATH}`));
+        this.log(colors.dim(`Found existing Claude settings at ${CLAUDE_SETTINGS_PATH}`));
       } catch {
         this.log(
-          pc.yellow(`Warning: Could not parse ${CLAUDE_SETTINGS_PATH}, will create fresh settings`),
+          colors.yellow(`Warning: Could not parse ${CLAUDE_SETTINGS_PATH}, will create fresh settings`),
         );
       }
     } else {
-      this.log(pc.dim(`No Claude settings file found, will create one`));
+      this.log(colors.dim(`No Claude settings file found, will create one`));
     }
 
     // Configure recommended settings
@@ -70,37 +70,37 @@ export default class Install extends BaseCommand {
     if (claudeSettings.cleanupPeriodDays !== 99999) {
       claudeSettings.cleanupPeriodDays = 99999;
       modified = true;
-      this.log(pc.green("✓ Set cleanupPeriodDays: 99999 (prevent log deletion)"));
+      this.log(colors.green("✓ Set cleanupPeriodDays: 99999 (prevent log deletion)"));
     } else {
-      this.log(pc.dim("✓ cleanupPeriodDays already set to 99999"));
+      this.log(colors.dim("✓ cleanupPeriodDays already set to 99999"));
     }
 
     // Enable thinking by default
     if (claudeSettings.alwaysThinkingEnabled !== true) {
       claudeSettings.alwaysThinkingEnabled = true;
       modified = true;
-      this.log(pc.green("✓ Set alwaysThinkingEnabled: true"));
+      this.log(colors.green("✓ Set alwaysThinkingEnabled: true"));
     } else {
-      this.log(pc.dim("✓ alwaysThinkingEnabled already set to true"));
+      this.log(colors.dim("✓ alwaysThinkingEnabled already set to true"));
     }
 
     // Save settings if modified
     if (modified) {
       this.saveClaudeSettings(claudeSettings);
-      this.log(pc.green(`\n✓ Saved Claude settings to ${CLAUDE_SETTINGS_PATH}`));
+      this.log(colors.green(`\n✓ Saved Claude settings to ${CLAUDE_SETTINGS_PATH}`));
     }
 
     // Show observability setup if requested
     if (flags.observability) {
-      this.log(pc.bold("\n📊 Observability Setup\n"));
+      this.log(colors.bold("\n📊 Observability Setup\n"));
       this.showOtelInstructions();
     }
 
     // Install Claude plugins
-    this.log(pc.bold("\n📦 Claude Plugins\n"));
+    this.log(colors.bold("\n📦 Claude Plugins\n"));
     await this.ensureClaudePlugins();
 
-    this.log(pc.bold(pc.green("\n✅ Installation complete!\n")));
+    this.log(colors.bold(colors.green("\n✅ Installation complete!\n")));
   }
 
   private async ensureClaudePlugins(): Promise<void> {
@@ -126,7 +126,7 @@ export default class Install extends BaseCommand {
       const plugins: { id: string }[] = JSON.parse(result.stdout);
       installedIds = new Set(plugins.map((p) => p.id));
     } catch {
-      this.log(pc.yellow("⚠ Could not list Claude plugins"));
+      this.log(colors.yellow("⚠ Could not list Claude plugins"));
     }
 
     // Ensure marketplaces are added first
@@ -134,7 +134,7 @@ export default class Install extends BaseCommand {
       if (plugin.marketplaceUrl && !installedIds.has(plugin.id)) {
         try {
           await x("claude", ["plugin", "marketplace", "add", plugin.marketplaceUrl]);
-          this.log(pc.dim(`  Added marketplace: ${plugin.marketplace}`));
+          this.log(colors.dim(`  Added marketplace: ${plugin.marketplace}`));
         } catch {
           // marketplace may already be added
         }
@@ -144,7 +144,7 @@ export default class Install extends BaseCommand {
     // Install missing plugins
     for (const plugin of requiredPlugins) {
       if (installedIds.has(plugin.id)) {
-        this.log(pc.dim(`✓ ${plugin.name} already installed`));
+        this.log(colors.dim(`✓ ${plugin.name} already installed`));
         continue;
       }
 
@@ -156,14 +156,14 @@ export default class Install extends BaseCommand {
       if (answer) {
         const result = await x("claude", ["plugin", "install", plugin.id, "--scope", "user"]);
         if (result.exitCode === 0) {
-          this.log(pc.green(`✓ ${plugin.name} installed`));
+          this.log(colors.green(`✓ ${plugin.name} installed`));
         } else {
           if (result.stdout) this.log(result.stdout);
-          if (result.stderr) this.log(pc.dim(result.stderr));
-          this.log(pc.yellow(`⚠ ${plugin.name} install exited with code ${result.exitCode}`));
+          if (result.stderr) this.log(colors.dim(result.stderr));
+          this.log(colors.yellow(`⚠ ${plugin.name} install exited with code ${result.exitCode}`));
         }
       } else {
-        this.log(pc.dim(`  Skipped ${plugin.name}`));
+        this.log(colors.dim(`  Skipped ${plugin.name}`));
       }
     }
   }
@@ -177,7 +177,7 @@ export default class Install extends BaseCommand {
   }
 
   private showOtelInstructions(): void {
-    this.log(pc.cyan("Add these environment variables to your shell profile:\n"));
+    this.log(colors.cyan("Add these environment variables to your shell profile:\n"));
 
     consola.box(`export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export OTEL_METRICS_EXPORTER=otlp
@@ -186,10 +186,10 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`);
 
     this.log("");
     this.log(
-      pc.dim("For more info, see: https://github.com/anthropics/claude-code-monitoring-guide"),
+      colors.dim("For more info, see: https://github.com/anthropics/claude-code-monitoring-guide"),
     );
     this.log("");
-    this.log(pc.cyan("Quick cost analysis (no setup required):"));
-    this.log(pc.dim("  npx ccusage@latest --breakdown"));
+    this.log(colors.cyan("Quick cost analysis (no setup required):"));
+    this.log(colors.dim("  npx ccusage@latest --breakdown"));
   }
 }

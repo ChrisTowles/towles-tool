@@ -1,5 +1,5 @@
 import { x } from "tinyexec";
-import pc from "picocolors";
+import { colors } from "consola/utils";
 import { BaseCommand } from "./base.js";
 
 interface CheckResult {
@@ -35,21 +35,21 @@ export default class Doctor extends BaseCommand {
 
     // Display results
     for (const check of checks) {
-      const icon = check.ok ? pc.green("✓") : pc.red("✗");
+      const icon = check.ok ? colors.green("✓") : colors.red("✗");
       const version = check.version ?? "not found";
       this.log(`${icon} ${check.name}: ${version}`);
       if (check.warning) {
-        this.log(`  ${pc.yellow("⚠")} ${check.warning}`);
+        this.log(`  ${colors.yellow("⚠")} ${check.warning}`);
       }
     }
 
     // Check gh auth
     this.log("");
     const ghAuth = await this.checkGhAuth();
-    const authIcon = ghAuth.ok ? pc.green("✓") : pc.yellow("⚠");
+    const authIcon = ghAuth.ok ? colors.green("✓") : colors.yellow("⚠");
     this.log(`${authIcon} gh auth: ${ghAuth.ok ? "authenticated" : "not authenticated"}`);
     if (!ghAuth.ok) {
-      this.log(`  ${pc.dim("Run: gh auth login")}`);
+      this.log(`  ${colors.dim("Run: gh auth login")}`);
     }
 
     // Node version check
@@ -58,7 +58,7 @@ export default class Doctor extends BaseCommand {
       const major = Number.parseInt(nodeCheck.version.split(".")[0], 10);
       if (major < 18) {
         this.log("");
-        this.log(`${pc.yellow("⚠")} Node.js 18+ recommended (found ${nodeCheck.version})`);
+        this.log(`${colors.yellow("⚠")} Node.js 18+ recommended (found ${nodeCheck.version})`);
       }
     }
 
@@ -66,11 +66,11 @@ export default class Doctor extends BaseCommand {
     this.log("");
     const pluginChecks = await this.checkClaudePlugins();
     for (const check of pluginChecks) {
-      const icon = check.ok ? pc.green("✓") : pc.red("✗");
+      const icon = check.ok ? colors.green("✓") : colors.red("✗");
       const status = check.ok ? "installed" : "not installed";
       this.log(`${icon} claude plugin ${check.name}: ${status}`);
       if (!check.ok && check.installHint) {
-        this.log(`  ${pc.dim(check.installHint)}`);
+        this.log(`  ${colors.dim(check.installHint)}`);
       }
     }
 
@@ -78,9 +78,9 @@ export default class Doctor extends BaseCommand {
     const allOk = checks.every((c) => c.ok) && ghAuth.ok && pluginChecks.every((c) => c.ok);
     this.log("");
     if (allOk) {
-      this.log(pc.green("All checks passed!"));
+      this.log(colors.green("All checks passed!"));
     } else {
-      this.log(pc.yellow("Some checks failed. See above for details."));
+      this.log(colors.yellow("Some checks failed. See above for details."));
     }
   }
 

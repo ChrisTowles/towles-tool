@@ -17,7 +17,7 @@ Dual-purpose repository:
 ## Commands
 
 ```bash
-pnpm start              # Run CLI with tsx
+pnpm dev                # Run CLI with tsx
 pnpm typecheck          # TypeScript type checking
 pnpm test               # Run vitest tests
 pnpm lint               # Run oxlint
