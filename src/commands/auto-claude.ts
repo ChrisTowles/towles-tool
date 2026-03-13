@@ -141,7 +141,7 @@ export default class AutoClaude extends BaseCommand {
       iteration++;
 
       if (loopMode) {
-        logBanner(`Iteration #${iteration} — ${new Date().toISOString()}`);
+        logBanner(`Iteration #${iteration} — ${new Date().toLocaleDateString("en-CA")}`);
       }
 
       try {

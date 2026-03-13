@@ -88,7 +88,7 @@ async function rebaseOrMerge(mainBranch: string): Promise<void> {
         await git(["merge", "--abort"]);
         throw new Error(`Merge conflicts detected in: ${conflicts.stdout}`);
       }
-      await git(["add", "."]);
+      await git(["add", "-u"]);
       await git(["commit", "--no-edit"]);
     }
   }

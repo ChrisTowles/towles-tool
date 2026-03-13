@@ -66,3 +66,7 @@ export function getConfig(): AutoClaudeConfig {
   if (!_config) throw new Error("Config not initialized. Call initConfig() first.");
   return _config;
 }
+
+export function resetConfig(): void {
+  _config = undefined;
+}

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AutoClaudeConfigSchema, getConfig, initConfig } from "./config";
+import { AutoClaudeConfigSchema, getConfig, initConfig, resetConfig } from "./config";
 
 describe("AutoClaudeConfigSchema", () => {
   it("should apply all defaults when only repo is provided", () => {
@@ -41,7 +41,7 @@ describe("AutoClaudeConfigSchema", () => {
 
 describe("getConfig", () => {
   afterEach(() => {
-    // Reset internal config state by re-initializing
+    resetConfig();
   });
 
   it("should return config after initConfig with explicit repo and mainBranch", async () => {
