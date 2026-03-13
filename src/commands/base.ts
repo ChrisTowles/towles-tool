@@ -15,13 +15,18 @@ export abstract class BaseCommand extends Command {
     }),
   };
 
-  protected settings!: SettingsFile;
+  protected settingsFile!: SettingsFile;
+
+  /** Shortcut to avoid `this.settingsFile.settings.X` stutter */
+  protected get userSettings() {
+    return this.settingsFile.settings;
+  }
 
   /**
    * Called before run(). Loads user settings.
    */
   async init(): Promise<void> {
     await super.init();
-    this.settings = await loadSettings();
+    this.settingsFile = await loadSettings();
   }
 }

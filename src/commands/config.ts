@@ -18,18 +18,16 @@ export default class Config extends BaseCommand {
     consola.info("Configuration");
     consola.log("");
 
-    consola.info(`Settings File: ${this.settings.path}`);
+    consola.info(`Settings File: ${this.settingsFile.path}`);
     consola.log("");
 
     consola.warn("User Config:");
+    consola.log(`  Daily Path Template: ${this.userSettings.journalSettings.dailyPathTemplate}`);
     consola.log(
-      `  Daily Path Template: ${this.settings.settings.journalSettings.dailyPathTemplate}`,
+      `  Meeting Path Template: ${this.userSettings.journalSettings.meetingPathTemplate}`,
     );
-    consola.log(
-      `  Meeting Path Template: ${this.settings.settings.journalSettings.meetingPathTemplate}`,
-    );
-    consola.log(`  Note Path Template: ${this.settings.settings.journalSettings.notePathTemplate}`);
-    consola.log(`  Editor: ${this.settings.settings.preferredEditor}`);
+    consola.log(`  Note Path Template: ${this.userSettings.journalSettings.notePathTemplate}`);
+    consola.log(`  Editor: ${this.userSettings.preferredEditor}`);
     consola.log("");
 
     consola.warn("Working Directory:");
