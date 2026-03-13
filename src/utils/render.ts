@@ -1,6 +1,8 @@
 import { colors } from "consola/utils";
 
-export const getTerminalColumns = () => process.stdout?.columns || 80;
+export function getTerminalColumns(): number {
+  return process.stdout?.columns || 80;
+}
 
 export const limitText = (text: string, maxWidth: number): string => {
   if (text.length <= maxWidth) return text;

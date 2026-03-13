@@ -106,7 +106,8 @@ export default class AutoClaudeList extends BaseCommand {
 
       const untilStep = flags.until as StepName | undefined;
       await runPipeline(ctx, untilStep);
-    } catch {
+    } catch (e) {
+      consola.error(e);
       this.exit(1);
     }
   }
