@@ -1,7 +1,7 @@
 ---
 title: claude
 description: "Launch Claude Code for the current task or plan"
-allowed-tools: Bash(*), Read(*), Glob(*), Write(*), Task(*)
+allowed-tools: Bash(*), Read(*), Glob(*), Task(*)
 ---
 
 Launch Claude Code in the appropriate mode based on context.
@@ -9,6 +9,7 @@ Launch Claude Code in the appropriate mode based on context.
 ## Phase 1: Assess Context
 
 Check for:
+
 - Active Ralph plan (`tt ralph show`)
 - Existing plan files in `docs/plans/`
 - User-provided task description
@@ -28,19 +29,25 @@ Check for:
 Based on context, choose:
 
 ### Option A: Direct Task (no plan)
+
 If user provides a direct task:
+
 ```bash
 claude --yes "[user's task]"
 ```
 
 ### Option B: Plan Execution (Ralph plan exists)
+
 If Ralph has an active plan:
+
 ```bash
 tt ralph run --maxIterations 15
 ```
 
 ### Option C: Plan File Execution
+
 If `docs/plans/*.md` exists but not in Ralph:
+
 ```bash
 # Add to Ralph and run
 tt ralph plan add "docs/plans/[latest-plan].md"
@@ -50,6 +57,7 @@ tt ralph run
 ## Phase 4: Monitor & Report
 
 After execution:
+
 1. Summarize what was changed: `git diff --stat HEAD~5..HEAD`
 2. Run tests if available: `pnpm test`
 3. Report status to user
