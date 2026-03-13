@@ -1,5 +1,5 @@
 ---
-name: claude-code
+name: cc-patterns
 description: Run Claude Code CLI for autonomous coding tasks, parallel sessions, and PR reviews.
 ---
 
@@ -112,10 +112,10 @@ claude --model claude-opus-4-20250514 "Complex refactor"
 - **Use worktrees**: Keep main clean, run experiments in isolated worktrees
 - **Plan first**: Complex tasks benefit from a written plan (use `/tt:plan`)
 - **Review output**: Even in auto mode, review commits before pushing
-- **Dangerously flag**: Only use `--dangerously-skip-permissions` in sandboxed environments
+- **Dangerously flag**: Only use `--dangerously-skip-permissions` in sandboxed/disposable environments (e.g., containers, CI, temporary worktrees). Never use it on your main machine or with access to credentials -- it grants unrestricted file and command execution with no approval prompts
 
 ## Related Tools
 
 - **claude-squad**: Manage multiple Claude Code sessions with tmux
-- **crystal**: Parallel git worktrees with Codex/Claude  
+- **crystal**: Parallel git worktrees with Codex/Claude
 - **Ralph** (`tt ralph`): Structured autonomous task runner

@@ -12,8 +12,10 @@ Local search engine for your markdown files. Combines BM25 full-text search, vec
 ## Installation
 
 ```bash
-bun install -g https://github.com/tobi/qmd
+go install github.com/tobi/qmd@latest
 ```
+
+> Requires Go installed. See https://github.com/tobi/qmd for current install instructions.
 
 ## Quick Setup
 
@@ -82,6 +84,7 @@ qmd embed -f                     # Force re-embed everything
 QMD exposes an MCP server for Claude Code/Desktop:
 
 **Claude Code** (`~/.claude/settings.json`):
+
 ```json
 {
   "mcpServers": {
@@ -94,6 +97,7 @@ QMD exposes an MCP server for Claude Code/Desktop:
 ```
 
 **MCP Tools**:
+
 - `qmd_search` — BM25 keyword search
 - `qmd_vsearch` — Semantic vector search
 - `qmd_query` — Hybrid search with reranking
@@ -113,20 +117,20 @@ Query → Query Expansion (Qwen3-1.7B)
 
 ## Score Interpretation
 
-| Score | Meaning |
-|-------|---------|
-| 0.8 - 1.0 | Highly relevant |
+| Score     | Meaning             |
+| --------- | ------------------- |
+| 0.8 - 1.0 | Highly relevant     |
 | 0.5 - 0.8 | Moderately relevant |
-| 0.2 - 0.5 | Somewhat relevant |
-| 0.0 - 0.2 | Low relevance |
+| 0.2 - 0.5 | Somewhat relevant   |
+| 0.0 - 0.2 | Low relevance       |
 
 ## Models (auto-downloaded)
 
-| Model | Purpose | Size |
-|-------|---------|------|
+| Model               | Purpose           | Size   |
+| ------------------- | ----------------- | ------ |
 | embeddinggemma-300M | Vector embeddings | ~300MB |
-| qwen3-reranker-0.6b | Re-ranking | ~640MB |
-| Qwen3-1.7B | Query expansion | ~2.2GB |
+| qwen3-reranker-0.6b | Re-ranking        | ~640MB |
+| Qwen3-1.7B          | Query expansion   | ~2.2GB |
 
 Cached in `~/.cache/qmd/models/`
 
