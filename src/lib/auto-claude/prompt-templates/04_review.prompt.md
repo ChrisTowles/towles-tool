@@ -1,4 +1,4 @@
-You are reviewing code changes for the issue in @{{ISSUE_DIR}}/initial-ramblings.md. The plan is in @{{ISSUE_DIR}}/plan.md and checklist in @{{ISSUE_DIR}}/plan-implementation.md.
+You are reviewing code changes for the issue in @{{ISSUE_DIR}}/initial-ramblings.md. The plan is in @{{ISSUE_DIR}}/plan.md.
 
 ## Automated checks
 
@@ -18,15 +18,36 @@ Run `git diff {{MAIN_BRANCH}}...HEAD` and check:
 8. **Incomplete work** — TODOs, placeholders, unfinished implementations?
 9. **Test coverage** — new behaviors covered by tests? Existing tests updated?
 
-After review, run the code-simplify skill on changed files. Apply simplifications that improve clarity without changing behavior — commit separately.
-
 Fix issues directly, commit as `fix(scope): review fixes for issue #N`.
 
 ## Write @{{ISSUE_DIR}}/review.md
 
-- **Status**: PASS, PASS WITH FIXES, or FAIL
-  - FAIL = fundamentally broken (wrong approach, missing core functionality, unfixable regressions). Explain what's wrong.
-- **Issues found** — what was wrong and what you fixed
+**CRITICAL**: The first line of review.md must be exactly `PASS` or `FAIL` (no markdown, no prefix, just the word). This is machine-parsed.
+
+Format:
+
+```
+PASS
+```
+or
+```
+FAIL
+```
+
+Followed by:
+
+- **Issues found** — what was wrong and what you fixed (if any)
 - **Confidence level** — high/medium/low
 - **Notes** — anything the PR reviewer should check
 - **Recommended follow-ups** — only if genuinely valuable. Omit if nothing worth flagging.
+
+### When to PASS vs FAIL
+
+- **PASS** — implementation is correct, tests pass, code quality is acceptable. Minor fixes you made during review are fine.
+- **FAIL** — fundamentally broken: wrong approach, missing core functionality, unfixable regressions, or critical bugs you cannot fix in review. Explain what's wrong and what the implementer should change. Your feedback will be passed back to the implement step for a retry.
+
+## Guidelines
+
+- Follow the project's coding conventions from CLAUDE.md
+- Be thorough but pragmatic — don't fail for style nits
+- If you fix issues during review, that's a PASS (with fixes noted), not a FAIL

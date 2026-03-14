@@ -187,6 +187,7 @@ export interface TokenValues {
   SCOPE_PATH: string;
   ISSUE_DIR: string;
   MAIN_BRANCH: string;
+  REVIEW_FEEDBACK?: string;
 }
 
 export function resolveTemplate(
@@ -260,11 +261,13 @@ export function buildIssueContext(
   };
 }
 
-export function buildTokens(ctx: IssueContext): TokenValues {
+export function buildTokens(ctx: IssueContext, overrides?: Partial<TokenValues>): TokenValues {
   return {
     SCOPE_PATH: ctx.scopePath,
     ISSUE_DIR: ctx.issueDirRel,
     MAIN_BRANCH: getConfig().mainBranch,
+    REVIEW_FEEDBACK: "",
+    ...overrides,
   };
 }
 
