@@ -90,7 +90,9 @@ export async function runClaude(opts: {
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < PROCESS_RETRIES) {
-        consola.warn(`Claude process failed (attempt ${attempt}/${PROCESS_RETRIES}), retrying in ${PROCESS_RETRY_DELAY_MS / 1000}s…`);
+        consola.warn(
+          `Claude process failed (attempt ${attempt}/${PROCESS_RETRIES}), retrying in ${PROCESS_RETRY_DELAY_MS / 1000}s…`,
+        );
         await sleep(PROCESS_RETRY_DELAY_MS);
       }
     }
@@ -355,11 +357,27 @@ export async function ensureLabelsExist(repo: string): Promise<void> {
 }
 
 export async function setLabel(repo: string, issueNumber: number, label: string): Promise<void> {
-  await execSafe("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", label]);
+  await execSafe("gh", [
+    "issue",
+    "edit",
+    String(issueNumber),
+    "--repo",
+    repo,
+    "--add-label",
+    label,
+  ]);
 }
 
 export async function removeLabel(repo: string, issueNumber: number, label: string): Promise<void> {
-  await execSafe("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", label]);
+  await execSafe("gh", [
+    "issue",
+    "edit",
+    String(issueNumber),
+    "--repo",
+    repo,
+    "--remove-label",
+    label,
+  ]);
 }
 
 // ── Git branch helpers ──

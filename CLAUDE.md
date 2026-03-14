@@ -28,7 +28,7 @@ pnpm format:check       # Check formatting without writing
 ## Guidelines
 
 - [Architecture](docs/architecture.md) - CLI structure, plugin system, tech stack
-- [Auto-Claude Pipeline](docs/auto-claude.md) - Automated issue-to-PR pipeline
+- [Auto-Claude Pipeline](docs/auto-claude.md) - 4-step issue-to-PR pipeline (plan → implement → simplify → review) with retry loop and label management
 - [Testing](docs/testing.md) - Test conventions
 - [CICD via GitHub Actions](docs/github-actions.md) - Automated release workflow
 - [Skill & Prompt Guide](docs/skill-and-prompt-guide.md) - Rules for writing skills, prompts, and CLAUDE.md

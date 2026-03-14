@@ -253,9 +253,7 @@ describe("runPipeline", () => {
     expect(failedLabelCall).toBeDefined();
 
     // Verify issue comment was posted
-    const commentCall = ghCalls.find(
-      (args) => args[0] === "issue" && args[1] === "comment",
-    );
+    const commentCall = ghCalls.find((args) => args[0] === "issue" && args[1] === "comment");
     expect(commentCall).toBeDefined();
   });
 
