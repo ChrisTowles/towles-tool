@@ -22,7 +22,8 @@ consola.level = -999;
 let mockClaudeImpl: MockClaudeImpl = null;
 vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
-// ── Mock tinyexec: intercept "gh" calls, pass through git ──
+// Track gh calls for label assertions
+let ghCalls: string[][] = [];
 
 vi.mock("tinyexec", async (importOriginal) => {
   const original = await importOriginal<typeof import("tinyexec")>();
@@ -35,7 +36,9 @@ vi.mock("tinyexec", async (importOriginal) => {
         opts?: Record<string, unknown>,
       ): Promise<{ stdout: string; exitCode: number }> => {
         if (cmd === "gh") {
-          throw new Error("Unexpected gh call in pipeline test");
+          ghCalls.push(args);
+          // Return empty success for label/issue/pr commands
+          return { stdout: "[]", exitCode: 0 };
         }
         return original.x(cmd, args, opts as never) as unknown as Promise<{
           stdout: string;
@@ -58,10 +61,11 @@ describe("runPipeline", () => {
     await initConfig({
       repo: "test/repo",
       mainBranch: "main",
-      maxImplementIterations: 2,
+      maxReviewRetries: 2,
     });
     ctx = buildTestContext(repo.dir);
     mockClaudeImpl = null;
+    ghCalls = [];
   });
 
   afterEach(() => {
@@ -131,7 +135,7 @@ describe("runPipeline", () => {
     expect(currentBranch).toBe("main");
   });
 
-  it("runs all steps in order when all succeed", async () => {
+  it("runs all 4 steps in order when review passes", async () => {
     const { runPipeline } = await import("./pipeline");
 
     let claudeCallCount = 0;
@@ -146,9 +150,11 @@ describe("runPipeline", () => {
         case 2:
           writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
           break;
-        // case 3: simplify (placeholder — no Claude call)
         case 3:
-          writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "# Review\nLooks good.");
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
+          break;
+        case 4:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "PASS\n\nLooks good.");
           break;
       }
       return { stdout: successClaudeJson(), exitCode: 0 };
@@ -156,6 +162,124 @@ describe("runPipeline", () => {
 
     await runPipeline(ctx);
 
-    expect(claudeCallCount).toBe(3);
+    expect(claudeCallCount).toBe(4);
+
+    // Verify auto-claude-review label was set
+    const reviewLabelCall = ghCalls.find(
+      (args) => args.includes("--add-label") && args.includes("auto-claude-review"),
+    );
+    expect(reviewLabelCall).toBeDefined();
+  });
+
+  it("retries implement→simplify→review on review fail then pass", async () => {
+    const { runPipeline } = await import("./pipeline");
+
+    let claudeCallCount = 0;
+    mockClaudeImpl = () => {
+      claudeCallCount++;
+      mkdirSync(ctx.issueDir, { recursive: true });
+
+      switch (claudeCallCount) {
+        case 1: // plan
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Plan");
+          break;
+        case 2: // implement (attempt 1)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
+          break;
+        case 3: // simplify (attempt 1)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
+          break;
+        case 4: // review (attempt 1 - FAIL)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "FAIL\n\nNeeds work.");
+          break;
+        case 5: // implement (attempt 2)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done v2");
+          break;
+        case 6: // simplify (attempt 2)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified v2");
+          break;
+        case 7: // review (attempt 2 - PASS)
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "PASS\n\nGood now.");
+          break;
+      }
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    await runPipeline(ctx);
+
+    // 1 plan + 3 steps * 2 attempts = 7
+    expect(claudeCallCount).toBe(7);
+  });
+
+  it("sets auto-claude-failed label after max retries exhausted", async () => {
+    const { runPipeline } = await import("./pipeline");
+
+    let claudeCallCount = 0;
+    mockClaudeImpl = () => {
+      claudeCallCount++;
+      mkdirSync(ctx.issueDir, { recursive: true });
+
+      // Plan
+      if (claudeCallCount === 1) {
+        writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Plan");
+        return { stdout: successClaudeJson(), exitCode: 0 };
+      }
+
+      // Each retry cycle: implement, simplify, review (always FAIL)
+      const stepInCycle = (claudeCallCount - 2) % 3;
+      switch (stepInCycle) {
+        case 0:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
+          break;
+        case 1:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
+          break;
+        case 2:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "FAIL\n\nStill bad.");
+          break;
+      }
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    await runPipeline(ctx);
+
+    // 1 plan + 3 steps * 3 attempts (maxReviewRetries=2 → 3 total) = 10
+    expect(claudeCallCount).toBe(10);
+
+    // Verify auto-claude-failed label was set
+    const failedLabelCall = ghCalls.find(
+      (args) => args.includes("--add-label") && args.includes("auto-claude-failed"),
+    );
+    expect(failedLabelCall).toBeDefined();
+
+    // Verify issue comment was posted
+    const commentCall = ghCalls.find(
+      (args) => args[0] === "issue" && args[1] === "comment",
+    );
+    expect(commentCall).toBeDefined();
+  });
+
+  it("--until implement stops after implement step", async () => {
+    const { runPipeline } = await import("./pipeline");
+
+    let claudeCallCount = 0;
+    mockClaudeImpl = () => {
+      claudeCallCount++;
+      mkdirSync(ctx.issueDir, { recursive: true });
+
+      switch (claudeCallCount) {
+        case 1:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Plan");
+          break;
+        case 2:
+          writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
+          break;
+      }
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    await runPipeline(ctx, "implement");
+
+    expect(claudeCallCount).toBe(2);
   });
 });

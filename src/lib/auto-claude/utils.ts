@@ -57,10 +57,14 @@ export interface ClaudeResult {
   num_turns: number;
 }
 
+const PROCESS_RETRIES = 3;
+const PROCESS_RETRY_DELAY_MS = 5_000;
+
 export async function runClaude(opts: {
   promptFile: string;
   maxTurns?: number;
 }): Promise<ClaudeResult> {
+  const cfg = getConfig();
   const args = [
     "-p",
     "--output-format",
@@ -68,16 +72,30 @@ export async function runClaude(opts: {
     "--verbose",
     "--include-partial-messages",
     "--dangerously-skip-permissions",
+    "--model",
+    cfg.model,
     ...(opts.maxTurns ? ["--max-turns", String(opts.maxTurns)] : []),
     `@${opts.promptFile}`,
   ];
 
-  const result = await runClaudeStreaming(args);
-  consola.success(`Done — ${result.num_turns} turns`);
-  if (result.result) {
-    consola.log(result.result);
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
+    try {
+      const result = await runClaudeStreaming(args);
+      consola.success(`Done — ${result.num_turns} turns`);
+      if (result.result) {
+        consola.log(result.result);
+      }
+      return result;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < PROCESS_RETRIES) {
+        consola.warn(`Claude process failed (attempt ${attempt}/${PROCESS_RETRIES}), retrying in ${PROCESS_RETRY_DELAY_MS / 1000}s…`);
+        await sleep(PROCESS_RETRY_DELAY_MS);
+      }
+    }
   }
-  return result;
+  throw lastError ?? new Error("runClaude failed after all retries");
 }
 
 function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
@@ -325,6 +343,23 @@ export function logStep(step: string, ctx: IssueContext, skipped = false): void 
   const tag = skipped ? pc.yellow("SKIP") : pc.green("RUN");
   logBanner(`[${tag}] ${step}`);
   consola.log(pc.dim(`${ctx.repo}#${ctx.number} — ${ctx.title}`));
+}
+
+// ── Label helpers ──
+
+export async function ensureLabelsExist(repo: string): Promise<void> {
+  const labels = ["auto-claude-in-progress", "auto-claude-review", "auto-claude-failed"];
+  for (const label of labels) {
+    await execSafe("gh", ["label", "create", label, "--repo", repo, "--force"]);
+  }
+}
+
+export async function setLabel(repo: string, issueNumber: number, label: string): Promise<void> {
+  await execSafe("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--add-label", label]);
+}
+
+export async function removeLabel(repo: string, issueNumber: number, label: string): Promise<void> {
+  await execSafe("gh", ["issue", "edit", String(issueNumber), "--repo", repo, "--remove-label", label]);
 }
 
 // ── Git branch helpers ──

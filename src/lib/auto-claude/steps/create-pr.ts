@@ -3,19 +3,18 @@ import { join } from "node:path";
 import consola from "consola";
 
 import { getConfig } from "../config.js";
-import { ARTIFACTS, STEP_LABELS } from "../prompt-templates/index.js";
-import { execSafe, fileExists, ghRaw, git, log, logStep, readFile, writeFile } from "../utils.js";
+import { ARTIFACTS } from "../prompt-templates/index.js";
+import { execSafe, fileExists, ghRaw, git, log, readFile, writeFile } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
-export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
+export async function createPr(ctx: IssueContext): Promise<string> {
   const cfg = getConfig();
 
-  if (await hasOpenPR(ctx.branch)) {
-    logStep(STEP_LABELS.createPr, ctx, true);
-    return true;
+  const existingUrl = await getExistingPrUrl(ctx.branch);
+  if (existingUrl) {
+    log(`PR already exists: ${existingUrl}`);
+    return existingUrl;
   }
-
-  logStep(STEP_LABELS.createPr, ctx);
 
   await git(["push", "-u", cfg.remote, ctx.branch]);
 
@@ -33,9 +32,9 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
     "",
     "## Pipeline Artifacts",
     "",
-    `- Research: \`.auto-claude/issue-${ctx.number}/research.md\``,
     `- Plan: \`.auto-claude/issue-${ctx.number}/plan.md\``,
-    `- Implementation Plan: \`.auto-claude/issue-${ctx.number}/plan-implementation.md\``,
+    `- Implementation: \`.auto-claude/issue-${ctx.number}/completed-summary.md\``,
+    `- Simplify: \`.auto-claude/issue-${ctx.number}/simplify-summary.md\``,
     `- Review: \`.auto-claude/issue-${ctx.number}/review.md\``,
     "",
     "## Review Summary",
@@ -57,13 +56,10 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
     ctx.title,
     "--body",
     body,
-    "--label",
-    cfg.triggerLabel,
   ]);
 
   if (!prUrl) {
-    consola.error("Failed to create PR");
-    return false;
+    throw new Error("Failed to create PR — gh returned empty output");
   }
 
   writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), prUrl);
@@ -75,7 +71,7 @@ export async function stepCreatePR(ctx: IssueContext): Promise<boolean> {
     consola.warn(`Artifact upload failed (non-blocking): ${e}`);
   }
 
-  return true;
+  return prUrl;
 }
 
 async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> {
@@ -83,7 +79,6 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
   const tag = `ac-issue-${ctx.number}`;
   const cfg = getConfig();
 
-  // Create tar.gz (exclude resolved prompt templates and the archive itself)
   await execSafe("tar", [
     "czf",
     archivePath,
@@ -94,10 +89,8 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
     ".",
   ]);
 
-  // Delete old release if exists (idempotent)
   await ghRaw(["release", "delete", tag, "--yes", "--repo", cfg.repo]);
 
-  // Create pre-release with asset
   await ghRaw([
     "release",
     "create",
@@ -110,7 +103,6 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
     archivePath,
   ]);
 
-  // Get asset download URL
   const assetUrl = await ghRaw([
     "release",
     "view",
@@ -128,19 +120,18 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
     return;
   }
 
-  // Add PR comment with download link
   const comment = [
     "## Pipeline Artifacts",
     "",
     `[Download artifacts (tar.gz)](${assetUrl})`,
     "",
-    "Contains: research.md, plan.md, plan-implementation.md, review.md, completed-summary.md",
+    "Contains: plan.md, completed-summary.md, simplify-summary.md, review.md",
   ].join("\n");
 
   await ghRaw(["pr", "comment", prUrl, "--body", comment]);
 }
 
-async function hasOpenPR(branch: string): Promise<boolean> {
+async function getExistingPrUrl(branch: string): Promise<string | null> {
   const out = await ghRaw([
     "pr",
     "list",
@@ -151,12 +142,12 @@ async function hasOpenPR(branch: string): Promise<boolean> {
     "--state",
     "open",
     "--json",
-    "number",
+    "url",
   ]);
   try {
-    const prs = JSON.parse(out);
-    return Array.isArray(prs) && prs.length > 0;
+    const prs = JSON.parse(out) as Array<{ url: string }>;
+    return prs.length > 0 ? prs[0].url : null;
   } catch {
-    return false;
+    return null;
   }
 }
