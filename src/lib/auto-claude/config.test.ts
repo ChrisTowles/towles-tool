@@ -12,11 +12,9 @@ describe("AutoClaudeConfigSchema", () => {
     expect(cfg.remote).toBe("origin");
     expect(cfg.maxImplementIterations).toBe(5);
     expect(cfg.maxTurns).toBeUndefined();
+    expect(cfg.model).toBe("opus");
+    expect(cfg.maxReviewRetries).toBe(2);
     expect(cfg.loopIntervalMinutes).toBe(30);
-    expect(cfg.loopRetryEnabled).toBe(false);
-    expect(cfg.maxRetries).toBe(5);
-    expect(cfg.retryDelayMs).toBe(30_000);
-    expect(cfg.maxRetryDelayMs).toBe(300_000);
   });
 
   it("should allow overriding defaults", () => {
@@ -24,14 +22,14 @@ describe("AutoClaudeConfigSchema", () => {
       repo: "owner/repo",
       triggerLabel: "bot",
       maxImplementIterations: 10,
-      maxRetries: 3,
-      loopRetryEnabled: true,
+      model: "sonnet",
+      maxReviewRetries: 5,
     });
 
     expect(cfg.triggerLabel).toBe("bot");
     expect(cfg.maxImplementIterations).toBe(10);
-    expect(cfg.maxRetries).toBe(3);
-    expect(cfg.loopRetryEnabled).toBe(true);
+    expect(cfg.model).toBe("sonnet");
+    expect(cfg.maxReviewRetries).toBe(5);
   });
 
   it("should require repo field", () => {

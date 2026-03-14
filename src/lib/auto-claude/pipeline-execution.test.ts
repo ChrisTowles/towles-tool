@@ -24,8 +24,6 @@ vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
 // ── Mock tinyexec: intercept "gh" calls, pass through git ──
 
-let mockGhImpl: ((args: string[]) => Promise<{ stdout: string; exitCode: number }>) | null = null;
-
 vi.mock("tinyexec", async (importOriginal) => {
   const original = await importOriginal<typeof import("tinyexec")>();
   return {
@@ -36,11 +34,8 @@ vi.mock("tinyexec", async (importOriginal) => {
         args: string[],
         opts?: Record<string, unknown>,
       ): Promise<{ stdout: string; exitCode: number }> => {
-        if (cmd === "gh" && mockGhImpl) {
-          return mockGhImpl(args);
-        }
         if (cmd === "gh") {
-          throw new Error("Unexpected gh call -- set mockGhImpl");
+          throw new Error("Unexpected gh call in pipeline test");
         }
         return original.x(cmd, args, opts as never) as unknown as Promise<{
           stdout: string;
@@ -67,7 +62,6 @@ describe("runPipeline", () => {
     });
     ctx = buildTestContext(repo.dir);
     mockClaudeImpl = null;
-    mockGhImpl = null;
   });
 
   afterEach(() => {
@@ -109,16 +103,16 @@ describe("runPipeline", () => {
     const { runPipeline } = await import("./pipeline");
 
     let claudeCallCount = 0;
-    const researchPath = join(ctx.issueDir, ARTIFACTS.research);
+    const planPath = join(ctx.issueDir, ARTIFACTS.plan);
 
     mockClaudeImpl = () => {
       claudeCallCount++;
       mkdirSync(ctx.issueDir, { recursive: true });
-      writeFileSync(researchPath, "x".repeat(250));
+      writeFileSync(planPath, "# Plan\n\nDetailed plan.");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx, "research");
+    await runPipeline(ctx, "plan");
 
     expect(claudeCallCount).toBe(1);
   });
@@ -147,45 +141,21 @@ describe("runPipeline", () => {
 
       switch (claudeCallCount) {
         case 1:
-          writeFileSync(join(ctx.issueDir, ARTIFACTS.research), "x".repeat(250));
-          break;
-        case 2:
           writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Plan");
           break;
-        case 3:
-          writeFileSync(join(ctx.issueDir, ARTIFACTS.planImplementation), "# Impl Plan");
-          break;
-        case 4:
+        case 2:
           writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
           break;
-        case 5:
+        // case 3: simplify (placeholder — no Claude call)
+        case 3:
           writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "# Review\nLooks good.");
           break;
       }
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    let ghCallCount = 0;
-    mockGhImpl = async (args: string[]) => {
-      ghCallCount++;
-      if (args[0] === "pr" && args[1] === "list") {
-        return { stdout: "[]", exitCode: 0 };
-      }
-      if (args[0] === "pr" && args[1] === "create") {
-        return { stdout: "https://github.com/test/repo/pull/1", exitCode: 0 };
-      }
-      return { stdout: "", exitCode: 0 };
-    };
-
     await runPipeline(ctx);
 
-    const prUrlPath = join(ctx.issueDir, ARTIFACTS.prUrl);
-    if (existsSync(prUrlPath)) {
-      const prUrl = readFileSync(prUrlPath, "utf-8");
-      expect(prUrl).toContain("github.com");
-    }
-
-    expect(claudeCallCount).toBe(5);
-    expect(ghCallCount).toBeGreaterThanOrEqual(2);
+    expect(claudeCallCount).toBe(3);
   });
 });

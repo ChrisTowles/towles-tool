@@ -60,7 +60,6 @@ export interface ClaudeResult {
 export async function runClaude(opts: {
   promptFile: string;
   maxTurns?: number;
-  retry?: boolean;
 }): Promise<ClaudeResult> {
   const args = [
     "-p",
@@ -73,33 +72,12 @@ export async function runClaude(opts: {
     `@${opts.promptFile}`,
   ];
 
-  const cfg = getConfig();
-  let retryDelay = cfg.retryDelayMs;
-  let retries = 0;
-
-  while (true) {
-    try {
-      const result = await runClaudeStreaming(args);
-      consola.success(`Done — ${result.num_turns} turns`);
-      if (result.result) {
-        consola.log(result.result);
-      }
-      return result;
-    } catch (e) {
-      const shouldRetry = opts.retry ?? cfg.loopRetryEnabled ?? false;
-      if (!shouldRetry) throw e;
-
-      retries++;
-      if (retries >= cfg.maxRetries) {
-        throw new Error(`Claude failed after ${cfg.maxRetries} retries: ${e}`);
-      }
-
-      consola.warn(`Claude process error (attempt ${retries}/${cfg.maxRetries}): ${e}`);
-      consola.info(`Retrying in ${retryDelay / 1000}s...`);
-      await sleep(retryDelay);
-      retryDelay = Math.min(retryDelay * 2, cfg.maxRetryDelayMs);
-    }
+  const result = await runClaudeStreaming(args);
+  consola.success(`Done — ${result.num_turns} turns`);
+  if (result.result) {
+    consola.log(result.result);
   }
+  return result;
 }
 
 function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {

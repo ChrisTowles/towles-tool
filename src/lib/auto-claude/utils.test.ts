@@ -69,14 +69,14 @@ describe("resolveTemplate", () => {
     const issueDir = join(tmpDir, "issue-99");
     mkdirSync(issueDir, { recursive: true });
 
-    const result = resolveTemplate("01_research.prompt.md", tokens, issueDir);
+    const result = resolveTemplate("01_plan.prompt.md", tokens, issueDir);
 
     // Should return a relative path
     expect(result).toContain("issue-99");
-    expect(result).toContain("01_research.prompt.md");
+    expect(result).toContain("01_plan.prompt.md");
 
     // Resolved file should exist and have tokens replaced
-    const content = readFileSync(join(issueDir, "01_research.prompt.md"), "utf-8");
+    const content = readFileSync(join(issueDir, "01_plan.prompt.md"), "utf-8");
     expect(content).toContain("src/");
     expect(content).toContain(".auto-claude/issue-99");
     expect(content).not.toContain("{{SCOPE_PATH}}");
