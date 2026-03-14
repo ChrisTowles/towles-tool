@@ -10,15 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe("TEMPLATES", () => {
   it("should have all expected keys", () => {
-    expect(Object.keys(TEMPLATES)).toEqual([
-      "research",
-      "plan",
-      "planAnnotations",
-      "planImplementation",
-      "implement",
-      "review",
-      "refresh",
-    ]);
+    expect(Object.keys(TEMPLATES)).toEqual(["plan", "implement", "simplify", "review"]);
   });
 
   it("every template file should exist on disk", () => {
@@ -43,8 +35,8 @@ describe("TEMPLATES", () => {
 });
 
 describe("PIPELINE_STEPS", () => {
-  it("should have 8 steps", () => {
-    expect(PIPELINE_STEPS).toHaveLength(8);
+  it("should have 4 steps", () => {
+    expect(PIPELINE_STEPS).toHaveLength(4);
   });
 
   it("each step should have order, name, and label", () => {
@@ -65,16 +57,7 @@ describe("PIPELINE_STEPS", () => {
   });
 
   it("names should match expected pipeline order", () => {
-    expect(PIPELINE_STEPS.map((s) => s.name)).toEqual([
-      "research",
-      "plan",
-      "plan-annotations",
-      "plan-implementation",
-      "implement",
-      "review",
-      "create-pr",
-      "remove-label",
-    ]);
+    expect(PIPELINE_STEPS.map((s) => s.name)).toEqual(["plan", "implement", "simplify", "review"]);
   });
 
   it("labels should include the order number", () => {
@@ -92,25 +75,12 @@ describe("STEP_NAMES", () => {
 });
 
 describe("STEP_LABELS", () => {
-  it("should have camelCase keys for all pipeline steps plus refresh", () => {
-    expect(Object.keys(STEP_LABELS)).toEqual([
-      "research",
-      "plan",
-      "planAnnotations",
-      "planImplementation",
-      "implement",
-      "review",
-      "createPr",
-      "removeLabel",
-      "refresh",
-    ]);
+  it("should have keys matching step names", () => {
+    expect(Object.keys(STEP_LABELS)).toEqual(["plan", "implement", "simplify", "review"]);
   });
 
-  it("pipeline labels should have numeric prefixes", () => {
-    const pipelineLabels = { ...STEP_LABELS };
-    delete pipelineLabels.refresh;
-
-    for (const label of Object.values(pipelineLabels)) {
+  it("labels should have numeric prefixes", () => {
+    for (const label of Object.values(STEP_LABELS)) {
       expect(label).toMatch(/^\d{2}-/);
     }
   });
@@ -127,12 +97,9 @@ describe("ARTIFACTS", () => {
   it("should have all expected keys", () => {
     expect(Object.keys(ARTIFACTS)).toEqual([
       "initialRamblings",
-      "research",
       "plan",
-      "planAnnotations",
-      "planAnnotationsAddressed",
-      "planImplementation",
       "completedSummary",
+      "simplifySummary",
       "review",
       "prUrl",
     ]);

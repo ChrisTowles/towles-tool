@@ -8,7 +8,7 @@ describe("STEP_NAMES", () => {
     expect(STEP_NAMES).toEqual(PIPELINE_STEPS.map((s) => s.name));
   });
 
-  it("should have 8 steps", () => {
-    expect(STEP_NAMES).toHaveLength(8);
+  it("should have 4 steps", () => {
+    expect(STEP_NAMES).toHaveLength(4);
   });
 });

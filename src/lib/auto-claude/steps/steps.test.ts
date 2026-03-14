@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import consola from "consola";
@@ -62,7 +62,7 @@ describe("runStepWithArtifact", () => {
       stepName: "Test Step",
       ctx,
       artifactPath,
-      templateName: "01_research.prompt.md",
+      templateName: "01_plan.prompt.md",
     });
 
     expect(result).toBe(true);
@@ -78,7 +78,7 @@ describe("runStepWithArtifact", () => {
       stepName: "Test Step",
       ctx,
       artifactPath,
-      templateName: "01_research.prompt.md",
+      templateName: "01_plan.prompt.md",
     });
 
     expect(result).toBe(false);
@@ -94,7 +94,7 @@ describe("runStepWithArtifact", () => {
       stepName: "Test Step",
       ctx,
       artifactPath,
-      templateName: "01_research.prompt.md",
+      templateName: "01_plan.prompt.md",
     });
 
     expect(result).toBe(false);
@@ -113,115 +113,10 @@ describe("runStepWithArtifact", () => {
       stepName: "Test Step",
       ctx,
       artifactPath,
-      templateName: "01_research.prompt.md",
+      templateName: "01_plan.prompt.md",
     });
 
     expect(result).toBe(true);
-  });
-});
-
-// ── stepResearch ──
-
-describe("stepResearch", () => {
-  let originalCwd: string;
-  let repo: TestRepo;
-  let ctx: IssueContext;
-
-  beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
-    await initConfig({ repo: "test/repo", mainBranch: "main" });
-  });
-
-  afterEach(() => teardownStepTest(originalCwd, repo));
-
-  it("skips when research.md exists and is > 200 chars", async () => {
-    const { stepResearch } = await import("./research");
-
-    writeFileSync(join(ctx.issueDir, ARTIFACTS.research), "x".repeat(250));
-
-    const result = await stepResearch(ctx);
-    expect(result).toBe(true);
-  });
-
-  it("does NOT skip when research.md exists but is < 200 chars", async () => {
-    const { stepResearch } = await import("./research");
-
-    const researchPath = join(ctx.issueDir, ARTIFACTS.research);
-    writeFileSync(researchPath, "short");
-
-    let claudeCalled = false;
-    mockClaudeImpl = () => {
-      claudeCalled = true;
-      writeFileSync(researchPath, "x".repeat(250));
-      return { stdout: successClaudeJson(), exitCode: 0 };
-    };
-
-    const result = await stepResearch(ctx);
-    expect(claudeCalled).toBe(true);
-    expect(result).toBe(true);
-  });
-
-  it("calls ensureBranch (real git branch creation)", async () => {
-    const { stepResearch } = await import("./research");
-
-    const researchPath = join(ctx.issueDir, ARTIFACTS.research);
-    mockClaudeImpl = () => {
-      writeFileSync(researchPath, "x".repeat(250));
-      return { stdout: successClaudeJson(), exitCode: 0 };
-    };
-
-    await stepResearch(ctx);
-
-    const branches = execSync("git branch", { cwd: repo.dir, encoding: "utf-8" });
-    expect(branches).toContain(ctx.branch.split("/").pop());
-  });
-});
-
-// ── stepPlanAnnotations ──
-
-describe("stepPlanAnnotations", () => {
-  let originalCwd: string;
-  let repo: TestRepo;
-  let ctx: IssueContext;
-
-  beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
-    await initConfig({ repo: "test/repo", mainBranch: "main" });
-  });
-
-  afterEach(() => teardownStepTest(originalCwd, repo));
-
-  it("returns true when no plan-annotations.md exists", async () => {
-    const { stepPlanAnnotations } = await import("./plan-annotations");
-
-    const result = await stepPlanAnnotations(ctx);
-    expect(result).toBe(true);
-  });
-
-  it("skips when plan-annotations-addressed.md already exists", async () => {
-    const { stepPlanAnnotations } = await import("./plan-annotations");
-
-    writeFileSync(join(ctx.issueDir, ARTIFACTS.planAnnotations), "# Annotations");
-    writeFileSync(join(ctx.issueDir, ARTIFACTS.planAnnotationsAddressed), "# Addressed");
-
-    const result = await stepPlanAnnotations(ctx);
-    expect(result).toBe(true);
-  });
-
-  it("renames file after Claude runs successfully", async () => {
-    const { stepPlanAnnotations } = await import("./plan-annotations");
-
-    const annotationsPath = join(ctx.issueDir, ARTIFACTS.planAnnotations);
-    const addressedPath = join(ctx.issueDir, ARTIFACTS.planAnnotationsAddressed);
-    writeFileSync(annotationsPath, "# Annotations\n\nSome feedback here.");
-
-    mockClaudeImpl = () => ({ stdout: successClaudeJson(), exitCode: 0 });
-
-    const result = await stepPlanAnnotations(ctx);
-
-    expect(result).toBe(true);
-    expect(existsSync(addressedPath)).toBe(true);
-    expect(existsSync(annotationsPath)).toBe(false);
   });
 });
 

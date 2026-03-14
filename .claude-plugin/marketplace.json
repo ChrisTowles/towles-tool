@@ -1,6 +1,5 @@
 {
   "name": "towles-tool",
-  "description": "Claude Code plugins for autonomous task execution, observability, and development workflows",
   "metadata": {
     "description": "Ralph autonomous runner with session forking, token usage visualization, and daily development commands"
   },

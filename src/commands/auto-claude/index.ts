@@ -7,7 +7,6 @@ import consola from "consola";
 import { BaseCommand } from "../base.js";
 import {
   STEP_NAMES,
-  buildIssueContext,
   fetchIssue,
   fetchIssues,
   getConfig,
@@ -17,7 +16,6 @@ import {
   logBanner,
   runPipeline,
   sleep,
-  stepRefresh,
 } from "../../lib/auto-claude/index.js";
 import type { IssueContext, StepName } from "../../lib/auto-claude/index.js";
 
@@ -38,10 +36,6 @@ export default class AutoClaude extends BaseCommand {
     {
       description: "Reset local state for an issue",
       command: "<%= config.bin %> auto-claude --reset 42",
-    },
-    {
-      description: "Refresh a stale PR branch",
-      command: "<%= config.bin %> auto-claude --refresh --issue 42",
     },
     {
       description: "Loop mode: poll for labeled issues",
@@ -67,9 +61,9 @@ export default class AutoClaude extends BaseCommand {
     reset: Flags.integer({
       description: "Delete local state for an issue (force restart)",
     }),
-    refresh: Flags.boolean({
-      description: "Rebase a stale PR branch onto current main",
-      default: false,
+    model: Flags.string({
+      description: "Claude model to use (default: opus)",
+      default: "opus",
     }),
     loop: Flags.boolean({
       description: "Poll for labeled issues continuously",
@@ -100,7 +94,7 @@ export default class AutoClaude extends BaseCommand {
       triggerLabel: flags.label,
       mainBranch: flags["main-branch"],
       scopePath: flags["scope-path"],
-      loopRetryEnabled: flags.loop || undefined,
+      model: flags.model,
     });
 
     if (flags.reset) {
@@ -108,19 +102,6 @@ export default class AutoClaude extends BaseCommand {
       log(`Resetting state for issue-${flags.reset}...`);
       rmSync(issueDir, { recursive: true, force: true });
       log(`Cleaned ${issueDir}`);
-      return;
-    }
-
-    if (flags.refresh) {
-      if (!flags.issue) {
-        this.error("--refresh requires --issue <number>");
-      }
-      const ctx = buildIssueContext(
-        { number: flags.issue, title: `Issue #${flags.issue}`, body: "" },
-        cfg.repo,
-        cfg.scopePath,
-      );
-      await stepRefresh(ctx);
       return;
     }
 

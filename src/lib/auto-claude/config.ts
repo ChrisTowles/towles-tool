@@ -10,11 +10,9 @@ export const AutoClaudeConfigSchema = z.object({
   remote: z.string().default("origin"),
   maxImplementIterations: z.number().default(5),
   maxTurns: z.number().optional(),
+  model: z.string().default("opus"),
+  maxReviewRetries: z.number().default(2),
   loopIntervalMinutes: z.number().default(30),
-  loopRetryEnabled: z.boolean().default(false),
-  maxRetries: z.number().default(5),
-  retryDelayMs: z.number().default(30_000),
-  maxRetryDelayMs: z.number().default(300_000),
 });
 
 export type AutoClaudeConfig = z.infer<typeof AutoClaudeConfigSchema>;

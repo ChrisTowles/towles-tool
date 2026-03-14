@@ -2,7 +2,6 @@ export { type AutoClaudeConfig, AutoClaudeConfigSchema, getConfig, initConfig } 
 export { STEP_NAMES, runPipeline } from "./pipeline.js";
 export type { StepName } from "./prompt-templates/index.js";
 export { fetchIssue, fetchIssues } from "./steps/fetch-issues.js";
-export { stepRefresh } from "./steps/refresh.js";
 export {
   type IssueContext,
   buildContextFromArtifacts,
