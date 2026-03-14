@@ -140,15 +140,7 @@ async function handleFailure(ctx: IssueContext, stepName: string, comment?: stri
   await removeLabel(ctx.repo, ctx.number, LABELS.inProgress);
   await setLabel(ctx.repo, ctx.number, LABELS.failed);
   if (comment) {
-    await ghRaw([
-      "issue",
-      "comment",
-      String(ctx.number),
-      "--repo",
-      ctx.repo,
-      "--body",
-      comment,
-    ]);
+    await ghRaw(["issue", "comment", String(ctx.number), "--repo", ctx.repo, "--body", comment]);
   }
   log(`Pipeline stopped at "${stepName}" for ${ctx.repo}#${ctx.number}`);
 }
