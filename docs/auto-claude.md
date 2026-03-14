@@ -24,18 +24,18 @@ If review outputs FAIL, the pipeline loops back to **implement → simplify → 
 
 Defined in `src/lib/auto-claude/config.ts` via Zod schema:
 
-| Field | Default | Description |
-|---|---|---|
-| `triggerLabel` | `"auto-claude"` | Label that triggers the pipeline |
-| `repo` | auto-detected | `owner/repo` from `gh repo view` |
-| `scopePath` | `"."` | Working directory scope |
-| `mainBranch` | auto-detected | Default branch |
-| `remote` | `"origin"` | Git remote |
-| `maxImplementIterations` | `5` | Max Claude turns per implement step |
-| `maxTurns` | — | Optional max turns override |
-| `model` | `"opus"` | Claude model to use |
-| `maxReviewRetries` | `2` | Review failure retries (loops back to implement) |
-| `loopIntervalMinutes` | `30` | Polling interval for loop mode |
+| Field                    | Default         | Description                                      |
+| ------------------------ | --------------- | ------------------------------------------------ |
+| `triggerLabel`           | `"auto-claude"` | Label that triggers the pipeline                 |
+| `repo`                   | auto-detected   | `owner/repo` from `gh repo view`                 |
+| `scopePath`              | `"."`           | Working directory scope                          |
+| `mainBranch`             | auto-detected   | Default branch                                   |
+| `remote`                 | `"origin"`      | Git remote                                       |
+| `maxImplementIterations` | `5`             | Max Claude turns per implement step              |
+| `maxTurns`               | —               | Optional max turns override                      |
+| `model`                  | `"opus"`        | Claude model to use                              |
+| `maxReviewRetries`       | `2`             | Review failure retries (loops back to implement) |
+| `loopIntervalMinutes`    | `30`            | Polling interval for loop mode                   |
 
 ## Prompt Templates
 
