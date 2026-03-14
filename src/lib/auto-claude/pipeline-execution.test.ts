@@ -164,7 +164,11 @@ describe("runPipeline", () => {
 
     expect(claudeCallCount).toBe(4);
 
-    // Verify auto-claude-review label was set
+    // Verify auto-claude-success and auto-claude-review labels were set
+    const successLabelCall = ghCalls.find(
+      (args) => args.includes("--add-label") && args.includes("auto-claude-success"),
+    );
+    expect(successLabelCall).toBeDefined();
     const reviewLabelCall = ghCalls.find(
       (args) => args.includes("--add-label") && args.includes("auto-claude-review"),
     );

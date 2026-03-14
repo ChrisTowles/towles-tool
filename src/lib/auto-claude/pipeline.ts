@@ -10,6 +10,7 @@ import { stepPlan } from "./steps/plan.js";
 import { stepReview } from "./steps/review.js";
 import { stepSimplify } from "./steps/simplify.js";
 import {
+  LABELS,
   ensureDir,
   ensureLabelsExist,
   execSafe,
@@ -26,13 +27,6 @@ import type { IssueContext } from "./utils.js";
 
 export { type StepName, STEP_NAMES } from "./prompt-templates/index.js";
 
-const STEP_RUNNERS: Record<StepName, (ctx: IssueContext) => Promise<boolean>> = {
-  plan: stepPlan,
-  implement: stepImplement,
-  simplify: stepSimplify,
-  review: stepReview,
-};
-
 export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Promise<void> {
   const cfg = getConfig();
   log(`Pipeline starting for ${ctx.repo}#${ctx.number}: ${ctx.title}`);
@@ -48,12 +42,11 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
   // Label management
   await ensureLabelsExist(ctx.repo);
   await removeLabel(ctx.repo, ctx.number, cfg.triggerLabel);
-  await setLabel(ctx.repo, ctx.number, "auto-claude-in-progress");
+  await setLabel(ctx.repo, ctx.number, LABELS.inProgress);
 
   try {
     // Step 1: Plan (runs once)
-    const planOk = await STEP_RUNNERS.plan(ctx);
-    if (!planOk) {
+    if (!(await stepPlan(ctx))) {
       await handleFailure(ctx, "plan");
       return;
     }
@@ -73,8 +66,7 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Implement
-      const implOk = await STEP_RUNNERS.implement(ctx);
-      if (!implOk) {
+      if (!(await stepImplement(ctx))) {
         await handleFailure(ctx, "implement");
         return;
       }
@@ -84,8 +76,7 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Simplify
-      const simplifyOk = await STEP_RUNNERS.simplify(ctx);
-      if (!simplifyOk) {
+      if (!(await stepSimplify(ctx))) {
         await handleFailure(ctx, "simplify");
         return;
       }
@@ -95,8 +86,7 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Review
-      const reviewOk = await STEP_RUNNERS.review(ctx);
-      if (!reviewOk) {
+      if (!(await stepReview(ctx))) {
         await handleFailure(ctx, "review");
         return;
       }
@@ -107,10 +97,10 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
 
       // Check review result
       if (isReviewPass(ctx)) {
-        // Review passed — create PR
         const prUrl = await createPr(ctx);
-        await removeLabel(ctx.repo, ctx.number, "auto-claude-in-progress");
-        await setLabel(ctx.repo, ctx.number, "auto-claude-review");
+        await removeLabel(ctx.repo, ctx.number, LABELS.inProgress);
+        await setLabel(ctx.repo, ctx.number, LABELS.success);
+        await setLabel(ctx.repo, ctx.number, LABELS.review);
         log(`Pipeline complete for ${ctx.repo}#${ctx.number} — ${prUrl}`);
         return;
       }
@@ -124,8 +114,32 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
     }
 
     // All retries exhausted
-    await removeLabel(ctx.repo, ctx.number, "auto-claude-in-progress");
-    await setLabel(ctx.repo, ctx.number, "auto-claude-failed");
+    await handleFailure(
+      ctx,
+      "review",
+      `auto-claude: review did not pass after ${maxRetries + 1} attempts. Labelled \`${LABELS.failed}\`.`,
+    );
+  } finally {
+    await checkoutMain();
+  }
+}
+
+function clearArtifact(ctx: IssueContext, artifact: string): void {
+  rmSync(join(ctx.issueDir, artifact), { force: true });
+}
+
+function isReviewPass(ctx: IssueContext): boolean {
+  const reviewPath = join(ctx.issueDir, ARTIFACTS.review);
+  if (!fileExists(reviewPath)) return false;
+  const content = readFile(reviewPath);
+  const firstLine = content.split("\n")[0].trim().toUpperCase();
+  return firstLine === "PASS";
+}
+
+async function handleFailure(ctx: IssueContext, stepName: string, comment?: string): Promise<void> {
+  await removeLabel(ctx.repo, ctx.number, LABELS.inProgress);
+  await setLabel(ctx.repo, ctx.number, LABELS.failed);
+  if (comment) {
     await ghRaw([
       "issue",
       "comment",
@@ -133,34 +147,9 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       "--repo",
       ctx.repo,
       "--body",
-      `auto-claude: review did not pass after ${maxRetries + 1} attempts. Labelled \`auto-claude-failed\`.`,
+      comment,
     ]);
-    log(`Pipeline failed after ${maxRetries + 1} review attempts for ${ctx.repo}#${ctx.number}`);
-  } finally {
-    await checkoutMain();
   }
-}
-
-function clearArtifact(ctx: IssueContext, artifact: string): void {
-  const path = join(ctx.issueDir, artifact);
-  try {
-    rmSync(path);
-  } catch {
-    // File may not exist — that's fine
-  }
-}
-
-function isReviewPass(ctx: IssueContext): boolean {
-  const reviewPath = join(ctx.issueDir, ARTIFACTS.review);
-  if (!fileExists(reviewPath)) return false;
-  const content = readFile(reviewPath);
-  const firstLine = content.split("\n")[0].trim();
-  return firstLine.toUpperCase().startsWith("PASS");
-}
-
-async function handleFailure(ctx: IssueContext, stepName: string): Promise<void> {
-  await removeLabel(ctx.repo, ctx.number, "auto-claude-in-progress");
-  await setLabel(ctx.repo, ctx.number, "auto-claude-failed");
   log(`Pipeline stopped at "${stepName}" for ${ctx.repo}#${ctx.number}`);
 }
 

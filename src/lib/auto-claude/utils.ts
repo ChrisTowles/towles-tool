@@ -349,11 +349,19 @@ export function logStep(step: string, ctx: IssueContext, skipped = false): void 
 
 // ── Label helpers ──
 
+export const LABELS = {
+  inProgress: "auto-claude-in-progress",
+  review: "auto-claude-review",
+  failed: "auto-claude-failed",
+  success: "auto-claude-success",
+} as const;
+
 export async function ensureLabelsExist(repo: string): Promise<void> {
-  const labels = ["auto-claude-in-progress", "auto-claude-review", "auto-claude-failed"];
-  for (const label of labels) {
-    await execSafe("gh", ["label", "create", label, "--repo", repo, "--force"]);
-  }
+  await Promise.all(
+    Object.values(LABELS).map((label) =>
+      execSafe("gh", ["label", "create", label, "--repo", repo, "--force"]),
+    ),
+  );
 }
 
 export async function setLabel(repo: string, issueNumber: number, label: string): Promise<void> {
