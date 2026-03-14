@@ -10,6 +10,7 @@ import {
   git,
   log,
   logStep,
+  readFile,
   resolveTemplate,
   runClaude,
 } from "../utils.js";
@@ -28,10 +29,13 @@ export async function stepImplement(ctx: IssueContext): Promise<boolean> {
 
   await git(["checkout", ctx.branch]);
 
+  const reviewPath = join(ctx.issueDir, ARTIFACTS.review);
+  const reviewFeedback = fileExists(reviewPath) ? readFile(reviewPath) : "";
+
   for (let i = 1; i <= maxIterations; i++) {
     log(`Implementation iteration ${i}/${maxIterations}`);
 
-    const tokens = buildTokens(ctx);
+    const tokens = buildTokens(ctx, { REVIEW_FEEDBACK: reviewFeedback });
     const promptFile = resolveTemplate(TEMPLATES.implement, tokens, ctx.issueDir);
 
     const result = await runClaude({

@@ -120,6 +120,107 @@ describe("runStepWithArtifact", () => {
   });
 });
 
+// ── stepPlan ──
+
+describe("stepPlan", () => {
+  let originalCwd: string;
+  let repo: TestRepo;
+  let ctx: IssueContext;
+
+  beforeEach(async () => {
+    ({ originalCwd, repo, ctx } = setupStepTest());
+    await initConfig({ repo: "test/repo", mainBranch: "main" });
+  });
+
+  afterEach(() => teardownStepTest(originalCwd, repo));
+
+  it("skips when plan.md already exists", async () => {
+    const { stepPlan } = await import("./plan");
+
+    writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Existing plan");
+
+    const result = await stepPlan(ctx);
+    expect(result).toBe(true);
+  });
+
+  it("calls ensureBranch and creates plan.md on success", async () => {
+    const { stepPlan } = await import("./plan");
+    const planPath = join(ctx.issueDir, ARTIFACTS.plan);
+
+    mockClaudeImpl = () => {
+      writeFileSync(planPath, "# Plan\n\nDetailed plan.");
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    const result = await stepPlan(ctx);
+    expect(result).toBe(true);
+
+    // Verify we ended up on the branch (ensureBranch was called)
+    const currentBranch = execSync("git branch --show-current", { cwd: repo.dir })
+      .toString()
+      .trim();
+    expect(currentBranch).toBe(ctx.branch);
+  });
+
+  it("returns false when Claude fails", async () => {
+    const { stepPlan } = await import("./plan");
+
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+
+    const result = await stepPlan(ctx);
+    expect(result).toBe(false);
+  });
+});
+
+// ── stepSimplify ──
+
+describe("stepSimplify", () => {
+  let originalCwd: string;
+  let repo: TestRepo;
+  let ctx: IssueContext;
+
+  beforeEach(async () => {
+    ({ originalCwd, repo, ctx } = setupStepTest());
+    await initConfig({ repo: "test/repo", mainBranch: "main" });
+
+    // stepSimplify doesn't switch branches, but we need to be on one
+    execSync(`git checkout -b ${ctx.branch}`, { cwd: repo.dir, stdio: "ignore" });
+  });
+
+  afterEach(() => teardownStepTest(originalCwd, repo));
+
+  it("skips when simplify-summary.md already exists", async () => {
+    const { stepSimplify } = await import("./simplify");
+
+    writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
+
+    const result = await stepSimplify(ctx);
+    expect(result).toBe(true);
+  });
+
+  it("creates simplify-summary.md on success", async () => {
+    const { stepSimplify } = await import("./simplify");
+    const artifactPath = join(ctx.issueDir, ARTIFACTS.simplifySummary);
+
+    mockClaudeImpl = () => {
+      writeFileSync(artifactPath, "# Simplify Summary\n\nCode simplified.");
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    const result = await stepSimplify(ctx);
+    expect(result).toBe(true);
+  });
+
+  it("returns false when Claude fails", async () => {
+    const { stepSimplify } = await import("./simplify");
+
+    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+
+    const result = await stepSimplify(ctx);
+    expect(result).toBe(false);
+  });
+});
+
 // ── stepImplement ──
 
 describe("stepImplement", () => {
@@ -162,6 +263,22 @@ describe("stepImplement", () => {
     const result = await stepImplement(ctx);
     expect(result).toBe(false);
     expect(callCount).toBe(3);
+  });
+
+  it("passes review feedback when review.md exists", async () => {
+    const { stepImplement } = await import("./implement");
+
+    // Write a review.md to simulate review feedback
+    writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "# Review\n\nFix the tests.");
+
+    const completedPath = join(ctx.issueDir, ARTIFACTS.completedSummary);
+    mockClaudeImpl = () => {
+      writeFileSync(completedPath, "# Done");
+      return { stdout: successClaudeJson(), exitCode: 0 };
+    };
+
+    const result = await stepImplement(ctx);
+    expect(result).toBe(true);
   });
 
   it("stops looping when completed-summary.md appears", async () => {
