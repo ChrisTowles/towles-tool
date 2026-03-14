@@ -4,6 +4,7 @@ The issue is in @{{ISSUE_DIR}}/initial-ramblings.md — background context only.
 
 The code lives primarily at `{{SCOPE_PATH}}/`.
 {{REVIEW_FEEDBACK}}
+
 ## How to work
 
 1. Find the next unchecked (`- [ ]`) task in order, top to bottom

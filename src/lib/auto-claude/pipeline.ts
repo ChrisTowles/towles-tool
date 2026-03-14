@@ -117,7 +117,9 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
 
       // Review failed
       if (attempt < maxRetries) {
-        log(`Review did not pass (attempt ${attempt + 1}/${maxRetries + 1}), retrying implement→simplify→review…`);
+        log(
+          `Review did not pass (attempt ${attempt + 1}/${maxRetries + 1}), retrying implement→simplify→review…`,
+        );
       }
     }
 

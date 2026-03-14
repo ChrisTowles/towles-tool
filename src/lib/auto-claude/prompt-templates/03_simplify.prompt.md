@@ -30,6 +30,7 @@ The base branch is `{{MAIN_BRANCH}}`.
 ## Verification
 
 After each round of simplifications:
+
 1. Run the project's type-check command — fix any errors
 2. Run the project's test command — fix any regressions
 3. Run the project's lint command — fix any violations
@@ -39,6 +40,7 @@ Commit simplifications as `refactor(scope): code-simplify review for issue #N` (
 ## Output
 
 Write @{{ISSUE_DIR}}/simplify-summary.md with:
+
 - List of simplifications made (file path + what changed)
 - If no simplifications were needed, state that explicitly
 - Verification results (all checks pass / any issues encountered)

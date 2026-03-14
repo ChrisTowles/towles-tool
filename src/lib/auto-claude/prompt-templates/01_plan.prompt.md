@@ -29,26 +29,32 @@ Write the plan to @{{ISSUE_DIR}}/plan.md with this structure:
 # Plan: <concise title>
 
 ## Summary
+
 1-3 sentence description of the change and why it's needed.
 
 ## Approach
+
 High-level description of the solution strategy.
 
 ## Files to Change
+
 - `path/to/file.ext` — what changes and why
 - `path/to/new-file.ext` — (new) purpose
 - `path/to/deleted.ext` — (delete) reason
 
 ## Implementation Checklist
+
 - [ ] Task 1 — specific, actionable description
 - [ ] Task 2 — include file paths where relevant
 - [ ] Task 3 — tests: describe what to test
 - [ ] ...
 
 ## Test Strategy
+
 How to verify the implementation is correct. Which behaviors need test coverage.
 
 ## Risks / Edge Cases
+
 Anything the implementer should watch out for.
 ```
 
