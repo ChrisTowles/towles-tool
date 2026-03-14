@@ -301,13 +301,9 @@ describe("stepImplement", () => {
   });
 });
 
-// ── stepCreatePR / stepRemoveLabel -- skip in CI (needs gh) ──
+// ── createPr / label helpers -- skip in CI (needs gh) ──
 
-describe.skipIf(!!process.env.CI)("stepCreatePR (requires gh)", () => {
+describe.skipIf(!!process.env.CI)("createPr (requires gh)", () => {
   it.todo("skips when open PR already exists");
   it.todo("creates PR and writes pr-url.txt");
-});
-
-describe.skipIf(!!process.env.CI)("stepRemoveLabel (requires gh)", () => {
-  it.todo("calls gh with correct args");
 });
