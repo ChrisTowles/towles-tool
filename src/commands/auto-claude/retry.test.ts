@@ -18,8 +18,11 @@ vi.mock("tinyexec", () => ({
 }));
 
 function getGhEditCalls() {
-  return vi.mocked(x).mock.calls
-    .filter(([cmd, args]) => cmd === "gh" && args?.[0] === "issue" && args?.[1] === "edit")
+  return vi
+    .mocked(x)
+    .mock.calls.filter(
+      ([cmd, args]) => cmd === "gh" && args?.[0] === "issue" && args?.[1] === "edit",
+    )
     .map(([, args]) => args as string[]);
 }
 
@@ -30,10 +33,15 @@ describe("retryIssues", () => {
 
   it("removes failed label and adds trigger label for each issue", async () => {
     const issues = [
-      { number: 42, title: "Fix bug", state: "OPEN", labels: [{ name: LABELS.failed, color: "red" }] },
+      {
+        number: 42,
+        title: "Fix bug",
+        state: "OPEN",
+        labels: [{ name: LABELS.failed, color: "red" }],
+      },
     ];
 
-    const count = await retryIssues("owner/repo", "auto-claude", issues, issues, false);
+    const count = await retryIssues("owner/repo", "auto-claude", issues, false);
 
     expect(count).toBe(1);
     const editCalls = getGhEditCalls();
@@ -48,11 +56,21 @@ describe("retryIssues", () => {
 
   it("retries multiple issues", async () => {
     const issues = [
-      { number: 10, title: "Issue A", state: "OPEN", labels: [{ name: LABELS.failed, color: "red" }] },
-      { number: 20, title: "Issue B", state: "OPEN", labels: [{ name: LABELS.failed, color: "red" }] },
+      {
+        number: 10,
+        title: "Issue A",
+        state: "OPEN",
+        labels: [{ name: LABELS.failed, color: "red" }],
+      },
+      {
+        number: 20,
+        title: "Issue B",
+        state: "OPEN",
+        labels: [{ name: LABELS.failed, color: "red" }],
+      },
     ];
 
-    const count = await retryIssues("owner/repo", "auto-claude", issues, issues, false);
+    const count = await retryIssues("owner/repo", "auto-claude", issues, false);
 
     expect(count).toBe(2);
     const editCalls = getGhEditCalls();
@@ -61,7 +79,7 @@ describe("retryIssues", () => {
   });
 
   it("returns 0 when given empty selection", async () => {
-    const count = await retryIssues("owner/repo", "auto-claude", [], [], false);
+    const count = await retryIssues("owner/repo", "auto-claude", [], false);
     expect(count).toBe(0);
     expect(getGhEditCalls().length).toBe(0);
   });
@@ -77,10 +95,15 @@ describe("retryIssues", () => {
 
     try {
       const issues = [
-        { number: 42, title: "Fix bug", state: "OPEN", labels: [{ name: LABELS.failed, color: "red" }] },
+        {
+          number: 42,
+          title: "Fix bug",
+          state: "OPEN",
+          labels: [{ name: LABELS.failed, color: "red" }],
+        },
       ];
 
-      await retryIssues("owner/repo", "auto-claude", issues, issues, true);
+      await retryIssues("owner/repo", "auto-claude", issues, true);
       expect(existsSync(issueDir)).toBe(false);
     } finally {
       process.chdir(originalCwd);
@@ -98,10 +121,15 @@ describe("retryIssues", () => {
 
     try {
       const issues = [
-        { number: 42, title: "Fix bug", state: "OPEN", labels: [{ name: LABELS.failed, color: "red" }] },
+        {
+          number: 42,
+          title: "Fix bug",
+          state: "OPEN",
+          labels: [{ name: LABELS.failed, color: "red" }],
+        },
       ];
 
-      await retryIssues("owner/repo", "auto-claude", issues, issues, false);
+      await retryIssues("owner/repo", "auto-claude", issues, false);
       expect(existsSync(issueDir)).toBe(true);
     } finally {
       process.chdir(originalCwd);

@@ -12,11 +12,6 @@ import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/utils.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 
-export interface RetryOptions {
-  issueNumber?: number;
-  clean: boolean;
-}
-
 /**
  * Core retry logic: swap labels on failed issues to re-trigger the pipeline.
  * Extracted for testability.
@@ -24,7 +19,6 @@ export interface RetryOptions {
 export async function retryIssues(
   repo: string,
   triggerLabel: string,
-  failedIssues: Issue[],
   selected: Issue[],
   clean: boolean,
 ): Promise<number> {
@@ -139,7 +133,7 @@ export default class AutoClaudeRetry extends BaseCommand {
       selected = failedIssues.filter((i) => result.selected.includes(i.number));
     }
 
-    const count = await retryIssues(cfg.repo, cfg.triggerLabel, failedIssues, selected, flags.clean);
+    const count = await retryIssues(cfg.repo, cfg.triggerLabel, selected, flags.clean);
     consola.box(`Retried ${count} issue(s)`);
   }
 }
