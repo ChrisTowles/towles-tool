@@ -200,3 +200,267 @@ tests:
         value: "fundamentally broken"
       - type: icontains
         value: "confidence level"
+
+  # ── Plugin Skills ────────────────────────────────────────────────────
+
+  # ── skills/towles-tool/SKILL.md ──────────────────────────────────────
+
+  - description: "towles-tool skill: name and description"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/towles-tool/SKILL.md
+    assert:
+      - type: icontains
+        value: "name: towles-tool"
+      - type: icontains
+        value: "auto-claude pipeline"
+      - type: icontains
+        value: "tt auto-claude"
+
+  - description: "towles-tool skill: key commands listed"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/towles-tool/SKILL.md
+    assert:
+      - type: icontains
+        value: "tt gh branch"
+      - type: icontains
+        value: "tt journal"
+      - type: icontains
+        value: "tt doctor"
+
+  - description: "towles-tool skill: auto-claude subcommands"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/towles-tool/SKILL.md
+    assert:
+      - type: icontains
+        value: "--loop"
+      - type: icontains
+        value: "--refresh"
+      - type: icontains
+        value: "tt ac list"
+
+  # ── skills/qmd/SKILL.md ─────────────────────────────────────────────
+
+  - description: "qmd skill: name and description"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/qmd/SKILL.md
+    assert:
+      - type: icontains
+        value: "name: qmd"
+      - type: icontains
+        value: "BM25"
+      - type: icontains
+        value: "markdown"
+
+  - description: "qmd skill: search commands"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/qmd/SKILL.md
+    assert:
+      - type: icontains
+        value: "qmd search"
+      - type: icontains
+        value: "qmd vsearch"
+      - type: icontains
+        value: "qmd query"
+
+  - description: "qmd skill: MCP server tools"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/qmd/SKILL.md
+    assert:
+      - type: icontains
+        value: "qmd_search"
+      - type: icontains
+        value: "qmd_vsearch"
+      - type: icontains
+        value: "qmd_query"
+      - type: icontains
+        value: "MCP"
+
+  # ── skills/cc-patterns/SKILL.md ──────────────────────────────────────
+
+  - description: "cc-patterns skill: name and description"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/cc-patterns/SKILL.md
+    assert:
+      - type: icontains
+        value: "name: cc-patterns"
+      - type: icontains
+        value: "autonomous coding tasks"
+      - type: icontains
+        value: "parallel sessions"
+
+  - description: "cc-patterns skill: worktree and autonomous patterns"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/cc-patterns/SKILL.md
+    assert:
+      - type: icontains
+        value: "git worktree"
+      - type: icontains
+        value: "--dangerously-skip-permissions"
+      - type: icontains
+        value: "PR Reviews"
+
+  - description: "cc-patterns skill: safety warnings"
+    vars:
+      prompt_content: file://plugins/tt-core/skills/cc-patterns/SKILL.md
+    assert:
+      - type: icontains
+        value: "Never use it on your main machine"
+      - type: icontains
+        value: "Review output"
+
+  # ── Plugin Commands ──────────────────────────────────────────────────
+
+  # ── commands/refine.md ───────────────────────────────────────────────
+
+  - description: "refine command: description and tools"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/refine.md
+    assert:
+      - type: icontains
+        value: "refine writing"
+      - type: icontains
+        value: "Read(*)"
+      - type: icontains
+        value: "Edit(*)"
+
+  - description: "refine command: editing instructions"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/refine.md
+    assert:
+      - type: icontains
+        value: "grammar"
+      - type: icontains
+        value: "active voice"
+      - type: icontains
+        value: "author's style"
+
+  # ── commands/refactor-claude-md.md ───────────────────────────────────
+
+  - description: "refactor-claude-md command: title and tools"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/refactor-claude-md.md
+    assert:
+      - type: icontains
+        value: "refactor-claude-md"
+      - type: icontains
+        value: "AskUserQuestion(*)"
+      - type: icontains
+        value: "progressive disclosure"
+
+  - description: "refactor-claude-md command: workflow steps"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/refactor-claude-md.md
+    assert:
+      - type: icontains
+        value: "Find Contradictions"
+      - type: icontains
+        value: "Extract Essentials"
+      - type: icontains
+        value: "Flag for Deletion"
+
+  - description: "refactor-claude-md command: AGENTS.md template"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/refactor-claude-md.md
+    assert:
+      - type: icontains
+        value: "AGENTS.md Template"
+      - type: icontains
+        value: "When NOT to Split"
+
+  # ── commands/create-auto-claude-issue.md ─────────────────────────────
+
+  - description: "create-auto-claude-issue command: description and tools"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/create-auto-claude-issue.md
+    assert:
+      - type: icontains
+        value: "auto-claude label"
+      - type: icontains
+        value: "Bash"
+      - type: icontains
+        value: "AskUserQuestion"
+
+  - description: "create-auto-claude-issue command: workflow steps"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/create-auto-claude-issue.md
+    assert:
+      - type: icontains
+        value: "gh issue create"
+      - type: icontains
+        value: "batch creation"
+      - type: icontains
+        value: "conventional"
+
+  # ── commands/improve.md ──────────────────────────────────────────────
+
+  - description: "improve command: title and tools"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/improve.md
+    assert:
+      - type: icontains
+        value: "improve"
+      - type: icontains
+        value: "AskUserQuestion(*)"
+      - type: icontains
+        value: "Task(*)"
+
+  - description: "improve command: three phases"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/improve.md
+    assert:
+      - type: icontains
+        value: "Phase 1: Explore"
+      - type: icontains
+        value: "Phase 2: Identify"
+      - type: icontains
+        value: "Phase 3: Present"
+      - type: icontains
+        value: "multiSelect"
+
+  # ── commands/simplify.md ─────────────────────────────────────────────
+
+  - description: "simplify command: description and scope options"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/simplify.md
+    assert:
+      - type: icontains
+        value: "Simplify and refine"
+      - type: icontains
+        value: "git diff --name-only HEAD~1"
+      - type: icontains
+        value: "staged"
+
+  - description: "simplify command: refinement rules"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/simplify.md
+    assert:
+      - type: icontains
+        value: "complexity"
+      - type: icontains
+        value: "redundant"
+      - type: icontains
+        value: "clarity over brevity"
+
+  # ── commands/claude.md ───────────────────────────────────────────────
+
+  - description: "claude command: title and tools"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/claude.md
+    assert:
+      - type: icontains
+        value: "title: claude"
+      - type: icontains
+        value: "Bash(*)"
+      - type: icontains
+        value: "Task(*)"
+
+  - description: "claude command: launch modes and rules"
+    vars:
+      prompt_content: file://plugins/tt-core/commands/claude.md
+    assert:
+      - type: icontains
+        value: "Ralph plan"
+      - type: icontains
+        value: "feature branch"
+      - type: icontains
+        value: "--dangerously-skip-permissions"
