@@ -13,58 +13,33 @@ import { BaseCommand } from "../base.js";
 /** All labels that indicate an issue is part of the auto-claude pipeline. */
 const ALL_AC_LABELS = ["auto-claude", ...Object.values(LABELS)] as const;
 
-/** Map a label to a color function for display. */
-function colorForLabel(label: string): (text: string) => string {
-  switch (label) {
-    case LABELS.inProgress:
-      return colors.yellow;
-    case LABELS.success:
-      return colors.green;
-    case LABELS.failed:
-      return colors.red;
-    case LABELS.review:
-      return colors.blue;
-    default:
-      return colors.dim;
-  }
-}
+/** Display config per label: short name + color function. */
+const LABEL_DISPLAY: Record<string, { status: string; color: (t: string) => string }> = {
+  [LABELS.inProgress]: { status: "in-progress", color: colors.yellow },
+  [LABELS.success]: { status: "success", color: colors.green },
+  [LABELS.failed]: { status: "failed", color: colors.red },
+  [LABELS.review]: { status: "review", color: colors.blue },
+};
 
-/** Friendly short name for display. */
-function shortStatus(label: string): string {
-  switch (label) {
-    case LABELS.inProgress:
-      return "in-progress";
-    case LABELS.success:
-      return "success";
-    case LABELS.failed:
-      return "failed";
-    case LABELS.review:
-      return "review";
-    default:
-      return "queued";
-  }
-}
+const DEFAULT_DISPLAY = { status: "queued", color: colors.dim };
 
 interface ArtifactStatus {
   name: string;
   exists: boolean;
 }
 
+/** Pipeline artifacts to check, in pipeline order. */
+const CHECKED_ARTIFACTS = [
+  ARTIFACTS.plan,
+  ARTIFACTS.completedSummary,
+  ARTIFACTS.simplifySummary,
+  ARTIFACTS.review,
+] as const;
+
 /** Check which pipeline artifacts exist locally for an issue. */
 export function checkArtifacts(issueNumber: number, cwd: string): ArtifactStatus[] {
   const issueDir = join(cwd, `.auto-claude/issue-${issueNumber}`);
-  return [
-    { name: "plan.md", exists: existsSync(join(issueDir, ARTIFACTS.plan)) },
-    {
-      name: "completed-summary.md",
-      exists: existsSync(join(issueDir, ARTIFACTS.completedSummary)),
-    },
-    {
-      name: "simplify-summary.md",
-      exists: existsSync(join(issueDir, ARTIFACTS.simplifySummary)),
-    },
-    { name: "review.md", exists: existsSync(join(issueDir, ARTIFACTS.review)) },
-  ];
+  return CHECKED_ARTIFACTS.map((name) => ({ name, exists: existsSync(join(issueDir, name)) }));
 }
 
 /** Find the most specific auto-claude label on an issue. */
@@ -78,18 +53,12 @@ export function findAcLabel(issue: Issue): string {
 }
 
 /** Format a single issue for display. */
-export function formatIssueStatus(
-  issue: Issue,
-  artifacts: ArtifactStatus[],
-): string {
+export function formatIssueStatus(issue: Issue, artifacts: ArtifactStatus[]): string {
   const label = findAcLabel(issue);
-  const colorFn = colorForLabel(label);
-  const status = shortStatus(label);
-  const statusTag = colorFn(`[${status}]`);
+  const { status, color } = LABEL_DISPLAY[label] ?? DEFAULT_DISPLAY;
+  const statusTag = color(`[${status}]`);
 
-  const parts: string[] = [
-    `#${issue.number} ${issue.title} ${statusTag}`,
-  ];
+  const parts: string[] = [`#${issue.number} ${issue.title} ${statusTag}`];
 
   const completedSteps = artifacts.filter((a) => a.exists).map((a) => a.name);
   if (completedSteps.length > 0) {
@@ -103,9 +72,7 @@ export function formatIssueStatus(
 export async function fetchAllAcIssues(cwd: string): Promise<Issue[]> {
   const issueMap = new Map<number, Issue>();
 
-  const results = await Promise.all(
-    ALL_AC_LABELS.map((label) => getIssues({ cwd, label })),
-  );
+  const results = await Promise.all(ALL_AC_LABELS.map((label) => getIssues({ cwd, label })));
 
   for (const issues of results) {
     for (const issue of issues) {
