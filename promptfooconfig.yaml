@@ -1,0 +1,198 @@
+# promptfoo config for testing auto-claude prompt templates.
+# Uses the "echo" provider to render prompts without calling an LLM,
+# then asserts on the rendered text to verify structure and content.
+#
+# Run: pnpm test:prompts
+# View results: pnpm dlx promptfoo view
+
+description: Auto-Claude Prompt Template Tests
+
+providers:
+  - echo
+
+prompts:
+  - "{{prompt_content}}"
+
+tests:
+  # ── 01_plan.prompt.md ──────────────────────────────────────────────
+
+  - description: "plan: creates plan.md with research and design phases"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/01_plan.prompt.md
+    assert:
+      - type: icontains
+        value: "plan.md"
+      - type: icontains
+        value: "research"
+      - type: icontains
+        value: "design"
+      - type: icontains
+        value: "implementation checklist"
+      - type: icontains
+        value: "CLAUDE.md"
+
+  - description: "plan: references issue dir, scope path, and main branch"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/01_plan.prompt.md
+    assert:
+      - type: icontains
+        value: "initial-ramblings.md"
+      - type: icontains
+        value: "The code lives primarily at"
+      - type: icontains
+        value: "base branch"
+
+  - description: "plan: includes test strategy and risk sections"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/01_plan.prompt.md
+    assert:
+      - type: icontains
+        value: "test strategy"
+      - type: icontains
+        value: "risks"
+      - type: icontains
+        value: "edge cases"
+
+  # ── 02_implement.prompt.md ─────────────────────────────────────────
+
+  - description: "implement: references plan.md as sole source of truth"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/02_implement.prompt.md
+    assert:
+      - type: icontains
+        value: "plan.md"
+      - type: icontains
+        value: "source of truth"
+      - type: icontains
+        value: "completed-summary.md"
+
+  - description: "implement: supports review feedback for retry loop"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/02_implement.prompt.md
+    assert:
+      - type: icontains
+        value: "The code lives primarily at"
+      - type: icontains
+        value: "initial-ramblings.md"
+
+  - description: "implement: enforces TDD workflow and commit conventions"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/02_implement.prompt.md
+    assert:
+      - type: icontains
+        value: "red/green TDD"
+      - type: icontains
+        value: "commit"
+      - type: icontains
+        value: "Do NOT push"
+
+  - description: "implement: requires mandatory verification"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/02_implement.prompt.md
+    assert:
+      - type: icontains
+        value: "type-check"
+      - type: icontains
+        value: "lint"
+      - type: icontains
+        value: "mandatory verification"
+
+  # ── 03_simplify.prompt.md ──────────────────────────────────────────
+
+  - description: "simplify: focuses on code simplification"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/03_simplify.prompt.md
+    assert:
+      - type: icontains
+        value: "code simplification"
+      - type: icontains
+        value: "simplify-summary.md"
+      - type: icontains
+        value: "behavior-preserving"
+
+  - description: "simplify: lists simplification categories"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/03_simplify.prompt.md
+    assert:
+      - type: icontains
+        value: "dead code"
+      - type: icontains
+        value: "over-abstraction"
+      - type: icontains
+        value: "complexity"
+      - type: icontains
+        value: "duplication"
+
+  - description: "simplify: requires verification after changes"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/03_simplify.prompt.md
+    assert:
+      - type: icontains
+        value: "type-check"
+      - type: icontains
+        value: "test"
+      - type: icontains
+        value: "lint"
+      - type: icontains
+        value: "git diff"
+
+  - description: "simplify: references issue dir, scope path, and main branch"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/03_simplify.prompt.md
+    assert:
+      - type: icontains
+        value: "initial-ramblings.md"
+      - type: icontains
+        value: "The code lives primarily at"
+      - type: icontains
+        value: "completed-summary.md"
+
+  # ── 04_review.prompt.md ────────────────────────────────────────────
+
+  - description: "review: outputs machine-parsed PASS/FAIL on first line"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/04_review.prompt.md
+    assert:
+      - type: icontains
+        value: "PASS"
+      - type: icontains
+        value: "FAIL"
+      - type: icontains
+        value: "first line"
+      - type: icontains
+        value: "machine-parsed"
+
+  - description: "review: checks code quality aspects"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/04_review.prompt.md
+    assert:
+      - type: icontains
+        value: "correctness"
+      - type: icontains
+        value: "security"
+      - type: icontains
+        value: "edge cases"
+      - type: icontains
+        value: "test coverage"
+
+  - description: "review: references plan and issue context"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/04_review.prompt.md
+    assert:
+      - type: icontains
+        value: "plan.md"
+      - type: icontains
+        value: "initial-ramblings.md"
+      - type: icontains
+        value: "git diff"
+
+  - description: "review: defines PASS vs FAIL criteria"
+    vars:
+      prompt_content: file://src/lib/auto-claude/prompt-templates/04_review.prompt.md
+    assert:
+      - type: icontains
+        value: "when to pass vs fail"
+      - type: icontains
+        value: "fundamentally broken"
+      - type: icontains
+        value: "confidence level"

@@ -37,6 +37,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "test": "vitest run",
+    "test:prompts": "promptfoo eval",
     "test:watch": "CI=DisableCallingClaude vitest watch",
     "typecheck": "tsgo --noEmit --incremental",
     "prepare": "simple-git-hooks"
@@ -66,6 +67,7 @@
     "bumpp": "^10.4.0",
     "oxfmt": "^0.24.0",
     "oxlint": "^1.7.0",
+    "promptfoo": "^0.121.2",
     "simple-git-hooks": "^2.13.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
@@ -84,7 +86,12 @@
   "pnpm": {
     "patchedDependencies": {
       "prompts@2.4.2": "patches/prompts.patch"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@anthropic-ai/claude-code",
+      "better-sqlite3",
+      "simple-git-hooks"
+    ]
   },
   "trustedDependencies": [
     "@anthropic-ai/claude-code"
