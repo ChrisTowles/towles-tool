@@ -14,6 +14,7 @@ $ARGUMENTS
 Diagnose from the user's description directly. Use `Agent` with `subagent_type=Explore` only when you need to examine actual files.
 
 Anti-patterns to look for:
+
 - **Scattered concepts** — features requiring many files to understand
 - **Tight coupling** — modules that can't be tested/changed independently
 - **Missing boundaries** — no clear interfaces between subsystems
@@ -29,6 +30,7 @@ If architecture is already clean, say so. Do not invent problems.
 ### 2. Diagnose
 
 For each issue, classify:
+
 - **Impact**: How much does this hurt comprehension and AI agent collaboration?
 - **Effort**: small/medium/large
 - **Risk**: What could break?
@@ -38,6 +40,7 @@ Prioritize high impact + low effort. Explain which fixes unlock further improvem
 ### 3. Present
 
 Present 5-15 specific improvements, each with:
+
 - Concrete problem description
 - Specific proposed fix
 - Affected areas
@@ -54,6 +57,7 @@ For selected improvements, ask preference: plan in `docs/plans/YYYY-MM-DD-archit
 > "If you have a garbage code base, the AI will produce garbage within that code base."
 
 Focus on changes that help both humans and AI agents:
+
 - Larger, self-contained modules over scattered files
 - Thin interfaces between modules
 - Pure functions extracted from side-effectful code

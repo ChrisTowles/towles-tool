@@ -25,15 +25,19 @@ $ARGUMENTS
 
 ```markdown
 ## Summary
+
 [What this delivers]
 
 ## Context
+
 From PRD: [link or reference]
 
 ## Acceptance Criteria
+
 - [ ] ...
 
 ## Dependencies
+
 - Blocked by: #N (if any)
 - Blocks: #M (if any)
 ```
