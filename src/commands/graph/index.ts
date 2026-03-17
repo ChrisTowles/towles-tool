@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { x } from "tinyexec";
 import { BaseCommand } from "../base.js";
-import { parseJsonl } from "./parser.js";
+import { parseJsonl } from "../../lib/graph/parser.js";
 import {
   buildAllSessionsTreemap,
   buildBarChartData,
@@ -13,12 +13,12 @@ import {
   findRecentSessions,
   findSessionPath,
   generateTreemapHtml,
-} from "./render.js";
-import { openInBrowser, startServer, waitForShutdown } from "./server.js";
+} from "../../lib/graph/render.js";
+import { openInBrowser, startServer, waitForShutdown } from "../../lib/graph/server.js";
 
 // Re-export public API for consumers and tests
-export { calculateCutoffMs, filterByDays, parseJsonl } from "./parser.js";
-export { analyzeSession, extractSessionLabel } from "./analyzer.js";
+export { calculateCutoffMs, filterByDays, parseJsonl } from "../../lib/graph/parser.js";
+export { analyzeSession, extractSessionLabel } from "../../lib/graph/analyzer.js";
 export {
   buildBarChartData,
   buildAllSessionsTreemap,
@@ -26,8 +26,14 @@ export {
   generateTreemapHtml,
   findRecentSessions,
   findSessionPath,
-} from "./render.js";
-export type { BarChartData, BarChartDay, ProjectBar, SessionResult, TreemapNode } from "./types.js";
+} from "../../lib/graph/render.js";
+export type {
+  BarChartData,
+  BarChartDay,
+  ProjectBar,
+  SessionResult,
+  TreemapNode,
+} from "../../lib/graph/types.js";
 
 /**
  * Generate interactive HTML treemap from session token data
