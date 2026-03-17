@@ -1,0 +1,144 @@
+description: tdd Iterative Eval
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config:
+      max_tokens: 1500
+prompts:
+  - '[{"role": "system", "content": "{{system_prompt}}"}, {"role": "user", "content": "{{user_message}}"}]'
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-haiku-4-5-20251001
+  vars:
+    system_prompt: file://commands/tdd.md
+tests:
+  # 1. Simple function request
+  - description: "Simple function: validate email addresses"
+    vars:
+      user_message: "I need a function to validate email addresses"
+    assert:
+      - type: llm-rubric
+        value: "The response should show a test BEFORE any implementation code. The first code block should be a test (e.g., using describe/it/test/expect), not the implementation function."
+      - type: llm-rubric
+        value: "The response should ask clarifying questions about the interface (e.g., what counts as valid, return type, edge cases) OR write a test first before implementation."
+      - type: not-icontains
+        value: "function validateEmail"
+
+  # 2. Complex feature: rate limiter
+  - description: "Complex feature: rate limiter for API endpoints"
+    vars:
+      user_message: "Build a rate limiter for our API endpoints. It should limit requests per IP address."
+    assert:
+      - type: llm-rubric
+        value: "The response must either ask clarifying questions about the interface (window size, max requests, storage mechanism) or write a test first. It must NOT jump straight to implementing a rate limiter class/function."
+      - type: llm-rubric
+        value: "If code is shown, the first code block must be a test, not the rate limiter implementation."
+
+  # 3. Bug fix request
+  - description: "Bug fix: auth middleware timeout"
+    vars:
+      user_message: "Fix the auth middleware — it's timing out after 30 seconds on large payloads"
+    assert:
+      - type: llm-rubric
+        value: "The response should suggest writing a test that reproduces the timeout bug BEFORE attempting a fix. It should describe a red-green approach: first write a test that fails due to the timeout, then fix it."
+      - type: llm-rubric
+        value: "The response should NOT jump straight to modifying the middleware code without mentioning writing a failing test first."
+
+  # 4. Refactoring request
+  - description: "Refactoring: extract payment logic into a service"
+    vars:
+      user_message: "Refactor: extract the payment logic from the order controller into a PaymentService"
+    assert:
+      - type: llm-rubric
+        value: "The response should mention writing tests for the existing behavior first (characterization tests) before refactoring. It should follow the pattern: write tests for current behavior, then refactor, then verify tests still pass."
+      - type: llm-rubric
+        value: "The response should NOT start by creating the PaymentService class. Tests must come first."
+
+  # 5. Vague request: add caching
+  - description: "Vague request: add caching"
+    vars:
+      user_message: "Add caching to the app"
+    assert:
+      - type: llm-rubric
+        value: "The response MUST ask clarifying questions before writing any code. Questions should cover: what to cache, cache invalidation strategy, TTL, cache storage (in-memory, Redis, etc.), which endpoints/functions."
+      - type: llm-rubric
+        value: "The response should NOT write any implementation code for a caching system without first clarifying requirements."
+
+  # 6. Request with clear specs
+  - description: "Clear specs: parse CSV with header row"
+    vars:
+      user_message: "Write a parseCSV function that takes a string of CSV data with a header row and returns an array of objects where keys are the header names. Handle quoted fields with commas inside them."
+    assert:
+      - type: llm-rubric
+        value: "The first code shown must be a test. It should test parseCSV with a simple CSV string and check the returned array of objects. The implementation of parseCSV should come AFTER the test."
+      - type: llm-rubric
+        value: "The response should follow red-green-refactor: write test first, then minimal implementation, starting with the happy path before edge cases like quoted fields."
+
+  # 7. Tempting to implement first
+  - description: "Tempting: fibonacci with memoization"
+    vars:
+      user_message: "Write a fibonacci function with memoization for performance"
+    assert:
+      - type: llm-rubric
+        value: "Despite fibonacci being a well-known algorithm, the response must show a test FIRST (e.g., test that fib(0)=0, fib(1)=1, fib(10)=55) before showing any fibonacci implementation code."
+      - type: llm-rubric
+        value: "The response should NOT start with 'function fibonacci' or the implementation. The first code must be a test."
+
+  # 8. UI component
+  - description: "UI component: search autocomplete"
+    vars:
+      user_message: "Create a search autocomplete component that shows suggestions as the user types"
+    assert:
+      - type: llm-rubric
+        value: "The response should discuss testing the component behavior first (e.g., rendering, user input handling, showing suggestions). If code is shown, tests should come before the component implementation."
+      - type: llm-rubric
+        value: "The response should either ask clarifying questions about the component interface or start with a test describing expected behavior, NOT jump to writing JSX/HTML."
+
+  # 9. Existing code patterns
+  - description: "Existing patterns: add a new CLI command following existing patterns"
+    vars:
+      user_message: "Add a new 'stats' command to the CLI that shows project statistics. Follow the existing command patterns in src/commands/."
+    assert:
+      - type: llm-rubric
+        value: "The response should mention exploring existing code/patterns first, then writing a test for the new command before implementing it. It should follow red-green-refactor."
+      - type: llm-rubric
+        value: "The response should NOT create the command file first. It should start with understanding existing patterns, then write a test."
+
+  # 10. Error handling scenarios
+  - description: "Error handling: database connection retry logic"
+    vars:
+      user_message: "Add retry logic for database connections — retry 3 times with exponential backoff on connection failure"
+    assert:
+      - type: llm-rubric
+        value: "The response should write tests first that verify: retries happen 3 times, exponential backoff timing, eventual success after retries, and failure after max retries. Tests before implementation."
+      - type: llm-rubric
+        value: "The first code block must be a test, not the retry logic implementation."
+
+  # 11. Test that mentions running tests
+  - description: "Mentions running tests to confirm failure/pass"
+    vars:
+      user_message: "Write a stack data structure with push, pop, and peek operations"
+    assert:
+      - type: llm-rubric
+        value: "The response should explicitly mention running the test to confirm it fails (red phase) before writing implementation, and running again to confirm it passes (green phase)."
+      - type: llm-rubric
+        value: "The first code shown must be a test for the stack, not the Stack class implementation."
+
+  # 12. Happy path then edge cases ordering
+  - description: "Order: starts with happy path, then edge cases"
+    vars:
+      user_message: "Create a URL shortener service that generates short codes and resolves them back to original URLs"
+    assert:
+      - type: llm-rubric
+        value: "The response should indicate starting with happy path tests first (basic shorten and resolve), then moving to edge cases (duplicate URLs, invalid codes, expired links). This ordering should be explicit."
+      - type: llm-rubric
+        value: "Tests must be shown before any URL shortener implementation code."
+
+  # 13. Describes expected behavior in tests
+  - description: "Tests describe expected behavior, not implementation details"
+    vars:
+      user_message: "Build a todo list manager with add, remove, and list operations"
+    assert:
+      - type: llm-rubric
+        value: "The tests should describe behavior (e.g., 'should add a todo item', 'should remove a todo by id', 'should list all todos') rather than testing implementation details (e.g., internal array manipulation)."
+      - type: llm-rubric
+        value: "The first code block must be a test, and tests should focus on WHAT the module does, not HOW it does it internally."

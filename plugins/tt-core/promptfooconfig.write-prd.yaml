@@ -1,0 +1,145 @@
+description: write-prd Iterative Eval
+
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config:
+      max_tokens: 1024
+
+prompts:
+  - '[{"role": "system", "content": "{{system_prompt}}"}, {"role": "user", "content": "{{user_message}}"}]'
+
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-haiku-4-5-20251001
+
+tests:
+  # ── 1. Vague idea ──────────────────────────────────────────────
+  - description: "vague idea: asks questions before writing PRD"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need PDF export"
+    assert:
+      - type: llm-rubric
+        value: "Response asks clarifying questions BEFORE producing a full PRD. It does NOT immediately output a complete PRD document. Questions should probe for details like what content to export, who the users are, or what format requirements exist."
+      - type: not-icontains
+        value: "## Technical Design"
+
+  # ── 2. Detailed idea with clear requirements ────────────────────
+  - description: "detailed idea: still asks questions to validate assumptions"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "Build a webhook system that lets users register HTTPS endpoints, receives events from our payment processor, validates signatures, retries failed deliveries with exponential backoff (max 5 retries), and logs all attempts. Target users are platform integrators."
+    assert:
+      - type: llm-rubric
+        value: "Even with detailed input, the response asks at least 1-2 clarifying questions about gaps (e.g., authentication, rate limits, event types, storage duration for logs). Does NOT skip straight to a complete PRD without any questions."
+
+  # ── 3. Missing user context ────────────────────────────────────
+  - description: "missing user context: asks who the users are"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "Add a dashboard that shows real-time metrics"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about who will use this dashboard — roles, personas, or user types. Also asks about which metrics matter. Does not assume the audience."
+      - type: not-icontains
+        value: "## Technical Design"
+
+  # ── 4. Needs technical design input ─────────────────────────────
+  - description: "technical idea: asks about architecture and constraints"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need to add GraphQL support to our REST API"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about technical constraints: which endpoints to expose via GraphQL, coexistence with REST, auth model, performance requirements, or existing schema. Does not produce a full PRD without understanding the technical landscape."
+
+  # ── 5. Unclear scope boundaries ─────────────────────────────────
+  - description: "unclear scope: asks about boundaries and non-goals"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We should improve our search functionality"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about scope: what kind of search (full-text, filters, faceted), what content is searchable, what 'improve' means specifically (speed, relevance, UX), and what is explicitly out of scope."
+
+  # ── 6. Non-technical stakeholder ────────────────────────────────
+  - description: "non-technical stakeholder: uses accessible language"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "Our customers keep complaining they can't find their invoices. We lose support tickets over this every week. Can we fix the billing section?"
+    assert:
+      - type: llm-rubric
+        value: "Response asks questions in accessible, non-technical language. Probes for specifics: what customers are doing when they can't find invoices, how many are affected, what the current flow looks like. Does not jump to technical solutions."
+
+  # ── 7. Internal tooling request ─────────────────────────────────
+  - description: "internal tooling: asks about workflows and users"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need an admin panel for managing feature flags"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about who manages flags (eng, PM, ops), current flag management workflow, what operations are needed (CRUD, rollout percentages, targeting), and audit/safety requirements."
+      - type: not-icontains
+        value: "## Technical Design"
+
+  # ── 8. API/integration feature ──────────────────────────────────
+  - description: "API integration: asks about contracts and consumers"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need to integrate with Stripe for subscription billing"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about billing models (flat, usage-based, tiered), existing payment handling, which Stripe APIs to use, webhook handling, and how subscriptions map to the product's plans. Gathers context before writing."
+
+  # ── 9. Performance improvement request ──────────────────────────
+  - description: "performance: asks about current state and targets"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "The app is too slow, we need to speed it up"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about current performance metrics, which parts are slow, what the target is (specific latency, load time), and how performance is measured. Does not accept 'too slow' without quantification."
+
+  # ── 10. Migration/upgrade request ───────────────────────────────
+  - description: "migration: asks about current state and risk tolerance"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need to migrate from MongoDB to PostgreSQL"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about data volume, downtime tolerance, migration strategy (big bang vs incremental), which collections/schemas need migration, and current MongoDB usage patterns. Does not produce a PRD without understanding the scope of the migration."
+
+  # ── 11. Multi-turn: answers provided, expects PRD draft ─────────
+  - description: "multi-turn: produces structured PRD after context gathered"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: |
+        I want to add email notifications to our app.
+
+        You already asked questions and here are my answers:
+        - Users: both admins and regular users
+        - Triggers: account signup, password reset, weekly digest, payment receipt
+        - Preferences: users can opt out of digest but not transactional emails
+        - Technical: we use SendGrid, Node.js backend
+        - Scope: email only, no SMS or push for now
+        - Acceptance: emails delivered within 30 seconds, unsubscribe link in every email
+
+        Now write the PRD.
+    assert:
+      - type: llm-rubric
+        value: "Response produces a structured PRD with sections including Problem Statement, User Stories, Acceptance Criteria, and Non-Goals. User stories follow the 'As a [user], I want [action] so that [outcome]' format. Acceptance criteria are specific and testable (not vague like 'works well')."
+      - type: icontains
+        value: "User Stories"
+      - type: icontains
+        value: "Acceptance Criteria"
+
+  # ── 12. Feature with security implications ──────────────────────
+  - description: "security-sensitive: asks about auth and data protection"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "Add a file upload feature so users can attach documents to their profiles"
+    assert:
+      - type: llm-rubric
+        value: "Response asks about security considerations: file type restrictions, size limits, virus scanning, access control (who can see uploaded files), storage (local vs cloud), and data retention. Does not skip security concerns for a user-facing upload feature."
+      - type: not-icontains
+        value: "## Technical Design"

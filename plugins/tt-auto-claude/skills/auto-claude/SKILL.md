@@ -55,13 +55,13 @@ tt ac list
 
 Auto-detects repo and main branch from cwd. Key settings:
 
-| Field | Default | Description |
-|---|---|---|
-| `triggerLabel` | `auto-claude` | Label that triggers the pipeline |
-| `model` | `opus` | Claude model to use |
-| `maxReviewRetries` | `2` | Review failure retries |
-| `loopIntervalMinutes` | `30` | Polling interval for loop mode |
-| `maxImplementIterations` | `5` | Max Claude turns per implement step |
+| Field                    | Default       | Description                         |
+| ------------------------ | ------------- | ----------------------------------- |
+| `triggerLabel`           | `auto-claude` | Label that triggers the pipeline    |
+| `model`                  | `opus`        | Claude model to use                 |
+| `maxReviewRetries`       | `2`           | Review failure retries              |
+| `loopIntervalMinutes`    | `30`          | Polling interval for loop mode      |
+| `maxImplementIterations` | `5`           | Max Claude turns per implement step |
 
 ## Conventions
 
