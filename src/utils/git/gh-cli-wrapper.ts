@@ -6,6 +6,7 @@ export async function isGithubCliInstalled(): Promise<boolean> {
     const proc = await x("gh", ["--version"]);
     return proc.stdout.includes("https://github.com/cli/cli");
   } catch {
+    // gh CLI not installed or not accessible
     return false;
   }
 }

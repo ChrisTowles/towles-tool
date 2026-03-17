@@ -576,6 +576,7 @@ export default class Graph extends BaseCommand {
       }
       return total;
     } catch {
+      // File unreadable or missing — treat token count as 0
       return 0;
     }
   }

@@ -1,3 +1,4 @@
+import consola from "consola";
 import { x } from "tinyexec";
 import { colors } from "consola/utils";
 import { BaseCommand } from "./base.js";
@@ -100,6 +101,7 @@ export default class Doctor extends BaseCommand {
         ok: true,
       };
     } catch {
+      consola.debug(`Tool check failed for "${name}"`);
       return { name, version: null, ok: false };
     }
   }
@@ -110,6 +112,7 @@ export default class Doctor extends BaseCommand {
       const result = await x("gh", ["auth", "status"]);
       return { ok: result.exitCode === 0 };
     } catch {
+      consola.debug("GitHub CLI auth check failed");
       return { ok: false };
     }
   }
@@ -136,6 +139,7 @@ export default class Doctor extends BaseCommand {
         installHint: installedIds.has(p.id) ? undefined : `Run: ${p.installCmd}`,
       }));
     } catch {
+      consola.debug("Failed to list Claude plugins");
       return requiredPlugins.map((p) => ({
         name: p.name,
         ok: false,

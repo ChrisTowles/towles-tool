@@ -146,7 +146,9 @@ async function handleFailure(ctx: IssueContext, stepName: string, comment?: stri
 }
 
 async function checkoutMain(): Promise<void> {
-  await git(["checkout", getConfig().mainBranch]).catch(() => {});
+  await git(["checkout", getConfig().mainBranch]).catch(() => {
+    // Best-effort checkout — may fail if branch doesn't exist locally yet
+  });
 
   const stashList = await execSafe("git", ["stash", "list"]);
   if (stashList.ok) {

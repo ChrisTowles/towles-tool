@@ -1,3 +1,4 @@
+import consola from "consola";
 import { getConfig } from "../config.js";
 import { buildIssueContext, gh, log } from "../utils.js";
 import type { IssueContext } from "../utils.js";
@@ -59,6 +60,7 @@ export async function fetchIssue(issueNumber: number): Promise<IssueContext | un
     ]);
     return buildIssueContext(issue, cfg.repo, cfg.scopePath);
   } catch {
+    consola.debug(`Could not fetch issue #${issueNumber} from ${cfg.repo}`);
     return undefined;
   }
 }

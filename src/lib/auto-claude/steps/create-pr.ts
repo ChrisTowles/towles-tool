@@ -148,6 +148,7 @@ async function getExistingPrUrl(branch: string): Promise<string | null> {
     const prs = JSON.parse(out) as Array<{ url: string }>;
     return prs.length > 0 ? prs[0].url : null;
   } catch {
+    consola.debug(`Failed to parse PR list JSON for branch "${branch}"`);
     return null;
   }
 }
