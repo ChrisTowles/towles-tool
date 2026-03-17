@@ -30,5 +30,6 @@ tt journal note         # General notes (alias: tt n)
 ```bash
 tt config   # Show config (alias: cfg)
 tt doctor   # Check dependencies
+tt graph    # Visualize dependency graph
 tt install  # Configure Claude Code settings
 ```
