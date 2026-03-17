@@ -23,7 +23,7 @@ tests:
       - type: icontains
         value: "AskUserQuestion"
       - type: icontains
-        value: "3-5 questions"
+        value: "3-5 per round"
       - type: icontains
         value: "batches"
       - type: icontains
