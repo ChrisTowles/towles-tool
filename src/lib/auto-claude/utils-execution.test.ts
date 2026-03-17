@@ -28,20 +28,20 @@ describe("shell helpers (real execution)", () => {
   });
 
   it("execSafe returns ok:true for a successful command", async () => {
-    const { execSafe } = await import("./utils");
+    const { execSafe } = await import("./shell");
     const result = await execSafe("echo", ["hello"]);
     expect(result.ok).toBe(true);
     expect(result.stdout).toBe("hello");
   });
 
   it("execSafe returns ok:false for a failing command", async () => {
-    const { execSafe } = await import("./utils");
+    const { execSafe } = await import("./shell");
     const result = await execSafe("git", ["checkout", "nonexistent-branch-xyz"]);
     expect(result.ok).toBe(false);
   });
 
   it("git() runs real git commands", async () => {
-    const { git } = await import("./utils");
+    const { git } = await import("./shell");
     const status = await git(["status", "--porcelain"]);
     expect(typeof status).toBe("string");
   });
@@ -66,7 +66,8 @@ describe("ensureBranch (real git)", () => {
   });
 
   it("creates a new branch from main when branch doesn't exist", async () => {
-    const { ensureBranch, git } = await import("./utils");
+    const { ensureBranch } = await import("./utils");
+    const { git } = await import("./shell");
 
     await ensureBranch("feature/42-new-branch");
 
@@ -75,7 +76,8 @@ describe("ensureBranch (real git)", () => {
   });
 
   it("checks out an existing local branch", async () => {
-    const { ensureBranch, git } = await import("./utils");
+    const { ensureBranch } = await import("./utils");
+    const { git } = await import("./shell");
 
     execSync("git checkout -b feature/existing-branch", { cwd: repo.dir, stdio: "ignore" });
     execSync("git checkout main", { cwd: repo.dir, stdio: "ignore" });
@@ -87,7 +89,8 @@ describe("ensureBranch (real git)", () => {
   });
 
   it("can checkout after branch creation", async () => {
-    const { ensureBranch, git } = await import("./utils");
+    const { ensureBranch } = await import("./utils");
+    const { git } = await import("./shell");
 
     await ensureBranch("feature/99-test-checkout");
     const branch1 = await git(["branch", "--show-current"]);

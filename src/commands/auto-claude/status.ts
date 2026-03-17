@@ -7,7 +7,7 @@ import { colors } from "consola/utils";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import { ARTIFACTS } from "../../lib/auto-claude/prompt-templates/index.js";
-import { LABELS } from "../../lib/auto-claude/utils.js";
+import { LABELS } from "../../lib/auto-claude/labels.js";
 import { BaseCommand } from "../base.js";
 
 /** All labels that indicate an issue is part of the auto-claude pipeline. */

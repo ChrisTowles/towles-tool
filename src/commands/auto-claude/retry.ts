@@ -8,7 +8,7 @@ import prompts from "prompts";
 
 import { BaseCommand } from "../base.js";
 import { initConfig } from "../../lib/auto-claude/index.js";
-import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/utils.js";
+import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/labels.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 

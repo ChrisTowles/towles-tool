@@ -6,7 +6,7 @@ import consola from "consola";
 import { x } from "tinyexec";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { LABELS } from "../../lib/auto-claude/utils.js";
+import { LABELS } from "../../lib/auto-claude/labels.js";
 import { retryIssues } from "./retry.js";
 
 // Suppress consola output during tests

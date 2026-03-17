@@ -4,7 +4,8 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS } from "../prompt-templates/index.js";
-import { execSafe, fileExists, ghRaw, git, log, readFile, writeFile } from "../utils.js";
+import { execSafe, ghRaw, git } from "../shell.js";
+import { fileExists, log, readFile, writeFile } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function createPr(ctx: IssueContext): Promise<string> {

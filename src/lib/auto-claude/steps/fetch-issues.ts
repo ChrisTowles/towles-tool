@@ -1,6 +1,7 @@
 import consola from "consola";
 import { getConfig } from "../config.js";
-import { buildIssueContext, gh, log } from "../utils.js";
+import { gh } from "../shell.js";
+import { buildIssueContext, log } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 interface GhIssue {

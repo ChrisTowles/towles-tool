@@ -8,7 +8,8 @@ import { PassThrough } from "node:stream";
 
 import { vi } from "vitest";
 
-import type { ClaudeResult, IssueContext } from "./utils";
+import type { ClaudeResult } from "./claude-cli";
+import type { IssueContext } from "./utils";
 
 export interface TestRepo {
   dir: string;

@@ -43,7 +43,7 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
-    const { runClaude } = await import("./utils");
+    const { runClaude } = await import("./claude-cli");
 
     const result = await runClaude({
       promptFile: "test-prompt.md",
@@ -101,7 +101,7 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
-    const { runClaude } = await import("./utils");
+    const { runClaude } = await import("./claude-cli");
     const result = await runClaude({ promptFile: "test.md" });
 
     expect(result.result).toBe("Done");
@@ -122,7 +122,7 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
-    const { runClaude } = await import("./utils");
+    const { runClaude } = await import("./claude-cli");
 
     const result = await runClaude({
       promptFile: "test.md",
