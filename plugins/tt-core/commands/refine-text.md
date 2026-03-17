@@ -14,22 +14,19 @@ File to edit: $ARGUMENTS
 <instruction>
 Apply these edits:
 
-1. **Fix spelling and typos** — correct misspelled words
-2. **Fix grammar** — subject-verb agreement, apostrophes, tense errors
-3. **Fix punctuation** — missing commas, periods
-4. **Cut filler words** — remove padding phrases ("in order to" → "to", "in its entirety" → cut, doubled adjectives like "comprehensive and thorough" → pick one). Don't rephrase — just delete the filler.
-5. **Passive → active** — only when the sentence names the actor ("was updated by X" → "X updated")
+1. **Fix spelling and typos**
+2. **Fix grammar** — agreement, apostrophes, tense
+3. **Fix punctuation**
+4. **Cut filler words** — "in order to" -> "to", doubled adjectives -> pick one. Just delete filler.
+5. **Passive -> active** — only when actor is named ("was updated by X" -> "X updated")
 
 Critical rules:
-
-- Casual language (slang, "gonna", "kinda", "tbh") is voice, not error — keep it
-- Rhetorical questions ("But can we deliver?") and deliberate fragments ("Fast. Reliable. Secure.") are stylistic choices — keep them exactly as-is
-- Code fences (```), inline code (`), URLs, markdown links — never modify, even if they contain typos
+- Casual language (slang, "gonna", "kinda") is voice — keep it
+- Rhetorical questions, deliberate fragments — keep them
+- Code fences, inline code, URLs, markdown links — never modify
 - Headings, labels, bullet structure — preserve exactly
-- Already-correct text — return unchanged
-- Never add content that wasn't there
-- Never reorder or restructure
-  </instruction>
+- Never add content, never reorder or restructure
+</instruction>
 
 <output_format>
 Output ONLY the corrected text. No introduction, no sign-off, no list of changes.

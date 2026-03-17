@@ -9,40 +9,31 @@ $ARGUMENTS
 
 ## Process
 
-1. **Find the PRD** — Read given path, or check `docs/plans/` for recent PRDs. If none, suggest `/tt:write-prd` first.
+1. **Find the PRD** — Read given path or check `docs/plans/`. If none, suggest `/tt:write-prd`.
 2. **Get repo and labels**:
    - `gh repo view --json nameWithOwner --jq '.nameWithOwner'`
    - `gh label list --json name --jq '.[].name'`
-3. **Draft vertical slices** — Break PRD into tasks that:
-   - Are vertical slices (not horizontal layers) — each delivers testable functionality
-   - Surface riskiest unknowns early
-   - Can be worked in parallel where possible
-   - Have clear acceptance criteria from the PRD
-4. **Present breakdown** via `AskUserQuestion` — show titles, summaries, blocking relationships. Get approval before creating.
+3. **Draft vertical slices** — testable functionality, riskiest unknowns early, parallelizable, clear acceptance criteria.
+4. **Present** via `AskUserQuestion` — titles, summaries, blocking relationships. Get approval first.
 5. **Create issues** with `gh issue create`:
-   - Prefix titles with conventional type (`feat:`, `fix:`, `refactor:`, `chore:`)
-   - Add appropriate labels from repo
-   - Include dependency info in body (Blocked by / Blocks)
+   - Prefix: `feat:`, `fix:`, `refactor:`, `chore:`
+   - Add repo labels, dependency info (Blocked by / Blocks)
    - Create in dependency order (blockers first)
-6. **Report** — Table of created issues with URLs and dependency graph.
+6. **Report** — Table with URLs and dependency graph.
 
 ## Issue Body Template
 
 ```markdown
 ## Summary
-
-[What this issue delivers]
+[What this delivers]
 
 ## Context
-
 From PRD: [link or reference]
 
 ## Acceptance Criteria
-
 - [ ] ...
 
 ## Dependencies
-
 - Blocked by: #N (if any)
 - Blocks: #M (if any)
 ```
