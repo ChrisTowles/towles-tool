@@ -82,6 +82,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
   const tag = `ac-issue-${ctx.number}`;
   const cfg = getConfig();
 
+  log("Archiving pipeline artifacts…");
   await execSafe("tar", [
     "czf",
     archivePath,
@@ -92,6 +93,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string): Promise<void> 
     ".",
   ]);
 
+  log("Uploading artifacts to GitHub release…");
   await ghRaw(["release", "delete", tag, "--yes", "--repo", cfg.repo]);
 
   await ghRaw([

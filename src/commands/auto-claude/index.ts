@@ -137,6 +137,7 @@ export default class AutoClaude extends BaseCommand {
         throw e;
       }
 
+      log("Fetching labeled issues…");
       let contexts: IssueContext[];
       if (flags.issue) {
         const ctx = await fetchIssue(flags.issue);
@@ -151,10 +152,14 @@ export default class AutoClaude extends BaseCommand {
         log(`Processing ${contexts.length} issue(s)...\n`);
 
         for (const ctx of contexts) {
+          const issueStart = Date.now();
           try {
             await runPipeline(ctx, untilStep);
           } catch (e) {
             consola.error(`Pipeline error for ${ctx.repo}#${ctx.number}:`, e);
+          } finally {
+            const elapsed = ((Date.now() - issueStart) / 1000).toFixed(1);
+            log(`Completed ${ctx.repo}#${ctx.number} in ${elapsed}s`);
           }
         }
       }
