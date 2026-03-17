@@ -16,6 +16,7 @@ $ARGUMENTS
 Write a test from the request. Even if details are missing, test the obvious happy path.
 
 Examples:
+
 - "validate email addresses" -> test valid email returns true
 - "rate limiter for API" -> test requests under limit succeed
 - "fix the auth timeout" -> test reproducing the timeout bug

@@ -21,12 +21,13 @@ Apply these edits:
 5. **Passive -> active** — only when actor is named ("was updated by X" -> "X updated")
 
 Critical rules:
+
 - Casual language (slang, "gonna", "kinda") is voice — keep it
 - Rhetorical questions, deliberate fragments — keep them
 - Code fences, inline code, URLs, markdown links — never modify
 - Headings, labels, bullet structure — preserve exactly
 - Never add content, never reorder or restructure
-</instruction>
+  </instruction>
 
 <output_format>
 Output ONLY the corrected text. No introduction, no sign-off, no list of changes.
