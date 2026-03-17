@@ -115,6 +115,10 @@ function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
   });
 }
 
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "\u2026" : s;
+}
+
 function toolDetail(block: Record<string, unknown>): string {
   const input =
     typeof block.input === "object" && block.input !== null
@@ -123,12 +127,22 @@ function toolDetail(block: Record<string, unknown>): string {
   if (!input) return "";
 
   const filePath = input.file_path ?? input.path;
-  if (typeof filePath === "string") return pc.dim(` ${filePath}`);
+  if (typeof filePath === "string") {
+    let detail = pc.dim(` ${filePath}`);
+    // Show edit context for Edit tool
+    if (typeof input.old_string === "string" && typeof input.new_string === "string") {
+      const old = truncate(input.old_string.split("\n")[0].trim(), 40);
+      const replacement = truncate(input.new_string.split("\n")[0].trim(), 40);
+      detail += pc.dim(` "${old}" → "${replacement}"`);
+    }
+    return detail;
+  }
   if (typeof input.pattern === "string") return pc.dim(` ${input.pattern}`);
   if (typeof input.command === "string") {
-    const cmd = input.command;
-    return pc.dim(` ${cmd.length > 60 ? cmd.slice(0, 60) + "\u2026" : cmd}`);
+    return pc.dim(` ${truncate(input.command, 60)}`);
   }
+  // TodoWrite/TaskCreate — show subject
+  if (typeof input.subject === "string") return pc.dim(` ${truncate(input.subject, 60)}`);
   return "";
 }
 
@@ -153,7 +167,11 @@ function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: numbe
       if (block.type === "tool_use") {
         logToolUse(block);
       } else if (block.type === "thinking") {
-        consola.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking\u2026")}`);
+        const thinkingText =
+          typeof block.thinking === "string" && block.thinking.length > 0
+            ? pc.dim(` ${truncate(block.thinking.split("\n")[0].trim(), 60)}`)
+            : "";
+        consola.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking")}${thinkingText}`);
       }
     }
   }
