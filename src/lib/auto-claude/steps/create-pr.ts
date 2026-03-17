@@ -2,10 +2,12 @@ import { join } from "node:path";
 
 import consola from "consola";
 
+import { fileExists, readFile, writeFile } from "../../../utils/fs.js";
+import { execSafe, git } from "../../../utils/git/exec.js";
+import { ghRaw } from "../../../utils/git/gh-cli-wrapper.js";
 import { getConfig } from "../config.js";
 import { ARTIFACTS } from "../prompt-templates/index.js";
-import { execSafe, ghRaw, git } from "../shell.js";
-import { fileExists, log, readFile, writeFile } from "../utils.js";
+import { log } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function createPr(ctx: IssueContext): Promise<string> {

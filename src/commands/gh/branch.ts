@@ -5,11 +5,10 @@ import type { Choice } from "prompts";
 import { colors } from "consola/utils";
 import { Fzf } from "fzf";
 
-import { exec } from "tinyexec";
-
 import { BaseCommand } from "../base.js";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
+import { git } from "../../utils/git/exec.js";
 import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
 import { getTerminalColumns, limitText, printWithHexColor } from "../../utils/render.js";
 
@@ -131,7 +130,7 @@ export default class GhBranch extends BaseCommand {
       );
 
       const branchName = createBranchNameFromIssue(selectedIssue);
-      await exec("git", ["checkout", "-b", branchName]);
+      await git(["checkout", "-b", branchName]);
     } catch {
       consola.debug("Branch checkout failed");
       this.exit(1);

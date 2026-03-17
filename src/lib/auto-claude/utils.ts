@@ -1,36 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import consola from "consola";
 import pc from "picocolors";
 
+import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
 import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
+import { execSafe, git } from "../../utils/git/exec.js";
 import { runClaude } from "./claude-cli.js";
 import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
-import { execSafe, git } from "./shell.js";
 import { resolveTemplate } from "./templates.js";
 
 import type { TokenValues } from "./templates.js";
 
-// ── File helpers ──
-
-export function ensureDir(dir: string): void {
-  mkdirSync(dir, { recursive: true });
-}
-
-export function fileExists(path: string): boolean {
-  return existsSync(path);
-}
-
-export function readFile(path: string): string {
-  return readFileSync(path, "utf-8");
-}
-
-export function writeFile(path: string, content: string): void {
-  ensureDir(dirname(path));
-  writeFileSync(path, content, "utf-8");
-}
+export { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
 
 // ── Issue context ──
 

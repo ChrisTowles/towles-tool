@@ -4,10 +4,11 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
+import { fileExists, readFile } from "../../../utils/fs.js";
+import { git } from "../../../utils/git/exec.js";
 import { runClaude } from "../claude-cli.js";
-import { git } from "../shell.js";
 import { resolveTemplate } from "../templates.js";
-import { buildTokens, fileExists, log, logStep, readFile } from "../utils.js";
+import { buildTokens, log, logStep } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 export async function stepImplement(ctx: IssueContext): Promise<boolean> {
