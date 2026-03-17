@@ -37,11 +37,15 @@ export async function runClaude(opts: {
     `@${opts.promptFile}`,
   ];
 
+  consola.info(
+    `${pc.dim("▶")} Calling Claude${opts.maxTurns ? ` (max ${opts.maxTurns} turns)` : ""}…`,
+  );
+
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
     try {
       const result = await runClaudeStreaming(args);
-      consola.success(`Done — ${result.num_turns} turns`);
+      consola.success(`Done — ${result.num_turns} turns, $${result.total_cost_usd.toFixed(4)}`);
       if (result.result) {
         consola.log(result.result);
       }
