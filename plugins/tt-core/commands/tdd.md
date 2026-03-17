@@ -16,6 +16,7 @@ $ARGUMENTS
 You can almost always write a test from the request. Even if details are missing, write a test for the obvious happy path.
 
 Examples:
+
 - "validate email addresses" → test that a valid email returns true
 - "search autocomplete component" → test that it renders and shows suggestions
 - "rate limiter for API" → test that requests under the limit succeed
@@ -33,6 +34,7 @@ Only ask clarifying questions when you truly cannot write any meaningful test (e
 - Say: "Running the test to confirm it fails (Red phase)"
 
 **After confirming the test fails, outline the full plan — do NOT write implementation code:**
+
 - "Next: Green phase — I'll write the minimal implementation to make this test pass, then run the test to confirm it passes (Green phase). After that: Refactor phase — clean up, run all tests to confirm nothing broke, then commit."
 - "Test progression: starting with the happy path, then edge cases (e.g., [list specific edge cases from the request]), then error handling."
 - Then STOP. Implementation comes in the next interaction.

@@ -21,6 +21,7 @@ Apply these edits:
 5. **Passive → active** — only when the sentence names the actor ("was updated by X" → "X updated")
 
 Critical rules:
+
 - Casual language (slang, "gonna", "kinda", "tbh") is voice, not error — keep it
 - Rhetorical questions ("But can we deliver?") and deliberate fragments ("Fast. Reliable. Secure.") are stylistic choices — keep them exactly as-is
 - Code fences (```), inline code (`), URLs, markdown links — never modify, even if they contain typos
@@ -28,7 +29,7 @@ Critical rules:
 - Already-correct text — return unchanged
 - Never add content that wasn't there
 - Never reorder or restructure
-</instruction>
+  </instruction>
 
 <output_format>
 Output ONLY the corrected text. No introduction, no sign-off, no list of changes.

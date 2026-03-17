@@ -26,30 +26,39 @@ $ARGUMENTS
 # [Feature Name]
 
 ## Problem Statement
+
 What problem does this solve? Who has this problem?
 
 ## Goals
+
 - Goal 1
 - Goal 2
 
 ## Non-Goals
+
 - Explicitly out of scope
 
 ## User Stories
+
 - As a [user], I want [action] so that [outcome]
 
 ## Acceptance Criteria
+
 - [ ] Criterion 1 (specific and testable)
 - [ ] Criterion 2
 
 ## Technical Design
+
 ### Architecture
+
 How this fits into the existing system.
 
 ### API / Interface
+
 Public-facing contracts.
 
 ## Open Questions
+
 - Anything unresolved
 ```
 
