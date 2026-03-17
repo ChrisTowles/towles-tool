@@ -19,6 +19,11 @@ pnpm typecheck          # TypeScript type checking
 pnpm test               # Run vitest tests
 pnpm test:watch         # Run vitest in watch mode
 pnpm test -- path       # Run tests matching a path (e.g. pnpm test -- auto-claude)
+pnpm test:prompts                  # Run all echo prompt tests
+pnpm test:prompts:root             # Root prompt tests only
+pnpm test:prompts:tt-core          # tt-core plugin prompt tests
+pnpm test:prompts:tt-core:llm      # LLM-based eval (needs ANTHROPIC_API_KEY)
+pnpm test:prompts:tt-auto-claude   # tt-auto-claude plugin prompt tests
 pnpm lint               # Run oxlint
 pnpm lint:fix           # Auto-fix lint issues
 pnpm format             # Format with oxfmt
