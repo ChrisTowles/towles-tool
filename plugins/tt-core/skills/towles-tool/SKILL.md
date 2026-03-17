@@ -1,6 +1,6 @@
 ---
 name: towles-tool
-description: Use towles-tool (`tt`) CLI for developer utilities, journaling, and the auto-claude pipeline for automated issue-to-PR workflows.
+description: Use towles-tool (`tt`) CLI for git helpers, journaling, and developer utilities.
 ---
 
 # towles-tool CLI
@@ -8,37 +8,6 @@ description: Use towles-tool (`tt`) CLI for developer utilities, journaling, and
 Personal CLI toolkit. Alias: `tt`
 
 Config: `~/.config/towles-tool/towles-tool.settings.json`
-
-## Auto-Claude Pipeline
-
-Automated issue-to-PR pipeline using Claude Code. Label a GitHub issue with `auto-claude` and the pipeline handles research, planning, implementation, review, and PR creation. Auto-detects repo and main branch from cwd.
-
-### Commands
-
-```bash
-# Process specific issue
-tt auto-claude --issue 42
-
-# Stop after planning step (review before implementation)
-tt auto-claude --issue 42 --until plan
-
-# Rebase stale PR branch onto current main
-tt auto-claude --refresh --issue 42
-
-# Reset state for an issue (force restart)
-tt auto-claude --reset 42
-
-# Start polling loop
-tt auto-claude --loop
-
-# Custom interval and limit
-tt auto-claude --loop --interval 15 --limit 3
-
-# Interactively pick an auto-claude issue to process
-tt auto-claude list
-```
-
-Alias: `tt ac --issue 42`, `tt ac list`
 
 ## Git
 

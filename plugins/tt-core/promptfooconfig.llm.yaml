@@ -1,0 +1,115 @@
+# promptfoo config for LLM-based eval of tt-core commands.
+# Sends real prompts + user scenarios to Haiku, grades responses with llm-rubric.
+#
+# Run: nr test:prompts:tt-core:llm
+# View results: pnpm dlx promptfoo view
+#
+# Requires: ANTHROPIC_API_KEY environment variable
+
+description: tt-core LLM Eval Tests
+
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config:
+      max_tokens: 1024
+
+prompts:
+  - '[{"role": "system", "content": "{{system_prompt}}"}, {"role": "user", "content": "{{user_message}}"}]'
+
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-haiku-4-5-20251001
+
+tests:
+  # ── interview-me ──────────────────────────────────────────────
+
+  - description: "interview-me: asks probing questions for a vague idea"
+    vars:
+      system_prompt: file://commands/interview-me.md
+      user_message: "I want to build a CLI tool that syncs dotfiles"
+    assert:
+      - type: llm-rubric
+        value: "Response asks multiple probing questions (at least 3) about the idea. Questions cover different aspects like scope, edge cases, or technical decisions. Response does NOT propose solutions or implementations."
+      - type: not-icontains
+        value: "Here's how I would implement"
+
+  - description: "interview-me: digs deeper on a vague answer"
+    vars:
+      system_prompt: file://commands/interview-me.md
+      user_message: |
+        I want to add notifications to my app.
+
+        You already asked: "What platforms do you need to support? What triggers a notification? How should users manage notification preferences?"
+
+        My answer: "Just like push notifications I guess"
+
+        Continue the interview.
+    assert:
+      - type: llm-rubric
+        value: "Response pushes back on the vague answer and asks more specific follow-up questions. Does not accept 'I guess' at face value. Asks about specifics like platforms, delivery mechanisms, or user control."
+
+  # ── refine-text ───────────────────────────────────────────────
+
+  - description: "refine-text: improves grammar without changing meaning"
+    vars:
+      system_prompt: file://commands/refine-text.md
+      user_message: "Refine this text: The system have a bug where users cant login when they're password has special characters, we need to fixing this ASAP because alot of users is affected."
+    assert:
+      - type: llm-rubric
+        value: "Response fixes most grammar errors (have->has, cant->can't, they're->their, alot->a lot, is->are) while preserving the original meaning about a login bug with special characters. The corrected text should be recognizably the same content, not a complete rewrite."
+
+  - description: "refine-text: preserves technical jargon and voice"
+    vars:
+      system_prompt: file://commands/refine-text.md
+      user_message: "Refine this text: We gotta refactor the middleware cuz the DI container aint resolving scoped services right in the background job worker threads."
+    assert:
+      - type: llm-rubric
+        value: "Response keeps technical terms (middleware, DI container, scoped services, background job, worker threads) intact. Fixes informal language (gotta, cuz, aint) but preserves the casual/direct voice. Does not over-formalize."
+
+  # ── tdd ───────────────────────────────────────────────────────
+
+  - description: "tdd: starts with a test or clarifying questions, not implementation"
+    vars:
+      system_prompt: file://commands/tdd.md
+      user_message: "Add a function that validates email addresses"
+    assert:
+      - type: llm-rubric
+        value: "Response starts by writing a test or asking clarifying questions about the interface — NOT by writing the implementation. If it writes code, the first code shown is a test, not the email validation function itself."
+
+  - description: "tdd: asks to confirm interface before coding"
+    vars:
+      system_prompt: file://commands/tdd.md
+      user_message: "Build a rate limiter for our API endpoints"
+    assert:
+      - type: llm-rubric
+        value: "Response asks clarifying questions about the interface: function signature, inputs/outputs, error cases, or configuration options. Does not jump straight into writing tests without understanding requirements."
+
+  # ── write-prd ─────────────────────────────────────────────────
+
+  - description: "write-prd: gathers context before writing"
+    vars:
+      system_prompt: file://commands/write-prd.md
+      user_message: "We need a feature to export reports as PDF"
+    assert:
+      - type: llm-rubric
+        value: "Response gathers context first — asks questions or explores before producing a full PRD. Does not immediately output a complete PRD without understanding requirements. May ask about report types, data sources, user roles, or export options."
+
+  # ── prd-to-issues ─────────────────────────────────────────────
+
+  - description: "prd-to-issues: creates actionable vertical-slice issues"
+    vars:
+      system_prompt: file://commands/prd-to-issues.md
+      user_message: "Break this PRD into issues: # PDF Export Feature. Problem: Users need to export dashboard reports as PDFs. User Stories: As a manager, I want to export weekly reports. As an analyst, I want to customize which charts are included. Technical Design: Use puppeteer for HTML-to-PDF rendering. Acceptance Criteria: PDFs match on-screen layout within 95%."
+    assert:
+      - type: llm-rubric
+        value: "Response breaks the PRD into multiple discrete issues/tasks. Each issue is a vertical slice (delivers end-to-end value, not just 'backend' or 'frontend'). Issues have some form of acceptance criteria or definition of done. Issues are ordered by dependency or risk."
+
+  # ── improve-architecture ──────────────────────────────────────
+
+  - description: "improve-architecture: identifies structural issues"
+    vars:
+      system_prompt: file://commands/improve-architecture.md
+      user_message: "Our Express app has all routes in a single 2000-line file, business logic mixed with request handling, and database queries inline in route handlers."
+    assert:
+      - type: llm-rubric
+        value: "Response identifies concrete architectural problems like tight coupling, missing separation of concerns, or lack of modularity. Suggests improvements like extracting services, separating routes, or introducing a data access layer. Does not just say 'refactor' without specifics."

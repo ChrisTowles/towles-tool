@@ -37,7 +37,11 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "test": "vitest run",
-    "test:prompts": "promptfoo eval",
+    "test:prompts": "promptfoo eval && promptfoo eval -c plugins/tt-core/promptfooconfig.yaml && promptfoo eval -c plugins/tt-auto-claude/promptfooconfig.yaml",
+    "test:prompts:root": "promptfoo eval",
+    "test:prompts:tt-core": "promptfoo eval -c plugins/tt-core/promptfooconfig.yaml",
+    "test:prompts:tt-core:llm": "promptfoo eval -c plugins/tt-core/promptfooconfig.llm.yaml",
+    "test:prompts:tt-auto-claude": "promptfoo eval -c plugins/tt-auto-claude/promptfooconfig.yaml",
     "test:watch": "CI=DisableCallingClaude vitest watch",
     "typecheck": "tsgo --noEmit --incremental",
     "prepare": "simple-git-hooks"
@@ -90,6 +94,7 @@
     "onlyBuiltDependencies": [
       "@anthropic-ai/claude-code",
       "better-sqlite3",
+      "esbuild",
       "simple-git-hooks"
     ]
   },
