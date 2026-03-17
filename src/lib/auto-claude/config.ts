@@ -47,6 +47,7 @@ export async function initConfig(
       });
       mainBranch = result.stdout.trim().replace("refs/remotes/origin/", "");
     } catch {
+      consola.debug("Could not detect default branch from origin/HEAD, defaulting to 'main'");
       mainBranch = "main";
     }
   }

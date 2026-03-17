@@ -1,9 +1,9 @@
 import { Flags } from "@oclif/core";
+import consola from "consola";
 import prompts from "prompts";
 import type { Choice } from "prompts";
 import { colors } from "consola/utils";
 import { Fzf } from "fzf";
-import consola from "consola";
 
 import { exec } from "tinyexec";
 
@@ -133,6 +133,7 @@ export default class GhBranch extends BaseCommand {
       const branchName = createBranchNameFromIssue(selectedIssue);
       await exec("git", ["checkout", "-b", branchName]);
     } catch {
+      consola.debug("Branch checkout failed");
       this.exit(1);
     }
   }

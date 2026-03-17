@@ -179,7 +179,9 @@ async function syncWithRemote(): Promise<void> {
   const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
   if (branch !== cfg.mainBranch) {
     log(`Warning: on branch "${branch}", switching to ${cfg.mainBranch}...`);
-    await git(["checkout", cfg.mainBranch]).catch(() => {});
+    await git(["checkout", cfg.mainBranch]).catch(() => {
+      // Best-effort checkout — may fail if working tree is dirty
+    });
   }
   const status = await git(["status", "--porcelain"]);
   if (status.length > 0) {
@@ -198,7 +200,9 @@ function registerShutdownHandlers(): void {
       log(`Received ${signal}, shutting down...`);
       setTimeout(() => process.exit(1), 5_000).unref();
       git(["checkout", getConfig().mainBranch])
-        .catch(() => {})
+        .catch(() => {
+          // Best-effort cleanup on shutdown — ignore failures
+        })
         .then(() => process.exit(0));
     });
   }
