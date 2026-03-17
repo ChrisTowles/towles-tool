@@ -1,233 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import consola from "consola";
 import pc from "picocolors";
-import { x } from "tinyexec";
 
 import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
+import { runClaude } from "./claude-cli.js";
 import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
-import { spawnClaude } from "./spawn-claude.js";
+import { execSafe, git } from "./shell.js";
+import { resolveTemplate } from "./templates.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const TEMPLATES_DIR = join(__dirname, "prompt-templates");
-
-// ── Shell helpers ──
-
-async function exec(cmd: string, args: string[]): Promise<string> {
-  const result = await x(cmd, args, { nodeOptions: { cwd: process.cwd() }, throwOnError: true });
-  return result.stdout.trim();
-}
-
-export async function execSafe(
-  cmd: string,
-  args: string[],
-): Promise<{ stdout: string; ok: boolean }> {
-  const result = await x(cmd, args, { nodeOptions: { cwd: process.cwd() }, throwOnError: false });
-  return { stdout: (result.stdout ?? "").trim(), ok: result.exitCode === 0 };
-}
-
-export async function gh<T = unknown>(args: string[]): Promise<T> {
-  const out = await exec("gh", args);
-  return JSON.parse(out) as T;
-}
-
-export async function ghRaw(args: string[]): Promise<string> {
-  const result = await execSafe("gh", args);
-  return result.stdout;
-}
-
-export async function git(args: string[]): Promise<string> {
-  return exec("git", args);
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ── Claude CLI ──
-
-export interface ClaudeResult {
-  result: string;
-  is_error: boolean;
-  total_cost_usd: number;
-  num_turns: number;
-}
-
-const PROCESS_RETRIES = 3;
-const PROCESS_RETRY_DELAY_MS = 5_000;
-
-export async function runClaude(opts: {
-  promptFile: string;
-  maxTurns?: number;
-}): Promise<ClaudeResult> {
-  const cfg = getConfig();
-  const args = [
-    "-p",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-    "--dangerously-skip-permissions",
-    "--model",
-    cfg.model,
-    ...(opts.maxTurns ? ["--max-turns", String(opts.maxTurns)] : []),
-    `@${opts.promptFile}`,
-  ];
-
-  let lastError: Error | undefined;
-  for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
-    try {
-      const result = await runClaudeStreaming(args);
-      consola.success(`Done — ${result.num_turns} turns`);
-      if (result.result) {
-        consola.log(result.result);
-      }
-      return result;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < PROCESS_RETRIES) {
-        consola.warn(
-          `Claude process failed (attempt ${attempt}/${PROCESS_RETRIES}), retrying in ${PROCESS_RETRY_DELAY_MS / 1000}s…`,
-        );
-        await sleep(PROCESS_RETRY_DELAY_MS);
-      }
-    }
-  }
-  throw lastError ?? new Error("runClaude failed after all retries");
-}
-
-function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
-  return new Promise((resolve, reject) => {
-    const proc = spawnClaude(args);
-    let capturedResult: ClaudeResult | null = null;
-    let turnCount = 0;
-
-    if (!proc.stdout) {
-      reject(new Error("Claude process has no stdout"));
-      return;
-    }
-
-    const rl = createInterface({ input: proc.stdout });
-
-    rl.on("line", (line) => {
-      if (!line.trim()) return;
-      try {
-        const event = JSON.parse(line) as Record<string, unknown>;
-        handleStreamEvent(event, (turns) => {
-          turnCount = turns;
-        });
-
-        if ("result" in event && "is_error" in event && "num_turns" in event) {
-          capturedResult = {
-            result: String(event.result ?? ""),
-            is_error: Boolean(event.is_error),
-            total_cost_usd: Number(event.total_cost_usd ?? 0),
-            num_turns: Number(event.num_turns),
-          };
-        }
-      } catch {
-        // Skip non-JSON lines
-      }
-    });
-
-    proc.on("error", (err) => {
-      rl.close();
-      reject(err);
-    });
-
-    proc.on("close", (code) => {
-      rl.close();
-      if (capturedResult) {
-        resolve(capturedResult);
-      } else if (code !== 0) {
-        reject(new Error(`Claude process exited with code ${code}`));
-      } else {
-        resolve({ result: "", is_error: false, total_cost_usd: 0, num_turns: turnCount });
-      }
-    });
-  });
-}
-
-function toolDetail(block: Record<string, unknown>): string {
-  const input =
-    typeof block.input === "object" && block.input !== null
-      ? (block.input as Record<string, unknown>)
-      : null;
-  if (!input) return "";
-
-  const filePath = input.file_path ?? input.path;
-  if (typeof filePath === "string") return pc.dim(` ${filePath}`);
-  if (typeof input.pattern === "string") return pc.dim(` ${input.pattern}`);
-  if (typeof input.command === "string") {
-    const cmd = input.command;
-    return pc.dim(` ${cmd.length > 60 ? cmd.slice(0, 60) + "\u2026" : cmd}`);
-  }
-  return "";
-}
-
-function logToolUse(block: Record<string, unknown>): void {
-  const name = block.name;
-  if (typeof name === "string") {
-    consola.info(`  ${pc.dim("\u21B3")} ${name}${toolDetail(block)}`);
-  }
-}
-
-function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: number) => void): void {
-  // Only handle stream_event — assistant turn events duplicate the same tools
-  if (event.type === "stream_event" && typeof event.event === "object" && event.event !== null) {
-    const inner = event.event as Record<string, unknown>;
-
-    if (
-      inner.type === "content_block_start" &&
-      typeof inner.content_block === "object" &&
-      inner.content_block !== null
-    ) {
-      const block = inner.content_block as Record<string, unknown>;
-      if (block.type === "tool_use") {
-        logToolUse(block);
-      } else if (block.type === "thinking") {
-        consola.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking\u2026")}`);
-      }
-    }
-  }
-
-  // Turn count tracking
-  if (typeof event.num_turns === "number" && !("result" in event)) {
-    onTurn(event.num_turns as number);
-  }
-}
-
-// ── Template resolution ──
-
-export interface TokenValues {
-  SCOPE_PATH: string;
-  ISSUE_DIR: string;
-  MAIN_BRANCH: string;
-  REVIEW_FEEDBACK?: string;
-}
-
-export function resolveTemplate(
-  templateName: string,
-  tokens: TokenValues,
-  issueDir: string,
-): string {
-  const templatePath = join(TEMPLATES_DIR, templateName);
-  let template = readFileSync(templatePath, "utf-8");
-
-  for (const [key, value] of Object.entries(tokens)) {
-    template = template.replaceAll(`{{${key}}}`, value);
-  }
-
-  const resolvedPath = join(issueDir, templateName);
-  ensureDir(dirname(resolvedPath));
-  writeFileSync(resolvedPath, template, "utf-8");
-
-  return relative(process.cwd(), resolvedPath);
-}
+import type { TokenValues } from "./templates.js";
 
 // ── File helpers ──
 
@@ -247,8 +31,6 @@ export function writeFile(path: string, content: string): void {
   ensureDir(dirname(path));
   writeFileSync(path, content, "utf-8");
 }
-
-// ── Git helpers ──
 
 // ── Issue context ──
 
@@ -326,6 +108,8 @@ function findNthBlankLine(lines: string[], n: number): number {
   return 0;
 }
 
+// ── Logging ──
+
 export function log(msg: string): void {
   consola.info(`[auto-claude] ${msg}`);
 }
@@ -345,47 +129,6 @@ export function logStep(step: string, ctx: IssueContext, skipped = false): void 
   const tag = skipped ? pc.yellow("SKIP") : pc.green("RUN");
   logBanner(`[${tag}] ${step}`);
   consola.log(pc.dim(`${ctx.repo}#${ctx.number} — ${ctx.title}`));
-}
-
-// ── Label helpers ──
-
-export const LABELS = {
-  inProgress: "auto-claude-in-progress",
-  review: "auto-claude-review",
-  failed: "auto-claude-failed",
-  success: "auto-claude-success",
-} as const;
-
-export async function ensureLabelsExist(repo: string): Promise<void> {
-  await Promise.all(
-    Object.values(LABELS).map((label) =>
-      execSafe("gh", ["label", "create", label, "--repo", repo, "--force"]),
-    ),
-  );
-}
-
-export async function setLabel(repo: string, issueNumber: number, label: string): Promise<void> {
-  await execSafe("gh", [
-    "issue",
-    "edit",
-    String(issueNumber),
-    "--repo",
-    repo,
-    "--add-label",
-    label,
-  ]);
-}
-
-export async function removeLabel(repo: string, issueNumber: number, label: string): Promise<void> {
-  await execSafe("gh", [
-    "issue",
-    "edit",
-    String(issueNumber),
-    "--repo",
-    repo,
-    "--remove-label",
-    label,
-  ]);
 }
 
 // ── Git branch helpers ──

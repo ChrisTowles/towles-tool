@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { initConfig } from "./config";
+import { resolveTemplate } from "./templates";
 import {
   buildContextFromArtifacts,
   buildIssueContext,
   buildTokens,
-  resolveTemplate,
 } from "./utils";
 
 // Initialize config once for tests that need getConfig()

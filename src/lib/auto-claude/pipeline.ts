@@ -9,20 +9,9 @@ import { stepImplement } from "./steps/implement.js";
 import { stepPlan } from "./steps/plan.js";
 import { stepReview } from "./steps/review.js";
 import { stepSimplify } from "./steps/simplify.js";
-import {
-  LABELS,
-  ensureDir,
-  ensureLabelsExist,
-  execSafe,
-  fileExists,
-  ghRaw,
-  git,
-  log,
-  readFile,
-  removeLabel,
-  setLabel,
-  writeFile,
-} from "./utils.js";
+import { LABELS, ensureLabelsExist, removeLabel, setLabel } from "./labels.js";
+import { execSafe, ghRaw, git } from "./shell.js";
+import { ensureDir, fileExists, log, readFile, writeFile } from "./utils.js";
 import type { IssueContext } from "./utils.js";
 
 export { type StepName, STEP_NAMES } from "./prompt-templates/index.js";
