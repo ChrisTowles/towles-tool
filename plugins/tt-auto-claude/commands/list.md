@@ -13,8 +13,8 @@ List open issues across all auto-claude pipeline states in the current repo.
    - `auto-claude-review`
 3. Deduplicate across queries. Display as a table sorted by issue number:
 
-   | # | Title | Status | Labels | Assignee |
-   |---|-------|--------|--------|----------|
+   | #   | Title | Status | Labels | Assignee |
+   | --- | ----- | ------ | ------ | -------- |
 
    Status derived from pipeline label. Labels column excludes pipeline labels. Assignee shows login or `—`.
 

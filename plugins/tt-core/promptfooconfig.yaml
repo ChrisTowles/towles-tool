@@ -83,14 +83,14 @@ tests:
       - type: icontains
         value: "Open Questions"
 
-  - description: "write-prd: gathers context and interviews for gaps"
+  - description: "write-prd: gathers context first and asks clarifying questions"
     vars:
       prompt_content: file://commands/write-prd.md
     assert:
       - type: icontains
-        value: "Gather context"
+        value: "Gather context first"
       - type: icontains
-        value: "Interview for gaps"
+        value: "clarifying questions"
       - type: icontains
         value: "AskUserQuestion"
       - type: icontains
@@ -142,20 +142,20 @@ tests:
       prompt_content: file://commands/tdd.md
     assert:
       - type: icontains
-        value: "Red"
+        value: "Red phase"
       - type: icontains
-        value: "Green"
+        value: "Green phase"
       - type: icontains
-        value: "Refactor"
+        value: "Refactor phase"
       - type: icontains
-        value: "failing test"
+        value: "confirm it fails"
 
   - description: "tdd: never writes implementation before the test"
     vars:
       prompt_content: file://commands/tdd.md
     assert:
       - type: icontains
-        value: "Never write implementation before the test"
+        value: "NEVER write implementation before the test"
       - type: icontains
         value: "minimum code"
       - type: icontains
@@ -202,7 +202,7 @@ tests:
       - type: icontains
         value: "multiSelect"
       - type: icontains
-        value: "10-15"
+        value: "5-15"
 
   - description: "improve-architecture: philosophy on thin interfaces"
     vars:
@@ -219,40 +219,39 @@ tests:
 
   # ── refine-text.md ──────────────────────────────────────────────
 
-  - description: "refine-text: fixes grammar and preserves voice"
+  - description: "refine-text: fixes grammar and spelling"
     vars:
       prompt_content: file://commands/refine-text.md
     assert:
       - type: icontains
-        value: "Grammar"
+        value: "grammar"
       - type: icontains
         value: "spelling"
       - type: icontains
-        value: "preserve"
-      - type: icontains
         value: "voice"
+      - type: icontains
+        value: "filler"
 
-  - description: "refine-text: uses active voice and edits in place"
+  - description: "refine-text: passive to active and edit tool"
     vars:
       prompt_content: file://commands/refine-text.md
     assert:
       - type: icontains
-        value: "active voice"
+        value: "active"
       - type: icontains
-        value: "Edit in place"
+        value: "Edit tool"
       - type: icontains
-        value: "meaning and intent"
+        value: "never rewrite"
       - type: icontains
-        value: "Technical accuracy"
+        value: "never add content"
 
-  - description: "refine-text: professional editor with no restructuring"
+  - description: "refine-text: professional copy editor with no restructuring"
     vars:
       prompt_content: file://commands/refine-text.md
     assert:
       - type: icontains
-        value: "professional editor"
+        value: "professional copy editor"
       - type: icontains
-        value: "don't create a new file"
+        value: "never reorder or restructure"
       - type: icontains
-        value: "Bloated sentences"
-
+        value: "Cut filler"
