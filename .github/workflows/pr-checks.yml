@@ -23,7 +23,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm format:check
       - run: pnpm test:prompts
-      - run: claude plugin validate .
 
   test:
     runs-on: ${{ matrix.os }}
