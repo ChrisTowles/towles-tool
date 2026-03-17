@@ -50,15 +50,30 @@ claude plugin update tt@towles-tool
 claude plugin uninstall tt@towles-tool && claude plugin marketplace remove towles-tool && claude plugin marketplace add /home/ctowles/code/p/towles-tool && claude plugin install tt@towles-tool
 ```
 
-**Available Plugin**: `tt-core` (named `tt`)
+**Available Plugins**:
 
-Plugin commands (invoked as `/tt:<command>`):
+### `tt-core` (named `tt`)
 
-- `commit` - AI-powered conventional commit messages
-- `plan` - Interview user and create implementation plan
-- `improve` - Explore codebase and suggest improvements
-- `refine` - Fix grammar/spelling in files
-- `refactor-claude-md` - reduce and claude.md files
+Dev workflow commands (invoked as `/tt:<command>`):
+
+- `interview-me` - Relentless interviewing to clarify ideas before implementation
+- `write-prd` - Transform conversations into structured PRDs with user stories
+- `prd-to-issues` - Break PRDs into vertical-slice GitHub issues
+- `tdd` - Strict red-green-refactor test-driven development
+- `improve-architecture` - Codebase architecture analysis for agent-friendliness
+- `refine-text` - Improve copy for readability and grammar
+- `refactor-claude-md` - Analyze and reorganize CLAUDE.md files
+
+Skill: `towles-tool` - Reference for `tt` CLI (git, journal, utils)
+
+### `tt-auto-claude` (named `tt-ac`)
+
+Auto-claude pipeline commands (invoked as `/tt-ac:<command>`):
+
+- `create-issue` - Create GitHub issue with auto-claude label and pipeline labels
+- `list` - List current auto-claude issues
+
+Skill: `auto-claude` - How the auto-claude pipeline works
 
 Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 

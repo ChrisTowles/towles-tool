@@ -1,6 +1,6 @@
 {
   "name": "tt",
-  "description": "Useful personal commands: Around Claude code and building using Agentic patterns.",
+  "description": "Core dev workflow commands: interview-me, write-prd, prd-to-issues, tdd, improve-architecture, refine-text.",
   "version": "0.0.47",
   "author": {
     "name": "Chris Towles"
