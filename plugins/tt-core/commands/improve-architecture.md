@@ -40,6 +40,7 @@ Prioritize: high impact + low effort first. Explain why certain fixes should com
 ### 3. Present
 
 Present 5-15 specific improvements (scaled to how many real issues exist), each with:
+
 - Concrete problem description (not just "needs refactoring")
 - Specific proposed fix with concrete patterns or approaches
 - Affected areas
