@@ -1,4 +1,4 @@
-import { execSafe } from "./shell.js";
+import { execSafe } from "../../utils/git/exec.js";
 
 // ── Label helpers ──
 

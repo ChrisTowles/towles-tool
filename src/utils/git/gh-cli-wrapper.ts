@@ -1,6 +1,8 @@
 import stripAnsi from "strip-ansi";
 import { x } from "tinyexec";
 
+import { execSafe } from "./exec.js";
+
 export async function isGithubCliInstalled(): Promise<boolean> {
   try {
     const proc = await x("gh", ["--version"]);
@@ -9,6 +11,16 @@ export async function isGithubCliInstalled(): Promise<boolean> {
     // gh CLI not installed or not accessible
     return false;
   }
+}
+
+export async function gh<T = unknown>(args: string[]): Promise<T> {
+  const result = await x("gh", args, { nodeOptions: { cwd: process.cwd() }, throwOnError: true });
+  return JSON.parse(result.stdout.trim()) as T;
+}
+
+export async function ghRaw(args: string[]): Promise<string> {
+  const result = await execSafe("gh", args);
+  return result.stdout;
 }
 
 export interface Issue {
