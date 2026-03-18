@@ -1,19 +1,13 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { homedir } from "node:os";
 import { Flags } from "@oclif/core";
 import { colors } from "consola/utils";
 import consola from "consola";
 import { BaseCommand } from "./base.js";
-
-const CLAUDE_SETTINGS_PATH = path.join(homedir(), ".claude", "settings.json");
-
-interface ClaudeSettings {
-  cleanupPeriodDays?: number;
-  alwaysThinkingEnabled?: boolean;
-  hooks?: Record<string, unknown[]>;
-  [key: string]: unknown;
-}
+import {
+  CLAUDE_SETTINGS_PATH,
+  loadClaudeSettings,
+  applyRecommendedSettings,
+  saveClaudeSettings,
+} from "../lib/install/claude-settings.js";
 
 /**
  * Install and configure towles-tool with Claude Code
@@ -48,47 +42,31 @@ export default class Install extends BaseCommand {
     this.log(colors.bold("\n🔧 towles-tool install\n"));
 
     // Load or create Claude settings
-    let claudeSettings: ClaudeSettings = {};
-    if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
-      try {
-        const content = fs.readFileSync(CLAUDE_SETTINGS_PATH, "utf-8");
-        claudeSettings = JSON.parse(content);
-        this.log(colors.dim(`Found existing Claude settings at ${CLAUDE_SETTINGS_PATH}`));
-      } catch {
-        this.log(
-          colors.yellow(
-            `Warning: Could not parse ${CLAUDE_SETTINGS_PATH}, will create fresh settings`,
-          ),
-        );
-      }
+    const existing = loadClaudeSettings(CLAUDE_SETTINGS_PATH);
+    if (Object.keys(existing).length > 0) {
+      this.log(colors.dim(`Found existing Claude settings at ${CLAUDE_SETTINGS_PATH}`));
     } else {
       this.log(colors.dim(`No Claude settings file found, will create one`));
     }
 
-    // Configure recommended settings
-    let modified = false;
+    // Apply recommended settings
+    const { settings, changes } = applyRecommendedSettings(existing);
 
-    // Prevent log deletion (set to ~274 years)
-    if (claudeSettings.cleanupPeriodDays !== 99999) {
-      claudeSettings.cleanupPeriodDays = 99999;
-      modified = true;
-      this.log(colors.green("✓ Set cleanupPeriodDays: 99999 (prevent log deletion)"));
-    } else {
-      this.log(colors.dim("✓ cleanupPeriodDays already set to 99999"));
+    for (const change of changes) {
+      this.log(colors.green(`✓ ${change}`));
     }
 
-    // Enable thinking by default
-    if (claudeSettings.alwaysThinkingEnabled !== true) {
-      claudeSettings.alwaysThinkingEnabled = true;
-      modified = true;
-      this.log(colors.green("✓ Set alwaysThinkingEnabled: true"));
-    } else {
+    // Report already-correct settings
+    if (!changes.some((c) => c.includes("cleanupPeriodDays"))) {
+      this.log(colors.dim("✓ cleanupPeriodDays already set to 99999"));
+    }
+    if (!changes.some((c) => c.includes("alwaysThinkingEnabled"))) {
       this.log(colors.dim("✓ alwaysThinkingEnabled already set to true"));
     }
 
-    // Save settings if modified
-    if (modified) {
-      this.saveClaudeSettings(claudeSettings);
+    // Save settings if anything changed
+    if (changes.length > 0) {
+      saveClaudeSettings(CLAUDE_SETTINGS_PATH, settings);
       this.log(colors.green(`\n✓ Saved Claude settings to ${CLAUDE_SETTINGS_PATH}`));
     }
 
@@ -168,14 +146,6 @@ export default class Install extends BaseCommand {
         this.log(colors.dim(`  Skipped ${plugin.name}`));
       }
     }
-  }
-
-  private saveClaudeSettings(settings: ClaudeSettings): void {
-    const dir = path.dirname(CLAUDE_SETTINGS_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2));
   }
 
   private showOtelInstructions(): void {
