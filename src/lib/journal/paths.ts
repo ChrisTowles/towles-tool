@@ -72,26 +72,22 @@ export function generateJournalFileInfoByType({
 }: GenerateJournalFileParams): GenerateJournalFileResult {
   const currentDate = new Date(date);
 
-  let templatePath: string = "";
-  let mondayDate: Date = getMondayOfWeek(currentDate);
+  let templatePath: string;
+  let mondayDate: Date;
 
   switch (type) {
-    case JOURNAL_TYPES.DAILY_NOTES: {
-      const monday = getMondayOfWeek(currentDate);
+    case JOURNAL_TYPES.DAILY_NOTES:
       templatePath = journalSettings.dailyPathTemplate;
-      mondayDate = monday;
+      mondayDate = getMondayOfWeek(currentDate);
       break;
-    }
-    case JOURNAL_TYPES.MEETING: {
+    case JOURNAL_TYPES.MEETING:
       templatePath = journalSettings.meetingPathTemplate;
       mondayDate = currentDate;
       break;
-    }
-    case JOURNAL_TYPES.NOTE: {
+    case JOURNAL_TYPES.NOTE:
       templatePath = journalSettings.notePathTemplate;
       mondayDate = currentDate;
       break;
-    }
     default:
       throw new Error(`Unknown JournalType: ${type}`);
   }
@@ -103,8 +99,8 @@ export function generateJournalFileInfoByType({
   const fullPath = path.join(journalSettings.baseFolder, resolvedPath);
 
   return {
-    currentDate: currentDate,
-    fullPath: fullPath,
+    currentDate,
+    fullPath,
     mondayDate,
   } satisfies GenerateJournalFileResult;
 }

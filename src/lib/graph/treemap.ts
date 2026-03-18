@@ -1,4 +1,5 @@
 import {
+  aggregateSessionTools,
   analyzeSession,
   extractProjectName,
   getModelName,
@@ -7,7 +8,6 @@ import {
 import { extractSessionLabel } from "./labels.js";
 import { parseJsonl } from "./parser.js";
 import { extractToolData } from "./tools.js";
-import { aggregateSessionTools } from "./analyzer.js";
 import type { JournalEntry, TreemapNode } from "./types.js";
 
 /**

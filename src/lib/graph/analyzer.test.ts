@@ -8,12 +8,7 @@ import {
   getPrimaryModel,
 } from "./analyzer";
 import { extractSessionLabel } from "./labels";
-import {
-  extractToolData,
-  extractToolDetail,
-  sanitizeString,
-  truncateDetail,
-} from "./tools";
+import { extractToolData, extractToolDetail, sanitizeString, truncateDetail } from "./tools";
 
 // ── Helpers ──
 

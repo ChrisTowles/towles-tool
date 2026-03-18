@@ -36,14 +36,12 @@ export function extractToolDetail(
 
   switch (toolName) {
     case "Read":
-      return truncateDetail(input.file_path as string);
     case "Write":
     case "Edit":
       return truncateDetail(input.file_path as string);
     case "Bash":
       return truncateDetail(input.command as string, 50);
     case "Glob":
-      return truncateDetail(input.pattern as string, 50);
     case "Grep":
       return truncateDetail(input.pattern as string, 50);
     case "Task":
