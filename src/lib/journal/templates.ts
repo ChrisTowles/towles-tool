@@ -1,14 +1,9 @@
-import { exec } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 import consola from "consola";
 import { colors } from "consola/utils";
-import { DateTime } from "luxon";
-import { formatDate, getMondayOfWeek, getWeekInfo } from "../../utils/date-utils.js";
-import type { JournalSettings } from "../../config/settings.js";
-import { JOURNAL_TYPES } from "../../types/journal.js";
-import type { JournalType } from "../../types/journal.js";
+import { formatDate, getWeekInfo } from "../../utils/date-utils.js";
+import { ensureDirectoryExists } from "./fs.js";
 
 // Default template file names
 const TEMPLATE_FILES = {
@@ -16,18 +11,6 @@ const TEMPLATE_FILES = {
   meeting: "meeting.md",
   note: "note.md",
 } as const;
-
-const execAsync = promisify(exec);
-
-/**
- * Create journal directory if it doesn't exist
- */
-export function ensureDirectoryExists(folderPath: string): void {
-  if (!existsSync(folderPath)) {
-    consola.info(`Creating journal directory: ${colors.cyan(folderPath)}`);
-    mkdirSync(folderPath, { recursive: true });
-  }
-}
 
 /**
  * Load template from external file or return null if not found
@@ -265,135 +248,4 @@ export function createNoteContent({
   content.push(``);
 
   return content.join("\n");
-}
-
-/**
- * Open file in default editor with folder context
- */
-export async function openInEditor({
-  editor,
-  filePath,
-  folderPath,
-}: {
-  editor: string;
-  filePath: string;
-  folderPath?: string;
-}): Promise<void> {
-  try {
-    if (folderPath) {
-      // Open both folder and file - this works with VS Code and similar editors
-      // the purpose is to open the folder context for better navigation
-      await execAsync(`"${editor}" "${folderPath}" "${filePath}"`);
-    } else {
-      await execAsync(`"${editor}" "${filePath}"`);
-    }
-  } catch (ex) {
-    consola.warn(
-      `Could not open in editor : '${editor}'. Modify your editor in the config: examples include 'code', 'code-insiders',  etc...`,
-      ex,
-    );
-  }
-}
-
-export function resolvePathTemplate(
-  template: string,
-  title: string,
-  date: Date,
-  mondayDate: Date,
-): string {
-  const dateTime = DateTime.fromJSDate(date, { zone: "utc" });
-
-  // Replace Luxon format tokens wrapped in curly braces
-  return template.replace(/\{([^}]+)\}/g, (match, token) => {
-    try {
-      if (token === "title") {
-        return title.toLowerCase().replace(/\s+/g, "-");
-      }
-
-      if (token.startsWith("monday:")) {
-        const mondayToken = token.substring(7); // Remove 'monday:' prefix
-        const mondayDateTime = DateTime.fromJSDate(mondayDate, { zone: "utc" });
-        return mondayDateTime.toFormat(mondayToken);
-      }
-
-      const result = dateTime.toFormat(token);
-      // Check if the result contains suspicious patterns that indicate invalid tokens
-      // This is a heuristic to detect when Luxon produces garbage output for invalid tokens
-      const isLikelyInvalid =
-        token.includes("invalid") ||
-        result.length > 20 || // Very long results are likely garbage
-        (result.length > token.length * 2 && /\d{10,}/.test(result)) || // Contains very long numbers
-        result.includes("UTC");
-
-      if (isLikelyInvalid) {
-        consola.warn(`Invalid date format token: ${token}`);
-        return match;
-      }
-      return result;
-    } catch (error) {
-      consola.warn(`Invalid date format token: ${token}`);
-      return match; // Return original token if format is invalid
-    }
-  });
-}
-
-interface GenerateJournalFileResult {
-  fullPath: string;
-  mondayDate: Date;
-  currentDate: Date;
-}
-
-interface GenerateJournalFileParams {
-  date: Date;
-  type: JournalType;
-  title: string;
-  journalSettings: JournalSettings;
-}
-
-/**
- * Generate journal file info for different types using individual path templates
- */
-export function generateJournalFileInfoByType({
-  journalSettings,
-  date = new Date(),
-  type,
-  title,
-}: GenerateJournalFileParams): GenerateJournalFileResult {
-  const currentDate = new Date(date);
-
-  let templatePath: string = "";
-  let mondayDate: Date = getMondayOfWeek(currentDate);
-
-  switch (type) {
-    case JOURNAL_TYPES.DAILY_NOTES: {
-      const monday = getMondayOfWeek(currentDate);
-      templatePath = journalSettings.dailyPathTemplate;
-      mondayDate = monday;
-      break;
-    }
-    case JOURNAL_TYPES.MEETING: {
-      templatePath = journalSettings.meetingPathTemplate;
-      mondayDate = currentDate;
-      break;
-    }
-    case JOURNAL_TYPES.NOTE: {
-      templatePath = journalSettings.notePathTemplate;
-      mondayDate = currentDate;
-      break;
-    }
-    default:
-      throw new Error(`Unknown JournalType: ${type}`);
-  }
-
-  // Resolve the path template and extract directory structure
-  const resolvedPath = resolvePathTemplate(templatePath, title, currentDate, mondayDate);
-
-  // Join baseFolder with the resolved path
-  const fullPath = path.join(journalSettings.baseFolder, resolvedPath);
-
-  return {
-    currentDate: currentDate,
-    fullPath: fullPath,
-    mondayDate,
-  } satisfies GenerateJournalFileResult;
 }
