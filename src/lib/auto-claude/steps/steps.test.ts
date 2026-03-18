@@ -135,7 +135,7 @@ describe("stepPlan", () => {
   afterEach(() => teardownStepTest(originalCwd, repo));
 
   it("skips when plan.md already exists", async () => {
-    const { stepPlan } = await import("./plan");
+    const { stepPlan } = await import("./simple-steps");
 
     writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Existing plan");
 
@@ -144,7 +144,7 @@ describe("stepPlan", () => {
   });
 
   it("calls ensureBranch and creates plan.md on success", async () => {
-    const { stepPlan } = await import("./plan");
+    const { stepPlan } = await import("./simple-steps");
     const planPath = join(ctx.issueDir, ARTIFACTS.plan);
 
     mockClaudeImpl = () => {
@@ -163,7 +163,7 @@ describe("stepPlan", () => {
   });
 
   it("returns false when Claude fails", async () => {
-    const { stepPlan } = await import("./plan");
+    const { stepPlan } = await import("./simple-steps");
 
     mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
@@ -190,7 +190,7 @@ describe("stepSimplify", () => {
   afterEach(() => teardownStepTest(originalCwd, repo));
 
   it("skips when simplify-summary.md already exists", async () => {
-    const { stepSimplify } = await import("./simplify");
+    const { stepSimplify } = await import("./simple-steps");
 
     writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
 
@@ -199,7 +199,7 @@ describe("stepSimplify", () => {
   });
 
   it("creates simplify-summary.md on success", async () => {
-    const { stepSimplify } = await import("./simplify");
+    const { stepSimplify } = await import("./simple-steps");
     const artifactPath = join(ctx.issueDir, ARTIFACTS.simplifySummary);
 
     mockClaudeImpl = () => {
@@ -212,7 +212,7 @@ describe("stepSimplify", () => {
   });
 
   it("returns false when Claude fails", async () => {
-    const { stepSimplify } = await import("./simplify");
+    const { stepSimplify } = await import("./simple-steps");
 
     mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
