@@ -77,6 +77,13 @@ Skill: `auto-claude` - How the auto-claude pipeline works
 
 Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 
+## Error Handling Convention
+
+- **Internal pipeline calls**: Use `git()` / throwing `exec()` — failures are exceptional and should abort the step.
+- **Probing / optional operations**: Use `execSafe()` — when failure is an expected branch (e.g., checking if a branch exists).
+- **neverthrow**: Reserved for `runClaude()` results where the caller must explicitly handle success/failure.
+- **Never** mix: don't catch a throwing call just to convert to `{ ok }`. Pick the right function upfront.
+
 ## Technology Stack
 
 - **Runtime**: Node.js + tsx (runs TypeScript via tsx loader)
