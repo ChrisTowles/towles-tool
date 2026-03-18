@@ -10,7 +10,6 @@
 **Configuration System**:
 
 - `src/config/settings.ts` - User settings management with Zod validation
-- `src/config/context.ts` - Context object passed to commands
 - `src/commands/base.ts` - BaseCommand class extending oclif Command with shared flags/settings
 
 **Available CLI Commands**:
@@ -62,7 +61,6 @@ Dev workflow commands (invoked as `/tt:<command>`):
 - `tdd` - Strict red-green-refactor test-driven development
 - `improve-architecture` - Codebase architecture analysis for agent-friendliness
 - `refine-text` - Improve copy for readability and grammar
-- `refactor-claude-md` - Analyze and reorganize CLAUDE.md files
 
 Skill: `towles-tool` - Reference for `tt` CLI (git, journal, utils)
 
