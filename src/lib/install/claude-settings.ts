@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
+import { writeFile } from "../../utils/fs.js";
 
 export interface ClaudeSettings {
   cleanupPeriodDays?: number;
@@ -9,7 +10,7 @@ export interface ClaudeSettings {
   [key: string]: unknown;
 }
 
-export const CLAUDE_SETTINGS_PATH = path.join(homedir(), ".claude", "settings.json");
+export const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 
 /**
  * Load Claude settings from the given path.
@@ -56,9 +57,5 @@ export function applyRecommendedSettings(settings: ClaudeSettings): {
  * creating parent directories if needed.
  */
 export function saveClaudeSettings(settingsPath: string, settings: ClaudeSettings): void {
-  const dir = path.dirname(settingsPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  writeFile(settingsPath, JSON.stringify(settings, null, 2));
 }

@@ -25,7 +25,7 @@ export function resolvePathTemplate(
   date: Date,
   mondayDate: Date,
 ): string {
-  const dateTime = DateTime.fromJSDate(date, { zone: "utc" });
+  const dateTime = DateTime.fromJSDate(date, { zone: "local" });
 
   // Replace Luxon format tokens wrapped in curly braces
   return template.replace(/\{([^}]+)\}/g, (match, token) => {
@@ -36,7 +36,7 @@ export function resolvePathTemplate(
 
       if (token.startsWith("monday:")) {
         const mondayToken = token.substring(7); // Remove 'monday:' prefix
-        const mondayDateTime = DateTime.fromJSDate(mondayDate, { zone: "utc" });
+        const mondayDateTime = DateTime.fromJSDate(mondayDate, { zone: "local" });
         return mondayDateTime.toFormat(mondayToken);
       }
 
