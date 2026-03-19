@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import consola from "consola";
 import { colors } from "consola/utils";
+import { ensureDir } from "../../utils/fs.js";
 
 /**
  * Create journal directory if it doesn't exist
@@ -8,6 +9,6 @@ import { colors } from "consola/utils";
 export function ensureDirectoryExists(folderPath: string): void {
   if (!existsSync(folderPath)) {
     consola.info(`Creating journal directory: ${colors.cyan(folderPath)}`);
-    mkdirSync(folderPath, { recursive: true });
+    ensureDir(folderPath);
   }
 }

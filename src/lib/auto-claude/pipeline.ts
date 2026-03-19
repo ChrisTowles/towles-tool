@@ -141,7 +141,7 @@ function isReviewPass(ctx: IssueContext): boolean {
 
 async function handleFailure(
   ctx: IssueContext,
-  stepName: string,
+  stepName: StepName,
   comment?: string,
   exec?: ExecSafeFn,
 ): Promise<void> {
