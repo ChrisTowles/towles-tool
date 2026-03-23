@@ -87,7 +87,13 @@ jobs:
           git push --tags --force
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          if npm view @towles/tool@$VERSION version 2>/dev/null; then
+            echo "Version $VERSION already published — skipping"
+          else
+            npm publish --access public --provenance
+          fi
 
       - name: Create GitHub Release
         env:
