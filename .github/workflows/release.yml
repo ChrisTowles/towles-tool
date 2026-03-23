@@ -82,9 +82,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit --no-verify -m "chore: release v${{ steps.version.outputs.version }}"
-          git tag v${{ steps.version.outputs.version }}
+          git tag -f v${{ steps.version.outputs.version }}
           git push
-          git push --tags
+          git push --tags --force
 
       - name: Publish to npm
         run: npm publish --access public --provenance
@@ -92,4 +92,6 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create v${{ steps.version.outputs.version }} --generate-notes
+        run: |
+          gh release delete v${{ steps.version.outputs.version }} --yes 2>/dev/null || true
+          gh release create v${{ steps.version.outputs.version }} --generate-notes
