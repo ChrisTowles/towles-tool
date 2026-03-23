@@ -19,13 +19,13 @@ Parse the arguments as task descriptions. If a single sentence, create one task.
 
 ### Subcommands
 
-| Input             | Action                                | Example                                  |
-| ----------------- | ------------------------------------- | ---------------------------------------- |
-| `list`            | TaskList — show all tasks with status | `/tt:task list`                          |
-| `done <id>`       | TaskUpdate — mark task completed      | `/tt:task done 1`                        |
-| `start <id>`      | TaskUpdate — mark task in_progress    | `/tt:task start 2`                       |
-| `cancel <id>`     | TaskUpdate — mark task cancelled      | `/tt:task cancel 3`                      |
-| _(anything else)_ | Create task(s) from the text          | `/tt:task fix login bug, add tests`      |
+| Input             | Action                                | Example                             |
+| ----------------- | ------------------------------------- | ----------------------------------- |
+| `list`            | TaskList — show all tasks with status | `/tt:task list`                     |
+| `done <id>`       | TaskUpdate — mark task completed      | `/tt:task done 1`                   |
+| `start <id>`      | TaskUpdate — mark task in_progress    | `/tt:task start 2`                  |
+| `cancel <id>`     | TaskUpdate — mark task cancelled      | `/tt:task cancel 3`                 |
+| _(anything else)_ | Create task(s) from the text          | `/tt:task fix login bug, add tests` |
 
 ## Rules
 
