@@ -60,22 +60,24 @@ onUnmounted(() => {
 
 // Fallback: poll every 5s only when WebSocket is disconnected
 const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
-watch(
-  connected,
-  (isConnected) => {
-    if (isConnected) {
-      if (refreshInterval.value) {
-        clearInterval(refreshInterval.value);
-        refreshInterval.value = null;
+onMounted(() => {
+  watch(
+    connected,
+    (isConnected) => {
+      if (isConnected) {
+        if (refreshInterval.value) {
+          clearInterval(refreshInterval.value);
+          refreshInterval.value = null;
+        }
+      } else {
+        if (!refreshInterval.value) {
+          refreshInterval.value = setInterval(fetchCards, 5000);
+        }
       }
-    } else {
-      if (!refreshInterval.value) {
-        refreshInterval.value = setInterval(fetchCards, 5000);
-      }
-    }
-  },
-  { immediate: true },
-);
+    },
+    { immediate: true },
+  );
+});
 onUnmounted(() => {
   if (refreshInterval.value) clearInterval(refreshInterval.value);
 });
