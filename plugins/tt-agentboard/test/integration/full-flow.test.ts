@@ -87,10 +87,9 @@ describe("Full Card Lifecycle (integration)", () => {
     expect(slot?.status).toBe("available");
   });
 
-  it("card progressed through all expected states", async () => {
-    // Final verification — card is archived
-    const card = await getCard(cardId);
-    expect(card.column).toBe("done");
-    expect(card.status).toBe("done");
+  it("slot is not claimed after card completes", async () => {
+    const slots = await getSlots();
+    const slot = slots.find((s) => s.id === slotId);
+    expect(slot?.claimedByCardId).toBeNull();
   });
 });

@@ -275,9 +275,15 @@ describe("GitHubService", () => {
   });
 
   describe("startPolling()", () => {
-    it("polls immediately and emits events for found issues", async () => {
+    beforeEach(() => {
       vi.useFakeTimers();
+    });
 
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("polls immediately and emits events for found issues", async () => {
       mockListForRepo.mockResolvedValue({
         data: [
           {
@@ -304,7 +310,6 @@ describe("GitHubService", () => {
       );
 
       service.stopPolling();
-      vi.useRealTimers();
     });
   });
 

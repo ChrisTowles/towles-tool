@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock dependencies
 vi.mock("../../server/db", () => {
@@ -68,6 +68,10 @@ async function runPlugin() {
 describe("Session Reconnect Plugin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("skips when tmux not available", async () => {
