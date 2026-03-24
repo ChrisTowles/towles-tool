@@ -1,16 +1,27 @@
 import { db } from "../db";
 import { cards, workflowRuns } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { tmuxManager } from "./tmux-manager";
 import { slotAllocator } from "./slot-allocator";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 
 /**
- * Handles single agent execution: claim slot, create tmux session,
- * spawn Claude Code CLI, stream output, move card on completion.
+ * Handles single agent execution: claim slot, configure Stop hook,
+ * create tmux session, spawn Claude Code CLI.
+ *
+ * Completion is detected via Claude Code's Stop hook (HTTP POST to callback endpoint),
+ * not by polling tmux session status.
  */
 export class AgentExecutor {
+  private port: number;
+
+  constructor(port = 4200) {
+    this.port = port;
+  }
+
   /** Start agent execution for a card moved to in_progress */
   async startExecution(cardId: number): Promise<void> {
     // Fetch the card
@@ -45,11 +56,14 @@ export class AgentExecutor {
     // Update card status to running
     await this.updateCardStatus(cardId, "running");
 
+    // Write .claude/settings.local.json with Stop hook in the slot directory
+    this.writeStopHook(slot.path, cardId);
+
     // Create tmux session
     const sessionName = tmuxManager.createSession(cardId, slot.path);
 
     // Create workflow run record
-    const workflowRunRows = await db
+    await db
       .insert(workflowRuns)
       .values({
         cardId,
@@ -59,7 +73,6 @@ export class AgentExecutor {
         startedAt: new Date(),
       })
       .returning();
-    const workflowRun = workflowRunRows[0]!;
 
     // Build the Claude Code command
     const prompt = card.description ?? card.title;
@@ -74,59 +87,48 @@ export class AgentExecutor {
       eventBus.emit("agent:output", { cardId, content: output });
     });
 
-    // Monitor for session completion
-    this.monitorCompletion(cardId, sessionName, slot.id, workflowRun.id);
+    logger.info(`Card ${cardId} execution started in session ${sessionName}, Stop hook configured`);
   }
 
-  /** Poll for tmux session exit to detect completion */
-  private monitorCompletion(
-    cardId: number,
-    sessionName: string,
-    slotId: number,
-    workflowRunId: number,
-  ): void {
-    const interval = setInterval(async () => {
-      if (tmuxManager.sessionExists(sessionName)) return;
+  /**
+   * Write .claude/settings.local.json with a Stop hook that POSTs
+   * to the AgentBoard callback endpoint when Claude finishes.
+   */
+  private writeStopHook(slotPath: string, cardId: number): void {
+    const claudeDir = resolve(slotPath, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
 
-      // Session ended
-      clearInterval(interval);
-      tmuxManager.stopCapture(sessionName);
+    const settingsPath = resolve(claudeDir, "settings.local.json");
 
-      // Update workflow run
-      await db
-        .update(workflowRuns)
-        .set({
-          status: "completed",
-          endedAt: new Date(),
-        })
-        .where(eq(workflowRuns.id, workflowRunId));
+    // Read existing settings if present, merge hooks
+    let settings: Record<string, unknown> = {};
+    if (existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      } catch {
+        // Corrupted file, start fresh
+      }
+    }
 
-      // Move card to review
-      await db
-        .update(cards)
-        .set({
-          column: "review",
-          status: "review_ready",
-          updatedAt: new Date(),
-        })
-        .where(eq(cards.id, cardId));
+    const callbackUrl = `http://localhost:${this.port}/api/agents/${cardId}/complete`;
 
-      // Release slot
-      await slotAllocator.releaseSlot(slotId);
+    settings.hooks = {
+      ...(settings.hooks as Record<string, unknown> | undefined),
+      Stop: [
+        {
+          matcher: "",
+          hooks: [
+            {
+              type: "http",
+              url: callbackUrl,
+            },
+          ],
+        },
+      ],
+    };
 
-      eventBus.emit("card:moved", {
-        cardId,
-        fromColumn: "in_progress",
-        toColumn: "review",
-      });
-      eventBus.emit("card:status-changed", {
-        cardId,
-        status: "review_ready",
-      });
-      eventBus.emit("workflow:completed", { cardId, status: "completed" });
-
-      logger.info(`Card ${cardId} execution completed, moved to review`);
-    }, 2000);
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+    logger.info(`Wrote Stop hook to ${settingsPath} → ${callbackUrl}`);
   }
 
   private async updateCardStatus(
