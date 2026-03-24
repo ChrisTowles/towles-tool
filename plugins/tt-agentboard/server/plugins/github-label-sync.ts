@@ -2,7 +2,7 @@ import { db } from "../db";
 import { cards, repositories } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus } from "../utils/event-bus";
-import { getGitHubService } from "../services/github-service";
+import { getGitHubService, isGitHubConfigured } from "../services/github-service";
 import { workflowLoader } from "../services/workflow-loader";
 import { logger } from "../utils/logger";
 
@@ -24,8 +24,8 @@ const STATUS_TO_LABEL_KEY: Record<
 const ALL_LABEL_KEYS = ["in_progress", "success", "failure"] as const;
 
 export default defineNitroPlugin(() => {
-  if (!process.env.GITHUB_TOKEN) {
-    logger.info("GITHUB_TOKEN not set — GitHub label sync disabled");
+  if (!isGitHubConfigured()) {
+    logger.info("gh CLI not authenticated — GitHub label sync disabled");
     return;
   }
 

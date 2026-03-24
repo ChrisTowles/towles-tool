@@ -9,6 +9,6 @@ describe("Health API (e2e)", () => {
 
     const body = await res.json();
     expect(typeof body.tmuxInstalled).toBe("boolean");
-    expect(typeof body.githubToken).toBe("boolean");
+    expect(typeof body.ghAuthenticated).toBe("boolean");
   });
 });

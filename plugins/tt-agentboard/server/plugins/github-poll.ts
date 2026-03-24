@@ -2,13 +2,14 @@ import { db } from "../db";
 import { cards, boards } from "../db/schema";
 import { and, eq } from "drizzle-orm";
 import { eventBus } from "../utils/event-bus";
+import { isGitHubConfigured } from "../services/github-service";
 import { logger } from "../utils/logger";
 
 const POLL_INTERVAL_MS = Number(process.env.GITHUB_POLL_INTERVAL_MS) || 30_000;
 
 export default defineNitroPlugin(async () => {
-  if (!process.env.GITHUB_TOKEN) {
-    logger.info("GITHUB_TOKEN not set — GitHub issue polling disabled");
+  if (!isGitHubConfigured()) {
+    logger.info("gh CLI not authenticated — GitHub issue polling disabled");
     return;
   }
 
