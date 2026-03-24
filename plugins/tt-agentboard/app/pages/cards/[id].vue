@@ -10,6 +10,16 @@ const { data: card, refresh } = await useFetch<Card>(`/api/cards/${cardId.value}
 
 const agentInput = ref("");
 
+const router = useRouter();
+
+async function archiveCard() {
+  await $fetch(`/api/cards/${cardId.value}/move`, {
+    method: "POST",
+    body: { column: "done" },
+  });
+  router.push("/");
+}
+
 async function sendResponse() {
   if (!agentInput.value.trim()) return;
   await $fetch(`/api/agents/${cardId.value}/respond`, {
@@ -73,6 +83,15 @@ onUnmounted(() => {
           Issue #{{ card.githubIssueNumber }}
           <span v-if="card.githubPrNumber"> · PR #{{ card.githubPrNumber }}</span>
         </div>
+
+        <!-- Archive button -->
+        <button
+          v-if="card.status === 'review_ready'"
+          class="mb-4 rounded-lg border border-emerald-600 bg-emerald-600/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-600/20"
+          @click="archiveCard"
+        >
+          ✓ Archive
+        </button>
 
         <!-- Agent question input -->
         <div

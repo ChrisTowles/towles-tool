@@ -19,6 +19,15 @@ function closePanel() {
   selectedCard.value = null;
 }
 
+async function archiveCard() {
+  if (!selectedCardId.value) return;
+  await $fetch(`/api/cards/${selectedCardId.value}/move`, {
+    method: "POST",
+    body: { column: "done" },
+  });
+  closePanel();
+}
+
 async function fetchSelectedCard() {
   if (!selectedCardId.value) return;
   try {
@@ -104,6 +113,13 @@ onUnmounted(() => {
               >
                 {{ selectedCard.description }}
               </p>
+              <button
+                v-if="selectedCard.status === 'review_ready'"
+                class="mt-2 rounded-lg border border-emerald-600 bg-emerald-600/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-600/20"
+                @click="archiveCard"
+              >
+                ✓ Archive
+              </button>
             </div>
           </template>
 
