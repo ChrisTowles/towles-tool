@@ -10,6 +10,13 @@ const emit = defineEmits<{
   cardSelected: [cardId: number];
 }>();
 
+const showNewCardForm = ref(false);
+
+function onCardCreated() {
+  showNewCardForm.value = false;
+  fetchCards();
+}
+
 async function handleCardMoved(cardId: number, column: Column, position: number) {
   await moveCard(cardId, column, position);
 }
@@ -77,6 +84,12 @@ onUnmounted(() => {
         >
           ↻ Refresh
         </button>
+        <button
+          class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+          @click="showNewCardForm = true"
+        >
+          + New Card
+        </button>
       </div>
     </header>
 
@@ -108,5 +121,12 @@ onUnmounted(() => {
         @card-selected="(id: number) => emit('cardSelected', id)"
       />
     </div>
+
+    <!-- New card form modal -->
+    <BoardNewCardForm
+      v-if="showNewCardForm"
+      @created="onCardCreated"
+      @cancel="showNewCardForm = false"
+    />
   </div>
 </template>
