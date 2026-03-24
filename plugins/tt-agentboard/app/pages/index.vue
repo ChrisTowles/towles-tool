@@ -131,6 +131,15 @@ watch(selectedCardId, (id) => {
 onUnmounted(() => {
   if (detailInterval.value) clearInterval(detailInterval.value);
 });
+
+// Escape key closes the side panel
+function handleEscape(e: KeyboardEvent) {
+  if (e.key === "Escape" && selectedCardId.value) {
+    closePanel();
+  }
+}
+onMounted(() => document.addEventListener("keydown", handleEscape));
+onUnmounted(() => document.removeEventListener("keydown", handleEscape));
 </script>
 
 <template>

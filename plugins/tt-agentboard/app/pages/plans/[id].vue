@@ -141,12 +141,33 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-zinc-950 p-6">
+  <div class="min-h-screen bg-zinc-950">
+    <!-- Nav -->
+    <nav class="border-b border-zinc-800 px-4 py-3 sm:px-6">
+      <div class="flex items-center gap-4">
+        <NuxtLink
+          to="/"
+          class="text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+        >
+          ← Board
+        </NuxtLink>
+        <span class="text-zinc-700">│</span>
+        <NuxtLink
+          to="/plans"
+          class="text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+        >
+          Plans
+        </NuxtLink>
+        <template v-if="plan">
+          <span class="text-zinc-700">│</span>
+          <span class="text-sm font-semibold text-zinc-200">{{ plan.name }}</span>
+        </template>
+      </div>
+    </nav>
+
+    <div class="p-4 sm:p-6">
     <!-- Header -->
     <div class="mb-6 flex items-center gap-4">
-      <NuxtLink to="/" class="text-zinc-500 transition-colors hover:text-zinc-300">
-        &larr; Board
-      </NuxtLink>
       <template v-if="plan">
         <h1 class="text-lg font-bold text-zinc-100">{{ plan.name }}</h1>
         <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
@@ -220,6 +241,7 @@ onUnmounted(() => {
       <p class="mt-1 text-xs text-zinc-600">
         Create cards and assign them to this plan to build your dependency graph
       </p>
+    </div>
     </div>
   </div>
 </template>
