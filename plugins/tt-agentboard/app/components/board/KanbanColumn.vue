@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import type { Column } from "~/utils/constants";
+import { COLUMN_LABELS, COLUMN_ICONS } from "~/utils/constants";
+import type { Card } from "~/composables/useCards";
+
+const props = defineProps<{
+  column: Column;
+  cards: Card[];
+}>();
+
+const emit = defineEmits<{
+  cardMoved: [cardId: number, column: Column, position: number];
+}>();
+
+const label = computed(() => COLUMN_LABELS[props.column]);
+const icon = computed(() => COLUMN_ICONS[props.column]);
+
+const columnClasses: Record<Column, string> = {
+  backlog: "border-t-zinc-600",
+  ready: "border-t-cyan-500",
+  in_progress: "border-t-blue-500",
+  review: "border-t-violet-500",
+  done: "border-t-emerald-500",
+};
+
+function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: string } } }) {
+  const cardId = Number(evt.item?.dataset?.cardId);
+  const position = evt.newIndex ?? 0;
+  if (cardId) {
+    emit("cardMoved", cardId, props.column, position);
+  }
+}
+</script>
+
+<template>
+  <div
+    class="flex min-w-[280px] flex-col rounded-xl border border-zinc-800 border-t-2 bg-zinc-900/50 backdrop-blur-sm"
+    :class="columnClasses[column]"
+  >
+    <!-- Column header -->
+    <div class="flex items-center justify-between px-4 py-3">
+      <div class="flex items-center gap-2">
+        <span class="text-sm opacity-60">{{ icon }}</span>
+        <span class="text-xs font-semibold uppercase tracking-widest text-zinc-300">{{
+          label
+        }}</span>
+      </div>
+      <span
+        class="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-mono font-bold tabular-nums text-zinc-400"
+      >
+        {{ cards.length }}
+      </span>
+    </div>
+
+    <!-- Card list -->
+    <div class="flex-1 space-y-2 overflow-y-auto px-3 pb-3" style="max-height: calc(100vh - 180px)">
+      <draggable
+        :list="cards"
+        :group="{ name: 'cards', pull: true, put: true }"
+        item-key="id"
+        ghost-class="opacity-30"
+        drag-class="rotate-2"
+        :animation="200"
+        @end="onDragEnd"
+      >
+        <template #item="{ element }">
+          <div :data-card-id="element.id">
+            <KanbanCard :card="element" />
+          </div>
+        </template>
+      </draggable>
+
+      <!-- Empty state -->
+      <div
+        v-if="cards.length === 0"
+        class="flex items-center justify-center rounded-lg border border-dashed border-zinc-800 py-8 text-xs text-zinc-600"
+      >
+        Drop cards here
+      </div>
+    </div>
+  </div>
+</template>

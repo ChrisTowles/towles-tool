@@ -1,0 +1,61 @@
+export const COLUMNS = ["backlog", "ready", "in_progress", "review", "done"] as const;
+export type Column = (typeof COLUMNS)[number];
+
+export const COLUMN_LABELS: Record<Column, string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  in_progress: "In Progress",
+  review: "Review",
+  done: "Done",
+};
+
+export const COLUMN_ICONS: Record<Column, string> = {
+  backlog: "◇",
+  ready: "◆",
+  in_progress: "▶",
+  review: "◉",
+  done: "✓",
+};
+
+export type CardStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "review_ready"
+  | "done"
+  | "failed"
+  | "blocked";
+
+export const STATUS_BORDER_CLASSES: Record<CardStatus, string> = {
+  failed: "border-red-500 shadow-red-500/20",
+  waiting_input: "border-amber-400 shadow-amber-400/20",
+  running: "border-blue-500 shadow-blue-500/20",
+  done: "border-emerald-500 shadow-emerald-500/20",
+  review_ready: "border-emerald-500 shadow-emerald-500/20",
+  idle: "border-zinc-700",
+  queued: "border-zinc-600",
+  blocked: "border-zinc-700",
+};
+
+export const STATUS_LABELS: Record<CardStatus, string> = {
+  idle: "Idle",
+  queued: "Queued",
+  running: "Running",
+  waiting_input: "Waiting",
+  review_ready: "Review Ready",
+  done: "Done",
+  failed: "Failed",
+  blocked: "Blocked",
+};
+
+export const STATUS_DOT_CLASSES: Record<CardStatus, string> = {
+  failed: "bg-red-500",
+  waiting_input: "bg-amber-400",
+  running: "bg-blue-500",
+  done: "bg-emerald-500",
+  review_ready: "bg-emerald-500",
+  idle: "bg-zinc-500",
+  queued: "bg-zinc-400",
+  blocked: "bg-zinc-600",
+};
