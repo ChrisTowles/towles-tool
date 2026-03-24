@@ -26,6 +26,14 @@ async function archiveCard() {
   router.push("/");
 }
 
+async function retryCard() {
+  await $fetch(`/api/cards/${cardId.value}/move`, {
+    method: "POST",
+    body: { column: "in_progress" },
+  });
+  await refresh();
+}
+
 async function sendAgentResponse(response: string) {
   await $fetch(`/api/agents/${cardId.value}/respond`, {
     method: "POST",
@@ -46,15 +54,23 @@ onUnmounted(() => {
   <div class="min-h-screen">
     <!-- Nav -->
     <nav class="border-b border-zinc-800 px-4 py-3 sm:px-6">
-      <div class="flex items-center gap-4">
-        <NuxtLink
-          to="/"
-          class="text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200"
-        >
-          ← Board
-        </NuxtLink>
-        <span class="text-zinc-700">│</span>
-        <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <NuxtLink
+            to="/"
+            class="text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+          >
+            ← Board
+          </NuxtLink>
+          <span class="text-zinc-700">│</span>
+          <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
+        </div>
+        <CardCardActions
+          v-if="card"
+          :card="card"
+          @archive="archiveCard"
+          @retry="retryCard"
+        />
       </div>
     </nav>
 
@@ -69,14 +85,22 @@ onUnmounted(() => {
         <div class="flex border-b border-zinc-800">
           <button
             class="px-4 py-2 text-xs font-medium transition-colors"
-            :class="activeTab === 'terminal' ? 'border-b-2 border-blue-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+            :class="
+              activeTab === 'terminal'
+                ? 'border-b-2 border-blue-500 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-300'
+            "
             @click="activeTab = 'terminal'"
           >
             Terminal
           </button>
           <button
             class="px-4 py-2 text-xs font-medium transition-colors"
-            :class="activeTab === 'diff' ? 'border-b-2 border-violet-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+            :class="
+              activeTab === 'diff'
+                ? 'border-b-2 border-violet-500 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-300'
+            "
             @click="activeTab = 'diff'"
           >
             Diff

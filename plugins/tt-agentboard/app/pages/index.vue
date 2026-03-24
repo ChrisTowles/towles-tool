@@ -97,6 +97,15 @@ async function archiveCard() {
   closePanel();
 }
 
+async function retryCard() {
+  if (!selectedCardId.value) return;
+  await $fetch(`/api/cards/${selectedCardId.value}/move`, {
+    method: "POST",
+    body: { column: "in_progress" },
+  });
+  await fetchSelectedCard();
+}
+
 async function fetchSelectedCard() {
   if (!selectedCardId.value) return;
   try {
@@ -153,6 +162,12 @@ onUnmounted(() => {
           <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
             <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
             <div class="flex items-center gap-2">
+              <CardCardActions
+                v-if="selectedCard"
+                :card="selectedCard"
+                @archive="archiveCard"
+                @retry="retryCard"
+              />
               <NuxtLink
                 :to="`/cards/${selectedCardId}`"
                 class="rounded px-2 py-1 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
