@@ -91,8 +91,8 @@ export class AgentExecutor {
   }
 
   /**
-   * Write .claude/settings.local.json with a Stop hook that POSTs
-   * to the AgentBoard callback endpoint when Claude finishes.
+   * Write .claude/settings.local.json with hooks that POST to AgentBoard
+   * callback endpoints for lifecycle events: Stop, StopFailure, Notification.
    */
   private writeStopHook(slotPath: string, cardId: number): void {
     const claudeDir = resolve(slotPath, ".claude");
@@ -110,25 +110,20 @@ export class AgentExecutor {
       }
     }
 
-    const callbackUrl = `http://localhost:${this.port}/api/agents/${cardId}/complete`;
+    const baseUrl = `http://localhost:${this.port}/api/agents/${cardId}`;
+    const httpHook = (url: string) => [
+      { matcher: "", hooks: [{ type: "http", url }] },
+    ];
 
     settings.hooks = {
       ...(settings.hooks as Record<string, unknown> | undefined),
-      Stop: [
-        {
-          matcher: "",
-          hooks: [
-            {
-              type: "http",
-              url: callbackUrl,
-            },
-          ],
-        },
-      ],
+      Stop: httpHook(`${baseUrl}/complete`),
+      StopFailure: httpHook(`${baseUrl}/failure`),
+      Notification: httpHook(`${baseUrl}/notification`),
     };
 
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    logger.info(`Wrote Stop hook to ${settingsPath} → ${callbackUrl}`);
+    logger.info(`Wrote lifecycle hooks to ${settingsPath} → ${baseUrl}/*`);
   }
 
   private async updateCardStatus(
