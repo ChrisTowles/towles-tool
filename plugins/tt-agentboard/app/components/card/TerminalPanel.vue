@@ -150,12 +150,15 @@ defineExpose({ terminalExists, refresh: fetchTerminal });
     <!-- Read-only xterm view -->
     <div v-if="mode === 'readonly'" class="flex-1 overflow-hidden p-1">
       <div ref="terminalRef" class="h-full w-full" />
-      <p
+      <div
         v-if="!terminalExists && !lastOutput"
-        class="absolute inset-0 flex items-center justify-center text-xs text-zinc-600"
+        class="absolute inset-0 flex flex-col items-center justify-center text-center"
       >
-        No tmux session for this card.
-      </p>
+        <p class="text-xs text-zinc-500">No terminal session active</p>
+        <p class="mt-1 text-[10px] text-zinc-600">
+          A tmux session will appear here when the agent starts running
+        </p>
+      </div>
     </div>
 
     <!-- Interactive ttyd view -->

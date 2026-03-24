@@ -215,6 +215,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-else class="py-20 text-center text-sm text-zinc-600">No cards in this plan yet.</div>
+    <div v-else class="py-20 text-center">
+      <p class="text-sm text-zinc-400">No cards in this plan yet</p>
+      <p class="mt-1 text-xs text-zinc-600">
+        Create cards and assign them to this plan to build your dependency graph
+      </p>
+    </div>
   </div>
 </template>
