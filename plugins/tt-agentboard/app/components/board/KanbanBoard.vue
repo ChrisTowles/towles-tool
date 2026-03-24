@@ -5,6 +5,10 @@ import type { Column } from "~/utils/constants";
 const { cards, loading, error, fetchCards, moveCard } = useCards();
 const { columnCards, totalCards, activeCards } = useBoard(cards);
 
+const emit = defineEmits<{
+  cardSelected: [cardId: number];
+}>();
+
 async function handleCardMoved(cardId: number, column: Column, position: number) {
   await moveCard(cardId, column, position);
 }
@@ -78,6 +82,7 @@ onUnmounted(() => {
         :cards="columnCards[col]"
         class="shrink-0"
         @card-moved="handleCardMoved"
+        @card-selected="(id: number) => emit('cardSelected', id)"
       />
     </div>
   </div>

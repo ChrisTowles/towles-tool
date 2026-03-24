@@ -8,6 +8,21 @@ const cardId = computed(() => Number(route.params.id));
 
 const { data: card, refresh } = await useFetch<Card>(`/api/cards/${cardId.value}`);
 
+const terminalOutput = ref("");
+const terminalExists = ref(false);
+
+async function fetchTerminal() {
+  try {
+    const data = await $fetch<{ exists: boolean; output: string }>(
+      `/api/agents/${cardId.value}/terminal`,
+    );
+    terminalExists.value = data.exists;
+    terminalOutput.value = data.output;
+  } catch {
+    terminalExists.value = false;
+  }
+}
+
 const agentInput = ref("");
 
 async function sendResponse() {
@@ -21,7 +36,11 @@ async function sendResponse() {
 
 const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
 onMounted(() => {
-  refreshInterval.value = setInterval(refresh, 3000);
+  fetchTerminal();
+  refreshInterval.value = setInterval(() => {
+    refresh();
+    fetchTerminal();
+  }, 2000);
 });
 onUnmounted(() => {
   if (refreshInterval.value) clearInterval(refreshInterval.value);
@@ -103,19 +122,23 @@ onUnmounted(() => {
       <!-- Terminal panel (below on mobile, right on desktop) -->
       <div class="flex-1 p-4 sm:p-6">
         <div class="rounded-lg border border-zinc-800 bg-black p-4">
-          <div class="mb-2 flex items-center gap-2">
-            <span class="h-2 w-2 rounded-full bg-red-500" />
-            <span class="h-2 w-2 rounded-full bg-amber-500" />
-            <span class="h-2 w-2 rounded-full bg-emerald-500" />
-            <span class="ml-2 text-[10px] font-mono text-zinc-500">card-{{ cardId }}</span>
+          <div class="mb-2 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="h-2 w-2 rounded-full" :class="terminalExists ? 'bg-emerald-500' : 'bg-zinc-600'" />
+              <span class="h-2 w-2 rounded-full bg-amber-500" />
+              <span class="h-2 w-2 rounded-full bg-red-500" />
+              <span class="ml-2 text-[10px] font-mono text-zinc-500">card-{{ cardId }}</span>
+            </div>
+            <span v-if="terminalExists" class="text-[10px] font-mono text-emerald-500">SESSION ACTIVE</span>
+            <span v-else class="text-[10px] font-mono text-zinc-600">NO SESSION</span>
           </div>
-          <div
-            class="min-h-[300px] font-mono text-xs text-zinc-400 sm:min-h-[400px] lg:min-h-[500px]"
-          >
-            <p class="text-zinc-600">
-              Terminal output will appear here when an agent is running...
-            </p>
-          </div>
+          <pre
+            v-if="terminalOutput"
+            class="max-h-[calc(100vh-200px)] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-zinc-300"
+          >{{ terminalOutput }}</pre>
+          <p v-else class="py-8 text-center text-zinc-600 text-xs">
+            {{ terminalExists ? 'Waiting for output...' : 'No tmux session found for this card.' }}
+          </p>
         </div>
       </div>
     </div>

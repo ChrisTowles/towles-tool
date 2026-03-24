@@ -1,8 +1,12 @@
 import { db } from "~~/server/db";
-import { cards } from "~~/server/db/schema";
+import { cards, workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { agentExecutor } from "~~/server/services/agent-executor";
+import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
+import { logger } from "~~/server/utils/logger";
+import { existsSync, unlinkSync } from "node:fs";
+import { resolve } from "node:path";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
@@ -29,11 +33,50 @@ export default defineEventHandler(async (event) => {
 
   // If moved to in_progress, trigger agent execution
   if (body.column === "in_progress") {
-    // Fire and forget — execution runs in background
-    agentExecutor.startExecution(id).catch((err) => {
+    agentExecutor.startExecution(id).catch(() => {
       eventBus.emit("card:status-changed", { cardId: id, status: "failed" });
-      // Logger is used inside agentExecutor
     });
+  }
+
+  // If moved to done, archive: kill tmux session, release slot, clean up hook config
+  if (body.column === "done") {
+    const sessionName = `card-${id}`;
+    tmuxManager.stopCapture(sessionName);
+    tmuxManager.killSession(sessionName);
+
+    // Release claimed slots
+    const claimedSlots = await db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.claimedByCardId, id));
+
+    for (const slot of claimedSlots) {
+      await db
+        .update(workspaceSlots)
+        .set({ status: "available", claimedByCardId: null })
+        .where(eq(workspaceSlots.id, slot.id));
+
+      // Clean up Stop hook config
+      const settingsPath = resolve(slot.path, ".claude", "settings.local.json");
+      try {
+        if (existsSync(settingsPath)) {
+          unlinkSync(settingsPath);
+          logger.info(`Cleaned up ${settingsPath}`);
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      eventBus.emit("slot:released", { slotId: slot.id });
+    }
+
+    await db
+      .update(cards)
+      .set({ status: "done", updatedAt: new Date() })
+      .where(eq(cards.id, id));
+
+    eventBus.emit("card:status-changed", { cardId: id, status: "done" });
+    logger.info(`Card ${id} archived: tmux killed, slot released`);
   }
 
   return { ok: true };
