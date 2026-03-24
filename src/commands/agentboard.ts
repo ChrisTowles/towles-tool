@@ -1,6 +1,7 @@
 import { Args, Flags } from "@oclif/core";
 import { execSync, spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve, join } from "node:path";
 import { networkInterfaces } from "node:os";
 import consola from "consola";
 import { BaseCommand } from "./base.js";
@@ -92,10 +93,16 @@ export default class Agentboard extends BaseCommand {
     );
     const dataDir = flags["data-dir"] ? resolve(flags["data-dir"]) : defaultDataDir;
     const localIp = getLocalIp();
+    const dbPath = join(dataDir, "agentboard.db");
+    const isFirstRun = !existsSync(dbPath);
 
     consola.box(
       `AgentBoard\n\n  Local:   http://localhost:${port}\n  Network: http://${localIp}:${port}\n  Data:    ${dataDir}`,
     );
+
+    if (isFirstRun) {
+      consola.info("First run detected — a new database will be created at startup.");
+    }
 
     const proc = spawn("pnpm", ["dev", "--port", port], {
       cwd: agentboardDir,
