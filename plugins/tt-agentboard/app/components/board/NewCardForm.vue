@@ -20,12 +20,14 @@ const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);
 const executionMode = ref<"headless" | "interactive">("headless");
 const submitting = ref(false);
+const submitError = ref("");
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 const { createCard } = useCards();
 
 async function submit() {
   if (!title.value.trim() || submitting.value) return;
+  submitError.value = "";
   submitting.value = true;
   const card = await createCard({
     title: title.value.trim(),
@@ -41,6 +43,8 @@ async function submit() {
     workflowId.value = undefined;
     executionMode.value = "headless";
     emit("created");
+  } else {
+    submitError.value = "Failed to create card. Check the server logs for details.";
   }
 }
 </script>
@@ -116,6 +120,11 @@ async function submit() {
               {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name }}
             </option>
           </select>
+          <p v-if="repos && repos.length === 0" class="mt-1.5 text-[11px] text-amber-500/80">
+            No repos registered. Add a workspace slot in
+            <NuxtLink to="/workspaces" class="font-medium underline">Workspaces</NuxtLink>
+            first to enable agent execution.
+          </p>
         </div>
 
         <!-- Execution mode toggle -->
@@ -151,6 +160,21 @@ async function submit() {
               ⌨ Interactive
             </button>
           </div>
+          <p class="mt-1.5 text-[11px] text-zinc-600">
+            {{
+              executionMode === "headless"
+                ? "Runs autonomously with --dangerously-skip-permissions."
+                : "Runs in tmux — attach to interact with the agent."
+            }}
+          </p>
+        </div>
+
+        <!-- Error -->
+        <div
+          v-if="submitError"
+          class="rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-xs text-red-400"
+        >
+          {{ submitError }}
         </div>
 
         <!-- Actions -->

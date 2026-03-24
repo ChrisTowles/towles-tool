@@ -23,6 +23,8 @@ const showImportModal = ref(false);
 
 const { data: githubStatus } = useFetch<{ configured: boolean }>("/api/github/status");
 const { data: health } = useFetch<{ tmuxInstalled: boolean; githubToken: boolean }>("/api/health");
+const { data: repos } = useFetch<{ id: number }[]>("/api/repos");
+const { data: slots } = useFetch<{ id: number }[]>("/api/slots");
 
 // Sync external showNewCard prop
 watch(
@@ -166,19 +168,87 @@ onUnmounted(() => {
         class="flex items-center gap-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-xs text-red-400"
       >
         <span class="font-semibold">tmux not found</span>
-        <span class="text-red-500/70"
-          >— agent execution requires tmux. Install it to run cards.</span
-        >
+        <span class="text-red-500/70">
+          — agent execution requires tmux. Install with
+          <code class="rounded bg-red-950 px-1 py-0.5 font-mono text-red-400"
+            >sudo apt install tmux</code
+          >
+          or
+          <code class="rounded bg-red-950 px-1 py-0.5 font-mono text-red-400"
+            >brew install tmux</code
+          >, then restart AgentBoard.
+        </span>
       </div>
       <div
         v-if="!health.githubToken"
         class="flex items-center gap-2 rounded-lg border border-amber-900 bg-amber-950/50 px-3 py-2 text-xs text-amber-400"
       >
         <span class="font-semibold">GITHUB_TOKEN not set</span>
-        <span class="text-amber-500/70"
-          >— GitHub features (issues, PRs, label sync) are disabled.</span
-        >
+        <span class="text-amber-500/70">
+          — GitHub features (issues, PRs, label sync) are disabled. Set
+          <code class="rounded bg-amber-950 px-1 py-0.5 font-mono text-amber-400"
+            >export GITHUB_TOKEN=ghp_...</code
+          >
+          in your shell, then restart AgentBoard.
+        </span>
       </div>
+    </div>
+
+    <!-- Getting started (empty board) -->
+    <div v-if="!loading && totalCards === 0" class="mx-auto max-w-xl px-6 py-8">
+      <h2 class="mb-4 text-sm font-bold text-zinc-200">Getting Started</h2>
+      <ol class="space-y-3 text-xs leading-relaxed text-zinc-400">
+        <li class="flex items-start gap-3">
+          <span
+            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+            :class="
+              repos?.length ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-500'
+            "
+            >1</span
+          >
+          <div>
+            <span class="font-semibold text-zinc-300">Configure workspaces</span>
+            — Go to
+            <NuxtLink to="/workspaces" class="font-medium text-blue-400 hover:underline"
+              >Workspaces</NuxtLink
+            >
+            and add a slot: pick a repo and point it to a local git checkout.
+            <span v-if="!repos?.length" class="block mt-1 text-amber-500/80"
+              >No repos registered yet — adding a workspace slot will register its repo
+              automatically.</span
+            >
+            <span v-else-if="!slots?.length" class="block mt-1 text-amber-500/80"
+              >Repos found but no workspace slots configured. Add one to enable agent
+              execution.</span
+            >
+          </div>
+        </li>
+        <li class="flex items-start gap-3">
+          <span
+            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-500"
+            >2</span
+          >
+          <div>
+            <span class="font-semibold text-zinc-300">Create a card</span>
+            — Click
+            <span class="rounded bg-blue-600/20 px-1.5 py-0.5 font-semibold text-blue-400"
+              >+ New Card</span
+            >
+            above. Give it a title like "Fix the login bug" and select a repo.
+          </div>
+        </li>
+        <li class="flex items-start gap-3">
+          <span
+            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-500"
+            >3</span
+          >
+          <div>
+            <span class="font-semibold text-zinc-300">Run an agent</span>
+            — Drag the card to "In Progress". A Claude Code session starts in tmux. Click the card
+            to see live terminal output.
+          </div>
+        </li>
+      </ol>
     </div>
 
     <!-- Loading / error states -->
