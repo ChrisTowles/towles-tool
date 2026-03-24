@@ -1,5 +1,6 @@
 import { resolveStepComplete } from "~~/server/services/workflow-runner";
 import { logger } from "~~/server/utils/logger";
+import { getCardId } from "~~/server/utils/params";
 
 /**
  * Callback endpoint for Claude Code Stop hook during workflow steps.
@@ -9,11 +10,7 @@ import { logger } from "~~/server/utils/logger";
  * POST /api/agents/:cardId/step-complete
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   logger.info(`Step-complete callback received for card ${cardId}`);
 

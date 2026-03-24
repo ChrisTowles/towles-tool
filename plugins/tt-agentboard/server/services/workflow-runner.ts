@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { cards, workflowRuns, stepRuns, repositories } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { tmuxManager } from "./tmux-manager";
@@ -11,6 +11,7 @@ import { contextBundler } from "./context-bundler";
 import type { WorkflowDefinition, WorkflowStep } from "./workflow-loader";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
+import { writeHooks } from "../utils/hook-writer";
 
 interface RunContext {
   cardId: number;
@@ -245,7 +246,7 @@ export class WorkflowRunner {
       eventBus.emit("step:started", { cardId: ctx.cardId, stepId: step.id });
 
       // Write Stop hook for this step — points to step-complete callback
-      this.writeStepHook(ctx.slotPath, ctx.cardId);
+      writeHooks(ctx.slotPath, ctx.cardId, this.port, "step-complete");
 
       // Build prompt
       const prompt = await this.buildStepPrompt(ctx, step);
@@ -362,40 +363,6 @@ export class WorkflowRunner {
     }
 
     return false;
-  }
-
-  /**
-   * Write .claude/settings.local.json with Stop hook pointing to the
-   * step-complete callback endpoint. Each step overwrites the hook
-   * so the callback always signals the current step.
-   */
-  private writeStepHook(slotPath: string, cardId: number): void {
-    const claudeDir = resolve(slotPath, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
-
-    const settingsPath = resolve(claudeDir, "settings.local.json");
-
-    let settings: Record<string, unknown> = {};
-    if (existsSync(settingsPath)) {
-      try {
-        settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-      } catch {
-        // Corrupted file, start fresh
-      }
-    }
-
-    const baseUrl = `http://localhost:${this.port}/api/agents/${cardId}`;
-    const httpHook = (url: string) => [{ matcher: "", hooks: [{ type: "http", url }] }];
-
-    settings.hooks = {
-      ...(settings.hooks as Record<string, unknown> | undefined),
-      Stop: httpHook(`${baseUrl}/step-complete`),
-      StopFailure: httpHook(`${baseUrl}/failure`),
-      Notification: httpHook(`${baseUrl}/notification`),
-    };
-
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    logger.info(`Wrote step hooks to ${settingsPath} → ${baseUrl}/step-complete`);
   }
 
   /** Wait for the step-complete callback, with timeout */

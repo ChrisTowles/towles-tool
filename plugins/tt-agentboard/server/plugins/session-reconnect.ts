@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { cards, workflowRuns } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { tmuxManager } from "../services/tmux-manager";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
@@ -19,23 +19,33 @@ export default defineNitroPlugin(async () => {
 
   logger.info(`Session reconnect: found ${liveSessions.length} card-* session(s)`);
 
+  // Extract all card IDs from session names in one pass
+  const sessionCardIds: number[] = [];
+  const sessionMap = new Map<number, string>();
   for (const sessionName of liveSessions) {
-    // Extract card ID from session name (card-123)
     const match = sessionName.match(/^card-(\d+)$/);
     if (!match) continue;
-
     const cardId = Number(match[1]);
+    sessionCardIds.push(cardId);
+    sessionMap.set(cardId, sessionName);
+  }
 
-    // Fetch card from DB
-    const cardRows = await db.select().from(cards).where(eq(cards.id, cardId));
-    if (cardRows.length === 0) {
+  // Batch fetch all cards referenced by live sessions
+  const cardRows =
+    sessionCardIds.length > 0
+      ? await db.select().from(cards).where(inArray(cards.id, sessionCardIds))
+      : [];
+  const cardById = new Map(cardRows.map((c) => [c.id, c]));
+
+  for (const [cardId, sessionName] of sessionMap) {
+    const card = cardById.get(cardId);
+
+    if (!card) {
       // Card doesn't exist — kill orphaned session
       logger.warn(`Session reconnect: card ${cardId} not in DB, killing session ${sessionName}`);
       tmuxManager.killSession(sessionName);
       continue;
     }
-
-    const card = cardRows[0]!;
 
     if (card.status !== "running") {
       // Card isn't in_progress — kill stale session

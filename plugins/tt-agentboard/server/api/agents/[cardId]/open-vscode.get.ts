@@ -3,17 +3,14 @@ import { workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { execSync } from "node:child_process";
 import { logger } from "~~/server/utils/logger";
+import { getCardId } from "~~/server/utils/params";
 
 /**
  * GET /api/agents/:cardId/open-vscode
  * Opens the card's workspace slot directory in VS Code.
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   const slots = await db
     .select()

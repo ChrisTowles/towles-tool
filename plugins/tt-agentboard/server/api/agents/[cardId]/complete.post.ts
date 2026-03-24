@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
+import { getCardId, requireCard } from "~~/server/utils/params";
 
 /**
  * Callback endpoint for Claude Code Stop hook.
@@ -16,20 +17,11 @@ import { logger } from "~~/server/utils/logger";
  * POST /api/agents/:cardId/complete
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   logger.info(`Stop hook callback received for card ${cardId}`);
 
-  // Fetch the card
-  const cardRows = await db.select().from(cards).where(eq(cards.id, cardId));
-  if (cardRows.length === 0) {
-    throw createError({ statusCode: 404, statusMessage: "Card not found" });
-  }
-  const card = cardRows[0]!;
+  const card = await requireCard(cardId);
 
   // Only process if card is actually in_progress
   if (card.column !== "in_progress") {

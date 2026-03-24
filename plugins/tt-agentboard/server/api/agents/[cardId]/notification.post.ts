@@ -3,6 +3,7 @@ import { cards } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
+import { getCardId, requireCard } from "~~/server/utils/params";
 
 /**
  * Callback endpoint for Claude Code Notification hook.
@@ -11,20 +12,11 @@ import { logger } from "~~/server/utils/logger";
  * POST /api/agents/:cardId/notification
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   logger.info(`Notification hook received for card ${cardId}`);
 
-  const cardRows = await db.select().from(cards).where(eq(cards.id, cardId));
-  if (cardRows.length === 0) {
-    throw createError({ statusCode: 404, statusMessage: "Card not found" });
-  }
-
-  const card = cardRows[0]!;
+  const card = await requireCard(cardId);
   if (card.status !== "running") {
     return { ok: true, ignored: true };
   }
