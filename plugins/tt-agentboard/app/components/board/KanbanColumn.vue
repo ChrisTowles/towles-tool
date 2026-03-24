@@ -67,7 +67,10 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
         >
           <template #item="{ element }">
             <div :data-card-id="element.id">
-              <BoardKanbanCard :card="element" @selected="(id: number) => emit('cardSelected', id)" />
+              <BoardKanbanCard
+                :card="element"
+                @selected="(id: number) => emit('cardSelected', id)"
+              />
             </div>
           </template>
         </draggable>
@@ -81,9 +84,14 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
       <!-- Empty state -->
       <div
         v-if="cards.length === 0"
-        class="flex items-center justify-center rounded-lg border border-dashed border-zinc-800 py-8 text-xs text-zinc-600"
+        class="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-8 text-center"
       >
-        Drop cards here
+        <p class="text-xs text-zinc-600">
+          {{ column === "backlog" ? "No cards yet" : "Drop cards here" }}
+        </p>
+        <p v-if="column === 'backlog'" class="mt-1 text-[10px] text-zinc-700">
+          Click "+ New Card" to get started
+        </p>
       </div>
     </div>
   </div>

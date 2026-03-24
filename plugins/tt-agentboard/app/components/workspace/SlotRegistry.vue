@@ -186,8 +186,11 @@ onMounted(fetchData);
 
     <!-- Empty state -->
     <div v-else class="rounded-lg border border-dashed border-zinc-800 py-12 text-center">
-      <p class="text-sm text-zinc-500">No workspace slots configured</p>
-      <p class="mt-1 text-xs text-zinc-600">Add a slot to start running agents</p>
+      <p class="text-sm text-zinc-400">No workspace slots configured</p>
+      <p class="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-zinc-600">
+        Workspace slots are directories where agents execute work. Each slot maps to a repo checkout.
+        Click "+ Add Slot" above to register your first workspace.
+      </p>
     </div>
   </div>
 </template>
