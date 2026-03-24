@@ -185,6 +185,7 @@ onUnmounted(() => document.removeEventListener("keydown", handleEscape));
               </NuxtLink>
               <button
                 class="rounded px-2 py-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                title="Close panel (Esc)"
                 @click="closePanel"
               >
                 ✕

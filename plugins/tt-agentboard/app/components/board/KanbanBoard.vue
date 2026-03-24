@@ -127,24 +127,28 @@ onUnmounted(() => {
               : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
           "
           @click="emit('toggleDictation')"
+          title="Voice dictation — create cards or respond hands-free"
         >
           🎙 Dictate
         </button>
         <button
           v-if="githubStatus?.configured"
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          title="Import GitHub issues as cards"
           @click="showImportModal = true"
         >
           Import Issues
         </button>
         <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          title="Refresh board data"
           @click="fetchCards"
         >
           ↻ Refresh
         </button>
         <button
           class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+          title="Create a new card"
           @click="showNewCardForm = true"
         >
           + New Card

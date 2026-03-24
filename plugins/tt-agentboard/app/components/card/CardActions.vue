@@ -101,6 +101,7 @@ onUnmounted(() => {
     <!-- Trigger -->
     <button
       class="rounded px-1.5 py-0.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+      title="Card actions"
       @click.stop="open = !open"
     >
       ⋮
