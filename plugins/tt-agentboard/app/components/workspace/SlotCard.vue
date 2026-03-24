@@ -5,7 +5,7 @@ export interface Slot {
   path: string;
   portConfig: string | null;
   envPath: string | null;
-  status: 'available' | 'claimed' | 'locked';
+  status: "available" | "claimed" | "locked";
   claimedByCardId: number | null;
   createdAt: string;
 }
@@ -21,9 +21,9 @@ const emit = defineEmits<{
 }>();
 
 const statusColors: Record<string, string> = {
-  available: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  claimed: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  locked: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+  available: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+  claimed: "text-blue-400 bg-blue-500/10 border-blue-500/30",
+  locked: "text-amber-400 bg-amber-500/10 border-amber-500/30",
 };
 
 const parsedPorts = computed(() => {
@@ -37,12 +37,16 @@ const parsedPorts = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 transition-colors hover:border-zinc-700">
+  <div
+    class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 transition-colors hover:border-zinc-700"
+  >
     <!-- Header -->
     <div class="mb-3 flex items-start justify-between">
       <div>
         <div class="flex items-center gap-2">
-          <span class="text-sm font-semibold text-zinc-200">{{ repoName || `Repo #${slot.repoId}` }}</span>
+          <span class="text-sm font-semibold text-zinc-200">{{
+            repoName || `Repo #${slot.repoId}`
+          }}</span>
           <span
             class="rounded border px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase"
             :class="statusColors[slot.status]"

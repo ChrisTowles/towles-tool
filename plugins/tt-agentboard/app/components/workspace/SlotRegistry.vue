@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Slot } from '~/components/workspace/SlotCard.vue';
+import type { Slot } from "~/components/workspace/SlotCard.vue";
 
 interface Repo {
   id: number;
@@ -14,17 +14,17 @@ const showAddForm = ref(false);
 
 const form = reactive({
   repoId: 0,
-  path: '',
-  portConfig: '',
-  envPath: '',
+  path: "",
+  portConfig: "",
+  envPath: "",
 });
 
 async function fetchData() {
   loading.value = true;
   try {
     const [slotsData, reposData] = await Promise.all([
-      $fetch<Slot[]>('/api/slots'),
-      $fetch<Repo[]>('/api/repos'),
+      $fetch<Slot[]>("/api/slots"),
+      $fetch<Repo[]>("/api/repos"),
     ]);
     slots.value = slotsData;
     repos.value = reposData;
@@ -45,8 +45,8 @@ async function addSlot() {
     }
   }
 
-  const slot = await $fetch<Slot>('/api/slots', {
-    method: 'POST',
+  const slot = await $fetch<Slot>("/api/slots", {
+    method: "POST",
     body: {
       repoId: form.repoId,
       path: form.path,
@@ -58,14 +58,14 @@ async function addSlot() {
   slots.value.push(slot);
   showAddForm.value = false;
   form.repoId = 0;
-  form.path = '';
-  form.portConfig = '';
-  form.envPath = '';
+  form.path = "";
+  form.portConfig = "";
+  form.envPath = "";
 }
 
 async function toggleLock(slotId: number, locked: boolean) {
   const updated = await $fetch<Slot>(`/api/slots/${slotId}/lock`, {
-    method: 'POST',
+    method: "POST",
     body: { locked },
   });
   const idx = slots.value.findIndex((s) => s.id === slotId);
@@ -73,7 +73,7 @@ async function toggleLock(slotId: number, locked: boolean) {
 }
 
 async function removeSlot(slotId: number) {
-  await $fetch(`/api/slots/${slotId}`, { method: 'DELETE' }).catch(() => {
+  await $fetch(`/api/slots/${slotId}`, { method: "DELETE" }).catch(() => {
     // DELETE might not exist yet, remove locally
   });
   slots.value = slots.value.filter((s) => s.id !== slotId);
@@ -99,30 +99,31 @@ onMounted(fetchData);
         class="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
         @click="showAddForm = !showAddForm"
       >
-        {{ showAddForm ? '✕ Cancel' : '+ Add Slot' }}
+        {{ showAddForm ? "✕ Cancel" : "+ Add Slot" }}
       </button>
     </div>
 
     <!-- Add form -->
-    <div
-      v-if="showAddForm"
-      class="mb-6 rounded-lg border border-zinc-700 bg-zinc-900/80 p-4"
-    >
+    <div v-if="showAddForm" class="mb-6 rounded-lg border border-zinc-700 bg-zinc-900/80 p-4">
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
-          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Repository</label>
+          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
+            >Repository</label
+          >
           <select
             v-model.number="form.repoId"
             class="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
           >
             <option :value="0" disabled>Select repo...</option>
             <option v-for="repo in repos" :key="repo.id" :value="repo.id">
-              {{ repo.org ? `${repo.org}/` : '' }}{{ repo.name }}
+              {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name }}
             </option>
           </select>
         </div>
         <div>
-          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Absolute Path</label>
+          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
+            >Absolute Path</label
+          >
           <input
             v-model="form.path"
             type="text"
@@ -131,7 +132,9 @@ onMounted(fetchData);
           />
         </div>
         <div>
-          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">Port Config (JSON)</label>
+          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
+            >Port Config (JSON)</label
+          >
           <input
             v-model="form.portConfig"
             type="text"
@@ -140,7 +143,9 @@ onMounted(fetchData);
           />
         </div>
         <div>
-          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">.env Path</label>
+          <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
+            >.env Path</label
+          >
           <input
             v-model="form.envPath"
             type="text"
@@ -162,12 +167,14 @@ onMounted(fetchData);
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-400" />
+      <span
+        class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-400"
+      />
     </div>
 
     <!-- Slot grid -->
     <div v-else-if="slots.length" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <SlotCard
+      <WorkspaceSlotCard
         v-for="s in slots"
         :key="s.id"
         :slot="s"

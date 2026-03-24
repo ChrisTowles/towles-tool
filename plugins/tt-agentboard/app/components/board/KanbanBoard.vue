@@ -22,7 +22,9 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <!-- Board header -->
-    <header class="flex flex-col gap-3 border-b border-zinc-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+    <header
+      class="flex flex-col gap-3 border-b border-zinc-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4"
+    >
       <div class="flex items-center gap-4">
         <h1 class="font-display text-xl font-bold tracking-tight text-zinc-100">
           <span class="text-blue-400">▸</span> AgentBoard
@@ -69,7 +71,7 @@ onUnmounted(() => {
 
     <!-- Columns -->
     <div v-else class="flex flex-1 gap-3 overflow-x-auto px-3 py-3 sm:gap-4 sm:px-6 sm:py-4">
-      <KanbanColumn
+      <BoardKanbanColumn
         v-for="col in COLUMNS"
         :key="col"
         :column="col"
