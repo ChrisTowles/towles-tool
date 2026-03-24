@@ -415,6 +415,7 @@ steps:
 
       // removeByPath currently only logs, so workflow is still in the map
       // This test covers the unlink handler code path (lines 75-78)
+      expect(loader.get("removable")).toBeDefined();
     } finally {
       await loader.close();
     }

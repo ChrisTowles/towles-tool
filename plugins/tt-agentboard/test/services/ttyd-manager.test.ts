@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChildProcess } from "node:child_process";
 
 // The TtydManager.isAvailable() uses require("node:child_process") internally,
@@ -38,6 +38,10 @@ describe("TtydManager", () => {
   beforeEach(() => {
     manager = new TtydManager();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    manager.detachAll();
   });
 
   describe("isAvailable()", () => {

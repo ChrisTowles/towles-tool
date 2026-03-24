@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // We test the queue manager's event handler directly by capturing
 // the callback passed to eventBus.on("slot:released", ...).
@@ -48,6 +48,10 @@ const mockDb = vi.mocked(db);
 
 describe("Queue Manager Plugin", () => {
   let slotReleasedHandler: (data: { slotId: number }) => Promise<void>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();
