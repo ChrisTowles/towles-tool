@@ -24,6 +24,18 @@ const columnClasses: Record<Column, string> = {
   done: "border-t-emerald-500",
 };
 
+// Animate count badge on change
+const countBounce = ref(false);
+watch(
+  () => props.cards.length,
+  () => {
+    countBounce.value = true;
+    setTimeout(() => {
+      countBounce.value = false;
+    }, 300);
+  },
+);
+
 function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: string } } }) {
   const cardId = Number(evt.item?.dataset?.cardId);
   const position = evt.newIndex ?? 0;
@@ -47,7 +59,8 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
         }}</span>
       </div>
       <span
-        class="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-mono font-bold tabular-nums text-zinc-400"
+        class="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-mono font-bold tabular-nums text-zinc-400 transition-transform duration-300"
+        :class="countBounce ? 'scale-125' : 'scale-100'"
       >
         {{ cards.length }}
       </span>

@@ -64,7 +64,10 @@ const issueUrl = computed(() => {
       <h3 class="text-sm font-semibold leading-snug text-zinc-100 group-hover:text-white">
         {{ card.title }}
       </h3>
-      <span class="shrink-0 text-xs" :title="card.executionMode">{{ modeIcon }}</span>
+      <span
+        class="shrink-0 text-xs"
+        :title="card.executionMode === 'headless' ? 'Headless — runs without interaction' : 'Interactive — can request input'"
+      >{{ modeIcon }}</span>
     </div>
 
     <!-- Repo badge -->
