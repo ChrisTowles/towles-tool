@@ -4,6 +4,7 @@ import type { Column } from "~/utils/constants";
 
 const { cards, loading, error, fetchCards, moveCard } = useCards();
 const { columnCards, totalCards, activeCards } = useBoard(cards);
+const { connected, bindCards } = useWebSocket();
 
 const emit = defineEmits<{
   cardSelected: [cardId: number];
@@ -13,11 +14,33 @@ async function handleCardMoved(cardId: number, column: Column, position: number)
   await moveCard(cardId, column, position);
 }
 
-// Refresh cards periodically for live status updates
-const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
+// Bind WebSocket events to cards for real-time updates
+let unbindCards: (() => void) | null = null;
 onMounted(() => {
-  refreshInterval.value = setInterval(fetchCards, 5000);
+  unbindCards = bindCards(cards, fetchCards);
 });
+onUnmounted(() => {
+  unbindCards?.();
+});
+
+// Fallback: poll every 5s only when WebSocket is disconnected
+const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
+watch(
+  connected,
+  (isConnected) => {
+    if (isConnected) {
+      if (refreshInterval.value) {
+        clearInterval(refreshInterval.value);
+        refreshInterval.value = null;
+      }
+    } else {
+      if (!refreshInterval.value) {
+        refreshInterval.value = setInterval(fetchCards, 5000);
+      }
+    }
+  },
+  { immediate: true },
+);
 onUnmounted(() => {
   if (refreshInterval.value) clearInterval(refreshInterval.value);
 });
