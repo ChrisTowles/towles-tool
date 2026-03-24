@@ -225,7 +225,7 @@ export class WorkflowRunner {
       // Build Claude Code command
       const modelFlag = step.model ? `--model ${step.model}` : "";
       const command =
-        `claude --message ${this.shellEscape(prompt)} --dangerously-skip-permissions ${modelFlag}`.trim();
+        `claude -p ${this.shellEscape(prompt)} --dangerously-skip-permissions ${modelFlag}`.trim();
 
       // Send command to tmux
       tmuxManager.sendCommand(ctx.sessionName, command);
