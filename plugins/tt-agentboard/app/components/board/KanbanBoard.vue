@@ -6,14 +6,31 @@ const { cards, loading, error, fetchCards, moveCard } = useCards();
 const { columnCards, totalCards, activeCards } = useBoard(cards);
 const { connected, bindCards } = useWebSocket();
 
+const props = defineProps<{
+  isDictating?: boolean;
+  newCardPrefill?: string;
+  showNewCard?: boolean;
+}>();
+
 const emit = defineEmits<{
   cardSelected: [cardId: number];
+  toggleDictation: [];
+  newCardClosed: [];
 }>();
 
 const showNewCardForm = ref(false);
 
+// Sync external showNewCard prop
+watch(
+  () => props.showNewCard,
+  (v) => {
+    if (v) showNewCardForm.value = true;
+  },
+);
+
 function onCardCreated() {
   showNewCardForm.value = false;
+  emit("newCardClosed");
   fetchCards();
 }
 
@@ -85,6 +102,17 @@ onUnmounted(() => {
           Workflows
         </NuxtLink>
         <button
+          class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+          :class="
+            isDictating
+              ? 'border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+              : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
+          "
+          @click="emit('toggleDictation')"
+        >
+          🎙 Dictate
+        </button>
+        <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
           @click="fetchCards"
         >
@@ -131,8 +159,12 @@ onUnmounted(() => {
     <!-- New card form modal -->
     <BoardNewCardForm
       v-if="showNewCardForm"
+      :initial-title="newCardPrefill"
       @created="onCardCreated"
-      @cancel="showNewCardForm = false"
+      @cancel="
+        showNewCardForm = false;
+        emit('newCardClosed');
+      "
     />
   </div>
 </template>

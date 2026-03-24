@@ -1,8 +1,12 @@
+export type VoiceContext = "card-response" | "new-card" | "idle";
+
 export function useVoice() {
   const isListening = ref(false);
   const transcript = ref("");
+  const interimTranscript = ref("");
   const isSupported = ref(false);
   const error = ref<string | null>(null);
+  const currentContext = ref<VoiceContext>("idle");
 
   let recognition: SpeechRecognition | null = null;
 
@@ -20,18 +24,22 @@ export function useVoice() {
     recognition.lang = "en-US";
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = "";
+      let finalText = "";
+      let interimText = "";
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalTranscript += result[0].transcript;
+          finalText += result[0].transcript;
+        } else {
+          interimText += result[0].transcript;
         }
       }
 
-      if (finalTranscript) {
-        transcript.value += finalTranscript;
+      if (finalText) {
+        transcript.value += finalText;
       }
+      interimTranscript.value = interimText;
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -40,35 +48,53 @@ export function useVoice() {
     };
 
     recognition.onend = () => {
+      // In continuous mode, restart if still supposed to be listening
+      if (isListening.value && recognition) {
+        recognition.start();
+        return;
+      }
       isListening.value = false;
     };
   }
 
-  function start() {
+  function setContext(ctx: VoiceContext) {
+    currentContext.value = ctx;
+  }
+
+  function startListening() {
     if (!recognition) init();
     if (!recognition) return;
 
     error.value = null;
     transcript.value = "";
+    interimTranscript.value = "";
     recognition.start();
     isListening.value = true;
   }
 
-  function stop() {
-    recognition?.stop();
+  function stopListening() {
     isListening.value = false;
+    interimTranscript.value = "";
+    recognition?.stop();
   }
 
-  function toggle() {
+  function toggleListening() {
     if (isListening.value) {
-      stop();
+      stopListening();
     } else {
-      start();
+      startListening();
     }
   }
 
   function clear() {
     transcript.value = "";
+    interimTranscript.value = "";
+  }
+
+  function cancelDictation() {
+    stopListening();
+    clear();
+    currentContext.value = "idle";
   }
 
   onMounted(init);
@@ -76,11 +102,19 @@ export function useVoice() {
   return {
     isListening,
     transcript,
+    interimTranscript,
     isSupported,
     error,
-    start,
-    stop,
-    toggle,
+    currentContext,
+    setContext,
+    startListening,
+    stopListening,
+    toggleListening,
+    cancelDictation,
     clear,
+    // Keep old names as aliases for existing VoiceInput component
+    start: startListening,
+    stop: stopListening,
+    toggle: toggleListening,
   };
 }

@@ -5,12 +5,16 @@ interface Repo {
   org: string | null;
 }
 
+const props = defineProps<{
+  initialTitle?: string;
+}>();
+
 const emit = defineEmits<{
   created: [];
   cancel: [];
 }>();
 
-const title = ref("");
+const title = ref(props.initialTitle ?? "");
 const description = ref("");
 const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);

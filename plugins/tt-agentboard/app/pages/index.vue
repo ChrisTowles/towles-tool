@@ -135,8 +135,14 @@ onUnmounted(() => {
       >
         <BoardKanbanBoard
           :is-dictating="isListening"
+          :show-new-card="showNewCardForm"
+          :new-card-prefill="newCardPrefill"
           @card-selected="selectCard"
           @toggle-dictation="handleToggleDictation"
+          @new-card-closed="
+            showNewCardForm = false;
+            newCardPrefill = '';
+          "
         />
       </div>
 
@@ -181,14 +187,22 @@ onUnmounted(() => {
           <div v-if="selectedCard" class="flex border-b border-zinc-800">
             <button
               class="px-4 py-2 text-xs font-medium transition-colors"
-              :class="activeTab === 'terminal' ? 'border-b-2 border-blue-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+              :class="
+                activeTab === 'terminal'
+                  ? 'border-b-2 border-blue-500 text-zinc-200'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
               @click="activeTab = 'terminal'"
             >
               Terminal
             </button>
             <button
               class="px-4 py-2 text-xs font-medium transition-colors"
-              :class="activeTab === 'diff' ? 'border-b-2 border-violet-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+              :class="
+                activeTab === 'diff'
+                  ? 'border-b-2 border-violet-500 text-zinc-200'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
               @click="activeTab = 'diff'"
             >
               Diff
