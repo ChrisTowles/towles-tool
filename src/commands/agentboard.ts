@@ -52,6 +52,11 @@ export default class Agentboard extends BaseCommand {
       default: true,
       allowNo: true,
     }),
+    "data-dir": Flags.string({
+      char: "d",
+      description: "Directory for AgentBoard data (SQLite DB, artifacts)",
+      env: "AGENTBOARD_DATA_DIR",
+    }),
   };
 
   static override args = {
@@ -80,16 +85,22 @@ export default class Agentboard extends BaseCommand {
 
     const agentboardDir = resolve(import.meta.dirname, "../../plugins/tt-agentboard");
     const port = flags.port;
+    const defaultDataDir = resolve(
+      process.env.XDG_CONFIG_HOME ?? resolve(process.env.HOME ?? "~", ".config"),
+      "towles-tool",
+      "agentboard",
+    );
+    const dataDir = flags["data-dir"] ? resolve(flags["data-dir"]) : defaultDataDir;
     const localIp = getLocalIp();
 
     consola.box(
-      `AgentBoard\n\n  Local:   http://localhost:${port}\n  Network: http://${localIp}:${port}`,
+      `AgentBoard\n\n  Local:   http://localhost:${port}\n  Network: http://${localIp}:${port}\n  Data:    ${dataDir}`,
     );
 
     const proc = spawn("pnpm", ["dev", "--port", port], {
       cwd: agentboardDir,
       stdio: "inherit",
-      env: { ...process.env, NUXT_DEV_HOST: "0.0.0.0" },
+      env: { ...process.env, NUXT_DEV_HOST: "0.0.0.0", AGENTBOARD_DATA_DIR: dataDir },
     });
 
     if (flags.open) {
