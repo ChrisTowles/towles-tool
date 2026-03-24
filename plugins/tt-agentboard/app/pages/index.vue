@@ -75,12 +75,17 @@ watch(isListening, async (listening) => {
 const activeTab = ref<"terminal" | "diff">("terminal");
 
 // Card selection
-async function selectCard(cardId: number) {
+function selectCard(cardId: number) {
   selectedCardId.value = cardId;
+  selectedCard.value = null;
   selectedCardLoading.value = true;
-  await fetchSelectedCard();
-  selectedCardLoading.value = false;
-  activeTab.value = selectedCard.value?.status === "review_ready" ? "diff" : "terminal";
+  activeTab.value = "terminal";
+  fetchSelectedCard().then(() => {
+    selectedCardLoading.value = false;
+    if (selectedCard.value?.status === "review_ready") {
+      activeTab.value = "diff";
+    }
+  });
 }
 
 function closePanel() {
@@ -120,13 +125,15 @@ function onCardCreated() {
   newCardPrefill.value = "";
 }
 
-// Refresh selected card periodically
+// Refresh selected card periodically (client-only)
 const detailInterval = ref<ReturnType<typeof setInterval> | null>(null);
-watch(selectedCardId, (id) => {
-  if (detailInterval.value) clearInterval(detailInterval.value);
-  if (id) {
-    detailInterval.value = setInterval(fetchSelectedCard, 2000);
-  }
+onMounted(() => {
+  watch(selectedCardId, (id) => {
+    if (detailInterval.value) clearInterval(detailInterval.value);
+    if (id) {
+      detailInterval.value = setInterval(fetchSelectedCard, 2000);
+    }
+  });
 });
 onUnmounted(() => {
   if (detailInterval.value) clearInterval(detailInterval.value);
