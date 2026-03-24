@@ -30,6 +30,17 @@ const elapsedTime = computed(() => {
 
 const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "⌨" : "⚡"));
 
+const prUrl = computed(() => {
+  if (!props.card.githubPrNumber) return null;
+  if (props.card.repo?.githubUrl) {
+    return `${props.card.repo.githubUrl}/pull/${props.card.githubPrNumber}`;
+  }
+  if (props.card.repo?.org && props.card.repo?.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/pull/${props.card.githubPrNumber}`;
+  }
+  return null;
+});
+
 const issueUrl = computed(() => {
   if (!props.card.githubIssueNumber) return null;
   if (props.card.repo?.githubUrl) {
@@ -86,11 +97,23 @@ const issueUrl = computed(() => {
         >
           #{{ card.githubIssueNumber }}
         </a>
-        <span
-          v-else-if="card.githubIssueNumber"
-          class="text-[10px] font-mono text-zinc-500"
-        >
+        <span v-else-if="card.githubIssueNumber" class="text-[10px] font-mono text-zinc-500">
           #{{ card.githubIssueNumber }}
+        </span>
+        <a
+          v-if="card.githubPrNumber && prUrl"
+          :href="prUrl"
+          target="_blank"
+          class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-mono text-purple-400 hover:bg-purple-500/25"
+          @click.stop
+        >
+          PR #{{ card.githubPrNumber }}
+        </a>
+        <span
+          v-else-if="card.githubPrNumber"
+          class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-mono text-purple-400"
+        >
+          PR #{{ card.githubPrNumber }}
         </span>
       </div>
     </div>

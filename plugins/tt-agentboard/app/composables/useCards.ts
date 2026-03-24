@@ -19,6 +19,7 @@ export interface Card {
   retryCount: number;
   createdAt: string;
   updatedAt: string;
+  branch: string | null;
   repo?: { name: string; org: string | null; githubUrl: string | null } | null;
 }
 

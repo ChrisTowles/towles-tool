@@ -72,29 +72,47 @@ function sendResponse() {
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
     </div>
 
-    <div v-if="card.githubIssueNumber && !compact" class="mb-4 flex items-center gap-1 text-xs font-mono text-zinc-500">
-      <span>Issue</span>
-      <a
-        v-if="issueUrl"
-        :href="issueUrl"
-        target="_blank"
-        class="text-blue-400 hover:text-blue-300 hover:underline"
+    <div
+      v-if="(card.githubIssueNumber || card.githubPrNumber || card.branch) && !compact"
+      class="mb-4 space-y-1.5"
+    >
+      <!-- Branch -->
+      <div v-if="card.branch" class="flex items-center gap-1.5 text-xs font-mono">
+        <span class="text-zinc-600">branch</span>
+        <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{ card.branch }}</span>
+      </div>
+
+      <!-- Issue + PR row -->
+      <div
+        v-if="card.githubIssueNumber || card.githubPrNumber"
+        class="flex items-center gap-2 text-xs font-mono text-zinc-500"
       >
-        #{{ card.githubIssueNumber }}
-      </a>
-      <span v-else>#{{ card.githubIssueNumber }}</span>
-      <template v-if="card.githubPrNumber">
-        <span> · PR</span>
-        <a
-          v-if="prUrl"
-          :href="prUrl"
-          target="_blank"
-          class="text-blue-400 hover:text-blue-300 hover:underline"
-        >
-          #{{ card.githubPrNumber }}
-        </a>
-        <span v-else>#{{ card.githubPrNumber }}</span>
-      </template>
+        <template v-if="card.githubIssueNumber">
+          <span>Issue</span>
+          <a
+            v-if="issueUrl"
+            :href="issueUrl"
+            target="_blank"
+            class="text-blue-400 hover:text-blue-300 hover:underline"
+          >
+            #{{ card.githubIssueNumber }}
+          </a>
+          <span v-else>#{{ card.githubIssueNumber }}</span>
+        </template>
+        <template v-if="card.githubPrNumber">
+          <span v-if="card.githubIssueNumber">·</span>
+          <span>PR</span>
+          <a
+            v-if="prUrl"
+            :href="prUrl"
+            target="_blank"
+            class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-purple-400 hover:bg-purple-500/25 hover:underline"
+          >
+            #{{ card.githubPrNumber }}
+          </a>
+          <span v-else>#{{ card.githubPrNumber }}</span>
+        </template>
+      </div>
     </div>
 
     <!-- Archive button -->
