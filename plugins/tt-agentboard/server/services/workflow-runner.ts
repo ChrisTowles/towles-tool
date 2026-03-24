@@ -57,7 +57,7 @@ export class WorkflowRunner {
 
       await db
         .update(cards)
-        .set({ column: "review", status: "review_ready", updatedAt: new Date() })
+        .set({ column: "review", status: "review_ready", currentStepId: null, updatedAt: new Date() })
         .where(eq(cards.id, cardId));
 
       eventBus.emit("card:moved", { cardId, fromColumn: "in_progress", toColumn: "review" });
@@ -308,6 +308,12 @@ export class WorkflowRunner {
           artifactPath,
         })
         .where(eq(stepRuns.id, stepRunId));
+
+      // Update card to reflect completed step (append :done suffix for progress bar)
+      await db
+        .update(cards)
+        .set({ currentStepId: `${step.id}:done`, updatedAt: new Date() })
+        .where(eq(cards.id, ctx.cardId));
 
       eventBus.emit("step:completed", {
         cardId: ctx.cardId,
