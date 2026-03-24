@@ -1,10 +1,9 @@
 import { db } from "../db";
 import { cards, workflowRuns, stepRuns, repositories } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { watch } from "chokidar";
 import { tmuxManager } from "./tmux-manager";
 import { slotAllocator } from "./slot-allocator";
 import { workflowLoader } from "./workflow-loader";
@@ -26,7 +25,27 @@ interface RunContext {
   previousArtifacts: Map<string, string>;
 }
 
+/** Pending step completion callbacks, keyed by cardId */
+const pendingStepCallbacks = new Map<number, () => void>();
+
+/** Called by the step-complete API endpoint to resolve the pending Promise */
+export function resolveStepComplete(cardId: number): boolean {
+  const resolve = pendingStepCallbacks.get(cardId);
+  if (resolve) {
+    resolve();
+    pendingStepCallbacks.delete(cardId);
+    return true;
+  }
+  return false;
+}
+
 export class WorkflowRunner {
+  private port: number;
+
+  constructor(port = 4200) {
+    this.port = port;
+  }
+
   /** Execute a full workflow for a card */
   async run(cardId: number): Promise<void> {
     const ctx = await this.initContext(cardId);
@@ -57,7 +76,12 @@ export class WorkflowRunner {
 
       await db
         .update(cards)
-        .set({ column: "review", status: "review_ready", currentStepId: null, updatedAt: new Date() })
+        .set({
+          column: "review",
+          status: "review_ready",
+          currentStepId: null,
+          updatedAt: new Date(),
+        })
         .where(eq(cards.id, cardId));
 
       eventBus.emit("card:moved", { cardId, fromColumn: "in_progress", toColumn: "review" });
@@ -70,6 +94,7 @@ export class WorkflowRunner {
       await this.handleFailure(ctx);
     } finally {
       // Cleanup
+      pendingStepCallbacks.delete(ctx.cardId);
       tmuxManager.stopCapture(ctx.sessionName);
       tmuxManager.killSession(ctx.sessionName);
       await slotAllocator.releaseSlot(ctx.slotId);
@@ -190,7 +215,7 @@ export class WorkflowRunner {
     }
   }
 
-  /** Execute a single workflow step: send prompt, wait for artifact, check condition */
+  /** Execute a single workflow step: write Stop hook, send prompt, wait for callback */
   private async executeStep(
     ctx: RunContext,
     step: WorkflowStep,
@@ -219,6 +244,9 @@ export class WorkflowRunner {
 
       eventBus.emit("step:started", { cardId: ctx.cardId, stepId: step.id });
 
+      // Write Stop hook for this step — points to step-complete callback
+      this.writeStepHook(ctx.slotPath, ctx.cardId);
+
       // Build prompt
       const prompt = await this.buildStepPrompt(ctx, step);
 
@@ -230,6 +258,26 @@ export class WorkflowRunner {
       // Send command to tmux
       tmuxManager.sendCommand(ctx.sessionName, command);
 
+      // Wait for Stop hook callback (step-complete endpoint resolves this)
+      const completed = await this.waitForStepComplete(ctx.cardId);
+
+      if (!completed) {
+        logger.warn(`Step ${step.id} timed out for card ${ctx.cardId}`);
+        await db
+          .update(stepRuns)
+          .set({ status: "failed", endedAt: new Date() })
+          .where(eq(stepRuns.id, stepRunId));
+
+        eventBus.emit("step:failed", {
+          cardId: ctx.cardId,
+          stepId: step.id,
+          retryNumber: retry,
+        });
+
+        if (retry < maxRetries) continue;
+        return false;
+      }
+
       // Resolve artifact path
       const artifactPath = resolve(
         ctx.slotPath,
@@ -240,11 +288,9 @@ export class WorkflowRunner {
         }),
       );
 
-      // Wait for artifact to appear
-      const found = await this.waitForArtifact(artifactPath);
-
-      if (!found) {
-        logger.warn(`Artifact not found for step ${step.id}, card ${ctx.cardId}`);
+      // Check for artifact after hook fired
+      if (!existsSync(artifactPath)) {
+        logger.warn(`Artifact not found at ${artifactPath} after step ${step.id} completed`);
         await db
           .update(stepRuns)
           .set({ status: "failed", endedAt: new Date() })
@@ -270,11 +316,7 @@ export class WorkflowRunner {
         if (!passed) {
           await db
             .update(stepRuns)
-            .set({
-              status: "failed",
-              endedAt: new Date(),
-              artifactPath,
-            })
+            .set({ status: "failed", endedAt: new Date(), artifactPath })
             .where(eq(stepRuns.id, stepRunId));
 
           eventBus.emit("step:failed", {
@@ -289,7 +331,6 @@ export class WorkflowRunner {
             const targetIndex = ctx.workflow.steps.findIndex((s) => s.id === targetStepId);
             if (targetIndex >= 0) {
               logger.info(`Step ${step.id} failed, retrying from ${targetStepId}`);
-              // Re-execute from target step (handled by caller via retry)
               continue;
             }
           }
@@ -302,14 +343,9 @@ export class WorkflowRunner {
       // Step passed
       await db
         .update(stepRuns)
-        .set({
-          status: "completed",
-          endedAt: new Date(),
-          artifactPath,
-        })
+        .set({ status: "completed", endedAt: new Date(), artifactPath })
         .where(eq(stepRuns.id, stepRunId));
 
-      // Update card to reflect completed step (append :done suffix for progress bar)
       await db
         .update(cards)
         .set({ currentStepId: `${step.id}:done`, updatedAt: new Date() })
@@ -328,6 +364,55 @@ export class WorkflowRunner {
     return false;
   }
 
+  /**
+   * Write .claude/settings.local.json with Stop hook pointing to the
+   * step-complete callback endpoint. Each step overwrites the hook
+   * so the callback always signals the current step.
+   */
+  private writeStepHook(slotPath: string, cardId: number): void {
+    const claudeDir = resolve(slotPath, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+
+    const settingsPath = resolve(claudeDir, "settings.local.json");
+
+    let settings: Record<string, unknown> = {};
+    if (existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      } catch {
+        // Corrupted file, start fresh
+      }
+    }
+
+    const baseUrl = `http://localhost:${this.port}/api/agents/${cardId}`;
+    const httpHook = (url: string) => [{ matcher: "", hooks: [{ type: "http", url }] }];
+
+    settings.hooks = {
+      ...(settings.hooks as Record<string, unknown> | undefined),
+      Stop: httpHook(`${baseUrl}/step-complete`),
+      StopFailure: httpHook(`${baseUrl}/failure`),
+      Notification: httpHook(`${baseUrl}/notification`),
+    };
+
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+    logger.info(`Wrote step hooks to ${settingsPath} → ${baseUrl}/step-complete`);
+  }
+
+  /** Wait for the step-complete callback, with timeout */
+  private waitForStepComplete(cardId: number, timeoutMs: number = 600_000): Promise<boolean> {
+    return new Promise((resolvePromise) => {
+      const timeout = setTimeout(() => {
+        pendingStepCallbacks.delete(cardId);
+        resolvePromise(false);
+      }, timeoutMs);
+
+      pendingStepCallbacks.set(cardId, () => {
+        clearTimeout(timeout);
+        resolvePromise(true);
+      });
+    });
+  }
+
   /** Build the prompt for a step using the context bundler */
   private buildStepPrompt(ctx: RunContext, step: WorkflowStep): string {
     return contextBundler.buildPrompt({
@@ -337,31 +422,6 @@ export class WorkflowRunner {
       issueNumber: ctx.card.githubIssueNumber ?? undefined,
       issueTitle: ctx.card.title,
       previousArtifacts: ctx.previousArtifacts,
-    });
-  }
-
-  /** Wait for an artifact file to appear, with timeout */
-  private waitForArtifact(path: string, timeoutMs: number = 600_000): Promise<boolean> {
-    return new Promise((resolvePromise) => {
-      if (existsSync(path)) {
-        resolvePromise(true);
-        return;
-      }
-
-      const dir = dirname(path);
-      const watcher = watch(dir, { ignoreInitial: false });
-      const timeout = setTimeout(() => {
-        watcher.close();
-        resolvePromise(false);
-      }, timeoutMs);
-
-      watcher.on("add", (addedPath) => {
-        if (resolve(addedPath) === resolve(path)) {
-          clearTimeout(timeout);
-          watcher.close();
-          resolvePromise(true);
-        }
-      });
     });
   }
 
