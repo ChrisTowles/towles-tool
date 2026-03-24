@@ -42,7 +42,10 @@ async function submit() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-20" @click.self="emit('cancel')">
+  <div
+    class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-20"
+    @click.self="emit('cancel')"
+  >
     <div class="w-full max-w-lg rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
@@ -57,11 +60,18 @@ async function submit() {
 
       <!-- Form -->
       <form class="space-y-4 px-5 py-4" @submit.prevent="submit">
-        <!-- Title -->
+        <!-- Title + Voice -->
         <div>
-          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-            Title <span class="text-red-400">*</span>
-          </label>
+          <div class="mb-1.5 flex items-center justify-between">
+            <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Title <span class="text-red-400">*</span>
+            </label>
+            <ClientOnly>
+              <VoiceVoiceInput
+                @transcription="(text: string) => (title = title ? `${title} ${text}` : text)"
+              />
+            </ClientOnly>
+          </div>
           <input
             v-model="title"
             type="text"
@@ -73,7 +83,9 @@ async function submit() {
 
         <!-- Description -->
         <div>
-          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          <label
+            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
             Description
           </label>
           <textarea
@@ -86,7 +98,9 @@ async function submit() {
 
         <!-- Repo selector -->
         <div>
-          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          <label
+            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
             Repository
           </label>
           <select
@@ -102,7 +116,9 @@ async function submit() {
 
         <!-- Execution mode toggle -->
         <div>
-          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          <label
+            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
             Execution Mode
           </label>
           <div class="flex gap-2">
