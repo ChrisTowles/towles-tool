@@ -1,0 +1,29 @@
+name: auto-claude
+description: Issue-to-PR pipeline with plan, implement, simplify, review
+steps:
+  - id: plan
+    prompt_template: .agentboard/prompts/plan.md
+    artifact: .auto-claude/issue-{issue}/plan.md
+    model: opus
+  - id: implement
+    prompt_template: .agentboard/prompts/implement.md
+    artifact: .auto-claude/issue-{issue}/completed-summary.md
+    max_iterations: 5
+  - id: simplify
+    prompt_template: .agentboard/prompts/simplify.md
+    artifact: .auto-claude/issue-{issue}/simplify-summary.md
+  - id: review
+    prompt_template: .agentboard/prompts/review.md
+    artifact: .auto-claude/issue-{issue}/review.md
+    pass_condition: "first_line_equals:PASS"
+    on_fail: "goto:implement"
+    max_retries: 2
+post_steps:
+  create_pr: true
+  pr_title_template: "auto-claude: {issue_title}"
+labels:
+  in_progress: auto-claude-in-progress
+  success: auto-claude-review
+  failure: auto-claude-failed
+branch_template: "auto-claude/issue-{issue}"
+artifact_dir: ".auto-claude/issue-{issue}"
