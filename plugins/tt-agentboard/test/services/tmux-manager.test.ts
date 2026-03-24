@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
@@ -17,6 +17,11 @@ describe("TmuxManager", () => {
   beforeEach(() => {
     manager = new TmuxManager();
     vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("isAvailable()", () => {
@@ -155,6 +160,119 @@ describe("TmuxManager", () => {
       });
 
       expect(manager.sessionExists("card-99")).toBe(false);
+    });
+  });
+
+  describe("startCapture()", () => {
+    function createSessionForCapture(cardId: number) {
+      mockExecSync.mockImplementation((cmd) => {
+        if (typeof cmd === "string" && cmd.includes("has-session")) {
+          throw new Error("no session");
+        }
+        return Buffer.from("");
+      });
+      manager.createSession(cardId, "/tmp/repo");
+      vi.clearAllMocks();
+    }
+
+    it("sets up polling interval and calls callback with output", () => {
+      createSessionForCapture(10);
+      mockExecSync.mockReturnValue("some terminal output" as never);
+
+      const callback = vi.fn();
+      manager.startCapture("card-10", callback);
+
+      // Advance past one interval (500ms)
+      vi.advanceTimersByTime(500);
+
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "tmux capture-pane -t card-10 -p -S -50",
+        { encoding: "utf-8", timeout: 2000 },
+      );
+      expect(callback).toHaveBeenCalledWith("some terminal output");
+
+      // Clean up
+      manager.stopCapture("card-10");
+    });
+
+    it("clears previous interval if called twice", () => {
+      createSessionForCapture(11);
+      mockExecSync.mockReturnValue("output" as never);
+
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+
+      manager.startCapture("card-11", callback1);
+      manager.startCapture("card-11", callback2);
+
+      vi.advanceTimersByTime(500);
+
+      // Only callback2 should be called (callback1's interval was cleared)
+      expect(callback1).not.toHaveBeenCalled();
+      expect(callback2).toHaveBeenCalledWith("output");
+
+      manager.stopCapture("card-11");
+    });
+
+    it("stops on execSync error (session ended)", () => {
+      createSessionForCapture(12);
+      mockExecSync.mockImplementation(() => {
+        throw new Error("session not found");
+      });
+
+      const callback = vi.fn();
+      manager.startCapture("card-12", callback);
+
+      // First tick triggers the error
+      vi.advanceTimersByTime(500);
+
+      expect(callback).not.toHaveBeenCalled();
+
+      // Further ticks should not call execSync again (interval was cleared)
+      mockExecSync.mockClear();
+      vi.advanceTimersByTime(1000);
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("stopCapture()", () => {
+    it("clears interval and resets state", () => {
+      // Create session and start capture
+      mockExecSync.mockImplementation((cmd) => {
+        if (typeof cmd === "string" && cmd.includes("has-session")) {
+          throw new Error("no session");
+        }
+        return Buffer.from("");
+      });
+      manager.createSession(20, "/tmp/repo");
+      vi.clearAllMocks();
+
+      mockExecSync.mockReturnValue("output" as never);
+      const callback = vi.fn();
+      manager.startCapture("card-20", callback);
+
+      manager.stopCapture("card-20");
+
+      // After stop, advancing timers should not trigger callback
+      vi.advanceTimersByTime(1000);
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("on non-captured session is a no-op", () => {
+      // Create session but don't start capture
+      mockExecSync.mockImplementation((cmd) => {
+        if (typeof cmd === "string" && cmd.includes("has-session")) {
+          throw new Error("no session");
+        }
+        return Buffer.from("");
+      });
+      manager.createSession(21, "/tmp/repo");
+
+      // Should not throw
+      expect(() => manager.stopCapture("card-21")).not.toThrow();
+
+      // Also no-op for completely unknown sessions
+      expect(() => manager.stopCapture("card-999")).not.toThrow();
     });
   });
 });

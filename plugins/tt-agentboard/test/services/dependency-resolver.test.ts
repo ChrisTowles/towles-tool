@@ -54,6 +54,14 @@ describe("DependencyResolver", () => {
     it("filters out NaN and zero values", () => {
       expect(resolver.parseDeps("1,abc,0,-1,3")).toEqual([1, 3]);
     });
+
+    it("returns empty array for malformed JSON-like string", () => {
+      expect(resolver.parseDeps('{"ids":[1,2]}')).toEqual([]);
+    });
+
+    it("returns empty array for string with only separators", () => {
+      expect(resolver.parseDeps(",,,")).toEqual([]);
+    });
   });
 
   describe("resolveAfterCompletion()", () => {
@@ -120,6 +128,20 @@ describe("DependencyResolver", () => {
           { id: 2, status: "running" },
         ],
       );
+
+      const result = await resolver.resolveAfterCompletion(1);
+      expect(result).toEqual([]);
+    });
+
+    it("skips blocked card with null dependsOn", async () => {
+      setupMockDb([{ id: 15, dependsOn: null, status: "blocked" }]);
+
+      const result = await resolver.resolveAfterCompletion(1);
+      expect(result).toEqual([]);
+    });
+
+    it("skips blocked card with empty dependsOn string", async () => {
+      setupMockDb([{ id: 16, dependsOn: "", status: "blocked" }]);
 
       const result = await resolver.resolveAfterCompletion(1);
       expect(result).toEqual([]);
