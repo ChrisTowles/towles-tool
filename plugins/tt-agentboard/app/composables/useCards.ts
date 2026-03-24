@@ -19,7 +19,7 @@ export interface Card {
   retryCount: number;
   createdAt: string;
   updatedAt: string;
-  repo?: { name: string; org: string | null } | null;
+  repo?: { name: string; org: string | null; githubUrl: string | null } | null;
 }
 
 export function useCards(boardId: Ref<number> = ref(1)) {

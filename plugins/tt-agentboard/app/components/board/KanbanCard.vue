@@ -29,6 +29,17 @@ const elapsedTime = computed(() => {
 });
 
 const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "⌨" : "⚡"));
+
+const issueUrl = computed(() => {
+  if (!props.card.githubIssueNumber) return null;
+  if (props.card.repo?.githubUrl) {
+    return `${props.card.repo.githubUrl}/issues/${props.card.githubIssueNumber}`;
+  }
+  if (props.card.repo?.org && props.card.repo?.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/issues/${props.card.githubIssueNumber}`;
+  }
+  return null;
+});
 </script>
 
 <template>
@@ -66,7 +77,19 @@ const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "�
         <span v-if="elapsedTime" class="text-[10px] font-mono tabular-nums text-zinc-500">
           {{ elapsedTime }}
         </span>
-        <span v-if="card.githubIssueNumber" class="text-[10px] font-mono text-zinc-500">
+        <a
+          v-if="card.githubIssueNumber && issueUrl"
+          :href="issueUrl"
+          target="_blank"
+          class="text-[10px] font-mono text-zinc-500 hover:text-blue-400"
+          @click.stop
+        >
+          #{{ card.githubIssueNumber }}
+        </a>
+        <span
+          v-else-if="card.githubIssueNumber"
+          class="text-[10px] font-mono text-zinc-500"
+        >
           #{{ card.githubIssueNumber }}
         </span>
       </div>

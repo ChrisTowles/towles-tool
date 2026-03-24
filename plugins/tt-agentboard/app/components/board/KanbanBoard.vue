@@ -111,6 +111,13 @@ onUnmounted(() => {
         >
           Workflows
         </NuxtLink>
+        <NuxtLink
+          to="/plans"
+          class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          title="View and manage execution plans"
+        >
+          Plans
+        </NuxtLink>
         <button
           class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
           :class="

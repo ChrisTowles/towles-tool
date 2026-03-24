@@ -63,6 +63,19 @@ function copyPrompt() {
   showToast("Copied!");
 }
 
+async function createGitHubIssue() {
+  closeMenu();
+  try {
+    const result = await $fetch<{ issueNumber: number; htmlUrl: string }>("/api/github/issues", {
+      method: "POST",
+      body: { cardId: props.card.id },
+    });
+    showToast(`Created issue #${result.issueNumber}`);
+  } catch {
+    showToast("Failed to create issue");
+  }
+}
+
 function archiveCard() {
   closeMenu();
   emit("archive");
@@ -131,7 +144,19 @@ onUnmounted(() => {
           Copy prompt
         </button>
 
-        <div v-if="card.status === 'failed' || card.status === 'review_ready'" class="my-1 border-t border-zinc-800" />
+        <button
+          v-if="card.repoId && !card.githubIssueNumber"
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+          @click="createGitHubIssue"
+        >
+          <span class="w-4 text-center text-[10px]">⊕</span>
+          Create GitHub Issue
+        </button>
+
+        <div
+          v-if="card.status === 'failed' || card.status === 'review_ready'"
+          class="my-1 border-t border-zinc-800"
+        />
 
         <button
           v-if="card.status === 'failed'"
