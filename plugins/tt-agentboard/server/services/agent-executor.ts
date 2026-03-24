@@ -8,6 +8,7 @@ import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
+import { shellEscape } from "../utils/workflow-helpers";
 
 /**
  * Handles single agent execution: claim slot, configure Stop hook,
@@ -99,7 +100,7 @@ export class AgentExecutor {
     // Build the Claude Code command
     const prompt = card.description ?? card.title;
     const modelFlag = card.executionMode === "interactive" ? "" : "--dangerously-skip-permissions";
-    const command = `claude -p ${this.shellEscape(prompt)} ${modelFlag}`.trim();
+    const command = `claude -p ${shellEscape(prompt)} ${modelFlag}`.trim();
 
     // Send command to tmux session
     tmuxManager.sendCommand(sessionName, command);
@@ -127,11 +128,6 @@ export class AgentExecutor {
     await db.update(cards).set({ status, updatedAt: new Date() }).where(eq(cards.id, cardId));
 
     eventBus.emit("card:status-changed", { cardId, status });
-  }
-
-  /** Escape a string for safe use in shell commands */
-  private shellEscape(str: string): string {
-    return `'${str.replace(/'/g, "'\\''")}'`;
   }
 }
 
