@@ -11,16 +11,19 @@ interface TtydInstance {
 export class TtydManager {
   private instances: Map<number, TtydInstance> = new Map();
   private basePort = 7680;
+  private _ttydAvailable: boolean | null = null;
 
-  /** Check if ttyd is available on the system */
+  /** Check if ttyd is available on the system (cached after first call) */
   isAvailable(): boolean {
+    if (this._ttydAvailable !== null) return this._ttydAvailable;
     try {
       const { execSync } = require("node:child_process") as typeof import("node:child_process");
       execSync("which ttyd", { stdio: "ignore" });
-      return true;
+      this._ttydAvailable = true;
     } catch {
-      return false;
+      this._ttydAvailable = false;
     }
+    return this._ttydAvailable;
   }
 
   /** Get the next available port */
@@ -43,10 +46,14 @@ export class TtydManager {
     const sessionName = `card-${cardId}`;
     const port = this.getNextPort();
 
-    const proc = spawn("ttyd", ["--port", String(port), "--writable", "tmux", "attach", "-t", sessionName], {
-      stdio: "ignore",
-      detached: true,
-    });
+    const proc = spawn(
+      "ttyd",
+      ["--port", String(port), "--writable", "tmux", "attach", "-t", sessionName],
+      {
+        stdio: "ignore",
+        detached: true,
+      },
+    );
 
     proc.unref();
 

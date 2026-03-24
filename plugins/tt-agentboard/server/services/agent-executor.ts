@@ -1,14 +1,13 @@
 import { db } from "../db";
 import { cards, workflowRuns } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { tmuxManager } from "./tmux-manager";
 import { slotAllocator } from "./slot-allocator";
 import { workflowLoader } from "./workflow-loader";
 import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
+import { writeHooks } from "../utils/hook-writer";
 
 /**
  * Handles single agent execution: claim slot, configure Stop hook,
@@ -44,11 +43,15 @@ export class AgentExecutor {
     if (card.workflowId) {
       const workflow = workflowLoader.get(card.workflowId);
       if (workflow) {
-        logger.info(`Card ${cardId} has workflow "${card.workflowId}", delegating to workflow runner`);
+        logger.info(
+          `Card ${cardId} has workflow "${card.workflowId}", delegating to workflow runner`,
+        );
         await workflowRunner.run(cardId);
         return;
       }
-      logger.warn(`Workflow "${card.workflowId}" not found for card ${cardId}, falling back to single-prompt`);
+      logger.warn(
+        `Workflow "${card.workflowId}" not found for card ${cardId}, falling back to single-prompt`,
+      );
     }
 
     // Single-prompt execution (no workflow)
@@ -76,7 +79,7 @@ export class AgentExecutor {
     await this.updateCardStatus(cardId, "running");
 
     // Write .claude/settings.local.json with Stop hook in the slot directory
-    this.writeStopHook(slot.path, cardId);
+    writeHooks(slot.path, cardId, this.port, "complete");
 
     // Create tmux session
     const sessionName = tmuxManager.createSession(cardId, slot.path);
@@ -107,40 +110,6 @@ export class AgentExecutor {
     });
 
     logger.info(`Card ${cardId} execution started in session ${sessionName}, Stop hook configured`);
-  }
-
-  /**
-   * Write .claude/settings.local.json with hooks that POST to AgentBoard
-   * callback endpoints for lifecycle events: Stop, StopFailure, Notification.
-   */
-  private writeStopHook(slotPath: string, cardId: number): void {
-    const claudeDir = resolve(slotPath, ".claude");
-    mkdirSync(claudeDir, { recursive: true });
-
-    const settingsPath = resolve(claudeDir, "settings.local.json");
-
-    // Read existing settings if present, merge hooks
-    let settings: Record<string, unknown> = {};
-    if (existsSync(settingsPath)) {
-      try {
-        settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-      } catch {
-        // Corrupted file, start fresh
-      }
-    }
-
-    const baseUrl = `http://localhost:${this.port}/api/agents/${cardId}`;
-    const httpHook = (url: string) => [{ matcher: "", hooks: [{ type: "http", url }] }];
-
-    settings.hooks = {
-      ...(settings.hooks as Record<string, unknown> | undefined),
-      Stop: httpHook(`${baseUrl}/complete`),
-      StopFailure: httpHook(`${baseUrl}/failure`),
-      Notification: httpHook(`${baseUrl}/notification`),
-    };
-
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    logger.info(`Wrote lifecycle hooks to ${settingsPath} → ${baseUrl}/*`);
   }
 
   private async updateCardStatus(

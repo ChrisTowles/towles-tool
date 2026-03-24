@@ -1,12 +1,9 @@
 import { ttydManager } from "~~/server/services/ttyd-manager";
 import { tmuxManager } from "~~/server/services/tmux-manager";
+import { getCardId } from "~~/server/utils/params";
 
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   const sessionName = `card-${cardId}`;
   if (!tmuxManager.sessionExists(sessionName)) {

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
+import { getCardId, requireCard } from "~~/server/utils/params";
 
 /**
  * Send a user response to an agent waiting for input.
@@ -13,21 +14,14 @@ import { logger } from "~~/server/utils/logger";
  * Body: { response: string }
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
+  const cardId = getCardId(event);
   const body = await readBody(event);
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
 
   if (!body?.response) {
     throw createError({ statusCode: 400, statusMessage: "Missing response field" });
   }
 
-  const cardRows = await db.select().from(cards).where(eq(cards.id, cardId));
-  if (cardRows.length === 0) {
-    throw createError({ statusCode: 404, statusMessage: "Card not found" });
-  }
+  await requireCard(cardId);
 
   const sessionName = `card-${cardId}`;
   if (!tmuxManager.sessionExists(sessionName)) {

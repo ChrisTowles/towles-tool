@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { CardStatus } from "~/utils/constants";
+
 const props = defineProps<{
   cardId: number;
+  status?: CardStatus;
 }>();
 
 interface DiffLine {
@@ -30,6 +33,8 @@ const diff = ref<DiffResponse | null>(null);
 const loading = ref(true);
 const collapsedFiles = ref<Set<string>>(new Set());
 
+const TERMINAL_STATUSES = new Set<CardStatus>(["done", "review_ready"]);
+
 function toggleFile(path: string) {
   if (collapsedFiles.value.has(path)) {
     collapsedFiles.value.delete(path);
@@ -48,17 +53,44 @@ async function fetchDiff() {
   }
 }
 
-// Poll every 5s
+// Poll every 5s, but stop when status is terminal
 const pollInterval = ref<ReturnType<typeof setInterval> | null>(null);
+
+function stopPolling() {
+  if (pollInterval.value) {
+    clearInterval(pollInterval.value);
+    pollInterval.value = null;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  pollInterval.value = setInterval(fetchDiff, 5000);
+}
 
 onMounted(() => {
   fetchDiff();
-  pollInterval.value = setInterval(fetchDiff, 5000);
+  if (!props.status || !TERMINAL_STATUSES.has(props.status)) {
+    startPolling();
+  }
 });
 
 onUnmounted(() => {
-  if (pollInterval.value) clearInterval(pollInterval.value);
+  stopPolling();
 });
+
+// Stop polling when status becomes terminal; do one final fetch then stop
+watch(
+  () => props.status,
+  (newStatus) => {
+    if (newStatus && TERMINAL_STATUSES.has(newStatus)) {
+      fetchDiff();
+      stopPolling();
+    } else if (!pollInterval.value) {
+      startPolling();
+    }
+  },
+);
 
 watch(
   () => props.cardId,
@@ -87,7 +119,9 @@ watch(
 
     <!-- Loading -->
     <div v-if="loading" class="flex flex-1 items-center justify-center">
-      <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-400" />
+      <span
+        class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-400"
+      />
     </div>
 
     <!-- No changes -->
@@ -97,7 +131,11 @@ watch(
 
     <!-- Diff content -->
     <div v-else class="flex-1 overflow-y-auto font-mono text-xs">
-      <div v-for="file in diff.files" :key="file.path" class="border-b border-zinc-800 last:border-b-0">
+      <div
+        v-for="file in diff.files"
+        :key="file.path"
+        class="border-b border-zinc-800 last:border-b-0"
+      >
         <!-- File header -->
         <button
           class="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-zinc-900"
@@ -127,7 +165,9 @@ watch(
                 'text-zinc-500': line.type === 'context',
               }"
             >
-              <span class="w-8 shrink-0 select-none border-r border-zinc-800/50 pr-1 text-right text-zinc-700">
+              <span
+                class="w-8 shrink-0 select-none border-r border-zinc-800/50 pr-1 text-right text-zinc-700"
+              >
                 {{ line.type === "delete" ? "-" : line.type === "add" ? "+" : " " }}
               </span>
               <pre class="flex-1 whitespace-pre-wrap break-all px-2">{{ line.content }}</pre>

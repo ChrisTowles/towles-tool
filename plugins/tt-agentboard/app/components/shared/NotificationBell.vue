@@ -1,12 +1,21 @@
 <script setup lang="ts">
-const { permission, unreadCount, notifications, requestPermission, clearUnread, clearAll } =
-  useNotifications();
+import { STATUS_LABELS } from "~/utils/constants";
+import type { CardStatus } from "~/utils/constants";
+
+const {
+  permission,
+  unreadCount,
+  notifications,
+  requestPermission,
+  clearUnread,
+  clearAll,
+  bindWebSocket,
+} = useNotifications();
 const { on, off } = useWebSocket();
 
 const showDropdown = ref(false);
 
 // Bind notifications to WebSocket
-const { bindWebSocket } = useNotifications();
 let unbind: (() => void) | null = null;
 onMounted(() => {
   unbind = bindWebSocket({ on, off });
@@ -103,13 +112,7 @@ function handleEnable() {
                 'text-emerald-400': n.status === 'review_ready',
               }"
             >
-              {{
-                n.status === "review_ready"
-                  ? "Review Ready"
-                  : n.status === "waiting_input"
-                    ? "Waiting"
-                    : "Failed"
-              }}
+              {{ STATUS_LABELS[n.status as CardStatus] ?? n.status }}
             </span>
           </div>
         </div>

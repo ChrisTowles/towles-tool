@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "~~/server/db";
 import { workspaceSlots } from "~~/server/db/schema";
+import { getCardId } from "~~/server/utils/params";
 
 interface DiffLine {
   type: "add" | "delete" | "context";
@@ -65,11 +66,7 @@ function parseDiff(raw: string): DiffFile[] {
  * GET /api/agents/:cardId/diff
  */
 export default defineEventHandler(async (event) => {
-  const cardId = Number(getRouterParam(event, "cardId"));
-
-  if (!cardId || Number.isNaN(cardId)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid cardId" });
-  }
+  const cardId = getCardId(event);
 
   const [slot] = await db
     .select()
