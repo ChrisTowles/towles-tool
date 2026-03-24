@@ -43,11 +43,11 @@ const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "â
 
     <!-- Repo badge -->
     <div v-if="card.repo" class="mb-2">
-      <RepoBadge :name="card.repo.name" :org="card.repo.org" />
+      <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
     </div>
 
     <!-- Progress bar -->
-    <CardProgressBar
+    <BoardCardProgressBar
       v-if="workflowSteps?.length"
       :steps="workflowSteps"
       :current-step-id="card.currentStepId"
@@ -57,7 +57,7 @@ const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "â
 
     <!-- Footer: status + elapsed time + issue # -->
     <div class="flex items-center justify-between">
-      <StatusBadge :status="card.status as CardStatus" />
+      <SharedStatusBadge :status="card.status as CardStatus" />
       <div class="flex items-center gap-2">
         <span v-if="elapsedTime" class="text-[10px] font-mono tabular-nums text-zinc-500">
           {{ elapsedTime }}

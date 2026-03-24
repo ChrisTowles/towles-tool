@@ -54,21 +54,28 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
 
     <!-- Card list -->
     <div class="flex-1 space-y-2 overflow-y-auto px-3 pb-3" style="max-height: calc(100vh - 180px)">
-      <draggable
-        :list="cards"
-        :group="{ name: 'cards', pull: true, put: true }"
-        item-key="id"
-        ghost-class="opacity-30"
-        drag-class="rotate-2"
-        :animation="200"
-        @end="onDragEnd"
-      >
-        <template #item="{ element }">
-          <div :data-card-id="element.id">
-            <KanbanCard :card="element" />
+      <ClientOnly>
+        <draggable
+          :list="cards"
+          :group="{ name: 'cards', pull: true, put: true }"
+          item-key="id"
+          ghost-class="opacity-30"
+          drag-class="rotate-2"
+          :animation="200"
+          @end="onDragEnd"
+        >
+          <template #item="{ element }">
+            <div :data-card-id="element.id">
+              <BoardKanbanCard :card="element" />
+            </div>
+          </template>
+        </draggable>
+        <template #fallback>
+          <div v-for="card in cards" :key="card.id">
+            <BoardKanbanCard :card="card" />
           </div>
         </template>
-      </draggable>
+      </ClientOnly>
 
       <!-- Empty state -->
       <div

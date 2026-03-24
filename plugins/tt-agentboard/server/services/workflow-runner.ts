@@ -224,7 +224,8 @@ export class WorkflowRunner {
 
       // Build Claude Code command
       const modelFlag = step.model ? `--model ${step.model}` : "";
-      const command = `claude --message ${this.shellEscape(prompt)} --dangerously-skip-permissions ${modelFlag}`.trim();
+      const command =
+        `claude --message ${this.shellEscape(prompt)} --dangerously-skip-permissions ${modelFlag}`.trim();
 
       // Send command to tmux
       tmuxManager.sendCommand(ctx.sessionName, command);
@@ -421,12 +422,17 @@ export class WorkflowRunner {
 
   private async updateCardStatus(
     cardId: number,
-    status: "idle" | "queued" | "running" | "waiting_input" | "review_ready" | "done" | "failed" | "blocked",
+    status:
+      | "idle"
+      | "queued"
+      | "running"
+      | "waiting_input"
+      | "review_ready"
+      | "done"
+      | "failed"
+      | "blocked",
   ): Promise<void> {
-    await db
-      .update(cards)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(cards.id, cardId));
+    await db.update(cards).set({ status, updatedAt: new Date() }).where(eq(cards.id, cardId));
 
     eventBus.emit("card:status-changed", { cardId, status });
   }
