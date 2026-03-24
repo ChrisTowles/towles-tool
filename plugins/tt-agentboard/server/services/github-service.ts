@@ -59,6 +59,28 @@ export class GitHubService {
     }));
   }
 
+  async getOpenIssues(owner: string, repo: string): Promise<GitHubIssue[]> {
+    const { data } = await this.octokit.rest.issues.listForRepo({
+      owner,
+      repo,
+      state: "open",
+      per_page: 100,
+    });
+
+    // Filter out pull requests (GitHub API returns PRs as issues too)
+    return data
+      .filter((issue) => !issue.pull_request)
+      .map((issue) => ({
+        number: issue.number,
+        title: issue.title,
+        body: issue.body ?? null,
+        labels: issue.labels
+          .map((l) => (typeof l === "string" ? l : l.name))
+          .filter((n): n is string => n != null),
+        html_url: issue.html_url,
+      }));
+  }
+
   async createIssue(owner: string, repo: string, title: string, body: string, labels?: string[]) {
     const { data } = await this.octokit.rest.issues.create({
       owner,
@@ -176,4 +198,8 @@ export function getGitHubService(): GitHubService {
     _instance = new GitHubService();
   }
   return _instance;
+}
+
+export function isGitHubConfigured(): boolean {
+  return !!process.env.GITHUB_TOKEN;
 }

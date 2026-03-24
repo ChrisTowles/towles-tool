@@ -15,6 +15,28 @@ const emit = defineEmits<{
 
 const agentInput = ref("");
 
+const issueUrl = computed(() => {
+  if (!props.card.githubIssueNumber) return null;
+  if (props.card.repo?.githubUrl) {
+    return `${props.card.repo.githubUrl}/issues/${props.card.githubIssueNumber}`;
+  }
+  if (props.card.repo?.org && props.card.repo?.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/issues/${props.card.githubIssueNumber}`;
+  }
+  return null;
+});
+
+const prUrl = computed(() => {
+  if (!props.card.githubPrNumber) return null;
+  if (props.card.repo?.githubUrl) {
+    return `${props.card.repo.githubUrl}/pull/${props.card.githubPrNumber}`;
+  }
+  if (props.card.repo?.org && props.card.repo?.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/pull/${props.card.githubPrNumber}`;
+  }
+  return null;
+});
+
 function sendResponse() {
   if (!agentInput.value.trim()) return;
   emit("respond", agentInput.value);
@@ -50,9 +72,29 @@ function sendResponse() {
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
     </div>
 
-    <div v-if="card.githubIssueNumber && !compact" class="mb-4 text-xs font-mono text-zinc-500">
-      Issue #{{ card.githubIssueNumber }}
-      <span v-if="card.githubPrNumber"> · PR #{{ card.githubPrNumber }}</span>
+    <div v-if="card.githubIssueNumber && !compact" class="mb-4 flex items-center gap-1 text-xs font-mono text-zinc-500">
+      <span>Issue</span>
+      <a
+        v-if="issueUrl"
+        :href="issueUrl"
+        target="_blank"
+        class="text-blue-400 hover:text-blue-300 hover:underline"
+      >
+        #{{ card.githubIssueNumber }}
+      </a>
+      <span v-else>#{{ card.githubIssueNumber }}</span>
+      <template v-if="card.githubPrNumber">
+        <span> · PR</span>
+        <a
+          v-if="prUrl"
+          :href="prUrl"
+          target="_blank"
+          class="text-blue-400 hover:text-blue-300 hover:underline"
+        >
+          #{{ card.githubPrNumber }}
+        </a>
+        <span v-else>#{{ card.githubPrNumber }}</span>
+      </template>
     </div>
 
     <!-- Archive button -->
