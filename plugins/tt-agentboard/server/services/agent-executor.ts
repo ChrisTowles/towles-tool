@@ -5,6 +5,8 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { tmuxManager } from "./tmux-manager";
 import { slotAllocator } from "./slot-allocator";
+import { workflowLoader } from "./workflow-loader";
+import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 
@@ -38,6 +40,23 @@ export class AgentExecutor {
       return;
     }
 
+    // Delegate to workflow runner if card has a valid workflow
+    if (card.workflowId) {
+      const workflow = workflowLoader.get(card.workflowId);
+      if (workflow) {
+        logger.info(`Card ${cardId} has workflow "${card.workflowId}", delegating to workflow runner`);
+        await workflowRunner.run(cardId);
+        return;
+      }
+      logger.warn(`Workflow "${card.workflowId}" not found for card ${cardId}, falling back to single-prompt`);
+    }
+
+    // Single-prompt execution (no workflow)
+    await this.runSinglePrompt(cardId, card);
+  }
+
+  /** Run a single claude -p command for cards without a workflow */
+  private async runSinglePrompt(cardId: number, card: typeof cards.$inferSelect): Promise<void> {
     // Check tmux availability
     if (!tmuxManager.isAvailable()) {
       logger.error("tmux is not available on this system");
@@ -46,7 +65,7 @@ export class AgentExecutor {
     }
 
     // Claim a workspace slot
-    const slot = await slotAllocator.claimSlot(card.repoId, cardId);
+    const slot = await slotAllocator.claimSlot(card.repoId!, cardId);
     if (!slot) {
       logger.warn(`No available slot for card ${cardId}, marking as queued`);
       await this.updateCardStatus(cardId, "queued");
@@ -111,9 +130,7 @@ export class AgentExecutor {
     }
 
     const baseUrl = `http://localhost:${this.port}/api/agents/${cardId}`;
-    const httpHook = (url: string) => [
-      { matcher: "", hooks: [{ type: "http", url }] },
-    ];
+    const httpHook = (url: string) => [{ matcher: "", hooks: [{ type: "http", url }] }];
 
     settings.hooks = {
       ...(settings.hooks as Record<string, unknown> | undefined),
