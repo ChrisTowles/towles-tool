@@ -1,35 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Mock octokit
-const mockListForRepo = vi.fn();
-const mockCreate = vi.fn();
-const mockRemoveLabel = vi.fn();
-const mockAddLabels = vi.fn();
-const mockGetRef = vi.fn();
-const mockCreateRef = vi.fn();
-const mockPullsCreate = vi.fn();
+const { mockExecSync } = vi.hoisted(() => ({
+  mockExecSync: vi.fn(),
+}));
 
-vi.mock("octokit", () => {
-  return {
-    Octokit: class MockOctokit {
-      rest = {
-        issues: {
-          listForRepo: mockListForRepo,
-          create: mockCreate,
-          removeLabel: mockRemoveLabel,
-          addLabels: mockAddLabels,
-        },
-        git: {
-          getRef: mockGetRef,
-          createRef: mockCreateRef,
-        },
-        pulls: {
-          create: mockPullsCreate,
-        },
-      };
-    },
-  };
-});
+vi.mock("node:child_process", () => ({
+  execSync: mockExecSync,
+}));
 
 vi.mock("../../server/utils/event-bus", () => ({
   eventBus: { emit: vi.fn(), on: vi.fn() },
@@ -40,7 +17,7 @@ vi.mock("../../server/utils/logger", () => ({
 }));
 
 // eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { GitHubService, isGitHubConfigured } from "../../server/services/github-service";
+import { GitHubService } from "../../server/services/github-service";
 // eslint-disable-next-line import/first
 import { eventBus } from "../../server/utils/event-bus";
 
@@ -48,7 +25,7 @@ describe("GitHubService", () => {
   let service: GitHubService;
 
   beforeEach(() => {
-    service = new GitHubService("test-token");
+    service = new GitHubService();
     vi.clearAllMocks();
   });
 
@@ -56,56 +33,19 @@ describe("GitHubService", () => {
     service.stopPolling();
   });
 
-  describe("isGitHubConfigured()", () => {
-    it("returns false when no GITHUB_TOKEN", () => {
-      const original = process.env.GITHUB_TOKEN;
-      delete process.env.GITHUB_TOKEN;
-      expect(isGitHubConfigured()).toBe(false);
-      if (original) process.env.GITHUB_TOKEN = original;
-    });
-
-    it("returns true when GITHUB_TOKEN is set", () => {
-      const original = process.env.GITHUB_TOKEN;
-      process.env.GITHUB_TOKEN = "test";
-      expect(isGitHubConfigured()).toBe(true);
-      if (original) {
-        process.env.GITHUB_TOKEN = original;
-      } else {
-        delete process.env.GITHUB_TOKEN;
-      }
-    });
-  });
-
-  describe("constructor", () => {
-    it("throws when no token provided and no env var", () => {
-      const original = process.env.GITHUB_TOKEN;
-      delete process.env.GITHUB_TOKEN;
-      expect(() => new GitHubService()).toThrow("GITHUB_TOKEN is required");
-      if (original) process.env.GITHUB_TOKEN = original;
-    });
-  });
-
   describe("getOpenIssues()", () => {
-    it("fetches issues and filters out pull requests", async () => {
-      mockListForRepo.mockResolvedValue({
-        data: [
+    it("fetches issues via gh CLI", async () => {
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify([
           {
             number: 1,
             title: "Bug report",
             body: "Something broken",
             labels: [{ name: "bug" }],
-            html_url: "https://github.com/org/repo/issues/1",
+            url: "https://github.com/org/repo/issues/1",
           },
-          {
-            number: 2,
-            title: "Feature PR",
-            body: null,
-            labels: [],
-            html_url: "https://github.com/org/repo/pull/2",
-            pull_request: { url: "..." },
-          },
-        ],
-      });
+        ]),
+      );
 
       const issues = await service.getOpenIssues("org", "repo");
 
@@ -113,66 +53,57 @@ describe("GitHubService", () => {
       expect(issues[0]!.number).toBe(1);
       expect(issues[0]!.title).toBe("Bug report");
       expect(issues[0]!.labels).toEqual(["bug"]);
-      expect(mockListForRepo).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        state: "open",
-        per_page: 100,
-      });
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining("issue list --repo org/repo"),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
     });
   });
 
   describe("getIssuesWithLabel()", () => {
     it("fetches issues with the specified label", async () => {
-      mockListForRepo.mockResolvedValue({
-        data: [
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify([
           {
             number: 5,
             title: "Labeled issue",
             body: "body",
-            labels: ["agentboard"],
-            html_url: "https://github.com/org/repo/issues/5",
+            labels: [{ name: "agentboard" }],
+            url: "https://github.com/org/repo/issues/5",
           },
-        ],
-      });
+        ]),
+      );
 
       const issues = await service.getIssuesWithLabel("org", "repo", "agentboard");
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.labels).toEqual(["agentboard"]);
-      expect(mockListForRepo).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        labels: "agentboard",
-        state: "open",
-        per_page: 100,
-      });
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('--label "agentboard"'),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
     });
   });
 
   describe("createIssue()", () => {
     it("creates issue and returns data", async () => {
-      mockCreate.mockResolvedValue({
-        data: { number: 42, title: "New issue" },
-      });
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify({ number: 42, url: "https://github.com/org/repo/issues/42" }),
+      );
 
       const result = await service.createIssue("org", "repo", "New issue", "body", ["bug"]);
 
       expect(result.number).toBe(42);
-      expect(mockCreate).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        title: "New issue",
-        body: "body",
-        labels: ["bug"],
-      });
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining("issue create --repo org/repo"),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
     });
   });
 
   describe("transitionLabels()", () => {
-    it("removes old labels and adds new ones", async () => {
-      mockRemoveLabel.mockResolvedValue({});
-      mockAddLabels.mockResolvedValue({});
+    it("edits labels via gh issue edit", async () => {
+      mockExecSync.mockReturnValueOnce("");
 
       await service.transitionLabels({
         owner: "org",
@@ -182,33 +113,18 @@ describe("GitHubService", () => {
         add: ["done"],
       });
 
-      expect(mockRemoveLabel).toHaveBeenCalledTimes(2);
-      expect(mockRemoveLabel).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        issue_number: 1,
-        name: "in-progress",
-      });
-      expect(mockAddLabels).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        issue_number: 1,
-        labels: ["done"],
-      });
-    });
-
-    it("ignores missing labels during removal", async () => {
-      mockRemoveLabel.mockRejectedValue(new Error("Not found"));
-
-      await service.transitionLabels({
-        owner: "org",
-        repo: "repo",
-        issueNumber: 1,
-        remove: ["nonexistent"],
-      });
-
-      // Should not throw
-      expect(mockRemoveLabel).toHaveBeenCalledTimes(1);
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining("issue edit org/repo#1"),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('--remove-label "in-progress"'),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('--add-label "done"'),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
     });
 
     it("does nothing when no labels to add or remove", async () => {
@@ -218,40 +134,29 @@ describe("GitHubService", () => {
         issueNumber: 1,
       });
 
-      expect(mockRemoveLabel).not.toHaveBeenCalled();
-      expect(mockAddLabels).not.toHaveBeenCalled();
+      expect(mockExecSync).not.toHaveBeenCalled();
     });
   });
 
   describe("createBranch()", () => {
-    it("creates branch from base ref", async () => {
-      mockGetRef.mockResolvedValue({
-        data: { object: { sha: "abc123" } },
-      });
-      mockCreateRef.mockResolvedValue({});
+    it("creates branch via gh api", async () => {
+      // First call: get ref SHA
+      mockExecSync.mockReturnValueOnce(JSON.stringify({ object: { sha: "abc123" } }));
+      // Second call: create ref
+      mockExecSync.mockReturnValueOnce("");
 
       const result = await service.createBranch("org", "repo", "feature/test", "main");
 
-      expect(result).toEqual({ branchName: "feature/test", sha: "abc123" });
-      expect(mockGetRef).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        ref: "heads/main",
-      });
-      expect(mockCreateRef).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        ref: "refs/heads/feature/test",
-        sha: "abc123",
-      });
+      expect(result.branchName).toBe("feature/test");
+      expect(mockExecSync).toHaveBeenCalledTimes(2);
     });
   });
 
   describe("createPr()", () => {
     it("creates pull request", async () => {
-      mockPullsCreate.mockResolvedValue({
-        data: { number: 10, html_url: "https://github.com/org/repo/pull/10" },
-      });
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify({ number: 10, url: "https://github.com/org/repo/pull/10" }),
+      );
 
       const result = await service.createPr({
         owner: "org",
@@ -263,14 +168,10 @@ describe("GitHubService", () => {
       });
 
       expect(result.number).toBe(10);
-      expect(mockPullsCreate).toHaveBeenCalledWith({
-        owner: "org",
-        repo: "repo",
-        title: "PR title",
-        body: "PR body",
-        head: "feature/test",
-        base: "main",
-      });
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining("pr create --repo org/repo"),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
     });
   });
 
@@ -284,17 +185,17 @@ describe("GitHubService", () => {
     });
 
     it("polls immediately and emits events for found issues", async () => {
-      mockListForRepo.mockResolvedValue({
-        data: [
+      mockExecSync.mockReturnValue(
+        JSON.stringify([
           {
             number: 1,
             title: "Issue",
-            body: null,
+            body: "",
             labels: [{ name: "agentboard" }],
-            html_url: "url",
+            url: "https://github.com/org/repo/issues/1",
           },
-        ],
-      });
+        ]),
+      );
 
       service.startPolling(
         [{ owner: "org", repo: "repo", repoId: 1, triggerLabel: "agentboard" }],

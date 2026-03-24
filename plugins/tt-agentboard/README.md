@@ -16,7 +16,7 @@ Kanban-style orchestration board for autonomous Claude Code agents. Create cards
 
 - **tmux** — required for agent execution (`sudo apt install tmux` or `brew install tmux`)
 - **Claude Code CLI** — agents run via the `claude` command
-- **GITHUB_TOKEN** (optional) — enables GitHub features (issues, PRs, label sync). Export it in your shell: `export GITHUB_TOKEN=ghp_...`
+- **gh CLI** (optional) — enables GitHub features (issues, PRs, label sync). Install from <https://cli.github.com> and run `gh auth login`
 
 ## Quick Start
 

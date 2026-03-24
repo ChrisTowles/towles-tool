@@ -22,7 +22,9 @@ const showNewCardForm = ref(false);
 const showImportModal = ref(false);
 
 const { data: githubStatus } = useFetch<{ configured: boolean }>("/api/github/status");
-const { data: health } = useFetch<{ tmuxInstalled: boolean; githubToken: boolean }>("/api/health");
+const { data: health } = useFetch<{ tmuxInstalled: boolean; ghAuthenticated: boolean }>(
+  "/api/health",
+);
 const { data: repos } = useFetch<{ id: number }[]>("/api/repos");
 const { data: slots } = useFetch<{ id: number }[]>("/api/slots");
 
@@ -162,7 +164,7 @@ onUnmounted(() => {
 
     <!-- Health warnings -->
     <div
-      v-if="health && (!health.tmuxInstalled || !health.githubToken)"
+      v-if="health && (!health.tmuxInstalled || !health.ghAuthenticated)"
       class="space-y-1 px-4 pt-2 sm:px-6"
     >
       <div
@@ -182,14 +184,14 @@ onUnmounted(() => {
         </span>
       </div>
       <div
-        v-if="!health.githubToken"
+        v-if="!health.ghAuthenticated"
         class="flex items-center gap-2 rounded-lg border border-amber-900 bg-amber-950/50 px-3 py-2 text-xs text-amber-400"
       >
-        <span class="font-semibold">GITHUB_TOKEN not set</span>
+        <span class="font-semibold">gh CLI not authenticated</span>
         <span class="text-amber-500/70">
-          — GitHub features (issues, PRs, label sync) are disabled. Set
+          — GitHub features (issues, PRs, label sync) are disabled. Run
           <code class="rounded bg-amber-950 px-1 py-0.5 font-mono text-amber-400"
-            >export GITHUB_TOKEN=ghp_...</code
+            >gh auth login</code
           >
           in your shell, then restart AgentBoard.
         </span>

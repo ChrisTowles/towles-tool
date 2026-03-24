@@ -1,4 +1,4 @@
-import { Octokit } from "octokit";
+import { execSync } from "node:child_process";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 
@@ -27,125 +27,103 @@ interface LabelTransition {
   add?: string[];
 }
 
+interface GhIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: { name: string }[];
+  url: string;
+}
+
+function ghExec(args: string): string {
+  return execSync(`gh ${args}`, { encoding: "utf-8" }).trim();
+}
+
+function ghJson<T>(args: string): T {
+  const output = ghExec(args);
+  return JSON.parse(output) as T;
+}
+
 export class GitHubService {
-  private octokit: Octokit;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(token?: string) {
-    const ghToken = token ?? process.env.GITHUB_TOKEN;
-    if (!ghToken) {
-      throw new Error("GITHUB_TOKEN is required for GitHub integration");
-    }
-    this.octokit = new Octokit({ auth: ghToken });
-  }
-
   async getIssuesWithLabel(owner: string, repo: string, label: string): Promise<GitHubIssue[]> {
-    const { data } = await this.octokit.rest.issues.listForRepo({
-      owner,
-      repo,
-      labels: label,
-      state: "open",
-      per_page: 100,
-    });
-
-    return data.map((issue) => ({
+    const raw = ghJson<GhIssue[]>(
+      `issue list --repo ${owner}/${repo} --label "${label}" --json number,title,body,labels,url --state open --limit 100`,
+    );
+    return raw.map((issue) => ({
       number: issue.number,
       title: issue.title,
-      body: issue.body ?? null,
-      labels: issue.labels
-        .map((l) => (typeof l === "string" ? l : l.name))
-        .filter((n): n is string => n != null),
-      html_url: issue.html_url,
+      body: issue.body || null,
+      labels: issue.labels.map((l) => l.name),
+      html_url: issue.url,
     }));
   }
 
   async getOpenIssues(owner: string, repo: string): Promise<GitHubIssue[]> {
-    const { data } = await this.octokit.rest.issues.listForRepo({
-      owner,
-      repo,
-      state: "open",
-      per_page: 100,
-    });
-
-    // Filter out pull requests (GitHub API returns PRs as issues too)
-    return data
-      .filter((issue) => !issue.pull_request)
-      .map((issue) => ({
-        number: issue.number,
-        title: issue.title,
-        body: issue.body ?? null,
-        labels: issue.labels
-          .map((l) => (typeof l === "string" ? l : l.name))
-          .filter((n): n is string => n != null),
-        html_url: issue.html_url,
-      }));
+    const raw = ghJson<GhIssue[]>(
+      `issue list --repo ${owner}/${repo} --json number,title,body,labels,url --state open --limit 100`,
+    );
+    return raw.map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      body: issue.body || null,
+      labels: issue.labels.map((l) => l.name),
+      html_url: issue.url,
+    }));
   }
 
   async createIssue(owner: string, repo: string, title: string, body: string, labels?: string[]) {
-    const { data } = await this.octokit.rest.issues.create({
-      owner,
-      repo,
-      title,
-      body,
-      labels,
-    });
-    return data;
+    const labelArgs = labels?.length ? labels.map((l) => `--label "${l}"`).join(" ") : "";
+    const result = ghJson<{ number: number; url: string }>(
+      `issue create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" ${labelArgs} --json number,url`,
+    );
+    return { number: result.number, html_url: result.url };
   }
 
   async transitionLabels({ owner, repo, issueNumber, remove, add }: LabelTransition) {
+    const editArgs: string[] = [];
+
     if (remove?.length) {
       for (const label of remove) {
-        try {
-          await this.octokit.rest.issues.removeLabel({
-            owner,
-            repo,
-            issue_number: issueNumber,
-            name: label,
-          });
-        } catch {
-          logger.debug(`Label "${label}" not found on issue #${issueNumber}, skipping removal`);
-        }
+        editArgs.push(`--remove-label "${label}"`);
       }
     }
 
     if (add?.length) {
-      await this.octokit.rest.issues.addLabels({
-        owner,
-        repo,
-        issue_number: issueNumber,
-        labels: add,
-      });
+      for (const label of add) {
+        editArgs.push(`--add-label "${label}"`);
+      }
+    }
+
+    if (editArgs.length === 0) return;
+
+    try {
+      ghExec(`issue edit ${owner}/${repo}#${issueNumber} ${editArgs.join(" ")}`);
+    } catch (error) {
+      logger.debug(`Label transition failed for issue #${issueNumber}: ${error}`);
     }
   }
 
   async createBranch(owner: string, repo: string, branchName: string, baseBranch: string = "main") {
-    const { data: ref } = await this.octokit.rest.git.getRef({
-      owner,
-      repo,
-      ref: `heads/${baseBranch}`,
-    });
-    const sha = ref.object.sha;
+    // Use gh api to get the base ref SHA, then create the branch
+    const sha = ghJson<{ object: { sha: string } }>(
+      `api repos/${owner}/${repo}/git/ref/heads/${baseBranch} --jq .object.sha`,
+    );
 
-    await this.octokit.rest.git.createRef({
-      owner,
-      repo,
-      ref: `refs/heads/${branchName}`,
-      sha,
-    });
+    // For branch creation, use the API directly
+    ghExec(
+      `api repos/${owner}/${repo}/git/refs -f ref="refs/heads/${branchName}" -f sha="${typeof sha === "string" ? sha : sha.object.sha}"`,
+    );
 
-    return { branchName, sha };
+    return { branchName, sha: typeof sha === "string" ? sha : sha.object.sha };
   }
 
   async createPr({ owner, repo, title, body, head, base }: CreatePrOptions) {
-    const { data } = await this.octokit.rest.pulls.create({
-      owner,
-      repo,
-      title,
-      body,
-      head,
-      base,
-    });
-    return data;
+    const result = ghJson<{ number: number; url: string }>(
+      `pr create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --base ${base} --head ${head} --json number,url`,
+    );
+    return { number: result.number, html_url: result.url };
   }
 
   startPolling(
@@ -190,7 +168,7 @@ export class GitHubService {
   }
 }
 
-// Lazy singleton — created on first access so missing token doesn't crash startup
+// Lazy singleton
 let _instance: GitHubService | null = null;
 
 export function getGitHubService(): GitHubService {
@@ -200,6 +178,15 @@ export function getGitHubService(): GitHubService {
   return _instance;
 }
 
+let _ghAuthCache: boolean | null = null;
+
 export function isGitHubConfigured(): boolean {
-  return !!process.env.GITHUB_TOKEN;
+  if (_ghAuthCache !== null) return _ghAuthCache;
+  try {
+    execSync("gh auth status", { encoding: "utf-8", stdio: "pipe" });
+    _ghAuthCache = true;
+  } catch {
+    _ghAuthCache = false;
+  }
+  return _ghAuthCache;
 }

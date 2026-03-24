@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { isGitHubConfigured } from "~~/server/services/github-service";
 
 export default defineEventHandler(() => {
   let tmuxInstalled = false;
@@ -9,7 +10,7 @@ export default defineEventHandler(() => {
     // tmux not found
   }
 
-  const githubToken = Boolean(process.env.GITHUB_TOKEN);
+  const ghAuthenticated = isGitHubConfigured();
 
-  return { tmuxInstalled, githubToken };
+  return { tmuxInstalled, ghAuthenticated };
 });
