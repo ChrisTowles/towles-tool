@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   cardMoved: [cardId: number, column: Column, position: number];
+  cardSelected: [cardId: number];
 }>();
 
 const label = computed(() => COLUMN_LABELS[props.column]);
@@ -66,13 +67,13 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
         >
           <template #item="{ element }">
             <div :data-card-id="element.id">
-              <BoardKanbanCard :card="element" />
+              <BoardKanbanCard :card="element" @selected="(id: number) => emit('cardSelected', id)" />
             </div>
           </template>
         </draggable>
         <template #fallback>
           <div v-for="card in cards" :key="card.id">
-            <BoardKanbanCard :card="card" />
+            <BoardKanbanCard :card="card" @selected="(id: number) => emit('cardSelected', id)" />
           </div>
         </template>
       </ClientOnly>

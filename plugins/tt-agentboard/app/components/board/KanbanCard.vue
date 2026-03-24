@@ -8,6 +8,10 @@ const props = defineProps<{
   workflowSteps?: string[];
 }>();
 
+const emit = defineEmits<{
+  selected: [cardId: number];
+}>();
+
 const borderClass = computed(
   () => STATUS_BORDER_CLASSES[props.card.status as CardStatus] ?? "border-zinc-700",
 );
@@ -28,10 +32,10 @@ const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "â
 </script>
 
 <template>
-  <NuxtLink
-    :to="`/cards/${card.id}`"
-    class="group block cursor-grab rounded-lg border-l-[3px] bg-zinc-900/80 p-3 shadow-lg transition-all duration-200 hover:bg-zinc-800/90 hover:shadow-xl active:cursor-grabbing"
+  <div
+    class="group block cursor-pointer rounded-lg border-l-[3px] bg-zinc-900/80 p-3 shadow-lg transition-all duration-200 hover:bg-zinc-800/90 hover:shadow-xl"
     :class="borderClass"
+    @click.stop="emit('selected', card.id)"
   >
     <!-- Header: title + mode icon -->
     <div class="mb-2 flex items-start justify-between gap-2">
@@ -67,5 +71,5 @@ const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "â
         </span>
       </div>
     </div>
-  </NuxtLink>
+  </div>
 </template>

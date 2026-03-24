@@ -1,15 +1,17 @@
 import { db } from "~~/server/db";
-import { cards, workflowRuns, workspaceSlots } from "~~/server/db/schema";
+import { cards, workflowRuns } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
-import { existsSync, unlinkSync } from "node:fs";
-import { resolve } from "node:path";
 
 /**
  * Callback endpoint for Claude Code Stop hook.
  * Called when Claude finishes responding in an agent session.
+ *
+ * Moves card to review but keeps tmux session alive so user can
+ * inspect the terminal output. Session + slot are released when
+ * the card is archived (moved to done).
  *
  * POST /api/agents/:cardId/complete
  */
@@ -35,7 +37,7 @@ export default defineEventHandler(async (event) => {
     return { ok: true, ignored: true };
   }
 
-  // Update card to review
+  // Update card to review — keep tmux session alive for inspection
   await db
     .update(cards)
     .set({
@@ -51,36 +53,9 @@ export default defineEventHandler(async (event) => {
     .set({ status: "completed", endedAt: new Date() })
     .where(eq(workflowRuns.cardId, cardId));
 
-  // Kill tmux session
+  // Stop live capture polling but keep session alive
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
-  tmuxManager.killSession(sessionName);
-
-  // Release the slot
-  const claimedSlots = await db
-    .select()
-    .from(workspaceSlots)
-    .where(eq(workspaceSlots.claimedByCardId, cardId));
-
-  for (const slot of claimedSlots) {
-    await db
-      .update(workspaceSlots)
-      .set({ status: "available", claimedByCardId: null })
-      .where(eq(workspaceSlots.id, slot.id));
-
-    // Clean up the .claude/settings.local.json we wrote
-    const settingsPath = resolve(slot.path, ".claude", "settings.local.json");
-    try {
-      if (existsSync(settingsPath)) {
-        unlinkSync(settingsPath);
-        logger.info(`Cleaned up ${settingsPath}`);
-      }
-    } catch {
-      // Non-fatal
-    }
-
-    eventBus.emit("slot:released", { slotId: slot.id });
-  }
 
   // Emit events
   eventBus.emit("card:moved", {
@@ -91,7 +66,7 @@ export default defineEventHandler(async (event) => {
   eventBus.emit("card:status-changed", { cardId, status: "review_ready" });
   eventBus.emit("workflow:completed", { cardId, status: "completed" });
 
-  logger.info(`Card ${cardId} completed via Stop hook, moved to review`);
+  logger.info(`Card ${cardId} completed via Stop hook, moved to review (tmux session preserved)`);
 
   return { ok: true };
 });
