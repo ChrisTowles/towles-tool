@@ -4,12 +4,83 @@ import type { Card } from "~/composables/useCards";
 const selectedCardId = ref<number | null>(null);
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
+const showNewCardForm = ref(false);
+const newCardPrefill = ref("");
 
+// Voice / Dictation
+const {
+  isListening,
+  transcript,
+  interimTranscript,
+  isSupported,
+  currentContext,
+  setContext,
+  toggleListening,
+  stopListening,
+  cancelDictation,
+} = useVoice();
+
+// Compute context label for the DictationBar
+const dictationContextLabel = computed(() => {
+  if (currentContext.value === "card-response" && selectedCard.value) {
+    return `Responding to Card #${selectedCardId.value}`;
+  }
+  if (currentContext.value === "new-card") {
+    return "New Card";
+  }
+  return "Ready";
+});
+
+// Auto-detect context when dictation starts
+function handleToggleDictation() {
+  if (isListening.value) {
+    stopListening();
+    return;
+  }
+
+  // Determine context
+  if (selectedCard.value?.status === "waiting_input") {
+    setContext("card-response");
+  } else if (showNewCardForm.value) {
+    setContext("new-card");
+  } else {
+    setContext("idle");
+  }
+
+  toggleListening();
+}
+
+// When transcript is finalized and user stops dictation, route it
+watch(isListening, async (listening) => {
+  if (listening) return;
+  const text = transcript.value.trim();
+  if (!text) return;
+
+  if (currentContext.value === "card-response" && selectedCardId.value) {
+    await $fetch(`/api/agents/${selectedCardId.value}/respond`, {
+      method: "POST",
+      body: { response: text },
+    });
+  } else if (currentContext.value === "new-card") {
+    // Form is already open, prefill handled by watcher below
+  } else {
+    // idle: open new card form with transcript as title
+    newCardPrefill.value = text;
+    showNewCardForm.value = true;
+  }
+
+  setContext("idle");
+});
+
+const activeTab = ref<"terminal" | "diff">("terminal");
+
+// Card selection
 async function selectCard(cardId: number) {
   selectedCardId.value = cardId;
   selectedCardLoading.value = true;
   await fetchSelectedCard();
   selectedCardLoading.value = false;
+  activeTab.value = selectedCard.value?.status === "review_ready" ? "diff" : "terminal";
 }
 
 function closePanel() {
@@ -35,6 +106,11 @@ async function fetchSelectedCard() {
   }
 }
 
+function onCardCreated() {
+  showNewCardForm.value = false;
+  newCardPrefill.value = "";
+}
+
 // Refresh selected card periodically
 const detailInterval = ref<ReturnType<typeof setInterval> | null>(null);
 watch(selectedCardId, (id) => {
@@ -57,7 +133,11 @@ onUnmounted(() => {
         class="flex-1 overflow-hidden transition-all duration-300"
         :class="selectedCardId ? 'w-1/2' : 'w-full'"
       >
-        <BoardKanbanBoard @card-selected="selectCard" />
+        <BoardKanbanBoard
+          :is-dictating="isListening"
+          @card-selected="selectCard"
+          @toggle-dictation="handleToggleDictation"
+        />
       </div>
 
       <!-- Detail Panel (right half, slides in) -->
@@ -97,15 +177,47 @@ onUnmounted(() => {
             <CardCardDetail :card="selectedCard" compact @archive="archiveCard" />
           </div>
 
-          <!-- Terminal panel (xterm.js) -->
+          <!-- Tab bar -->
+          <div v-if="selectedCard" class="flex border-b border-zinc-800">
+            <button
+              class="px-4 py-2 text-xs font-medium transition-colors"
+              :class="activeTab === 'terminal' ? 'border-b-2 border-blue-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+              @click="activeTab = 'terminal'"
+            >
+              Terminal
+            </button>
+            <button
+              class="px-4 py-2 text-xs font-medium transition-colors"
+              :class="activeTab === 'diff' ? 'border-b-2 border-violet-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+              @click="activeTab = 'diff'"
+            >
+              Diff
+            </button>
+          </div>
+
+          <!-- Tab content -->
           <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
             <ClientOnly>
-              <CardTerminalPanel :card-id="selectedCardId!" />
+              <CardTerminalPanel v-if="activeTab === 'terminal'" :card-id="selectedCardId!" />
+              <CardDiffViewer v-else :card-id="selectedCardId!" />
             </ClientOnly>
           </div>
         </div>
       </Transition>
     </div>
+
+    <!-- Dictation Bar -->
+    <ClientOnly>
+      <SharedDictationBar
+        :is-listening="isListening"
+        :interim-transcript="interimTranscript"
+        :transcript="transcript"
+        :current-context="currentContext"
+        :context-label="dictationContextLabel"
+        @cancel="cancelDictation"
+        @stop="stopListening"
+      />
+    </ClientOnly>
   </div>
 </template>
 

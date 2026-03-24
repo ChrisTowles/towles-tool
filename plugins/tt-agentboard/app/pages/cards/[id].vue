@@ -7,6 +7,16 @@ const cardId = computed(() => Number(route.params.id));
 const { data: card, refresh } = await useFetch<Card>(`/api/cards/${cardId.value}`);
 
 const router = useRouter();
+const activeTab = ref<"terminal" | "diff">("terminal");
+
+// Default to diff tab for review_ready cards
+watch(
+  () => card.value?.status,
+  (status) => {
+    if (status === "review_ready") activeTab.value = "diff";
+  },
+  { immediate: true },
+);
 
 async function archiveCard() {
   await $fetch(`/api/cards/${cardId.value}/move`, {
@@ -51,18 +61,33 @@ onUnmounted(() => {
     <div v-if="card" class="flex flex-col lg:flex-row">
       <!-- Card info (top on mobile, left on desktop) -->
       <div class="w-full border-b border-zinc-800 p-4 sm:p-6 lg:w-1/3 lg:border-b-0 lg:border-r">
-        <CardCardDetail
-          :card="card"
-          @archive="archiveCard"
-          @respond="sendAgentResponse"
-        />
+        <CardCardDetail :card="card" @archive="archiveCard" @respond="sendAgentResponse" />
       </div>
 
-      <!-- Terminal panel (below on mobile, right on desktop) -->
-      <div class="flex-1 p-4 sm:p-6" style="min-height: calc(100vh - 200px)">
-        <ClientOnly>
-          <CardTerminalPanel :card-id="cardId" />
-        </ClientOnly>
+      <!-- Tab bar + content (below on mobile, right on desktop) -->
+      <div class="flex flex-1 flex-col" style="min-height: calc(100vh - 200px)">
+        <div class="flex border-b border-zinc-800">
+          <button
+            class="px-4 py-2 text-xs font-medium transition-colors"
+            :class="activeTab === 'terminal' ? 'border-b-2 border-blue-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+            @click="activeTab = 'terminal'"
+          >
+            Terminal
+          </button>
+          <button
+            class="px-4 py-2 text-xs font-medium transition-colors"
+            :class="activeTab === 'diff' ? 'border-b-2 border-violet-500 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+            @click="activeTab = 'diff'"
+          >
+            Diff
+          </button>
+        </div>
+        <div class="flex-1 p-4 sm:p-6">
+          <ClientOnly>
+            <CardTerminalPanel v-if="activeTab === 'terminal'" :card-id="cardId" />
+            <CardDiffViewer v-else :card-id="cardId" />
+          </ClientOnly>
+        </div>
       </div>
     </div>
 
