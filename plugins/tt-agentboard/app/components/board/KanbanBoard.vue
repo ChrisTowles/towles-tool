@@ -22,6 +22,7 @@ const showNewCardForm = ref(false);
 const showImportModal = ref(false);
 
 const { data: githubStatus } = useFetch<{ configured: boolean }>("/api/github/status");
+const { data: health } = useFetch<{ tmuxInstalled: boolean; githubToken: boolean }>("/api/health");
 
 // Sync external showNewCard prop
 watch(
@@ -151,6 +152,31 @@ onUnmounted(() => {
       </div>
     </header>
 
+    <!-- Health warnings -->
+    <div
+      v-if="health && (!health.tmuxInstalled || !health.githubToken)"
+      class="space-y-1 px-4 pt-2 sm:px-6"
+    >
+      <div
+        v-if="!health.tmuxInstalled"
+        class="flex items-center gap-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-xs text-red-400"
+      >
+        <span class="font-semibold">tmux not found</span>
+        <span class="text-red-500/70"
+          >— agent execution requires tmux. Install it to run cards.</span
+        >
+      </div>
+      <div
+        v-if="!health.githubToken"
+        class="flex items-center gap-2 rounded-lg border border-amber-900 bg-amber-950/50 px-3 py-2 text-xs text-amber-400"
+      >
+        <span class="font-semibold">GITHUB_TOKEN not set</span>
+        <span class="text-amber-500/70"
+          >— GitHub features (issues, PRs, label sync) are disabled.</span
+        >
+      </div>
+    </div>
+
     <!-- Loading / error states -->
     <div v-if="loading && cards.length === 0" class="flex flex-1 items-center justify-center">
       <div class="flex items-center gap-3 text-sm text-zinc-500">
@@ -163,7 +189,7 @@ onUnmounted(() => {
 
     <div v-else-if="error" class="flex flex-1 items-center justify-center">
       <div class="rounded-lg border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-400">
-        {{ error }}
+        Could not load cards. Check the server logs for details.
       </div>
     </div>
 

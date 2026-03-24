@@ -54,10 +54,7 @@ onUnmounted(() => {
     <!-- Controls -->
     <div class="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
       <div class="flex items-center gap-2">
-        <span
-          class="h-2 w-2 rounded-full"
-          :class="attached ? 'bg-emerald-500' : 'bg-zinc-600'"
-        />
+        <span class="h-2 w-2 rounded-full" :class="attached ? 'bg-emerald-500' : 'bg-zinc-600'" />
         <span class="text-[10px] font-mono text-zinc-500">ttyd</span>
       </div>
       <div>
@@ -80,7 +77,12 @@ onUnmounted(() => {
     </div>
 
     <!-- Error -->
-    <div v-if="error" class="px-3 py-2 text-[10px] text-red-400">{{ error }}</div>
+    <div
+      v-if="error"
+      class="mx-3 mt-2 rounded border border-red-900 bg-red-950/50 px-3 py-2 text-[10px] text-red-400"
+    >
+      Could not attach to terminal. The tmux session may not exist yet.
+    </div>
 
     <!-- iframe -->
     <div v-if="attached && ttydUrl" class="flex-1">
