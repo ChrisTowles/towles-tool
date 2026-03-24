@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import type { Card } from "~/composables/useCards";
-import type { CardStatus } from "~/utils/constants";
-import { COLUMN_LABELS } from "~/utils/constants";
 
 const selectedCardId = ref<number | null>(null);
 const selectedCard = ref<Card | null>(null);
@@ -67,16 +65,7 @@ onUnmounted(() => {
         <div v-if="selectedCardId" class="flex w-1/2 flex-col border-l border-zinc-800 bg-zinc-950">
           <!-- Panel header -->
           <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
-              <SharedStatusBadge v-if="selectedCard" :status="selectedCard.status as CardStatus" />
-              <span
-                v-if="selectedCard"
-                class="rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-mono uppercase text-zinc-400"
-              >
-                {{ COLUMN_LABELS[selectedCard.column] }}
-              </span>
-            </div>
+            <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
             <div class="flex items-center gap-2">
               <NuxtLink
                 :to="`/cards/${selectedCardId}`"
@@ -104,24 +93,9 @@ onUnmounted(() => {
           </div>
 
           <!-- Card info -->
-          <template v-if="selectedCard">
-            <div class="border-b border-zinc-800 px-4 py-3">
-              <h2 class="mb-1 text-sm font-bold text-zinc-100">{{ selectedCard.title }}</h2>
-              <p
-                v-if="selectedCard.description"
-                class="text-xs leading-relaxed text-zinc-400 line-clamp-3"
-              >
-                {{ selectedCard.description }}
-              </p>
-              <button
-                v-if="selectedCard.status === 'review_ready'"
-                class="mt-2 rounded-lg border border-emerald-600 bg-emerald-600/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-600/20"
-                @click="archiveCard"
-              >
-                ✓ Archive
-              </button>
-            </div>
-          </template>
+          <div v-if="selectedCard" class="border-b border-zinc-800 px-4 py-3">
+            <CardCardDetail :card="selectedCard" compact @archive="archiveCard" />
+          </div>
 
           <!-- Terminal panel (xterm.js) -->
           <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
