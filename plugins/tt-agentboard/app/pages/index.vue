@@ -6,21 +6,17 @@ import { COLUMN_LABELS } from "~/utils/constants";
 const selectedCardId = ref<number | null>(null);
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
-const terminalOutput = ref("");
-const terminalExists = ref(false);
 
 async function selectCard(cardId: number) {
   selectedCardId.value = cardId;
   selectedCardLoading.value = true;
-  await Promise.all([fetchSelectedCard(), fetchTerminal()]);
+  await fetchSelectedCard();
   selectedCardLoading.value = false;
 }
 
 function closePanel() {
   selectedCardId.value = null;
   selectedCard.value = null;
-  terminalOutput.value = "";
-  terminalExists.value = false;
 }
 
 async function fetchSelectedCard() {
@@ -32,28 +28,12 @@ async function fetchSelectedCard() {
   }
 }
 
-async function fetchTerminal() {
-  if (!selectedCardId.value) return;
-  try {
-    const data = await $fetch<{ exists: boolean; output: string }>(
-      `/api/agents/${selectedCardId.value}/terminal`,
-    );
-    terminalExists.value = data.exists;
-    terminalOutput.value = data.output;
-  } catch {
-    terminalExists.value = false;
-  }
-}
-
-// Refresh selected card + terminal periodically
+// Refresh selected card periodically
 const detailInterval = ref<ReturnType<typeof setInterval> | null>(null);
 watch(selectedCardId, (id) => {
   if (detailInterval.value) clearInterval(detailInterval.value);
   if (id) {
-    detailInterval.value = setInterval(() => {
-      fetchSelectedCard();
-      fetchTerminal();
-    }, 2000);
+    detailInterval.value = setInterval(fetchSelectedCard, 2000);
   }
 });
 onUnmounted(() => {
@@ -127,35 +107,11 @@ onUnmounted(() => {
             </div>
           </template>
 
-          <!-- Terminal output -->
+          <!-- Terminal panel (xterm.js) -->
           <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
-            <div class="flex h-full flex-col rounded-lg border border-zinc-800 bg-black">
-              <div class="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="h-2 w-2 rounded-full"
-                    :class="terminalExists ? 'bg-emerald-500' : 'bg-zinc-600'"
-                  />
-                  <span class="text-[10px] font-mono text-zinc-500">
-                    card-{{ selectedCardId }}
-                  </span>
-                </div>
-                <span v-if="terminalExists" class="text-[10px] font-mono text-emerald-500">
-                  SESSION ACTIVE
-                </span>
-                <span v-else class="text-[10px] font-mono text-zinc-600">NO SESSION</span>
-              </div>
-              <div class="flex-1 overflow-auto p-3">
-                <pre
-                  v-if="terminalOutput"
-                  class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-zinc-300"
-                  >{{ terminalOutput }}</pre
-                >
-                <p v-else class="py-8 text-center text-xs text-zinc-600">
-                  {{ terminalExists ? "Waiting for output..." : "No tmux session for this card." }}
-                </p>
-              </div>
-            </div>
+            <ClientOnly>
+              <CardTerminalPanel :card-id="selectedCardId!" />
+            </ClientOnly>
           </div>
         </div>
       </Transition>
