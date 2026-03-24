@@ -65,19 +65,14 @@ onUnmounted(() => {
           <span class="text-zinc-700">│</span>
           <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
         </div>
-        <CardCardActions
-          v-if="card"
-          :card="card"
-          @archive="archiveCard"
-          @retry="retryCard"
-        />
+        <CardActions v-if="card" :card="card" @archive="archiveCard" @retry="retryCard" />
       </div>
     </nav>
 
     <div v-if="card" class="flex flex-col lg:flex-row">
       <!-- Card info (top on mobile, left on desktop) -->
       <div class="w-full border-b border-zinc-800 p-4 sm:p-6 lg:w-1/3 lg:border-b-0 lg:border-r">
-        <CardCardDetail :card="card" @archive="archiveCard" @respond="sendAgentResponse" />
+        <CardDetail :card="card" @archive="archiveCard" @respond="sendAgentResponse" />
       </div>
 
       <!-- Tab bar + content (below on mobile, right on desktop) -->

@@ -162,7 +162,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
             <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
             <div class="flex items-center gap-2">
-              <CardCardActions
+              <CardActions
                 v-if="selectedCard"
                 :card="selectedCard"
                 @archive="archiveCard"
@@ -195,7 +195,7 @@ onUnmounted(() => {
 
           <!-- Card info -->
           <div v-if="selectedCard" class="border-b border-zinc-800 px-4 py-3">
-            <CardCardDetail :card="selectedCard" compact @archive="archiveCard" />
+            <CardDetail :card="selectedCard" compact @archive="archiveCard" />
           </div>
 
           <!-- Tab bar -->
