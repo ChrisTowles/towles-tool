@@ -111,6 +111,8 @@ watch(
   },
 );
 
+const mode = ref<"readonly" | "interactive">("readonly");
+
 defineExpose({ terminalExists, refresh: fetchTerminal });
 </script>
 
@@ -125,14 +127,28 @@ defineExpose({ terminalExists, refresh: fetchTerminal });
         />
         <span class="text-[10px] font-mono text-zinc-500">card-{{ cardId }}</span>
       </div>
-      <span v-if="terminalExists" class="text-[10px] font-mono text-emerald-500">
-        SESSION ACTIVE
-      </span>
-      <span v-else class="text-[10px] font-mono text-zinc-600">NO SESSION</span>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="terminalExists"
+          class="rounded px-2 py-0.5 text-[10px] font-medium transition-colors"
+          :class="
+            mode === 'interactive'
+              ? 'bg-blue-500/10 text-blue-400'
+              : 'text-zinc-500 hover:text-zinc-300'
+          "
+          @click="mode = mode === 'readonly' ? 'interactive' : 'readonly'"
+        >
+          {{ mode === "interactive" ? "⌨ Interactive" : "Attach" }}
+        </button>
+        <span v-if="terminalExists" class="text-[10px] font-mono text-emerald-500">
+          SESSION ACTIVE
+        </span>
+        <span v-else class="text-[10px] font-mono text-zinc-600">NO SESSION</span>
+      </div>
     </div>
 
-    <!-- xterm container -->
-    <div class="flex-1 overflow-hidden p-1">
+    <!-- Read-only xterm view -->
+    <div v-if="mode === 'readonly'" class="flex-1 overflow-hidden p-1">
       <div ref="terminalRef" class="h-full w-full" />
       <p
         v-if="!terminalExists && !lastOutput"
@@ -140,6 +156,11 @@ defineExpose({ terminalExists, refresh: fetchTerminal });
       >
         No tmux session for this card.
       </p>
+    </div>
+
+    <!-- Interactive ttyd view -->
+    <div v-else class="flex-1 overflow-hidden">
+      <CardTtydEmbed :card-id="cardId" />
     </div>
   </div>
 </template>
