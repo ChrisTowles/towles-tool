@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Card } from "~/composables/useCards";
 import type { CardStatus } from "~/utils/constants";
-import { COLUMN_LABELS } from "~/utils/constants";
+import { COLUMN_LABELS, EXECUTION_MODE_LABELS } from "~/utils/constants";
 
 const props = defineProps<{
   card: Card;
@@ -24,10 +24,7 @@ function sendResponse() {
 
 <template>
   <div>
-    <h2
-      class="font-bold text-zinc-100"
-      :class="compact ? 'mb-1 text-sm' : 'mb-2 text-lg'"
-    >
+    <h2 class="font-bold text-zinc-100" :class="compact ? 'mb-1 text-sm' : 'mb-2 text-lg'">
       {{ card.title }}
     </h2>
 
@@ -37,7 +34,7 @@ function sendResponse() {
         {{ COLUMN_LABELS[card.column] }}
       </span>
       <span v-if="!compact" class="text-[10px] font-mono text-zinc-500">
-        {{ card.executionMode }}
+        {{ EXECUTION_MODE_LABELS[card.executionMode] ?? card.executionMode }}
       </span>
     </div>
 

@@ -19,6 +19,9 @@ const emit = defineEmits<{
 }>();
 
 const showNewCardForm = ref(false);
+const showImportModal = ref(false);
+
+const { data: githubStatus } = useFetch<{ configured: boolean }>("/api/github/status");
 
 // Sync external showNewCard prop
 watch(
@@ -31,6 +34,11 @@ watch(
 function onCardCreated() {
   showNewCardForm.value = false;
   emit("newCardClosed");
+  fetchCards();
+}
+
+function onIssuesImported() {
+  showImportModal.value = false;
   fetchCards();
 }
 
@@ -92,12 +100,14 @@ onUnmounted(() => {
         <NuxtLink
           to="/workspaces"
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          title="Manage workspace slots for agent execution"
         >
           Workspaces
         </NuxtLink>
         <NuxtLink
           to="/workflows"
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          title="View loaded workflow definitions"
         >
           Workflows
         </NuxtLink>
@@ -111,6 +121,13 @@ onUnmounted(() => {
           @click="emit('toggleDictation')"
         >
           🎙 Dictate
+        </button>
+        <button
+          v-if="githubStatus?.configured"
+          class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          @click="showImportModal = true"
+        >
+          Import Issues
         </button>
         <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
@@ -165,6 +182,13 @@ onUnmounted(() => {
         showNewCardForm = false;
         emit('newCardClosed');
       "
+    />
+
+    <!-- Import issues modal -->
+    <BoardImportIssuesModal
+      v-if="showImportModal"
+      @imported="onIssuesImported"
+      @cancel="showImportModal = false"
     />
   </div>
 </template>

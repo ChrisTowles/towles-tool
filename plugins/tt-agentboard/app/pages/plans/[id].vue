@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Card } from "~/composables/useCards";
 import type { CardStatus } from "~/utils/constants";
-import { STATUS_DOT_CLASSES } from "~/utils/constants";
+import { STATUS_DOT_CLASSES, PR_GRANULARITY_LABELS } from "~/utils/constants";
 
 interface Plan {
   id: number;
@@ -28,7 +28,8 @@ function getDeps(card: Card): number[] {
 
 // Layout cards in DAG layers using topological sort
 const dagLayout = computed(() => {
-  if (!plan.value?.cards.length) return { layers: [] as Card[][], positions: new Map<number, { col: number; row: number }>() };
+  if (!plan.value?.cards.length)
+    return { layers: [] as Card[][], positions: new Map<number, { col: number; row: number }>() };
 
   const cardsMap = new Map(plan.value.cards.map((c) => [c.id, c]));
   const deps = new Map(plan.value.cards.map((c) => [c.id, getDeps(c)]));
@@ -43,9 +44,8 @@ const dagLayout = computed(() => {
     visited.add(id);
 
     const cardDeps = deps.get(id) ?? [];
-    const layer = cardDeps.length === 0
-      ? 0
-      : Math.max(...cardDeps.map((d) => computeLayer(d, visited) + 1));
+    const layer =
+      cardDeps.length === 0 ? 0 : Math.max(...cardDeps.map((d) => computeLayer(d, visited) + 1));
 
     cardLayer.set(id, layer);
     return layer;
@@ -153,7 +153,7 @@ onUnmounted(() => {
           {{ plan.cards.length }} cards
         </span>
         <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs font-mono text-zinc-500">
-          {{ plan.prGranularity }}
+          {{ PR_GRANULARITY_LABELS[plan.prGranularity] ?? plan.prGranularity }}
         </span>
       </template>
     </div>
@@ -163,14 +163,13 @@ onUnmounted(() => {
     </p>
 
     <!-- DAG View -->
-    <div v-if="plan?.cards.length" class="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <div
+      v-if="plan?.cards.length"
+      class="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-5"
+    >
       <div class="relative" :style="{ width: svgWidth + 'px', height: svgHeight + 'px' }">
         <!-- SVG edges -->
-        <svg
-          class="pointer-events-none absolute inset-0"
-          :width="svgWidth"
-          :height="svgHeight"
-        >
+        <svg class="pointer-events-none absolute inset-0" :width="svgWidth" :height="svgHeight">
           <line
             v-for="(edge, i) in edges"
             :key="i"
@@ -216,8 +215,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-else class="py-20 text-center text-sm text-zinc-600">
-      No cards in this plan yet.
-    </div>
+    <div v-else class="py-20 text-center text-sm text-zinc-600">No cards in this plan yet.</div>
   </div>
 </template>

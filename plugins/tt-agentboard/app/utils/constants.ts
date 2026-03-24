@@ -49,6 +49,27 @@ export const STATUS_LABELS: Record<CardStatus, string> = {
   blocked: "Blocked",
 };
 
+export const STATUS_DESCRIPTIONS: Record<CardStatus, string> = {
+  idle: "Card is waiting in the backlog",
+  queued: "Card is queued and will start soon",
+  running: "Agent is actively working on this card",
+  waiting_input: "Agent is paused and needs your input",
+  review_ready: "Agent finished — ready for your review",
+  done: "Card is complete and archived",
+  failed: "Agent encountered an error",
+  blocked: "Blocked by a dependency",
+};
+
+export const EXECUTION_MODE_LABELS: Record<string, string> = {
+  headless: "Headless",
+  interactive: "Interactive",
+};
+
+export const PR_GRANULARITY_LABELS: Record<string, string> = {
+  per_card: "Per Card",
+  per_plan: "Per Plan",
+};
+
 export const STATUS_DOT_CLASSES: Record<CardStatus, string> = {
   failed: "bg-red-500",
   waiting_input: "bg-amber-400",
