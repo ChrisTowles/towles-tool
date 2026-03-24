@@ -64,7 +64,7 @@ export class AgentExecutor {
     // Build the Claude Code command
     const prompt = card.description ?? card.title;
     const modelFlag = card.executionMode === "interactive" ? "" : "--dangerously-skip-permissions";
-    const command = `claude --message ${this.shellEscape(prompt)} ${modelFlag}`.trim();
+    const command = `claude -p ${this.shellEscape(prompt)} ${modelFlag}`.trim();
 
     // Send command to tmux session
     tmuxManager.sendCommand(sessionName, command);
