@@ -5,13 +5,15 @@ import { COLUMN_LABELS } from "~/utils/constants";
 
 const selectedCardId = ref<number | null>(null);
 const selectedCard = ref<Card | null>(null);
+const selectedCardLoading = ref(false);
 const terminalOutput = ref("");
 const terminalExists = ref(false);
 
 async function selectCard(cardId: number) {
   selectedCardId.value = cardId;
-  await fetchSelectedCard();
-  await fetchTerminal();
+  selectedCardLoading.value = true;
+  await Promise.all([fetchSelectedCard(), fetchTerminal()]);
+  selectedCardLoading.value = false;
 }
 
 function closePanel() {
@@ -73,18 +75,12 @@ onUnmounted(() => {
 
       <!-- Detail Panel (right half, slides in) -->
       <Transition name="slide">
-        <div
-          v-if="selectedCardId && selectedCard"
-          class="flex w-1/2 flex-col border-l border-zinc-800 bg-zinc-950"
-        >
+        <div v-if="selectedCardId" class="flex w-1/2 flex-col border-l border-zinc-800 bg-zinc-950">
           <!-- Panel header -->
           <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
             <div class="flex items-center gap-3">
               <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
-              <SharedStatusBadge
-                v-if="selectedCard"
-                :status="selectedCard.status as CardStatus"
-              />
+              <SharedStatusBadge v-if="selectedCard" :status="selectedCard.status as CardStatus" />
               <span
                 v-if="selectedCard"
                 class="rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-mono uppercase text-zinc-400"
@@ -108,19 +104,31 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Card info -->
-          <div class="border-b border-zinc-800 px-4 py-3">
-            <h2 class="mb-1 text-sm font-bold text-zinc-100">{{ selectedCard.title }}</h2>
-            <p
-              v-if="selectedCard.description"
-              class="text-xs leading-relaxed text-zinc-400 line-clamp-3"
-            >
-              {{ selectedCard.description }}
-            </p>
+          <!-- Loading state -->
+          <div
+            v-if="selectedCardLoading && !selectedCard"
+            class="flex flex-1 items-center justify-center"
+          >
+            <span
+              class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-400"
+            />
           </div>
 
+          <!-- Card info -->
+          <template v-if="selectedCard">
+            <div class="border-b border-zinc-800 px-4 py-3">
+              <h2 class="mb-1 text-sm font-bold text-zinc-100">{{ selectedCard.title }}</h2>
+              <p
+                v-if="selectedCard.description"
+                class="text-xs leading-relaxed text-zinc-400 line-clamp-3"
+              >
+                {{ selectedCard.description }}
+              </p>
+            </div>
+          </template>
+
           <!-- Terminal output -->
-          <div class="flex-1 overflow-hidden p-3">
+          <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
             <div class="flex h-full flex-col rounded-lg border border-zinc-800 bg-black">
               <div class="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
                 <div class="flex items-center gap-2">
@@ -132,10 +140,7 @@ onUnmounted(() => {
                     card-{{ selectedCardId }}
                   </span>
                 </div>
-                <span
-                  v-if="terminalExists"
-                  class="text-[10px] font-mono text-emerald-500"
-                >
+                <span v-if="terminalExists" class="text-[10px] font-mono text-emerald-500">
                   SESSION ACTIVE
                 </span>
                 <span v-else class="text-[10px] font-mono text-zinc-600">NO SESSION</span>
@@ -144,13 +149,10 @@ onUnmounted(() => {
                 <pre
                   v-if="terminalOutput"
                   class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-zinc-300"
-                >{{ terminalOutput }}</pre>
+                  >{{ terminalOutput }}</pre
+                >
                 <p v-else class="py-8 text-center text-xs text-zinc-600">
-                  {{
-                    terminalExists
-                      ? "Waiting for output..."
-                      : "No tmux session for this card."
-                  }}
+                  {{ terminalExists ? "Waiting for output..." : "No tmux session for this card." }}
                 </p>
               </div>
             </div>
