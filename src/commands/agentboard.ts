@@ -102,6 +102,13 @@ export default class Agentboard extends BaseCommand {
 
     if (isFirstRun) {
       consola.info("First run detected — a new database will be created at startup.");
+      consola.info(
+        "Setup checklist:\n" +
+          "  1. Ensure tmux is installed (sudo apt install tmux / brew install tmux)\n" +
+          "  2. Set GITHUB_TOKEN for GitHub features (optional)\n" +
+          "  3. Open the board → Workspaces → Add a workspace slot\n" +
+          "  4. Create your first card and drag it to In Progress",
+      );
     }
 
     const proc = spawn("pnpm", ["dev", "--port", port], {

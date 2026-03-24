@@ -105,6 +105,13 @@ onMounted(fetchData);
 
     <!-- Add form -->
     <div v-if="showAddForm" class="mb-6 rounded-lg border border-zinc-700 bg-zinc-900/80 p-4">
+      <div
+        v-if="repos.length === 0"
+        class="mb-4 rounded-lg border border-amber-900 bg-amber-950/50 px-3 py-2 text-xs text-amber-400"
+      >
+        No repos registered yet. Add your first slot below — the repo will be registered
+        automatically from the directory's git remote.
+      </div>
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
           <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
@@ -130,28 +137,39 @@ onMounted(fetchData);
             placeholder="/home/user/code/my-app"
             class="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 placeholder-zinc-600 focus:border-blue-500 focus:outline-none"
           />
+          <p class="mt-1 text-[11px] text-zinc-600">
+            Full path to a git checkout where the agent will execute.
+          </p>
         </div>
         <div>
           <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
-            >Port Config (JSON)</label
-          >
+            >Port Config (JSON)
+            <span class="normal-case tracking-normal font-normal text-zinc-600">— optional</span>
+          </label>
           <input
             v-model="form.portConfig"
             type="text"
             placeholder='{"web": 3003, "db": 5435}'
             class="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 placeholder-zinc-600 focus:border-blue-500 focus:outline-none"
           />
+          <p class="mt-1 text-[11px] text-zinc-600">
+            Named ports for the agent's dev server. Avoids port conflicts between slots.
+          </p>
         </div>
         <div>
           <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400"
-            >.env Path</label
-          >
+            >.env Path
+            <span class="normal-case tracking-normal font-normal text-zinc-600">— optional</span>
+          </label>
           <input
             v-model="form.envPath"
             type="text"
             placeholder="/home/user/code/my-app/.env"
             class="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 placeholder-zinc-600 focus:border-blue-500 focus:outline-none"
           />
+          <p class="mt-1 text-[11px] text-zinc-600">
+            Path to .env file loaded into the agent's shell environment.
+          </p>
         </div>
       </div>
       <div class="mt-4 flex justify-end">
@@ -188,8 +206,8 @@ onMounted(fetchData);
     <div v-else class="rounded-lg border border-dashed border-zinc-800 py-12 text-center">
       <p class="text-sm text-zinc-400">No workspace slots configured</p>
       <p class="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-zinc-600">
-        Workspace slots are directories where agents execute work. Each slot maps to a repo checkout.
-        Click "+ Add Slot" above to register your first workspace.
+        Workspace slots are directories where agents execute work. Each slot maps to a repo
+        checkout. Click "+ Add Slot" above to register your first workspace.
       </p>
     </div>
   </div>
