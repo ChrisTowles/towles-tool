@@ -26,6 +26,14 @@ async function archiveCard() {
   router.push("/");
 }
 
+async function startCard() {
+  await $fetch(`/api/cards/${cardId.value}/move`, {
+    method: "POST",
+    body: { column: "in_progress", position: 0 },
+  });
+  await refresh();
+}
+
 async function retryCard() {
   await $fetch(`/api/cards/${cardId.value}/move`, {
     method: "POST",
@@ -65,7 +73,7 @@ onUnmounted(() => {
           <span class="text-zinc-700">│</span>
           <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
         </div>
-        <CardActions v-if="card" :card="card" @archive="archiveCard" @retry="retryCard" />
+        <CardActions v-if="card" :card="card" @archive="archiveCard" @retry="retryCard" @start="startCard" />
       </div>
     </nav>
 

@@ -102,6 +102,15 @@ async function archiveCard() {
   closePanel();
 }
 
+async function startCard() {
+  if (!selectedCardId.value) return;
+  await $fetch(`/api/cards/${selectedCardId.value}/move`, {
+    method: "POST",
+    body: { column: "in_progress", position: 0 },
+  });
+  await fetchSelectedCard();
+}
+
 async function retryCard() {
   if (!selectedCardId.value) return;
   await $fetch(`/api/cards/${selectedCardId.value}/move`, {
@@ -196,6 +205,7 @@ useKeyboardShortcuts({
                 :card="selectedCard"
                 @archive="archiveCard"
                 @retry="retryCard"
+                @start="startCard"
               />
               <NuxtLink
                 :to="`/cards/${selectedCardId}`"
