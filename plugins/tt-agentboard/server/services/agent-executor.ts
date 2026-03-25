@@ -153,6 +153,24 @@ export class AgentExecutor {
       }
     }
 
+    // Run package installer if lockfile exists
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    try {
+      if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
+        execSync("pnpm install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        await logCardEvent(cardId, "deps_installed", "pnpm install");
+      } else if (existsSync(join(slot.path, "bun.lock"))) {
+        execSync("bun install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        await logCardEvent(cardId, "deps_installed", "bun install");
+      } else if (existsSync(join(slot.path, "package-lock.json"))) {
+        execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        await logCardEvent(cardId, "deps_installed", "npm ci");
+      }
+    } catch {
+      await logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
+    }
+
     // Create workflow run record
     await db
       .insert(workflowRuns)
