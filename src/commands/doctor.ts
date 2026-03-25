@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve, join } from "node:path";
 import consola from "consola";
 import { x } from "tinyexec";
 import { colors } from "consola/utils";
@@ -32,11 +34,18 @@ export default class Doctor extends BaseCommand {
       this.checkCommand("node", ["--version"], /v?([\d.]+)/),
       this.checkCommand("bun", ["--version"], /([\d.]+)/),
       this.checkCommand("pnpm", ["--version"], /([\d.]+)/),
+      this.checkCommand("claude", ["--version"], /([\d.]+)/),
+      this.checkCommand("tmux", ["-V"], /tmux ([\d.]+)/),
+      this.checkCommand("ttyd", ["--version"], /ttyd version ([\d.]+)/, true),
     ]);
 
     // Display results
     for (const check of checks) {
-      const icon = check.ok ? colors.green("✓") : colors.red("✗");
+      const icon = check.ok
+        ? colors.green("✓")
+        : check.warning
+          ? colors.yellow("⚠")
+          : colors.red("✗");
       const version = check.version ?? "not found";
       this.log(`${icon} ${check.name}: ${version}`);
       if (check.warning) {
@@ -75,8 +84,28 @@ export default class Doctor extends BaseCommand {
       }
     }
 
+    // AgentBoard checks
+    this.log("");
+    this.log(colors.bold("AgentBoard:"));
+    const agentboardChecks = this.checkAgentBoard();
+    for (const check of agentboardChecks) {
+      const icon = check.ok
+        ? colors.green("✓")
+        : check.warning
+          ? colors.yellow("⚠")
+          : colors.red("✗");
+      this.log(`${icon} ${check.name}: ${check.value}`);
+      if (check.hint) {
+        this.log(`  ${colors.dim(check.hint)}`);
+      }
+    }
+
     // Summary
-    const allOk = checks.every((c) => c.ok) && ghAuth.ok && pluginChecks.every((c) => c.ok);
+    const allOk =
+      checks.every((c) => c.ok || !!c.warning) &&
+      ghAuth.ok &&
+      pluginChecks.every((c) => c.ok) &&
+      agentboardChecks.every((c) => c.ok || !!c.warning);
     this.log("");
     if (allOk) {
       this.log(colors.green("All checks passed!"));
@@ -89,6 +118,7 @@ export default class Doctor extends BaseCommand {
     name: string,
     args: string[],
     versionPattern: RegExp,
+    optional = false,
   ): Promise<CheckResult> {
     try {
       // tinyexec is safe - uses execFile internally, no shell injection risk
@@ -102,7 +132,12 @@ export default class Doctor extends BaseCommand {
       };
     } catch {
       consola.debug(`Tool check failed for "${name}"`);
-      return { name, version: null, ok: false };
+      return {
+        name,
+        version: null,
+        ok: optional,
+        warning: optional ? "optional, not installed" : undefined,
+      };
     }
   }
 
@@ -115,6 +150,66 @@ export default class Doctor extends BaseCommand {
       consola.debug("GitHub CLI auth check failed");
       return { ok: false };
     }
+  }
+
+  private checkAgentBoard(): {
+    name: string;
+    value: string;
+    ok: boolean;
+    warning?: string;
+    hint?: string;
+  }[] {
+    const results: { name: string; value: string; ok: boolean; warning?: string; hint?: string }[] =
+      [];
+
+    const defaultDataDir = resolve(
+      process.env.XDG_CONFIG_HOME ?? resolve(process.env.HOME ?? "~", ".config"),
+      "towles-tool",
+      "agentboard",
+    );
+    const dataDir = process.env.AGENTBOARD_DATA_DIR ?? defaultDataDir;
+    const dbPath = join(dataDir, "agentboard.db");
+    const configPath = join(dataDir, "config.json");
+
+    // DB exists
+    const dbExists = existsSync(dbPath);
+    results.push({
+      name: "database",
+      value: dbExists ? dbPath : "not found",
+      ok: dbExists,
+      hint: dbExists ? undefined : "Run: tt ag (starts server and creates DB automatically)",
+    });
+
+    // Config exists with repoPaths
+    let repoPaths: string[] = [];
+    if (existsSync(configPath)) {
+      try {
+        const config = JSON.parse(readFileSync(configPath, "utf-8"));
+        repoPaths = config.repoPaths ?? [];
+      } catch {
+        // Corrupted config
+      }
+    }
+
+    results.push({
+      name: "scan paths",
+      value: repoPaths.length > 0 ? repoPaths.join(", ") : "none configured",
+      ok: repoPaths.length > 0,
+      warning: repoPaths.length === 0 ? "no scan paths" : undefined,
+      hint:
+        repoPaths.length === 0
+          ? "Run: tt ag → open Workspaces → run the onboarding wizard"
+          : undefined,
+    });
+
+    // Data directory
+    results.push({
+      name: "data dir",
+      value: dataDir,
+      ok: true,
+    });
+
+    return results;
   }
 
   private async checkClaudePlugins(): Promise<
