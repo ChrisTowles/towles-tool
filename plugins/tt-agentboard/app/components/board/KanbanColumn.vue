@@ -36,11 +36,10 @@ watch(
   },
 );
 
-function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: string } } }) {
-  const cardId = Number(evt.item?.dataset?.cardId);
-  const position = evt.newIndex ?? 0;
-  if (cardId) {
-    emit("cardMoved", cardId, props.column, position);
+function onDragChange(evt: { added?: { element: { id: number }; newIndex: number } }) {
+  // Only handle 'added' — fires on the DESTINATION column when a card is dropped in
+  if (evt.added) {
+    emit("cardMoved", evt.added.element.id, props.column, evt.added.newIndex);
   }
 }
 </script>
@@ -76,7 +75,7 @@ function onDragEnd(evt: { newIndex?: number; item?: { dataset?: { cardId?: strin
           ghost-class="opacity-30"
           drag-class="rotate-2"
           :animation="200"
-          @end="onDragEnd"
+          @change="onDragChange"
         >
           <template #item="{ element }">
             <div :data-card-id="element.id">
