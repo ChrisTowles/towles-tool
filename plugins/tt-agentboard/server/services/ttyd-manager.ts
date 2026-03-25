@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { logger } from "../utils/logger";
 
 interface TtydInstance {
@@ -10,14 +10,13 @@ interface TtydInstance {
 
 export class TtydManager {
   private instances: Map<number, TtydInstance> = new Map();
-  private basePort = 7680;
+  private basePort = 7700;
   private _ttydAvailable: boolean | null = null;
 
   /** Check if ttyd is available on the system (cached after first call) */
   isAvailable(): boolean {
     if (this._ttydAvailable !== null) return this._ttydAvailable;
     try {
-      const { execSync } = require("node:child_process") as typeof import("node:child_process");
       execSync("which ttyd", { stdio: "ignore" });
       this._ttydAvailable = true;
     } catch {
