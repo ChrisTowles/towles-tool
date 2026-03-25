@@ -99,7 +99,9 @@ function sendResponse() {
         >
           {{ card.branch }}
         </a>
-        <span v-else class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{ card.branch }}</span>
+        <span v-else class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{
+          card.branch
+        }}</span>
       </div>
 
       <!-- Issue + PR row -->
@@ -136,7 +138,10 @@ function sendResponse() {
     </div>
 
     <!-- Timestamps + branch mode -->
-    <div v-if="!compact" class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500">
+    <div
+      v-if="!compact"
+      class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500"
+    >
       <span>Created {{ new Date(card.createdAt).toLocaleString() }}</span>
       <span>Updated {{ new Date(card.updatedAt).toLocaleString() }}</span>
     </div>

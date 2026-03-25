@@ -116,11 +116,19 @@ export class AgentExecutor {
     if (existingBranch) {
       // Reuse existing branch from previous run
       try {
-        execSync(`git checkout ${existingBranch}`, { cwd: slot.path, stdio: "ignore", timeout: 10000 });
+        execSync(`git checkout ${existingBranch}`, {
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 10000,
+        });
         branch = existingBranch;
         await logCardEvent(cardId, "branch_reused", existingBranch);
       } catch {
-        await logCardEvent(cardId, "warn", `Could not checkout existing branch ${existingBranch}, creating new`);
+        await logCardEvent(
+          cardId,
+          "warn",
+          `Could not checkout existing branch ${existingBranch}, creating new`,
+        );
         // Fall through to normal branch creation
       }
     }
