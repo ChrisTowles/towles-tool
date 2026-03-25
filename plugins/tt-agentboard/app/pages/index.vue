@@ -73,7 +73,9 @@ watch(isListening, async (listening) => {
 });
 
 const activeTab = ref<"terminal" | "diff" | "events">("terminal");
-const cardEvents = ref<{ id: number; event: string; detail: string | null; timestamp: string }[]>([]);
+const cardEvents = ref<{ id: number; event: string; detail: string | null; timestamp: string }[]>(
+  [],
+);
 
 async function fetchCardEvents() {
   if (!selectedCardId.value) return;
@@ -125,6 +127,13 @@ async function startCard() {
     body: { column: "in_progress", position: 0 },
   });
   await fetchSelectedCard();
+  refreshBoard();
+}
+
+async function deleteCard() {
+  if (!selectedCardId.value) return;
+  await $fetch(`/api/cards/${selectedCardId.value}`, { method: "DELETE" });
+  closePanel();
   refreshBoard();
 }
 
@@ -250,12 +259,20 @@ useKeyboardShortcuts({
               >
                 Archive
               </button>
+              <button
+                v-if="selectedCard"
+                class="rounded-lg border border-red-800 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-950"
+                @click="deleteCard"
+              >
+                Delete
+              </button>
               <CardActions
                 v-if="selectedCard"
                 :card="selectedCard"
                 @archive="archiveCard"
                 @retry="retryCard"
                 @start="startCard"
+                @deleted="closePanel(); refreshBoard()"
               />
               <NuxtLink
                 :to="`/cards/${selectedCardId}`"
@@ -319,7 +336,10 @@ useKeyboardShortcuts({
                   ? 'border-b-2 border-amber-500 text-zinc-200'
                   : 'text-zinc-500 hover:text-zinc-300'
               "
-              @click="activeTab = 'events'; fetchCardEvents()"
+              @click="
+                activeTab = 'events';
+                fetchCardEvents();
+              "
             >
               Events
             </button>
@@ -333,7 +353,10 @@ useKeyboardShortcuts({
             </ClientOnly>
 
             <!-- Events log -->
-            <div v-if="activeTab === 'events'" class="h-full overflow-auto rounded-lg border border-zinc-800 bg-black p-3">
+            <div
+              v-if="activeTab === 'events'"
+              class="h-full overflow-auto rounded-lg border border-zinc-800 bg-black p-3"
+            >
               <div v-if="cardEvents.length === 0" class="py-8 text-center text-xs text-zinc-600">
                 No events recorded yet
               </div>
@@ -350,10 +373,17 @@ useKeyboardShortcuts({
                     class="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold"
                     :class="{
                       'bg-blue-500/10 text-blue-400': evt.event.includes('start'),
-                      'bg-emerald-500/10 text-emerald-400': evt.event.includes('complete') || evt.event.includes('hook_received'),
-                      'bg-red-500/10 text-red-400': evt.event.includes('error') || evt.event.includes('fail'),
-                      'bg-amber-500/10 text-amber-400': evt.event.includes('queued') || evt.event.includes('ignored'),
-                      'bg-zinc-800 text-zinc-400': !evt.event.includes('start') && !evt.event.includes('complete') && !evt.event.includes('error') && !evt.event.includes('queued'),
+                      'bg-emerald-500/10 text-emerald-400':
+                        evt.event.includes('complete') || evt.event.includes('hook_received'),
+                      'bg-red-500/10 text-red-400':
+                        evt.event.includes('error') || evt.event.includes('fail'),
+                      'bg-amber-500/10 text-amber-400':
+                        evt.event.includes('queued') || evt.event.includes('ignored'),
+                      'bg-zinc-800 text-zinc-400':
+                        !evt.event.includes('start') &&
+                        !evt.event.includes('complete') &&
+                        !evt.event.includes('error') &&
+                        !evt.event.includes('queued'),
                     }"
                   >
                     {{ evt.event }}

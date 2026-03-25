@@ -73,7 +73,14 @@ onUnmounted(() => {
           <span class="text-zinc-700">│</span>
           <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
         </div>
-        <CardActions v-if="card" :card="card" @archive="archiveCard" @retry="retryCard" @start="startCard" />
+        <CardActions
+          v-if="card"
+          :card="card"
+          @archive="archiveCard"
+          @retry="retryCard"
+          @start="startCard"
+          @deleted="router.push('/')"
+        />
       </div>
     </nav>
 
