@@ -227,6 +227,13 @@ useKeyboardShortcuts({
               </button>
               <button
                 v-if="selectedCard?.status === 'review_ready'"
+                class="rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-amber-500"
+                @click="retryCard"
+              >
+                Rerun
+              </button>
+              <button
+                v-if="selectedCard?.status === 'review_ready'"
                 class="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-500"
                 @click="archiveCard"
               >
