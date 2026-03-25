@@ -64,6 +64,7 @@ export function useCards(boardId: Ref<number> = ref(1)) {
     title: string;
     description?: string;
     repoId?: number;
+    column?: string;
     workflowId?: string;
     executionMode?: string;
     branchMode?: string;

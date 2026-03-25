@@ -51,7 +51,7 @@ export const STATUS_LABELS: Record<CardStatus, string> = {
 
 export const STATUS_DESCRIPTIONS: Record<CardStatus, string> = {
   idle: "Card is waiting in the backlog",
-  queued: "Card is queued and will start soon",
+  queued: "No workspace slot available — will start when one opens up",
   running: "Agent is actively working on this card",
   waiting_input: "Agent is paused and needs your input",
   review_ready: "Agent finished — ready for your review",

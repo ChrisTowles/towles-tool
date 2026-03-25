@@ -112,7 +112,7 @@ const issueUrl = computed(() => {
         class="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-mono text-violet-400"
         :title="card.branch"
       >
-        {{ card.branch.length > 25 ? card.branch.slice(0, 25) + '...' : card.branch }}
+        {{ card.branch.length > 25 ? card.branch.slice(0, 25) + "..." : card.branch }}
       </span>
     </div>
 
@@ -133,6 +133,11 @@ const issueUrl = computed(() => {
       <span class="text-emerald-400">+{{ diffStats.additions }}</span>
       <span class="text-red-400">-{{ diffStats.deletions }}</span>
     </div>
+
+    <!-- Queued reason -->
+    <p v-if="card.status === 'queued'" class="mb-1 text-[10px] text-amber-500/70">
+      No slot available — waiting
+    </p>
 
     <!-- Footer: status + elapsed time + issue # -->
     <div class="flex items-center justify-between">
