@@ -30,6 +30,35 @@ const elapsedTime = computed(() => {
 
 const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "⌨" : "⚡"));
 
+// Diff stats — fetch once for review_ready or running cards
+const diffStats = ref<{ files: number; additions: number; deletions: number } | null>(null);
+const diffFetched = ref(false);
+
+watch(
+  () => props.card.status,
+  async (status) => {
+    if ((status === "review_ready" || status === "running") && !diffFetched.value) {
+      diffFetched.value = true;
+      try {
+        const data = await $fetch<{
+          hasDiff: boolean;
+          files: { additions: number; deletions: number }[];
+        }>(`/api/agents/${props.card.id}/diff`);
+        if (data.hasDiff && data.files.length > 0) {
+          diffStats.value = {
+            files: data.files.length,
+            additions: data.files.reduce((sum, f) => sum + f.additions, 0),
+            deletions: data.files.reduce((sum, f) => sum + f.deletions, 0),
+          };
+        }
+      } catch {
+        // No diff available
+      }
+    }
+  },
+  { immediate: true },
+);
+
 const prUrl = computed(() => {
   if (!props.card.githubPrNumber) return null;
   if (props.card.repo?.githubUrl) {
@@ -88,6 +117,13 @@ const issueUrl = computed(() => {
       :retry-count="card.retryCount"
       class="mb-2"
     />
+
+    <!-- Diff stats -->
+    <div v-if="diffStats" class="mb-2 flex items-center gap-2 text-[10px] font-mono">
+      <span class="text-zinc-500">{{ diffStats.files }} file{{ diffStats.files !== 1 ? "s" : "" }}</span>
+      <span class="text-emerald-400">+{{ diffStats.additions }}</span>
+      <span class="text-red-400">-{{ diffStats.deletions }}</span>
+    </div>
 
     <!-- Footer: status + elapsed time + issue # -->
     <div class="flex items-center justify-between">
