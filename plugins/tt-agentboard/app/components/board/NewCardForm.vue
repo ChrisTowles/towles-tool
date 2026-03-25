@@ -14,8 +14,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const title = ref(props.initialTitle ?? "");
-const description = ref("");
+const prompt = ref(props.initialTitle ?? "");
 const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);
 const executionMode = ref<"headless" | "interactive">("headless");
@@ -26,13 +25,20 @@ const submitError = ref("");
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 const { createCard } = useCards();
 
+function generateTitle(text: string): string {
+  const firstLine = text.split("\n")[0]?.trim() ?? text.trim();
+  if (firstLine.length <= 60) return firstLine;
+  return firstLine.slice(0, 57) + "...";
+}
+
 async function submit() {
-  if (!title.value.trim() || submitting.value) return;
+  if (!prompt.value.trim() || submitting.value) return;
   submitError.value = "";
   submitting.value = true;
+  const text = prompt.value.trim();
   const card = await createCard({
-    title: title.value.trim(),
-    description: description.value.trim() || undefined,
+    title: generateTitle(text),
+    description: text,
     repoId: repoId.value,
     workflowId: workflowId.value || undefined,
     executionMode: executionMode.value,
@@ -40,11 +46,11 @@ async function submit() {
   });
   submitting.value = false;
   if (card) {
-    title.value = "";
-    description.value = "";
+    prompt.value = "";
     repoId.value = undefined;
     workflowId.value = undefined;
     executionMode.value = "headless";
+    branchMode.value = "create";
     emit("created");
   } else {
     submitError.value = "Failed to create card. Check the server logs for details.";
@@ -71,40 +77,28 @@ async function submit() {
 
       <!-- Form -->
       <form class="space-y-4 px-5 py-4" @submit.prevent="submit">
-        <!-- Title + Voice -->
+        <!-- Prompt -->
         <div>
           <div class="mb-1.5 flex items-center justify-between">
             <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Title <span class="text-red-400">*</span>
+              Prompt <span class="text-red-400">*</span>
             </label>
             <ClientOnly>
               <VoiceVoiceInput
-                @transcription="(text: string) => (title = title ? `${title} ${text}` : text)"
+                @transcription="(text: string) => (prompt = prompt ? `${prompt} ${text}` : text)"
               />
             </ClientOnly>
           </div>
-          <input
-            v-model="title"
-            type="text"
-            placeholder="What needs to be done?"
-            autofocus
-            class="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <!-- Description -->
-        <div>
-          <label
-            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
-          >
-            Description
-          </label>
           <textarea
-            v-model="description"
-            rows="3"
-            placeholder="Optional details, context, or instructions..."
+            v-model="prompt"
+            rows="4"
+            placeholder="What should the agent do? e.g. Fix the login bug in auth.ts — the session token expires too early..."
+            autofocus
             class="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
           />
+          <p class="mt-1 text-[10px] text-zinc-600">
+            First line becomes the card title. Full text is sent as the prompt to Claude.
+          </p>
         </div>
 
         <!-- Repo selector -->
