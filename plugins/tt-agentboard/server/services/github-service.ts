@@ -75,10 +75,12 @@ export class GitHubService {
 
   async createIssue(owner: string, repo: string, title: string, body: string, labels?: string[]) {
     const labelArgs = labels?.length ? labels.map((l) => `--label "${l}"`).join(" ") : "";
-    const result = ghJson<{ number: number; url: string }>(
-      `issue create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" ${labelArgs} --json number,url`,
+    // gh issue create returns the URL on stdout (no --json support)
+    const url = ghExec(
+      `issue create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" ${labelArgs}`,
     );
-    return { number: result.number, html_url: result.url };
+    const numMatch = url.match(/\/issues\/(\d+)/);
+    return { number: numMatch ? Number(numMatch[1]) : 0, html_url: url };
   }
 
   async transitionLabels({ owner, repo, issueNumber, remove, add }: LabelTransition) {
@@ -120,10 +122,12 @@ export class GitHubService {
   }
 
   async createPr({ owner, repo, title, body, head, base }: CreatePrOptions) {
-    const result = ghJson<{ number: number; url: string }>(
-      `pr create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --base ${base} --head ${head} --json number,url`,
+    // gh pr create returns the URL on stdout (no --json support)
+    const url = ghExec(
+      `pr create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --base ${base} --head ${head}`,
     );
-    return { number: result.number, html_url: result.url };
+    const numMatch = url.match(/\/pull\/(\d+)/);
+    return { number: numMatch ? Number(numMatch[1]) : 0, html_url: url };
   }
 
   startPolling(
