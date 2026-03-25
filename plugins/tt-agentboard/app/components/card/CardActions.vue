@@ -128,7 +128,10 @@ onUnmounted(() => {
           Start Agent
         </button>
 
-        <div v-if="card.status === 'idle' || card.status === 'queued'" class="my-1 border-t border-zinc-800" />
+        <div
+          v-if="card.status === 'idle' || card.status === 'queued'"
+          class="my-1 border-t border-zinc-800"
+        />
 
         <button
           class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
@@ -183,6 +186,15 @@ onUnmounted(() => {
         >
           <span class="w-4 text-center text-[10px]">↻</span>
           Retry
+        </button>
+
+        <button
+          v-if="card.status === 'review_ready'"
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-400 transition-colors hover:bg-zinc-800"
+          @click="retryCard"
+        >
+          <span class="w-4 text-center text-[10px]">↻</span>
+          Rerun
         </button>
 
         <button
