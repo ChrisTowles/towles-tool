@@ -136,8 +136,14 @@ export class AgentExecutor {
     if (!branch && card.branchMode === "create") {
       // Clean working tree of leftover files from previous agents
       try {
-        execSync("git checkout -- . && git clean -fd", { cwd: slot.path, stdio: "ignore", timeout: 5000 });
-      } catch { /* non-fatal */ }
+        execSync("git checkout -- . && git clean -fd", {
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 5000,
+        });
+      } catch {
+        /* non-fatal */
+      }
 
       // Start from a clean, up-to-date main before branching
       const branchName = `agentboard/card-${cardId}`;
@@ -196,10 +202,18 @@ export class AgentExecutor {
     if (hasLockfile) {
       try {
         if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
-          execSync("pnpm install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          execSync("pnpm install --frozen-lockfile", {
+            cwd: slot.path,
+            stdio: "ignore",
+            timeout: 60000,
+          });
           await logCardEvent(cardId, "deps_installed", "pnpm install");
         } else if (existsSync(join(slot.path, "bun.lock"))) {
-          execSync("bun install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          execSync("bun install --frozen-lockfile", {
+            cwd: slot.path,
+            stdio: "ignore",
+            timeout: 60000,
+          });
           await logCardEvent(cardId, "deps_installed", "bun install");
         } else {
           execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });

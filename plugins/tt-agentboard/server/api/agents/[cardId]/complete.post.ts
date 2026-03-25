@@ -80,13 +80,21 @@ export default defineEventHandler(async (event) => {
     try {
       const { execSync } = await import("node:child_process");
       const status = execSync("git status --porcelain", {
-        cwd: slot.path, encoding: "utf-8", timeout: 5000,
+        cwd: slot.path,
+        encoding: "utf-8",
+        timeout: 5000,
       }).trim();
       if (status) {
         execSync(`git add -A && git commit -m "agentboard: card #${cardId} — ${card.title}"`, {
-          cwd: slot.path, stdio: "ignore", timeout: 10000,
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 10000,
         });
-        await logCardEvent(cardId, "auto_committed", `Committed uncommitted changes in ${slot.path}`);
+        await logCardEvent(
+          cardId,
+          "auto_committed",
+          `Committed uncommitted changes in ${slot.path}`,
+        );
       }
     } catch {
       // Non-fatal — agent may have already committed
