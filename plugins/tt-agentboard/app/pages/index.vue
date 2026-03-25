@@ -260,7 +260,11 @@ useKeyboardShortcuts({
                 Retry
               </button>
               <button
-                v-if="selectedCard?.status === 'review_ready' && !selectedCard?.githubPrNumber && selectedCard?.branch"
+                v-if="
+                  selectedCard?.status === 'review_ready' &&
+                  !selectedCard?.githubPrNumber &&
+                  selectedCard?.branch
+                "
                 class="rounded-lg bg-violet-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-violet-500"
                 @click="createPR"
               >
