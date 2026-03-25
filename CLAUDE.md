@@ -28,7 +28,30 @@ pnpm lint               # Run oxlint
 pnpm lint:fix           # Auto-fix lint issues
 pnpm format             # Format with oxfmt
 pnpm format:check       # Check formatting without writing
+
+# AgentBoard
+cd plugins/tt-agentboard
+pnpm dev                # Start Nuxt dev server on port 4200
+pnpm test               # Run vitest (222 tests, needs dev server running)
+pnpm build              # Build for production
+pnpm db:generate        # Generate Drizzle migration
+pnpm db:migrate         # Apply migrations
 ```
+
+## AgentBoard Plugin (`plugins/tt-agentboard/`)
+
+- **Nuxt 4 app** — has its own `package.json`, `vitest.config.ts`, and `tsconfig.json`
+- **Run agentboard tests**: `cd plugins/tt-agentboard && pnpm test` (222 tests, requires dev server on port 4200 for e2e tests)
+- **Start dev server**: `cd plugins/tt-agentboard && AGENTBOARD_DATA_DIR=~/.config/towles-tool/agentboard pnpm dev`
+- **DB location**: `~/.config/towles-tool/agentboard/agentboard.db` (SQLite via Drizzle ORM)
+- **DB migrations**: `cd plugins/tt-agentboard && pnpm db:generate && pnpm db:migrate`
+- **Root tsconfig excludes agentboard** — Nuxt has its own type system with auto-imports
+- **Nuxt 4 component auto-imports**: nested dirs prefix components (`components/board/KanbanCard.vue` → `BoardKanbanCard`), except when filename already starts with dir name (`card/CardDetail.vue` → `CardDetail`, NOT `CardCardDetail`)
+- **SSR gotcha**: `setInterval`, `WebSocket`, `SpeechRecognition` must be wrapped in `onMounted` or `<ClientOnly>` — Nuxt 4 errors on server-side usage
+- **Server imports**: use `~~/server/` prefix (not `~/server/`) — Nuxt 4 resolves `~` to `app/` dir
+- **GitHub integration uses `gh` CLI** (not Octokit/GITHUB_TOKEN) — requires `gh auth login`
+- **Agent completion**: detected via Claude Code HTTP Stop hooks, not tmux polling
+- **Shared server utils**: `server/utils/params.ts` (getCardId, requireCard), `server/utils/hook-writer.ts`, `server/utils/workflow-helpers.ts`
 
 ## Guidelines
 
