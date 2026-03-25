@@ -95,7 +95,8 @@
       "@anthropic-ai/claude-code",
       "better-sqlite3",
       "esbuild",
-      "simple-git-hooks"
+      "simple-git-hooks",
+      "@parcel/watcher"
     ]
   },
   "trustedDependencies": [
