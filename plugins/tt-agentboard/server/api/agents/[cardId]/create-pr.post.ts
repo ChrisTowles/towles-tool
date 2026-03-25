@@ -66,6 +66,9 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    // Ensure we're on the correct branch before pushing
+    execSync(`git checkout ${branch}`, { cwd, stdio: "ignore", timeout: 10000 });
+
     // Push the branch
     execSync(`git push -u origin ${branch}`, { cwd, stdio: "ignore", timeout: 30000 });
 
