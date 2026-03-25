@@ -62,7 +62,7 @@ export default class Agentboard extends BaseCommand {
 
   static override args = {
     subcommand: Args.string({
-      description: "Subcommand (attach)",
+      description: "Subcommand (attach, reset)",
       required: false,
     }),
     cardId: Args.string({
@@ -81,6 +81,33 @@ export default class Agentboard extends BaseCommand {
       execSync(`tmux attach-session -t card-${args.cardId}`, {
         stdio: "inherit",
       });
+      return;
+    }
+
+    if (args.subcommand === "reset") {
+      const defaultDataDir = resolve(
+        process.env.XDG_CONFIG_HOME ?? resolve(process.env.HOME ?? "~", ".config"),
+        "towles-tool",
+        "agentboard",
+      );
+      const dataDir = flags["data-dir"] ? resolve(flags["data-dir"]) : defaultDataDir;
+      const dbPath = join(dataDir, "agentboard.db");
+      const walPath = `${dbPath}-wal`;
+      const shmPath = `${dbPath}-shm`;
+
+      if (!existsSync(dbPath)) {
+        consola.info("No database found — nothing to reset.");
+        return;
+      }
+
+      consola.warn(`This will delete: ${dbPath}`);
+      for (const f of [dbPath, walPath, shmPath]) {
+        if (existsSync(f)) {
+          const { unlinkSync } = await import("node:fs");
+          unlinkSync(f);
+        }
+      }
+      consola.success("Database reset. Start AgentBoard to create a fresh DB.");
       return;
     }
 
