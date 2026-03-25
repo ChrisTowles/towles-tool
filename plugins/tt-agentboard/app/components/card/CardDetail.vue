@@ -15,6 +15,17 @@ const emit = defineEmits<{
 
 const agentInput = ref("");
 
+const branchUrl = computed(() => {
+  if (!props.card.branch) return null;
+  if (props.card.repo?.githubUrl) {
+    return `${props.card.repo.githubUrl}/tree/${props.card.branch}`;
+  }
+  if (props.card.repo?.org && props.card.repo?.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/tree/${props.card.branch}`;
+  }
+  return null;
+});
+
 const issueUrl = computed(() => {
   if (!props.card.githubIssueNumber) return null;
   if (props.card.repo?.githubUrl) {
@@ -47,6 +58,7 @@ function sendResponse() {
 <template>
   <div>
     <h2 class="font-bold text-zinc-100" :class="compact ? 'mb-1 text-sm' : 'mb-2 text-lg'">
+      <span class="font-mono text-zinc-500">#{{ card.id }}</span>
       {{ card.title }}
     </h2>
 
@@ -79,7 +91,15 @@ function sendResponse() {
       <!-- Branch -->
       <div v-if="card.branch" class="flex items-center gap-1.5 text-xs font-mono">
         <span class="text-zinc-600">branch</span>
-        <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{ card.branch }}</span>
+        <a
+          v-if="branchUrl"
+          :href="branchUrl"
+          target="_blank"
+          class="rounded bg-zinc-800 px-1.5 py-0.5 text-blue-400 hover:text-blue-300 hover:underline"
+        >
+          {{ card.branch }}
+        </a>
+        <span v-else class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{ card.branch }}</span>
       </div>
 
       <!-- Issue + PR row -->
@@ -113,6 +133,12 @@ function sendResponse() {
           <span v-else>#{{ card.githubPrNumber }}</span>
         </template>
       </div>
+    </div>
+
+    <!-- Timestamps + branch mode -->
+    <div v-if="!compact" class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500">
+      <span>Created {{ new Date(card.createdAt).toLocaleString() }}</span>
+      <span>Updated {{ new Date(card.updatedAt).toLocaleString() }}</span>
     </div>
 
     <!-- Archive button -->

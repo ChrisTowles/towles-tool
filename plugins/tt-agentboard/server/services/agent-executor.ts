@@ -106,7 +106,26 @@ export class AgentExecutor {
     const { execSync } = await import("node:child_process");
     let branch: string | null = null;
 
-    if (card.branchMode === "create") {
+    // Check for existing branch from a previous run (resume/rerun case)
+    const previousRuns = await db
+      .select({ branch: workflowRuns.branch })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, cardId));
+    const existingBranch = previousRuns.find((r) => r.branch)?.branch ?? null;
+
+    if (existingBranch) {
+      // Reuse existing branch from previous run
+      try {
+        execSync(`git checkout ${existingBranch}`, { cwd: slot.path, stdio: "ignore", timeout: 10000 });
+        branch = existingBranch;
+        await logCardEvent(cardId, "branch_reused", existingBranch);
+      } catch {
+        await logCardEvent(cardId, "warn", `Could not checkout existing branch ${existingBranch}, creating new`);
+        // Fall through to normal branch creation
+      }
+    }
+
+    if (!branch && card.branchMode === "create") {
       // Start from a clean, up-to-date main before branching
       const branchName = `agentboard/card-${cardId}`;
       try {
@@ -140,7 +159,7 @@ export class AgentExecutor {
           }
         }
       }
-    } else {
+    } else if (!branch) {
       // Stay on current branch
       try {
         branch = execSync("git rev-parse --abbrev-ref HEAD", {
@@ -158,10 +177,18 @@ export class AgentExecutor {
     const { join } = await import("node:path");
     try {
       if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
-        execSync("pnpm install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        execSync("pnpm install --frozen-lockfile", {
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 60000,
+        });
         await logCardEvent(cardId, "deps_installed", "pnpm install");
       } else if (existsSync(join(slot.path, "bun.lock"))) {
-        execSync("bun install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        execSync("bun install --frozen-lockfile", {
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 60000,
+        });
         await logCardEvent(cardId, "deps_installed", "bun install");
       } else if (existsSync(join(slot.path, "package-lock.json"))) {
         execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });

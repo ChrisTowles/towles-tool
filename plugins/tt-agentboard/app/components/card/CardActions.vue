@@ -83,6 +83,24 @@ async function createGitHubIssue() {
   }
 }
 
+const branchUrl = computed(() => {
+  if (!props.card.branch || !props.card.repo) return null;
+  if (props.card.repo.githubUrl) {
+    return `${props.card.repo.githubUrl}/tree/${props.card.branch}`;
+  }
+  if (props.card.repo.org && props.card.repo.name) {
+    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/tree/${props.card.branch}`;
+  }
+  return null;
+});
+
+function viewOnGitHub() {
+  closeMenu();
+  if (branchUrl.value) {
+    window.open(branchUrl.value, "_blank");
+  }
+}
+
 async function deleteCard() {
   closeMenu();
   try {
@@ -183,6 +201,15 @@ onUnmounted(() => {
         >
           <span class="w-4 text-center text-[10px]">⊕</span>
           Create GitHub Issue
+        </button>
+
+        <button
+          v-if="branchUrl"
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+          @click="viewOnGitHub"
+        >
+          <span class="w-4 text-center text-[10px]">↗</span>
+          View on GitHub
         </button>
 
         <div
