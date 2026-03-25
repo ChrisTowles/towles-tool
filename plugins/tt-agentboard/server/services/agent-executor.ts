@@ -41,7 +41,11 @@ export class AgentExecutor {
       return;
     }
 
-    await logCardEvent(cardId, "execution_start", `repoId=${card.repoId}, mode=${card.executionMode}, branch=${card.branchMode}`);
+    await logCardEvent(
+      cardId,
+      "execution_start",
+      `repoId=${card.repoId}, mode=${card.executionMode}, branch=${card.branchMode}`,
+    );
 
     // Delegate to workflow runner if card has a valid workflow
     if (card.workflowId) {
@@ -51,7 +55,11 @@ export class AgentExecutor {
         await workflowRunner.run(cardId);
         return;
       }
-      await logCardEvent(cardId, "workflow_not_found", `workflow=${card.workflowId}, falling back to single-prompt`);
+      await logCardEvent(
+        cardId,
+        "workflow_not_found",
+        `workflow=${card.workflowId}, falling back to single-prompt`,
+      );
     }
 
     // Single-prompt execution (no workflow)
@@ -91,6 +99,19 @@ export class AgentExecutor {
     // Create tmux session
     const sessionName = tmuxManager.createSession(cardId, slot.path);
 
+    // Detect current branch in the slot
+    let branch: string | null = null;
+    try {
+      const { execSync } = await import("node:child_process");
+      branch = execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd: slot.path,
+        encoding: "utf-8",
+        timeout: 3000,
+      }).trim();
+    } catch {
+      // Not a git repo or git not available
+    }
+
     // Create workflow run record
     await db
       .insert(workflowRuns)
@@ -99,6 +120,7 @@ export class AgentExecutor {
         workflowId: card.workflowId ?? "default",
         slotId: slot.id,
         tmuxSession: sessionName,
+        branch,
         startedAt: new Date(),
       })
       .returning();
@@ -130,7 +152,11 @@ export class AgentExecutor {
       eventBus.emit("agent:output", { cardId, content: output });
     });
 
-    await logCardEvent(cardId, "agent_started", `session=${sessionName}, mode=${card.executionMode}`);
+    await logCardEvent(
+      cardId,
+      "agent_started",
+      `session=${sessionName}, mode=${card.executionMode}`,
+    );
     logger.info(`Card ${cardId} execution started in session ${sessionName}, Stop hook configured`);
   }
 
