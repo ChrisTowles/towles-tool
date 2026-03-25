@@ -47,6 +47,27 @@ export default defineEventHandler(async (event) => {
     .set({ status: "completed", endedAt: new Date() })
     .where(eq(workflowRuns.cardId, cardId));
 
+  // Try to detect PR for the card's branch
+  try {
+    const run = await db.select().from(workflowRuns).where(eq(workflowRuns.cardId, cardId)).limit(1);
+    if (run[0]?.branch) {
+      const { execSync } = await import("node:child_process");
+      const prJson = execSync(
+        `gh pr list --head ${run[0].branch} --json number --limit 1`,
+        { encoding: "utf-8", timeout: 5000 },
+      ).trim();
+      const prs = JSON.parse(prJson);
+      if (prs.length > 0) {
+        await db
+          .update(cards)
+          .set({ githubPrNumber: prs[0].number })
+          .where(eq(cards.id, cardId));
+      }
+    }
+  } catch {
+    // PR detection is best-effort
+  }
+
   // Stop live capture polling but keep session alive
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
