@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const { execSync } = await import("node:child_process");
-    const output = execSync(`tmux capture-pane -t ${sessionName} -p -S -500`, {
+    const output = execSync(`tmux capture-pane -t ${sessionName} -p -e -S -500`, {
       encoding: "utf-8",
       timeout: 3000,
     });
