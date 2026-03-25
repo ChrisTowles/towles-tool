@@ -139,7 +139,7 @@ onUnmounted(() => {
               : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
           "
           @click="emit('toggleDictation')"
-          title="Voice dictation — create cards or respond hands-free"
+          title="Voice dictation — create cards or respond hands-free (D)"
         >
           🎙 Dictate
         </button>
@@ -153,14 +153,14 @@ onUnmounted(() => {
         </button>
         <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
-          title="Refresh board data"
+          title="Refresh board data (R)"
           @click="fetchCards"
         >
           ↻ Refresh
         </button>
         <button
           class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
-          title="Create a new card"
+          title="Create a new card (N)"
           @click="showNewCardForm = true"
         >
           + New Card
@@ -206,10 +206,17 @@ onUnmounted(() => {
 
     <!-- Onboarding prompt (no repos & no slots) -->
     <div v-if="!loading && showOnboarding" class="px-4 py-8 sm:px-6">
-      <div class="mx-auto flex max-w-md flex-col items-center rounded-lg border border-dashed border-zinc-800 py-12 text-center">
+      <div
+        class="mx-auto flex max-w-md flex-col items-center rounded-lg border border-dashed border-zinc-800 py-12 text-center"
+      >
         <p class="mb-2 text-sm font-semibold text-zinc-300">Welcome to AgentBoard</p>
-        <p class="mb-4 text-xs text-zinc-500">Set up your workspace slots to start running agents on your repos.</p>
-        <NuxtLink to="/workspaces/setup" class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500">
+        <p class="mb-4 text-xs text-zinc-500">
+          Set up your workspace slots to start running agents on your repos.
+        </p>
+        <NuxtLink
+          to="/workspaces/setup"
+          class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+        >
           Run Setup Wizard
         </NuxtLink>
       </div>
