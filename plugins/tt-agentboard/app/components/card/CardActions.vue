@@ -9,6 +9,7 @@ const emit = defineEmits<{
   archive: [];
   retry: [];
   start: [];
+  deleted: [];
 }>();
 
 const open = ref(false);
@@ -79,6 +80,16 @@ async function createGitHubIssue() {
     showToast(`Created issue #${result.issueNumber}`);
   } catch {
     showToast("Failed to create issue");
+  }
+}
+
+async function deleteCard() {
+  closeMenu();
+  try {
+    await $fetch(`/api/cards/${props.card.id}`, { method: "DELETE" });
+    emit("deleted");
+  } catch {
+    showToast("Failed to delete card");
   }
 }
 
@@ -204,6 +215,16 @@ onUnmounted(() => {
         >
           <span class="w-4 text-center text-[10px]">✓</span>
           Archive
+        </button>
+
+        <div class="my-1 border-t border-zinc-800" />
+
+        <button
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-950/50"
+          @click="deleteCard"
+        >
+          <span class="w-4 text-center text-[10px]">✕</span>
+          Delete
         </button>
       </div>
     </Transition>
