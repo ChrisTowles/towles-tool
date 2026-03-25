@@ -5,6 +5,7 @@ import { agentExecutor } from "~~/server/services/agent-executor";
 import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
+import { logCardEvent } from "~~/server/utils/card-events";
 import { existsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -30,6 +31,8 @@ export default defineEventHandler(async (event) => {
     fromColumn,
     toColumn: body.column,
   });
+
+  await logCardEvent(id, "card_moved", `${fromColumn} → ${body.column}`);
 
   // If moved to in_progress, clean up stale resources first, then trigger agent
   if (body.column === "in_progress") {

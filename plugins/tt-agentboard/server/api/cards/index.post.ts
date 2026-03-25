@@ -1,5 +1,6 @@
 import { db } from "~~/server/db";
 import { cards } from "~~/server/db/schema";
+import { logCardEvent } from "~~/server/utils/card-events";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
@@ -17,5 +18,7 @@ export default defineEventHandler(async (event) => {
       workflowId: body.workflowId,
     })
     .returning();
-  return result[0];
+  const card = result[0]!;
+  await logCardEvent(card.id, "card_created", `column=${card.column}, mode=${card.executionMode}`);
+  return card;
 });
