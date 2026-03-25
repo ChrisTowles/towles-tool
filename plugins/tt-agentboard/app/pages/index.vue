@@ -72,7 +72,17 @@ watch(isListening, async (listening) => {
   setContext("idle");
 });
 
-const activeTab = ref<"terminal" | "diff">("terminal");
+const activeTab = ref<"terminal" | "diff" | "events">("terminal");
+const cardEvents = ref<{ id: number; event: string; detail: string | null; timestamp: string }[]>([]);
+
+async function fetchCardEvents() {
+  if (!selectedCardId.value) return;
+  try {
+    cardEvents.value = await $fetch(`/api/cards/${selectedCardId.value}/events`);
+  } catch {
+    cardEvents.value = [];
+  }
+}
 const boardRefreshKey = ref(0);
 function refreshBoard() {
   boardRefreshKey.value++;
@@ -86,6 +96,7 @@ function selectCard(cardId: number) {
   activeTab.value = "terminal";
   fetchSelectedCard().then(() => {
     selectedCardLoading.value = false;
+    fetchCardEvents();
     if (selectedCard.value?.status === "review_ready") {
       activeTab.value = "diff";
     }
@@ -301,14 +312,56 @@ useKeyboardShortcuts({
             >
               Diff
             </button>
+            <button
+              class="px-4 py-2 text-xs font-medium transition-colors"
+              :class="
+                activeTab === 'events'
+                  ? 'border-b-2 border-amber-500 text-zinc-200'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
+              @click="activeTab = 'events'; fetchCardEvents()"
+            >
+              Events
+            </button>
           </div>
 
           <!-- Tab content -->
           <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
             <ClientOnly>
               <CardTerminalPanel v-if="activeTab === 'terminal'" :card-id="selectedCardId!" />
-              <CardDiffViewer v-else :card-id="selectedCardId!" />
+              <CardDiffViewer v-else-if="activeTab === 'diff'" :card-id="selectedCardId!" />
             </ClientOnly>
+
+            <!-- Events log -->
+            <div v-if="activeTab === 'events'" class="h-full overflow-auto rounded-lg border border-zinc-800 bg-black p-3">
+              <div v-if="cardEvents.length === 0" class="py-8 text-center text-xs text-zinc-600">
+                No events recorded yet
+              </div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="evt in cardEvents"
+                  :key="evt.id"
+                  class="flex items-start gap-3 rounded px-2 py-1.5 text-[11px] hover:bg-zinc-900"
+                >
+                  <span class="shrink-0 font-mono text-zinc-600">
+                    {{ new Date(evt.timestamp).toLocaleTimeString() }}
+                  </span>
+                  <span
+                    class="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+                    :class="{
+                      'bg-blue-500/10 text-blue-400': evt.event.includes('start'),
+                      'bg-emerald-500/10 text-emerald-400': evt.event.includes('complete') || evt.event.includes('hook_received'),
+                      'bg-red-500/10 text-red-400': evt.event.includes('error') || evt.event.includes('fail'),
+                      'bg-amber-500/10 text-amber-400': evt.event.includes('queued') || evt.event.includes('ignored'),
+                      'bg-zinc-800 text-zinc-400': !evt.event.includes('start') && !evt.event.includes('complete') && !evt.event.includes('error') && !evt.event.includes('queued'),
+                    }"
+                  >
+                    {{ evt.event }}
+                  </span>
+                  <span v-if="evt.detail" class="text-zinc-500">{{ evt.detail }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </Transition>

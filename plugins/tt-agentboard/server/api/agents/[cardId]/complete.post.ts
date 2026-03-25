@@ -5,6 +5,7 @@ import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
+import { logCardEvent } from "~~/server/utils/card-events";
 
 /**
  * Callback endpoint for Claude Code Stop hook.
@@ -19,13 +20,14 @@ import { getCardId, requireCard } from "~~/server/utils/params";
 export default defineEventHandler(async (event) => {
   const cardId = getCardId(event);
 
+  await logCardEvent(cardId, "stop_hook_received", "Claude Code Stop hook fired");
   logger.info(`Stop hook callback received for card ${cardId}`);
 
   const card = await requireCard(cardId);
 
-  // Only process if card is actually in_progress
-  if (card.column !== "in_progress") {
-    logger.warn(`Card ${cardId} not in_progress (${card.column}), ignoring callback`);
+  // Only process if card is actively running or queued (not already done/review)
+  if (card.status === "review_ready" || card.status === "done") {
+    await logCardEvent(cardId, "stop_hook_ignored", `card already ${card.status}`);
     return { ok: true, ignored: true };
   }
 

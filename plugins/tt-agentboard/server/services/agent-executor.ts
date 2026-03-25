@@ -9,6 +9,7 @@ import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
 import { shellEscape } from "../utils/workflow-helpers";
+import { logCardEvent } from "../utils/card-events";
 
 /**
  * Handles single agent execution: claim slot, configure Stop hook,
@@ -35,24 +36,22 @@ export class AgentExecutor {
     const card = cardRows[0]!;
 
     if (!card.repoId) {
-      logger.error(`Card ${cardId} has no repo assigned`);
+      await logCardEvent(cardId, "error", "No repo assigned");
       await this.updateCardStatus(cardId, "failed");
       return;
     }
+
+    await logCardEvent(cardId, "execution_start", `repoId=${card.repoId}, mode=${card.executionMode}, branch=${card.branchMode}`);
 
     // Delegate to workflow runner if card has a valid workflow
     if (card.workflowId) {
       const workflow = workflowLoader.get(card.workflowId);
       if (workflow) {
-        logger.info(
-          `Card ${cardId} has workflow "${card.workflowId}", delegating to workflow runner`,
-        );
+        await logCardEvent(cardId, "workflow_delegate", `workflow=${card.workflowId}`);
         await workflowRunner.run(cardId);
         return;
       }
-      logger.warn(
-        `Workflow "${card.workflowId}" not found for card ${cardId}, falling back to single-prompt`,
-      );
+      await logCardEvent(cardId, "workflow_not_found", `workflow=${card.workflowId}, falling back to single-prompt`);
     }
 
     // Single-prompt execution (no workflow)
@@ -63,7 +62,7 @@ export class AgentExecutor {
   private async runSinglePrompt(cardId: number, card: typeof cards.$inferSelect): Promise<void> {
     // Check tmux availability
     if (!tmuxManager.isAvailable()) {
-      logger.error("tmux is not available on this system");
+      await logCardEvent(cardId, "error", "tmux not available");
       await this.updateCardStatus(cardId, "failed");
       return;
     }
@@ -71,7 +70,7 @@ export class AgentExecutor {
     // Claim a workspace slot
     const slot = await slotAllocator.claimSlot(card.repoId!, cardId);
     if (!slot) {
-      logger.warn(`No available slot for card ${cardId}, moving to ready/queued`);
+      await logCardEvent(cardId, "queued", `No available slot for repoId=${card.repoId}`);
       await db
         .update(cards)
         .set({ column: "ready", status: "queued", updatedAt: new Date() })
@@ -86,6 +85,8 @@ export class AgentExecutor {
 
     // Write .claude/settings.local.json with Stop hook in the slot directory
     writeHooks(slot.path, cardId, this.port, "complete");
+
+    await logCardEvent(cardId, "slot_claimed", `slotId=${slot.id}, path=${slot.path}`);
 
     // Create tmux session
     const sessionName = tmuxManager.createSession(cardId, slot.path);
@@ -129,6 +130,7 @@ export class AgentExecutor {
       eventBus.emit("agent:output", { cardId, content: output });
     });
 
+    await logCardEvent(cardId, "agent_started", `session=${sessionName}, mode=${card.executionMode}`);
     logger.info(`Card ${cardId} execution started in session ${sessionName}, Stop hook configured`);
   }
 
