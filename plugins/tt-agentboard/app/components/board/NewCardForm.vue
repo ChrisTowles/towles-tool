@@ -84,7 +84,7 @@ async function submit() {
               Prompt <span class="text-red-400">*</span>
             </label>
             <ClientOnly>
-              <VoiceVoiceInput
+              <VoiceInput
                 @transcription="(text: string) => (prompt = prompt ? `${prompt} ${text}` : text)"
               />
             </ClientOnly>
