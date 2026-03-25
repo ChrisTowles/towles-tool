@@ -44,11 +44,7 @@ function connectWs(timeoutMs = 5000): Promise<{ ws: WebSocket; events: WsEvent[]
   });
 }
 
-function waitForEvent(
-  events: WsEvent[],
-  type: string,
-  timeoutMs = 3000,
-): Promise<WsEvent | null> {
+function waitForEvent(events: WsEvent[], type: string, timeoutMs = 3000): Promise<WsEvent | null> {
   return new Promise((resolve) => {
     const start = Date.now();
     const check = () => {

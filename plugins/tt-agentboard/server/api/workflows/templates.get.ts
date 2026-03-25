@@ -13,21 +13,23 @@ export default defineEventHandler(async () => {
 
   const files = await glob(resolve(templatesDir, "*.yaml"));
 
-  const templates = files.map((file) => {
-    try {
-      const content = readFileSync(file, "utf-8");
-      const parsed = parseYaml(content) as { name?: string; description?: string };
-      return {
-        filename: basename(file),
-        name: parsed.name ?? basename(file, ".yaml"),
-        description: parsed.description ?? "",
-        content,
-      };
-    } catch (err) {
-      logger.error(`Failed to read template ${file}:`, err);
-      return null;
-    }
-  }).filter(Boolean);
+  const templates = files
+    .map((file) => {
+      try {
+        const content = readFileSync(file, "utf-8");
+        const parsed = parseYaml(content) as { name?: string; description?: string };
+        return {
+          filename: basename(file),
+          name: parsed.name ?? basename(file, ".yaml"),
+          description: parsed.description ?? "",
+          content,
+        };
+      } catch (err) {
+        logger.error(`Failed to read template ${file}:`, err);
+        return null;
+      }
+    })
+    .filter(Boolean);
 
   return { templates };
 });

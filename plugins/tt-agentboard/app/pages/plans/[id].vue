@@ -166,82 +166,82 @@ onUnmounted(() => {
     </nav>
 
     <div class="p-4 sm:p-6">
-    <!-- Header -->
-    <div class="mb-6 flex items-center gap-4">
-      <template v-if="plan">
-        <h1 class="text-lg font-bold text-zinc-100">{{ plan.name }}</h1>
-        <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-          {{ plan.cards.length }} cards
-        </span>
-        <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs font-mono text-zinc-500">
-          {{ PR_GRANULARITY_LABELS[plan.prGranularity] ?? plan.prGranularity }}
-        </span>
-      </template>
-    </div>
+      <!-- Header -->
+      <div class="mb-6 flex items-center gap-4">
+        <template v-if="plan">
+          <h1 class="text-lg font-bold text-zinc-100">{{ plan.name }}</h1>
+          <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+            {{ plan.cards.length }} cards
+          </span>
+          <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs font-mono text-zinc-500">
+            {{ PR_GRANULARITY_LABELS[plan.prGranularity] ?? plan.prGranularity }}
+          </span>
+        </template>
+      </div>
 
-    <p v-if="plan?.description" class="mb-6 max-w-2xl text-sm text-zinc-400">
-      {{ plan.description }}
-    </p>
+      <p v-if="plan?.description" class="mb-6 max-w-2xl text-sm text-zinc-400">
+        {{ plan.description }}
+      </p>
 
-    <!-- DAG View -->
-    <div
-      v-if="plan?.cards.length"
-      class="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-5"
-    >
-      <div class="relative" :style="{ width: svgWidth + 'px', height: svgHeight + 'px' }">
-        <!-- SVG edges -->
-        <svg class="pointer-events-none absolute inset-0" :width="svgWidth" :height="svgHeight">
-          <line
-            v-for="(edge, i) in edges"
-            :key="i"
-            :x1="edge.x1 + 20"
-            :y1="edge.y1 + 20"
-            :x2="edge.x2 + 20"
-            :y2="edge.y2 + 20"
-            stroke="#52525b"
-            stroke-width="2"
-            stroke-dasharray="6 4"
-          />
-          <!-- Arrowheads -->
-          <polygon
-            v-for="(edge, i) in edges"
-            :key="'arrow-' + i"
-            :points="`${edge.x2 + 20},${edge.y2 + 20} ${edge.x2 + 12},${edge.y2 + 14} ${edge.x2 + 12},${edge.y2 + 26}`"
-            fill="#52525b"
-          />
-        </svg>
-
-        <!-- Card nodes -->
-        <div
-          v-for="card in plan.cards"
-          :key="card.id"
-          class="absolute rounded-lg border-2 px-3 py-2"
-          :class="statusColors[card.status as CardStatus] ?? 'bg-zinc-800 border-zinc-600'"
-          :style="{
-            left: cardX(dagLayout.positions.get(card.id)?.col ?? 0) + 20 + 'px',
-            top: cardY(dagLayout.positions.get(card.id)?.row ?? 0) + 20 + 'px',
-            width: CARD_W + 'px',
-            height: CARD_H + 'px',
-          }"
-        >
-          <div class="flex items-center gap-2">
-            <span
-              class="h-2 w-2 shrink-0 rounded-full"
-              :class="STATUS_DOT_CLASSES[card.status as CardStatus] ?? 'bg-zinc-500'"
+      <!-- DAG View -->
+      <div
+        v-if="plan?.cards.length"
+        class="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-5"
+      >
+        <div class="relative" :style="{ width: svgWidth + 'px', height: svgHeight + 'px' }">
+          <!-- SVG edges -->
+          <svg class="pointer-events-none absolute inset-0" :width="svgWidth" :height="svgHeight">
+            <line
+              v-for="(edge, i) in edges"
+              :key="i"
+              :x1="edge.x1 + 20"
+              :y1="edge.y1 + 20"
+              :x2="edge.x2 + 20"
+              :y2="edge.y2 + 20"
+              stroke="#52525b"
+              stroke-width="2"
+              stroke-dasharray="6 4"
             />
-            <span class="text-xs font-mono text-zinc-500">#{{ card.id }}</span>
+            <!-- Arrowheads -->
+            <polygon
+              v-for="(edge, i) in edges"
+              :key="'arrow-' + i"
+              :points="`${edge.x2 + 20},${edge.y2 + 20} ${edge.x2 + 12},${edge.y2 + 14} ${edge.x2 + 12},${edge.y2 + 26}`"
+              fill="#52525b"
+            />
+          </svg>
+
+          <!-- Card nodes -->
+          <div
+            v-for="card in plan.cards"
+            :key="card.id"
+            class="absolute rounded-lg border-2 px-3 py-2"
+            :class="statusColors[card.status as CardStatus] ?? 'bg-zinc-800 border-zinc-600'"
+            :style="{
+              left: cardX(dagLayout.positions.get(card.id)?.col ?? 0) + 20 + 'px',
+              top: cardY(dagLayout.positions.get(card.id)?.row ?? 0) + 20 + 'px',
+              width: CARD_W + 'px',
+              height: CARD_H + 'px',
+            }"
+          >
+            <div class="flex items-center gap-2">
+              <span
+                class="h-2 w-2 shrink-0 rounded-full"
+                :class="STATUS_DOT_CLASSES[card.status as CardStatus] ?? 'bg-zinc-500'"
+              />
+              <span class="text-xs font-mono text-zinc-500">#{{ card.id }}</span>
+            </div>
+            <p class="mt-1 text-sm font-medium text-zinc-200 line-clamp-2">{{ card.title }}</p>
           </div>
-          <p class="mt-1 text-sm font-medium text-zinc-200 line-clamp-2">{{ card.title }}</p>
         </div>
       </div>
-    </div>
 
-    <div v-else class="py-20 text-center">
-      <p class="text-sm text-zinc-400">No cards in this plan yet</p>
-      <p class="mt-1 text-xs text-zinc-600">
-        Create cards and assign them to this plan to build your dependency graph
-      </p>
-    </div>
+      <div v-else class="py-20 text-center">
+        <p class="text-sm text-zinc-400">No cards in this plan yet</p>
+        <p class="mt-1 text-xs text-zinc-600">
+          Create cards and assign them to this plan to build your dependency graph
+        </p>
+      </div>
     </div>
   </div>
 </template>

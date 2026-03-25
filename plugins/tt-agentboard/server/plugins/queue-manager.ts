@@ -20,10 +20,7 @@ export default defineNitroPlugin(() => {
       const slot = slotRows[0]!;
 
       // Check current running count across all repos
-      const runningCards = await db
-        .select()
-        .from(cards)
-        .where(eq(cards.status, "running"));
+      const runningCards = await db.select().from(cards).where(eq(cards.status, "running"));
 
       if (runningCards.length >= MAX_CONCURRENT) {
         logger.info(
