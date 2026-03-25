@@ -116,6 +116,18 @@ export const stepRuns = sqliteTable("step_runs", {
   retryNumber: integer("retry_number").default(0),
 });
 
+export const cardEvents = sqliteTable("card_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  cardId: integer("card_id")
+    .notNull()
+    .references(() => cards.id),
+  event: text("event").notNull(),
+  detail: text("detail"),
+  timestamp: integer("timestamp", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const agentLogs = sqliteTable("agent_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   workflowRunId: integer("workflow_run_id")
