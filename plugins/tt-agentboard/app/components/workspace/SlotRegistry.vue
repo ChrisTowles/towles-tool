@@ -12,6 +12,11 @@ const repos = ref<Repo[]>([]);
 const loading = ref(false);
 const showAddForm = ref(false);
 
+// Scan paths config
+const repoPaths = ref<string[]>([]);
+const editingPaths = ref(false);
+const editPathInput = ref("");
+
 const form = reactive({
   repoId: 0,
   path: "",
@@ -22,15 +27,35 @@ const form = reactive({
 async function fetchData() {
   loading.value = true;
   try {
-    const [slotsData, reposData] = await Promise.all([
+    const [slotsData, reposData, config] = await Promise.all([
       $fetch<Slot[]>("/api/slots"),
       $fetch<Repo[]>("/api/repos"),
+      $fetch<{ repoPaths: string[] }>("/api/config"),
     ]);
     slots.value = slotsData;
     repos.value = reposData;
+    repoPaths.value = config.repoPaths;
   } finally {
     loading.value = false;
   }
+}
+
+function startEditingPaths() {
+  editingPaths.value = true;
+  editPathInput.value = repoPaths.value.join("\n");
+}
+
+async function savePaths() {
+  const paths = editPathInput.value
+    .split(/[,\n]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  await $fetch("/api/config", {
+    method: "PUT",
+    body: { repoPaths: paths },
+  });
+  repoPaths.value = paths;
+  editingPaths.value = false;
 }
 
 async function addSlot() {
@@ -101,6 +126,50 @@ onMounted(fetchData);
       >
         {{ showAddForm ? "✕ Cancel" : "+ Add Slot" }}
       </button>
+    </div>
+
+    <!-- Scan paths -->
+    <div
+      v-if="repoPaths.length && !editingPaths"
+      class="mb-4 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
+    >
+      <span class="text-[11px] font-medium text-zinc-500">Scan paths:</span>
+      <span class="flex-1 truncate font-mono text-[11px] text-zinc-400">
+        {{ repoPaths.join(", ") }}
+      </span>
+      <button
+        class="shrink-0 text-[11px] font-medium text-blue-400 hover:underline"
+        @click="startEditingPaths"
+      >
+        Edit
+      </button>
+    </div>
+
+    <!-- Edit scan paths -->
+    <div v-if="editingPaths" class="mb-4 rounded-lg border border-zinc-700 bg-zinc-900/80 p-4">
+      <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+        Repo Scan Directories
+      </label>
+      <textarea
+        v-model="editPathInput"
+        rows="3"
+        placeholder="One path per line"
+        class="mb-2 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-200 placeholder-zinc-600 focus:border-blue-500 focus:outline-none"
+      />
+      <div class="flex justify-end gap-2">
+        <button
+          class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
+          @click="editingPaths = false"
+        >
+          Cancel
+        </button>
+        <button
+          class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+          @click="savePaths"
+        >
+          Save
+        </button>
+      </div>
     </div>
 
     <!-- Add form -->
