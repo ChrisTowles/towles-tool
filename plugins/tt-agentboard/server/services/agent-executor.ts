@@ -107,8 +107,17 @@ export class AgentExecutor {
     let branch: string | null = null;
 
     if (card.branchMode === "create") {
-      // Create a new branch for this card
+      // Start from a clean, up-to-date main before branching
       const branchName = `agentboard/card-${cardId}`;
+      try {
+        execSync("git checkout main && git pull --ff-only", {
+          cwd: slot.path,
+          stdio: "ignore",
+          timeout: 15000,
+        });
+      } catch {
+        await logCardEvent(cardId, "warn", "Could not checkout/pull main before branching");
+      }
       try {
         execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
         branch = branchName;
