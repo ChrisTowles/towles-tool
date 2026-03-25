@@ -29,7 +29,7 @@ export default defineNitroPlugin(() => {
         return;
       }
 
-      // Find next queued card for this repo
+      // Find next queued card (any column — queued cards may be in "ready" column)
       const queued = await db
         .select()
         .from(cards)
@@ -45,7 +45,13 @@ export default defineNitroPlugin(() => {
       const nextCard = queued[0]!;
       logger.info(`Queue: auto-starting card ${nextCard.id} for repo ${slot.repoId}`);
 
-      // Move card to in_progress and trigger execution
+      // Pre-claim the released slot for this card to avoid race conditions
+      await db
+        .update(workspaceSlots)
+        .set({ status: "claimed", claimedByCardId: nextCard.id })
+        .where(eq(workspaceSlots.id, data.slotId));
+
+      // Move card to in_progress
       await db
         .update(cards)
         .set({ column: "in_progress", updatedAt: new Date() })

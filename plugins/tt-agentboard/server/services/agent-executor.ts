@@ -75,8 +75,11 @@ export class AgentExecutor {
       return;
     }
 
-    // Claim a workspace slot
-    const slot = await slotAllocator.claimSlot(card.repoId!, cardId);
+    // Check if a slot is already claimed for this card (e.g. by queue manager)
+    let slot = await slotAllocator.getSlotForCard(cardId);
+    if (!slot) {
+      slot = await slotAllocator.claimSlot(card.repoId!, cardId);
+    }
     if (!slot) {
       await logCardEvent(cardId, "queued", `No available slot for repoId=${card.repoId}`);
       await db
@@ -119,18 +122,26 @@ export class AgentExecutor {
           // Fall back to current branch
           try {
             branch = execSync("git rev-parse --abbrev-ref HEAD", {
-              cwd: slot.path, encoding: "utf-8", timeout: 3000,
+              cwd: slot.path,
+              encoding: "utf-8",
+              timeout: 3000,
             }).trim();
-          } catch { /* not a git repo */ }
+          } catch {
+            /* not a git repo */
+          }
         }
       }
     } else {
       // Stay on current branch
       try {
         branch = execSync("git rev-parse --abbrev-ref HEAD", {
-          cwd: slot.path, encoding: "utf-8", timeout: 3000,
+          cwd: slot.path,
+          encoding: "utf-8",
+          timeout: 3000,
         }).trim();
-      } catch { /* not a git repo */ }
+      } catch {
+        /* not a git repo */
+      }
     }
 
     // Create workflow run record
