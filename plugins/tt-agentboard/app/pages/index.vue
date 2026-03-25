@@ -139,14 +139,27 @@ onUnmounted(() => {
   if (detailInterval.value) clearInterval(detailInterval.value);
 });
 
-// Escape key closes the side panel
-function handleEscape(e: KeyboardEvent) {
-  if (e.key === "Escape" && selectedCardId.value) {
-    closePanel();
-  }
-}
-onMounted(() => document.addEventListener("keydown", handleEscape));
-onUnmounted(() => document.removeEventListener("keydown", handleEscape));
+// Keyboard shortcuts
+useKeyboardShortcuts({
+  newCard: () => {
+    showNewCardForm.value = true;
+  },
+  refresh: () => {
+    // Trigger board refresh via a custom event or direct fetch
+  },
+  closePanel: () => {
+    if (selectedCardId.value) closePanel();
+  },
+  dictate: () => {
+    handleToggleDictation();
+  },
+  archive: () => {
+    if (selectedCard.value?.status === "review_ready") archiveCard();
+  },
+  retry: () => {
+    if (selectedCard.value?.status === "failed") retryCard();
+  },
+});
 </script>
 
 <template>
