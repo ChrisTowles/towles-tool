@@ -8,6 +8,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   archive: [];
   retry: [];
+  start: [];
 }>();
 
 const open = ref(false);
@@ -50,6 +51,11 @@ async function openTerminal() {
   } catch {
     showToast("Failed to attach terminal");
   }
+}
+
+function startAgent() {
+  closeMenu();
+  emit("start");
 }
 
 function retryCard() {
@@ -113,6 +119,17 @@ onUnmounted(() => {
         v-if="open"
         class="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
       >
+        <button
+          v-if="card.status === 'idle' || card.status === 'queued'"
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-blue-400 transition-colors hover:bg-zinc-800"
+          @click="startAgent"
+        >
+          <span class="w-4 text-center text-[10px]">▶</span>
+          Start Agent
+        </button>
+
+        <div v-if="card.status === 'idle' || card.status === 'queued'" class="my-1 border-t border-zinc-800" />
+
         <button
           class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
           @click="openVSCode"
