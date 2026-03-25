@@ -69,9 +69,24 @@ export default defineEventHandler(async (event) => {
     // PR detection is best-effort
   }
 
-  // Stop live capture polling but keep session alive
+  // Kill tmux session and release slot so next card can start
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
+  tmuxManager.killSession(sessionName);
+
+  // Release slot
+  const { workspaceSlots } = await import("~~/server/db/schema");
+  const claimedSlots = await db
+    .select()
+    .from(workspaceSlots)
+    .where(eq(workspaceSlots.claimedByCardId, cardId));
+  for (const slot of claimedSlots) {
+    await db
+      .update(workspaceSlots)
+      .set({ status: "available", claimedByCardId: null })
+      .where(eq(workspaceSlots.id, slot.id));
+    eventBus.emit("slot:released", { slotId: slot.id });
+  }
 
   // Emit events
   eventBus.emit("card:moved", {
@@ -82,7 +97,7 @@ export default defineEventHandler(async (event) => {
   eventBus.emit("card:status-changed", { cardId, status: "review_ready" });
   eventBus.emit("workflow:completed", { cardId, status: "completed" });
 
-  logger.info(`Card ${cardId} completed via Stop hook, moved to review (tmux session preserved)`);
+  logger.info(`Card ${cardId} completed, slot released, tmux killed`);
 
   return { ok: true };
 });
