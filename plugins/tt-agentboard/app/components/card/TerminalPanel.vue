@@ -148,7 +148,7 @@ defineExpose({ terminalExists, refresh: fetchTerminal });
     </div>
 
     <!-- Read-only xterm view -->
-    <div v-if="mode === 'readonly'" class="flex-1 overflow-hidden p-1">
+    <div v-if="mode === 'readonly'" class="relative flex-1 overflow-hidden p-1">
       <div ref="terminalRef" class="h-full w-full" />
       <div
         v-if="!terminalExists && !lastOutput"
