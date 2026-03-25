@@ -204,9 +204,15 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Onboarding wizard (no repos & no slots) -->
+    <!-- Onboarding prompt (no repos & no slots) -->
     <div v-if="!loading && showOnboarding" class="px-4 py-8 sm:px-6">
-      <WorkspaceOnboardingWizard @complete="onOnboardingComplete" />
+      <div class="mx-auto flex max-w-md flex-col items-center rounded-lg border border-dashed border-zinc-800 py-12 text-center">
+        <p class="mb-2 text-sm font-semibold text-zinc-300">Welcome to AgentBoard</p>
+        <p class="mb-4 text-xs text-zinc-500">Set up your workspace slots to start running agents on your repos.</p>
+        <NuxtLink to="/workspaces/setup" class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500">
+          Run Setup Wizard
+        </NuxtLink>
+      </div>
     </div>
 
     <!-- Loading / error states -->
