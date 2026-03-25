@@ -200,6 +200,27 @@ useKeyboardShortcuts({
           <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
             <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
             <div class="flex items-center gap-2">
+              <button
+                v-if="selectedCard && (selectedCard.status === 'idle' || selectedCard.status === 'queued')"
+                class="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
+                @click="startCard"
+              >
+                Start Agent
+              </button>
+              <button
+                v-if="selectedCard?.status === 'failed'"
+                class="rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-amber-500"
+                @click="retryCard"
+              >
+                Retry
+              </button>
+              <button
+                v-if="selectedCard?.status === 'review_ready'"
+                class="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-500"
+                @click="archiveCard"
+              >
+                Archive
+              </button>
               <CardActions
                 v-if="selectedCard"
                 :card="selectedCard"
