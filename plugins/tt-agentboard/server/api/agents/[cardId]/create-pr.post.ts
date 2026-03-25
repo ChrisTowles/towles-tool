@@ -17,11 +17,7 @@ export default defineEventHandler(async (event) => {
   const card = await requireCard(cardId);
 
   // Get the branch from workflow runs
-  const runs = await db
-    .select()
-    .from(workflowRuns)
-    .where(eq(workflowRuns.cardId, cardId))
-    .limit(1);
+  const runs = await db.select().from(workflowRuns).where(eq(workflowRuns.cardId, cardId)).limit(1);
 
   const branch = runs[0]?.branch;
   if (!branch) {
@@ -46,7 +42,10 @@ export default defineEventHandler(async (event) => {
       .where(eq(workspaceSlots.repoId, card.repoId))
       .limit(1);
     if (!repoSlots[0]) {
-      throw createError({ statusCode: 400, statusMessage: "No workspace slot found for this repo" });
+      throw createError({
+        statusCode: 400,
+        statusMessage: "No workspace slot found for this repo",
+      });
     }
     cwd = repoSlots[0].path;
   } else {
