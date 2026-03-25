@@ -71,8 +71,13 @@ export class AgentExecutor {
     // Claim a workspace slot
     const slot = await slotAllocator.claimSlot(card.repoId!, cardId);
     if (!slot) {
-      logger.warn(`No available slot for card ${cardId}, marking as queued`);
-      await this.updateCardStatus(cardId, "queued");
+      logger.warn(`No available slot for card ${cardId}, moving to ready/queued`);
+      await db
+        .update(cards)
+        .set({ column: "ready", status: "queued", updatedAt: new Date() })
+        .where(eq(cards.id, cardId));
+      eventBus.emit("card:moved", { cardId, fromColumn: "in_progress", toColumn: "ready" });
+      eventBus.emit("card:status-changed", { cardId, status: "queued" });
       return;
     }
 
