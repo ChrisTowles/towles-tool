@@ -130,6 +130,20 @@ async function startCard() {
   refreshBoard();
 }
 
+async function createPR() {
+  if (!selectedCardId.value) return;
+  try {
+    const result = await $fetch<{ prNumber: number; prUrl: string }>(
+      `/api/agents/${selectedCardId.value}/create-pr`,
+      { method: "POST" },
+    );
+    await fetchSelectedCard();
+    refreshBoard();
+  } catch {
+    // TODO: show error toast
+  }
+}
+
 async function deleteCard() {
   if (!selectedCardId.value) return;
   await $fetch(`/api/cards/${selectedCardId.value}`, { method: "DELETE" });
@@ -246,6 +260,13 @@ useKeyboardShortcuts({
                 Retry
               </button>
               <button
+                v-if="selectedCard?.status === 'review_ready' && !selectedCard?.githubPrNumber && selectedCard?.branch"
+                class="rounded-lg bg-violet-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-violet-500"
+                @click="createPR"
+              >
+                Create PR
+              </button>
+              <button
                 v-if="selectedCard?.status === 'review_ready'"
                 class="rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-amber-500"
                 @click="retryCard"
@@ -272,7 +293,10 @@ useKeyboardShortcuts({
                 @archive="archiveCard"
                 @retry="retryCard"
                 @start="startCard"
-                @deleted="closePanel(); refreshBoard()"
+                @deleted="
+                  closePanel();
+                  refreshBoard();
+                "
               />
               <NuxtLink
                 :to="`/cards/${selectedCardId}`"
