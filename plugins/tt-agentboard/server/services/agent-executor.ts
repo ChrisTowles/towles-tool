@@ -134,6 +134,11 @@ export class AgentExecutor {
     }
 
     if (!branch && card.branchMode === "create") {
+      // Clean working tree of leftover files from previous agents
+      try {
+        execSync("git checkout -- . && git clean -fd", { cwd: slot.path, stdio: "ignore", timeout: 5000 });
+      } catch { /* non-fatal */ }
+
       // Start from a clean, up-to-date main before branching
       const branchName = `agentboard/card-${cardId}`;
       try {
@@ -180,30 +185,29 @@ export class AgentExecutor {
       }
     }
 
-    // Run package installer if lockfile exists
+    // Run package installer if a lockfile exists
     const { existsSync } = await import("node:fs");
     const { join } = await import("node:path");
-    try {
-      if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
-        execSync("pnpm install --frozen-lockfile", {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 60000,
-        });
-        await logCardEvent(cardId, "deps_installed", "pnpm install");
-      } else if (existsSync(join(slot.path, "bun.lock"))) {
-        execSync("bun install --frozen-lockfile", {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 60000,
-        });
-        await logCardEvent(cardId, "deps_installed", "bun install");
-      } else if (existsSync(join(slot.path, "package-lock.json"))) {
-        execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
-        await logCardEvent(cardId, "deps_installed", "npm ci");
+    const hasLockfile =
+      existsSync(join(slot.path, "pnpm-lock.yaml")) ||
+      existsSync(join(slot.path, "bun.lock")) ||
+      existsSync(join(slot.path, "package-lock.json"));
+
+    if (hasLockfile) {
+      try {
+        if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
+          execSync("pnpm install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          await logCardEvent(cardId, "deps_installed", "pnpm install");
+        } else if (existsSync(join(slot.path, "bun.lock"))) {
+          execSync("bun install --frozen-lockfile", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          await logCardEvent(cardId, "deps_installed", "bun install");
+        } else {
+          execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          await logCardEvent(cardId, "deps_installed", "npm ci");
+        }
+      } catch {
+        await logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
       }
-    } catch {
-      await logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
     }
 
     // Create workflow run record
@@ -233,7 +237,7 @@ export class AgentExecutor {
     flags.push(
       "--append-system-prompt",
       shellEscape(
-        "You are an autonomous agent. Complete the task fully without asking clarifying questions. Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work.",
+        "You are an autonomous agent. Complete the task fully without asking clarifying questions. Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work. IMPORTANT: When you are done, you MUST commit your changes with git add and git commit. Do not leave uncommitted files.",
       ),
     );
     const command = `claude ${flags.join(" ")} ${shellEscape(prompt)}`.trim();

@@ -72,15 +72,20 @@ export default defineEventHandler(async (event) => {
     // Push the branch
     execSync(`git push -u origin ${branch}`, { cwd, stdio: "ignore", timeout: 30000 });
 
-    // Create PR
+    // Create PR — gh pr create returns the PR URL on stdout
     const prTitle = card.title;
     const prBody = card.description ?? "";
-    const result = execSync(
-      `gh pr create --title "${prTitle.replace(/"/g, '\\"')}" --body "${prBody.replace(/"/g, '\\"')}" --base ${base} --head ${branch} --json number,url`,
+    const prUrl = execSync(
+      `gh pr create --title "${prTitle.replace(/"/g, '\\"')}" --body "${prBody.replace(/"/g, '\\"')}" --base ${base} --head ${branch}`,
       { cwd, encoding: "utf-8", timeout: 30000 },
     ).trim();
 
-    const pr = JSON.parse(result);
+    // Extract PR number from URL (e.g., https://github.com/.../pull/42)
+    const prNumMatch = prUrl.match(/\/pull\/(\d+)/);
+    const pr = {
+      number: prNumMatch ? Number(prNumMatch[1]) : 0,
+      url: prUrl,
+    };
 
     // Update card with PR number
     await db

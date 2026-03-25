@@ -69,17 +69,36 @@ export default defineEventHandler(async (event) => {
     // PR detection is best-effort
   }
 
+  // Auto-commit any uncommitted changes left by the agent
+  const { workspaceSlots } = await import("~~/server/db/schema");
+  const claimedSlots = await db
+    .select()
+    .from(workspaceSlots)
+    .where(eq(workspaceSlots.claimedByCardId, cardId));
+
+  for (const slot of claimedSlots) {
+    try {
+      const { execSync } = await import("node:child_process");
+      const status = execSync("git status --porcelain", {
+        cwd: slot.path, encoding: "utf-8", timeout: 5000,
+      }).trim();
+      if (status) {
+        execSync(`git add -A && git commit -m "agentboard: card #${cardId} — ${card.title}"`, {
+          cwd: slot.path, stdio: "ignore", timeout: 10000,
+        });
+        await logCardEvent(cardId, "auto_committed", `Committed uncommitted changes in ${slot.path}`);
+      }
+    } catch {
+      // Non-fatal — agent may have already committed
+    }
+  }
+
   // Kill tmux session and release slot so next card can start
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
   tmuxManager.killSession(sessionName);
 
   // Release slot
-  const { workspaceSlots } = await import("~~/server/db/schema");
-  const claimedSlots = await db
-    .select()
-    .from(workspaceSlots)
-    .where(eq(workspaceSlots.claimedByCardId, cardId));
   for (const slot of claimedSlots) {
     await db
       .update(workspaceSlots)
