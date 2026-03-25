@@ -185,10 +185,10 @@ describe("TmuxManager", () => {
       // Advance past one interval (500ms)
       vi.advanceTimersByTime(500);
 
-      expect(mockExecSync).toHaveBeenCalledWith(
-        "tmux capture-pane -t card-10 -p -S -50",
-        { encoding: "utf-8", timeout: 2000 },
-      );
+      expect(mockExecSync).toHaveBeenCalledWith("tmux capture-pane -t card-10 -p -S -50", {
+        encoding: "utf-8",
+        timeout: 2000,
+      });
       expect(callback).toHaveBeenCalledWith("some terminal output");
 
       // Clean up

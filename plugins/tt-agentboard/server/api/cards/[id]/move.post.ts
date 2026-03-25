@@ -70,10 +70,7 @@ export default defineEventHandler(async (event) => {
       eventBus.emit("slot:released", { slotId: slot.id });
     }
 
-    await db
-      .update(cards)
-      .set({ status: "done", updatedAt: new Date() })
-      .where(eq(cards.id, id));
+    await db.update(cards).set({ status: "done", updatedAt: new Date() }).where(eq(cards.id, id));
 
     eventBus.emit("card:status-changed", { cardId: id, status: "done" });
     logger.info(`Card ${id} archived: tmux killed, slot released`);

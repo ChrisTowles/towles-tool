@@ -57,14 +57,14 @@ const { data: workflows, status } = useFetch<Workflow[]>("/api/workflows");
     </div>
 
     <!-- Empty state -->
-    <div
-      v-else-if="!workflows?.length"
-      class="mx-auto max-w-md py-20 text-center"
-    >
+    <div v-else-if="!workflows?.length" class="mx-auto max-w-md py-20 text-center">
       <p class="mb-2 text-sm text-zinc-400">No workflows loaded</p>
       <p class="text-xs leading-relaxed text-zinc-600">
-        Workflows define multi-step agent pipelines (plan, implement, review).
-        Add a YAML file to <code class="rounded bg-zinc-800 px-1 py-0.5 font-mono text-zinc-500">.agentboard/workflows/</code> in any registered repo to get started.
+        Workflows define multi-step agent pipelines (plan, implement, review). Add a YAML file to
+        <code class="rounded bg-zinc-800 px-1 py-0.5 font-mono text-zinc-500"
+          >.agentboard/workflows/</code
+        >
+        in any registered repo to get started.
       </p>
     </div>
 
