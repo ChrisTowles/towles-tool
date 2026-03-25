@@ -65,6 +65,8 @@ export function useCards(boardId: Ref<number> = ref(1)) {
     description?: string;
     repoId?: number;
     workflowId?: string;
+    executionMode?: string;
+    branchMode?: string;
   }) {
     try {
       const card = await $fetch<Card>("/api/cards", {

@@ -57,6 +57,7 @@ export const cards = sqliteTable("cards", {
   ),
   position: integer("position").notNull().default(0),
   executionMode: text("execution_mode", { enum: ["headless", "interactive"] }).default("headless"),
+  branchMode: text("branch_mode", { enum: ["create", "current"] }).default("create"),
   status: text("status", {
     enum: [
       "idle",

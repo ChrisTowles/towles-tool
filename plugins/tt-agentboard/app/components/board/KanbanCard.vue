@@ -104,9 +104,16 @@ const issueUrl = computed(() => {
       >
     </div>
 
-    <!-- Repo badge -->
-    <div v-if="card.repo" class="mb-2">
+    <!-- Repo + branch info -->
+    <div v-if="card.repo" class="mb-2 flex flex-wrap items-center gap-1.5">
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
+      <span
+        v-if="card.branch"
+        class="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-mono text-violet-400"
+        :title="card.branch"
+      >
+        {{ card.branch.length > 25 ? card.branch.slice(0, 25) + '...' : card.branch }}
+      </span>
     </div>
 
     <!-- Progress bar -->
@@ -120,7 +127,9 @@ const issueUrl = computed(() => {
 
     <!-- Diff stats -->
     <div v-if="diffStats" class="mb-2 flex items-center gap-2 text-[10px] font-mono">
-      <span class="text-zinc-500">{{ diffStats.files }} file{{ diffStats.files !== 1 ? "s" : "" }}</span>
+      <span class="text-zinc-500"
+        >{{ diffStats.files }} file{{ diffStats.files !== 1 ? "s" : "" }}</span
+      >
       <span class="text-emerald-400">+{{ diffStats.additions }}</span>
       <span class="text-red-400">-{{ diffStats.deletions }}</span>
     </div>

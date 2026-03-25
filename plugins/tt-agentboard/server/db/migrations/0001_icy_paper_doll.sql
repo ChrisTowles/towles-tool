@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `branch_mode` text DEFAULT 'create';
