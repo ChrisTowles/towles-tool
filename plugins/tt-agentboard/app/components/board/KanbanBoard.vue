@@ -25,8 +25,14 @@ const { data: githubStatus } = useFetch<{ configured: boolean }>("/api/github/st
 const { data: health } = useFetch<{ tmuxInstalled: boolean; ghAuthenticated: boolean }>(
   "/api/health",
 );
-const { data: repos } = useFetch<{ id: number }[]>("/api/repos");
-const { data: slots } = useFetch<{ id: number }[]>("/api/slots");
+const { data: repos, refresh: refreshRepos } = useFetch<{ id: number }[]>("/api/repos");
+const { data: slots, refresh: refreshSlots } = useFetch<{ id: number }[]>("/api/slots");
+
+const showOnboarding = computed(() => !repos.value?.length && !slots.value?.length);
+
+async function onOnboardingComplete() {
+  await Promise.all([refreshRepos(), refreshSlots(), fetchCards()]);
+}
 
 // Sync external showNewCard prop
 watch(
@@ -198,61 +204,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Getting started (empty board) -->
-    <div v-if="!loading && totalCards === 0" class="mx-auto max-w-xl px-6 py-8">
-      <h2 class="mb-4 text-sm font-bold text-zinc-200">Getting Started</h2>
-      <ol class="space-y-3 text-xs leading-relaxed text-zinc-400">
-        <li class="flex items-start gap-3">
-          <span
-            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
-            :class="
-              repos?.length ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-500'
-            "
-            >1</span
-          >
-          <div>
-            <span class="font-semibold text-zinc-300">Configure workspaces</span>
-            — Go to
-            <NuxtLink to="/workspaces" class="font-medium text-blue-400 hover:underline"
-              >Workspaces</NuxtLink
-            >
-            and add a slot: pick a repo and point it to a local git checkout.
-            <span v-if="!repos?.length" class="block mt-1 text-amber-500/80"
-              >No repos registered yet — adding a workspace slot will register its repo
-              automatically.</span
-            >
-            <span v-else-if="!slots?.length" class="block mt-1 text-amber-500/80"
-              >Repos found but no workspace slots configured. Add one to enable agent
-              execution.</span
-            >
-          </div>
-        </li>
-        <li class="flex items-start gap-3">
-          <span
-            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-500"
-            >2</span
-          >
-          <div>
-            <span class="font-semibold text-zinc-300">Create a card</span>
-            — Click
-            <span class="rounded bg-blue-600/20 px-1.5 py-0.5 font-semibold text-blue-400"
-              >+ New Card</span
-            >
-            above. Give it a title like "Fix the login bug" and select a repo.
-          </div>
-        </li>
-        <li class="flex items-start gap-3">
-          <span
-            class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-500"
-            >3</span
-          >
-          <div>
-            <span class="font-semibold text-zinc-300">Run an agent</span>
-            — Drag the card to "In Progress". A Claude Code session starts in tmux. Click the card
-            to see live terminal output.
-          </div>
-        </li>
-      </ol>
+    <!-- Onboarding wizard (no repos & no slots) -->
+    <div v-if="!loading && showOnboarding" class="px-4 py-8 sm:px-6">
+      <WorkspaceOnboardingWizard @complete="onOnboardingComplete" />
     </div>
 
     <!-- Loading / error states -->

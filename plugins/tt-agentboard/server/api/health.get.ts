@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { isGitHubConfigured } from "~~/server/services/github-service";
+import { readConfig } from "~~/server/utils/config";
 
 export default defineEventHandler(() => {
   let tmuxInstalled = false;
@@ -11,6 +12,7 @@ export default defineEventHandler(() => {
   }
 
   const ghAuthenticated = isGitHubConfigured();
+  const config = readConfig();
 
-  return { tmuxInstalled, ghAuthenticated };
+  return { tmuxInstalled, ghAuthenticated, repoPaths: config.repoPaths };
 });
