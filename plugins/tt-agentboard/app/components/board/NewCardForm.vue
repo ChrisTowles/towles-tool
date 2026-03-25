@@ -227,7 +227,7 @@ async function submit() {
           </button>
           <button
             type="submit"
-            :disabled="!title.trim() || submitting"
+            :disabled="!prompt.trim() || submitting"
             class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {{ submitting ? "Creating..." : "Create Card" }}
