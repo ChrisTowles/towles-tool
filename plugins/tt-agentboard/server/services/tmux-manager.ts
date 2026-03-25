@@ -53,7 +53,7 @@ export class TmuxManager extends EventEmitter {
 
     const interval = setInterval(() => {
       try {
-        const output = execSync(`tmux capture-pane -t ${sessionName} -p -S -50`, {
+        const output = execSync(`tmux capture-pane -t ${sessionName} -p -e -S -50`, {
           encoding: "utf-8",
           timeout: 2000,
         });
