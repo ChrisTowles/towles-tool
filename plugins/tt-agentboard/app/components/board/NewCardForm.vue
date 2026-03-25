@@ -19,6 +19,7 @@ const description = ref("");
 const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);
 const executionMode = ref<"headless" | "interactive">("headless");
+const branchMode = ref<"create" | "current">("create");
 const submitting = ref(false);
 const submitError = ref("");
 
@@ -34,6 +35,8 @@ async function submit() {
     description: description.value.trim() || undefined,
     repoId: repoId.value,
     workflowId: workflowId.value || undefined,
+    executionMode: executionMode.value,
+    branchMode: branchMode.value,
   });
   submitting.value = false;
   if (card) {
@@ -165,6 +168,48 @@ async function submit() {
               executionMode === "headless"
                 ? "Runs autonomously with --dangerously-skip-permissions."
                 : "Runs in tmux — attach to interact with the agent."
+            }}
+          </p>
+        </div>
+
+        <!-- Branch mode toggle -->
+        <div>
+          <label
+            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
+            Branch
+          </label>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors"
+              :class="
+                branchMode === 'create'
+                  ? 'border-violet-500 bg-violet-500/10 text-violet-400'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
+              "
+              @click="branchMode = 'create'"
+            >
+              New Branch
+            </button>
+            <button
+              type="button"
+              class="flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors"
+              :class="
+                branchMode === 'current'
+                  ? 'border-violet-500 bg-violet-500/10 text-violet-400'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
+              "
+              @click="branchMode = 'current'"
+            >
+              Current Branch
+            </button>
+          </div>
+          <p class="mt-1.5 text-[11px] text-zinc-600">
+            {{
+              branchMode === "create"
+                ? "Creates a new git branch for this work (recommended for PRs)."
+                : "Stays on the current branch — use for quick fixes or manual branch management."
             }}
           </p>
         </div>

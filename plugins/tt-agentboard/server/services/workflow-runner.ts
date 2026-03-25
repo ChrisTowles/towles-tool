@@ -54,8 +54,10 @@ export class WorkflowRunner {
     if (!ctx) return;
 
     try {
-      // Create git branch
-      this.createBranch(ctx);
+      // Create git branch (skip if branchMode is "current")
+      if (ctx.card.branchMode !== "current") {
+        this.createBranch(ctx);
+      }
 
       // Execute each step in sequence
       for (let i = 0; i < ctx.workflow.steps.length; i++) {

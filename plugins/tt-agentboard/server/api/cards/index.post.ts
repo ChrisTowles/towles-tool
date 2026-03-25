@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
       column: body.column || "backlog",
       position: body.position || 0,
       executionMode: body.executionMode || "headless",
+      branchMode: body.branchMode || "create",
       workflowId: body.workflowId,
     })
     .returning();
