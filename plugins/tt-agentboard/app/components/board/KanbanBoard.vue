@@ -10,6 +10,7 @@ const props = defineProps<{
   isDictating?: boolean;
   newCardPrefill?: string;
   showNewCard?: boolean;
+  refreshTrigger?: number;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +41,12 @@ watch(
   (v) => {
     if (v) showNewCardForm.value = true;
   },
+);
+
+// Refresh board when parent triggers it
+watch(
+  () => props.refreshTrigger,
+  () => fetchCards(),
 );
 
 function onCardCreated() {

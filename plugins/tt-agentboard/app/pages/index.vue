@@ -73,6 +73,10 @@ watch(isListening, async (listening) => {
 });
 
 const activeTab = ref<"terminal" | "diff">("terminal");
+const boardRefreshKey = ref(0);
+function refreshBoard() {
+  boardRefreshKey.value++;
+}
 
 // Card selection
 function selectCard(cardId: number) {
@@ -100,6 +104,7 @@ async function archiveCard() {
     body: { column: "done" },
   });
   closePanel();
+  refreshBoard();
 }
 
 async function startCard() {
@@ -109,6 +114,7 @@ async function startCard() {
     body: { column: "in_progress", position: 0 },
   });
   await fetchSelectedCard();
+  refreshBoard();
 }
 
 async function retryCard() {
@@ -118,6 +124,7 @@ async function retryCard() {
     body: { column: "in_progress" },
   });
   await fetchSelectedCard();
+  refreshBoard();
 }
 
 async function fetchSelectedCard() {
@@ -184,6 +191,7 @@ useKeyboardShortcuts({
           :is-dictating="isListening"
           :show-new-card="showNewCardForm"
           :new-card-prefill="newCardPrefill"
+          :refresh-trigger="boardRefreshKey"
           @card-selected="selectCard"
           @toggle-dictation="handleToggleDictation"
           @new-card-closed="
@@ -201,7 +209,10 @@ useKeyboardShortcuts({
             <span class="text-sm font-semibold text-zinc-200">Card #{{ selectedCardId }}</span>
             <div class="flex items-center gap-2">
               <button
-                v-if="selectedCard && (selectedCard.status === 'idle' || selectedCard.status === 'queued')"
+                v-if="
+                  selectedCard &&
+                  (selectedCard.status === 'idle' || selectedCard.status === 'queued')
+                "
                 class="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
                 @click="startCard"
               >
