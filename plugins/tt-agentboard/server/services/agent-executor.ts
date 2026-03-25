@@ -99,17 +99,38 @@ export class AgentExecutor {
     // Create tmux session
     const sessionName = tmuxManager.createSession(cardId, slot.path);
 
-    // Detect current branch in the slot
+    // Branch handling
+    const { execSync } = await import("node:child_process");
     let branch: string | null = null;
-    try {
-      const { execSync } = await import("node:child_process");
-      branch = execSync("git rev-parse --abbrev-ref HEAD", {
-        cwd: slot.path,
-        encoding: "utf-8",
-        timeout: 3000,
-      }).trim();
-    } catch {
-      // Not a git repo or git not available
+
+    if (card.branchMode === "create") {
+      // Create a new branch for this card
+      const branchName = `agentboard/card-${cardId}`;
+      try {
+        execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
+        branch = branchName;
+        await logCardEvent(cardId, "branch_created", branchName);
+      } catch {
+        // Branch may exist — try switching to it
+        try {
+          execSync(`git checkout ${branchName}`, { cwd: slot.path, stdio: "ignore" });
+          branch = branchName;
+        } catch {
+          // Fall back to current branch
+          try {
+            branch = execSync("git rev-parse --abbrev-ref HEAD", {
+              cwd: slot.path, encoding: "utf-8", timeout: 3000,
+            }).trim();
+          } catch { /* not a git repo */ }
+        }
+      }
+    } else {
+      // Stay on current branch
+      try {
+        branch = execSync("git rev-parse --abbrev-ref HEAD", {
+          cwd: slot.path, encoding: "utf-8", timeout: 3000,
+        }).trim();
+      } catch { /* not a git repo */ }
     }
 
     // Create workflow run record
