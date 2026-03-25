@@ -17,15 +17,20 @@ const borderClass = computed(
 );
 
 const elapsedTime = computed(() => {
-  if (props.card.status !== "running") return null;
-  const start = new Date(props.card.updatedAt).getTime();
+  if (props.card.status === "idle") return null;
+  // Running cards: show time since last status change (updatedAt)
+  // Other non-idle cards: show time since creation
+  const ref = props.card.status === "running" ? props.card.updatedAt : props.card.createdAt;
+  const start = new Date(ref).getTime();
   const now = Date.now();
   const seconds = Math.floor((now - start) / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
 });
 
 const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "⌨" : "⚡"));
@@ -91,6 +96,7 @@ const issueUrl = computed(() => {
     <!-- Header: title + mode icon -->
     <div class="mb-2 flex items-start justify-between gap-2">
       <h3 class="text-sm font-semibold leading-snug text-zinc-100 group-hover:text-white">
+        <span class="text-zinc-500 font-mono text-xs">#{{ card.id }}</span>
         {{ card.title }}
       </h3>
       <span
