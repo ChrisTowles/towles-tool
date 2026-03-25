@@ -58,6 +58,10 @@ export default class Agentboard extends BaseCommand {
       description: "Directory for AgentBoard data (SQLite DB, artifacts)",
       env: "AGENTBOARD_DATA_DIR",
     }),
+    lan: Flags.boolean({
+      description: "Listen on all interfaces (0.0.0.0) for LAN access. Default: localhost only.",
+      default: false,
+    }),
   };
 
   static override args = {
@@ -123,9 +127,17 @@ export default class Agentboard extends BaseCommand {
     const dbPath = join(dataDir, "agentboard.db");
     const isFirstRun = !existsSync(dbPath);
 
-    consola.box(
-      `AgentBoard\n\n  Local:   http://localhost:${port}\n  Network: http://${localIp}:${port}\n  Data:    ${dataDir}`,
-    );
+    const lanMode = flags.lan;
+    const host = lanMode ? "0.0.0.0" : "127.0.0.1";
+
+    const lines = [`AgentBoard\n\n  Local:   http://localhost:${port}`];
+    if (lanMode) {
+      lines.push(`  Network: http://${localIp}:${port}`);
+    } else {
+      lines.push(`  Network: disabled (use --lan to enable)`);
+    }
+    lines.push(`  Data:    ${dataDir}`);
+    consola.box(lines.join("\n"));
 
     if (isFirstRun) {
       consola.info("First run detected — a new database will be created at startup.");
@@ -141,7 +153,12 @@ export default class Agentboard extends BaseCommand {
     const proc = spawn("pnpm", ["dev", "--port", port], {
       cwd: agentboardDir,
       stdio: "inherit",
-      env: { ...process.env, NUXT_DEV_HOST: "0.0.0.0", AGENTBOARD_DATA_DIR: dataDir },
+      env: {
+        ...process.env,
+        NUXT_DEV_HOST: host,
+        AGENTBOARD_DATA_DIR: dataDir,
+        AGENTBOARD_LAN: lanMode ? "1" : "0",
+      },
     });
 
     if (flags.open) {

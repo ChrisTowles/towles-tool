@@ -8,7 +8,7 @@ export default defineNuxtConfig({
     },
   },
   devServer: {
-    host: "0.0.0.0",
+    host: process.env.AGENTBOARD_LAN === "1" ? "0.0.0.0" : "127.0.0.1",
     port: 4200,
   },
   app: {
