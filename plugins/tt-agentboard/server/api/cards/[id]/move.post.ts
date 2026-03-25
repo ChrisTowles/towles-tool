@@ -31,8 +31,26 @@ export default defineEventHandler(async (event) => {
     toColumn: body.column,
   });
 
-  // If moved to in_progress, trigger agent execution
+  // If moved to in_progress, clean up stale resources first, then trigger agent
   if (body.column === "in_progress") {
+    // Release any stale slots from a previous run
+    const staleSlots = await db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.claimedByCardId, id));
+    for (const slot of staleSlots) {
+      await db
+        .update(workspaceSlots)
+        .set({ status: "available", claimedByCardId: null })
+        .where(eq(workspaceSlots.id, slot.id));
+      eventBus.emit("slot:released", { slotId: slot.id });
+    }
+
+    // Kill any stale tmux session
+    const sessionName = `card-${id}`;
+    tmuxManager.stopCapture(sessionName);
+    tmuxManager.killSession(sessionName);
+
     agentExecutor.startExecution(id).catch(() => {
       eventBus.emit("card:status-changed", { cardId: id, status: "failed" });
     });
