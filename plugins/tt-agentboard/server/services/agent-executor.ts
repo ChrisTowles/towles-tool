@@ -98,9 +98,23 @@ export class AgentExecutor {
       .returning();
 
     // Build the Claude Code command
+    // TODO: add --model flag from card config
+    // TODO: add --permission-mode instead of binary headless/interactive
+    // TODO: add --verbose flag option
+    // TODO: consider --append-system-prompt for card-level custom instructions
     const prompt = card.description ?? card.title;
-    const modelFlag = card.executionMode === "interactive" ? "" : "--dangerously-skip-permissions";
-    const command = `claude -p ${shellEscape(prompt)} ${modelFlag}`.trim();
+    const flags: string[] = ["-p"];
+    if (card.executionMode !== "interactive") {
+      flags.push("--dangerously-skip-permissions");
+    }
+    flags.push("--max-turns", "50");
+    flags.push(
+      "--append-system-prompt",
+      shellEscape(
+        "You are an autonomous agent. Complete the task fully without asking clarifying questions. Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work.",
+      ),
+    );
+    const command = `claude ${flags.join(" ")} ${shellEscape(prompt)}`.trim();
 
     // Send command to tmux session
     tmuxManager.sendCommand(sessionName, command);
