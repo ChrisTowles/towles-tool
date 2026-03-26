@@ -26,6 +26,16 @@ export interface AgentOutputEvent extends BoardEvent {
   content: string;
 }
 
+export interface AgentActivityEvent extends BoardEvent {
+  type: "agent:activity";
+  cardId: number;
+  event: {
+    kind: "tool_use" | "thinking" | "text" | "result";
+    [key: string]: unknown;
+  };
+  timestamp: number;
+}
+
 export interface WorkflowCompletedEvent extends BoardEvent {
   type: "workflow:completed";
   cardId: number;
@@ -151,6 +161,16 @@ function unsubscribeTerminal(cardId: number) {
   send({ type: "unsubscribe-terminal", cardId });
 }
 
+/** Subscribe to activity events for a specific card */
+function subscribeActivity(cardId: number) {
+  send({ type: "subscribe-activity", cardId });
+}
+
+/** Unsubscribe from activity events for a specific card */
+function unsubscribeActivity(cardId: number) {
+  send({ type: "unsubscribe-activity", cardId });
+}
+
 /**
  * Integrate with useCards — update card list reactively from WebSocket events.
  * Returns a cleanup function.
@@ -213,6 +233,8 @@ export function useWebSocket() {
     send,
     subscribeTerminal,
     unsubscribeTerminal,
+    subscribeActivity,
+    unsubscribeActivity,
     bindCards,
     connect,
     disconnect,
