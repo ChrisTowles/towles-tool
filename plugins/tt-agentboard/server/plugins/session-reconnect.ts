@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { tmuxManager } from "../services/tmux-manager";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
+import { logCardEvent } from "../utils/card-events";
 
 export default defineNitroPlugin(async () => {
   if (!tmuxManager.isAvailable()) {
@@ -53,12 +54,14 @@ export default defineNitroPlugin(async () => {
         `Session reconnect: card ${cardId} status is "${card.status}", killing stale session`,
       );
       tmuxManager.killSession(sessionName);
+      await logCardEvent(cardId, "tmux_session_orphaned_killed", `session=${sessionName}, status=${card.status}`);
       continue;
     }
 
     // Card is running and session exists — resume capture
     if (tmuxManager.sessionExists(sessionName)) {
       logger.info(`Session reconnect: resuming capture for card ${cardId}`);
+      await logCardEvent(cardId, "tmux_session_reconnected", `session=${sessionName}`);
       tmuxManager.startCapture(sessionName, (output) => {
         eventBus.emit("agent:output", { cardId, content: output });
       });
@@ -75,6 +78,7 @@ export default defineNitroPlugin(async () => {
         .set({ status: "failed", endedAt: new Date() })
         .where(eq(workflowRuns.cardId, cardId));
 
+      await logCardEvent(cardId, "agent_failed", `session ${sessionName} died between list and check`);
       eventBus.emit("card:status-changed", { cardId, status: "failed" });
     }
   }
@@ -88,6 +92,7 @@ export default defineNitroPlugin(async () => {
       logger.warn(
         `Session reconnect: card ${card.id} is running but no tmux session, marking failed`,
       );
+      await logCardEvent(card.id, "agent_failed", "session not found on restart");
       await db
         .update(cards)
         .set({ status: "failed", updatedAt: new Date() })

@@ -39,6 +39,6 @@ export default defineEventHandler(async (event) => {
   return rows.map((card) => ({
     ...card,
     branch: branches.get(card.id) ?? null,
-    repo: card.repoId ? repoMap.get(card.repoId) ?? null : null,
+    repo: card.repoId ? (repoMap.get(card.repoId) ?? null) : null,
   }));
 });

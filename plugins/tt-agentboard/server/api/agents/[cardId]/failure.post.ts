@@ -5,6 +5,7 @@ import { tmuxManager } from "~~/server/services/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
+import { logCardEvent } from "~~/server/utils/card-events";
 
 /**
  * Callback endpoint for Claude Code StopFailure hook.
@@ -36,6 +37,8 @@ export default defineEventHandler(async (event) => {
   // Stop capture but keep session alive for debugging
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
+
+  await logCardEvent(cardId, "agent_failed", `session=${sessionName} preserved for debugging`);
 
   eventBus.emit("card:status-changed", { cardId, status: "failed" });
   eventBus.emit("workflow:completed", { cardId, status: "failed" });

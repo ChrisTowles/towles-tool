@@ -104,7 +104,10 @@ export default defineEventHandler(async (event) => {
   // Kill tmux session and release slot so next card can start
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
-  tmuxManager.killSession(sessionName);
+  const killed = tmuxManager.killSession(sessionName);
+  if (killed) {
+    await logCardEvent(cardId, "tmux_session_killed", `session=${sessionName}`);
+  }
 
   // Release slot
   for (const slot of claimedSlots) {
@@ -112,6 +115,7 @@ export default defineEventHandler(async (event) => {
       .update(workspaceSlots)
       .set({ status: "available", claimedByCardId: null })
       .where(eq(workspaceSlots.id, slot.id));
+    await logCardEvent(cardId, "slot_released", `slotId=${slot.id}`);
     eventBus.emit("slot:released", { slotId: slot.id });
   }
 

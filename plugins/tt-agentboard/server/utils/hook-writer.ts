@@ -2,9 +2,13 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "./logger";
 
+function httpHook(url: string) {
+  return [{ matcher: "", hooks: [{ type: "http", url }] }];
+}
+
 /**
  * Write .claude/settings.local.json with hooks that POST to AgentBoard
- * callback endpoints for lifecycle events: Stop, StopFailure, Notification.
+ * callback endpoints for lifecycle events: Stop, Notification.
  */
 export function writeHooks(
   slotPath: string,
@@ -27,12 +31,10 @@ export function writeHooks(
   }
 
   const baseUrl = `http://localhost:${port}/api/agents/${cardId}`;
-  const httpHook = (url: string) => [{ matcher: "", hooks: [{ type: "http", url }] }];
 
   settings.hooks = {
     ...(settings.hooks as Record<string, unknown> | undefined),
     Stop: httpHook(`${baseUrl}/${stopEndpoint}`),
-    StopFailure: httpHook(`${baseUrl}/failure`),
     Notification: httpHook(`${baseUrl}/notification`),
   };
 

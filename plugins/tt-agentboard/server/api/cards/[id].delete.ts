@@ -1,7 +1,8 @@
 import { db } from "~~/server/db";
-import { cards, cardEvents, workflowRuns, stepRuns } from "~~/server/db/schema";
+import { cards, cardEvents, workflowRuns, stepRuns, workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/services/tmux-manager";
+import { eventBus } from "~~/server/utils/event-bus";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
@@ -10,6 +11,19 @@ export default defineEventHandler(async (event) => {
   const sessionName = `card-${id}`;
   tmuxManager.stopCapture(sessionName);
   tmuxManager.killSession(sessionName);
+
+  // Release any claimed workspace slots
+  const claimedSlots = await db
+    .select()
+    .from(workspaceSlots)
+    .where(eq(workspaceSlots.claimedByCardId, id));
+  for (const slot of claimedSlots) {
+    await db
+      .update(workspaceSlots)
+      .set({ status: "available", claimedByCardId: null })
+      .where(eq(workspaceSlots.id, slot.id));
+    eventBus.emit("slot:released", { slotId: slot.id });
+  }
 
   // Delete related records (foreign key constraints)
   await db.delete(cardEvents).where(eq(cardEvents.cardId, id));

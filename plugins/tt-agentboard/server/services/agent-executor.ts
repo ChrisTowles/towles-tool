@@ -96,11 +96,19 @@ export class AgentExecutor {
 
     // Write .claude/settings.local.json with Stop hook in the slot directory
     writeHooks(slot.path, cardId, this.port, "complete");
+    await logCardEvent(cardId, "hooks_written", `endpoint=complete, path=${slot.path}`);
 
     await logCardEvent(cardId, "slot_claimed", `slotId=${slot.id}, path=${slot.path}`);
 
     // Create tmux session
-    const sessionName = tmuxManager.createSession(cardId, slot.path);
+    const { sessionName, created } = tmuxManager.createSession(cardId, slot.path);
+    if (created) {
+      await logCardEvent(
+        cardId,
+        "tmux_session_created",
+        `session=${sessionName}, cwd=${slot.path}`,
+      );
+    }
 
     // Branch handling
     const { execSync } = await import("node:child_process");
@@ -243,21 +251,24 @@ export class AgentExecutor {
     // TODO: add --verbose flag option
     // TODO: consider --append-system-prompt for card-level custom instructions
     const prompt = card.description ?? card.title;
-    const flags: string[] = ["-p"];
+    const systemPrompt =
+      "You are an autonomous agent. Complete the task fully without asking clarifying questions. " +
+      "Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work. " +
+      "IMPORTANT: When you are done, you MUST commit your changes with git add and git commit. Do not leave uncommitted files.";
+
+    const args: string[] = [];
     if (card.executionMode !== "interactive") {
-      flags.push("--dangerously-skip-permissions");
+      args.push("--dangerously-skip-permissions");
     }
-    flags.push("--max-turns", "50");
-    flags.push(
-      "--append-system-prompt",
-      shellEscape(
-        "You are an autonomous agent. Complete the task fully without asking clarifying questions. Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work. IMPORTANT: When you are done, you MUST commit your changes with git add and git commit. Do not leave uncommitted files.",
-      ),
-    );
-    const command = `claude ${flags.join(" ")} ${shellEscape(prompt)}`.trim();
+    args.push("--max-turns 50");
+    args.push(`--append-system-prompt ${shellEscape(systemPrompt)}`);
+    args.push(`-p ${shellEscape(prompt)}`);
+
+    const command = `claude \\\n  ${args.join(" \\\n  ")}`;
 
     // Send command to tmux session
     tmuxManager.sendCommand(sessionName, command);
+    await logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
 
     // Start capturing output and forwarding via event bus
     tmuxManager.startCapture(sessionName, (output) => {
