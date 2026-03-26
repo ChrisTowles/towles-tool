@@ -1,6 +1,5 @@
 import type { FSWatcher } from "node:fs";
-import { watch as fsWatch, createReadStream } from "node:fs";
-import { open } from "node:fs/promises";
+import { watch as fsWatch, createReadStream, statSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { parseStreamLine } from "../utils/stream-parser";
 import { eventBus } from "../utils/event-bus";
@@ -26,11 +25,8 @@ class StreamTailer {
       reading = true;
 
       try {
-        const fh = await open(logFilePath, "r");
-        const stat = await fh.stat();
-
-        if (stat.size <= offset) {
-          await fh.close();
+        const fileSize = statSync(logFilePath).size;
+        if (fileSize <= offset) {
           reading = false;
           return;
         }
@@ -41,12 +37,7 @@ class StreamTailer {
         });
         const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
-        let newOffset = offset;
-
         for await (const line of rl) {
-          // +1 for the newline character
-          newOffset += Buffer.byteLength(line, "utf-8") + 1;
-
           const event = parseStreamLine(line);
           if (event) {
             eventBus.emit("agent:activity", {
@@ -57,8 +48,8 @@ class StreamTailer {
           }
         }
 
-        offset = newOffset;
-        await fh.close();
+        // Use actual file size as offset — avoids CRLF byte-counting issues
+        offset = fileSize;
       } catch (err) {
         if (!closed) {
           logger.warn(`Stream tailer read error for card ${cardId}:`, err);

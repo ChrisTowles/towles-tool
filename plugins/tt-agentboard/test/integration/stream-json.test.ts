@@ -20,7 +20,7 @@ describe("Stream JSON Integration (Haiku)", { timeout: 90_000 }, () => {
     mkdirSync(testDir, { recursive: true });
     try {
       execSync(
-        `claude --model claude-haiku-4-5-20251001 --output-format stream-json --verbose -p ${JSON.stringify(prompt)} --max-turns 2 < /dev/null > ${JSON.stringify(outputFile)} 2>&1`,
+        `claude --model haiku --output-format stream-json --verbose -p ${JSON.stringify(prompt)} --max-turns 2 < /dev/null > ${JSON.stringify(outputFile)} 2>&1`,
         {
           timeout: 60_000,
           cwd: testDir,

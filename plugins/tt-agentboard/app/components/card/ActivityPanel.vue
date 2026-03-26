@@ -3,19 +3,24 @@ import type { AgentActivityEvent } from "~/composables/useWebSocket";
 
 const props = defineProps<{ cardId: number }>();
 
-interface ActivityEvent {
-  kind: "tool_use" | "thinking" | "text" | "result";
-  name?: string;
-  detail?: string;
-  input?: Record<string, unknown>;
-  summary?: string;
-  content?: string;
-  costUsd?: number;
-  durationMs?: number;
-  numTurns?: number;
-  isError?: boolean;
-  timestamp: number;
-}
+type ActivityEvent =
+  | {
+      kind: "tool_use";
+      name: string;
+      detail: string;
+      input: Record<string, unknown>;
+      timestamp: number;
+    }
+  | { kind: "thinking"; summary: string; timestamp: number }
+  | { kind: "text"; content: string; timestamp: number }
+  | {
+      kind: "result";
+      costUsd: number;
+      durationMs: number;
+      numTurns: number;
+      isError: boolean;
+      timestamp: number;
+    };
 
 const MAX_EVENTS = 500;
 const events = ref<ActivityEvent[]>([]);

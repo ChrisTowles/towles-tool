@@ -8,7 +8,7 @@ import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
-import { buildClaudeCommand, shellEscape } from "../utils/workflow-helpers";
+import { buildStreamingCommand, shellEscape } from "../utils/workflow-helpers";
 import { logCardEvent } from "../utils/card-events";
 import { streamTailer } from "./stream-tailer";
 
@@ -260,13 +260,12 @@ export class AgentExecutor {
     if (card.executionMode !== "interactive") {
       args.push("--dangerously-skip-permissions");
     }
-    args.push("--output-format", "stream-json", "--verbose");
     args.push("--max-turns", "50");
     args.push("--append-system-prompt", shellEscape(systemPrompt));
     args.push("-p", shellEscape(prompt));
 
     const logFilePath = join(slot.path, ".claude-stream.ndjson");
-    const command = `${buildClaudeCommand(args)} 2>&1 | tee ${shellEscape(logFilePath)}`;
+    const command = buildStreamingCommand(args, logFilePath);
 
     tmuxManager.sendCommand(sessionName, command);
     await logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
