@@ -260,7 +260,7 @@ export class AgentExecutor {
     if (card.executionMode !== "interactive") {
       args.push("--dangerously-skip-permissions");
     }
-    args.push("--output-format", "stream-json");
+    args.push("--output-format", "stream-json", "--verbose");
     args.push("--max-turns", "50");
     args.push("--append-system-prompt", shellEscape(systemPrompt));
     args.push("-p", shellEscape(prompt));

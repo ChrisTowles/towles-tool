@@ -276,7 +276,7 @@ export class WorkflowRunner {
       const prompt = await this.buildStepPrompt(ctx, step);
 
       const args: string[] = ["--dangerously-skip-permissions"];
-      args.push("--output-format", "stream-json");
+      args.push("--output-format", "stream-json", "--verbose");
       args.push("--max-turns", "50");
       if (step.model) args.push("--model", step.model);
       args.push("-p", shellEscape(prompt));
