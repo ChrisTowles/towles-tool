@@ -173,11 +173,14 @@ export const cache: Record<string, unknown> = {};
       const decision = readFileSync(join(dir, "decision.md"), "utf-8");
       expect(decision.length).toBeGreaterThan(10);
 
-      // Verify config.ts was modified
+      // Verify config.ts was modified from the original
       const config = readFileSync(join(dir, "config.ts"), "utf-8");
-      // The agent should have picked one approach — either Map or kept Object
-      const hasImplementation = config.includes("Map") || config.includes("Record");
-      expect(hasImplementation).toBe(true);
+      const original = `// TODO: Choose either Map or Object for the cache implementation
+// Option A: Use a Map (better for frequent additions/deletions)
+// Option B: Use a plain object (simpler serialization)
+export const cache: Record<string, unknown> = {};
+`;
+      expect(config).not.toBe(original);
     });
   });
 });
