@@ -91,7 +91,7 @@ watch(
 
     <!-- Repo + branch info -->
     <div v-if="card.repo" class="mb-2 flex flex-wrap items-center gap-1.5">
-      <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
+      <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" :repo-id="card.repoId" />
       <span
         v-if="card.branch"
         class="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-mono text-violet-400"

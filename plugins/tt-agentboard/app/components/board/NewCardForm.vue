@@ -3,6 +3,7 @@ interface Repo {
   id: number;
   name: string;
   org: string | null;
+  slotPaths?: string[];
 }
 
 const props = defineProps<{
@@ -116,7 +117,12 @@ async function submit() {
           >
             <option :value="undefined">None</option>
             <option v-for="repo in repos" :key="repo.id" :value="repo.id">
-              {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name }}
+              {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name
+              }}{{
+                repo.slotPaths?.length
+                  ? ` (${repo.slotPaths.map((p) => p.split("/").pop()).join(", ")})`
+                  : ""
+              }}
             </option>
           </select>
           <p v-if="repos && repos.length === 0" class="mt-1.5 text-[11px] text-amber-500/80">
