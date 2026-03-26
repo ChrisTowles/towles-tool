@@ -1,6 +1,6 @@
 import { db } from "~~/server/db";
-import { cards, workflowRuns } from "~~/server/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { cards, repositories, workflowRuns } from "~~/server/db/schema";
+import { eq, desc, inArray } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);
@@ -12,10 +12,19 @@ export default defineEventHandler(async (event) => {
     .where(eq(cards.boardId, boardId))
     .orderBy(cards.position);
 
+  // Batch-fetch repos for cards that have a repoId
+  const repoIds = [...new Set(rows.map((c) => c.repoId).filter((id): id is number => id !== null))];
+  const repoMap = new Map<number, { name: string; org: string | null; githubUrl: string | null }>();
+  if (repoIds.length > 0) {
+    const repos = await db.select().from(repositories).where(inArray(repositories.id, repoIds));
+    for (const r of repos) {
+      repoMap.set(r.id, { name: r.name, org: r.org, githubUrl: r.githubUrl });
+    }
+  }
+
   // Batch-fetch latest branch from workflowRuns for all cards
-  const cardIds = rows.map((c) => c.id);
   const branches = new Map<number, string>();
-  if (cardIds.length > 0) {
+  if (rows.length > 0) {
     const runs = await db
       .select({ cardId: workflowRuns.cardId, branch: workflowRuns.branch })
       .from(workflowRuns)
@@ -30,5 +39,6 @@ export default defineEventHandler(async (event) => {
   return rows.map((card) => ({
     ...card,
     branch: branches.get(card.id) ?? null,
+    repo: card.repoId ? repoMap.get(card.repoId) ?? null : null,
   }));
 });

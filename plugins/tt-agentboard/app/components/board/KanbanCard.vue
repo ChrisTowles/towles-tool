@@ -12,14 +12,15 @@ const emit = defineEmits<{
   selected: [cardId: number];
 }>();
 
+const cardRef = computed(() => props.card);
+const { issueUrl, prUrl } = useCardUrls(cardRef);
+
 const borderClass = computed(
   () => STATUS_BORDER_CLASSES[props.card.status as CardStatus] ?? "border-zinc-700",
 );
 
 const elapsedTime = computed(() => {
   if (props.card.status === "idle") return null;
-  // Running cards: show time since last status change (updatedAt)
-  // Other non-idle cards: show time since creation
   const ref = props.card.status === "running" ? props.card.updatedAt : props.card.createdAt;
   const start = new Date(ref).getTime();
   const now = Date.now();
@@ -63,28 +64,6 @@ watch(
   },
   { immediate: true },
 );
-
-const prUrl = computed(() => {
-  if (!props.card.githubPrNumber) return null;
-  if (props.card.repo?.githubUrl) {
-    return `${props.card.repo.githubUrl}/pull/${props.card.githubPrNumber}`;
-  }
-  if (props.card.repo?.org && props.card.repo?.name) {
-    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/pull/${props.card.githubPrNumber}`;
-  }
-  return null;
-});
-
-const issueUrl = computed(() => {
-  if (!props.card.githubIssueNumber) return null;
-  if (props.card.repo?.githubUrl) {
-    return `${props.card.repo.githubUrl}/issues/${props.card.githubIssueNumber}`;
-  }
-  if (props.card.repo?.org && props.card.repo?.name) {
-    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/issues/${props.card.githubIssueNumber}`;
-  }
-  return null;
-});
 </script>
 
 <template>
