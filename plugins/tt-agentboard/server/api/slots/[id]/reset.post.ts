@@ -1,38 +1,44 @@
 import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { repositories, workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
-async function gitRun(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, {
-    cwd,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-}
+import { gitRun } from "~~/server/utils/git";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
+  const query = getQuery(event);
+  const force = query.force === "true";
 
-  const rows = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, id));
-  if (rows.length === 0) {
+  const [slot] = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, id));
+  if (!slot) {
     throw createError({ statusCode: 404, statusMessage: "Slot not found" });
   }
-
-  const slot = rows[0];
   if (slot.status === "claimed") {
     throw createError({ statusCode: 409, statusMessage: "Cannot reset a claimed slot" });
   }
 
   const cwd = slot.path;
 
+  const porcelain = await gitRun(cwd, ["status", "--porcelain"]);
+  if (porcelain.length > 0 && !force) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Slot has uncommitted changes. Use ?force=true to override.",
+    });
+  }
+
+  let defaultBranch = "main";
+  if (slot.repoId) {
+    const [repo] = await db.select().from(repositories).where(eq(repositories.id, slot.repoId));
+    if (repo?.defaultBranch) {
+      defaultBranch = repo.defaultBranch;
+    }
+  }
+
   try {
     await gitRun(cwd, ["stash", "--include-untracked"]);
     await gitRun(cwd, ["fetch", "origin"]);
-    await gitRun(cwd, ["checkout", "main"]);
-    await gitRun(cwd, ["reset", "--hard", "origin/main"]);
+    await gitRun(cwd, ["checkout", defaultBranch]);
+    await gitRun(cwd, ["reset", "--hard", `origin/${defaultBranch}`]);
   } catch (err) {
     throw createError({
       statusCode: 500,

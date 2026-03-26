@@ -49,12 +49,12 @@ function sendResponse() {
       {{ card.description }}
     </p>
 
-    <div v-if="card.repo" class="mb-4">
+    <div v-if="card.repo && !compact" class="mb-4">
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
     </div>
 
     <div
-      v-if="card.githubIssueNumber || card.githubPrNumber || card.branch"
+      v-if="(card.githubIssueNumber || card.githubPrNumber || card.branch) && !compact"
       class="mb-4 space-y-1.5"
     >
       <!-- Branch -->

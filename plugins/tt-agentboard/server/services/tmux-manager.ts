@@ -123,3 +123,7 @@ export class TmuxManager extends EventEmitter {
 }
 
 export const tmuxManager = new TmuxManager();
+
+export function cardSessionName(cardId: number): string {
+  return `card-${cardId}`;
+}

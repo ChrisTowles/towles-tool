@@ -1,22 +1,7 @@
 import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { repositories, workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
-async function gitCommand(cwd: string, args: string[]): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return stdout.trim();
-  } catch {
-    return null;
-  }
-}
+import { gitQuery } from "~~/server/utils/git";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
@@ -28,11 +13,14 @@ export default defineEventHandler(async (event) => {
   const slot = rows[0];
   const cwd = slot.path;
 
+  const repos = await db.select().from(repositories).where(eq(repositories.id, slot.repoId));
+  const defaultBranch = repos[0]?.defaultBranch ?? "main";
+
   const [branch, aheadStr, behindStr, porcelain] = await Promise.all([
-    gitCommand(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    gitCommand(cwd, ["rev-list", "origin/main..HEAD", "--count"]),
-    gitCommand(cwd, ["rev-list", "HEAD..origin/main", "--count"]),
-    gitCommand(cwd, ["status", "--porcelain"]),
+    gitQuery(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    gitQuery(cwd, ["rev-list", `origin/${defaultBranch}..HEAD`, "--count"]),
+    gitQuery(cwd, ["rev-list", `HEAD..origin/${defaultBranch}`, "--count"]),
+    gitQuery(cwd, ["status", "--porcelain"]),
   ]);
 
   return {

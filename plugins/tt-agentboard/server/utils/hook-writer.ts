@@ -35,6 +35,7 @@ export function writeHooks(
   settings.hooks = {
     ...(settings.hooks as Record<string, unknown> | undefined),
     Stop: httpHook(`${baseUrl}/${stopEndpoint}`),
+    StopFailure: httpHook(`${baseUrl}/failure`),
     Notification: httpHook(`${baseUrl}/notification`),
   };
 

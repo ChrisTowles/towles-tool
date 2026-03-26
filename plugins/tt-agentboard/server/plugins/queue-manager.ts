@@ -8,13 +8,7 @@ import { logCardEvent } from "../utils/card-events";
 
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_AGENTS) || 3;
 
-async function tryAutoStartNext(slotId: number): Promise<void> {
-  // Find which repo this slot belongs to
-  const slotRows = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, slotId));
-
-  if (slotRows.length === 0) return;
-  const slot = slotRows[0]!;
-
+async function tryAutoStartNext(slot: { id: number; repoId: number | null }): Promise<boolean> {
   // Check current running count across all repos
   const runningCards = await db.select().from(cards).where(eq(cards.status, "running"));
 
@@ -22,7 +16,7 @@ async function tryAutoStartNext(slotId: number): Promise<void> {
     logger.info(
       `Queue: ${runningCards.length}/${MAX_CONCURRENT} agents running, skipping auto-start`,
     );
-    return;
+    return false;
   }
 
   // Find next queued card (any column — queued cards may be in "ready" column)
@@ -47,7 +41,7 @@ async function tryAutoStartNext(slotId: number): Promise<void> {
 
   if (queued.length === 0) {
     logger.info(`Queue: no queued or ready cards for repo ${slot.repoId}`);
-    return;
+    return false;
   }
 
   const nextCard = queued[0]!;
@@ -60,7 +54,7 @@ async function tryAutoStartNext(slotId: number): Promise<void> {
   await db
     .update(workspaceSlots)
     .set({ status: "claimed", claimedByCardId: nextCard.id })
-    .where(eq(workspaceSlots.id, slotId));
+    .where(eq(workspaceSlots.id, slot.id));
 
   // Move card to in_progress
   await db
@@ -78,7 +72,7 @@ async function tryAutoStartNext(slotId: number): Promise<void> {
     await logCardEvent(
       nextCard.id,
       "auto_started",
-      `Auto-promoted from ready column (slot ${slotId} became available)`,
+      `Auto-promoted from ready column (slot ${slot.id} became available)`,
     );
   }
 
@@ -86,12 +80,19 @@ async function tryAutoStartNext(slotId: number): Promise<void> {
     logger.error(`Queue: failed to start card ${nextCard.id}:`, err);
     eventBus.emit("card:status-changed", { cardId: nextCard.id, status: "failed" });
   });
+
+  return true;
 }
 
 export default defineNitroPlugin(() => {
   eventBus.on("slot:released", async (data: { slotId: number }) => {
     try {
-      await tryAutoStartNext(data.slotId);
+      const [slot] = await db
+        .select()
+        .from(workspaceSlots)
+        .where(eq(workspaceSlots.id, data.slotId));
+      if (!slot) return;
+      await tryAutoStartNext(slot);
     } catch (err) {
       logger.error("Queue: error processing slot:released:", err);
     }
@@ -115,13 +116,12 @@ export default defineNitroPlugin(() => {
         .from(workspaceSlots)
         .where(eq(workspaceSlots.status, "available"));
 
+      let started = 0;
       for (const slot of availableSlots) {
-        // Re-check running count after each start
-        const currentRunning = await db.select().from(cards).where(eq(cards.status, "running"));
+        if (runningCards.length + started >= MAX_CONCURRENT) break;
 
-        if (currentRunning.length >= MAX_CONCURRENT) break;
-
-        await tryAutoStartNext(slot.id);
+        const didStart = await tryAutoStartNext(slot);
+        if (didStart) started++;
       }
     } catch (err) {
       logger.error("Queue: error processing card:status-changed for auto-start:", err);
