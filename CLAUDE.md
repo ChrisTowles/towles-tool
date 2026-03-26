@@ -36,6 +36,12 @@ pnpm test               # Run vitest (222 tests, needs dev server running)
 pnpm build              # Build for production
 pnpm db:generate        # Generate Drizzle migration
 pnpm db:migrate         # Apply migrations
+
+# AgentBoard CLI
+tt ag                   # Start AgentBoard (localhost only)
+tt ag --lan             # Start with LAN access (0.0.0.0)
+tt ag reset             # Delete DB and start fresh
+tt ag attach <cardId>   # Attach to card's tmux session
 ```
 
 ## AgentBoard Plugin (`plugins/tt-agentboard/`)
@@ -52,6 +58,14 @@ pnpm db:migrate         # Apply migrations
 - **GitHub integration uses `gh` CLI** (not Octokit/GITHUB_TOKEN) — requires `gh auth login`
 - **Agent completion**: detected via Claude Code HTTP Stop hooks, not tmux polling
 - **Shared server utils**: `server/utils/params.ts` (getCardId, requireCard), `server/utils/hook-writer.ts`, `server/utils/workflow-helpers.ts`
+- **pnpm workspace**: root `pnpm install` installs for agentboard too (configured in `pnpm-workspace.yaml`)
+- **DB auto-migrates on startup** — no need to run `pnpm db:migrate` manually. `tt ag reset` to wipe DB.
+- **`gh` CLI gotcha**: `gh issue create` and `gh pr create` do NOT support `--json` flag — parse URL from stdout instead. `gh list` commands DO support `--json`.
+- **Agent executor flow**: checkout main → pull → clean working tree → create branch → install deps → write hooks → spawn claude in tmux
+- **Auto-commit safety net**: Stop hook auto-commits uncommitted changes after agent finishes. System prompt also tells agent to commit.
+- **`claude -p` needs `--max-turns 50`** — without it, print mode exits after 1 turn. Agent also needs `--append-system-prompt` telling it to work autonomously and commit.
+- **Card lifecycle hooks**: Stop → complete (review_ready), StopFailure → failure, Notification → waiting_input
+- **ttyd**: requires top-level ES module import (not `require()`), starts on port 7700+
 
 ## Guidelines
 
