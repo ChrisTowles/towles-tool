@@ -14,39 +14,8 @@ const emit = defineEmits<{
 }>();
 
 const agentInput = ref("");
-
-const branchUrl = computed(() => {
-  if (!props.card.branch) return null;
-  if (props.card.repo?.githubUrl) {
-    return `${props.card.repo.githubUrl}/tree/${props.card.branch}`;
-  }
-  if (props.card.repo?.org && props.card.repo?.name) {
-    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/tree/${props.card.branch}`;
-  }
-  return null;
-});
-
-const issueUrl = computed(() => {
-  if (!props.card.githubIssueNumber) return null;
-  if (props.card.repo?.githubUrl) {
-    return `${props.card.repo.githubUrl}/issues/${props.card.githubIssueNumber}`;
-  }
-  if (props.card.repo?.org && props.card.repo?.name) {
-    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/issues/${props.card.githubIssueNumber}`;
-  }
-  return null;
-});
-
-const prUrl = computed(() => {
-  if (!props.card.githubPrNumber) return null;
-  if (props.card.repo?.githubUrl) {
-    return `${props.card.repo.githubUrl}/pull/${props.card.githubPrNumber}`;
-  }
-  if (props.card.repo?.org && props.card.repo?.name) {
-    return `https://github.com/${props.card.repo.org}/${props.card.repo.name}/pull/${props.card.githubPrNumber}`;
-  }
-  return null;
-});
+const cardRef = computed(() => props.card);
+const { branchUrl, issueUrl, prUrl } = useCardUrls(cardRef);
 
 function sendResponse() {
   if (!agentInput.value.trim()) return;
@@ -80,12 +49,12 @@ function sendResponse() {
       {{ card.description }}
     </p>
 
-    <div v-if="card.repo && !compact" class="mb-4">
+    <div v-if="card.repo" class="mb-4">
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
     </div>
 
     <div
-      v-if="(card.githubIssueNumber || card.githubPrNumber || card.branch) && !compact"
+      v-if="card.githubIssueNumber || card.githubPrNumber || card.branch"
       class="mb-4 space-y-1.5"
     >
       <!-- Branch -->
