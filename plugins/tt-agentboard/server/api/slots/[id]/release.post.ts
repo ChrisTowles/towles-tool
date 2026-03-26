@@ -2,9 +2,25 @@ import { db } from "~~/server/db";
 import { workspaceSlots } from "~~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus } from "~~/server/utils/event-bus";
+import { tmuxManager, cardSessionName } from "~~/server/services/tmux-manager";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
+
+  const [slot] = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, id));
+  if (!slot) {
+    throw createError({ statusCode: 404, statusMessage: "Slot not found" });
+  }
+
+  if (slot.status === "claimed" && slot.claimedByCardId) {
+    const sessionName = cardSessionName(slot.claimedByCardId);
+    if (tmuxManager.sessionExists(sessionName)) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Slot has an active agent session. Stop the agent first.",
+      });
+    }
+  }
 
   const result = await db
     .update(workspaceSlots)
@@ -14,10 +30,6 @@ export default defineEventHandler(async (event) => {
     })
     .where(eq(workspaceSlots.id, id))
     .returning();
-
-  if (result.length === 0) {
-    throw createError({ statusCode: 404, statusMessage: "Slot not found" });
-  }
 
   eventBus.emit("slot:released", { slotId: id });
   return result[0];

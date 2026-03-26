@@ -30,3 +30,8 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 export function shellEscape(str: string): string {
   return `'${str.replace(/'/g, "'\\''")}'`;
 }
+
+/** Build a multi-line claude CLI command from args */
+export function buildClaudeCommand(args: string[]): string {
+  return `claude \\\n  ${args.join(" \\\n  ")}`;
+}

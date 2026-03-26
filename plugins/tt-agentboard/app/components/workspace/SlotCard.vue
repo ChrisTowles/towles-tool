@@ -75,16 +75,11 @@ async function resetToMain() {
   }
 }
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
-
 onMounted(() => {
   fetchGitInfo();
-  pollTimer = setInterval(fetchGitInfo, 10_000);
 });
 
-onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
-});
+watch(() => props.slot.status, fetchGitInfo);
 </script>
 
 <template>

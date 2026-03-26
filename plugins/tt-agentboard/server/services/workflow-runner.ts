@@ -12,7 +12,12 @@ import type { WorkflowDefinition, WorkflowStep } from "./workflow-loader";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
-import { checkPassCondition, renderTemplate, shellEscape } from "../utils/workflow-helpers";
+import {
+  buildClaudeCommand,
+  checkPassCondition,
+  renderTemplate,
+  shellEscape,
+} from "../utils/workflow-helpers";
 import { logCardEvent } from "../utils/card-events";
 
 interface RunContext {
@@ -268,14 +273,12 @@ export class WorkflowRunner {
       // Build prompt
       const prompt = await this.buildStepPrompt(ctx, step);
 
-      // Build Claude Code command
       const args: string[] = ["--dangerously-skip-permissions"];
-      args.push("--max-turns 50");
-      if (step.model) args.push(`--model ${step.model}`);
-      args.push(`-p ${shellEscape(prompt)}`);
-      const command = `claude \\\n  ${args.join(" \\\n  ")}`;
+      args.push("--max-turns", "50");
+      if (step.model) args.push("--model", step.model);
+      args.push("-p", shellEscape(prompt));
+      const command = buildClaudeCommand(args);
 
-      // Send command to tmux
       tmuxManager.sendCommand(ctx.sessionName, command);
 
       // Wait for Stop hook callback (step-complete endpoint resolves this)
@@ -283,7 +286,11 @@ export class WorkflowRunner {
 
       if (!completed) {
         logger.warn(`Step ${step.id} timed out for card ${ctx.cardId}`);
-        await logCardEvent(ctx.cardId, "step_failed", `stepId=${step.id}, reason=timeout, retry=${retry}`);
+        await logCardEvent(
+          ctx.cardId,
+          "step_failed",
+          `stepId=${step.id}, reason=timeout, retry=${retry}`,
+        );
         await db
           .update(stepRuns)
           .set({ status: "failed", endedAt: new Date() })
@@ -312,7 +319,11 @@ export class WorkflowRunner {
       // Check for artifact after hook fired
       if (!existsSync(artifactPath)) {
         logger.warn(`Artifact not found at ${artifactPath} after step ${step.id} completed`);
-        await logCardEvent(ctx.cardId, "step_failed", `stepId=${step.id}, reason=artifact_missing, retry=${retry}`);
+        await logCardEvent(
+          ctx.cardId,
+          "step_failed",
+          `stepId=${step.id}, reason=artifact_missing, retry=${retry}`,
+        );
         await db
           .update(stepRuns)
           .set({ status: "failed", endedAt: new Date() })
@@ -336,7 +347,11 @@ export class WorkflowRunner {
       if (step.pass_condition) {
         const passed = checkPassCondition(step.pass_condition, artifactContent);
         if (!passed) {
-          await logCardEvent(ctx.cardId, "step_failed", `stepId=${step.id}, reason=pass_condition, retry=${retry}`);
+          await logCardEvent(
+            ctx.cardId,
+            "step_failed",
+            `stepId=${step.id}, reason=pass_condition, retry=${retry}`,
+          );
           await db
             .update(stepRuns)
             .set({ status: "failed", endedAt: new Date(), artifactPath })

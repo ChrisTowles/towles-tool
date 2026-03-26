@@ -8,7 +8,7 @@ import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
-import { shellEscape } from "../utils/workflow-helpers";
+import { buildClaudeCommand, shellEscape } from "../utils/workflow-helpers";
 import { logCardEvent } from "../utils/card-events";
 
 /**
@@ -245,7 +245,6 @@ export class AgentExecutor {
       })
       .returning();
 
-    // Build the Claude Code command
     // TODO: add --model flag from card config
     // TODO: add --permission-mode instead of binary headless/interactive
     // TODO: add --verbose flag option
@@ -260,17 +259,15 @@ export class AgentExecutor {
     if (card.executionMode !== "interactive") {
       args.push("--dangerously-skip-permissions");
     }
-    args.push("--max-turns 50");
-    args.push(`--append-system-prompt ${shellEscape(systemPrompt)}`);
-    args.push(`-p ${shellEscape(prompt)}`);
+    args.push("--max-turns", "50");
+    args.push("--append-system-prompt", shellEscape(systemPrompt));
+    args.push("-p", shellEscape(prompt));
 
-    const command = `claude \\\n  ${args.join(" \\\n  ")}`;
+    const command = buildClaudeCommand(args);
 
-    // Send command to tmux session
     tmuxManager.sendCommand(sessionName, command);
     await logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
 
-    // Start capturing output and forwarding via event bus
     tmuxManager.startCapture(sessionName, (output) => {
       eventBus.emit("agent:output", { cardId, content: output });
     });

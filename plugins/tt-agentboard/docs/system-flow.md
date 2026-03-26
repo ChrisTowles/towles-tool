@@ -4,14 +4,14 @@ AgentBoard is a Nuxt 4 app that manages autonomous Claude Code agents via a Kanb
 
 ## Core Concepts
 
-| Concept | Description |
-|---------|-------------|
-| **Board** | Kanban board with columns: backlog, ready, in_progress, review, done |
-| **Card** | A task with title, description, repo, status, optional workflow and GitHub issue link |
-| **Repository** | A registered Git repo (org, name, default branch, GitHub URL) |
-| **Workspace Slot** | A directory (git worktree) tied to a repo. Each running agent needs one slot. |
-| **Workflow** | Multi-step YAML pipeline loaded from `.agentboard/workflows/*.yaml` in a repo |
-| **Plan** | Groups cards with shared PR granularity (per_card or per_plan) |
+| Concept            | Description                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| **Board**          | Kanban board with columns: backlog, ready, in_progress, review, done                  |
+| **Card**           | A task with title, description, repo, status, optional workflow and GitHub issue link |
+| **Repository**     | A registered Git repo (org, name, default branch, GitHub URL)                         |
+| **Workspace Slot** | A directory (git worktree) tied to a repo. Each running agent needs one slot.         |
+| **Workflow**       | Multi-step YAML pipeline loaded from `.agentboard/workflows/*.yaml` in a repo         |
+| **Plan**           | Groups cards with shared PR granularity (per_card or per_plan)                        |
 
 ## Card Lifecycle
 
@@ -40,13 +40,13 @@ stateDiagram-v2
 
 **Column/status mapping:**
 
-| Column | Statuses |
-|--------|----------|
-| backlog | idle, blocked |
-| ready | idle, queued |
+| Column      | Statuses               |
+| ----------- | ---------------------- |
+| backlog     | idle, blocked          |
+| ready       | idle, queued           |
 | in_progress | running, waiting_input |
-| review | review_ready |
-| done | done |
+| review      | review_ready           |
+| done        | done                   |
 
 ## Agent Execution Flow
 
@@ -100,19 +100,31 @@ Card moved to in_progress
 
 ### Hook Callback Endpoints
 
-| Endpoint | Hook | Effect |
-|----------|------|--------|
-| `POST /api/agents/{cardId}/complete` | Stop | Auto-commit uncommitted changes, kill tmux, release slot, move card to review |
-| `POST /api/agents/{cardId}/step-complete` | Stop (workflow) | Resolves pending step promise so workflow-runner proceeds to next step |
-| `POST /api/agents/{cardId}/notification` | Notification | Set card status to waiting_input |
+| Endpoint                                  | Hook            | Effect                                                                        |
+| ----------------------------------------- | --------------- | ----------------------------------------------------------------------------- |
+| `POST /api/agents/{cardId}/complete`      | Stop            | Auto-commit uncommitted changes, kill tmux, release slot, move card to review |
+| `POST /api/agents/{cardId}/step-complete` | Stop (workflow) | Resolves pending step promise so workflow-runner proceeds to next step        |
+| `POST /api/agents/{cardId}/notification`  | Notification    | Set card status to waiting_input                                              |
 
 The hooks are written to `.claude/settings.local.json` in the slot directory:
 
 ```json
 {
   "hooks": {
-    "Stop": [{ "matcher": "", "hooks": [{ "type": "http", "url": "http://localhost:4200/api/agents/{cardId}/complete" }] }],
-    "Notification": [{ "matcher": "", "hooks": [{ "type": "http", "url": "http://localhost:4200/api/agents/{cardId}/notification" }] }]
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "http", "url": "http://localhost:4200/api/agents/{cardId}/complete" }]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "http", "url": "http://localhost:4200/api/agents/{cardId}/notification" }
+        ]
+      }
+    ]
   }
 }
 ```
@@ -131,11 +143,13 @@ graph LR
 **Slot statuses:** available | claimed | locked
 
 **Lifecycle:**
+
 1. **Claim** (`slot-allocator.claimSlot`): finds first available slot for the repo, sets status=claimed, claimedByCardId=cardId
 2. **Use**: agent runs in the slot directory (git ops, claude CLI)
 3. **Release** (`slot-allocator.releaseSlot`): sets status=available, claimedByCardId=null, emits `slot:released`
 
 **Concurrency control:**
+
 - `MAX_CONCURRENT_AGENTS` (env var, default 3) limits total running agents
 - Each repo can run as many agents as it has available slots
 - When no slot is available, the card is set to `queued` in the `ready` column
@@ -177,6 +191,7 @@ graph TB
 **Server side:** All services emit events on the shared `eventBus` (Node EventEmitter). The WebSocket handler (`server/routes/ws.ts`) forwards every event to connected clients.
 
 **Event types:**
+
 - `card:moved` -- column change
 - `card:status-changed` -- status change
 - `step:started/completed/failed` -- workflow step progress
@@ -192,28 +207,28 @@ graph TB
 
 ## Key Services
 
-| Service | File | Purpose |
-|---------|------|---------|
-| **tmux-manager** | `services/tmux-manager.ts` | Create/kill tmux sessions, send commands, poll terminal output via capture-pane |
-| **agent-executor** | `services/agent-executor.ts` | Single-prompt execution: slot claim, branch setup, deps install, spawn claude CLI |
-| **workflow-runner** | `services/workflow-runner.ts` | Multi-step pipeline: iterate steps, wait for callbacks, check artifacts/pass conditions, retry |
-| **workflow-loader** | `services/workflow-loader.ts` | Load YAML workflow definitions from `.agentboard/workflows/`, watch for changes with chokidar |
-| **context-bundler** | `services/context-bundler.ts` | Build step prompts: template vars, previous artifacts, dependency diffs, CLAUDE.md |
-| **slot-allocator** | `services/slot-allocator.ts` | Claim/release workspace slots per repo |
-| **dependency-resolver** | `services/dependency-resolver.ts` | Track card dependencies (dependsOn field), unblock cards when deps complete |
-| **github-service** | `services/github-service.ts` | GitHub operations via `gh` CLI: list issues, create PRs, manage labels, poll for trigger labels |
-| **ttyd-manager** | `services/ttyd-manager.ts` | Spawn ttyd processes to expose tmux sessions as web terminals (port 7700+) |
+| Service                 | File                              | Purpose                                                                                         |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **tmux-manager**        | `services/tmux-manager.ts`        | Create/kill tmux sessions, send commands, poll terminal output via capture-pane                 |
+| **agent-executor**      | `services/agent-executor.ts`      | Single-prompt execution: slot claim, branch setup, deps install, spawn claude CLI               |
+| **workflow-runner**     | `services/workflow-runner.ts`     | Multi-step pipeline: iterate steps, wait for callbacks, check artifacts/pass conditions, retry  |
+| **workflow-loader**     | `services/workflow-loader.ts`     | Load YAML workflow definitions from `.agentboard/workflows/`, watch for changes with chokidar   |
+| **context-bundler**     | `services/context-bundler.ts`     | Build step prompts: template vars, previous artifacts, dependency diffs, CLAUDE.md              |
+| **slot-allocator**      | `services/slot-allocator.ts`      | Claim/release workspace slots per repo                                                          |
+| **dependency-resolver** | `services/dependency-resolver.ts` | Track card dependencies (dependsOn field), unblock cards when deps complete                     |
+| **github-service**      | `services/github-service.ts`      | GitHub operations via `gh` CLI: list issues, create PRs, manage labels, poll for trigger labels |
+| **ttyd-manager**        | `services/ttyd-manager.ts`        | Spawn ttyd processes to expose tmux sessions as web terminals (port 7700+)                      |
 
 ## Nitro Plugins (Startup)
 
-| Plugin | File | Purpose |
-|--------|------|---------|
-| **seed** | `plugins/seed.ts` | Ensure default board exists |
-| **session-reconnect** | `plugins/session-reconnect.ts` | On startup: reconcile running cards with live tmux sessions, kill orphans, resume captures |
-| **queue-manager** | `plugins/queue-manager.ts` | Auto-start queued/ready cards when slots become available |
-| **dependency-watcher** | `plugins/dependency-watcher.ts` | When a card completes, unblock dependent cards and move them to ready |
-| **github-poll** | `plugins/github-poll.ts` | Poll GitHub issues with trigger labels, auto-create cards |
-| **github-label-sync** | `plugins/github-label-sync.ts` | Sync card status to GitHub issue labels (in_progress/success/failure) |
+| Plugin                 | File                            | Purpose                                                                                    |
+| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| **seed**               | `plugins/seed.ts`               | Ensure default board exists                                                                |
+| **session-reconnect**  | `plugins/session-reconnect.ts`  | On startup: reconcile running cards with live tmux sessions, kill orphans, resume captures |
+| **queue-manager**      | `plugins/queue-manager.ts`      | Auto-start queued/ready cards when slots become available                                  |
+| **dependency-watcher** | `plugins/dependency-watcher.ts` | When a card completes, unblock dependent cards and move them to ready                      |
+| **github-poll**        | `plugins/github-poll.ts`        | Poll GitHub issues with trigger labels, auto-create cards                                  |
+| **github-label-sync**  | `plugins/github-label-sync.ts`  | Sync card status to GitHub issue labels (in_progress/success/failure)                      |
 
 ## Database Schema
 

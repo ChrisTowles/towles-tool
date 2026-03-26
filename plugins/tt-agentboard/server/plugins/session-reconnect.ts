@@ -54,7 +54,11 @@ export default defineNitroPlugin(async () => {
         `Session reconnect: card ${cardId} status is "${card.status}", killing stale session`,
       );
       tmuxManager.killSession(sessionName);
-      await logCardEvent(cardId, "tmux_session_orphaned_killed", `session=${sessionName}, status=${card.status}`);
+      await logCardEvent(
+        cardId,
+        "tmux_session_orphaned_killed",
+        `session=${sessionName}, status=${card.status}`,
+      );
       continue;
     }
 
@@ -78,7 +82,11 @@ export default defineNitroPlugin(async () => {
         .set({ status: "failed", endedAt: new Date() })
         .where(eq(workflowRuns.cardId, cardId));
 
-      await logCardEvent(cardId, "agent_failed", `session ${sessionName} died between list and check`);
+      await logCardEvent(
+        cardId,
+        "agent_failed",
+        `session ${sessionName} died between list and check`,
+      );
       eventBus.emit("card:status-changed", { cardId, status: "failed" });
     }
   }
