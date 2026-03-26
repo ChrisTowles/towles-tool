@@ -7,6 +7,7 @@ vi.mock("../../server/db", () => {
     chain.from = vi.fn().mockReturnValue(chain);
     chain.where = vi.fn().mockReturnValue(chain);
     chain.set = vi.fn().mockReturnValue(chain);
+    chain.values = vi.fn().mockResolvedValue(undefined);
     chain.limit = vi.fn().mockResolvedValue([]);
     return chain;
   };
@@ -15,9 +16,14 @@ vi.mock("../../server/db", () => {
     db: {
       select: vi.fn().mockReturnValue(mockChain()),
       update: vi.fn().mockReturnValue(mockChain()),
+      insert: vi.fn().mockReturnValue(mockChain()),
     },
   };
 });
+
+vi.mock("../../server/utils/card-events", () => ({
+  logCardEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../server/utils/event-bus", () => ({
   eventBus: { emit: vi.fn(), on: vi.fn() },
@@ -61,6 +67,9 @@ async function runPlugin() {
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   }));
   vi.doMock("../../server/services/tmux-manager", () => ({ tmuxManager }));
+  vi.doMock("../../server/utils/card-events", () => ({
+    logCardEvent: vi.fn().mockResolvedValue(undefined),
+  }));
 
   await import("../../server/plugins/session-reconnect");
 }

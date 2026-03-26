@@ -49,9 +49,9 @@ describe("TmuxManager", () => {
         return Buffer.from("");
       });
 
-      const name = manager.createSession(7, "/home/user/repo");
+      const result = manager.createSession(7, "/home/user/repo");
 
-      expect(name).toBe("card-7");
+      expect(result).toEqual({ sessionName: "card-7", created: true });
       expect(mockExecSync).toHaveBeenCalledWith(
         'tmux new-session -d -s card-7 -c "/home/user/repo"',
         { stdio: "ignore" },
@@ -62,9 +62,9 @@ describe("TmuxManager", () => {
       // sessionExists check succeeds
       mockExecSync.mockReturnValue(Buffer.from(""));
 
-      const name = manager.createSession(7, "/home/user/repo");
+      const result = manager.createSession(7, "/home/user/repo");
 
-      expect(name).toBe("card-7");
+      expect(result).toEqual({ sessionName: "card-7", created: false });
       // Should NOT have called new-session
       const newSessionCalls = mockExecSync.mock.calls.filter(
         (c) => typeof c[0] === "string" && c[0].includes("new-session"),

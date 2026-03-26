@@ -42,7 +42,7 @@ vi.mock("../../server/utils/hook-writer", () => ({
 vi.mock("../../server/services/tmux-manager", () => ({
   tmuxManager: {
     isAvailable: vi.fn().mockReturnValue(true),
-    createSession: vi.fn().mockReturnValue("card-1"),
+    createSession: vi.fn().mockReturnValue({ sessionName: "card-1", created: true }),
     startCapture: vi.fn(),
     stopCapture: vi.fn(),
     killSession: vi.fn(),

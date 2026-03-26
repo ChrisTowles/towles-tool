@@ -10,6 +10,13 @@ export interface Slot {
   createdAt: string;
 }
 
+interface GitInfo {
+  branch: string | null;
+  ahead: number | null;
+  behind: number | null;
+  dirty: boolean | null;
+}
+
 const props = defineProps<{
   slot: Slot;
   repoName?: string;
@@ -18,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   lock: [slotId: number, locked: boolean];
   remove: [slotId: number];
+  refresh: [];
 }>();
 
 const statusColors: Record<string, string> = {
@@ -26,6 +34,10 @@ const statusColors: Record<string, string> = {
   locked: "text-amber-400 bg-amber-500/10 border-amber-500/30",
 };
 
+const gitInfo = ref<GitInfo | null>(null);
+const resetting = ref(false);
+const releasing = ref(false);
+
 const parsedPorts = computed(() => {
   if (!props.slot.portConfig) return null;
   try {
@@ -33,6 +45,45 @@ const parsedPorts = computed(() => {
   } catch {
     return null;
   }
+});
+
+async function fetchGitInfo() {
+  try {
+    gitInfo.value = await $fetch<GitInfo>(`/api/slots/${props.slot.id}/git-info`);
+  } catch {
+    gitInfo.value = null;
+  }
+}
+
+async function releaseSlot() {
+  releasing.value = true;
+  try {
+    await $fetch(`/api/slots/${props.slot.id}/release`, { method: "POST" });
+    emit("refresh");
+  } finally {
+    releasing.value = false;
+  }
+}
+
+async function resetToMain() {
+  resetting.value = true;
+  try {
+    await $fetch(`/api/slots/${props.slot.id}/reset`, { method: "POST" });
+    await fetchGitInfo();
+  } finally {
+    resetting.value = false;
+  }
+}
+
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+onMounted(() => {
+  fetchGitInfo();
+  pollTimer = setInterval(fetchGitInfo, 10_000);
+});
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 
@@ -55,6 +106,34 @@ const parsedPorts = computed(() => {
           </span>
         </div>
         <p class="mt-1 font-mono text-xs text-zinc-500 break-all">{{ slot.path }}</p>
+
+        <!-- Git info -->
+        <div v-if="gitInfo" class="mt-1 flex flex-wrap items-center gap-2">
+          <span
+            v-if="gitInfo.branch"
+            class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-400"
+          >
+            {{ gitInfo.branch }}
+          </span>
+          <span
+            v-if="gitInfo.ahead !== null && gitInfo.ahead > 0"
+            class="rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-mono text-emerald-400"
+          >
+            ↑{{ gitInfo.ahead }}
+          </span>
+          <span
+            v-if="gitInfo.behind !== null && gitInfo.behind > 0"
+            class="rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-mono text-amber-400"
+          >
+            ↓{{ gitInfo.behind }}
+          </span>
+          <span
+            v-if="gitInfo.dirty"
+            class="rounded bg-red-500/10 px-1 py-0.5 text-[10px] font-mono text-red-400"
+          >
+            dirty
+          </span>
+        </div>
       </div>
     </div>
 
@@ -92,6 +171,22 @@ const parsedPorts = computed(() => {
         @click="emit('lock', slot.id, false)"
       >
         Unlock
+      </button>
+      <button
+        v-if="slot.status === 'claimed'"
+        :disabled="releasing"
+        class="rounded border border-orange-500/30 bg-orange-500/10 px-2 py-1 text-[11px] font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-40"
+        @click="releaseSlot"
+      >
+        {{ releasing ? "Freeing..." : "Free" }}
+      </button>
+      <button
+        v-if="slot.status === 'available' || slot.status === 'locked'"
+        :disabled="resetting"
+        class="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-400 transition-colors hover:bg-cyan-500/20 disabled:opacity-40"
+        @click="resetToMain"
+      >
+        {{ resetting ? "Resetting..." : "Reset to Main" }}
       </button>
       <button
         v-if="slot.status !== 'claimed'"

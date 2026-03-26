@@ -1,6 +1,6 @@
 import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
-import { eq } from "drizzle-orm";
+import { workspaceSlots, workflowRuns } from "~~/server/db/schema";
+import { eq, desc } from "drizzle-orm";
 import { execSync } from "node:child_process";
 import { logger } from "~~/server/utils/logger";
 import { getCardId } from "~~/server/utils/params";
@@ -8,20 +8,42 @@ import { getCardId } from "~~/server/utils/params";
 /**
  * GET /api/agents/:cardId/open-vscode
  * Opens the card's workspace slot directory in VS Code.
+ * Checks currently claimed slot first, then falls back to the last workflow run's slot.
  */
 export default defineEventHandler(async (event) => {
   const cardId = getCardId(event);
 
-  const slots = await db
+  // Try currently claimed slot
+  const claimed = await db
     .select()
     .from(workspaceSlots)
-    .where(eq(workspaceSlots.claimedByCardId, cardId));
+    .where(eq(workspaceSlots.claimedByCardId, cardId))
+    .limit(1);
 
-  if (slots.length === 0) {
-    throw createError({ statusCode: 404, statusMessage: "No workspace slot found for this card" });
+  let slotPath = claimed[0]?.path ?? null;
+
+  // Fallback: look up slot from the most recent workflow run
+  if (!slotPath) {
+    const runs = await db
+      .select({ slotId: workflowRuns.slotId })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, cardId))
+      .orderBy(desc(workflowRuns.id))
+      .limit(1);
+
+    if (runs[0]?.slotId) {
+      const slot = await db
+        .select()
+        .from(workspaceSlots)
+        .where(eq(workspaceSlots.id, runs[0].slotId))
+        .limit(1);
+      slotPath = slot[0]?.path ?? null;
+    }
   }
 
-  const slotPath = slots[0]!.path;
+  if (!slotPath) {
+    throw createError({ statusCode: 404, statusMessage: "No workspace slot found for this card" });
+  }
 
   try {
     execSync(`code ${JSON.stringify(slotPath)}`, { stdio: "ignore" });

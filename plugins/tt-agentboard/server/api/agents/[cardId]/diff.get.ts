@@ -89,13 +89,18 @@ export default defineEventHandler(async (event) => {
       timeout: 5000,
     });
 
-    // If no uncommitted changes, try branch diff against main
+    // If no uncommitted changes, try branch diff against origin/main
     if (!raw.trim()) {
-      raw = execSync("git diff main...HEAD", {
-        cwd: slot.path,
-        encoding: "utf-8",
-        timeout: 5000,
-      });
+      try {
+        raw = execSync("git diff origin/main...HEAD", {
+          cwd: slot.path,
+          encoding: "utf-8",
+          timeout: 5000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch {
+        // origin/main may not exist — ignore
+      }
     }
   } catch {
     return { hasDiff: false, files: [], raw: "" };

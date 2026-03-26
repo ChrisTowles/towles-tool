@@ -268,6 +268,7 @@ onMounted(fetchData);
         :repo-name="repoName(s.repoId)"
         @lock="toggleLock"
         @remove="removeSlot"
+        @refresh="fetchData"
       />
     </div>
 

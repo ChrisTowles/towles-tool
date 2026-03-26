@@ -20,14 +20,14 @@ export class TmuxManager extends EventEmitter {
     }
   }
 
-  /** Create a named tmux session for a card */
-  createSession(cardId: number, cwd: string): string {
+  /** Create a named tmux session for a card. Returns { sessionName, created } */
+  createSession(cardId: number, cwd: string): { sessionName: string; created: boolean } {
     const sessionName = `card-${cardId}`;
 
     if (this.sessionExists(sessionName)) {
       logger.warn(`tmux session ${sessionName} already exists, reusing`);
       this.sessions.set(sessionName, { cardId });
-      return sessionName;
+      return { sessionName, created: false };
     }
 
     execSync(`tmux new-session -d -s ${sessionName} -c "${cwd}"`, {
@@ -35,7 +35,7 @@ export class TmuxManager extends EventEmitter {
     });
     this.sessions.set(sessionName, { cardId });
     logger.info(`Created tmux session: ${sessionName} in ${cwd}`);
-    return sessionName;
+    return { sessionName, created: true };
   }
 
   /** Send a command to a tmux session */
@@ -91,16 +91,19 @@ export class TmuxManager extends EventEmitter {
     }
   }
 
-  /** Kill a tmux session */
-  killSession(sessionName: string): void {
+  /** Kill a tmux session. Returns true if session was killed, false if already dead. */
+  killSession(sessionName: string): boolean {
     this.stopCapture(sessionName);
+    let killed = false;
     try {
       execSync(`tmux kill-session -t ${sessionName}`, { stdio: "ignore" });
+      killed = true;
     } catch {
       /* session may already be dead */
     }
     this.sessions.delete(sessionName);
     logger.info(`Killed tmux session: ${sessionName}`);
+    return killed;
   }
 
   /** List all agentboard tmux sessions (card-* prefix) */
