@@ -7,7 +7,7 @@ const cardId = computed(() => Number(route.params.id));
 const { data: card, refresh } = await useFetch<Card>(`/api/cards/${cardId.value}`);
 
 const router = useRouter();
-const activeTab = ref<"terminal" | "diff">("terminal");
+const activeTab = ref<"terminal" | "diff" | "activity">("terminal");
 
 // Default to diff tab for review_ready cards
 watch(
@@ -115,11 +115,23 @@ onUnmounted(() => {
           >
             Diff
           </button>
+          <button
+            class="px-4 py-2 text-xs font-medium transition-colors"
+            :class="
+              activeTab === 'activity'
+                ? 'border-b-2 border-emerald-500 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-300'
+            "
+            @click="activeTab = 'activity'"
+          >
+            Activity
+          </button>
         </div>
         <div class="flex-1 p-4 sm:p-6">
           <ClientOnly>
             <CardTerminalPanel v-if="activeTab === 'terminal'" :card-id="cardId" />
-            <CardDiffViewer v-else :card-id="cardId" />
+            <CardDiffViewer v-else-if="activeTab === 'diff'" :card-id="cardId" />
+            <CardActivityPanel v-else-if="activeTab === 'activity'" :card-id="cardId" />
           </ClientOnly>
         </div>
       </div>

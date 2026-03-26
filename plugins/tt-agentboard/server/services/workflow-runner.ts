@@ -2,7 +2,7 @@ import { db } from "../db";
 import { cards, workflowRuns, stepRuns, repositories } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { execSync } from "node:child_process";
 import { tmuxManager } from "./tmux-manager";
 import { slotAllocator } from "./slot-allocator";
@@ -19,6 +19,7 @@ import {
   shellEscape,
 } from "../utils/workflow-helpers";
 import { logCardEvent } from "../utils/card-events";
+import { streamTailer } from "./stream-tailer";
 
 interface RunContext {
   cardId: number;
@@ -105,6 +106,7 @@ export class WorkflowRunner {
     } finally {
       // Cleanup
       pendingStepCallbacks.delete(ctx.cardId);
+      streamTailer.stopTailing(ctx.cardId);
       tmuxManager.stopCapture(ctx.sessionName);
       const killed = tmuxManager.killSession(ctx.sessionName);
       if (killed) {
@@ -274,12 +276,18 @@ export class WorkflowRunner {
       const prompt = await this.buildStepPrompt(ctx, step);
 
       const args: string[] = ["--dangerously-skip-permissions"];
+      args.push("--output-format", "stream-json");
       args.push("--max-turns", "50");
       if (step.model) args.push("--model", step.model);
       args.push("-p", shellEscape(prompt));
-      const command = buildClaudeCommand(args);
+
+      const logFilePath = join(ctx.slotPath, ".claude-stream.ndjson");
+      const command = `${buildClaudeCommand(args)} 2>&1 | tee ${shellEscape(logFilePath)}`;
 
       tmuxManager.sendCommand(ctx.sessionName, command);
+
+      // Start tailing the stream-json output for structured activity events
+      await streamTailer.startTailing(ctx.cardId, logFilePath);
 
       // Wait for Stop hook callback (step-complete endpoint resolves this)
       const completed = await this.waitForStepComplete(ctx.cardId);
