@@ -13,7 +13,7 @@ import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
 import {
-  buildClaudeCommand,
+  buildStreamingCommand,
   checkPassCondition,
   renderTemplate,
   shellEscape,
@@ -276,13 +276,12 @@ export class WorkflowRunner {
       const prompt = await this.buildStepPrompt(ctx, step);
 
       const args: string[] = ["--dangerously-skip-permissions"];
-      args.push("--output-format", "stream-json", "--verbose");
       args.push("--max-turns", "50");
       if (step.model) args.push("--model", step.model);
       args.push("-p", shellEscape(prompt));
 
       const logFilePath = join(ctx.slotPath, ".claude-stream.ndjson");
-      const command = `${buildClaudeCommand(args)} 2>&1 | tee ${shellEscape(logFilePath)}`;
+      const command = buildStreamingCommand(args, logFilePath);
 
       tmuxManager.sendCommand(ctx.sessionName, command);
 

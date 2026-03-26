@@ -35,3 +35,9 @@ export function shellEscape(str: string): string {
 export function buildClaudeCommand(args: string[]): string {
   return `claude \\\n  ${args.join(" \\\n  ")}`;
 }
+
+/** Build a claude command with stream-json output piped to a log file via tee */
+export function buildStreamingCommand(args: string[], logFilePath: string): string {
+  args.push("--output-format", "stream-json", "--verbose");
+  return `${buildClaudeCommand(args)} 2>&1 | tee ${shellEscape(logFilePath)}`;
+}
