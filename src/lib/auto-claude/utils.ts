@@ -11,6 +11,7 @@ import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
 import { resolveTemplate } from "./templates.js";
 
+import type { SpawnClaudeFn } from "./spawn-claude.js";
 import type { TokenValues } from "./templates.js";
 
 export { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
@@ -157,6 +158,7 @@ export interface StepRunnerOptions {
   artifactPath: string;
   templateName: string;
   artifactValidator?: (path: string) => boolean;
+  spawnFn?: SpawnClaudeFn;
 }
 
 /**
@@ -167,7 +169,7 @@ export interface StepRunnerOptions {
  * the same pattern.
  */
 export async function runStepWithArtifact(opts: StepRunnerOptions): Promise<boolean> {
-  const { stepName, ctx, artifactPath, templateName, artifactValidator } = opts;
+  const { stepName, ctx, artifactPath, templateName, artifactValidator, spawnFn } = opts;
 
   const isValid = artifactValidator ?? fileExists;
   if (isValid(artifactPath)) {
@@ -183,6 +185,7 @@ export async function runStepWithArtifact(opts: StepRunnerOptions): Promise<bool
   const result = await runClaude({
     promptFile,
     maxTurns: getConfig().maxTurns,
+    spawnFn,
   });
 
   if (result.is_error) {

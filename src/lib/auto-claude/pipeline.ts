@@ -8,16 +8,29 @@ import { createPr } from "./steps/create-pr.js";
 import { stepImplement } from "./steps/implement.js";
 import { stepPlan, stepReview, stepSimplify } from "./steps/simple-steps.js";
 import { LABELS, ensureLabelsExist, removeLabel, setLabel } from "./labels.js";
+import type { ExecSafeFn } from "./labels.js";
 import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
 import { execSafe, git } from "../../utils/git/exec.js";
 import { ghRaw } from "../../utils/git/gh-cli-wrapper.js";
 import { log } from "./utils.js";
 import type { IssueContext } from "./utils.js";
+import type { SpawnClaudeFn } from "./spawn-claude.js";
 
 export { type StepName, STEP_NAMES } from "./prompt-templates/index.js";
 
-export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Promise<void> {
+export interface PipelineDeps {
+  spawnFn?: SpawnClaudeFn;
+  exec?: ExecSafeFn;
+}
+
+export async function runPipeline(
+  ctx: IssueContext,
+  untilStep?: StepName,
+  deps?: PipelineDeps,
+): Promise<void> {
   const cfg = getConfig();
+  const exec = deps?.exec;
+  const spawnFn = deps?.spawnFn;
   log(`Pipeline starting for ${ctx.repo}#${ctx.number}: ${ctx.title}`);
 
   ensureDir(ctx.issueDir);
@@ -29,14 +42,14 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
   }
 
   // Label management
-  await ensureLabelsExist(ctx.repo);
-  await removeLabel(ctx.repo, ctx.number, cfg.triggerLabel);
-  await setLabel(ctx.repo, ctx.number, LABELS.inProgress);
+  await ensureLabelsExist(ctx.repo, exec);
+  await removeLabel(ctx.repo, ctx.number, cfg.triggerLabel, exec);
+  await setLabel(ctx.repo, ctx.number, LABELS.inProgress, exec);
 
   try {
     // Step 1: Plan (runs once)
-    if (!(await stepPlan(ctx))) {
-      await handleFailure(ctx, "plan");
+    if (!(await stepPlan(ctx, spawnFn))) {
+      await handleFailure(ctx, "plan", undefined, exec);
       return;
     }
     if (untilStep === "plan") {
@@ -55,8 +68,8 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Implement
-      if (!(await stepImplement(ctx))) {
-        await handleFailure(ctx, "implement");
+      if (!(await stepImplement(ctx, spawnFn))) {
+        await handleFailure(ctx, "implement", undefined, exec);
         return;
       }
       if (untilStep === "implement") {
@@ -65,8 +78,8 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Simplify
-      if (!(await stepSimplify(ctx))) {
-        await handleFailure(ctx, "simplify");
+      if (!(await stepSimplify(ctx, spawnFn))) {
+        await handleFailure(ctx, "simplify", undefined, exec);
         return;
       }
       if (untilStep === "simplify") {
@@ -75,8 +88,8 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       }
 
       // Review
-      if (!(await stepReview(ctx))) {
-        await handleFailure(ctx, "review");
+      if (!(await stepReview(ctx, spawnFn))) {
+        await handleFailure(ctx, "review", undefined, exec);
         return;
       }
       if (untilStep === "review") {
@@ -86,10 +99,10 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
 
       // Check review result
       if (isReviewPass(ctx)) {
-        const prUrl = await createPr(ctx);
-        await removeLabel(ctx.repo, ctx.number, LABELS.inProgress);
-        await setLabel(ctx.repo, ctx.number, LABELS.success);
-        await setLabel(ctx.repo, ctx.number, LABELS.review);
+        const prUrl = await createPr(ctx, exec);
+        await removeLabel(ctx.repo, ctx.number, LABELS.inProgress, exec);
+        await setLabel(ctx.repo, ctx.number, LABELS.success, exec);
+        await setLabel(ctx.repo, ctx.number, LABELS.review, exec);
         log(`Pipeline complete for ${ctx.repo}#${ctx.number} — ${prUrl}`);
         return;
       }
@@ -107,6 +120,7 @@ export async function runPipeline(ctx: IssueContext, untilStep?: StepName): Prom
       ctx,
       "review",
       `auto-claude: review did not pass after ${maxRetries + 1} attempts. Labelled \`${LABELS.failed}\`.`,
+      exec,
     );
   } finally {
     await checkoutMain();
@@ -125,11 +139,19 @@ function isReviewPass(ctx: IssueContext): boolean {
   return firstLine === "PASS";
 }
 
-async function handleFailure(ctx: IssueContext, stepName: string, comment?: string): Promise<void> {
-  await removeLabel(ctx.repo, ctx.number, LABELS.inProgress);
-  await setLabel(ctx.repo, ctx.number, LABELS.failed);
+async function handleFailure(
+  ctx: IssueContext,
+  stepName: string,
+  comment?: string,
+  exec?: ExecSafeFn,
+): Promise<void> {
+  await removeLabel(ctx.repo, ctx.number, LABELS.inProgress, exec);
+  await setLabel(ctx.repo, ctx.number, LABELS.failed, exec);
   if (comment) {
-    await ghRaw(["issue", "comment", String(ctx.number), "--repo", ctx.repo, "--body", comment]);
+    await ghRaw(
+      ["issue", "comment", String(ctx.number), "--repo", ctx.repo, "--body", comment],
+      exec,
+    );
   }
   log(`Pipeline stopped at "${stepName}" for ${ctx.repo}#${ctx.number}`);
 }

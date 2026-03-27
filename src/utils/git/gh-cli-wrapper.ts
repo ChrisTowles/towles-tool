@@ -25,8 +25,12 @@ export async function gh<T = unknown>(args: string[]): Promise<T> {
   return JSON.parse(result.stdout.trim()) as T;
 }
 
-export async function ghRaw(args: string[]): Promise<string> {
-  const result = await execSafe("gh", args);
+export async function ghRaw(
+  args: string[],
+  exec?: (cmd: string, args: string[]) => Promise<{ stdout: string; ok: boolean }>,
+): Promise<string> {
+  const execFn = exec ?? execSafe;
+  const result = await execFn("gh", args);
   return result.stdout;
 }
 

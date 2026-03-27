@@ -5,6 +5,7 @@ import { initConfig } from "./config";
 import { createMockClaudeProcess, createTestRepo } from "./test-helpers";
 import type { TestRepo } from "./test-helpers";
 import type { SpawnClaudeFn } from "./spawn-claude";
+import type { ClaudeLogger } from "./claude-cli";
 
 consola.level = -999;
 
@@ -70,8 +71,13 @@ describe("runClaude (injected spawnFn)", () => {
   });
 
   it("logs tool names from stream_event and shows thinking indicator", async () => {
-    // eslint-disable-next-line jest/no-restricted-jest-methods
-    const infoSpy = vi.spyOn(consola, "info");
+    const mockLogger: ClaudeLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      success: vi.fn(),
+      log: vi.fn(),
+    };
 
     const thinkingEvent = {
       type: "stream_event",
@@ -104,16 +110,20 @@ describe("runClaude (injected spawnFn)", () => {
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
     const { runClaude } = await import("./claude-cli");
-    const result = await runClaude({ promptFile: "test.md", spawnFn: mockSpawnClaude });
+    const result = await runClaude({
+      promptFile: "test.md",
+      spawnFn: mockSpawnClaude,
+      logger: mockLogger,
+    });
 
     expect(result.result).toBe("Done");
     expect(result.num_turns).toBe(1);
 
-    const infoCalls = infoSpy.mock.calls.map((c) => String(c[0]));
+    const infoCalls = (mockLogger.info as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    );
     expect(infoCalls.some((msg) => msg.includes("thinking"))).toBe(true);
     expect(infoCalls.some((msg) => msg.includes("Edit"))).toBe(true);
-
-    infoSpy.mockRestore();
   });
 
   it("returns fallback when no result event in stream", async () => {

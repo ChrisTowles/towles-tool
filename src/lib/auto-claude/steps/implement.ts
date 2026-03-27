@@ -10,8 +10,9 @@ import { runClaude } from "../claude-cli.js";
 import { resolveTemplate } from "../templates.js";
 import { buildTokens, log, logStep } from "../utils.js";
 import type { IssueContext } from "../utils.js";
+import type { SpawnClaudeFn } from "../spawn-claude.js";
 
-export async function stepImplement(ctx: IssueContext): Promise<boolean> {
+export async function stepImplement(ctx: IssueContext, spawnFn?: SpawnClaudeFn): Promise<boolean> {
   const completedPath = join(ctx.issueDir, ARTIFACTS.completedSummary);
   const maxIterations = getConfig().maxImplementIterations;
 
@@ -36,6 +37,7 @@ export async function stepImplement(ctx: IssueContext): Promise<boolean> {
     const result = await runClaude({
       promptFile,
       maxTurns: getConfig().maxTurns,
+      spawnFn,
     });
 
     if (result.is_error) {
