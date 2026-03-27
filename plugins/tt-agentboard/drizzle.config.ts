@@ -10,8 +10,8 @@ const defaultDataDir = resolve(
 const dbDir = process.env.AGENTBOARD_DATA_DIR ?? defaultDataDir;
 
 export default defineConfig({
-  schema: "./server/db/schema.ts",
-  out: "./server/db/migrations",
+  schema: "./server/shared/db/schema.ts",
+  out: "./server/shared/db/migrations",
   dialect: "sqlite",
   dbCredentials: {
     url: resolve(dbDir, "agentboard.db"),

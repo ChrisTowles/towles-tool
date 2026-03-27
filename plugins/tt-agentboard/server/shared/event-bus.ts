@@ -1,16 +1,7 @@
 import { EventEmitter } from "node:events";
+import type { Column, CardStatus } from "../domains/cards/types";
 
-// Column and status types (inline until domains are created in Task 3)
-export type Column = "backlog" | "ready" | "in_progress" | "review" | "done";
-export type CardStatus =
-  | "idle"
-  | "queued"
-  | "running"
-  | "waiting_input"
-  | "review_ready"
-  | "done"
-  | "failed"
-  | "blocked";
+export type { Column, CardStatus };
 
 export interface AgentActivityEvent {
   kind: "tool_use" | "thinking" | "text" | "result";
@@ -45,24 +36,15 @@ export class TypedEventBus {
     this.ee.emit(event, data);
   }
 
-  on<K extends keyof EventMap>(
-    event: K,
-    handler: (data: EventMap[K]) => void,
-  ): void {
+  on<K extends keyof EventMap>(event: K, handler: (data: EventMap[K]) => void): void {
     this.ee.on(event, handler as (...args: unknown[]) => void);
   }
 
-  off<K extends keyof EventMap>(
-    event: K,
-    handler: (data: EventMap[K]) => void,
-  ): void {
+  off<K extends keyof EventMap>(event: K, handler: (data: EventMap[K]) => void): void {
     this.ee.off(event, handler as (...args: unknown[]) => void);
   }
 
-  once<K extends keyof EventMap>(
-    event: K,
-    handler: (data: EventMap[K]) => void,
-  ): void {
+  once<K extends keyof EventMap>(event: K, handler: (data: EventMap[K]) => void): void {
     this.ee.once(event, handler as (...args: unknown[]) => void);
   }
 }

@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { workspaceSlots } from "~~/server/shared/db/schema";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);

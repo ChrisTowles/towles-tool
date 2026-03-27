@@ -3,8 +3,8 @@ import { execSync } from "node:child_process";
 import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseStreamLine } from "../../server/utils/stream-parser";
-import type { AgentActivityEvent } from "../../server/utils/stream-parser";
+import { parseStreamLine } from "../../server/domains/infra/stream-parser";
+import type { AgentActivityEvent } from "../../server/domains/infra/stream-parser";
 
 /**
  * Integration test: runs `claude` with `--output-format stream-json` using Haiku,

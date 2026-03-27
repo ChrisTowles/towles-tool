@@ -1,8 +1,8 @@
-import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { workspaceSlots } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus } from "~~/server/utils/event-bus";
-import { tmuxManager, cardSessionName } from "~~/server/services/tmux-manager";
+import { tmuxManager, cardSessionName } from "~~/server/domains/infra/tmux-manager";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));

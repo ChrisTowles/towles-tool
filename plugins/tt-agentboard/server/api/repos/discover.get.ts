@@ -2,8 +2,8 @@ import { execSync } from "node:child_process";
 import { readdirSync, statSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { consola } from "consola";
-import { db } from "~~/server/db";
-import { repositories } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { repositories } from "~~/server/shared/db/schema";
 import { readConfig } from "~~/server/utils/config";
 
 interface DiscoveredRepo {

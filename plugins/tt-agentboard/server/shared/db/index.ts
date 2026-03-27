@@ -25,7 +25,7 @@ export const db = drizzle(sqlite, { schema });
 // so resolve relative to the known db module location
 const migrationsDir = import.meta.dirname
   ? resolve(import.meta.dirname, "migrations")
-  : resolve(process.cwd(), "server", "db", "migrations");
+  : resolve(process.cwd(), "server", "shared", "db", "migrations");
 try {
   migrate(db, { migrationsFolder: migrationsDir });
 } catch {

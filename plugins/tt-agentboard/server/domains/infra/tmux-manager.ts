@@ -1,6 +1,6 @@
 import { execSync as defaultExecSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { logger as defaultLogger } from "../utils/logger";
+import { logger as defaultLogger } from "../../utils/logger";
 
 interface SessionInfo {
   cardId: number;

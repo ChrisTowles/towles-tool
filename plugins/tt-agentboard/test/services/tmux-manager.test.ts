@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { TmuxManager } from "../../server/services/tmux-manager";
+import { TmuxManager } from "../../server/domains/infra/tmux-manager";
 import { createMockExecSync, createMockLogger } from "../helpers/mock-deps";
 
 describe("TmuxManager", () => {

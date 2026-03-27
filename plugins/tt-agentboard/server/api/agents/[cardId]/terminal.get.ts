@@ -1,4 +1,4 @@
-import { tmuxManager } from "~~/server/services/tmux-manager";
+import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { getCardId } from "~~/server/utils/params";
 
 /**

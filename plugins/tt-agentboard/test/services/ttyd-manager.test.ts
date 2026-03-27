@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChildProcess } from "node:child_process";
 import { createMockLogger } from "../helpers/mock-deps";
-import { TtydManager } from "../../server/services/ttyd-manager";
+import { TtydManager } from "../../server/domains/infra/ttyd-manager";
 
 function createMockProcess(): ChildProcess {
   const proc = {

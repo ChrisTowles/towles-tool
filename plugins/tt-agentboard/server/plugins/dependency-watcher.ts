@@ -1,5 +1,5 @@
 import { eventBus } from "../utils/event-bus";
-import { dependencyResolver } from "../services/dependency-resolver";
+import { dependencyResolver } from "../domains/cards/dependency-resolver";
 import { logger } from "../utils/logger";
 
 export default defineNitroPlugin(() => {

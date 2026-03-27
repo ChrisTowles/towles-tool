@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { db } from "../../server/db";
-import { boards, cards, cardDependencies } from "../../server/db/schema";
+import { db } from "../../server/shared/db";
+import { boards, cards, cardDependencies } from "../../server/shared/db/schema";
 import { eq } from "drizzle-orm";
 
 describe("cardDependencies schema", () => {

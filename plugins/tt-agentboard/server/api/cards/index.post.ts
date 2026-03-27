@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { cards } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards } from "~~/server/shared/db/schema";
 import { logCardEvent } from "~~/server/utils/card-events";
 
 export default defineEventHandler(async (event) => {

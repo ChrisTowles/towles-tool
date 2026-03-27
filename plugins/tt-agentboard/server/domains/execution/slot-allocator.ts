@@ -1,8 +1,8 @@
-import { db } from "../db";
-import { workspaceSlots } from "../db/schema";
+import { db } from "../../shared/db";
+import { workspaceSlots } from "../../shared/db/schema";
 import { eq, and } from "drizzle-orm";
-import { eventBus } from "../utils/event-bus";
-import { logger } from "../utils/logger";
+import { eventBus } from "../../utils/event-bus";
+import { logger } from "../../utils/logger";
 
 export interface SlotAllocatorDeps {
   db: typeof db;

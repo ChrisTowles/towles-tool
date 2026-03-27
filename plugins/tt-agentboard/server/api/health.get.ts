@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { isGitHubConfigured } from "~~/server/services/github-service";
+import { isGitHubConfigured } from "~~/server/domains/infra/github-service";
 import { readConfig } from "~~/server/utils/config";
 
 export default defineEventHandler(() => {

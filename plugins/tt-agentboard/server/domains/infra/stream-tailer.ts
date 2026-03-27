@@ -1,9 +1,9 @@
 import type { FSWatcher } from "node:fs";
 import { watch as fsWatch, createReadStream, statSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { parseStreamLine } from "../utils/stream-parser";
-import { eventBus } from "../utils/event-bus";
-import { logger } from "../utils/logger";
+import { parseStreamLine } from "./stream-parser";
+import { eventBus } from "../../utils/event-bus";
+import { logger } from "../../utils/logger";
 
 export interface StreamTailerDeps {
   eventBus: typeof eventBus;

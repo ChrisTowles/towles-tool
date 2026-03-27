@@ -1,7 +1,7 @@
-import { db } from "../db";
-import { cards, workspaceSlots } from "../db/schema";
+import { db } from "../shared/db";
+import { cards, workspaceSlots } from "../shared/db/schema";
 import { eq, and } from "drizzle-orm";
-import { agentExecutor } from "../services/agent-executor";
+import { agentExecutor } from "../domains/execution/agent-executor";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { logCardEvent } from "../utils/card-events";

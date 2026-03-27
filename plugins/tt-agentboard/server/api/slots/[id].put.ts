@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { workspaceSlots } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {

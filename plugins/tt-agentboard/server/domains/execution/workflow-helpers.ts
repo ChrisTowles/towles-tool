@@ -1,4 +1,4 @@
-import { logger } from "./logger";
+import { logger } from "../../utils/logger";
 
 /** Check if artifact content satisfies a pass condition */
 export function checkPassCondition(condition: string, content: string): boolean {

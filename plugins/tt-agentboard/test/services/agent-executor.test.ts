@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { AgentExecutor } from "../../server/services/agent-executor";
+import { AgentExecutor } from "../../server/domains/execution/agent-executor";
 import {
   createMockDb,
   createMockEventBus,

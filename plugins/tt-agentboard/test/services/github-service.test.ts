@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockLogger, createMockEventBus } from "../helpers/mock-deps";
-import { GitHubService } from "../../server/services/github-service";
+import { GitHubService } from "../../server/domains/infra/github-service";
 
 describe("GitHubService", () => {
   let service: GitHubService;

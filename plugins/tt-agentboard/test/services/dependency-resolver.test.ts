@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb, createMockLogger } from "../helpers/mock-deps";
-import { DependencyResolver } from "../../server/services/dependency-resolver";
+import { DependencyResolver } from "../../server/domains/cards/dependency-resolver";
 
 describe("DependencyResolver", () => {
   let resolver: DependencyResolver;

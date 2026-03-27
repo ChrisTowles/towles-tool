@@ -1,7 +1,7 @@
-import { db } from "~~/server/db";
-import { repositories, workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { repositories, workspaceSlots } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { gitRun } from "~~/server/utils/git";
+import { gitRun } from "~~/server/domains/infra/git";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));

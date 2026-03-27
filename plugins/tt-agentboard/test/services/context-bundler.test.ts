@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { ContextBundler } from "../../server/services/context-bundler";
+import { ContextBundler } from "../../server/domains/execution/context-bundler";
 
 const tmpDirs: string[] = [];
 

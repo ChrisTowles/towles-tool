@@ -1,4 +1,4 @@
-import { workflowLoader } from "~~/server/services/workflow-loader";
+import { workflowLoader } from "~~/server/domains/execution/workflow-loader";
 
 export default defineEventHandler(() => {
   return workflowLoader.list();

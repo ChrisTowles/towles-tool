@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createMockLogger } from "../helpers/mock-deps";
-import { WorkflowLoader } from "../../server/services/workflow-loader";
+import { WorkflowLoader } from "../../server/domains/execution/workflow-loader";
 
 const tmpDirs: string[] = [];
 

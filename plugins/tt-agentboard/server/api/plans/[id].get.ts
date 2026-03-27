@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { plans, cards, cardDependencies } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { plans, cards, cardDependencies } from "~~/server/shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {

@@ -1,5 +1,5 @@
-import { db } from "../db";
-import { boards } from "../db/schema";
+import { db } from "../shared/db";
+import { boards } from "../shared/db/schema";
 
 export default defineNitroPlugin(async () => {
   const existing = await db.select().from(boards).limit(1);

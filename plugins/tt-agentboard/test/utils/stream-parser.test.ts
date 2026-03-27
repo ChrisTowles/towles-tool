@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStreamLine } from "../../server/utils/stream-parser";
+import { parseStreamLine } from "../../server/domains/infra/stream-parser";
 
 describe("parseStreamLine", () => {
   it("returns null for empty lines", () => {

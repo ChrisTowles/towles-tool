@@ -1,7 +1,7 @@
-import { db } from "../db";
-import { cards, workflowRuns } from "../db/schema";
+import { db } from "../shared/db";
+import { cards, workflowRuns } from "../shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { tmuxManager } from "../services/tmux-manager";
+import { tmuxManager } from "../domains/infra/tmux-manager";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { logCardEvent } from "../utils/card-events";

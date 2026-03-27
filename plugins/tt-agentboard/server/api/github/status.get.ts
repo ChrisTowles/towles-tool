@@ -1,4 +1,4 @@
-import { isGitHubConfigured } from "~~/server/services/github-service";
+import { isGitHubConfigured } from "~~/server/domains/infra/github-service";
 
 export default defineEventHandler(() => {
   return { configured: isGitHubConfigured() };

@@ -1,25 +1,25 @@
-import { db as defaultDb } from "../db";
-import { cards, workflowRuns, stepRuns, repositories } from "../db/schema";
+import { db as defaultDb } from "../../shared/db";
+import { cards, workflowRuns, stepRuns, repositories } from "../../shared/db/schema";
 import { eq } from "drizzle-orm";
 import { existsSync as defaultExistsSync, readFileSync as defaultReadFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { execSync as defaultExecSync } from "node:child_process";
-import { tmuxManager as defaultTmuxManager } from "./tmux-manager";
+import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { contextBundler as defaultContextBundler } from "./context-bundler";
 import type { WorkflowDefinition, WorkflowStep } from "./workflow-loader";
-import { eventBus as defaultEventBus } from "../utils/event-bus";
-import { logger as defaultLogger } from "../utils/logger";
-import { writeHooks as defaultWriteHooks } from "../utils/hook-writer";
+import { eventBus as defaultEventBus } from "../../utils/event-bus";
+import { logger as defaultLogger } from "../../utils/logger";
+import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
 import {
   buildStreamingCommand,
   checkPassCondition,
   renderTemplate,
   shellEscape,
-} from "../utils/workflow-helpers";
-import { logCardEvent as defaultLogCardEvent } from "../utils/card-events";
-import { streamTailer as defaultStreamTailer } from "./stream-tailer";
+} from "./workflow-helpers";
+import { logCardEvent as defaultLogCardEvent } from "../../utils/card-events";
+import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 
 interface RunContext {
   cardId: number;
