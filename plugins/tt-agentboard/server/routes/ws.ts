@@ -47,6 +47,7 @@ const forwardedEvents = [
   "slot:claimed",
   "slot:released",
   "agent:output",
+  "agent:activity",
   "agent:waiting",
   "workflow:completed",
   "github:issue-found",
@@ -97,6 +98,19 @@ export default defineWebSocketHandler({
         if (peers.size === 0) {
           tmuxManager.stopCapture(`card-${data.cardId}`);
         }
+      }
+    }
+
+    if (data.type === "subscribe-activity") {
+      const cardId = data.cardId;
+      addSubscription(`card:${cardId}`, peer);
+    }
+
+    if (data.type === "unsubscribe-activity") {
+      const channel = `card:${data.cardId}`;
+      const peers = subscribers.get(channel);
+      if (peers) {
+        peers.delete(peer);
       }
     }
   },

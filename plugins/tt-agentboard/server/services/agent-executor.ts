@@ -8,8 +8,9 @@ import { workflowRunner } from "./workflow-runner";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { writeHooks } from "../utils/hook-writer";
-import { buildClaudeCommand, shellEscape } from "../utils/workflow-helpers";
+import { buildStreamingCommand, shellEscape } from "../utils/workflow-helpers";
 import { logCardEvent } from "../utils/card-events";
+import { streamTailer } from "./stream-tailer";
 
 /**
  * Handles single agent execution: claim slot, configure Stop hook,
@@ -263,10 +264,14 @@ export class AgentExecutor {
     args.push("--append-system-prompt", shellEscape(systemPrompt));
     args.push("-p", shellEscape(prompt));
 
-    const command = buildClaudeCommand(args);
+    const logFilePath = join(slot.path, ".claude-stream.ndjson");
+    const command = buildStreamingCommand(args, logFilePath);
 
     tmuxManager.sendCommand(sessionName, command);
     await logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
+
+    // Start tailing the stream-json output for structured activity events
+    await streamTailer.startTailing(cardId, logFilePath);
 
     tmuxManager.startCapture(sessionName, (output) => {
       eventBus.emit("agent:output", { cardId, content: output });
