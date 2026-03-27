@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { workspaceSlots, workflowRuns } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { workspaceSlots, workflowRuns } from "~~/server/shared/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { execSync } from "node:child_process";
 import { logger } from "~~/server/utils/logger";

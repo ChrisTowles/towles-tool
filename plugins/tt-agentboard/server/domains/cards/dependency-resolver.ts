@@ -1,7 +1,7 @@
-import { db } from "../db";
-import { cards, cardDependencies } from "../db/schema";
+import { db } from "../../shared/db";
+import { cards, cardDependencies } from "../../shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { logger } from "../utils/logger";
+import { logger } from "../../utils/logger";
 
 export interface DependencyResolverDeps {
   db: typeof db;

@@ -1,7 +1,13 @@
-import { db } from "~~/server/db";
-import { cards, cardEvents, workflowRuns, stepRuns, workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import {
+  cards,
+  cardEvents,
+  workflowRuns,
+  stepRuns,
+  workspaceSlots,
+} from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { tmuxManager } from "~~/server/services/tmux-manager";
+import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 
 export default defineEventHandler(async (event) => {

@@ -1,9 +1,9 @@
-import { db } from "../db";
-import { cards, repositories } from "../db/schema";
+import { db } from "../shared/db";
+import { cards, repositories } from "../shared/db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus } from "../utils/event-bus";
-import { getGitHubService, isGitHubConfigured } from "../services/github-service";
-import { workflowLoader } from "../services/workflow-loader";
+import { getGitHubService, isGitHubConfigured } from "../domains/infra/github-service";
+import { workflowLoader } from "../domains/execution/workflow-loader";
 import { logger } from "../utils/logger";
 
 type CardStatus = string;

@@ -1,7 +1,7 @@
-import { db } from "~~/server/db";
-import { cards, workflowRuns } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards, workflowRuns } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { tmuxManager } from "~~/server/services/tmux-manager";
+import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Auto-commit any uncommitted changes left by the agent
-  const { workspaceSlots } = await import("~~/server/db/schema");
+  const { workspaceSlots } = await import("~~/server/shared/db/schema");
   const claimedSlots = await db
     .select()
     .from(workspaceSlots)

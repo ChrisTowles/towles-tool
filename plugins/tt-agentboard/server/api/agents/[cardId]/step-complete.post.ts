@@ -1,4 +1,4 @@
-import { resolveStepComplete } from "~~/server/services/workflow-runner";
+import { resolveStepComplete } from "~~/server/domains/execution/workflow-runner";
 import { logger } from "~~/server/utils/logger";
 import { getCardId } from "~~/server/utils/params";
 

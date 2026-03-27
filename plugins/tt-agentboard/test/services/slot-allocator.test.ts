@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
-import { SlotAllocator } from "../../server/services/slot-allocator";
+import { SlotAllocator } from "../../server/domains/execution/slot-allocator";
 
 describe("SlotAllocator", () => {
   let allocator: SlotAllocator;

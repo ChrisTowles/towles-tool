@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { db } from "~~/server/db";
-import { workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { workspaceSlots } from "~~/server/shared/db/schema";
 import { getCardId } from "~~/server/utils/params";
 
 interface DiffLine {

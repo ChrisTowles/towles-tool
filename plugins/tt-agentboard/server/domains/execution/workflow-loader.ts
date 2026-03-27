@@ -2,7 +2,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { watch } from "chokidar";
-import { logger } from "../utils/logger";
+import { logger } from "../../utils/logger";
 
 /** Default glob implementation using readdirSync (avoids 'glob' package dependency) */
 async function defaultGlob(pattern: string): Promise<string[]> {

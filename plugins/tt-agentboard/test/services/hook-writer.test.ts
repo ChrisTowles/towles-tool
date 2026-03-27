@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeHooks } from "../../server/utils/hook-writer";
+import { writeHooks } from "../../server/domains/infra/hook-writer";
 
 const tmpDirs: string[] = [];
 

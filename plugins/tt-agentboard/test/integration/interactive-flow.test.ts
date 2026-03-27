@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "no
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
-import { writeHooks } from "../../server/utils/hook-writer";
+import { writeHooks } from "../../server/domains/infra/hook-writer";
 
 const tmpDirs: string[] = [];
 

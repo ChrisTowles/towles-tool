@@ -1,8 +1,8 @@
-import { db } from "~~/server/db";
-import { cards, workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards, workspaceSlots } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { agentExecutor } from "~~/server/services/agent-executor";
-import { tmuxManager } from "~~/server/services/tmux-manager";
+import { agentExecutor } from "~~/server/domains/execution/agent-executor";
+import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { logCardEvent } from "~~/server/utils/card-events";

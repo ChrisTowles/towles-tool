@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { repositories, workspaceSlots } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { repositories, workspaceSlots } from "~~/server/shared/db/schema";
 
 export default defineEventHandler(async () => {
   const repos = await db.select().from(repositories);

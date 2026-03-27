@@ -1,5 +1,5 @@
-import { ttydManager } from "~~/server/services/ttyd-manager";
-import { tmuxManager } from "~~/server/services/tmux-manager";
+import { ttydManager } from "~~/server/domains/infra/ttyd-manager";
+import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { getCardId } from "~~/server/utils/params";
 
 export default defineEventHandler(async (event) => {

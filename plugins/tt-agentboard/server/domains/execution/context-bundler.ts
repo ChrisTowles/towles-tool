@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { WorkflowStep } from "./workflow-loader";
-import type { cards } from "../db/schema";
-import { logger } from "../utils/logger";
+import type { cards } from "../../shared/db/schema";
+import { logger } from "../../utils/logger";
 
 interface BuildPromptOptions {
   step: WorkflowStep;

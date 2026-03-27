@@ -1,7 +1,7 @@
-import { db } from "~~/server/db";
-import { cards, repositories } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards, repositories } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { getGitHubService } from "~~/server/services/github-service";
+import { getGitHubService } from "~~/server/domains/infra/github-service";
 
 export default defineEventHandler(async (event) => {
   const { cardId } = await readBody<{ cardId: number }>(event);

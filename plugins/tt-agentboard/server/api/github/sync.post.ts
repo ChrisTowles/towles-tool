@@ -1,7 +1,7 @@
-import { db } from "~~/server/db";
-import { repositories, cards, boards } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { repositories, cards, boards } from "~~/server/shared/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getGitHubService } from "~~/server/services/github-service";
+import { getGitHubService } from "~~/server/domains/infra/github-service";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);

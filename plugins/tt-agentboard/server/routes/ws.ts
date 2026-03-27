@@ -1,5 +1,5 @@
 import { eventBus } from "../utils/event-bus";
-import { tmuxManager } from "../services/tmux-manager";
+import { tmuxManager } from "../domains/infra/tmux-manager";
 
 interface WsPeer {
   id: string;

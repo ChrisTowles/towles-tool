@@ -1,19 +1,19 @@
-import { db as defaultDb } from "../db";
-import { cards, workflowRuns } from "../db/schema";
+import { db as defaultDb } from "../../shared/db";
+import { cards, workflowRuns } from "../../shared/db/schema";
 import { eq } from "drizzle-orm";
 import { execSync as defaultExecSync } from "node:child_process";
 import { existsSync as defaultExistsSync } from "node:fs";
 import { join } from "node:path";
-import { tmuxManager as defaultTmuxManager } from "./tmux-manager";
+import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { workflowRunner as defaultWorkflowRunner } from "./workflow-runner";
-import { eventBus as defaultEventBus } from "../utils/event-bus";
-import { logger as defaultLogger } from "../utils/logger";
-import { writeHooks as defaultWriteHooks } from "../utils/hook-writer";
-import { buildStreamingCommand, shellEscape } from "../utils/workflow-helpers";
-import { logCardEvent as defaultLogCardEvent } from "../utils/card-events";
-import { streamTailer as defaultStreamTailer } from "./stream-tailer";
+import { eventBus as defaultEventBus } from "../../utils/event-bus";
+import { logger as defaultLogger } from "../../utils/logger";
+import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
+import { buildStreamingCommand, shellEscape } from "./workflow-helpers";
+import { logCardEvent as defaultLogCardEvent } from "../../utils/card-events";
+import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 
 export interface AgentExecutorDeps {
   db: typeof defaultDb;

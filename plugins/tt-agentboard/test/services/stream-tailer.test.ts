@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createMockLogger } from "../helpers/mock-deps";
-import { StreamTailer } from "../../server/services/stream-tailer";
+import { StreamTailer } from "../../server/domains/infra/stream-tailer";
 
 describe("StreamTailer", () => {
   let testDir: string;

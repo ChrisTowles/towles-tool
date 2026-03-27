@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { execSync, spawn } from "node:child_process";
-import { logger } from "../utils/logger";
+import { logger } from "../../utils/logger";
 
 interface TtydInstance {
   cardId: number;

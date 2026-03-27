@@ -1,6 +1,6 @@
 import type { H3Event } from "h3";
-import { db } from "~~/server/db";
-import { cards } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 
 export function getCardId(event: H3Event): number {

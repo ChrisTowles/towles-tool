@@ -1,8 +1,8 @@
-import { db } from "../db";
-import { cards, boards } from "../db/schema";
+import { db } from "../shared/db";
+import { cards, boards } from "../shared/db/schema";
 import { and, eq } from "drizzle-orm";
 import { eventBus } from "../utils/event-bus";
-import { isGitHubConfigured } from "../services/github-service";
+import { isGitHubConfigured } from "../domains/infra/github-service";
 import { logger } from "../utils/logger";
 
 const POLL_INTERVAL_MS = Number(process.env.GITHUB_POLL_INTERVAL_MS) || 30_000;

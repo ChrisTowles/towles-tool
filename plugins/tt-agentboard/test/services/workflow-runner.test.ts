@@ -3,9 +3,12 @@ import {
   checkPassCondition,
   renderTemplate,
   shellEscape,
-} from "../../server/utils/workflow-helpers";
+} from "../../server/domains/execution/workflow-helpers";
 
-import { WorkflowRunner, resolveStepComplete } from "../../server/services/workflow-runner";
+import {
+  WorkflowRunner,
+  resolveStepComplete,
+} from "../../server/domains/execution/workflow-runner";
 import {
   createMockDb,
   createMockEventBus,

@@ -3,7 +3,10 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
-import { checkPassCondition, renderTemplate } from "../../server/utils/workflow-helpers";
+import {
+  checkPassCondition,
+  renderTemplate,
+} from "../../server/domains/execution/workflow-helpers";
 
 const tmpDirs: string[] = [];
 

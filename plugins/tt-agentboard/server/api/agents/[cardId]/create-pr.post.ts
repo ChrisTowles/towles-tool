@@ -1,5 +1,5 @@
-import { db } from "~~/server/db";
-import { cards, workflowRuns, workspaceSlots, repositories } from "~~/server/db/schema";
+import { db } from "~~/server/shared/db";
+import { cards, workflowRuns, workspaceSlots, repositories } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 import { execSync } from "node:child_process";
 import { getCardId, requireCard } from "~~/server/utils/params";

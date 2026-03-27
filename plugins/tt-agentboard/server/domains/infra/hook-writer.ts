@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { logger } from "./logger";
+import { logger } from "../../utils/logger";
 
 function httpHook(url: string) {
   return [{ matcher: "", hooks: [{ type: "http", url }] }];
