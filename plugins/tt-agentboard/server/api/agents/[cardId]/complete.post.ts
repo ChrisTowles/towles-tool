@@ -2,10 +2,10 @@ import { db } from "~~/server/shared/db";
 import { cards, workflowRuns } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
-import { eventBus } from "~~/server/utils/event-bus";
+import { eventBus } from "~~/server/shared/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
-import { logCardEvent } from "~~/server/utils/card-events";
+import { cardService } from "~~/server/domains/cards/card-service";
 
 /**
  * Callback endpoint for Claude Code Stop hook.
@@ -20,26 +20,19 @@ import { logCardEvent } from "~~/server/utils/card-events";
 export default defineEventHandler(async (event) => {
   const cardId = getCardId(event);
 
-  await logCardEvent(cardId, "stop_hook_received", "Claude Code Stop hook fired");
+  await cardService.logEvent(cardId, "stop_hook_received", "Claude Code Stop hook fired");
   logger.info(`Stop hook callback received for card ${cardId}`);
 
   const card = await requireCard(cardId);
 
   // Only process if card is actively running or queued (not already done/review)
   if (card.status === "review_ready" || card.status === "done") {
-    await logCardEvent(cardId, "stop_hook_ignored", `card already ${card.status}`);
+    await cardService.logEvent(cardId, "stop_hook_ignored", `card already ${card.status}`);
     return { ok: true, ignored: true };
   }
 
-  // Update card to review — keep tmux session alive for inspection
-  await db
-    .update(cards)
-    .set({
-      column: "review",
-      status: "review_ready",
-      updatedAt: new Date(),
-    })
-    .where(eq(cards.id, cardId));
+  // Update card to review_ready + review column
+  await cardService.markComplete(cardId);
 
   // Update workflow run if exists
   await db
@@ -90,7 +83,7 @@ export default defineEventHandler(async (event) => {
           stdio: "ignore",
           timeout: 10000,
         });
-        await logCardEvent(
+        await cardService.logEvent(
           cardId,
           "auto_committed",
           `Committed uncommitted changes in ${slot.path}`,
@@ -106,7 +99,7 @@ export default defineEventHandler(async (event) => {
   tmuxManager.stopCapture(sessionName);
   const killed = tmuxManager.killSession(sessionName);
   if (killed) {
-    await logCardEvent(cardId, "tmux_session_killed", `session=${sessionName}`);
+    await cardService.logEvent(cardId, "tmux_session_killed", `session=${sessionName}`);
   }
 
   // Release slot
@@ -115,17 +108,10 @@ export default defineEventHandler(async (event) => {
       .update(workspaceSlots)
       .set({ status: "available", claimedByCardId: null })
       .where(eq(workspaceSlots.id, slot.id));
-    await logCardEvent(cardId, "slot_released", `slotId=${slot.id}`);
+    await cardService.logEvent(cardId, "slot_released", `slotId=${slot.id}`);
     eventBus.emit("slot:released", { slotId: slot.id });
   }
 
-  // Emit events
-  eventBus.emit("card:moved", {
-    cardId,
-    fromColumn: "in_progress",
-    toColumn: "review",
-  });
-  eventBus.emit("card:status-changed", { cardId, status: "review_ready" });
   eventBus.emit("workflow:completed", { cardId, status: "completed" });
 
   logger.info(`Card ${cardId} completed, slot released, tmux killed`);

@@ -1,9 +1,7 @@
-import { db } from "~~/server/shared/db";
-import { cards } from "~~/server/shared/db/schema";
-import { eq } from "drizzle-orm";
-import { eventBus } from "~~/server/utils/event-bus";
+import { eventBus } from "~~/server/shared/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
+import { cardService } from "~~/server/domains/cards/card-service";
 
 /**
  * Callback endpoint for Claude Code Notification hook.
@@ -21,12 +19,7 @@ export default defineEventHandler(async (event) => {
     return { ok: true, ignored: true };
   }
 
-  await db
-    .update(cards)
-    .set({ status: "waiting_input", updatedAt: new Date() })
-    .where(eq(cards.id, cardId));
-
-  eventBus.emit("card:status-changed", { cardId, status: "waiting_input" });
+  await cardService.updateStatus(cardId, "waiting_input");
   eventBus.emit("agent:waiting", { cardId });
 
   return { ok: true };

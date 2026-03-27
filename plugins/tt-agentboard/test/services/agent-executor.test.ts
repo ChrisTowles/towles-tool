@@ -11,6 +11,7 @@ import {
   createMockWorkflowRunner,
   createMockStreamTailer,
   createMockExecSync,
+  createMockCardService,
   setupSelectReturning,
   setupUpdate,
   setupInsert,
@@ -26,7 +27,7 @@ describe("AgentExecutor", () => {
   let mockWorkflowLoader: ReturnType<typeof createMockWorkflowLoader>;
   let mockWorkflowRunner: ReturnType<typeof createMockWorkflowRunner>;
   let mockWriteHooks: ReturnType<typeof vi.fn>;
-  let mockLogCardEvent: ReturnType<typeof vi.fn>;
+  let mockCardService: ReturnType<typeof createMockCardService>;
 
   beforeEach(() => {
     mockDb = createMockDb();
@@ -36,7 +37,7 @@ describe("AgentExecutor", () => {
     mockWorkflowLoader = createMockWorkflowLoader();
     mockWorkflowRunner = createMockWorkflowRunner();
     mockWriteHooks = vi.fn();
-    mockLogCardEvent = vi.fn().mockResolvedValue(undefined);
+    mockCardService = createMockCardService();
 
     executor = new AgentExecutor(4200, {
       db: mockDb as never,
@@ -47,7 +48,7 @@ describe("AgentExecutor", () => {
       workflowLoader: mockWorkflowLoader,
       workflowRunner: mockWorkflowRunner,
       writeHooks: mockWriteHooks as never,
-      logCardEvent: mockLogCardEvent as never,
+      cardService: mockCardService as never,
       streamTailer: createMockStreamTailer(),
       execSync: createMockExecSync() as never,
       existsSync: vi.fn().mockReturnValue(false) as never,
@@ -62,7 +63,7 @@ describe("AgentExecutor", () => {
       await executor.startExecution(999);
 
       expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockEventBus.emit).not.toHaveBeenCalled();
+      expect(mockCardService.updateStatus).not.toHaveBeenCalled();
     });
 
     it("marks failed when card has no repoId", async () => {
@@ -72,10 +73,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("delegates to workflowRunner when card has valid workflow", async () => {
@@ -132,10 +130,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "queued",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "queued");
     });
 
     it("marks failed when tmux not available", async () => {
@@ -153,10 +148,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("writes hooks and starts capture on successful single-prompt", async () => {

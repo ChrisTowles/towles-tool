@@ -190,7 +190,14 @@ describe("Session Reconnect Plugin (mocked)", () => {
       tmuxManager: mockTmuxManager,
       eventBus: mockEventBus as never,
       logger: createMockLogger() as never,
-      logCardEvent: vi.fn().mockResolvedValue(undefined),
+      cardService: {
+        updateStatus: vi.fn().mockResolvedValue(undefined),
+        moveToColumn: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+        markComplete: vi.fn().mockResolvedValue(undefined),
+        logEvent: vi.fn().mockResolvedValue(undefined),
+        resolveDependencies: vi.fn().mockResolvedValue([]),
+      } as never,
     });
   }
 

@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+import {
+  createMockDb,
+  createMockEventBus,
+  createMockLogger,
+  createMockCardService,
+} from "../helpers/mock-deps";
 import { createSessionReconnect } from "../../server/plugins/session-reconnect";
 
 describe("Session Reconnect Plugin", () => {
   let mockDb: ReturnType<typeof createMockDb>;
   let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let mockCardService: ReturnType<typeof createMockCardService>;
   let mockTmuxManager: {
     isAvailable: ReturnType<typeof vi.fn>;
     listSessions: ReturnType<typeof vi.fn>;
@@ -18,6 +24,7 @@ describe("Session Reconnect Plugin", () => {
     vi.clearAllMocks();
     mockDb = createMockDb();
     mockEventBus = createMockEventBus();
+    mockCardService = createMockCardService();
     mockTmuxManager = {
       isAvailable: vi.fn().mockReturnValue(true),
       listSessions: vi.fn().mockReturnValue([]),
@@ -33,7 +40,7 @@ describe("Session Reconnect Plugin", () => {
       tmuxManager: mockTmuxManager,
       eventBus: mockEventBus as never,
       logger: createMockLogger() as never,
-      logCardEvent: vi.fn().mockResolvedValue(undefined),
+      cardService: mockCardService as never,
     });
   }
 
@@ -147,11 +154,10 @@ describe("Session Reconnect Plugin", () => {
 
     await runPlugin();
 
-    expect(mockDb.update).toHaveBeenCalled();
-    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-      cardId: 7,
-      status: "failed",
-    });
+    expect(mockCardService.markFailed).toHaveBeenCalledWith(
+      7,
+      "session card-7 died between list and check",
+    );
   });
 
   it("marks running card failed when it has no live tmux session", async () => {
@@ -179,10 +185,6 @@ describe("Session Reconnect Plugin", () => {
     await runPlugin();
 
     expect(mockTmuxManager.killSession).toHaveBeenCalledWith("card-5");
-    expect(mockDb.update).toHaveBeenCalled();
-    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-      cardId: 20,
-      status: "failed",
-    });
+    expect(mockCardService.markFailed).toHaveBeenCalledWith(20, "session not found on restart");
   });
 });

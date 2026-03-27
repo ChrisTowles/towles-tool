@@ -3,9 +3,9 @@ import { cards, workspaceSlots } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 import { agentExecutor } from "~~/server/domains/execution/agent-executor";
 import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
-import { eventBus } from "~~/server/utils/event-bus";
+import { eventBus } from "~~/server/shared/event-bus";
 import { logger } from "~~/server/utils/logger";
-import { logCardEvent } from "~~/server/utils/card-events";
+import { cardService } from "~~/server/domains/cards/card-service";
 import { existsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const current = await db.select().from(cards).where(eq(cards.id, id));
   const fromColumn = current[0]?.column ?? "backlog";
 
+  // Move card to the target column (also updates position)
   await db
     .update(cards)
     .set({
@@ -26,13 +27,14 @@ export default defineEventHandler(async (event) => {
     })
     .where(eq(cards.id, id));
 
+  // Emit move event (we handle this manually since we also set position)
   eventBus.emit("card:moved", {
     cardId: id,
     fromColumn,
     toColumn: body.column,
   });
 
-  await logCardEvent(id, "card_moved", `${fromColumn} → ${body.column}`);
+  await cardService.logEvent(id, "card_moved", `${fromColumn} → ${body.column}`);
 
   // If moved to in_progress, clean up stale resources first, then trigger agent
   if (body.column === "in_progress") {
@@ -55,7 +57,7 @@ export default defineEventHandler(async (event) => {
     tmuxManager.killSession(sessionName);
 
     agentExecutor.startExecution(id).catch(() => {
-      eventBus.emit("card:status-changed", { cardId: id, status: "failed" });
+      cardService.updateStatus(id, "failed");
     });
   }
 
@@ -91,9 +93,7 @@ export default defineEventHandler(async (event) => {
       eventBus.emit("slot:released", { slotId: slot.id });
     }
 
-    await db.update(cards).set({ status: "done", updatedAt: new Date() }).where(eq(cards.id, id));
-
-    eventBus.emit("card:status-changed", { cardId: id, status: "done" });
+    await cardService.updateStatus(id, "done");
     logger.info(`Card ${id} archived: tmux killed, slot released`);
   }
 

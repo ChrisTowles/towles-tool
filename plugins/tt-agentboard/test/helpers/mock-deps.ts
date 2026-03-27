@@ -83,6 +83,20 @@ export function createMockContextBundler() {
   };
 }
 
+/** Create a mock CardService */
+export function createMockCardService() {
+  return {
+    updateStatus: vi.fn().mockResolvedValue(undefined),
+    moveToColumn: vi.fn().mockResolvedValue(undefined),
+    markFailed: vi.fn().mockResolvedValue(undefined),
+    markComplete: vi.fn().mockResolvedValue(undefined),
+    logEvent: vi.fn().mockResolvedValue(undefined),
+    resolveDependencies: vi.fn().mockResolvedValue([]),
+  };
+}
+
+export type MockCardService = ReturnType<typeof createMockCardService>;
+
 /** Create a mock WorkflowRunner */
 export function createMockWorkflowRunner() {
   return {

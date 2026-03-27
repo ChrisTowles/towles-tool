@@ -9,7 +9,7 @@ import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { contextBundler as defaultContextBundler } from "./context-bundler";
 import type { WorkflowDefinition, WorkflowStep } from "./workflow-loader";
-import { eventBus as defaultEventBus } from "../../utils/event-bus";
+import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
 import {
@@ -18,7 +18,8 @@ import {
   renderTemplate,
   shellEscape,
 } from "./workflow-helpers";
-import { logCardEvent as defaultLogCardEvent } from "../../utils/card-events";
+import { cardService as defaultCardService } from "../cards/card-service";
+import type { CardService } from "../cards/card-service";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 
 interface RunContext {
@@ -71,7 +72,7 @@ export interface WorkflowRunnerDeps {
   workflowLoader: { get: (id: string) => WorkflowDefinition | undefined };
   contextBundler: { buildPrompt: (opts: unknown) => string };
   writeHooks: typeof defaultWriteHooks;
-  logCardEvent: typeof defaultLogCardEvent;
+  cardService: CardService;
   streamTailer: {
     startTailing: (cardId: number, logFilePath: string) => Promise<void>;
     stopTailing: (cardId: number) => void;
@@ -96,7 +97,7 @@ export class WorkflowRunner {
       workflowLoader: defaultWorkflowLoader,
       contextBundler: defaultContextBundler,
       writeHooks: defaultWriteHooks,
-      logCardEvent: defaultLogCardEvent,
+      cardService: defaultCardService,
       streamTailer: defaultStreamTailer,
       execSync: defaultExecSync,
       existsSync: defaultExistsSync,
@@ -137,20 +138,10 @@ export class WorkflowRunner {
 
       await this.deps.db
         .update(cards)
-        .set({
-          column: "review",
-          status: "review_ready",
-          currentStepId: null,
-          updatedAt: new Date(),
-        })
+        .set({ currentStepId: null, updatedAt: new Date() })
         .where(eq(cards.id, cardId));
 
-      this.deps.eventBus.emit("card:moved", {
-        cardId,
-        fromColumn: "in_progress",
-        toColumn: "review",
-      });
-      this.deps.eventBus.emit("card:status-changed", { cardId, status: "review_ready" });
+      await this.deps.cardService.markComplete(cardId);
       this.deps.eventBus.emit("workflow:completed", { cardId, status: "completed" });
 
       this.deps.logger.info(`Workflow completed for card ${cardId}`);
@@ -164,14 +155,14 @@ export class WorkflowRunner {
       this.deps.tmuxManager.stopCapture(ctx.sessionName);
       const killed = this.deps.tmuxManager.killSession(ctx.sessionName);
       if (killed) {
-        await this.deps.logCardEvent(
+        await this.deps.cardService.logEvent(
           ctx.cardId,
           "tmux_session_killed",
           `session=${ctx.sessionName}`,
         );
       }
       await this.deps.slotAllocator.releaseSlot(ctx.slotId);
-      await this.deps.logCardEvent(ctx.cardId, "slot_released", `slotId=${ctx.slotId}`);
+      await this.deps.cardService.logEvent(ctx.cardId, "slot_released", `slotId=${ctx.slotId}`);
     }
   }
 
@@ -187,7 +178,7 @@ export class WorkflowRunner {
 
     if (!card.repoId || !card.workflowId) {
       this.deps.logger.error(`Card ${cardId} missing repoId or workflowId`);
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return null;
     }
 
@@ -198,7 +189,7 @@ export class WorkflowRunner {
       .where(eq(repositories.id, card.repoId));
     if (repoRows.length === 0) {
       this.deps.logger.error(`Repo ${card.repoId} not found for card ${cardId}`);
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return null;
     }
     const repo = repoRows[0]!;
@@ -207,14 +198,14 @@ export class WorkflowRunner {
     const workflow = this.deps.workflowLoader.get(card.workflowId);
     if (!workflow) {
       this.deps.logger.error(`Workflow "${card.workflowId}" not found for card ${cardId}`);
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return null;
     }
 
     // Check tmux
     if (!this.deps.tmuxManager.isAvailable()) {
       this.deps.logger.error("tmux is not available");
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return null;
     }
 
@@ -222,17 +213,17 @@ export class WorkflowRunner {
     const slot = await this.deps.slotAllocator.claimSlot(card.repoId, cardId);
     if (!slot) {
       this.deps.logger.warn(`No slot available for card ${cardId}, marking queued`);
-      await this.updateCardStatus(cardId, "queued");
+      await this.deps.cardService.updateStatus(cardId, "queued");
       return null;
     }
 
     // Update card to running
-    await this.updateCardStatus(cardId, "running");
+    await this.deps.cardService.updateStatus(cardId, "running");
 
     // Create tmux session
     const { sessionName, created } = this.deps.tmuxManager.createSession(cardId, slot.path);
     if (created) {
-      await this.deps.logCardEvent(
+      await this.deps.cardService.logEvent(
         cardId,
         "tmux_session_created",
         `session=${sessionName}, cwd=${slot.path}`,
@@ -327,11 +318,15 @@ export class WorkflowRunner {
         .where(eq(cards.id, ctx.cardId));
 
       this.deps.eventBus.emit("step:started", { cardId: ctx.cardId, stepId: step.id });
-      await this.deps.logCardEvent(ctx.cardId, "step_started", `stepId=${step.id}, retry=${retry}`);
+      await this.deps.cardService.logEvent(
+        ctx.cardId,
+        "step_started",
+        `stepId=${step.id}, retry=${retry}`,
+      );
 
       // Write Stop hook for this step — points to step-complete callback
       this.deps.writeHooks(ctx.slotPath, ctx.cardId, this.port, "step-complete");
-      await this.deps.logCardEvent(
+      await this.deps.cardService.logEvent(
         ctx.cardId,
         "hooks_written",
         `endpoint=step-complete, step=${step.id}`,
@@ -358,7 +353,7 @@ export class WorkflowRunner {
 
       if (!completed) {
         this.deps.logger.warn(`Step ${step.id} timed out for card ${ctx.cardId}`);
-        await this.deps.logCardEvent(
+        await this.deps.cardService.logEvent(
           ctx.cardId,
           "step_failed",
           `stepId=${step.id}, reason=timeout, retry=${retry}`,
@@ -393,7 +388,7 @@ export class WorkflowRunner {
         this.deps.logger.warn(
           `Artifact not found at ${artifactPath} after step ${step.id} completed`,
         );
-        await this.deps.logCardEvent(
+        await this.deps.cardService.logEvent(
           ctx.cardId,
           "step_failed",
           `stepId=${step.id}, reason=artifact_missing, retry=${retry}`,
@@ -421,7 +416,7 @@ export class WorkflowRunner {
       if (step.pass_condition) {
         const passed = checkPassCondition(step.pass_condition, artifactContent);
         if (!passed) {
-          await this.deps.logCardEvent(
+          await this.deps.cardService.logEvent(
             ctx.cardId,
             "step_failed",
             `stepId=${step.id}, reason=pass_condition, retry=${retry}`,
@@ -463,7 +458,7 @@ export class WorkflowRunner {
         .set({ currentStepId: `${step.id}:done`, updatedAt: new Date() })
         .where(eq(cards.id, ctx.cardId));
 
-      await this.deps.logCardEvent(ctx.cardId, "step_completed", `stepId=${step.id}`);
+      await this.deps.cardService.logEvent(ctx.cardId, "step_completed", `stepId=${step.id}`);
       this.deps.eventBus.emit("step:completed", {
         cardId: ctx.cardId,
         stepId: step.id,
@@ -544,28 +539,8 @@ export class WorkflowRunner {
       .set({ status: "failed", endedAt: new Date() })
       .where(eq(workflowRuns.id, ctx.workflowRunId));
 
-    await this.updateCardStatus(ctx.cardId, "failed");
+    await this.deps.cardService.updateStatus(ctx.cardId, "failed");
     this.deps.eventBus.emit("workflow:completed", { cardId: ctx.cardId, status: "failed" });
-  }
-
-  private async updateCardStatus(
-    cardId: number,
-    status:
-      | "idle"
-      | "queued"
-      | "running"
-      | "waiting_input"
-      | "review_ready"
-      | "done"
-      | "failed"
-      | "blocked",
-  ): Promise<void> {
-    await this.deps.db
-      .update(cards)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(cards.id, cardId));
-
-    this.deps.eventBus.emit("card:status-changed", { cardId, status });
   }
 }
 

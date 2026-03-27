@@ -3,7 +3,7 @@ import { cards, workflowRuns, workspaceSlots, repositories } from "~~/server/sha
 import { eq } from "drizzle-orm";
 import { execSync } from "node:child_process";
 import { getCardId, requireCard } from "~~/server/utils/params";
-import { logCardEvent } from "~~/server/utils/card-events";
+import { cardService } from "~~/server/domains/cards/card-service";
 import { logger } from "~~/server/utils/logger";
 
 /**
@@ -93,13 +93,13 @@ export default defineEventHandler(async (event) => {
       .set({ githubPrNumber: pr.number, updatedAt: new Date() })
       .where(eq(cards.id, cardId));
 
-    await logCardEvent(cardId, "pr_created", `PR #${pr.number}: ${pr.url}`);
+    await cardService.logEvent(cardId, "pr_created", `PR #${pr.number}: ${pr.url}`);
     logger.info(`PR #${pr.number} created for card ${cardId}: ${pr.url}`);
 
     return { prNumber: pr.number, prUrl: pr.url };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await logCardEvent(cardId, "pr_failed", msg);
+    await cardService.logEvent(cardId, "pr_failed", msg);
     throw createError({ statusCode: 500, statusMessage: `Failed to create PR: ${msg}` });
   }
 });
