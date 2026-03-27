@@ -11,6 +11,7 @@ export const eventBus = new EventEmitter();
 // 'slot:claimed'        { slotId, cardId }
 // 'slot:released'       { slotId }
 // 'agent:output'        { cardId, content }
+// 'agent:activity'      { cardId, event: AgentActivityEvent, timestamp }
 // 'agent:waiting'       { cardId, question }
 // 'workflow:completed'  { cardId, status }
 // 'github:issue-found'  { issueNumber, repoId }
