@@ -1,38 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+
 // We test the queue manager's event handler directly by capturing
 // the callback passed to eventBus.on("slot:released", ...).
 
-const mockEmit = vi.fn();
-const mockOn = vi.fn();
+const mockEventBus = createMockEventBus();
+const mockDb = createMockDb();
 
-vi.mock("../../server/db", () => {
-  const mockChain = () => {
-    const chain: Record<string, unknown> = {};
-    chain.from = vi.fn().mockReturnValue(chain);
-    chain.where = vi.fn().mockReturnValue(chain);
-    chain.set = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockResolvedValue([]);
-    chain.orderBy = vi.fn().mockReturnValue(chain);
-    return chain;
-  };
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI; SQLite can't load in test
+vi.mock("../../server/db", () => ({ db: mockDb }));
 
-  return {
-    db: {
-      select: vi.fn().mockReturnValue(mockChain()),
-      update: vi.fn().mockReturnValue(mockChain()),
-    },
-  };
-});
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
+vi.mock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
 
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: { emit: mockEmit, on: mockOn },
-}));
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
+vi.mock("../../server/utils/logger", () => ({ logger: createMockLogger() }));
 
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
-
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
 vi.mock("../../server/services/agent-executor", () => ({
   agentExecutor: {
     startExecution: vi.fn().mockResolvedValue(undefined),
@@ -40,11 +25,7 @@ vi.mock("../../server/services/agent-executor", () => ({
 }));
 
 // eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { db } from "../../server/db";
-// eslint-disable-next-line import/first
 import { agentExecutor } from "../../server/services/agent-executor";
-
-const mockDb = vi.mocked(db);
 
 describe("Queue Manager Plugin", () => {
   let slotReleasedHandler: (data: { slotId: number }) => Promise<void>;
@@ -57,6 +38,7 @@ describe("Queue Manager Plugin", () => {
     vi.clearAllMocks();
 
     // Stub defineNitroPlugin globally so the plugin module can call it
+    // eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin requires global defineNitroPlugin
     vi.stubGlobal("defineNitroPlugin", (fn: () => void) => fn());
 
     // Reset module cache so the plugin re-registers
@@ -68,7 +50,9 @@ describe("Queue Manager Plugin", () => {
     await import("../../server/plugins/queue-manager");
 
     // Extract the registered handler
-    const slotReleasedCall = mockOn.mock.calls.find((c: unknown[]) => c[0] === "slot:released");
+    const slotReleasedCall = mockEventBus.on.mock.calls.find(
+      (c: unknown[]) => c[0] === "slot:released",
+    );
     expect(slotReleasedCall).toBeTruthy();
     slotReleasedHandler = slotReleasedCall![1] as (data: { slotId: number }) => Promise<void>;
   });

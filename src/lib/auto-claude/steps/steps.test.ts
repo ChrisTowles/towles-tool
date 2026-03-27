@@ -20,6 +20,7 @@ import type { IssueContext } from "../utils";
 consola.level = -999;
 
 let mockClaudeImpl: MockClaudeImpl = null;
+// eslint-disable-next-line jest/no-restricted-jest-methods -- spawnClaude is 3 layers deep (steps -> utils -> claude-cli -> spawn-claude); DI impractical
 vi.mock("../spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
 // ── Shared setup/teardown for all step tests ──

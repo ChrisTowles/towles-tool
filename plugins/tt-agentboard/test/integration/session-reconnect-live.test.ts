@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import { execSync } from "node:child_process";
 
+import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+
 // Track sessions we create so we can clean up
 const createdSessions: string[] = [];
 
@@ -158,66 +160,43 @@ describe("Session Reconnect Live (real tmux)", { timeout: 30_000 }, () => {
 });
 
 // Mock dependencies for plugin tests
-vi.mock("../../server/db", () => {
-  const mockChain = () => {
-    const chain: Record<string, unknown> = {};
-    chain.from = vi.fn().mockReturnValue(chain);
-    chain.where = vi.fn().mockReturnValue(chain);
-    chain.set = vi.fn().mockReturnValue(chain);
-    chain.values = vi.fn().mockResolvedValue(undefined);
-    chain.limit = vi.fn().mockResolvedValue([]);
-    return chain;
-  };
+const mockDb = createMockDb();
+const mockEventBus = createMockEventBus();
+const mockTmuxManager = {
+  isAvailable: vi.fn().mockReturnValue(true),
+  listSessions: vi.fn().mockReturnValue([]),
+  sessionExists: vi.fn().mockReturnValue(true),
+  startCapture: vi.fn(),
+  killSession: vi.fn(),
+};
 
-  return {
-    db: {
-      select: vi.fn().mockReturnValue(mockChain()),
-      update: vi.fn().mockReturnValue(mockChain()),
-      insert: vi.fn().mockReturnValue(mockChain()),
-    },
-  };
-});
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI; SQLite can't load in test
+vi.mock("../../server/db", () => ({ db: mockDb }));
 
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
 vi.mock("../../server/utils/card-events", () => ({
   logCardEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: { emit: vi.fn(), on: vi.fn() },
-}));
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
+vi.mock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
 
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
+vi.mock("../../server/utils/logger", () => ({ logger: createMockLogger() }));
 
-vi.mock("../../server/services/tmux-manager", () => ({
-  tmuxManager: {
-    isAvailable: vi.fn().mockReturnValue(true),
-    listSessions: vi.fn().mockReturnValue([]),
-    sessionExists: vi.fn().mockReturnValue(true),
-    startCapture: vi.fn(),
-    killSession: vi.fn(),
-  },
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { db } from "../../server/db";
-// eslint-disable-next-line import/first
-import { eventBus } from "../../server/utils/event-bus";
-// eslint-disable-next-line import/first
-import { tmuxManager as mockedTmuxManager } from "../../server/services/tmux-manager";
-
-const mockDb = vi.mocked(db);
+// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
+vi.mock("../../server/services/tmux-manager", () => ({ tmuxManager: mockTmuxManager }));
 
 async function runPlugin() {
+  // eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin requires global defineNitroPlugin
   vi.stubGlobal("defineNitroPlugin", async (fn: () => Promise<void>) => fn());
   vi.resetModules();
   vi.doMock("../../server/db", () => ({ db: mockDb }));
-  vi.doMock("../../server/utils/event-bus", () => ({ eventBus }));
+  vi.doMock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
   vi.doMock("../../server/utils/logger", () => ({
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    logger: createMockLogger(),
   }));
-  vi.doMock("../../server/services/tmux-manager", () => ({ tmuxManager: mockedTmuxManager }));
+  vi.doMock("../../server/services/tmux-manager", () => ({ tmuxManager: mockTmuxManager }));
   vi.doMock("../../server/utils/card-events", () => ({
     logCardEvent: vi.fn().mockResolvedValue(undefined),
   }));
@@ -236,9 +215,9 @@ describe("Session Reconnect Plugin (mocked)", () => {
 
   it("resumes capture for running card and marks orphaned card failed", async () => {
     // Scenario: card-3 is running with a live session, card-50 is running with no session
-    vi.mocked(mockedTmuxManager.isAvailable).mockReturnValue(true);
-    vi.mocked(mockedTmuxManager.listSessions).mockReturnValue(["card-3"]);
-    vi.mocked(mockedTmuxManager.sessionExists).mockReturnValue(true);
+    mockTmuxManager.isAvailable.mockReturnValue(true);
+    mockTmuxManager.listSessions.mockReturnValue(["card-3"]);
+    mockTmuxManager.sessionExists.mockReturnValue(true);
 
     let selectCount = 0;
     mockDb.select = vi.fn().mockImplementation(() => {
@@ -266,20 +245,20 @@ describe("Session Reconnect Plugin (mocked)", () => {
     await runPlugin();
 
     // card-3 should get capture resumed (it has a live session)
-    expect(mockedTmuxManager.startCapture).toHaveBeenCalledWith("card-3", expect.any(Function));
+    expect(mockTmuxManager.startCapture).toHaveBeenCalledWith("card-3", expect.any(Function));
 
     // card-50 should be marked failed (running but no session)
-    expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
       cardId: 50,
       status: "failed",
     });
   });
 
   it("handles session that dies between list and existence check", async () => {
-    vi.mocked(mockedTmuxManager.isAvailable).mockReturnValue(true);
-    vi.mocked(mockedTmuxManager.listSessions).mockReturnValue(["card-15"]);
+    mockTmuxManager.isAvailable.mockReturnValue(true);
+    mockTmuxManager.listSessions.mockReturnValue(["card-15"]);
     // Session dies between list and has-session check
-    vi.mocked(mockedTmuxManager.sessionExists).mockReturnValue(false);
+    mockTmuxManager.sessionExists.mockReturnValue(false);
 
     const updateChain: Record<string, unknown> = {};
     updateChain.set = vi.fn().mockReturnValue(updateChain);
@@ -303,7 +282,7 @@ describe("Session Reconnect Plugin (mocked)", () => {
 
     // Card should be marked failed since session died
     expect(mockDb.update).toHaveBeenCalled();
-    expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
       cardId: 15,
       status: "failed",
     });

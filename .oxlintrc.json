@@ -233,7 +233,7 @@
     "unicorn/prefer-type-error": "error",
     "unicorn/throw-new-error": "error",
     "jest/no-restricted-jest-methods": [
-      "warn",
+      "error",
       {
         "mock": "vi.mock() is banned. Use constructor or parameter dependency injection instead.",
         "spyOn": "vi.spyOn() is banned. Use constructor or parameter dependency injection instead.",

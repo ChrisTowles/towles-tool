@@ -9,6 +9,7 @@ import prompts from "prompts";
 import { BaseCommand } from "../base.js";
 import { initConfig } from "../../lib/auto-claude/index.js";
 import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/labels.js";
+import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 
@@ -21,14 +22,15 @@ export async function retryIssues(
   triggerLabel: string,
   selected: Issue[],
   clean: boolean,
+  exec?: ExecSafeFn,
 ): Promise<number> {
   for (const issue of selected) {
     consola.info(`Retrying issue #${issue.number}: ${issue.title}`);
 
-    await removeLabel(repo, issue.number, LABELS.failed);
+    await removeLabel(repo, issue.number, LABELS.failed, exec);
     consola.success(`  Removed '${LABELS.failed}' label`);
 
-    await setLabel(repo, issue.number, triggerLabel);
+    await setLabel(repo, issue.number, triggerLabel, exec);
     consola.success(`  Added '${triggerLabel}' label`);
 
     if (clean) {

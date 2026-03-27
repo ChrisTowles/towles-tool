@@ -1,29 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockExecSync } = vi.hoisted(() => ({
-  mockExecSync: vi.fn(),
-}));
-
-vi.mock("node:child_process", () => ({
-  execSync: mockExecSync,
-}));
-
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: { emit: vi.fn(), on: vi.fn() },
-}));
-
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
+import { createMockEventBus, createMockLogger } from "../helpers/mock-deps";
 import { GitHubService } from "../../server/services/github-service";
 
 describe("GitHub Round-Trip Integration", () => {
   let service: GitHubService;
+  const mockExecSync = vi.fn();
 
   beforeEach(() => {
-    service = new GitHubService();
+    service = new GitHubService({
+      execSync: mockExecSync,
+      eventBus: createMockEventBus(),
+      logger: createMockLogger(),
+    });
     vi.clearAllMocks();
   });
 

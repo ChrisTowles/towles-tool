@@ -3,23 +3,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import consola from "consola";
-import { x } from "tinyexec";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
 import { LABELS } from "../../lib/auto-claude/labels.js";
 import { retryIssues } from "./retry.js";
 
 // Suppress consola output during tests
 consola.level = -999;
 
-// Mock tinyexec so setLabel/removeLabel (which use execSafe -> x) work
-vi.mock("tinyexec", () => ({
-  x: vi.fn().mockResolvedValue({ stdout: "", exitCode: 0, stderr: "" }),
-}));
+const mockExecSafe: ExecSafeFn = vi.fn().mockResolvedValue({ stdout: "", ok: true });
 
 function getGhEditCalls() {
   return vi
-    .mocked(x)
+    .mocked(mockExecSafe)
     .mock.calls.filter(
       ([cmd, args]) => cmd === "gh" && args?.[0] === "issue" && args?.[1] === "edit",
     )
@@ -41,7 +38,7 @@ describe("retryIssues", () => {
       },
     ];
 
-    const count = await retryIssues("owner/repo", "auto-claude", issues, false);
+    const count = await retryIssues("owner/repo", "auto-claude", issues, false, mockExecSafe);
 
     expect(count).toBe(1);
     const editCalls = getGhEditCalls();
@@ -70,7 +67,7 @@ describe("retryIssues", () => {
       },
     ];
 
-    const count = await retryIssues("owner/repo", "auto-claude", issues, false);
+    const count = await retryIssues("owner/repo", "auto-claude", issues, false, mockExecSafe);
 
     expect(count).toBe(2);
     const editCalls = getGhEditCalls();
@@ -79,7 +76,7 @@ describe("retryIssues", () => {
   });
 
   it("returns 0 when given empty selection", async () => {
-    const count = await retryIssues("owner/repo", "auto-claude", [], false);
+    const count = await retryIssues("owner/repo", "auto-claude", [], false, mockExecSafe);
     expect(count).toBe(0);
     expect(getGhEditCalls().length).toBe(0);
   });
@@ -103,7 +100,7 @@ describe("retryIssues", () => {
         },
       ];
 
-      await retryIssues("owner/repo", "auto-claude", issues, true);
+      await retryIssues("owner/repo", "auto-claude", issues, true, mockExecSafe);
       expect(existsSync(issueDir)).toBe(false);
     } finally {
       process.chdir(originalCwd);
@@ -129,7 +126,7 @@ describe("retryIssues", () => {
         },
       ];
 
-      await retryIssues("owner/repo", "auto-claude", issues, false);
+      await retryIssues("owner/repo", "auto-claude", issues, false, mockExecSafe);
       expect(existsSync(issueDir)).toBe(true);
     } finally {
       process.chdir(originalCwd);
