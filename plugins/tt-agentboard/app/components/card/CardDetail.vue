@@ -50,7 +50,7 @@ function sendResponse() {
     </p>
 
     <div v-if="card.repo && !compact" class="mb-4">
-      <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" />
+      <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" :repo-id="card.repoId" />
     </div>
 
     <div
