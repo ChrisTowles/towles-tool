@@ -32,7 +32,7 @@ pnpm format:check       # Check formatting without writing
 # AgentBoard
 cd plugins/tt-agentboard
 pnpm dev                # Start Nuxt dev server on port 4200
-pnpm test               # Run vitest (222 tests, needs dev server running)
+pnpm test               # Run vitest (e2e tests need dev server running)
 pnpm build              # Build for production
 pnpm db:generate        # Generate Drizzle migration
 pnpm db:migrate         # Apply migrations
@@ -47,7 +47,8 @@ tt ag attach <cardId>   # Attach to card's tmux session
 ## AgentBoard Plugin (`plugins/tt-agentboard/`)
 
 - **Nuxt 4 app** — has its own `package.json`, `vitest.config.ts`, and `tsconfig.json`
-- **Run agentboard tests**: `cd plugins/tt-agentboard && pnpm test` (222 tests, requires dev server on port 4200 for e2e tests)
+- **Run agentboard tests**: `cd plugins/tt-agentboard && pnpm test` (e2e tests require dev server on port 4200)
+- **Run agentboard unit tests only**: `cd plugins/tt-agentboard && pnpm vitest run test/services/ test/plugins/ test/shared/ test/db/`
 - **Start dev server**: `cd plugins/tt-agentboard && AGENTBOARD_DATA_DIR=~/.config/towles-tool/agentboard pnpm dev`
 - **DB location**: `~/.config/towles-tool/agentboard/agentboard.db` (SQLite via Drizzle ORM)
 - **DB migrations**: `cd plugins/tt-agentboard && pnpm db:generate && pnpm db:migrate`
@@ -57,7 +58,13 @@ tt ag attach <cardId>   # Attach to card's tmux session
 - **Server imports**: use `~~/server/` prefix (not `~/server/`) — Nuxt 4 resolves `~` to `app/` dir
 - **GitHub integration uses `gh` CLI** (not Octokit/GITHUB_TOKEN) — requires `gh auth login`
 - **Agent completion**: detected via Claude Code HTTP Stop hooks, not tmux polling
-- **Shared server utils**: `server/utils/params.ts` (getCardId, requireCard), `server/utils/hook-writer.ts`, `server/utils/workflow-helpers.ts`
+- **Domain-driven server**: `server/domains/cards/` (schema, card-service, types), `server/domains/execution/` (orchestrator, step-executor, agent-executor, slot-allocator), `server/domains/infra/` (tmux, git, github, stream-parser), `server/shared/` (typed event-bus, db)
+- **Typed EventBus**: `server/shared/event-bus.ts` — events typed via `EventMap` interface. Compile-time safety on emit/on/off.
+- **CardService**: `server/domains/cards/card-service.ts` — all card state transitions go through here (updateStatus, moveToColumn, markFailed, markComplete, logEvent, resolveDependencies). Never do ad-hoc `db.update(cards)` + `eventBus.emit` directly.
+- **Pinia store**: `app/stores/cards.ts` (`useCardStore`) — single source of truth for card state. WS events feed into store via `bindWebSocket()`. Old `useCards`/`useBoard` composables are deleted.
+- **Nitro plugin DI pattern**: `createQueueManager(deps)` / `createSessionReconnect(deps)` — extracted functions accept deps for testability, `defineNitroPlugin` wrapper calls them with real deps.
+- **vitest.setup.ts**: sets `AGENTBOARD_DATA_DIR` to temp dir + stubs `defineNitroPlugin` — allows real DB module to load in tests without touching user data.
+- **No vi.mock**: Use constructor DI instead of `vi.mock()`. The lint rule `jest/no-restricted-jest-methods` is set to `"error"` — vi.mock/vi.spyOn/vi.stubGlobal are banned. Inject mock dependencies via constructor params.
 - **pnpm workspace**: root `pnpm install` installs for agentboard too (configured in `pnpm-workspace.yaml`)
 - **DB auto-migrates on startup** — no need to run `pnpm db:migrate` manually. `tt ag reset` to wipe DB.
 - **`gh` CLI gotcha**: `gh issue create` and `gh pr create` do NOT support `--json` flag — parse URL from stdout instead. `gh list` commands DO support `--json`.
