@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Column } from "~/utils/constants";
 import { COLUMN_LABELS, COLUMN_ICONS } from "~/utils/constants";
-import type { Card } from "~/composables/useCards";
+import type { Card } from "~/stores/cards";
 
 const props = defineProps<{
   column: Column;

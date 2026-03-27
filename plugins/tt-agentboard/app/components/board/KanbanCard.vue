@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Card } from "~/composables/useCards";
+import type { Card } from "~/stores/cards";
 import type { CardStatus } from "~/utils/constants";
 import { STATUS_BORDER_CLASSES } from "~/utils/constants";
 

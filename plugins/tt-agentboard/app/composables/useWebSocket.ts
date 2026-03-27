@@ -1,4 +1,3 @@
-import type { Card } from "~/composables/useCards";
 import type { CardStatus, Column } from "~/utils/constants";
 
 export interface BoardEvent {
@@ -171,46 +170,6 @@ function unsubscribeActivity(cardId: number) {
   send({ type: "unsubscribe-activity", cardId });
 }
 
-/**
- * Integrate with useCards — update card list reactively from WebSocket events.
- * Returns a cleanup function.
- */
-function bindCards(cards: Ref<Card[]>, fetchCards: () => Promise<void>) {
-  const handleMoved = (event: BoardEvent) => {
-    const { cardId, toColumn } = event as CardMovedEvent;
-    const card = cards.value.find((c) => c.id === cardId);
-    if (card) {
-      card.column = toColumn;
-    } else {
-      // Card not in local state — full refresh
-      fetchCards();
-    }
-  };
-
-  const handleStatusChanged = (event: BoardEvent) => {
-    const { cardId, status } = event as CardStatusChangedEvent;
-    const card = cards.value.find((c) => c.id === cardId);
-    if (card) {
-      card.status = status;
-    }
-  };
-
-  const handleWorkflowCompleted = (_event: BoardEvent) => {
-    // Full refresh to pick up column/status changes
-    fetchCards();
-  };
-
-  on("card:moved", handleMoved);
-  on("card:status-changed", handleStatusChanged);
-  on("workflow:completed", handleWorkflowCompleted);
-
-  return () => {
-    off("card:moved", handleMoved);
-    off("card:status-changed", handleStatusChanged);
-    off("workflow:completed", handleWorkflowCompleted);
-  };
-}
-
 export function useWebSocket() {
   onMounted(() => {
     _refCount++;
@@ -235,7 +194,6 @@ export function useWebSocket() {
     unsubscribeTerminal,
     subscribeActivity,
     unsubscribeActivity,
-    bindCards,
     connect,
     disconnect,
   };

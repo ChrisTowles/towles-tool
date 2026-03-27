@@ -2,9 +2,8 @@
 import { COLUMNS } from "~/utils/constants";
 import type { Column } from "~/utils/constants";
 
-const { cards, loading, error, fetchCards, moveCard } = useCards();
-const { columnCards, totalCards, activeCards } = useBoard(cards);
-const { connected, bindCards } = useWebSocket();
+const store = useCardStore();
+const { cards, loading, error, columnCards, totalCards, activeCards } = storeToRefs(store);
 
 const props = defineProps<{
   isDictating?: boolean;
@@ -32,7 +31,7 @@ const { data: slots, refresh: refreshSlots } = useFetch<{ id: number }[]>("/api/
 const showOnboarding = computed(() => !repos.value?.length && !slots.value?.length);
 
 async function onOnboardingComplete() {
-  await Promise.all([refreshRepos(), refreshSlots(), fetchCards()]);
+  await Promise.all([refreshRepos(), refreshSlots(), store.fetchCards()]);
 }
 
 // Sync external showNewCard prop
@@ -46,37 +45,28 @@ watch(
 // Refresh board when parent triggers it
 watch(
   () => props.refreshTrigger,
-  () => fetchCards(),
+  () => store.fetchCards(),
 );
 
 function onCardCreated() {
   showNewCardForm.value = false;
   emit("newCardClosed");
-  fetchCards();
+  store.fetchCards();
 }
 
 function onIssuesImported() {
   showImportModal.value = false;
-  fetchCards();
+  store.fetchCards();
 }
 
 async function handleCardMoved(cardId: number, column: Column, position: number) {
-  await moveCard(cardId, column, position);
+  await store.moveCard(cardId, column, position);
 }
-
-// Bind WebSocket events to cards for real-time updates
-let unbindCards: (() => void) | null = null;
-onMounted(() => {
-  unbindCards = bindCards(cards, fetchCards);
-});
-onUnmounted(() => {
-  unbindCards?.();
-});
 
 // Poll every 3s to keep board in sync
 const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
 onMounted(() => {
-  refreshInterval.value = setInterval(fetchCards, 3000);
+  refreshInterval.value = setInterval(() => store.fetchCards(), 3000);
 });
 onUnmounted(() => {
   if (refreshInterval.value) clearInterval(refreshInterval.value);
@@ -146,7 +136,7 @@ onUnmounted(() => {
         <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"
           title="Refresh board data (R)"
-          @click="fetchCards"
+          @click="store.fetchCards()"
         >
           ↻ Refresh
         </button>

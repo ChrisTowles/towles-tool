@@ -25,7 +25,7 @@ const submitting = ref(false);
 const submitError = ref("");
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
-const { createCard } = useCards();
+const { createCard } = useCardStore();
 
 function generateTitle(text: string): string {
   const firstLine = text.split("\n")[0]?.trim() ?? text.trim();
