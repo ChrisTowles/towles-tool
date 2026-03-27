@@ -8,7 +8,7 @@ import {
   createMockTmuxManager,
   createMockSlotAllocator,
   createMockWorkflowLoader,
-  createMockWorkflowRunner,
+  createMockWorkflowOrchestrator,
   createMockStreamTailer,
   createMockExecSync,
   createMockCardService,
@@ -25,7 +25,7 @@ describe("AgentExecutor", () => {
   let mockTmuxManager: ReturnType<typeof createMockTmuxManager>;
   let mockSlotAllocator: ReturnType<typeof createMockSlotAllocator>;
   let mockWorkflowLoader: ReturnType<typeof createMockWorkflowLoader>;
-  let mockWorkflowRunner: ReturnType<typeof createMockWorkflowRunner>;
+  let mockWorkflowOrchestrator: ReturnType<typeof createMockWorkflowOrchestrator>;
   let mockWriteHooks: ReturnType<typeof vi.fn>;
   let mockCardService: ReturnType<typeof createMockCardService>;
 
@@ -35,7 +35,7 @@ describe("AgentExecutor", () => {
     mockTmuxManager = createMockTmuxManager();
     mockSlotAllocator = createMockSlotAllocator();
     mockWorkflowLoader = createMockWorkflowLoader();
-    mockWorkflowRunner = createMockWorkflowRunner();
+    mockWorkflowOrchestrator = createMockWorkflowOrchestrator();
     mockWriteHooks = vi.fn();
     mockCardService = createMockCardService();
 
@@ -46,7 +46,7 @@ describe("AgentExecutor", () => {
       tmuxManager: mockTmuxManager,
       slotAllocator: mockSlotAllocator as never,
       workflowLoader: mockWorkflowLoader,
-      workflowRunner: mockWorkflowRunner,
+      workflowOrchestrator: mockWorkflowOrchestrator,
       writeHooks: mockWriteHooks as never,
       cardService: mockCardService as never,
       streamTailer: createMockStreamTailer(),
@@ -85,7 +85,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      expect(mockWorkflowRunner.run).toHaveBeenCalledWith(1);
+      expect(mockWorkflowOrchestrator.run).toHaveBeenCalledWith(1);
     });
 
     it("falls back to single prompt when workflow not found", async () => {
@@ -110,7 +110,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      expect(mockWorkflowRunner.run).not.toHaveBeenCalled();
+      expect(mockWorkflowOrchestrator.run).not.toHaveBeenCalled();
       expect(mockTmuxManager.sendCommand).toHaveBeenCalled();
     });
 
