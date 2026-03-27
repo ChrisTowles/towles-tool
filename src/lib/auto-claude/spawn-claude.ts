@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 
+export type SpawnClaudeFn = (args: string[]) => ChildProcess;
+
 /**
  * Spawns the Claude CLI as a child process.
  * Extracted into its own module so tests can mock it cleanly

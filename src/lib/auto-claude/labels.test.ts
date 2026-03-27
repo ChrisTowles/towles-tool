@@ -1,13 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { execSafe } from "../../utils/git/exec.js";
+import type { ExecSafeFn } from "./labels";
 import { ensureLabelsExist, LABELS, removeLabel, setLabel } from "./labels";
 
-vi.mock("../../utils/git/exec.js", () => ({
-  execSafe: vi.fn().mockResolvedValue({ stdout: "", ok: true }),
-}));
-
-const mockedExecSafe = vi.mocked(execSafe);
+const mockExecSafe: ExecSafeFn = vi.fn().mockResolvedValue({ stdout: "", ok: true });
 
 describe("LABELS", () => {
   it("has expected label values", () => {
@@ -28,11 +24,11 @@ describe("ensureLabelsExist", () => {
   });
 
   it("creates all labels with --force", async () => {
-    await ensureLabelsExist("owner/repo");
+    await ensureLabelsExist("owner/repo", mockExecSafe);
 
-    expect(mockedExecSafe).toHaveBeenCalledTimes(4);
+    expect(mockExecSafe).toHaveBeenCalledTimes(4);
     for (const label of Object.values(LABELS)) {
-      expect(mockedExecSafe).toHaveBeenCalledWith("gh", [
+      expect(mockExecSafe).toHaveBeenCalledWith("gh", [
         "label",
         "create",
         label,
@@ -50,9 +46,9 @@ describe("setLabel", () => {
   });
 
   it("calls gh issue edit with --add-label", async () => {
-    await setLabel("owner/repo", 42, "auto-claude-in-progress");
+    await setLabel("owner/repo", 42, "auto-claude-in-progress", mockExecSafe);
 
-    expect(mockedExecSafe).toHaveBeenCalledWith("gh", [
+    expect(mockExecSafe).toHaveBeenCalledWith("gh", [
       "issue",
       "edit",
       "42",
@@ -70,9 +66,9 @@ describe("removeLabel", () => {
   });
 
   it("calls gh issue edit with --remove-label", async () => {
-    await removeLabel("owner/repo", 42, "auto-claude-failed");
+    await removeLabel("owner/repo", 42, "auto-claude-failed", mockExecSafe);
 
-    expect(mockedExecSafe).toHaveBeenCalledWith("gh", [
+    expect(mockExecSafe).toHaveBeenCalledWith("gh", [
       "issue",
       "edit",
       "42",

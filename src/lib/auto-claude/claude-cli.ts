@@ -5,7 +5,8 @@ import pc from "picocolors";
 
 import { getConfig } from "./config.js";
 import { sleep } from "./shell.js";
-import { spawnClaude } from "./spawn-claude.js";
+import { spawnClaude as defaultSpawnClaude } from "./spawn-claude.js";
+import type { SpawnClaudeFn } from "./spawn-claude.js";
 
 // ── Claude CLI ──
 
@@ -22,8 +23,10 @@ const PROCESS_RETRY_DELAY_MS = 5_000;
 export async function runClaude(opts: {
   promptFile: string;
   maxTurns?: number;
+  spawnFn?: SpawnClaudeFn;
 }): Promise<ClaudeResult> {
   const cfg = getConfig();
+  const spawnFn = opts.spawnFn ?? defaultSpawnClaude;
   const args = [
     "-p",
     "--output-format",
@@ -44,7 +47,7 @@ export async function runClaude(opts: {
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
     try {
-      const result = await runClaudeStreaming(args);
+      const result = await runClaudeStreaming(args, spawnFn);
       consola.success(`Done — ${result.num_turns} turns, $${result.total_cost_usd.toFixed(4)}`);
       if (result.result) {
         consola.log(result.result);
@@ -63,9 +66,9 @@ export async function runClaude(opts: {
   throw lastError ?? new Error("runClaude failed after all retries");
 }
 
-function runClaudeStreaming(args: string[]): Promise<ClaudeResult> {
+function runClaudeStreaming(args: string[], spawnFn: SpawnClaudeFn): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
-    const proc = spawnClaude(args);
+    const proc = spawnFn(args);
     let capturedResult: ClaudeResult | null = null;
     let turnCount = 0;
 

@@ -1,5 +1,8 @@
-import * as fs from "node:fs";
+import { readFileSync as defaultReadFileSync } from "node:fs";
+
 import type { JournalEntry } from "./types.js";
+
+export type ReadFileFn = (path: string, encoding: BufferEncoding) => string;
 
 /**
  * Calculate cutoff timestamp for days filtering.
@@ -22,8 +25,11 @@ export function filterByDays<T extends { mtime: number }>(items: T[], days: numb
 /**
  * Parse JSONL file into JournalEntry array.
  */
-export function parseJsonl(filePath: string): JournalEntry[] {
-  const content = fs.readFileSync(filePath, "utf-8");
+export function parseJsonl(
+  filePath: string,
+  readFile: ReadFileFn = defaultReadFileSync,
+): JournalEntry[] {
+  const content = readFile(filePath, "utf-8");
   const entries: JournalEntry[] = [];
 
   for (const line of content.split("\n")) {
@@ -41,9 +47,12 @@ export function parseJsonl(filePath: string): JournalEntry[] {
 /**
  * Quick token count from a JSONL file without full parsing.
  */
-export function quickTokenCount(filePath: string): number {
+export function quickTokenCount(
+  filePath: string,
+  readFile: ReadFileFn = defaultReadFileSync,
+): number {
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
+    const content = readFile(filePath, "utf-8");
     let total = 0;
     for (const line of content.split("\n")) {
       if (!line.trim()) continue;

@@ -1,4 +1,8 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync as defaultMkdirSync,
+  readFileSync as defaultReadFileSync,
+  writeFileSync as defaultWriteFileSync,
+} from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,21 +18,34 @@ export interface TokenValues {
   REVIEW_FEEDBACK?: string;
 }
 
+export interface TemplateFsDeps {
+  readFileSync: typeof defaultReadFileSync;
+  writeFileSync: typeof defaultWriteFileSync;
+  mkdirSync: typeof defaultMkdirSync;
+}
+
+const defaultFsDeps: TemplateFsDeps = {
+  readFileSync: defaultReadFileSync,
+  writeFileSync: defaultWriteFileSync,
+  mkdirSync: defaultMkdirSync,
+};
+
 export function resolveTemplate(
   templateName: string,
   tokens: TokenValues,
   issueDir: string,
+  fs: TemplateFsDeps = defaultFsDeps,
 ): string {
   const templatePath = join(TEMPLATES_DIR, templateName);
-  let template = readFileSync(templatePath, "utf-8");
+  let template = fs.readFileSync(templatePath, "utf-8") as string;
 
   for (const [key, value] of Object.entries(tokens)) {
     template = template.replaceAll(`{{${key}}}`, value);
   }
 
   const resolvedPath = join(issueDir, templateName);
-  mkdirSync(dirname(resolvedPath), { recursive: true });
-  writeFileSync(resolvedPath, template, "utf-8");
+  fs.mkdirSync(dirname(resolvedPath), { recursive: true });
+  fs.writeFileSync(resolvedPath, template, "utf-8");
 
   return relative(process.cwd(), resolvedPath);
 }
