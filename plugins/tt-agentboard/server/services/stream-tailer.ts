@@ -5,12 +5,22 @@ import { parseStreamLine } from "../utils/stream-parser";
 import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 
+export interface StreamTailerDeps {
+  eventBus: typeof eventBus;
+  logger: typeof logger;
+}
+
 interface TailHandle {
   close: () => void;
 }
 
-class StreamTailer {
+export class StreamTailer {
   private tailers = new Map<number, TailHandle>();
+  private deps: StreamTailerDeps;
+
+  constructor(deps: Partial<StreamTailerDeps> = {}) {
+    this.deps = { eventBus, logger, ...deps };
+  }
 
   async startTailing(cardId: number, logFilePath: string): Promise<void> {
     this.stopTailing(cardId);
@@ -40,7 +50,7 @@ class StreamTailer {
         for await (const line of rl) {
           const event = parseStreamLine(line);
           if (event) {
-            eventBus.emit("agent:activity", {
+            this.deps.eventBus.emit("agent:activity", {
               cardId,
               event,
               timestamp: Date.now(),
@@ -52,7 +62,7 @@ class StreamTailer {
         offset = fileSize;
       } catch (err) {
         if (!closed) {
-          logger.warn(`Stream tailer read error for card ${cardId}:`, err);
+          this.deps.logger.warn(`Stream tailer read error for card ${cardId}:`, err);
         }
       }
 
@@ -70,11 +80,11 @@ class StreamTailer {
 
       watcher.on("error", (err) => {
         if (!closed) {
-          logger.warn(`Stream tailer watcher error for card ${cardId}:`, err);
+          this.deps.logger.warn(`Stream tailer watcher error for card ${cardId}:`, err);
         }
       });
     } catch (err) {
-      logger.warn(`Could not watch ${logFilePath} for card ${cardId}:`, err);
+      this.deps.logger.warn(`Could not watch ${logFilePath} for card ${cardId}:`, err);
     }
 
     const handle: TailHandle = {
@@ -85,7 +95,7 @@ class StreamTailer {
     };
 
     this.tailers.set(cardId, handle);
-    logger.info(`Started stream tailing for card ${cardId}: ${logFilePath}`);
+    this.deps.logger.info(`Started stream tailing for card ${cardId}: ${logFilePath}`);
   }
 
   stopTailing(cardId: number): void {
@@ -93,7 +103,7 @@ class StreamTailer {
     if (handle) {
       handle.close();
       this.tailers.delete(cardId);
-      logger.info(`Stopped stream tailing for card ${cardId}`);
+      this.deps.logger.info(`Stopped stream tailing for card ${cardId}`);
     }
   }
 

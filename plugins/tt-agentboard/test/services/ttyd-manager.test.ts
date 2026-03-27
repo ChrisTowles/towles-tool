@@ -1,23 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChildProcess } from "node:child_process";
-
-// The TtydManager.isAvailable() uses require("node:child_process") internally,
-// so we must mock the module at the vi.mock level which also intercepts require().
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-  spawn: vi.fn(),
-}));
-
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { spawn } from "node:child_process";
-// eslint-disable-next-line import/first
+import { createMockLogger } from "../helpers/mock-deps";
 import { TtydManager } from "../../server/services/ttyd-manager";
-
-const mockSpawn = vi.mocked(spawn);
 
 function createMockProcess(): ChildProcess {
   const proc = {
@@ -34,9 +18,17 @@ function createMockProcess(): ChildProcess {
 
 describe("TtydManager", () => {
   let manager: TtydManager;
+  let mockSpawn: ReturnType<typeof vi.fn>;
+  let mockExecSync: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    manager = new TtydManager();
+    mockSpawn = vi.fn();
+    mockExecSync = vi.fn();
+    manager = new TtydManager({
+      spawn: mockSpawn as never,
+      execSync: mockExecSync as never,
+      logger: createMockLogger() as never,
+    });
     vi.clearAllMocks();
   });
 
@@ -45,19 +37,28 @@ describe("TtydManager", () => {
   });
 
   describe("isAvailable()", () => {
-    // isAvailable() uses an inline require("node:child_process").execSync which
-    // bypasses our module-level vi.mock in some vitest configurations.
-    // We test the caching and return-type behavior instead.
-
-    it("returns a boolean", () => {
+    it("returns true when execSync succeeds", () => {
+      mockExecSync.mockReturnValue(undefined);
       const result = manager.isAvailable();
-      expect(typeof result).toBe("boolean");
+      expect(result).toBe(true);
+      expect(mockExecSync).toHaveBeenCalledWith("which ttyd", { stdio: "ignore" });
+    });
+
+    it("returns false when execSync throws", () => {
+      mockExecSync.mockImplementation(() => {
+        throw new Error("not found");
+      });
+      const result = manager.isAvailable();
+      expect(result).toBe(false);
     });
 
     it("caches result on subsequent calls", () => {
+      mockExecSync.mockReturnValue(undefined);
       const first = manager.isAvailable();
       const second = manager.isAvailable();
       expect(first).toBe(second);
+      // Only called once due to caching
+      expect(mockExecSync).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -68,11 +69,11 @@ describe("TtydManager", () => {
 
       const result = manager.attach(1);
 
-      expect(result.port).toBe(7680);
-      expect(result.url).toBe("http://localhost:7680");
+      expect(result.port).toBe(7700);
+      expect(result.url).toBe("http://localhost:7700");
       expect(mockSpawn).toHaveBeenCalledWith(
         "ttyd",
-        ["--port", "7680", "--writable", "tmux", "attach", "-t", "card-1"],
+        ["--port", "7700", "--writable", "tmux", "attach", "-t", "card-1"],
         { stdio: "ignore", detached: true },
       );
       expect(proc.unref).toHaveBeenCalled();
@@ -95,8 +96,8 @@ describe("TtydManager", () => {
       const r1 = manager.attach(1);
       const r2 = manager.attach(2);
 
-      expect(r1.port).toBe(7680);
-      expect(r2.port).toBe(7681);
+      expect(r1.port).toBe(7700);
+      expect(r2.port).toBe(7701);
     });
   });
 
@@ -143,8 +144,8 @@ describe("TtydManager", () => {
       const result = manager.isAttached(1);
 
       expect(result.attached).toBe(true);
-      expect(result.port).toBe(7680);
-      expect(result.url).toBe("http://localhost:7680");
+      expect(result.port).toBe(7700);
+      expect(result.url).toBe("http://localhost:7700");
     });
   });
 

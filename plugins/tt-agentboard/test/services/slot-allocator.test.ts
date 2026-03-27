@@ -1,45 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-
-// Mock the db and event-bus modules
-vi.mock("../../server/db", () => {
-  const mockChain = () => {
-    const chain: Record<string, unknown> = {};
-    chain.from = vi.fn().mockReturnValue(chain);
-    chain.where = vi.fn().mockReturnValue(chain);
-    chain.set = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockResolvedValue([]);
-    return chain;
-  };
-
-  return {
-    db: {
-      select: vi.fn().mockReturnValue(mockChain()),
-      update: vi.fn().mockReturnValue(mockChain()),
-    },
-  };
-});
-
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: {
-    emit: vi.fn(),
-  },
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { db } from "../../server/db";
-// eslint-disable-next-line import/first
-import { eventBus } from "../../server/utils/event-bus";
-// eslint-disable-next-line import/first
+import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
 import { SlotAllocator } from "../../server/services/slot-allocator";
-
-const mockDb = vi.mocked(db);
-const mockEventBus = vi.mocked(eventBus);
 
 describe("SlotAllocator", () => {
   let allocator: SlotAllocator;
+  let mockDb: ReturnType<typeof createMockDb>;
+  let mockEventBus: ReturnType<typeof createMockEventBus>;
 
   beforeEach(() => {
-    allocator = new SlotAllocator();
+    mockDb = createMockDb();
+    mockEventBus = createMockEventBus();
+    allocator = new SlotAllocator({
+      db: mockDb as never,
+      eventBus: mockEventBus as never,
+      logger: createMockLogger() as never,
+    });
     vi.clearAllMocks();
   });
 

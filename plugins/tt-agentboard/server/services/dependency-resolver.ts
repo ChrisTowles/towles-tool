@@ -3,11 +3,22 @@ import { cards } from "../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { logger } from "../utils/logger";
 
+export interface DependencyResolverDeps {
+  db: typeof db;
+  logger: typeof logger;
+}
+
 /**
  * Resolves card dependencies. When a card completes, checks if any blocked
  * cards now have all dependencies met and moves them to 'ready'.
  */
 export class DependencyResolver {
+  private deps: DependencyResolverDeps;
+
+  constructor(deps: Partial<DependencyResolverDeps> = {}) {
+    this.deps = { db, logger, ...deps };
+  }
+
   /**
    * Parse the dependsOn field (comma-separated card IDs) into an array of numbers.
    */
@@ -26,7 +37,7 @@ export class DependencyResolver {
    */
   async resolveAfterCompletion(completedCardId: number): Promise<number[]> {
     // Find all cards with status 'blocked' that reference the completed card in dependsOn
-    const blockedCards = await db.select().from(cards).where(eq(cards.status, "blocked"));
+    const blockedCards = await this.deps.db.select().from(cards).where(eq(cards.status, "blocked"));
 
     const unblockedIds: number[] = [];
 
@@ -37,7 +48,7 @@ export class DependencyResolver {
       // Check if ALL dependencies are now done
       const allMet = await this.allDepsMet(deps);
       if (allMet) {
-        await db
+        await this.deps.db
           .update(cards)
           .set({
             column: "ready",
@@ -47,7 +58,7 @@ export class DependencyResolver {
           .where(eq(cards.id, card.id));
 
         unblockedIds.push(card.id);
-        logger.info(`Card ${card.id} unblocked — all dependencies met, moved to ready`);
+        this.deps.logger.info(`Card ${card.id} unblocked — all dependencies met, moved to ready`);
       }
     }
 
@@ -60,7 +71,7 @@ export class DependencyResolver {
   private async allDepsMet(depIds: number[]): Promise<boolean> {
     if (depIds.length === 0) return true;
 
-    const depCards = await db
+    const depCards = await this.deps.db
       .select({ id: cards.id, status: cards.status })
       .from(cards)
       .where(inArray(cards.id, depIds));
