@@ -1,11 +1,18 @@
 import stripAnsi from "strip-ansi";
 import { x } from "tinyexec";
+import type { Output } from "tinyexec";
 
 import { execSafe } from "./exec.js";
 
-export async function isGithubCliInstalled(): Promise<boolean> {
+export type XFn = (
+  cmd: string,
+  args?: string[],
+  opts?: Record<string, unknown>,
+) => PromiseLike<Output>;
+
+export async function isGithubCliInstalled(exec: XFn = x as XFn): Promise<boolean> {
   try {
-    const proc = await x("gh", ["--version"]);
+    const proc = await exec("gh", ["--version"]);
     return proc.stdout.includes("https://github.com/cli/cli");
   } catch {
     // gh CLI not installed or not accessible
@@ -37,9 +44,11 @@ export async function getIssues({
   assignedToMe,
   cwd,
   label,
+  exec = x as XFn,
 }: {
   assignedToMe?: boolean;
   cwd: string;
+  exec?: XFn;
   label?: string;
 }): Promise<Issue[]> {
   const args = ["issue", "list", "--json", "labels,number,title,state"];
@@ -52,7 +61,7 @@ export async function getIssues({
     args.push("--label", label);
   }
 
-  const result = await x("gh", args);
+  const result = await exec("gh", args);
   // Setting NO_COLOR=1 didn't remove colors so had to use stripAnsi
   const stripped = stripAnsi(result.stdout);
 

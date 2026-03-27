@@ -20,11 +20,13 @@ import type { IssueContext } from "./utils";
 consola.level = -999;
 
 let mockClaudeImpl: MockClaudeImpl = null;
+// eslint-disable-next-line jest/no-restricted-jest-methods -- spawnClaude is 4 layers deep (pipeline -> steps -> utils -> claude-cli -> spawn-claude); DI impractical
 vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
 
 // Track gh calls for label assertions
 let ghCalls: string[][] = [];
 
+// eslint-disable-next-line jest/no-restricted-jest-methods -- tinyexec is used transitively by label helpers via execSafe; DI impractical at this depth
 vi.mock("tinyexec", async (importOriginal) => {
   const original = await importOriginal<typeof import("tinyexec")>();
   return {

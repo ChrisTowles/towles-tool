@@ -2,15 +2,13 @@ import consola from "consola";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initConfig } from "./config";
-import { createSpawnClaudeMock, createTestRepo } from "./test-helpers";
-import type { MockClaudeImpl, TestRepo } from "./test-helpers";
+import { createMockClaudeProcess, createTestRepo } from "./test-helpers";
+import type { TestRepo } from "./test-helpers";
+import type { SpawnClaudeFn } from "./spawn-claude";
 
 consola.level = -999;
 
-let mockSpawnImpl: MockClaudeImpl = null;
-vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockSpawnImpl));
-
-describe("runClaude (mocked spawn-claude)", () => {
+describe("runClaude (injected spawnFn)", () => {
   let originalCwd: string;
   let repo: TestRepo;
 
@@ -26,19 +24,20 @@ describe("runClaude (mocked spawn-claude)", () => {
   });
 
   beforeEach(() => {
-    mockSpawnImpl = null;
     vi.clearAllMocks();
   });
 
   it("parses stream-json result event", async () => {
-    mockSpawnImpl = () => ({
-      stdout: JSON.stringify({
-        result: "All done",
-        is_error: false,
-        total_cost_usd: 0.05,
-        num_turns: 3,
-      }),
-      exitCode: 0,
+    const mockSpawnClaude: SpawnClaudeFn = vi.fn((args: string[]) => {
+      return createMockClaudeProcess(
+        JSON.stringify({
+          result: "All done",
+          is_error: false,
+          total_cost_usd: 0.05,
+          num_turns: 3,
+        }),
+        0,
+      );
     });
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
@@ -48,14 +47,14 @@ describe("runClaude (mocked spawn-claude)", () => {
     const result = await runClaude({
       promptFile: "test-prompt.md",
       maxTurns: 10,
+      spawnFn: mockSpawnClaude,
     });
 
     expect(result.result).toBe("All done");
     expect(result.is_error).toBe(false);
     expect(result.num_turns).toBe(3);
 
-    const { spawnClaude } = await import("./spawn-claude");
-    expect(spawnClaude).toHaveBeenCalledWith(
+    expect(mockSpawnClaude).toHaveBeenCalledWith(
       expect.arrayContaining([
         "-p",
         "--output-format",
@@ -94,15 +93,17 @@ describe("runClaude (mocked spawn-claude)", () => {
       num_turns: 1,
     };
 
-    mockSpawnImpl = () => ({
-      stdout: [thinkingEvent, toolEvent, resultEvent].map((e) => JSON.stringify(e)).join("\n"),
-      exitCode: 0,
+    const mockSpawnClaude: SpawnClaudeFn = vi.fn(() => {
+      return createMockClaudeProcess(
+        [thinkingEvent, toolEvent, resultEvent].map((e) => JSON.stringify(e)).join("\n"),
+        0,
+      );
     });
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
     const { runClaude } = await import("./claude-cli");
-    const result = await runClaude({ promptFile: "test.md" });
+    const result = await runClaude({ promptFile: "test.md", spawnFn: mockSpawnClaude });
 
     expect(result.result).toBe("Done");
     expect(result.num_turns).toBe(1);
@@ -115,9 +116,8 @@ describe("runClaude (mocked spawn-claude)", () => {
   });
 
   it("returns fallback when no result event in stream", async () => {
-    mockSpawnImpl = () => ({
-      stdout: '{"type":"system","message":"starting"}',
-      exitCode: 0,
+    const mockSpawnClaude: SpawnClaudeFn = vi.fn(() => {
+      return createMockClaudeProcess('{"type":"system","message":"starting"}', 0);
     });
 
     await initConfig({ repo: "test/repo", mainBranch: "main" });
@@ -126,6 +126,7 @@ describe("runClaude (mocked spawn-claude)", () => {
 
     const result = await runClaude({
       promptFile: "test.md",
+      spawnFn: mockSpawnClaude,
     });
 
     expect(result.result).toBe("");
