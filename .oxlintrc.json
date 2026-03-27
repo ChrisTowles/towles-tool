@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["node", "jsdoc", "import", "typescript", "unicorn", "vitest", "promise"],
+  "plugins": ["node", "jsdoc", "import", "typescript", "unicorn", "vitest", "jest", "promise"],
   "categories": {
     "correctness": "off"
   },
@@ -231,7 +231,12 @@
     "unicorn/prefer-number-properties": "error",
     "unicorn/prefer-string-starts-ends-with": "error",
     "unicorn/prefer-type-error": "error",
-    "unicorn/throw-new-error": "error"
+    "unicorn/throw-new-error": "error",
+    "jest/no-restricted-jest-methods": ["warn", {
+      "mock": "vi.mock() is banned. Use constructor or parameter dependency injection instead.",
+      "spyOn": "vi.spyOn() is banned. Use constructor or parameter dependency injection instead.",
+      "stubGlobal": "vi.stubGlobal() is banned. Use constructor or parameter dependency injection instead."
+    }]
   },
   "overrides": [
     {
