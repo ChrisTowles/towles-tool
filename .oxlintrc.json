@@ -232,11 +232,14 @@
     "unicorn/prefer-string-starts-ends-with": "error",
     "unicorn/prefer-type-error": "error",
     "unicorn/throw-new-error": "error",
-    "jest/no-restricted-jest-methods": ["warn", {
-      "mock": "vi.mock() is banned. Use constructor or parameter dependency injection instead.",
-      "spyOn": "vi.spyOn() is banned. Use constructor or parameter dependency injection instead.",
-      "stubGlobal": "vi.stubGlobal() is banned. Use constructor or parameter dependency injection instead."
-    }]
+    "jest/no-restricted-jest-methods": [
+      "warn",
+      {
+        "mock": "vi.mock() is banned. Use constructor or parameter dependency injection instead.",
+        "spyOn": "vi.spyOn() is banned. Use constructor or parameter dependency injection instead.",
+        "stubGlobal": "vi.stubGlobal() is banned. Use constructor or parameter dependency injection instead."
+      }
+    ]
   },
   "overrides": [
     {
