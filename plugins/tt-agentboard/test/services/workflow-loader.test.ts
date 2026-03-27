@@ -2,57 +2,7 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-
-// Mock glob to use readdirSync instead (glob package not installed)
-vi.mock("glob", () => ({
-  glob: vi.fn(async (pattern: string) => {
-    // Extract directory from pattern like "/tmp/.../workflows/*.yaml"
-    const dir = pattern.replace("/*.yaml", "").replace("\\*.yaml", "");
-    try {
-      const files = readdirSync(dir);
-      return files.filter((f: string) => f.endsWith(".yaml")).map((f: string) => join(dir, f));
-    } catch {
-      return [];
-    }
-  }),
-}));
-
-// Mock chokidar — capture event handlers so we can trigger them in tests
-const chokidarHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
-const mockWatcherClose = vi.fn().mockResolvedValue(undefined);
-vi.mock("chokidar", () => ({
-  watch: vi.fn(() => {
-    // Reset handlers for each new watcher
-    for (const key of Object.keys(chokidarHandlers)) {
-      delete chokidarHandlers[key];
-    }
-    return {
-      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        if (!chokidarHandlers[event]) chokidarHandlers[event] = [];
-        chokidarHandlers[event].push(handler);
-        // Return self for chaining
-        return {
-          on: vi.fn((event2: string, handler2: (...args: unknown[]) => void) => {
-            if (!chokidarHandlers[event2]) chokidarHandlers[event2] = [];
-            chokidarHandlers[event2].push(handler2);
-            return {
-              on: vi.fn((event3: string, handler3: (...args: unknown[]) => void) => {
-                if (!chokidarHandlers[event3]) chokidarHandlers[event3] = [];
-                chokidarHandlers[event3].push(handler3);
-                return { on: vi.fn().mockReturnThis(), close: mockWatcherClose };
-              }),
-              close: mockWatcherClose,
-            };
-          }),
-          close: mockWatcherClose,
-        };
-      }),
-      close: mockWatcherClose,
-    };
-  }),
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports
+import { createMockLogger } from "../helpers/mock-deps";
 import { WorkflowLoader } from "../../server/services/workflow-loader";
 
 const tmpDirs: string[] = [];
@@ -68,6 +18,57 @@ afterAll(() => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Mock glob to use readdirSync instead
+const mockGlob = vi.fn(async (pattern: string) => {
+  const dir = pattern.replace("/*.yaml", "").replace("\\*.yaml", "");
+  try {
+    const files = readdirSync(dir);
+    return files.filter((f: string) => f.endsWith(".yaml")).map((f: string) => join(dir, f));
+  } catch {
+    return [];
+  }
+});
+
+// Mock chokidar — capture event handlers so we can trigger them in tests
+const chokidarHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
+const mockWatcherClose = vi.fn().mockResolvedValue(undefined);
+const mockWatch = vi.fn(() => {
+  // Reset handlers for each new watcher
+  for (const key of Object.keys(chokidarHandlers)) {
+    delete chokidarHandlers[key];
+  }
+  return {
+    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      if (!chokidarHandlers[event]) chokidarHandlers[event] = [];
+      chokidarHandlers[event].push(handler);
+      return {
+        on: vi.fn((event2: string, handler2: (...args: unknown[]) => void) => {
+          if (!chokidarHandlers[event2]) chokidarHandlers[event2] = [];
+          chokidarHandlers[event2].push(handler2);
+          return {
+            on: vi.fn((event3: string, handler3: (...args: unknown[]) => void) => {
+              if (!chokidarHandlers[event3]) chokidarHandlers[event3] = [];
+              chokidarHandlers[event3].push(handler3);
+              return { on: vi.fn().mockReturnThis(), close: mockWatcherClose };
+            }),
+            close: mockWatcherClose,
+          };
+        }),
+        close: mockWatcherClose,
+      };
+    }),
+    close: mockWatcherClose,
+  };
+});
+
+function createLoader() {
+  return new WorkflowLoader({
+    logger: createMockLogger() as never,
+    glob: mockGlob as never,
+    watch: mockWatch as never,
+  });
+}
 
 describe("WorkflowLoader", () => {
   it("loadFromRepos loads workflows from multiple repo paths", async () => {
@@ -99,7 +100,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepos([repo1, repo2]);
 
@@ -131,7 +132,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
 
@@ -151,7 +152,7 @@ steps:
     const repoPath = makeTmpDir();
     // No .agentboard/workflows dir created
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       // Should not throw, just return with no workflows loaded
@@ -176,7 +177,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       expect(loader.list()).toHaveLength(0);
@@ -197,7 +198,7 @@ description: Has name but no steps
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       expect(loader.get("broken-workflow")).toBeUndefined();
@@ -207,7 +208,7 @@ description: Has name but no steps
   });
 
   it("get() returns undefined for unknown workflow", async () => {
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     expect(loader.get("nonexistent")).toBeUndefined();
     await loader.close();
   });
@@ -237,7 +238,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
 
@@ -258,7 +259,7 @@ steps:
     // Write content that parses as YAML but is a string, not an object with name/steps
     writeFileSync(resolve(wfDir, "corrupt.yaml"), ": :\n  - : [}{");
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       // Should not throw, and no workflows should be loaded
@@ -283,7 +284,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     await loader.loadFromRepo(repoPath);
 
     mockWatcherClose.mockClear();
@@ -308,7 +309,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
 
@@ -357,7 +358,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       expect(loader.get("my-workflow")!.description).toBe("original");
@@ -401,7 +402,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
       expect(loader.get("removable")).toBeDefined();
@@ -436,7 +437,7 @@ steps:
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
 
@@ -481,7 +482,7 @@ branch_template: "agentboard/card-{card_id}"
 `,
     );
 
-    const loader = new WorkflowLoader();
+    const loader = createLoader();
     try {
       await loader.loadFromRepo(repoPath);
 

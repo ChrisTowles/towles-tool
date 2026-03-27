@@ -1,36 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-
-// Mock the db module before importing DependencyResolver
-vi.mock("../../server/db", () => {
-  const mockChain = () => {
-    const chain: Record<string, unknown> = {};
-    chain.from = vi.fn().mockReturnValue(chain);
-    chain.where = vi.fn().mockReturnValue(chain);
-    chain.set = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockResolvedValue([]);
-    return chain;
-  };
-
-  return {
-    db: {
-      select: vi.fn().mockReturnValue(mockChain()),
-      update: vi.fn().mockReturnValue(mockChain()),
-    },
-  };
-});
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { db } from "../../server/db";
-// eslint-disable-next-line import/first
+import { createMockDb, createMockLogger } from "../helpers/mock-deps";
 import { DependencyResolver } from "../../server/services/dependency-resolver";
-
-const mockDb = vi.mocked(db);
 
 describe("DependencyResolver", () => {
   let resolver: DependencyResolver;
+  let mockDb: ReturnType<typeof createMockDb>;
 
   beforeEach(() => {
-    resolver = new DependencyResolver();
+    mockDb = createMockDb();
+    resolver = new DependencyResolver({
+      db: mockDb as never,
+      logger: createMockLogger() as never,
+    });
     vi.clearAllMocks();
   });
 

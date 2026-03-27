@@ -2,29 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
-
-const emittedEvents: Array<{ cardId: number; event: unknown; timestamp: number }> = [];
-
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: {
-    emit: vi.fn((type: string, data: unknown) => {
-      if (type === "agent:activity") {
-        emittedEvents.push(data as { cardId: number; event: unknown; timestamp: number });
-      }
-    }),
-  },
-}));
+import { createMockLogger } from "../helpers/mock-deps";
+import { StreamTailer } from "../../server/services/stream-tailer";
 
 describe("StreamTailer", () => {
   let testDir: string;
   let logFile: string;
-  let streamTailer: (typeof import("../../server/services/stream-tailer"))["streamTailer"];
+  let streamTailer: StreamTailer;
+  const emittedEvents: Array<{ cardId: number; event: unknown; timestamp: number }> = [];
+  let mockEventBus: {
+    emit: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+    off: ReturnType<typeof vi.fn>;
+  };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     emittedEvents.length = 0;
 
     testDir = join(tmpdir(), `stream-tailer-test-${Date.now()}`);
@@ -32,10 +24,20 @@ describe("StreamTailer", () => {
     logFile = join(testDir, "test.ndjson");
     writeFileSync(logFile, "");
 
-    // Fresh import each test to reset singleton state
-    vi.resetModules();
-    const mod = await import("../../server/services/stream-tailer");
-    streamTailer = mod.streamTailer;
+    mockEventBus = {
+      emit: vi.fn((type: string, data: unknown) => {
+        if (type === "agent:activity") {
+          emittedEvents.push(data as { cardId: number; event: unknown; timestamp: number });
+        }
+      }),
+      on: vi.fn(),
+      off: vi.fn(),
+    };
+
+    streamTailer = new StreamTailer({
+      eventBus: mockEventBus as never,
+      logger: createMockLogger() as never,
+    });
   });
 
   afterEach(() => {
