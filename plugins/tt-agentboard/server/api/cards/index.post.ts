@@ -1,6 +1,6 @@
 import { db } from "~~/server/shared/db";
 import { cards } from "~~/server/shared/db/schema";
-import { logCardEvent } from "~~/server/utils/card-events";
+import { cardService } from "~~/server/domains/cards/card-service";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
@@ -19,6 +19,10 @@ export default defineEventHandler(async (event) => {
     })
     .returning();
   const card = result[0]!;
-  await logCardEvent(card.id, "card_created", `column=${card.column}, mode=${card.executionMode}`);
+  await cardService.logEvent(
+    card.id,
+    "card_created",
+    `column=${card.column}, mode=${card.executionMode}`,
+  );
   return card;
 });

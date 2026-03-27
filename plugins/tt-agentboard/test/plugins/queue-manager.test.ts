@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+import {
+  createMockDb,
+  createMockEventBus,
+  createMockLogger,
+  createMockCardService,
+} from "../helpers/mock-deps";
 import { createQueueManager } from "../../server/plugins/queue-manager";
 
 describe("Queue Manager Plugin", () => {
@@ -21,7 +26,7 @@ describe("Queue Manager Plugin", () => {
       eventBus: mockEventBus as never,
       logger: createMockLogger() as never,
       agentExecutor: mockAgentExecutor,
-      logCardEvent: vi.fn().mockResolvedValue(undefined),
+      cardService: createMockCardService() as never,
     });
 
     // Extract the registered handler

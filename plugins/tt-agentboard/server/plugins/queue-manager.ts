@@ -2,11 +2,12 @@ import { db } from "../shared/db";
 import { cards, workspaceSlots } from "../shared/db/schema";
 import { eq, and } from "drizzle-orm";
 import { agentExecutor } from "../domains/execution/agent-executor";
-import { eventBus } from "../utils/event-bus";
+import { eventBus } from "../shared/event-bus";
 import { logger } from "../utils/logger";
-import { logCardEvent } from "../utils/card-events";
+import { cardService } from "../domains/cards/card-service";
 
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { CardService } from "../domains/cards/card-service";
 
 export interface QueueManagerDeps {
   db: BetterSQLite3Database<Record<string, unknown>>;
@@ -16,7 +17,7 @@ export interface QueueManagerDeps {
   };
   logger: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
   agentExecutor: { startExecution: (cardId: number) => Promise<void> };
-  logCardEvent: (cardId: number, event: string, detail?: string) => Promise<void>;
+  cardService: CardService;
   maxConcurrent?: number;
 }
 
@@ -79,7 +80,7 @@ export function createQueueManager(deps: QueueManagerDeps): void {
     });
 
     if (isReadyCard) {
-      await deps.logCardEvent(
+      await deps.cardService.logEvent(
         nextCard.id,
         "auto_started",
         `Auto-promoted from ready column (slot ${slot.id} became available)`,
@@ -138,5 +139,5 @@ export function createQueueManager(deps: QueueManagerDeps): void {
 }
 
 export default defineNitroPlugin(() => {
-  createQueueManager({ db, eventBus, logger, agentExecutor, logCardEvent });
+  createQueueManager({ db, eventBus, logger, agentExecutor, cardService });
 });

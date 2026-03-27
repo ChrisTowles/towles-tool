@@ -8,12 +8,13 @@ import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { workflowRunner as defaultWorkflowRunner } from "./workflow-runner";
-import { eventBus as defaultEventBus } from "../../utils/event-bus";
+import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
 import { buildStreamingCommand, shellEscape } from "./workflow-helpers";
-import { logCardEvent as defaultLogCardEvent } from "../../utils/card-events";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
+import { cardService as defaultCardService } from "../cards/card-service";
+import type { CardService } from "../cards/card-service";
 
 export interface AgentExecutorDeps {
   db: typeof defaultDb;
@@ -39,7 +40,7 @@ export interface AgentExecutorDeps {
   workflowLoader: { get: (id: string) => unknown };
   workflowRunner: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
-  logCardEvent: typeof defaultLogCardEvent;
+  cardService: CardService;
   streamTailer: {
     startTailing: (cardId: number, logFilePath: string) => Promise<void>;
     stopTailing: (cardId: number) => void;
@@ -70,7 +71,7 @@ export class AgentExecutor {
       workflowLoader: defaultWorkflowLoader,
       workflowRunner: defaultWorkflowRunner,
       writeHooks: defaultWriteHooks,
-      logCardEvent: defaultLogCardEvent,
+      cardService: defaultCardService,
       streamTailer: defaultStreamTailer,
       execSync: defaultExecSync,
       existsSync: defaultExistsSync,
@@ -89,12 +90,12 @@ export class AgentExecutor {
     const card = cardRows[0]!;
 
     if (!card.repoId) {
-      await this.deps.logCardEvent(cardId, "error", "No repo assigned");
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.logEvent(cardId, "error", "No repo assigned");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return;
     }
 
-    await this.deps.logCardEvent(
+    await this.deps.cardService.logEvent(
       cardId,
       "execution_start",
       `repoId=${card.repoId}, mode=${card.executionMode}, branch=${card.branchMode}`,
@@ -104,11 +105,15 @@ export class AgentExecutor {
     if (card.workflowId) {
       const workflow = this.deps.workflowLoader.get(card.workflowId);
       if (workflow) {
-        await this.deps.logCardEvent(cardId, "workflow_delegate", `workflow=${card.workflowId}`);
+        await this.deps.cardService.logEvent(
+          cardId,
+          "workflow_delegate",
+          `workflow=${card.workflowId}`,
+        );
         await this.deps.workflowRunner.run(cardId);
         return;
       }
-      await this.deps.logCardEvent(
+      await this.deps.cardService.logEvent(
         cardId,
         "workflow_not_found",
         `workflow=${card.workflowId}, falling back to single-prompt`,
@@ -123,8 +128,8 @@ export class AgentExecutor {
   private async runSinglePrompt(cardId: number, card: typeof cards.$inferSelect): Promise<void> {
     // Check tmux availability
     if (!this.deps.tmuxManager.isAvailable()) {
-      await this.deps.logCardEvent(cardId, "error", "tmux not available");
-      await this.updateCardStatus(cardId, "failed");
+      await this.deps.cardService.logEvent(cardId, "error", "tmux not available");
+      await this.deps.cardService.updateStatus(cardId, "failed");
       return;
     }
 
@@ -134,33 +139,37 @@ export class AgentExecutor {
       slot = await this.deps.slotAllocator.claimSlot(card.repoId!, cardId);
     }
     if (!slot) {
-      await this.deps.logCardEvent(cardId, "queued", `No available slot for repoId=${card.repoId}`);
-      await this.deps.db
-        .update(cards)
-        .set({ column: "ready", status: "queued", updatedAt: new Date() })
-        .where(eq(cards.id, cardId));
-      this.deps.eventBus.emit("card:moved", {
+      await this.deps.cardService.logEvent(
         cardId,
-        fromColumn: "in_progress",
-        toColumn: "ready",
-      });
-      this.deps.eventBus.emit("card:status-changed", { cardId, status: "queued" });
+        "queued",
+        `No available slot for repoId=${card.repoId}`,
+      );
+      await this.deps.cardService.moveToColumn(cardId, "ready");
+      await this.deps.cardService.updateStatus(cardId, "queued");
       return;
     }
 
     // Update card status to running
-    await this.updateCardStatus(cardId, "running");
+    await this.deps.cardService.updateStatus(cardId, "running");
 
     // Write .claude/settings.local.json with Stop hook in the slot directory
     this.deps.writeHooks(slot.path, cardId, this.port, "complete");
-    await this.deps.logCardEvent(cardId, "hooks_written", `endpoint=complete, path=${slot.path}`);
+    await this.deps.cardService.logEvent(
+      cardId,
+      "hooks_written",
+      `endpoint=complete, path=${slot.path}`,
+    );
 
-    await this.deps.logCardEvent(cardId, "slot_claimed", `slotId=${slot.id}, path=${slot.path}`);
+    await this.deps.cardService.logEvent(
+      cardId,
+      "slot_claimed",
+      `slotId=${slot.id}, path=${slot.path}`,
+    );
 
     // Create tmux session
     const { sessionName, created } = this.deps.tmuxManager.createSession(cardId, slot.path);
     if (created) {
-      await this.deps.logCardEvent(
+      await this.deps.cardService.logEvent(
         cardId,
         "tmux_session_created",
         `session=${sessionName}, cwd=${slot.path}`,
@@ -186,9 +195,9 @@ export class AgentExecutor {
           timeout: 10000,
         });
         branch = existingBranch;
-        await this.deps.logCardEvent(cardId, "branch_reused", existingBranch);
+        await this.deps.cardService.logEvent(cardId, "branch_reused", existingBranch);
       } catch {
-        await this.deps.logCardEvent(
+        await this.deps.cardService.logEvent(
           cardId,
           "warn",
           `Could not checkout existing branch ${existingBranch}, creating new`,
@@ -218,7 +227,7 @@ export class AgentExecutor {
           timeout: 15000,
         });
       } catch {
-        await this.deps.logCardEvent(
+        await this.deps.cardService.logEvent(
           cardId,
           "warn",
           "Could not checkout/pull main before branching",
@@ -227,7 +236,7 @@ export class AgentExecutor {
       try {
         this.deps.execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
         branch = branchName;
-        await this.deps.logCardEvent(cardId, "branch_created", branchName);
+        await this.deps.cardService.logEvent(cardId, "branch_created", branchName);
       } catch {
         // Branch may exist — try switching to it
         try {
@@ -277,20 +286,24 @@ export class AgentExecutor {
             stdio: "ignore",
             timeout: 60000,
           });
-          await this.deps.logCardEvent(cardId, "deps_installed", "pnpm install");
+          await this.deps.cardService.logEvent(cardId, "deps_installed", "pnpm install");
         } else if (this.deps.existsSync(join(slot.path, "bun.lock"))) {
           this.deps.execSync("bun install --frozen-lockfile", {
             cwd: slot.path,
             stdio: "ignore",
             timeout: 60000,
           });
-          await this.deps.logCardEvent(cardId, "deps_installed", "bun install");
+          await this.deps.cardService.logEvent(cardId, "deps_installed", "bun install");
         } else {
           this.deps.execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
-          await this.deps.logCardEvent(cardId, "deps_installed", "npm ci");
+          await this.deps.cardService.logEvent(cardId, "deps_installed", "npm ci");
         }
       } catch {
-        await this.deps.logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
+        await this.deps.cardService.logEvent(
+          cardId,
+          "warn",
+          "Package install failed — continuing anyway",
+        );
       }
     }
 
@@ -329,7 +342,7 @@ export class AgentExecutor {
     const command = buildStreamingCommand(args, logFilePath);
 
     this.deps.tmuxManager.sendCommand(sessionName, command);
-    await this.deps.logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
+    await this.deps.cardService.logEvent(cardId, "agent_command_sent", `session=${sessionName}`);
 
     // Start tailing the stream-json output for structured activity events
     await this.deps.streamTailer.startTailing(cardId, logFilePath);
@@ -338,7 +351,7 @@ export class AgentExecutor {
       this.deps.eventBus.emit("agent:output", { cardId, content: output });
     });
 
-    await this.deps.logCardEvent(
+    await this.deps.cardService.logEvent(
       cardId,
       "agent_started",
       `session=${sessionName}, mode=${card.executionMode}`,
@@ -346,26 +359,6 @@ export class AgentExecutor {
     this.deps.logger.info(
       `Card ${cardId} execution started in session ${sessionName}, Stop hook configured`,
     );
-  }
-
-  private async updateCardStatus(
-    cardId: number,
-    status:
-      | "idle"
-      | "queued"
-      | "running"
-      | "waiting_input"
-      | "review_ready"
-      | "done"
-      | "failed"
-      | "blocked",
-  ): Promise<void> {
-    await this.deps.db
-      .update(cards)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(cards.id, cardId));
-
-    this.deps.eventBus.emit("card:status-changed", { cardId, status });
   }
 }
 

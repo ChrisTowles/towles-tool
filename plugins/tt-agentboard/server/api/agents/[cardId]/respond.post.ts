@@ -1,10 +1,7 @@
-import { db } from "~~/server/shared/db";
-import { cards } from "~~/server/shared/db/schema";
-import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
-import { eventBus } from "~~/server/utils/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
+import { cardService } from "~~/server/domains/cards/card-service";
 
 /**
  * Send a user response to an agent waiting for input.
@@ -32,12 +29,7 @@ export default defineEventHandler(async (event) => {
   tmuxManager.sendCommand(sessionName, body.response);
 
   // Update status back to running
-  await db
-    .update(cards)
-    .set({ status: "running", updatedAt: new Date() })
-    .where(eq(cards.id, cardId));
-
-  eventBus.emit("card:status-changed", { cardId, status: "running" });
+  await cardService.updateStatus(cardId, "running");
 
   logger.info(`User responded to card ${cardId}: "${body.response.substring(0, 50)}..."`);
 

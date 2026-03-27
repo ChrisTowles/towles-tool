@@ -2,11 +2,12 @@ import { db } from "../shared/db";
 import { cards, workflowRuns } from "../shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { tmuxManager } from "../domains/infra/tmux-manager";
-import { eventBus } from "../utils/event-bus";
+import { eventBus } from "../shared/event-bus";
 import { logger } from "../utils/logger";
-import { logCardEvent } from "../utils/card-events";
+import { cardService } from "../domains/cards/card-service";
 
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { CardService } from "../domains/cards/card-service";
 
 export interface SessionReconnectDeps {
   db: BetterSQLite3Database<Record<string, unknown>>;
@@ -19,7 +20,7 @@ export interface SessionReconnectDeps {
   };
   eventBus: { emit: (event: string, data: unknown) => void };
   logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
-  logCardEvent: (cardId: number, event: string, detail?: string) => Promise<void>;
+  cardService: CardService;
 }
 
 export async function createSessionReconnect(deps: SessionReconnectDeps): Promise<void> {
@@ -68,7 +69,7 @@ export async function createSessionReconnect(deps: SessionReconnectDeps): Promis
         `Session reconnect: card ${cardId} status is "${card.status}", killing stale session`,
       );
       deps.tmuxManager.killSession(sessionName);
-      await deps.logCardEvent(
+      await deps.cardService.logEvent(
         cardId,
         "tmux_session_orphaned_killed",
         `session=${sessionName}, status=${card.status}`,
@@ -78,7 +79,7 @@ export async function createSessionReconnect(deps: SessionReconnectDeps): Promis
 
     if (deps.tmuxManager.sessionExists(sessionName)) {
       deps.logger.info(`Session reconnect: resuming capture for card ${cardId}`);
-      await deps.logCardEvent(cardId, "tmux_session_reconnected", `session=${sessionName}`);
+      await deps.cardService.logEvent(cardId, "tmux_session_reconnected", `session=${sessionName}`);
       deps.tmuxManager.startCapture(sessionName, (output) => {
         deps.eventBus.emit("agent:output", { cardId, content: output });
       });
@@ -86,22 +87,15 @@ export async function createSessionReconnect(deps: SessionReconnectDeps): Promis
       deps.logger.warn(
         `Session reconnect: session ${sessionName} died, marking card ${cardId} failed`,
       );
-      await deps.db
-        .update(cards)
-        .set({ status: "failed", updatedAt: new Date() })
-        .where(eq(cards.id, cardId));
+      await deps.cardService.markFailed(
+        cardId,
+        `session ${sessionName} died between list and check`,
+      );
 
       await deps.db
         .update(workflowRuns)
         .set({ status: "failed", endedAt: new Date() })
         .where(eq(workflowRuns.cardId, cardId));
-
-      await deps.logCardEvent(
-        cardId,
-        "agent_failed",
-        `session ${sessionName} died between list and check`,
-      );
-      deps.eventBus.emit("card:status-changed", { cardId, status: "failed" });
     }
   }
 
@@ -113,18 +107,12 @@ export async function createSessionReconnect(deps: SessionReconnectDeps): Promis
       deps.logger.warn(
         `Session reconnect: card ${card.id} is running but no tmux session, marking failed`,
       );
-      await deps.logCardEvent(card.id, "agent_failed", "session not found on restart");
-      await deps.db
-        .update(cards)
-        .set({ status: "failed", updatedAt: new Date() })
-        .where(eq(cards.id, card.id));
+      await deps.cardService.markFailed(card.id, "session not found on restart");
 
       await deps.db
         .update(workflowRuns)
         .set({ status: "failed", endedAt: new Date() })
         .where(eq(workflowRuns.cardId, card.id));
-
-      deps.eventBus.emit("card:status-changed", { cardId: card.id, status: "failed" });
     }
   }
 
@@ -132,5 +120,5 @@ export async function createSessionReconnect(deps: SessionReconnectDeps): Promis
 }
 
 export default defineNitroPlugin(async () => {
-  await createSessionReconnect({ db, tmuxManager, eventBus, logger, logCardEvent });
+  await createSessionReconnect({ db, tmuxManager, eventBus, logger, cardService });
 });

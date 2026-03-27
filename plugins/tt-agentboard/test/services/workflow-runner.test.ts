@@ -19,6 +19,7 @@ import {
   createMockContextBundler,
   createMockStreamTailer,
   createMockExecSync,
+  createMockCardService,
   setupSelectReturning,
   setupUpdate,
 } from "../helpers/mock-deps";
@@ -127,6 +128,7 @@ describe("WorkflowRunner", () => {
   let mockTmuxManager: ReturnType<typeof createMockTmuxManager>;
   let mockSlotAllocator: ReturnType<typeof createMockSlotAllocator>;
   let mockWorkflowLoader: ReturnType<typeof createMockWorkflowLoader>;
+  let mockCardService: ReturnType<typeof createMockCardService>;
 
   beforeEach(() => {
     mockDb = createMockDb();
@@ -134,6 +136,7 @@ describe("WorkflowRunner", () => {
     mockTmuxManager = createMockTmuxManager();
     mockSlotAllocator = createMockSlotAllocator();
     mockWorkflowLoader = createMockWorkflowLoader();
+    mockCardService = createMockCardService();
 
     runner = new WorkflowRunner(4200, {
       db: mockDb as never,
@@ -144,7 +147,7 @@ describe("WorkflowRunner", () => {
       workflowLoader: mockWorkflowLoader as never,
       contextBundler: createMockContextBundler(),
       writeHooks: vi.fn(),
-      logCardEvent: vi.fn().mockResolvedValue(undefined),
+      cardService: mockCardService as never,
       streamTailer: createMockStreamTailer(),
       execSync: createMockExecSync() as never,
       existsSync: vi.fn().mockReturnValue(true) as never,
@@ -170,11 +173,7 @@ describe("WorkflowRunner", () => {
 
       await runner.run(1);
 
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("marks failed when card has no workflowId", async () => {
@@ -184,10 +183,7 @@ describe("WorkflowRunner", () => {
 
       await runner.run(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("marks failed when workflow not found", async () => {
@@ -212,10 +208,7 @@ describe("WorkflowRunner", () => {
 
       await runner.run(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("marks failed when tmux not available", async () => {
@@ -242,10 +235,7 @@ describe("WorkflowRunner", () => {
 
       await runner.run(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
     });
 
     it("marks queued when no slots available", async () => {
@@ -273,10 +263,7 @@ describe("WorkflowRunner", () => {
 
       await runner.run(1);
 
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "queued",
-      });
+      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "queued");
     });
   });
 });
