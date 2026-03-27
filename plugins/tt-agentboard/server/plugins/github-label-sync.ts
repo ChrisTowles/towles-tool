@@ -1,7 +1,7 @@
 import { db } from "../shared/db";
 import { cards, repositories } from "../shared/db/schema";
 import { eq } from "drizzle-orm";
-import { eventBus } from "../utils/event-bus";
+import { eventBus } from "../shared/event-bus";
 import { getGitHubService, isGitHubConfigured } from "../domains/infra/github-service";
 import { workflowLoader } from "../domains/execution/workflow-loader";
 import { logger } from "../utils/logger";
