@@ -50,7 +50,7 @@ export async function createTestCard(
     status: string;
     repoId: number;
     planId: number | null;
-    dependsOn: string | null;
+    dependsOn: number[];
   }>("/api/cards", {
     method: "POST",
     body: JSON.stringify({
@@ -70,7 +70,7 @@ export async function getCard(id: number) {
     status: string;
     repoId: number;
     planId: number | null;
-    dependsOn: string | null;
+    dependsOn: number[];
   }>(`/api/cards/${id}`);
 }
 
@@ -140,7 +140,7 @@ export async function getPlan(id: number) {
       title: string;
       column: string;
       status: string;
-      dependsOn: string | null;
+      dependsOn: number[];
     }[];
   }>(`/api/plans/${id}`);
 }

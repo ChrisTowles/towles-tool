@@ -24,7 +24,7 @@ function makeCard(overrides: Partial<Record<string, unknown>> = {}) {
     executionMode: "headless" as const,
     status: "running" as const,
     planId: null,
-    dependsOn: null,
+    branchMode: "create" as const,
     workflowId: null,
     githubIssueNumber: null,
     githubPrNumber: null,

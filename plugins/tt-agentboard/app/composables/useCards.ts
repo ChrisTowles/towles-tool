@@ -11,7 +11,7 @@ export interface Card {
   executionMode: "headless" | "interactive";
   status: CardStatus;
   planId: number | null;
-  dependsOn: string | null;
+  dependsOn: number[];
   workflowId: string | null;
   githubIssueNumber: number | null;
   githubPrNumber: number | null;

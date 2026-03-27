@@ -16,14 +16,9 @@ const planId = Number(route.params.id);
 
 const { data: plan, refresh } = await useFetch<Plan>(`/api/plans/${planId}`);
 
-// Parse dependsOn JSON for each card
+// Get dependency IDs from card (now a proper array from the API)
 function getDeps(card: Card): number[] {
-  if (!card.dependsOn) return [];
-  try {
-    return JSON.parse(card.dependsOn) as number[];
-  } catch {
-    return [];
-  }
+  return card.dependsOn ?? [];
 }
 
 // Layout cards in DAG layers using topological sort

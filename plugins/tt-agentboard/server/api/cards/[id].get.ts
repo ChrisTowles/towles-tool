@@ -1,5 +1,5 @@
 import { db } from "~~/server/db";
-import { cards, repositories, workflowRuns } from "~~/server/db/schema";
+import { cards, repositories, workflowRuns, cardDependencies } from "~~/server/db/schema";
 import { eq, desc } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
@@ -27,8 +27,15 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(workflowRuns.id))
     .limit(1);
 
+  // Fetch dependencies
+  const deps = await db
+    .select({ dependsOnCardId: cardDependencies.dependsOnCardId })
+    .from(cardDependencies)
+    .where(eq(cardDependencies.cardId, id));
+
   return {
     ...card,
+    dependsOn: deps.map((d) => d.dependsOnCardId),
     branch: runs[0]?.branch ?? null,
     repo,
   };

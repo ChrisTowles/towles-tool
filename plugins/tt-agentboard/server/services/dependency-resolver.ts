@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { cards } from "../db/schema";
+import { cards, cardDependencies } from "../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { logger } from "../utils/logger";
 
@@ -20,14 +20,14 @@ export class DependencyResolver {
   }
 
   /**
-   * Parse the dependsOn field (comma-separated card IDs) into an array of numbers.
+   * Get the dependency card IDs for a given card from the cardDependencies table.
    */
-  parseDeps(dependsOn: string | null): number[] {
-    if (!dependsOn) return [];
-    return dependsOn
-      .split(",")
-      .map((s) => Number(s.trim()))
-      .filter((n) => !Number.isNaN(n) && n > 0);
+  async getDeps(cardId: number): Promise<number[]> {
+    const rows = await this.deps.db
+      .select({ dependsOnCardId: cardDependencies.dependsOnCardId })
+      .from(cardDependencies)
+      .where(eq(cardDependencies.cardId, cardId));
+    return rows.map((r) => r.dependsOnCardId);
   }
 
   /**
@@ -36,14 +36,29 @@ export class DependencyResolver {
    * Returns the IDs of cards that were unblocked and moved to 'ready'.
    */
   async resolveAfterCompletion(completedCardId: number): Promise<number[]> {
-    // Find all cards with status 'blocked' that reference the completed card in dependsOn
-    const blockedCards = await this.deps.db.select().from(cards).where(eq(cards.status, "blocked"));
+    // Find all cards that depend on the completed card via the join table
+    const depRows = await this.deps.db
+      .select({ cardId: cardDependencies.cardId })
+      .from(cardDependencies)
+      .where(eq(cardDependencies.dependsOnCardId, completedCardId));
+
+    if (depRows.length === 0) return [];
+
+    const dependentCardIds = depRows.map((r) => r.cardId);
+
+    // Fetch only the blocked ones among those dependents
+    const blockedCards = await this.deps.db
+      .select()
+      .from(cards)
+      .where(inArray(cards.id, dependentCardIds));
 
     const unblockedIds: number[] = [];
 
     for (const card of blockedCards) {
-      const deps = this.parseDeps(card.dependsOn);
-      if (!deps.includes(completedCardId)) continue;
+      if (card.status !== "blocked") continue;
+
+      // Get all deps for this card
+      const deps = await this.getDeps(card.id);
 
       // Check if ALL dependencies are now done
       const allMet = await this.allDepsMet(deps);

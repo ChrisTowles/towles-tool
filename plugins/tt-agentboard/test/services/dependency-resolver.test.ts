@@ -15,74 +15,81 @@ describe("DependencyResolver", () => {
     vi.clearAllMocks();
   });
 
-  describe("parseDeps()", () => {
-    it("returns empty array for null", () => {
-      expect(resolver.parseDeps(null)).toEqual([]);
+  describe("getDeps()", () => {
+    it("returns empty array when no dependencies exist", async () => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn().mockResolvedValue([]);
+      mockDb.select = vi.fn().mockReturnValue(chain);
+
+      const result = await resolver.getDeps(1);
+      expect(result).toEqual([]);
     });
 
-    it("returns empty array for empty string", () => {
-      expect(resolver.parseDeps("")).toEqual([]);
-    });
+    it("returns dependency card IDs", async () => {
+      const chain: Record<string, unknown> = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn().mockResolvedValue([{ dependsOnCardId: 3 }, { dependsOnCardId: 5 }]);
+      mockDb.select = vi.fn().mockReturnValue(chain);
 
-    it("parses comma-separated IDs", () => {
-      expect(resolver.parseDeps("1,3,5")).toEqual([1, 3, 5]);
-    });
-
-    it("trims whitespace", () => {
-      expect(resolver.parseDeps(" 1 , 3 , 5 ")).toEqual([1, 3, 5]);
-    });
-
-    it("filters out NaN and zero values", () => {
-      expect(resolver.parseDeps("1,abc,0,-1,3")).toEqual([1, 3]);
-    });
-
-    it("returns empty array for malformed JSON-like string", () => {
-      expect(resolver.parseDeps('{"ids":[1,2]}')).toEqual([]);
-    });
-
-    it("returns empty array for string with only separators", () => {
-      expect(resolver.parseDeps(",,,")).toEqual([]);
+      const result = await resolver.getDeps(1);
+      expect(result).toEqual([3, 5]);
     });
   });
 
   describe("resolveAfterCompletion()", () => {
     function setupMockDb(
+      depRows: Array<{ cardId: number }>,
       blockedCards: Array<Record<string, unknown>>,
+      cardDeps: Array<{ dependsOnCardId: number }> = [],
       depCards: Array<Record<string, unknown>> = [],
     ) {
-      // First select().from().where() call returns blocked cards
-      const selectChain1: Record<string, unknown> = {};
-      selectChain1.from = vi.fn().mockReturnValue(selectChain1);
-      selectChain1.where = vi.fn().mockReturnValue(Promise.resolve(blockedCards));
+      const selectChains: Array<Record<string, unknown>> = [];
 
-      // Second select().from().where() call returns dep cards for allDepsMet check
-      const selectChain2: Record<string, unknown> = {};
-      selectChain2.from = vi.fn().mockReturnValue(selectChain2);
-      selectChain2.where = vi.fn().mockReturnValue(Promise.resolve(depCards));
+      // 1st call: find cards that depend on completedCardId (from cardDependencies)
+      const chain0: Record<string, unknown> = {};
+      chain0.from = vi.fn().mockReturnValue(chain0);
+      chain0.where = vi.fn().mockResolvedValue(depRows);
+      selectChains.push(chain0);
+
+      // 2nd call: fetch blocked cards by IDs
+      const chain1: Record<string, unknown> = {};
+      chain1.from = vi.fn().mockReturnValue(chain1);
+      chain1.where = vi.fn().mockResolvedValue(blockedCards);
+      selectChains.push(chain1);
+
+      // 3rd call: getDeps for the blocked card (cardDependencies)
+      const chain2: Record<string, unknown> = {};
+      chain2.from = vi.fn().mockReturnValue(chain2);
+      chain2.where = vi.fn().mockResolvedValue(cardDeps);
+      selectChains.push(chain2);
+
+      // 4th call: allDepsMet check (cards table)
+      const chain3: Record<string, unknown> = {};
+      chain3.from = vi.fn().mockReturnValue(chain3);
+      chain3.where = vi.fn().mockResolvedValue(depCards);
+      selectChains.push(chain3);
+
+      let callIdx = 0;
+      mockDb.select = vi.fn().mockImplementation(() => selectChains[callIdx++]);
 
       const updateChain: Record<string, unknown> = {};
       updateChain.set = vi.fn().mockReturnValue(updateChain);
       updateChain.where = vi.fn().mockResolvedValue(undefined);
-
-      let selectCallCount = 0;
-      mockDb.select = vi.fn().mockImplementation(() => {
-        selectCallCount++;
-        return selectCallCount === 1 ? selectChain1 : selectChain2;
-      });
       mockDb.update = vi.fn().mockReturnValue(updateChain);
 
       return { updateChain };
     }
 
-    it("returns empty when no blocked cards exist", async () => {
-      setupMockDb([]);
+    it("returns empty when no cards depend on completed card", async () => {
+      setupMockDb([], []);
 
       const result = await resolver.resolveAfterCompletion(1);
       expect(result).toEqual([]);
     });
 
-    it("returns empty when blocked card does not depend on completed card", async () => {
-      setupMockDb([{ id: 10, dependsOn: "5,6", status: "blocked" }]);
+    it("returns empty when dependent card is not blocked", async () => {
+      setupMockDb([{ cardId: 10 }], [{ id: 10, status: "running" }]);
 
       const result = await resolver.resolveAfterCompletion(1);
       expect(result).toEqual([]);
@@ -90,7 +97,9 @@ describe("DependencyResolver", () => {
 
     it("unblocks card when all deps are done", async () => {
       setupMockDb(
-        [{ id: 10, dependsOn: "1,2", status: "blocked" }],
+        [{ cardId: 10 }],
+        [{ id: 10, status: "blocked" }],
+        [{ dependsOnCardId: 1 }, { dependsOnCardId: 2 }],
         [
           { id: 1, status: "done" },
           { id: 2, status: "done" },
@@ -103,7 +112,9 @@ describe("DependencyResolver", () => {
 
     it("does not unblock card when some deps still not done", async () => {
       setupMockDb(
-        [{ id: 10, dependsOn: "1,2", status: "blocked" }],
+        [{ cardId: 10 }],
+        [{ id: 10, status: "blocked" }],
+        [{ dependsOnCardId: 1 }, { dependsOnCardId: 2 }],
         [
           { id: 1, status: "done" },
           { id: 2, status: "running" },
@@ -114,46 +125,47 @@ describe("DependencyResolver", () => {
       expect(result).toEqual([]);
     });
 
-    it("skips blocked card with null dependsOn", async () => {
-      setupMockDb([{ id: 15, dependsOn: null, status: "blocked" }]);
-
-      const result = await resolver.resolveAfterCompletion(1);
-      expect(result).toEqual([]);
-    });
-
-    it("skips blocked card with empty dependsOn string", async () => {
-      setupMockDb([{ id: 16, dependsOn: "", status: "blocked" }]);
-
-      const result = await resolver.resolveAfterCompletion(1);
-      expect(result).toEqual([]);
-    });
-
     it("unblocks multiple cards at once", async () => {
-      // Two blocked cards both depend on card 1
-      const blockedCards = [
-        { id: 10, dependsOn: "1", status: "blocked" },
-        { id: 11, dependsOn: "1", status: "blocked" },
-      ];
-
       const selectChains: Array<Record<string, unknown>> = [];
 
-      // First call: blocked cards query
+      // 1st call: find cards that depend on completedCardId
       const chain0: Record<string, unknown> = {};
       chain0.from = vi.fn().mockReturnValue(chain0);
-      chain0.where = vi.fn().mockResolvedValue(blockedCards);
+      chain0.where = vi.fn().mockResolvedValue([{ cardId: 10 }, { cardId: 11 }]);
       selectChains.push(chain0);
 
-      // Second call: allDepsMet for card 10 (deps: [1])
+      // 2nd call: fetch blocked cards
       const chain1: Record<string, unknown> = {};
       chain1.from = vi.fn().mockReturnValue(chain1);
-      chain1.where = vi.fn().mockResolvedValue([{ id: 1, status: "done" }]);
+      chain1.where = vi.fn().mockResolvedValue([
+        { id: 10, status: "blocked" },
+        { id: 11, status: "blocked" },
+      ]);
       selectChains.push(chain1);
 
-      // Third call: allDepsMet for card 11 (deps: [1])
+      // 3rd: getDeps for card 10
       const chain2: Record<string, unknown> = {};
       chain2.from = vi.fn().mockReturnValue(chain2);
-      chain2.where = vi.fn().mockResolvedValue([{ id: 1, status: "done" }]);
+      chain2.where = vi.fn().mockResolvedValue([{ dependsOnCardId: 1 }]);
       selectChains.push(chain2);
+
+      // 4th: allDepsMet for card 10
+      const chain3: Record<string, unknown> = {};
+      chain3.from = vi.fn().mockReturnValue(chain3);
+      chain3.where = vi.fn().mockResolvedValue([{ id: 1, status: "done" }]);
+      selectChains.push(chain3);
+
+      // 5th: getDeps for card 11
+      const chain4: Record<string, unknown> = {};
+      chain4.from = vi.fn().mockReturnValue(chain4);
+      chain4.where = vi.fn().mockResolvedValue([{ dependsOnCardId: 1 }]);
+      selectChains.push(chain4);
+
+      // 6th: allDepsMet for card 11
+      const chain5: Record<string, unknown> = {};
+      chain5.from = vi.fn().mockReturnValue(chain5);
+      chain5.where = vi.fn().mockResolvedValue([{ id: 1, status: "done" }]);
+      selectChains.push(chain5);
 
       let callIdx = 0;
       mockDb.select = vi.fn().mockImplementation(() => selectChains[callIdx++]);

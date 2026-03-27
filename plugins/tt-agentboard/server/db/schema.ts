@@ -15,7 +15,7 @@ export const workspaceSlots = sqliteTable("workspace_slots", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   repoId: integer("repo_id")
     .notNull()
-    .references(() => repositories.id),
+    .references(() => repositories.id, { onDelete: "cascade" }),
   path: text("path").notNull(),
   portConfig: text("port_config"),
   envPath: text("env_path"),
@@ -48,10 +48,10 @@ export const cards = sqliteTable("cards", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   boardId: integer("board_id")
     .notNull()
-    .references(() => boards.id),
+    .references(() => boards.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
-  repoId: integer("repo_id").references(() => repositories.id),
+  repoId: integer("repo_id").references(() => repositories.id, { onDelete: "set null" }),
   column: text("column", { enum: ["backlog", "ready", "in_progress", "review", "done"] }).default(
     "backlog",
   ),
@@ -70,8 +70,7 @@ export const cards = sqliteTable("cards", {
       "blocked",
     ],
   }).default("idle"),
-  planId: integer("plan_id").references(() => plans.id),
-  dependsOn: text("depends_on"),
+  planId: integer("plan_id").references(() => plans.id, { onDelete: "set null" }),
   workflowId: text("workflow_id"),
   githubIssueNumber: integer("github_issue_number"),
   githubPrNumber: integer("github_pr_number"),
@@ -85,13 +84,23 @@ export const cards = sqliteTable("cards", {
     .$defaultFn(() => new Date()),
 });
 
+export const cardDependencies = sqliteTable("card_dependencies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  cardId: integer("card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
+  dependsOnCardId: integer("depends_on_card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
+});
+
 export const workflowRuns = sqliteTable("workflow_runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   cardId: integer("card_id")
     .notNull()
-    .references(() => cards.id),
+    .references(() => cards.id, { onDelete: "cascade" }),
   workflowId: text("workflow_id").notNull(),
-  slotId: integer("slot_id").references(() => workspaceSlots.id),
+  slotId: integer("slot_id").references(() => workspaceSlots.id, { onDelete: "set null" }),
   tmuxSession: text("tmux_session"),
   branch: text("branch"),
   startedAt: integer("started_at", { mode: "timestamp" }),
@@ -105,7 +114,7 @@ export const stepRuns = sqliteTable("step_runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   workflowRunId: integer("workflow_run_id")
     .notNull()
-    .references(() => workflowRuns.id),
+    .references(() => workflowRuns.id, { onDelete: "cascade" }),
   stepId: text("step_id").notNull(),
   startedAt: integer("started_at", { mode: "timestamp" }),
   endedAt: integer("ended_at", { mode: "timestamp" }),
@@ -120,7 +129,7 @@ export const cardEvents = sqliteTable("card_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   cardId: integer("card_id")
     .notNull()
-    .references(() => cards.id),
+    .references(() => cards.id, { onDelete: "cascade" }),
   event: text("event").notNull(),
   detail: text("detail"),
   timestamp: integer("timestamp", { mode: "timestamp" })
@@ -132,7 +141,7 @@ export const agentLogs = sqliteTable("agent_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   workflowRunId: integer("workflow_run_id")
     .notNull()
-    .references(() => workflowRuns.id),
+    .references(() => workflowRuns.id, { onDelete: "cascade" }),
   stepId: text("step_id"),
   timestamp: integer("timestamp", { mode: "timestamp" })
     .notNull()
