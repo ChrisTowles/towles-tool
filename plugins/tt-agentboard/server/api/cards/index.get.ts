@@ -1,5 +1,5 @@
 import { db } from "~~/server/db";
-import { cards, repositories, workflowRuns } from "~~/server/db/schema";
+import { cards, repositories, workflowRuns, cardDependencies } from "~~/server/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
@@ -36,8 +36,24 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Batch-fetch dependencies for all cards
+  const cardIds = rows.map((c) => c.id);
+  const depsMap = new Map<number, number[]>();
+  if (cardIds.length > 0) {
+    const deps = await db
+      .select()
+      .from(cardDependencies)
+      .where(inArray(cardDependencies.cardId, cardIds));
+    for (const dep of deps) {
+      const existing = depsMap.get(dep.cardId) ?? [];
+      existing.push(dep.dependsOnCardId);
+      depsMap.set(dep.cardId, existing);
+    }
+  }
+
   return rows.map((card) => ({
     ...card,
+    dependsOn: depsMap.get(card.id) ?? [],
     branch: branches.get(card.id) ?? null,
     repo: card.repoId ? (repoMap.get(card.repoId) ?? null) : null,
   }));

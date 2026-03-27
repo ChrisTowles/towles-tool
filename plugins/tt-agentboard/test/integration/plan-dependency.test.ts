@@ -42,7 +42,7 @@ describe("Plan Dependencies (integration)", () => {
     cardBId = cardB.id;
     await updateCard(cardBId, {
       planId,
-      dependsOn: String(cardAId),
+      dependsOn: [cardAId],
       status: "blocked",
     });
 
@@ -51,7 +51,7 @@ describe("Plan Dependencies (integration)", () => {
     cardCId = cardC.id;
     await updateCard(cardCId, {
       planId,
-      dependsOn: `${cardAId},${cardBId}`,
+      dependsOn: [cardAId, cardBId],
       status: "blocked",
     });
 

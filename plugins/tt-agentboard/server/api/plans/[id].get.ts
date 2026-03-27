@@ -1,6 +1,6 @@
 import { db } from "~~/server/db";
-import { plans, cards } from "~~/server/db/schema";
-import { eq } from "drizzle-orm";
+import { plans, cards, cardDependencies } from "~~/server/db/schema";
+import { eq, inArray } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));
@@ -16,8 +16,26 @@ export default defineEventHandler(async (event) => {
     .where(eq(cards.planId, id))
     .orderBy(cards.position);
 
+  // Batch-fetch dependencies for all plan cards
+  const cardIds = planCards.map((c) => c.id);
+  const depsMap = new Map<number, number[]>();
+  if (cardIds.length > 0) {
+    const deps = await db
+      .select()
+      .from(cardDependencies)
+      .where(inArray(cardDependencies.cardId, cardIds));
+    for (const dep of deps) {
+      const existing = depsMap.get(dep.cardId) ?? [];
+      existing.push(dep.dependsOnCardId);
+      depsMap.set(dep.cardId, existing);
+    }
+  }
+
   return {
     ...planRows[0],
-    cards: planCards,
+    cards: planCards.map((card) => ({
+      ...card,
+      dependsOn: depsMap.get(card.id) ?? [],
+    })),
   };
 });
