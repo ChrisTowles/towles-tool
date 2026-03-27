@@ -1,7 +1,7 @@
 import { db } from "../shared/db";
 import { cards, boards } from "../shared/db/schema";
 import { and, eq } from "drizzle-orm";
-import { eventBus } from "../utils/event-bus";
+import { eventBus } from "../shared/event-bus";
 import { isGitHubConfigured } from "../domains/infra/github-service";
 import { logger } from "../utils/logger";
 

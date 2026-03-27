@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { eventBus } from "../../utils/event-bus";
+import { eventBus } from "../../shared/event-bus";
 import { logger } from "../../utils/logger";
 
 interface GitHubIssue {

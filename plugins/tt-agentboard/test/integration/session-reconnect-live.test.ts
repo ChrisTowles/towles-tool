@@ -163,6 +163,14 @@ describe("Session Reconnect Live (real tmux)", { timeout: 30_000 }, () => {
 describe("Session Reconnect Plugin (mocked)", () => {
   let mockDb: ReturnType<typeof createMockDb>;
   let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let mockCardService: {
+    updateStatus: ReturnType<typeof vi.fn>;
+    moveToColumn: ReturnType<typeof vi.fn>;
+    markFailed: ReturnType<typeof vi.fn>;
+    markComplete: ReturnType<typeof vi.fn>;
+    logEvent: ReturnType<typeof vi.fn>;
+    resolveDependencies: ReturnType<typeof vi.fn>;
+  };
   let mockTmuxManager: {
     isAvailable: ReturnType<typeof vi.fn>;
     listSessions: ReturnType<typeof vi.fn>;
@@ -175,6 +183,14 @@ describe("Session Reconnect Plugin (mocked)", () => {
     vi.clearAllMocks();
     mockDb = createMockDb();
     mockEventBus = createMockEventBus();
+    mockCardService = {
+      updateStatus: vi.fn().mockResolvedValue(undefined),
+      moveToColumn: vi.fn().mockResolvedValue(undefined),
+      markFailed: vi.fn().mockResolvedValue(undefined),
+      markComplete: vi.fn().mockResolvedValue(undefined),
+      logEvent: vi.fn().mockResolvedValue(undefined),
+      resolveDependencies: vi.fn().mockResolvedValue([]),
+    };
     mockTmuxManager = {
       isAvailable: vi.fn().mockReturnValue(true),
       listSessions: vi.fn().mockReturnValue([]),
@@ -190,14 +206,7 @@ describe("Session Reconnect Plugin (mocked)", () => {
       tmuxManager: mockTmuxManager,
       eventBus: mockEventBus as never,
       logger: createMockLogger() as never,
-      cardService: {
-        updateStatus: vi.fn().mockResolvedValue(undefined),
-        moveToColumn: vi.fn().mockResolvedValue(undefined),
-        markFailed: vi.fn().mockResolvedValue(undefined),
-        markComplete: vi.fn().mockResolvedValue(undefined),
-        logEvent: vi.fn().mockResolvedValue(undefined),
-        resolveDependencies: vi.fn().mockResolvedValue([]),
-      } as never,
+      cardService: mockCardService as never,
     });
   }
 
@@ -213,10 +222,8 @@ describe("Session Reconnect Plugin (mocked)", () => {
       const chain: Record<string, unknown> = {};
       chain.from = vi.fn().mockReturnValue(chain);
       if (selectCount === 1) {
-        // Batch fetch cards by session IDs
         chain.where = vi.fn().mockResolvedValue([{ id: 3, status: "running" }]);
       } else {
-        // Running cards query — card 3 AND card 50 are running
         chain.where = vi.fn().mockResolvedValue([
           { id: 3, status: "running" },
           { id: 50, status: "running" },
@@ -236,16 +243,12 @@ describe("Session Reconnect Plugin (mocked)", () => {
     expect(mockTmuxManager.startCapture).toHaveBeenCalledWith("card-3", expect.any(Function));
 
     // card-50 should be marked failed (running but no session)
-    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-      cardId: 50,
-      status: "failed",
-    });
+    expect(mockCardService.markFailed).toHaveBeenCalledWith(50, expect.any(String));
   });
 
   it("handles session that dies between list and existence check", async () => {
     mockTmuxManager.isAvailable.mockReturnValue(true);
     mockTmuxManager.listSessions.mockReturnValue(["card-15"]);
-    // Session dies between list and has-session check
     mockTmuxManager.sessionExists.mockReturnValue(false);
 
     const updateChain: Record<string, unknown> = {};
@@ -269,10 +272,6 @@ describe("Session Reconnect Plugin (mocked)", () => {
     await runPlugin();
 
     // Card should be marked failed since session died
-    expect(mockDb.update).toHaveBeenCalled();
-    expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-      cardId: 15,
-      status: "failed",
-    });
+    expect(mockCardService.markFailed).toHaveBeenCalledWith(15, expect.any(String));
   });
 });

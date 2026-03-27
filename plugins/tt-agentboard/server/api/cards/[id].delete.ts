@@ -8,7 +8,7 @@ import {
 } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
 import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
-import { eventBus } from "~~/server/utils/event-bus";
+import { eventBus } from "~~/server/shared/event-bus";
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, "id"));

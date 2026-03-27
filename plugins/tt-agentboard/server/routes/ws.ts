@@ -1,4 +1,4 @@
-import { eventBus } from "../utils/event-bus";
+import { eventBus } from "../shared/event-bus";
 import { tmuxManager } from "../domains/infra/tmux-manager";
 
 interface WsPeer {
