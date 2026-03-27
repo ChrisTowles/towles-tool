@@ -1,4 +1,4 @@
-import type { Card } from "~/composables/useCards";
+import type { Card } from "~/stores/cards";
 
 export function useCardUrls(card: Ref<Card> | ComputedRef<Card>) {
   function buildGithubUrl(path: string) {

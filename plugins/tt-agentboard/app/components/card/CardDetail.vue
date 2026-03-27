@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Card } from "~/composables/useCards";
+import type { Card } from "~/stores/cards";
 import type { CardStatus } from "~/utils/constants";
 import { COLUMN_LABELS, EXECUTION_MODE_LABELS } from "~/utils/constants";
 

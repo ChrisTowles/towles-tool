@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Card } from "~/composables/useCards";
+import type { Card } from "~/stores/cards";
 
 const props = defineProps<{
   card: Card;

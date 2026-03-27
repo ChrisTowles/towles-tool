@@ -18,7 +18,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const { createCard } = useCards();
+const { createCard } = useCardStore();
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 
 const selectedRepoId = ref<number | undefined>(undefined);

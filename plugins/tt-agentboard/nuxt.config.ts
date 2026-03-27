@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
   devtools: { enabled: true },
-  modules: ["@nuxtjs/tailwindcss"],
+  modules: ["@nuxtjs/tailwindcss", "@pinia/nuxt"],
   vite: {
     optimizeDeps: {
       include: ["vuedraggable", "@xterm/xterm", "@xterm/addon-fit", "@vueuse/core"],
