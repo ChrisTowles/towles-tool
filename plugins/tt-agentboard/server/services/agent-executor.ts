@@ -1,16 +1,52 @@
-import { db } from "../db";
+import { db as defaultDb } from "../db";
 import { cards, workflowRuns } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { tmuxManager } from "./tmux-manager";
-import { slotAllocator } from "./slot-allocator";
-import { workflowLoader } from "./workflow-loader";
-import { workflowRunner } from "./workflow-runner";
-import { eventBus } from "../utils/event-bus";
-import { logger } from "../utils/logger";
-import { writeHooks } from "../utils/hook-writer";
+import { execSync as defaultExecSync } from "node:child_process";
+import { existsSync as defaultExistsSync } from "node:fs";
+import { join } from "node:path";
+import { tmuxManager as defaultTmuxManager } from "./tmux-manager";
+import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
+import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
+import { workflowRunner as defaultWorkflowRunner } from "./workflow-runner";
+import { eventBus as defaultEventBus } from "../utils/event-bus";
+import { logger as defaultLogger } from "../utils/logger";
+import { writeHooks as defaultWriteHooks } from "../utils/hook-writer";
 import { buildStreamingCommand, shellEscape } from "../utils/workflow-helpers";
-import { logCardEvent } from "../utils/card-events";
-import { streamTailer } from "./stream-tailer";
+import { logCardEvent as defaultLogCardEvent } from "../utils/card-events";
+import { streamTailer as defaultStreamTailer } from "./stream-tailer";
+
+export interface AgentExecutorDeps {
+  db: typeof defaultDb;
+  eventBus: { emit: (event: string, ...args: unknown[]) => boolean | void };
+  logger: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+  };
+  tmuxManager: {
+    isAvailable: () => boolean;
+    createSession: (cardId: number, cwd: string) => { sessionName: string; created: boolean };
+    startCapture: (sessionName: string, cb: (data: string) => void) => void;
+    stopCapture: (sessionName: string) => void;
+    killSession: (sessionName: string) => boolean;
+    sendCommand: (sessionName: string, command: string) => void;
+  };
+  slotAllocator: {
+    claimSlot: (repoId: number, cardId: number) => Promise<{ id: number; path: string } | null>;
+    releaseSlot: (slotId: number) => Promise<void>;
+    getSlotForCard: (cardId: number) => Promise<{ id: number; path: string } | null>;
+  };
+  workflowLoader: { get: (id: string) => unknown };
+  workflowRunner: { run: (cardId: number) => Promise<void> };
+  writeHooks: typeof defaultWriteHooks;
+  logCardEvent: typeof defaultLogCardEvent;
+  streamTailer: {
+    startTailing: (cardId: number, logFilePath: string) => Promise<void>;
+    stopTailing: (cardId: number) => void;
+  };
+  execSync: typeof defaultExecSync;
+  existsSync: typeof defaultExistsSync;
+}
 
 /**
  * Handles single agent execution: claim slot, configure Stop hook,
@@ -21,28 +57,44 @@ import { streamTailer } from "./stream-tailer";
  */
 export class AgentExecutor {
   private port: number;
+  private deps: AgentExecutorDeps;
 
-  constructor(port = 4200) {
+  constructor(port = 4200, deps: Partial<AgentExecutorDeps> = {}) {
     this.port = port;
+    this.deps = {
+      db: defaultDb,
+      eventBus: defaultEventBus,
+      logger: defaultLogger,
+      tmuxManager: defaultTmuxManager,
+      slotAllocator: defaultSlotAllocator,
+      workflowLoader: defaultWorkflowLoader,
+      workflowRunner: defaultWorkflowRunner,
+      writeHooks: defaultWriteHooks,
+      logCardEvent: defaultLogCardEvent,
+      streamTailer: defaultStreamTailer,
+      execSync: defaultExecSync,
+      existsSync: defaultExistsSync,
+      ...deps,
+    };
   }
 
   /** Start agent execution for a card moved to in_progress */
   async startExecution(cardId: number): Promise<void> {
     // Fetch the card
-    const cardRows = await db.select().from(cards).where(eq(cards.id, cardId));
+    const cardRows = await this.deps.db.select().from(cards).where(eq(cards.id, cardId));
     if (cardRows.length === 0) {
-      logger.error(`Card ${cardId} not found`);
+      this.deps.logger.error(`Card ${cardId} not found`);
       return;
     }
     const card = cardRows[0]!;
 
     if (!card.repoId) {
-      await logCardEvent(cardId, "error", "No repo assigned");
+      await this.deps.logCardEvent(cardId, "error", "No repo assigned");
       await this.updateCardStatus(cardId, "failed");
       return;
     }
 
-    await logCardEvent(
+    await this.deps.logCardEvent(
       cardId,
       "execution_start",
       `repoId=${card.repoId}, mode=${card.executionMode}, branch=${card.branchMode}`,
@@ -50,13 +102,13 @@ export class AgentExecutor {
 
     // Delegate to workflow runner if card has a valid workflow
     if (card.workflowId) {
-      const workflow = workflowLoader.get(card.workflowId);
+      const workflow = this.deps.workflowLoader.get(card.workflowId);
       if (workflow) {
-        await logCardEvent(cardId, "workflow_delegate", `workflow=${card.workflowId}`);
-        await workflowRunner.run(cardId);
+        await this.deps.logCardEvent(cardId, "workflow_delegate", `workflow=${card.workflowId}`);
+        await this.deps.workflowRunner.run(cardId);
         return;
       }
-      await logCardEvent(
+      await this.deps.logCardEvent(
         cardId,
         "workflow_not_found",
         `workflow=${card.workflowId}, falling back to single-prompt`,
@@ -70,25 +122,29 @@ export class AgentExecutor {
   /** Run a single claude -p command for cards without a workflow */
   private async runSinglePrompt(cardId: number, card: typeof cards.$inferSelect): Promise<void> {
     // Check tmux availability
-    if (!tmuxManager.isAvailable()) {
-      await logCardEvent(cardId, "error", "tmux not available");
+    if (!this.deps.tmuxManager.isAvailable()) {
+      await this.deps.logCardEvent(cardId, "error", "tmux not available");
       await this.updateCardStatus(cardId, "failed");
       return;
     }
 
     // Check if a slot is already claimed for this card (e.g. by queue manager)
-    let slot = await slotAllocator.getSlotForCard(cardId);
+    let slot = await this.deps.slotAllocator.getSlotForCard(cardId);
     if (!slot) {
-      slot = await slotAllocator.claimSlot(card.repoId!, cardId);
+      slot = await this.deps.slotAllocator.claimSlot(card.repoId!, cardId);
     }
     if (!slot) {
-      await logCardEvent(cardId, "queued", `No available slot for repoId=${card.repoId}`);
-      await db
+      await this.deps.logCardEvent(cardId, "queued", `No available slot for repoId=${card.repoId}`);
+      await this.deps.db
         .update(cards)
         .set({ column: "ready", status: "queued", updatedAt: new Date() })
         .where(eq(cards.id, cardId));
-      eventBus.emit("card:moved", { cardId, fromColumn: "in_progress", toColumn: "ready" });
-      eventBus.emit("card:status-changed", { cardId, status: "queued" });
+      this.deps.eventBus.emit("card:moved", {
+        cardId,
+        fromColumn: "in_progress",
+        toColumn: "ready",
+      });
+      this.deps.eventBus.emit("card:status-changed", { cardId, status: "queued" });
       return;
     }
 
@@ -96,15 +152,15 @@ export class AgentExecutor {
     await this.updateCardStatus(cardId, "running");
 
     // Write .claude/settings.local.json with Stop hook in the slot directory
-    writeHooks(slot.path, cardId, this.port, "complete");
-    await logCardEvent(cardId, "hooks_written", `endpoint=complete, path=${slot.path}`);
+    this.deps.writeHooks(slot.path, cardId, this.port, "complete");
+    await this.deps.logCardEvent(cardId, "hooks_written", `endpoint=complete, path=${slot.path}`);
 
-    await logCardEvent(cardId, "slot_claimed", `slotId=${slot.id}, path=${slot.path}`);
+    await this.deps.logCardEvent(cardId, "slot_claimed", `slotId=${slot.id}, path=${slot.path}`);
 
     // Create tmux session
-    const { sessionName, created } = tmuxManager.createSession(cardId, slot.path);
+    const { sessionName, created } = this.deps.tmuxManager.createSession(cardId, slot.path);
     if (created) {
-      await logCardEvent(
+      await this.deps.logCardEvent(
         cardId,
         "tmux_session_created",
         `session=${sessionName}, cwd=${slot.path}`,
@@ -112,11 +168,10 @@ export class AgentExecutor {
     }
 
     // Branch handling
-    const { execSync } = await import("node:child_process");
     let branch: string | null = null;
 
     // Check for existing branch from a previous run (resume/rerun case)
-    const previousRuns = await db
+    const previousRuns = await this.deps.db
       .select({ branch: workflowRuns.branch })
       .from(workflowRuns)
       .where(eq(workflowRuns.cardId, cardId));
@@ -125,15 +180,15 @@ export class AgentExecutor {
     if (existingBranch) {
       // Reuse existing branch from previous run
       try {
-        execSync(`git checkout ${existingBranch}`, {
+        this.deps.execSync(`git checkout ${existingBranch}`, {
           cwd: slot.path,
           stdio: "ignore",
           timeout: 10000,
         });
         branch = existingBranch;
-        await logCardEvent(cardId, "branch_reused", existingBranch);
+        await this.deps.logCardEvent(cardId, "branch_reused", existingBranch);
       } catch {
-        await logCardEvent(
+        await this.deps.logCardEvent(
           cardId,
           "warn",
           `Could not checkout existing branch ${existingBranch}, creating new`,
@@ -145,7 +200,7 @@ export class AgentExecutor {
     if (!branch && card.branchMode === "create") {
       // Clean working tree of leftover files from previous agents
       try {
-        execSync("git checkout -- . && git clean -fd", {
+        this.deps.execSync("git checkout -- . && git clean -fd", {
           cwd: slot.path,
           stdio: "ignore",
           timeout: 5000,
@@ -157,31 +212,37 @@ export class AgentExecutor {
       // Start from a clean, up-to-date main before branching
       const branchName = `agentboard/card-${cardId}`;
       try {
-        execSync("git checkout main && git pull --ff-only", {
+        this.deps.execSync("git checkout main && git pull --ff-only", {
           cwd: slot.path,
           stdio: "ignore",
           timeout: 15000,
         });
       } catch {
-        await logCardEvent(cardId, "warn", "Could not checkout/pull main before branching");
+        await this.deps.logCardEvent(
+          cardId,
+          "warn",
+          "Could not checkout/pull main before branching",
+        );
       }
       try {
-        execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
+        this.deps.execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
         branch = branchName;
-        await logCardEvent(cardId, "branch_created", branchName);
+        await this.deps.logCardEvent(cardId, "branch_created", branchName);
       } catch {
         // Branch may exist — try switching to it
         try {
-          execSync(`git checkout ${branchName}`, { cwd: slot.path, stdio: "ignore" });
+          this.deps.execSync(`git checkout ${branchName}`, { cwd: slot.path, stdio: "ignore" });
           branch = branchName;
         } catch {
           // Fall back to current branch
           try {
-            branch = execSync("git rev-parse --abbrev-ref HEAD", {
-              cwd: slot.path,
-              encoding: "utf-8",
-              timeout: 3000,
-            }).trim();
+            branch = (
+              this.deps.execSync("git rev-parse --abbrev-ref HEAD", {
+                cwd: slot.path,
+                encoding: "utf-8",
+                timeout: 3000,
+              }) as unknown as string
+            ).trim();
           } catch {
             /* not a git repo */
           }
@@ -190,51 +251,51 @@ export class AgentExecutor {
     } else if (!branch) {
       // Stay on current branch
       try {
-        branch = execSync("git rev-parse --abbrev-ref HEAD", {
-          cwd: slot.path,
-          encoding: "utf-8",
-          timeout: 3000,
-        }).trim();
+        branch = (
+          this.deps.execSync("git rev-parse --abbrev-ref HEAD", {
+            cwd: slot.path,
+            encoding: "utf-8",
+            timeout: 3000,
+          }) as unknown as string
+        ).trim();
       } catch {
         /* not a git repo */
       }
     }
 
     // Run package installer if a lockfile exists
-    const { existsSync } = await import("node:fs");
-    const { join } = await import("node:path");
     const hasLockfile =
-      existsSync(join(slot.path, "pnpm-lock.yaml")) ||
-      existsSync(join(slot.path, "bun.lock")) ||
-      existsSync(join(slot.path, "package-lock.json"));
+      this.deps.existsSync(join(slot.path, "pnpm-lock.yaml")) ||
+      this.deps.existsSync(join(slot.path, "bun.lock")) ||
+      this.deps.existsSync(join(slot.path, "package-lock.json"));
 
     if (hasLockfile) {
       try {
-        if (existsSync(join(slot.path, "pnpm-lock.yaml"))) {
-          execSync("pnpm install --frozen-lockfile", {
+        if (this.deps.existsSync(join(slot.path, "pnpm-lock.yaml"))) {
+          this.deps.execSync("pnpm install --frozen-lockfile", {
             cwd: slot.path,
             stdio: "ignore",
             timeout: 60000,
           });
-          await logCardEvent(cardId, "deps_installed", "pnpm install");
-        } else if (existsSync(join(slot.path, "bun.lock"))) {
-          execSync("bun install --frozen-lockfile", {
+          await this.deps.logCardEvent(cardId, "deps_installed", "pnpm install");
+        } else if (this.deps.existsSync(join(slot.path, "bun.lock"))) {
+          this.deps.execSync("bun install --frozen-lockfile", {
             cwd: slot.path,
             stdio: "ignore",
             timeout: 60000,
           });
-          await logCardEvent(cardId, "deps_installed", "bun install");
+          await this.deps.logCardEvent(cardId, "deps_installed", "bun install");
         } else {
-          execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
-          await logCardEvent(cardId, "deps_installed", "npm ci");
+          this.deps.execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+          await this.deps.logCardEvent(cardId, "deps_installed", "npm ci");
         }
       } catch {
-        await logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
+        await this.deps.logCardEvent(cardId, "warn", "Package install failed — continuing anyway");
       }
     }
 
     // Create workflow run record
-    await db
+    await this.deps.db
       .insert(workflowRuns)
       .values({
         cardId,
@@ -267,22 +328,24 @@ export class AgentExecutor {
     const logFilePath = join(slot.path, ".claude-stream.ndjson");
     const command = buildStreamingCommand(args, logFilePath);
 
-    tmuxManager.sendCommand(sessionName, command);
-    await logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
+    this.deps.tmuxManager.sendCommand(sessionName, command);
+    await this.deps.logCardEvent(cardId, "agent_command_sent", `session=${sessionName}`);
 
     // Start tailing the stream-json output for structured activity events
-    await streamTailer.startTailing(cardId, logFilePath);
+    await this.deps.streamTailer.startTailing(cardId, logFilePath);
 
-    tmuxManager.startCapture(sessionName, (output) => {
-      eventBus.emit("agent:output", { cardId, content: output });
+    this.deps.tmuxManager.startCapture(sessionName, (output) => {
+      this.deps.eventBus.emit("agent:output", { cardId, content: output });
     });
 
-    await logCardEvent(
+    await this.deps.logCardEvent(
       cardId,
       "agent_started",
       `session=${sessionName}, mode=${card.executionMode}`,
     );
-    logger.info(`Card ${cardId} execution started in session ${sessionName}, Stop hook configured`);
+    this.deps.logger.info(
+      `Card ${cardId} execution started in session ${sessionName}, Stop hook configured`,
+    );
   }
 
   private async updateCardStatus(
@@ -297,9 +360,12 @@ export class AgentExecutor {
       | "failed"
       | "blocked",
   ): Promise<void> {
-    await db.update(cards).set({ status, updatedAt: new Date() }).where(eq(cards.id, cardId));
+    await this.deps.db
+      .update(cards)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(cards.id, cardId));
 
-    eventBus.emit("card:status-changed", { cardId, status });
+    this.deps.eventBus.emit("card:status-changed", { cardId, status });
   }
 }
 

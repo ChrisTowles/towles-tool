@@ -5,93 +5,37 @@ import {
   shellEscape,
 } from "../../server/utils/workflow-helpers";
 
-// Mock dependencies before importing WorkflowRunner
-vi.mock("../../server/db", () => {
-  const mockChain = () => {
-    const chain: Record<string, unknown> = {};
-    chain.from = vi.fn().mockReturnValue(chain);
-    chain.where = vi.fn().mockReturnValue(chain);
-    chain.set = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockResolvedValue([]);
-    chain.values = vi.fn().mockReturnValue(chain);
-    chain.returning = vi.fn().mockResolvedValue([{ id: 1 }]);
-    return chain;
-  };
-
-  return {
-    db: {
-      select: vi.fn().mockReturnValue(mockChain()),
-      update: vi.fn().mockReturnValue(mockChain()),
-      insert: vi.fn().mockReturnValue(mockChain()),
-    },
-  };
-});
-
-vi.mock("../../server/utils/event-bus", () => ({
-  eventBus: { emit: vi.fn(), on: vi.fn() },
+// Minimal mocks for modules that can't load in test environment (SQLite, glob)
+vi.mock("../../server/db", () => ({
+  db: {},
 }));
 
-vi.mock("../../server/utils/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+vi.mock("glob", () => ({
+  glob: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../server/utils/hook-writer", () => ({
-  writeHooks: vi.fn(),
-}));
-
-vi.mock("../../server/services/tmux-manager", () => ({
-  tmuxManager: {
-    isAvailable: vi.fn().mockReturnValue(true),
-    createSession: vi.fn().mockReturnValue({ sessionName: "card-1", created: true }),
-    startCapture: vi.fn(),
-    stopCapture: vi.fn(),
-    killSession: vi.fn(),
-    sendCommand: vi.fn(),
-  },
-}));
-
-vi.mock("../../server/services/slot-allocator", () => ({
-  slotAllocator: {
-    claimSlot: vi.fn().mockResolvedValue({ id: 1, path: "/workspace/slot-1" }),
-    releaseSlot: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-vi.mock("../../server/services/workflow-loader", () => ({
-  workflowLoader: {
-    get: vi.fn().mockReturnValue(null),
-  },
-}));
-
-vi.mock("../../server/services/context-bundler", () => ({
-  contextBundler: {
-    buildPrompt: vi.fn().mockReturnValue("test prompt"),
-  },
-}));
-
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-}));
-
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  readFileSync: vi.fn().mockReturnValue("PASS\ndetails"),
+vi.mock("../../server/utils/card-events", () => ({
+  logCardEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 // eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { db } from "../../server/db";
-// eslint-disable-next-line import/first
-import { eventBus } from "../../server/utils/event-bus";
-// eslint-disable-next-line import/first
-import { tmuxManager } from "../../server/services/tmux-manager";
-// eslint-disable-next-line import/first
-import { slotAllocator } from "../../server/services/slot-allocator";
-// eslint-disable-next-line import/first
-import { workflowLoader } from "../../server/services/workflow-loader";
-// eslint-disable-next-line import/first
 import { WorkflowRunner, resolveStepComplete } from "../../server/services/workflow-runner";
-
-const mockDb = vi.mocked(db);
+// eslint-disable-next-line import/first
+import {
+  createMockDb,
+  createMockEventBus,
+  createMockLogger,
+  createMockTmuxManager,
+  createMockSlotAllocator,
+  createMockWorkflowLoader,
+  createMockContextBundler,
+  createMockStreamTailer,
+  createMockExecSync,
+  setupSelectReturning,
+  setupUpdate,
+} from "../helpers/mock-deps";
+// eslint-disable-next-line import/first
+import type { MockDb } from "../helpers/mock-deps";
 
 describe("workflow-helpers", () => {
   describe("checkPassCondition()", () => {
@@ -191,45 +135,56 @@ describe("resolveStepComplete()", () => {
 
 describe("WorkflowRunner", () => {
   let runner: WorkflowRunner;
+  let mockDb: MockDb;
+  let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let mockTmuxManager: ReturnType<typeof createMockTmuxManager>;
+  let mockSlotAllocator: ReturnType<typeof createMockSlotAllocator>;
+  let mockWorkflowLoader: ReturnType<typeof createMockWorkflowLoader>;
 
   beforeEach(() => {
-    runner = new WorkflowRunner(4200);
+    mockDb = createMockDb();
+    mockEventBus = createMockEventBus();
+    mockTmuxManager = createMockTmuxManager();
+    mockSlotAllocator = createMockSlotAllocator();
+    mockWorkflowLoader = createMockWorkflowLoader();
+
+    runner = new WorkflowRunner(4200, {
+      db: mockDb as never,
+      eventBus: mockEventBus,
+      logger: createMockLogger(),
+      tmuxManager: mockTmuxManager,
+      slotAllocator: mockSlotAllocator as never,
+      workflowLoader: mockWorkflowLoader as never,
+      contextBundler: createMockContextBundler(),
+      writeHooks: vi.fn(),
+      logCardEvent: vi.fn().mockResolvedValue(undefined),
+      streamTailer: createMockStreamTailer(),
+      execSync: createMockExecSync() as never,
+      existsSync: vi.fn().mockReturnValue(true) as never,
+      readFileSync: vi.fn().mockReturnValue("PASS\ndetails") as never,
+    });
     vi.clearAllMocks();
   });
 
   describe("initContext (via run)", () => {
     it("returns early when card not found", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+      setupSelectReturning(mockDb, []);
 
       await runner.run(999);
 
       // Should not emit any workflow events since card not found
-      expect(vi.mocked(eventBus.emit)).not.toHaveBeenCalledWith(
-        "workflow:completed",
-        expect.anything(),
-      );
+      expect(mockEventBus.emit).not.toHaveBeenCalledWith("workflow:completed", expect.anything());
     });
 
     it("marks failed when card has no repoId", async () => {
       const card = { id: 1, repoId: null, workflowId: "plan", title: "Test" };
-
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([card]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      setupSelectReturning(mockDb, [card]);
+      setupUpdate(mockDb);
 
       await runner.run(1);
 
       expect(mockDb.update).toHaveBeenCalled();
-      expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "failed",
       });
@@ -237,20 +192,12 @@ describe("WorkflowRunner", () => {
 
     it("marks failed when card has no workflowId", async () => {
       const card = { id: 1, repoId: 1, workflowId: null, title: "Test" };
-
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([card]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      setupSelectReturning(mockDb, [card]);
+      setupUpdate(mockDb);
 
       await runner.run(1);
 
-      expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "failed",
       });
@@ -273,16 +220,12 @@ describe("WorkflowRunner", () => {
         return chain;
       });
 
-      vi.mocked(workflowLoader.get).mockReturnValue(undefined as never);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      mockWorkflowLoader.get.mockReturnValue(undefined as never);
+      setupUpdate(mockDb);
 
       await runner.run(1);
 
-      expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "failed",
       });
@@ -306,17 +249,13 @@ describe("WorkflowRunner", () => {
         return chain;
       });
 
-      vi.mocked(workflowLoader.get).mockReturnValue(workflow as never);
-      vi.mocked(tmuxManager.isAvailable).mockReturnValue(false);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      mockWorkflowLoader.get.mockReturnValue(workflow as never);
+      mockTmuxManager.isAvailable.mockReturnValue(false);
+      setupUpdate(mockDb);
 
       await runner.run(1);
 
-      expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "failed",
       });
@@ -340,18 +279,14 @@ describe("WorkflowRunner", () => {
         return chain;
       });
 
-      vi.mocked(workflowLoader.get).mockReturnValue(workflow as never);
-      vi.mocked(tmuxManager.isAvailable).mockReturnValue(true);
-      vi.mocked(slotAllocator.claimSlot).mockResolvedValue(null);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      mockWorkflowLoader.get.mockReturnValue(workflow as never);
+      mockTmuxManager.isAvailable.mockReturnValue(true);
+      mockSlotAllocator.claimSlot.mockResolvedValue(null);
+      setupUpdate(mockDb);
 
       await runner.run(1);
 
-      expect(vi.mocked(eventBus.emit)).toHaveBeenCalledWith("card:status-changed", {
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "queued",
       });

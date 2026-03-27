@@ -1,21 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { execSync } from "node:child_process";
-// eslint-disable-next-line import/first
 import { TmuxManager } from "../../server/services/tmux-manager";
-
-const mockExecSync = vi.mocked(execSync);
+import { createMockExecSync, createMockLogger } from "../helpers/mock-deps";
 
 describe("TmuxManager", () => {
   let manager: TmuxManager;
+  let mockExecSync: ReturnType<typeof createMockExecSync>;
+  let mockLogger: ReturnType<typeof createMockLogger>;
 
   beforeEach(() => {
-    manager = new TmuxManager();
+    mockExecSync = createMockExecSync();
+    mockLogger = createMockLogger();
+    manager = new TmuxManager({ execSync: mockExecSync as never, logger: mockLogger });
     vi.clearAllMocks();
     vi.useFakeTimers();
   });
@@ -185,7 +180,7 @@ describe("TmuxManager", () => {
       // Advance past one interval (500ms)
       vi.advanceTimersByTime(500);
 
-      expect(mockExecSync).toHaveBeenCalledWith("tmux capture-pane -t card-10 -p -S -50", {
+      expect(mockExecSync).toHaveBeenCalledWith("tmux capture-pane -t card-10 -p -e -S -50", {
         encoding: "utf-8",
         timeout: 2000,
       });

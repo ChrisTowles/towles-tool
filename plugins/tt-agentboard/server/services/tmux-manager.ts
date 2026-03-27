@@ -1,19 +1,34 @@
-import { execSync } from "node:child_process";
+import { execSync as defaultExecSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { logger } from "../utils/logger";
+import { logger as defaultLogger } from "../utils/logger";
 
 interface SessionInfo {
   cardId: number;
   captureInterval?: ReturnType<typeof setInterval>;
 }
 
+export interface TmuxManagerDeps {
+  execSync: typeof defaultExecSync;
+  logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+}
+
 export class TmuxManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
+  private deps: TmuxManagerDeps;
+
+  constructor(deps: Partial<TmuxManagerDeps> = {}) {
+    super();
+    this.deps = {
+      execSync: defaultExecSync,
+      logger: defaultLogger,
+      ...deps,
+    };
+  }
 
   /** Check if tmux is available on the system */
   isAvailable(): boolean {
     try {
-      execSync("which tmux", { stdio: "ignore" });
+      this.deps.execSync("which tmux", { stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -25,23 +40,23 @@ export class TmuxManager extends EventEmitter {
     const sessionName = `card-${cardId}`;
 
     if (this.sessionExists(sessionName)) {
-      logger.warn(`tmux session ${sessionName} already exists, reusing`);
+      this.deps.logger.warn(`tmux session ${sessionName} already exists, reusing`);
       this.sessions.set(sessionName, { cardId });
       return { sessionName, created: false };
     }
 
-    execSync(`tmux new-session -d -s ${sessionName} -c "${cwd}"`, {
+    this.deps.execSync(`tmux new-session -d -s ${sessionName} -c "${cwd}"`, {
       stdio: "ignore",
     });
     this.sessions.set(sessionName, { cardId });
-    logger.info(`Created tmux session: ${sessionName} in ${cwd}`);
+    this.deps.logger.info(`Created tmux session: ${sessionName} in ${cwd}`);
     return { sessionName, created: true };
   }
 
   /** Send a command to a tmux session */
   sendCommand(sessionName: string, command: string): void {
     const escaped = command.replace(/'/g, "'\\''");
-    execSync(`tmux send-keys -t ${sessionName} '${escaped}' Enter`);
+    this.deps.execSync(`tmux send-keys -t ${sessionName} '${escaped}' Enter`);
   }
 
   /** Start capturing output from a tmux session via polling capture-pane */
@@ -53,11 +68,11 @@ export class TmuxManager extends EventEmitter {
 
     const interval = setInterval(() => {
       try {
-        const output = execSync(`tmux capture-pane -t ${sessionName} -p -e -S -50`, {
+        const output = this.deps.execSync(`tmux capture-pane -t ${sessionName} -p -e -S -50`, {
           encoding: "utf-8",
           timeout: 2000,
         });
-        outputCallback(output);
+        outputCallback(output as string);
       } catch {
         clearInterval(interval);
         const s = this.sessions.get(sessionName);
@@ -84,7 +99,7 @@ export class TmuxManager extends EventEmitter {
   /** Check if a tmux session exists */
   sessionExists(sessionName: string): boolean {
     try {
-      execSync(`tmux has-session -t ${sessionName}`, { stdio: "ignore" });
+      this.deps.execSync(`tmux has-session -t ${sessionName}`, { stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -96,23 +111,23 @@ export class TmuxManager extends EventEmitter {
     this.stopCapture(sessionName);
     let killed = false;
     try {
-      execSync(`tmux kill-session -t ${sessionName}`, { stdio: "ignore" });
+      this.deps.execSync(`tmux kill-session -t ${sessionName}`, { stdio: "ignore" });
       killed = true;
     } catch {
       /* session may already be dead */
     }
     this.sessions.delete(sessionName);
-    logger.info(`Killed tmux session: ${sessionName}`);
+    this.deps.logger.info(`Killed tmux session: ${sessionName}`);
     return killed;
   }
 
   /** List all agentboard tmux sessions (card-* prefix) */
   listSessions(): string[] {
     try {
-      const output = execSync('tmux list-sessions -F "#{session_name}"', {
+      const output = this.deps.execSync('tmux list-sessions -F "#{session_name}"', {
         encoding: "utf-8",
       });
-      return output
+      return (output as string)
         .trim()
         .split("\n")
         .filter((s) => s.startsWith("card-"));
