@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
-import { workflowRunner as defaultWorkflowRunner } from "./workflow-runner";
+import { workflowOrchestrator as defaultWorkflowOrchestrator } from "./workflow-orchestrator";
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
@@ -38,7 +38,7 @@ export interface AgentExecutorDeps {
     getSlotForCard: (cardId: number) => Promise<{ id: number; path: string } | null>;
   };
   workflowLoader: { get: (id: string) => unknown };
-  workflowRunner: { run: (cardId: number) => Promise<void> };
+  workflowOrchestrator: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
   streamTailer: {
@@ -69,7 +69,7 @@ export class AgentExecutor {
       tmuxManager: defaultTmuxManager,
       slotAllocator: defaultSlotAllocator,
       workflowLoader: defaultWorkflowLoader,
-      workflowRunner: defaultWorkflowRunner,
+      workflowOrchestrator: defaultWorkflowOrchestrator,
       writeHooks: defaultWriteHooks,
       cardService: defaultCardService,
       streamTailer: defaultStreamTailer,
@@ -110,7 +110,7 @@ export class AgentExecutor {
           "workflow_delegate",
           `workflow=${card.workflowId}`,
         );
-        await this.deps.workflowRunner.run(cardId);
+        await this.deps.workflowOrchestrator.run(cardId);
         return;
       }
       await this.deps.cardService.logEvent(

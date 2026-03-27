@@ -104,6 +104,20 @@ export function createMockWorkflowRunner() {
   };
 }
 
+/** Create a mock WorkflowOrchestrator */
+export function createMockWorkflowOrchestrator() {
+  return {
+    run: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/** Create a mock StepExecutor */
+export function createMockStepExecutor() {
+  return {
+    execute: vi.fn().mockResolvedValue({ passed: true, artifact: "PASS\ndetails" }),
+  };
+}
+
 /** Create a mock StreamTailer */
 export function createMockStreamTailer() {
   return {
