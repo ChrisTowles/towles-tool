@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { execSync } from "node:child_process";
 
 import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+import { createSessionReconnect } from "../../server/plugins/session-reconnect";
 
 // Track sessions we create so we can clean up
 const createdSessions: string[] = [];
@@ -159,59 +160,39 @@ describe("Session Reconnect Live (real tmux)", { timeout: 30_000 }, () => {
   });
 });
 
-// Mock dependencies for plugin tests
-const mockDb = createMockDb();
-const mockEventBus = createMockEventBus();
-const mockTmuxManager = {
-  isAvailable: vi.fn().mockReturnValue(true),
-  listSessions: vi.fn().mockReturnValue([]),
-  sessionExists: vi.fn().mockReturnValue(true),
-  startCapture: vi.fn(),
-  killSession: vi.fn(),
-};
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI; SQLite can't load in test
-vi.mock("../../server/db", () => ({ db: mockDb }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/utils/card-events", () => ({
-  logCardEvent: vi.fn().mockResolvedValue(undefined),
-}));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/utils/logger", () => ({ logger: createMockLogger() }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/services/tmux-manager", () => ({ tmuxManager: mockTmuxManager }));
-
-async function runPlugin() {
-  // eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin requires global defineNitroPlugin
-  vi.stubGlobal("defineNitroPlugin", async (fn: () => Promise<void>) => fn());
-  vi.resetModules();
-  vi.doMock("../../server/db", () => ({ db: mockDb }));
-  vi.doMock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
-  vi.doMock("../../server/utils/logger", () => ({
-    logger: createMockLogger(),
-  }));
-  vi.doMock("../../server/services/tmux-manager", () => ({ tmuxManager: mockTmuxManager }));
-  vi.doMock("../../server/utils/card-events", () => ({
-    logCardEvent: vi.fn().mockResolvedValue(undefined),
-  }));
-
-  await import("../../server/plugins/session-reconnect");
-}
-
 describe("Session Reconnect Plugin (mocked)", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+  let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let mockTmuxManager: {
+    isAvailable: ReturnType<typeof vi.fn>;
+    listSessions: ReturnType<typeof vi.fn>;
+    sessionExists: ReturnType<typeof vi.fn>;
+    startCapture: ReturnType<typeof vi.fn>;
+    killSession: ReturnType<typeof vi.fn>;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDb = createMockDb();
+    mockEventBus = createMockEventBus();
+    mockTmuxManager = {
+      isAvailable: vi.fn().mockReturnValue(true),
+      listSessions: vi.fn().mockReturnValue([]),
+      sessionExists: vi.fn().mockReturnValue(true),
+      startCapture: vi.fn(),
+      killSession: vi.fn(),
+    };
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+  function runPlugin() {
+    return createSessionReconnect({
+      db: mockDb as never,
+      tmuxManager: mockTmuxManager,
+      eventBus: mockEventBus as never,
+      logger: createMockLogger() as never,
+      logCardEvent: vi.fn().mockResolvedValue(undefined),
+    });
+  }
 
   it("resumes capture for running card and marks orphaned card failed", async () => {
     // Scenario: card-3 is running with a live session, card-50 is running with no session

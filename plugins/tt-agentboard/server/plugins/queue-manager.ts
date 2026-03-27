@@ -6,112 +6,118 @@ import { eventBus } from "../utils/event-bus";
 import { logger } from "../utils/logger";
 import { logCardEvent } from "../utils/card-events";
 
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_AGENTS) || 3;
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
-async function tryAutoStartNext(slot: { id: number; repoId: number | null }): Promise<boolean> {
-  // Check current running count across all repos
-  const runningCards = await db.select().from(cards).where(eq(cards.status, "running"));
-
-  if (runningCards.length >= MAX_CONCURRENT) {
-    logger.info(
-      `Queue: ${runningCards.length}/${MAX_CONCURRENT} agents running, skipping auto-start`,
-    );
-    return false;
-  }
-
-  // Find next queued card (any column — queued cards may be in "ready" column)
-  let queued = await db
-    .select()
-    .from(cards)
-    .where(and(eq(cards.repoId, slot.repoId), eq(cards.status, "queued")))
-    .orderBy(cards.position)
-    .limit(1);
-
-  // Fall back to idle cards in the "ready" column
-  if (queued.length === 0) {
-    queued = await db
-      .select()
-      .from(cards)
-      .where(
-        and(eq(cards.repoId, slot.repoId), eq(cards.column, "ready"), eq(cards.status, "idle")),
-      )
-      .orderBy(cards.position)
-      .limit(1);
-  }
-
-  if (queued.length === 0) {
-    logger.info(`Queue: no queued or ready cards for repo ${slot.repoId}`);
-    return false;
-  }
-
-  const nextCard = queued[0]!;
-  const isReadyCard = nextCard.status === "idle" && nextCard.column === "ready";
-  logger.info(
-    `Queue: auto-starting card ${nextCard.id} (${isReadyCard ? "ready/idle" : "queued"}) for repo ${slot.repoId}`,
-  );
-
-  // Pre-claim the released slot for this card to avoid race conditions
-  await db
-    .update(workspaceSlots)
-    .set({ status: "claimed", claimedByCardId: nextCard.id })
-    .where(eq(workspaceSlots.id, slot.id));
-
-  // Move card to in_progress
-  await db
-    .update(cards)
-    .set({ column: "in_progress", updatedAt: new Date() })
-    .where(eq(cards.id, nextCard.id));
-
-  eventBus.emit("card:moved", {
-    cardId: nextCard.id,
-    fromColumn: nextCard.column,
-    toColumn: "in_progress",
-  });
-
-  if (isReadyCard) {
-    await logCardEvent(
-      nextCard.id,
-      "auto_started",
-      `Auto-promoted from ready column (slot ${slot.id} became available)`,
-    );
-  }
-
-  agentExecutor.startExecution(nextCard.id).catch((err) => {
-    logger.error(`Queue: failed to start card ${nextCard.id}:`, err);
-    eventBus.emit("card:status-changed", { cardId: nextCard.id, status: "failed" });
-  });
-
-  return true;
+export interface QueueManagerDeps {
+  db: BetterSQLite3Database<Record<string, unknown>>;
+  eventBus: {
+    on: (event: string, handler: (...args: never[]) => void) => void;
+    emit: (event: string, data: unknown) => void;
+  };
+  logger: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+  agentExecutor: { startExecution: (cardId: number) => Promise<void> };
+  logCardEvent: (cardId: number, event: string, detail?: string) => Promise<void>;
+  maxConcurrent?: number;
 }
 
-export default defineNitroPlugin(() => {
-  eventBus.on("slot:released", async (data: { slotId: number }) => {
+export function createQueueManager(deps: QueueManagerDeps): void {
+  const MAX_CONCURRENT = deps.maxConcurrent ?? (Number(process.env.MAX_CONCURRENT_AGENTS) || 3);
+
+  async function tryAutoStartNext(slot: { id: number; repoId: number | null }): Promise<boolean> {
+    const runningCards = await deps.db.select().from(cards).where(eq(cards.status, "running"));
+
+    if (runningCards.length >= MAX_CONCURRENT) {
+      deps.logger.info(
+        `Queue: ${runningCards.length}/${MAX_CONCURRENT} agents running, skipping auto-start`,
+      );
+      return false;
+    }
+
+    let queued = await deps.db
+      .select()
+      .from(cards)
+      .where(and(eq(cards.repoId, slot.repoId), eq(cards.status, "queued")))
+      .orderBy(cards.position)
+      .limit(1);
+
+    if (queued.length === 0) {
+      queued = await deps.db
+        .select()
+        .from(cards)
+        .where(
+          and(eq(cards.repoId, slot.repoId), eq(cards.column, "ready"), eq(cards.status, "idle")),
+        )
+        .orderBy(cards.position)
+        .limit(1);
+    }
+
+    if (queued.length === 0) {
+      deps.logger.info(`Queue: no queued or ready cards for repo ${slot.repoId}`);
+      return false;
+    }
+
+    const nextCard = queued[0]!;
+    const isReadyCard = nextCard.status === "idle" && nextCard.column === "ready";
+    deps.logger.info(
+      `Queue: auto-starting card ${nextCard.id} (${isReadyCard ? "ready/idle" : "queued"}) for repo ${slot.repoId}`,
+    );
+
+    await deps.db
+      .update(workspaceSlots)
+      .set({ status: "claimed", claimedByCardId: nextCard.id })
+      .where(eq(workspaceSlots.id, slot.id));
+
+    await deps.db
+      .update(cards)
+      .set({ column: "in_progress", updatedAt: new Date() })
+      .where(eq(cards.id, nextCard.id));
+
+    deps.eventBus.emit("card:moved", {
+      cardId: nextCard.id,
+      fromColumn: nextCard.column,
+      toColumn: "in_progress",
+    });
+
+    if (isReadyCard) {
+      await deps.logCardEvent(
+        nextCard.id,
+        "auto_started",
+        `Auto-promoted from ready column (slot ${slot.id} became available)`,
+      );
+    }
+
+    deps.agentExecutor.startExecution(nextCard.id).catch((err) => {
+      deps.logger.error(`Queue: failed to start card ${nextCard.id}:`, err);
+      deps.eventBus.emit("card:status-changed", { cardId: nextCard.id, status: "failed" });
+    });
+
+    return true;
+  }
+
+  deps.eventBus.on("slot:released", async (data: { slotId: number }) => {
     try {
-      const [slot] = await db
+      const [slot] = await deps.db
         .select()
         .from(workspaceSlots)
         .where(eq(workspaceSlots.id, data.slotId));
       if (!slot) return;
       await tryAutoStartNext(slot);
     } catch (err) {
-      logger.error("Queue: error processing slot:released:", err);
+      deps.logger.error("Queue: error processing slot:released:", err);
     }
   });
 
-  // When a card completes or fails, check if ready cards can be auto-started
-  eventBus.on("card:status-changed", async (data: { cardId: number; status: string }) => {
+  deps.eventBus.on("card:status-changed", async (data: { cardId: number; status: string }) => {
     if (data.status !== "review_ready" && data.status !== "done" && data.status !== "failed") {
       return;
     }
 
     try {
-      // Check current running count
-      const runningCards = await db.select().from(cards).where(eq(cards.status, "running"));
+      const runningCards = await deps.db.select().from(cards).where(eq(cards.status, "running"));
 
       if (runningCards.length >= MAX_CONCURRENT) return;
 
-      // Find all available slots
-      const availableSlots = await db
+      const availableSlots = await deps.db
         .select()
         .from(workspaceSlots)
         .where(eq(workspaceSlots.status, "available"));
@@ -124,9 +130,13 @@ export default defineNitroPlugin(() => {
         if (didStart) started++;
       }
     } catch (err) {
-      logger.error("Queue: error processing card:status-changed for auto-start:", err);
+      deps.logger.error("Queue: error processing card:status-changed for auto-start:", err);
     }
   });
 
-  logger.info(`Queue manager active (max concurrent: ${MAX_CONCURRENT})`);
+  deps.logger.info(`Queue manager active (max concurrent: ${MAX_CONCURRENT})`);
+}
+
+export default defineNitroPlugin(() => {
+  createQueueManager({ db, eventBus, logger, agentExecutor, logCardEvent });
 });

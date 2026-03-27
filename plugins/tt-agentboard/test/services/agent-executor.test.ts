@@ -1,15 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Minimal mocks for modules that can't load in test environment (SQLite, glob)
-// eslint-disable-next-line jest/no-restricted-jest-methods
-vi.mock("../../server/db", () => ({ db: {} }));
-// eslint-disable-next-line jest/no-restricted-jest-methods
-vi.mock("glob", () => ({ glob: () => Promise.resolve([]) }));
-// eslint-disable-next-line jest/no-restricted-jest-methods
-vi.mock("../../server/utils/card-events", () => ({ logCardEvent: () => Promise.resolve() }));
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
 import { AgentExecutor } from "../../server/services/agent-executor";
-// eslint-disable-next-line import/first
 import {
   createMockDb,
   createMockEventBus,
@@ -24,7 +15,6 @@ import {
   setupUpdate,
   setupInsert,
 } from "../helpers/mock-deps";
-// eslint-disable-next-line import/first
 import type { MockDb } from "../helpers/mock-deps";
 
 describe("AgentExecutor", () => {

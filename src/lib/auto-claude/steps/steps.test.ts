@@ -9,30 +9,44 @@ import { initConfig } from "../config";
 import { ARTIFACTS } from "../prompt-templates/index";
 import {
   buildTestContext,
-  createSpawnClaudeMock,
+  createMockClaudeProcess,
   createTestRepoWithRemote,
   errorClaudeJson,
   successClaudeJson,
 } from "../test-helpers";
 import type { MockClaudeImpl, TestRepo } from "../test-helpers";
 import type { IssueContext } from "../utils";
+import type { SpawnClaudeFn } from "../spawn-claude";
 
 consola.level = -999;
 
-let mockClaudeImpl: MockClaudeImpl = null;
-// eslint-disable-next-line jest/no-restricted-jest-methods -- spawnClaude is 3 layers deep (steps -> utils -> claude-cli -> spawn-claude); DI impractical
-vi.mock("../spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
-
 // ── Shared setup/teardown for all step tests ──
 
-function setupStepTest(): { originalCwd: string; repo: TestRepo; ctx: IssueContext } {
+function setupStepTest(): {
+  originalCwd: string;
+  repo: TestRepo;
+  ctx: IssueContext;
+  spawnFn: SpawnClaudeFn;
+  mockClaudeImpl: { current: MockClaudeImpl };
+} {
   const originalCwd = process.cwd();
   const repo = createTestRepoWithRemote();
   process.chdir(repo.dir);
   const ctx = buildTestContext(repo.dir);
   mkdirSync(ctx.issueDir, { recursive: true });
-  mockClaudeImpl = null;
-  return { originalCwd, repo, ctx };
+
+  const mockClaudeImpl = { current: null as MockClaudeImpl };
+
+  const spawnFn = vi.fn((args: string[]) => {
+    const impl = mockClaudeImpl.current;
+    if (impl) {
+      const { stdout, exitCode } = impl(args);
+      return createMockClaudeProcess(stdout, exitCode);
+    }
+    throw new Error("Unexpected spawnClaude call -- set mockClaudeImpl.current");
+  }) as SpawnClaudeFn;
+
+  return { originalCwd, repo, ctx, spawnFn, mockClaudeImpl };
 }
 
 function teardownStepTest(originalCwd: string, repo: TestRepo): void {
@@ -46,9 +60,11 @@ describe("runStepWithArtifact", () => {
   let originalCwd: string;
   let repo: TestRepo;
   let ctx: IssueContext;
+  let spawnFn: SpawnClaudeFn;
+  let mockClaudeImpl: { current: MockClaudeImpl };
 
   beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
+    ({ originalCwd, repo, ctx, spawnFn, mockClaudeImpl } = setupStepTest());
     await initConfig({ repo: "test/repo", mainBranch: "main" });
   });
 
@@ -64,13 +80,14 @@ describe("runStepWithArtifact", () => {
       ctx,
       artifactPath,
       templateName: "01_plan.prompt.md",
+      spawnFn,
     });
 
     expect(result).toBe(true);
   });
 
   it("returns false when Claude returns is_error", async () => {
-    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl.current = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "missing-artifact.md");
@@ -80,13 +97,14 @@ describe("runStepWithArtifact", () => {
       ctx,
       artifactPath,
       templateName: "01_plan.prompt.md",
+      spawnFn,
     });
 
     expect(result).toBe(false);
   });
 
   it("returns false when artifact not produced after Claude run", async () => {
-    mockClaudeImpl = () => ({ stdout: successClaudeJson(), exitCode: 0 });
+    mockClaudeImpl.current = () => ({ stdout: successClaudeJson(), exitCode: 0 });
 
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "never-created.md");
@@ -96,6 +114,7 @@ describe("runStepWithArtifact", () => {
       ctx,
       artifactPath,
       templateName: "01_plan.prompt.md",
+      spawnFn,
     });
 
     expect(result).toBe(false);
@@ -105,7 +124,7 @@ describe("runStepWithArtifact", () => {
     const { runStepWithArtifact } = await import("../utils");
     const artifactPath = join(ctx.issueDir, "plan.md");
 
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       writeFileSync(artifactPath, "# Plan\n\nDetailed plan content here.");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
@@ -115,6 +134,7 @@ describe("runStepWithArtifact", () => {
       ctx,
       artifactPath,
       templateName: "01_plan.prompt.md",
+      spawnFn,
     });
 
     expect(result).toBe(true);
@@ -127,9 +147,11 @@ describe("stepPlan", () => {
   let originalCwd: string;
   let repo: TestRepo;
   let ctx: IssueContext;
+  let spawnFn: SpawnClaudeFn;
+  let mockClaudeImpl: { current: MockClaudeImpl };
 
   beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
+    ({ originalCwd, repo, ctx, spawnFn, mockClaudeImpl } = setupStepTest());
     await initConfig({ repo: "test/repo", mainBranch: "main" });
   });
 
@@ -140,7 +162,7 @@ describe("stepPlan", () => {
 
     writeFileSync(join(ctx.issueDir, ARTIFACTS.plan), "# Existing plan");
 
-    const result = await stepPlan(ctx);
+    const result = await stepPlan(ctx, spawnFn);
     expect(result).toBe(true);
   });
 
@@ -148,12 +170,12 @@ describe("stepPlan", () => {
     const { stepPlan } = await import("./simple-steps");
     const planPath = join(ctx.issueDir, ARTIFACTS.plan);
 
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       writeFileSync(planPath, "# Plan\n\nDetailed plan.");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    const result = await stepPlan(ctx);
+    const result = await stepPlan(ctx, spawnFn);
     expect(result).toBe(true);
 
     // Verify we ended up on the branch (ensureBranch was called)
@@ -166,9 +188,9 @@ describe("stepPlan", () => {
   it("returns false when Claude fails", async () => {
     const { stepPlan } = await import("./simple-steps");
 
-    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl.current = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
-    const result = await stepPlan(ctx);
+    const result = await stepPlan(ctx, spawnFn);
     expect(result).toBe(false);
   });
 });
@@ -179,9 +201,11 @@ describe("stepSimplify", () => {
   let originalCwd: string;
   let repo: TestRepo;
   let ctx: IssueContext;
+  let spawnFn: SpawnClaudeFn;
+  let mockClaudeImpl: { current: MockClaudeImpl };
 
   beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
+    ({ originalCwd, repo, ctx, spawnFn, mockClaudeImpl } = setupStepTest());
     await initConfig({ repo: "test/repo", mainBranch: "main" });
 
     // stepSimplify doesn't switch branches, but we need to be on one
@@ -195,7 +219,7 @@ describe("stepSimplify", () => {
 
     writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified");
 
-    const result = await stepSimplify(ctx);
+    const result = await stepSimplify(ctx, spawnFn);
     expect(result).toBe(true);
   });
 
@@ -203,21 +227,21 @@ describe("stepSimplify", () => {
     const { stepSimplify } = await import("./simple-steps");
     const artifactPath = join(ctx.issueDir, ARTIFACTS.simplifySummary);
 
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       writeFileSync(artifactPath, "# Simplify Summary\n\nCode simplified.");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    const result = await stepSimplify(ctx);
+    const result = await stepSimplify(ctx, spawnFn);
     expect(result).toBe(true);
   });
 
   it("returns false when Claude fails", async () => {
     const { stepSimplify } = await import("./simple-steps");
 
-    mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
+    mockClaudeImpl.current = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
-    const result = await stepSimplify(ctx);
+    const result = await stepSimplify(ctx, spawnFn);
     expect(result).toBe(false);
   });
 });
@@ -228,9 +252,11 @@ describe("stepImplement", () => {
   let originalCwd: string;
   let repo: TestRepo;
   let ctx: IssueContext;
+  let spawnFn: SpawnClaudeFn;
+  let mockClaudeImpl: { current: MockClaudeImpl };
 
   beforeEach(async () => {
-    ({ originalCwd, repo, ctx } = setupStepTest());
+    ({ originalCwd, repo, ctx, spawnFn, mockClaudeImpl } = setupStepTest());
     await initConfig({
       repo: "test/repo",
       mainBranch: "main",
@@ -248,7 +274,7 @@ describe("stepImplement", () => {
 
     writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done");
 
-    const result = await stepImplement(ctx);
+    const result = await stepImplement(ctx, spawnFn);
     expect(result).toBe(true);
   });
 
@@ -256,12 +282,12 @@ describe("stepImplement", () => {
     const { stepImplement } = await import("./implement");
 
     let callCount = 0;
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       callCount++;
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    const result = await stepImplement(ctx);
+    const result = await stepImplement(ctx, spawnFn);
     expect(result).toBe(false);
     expect(callCount).toBe(3);
   });
@@ -273,12 +299,12 @@ describe("stepImplement", () => {
     writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "# Review\n\nFix the tests.");
 
     const completedPath = join(ctx.issueDir, ARTIFACTS.completedSummary);
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       writeFileSync(completedPath, "# Done");
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    const result = await stepImplement(ctx);
+    const result = await stepImplement(ctx, spawnFn);
     expect(result).toBe(true);
   });
 
@@ -288,7 +314,7 @@ describe("stepImplement", () => {
     let callCount = 0;
     const completedPath = join(ctx.issueDir, ARTIFACTS.completedSummary);
 
-    mockClaudeImpl = () => {
+    mockClaudeImpl.current = () => {
       callCount++;
       if (callCount === 2) {
         writeFileSync(completedPath, "# Implementation Complete\n\nAll tasks done.");
@@ -296,7 +322,7 @@ describe("stepImplement", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    const result = await stepImplement(ctx);
+    const result = await stepImplement(ctx, spawnFn);
     expect(result).toBe(true);
     expect(callCount).toBe(2);
   });

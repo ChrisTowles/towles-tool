@@ -9,52 +9,26 @@ import { initConfig } from "./config";
 import { ARTIFACTS } from "./prompt-templates/index";
 import {
   buildTestContext,
-  createSpawnClaudeMock,
+  createMockClaudeProcess,
   createTestRepoWithRemote,
   errorClaudeJson,
   successClaudeJson,
 } from "./test-helpers";
 import type { MockClaudeImpl, TestRepo } from "./test-helpers";
 import type { IssueContext } from "./utils";
+import type { SpawnClaudeFn } from "./spawn-claude";
+import type { ExecSafeFn } from "./labels";
 
 consola.level = -999;
-
-let mockClaudeImpl: MockClaudeImpl = null;
-// eslint-disable-next-line jest/no-restricted-jest-methods -- spawnClaude is 4 layers deep (pipeline -> steps -> utils -> claude-cli -> spawn-claude); DI impractical
-vi.mock("./spawn-claude", () => createSpawnClaudeMock(() => mockClaudeImpl));
-
-// Track gh calls for label assertions
-let ghCalls: string[][] = [];
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- tinyexec is used transitively by label helpers via execSafe; DI impractical at this depth
-vi.mock("tinyexec", async (importOriginal) => {
-  const original = await importOriginal<typeof import("tinyexec")>();
-  return {
-    ...original,
-    x: vi.fn(
-      async (
-        cmd: string,
-        args: string[],
-        opts?: Record<string, unknown>,
-      ): Promise<{ stdout: string; exitCode: number }> => {
-        if (cmd === "gh") {
-          ghCalls.push(args);
-          // Return empty success for label/issue/pr commands
-          return { stdout: "[]", exitCode: 0 };
-        }
-        return original.x(cmd, args, opts as never) as unknown as Promise<{
-          stdout: string;
-          exitCode: number;
-        }>;
-      },
-    ),
-  };
-});
 
 describe("runPipeline", () => {
   let originalCwd: string;
   let repo: TestRepo;
   let ctx: IssueContext;
+  let mockClaudeImpl: MockClaudeImpl;
+  let ghCalls: string[][];
+  let mockSpawnFn: SpawnClaudeFn;
+  let mockExec: ExecSafeFn;
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -68,6 +42,24 @@ describe("runPipeline", () => {
     ctx = buildTestContext(repo.dir);
     mockClaudeImpl = null;
     ghCalls = [];
+
+    mockSpawnFn = vi.fn((args: string[]) => {
+      if (mockClaudeImpl) {
+        const { stdout, exitCode } = mockClaudeImpl(args);
+        return createMockClaudeProcess(stdout, exitCode);
+      }
+      throw new Error("Unexpected spawnClaude call -- set mockClaudeImpl");
+    }) as SpawnClaudeFn;
+
+    mockExec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "gh") {
+        ghCalls.push(args);
+        return { stdout: "[]", ok: true };
+      }
+      // Pass through non-gh commands to real exec
+      const { execSafe } = await import("../../utils/git/exec");
+      return execSafe(cmd, args);
+    }) as ExecSafeFn;
   });
 
   afterEach(() => {
@@ -80,7 +72,7 @@ describe("runPipeline", () => {
 
     mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     const ramblingsPath = join(ctx.issueDir, ARTIFACTS.initialRamblings);
     expect(existsSync(ramblingsPath)).toBe(true);
@@ -99,7 +91,7 @@ describe("runPipeline", () => {
 
     mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     const content = readFileSync(ramblingsPath, "utf-8");
     expect(content).toBe("# Existing ramblings");
@@ -118,7 +110,7 @@ describe("runPipeline", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx, "plan");
+    await runPipeline(ctx, "plan", { spawnFn: mockSpawnFn, exec: mockExec });
 
     expect(claudeCallCount).toBe(1);
   });
@@ -128,7 +120,7 @@ describe("runPipeline", () => {
 
     mockClaudeImpl = () => ({ stdout: errorClaudeJson(), exitCode: 0 });
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     const currentBranch = execSync("git branch --show-current", {
       cwd: repo.dir,
@@ -162,7 +154,7 @@ describe("runPipeline", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     expect(claudeCallCount).toBe(4);
 
@@ -211,7 +203,7 @@ describe("runPipeline", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     // 1 plan + 3 steps * 2 attempts = 7
     expect(claudeCallCount).toBe(7);
@@ -247,7 +239,7 @@ describe("runPipeline", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx);
+    await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     // 1 plan + 3 steps * 3 attempts (maxReviewRetries=2 → 3 total) = 10
     expect(claudeCallCount).toBe(10);
@@ -282,7 +274,7 @@ describe("runPipeline", () => {
       return { stdout: successClaudeJson(), exitCode: 0 };
     };
 
-    await runPipeline(ctx, "implement");
+    await runPipeline(ctx, "implement", { spawnFn: mockSpawnFn, exec: mockExec });
 
     expect(claudeCallCount).toBe(2);
   });

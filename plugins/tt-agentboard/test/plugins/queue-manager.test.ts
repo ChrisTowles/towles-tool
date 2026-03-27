@@ -1,53 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
-
-// We test the queue manager's event handler directly by capturing
-// the callback passed to eventBus.on("slot:released", ...).
-
-const mockEventBus = createMockEventBus();
-const mockDb = createMockDb();
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI; SQLite can't load in test
-vi.mock("../../server/db", () => ({ db: mockDb }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/utils/event-bus", () => ({ eventBus: mockEventBus }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/utils/logger", () => ({ logger: createMockLogger() }));
-
-// eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin has no constructor for DI
-vi.mock("../../server/services/agent-executor", () => ({
-  agentExecutor: {
-    startExecution: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-// eslint-disable-next-line import/first -- vi.mock must come before imports (vitest hoisting)
-import { agentExecutor } from "../../server/services/agent-executor";
+import { createQueueManager } from "../../server/plugins/queue-manager";
 
 describe("Queue Manager Plugin", () => {
   let slotReleasedHandler: (data: { slotId: number }) => Promise<void>;
+  let mockDb: ReturnType<typeof createMockDb>;
+  let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let mockAgentExecutor: { startExecution: ReturnType<typeof vi.fn> };
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
 
-    // Stub defineNitroPlugin globally so the plugin module can call it
-    // eslint-disable-next-line jest/no-restricted-jest-methods -- Nitro plugin requires global defineNitroPlugin
-    vi.stubGlobal("defineNitroPlugin", (fn: () => void) => fn());
+    mockDb = createMockDb();
+    mockEventBus = createMockEventBus();
+    mockAgentExecutor = { startExecution: vi.fn().mockResolvedValue(undefined) };
 
-    // Reset module cache so the plugin re-registers
-    vi.resetModules();
-
-    // Re-apply mocks after resetModules (vi.mock is hoisted, but resetModules clears cache)
-    // The vi.mock calls above are hoisted and still apply
-
-    await import("../../server/plugins/queue-manager");
+    createQueueManager({
+      db: mockDb as never,
+      eventBus: mockEventBus as never,
+      logger: createMockLogger() as never,
+      agentExecutor: mockAgentExecutor,
+      logCardEvent: vi.fn().mockResolvedValue(undefined),
+    });
 
     // Extract the registered handler
     const slotReleasedCall = mockEventBus.on.mock.calls.find(
@@ -92,7 +67,7 @@ describe("Queue Manager Plugin", () => {
     await slotReleasedHandler({ slotId: 1 });
 
     expect(mockDb.update).toHaveBeenCalled();
-    expect(vi.mocked(agentExecutor.startExecution)).toHaveBeenCalledWith(10);
+    expect(mockAgentExecutor.startExecution).toHaveBeenCalledWith(10);
   });
 
   it("skips when slot not found", async () => {
@@ -103,7 +78,7 @@ describe("Queue Manager Plugin", () => {
 
     await slotReleasedHandler({ slotId: 999 });
 
-    expect(vi.mocked(agentExecutor.startExecution)).not.toHaveBeenCalled();
+    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
   });
 
   it("skips when MAX_CONCURRENT reached", async () => {
@@ -125,7 +100,7 @@ describe("Queue Manager Plugin", () => {
 
     await slotReleasedHandler({ slotId: 1 });
 
-    expect(vi.mocked(agentExecutor.startExecution)).not.toHaveBeenCalled();
+    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
   });
 
   it("does nothing when no queued cards for repo", async () => {
@@ -151,6 +126,6 @@ describe("Queue Manager Plugin", () => {
 
     await slotReleasedHandler({ slotId: 1 });
 
-    expect(vi.mocked(agentExecutor.startExecution)).not.toHaveBeenCalled();
+    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
   });
 });

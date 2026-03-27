@@ -17,6 +17,14 @@ export interface ClaudeResult {
   num_turns: number;
 }
 
+export interface ClaudeLogger {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+  success: (...args: unknown[]) => void;
+  log: (...args: unknown[]) => void;
+}
+
 const PROCESS_RETRIES = 3;
 const PROCESS_RETRY_DELAY_MS = 5_000;
 
@@ -24,9 +32,11 @@ export async function runClaude(opts: {
   promptFile: string;
   maxTurns?: number;
   spawnFn?: SpawnClaudeFn;
+  logger?: ClaudeLogger;
 }): Promise<ClaudeResult> {
   const cfg = getConfig();
   const spawnFn = opts.spawnFn ?? defaultSpawnClaude;
+  const log = opts.logger ?? consola;
   const args = [
     "-p",
     "--output-format",
@@ -40,23 +50,21 @@ export async function runClaude(opts: {
     `@${opts.promptFile}`,
   ];
 
-  consola.info(
-    `${pc.dim("▶")} Calling Claude${opts.maxTurns ? ` (max ${opts.maxTurns} turns)` : ""}…`,
-  );
+  log.info(`${pc.dim("▶")} Calling Claude${opts.maxTurns ? ` (max ${opts.maxTurns} turns)` : ""}…`);
 
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
     try {
-      const result = await runClaudeStreaming(args, spawnFn);
-      consola.success(`Done — ${result.num_turns} turns, $${result.total_cost_usd.toFixed(4)}`);
+      const result = await runClaudeStreaming(args, spawnFn, log);
+      log.success(`Done — ${result.num_turns} turns, $${result.total_cost_usd.toFixed(4)}`);
       if (result.result) {
-        consola.log(result.result);
+        log.log(result.result);
       }
       return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < PROCESS_RETRIES) {
-        consola.warn(
+        log.warn(
           `Claude process failed (attempt ${attempt}/${PROCESS_RETRIES}), retrying in ${PROCESS_RETRY_DELAY_MS / 1000}s…`,
         );
         await sleep(PROCESS_RETRY_DELAY_MS);
@@ -66,7 +74,11 @@ export async function runClaude(opts: {
   throw lastError ?? new Error("runClaude failed after all retries");
 }
 
-function runClaudeStreaming(args: string[], spawnFn: SpawnClaudeFn): Promise<ClaudeResult> {
+function runClaudeStreaming(
+  args: string[],
+  spawnFn: SpawnClaudeFn,
+  log: ClaudeLogger,
+): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
     const proc = spawnFn(args);
     let capturedResult: ClaudeResult | null = null;
@@ -83,7 +95,7 @@ function runClaudeStreaming(args: string[], spawnFn: SpawnClaudeFn): Promise<Cla
       if (!line.trim()) return;
       try {
         const event = JSON.parse(line) as Record<string, unknown>;
-        handleStreamEvent(event, (turns) => {
+        handleStreamEvent(event, log, (turns) => {
           turnCount = turns;
         });
 
@@ -149,14 +161,18 @@ function toolDetail(block: Record<string, unknown>): string {
   return "";
 }
 
-function logToolUse(block: Record<string, unknown>): void {
+function logToolUse(block: Record<string, unknown>, log: ClaudeLogger): void {
   const name = block.name;
   if (typeof name === "string") {
-    consola.info(`  ${pc.dim("\u21B3")} ${name}${toolDetail(block)}`);
+    log.info(`  ${pc.dim("\u21B3")} ${name}${toolDetail(block)}`);
   }
 }
 
-function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: number) => void): void {
+function handleStreamEvent(
+  event: Record<string, unknown>,
+  log: ClaudeLogger,
+  onTurn: (count: number) => void,
+): void {
   // Only handle stream_event — assistant turn events duplicate the same tools
   if (event.type === "stream_event" && typeof event.event === "object" && event.event !== null) {
     const inner = event.event as Record<string, unknown>;
@@ -168,13 +184,13 @@ function handleStreamEvent(event: Record<string, unknown>, onTurn: (count: numbe
     ) {
       const block = inner.content_block as Record<string, unknown>;
       if (block.type === "tool_use") {
-        logToolUse(block);
+        logToolUse(block, log);
       } else if (block.type === "thinking") {
         const thinkingText =
           typeof block.thinking === "string" && block.thinking.length > 0
             ? pc.dim(` ${truncate(block.thinking.split("\n")[0].trim(), 60)}`)
             : "";
-        consola.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking")}${thinkingText}`);
+        log.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking")}${thinkingText}`);
       }
     }
   }
