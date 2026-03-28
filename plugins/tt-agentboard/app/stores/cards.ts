@@ -47,6 +47,7 @@ export const useCardStore = defineStore("cards", () => {
       backlog: [],
       ready: [],
       in_progress: [],
+      simplify_review: [],
       review: [],
       done: [],
     };

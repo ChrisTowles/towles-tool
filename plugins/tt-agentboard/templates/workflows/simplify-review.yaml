@@ -1,0 +1,15 @@
+name: simplify-review
+description: Run simplify and review steps on the current branch (skips plan and implement)
+steps:
+  - id: simplify
+    prompt_template: .agentboard/prompts/simplify.md
+    artifact: .auto-claude/issue-{issue}/simplify-summary.md
+  - id: review
+    prompt_template: .agentboard/prompts/review.md
+    artifact: .auto-claude/issue-{issue}/review.md
+    pass_condition: "first_line_equals:PASS"
+    on_fail: "goto:simplify"
+    max_retries: 2
+post_steps:
+  create_pr: false
+artifact_dir: ".auto-claude/issue-{issue}"
