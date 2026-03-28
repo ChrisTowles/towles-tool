@@ -3,18 +3,21 @@ import { workspaceSlots } from "../../shared/db/schema";
 import { eq, and } from "drizzle-orm";
 import { eventBus } from "../../shared/event-bus";
 import { logger } from "../../utils/logger";
+import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
+import type { SlotPreparer } from "./slot-preparer";
 
 export interface SlotAllocatorDeps {
   db: typeof db;
   eventBus: typeof eventBus;
   logger: typeof logger;
+  slotPreparer: SlotPreparer;
 }
 
 export class SlotAllocator {
   private deps: SlotAllocatorDeps;
 
   constructor(deps: Partial<SlotAllocatorDeps> = {}) {
-    this.deps = { db, eventBus, logger, ...deps };
+    this.deps = { db, eventBus, logger, slotPreparer: defaultSlotPreparer, ...deps };
   }
 
   /** Find and claim an available slot for a repo */
@@ -52,8 +55,16 @@ export class SlotAllocator {
     } as typeof workspaceSlots.$inferSelect;
   }
 
-  /** Release a slot when work is done */
+  /** Release a slot when work is done, then reset it for the next use */
   async releaseSlot(slotId: number): Promise<void> {
+    // Look up the slot path before releasing
+    const slotRows = await this.deps.db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.id, slotId))
+      .limit(1);
+    const slotPath = slotRows[0]?.path;
+
     await this.deps.db
       .update(workspaceSlots)
       .set({
@@ -64,6 +75,13 @@ export class SlotAllocator {
 
     this.deps.eventBus.emit("slot:released", { slotId });
     this.deps.logger.info(`Slot ${slotId} released`);
+
+    // Reset slot in the background: sync to main + install deps
+    if (slotPath) {
+      this.deps.slotPreparer.reset(slotPath).catch((err) => {
+        this.deps.logger.error(`Slot ${slotId} reset failed:`, err);
+      });
+    }
   }
 
   /** Get the slot currently claimed by a card */
