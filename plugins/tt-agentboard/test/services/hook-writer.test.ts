@@ -56,8 +56,33 @@ describe("writeHooks()", () => {
       expect(hook.command).toContain("stop-hook.sh");
       expect(hook.command).toContain("AGENTBOARD_CARD_ID=7");
       expect(hook.command).toContain("AGENTBOARD_PORT=4200");
+      expect(hook.command).toContain("AGENTBOARD_STOP_ENDPOINT=step-complete");
       expect(hook.timeout).toBe(120);
     }
+  });
+
+  it("passes stopEndpoint through to command env var", () => {
+    const slotPath = makeTmpDir();
+
+    writeHooks(slotPath, 1, 4200, "complete");
+
+    const settings = readSettings(slotPath) as {
+      hooks: Record<
+        string,
+        Array<{ hooks: Array<{ command: string }> }>
+      >;
+    };
+    expect(settings.hooks.Stop[0]!.hooks[0]!.command).toContain(
+      "AGENTBOARD_STOP_ENDPOINT=complete",
+    );
+  });
+
+  it("copies stop-hook.sh into slot .claude dir", () => {
+    const slotPath = makeTmpDir();
+
+    writeHooks(slotPath, 1, 4200, "complete");
+
+    expect(existsSync(resolve(slotPath, ".claude", "stop-hook.sh"))).toBe(true);
   });
 
   it("merges with existing settings.local.json", () => {

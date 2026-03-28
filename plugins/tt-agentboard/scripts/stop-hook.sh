@@ -8,14 +8,15 @@ set -euo pipefail
 INPUT=$(cat)
 CARD_ID="${AGENTBOARD_CARD_ID:?AGENTBOARD_CARD_ID not set}"
 PORT="${AGENTBOARD_PORT:-4200}"
+STOP_ENDPOINT="${AGENTBOARD_STOP_ENDPOINT:-complete}"
 
-# Determine endpoint from hook event name
-EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | cut -d'"' -f4)
+# Determine endpoint from hook event name (grep may fail if key is missing — default to STOP_ENDPOINT)
+EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | cut -d'"' -f4 || true)
 case "$EVENT" in
-  Stop)         ENDPOINT="complete" ;;
+  Stop)         ENDPOINT="$STOP_ENDPOINT" ;;
   StopFailure)  ENDPOINT="failure" ;;
   Notification) ENDPOINT="notification" ;;
-  *)            ENDPOINT="complete" ;;
+  *)            ENDPOINT="$STOP_ENDPOINT" ;;
 esac
 
 URL="http://localhost:${PORT}/api/agents/${CARD_ID}/${ENDPOINT}"
