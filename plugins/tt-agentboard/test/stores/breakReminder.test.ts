@@ -27,8 +27,12 @@ class FakeGain {
 Object.defineProperty(globalThis, "AudioContext", {
   value: class {
     currentTime = 0;
-    createOscillator() { return new FakeOscillator(); }
-    createGain() { return new FakeGain(); }
+    createOscillator() {
+      return new FakeOscillator();
+    }
+    createGain() {
+      return new FakeGain();
+    }
     destination = {};
   },
   writable: true,

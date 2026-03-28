@@ -86,7 +86,12 @@ export const useBreakReminderStore = defineStore("breakReminder", () => {
   const lastBreakTimestamp = ref<number | null>(null);
   const lastInputTimestamp = ref<number>(Date.now());
   const currentSnoozeExpiry = ref<number | null>(null);
-  const todayStats = ref<DailyStats>({ date: todayDateString(), completed: 0, skipped: 0, snoozed: 0 });
+  const todayStats = ref<DailyStats>({
+    date: todayDateString(),
+    completed: 0,
+    skipped: 0,
+    snoozed: 0,
+  });
   const breakQueue = ref<BreakType[]>([]);
   const focusModeUntil = ref<number | null>(null);
   const isPaused = ref(false);
@@ -327,7 +332,9 @@ export const useBreakReminderStore = defineStore("breakReminder", () => {
     }
 
     const intervalMs = config.value.intervalMinutes * 60_000;
-    const timeSinceBreak = lastBreakTimestamp.value ? Date.now() - lastBreakTimestamp.value : Infinity;
+    const timeSinceBreak = lastBreakTimestamp.value
+      ? Date.now() - lastBreakTimestamp.value
+      : Infinity;
 
     // Not enough time has passed
     if (timeSinceBreak < intervalMs) return;
