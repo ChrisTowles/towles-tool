@@ -16,6 +16,7 @@ const emit = defineEmits<{
   cardSelected: [cardId: number];
   toggleDictation: [];
   newCardClosed: [];
+  showHelp: [];
 }>();
 
 const showNewCardForm = ref(false);
@@ -96,6 +97,13 @@ useIntervalFn(() => store.fetchCards(), 60_000);
       </ClientOnly>
 
       <div class="flex items-center gap-2">
+        <button
+          class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:bg-zinc-700 hover:text-zinc-200"
+          title="Keyboard shortcuts (?)"
+          @click="emit('showHelp')"
+        >
+          <span class="font-mono">?</span>
+        </button>
         <NuxtLink
           to="/workspaces"
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-700"

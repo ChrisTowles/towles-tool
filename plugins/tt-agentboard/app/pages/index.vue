@@ -2,6 +2,7 @@
 import type { Card } from "~/stores/cards";
 
 const breakStore = useBreakReminderStore();
+const store = useCardStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -12,6 +13,7 @@ const selectedCardId = ref<number | null>(
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
 const showNewCardForm = ref(false);
+const showShortcutsHelp = ref(false);
 const newCardPrefill = ref("");
 
 // Voice / Dictation
@@ -227,16 +229,58 @@ onUnmounted(() => {
   breakStore.stop();
 });
 
+// All visible cards in column order for j/k navigation
+const allVisibleCards = computed(() => {
+  const { columnCards } = storeToRefs(store);
+  const cols = columnCards.value;
+  const result: number[] = [];
+  for (const col of ["backlog", "ready", "in_progress", "review", "done"] as const) {
+    for (const card of cols[col]) {
+      result.push(card.id);
+    }
+  }
+  return result;
+});
+
+function selectNextCard() {
+  const ids = allVisibleCards.value;
+  if (ids.length === 0) return;
+  if (!selectedCardId.value) {
+    selectCard(ids[0]);
+    return;
+  }
+  const idx = ids.indexOf(selectedCardId.value);
+  if (idx < ids.length - 1) selectCard(ids[idx + 1]);
+}
+
+function selectPrevCard() {
+  const ids = allVisibleCards.value;
+  if (ids.length === 0) return;
+  if (!selectedCardId.value) {
+    selectCard(ids[ids.length - 1]);
+    return;
+  }
+  const idx = ids.indexOf(selectedCardId.value);
+  if (idx > 0) selectCard(ids[idx - 1]);
+}
+
 // Keyboard shortcuts
 useKeyboardShortcuts({
+  toggleHelp: () => {
+    showShortcutsHelp.value = !showShortcutsHelp.value;
+  },
   newCard: () => {
     showNewCardForm.value = true;
   },
   refresh: () => {
-    // Trigger board refresh via a custom event or direct fetch
+    refreshBoard();
   },
   closePanel: () => {
-    if (selectedCardId.value) closePanel();
+    if (showShortcutsHelp.value) {
+      showShortcutsHelp.value = false;
+    } else if (selectedCardId.value) {
+      closePanel();
+    }
   },
   dictate: () => {
     handleToggleDictation();
@@ -246,6 +290,30 @@ useKeyboardShortcuts({
   },
   retry: () => {
     if (selectedCard.value?.status === "failed") retryCard();
+  },
+  startAgent: () => {
+    if (
+      selectedCard.value &&
+      (selectedCard.value.status === "idle" || selectedCard.value.status === "queued")
+    ) {
+      startCard();
+    }
+  },
+  openFullPage: () => {
+    if (selectedCardId.value) {
+      navigateTo(`/cards/${selectedCardId.value}`);
+    }
+  },
+  deleteCard: () => {
+    if (selectedCardId.value) deleteCard();
+  },
+  nextCard: selectNextCard,
+  prevCard: selectPrevCard,
+  switchTab: (tab) => {
+    if (selectedCardId.value) {
+      activeTab.value = tab;
+      if (tab === "events") fetchCardEvents();
+    }
   },
 });
 </script>
@@ -266,6 +334,7 @@ useKeyboardShortcuts({
           :refresh-trigger="boardRefreshKey"
           @card-selected="selectCard"
           @toggle-dictation="handleToggleDictation"
+          @show-help="showShortcutsHelp = true"
           @new-card-closed="
             showNewCardForm = false;
             newCardPrefill = '';
@@ -475,6 +544,9 @@ useKeyboardShortcuts({
         </div>
       </Transition>
     </div>
+
+    <!-- Keyboard shortcuts help modal -->
+    <SharedKeyboardShortcutsHelp v-if="showShortcutsHelp" @close="showShortcutsHelp = false" />
 
     <!-- Dictation Bar — hidden when NewCardForm is open (it has its own VoiceInput) -->
     <ClientOnly>
