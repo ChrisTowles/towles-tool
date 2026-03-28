@@ -2,19 +2,33 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "../../utils/logger";
 
-function httpHook(url: string) {
-  return [{ matcher: "", hooks: [{ type: "http", url }] }];
+function commandHook(cardId: number, port: number, scriptPath: string) {
+  return [
+    {
+      matcher: "",
+      hooks: [
+        {
+          type: "command",
+          command: `AGENTBOARD_CARD_ID=${cardId} AGENTBOARD_PORT=${port} ${scriptPath}`,
+          timeout: 120,
+        },
+      ],
+    },
+  ];
 }
 
 /**
- * Write .claude/settings.local.json with hooks that POST to AgentBoard
- * callback endpoints for lifecycle events: Stop, Notification.
+ * Write .claude/settings.local.json with command hooks that POST to AgentBoard
+ * callback endpoints with exponential backoff retry.
+ *
+ * Uses command hooks (not HTTP hooks) so that transient server restarts
+ * don't silently lose the completion signal.
  */
 export function writeHooks(
   slotPath: string,
   cardId: number,
   port: number,
-  stopEndpoint: string,
+  _stopEndpoint: string,
 ): void {
   const claudeDir = resolve(slotPath, ".claude");
   mkdirSync(claudeDir, { recursive: true });
@@ -30,15 +44,16 @@ export function writeHooks(
     }
   }
 
-  const baseUrl = `http://localhost:${port}/api/agents/${cardId}`;
+  // Script reads hook_event_name from stdin to determine the endpoint
+  const scriptPath = resolve(__dirname, "../../../scripts/stop-hook.sh");
 
   settings.hooks = {
     ...(settings.hooks as Record<string, unknown> | undefined),
-    Stop: httpHook(`${baseUrl}/${stopEndpoint}`),
-    StopFailure: httpHook(`${baseUrl}/failure`),
-    Notification: httpHook(`${baseUrl}/notification`),
+    Stop: commandHook(cardId, port, scriptPath),
+    StopFailure: commandHook(cardId, port, scriptPath),
+    Notification: commandHook(cardId, port, scriptPath),
   };
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-  logger.info(`Wrote lifecycle hooks to ${settingsPath} → ${baseUrl}/${stopEndpoint}`);
+  logger.info(`Wrote lifecycle hooks to ${settingsPath} (command, cardId=${cardId})`);
 }
