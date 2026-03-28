@@ -60,11 +60,7 @@ const categoryOrder = ["general", "navigation", "card", "tabs"];
 
           <!-- Shortcut groups -->
           <div class="max-h-[60vh] overflow-y-auto px-6 py-4">
-            <div
-              v-for="cat in categoryOrder"
-              :key="cat"
-              class="mb-5 last:mb-0"
-            >
+            <div v-for="cat in categoryOrder" :key="cat" class="mb-5 last:mb-0">
               <h3 class="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                 {{ SHORTCUT_CATEGORIES[cat] }}
               </h3>
@@ -89,9 +85,20 @@ const categoryOrder = ["general", "navigation", "card", "tabs"];
           <div
             class="flex items-center justify-between border-t border-zinc-800 px-6 py-3 text-[11px] text-zinc-600"
           >
-            <span>Press <kbd class="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-400">?</kbd> to toggle</span>
+            <span
+              >Press
+              <kbd
+                class="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-400"
+                >?</kbd
+              >
+              to toggle</span
+            >
             <span>
-              <kbd class="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-400">Esc</kbd> to close
+              <kbd
+                class="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-400"
+                >Esc</kbd
+              >
+              to close
             </span>
           </div>
         </div>
