@@ -36,7 +36,7 @@ function sendResponse() {
       <span class="rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-mono uppercase text-zinc-400">
         {{ COLUMN_LABELS[card.column] }}
       </span>
-      <span v-if="!compact" class="text-[10px] font-mono text-zinc-500">
+      <span class="text-[10px] font-mono text-zinc-500">
         {{ EXECUTION_MODE_LABELS[card.executionMode] ?? card.executionMode }}
       </span>
     </div>
@@ -49,12 +49,12 @@ function sendResponse() {
       {{ card.description }}
     </p>
 
-    <div v-if="card.repo && !compact" class="mb-4">
+    <div v-if="card.repo" class="mb-4">
       <SharedRepoBadge :name="card.repo.name" :org="card.repo.org" :repo-id="card.repoId" />
     </div>
 
     <div
-      v-if="(card.githubIssueNumber || card.githubPrNumber || card.branch) && !compact"
+      v-if="card.githubIssueNumber || card.githubPrNumber || card.branch"
       class="mb-4 space-y-1.5"
     >
       <!-- Branch -->
@@ -108,7 +108,6 @@ function sendResponse() {
 
     <!-- Timestamps + branch mode -->
     <div
-      v-if="!compact"
       class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500"
     >
       <span>Created {{ new Date(card.createdAt).toLocaleString() }}</span>

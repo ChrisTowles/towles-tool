@@ -29,6 +29,7 @@ export class StreamTailer {
     let watcher: FSWatcher | null = null;
     let closed = false;
     let reading = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const readNewLines = async () => {
       if (closed || reading) return;
@@ -69,27 +70,40 @@ export class StreamTailer {
       reading = false;
     };
 
-    // Initial read from start of file
-    await readNewLines();
-
-    // Watch for file changes
-    try {
-      watcher = fsWatch(logFilePath, () => {
-        readNewLines();
-      });
-
-      watcher.on("error", (err) => {
+    const startWatching = () => {
+      try {
+        statSync(logFilePath);
+      } catch {
+        // File doesn't exist yet — retry until it appears or we're closed
         if (!closed) {
-          this.deps.logger.warn(`Stream tailer watcher error for card ${cardId}:`, err);
+          retryTimer = setTimeout(startWatching, 500);
         }
-      });
-    } catch (err) {
-      this.deps.logger.warn(`Could not watch ${logFilePath} for card ${cardId}:`, err);
-    }
+        return;
+      }
+
+      readNewLines();
+
+      try {
+        watcher = fsWatch(logFilePath, () => {
+          readNewLines();
+        });
+
+        watcher.on("error", (err) => {
+          if (!closed) {
+            this.deps.logger.warn(`Stream tailer watcher error for card ${cardId}:`, err);
+          }
+        });
+      } catch (err) {
+        this.deps.logger.warn(`Could not watch ${logFilePath} for card ${cardId}:`, err);
+      }
+    };
+
+    startWatching();
 
     const handle: TailHandle = {
       close: () => {
         closed = true;
+        if (retryTimer) clearTimeout(retryTimer);
         watcher?.close();
       },
     };

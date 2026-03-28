@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "~~/server/shared/db";
-import { workspaceSlots } from "~~/server/shared/db/schema";
+import { workspaceSlots, workflowRuns } from "~~/server/shared/db/schema";
 import { getCardId } from "~~/server/utils/params";
 
 interface DiffLine {
@@ -68,13 +68,45 @@ function parseDiff(raw: string): DiffFile[] {
 export default defineEventHandler(async (event) => {
   const cardId = getCardId(event);
 
-  const [slot] = await db
+  // Try claimed slot first (active execution), then fall back to workflow run record (completed)
+  let slotPath: string | null = null;
+  let branch: string | null = null;
+
+  const [claimedSlot] = await db
     .select()
     .from(workspaceSlots)
     .where(eq(workspaceSlots.claimedByCardId, cardId))
     .limit(1);
 
-  if (!slot) {
+  if (claimedSlot) {
+    slotPath = claimedSlot.path;
+    // Still look up branch from workflow run for active cards
+    const [run] = await db
+      .select({ branch: workflowRuns.branch })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, cardId))
+      .limit(1);
+    branch = run?.branch ?? null;
+  } else {
+    // Slot was released after completion — look up via workflow run
+    const [run] = await db
+      .select({ slotId: workflowRuns.slotId, branch: workflowRuns.branch })
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, cardId))
+      .limit(1);
+
+    if (run?.slotId) {
+      const [slot] = await db
+        .select()
+        .from(workspaceSlots)
+        .where(eq(workspaceSlots.id, run.slotId))
+        .limit(1);
+      slotPath = slot?.path ?? null;
+      branch = run.branch;
+    }
+  }
+
+  if (!slotPath) {
     return { hasDiff: false, files: [], raw: "" };
   }
 
@@ -82,25 +114,21 @@ export default defineEventHandler(async (event) => {
 
   let raw = "";
   try {
-    // Try uncommitted changes first
-    raw = execSync("git diff HEAD", {
-      cwd: slot.path,
-      encoding: "utf-8",
-      timeout: 5000,
-    });
-
-    // If no uncommitted changes, try branch diff against origin/main
-    if (!raw.trim()) {
-      try {
-        raw = execSync("git diff origin/main...HEAD", {
-          cwd: slot.path,
-          encoding: "utf-8",
-          timeout: 5000,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-      } catch {
-        // origin/main may not exist — ignore
-      }
+    if (branch) {
+      // Diff the card's branch against main — safe even if slot is reused by another card
+      raw = execSync(`git diff origin/main...${branch}`, {
+        cwd: slotPath,
+        encoding: "utf-8",
+        timeout: 5000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } else {
+      // No branch recorded — fall back to uncommitted changes (active execution)
+      raw = execSync("git diff HEAD", {
+        cwd: slotPath,
+        encoding: "utf-8",
+        timeout: 5000,
+      });
     }
   } catch {
     return { hasDiff: false, files: [], raw: "" };

@@ -72,7 +72,7 @@ watch(isListening, async (listening) => {
   setContext("idle");
 });
 
-const activeTab = ref<"terminal" | "diff" | "events">("terminal");
+const activeTab = ref<"terminal" | "diff" | "events" | "activity">("activity");
 const cardEvents = ref<{ id: number; event: string; detail: string | null; timestamp: string }[]>(
   [],
 );
@@ -95,7 +95,7 @@ function selectCard(cardId: number) {
   selectedCardId.value = cardId;
   selectedCard.value = null;
   selectedCardLoading.value = true;
-  activeTab.value = "terminal";
+  activeTab.value = "activity";
   fetchSelectedCard().then(() => {
     selectedCardLoading.value = false;
     fetchCardEvents();
@@ -360,6 +360,17 @@ useKeyboardShortcuts({
             <button
               class="px-4 py-2 text-xs font-medium transition-colors"
               :class="
+                activeTab === 'activity'
+                  ? 'border-b-2 border-emerald-500 text-zinc-200'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              "
+              @click="activeTab = 'activity'"
+            >
+              Activity
+            </button>
+            <button
+              class="px-4 py-2 text-xs font-medium transition-colors"
+              :class="
                 activeTab === 'events'
                   ? 'border-b-2 border-amber-500 text-zinc-200'
                   : 'text-zinc-500 hover:text-zinc-300'
@@ -376,7 +387,8 @@ useKeyboardShortcuts({
           <!-- Tab content -->
           <div v-if="selectedCard" class="flex-1 overflow-hidden p-3">
             <ClientOnly>
-              <CardTerminalPanel v-if="activeTab === 'terminal'" :card-id="selectedCardId!" />
+              <CardActivityPanel v-if="activeTab === 'activity'" :card-id="selectedCardId!" />
+              <CardTerminalPanel v-else-if="activeTab === 'terminal'" :card-id="selectedCardId!" />
               <CardDiffViewer v-else-if="activeTab === 'diff'" :card-id="selectedCardId!" />
             </ClientOnly>
 

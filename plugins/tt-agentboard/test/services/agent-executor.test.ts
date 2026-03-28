@@ -9,7 +9,6 @@ import {
   createMockSlotAllocator,
   createMockWorkflowLoader,
   createMockWorkflowOrchestrator,
-  createMockStreamTailer,
   createMockExecSync,
   createMockCardService,
   setupSelectReturning,
@@ -49,7 +48,6 @@ describe("AgentExecutor", () => {
       workflowOrchestrator: mockWorkflowOrchestrator,
       writeHooks: mockWriteHooks as never,
       cardService: mockCardService as never,
-      streamTailer: createMockStreamTailer(),
       execSync: createMockExecSync() as never,
       existsSync: vi.fn().mockReturnValue(false) as never,
     });
@@ -176,11 +174,11 @@ describe("AgentExecutor", () => {
       expect(mockTmuxManager.createSession).toHaveBeenCalledWith(1, "/workspace/slot-1");
       expect(mockTmuxManager.startCapture).toHaveBeenCalled();
       const cmd = mockTmuxManager.sendCommand.mock.calls[0]![1] as string;
-      expect(cmd).toContain("claude");
-      expect(cmd).toContain("-p");
+      expect(cmd).toContain("tt auto-claude");
+      expect(cmd).toContain("Implement feature");
     });
 
-    it("uses --dangerously-skip-permissions for headless mode", async () => {
+    it("uses tt auto-claude for headless mode", async () => {
       const card = {
         id: 1,
         repoId: 1,
@@ -202,10 +200,10 @@ describe("AgentExecutor", () => {
       await executor.startExecution(1);
 
       const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toContain("--dangerously-skip-permissions");
+      expect(sendCommandCall[1]).toContain("tt auto-claude");
     });
 
-    it("omits --dangerously-skip-permissions for interactive mode", async () => {
+    it("uses raw claude for interactive mode", async () => {
       const card = {
         id: 1,
         repoId: 1,
@@ -227,7 +225,8 @@ describe("AgentExecutor", () => {
       await executor.startExecution(1);
 
       const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).not.toContain("--dangerously-skip-permissions");
+      expect(sendCommandCall[1]).toContain("claude");
+      expect(sendCommandCall[1]).not.toContain("tt auto-claude");
     });
 
     it("uses card title as prompt when description is null", async () => {
