@@ -172,8 +172,16 @@ onUnmounted(() => {
           class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
           @click="openVSCode"
         >
-          <svg class="h-3 w-3 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M71.6 0L34.8 33.4 14.2 18.2 0 24v52l14.2 5.8L34.8 66.6 71.6 100l28.4-12V12L71.6 0zM34.8 62.2L14.2 50l20.6-12.2v24.4zM71.6 76L50 50l21.6-26v52z" fill="currentColor" />
+          <svg
+            class="h-3 w-3 shrink-0"
+            viewBox="0 0 100 100"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M71.6 0L34.8 33.4 14.2 18.2 0 24v52l14.2 5.8L34.8 66.6 71.6 100l28.4-12V12L71.6 0zM34.8 62.2L14.2 50l20.6-12.2v24.4zM71.6 76L50 50l21.6-26v52z"
+              fill="currentColor"
+            />
           </svg>
           Open in VS Code
         </button>
