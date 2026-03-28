@@ -70,6 +70,42 @@ async function handleClearDone() {
   await store.fetchCards();
 }
 
+// --- Filter / search ---
+const filterQuery = ref("");
+
+const filteredColumnCards = computed(() => {
+  const q = filterQuery.value.trim().toLowerCase();
+  if (!q) return columnCards.value;
+
+  const result: Record<Column, Card[]> = {
+    backlog: [],
+    ready: [],
+    in_progress: [],
+    review: [],
+    done: [],
+  };
+
+  for (const col of COLUMNS) {
+    result[col] = columnCards.value[col].filter((card) => {
+      const haystack = [
+        `#${card.id}`,
+        card.title,
+        card.description,
+        card.status,
+        card.branch,
+        card.repo?.name,
+        card.repo?.org,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  return result;
+});
+
 // Stale-data fallback — WS handles real-time, this catches missed events
 useIntervalFn(() => store.fetchCards(), 60_000);
 </script>
@@ -105,7 +141,10 @@ useIntervalFn(() => store.fetchCards(), 60_000);
             placeholder="Filter cards..."
             class="w-48 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 pl-8 text-xs text-zinc-200 placeholder-zinc-500 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           />
-          <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">⌕</span>
+          <span
+            class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-xs"
+            >⌕</span
+          >
           <button
             v-if="filterQuery"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs"
