@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Card } from "~/stores/cards";
 
+const breakStore = useBreakReminderStore();
+
 const selectedCardId = ref<number | null>(null);
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
@@ -190,6 +192,32 @@ onUnmounted(() => {
   if (detailInterval.value) clearInterval(detailInterval.value);
 });
 
+// Break reminders — start timer and track input
+onMounted(() => {
+  breakStore.start();
+
+  const handleInput = () => breakStore.recordInput();
+  document.addEventListener("mousemove", handleInput, { passive: true });
+  document.addEventListener("keydown", handleInput, { passive: true });
+
+  // Throttle: only update once per 10 seconds
+  let lastRecorded = 0;
+  const throttledInput = () => {
+    const now = Date.now();
+    if (now - lastRecorded > 10_000) {
+      lastRecorded = now;
+      breakStore.recordInput();
+    }
+  };
+  document.removeEventListener("mousemove", handleInput);
+  document.removeEventListener("keydown", handleInput);
+  document.addEventListener("mousemove", throttledInput, { passive: true });
+  document.addEventListener("keydown", throttledInput, { passive: true });
+});
+onUnmounted(() => {
+  breakStore.stop();
+});
+
 // Keyboard shortcuts
 useKeyboardShortcuts({
   newCard: () => {
@@ -215,6 +243,12 @@ useKeyboardShortcuts({
 
 <template>
   <div class="flex h-screen flex-col">
+    <!-- Break reminder overlays -->
+    <ClientOnly>
+      <BreaksBreakBanner />
+      <BreaksBreakToast />
+    </ClientOnly>
+
     <!-- Split: Board + Detail Panel -->
     <div class="flex flex-1 overflow-hidden">
       <!-- Board (full width when no card selected, left half when selected) -->
