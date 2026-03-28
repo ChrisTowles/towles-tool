@@ -1,5 +1,5 @@
 ---
-description: Implement a feature or fix using strict red-green-refactor TDD
+description: Implement a feature or fix using strict red-green-refactor TDD. Use when asked to "write tests first", "use TDD", "red-green-refactor", or "test-driven".
 allowed-tools: Read(*), Edit(*), Write(*), Glob(*), Grep(*), Bash(*), AskUserQuestion(*)
 ---
 
