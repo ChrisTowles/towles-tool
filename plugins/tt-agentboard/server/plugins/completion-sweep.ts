@@ -5,7 +5,8 @@ import { tmuxManager as defaultTmuxManager } from "../domains/infra/tmux-manager
 import { logger as defaultLogger } from "../utils/logger";
 
 const SWEEP_INTERVAL_MS = 30_000;
-const AGENT_COMMANDS = new Set(["node", "tt", "claude", "tsx"]);
+// Processes that indicate the agent or its setup is still active — don't sweep these
+const AGENT_COMMANDS = new Set(["node", "tt", "claude", "tsx", "pnpm", "npm", "bun", "git"]);
 
 export interface CompletionSweepDeps {
   tmuxManager: {
