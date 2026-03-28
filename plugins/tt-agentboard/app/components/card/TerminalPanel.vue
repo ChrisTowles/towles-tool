@@ -67,6 +67,7 @@ async function fetchTerminal() {
       if (terminal.value) {
         terminal.value.reset();
         terminal.value.write(data.output);
+        terminal.value.scrollToBottom();
       }
     }
   } catch {

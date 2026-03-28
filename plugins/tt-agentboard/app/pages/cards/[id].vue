@@ -7,7 +7,7 @@ const cardId = computed(() => Number(route.params.id));
 const { data: card, refresh } = await useFetch<Card>(`/api/cards/${cardId.value}`);
 
 const router = useRouter();
-const activeTab = ref<"terminal" | "diff" | "activity">("activity");
+const activeTab = ref<"terminal" | "diff" | "activity">("terminal");
 
 // Switch tab based on card status
 watch(
