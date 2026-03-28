@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { COLUMNS } from "~/utils/constants";
 import type { Column } from "~/utils/constants";
+import type { Card } from "~/stores/cards";
 
 const store = useCardStore();
 const { cards, loading, error, columnCards, totalCards, activeCards } = storeToRefs(store);
@@ -97,6 +98,23 @@ useIntervalFn(() => store.fetchCards(), 60_000);
       </ClientOnly>
 
       <div class="flex items-center gap-2">
+        <div class="relative">
+          <input
+            v-model="filterQuery"
+            type="text"
+            placeholder="Filter cards..."
+            class="w-48 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 pl-8 text-xs text-zinc-200 placeholder-zinc-500 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          />
+          <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">⌕</span>
+          <button
+            v-if="filterQuery"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs"
+            @click="filterQuery = ''"
+            title="Clear filter"
+          >
+            ✕
+          </button>
+        </div>
         <button
           class="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:bg-zinc-700 hover:text-zinc-200"
           title="Keyboard shortcuts (?)"
@@ -243,7 +261,7 @@ useIntervalFn(() => store.fetchCards(), 60_000);
         v-for="col in COLUMNS"
         :key="col"
         :column="col"
-        :cards="columnCards[col]"
+        :cards="filteredColumnCards[col]"
         class="shrink-0"
         @card-moved="handleCardMoved"
         @card-selected="(id: number) => emit('cardSelected', id)"
