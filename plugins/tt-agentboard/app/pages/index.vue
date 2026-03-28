@@ -53,6 +53,9 @@ function handleToggleDictation() {
 // When transcript is finalized and user stops dictation, route it
 watch(isListening, async (listening) => {
   if (listening) return;
+  // When NewCardForm is open, VoiceInput handles transcription directly
+  if (showNewCardForm.value) return;
+
   const text = transcript.value.trim();
   if (!text) return;
 
@@ -61,8 +64,6 @@ watch(isListening, async (listening) => {
       method: "POST",
       body: { response: text },
     });
-  } else if (currentContext.value === "new-card") {
-    // Form is already open, prefill handled by watcher below
   } else {
     // idle: open new card form with transcript as title
     newCardPrefill.value = text;
@@ -437,9 +438,10 @@ useKeyboardShortcuts({
       </Transition>
     </div>
 
-    <!-- Dictation Bar -->
+    <!-- Dictation Bar — hidden when NewCardForm is open (it has its own VoiceInput) -->
     <ClientOnly>
       <SharedDictationBar
+        v-if="!showNewCardForm"
         :is-listening="isListening"
         :interim-transcript="interimTranscript"
         :transcript="transcript"
