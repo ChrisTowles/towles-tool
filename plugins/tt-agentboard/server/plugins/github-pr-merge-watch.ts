@@ -51,11 +51,7 @@ async function checkMergedPrs(): Promise<void> {
     })
     .from(cards)
     .where(
-      and(
-        eq(cards.column, "review"),
-        isNotNull(cards.githubPrNumber),
-        isNotNull(cards.repoId),
-      ),
+      and(eq(cards.column, "review"), isNotNull(cards.githubPrNumber), isNotNull(cards.repoId)),
     );
 
   if (reviewCards.length === 0) return;
@@ -65,11 +61,7 @@ async function checkMergedPrs(): Promise<void> {
   for (const card of reviewCards) {
     if (!card.githubPrNumber || !card.repoId) continue;
 
-    const repo = await db
-      .select()
-      .from(repositories)
-      .where(eq(repositories.id, card.repoId))
-      .get();
+    const repo = await db.select().from(repositories).where(eq(repositories.id, card.repoId)).get();
 
     if (!repo?.org) continue;
 
@@ -77,9 +69,7 @@ async function checkMergedPrs(): Promise<void> {
       const merged = await github.isPrMerged(repo.org, repo.name, card.githubPrNumber);
       if (!merged) continue;
 
-      logger.info(
-        `PR #${card.githubPrNumber} merged — moving card ${card.id} to done`,
-      );
+      logger.info(`PR #${card.githubPrNumber} merged — moving card ${card.id} to done`);
 
       // Clean up resources (same as move.post.ts done block)
       const sessionName = `card-${card.id}`;
@@ -116,9 +106,7 @@ async function checkMergedPrs(): Promise<void> {
         `PR #${card.githubPrNumber} was merged — auto-moved to done`,
       );
     } catch (error) {
-      logger.debug(
-        `Failed to check PR #${card.githubPrNumber} for card ${card.id}: ${error}`,
-      );
+      logger.debug(`Failed to check PR #${card.githubPrNumber} for card ${card.id}: ${error}`);
     }
   }
 }

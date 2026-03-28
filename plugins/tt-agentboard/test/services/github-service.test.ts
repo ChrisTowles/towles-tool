@@ -143,9 +143,7 @@ describe("GitHubService", () => {
     });
 
     it("returns false when PR is still open", async () => {
-      mockExecSync.mockReturnValueOnce(
-        JSON.stringify({ state: "OPEN", mergedAt: null }),
-      );
+      mockExecSync.mockReturnValueOnce(JSON.stringify({ state: "OPEN", mergedAt: null }));
 
       const result = await service.isPrMerged("org", "repo", 42);
 
