@@ -25,8 +25,25 @@ const submitting = ref(false);
 const submitError = ref("");
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
-const { createCard } = useCardStore();
+const cardStore = useCardStore();
+const { createCard } = cardStore;
 const { isListening, transcript, interimTranscript, isSupported, toggle } = useVoice();
+
+// Top 5 most-used repos based on existing cards
+const quickSelectRepos = computed(() => {
+  if (!repos.value?.length) return [];
+  const counts = new Map<number, number>();
+  for (const card of cardStore.cards) {
+    if (card.repoId != null) {
+      counts.set(card.repoId, (counts.get(card.repoId) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id]) => repos.value!.find((r) => r.id === id))
+    .filter((r): r is Repo => r != null);
+});
 
 // Snapshot prompt text before dictation starts so we can append to it
 const promptBeforeDictation = ref("");
@@ -142,6 +159,23 @@ async function submit() {
           >
             Repository
           </label>
+          <!-- Quick select: top 5 most-used repos -->
+          <div v-if="quickSelectRepos.length" class="mb-2 flex flex-wrap gap-1.5">
+            <button
+              v-for="repo in quickSelectRepos"
+              :key="repo.id"
+              type="button"
+              class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
+              :class="
+                repoId === repo.id
+                  ? 'border-blue-500 bg-blue-500/15 text-blue-400'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
+              "
+              @click="repoId = repoId === repo.id ? undefined : repo.id"
+            >
+              {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name }}
+            </button>
+          </div>
           <select
             v-model="repoId"
             class="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
