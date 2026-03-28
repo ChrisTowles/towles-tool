@@ -11,11 +11,10 @@ import { workflowOrchestrator as defaultWorkflowOrchestrator } from "./workflow-
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
-import { buildStreamingCommand, shellEscape } from "./workflow-helpers";
-import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
+import { shellEscape } from "./workflow-helpers";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
-import type { Logger, EventBus, StreamTailer } from "./types";
+import type { Logger, EventBus } from "./types";
 
 export interface AgentExecutorDeps {
   db: typeof defaultDb;
@@ -38,7 +37,6 @@ export interface AgentExecutorDeps {
   workflowOrchestrator: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
-  streamTailer: StreamTailer;
   execSync: typeof defaultExecSync;
   existsSync: typeof defaultExistsSync;
 }
@@ -66,7 +64,6 @@ export class AgentExecutor {
       workflowOrchestrator: defaultWorkflowOrchestrator,
       writeHooks: defaultWriteHooks,
       cardService: defaultCardService,
-      streamTailer: defaultStreamTailer,
       execSync: defaultExecSync,
       existsSync: defaultExistsSync,
       ...deps,
@@ -306,32 +303,20 @@ export class AgentExecutor {
       })
       .returning();
 
-    // TODO: add --model flag from card config
-    // TODO: add --permission-mode instead of binary headless/interactive
-    // TODO: add --verbose flag option
-    // TODO: consider --append-system-prompt for card-level custom instructions
     const prompt = card.description ?? card.title;
-    const systemPrompt =
-      "You are an autonomous agent. Complete the task fully without asking clarifying questions. " +
-      "Make your best judgment and implement the solution. Do not ask the user for confirmation — just do the work. " +
-      "IMPORTANT: When you are done, you MUST commit your changes with git add and git commit. Do not leave uncommitted files.";
 
-    const args: string[] = [];
+    // Build the tmux command based on execution mode
+    let command: string;
     if (card.executionMode !== "interactive") {
-      args.push("--dangerously-skip-permissions");
+      // Headless: use `tt auto-claude` for structured terminal output
+      command = `tt auto-claude ${shellEscape(prompt)}`;
+    } else {
+      // Interactive: launch claude directly — user interacts via tmux attach
+      command = `claude`;
     }
-    args.push("--max-turns", "50");
-    args.push("--append-system-prompt", shellEscape(systemPrompt));
-    args.push("-p", shellEscape(prompt));
-
-    const logFilePath = join(slot.path, ".claude-stream.ndjson");
-    const command = buildStreamingCommand(args, logFilePath);
 
     this.deps.tmuxManager.sendCommand(sessionName, command);
     await this.deps.cardService.logEvent(cardId, "agent_command_sent", `session=${sessionName}`);
-
-    // Start tailing the stream-json output for structured activity events
-    await this.deps.streamTailer.startTailing(cardId, logFilePath);
 
     this.deps.tmuxManager.startCapture(sessionName, (output) => {
       this.deps.eventBus.emit("agent:output", { cardId, content: output });

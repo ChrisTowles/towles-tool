@@ -14,7 +14,7 @@ export default defineNuxtConfig({
   },
   devServer: {
     host: process.env.AGENTBOARD_LAN === "1" ? "0.0.0.0" : "127.0.0.1",
-    port: 4200,
+    port: Number(process.env.AGENTBOARD_PORT) || 4200,
   },
   app: {
     head: {

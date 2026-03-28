@@ -1,7 +1,8 @@
-import { rmSync } from "node:fs";
+import { rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-import { Flags } from "@oclif/core";
+import { Args, Flags } from "@oclif/core";
 import consola from "consola";
 
 import { BaseCommand } from "../base.js";
@@ -14,6 +15,7 @@ import {
   initConfig,
   log,
   logBanner,
+  runClaude,
   runPipeline,
   sleep,
 } from "../../lib/auto-claude/index.js";
@@ -24,7 +26,18 @@ export default class AutoClaude extends BaseCommand {
 
   static override description = "Automated issue-to-PR pipeline using Claude Code";
 
+  static override args = {
+    prompt: Args.string({
+      description: "Run a single prompt (skips issue pipeline)",
+      required: false,
+    }),
+  };
+
   static override examples = [
+    {
+      description: "Run a single prompt",
+      command: '<%= config.bin %> auto-claude "Fix the login bug in auth.ts"',
+    },
     {
       description: "Process a specific issue",
       command: "<%= config.bin %> auto-claude --issue 42",
@@ -49,6 +62,10 @@ export default class AutoClaude extends BaseCommand {
 
   static override flags = {
     ...BaseCommand.baseFlags,
+    "max-turns": Flags.integer({
+      description: "Maximum conversation turns for prompt mode (default: 10)",
+      default: 10,
+    }),
     issue: Flags.integer({
       char: "i",
       description: "Process a specific issue number",
@@ -88,8 +105,29 @@ export default class AutoClaude extends BaseCommand {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(AutoClaude);
+    const { args, flags } = await this.parse(AutoClaude);
 
+    // Prompt mode: run a single prompt with structured output, skip issue pipeline
+    if (args.prompt) {
+      await initConfig({ model: flags.model });
+
+      const promptDir = join(tmpdir(), "tt-auto-claude");
+      mkdirSync(promptDir, { recursive: true });
+      const promptFile = join(promptDir, `prompt-${Date.now()}.md`);
+      writeFileSync(promptFile, args.prompt);
+
+      const result = await runClaude({
+        promptFile,
+        maxTurns: flags["max-turns"],
+      });
+
+      if (result.is_error) {
+        this.error("Claude reported an error", { exit: 1 });
+      }
+      return;
+    }
+
+    // Issue pipeline mode
     const cfg = await initConfig({
       triggerLabel: flags.label,
       mainBranch: flags["main-branch"],

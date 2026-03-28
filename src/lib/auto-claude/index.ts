@@ -1,4 +1,5 @@
 export { type AutoClaudeConfig, AutoClaudeConfigSchema, getConfig, initConfig } from "./config.js";
+export { type ClaudeResult, runClaude } from "./claude-cli.js";
 export { STEP_NAMES, runPipeline } from "./pipeline.js";
 export type { StepName } from "./prompt-templates/index.js";
 export { git } from "../../utils/git/exec.js";

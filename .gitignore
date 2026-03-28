@@ -22,3 +22,4 @@ tsconfig.tsbuildinfo
 # auto-claude artifacts
 .auto-claude/
 .auto-claude/**/prompt-*.md
+.claude-stream.ndjson
