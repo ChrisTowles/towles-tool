@@ -26,6 +26,26 @@ const submitError = ref("");
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 const { createCard } = useCardStore();
+const { isListening, transcript, interimTranscript, isSupported, toggle } = useVoice();
+
+// Snapshot prompt text before dictation starts so we can append to it
+const promptBeforeDictation = ref("");
+
+function toggleVoice() {
+  if (!isListening.value) {
+    // Capture current prompt BEFORE toggle clears transcript
+    promptBeforeDictation.value = prompt.value;
+  }
+  toggle();
+}
+
+// Sync transcript + interim into prompt textarea in real-time
+watch([transcript, interimTranscript], ([final, interim]) => {
+  if (!isListening.value && !final) return;
+  const base = promptBeforeDictation.value;
+  const combined = `${final}${interim}`;
+  prompt.value = base ? `${base} ${combined}` : combined;
+});
 
 function generateTitle(text: string): string {
   const firstLine = text.split("\n")[0]?.trim() ?? text.trim();
@@ -82,16 +102,9 @@ async function submit() {
       <form class="space-y-4 px-5 py-4" @submit.prevent="submit">
         <!-- Prompt -->
         <div>
-          <div class="mb-1.5 flex items-center justify-between">
-            <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Prompt <span class="text-red-400">*</span>
-            </label>
-            <ClientOnly>
-              <VoiceInput
-                @transcription="(text: string) => (prompt = prompt ? `${prompt} ${text}` : text)"
-              />
-            </ClientOnly>
-          </div>
+          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            Prompt <span class="text-red-400">*</span>
+          </label>
           <textarea
             v-model="prompt"
             rows="4"
@@ -99,9 +112,25 @@ async function submit() {
             autofocus
             class="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
           />
-          <p class="mt-1 text-[10px] text-zinc-600">
-            First line becomes the card title. Full text is sent as the prompt to Claude.
-          </p>
+          <div class="mt-1.5 flex items-center justify-between">
+            <p class="text-[10px] text-zinc-600">
+              First line becomes the card title. Full text is sent as the prompt to Claude.
+            </p>
+            <button
+              v-if="isSupported"
+              type="button"
+              class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
+              :class="
+                isListening
+                  ? 'border-red-500 bg-red-500/10 text-red-400 animate-pulse'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
+              "
+              @click="toggleVoice"
+            >
+              <span class="text-sm">{{ isListening ? "●" : "🎤" }}</span>
+              {{ isListening ? "Stop" : "Dictate" }}
+            </button>
+          </div>
         </div>
 
         <!-- Repo selector -->

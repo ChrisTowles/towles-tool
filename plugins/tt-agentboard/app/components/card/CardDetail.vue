@@ -107,9 +107,7 @@ function sendResponse() {
     </div>
 
     <!-- Timestamps + branch mode -->
-    <div
-      class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500"
-    >
+    <div class="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-zinc-500">
       <span>Created {{ new Date(card.createdAt).toLocaleString() }}</span>
       <span>Updated {{ new Date(card.updatedAt).toLocaleString() }}</span>
     </div>
