@@ -13,39 +13,35 @@ import {
   simulateStopHook,
 } from "../helpers";
 
-/**
- * Integration test for multi-step workflow: plan → implement → review
- *
- * Tests the full card lifecycle through multiple workflow steps,
- * simulating the artifact creation and step-complete callbacks
- * that would happen with real Claude execution.
- */
+const tmpDirs: string[] = [];
+
+function makeTmpSlotDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `${prefix}-`));
+  tmpDirs.push(dir);
+  return dir;
+}
+
+function artifactsDir(slotPath: string, cardId: number): string {
+  return join(slotPath, "artifacts", String(cardId));
+}
+
+afterAll(() => {
+  for (const dir of tmpDirs) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 describe("Multi-Step Workflow (plan → implement → review)", { timeout: 30_000 }, () => {
   let repoId: number;
   let slotPath: string;
   let cardId: number;
-  const tmpDirs: string[] = [];
-
-  function makeTmpSlotDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), "workflow-test-slot-"));
-    tmpDirs.push(dir);
-    return dir;
-  }
 
   beforeAll(async () => {
     const repo = await createTestRepo("multi-step-workflow-repo");
     repoId = repo.id;
 
-    slotPath = makeTmpSlotDir();
+    slotPath = makeTmpSlotDir("workflow-test-slot");
     await createTestSlot(repoId, slotPath);
-  });
-
-  afterAll(() => {
-    for (const dir of tmpDirs) {
-      if (existsSync(dir)) {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    }
   });
 
   it("creates a card with workflow in backlog", async () => {
@@ -73,12 +69,12 @@ describe("Multi-Step Workflow (plan → implement → review)", { timeout: 30_00
     // Force status to running for hook to process
     await updateCard(cardId, { status: "running", currentStepId: "plan" });
 
-    // Create mock artifact directory
-    const artifactsDir = join(slotPath, "artifacts", String(cardId));
-    mkdirSync(artifactsDir, { recursive: true });
+    const dir = artifactsDir(slotPath, cardId);
+    mkdirSync(dir, { recursive: true });
 
-    // Write plan artifact (simulating what Claude would produce)
-    const planContent = `PASS
+    writeFileSync(
+      join(dir, "plan.md"),
+      `PASS
 ## Plan: isPalindrome function
 
 ### Overview
@@ -93,8 +89,8 @@ Add an isPalindrome function that checks if a string reads the same forward and 
 - Test palindromes: "racecar", "madam", "A man a plan a canal Panama"
 - Test non-palindromes: "hello", "world"
 - Test edge cases: empty string, single character
-`;
-    writeFileSync(join(artifactsDir, "plan.md"), planContent);
+`,
+    );
 
     // Simulate step-complete hook (plan step done)
     const result = await simulateStepCompleteHook(cardId);
@@ -111,26 +107,14 @@ Add an isPalindrome function that checks if a string reads the same forward and 
   it("simulating implement step completion with artifact", async () => {
     await updateCard(cardId, { status: "running", currentStepId: "implement" });
 
-    // Write implement artifact
-    const artifactsDir = join(slotPath, "artifacts", String(cardId));
-    const implementContent = `export function isPalindrome(str: string): boolean {
+    const dir = artifactsDir(slotPath, cardId);
+    const codeSnippet = `export function isPalindrome(str: string): boolean {
   const cleaned = str.toLowerCase().replace(/[^a-z0-9]/g, "");
   return cleaned === cleaned.split("").reverse().join("");
 }
-
-// Tests added to utils.test.ts
 `;
-    writeFileSync(join(artifactsDir, "implement.md"), implementContent);
-
-    // Also create the actual code file
-    writeFileSync(
-      join(slotPath, "utils.ts"),
-      `export function isPalindrome(str: string): boolean {
-  const cleaned = str.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return cleaned === cleaned.split("").reverse().join("");
-}
-`,
-    );
+    writeFileSync(join(dir, "implement.md"), `${codeSnippet}\n// Tests added to utils.test.ts\n`);
+    writeFileSync(join(slotPath, "utils.ts"), codeSnippet);
 
     const result = await simulateStepCompleteHook(cardId);
     expect(result.ok).toBe(true);
@@ -144,9 +128,10 @@ Add an isPalindrome function that checks if a string reads the same forward and 
   it("simulating review step completion with PASS verdict", async () => {
     await updateCard(cardId, { status: "running", currentStepId: "review" });
 
-    // Write review artifact with PASS on first line
-    const artifactsDir = join(slotPath, "artifacts", String(cardId));
-    const reviewContent = `PASS
+    const dir = artifactsDir(slotPath, cardId);
+    writeFileSync(
+      join(dir, "review.md"),
+      `PASS
 
 ## Review Summary
 
@@ -162,8 +147,8 @@ Add an isPalindrome function that checks if a string reads the same forward and 
 
 ### Verdict
 Implementation is correct and ready for merge.
-`;
-    writeFileSync(join(artifactsDir, "review.md"), reviewContent);
+`,
+    );
 
     const result = await simulateStepCompleteHook(cardId);
     expect(result.ok).toBe(true);
@@ -194,11 +179,11 @@ Implementation is correct and ready for merge.
   });
 
   it("verifies artifacts exist in slot directory", () => {
-    const artifactsDir = join(slotPath, "artifacts", String(cardId));
+    const dir = artifactsDir(slotPath, cardId);
 
-    expect(existsSync(join(artifactsDir, "plan.md"))).toBe(true);
-    expect(existsSync(join(artifactsDir, "implement.md"))).toBe(true);
-    expect(existsSync(join(artifactsDir, "review.md"))).toBe(true);
+    for (const file of ["plan.md", "implement.md", "review.md"]) {
+      expect(existsSync(join(dir, file))).toBe(true);
+    }
     expect(existsSync(join(slotPath, "utils.ts"))).toBe(true);
   });
 });
@@ -207,28 +192,13 @@ describe("Multi-Step Workflow with FAIL and Retry", { timeout: 30_000 }, () => {
   let repoId: number;
   let slotPath: string;
   let cardId: number;
-  const tmpDirs: string[] = [];
-
-  function makeTmpSlotDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), "workflow-retry-test-"));
-    tmpDirs.push(dir);
-    return dir;
-  }
 
   beforeAll(async () => {
     const repo = await createTestRepo("retry-workflow-repo");
     repoId = repo.id;
 
-    slotPath = makeTmpSlotDir();
+    slotPath = makeTmpSlotDir("workflow-retry-test");
     await createTestSlot(repoId, slotPath);
-  });
-
-  afterAll(() => {
-    for (const dir of tmpDirs) {
-      if (existsSync(dir)) {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    }
   });
 
   it("creates card and simulates review FAIL triggering retry", async () => {
@@ -241,36 +211,35 @@ describe("Multi-Step Workflow with FAIL and Retry", { timeout: 30_000 }, () => {
     await moveCard(cardId, "in_progress");
     await new Promise((r) => setTimeout(r, 300));
 
-    // Setup artifacts directory
-    const artifactsDir = join(slotPath, "artifacts", String(cardId));
-    mkdirSync(artifactsDir, { recursive: true });
+    const dir = artifactsDir(slotPath, cardId);
+    mkdirSync(dir, { recursive: true });
 
     // Plan passes
     await updateCard(cardId, { status: "running", currentStepId: "plan" });
-    writeFileSync(join(artifactsDir, "plan.md"), "PASS\nPlan for feature X");
+    writeFileSync(join(dir, "plan.md"), "PASS\nPlan for feature X");
     await simulateStepCompleteHook(cardId);
     await updateCard(cardId, { currentStepId: "plan:done" });
 
     // Implement completes
     await updateCard(cardId, { status: "running", currentStepId: "implement" });
-    writeFileSync(join(artifactsDir, "implement.md"), "Implementation done");
+    writeFileSync(join(dir, "implement.md"), "Implementation done");
     await simulateStepCompleteHook(cardId);
     await updateCard(cardId, { currentStepId: "implement:done" });
 
     // Review FAILS (first attempt)
     await updateCard(cardId, { status: "running", currentStepId: "review", retryCount: 0 });
-    writeFileSync(join(artifactsDir, "review.md"), "FAIL\nMissing error handling for edge cases");
+    writeFileSync(join(dir, "review.md"), "FAIL\nMissing error handling for edge cases");
     await simulateStepCompleteHook(cardId);
 
-    // Simulate retry: implement again with retryCount incremented
+    // Retry: implement again with retryCount incremented
     await updateCard(cardId, { status: "running", currentStepId: "implement", retryCount: 1 });
-    writeFileSync(join(artifactsDir, "implement.md"), "Implementation with error handling added");
+    writeFileSync(join(dir, "implement.md"), "Implementation with error handling added");
     await simulateStepCompleteHook(cardId);
     await updateCard(cardId, { currentStepId: "implement:done" });
 
     // Review PASSES on retry
     await updateCard(cardId, { status: "running", currentStepId: "review" });
-    writeFileSync(join(artifactsDir, "review.md"), "PASS\nAll issues addressed");
+    writeFileSync(join(dir, "review.md"), "PASS\nAll issues addressed");
     await simulateStepCompleteHook(cardId);
     await updateCard(cardId, { currentStepId: "review:done" });
 
