@@ -112,7 +112,12 @@ describe("CardService", () => {
   });
 
   describe("markComplete()", () => {
-    it("sets status=review_ready + column=review in a single update", async () => {
+    it("sets status=review_ready + column=review, emits actual fromColumn", async () => {
+      const selectChain: Record<string, unknown> = {};
+      selectChain.from = vi.fn().mockReturnValue(selectChain);
+      selectChain.where = vi.fn().mockResolvedValue([{ column: "in_progress" }]);
+      mockDb.select = vi.fn().mockReturnValue(selectChain);
+
       const updateChain: Record<string, unknown> = {};
       updateChain.set = vi.fn().mockReturnValue(updateChain);
       updateChain.where = vi.fn().mockResolvedValue(undefined);
@@ -128,6 +133,26 @@ describe("CardService", () => {
       expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
         cardId: 1,
         fromColumn: "in_progress",
+        toColumn: "review",
+      });
+    });
+
+    it("emits simplify_review as fromColumn when card was in that column", async () => {
+      const selectChain: Record<string, unknown> = {};
+      selectChain.from = vi.fn().mockReturnValue(selectChain);
+      selectChain.where = vi.fn().mockResolvedValue([{ column: "simplify_review" }]);
+      mockDb.select = vi.fn().mockReturnValue(selectChain);
+
+      const updateChain: Record<string, unknown> = {};
+      updateChain.set = vi.fn().mockReturnValue(updateChain);
+      updateChain.where = vi.fn().mockResolvedValue(undefined);
+      mockDb.update = vi.fn().mockReturnValue(updateChain);
+
+      await service.markComplete(1);
+
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
+        cardId: 1,
+        fromColumn: "simplify_review",
         toColumn: "review",
       });
     });

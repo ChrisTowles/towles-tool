@@ -37,9 +37,9 @@ export const cards = sqliteTable("cards", {
   title: text("title").notNull(),
   description: text("description"),
   repoId: integer("repo_id").references(() => repositories.id, { onDelete: "set null" }),
-  column: text("column", { enum: ["backlog", "ready", "in_progress", "review", "done"] }).default(
-    "backlog",
-  ),
+  column: text("column", {
+    enum: ["backlog", "ready", "in_progress", "simplify_review", "review", "done"],
+  }).default("backlog"),
   position: integer("position").notNull().default(0),
   executionMode: text("execution_mode", { enum: ["headless", "interactive"] }).default("headless"),
   branchMode: text("branch_mode", { enum: ["create", "current"] }).default("create"),
