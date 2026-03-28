@@ -109,6 +109,13 @@ export async function simulateNotificationHook(cardId: number) {
   });
 }
 
+export async function simulateStepCompleteHook(cardId: number) {
+  return api<{ ok: boolean; ignored?: boolean }>(`/api/agents/${cardId}/step-complete`, {
+    method: "POST",
+    body: JSON.stringify({ session_id: "test", hook_event_name: "Stop" }),
+  });
+}
+
 export async function resetSlot(slotId: number) {
   await api(`/api/slots/${slotId}/lock`, {
     method: "POST",
