@@ -1,15 +1,18 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { platform } from "node:os";
 import { logger } from "~~/server/utils/logger";
+
+function systemOpen(): string {
+  return platform() === "darwin" ? "open" : "xdg-open";
+}
 
 /**
  * Opens a URL in the system default browser.
  * Works on Linux (xdg-open) and macOS (open).
  */
 export function openUrl(url: string) {
-  const cmd = platform() === "darwin" ? "open" : "xdg-open";
   logger.info(`Opening URL: ${url}`);
-  execSync(`${cmd} ${JSON.stringify(url)}`, { stdio: "ignore" });
+  execFileSync(systemOpen(), [url], { stdio: "ignore" });
 }
 
 /**
@@ -17,14 +20,13 @@ export function openUrl(url: string) {
  */
 export function openInVscode(path: string) {
   logger.info(`Opening in VS Code: ${path}`);
-  execSync(`code ${JSON.stringify(path)}`, { stdio: "ignore" });
+  execFileSync("code", [path], { stdio: "ignore" });
 }
 
 /**
  * Opens a file with the system default application.
  */
 export function openFile(path: string) {
-  const cmd = platform() === "darwin" ? "open" : "xdg-open";
   logger.info(`Opening file: ${path}`);
-  execSync(`${cmd} ${JSON.stringify(path)}`, { stdio: "ignore" });
+  execFileSync(systemOpen(), [path], { stdio: "ignore" });
 }
