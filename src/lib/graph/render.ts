@@ -5,7 +5,7 @@ import type { BarChartData, TreemapNode } from "./types.js";
 
 // Load HTML template from file (resolved relative to this module)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_PATH = path.join(__dirname, "..", "graph-template.html");
+const TEMPLATE_PATH = path.join(__dirname, "graph-template.html");
 let _cachedTemplate: string | undefined;
 function getTemplate(): string {
   _cachedTemplate ??= fs.readFileSync(TEMPLATE_PATH, "utf-8");
