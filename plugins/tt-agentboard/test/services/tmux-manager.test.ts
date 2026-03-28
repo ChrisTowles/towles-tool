@@ -230,6 +230,25 @@ describe("TmuxManager", () => {
     });
   });
 
+  describe("getPaneCommand()", () => {
+    it("returns foreground command for existing session", () => {
+      mockExecSync.mockReturnValueOnce("zsh\n");
+      const result = manager.getPaneCommand("card-1");
+      expect(result).toBe("zsh");
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "tmux list-panes -t card-1 -F '#{pane_current_command}'",
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
+    });
+
+    it("returns null for non-existent session", () => {
+      mockExecSync.mockImplementationOnce(() => {
+        throw new Error("no session");
+      });
+      expect(manager.getPaneCommand("card-999")).toBeNull();
+    });
+  });
+
   describe("stopCapture()", () => {
     it("clears interval and resets state", () => {
       // Create session and start capture

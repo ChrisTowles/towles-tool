@@ -106,6 +106,19 @@ export class TmuxManager extends EventEmitter {
     }
   }
 
+  /** Get the foreground command running in a session's pane. Returns null if session doesn't exist. */
+  getPaneCommand(sessionName: string): string | null {
+    try {
+      const output = this.deps.execSync(
+        `tmux list-panes -t ${sessionName} -F '#{pane_current_command}'`,
+        { encoding: "utf-8", timeout: 2000 },
+      );
+      return (output as string).trim().split("\n")[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Kill a tmux session. Returns true if session was killed, false if already dead. */
   killSession(sessionName: string): boolean {
     this.stopCapture(sessionName);
