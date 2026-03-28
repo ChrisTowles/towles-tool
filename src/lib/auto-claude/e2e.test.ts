@@ -102,7 +102,10 @@ describe("auto-claude e2e: full pipeline lifecycle", () => {
           writeFileSync(join(ctx.issueDir, ARTIFACTS.completedSummary), "# Done\n\nImpl complete.");
           break;
         case 3:
-          writeFileSync(join(ctx.issueDir, ARTIFACTS.simplifySummary), "# Simplified\n\nCode simplified.");
+          writeFileSync(
+            join(ctx.issueDir, ARTIFACTS.simplifySummary),
+            "# Simplified\n\nCode simplified.",
+          );
           break;
         case 4:
           writeFileSync(join(ctx.issueDir, ARTIFACTS.review), "PASS\n\nAll checks pass.");
@@ -164,9 +167,7 @@ describe("auto-claude e2e: full pipeline lifecycle", () => {
     await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     // Verify PR create was called
-    const prCreateCall = ghCalls.find(
-      (args) => args[0] === "pr" && args[1] === "create",
-    );
+    const prCreateCall = ghCalls.find((args) => args[0] === "pr" && args[1] === "create");
     expect(prCreateCall).toBeDefined();
 
     // Verify PR body contains required elements
@@ -316,9 +317,7 @@ describe("auto-claude e2e: label state transitions", () => {
     await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     // Verify all labels were created
-    const labelCreateCalls = ghCalls.filter(
-      (args) => args[0] === "label" && args[1] === "create",
-    );
+    const labelCreateCalls = ghCalls.filter((args) => args[0] === "label" && args[1] === "create");
     expect(labelCreateCalls.length).toBe(4);
 
     const createdLabels = labelCreateCalls.map((args) => args[2]);
@@ -469,9 +468,7 @@ describe("auto-claude e2e: retry loop behavior", () => {
     await runPipeline(ctx, undefined, { spawnFn: mockSpawnFn, exec: mockExec });
 
     // Verify comment was posted
-    const commentCall = ghCalls.find(
-      (args) => args[0] === "issue" && args[1] === "comment",
-    );
+    const commentCall = ghCalls.find((args) => args[0] === "issue" && args[1] === "comment");
     expect(commentCall).toBeDefined();
 
     // Verify comment mentions retry count
