@@ -318,6 +318,7 @@ useKeyboardShortcuts({
               >
                 Delete
               </button>
+              <CardQuickActions v-if="selectedCard" :card="selectedCard" />
               <CardActions
                 v-if="selectedCard"
                 :card="selectedCard"
