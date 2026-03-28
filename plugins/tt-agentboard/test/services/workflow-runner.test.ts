@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildAgentBranchName,
   checkPassCondition,
   renderTemplate,
   shellEscape,
@@ -69,6 +70,41 @@ describe("workflow-helpers", () => {
 
     it("handles empty value", () => {
       expect(renderTemplate("issue-{issue}", { issue: "" })).toBe("issue-");
+    });
+  });
+
+  describe("buildAgentBranchName()", () => {
+    it("slugifies card title into branch name", () => {
+      expect(buildAgentBranchName(2, "Fix login bug in auth")).toBe(
+        "agentboard/2-fix-login-bug-in-auth",
+      );
+    });
+
+    it("strips special characters", () => {
+      expect(buildAgentBranchName(5, "feat: add @user auth!")).toBe(
+        "agentboard/5-feat-add-user-auth",
+      );
+    });
+
+    it("truncates long titles to 50 chars", () => {
+      const longTitle = "This is a very long card title that exceeds the fifty character slug limit by quite a lot";
+      const result = buildAgentBranchName(10, longTitle);
+      const slug = result.replace("agentboard/10-", "");
+      expect(slug.length).toBeLessThanOrEqual(50);
+    });
+
+    it("falls back to card-{id} for empty title", () => {
+      expect(buildAgentBranchName(7, "")).toBe("agentboard/card-7");
+    });
+
+    it("falls back to card-{id} for title with only special chars", () => {
+      expect(buildAgentBranchName(3, "!!!@@@###")).toBe("agentboard/card-3");
+    });
+
+    it("collapses consecutive hyphens", () => {
+      expect(buildAgentBranchName(1, "fix   multiple    spaces")).toBe(
+        "agentboard/1-fix-multiple-spaces",
+      );
     });
   });
 

@@ -16,7 +16,7 @@ import type { SlotPreparer } from "./slot-preparer";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 import { stepExecutor as defaultStepExecutor, clearPendingCallback } from "./step-executor";
 import type { StepExecutor, WorkflowContext } from "./step-executor";
-import { renderTemplate, shellEscape } from "./workflow-helpers";
+import { buildAgentBranchName, renderTemplate, shellEscape } from "./workflow-helpers";
 import type { Logger, EventBus, StreamTailer } from "./types";
 
 export interface WorkflowOrchestratorDeps {
@@ -174,11 +174,13 @@ export class WorkflowOrchestrator {
     await this.deps.cardService.updateStatus(cardId, "running");
 
     // Build branch name
-    const branch = renderTemplate(workflow.branch_template ?? "agentboard/card-{card_id}", {
-      card_id: String(cardId),
-      issue: String(card.githubIssueNumber ?? ""),
-      issue_title: card.title,
-    });
+    const branch = workflow.branch_template
+      ? renderTemplate(workflow.branch_template, {
+          card_id: String(cardId),
+          issue: String(card.githubIssueNumber ?? ""),
+          issue_title: card.title,
+        })
+      : buildAgentBranchName(cardId, card.title);
 
     // Prepare the slot: sync git, set up branch, install deps
     const prepResult = await this.deps.slotPreparer.prepare({
