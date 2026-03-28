@@ -12,6 +12,7 @@ const emit = defineEmits<{
   deleted: [];
 }>();
 
+const { openUrl } = useServerOpen();
 const open = ref(false);
 const toast = ref("");
 const toastTimeout = ref<ReturnType<typeof setTimeout> | null>(null);
@@ -94,10 +95,15 @@ const branchUrl = computed(() => {
   return null;
 });
 
-function viewOnGitHub() {
+async function viewOnGitHub() {
   closeMenu();
   if (branchUrl.value) {
-    window.open(branchUrl.value, "_blank");
+    try {
+      await openUrl(branchUrl.value);
+      showToast("Opened in browser");
+    } catch {
+      showToast("Failed to open browser");
+    }
   }
 }
 
