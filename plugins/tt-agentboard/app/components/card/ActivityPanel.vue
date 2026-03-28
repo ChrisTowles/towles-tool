@@ -56,26 +56,29 @@ function handleScroll() {
   autoScroll.value = scrollHeight - scrollTop - clientHeight < 40;
 }
 
-/** Map tool names to display labels matching Claude Code TUI style */
+const TOOL_COLORS = {
+  blue: "text-blue-400 border-blue-500/30 bg-blue-500/5",
+  amber: "text-amber-400 border-amber-500/30 bg-amber-500/5",
+  emerald: "text-emerald-400 border-emerald-500/30 bg-emerald-500/5",
+  cyan: "text-cyan-400 border-cyan-500/30 bg-cyan-500/5",
+  purple: "text-purple-400 border-purple-500/30 bg-purple-500/5",
+  violet: "text-violet-400 border-violet-500/30 bg-violet-500/5",
+  sky: "text-sky-400 border-sky-500/30 bg-sky-500/5",
+} as const;
+
 const TOOL_ICONS: Record<string, { label: string; color: string }> = {
-  Read: { label: "Read", color: "text-blue-400 border-blue-500/30 bg-blue-500/5" },
-  Edit: { label: "Edit", color: "text-amber-400 border-amber-500/30 bg-amber-500/5" },
-  Write: { label: "Write", color: "text-amber-400 border-amber-500/30 bg-amber-500/5" },
-  Bash: { label: "Bash", color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/5" },
-  Glob: { label: "Glob", color: "text-cyan-400 border-cyan-500/30 bg-cyan-500/5" },
-  Grep: { label: "Grep", color: "text-cyan-400 border-cyan-500/30 bg-cyan-500/5" },
-  Agent: { label: "Agent", color: "text-purple-400 border-purple-500/30 bg-purple-500/5" },
-  TodoWrite: { label: "TodoWrite", color: "text-violet-400 border-violet-500/30 bg-violet-500/5" },
-  TaskCreate: {
-    label: "TaskCreate",
-    color: "text-violet-400 border-violet-500/30 bg-violet-500/5",
-  },
-  TaskUpdate: {
-    label: "TaskUpdate",
-    color: "text-violet-400 border-violet-500/30 bg-violet-500/5",
-  },
-  WebFetch: { label: "WebFetch", color: "text-sky-400 border-sky-500/30 bg-sky-500/5" },
-  WebSearch: { label: "WebSearch", color: "text-sky-400 border-sky-500/30 bg-sky-500/5" },
+  Read: { label: "Read", color: TOOL_COLORS.blue },
+  Edit: { label: "Edit", color: TOOL_COLORS.amber },
+  Write: { label: "Write", color: TOOL_COLORS.amber },
+  Bash: { label: "Bash", color: TOOL_COLORS.emerald },
+  Glob: { label: "Glob", color: TOOL_COLORS.cyan },
+  Grep: { label: "Grep", color: TOOL_COLORS.cyan },
+  Agent: { label: "Agent", color: TOOL_COLORS.purple },
+  TodoWrite: { label: "TodoWrite", color: TOOL_COLORS.violet },
+  TaskCreate: { label: "TaskCreate", color: TOOL_COLORS.violet },
+  TaskUpdate: { label: "TaskUpdate", color: TOOL_COLORS.violet },
+  WebFetch: { label: "WebFetch", color: TOOL_COLORS.sky },
+  WebSearch: { label: "WebSearch", color: TOOL_COLORS.sky },
 };
 
 function getToolStyle(name: string) {
@@ -85,14 +88,6 @@ function getToolStyle(name: string) {
 }
 
 function formatDetail(event: ActivityEvent & { kind: "tool_use" }) {
-  const input = event.input;
-  if (!input) return event.detail;
-
-  const filePath = input.file_path ?? input.path;
-  if (typeof filePath === "string") return filePath;
-  if (typeof input.command === "string") return input.command;
-  if (typeof input.pattern === "string") return input.pattern;
-  if (typeof input.subject === "string") return input.subject;
   return event.detail;
 }
 

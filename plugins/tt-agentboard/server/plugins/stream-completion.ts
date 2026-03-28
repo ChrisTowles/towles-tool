@@ -1,4 +1,5 @@
 import { eventBus } from "../shared/event-bus";
+import type { EventMap } from "../shared/event-bus";
 import { logger } from "../utils/logger";
 
 /**
@@ -12,19 +13,15 @@ import { logger } from "../utils/logger";
 export default defineNitroPlugin(() => {
   const processed = new Set<string>();
 
-  eventBus.on("agent:activity", async (data) => {
-    const { cardId, event } = data as {
-      cardId: number;
-      event: { kind: string; isError?: boolean };
-    };
+  eventBus.on("agent:activity", async (data: EventMap["agent:activity"]) => {
+    const { cardId, event, timestamp } = data;
 
     if (event.kind !== "result") return;
 
-    // Deduplicate — stream-tailer may re-read the same line on file change
-    const key = `${cardId}`;
+    // Deduplicate with timestamp to allow reruns of the same card
+    const key = `${cardId}:${timestamp}`;
     if (processed.has(key)) return;
     processed.add(key);
-    // Clean up after 60s to avoid unbounded growth
     setTimeout(() => processed.delete(key), 60_000);
 
     const endpoint = event.isError ? "failure" : "complete";

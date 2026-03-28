@@ -68,42 +68,31 @@ function parseDiff(raw: string): DiffFile[] {
 export default defineEventHandler(async (event) => {
   const cardId = getCardId(event);
 
-  // Try claimed slot first (active execution), then fall back to workflow run record (completed)
+  // Fetch claimed slot and workflow run in parallel
   let slotPath: string | null = null;
   let branch: string | null = null;
 
-  const [claimedSlot] = await db
-    .select()
-    .from(workspaceSlots)
-    .where(eq(workspaceSlots.claimedByCardId, cardId))
-    .limit(1);
-
-  if (claimedSlot) {
-    slotPath = claimedSlot.path;
-    // Still look up branch from workflow run for active cards
-    const [run] = await db
-      .select({ branch: workflowRuns.branch })
-      .from(workflowRuns)
-      .where(eq(workflowRuns.cardId, cardId))
-      .limit(1);
-    branch = run?.branch ?? null;
-  } else {
-    // Slot was released after completion — look up via workflow run
-    const [run] = await db
+  const [[claimedSlot], [run]] = await Promise.all([
+    db.select().from(workspaceSlots).where(eq(workspaceSlots.claimedByCardId, cardId)).limit(1),
+    db
       .select({ slotId: workflowRuns.slotId, branch: workflowRuns.branch })
       .from(workflowRuns)
       .where(eq(workflowRuns.cardId, cardId))
-      .limit(1);
+      .limit(1),
+  ]);
 
-    if (run?.slotId) {
-      const [slot] = await db
-        .select()
-        .from(workspaceSlots)
-        .where(eq(workspaceSlots.id, run.slotId))
-        .limit(1);
-      slotPath = slot?.path ?? null;
-      branch = run.branch;
-    }
+  if (claimedSlot) {
+    slotPath = claimedSlot.path;
+    branch = run?.branch ?? null;
+  } else if (run?.slotId) {
+    // Slot was released after completion — look up via workflow run's slotId
+    const [slot] = await db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.id, run.slotId))
+      .limit(1);
+    slotPath = slot?.path ?? null;
+    branch = run.branch;
   }
 
   if (!slotPath) {
