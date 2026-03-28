@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   cardMoved: [cardId: number, column: Column, position: number];
   cardSelected: [cardId: number];
+  clearDone: [];
 }>();
 
 const label = computed(() => COLUMN_LABELS[props.column]);
@@ -58,12 +59,22 @@ function onDragChange(evt: { added?: { element: { id: number }; newIndex: number
           label
         }}</span>
       </div>
-      <span
-        class="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-mono font-bold tabular-nums text-zinc-400 transition-transform duration-300"
-        :class="countBounce ? 'scale-125' : 'scale-100'"
-      >
-        {{ cards.length }}
-      </span>
+      <div class="flex items-center gap-2">
+        <span
+          class="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-mono font-bold tabular-nums text-zinc-400 transition-transform duration-300"
+          :class="countBounce ? 'scale-125' : 'scale-100'"
+        >
+          {{ cards.length }}
+        </span>
+        <button
+          v-if="column === 'done' && cards.length > 0"
+          class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+          title="Clear all done cards"
+          @click="emit('clearDone')"
+        >
+          Clear
+        </button>
+      </div>
     </div>
 
     <!-- Card list -->

@@ -1,7 +1,8 @@
 import { db as defaultDb } from "../../shared/db";
-import { cards, cardEvents, cardDependencies } from "../../shared/db/schema";
+import { cards, cardEvents, cardDependencies, workflowRuns, stepRuns, workspaceSlots } from "../../shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
+import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { logger as defaultLogger } from "../../utils/logger";
 import type { CardStatus, Column } from "./types";
 
@@ -9,6 +10,7 @@ export interface CardServiceDeps {
   db: typeof defaultDb;
   eventBus: typeof defaultEventBus;
   logger: typeof defaultLogger;
+  tmuxManager: typeof defaultTmuxManager;
 }
 
 /**
@@ -23,6 +25,7 @@ export class CardService {
       db: defaultDb,
       eventBus: defaultEventBus,
       logger: defaultLogger,
+      tmuxManager: defaultTmuxManager,
       ...deps,
     };
   }
@@ -83,6 +86,35 @@ export class CardService {
       fromColumn,
       toColumn: "review" as Column,
     });
+  }
+
+  /** Delete a card and all related records (tmux, slots, events, runs) */
+  async deleteCard(cardId: number): Promise<void> {
+    const sessionName = `card-${cardId}`;
+    this.deps.tmuxManager.stopCapture(sessionName);
+    this.deps.tmuxManager.killSession(sessionName);
+
+    // Release claimed workspace slots
+    const claimedSlots = await this.deps.db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.claimedByCardId, cardId));
+    for (const slot of claimedSlots) {
+      await this.deps.db
+        .update(workspaceSlots)
+        .set({ status: "available", claimedByCardId: null })
+        .where(eq(workspaceSlots.id, slot.id));
+      this.deps.eventBus.emit("slot:released", { slotId: slot.id });
+    }
+
+    // Delete related records
+    await this.deps.db.delete(cardEvents).where(eq(cardEvents.cardId, cardId));
+    const runs = await this.deps.db.select().from(workflowRuns).where(eq(workflowRuns.cardId, cardId));
+    for (const run of runs) {
+      await this.deps.db.delete(stepRuns).where(eq(stepRuns.workflowRunId, run.id));
+    }
+    await this.deps.db.delete(workflowRuns).where(eq(workflowRuns.cardId, cardId));
+    await this.deps.db.delete(cards).where(eq(cards.id, cardId));
   }
 
   /** Insert a row into the cardEvents table */

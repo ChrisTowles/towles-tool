@@ -1,7 +1,6 @@
 import { execSync } from "node:child_process";
-import { readdirSync, statSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
-import { consola } from "consola";
+import { existsSync, readdirSync } from "node:fs";
+import { basename, join } from "node:path";
 import { db } from "~~/server/shared/db";
 import { repositories } from "~~/server/shared/db/schema";
 import { readConfig } from "~~/server/utils/config";
@@ -40,37 +39,43 @@ function parseGitRemote(repoPath: string): {
   }
 }
 
-function discoverReposInDir(parentDir: string): DiscoveredRepo[] {
-  const repos: DiscoveredRepo[] = [];
-  if (!existsSync(parentDir)) return repos;
-
+function findRepoDirs(dir: string): string[] {
+  const repos: string[] = [];
+  let entries;
   try {
-    const entries = readdirSync(parentDir);
-    for (const entry of entries) {
-      if (entry.startsWith(".")) continue;
-      const fullPath = join(parentDir, entry);
-      try {
-        const stat = statSync(fullPath);
-        if (!stat.isDirectory()) continue;
-        const gitDir = join(fullPath, ".git");
-        if (!existsSync(gitDir)) continue;
-
-        const remote = parseGitRemote(fullPath);
-        repos.push({
-          path: fullPath,
-          name: remote.name,
-          org: remote.org,
-          githubUrl: remote.githubUrl,
-          alreadyRegistered: false,
-        });
-      } catch {
-        // Skip inaccessible dirs
-      }
-    }
+    entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    consola.warn(`Could not scan directory: ${parentDir}`);
+    return repos;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === ".git") {
+      repos.push(dir);
+      return repos; // don't recurse into a git repo
+    }
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === "node_modules" || entry.name.startsWith("."))
+      continue;
+    repos.push(...findRepoDirs(join(dir, entry.name)));
   }
   return repos;
+}
+
+function discoverRepos(scanPaths: string[]): DiscoveredRepo[] {
+  return scanPaths.flatMap((scanPath) => {
+    if (!existsSync(scanPath)) return [];
+    return findRepoDirs(scanPath).map((repoPath) => {
+      const remote = parseGitRemote(repoPath);
+      return {
+        path: repoPath,
+        name: remote.name,
+        org: remote.org,
+        githubUrl: remote.githubUrl,
+        alreadyRegistered: false,
+      };
+    });
+  });
 }
 
 export default defineEventHandler(async () => {
@@ -81,12 +86,7 @@ export default defineEventHandler(async () => {
     return { repos: [], scanPaths: [] };
   }
 
-  // Discover repos in each scan path (one level deep)
-  const allRepos: DiscoveredRepo[] = [];
-  for (const scanPath of scanPaths) {
-    const found = discoverReposInDir(scanPath);
-    allRepos.push(...found);
-  }
+  const allRepos = discoverRepos(scanPaths);
 
   // Deduplicate by path
   const seen = new Set<string>();

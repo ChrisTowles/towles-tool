@@ -63,6 +63,11 @@ async function handleCardMoved(cardId: number, column: Column, position: number)
   await store.moveCard(cardId, column, position);
 }
 
+async function handleClearDone() {
+  await $fetch("/api/cards/clear-done", { method: "POST" });
+  await store.fetchCards();
+}
+
 // Stale-data fallback — WS handles real-time, this catches missed events
 useIntervalFn(() => store.fetchCards(), 60_000);
 </script>
@@ -234,6 +239,7 @@ useIntervalFn(() => store.fetchCards(), 60_000);
         class="shrink-0"
         @card-moved="handleCardMoved"
         @card-selected="(id: number) => emit('cardSelected', id)"
+        @clear-done="handleClearDone"
       />
     </div>
 

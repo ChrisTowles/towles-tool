@@ -3,7 +3,12 @@ import type { Card } from "~/stores/cards";
 
 const breakStore = useBreakReminderStore();
 
-const selectedCardId = ref<number | null>(null);
+const route = useRoute();
+const router = useRouter();
+
+const selectedCardId = ref<number | null>(
+  route.query.card ? Number(route.query.card) : null,
+);
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
 const showNewCardForm = ref(false);
@@ -140,6 +145,9 @@ async function createPR() {
       `/api/agents/${selectedCardId.value}/create-pr`,
       { method: "POST" },
     );
+    if (result.prUrl) {
+      window.open(result.prUrl, "_blank");
+    }
     await fetchSelectedCard();
     refreshBoard();
   } catch {
@@ -185,13 +193,16 @@ const { pause: pauseDetail, resume: resumeDetail } = useIntervalFn(fetchSelected
 watch(selectedCardId, (id) => {
   if (id) {
     resumeDetail();
+    router.replace({ query: { card: String(id) } });
   } else {
     pauseDetail();
+    router.replace({ query: {} });
   }
 });
 
 // Break reminders — start timer and track input
 onMounted(() => {
+  if (selectedCardId.value) selectCard(selectedCardId.value);
   breakStore.start();
 
   const handleInput = () => breakStore.recordInput();

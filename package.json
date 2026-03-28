@@ -93,10 +93,15 @@
     },
     "onlyBuiltDependencies": [
       "@anthropic-ai/claude-code",
+      "@parcel/watcher",
+      "@playwright/browser-chromium",
+      "@swc/core",
       "better-sqlite3",
       "esbuild",
-      "simple-git-hooks",
-      "@parcel/watcher"
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp",
+      "simple-git-hooks"
     ]
   },
   "trustedDependencies": [
