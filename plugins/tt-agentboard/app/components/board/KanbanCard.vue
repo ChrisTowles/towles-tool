@@ -14,6 +14,7 @@ const emit = defineEmits<{
 
 const cardRef = computed(() => props.card);
 const { issueUrl, prUrl } = useCardUrls(cardRef);
+const { openUrl } = useServerOpen();
 
 const borderClass = computed(
   () => STATUS_BORDER_CLASSES[props.card.status as CardStatus] ?? "border-zinc-700",
@@ -131,27 +132,23 @@ watch(
         <span v-if="elapsedTime" class="text-[10px] font-mono tabular-nums text-zinc-500">
           {{ elapsedTime }}
         </span>
-        <a
+        <button
           v-if="card.githubIssueNumber && issueUrl"
-          :href="issueUrl"
-          target="_blank"
           class="text-[10px] font-mono text-zinc-500 hover:text-blue-400"
-          @click.stop
+          @click.stop="openUrl(issueUrl!)"
         >
           #{{ card.githubIssueNumber }}
-        </a>
+        </button>
         <span v-else-if="card.githubIssueNumber" class="text-[10px] font-mono text-zinc-500">
           #{{ card.githubIssueNumber }}
         </span>
-        <a
+        <button
           v-if="card.githubPrNumber && prUrl"
-          :href="prUrl"
-          target="_blank"
           class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-mono text-purple-400 hover:bg-purple-500/25"
-          @click.stop
+          @click.stop="openUrl(prUrl!)"
         >
           PR #{{ card.githubPrNumber }}
-        </a>
+        </button>
         <span
           v-else-if="card.githubPrNumber"
           class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-mono text-purple-400"

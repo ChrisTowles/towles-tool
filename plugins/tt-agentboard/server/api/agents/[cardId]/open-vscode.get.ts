@@ -1,7 +1,7 @@
 import { db } from "~~/server/shared/db";
 import { workspaceSlots, workflowRuns } from "~~/server/shared/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { execSync } from "node:child_process";
+import { openInVscode } from "~~/server/domains/infra/opener";
 import { logger } from "~~/server/utils/logger";
 import { getCardId } from "~~/server/utils/params";
 
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    execSync(`code ${JSON.stringify(slotPath)}`, { stdio: "ignore" });
+    openInVscode(slotPath);
     logger.info(`Opened VS Code for card ${cardId} at ${slotPath}`);
     return { ok: true, path: slotPath };
   } catch (err) {

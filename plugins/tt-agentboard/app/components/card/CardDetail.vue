@@ -16,6 +16,11 @@ const emit = defineEmits<{
 const agentInput = ref("");
 const cardRef = computed(() => props.card);
 const { branchUrl, issueUrl, prUrl } = useCardUrls(cardRef);
+const { openUrl } = useServerOpen();
+
+function serverOpen(url: string | null) {
+  if (url) openUrl(url);
+}
 
 function sendResponse() {
   if (!agentInput.value.trim()) return;
@@ -60,14 +65,13 @@ function sendResponse() {
       <!-- Branch -->
       <div v-if="card.branch" class="flex items-center gap-1.5 text-xs font-mono">
         <span class="text-zinc-600">branch</span>
-        <a
+        <button
           v-if="branchUrl"
-          :href="branchUrl"
-          target="_blank"
-          class="rounded bg-zinc-800 px-1.5 py-0.5 text-blue-400 hover:text-blue-300 hover:underline"
+          class="cursor-pointer rounded bg-zinc-800 px-1.5 py-0.5 text-blue-400 hover:text-blue-300 hover:underline"
+          @click="serverOpen(branchUrl)"
         >
           {{ card.branch }}
-        </a>
+        </button>
         <span v-else class="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{{
           card.branch
         }}</span>
@@ -80,27 +84,25 @@ function sendResponse() {
       >
         <template v-if="card.githubIssueNumber">
           <span>Issue</span>
-          <a
+          <button
             v-if="issueUrl"
-            :href="issueUrl"
-            target="_blank"
-            class="text-blue-400 hover:text-blue-300 hover:underline"
+            class="cursor-pointer text-blue-400 hover:text-blue-300 hover:underline"
+            @click="serverOpen(issueUrl)"
           >
             #{{ card.githubIssueNumber }}
-          </a>
+          </button>
           <span v-else>#{{ card.githubIssueNumber }}</span>
         </template>
         <template v-if="card.githubPrNumber">
           <span v-if="card.githubIssueNumber">·</span>
           <span>PR</span>
-          <a
+          <button
             v-if="prUrl"
-            :href="prUrl"
-            target="_blank"
-            class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-purple-400 hover:bg-purple-500/25 hover:underline"
+            class="cursor-pointer rounded-full bg-purple-500/15 px-1.5 py-0.5 text-purple-400 hover:bg-purple-500/25 hover:underline"
+            @click="serverOpen(prUrl)"
           >
             #{{ card.githubPrNumber }}
-          </a>
+          </button>
           <span v-else>#{{ card.githubPrNumber }}</span>
         </template>
       </div>
