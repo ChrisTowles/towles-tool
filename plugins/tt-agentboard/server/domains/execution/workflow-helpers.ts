@@ -26,6 +26,18 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
   return result;
 }
 
+/** Build an agentboard branch name from card ID and title */
+export function buildAgentBranchName(cardId: number, title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50)
+    .replace(/-$/, "");
+
+  return slug ? `agentboard/${cardId}-${slug}` : `agentboard/card-${cardId}`;
+}
+
 /** Escape a string for safe use in shell commands */
 export function shellEscape(str: string): string {
   return `'${str.replace(/'/g, "'\\''")}'`;

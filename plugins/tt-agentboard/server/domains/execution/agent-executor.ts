@@ -9,7 +9,7 @@ import { workflowOrchestrator as defaultWorkflowOrchestrator } from "./workflow-
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
-import { shellEscape } from "./workflow-helpers";
+import { buildAgentBranchName, shellEscape } from "./workflow-helpers";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
 import type { SlotPreparer } from "./slot-preparer";
@@ -172,7 +172,7 @@ export class AgentExecutor {
     const existingBranch = previousRuns.find((r) => r.branch)?.branch ?? null;
 
     // Prepare the slot: sync git, set up branch, install deps
-    const branchName = `agentboard/card-${cardId}`;
+    const branchName = buildAgentBranchName(cardId, card.title);
     const prepResult = await this.deps.slotPreparer.prepare({
       slotPath: slot.path,
       branchMode: card.branchMode as "create" | "current",
