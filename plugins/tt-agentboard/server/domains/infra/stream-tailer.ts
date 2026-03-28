@@ -1,5 +1,6 @@
 import type { FSWatcher } from "node:fs";
 import { watch as fsWatch, createReadStream, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { parseStreamLine } from "./stream-parser";
 import { eventBus } from "../../shared/event-bus";
@@ -70,11 +71,10 @@ export class StreamTailer {
       reading = false;
     };
 
-    const startWatching = () => {
+    const startWatching = async () => {
       try {
-        statSync(logFilePath);
+        await stat(logFilePath);
       } catch {
-        // File doesn't exist yet — retry until it appears or we're closed
         if (!closed) {
           retryTimer = setTimeout(startWatching, 500);
         }

@@ -102,7 +102,9 @@ async function submit() {
       <form class="space-y-4 px-5 py-4" @submit.prevent="submit">
         <!-- Prompt -->
         <div>
-          <label class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          <label
+            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
             Prompt <span class="text-red-400">*</span>
           </label>
           <textarea
