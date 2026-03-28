@@ -1,11 +1,9 @@
 import { db as defaultDb } from "../../shared/db";
 import { cards, workflowRuns } from "../../shared/db/schema";
 import { eq } from "drizzle-orm";
-import { execSync as defaultExecSync } from "node:child_process";
-import { existsSync as defaultExistsSync } from "node:fs";
-import { join } from "node:path";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
+import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { workflowOrchestrator as defaultWorkflowOrchestrator } from "./workflow-orchestrator";
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
@@ -14,6 +12,7 @@ import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
 import { shellEscape } from "./workflow-helpers";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
+import type { SlotPreparer } from "./slot-preparer";
 import type { Logger, EventBus } from "./types";
 
 export interface AgentExecutorDeps {
@@ -33,12 +32,11 @@ export interface AgentExecutorDeps {
     releaseSlot: (slotId: number) => Promise<void>;
     getSlotForCard: (cardId: number) => Promise<{ id: number; path: string } | null>;
   };
+  slotPreparer: SlotPreparer;
   workflowLoader: { get: (id: string) => unknown };
   workflowOrchestrator: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
-  execSync: typeof defaultExecSync;
-  existsSync: typeof defaultExistsSync;
 }
 
 /**
@@ -60,12 +58,11 @@ export class AgentExecutor {
       logger: defaultLogger,
       tmuxManager: defaultTmuxManager,
       slotAllocator: defaultSlotAllocator,
+      slotPreparer: defaultSlotPreparer,
       workflowLoader: defaultWorkflowLoader,
       workflowOrchestrator: defaultWorkflowOrchestrator,
       writeHooks: defaultWriteHooks,
       cardService: defaultCardService,
-      execSync: defaultExecSync,
-      existsSync: defaultExistsSync,
       ...deps,
     };
   }
@@ -167,9 +164,6 @@ export class AgentExecutor {
       );
     }
 
-    // Branch handling
-    let branch: string | null = null;
-
     // Check for existing branch from a previous run (resume/rerun case)
     const previousRuns = await this.deps.db
       .select({ branch: workflowRuns.branch })
@@ -177,118 +171,21 @@ export class AgentExecutor {
       .where(eq(workflowRuns.cardId, cardId));
     const existingBranch = previousRuns.find((r) => r.branch)?.branch ?? null;
 
-    if (existingBranch) {
-      // Reuse existing branch from previous run
-      try {
-        this.deps.execSync(`git checkout ${existingBranch}`, {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 10000,
-        });
-        branch = existingBranch;
-        await this.deps.cardService.logEvent(cardId, "branch_reused", existingBranch);
-      } catch {
-        await this.deps.cardService.logEvent(
-          cardId,
-          "warn",
-          `Could not checkout existing branch ${existingBranch}, creating new`,
-        );
-        // Fall through to normal branch creation
-      }
+    // Prepare the slot: sync git, set up branch, install deps
+    const branchName = `agentboard/card-${cardId}`;
+    const prepResult = await this.deps.slotPreparer.prepare({
+      slotPath: slot.path,
+      branchMode: card.branchMode as "create" | "current",
+      branch: branchName,
+      existingBranch,
+    });
+
+    // Log all prep events
+    for (const event of prepResult.events) {
+      await this.deps.cardService.logEvent(cardId, event.type, event.detail);
     }
 
-    if (!branch && card.branchMode === "create") {
-      // Clean working tree of leftover files from previous agents
-      try {
-        this.deps.execSync("git checkout -- . && git clean -fd", {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 5000,
-        });
-      } catch {
-        /* non-fatal */
-      }
-
-      // Start from a clean, up-to-date main before branching
-      const branchName = `agentboard/card-${cardId}`;
-      try {
-        this.deps.execSync("git checkout main && git pull --ff-only", {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 15000,
-        });
-      } catch {
-        await this.deps.cardService.logEvent(
-          cardId,
-          "warn",
-          "Could not checkout/pull main before branching",
-        );
-      }
-      try {
-        this.deps.execSync(`git checkout -b ${branchName}`, { cwd: slot.path, stdio: "ignore" });
-        branch = branchName;
-        await this.deps.cardService.logEvent(cardId, "branch_created", branchName);
-      } catch {
-        // Branch may exist — try switching to it
-        try {
-          this.deps.execSync(`git checkout ${branchName}`, { cwd: slot.path, stdio: "ignore" });
-          branch = branchName;
-        } catch {
-          // Fall back to current branch
-          try {
-            branch = (
-              this.deps.execSync("git rev-parse --abbrev-ref HEAD", {
-                cwd: slot.path,
-                encoding: "utf-8",
-                timeout: 3000,
-              }) as unknown as string
-            ).trim();
-          } catch {
-            /* not a git repo */
-          }
-        }
-      }
-    } else if (!branch) {
-      // Stay on current branch
-      try {
-        branch = (
-          this.deps.execSync("git rev-parse --abbrev-ref HEAD", {
-            cwd: slot.path,
-            encoding: "utf-8",
-            timeout: 3000,
-          }) as unknown as string
-        ).trim();
-      } catch {
-        /* not a git repo */
-      }
-    }
-
-    // Run package installer if a lockfile exists
-    const lockfile = this.deps.existsSync(join(slot.path, "pnpm-lock.yaml"))
-      ? "pnpm"
-      : this.deps.existsSync(join(slot.path, "bun.lock"))
-        ? "bun"
-        : this.deps.existsSync(join(slot.path, "package-lock.json"))
-          ? "npm"
-          : null;
-
-    if (lockfile) {
-      try {
-        const cmds = {
-          pnpm: "pnpm install --frozen-lockfile",
-          bun: "bun install --frozen-lockfile",
-          npm: "npm ci",
-        };
-        this.deps.execSync(cmds[lockfile], { cwd: slot.path, stdio: "ignore", timeout: 60000 });
-        await this.deps.cardService.logEvent(cardId, "deps_installed", `${lockfile} install`);
-      } catch {
-        await this.deps.cardService.logEvent(
-          cardId,
-          "warn",
-          "Package install failed — continuing anyway",
-        );
-      }
-    }
+    const branch = prepResult.branch;
 
     // Create workflow run record
     await this.deps.db

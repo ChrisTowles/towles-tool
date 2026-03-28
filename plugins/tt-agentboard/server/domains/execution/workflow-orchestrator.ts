@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { execSync as defaultExecSync } from "node:child_process";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
+import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
 import { contextBundler as defaultContextBundler } from "./context-bundler";
 import type { WorkflowDefinition } from "./workflow-loader";
@@ -11,6 +12,7 @@ import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
+import type { SlotPreparer } from "./slot-preparer";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 import { stepExecutor as defaultStepExecutor, clearPendingCallback } from "./step-executor";
 import type { StepExecutor, WorkflowContext } from "./step-executor";
@@ -32,6 +34,7 @@ export interface WorkflowOrchestratorDeps {
     claimSlot: (repoId: number, cardId: number) => Promise<{ id: number; path: string } | null>;
     releaseSlot: (slotId: number) => Promise<void>;
   };
+  slotPreparer: SlotPreparer;
   workflowLoader: { get: (id: string) => WorkflowDefinition | undefined };
   contextBundler: { buildPrompt: (opts: unknown) => string };
   cardService: CardService;
@@ -50,6 +53,7 @@ export class WorkflowOrchestrator {
       logger: defaultLogger,
       tmuxManager: defaultTmuxManager,
       slotAllocator: defaultSlotAllocator,
+      slotPreparer: defaultSlotPreparer,
       workflowLoader: defaultWorkflowLoader,
       contextBundler: defaultContextBundler,
       cardService: defaultCardService,
@@ -66,11 +70,6 @@ export class WorkflowOrchestrator {
     if (!ctx) return;
 
     try {
-      // Create git branch (skip if branchMode is "current")
-      if (ctx.card.branchMode !== "current") {
-        this.createBranch(ctx);
-      }
-
       // Execute each step in sequence
       for (let i = 0; i < ctx.workflow.steps.length; i++) {
         const step = ctx.workflow.steps[i]!;
@@ -174,6 +173,24 @@ export class WorkflowOrchestrator {
     // Update card to running
     await this.deps.cardService.updateStatus(cardId, "running");
 
+    // Build branch name
+    const branch = renderTemplate(workflow.branch_template ?? "agentboard/card-{card_id}", {
+      card_id: String(cardId),
+      issue: String(card.githubIssueNumber ?? ""),
+      issue_title: card.title,
+    });
+
+    // Prepare the slot: sync git, set up branch, install deps
+    const prepResult = await this.deps.slotPreparer.prepare({
+      slotPath: slot.path,
+      branchMode: card.branchMode as "create" | "current",
+      branch,
+    });
+
+    for (const event of prepResult.events) {
+      await this.deps.cardService.logEvent(cardId, event.type, event.detail);
+    }
+
     // Create tmux session
     const { sessionName, created } = this.deps.tmuxManager.createSession(cardId, slot.path);
     if (created) {
@@ -189,12 +206,8 @@ export class WorkflowOrchestrator {
       this.deps.eventBus.emit("agent:output", { cardId, content: output });
     });
 
-    // Build branch name
-    const branch = renderTemplate(workflow.branch_template ?? "agentboard/card-{card_id}", {
-      card_id: String(cardId),
-      issue: String(card.githubIssueNumber ?? ""),
-      issue_title: card.title,
-    });
+    // Use the actual branch from prep (may differ if fallback occurred)
+    const actualBranch = prepResult.branch;
 
     // Create workflow run record
     const runRows = await this.deps.db
@@ -204,7 +217,7 @@ export class WorkflowOrchestrator {
         workflowId: card.workflowId,
         slotId: slot.id,
         tmuxSession: sessionName,
-        branch,
+        branch: actualBranch,
         startedAt: new Date(),
       })
       .returning();
@@ -218,30 +231,9 @@ export class WorkflowOrchestrator {
       slotId: slot.id,
       sessionName,
       workflowRunId: runRows[0]!.id,
-      branch,
+      branch: actualBranch,
       previousArtifacts: new Map(),
     };
-  }
-
-  /** Create a git branch in the slot directory */
-  private createBranch(ctx: WorkflowContext): void {
-    try {
-      this.deps.execSync(`git checkout -b ${ctx.branch}`, {
-        cwd: ctx.slotPath,
-        stdio: "ignore",
-      });
-      this.deps.logger.info(`Created branch ${ctx.branch} in ${ctx.slotPath}`);
-    } catch {
-      // Branch may already exist -- try checking it out
-      try {
-        this.deps.execSync(`git checkout ${ctx.branch}`, {
-          cwd: ctx.slotPath,
-          stdio: "ignore",
-        });
-      } catch (err) {
-        this.deps.logger.error(`Failed to create/checkout branch ${ctx.branch}:`, err);
-      }
-    }
   }
 
   /** Execute post-workflow steps (create PR, update labels) */
