@@ -33,7 +33,7 @@ describe("writeHooks()", () => {
     expect(existsSync(resolve(slotPath, ".claude", "settings.local.json"))).toBe(true);
   });
 
-  it("writes correct Stop, StopFailure, Notification hooks", () => {
+  it("writes command hooks with retry script for all lifecycle events", () => {
     const slotPath = makeTmpDir();
 
     writeHooks(slotPath, 7, 4200, "step-complete");
@@ -41,26 +41,22 @@ describe("writeHooks()", () => {
     const settings = readSettings(slotPath) as {
       hooks: Record<
         string,
-        Array<{ matcher: string; hooks: Array<{ type: string; url: string }> }>
+        Array<{ matcher: string; hooks: Array<{ type: string; command: string; timeout: number }> }>
       >;
     };
 
-    expect(settings.hooks.Stop[0]!.hooks[0]!.url).toBe(
-      "http://localhost:4200/api/agents/7/step-complete",
-    );
-    expect(settings.hooks.StopFailure[0]!.hooks[0]!.url).toBe(
-      "http://localhost:4200/api/agents/7/failure",
-    );
-    expect(settings.hooks.Notification[0]!.hooks[0]!.url).toBe(
-      "http://localhost:4200/api/agents/7/notification",
-    );
-
-    // All hooks should use http type and empty matcher
+    // All hooks should use command type with retry script
     for (const hookName of ["Stop", "StopFailure", "Notification"]) {
       const hookArray = settings.hooks[hookName]!;
       expect(hookArray).toHaveLength(1);
       expect(hookArray[0]!.matcher).toBe("");
-      expect(hookArray[0]!.hooks[0]!.type).toBe("http");
+
+      const hook = hookArray[0]!.hooks[0]!;
+      expect(hook.type).toBe("command");
+      expect(hook.command).toContain("stop-hook.sh");
+      expect(hook.command).toContain("AGENTBOARD_CARD_ID=7");
+      expect(hook.command).toContain("AGENTBOARD_PORT=4200");
+      expect(hook.timeout).toBe(120);
     }
   });
 
