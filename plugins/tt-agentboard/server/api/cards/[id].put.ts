@@ -25,15 +25,9 @@ export default defineEventHandler(async (event) => {
   if (dependsOn !== undefined) {
     await db.delete(cardDependencies).where(eq(cardDependencies.cardId, id));
 
-    // Accept either an array of IDs or a comma-separated string (for migration compat)
     const depIds: number[] = Array.isArray(dependsOn)
       ? dependsOn.map(Number).filter((n: number) => !Number.isNaN(n) && n > 0)
-      : typeof dependsOn === "string" && dependsOn.length > 0
-        ? dependsOn
-            .split(",")
-            .map((s: string) => Number(s.trim()))
-            .filter((n: number) => !Number.isNaN(n) && n > 0)
-        : [];
+      : [];
 
     if (depIds.length > 0) {
       await db.insert(cardDependencies).values(

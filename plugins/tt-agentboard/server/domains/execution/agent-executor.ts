@@ -15,15 +15,12 @@ import { buildStreamingCommand, shellEscape } from "./workflow-helpers";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
+import type { Logger, EventBus, StreamTailer } from "./types";
 
 export interface AgentExecutorDeps {
   db: typeof defaultDb;
-  eventBus: { emit: (event: string, ...args: unknown[]) => boolean | void };
-  logger: {
-    info: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
+  eventBus: EventBus;
+  logger: Logger;
   tmuxManager: {
     isAvailable: () => boolean;
     createSession: (cardId: number, cwd: string) => { sessionName: string; created: boolean };
@@ -41,10 +38,7 @@ export interface AgentExecutorDeps {
   workflowOrchestrator: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
-  streamTailer: {
-    startTailing: (cardId: number, logFilePath: string) => Promise<void>;
-    stopTailing: (cardId: number) => void;
-  };
+  streamTailer: StreamTailer;
   execSync: typeof defaultExecSync;
   existsSync: typeof defaultExistsSync;
 }
@@ -273,31 +267,23 @@ export class AgentExecutor {
     }
 
     // Run package installer if a lockfile exists
-    const hasLockfile =
-      this.deps.existsSync(join(slot.path, "pnpm-lock.yaml")) ||
-      this.deps.existsSync(join(slot.path, "bun.lock")) ||
-      this.deps.existsSync(join(slot.path, "package-lock.json"));
+    const lockfile = this.deps.existsSync(join(slot.path, "pnpm-lock.yaml"))
+      ? "pnpm"
+      : this.deps.existsSync(join(slot.path, "bun.lock"))
+        ? "bun"
+        : this.deps.existsSync(join(slot.path, "package-lock.json"))
+          ? "npm"
+          : null;
 
-    if (hasLockfile) {
+    if (lockfile) {
       try {
-        if (this.deps.existsSync(join(slot.path, "pnpm-lock.yaml"))) {
-          this.deps.execSync("pnpm install --frozen-lockfile", {
-            cwd: slot.path,
-            stdio: "ignore",
-            timeout: 60000,
-          });
-          await this.deps.cardService.logEvent(cardId, "deps_installed", "pnpm install");
-        } else if (this.deps.existsSync(join(slot.path, "bun.lock"))) {
-          this.deps.execSync("bun install --frozen-lockfile", {
-            cwd: slot.path,
-            stdio: "ignore",
-            timeout: 60000,
-          });
-          await this.deps.cardService.logEvent(cardId, "deps_installed", "bun install");
-        } else {
-          this.deps.execSync("npm ci", { cwd: slot.path, stdio: "ignore", timeout: 60000 });
-          await this.deps.cardService.logEvent(cardId, "deps_installed", "npm ci");
-        }
+        const cmds = {
+          pnpm: "pnpm install --frozen-lockfile",
+          bun: "bun install --frozen-lockfile",
+          npm: "npm ci",
+        };
+        this.deps.execSync(cmds[lockfile], { cwd: slot.path, stdio: "ignore", timeout: 60000 });
+        await this.deps.cardService.logEvent(cardId, "deps_installed", `${lockfile} install`);
       } catch {
         await this.deps.cardService.logEvent(
           cardId,

@@ -1,6 +1,7 @@
 import { db } from "~~/server/shared/db";
-import { cards, repositories, workflowRuns, cardDependencies } from "~~/server/shared/db/schema";
+import { cards, repositories, workflowRuns } from "~~/server/shared/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
+import { cardService } from "~~/server/domains/cards/card-service";
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);
@@ -38,18 +39,7 @@ export default defineEventHandler(async (event) => {
 
   // Batch-fetch dependencies for all cards
   const cardIds = rows.map((c) => c.id);
-  const depsMap = new Map<number, number[]>();
-  if (cardIds.length > 0) {
-    const deps = await db
-      .select()
-      .from(cardDependencies)
-      .where(inArray(cardDependencies.cardId, cardIds));
-    for (const dep of deps) {
-      const existing = depsMap.get(dep.cardId) ?? [];
-      existing.push(dep.dependsOnCardId);
-      depsMap.set(dep.cardId, existing);
-    }
-  }
+  const depsMap = await cardService.getDepsMap(cardIds);
 
   return rows.map((card) => ({
     ...card,

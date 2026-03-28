@@ -15,6 +15,7 @@
 ## File Structure
 
 ### New files to create
+
 ```
 server/shared/event-bus.ts                    # TypedEventBus + EventMap
 server/shared/db/index.ts                     # DB init (moved from server/db/index.ts)
@@ -36,6 +37,7 @@ test/domains/execution/workflow-orchestrator.test.ts  # Orchestrator tests
 ```
 
 ### Files to delete after migration
+
 ```
 server/utils/event-bus.ts                     # Replaced by shared/event-bus.ts
 server/utils/card-events.ts                   # Absorbed into CardService
@@ -46,6 +48,7 @@ app/composables/useBoard.ts                   # Replaced by Pinia store getters
 ```
 
 ### Files to move (pure rename, update imports)
+
 ```
 server/db/index.ts          → server/shared/db/index.ts
 server/db/schema.ts         → split into domains/cards/schema.ts + domains/execution/schema.ts
@@ -69,6 +72,7 @@ server/utils/workflow-helpers.ts     → server/domains/execution/workflow-helpe
 ## Task 1: Typed Event Bus
 
 **Files:**
+
 - Create: `server/shared/event-bus.ts`
 - Create: `test/shared/event-bus.test.ts`
 - Modify: `server/utils/event-bus.ts` (keep as re-export for now)
@@ -123,11 +127,19 @@ describe("TypedEventBus", () => {
   it("EventMap keys export covers all events", () => {
     // Compile-time check: if EventMap is missing an event, this won't compile
     const allEvents: (keyof EventMap)[] = [
-      "card:created", "card:moved", "card:status-changed", "card:deleted",
-      "slot:claimed", "slot:released",
-      "step:started", "step:completed", "step:failed",
+      "card:created",
+      "card:moved",
+      "card:status-changed",
+      "card:deleted",
+      "slot:claimed",
+      "slot:released",
+      "step:started",
+      "step:completed",
+      "step:failed",
       "workflow:completed",
-      "agent:output", "agent:activity", "agent:waiting",
+      "agent:output",
+      "agent:activity",
+      "agent:waiting",
       "github:issue-found",
     ];
     expect(allEvents).toHaveLength(14);
@@ -150,8 +162,14 @@ import { EventEmitter } from "node:events";
 
 export type Column = "backlog" | "ready" | "in_progress" | "review" | "done";
 export type CardStatus =
-  | "idle" | "queued" | "running" | "waiting_input"
-  | "review_ready" | "done" | "failed" | "blocked";
+  | "idle"
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "review_ready"
+  | "done"
+  | "failed"
+  | "blocked";
 
 export interface AgentActivityEvent {
   kind: "tool_use" | "thinking" | "text" | "result";
@@ -162,24 +180,24 @@ export interface AgentActivityEvent {
 
 export interface EventMap {
   // Card domain
-  "card:created":        { cardId: number };
-  "card:moved":          { cardId: number; fromColumn: Column; toColumn: Column };
+  "card:created": { cardId: number };
+  "card:moved": { cardId: number; fromColumn: Column; toColumn: Column };
   "card:status-changed": { cardId: number; status: CardStatus };
-  "card:deleted":        { cardId: number };
+  "card:deleted": { cardId: number };
 
   // Execution domain
-  "slot:claimed":        { slotId: number; cardId: number };
-  "slot:released":       { slotId: number };
-  "step:started":        { cardId: number; stepId: string };
-  "step:completed":      { cardId: number; stepId: string; passed: boolean };
-  "step:failed":         { cardId: number; stepId: string; retryNumber: number };
-  "workflow:completed":  { cardId: number; status: "success" | "failed" };
-  "agent:output":        { cardId: number; content: string };
-  "agent:activity":      { cardId: number; event: AgentActivityEvent; timestamp: number };
-  "agent:waiting":       { cardId: number; question: string };
+  "slot:claimed": { slotId: number; cardId: number };
+  "slot:released": { slotId: number };
+  "step:started": { cardId: number; stepId: string };
+  "step:completed": { cardId: number; stepId: string; passed: boolean };
+  "step:failed": { cardId: number; stepId: string; retryNumber: number };
+  "workflow:completed": { cardId: number; status: "success" | "failed" };
+  "agent:output": { cardId: number; content: string };
+  "agent:activity": { cardId: number; event: AgentActivityEvent; timestamp: number };
+  "agent:waiting": { cardId: number; question: string };
 
   // Infrastructure domain
-  "github:issue-found":  { issueNumber: number; repoId: number };
+  "github:issue-found": { issueNumber: number; repoId: number };
 }
 
 // ── Typed Event Bus ──
@@ -241,6 +259,7 @@ git commit -m "feat(agentboard): add TypedEventBus with compile-time event safet
 ## Task 2: DB Schema — cardDependencies join table + cascade deletes
 
 **Files:**
+
 - Modify: `server/db/schema.ts`
 - Create: `test/db/schema-migration.test.ts`
 
@@ -257,14 +276,23 @@ describe("cardDependencies join table", () => {
   it("inserts and queries card dependencies", async () => {
     // Setup: create board + 2 cards
     const [board] = await db.insert(boards).values({ name: "Test" }).returning();
-    const [card1] = await db.insert(cards).values({ boardId: board.id, title: "Card 1" }).returning();
-    const [card2] = await db.insert(cards).values({ boardId: board.id, title: "Card 2" }).returning();
+    const [card1] = await db
+      .insert(cards)
+      .values({ boardId: board.id, title: "Card 1" })
+      .returning();
+    const [card2] = await db
+      .insert(cards)
+      .values({ boardId: board.id, title: "Card 2" })
+      .returning();
 
     // Insert dependency: card2 depends on card1
     await db.insert(cardDependencies).values({ cardId: card2.id, dependsOnCardId: card1.id });
 
     // Query
-    const deps = await db.select().from(cardDependencies).where(eq(cardDependencies.cardId, card2.id));
+    const deps = await db
+      .select()
+      .from(cardDependencies)
+      .where(eq(cardDependencies.cardId, card2.id));
     expect(deps).toHaveLength(1);
     expect(deps[0].dependsOnCardId).toBe(card1.id);
   });
@@ -308,6 +336,7 @@ export const cardDependencies = sqliteTable("card_dependencies", {
 ```
 
 Update existing foreign keys to add cascade/set-null behavior:
+
 - `cards.boardId` → add `{ onDelete: "cascade" }`
 - `cards.repoId` → add `{ onDelete: "set null" }`
 - `cards.planId` → add `{ onDelete: "set null" }`
@@ -323,6 +352,7 @@ Remove the `dependsOn` text column from `cards`.
 - [ ] **Step 4: Generate and apply Drizzle migration**
 
 Run:
+
 ```bash
 cd plugins/tt-agentboard && pnpm db:generate && pnpm db:migrate
 ```
@@ -347,6 +377,7 @@ const depIds = deps.map((d) => d.dependsOnCardId);
 - [ ] **Step 6: Update API routes that read/write dependsOn**
 
 Search for `dependsOn` in `server/api/` and update to use `cardDependencies` table. Key files:
+
 - `server/api/cards/index.post.ts` — insert dependencies after card creation
 - `server/api/cards/[id].put.ts` — replace dependencies on update
 - `server/api/cards/index.get.ts` — join to include dependencies in response
@@ -407,6 +438,7 @@ Create `server/domains/cards/schema.ts` — move `repositories`, `boards`, `plan
 Create `server/domains/execution/schema.ts` — move `workspaceSlots`, `workflowRuns`, `stepRuns`, `agentLogs` tables.
 
 Create `server/shared/db/schema.ts` that re-exports everything:
+
 ```typescript
 export * from "../../domains/cards/schema";
 export * from "../../domains/execution/schema";
@@ -430,8 +462,14 @@ mv server/utils/workflow-helpers.ts server/domains/execution/
 // server/domains/cards/types.ts
 export type Column = "backlog" | "ready" | "in_progress" | "review" | "done";
 export type CardStatus =
-  | "idle" | "queued" | "running" | "waiting_input"
-  | "review_ready" | "done" | "failed" | "blocked";
+  | "idle"
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "review_ready"
+  | "done"
+  | "failed"
+  | "blocked";
 ```
 
 Update `server/shared/event-bus.ts` to import from `../domains/cards/types` instead of inline types.
@@ -439,6 +477,7 @@ Update `server/shared/event-bus.ts` to import from `../domains/cards/types` inst
 - [ ] **Step 7: Fix all import paths across the codebase**
 
 Use find-and-replace across all `.ts` and `.vue` files:
+
 - `"../db"` or `"../../server/db"` → `"../shared/db"` or `"../../server/shared/db"`
 - `"../db/schema"` → `"../shared/db/schema"` (the re-export file)
 - `"../services/tmux-manager"` → `"../domains/infra/tmux-manager"` (etc for all moved files)
@@ -459,6 +498,7 @@ cd plugins/tt-agentboard
 # Typecheck isn't separate for Nuxt — rely on test imports
 pnpm vitest run test/services/ test/plugins/ test/integration/session-reconnect-live.test.ts test/shared/ test/db/
 ```
+
 Expected: All pass
 
 - [ ] **Step 10: Commit**
@@ -473,6 +513,7 @@ git commit -m "refactor(agentboard): reorganize server into domain-driven struct
 ## Task 4: CardService — Centralize card state transitions
 
 **Files:**
+
 - Create: `server/domains/cards/card-service.ts`
 - Create: `test/domains/cards/card-service.test.ts`
 - Modify: All files that do ad-hoc `db.update(cards)` + `eventBus.emit("card:status-changed")`
@@ -569,7 +610,11 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 export interface CardServiceDeps {
   db: BetterSQLite3Database<Record<string, unknown>>;
   eventBus: TypedEventBus;
-  logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+  logger: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+  };
 }
 
 export class CardService {
@@ -634,10 +679,7 @@ export class CardService {
       const depCardIds = allDeps.map((d) => d.dependsOnCardId);
       if (depCardIds.length === 0) continue;
 
-      const depCards = await this.deps.db
-        .select()
-        .from(cards)
-        .where(inArray(cards.id, depCardIds));
+      const depCards = await this.deps.db.select().from(cards).where(inArray(cards.id, depCardIds));
 
       const allDone = depCards.every((c) => c.status === "done");
       if (allDone) {
@@ -660,6 +702,7 @@ Expected: PASS
 - [ ] **Step 5: Replace ad-hoc card state changes with CardService calls**
 
 Search for patterns like `db.update(cards).set({ status:` and `eventBus.emit("card:status-changed"` across:
+
 - `server/domains/execution/agent-executor.ts`
 - `server/plugins/queue-manager.ts`
 - `server/plugins/session-reconnect.ts`
@@ -691,6 +734,7 @@ git commit -m "feat(agentboard): add CardService, centralize all card state tran
 ## Task 5: Workflow-Runner Decomposition
 
 **Files:**
+
 - Create: `server/domains/execution/step-executor.ts`
 - Create: `server/domains/execution/workflow-orchestrator.ts`
 - Create: `test/domains/execution/step-executor.test.ts`
@@ -702,6 +746,7 @@ git commit -m "feat(agentboard): add CardService, centralize all card state tran
 Test the core step execution: spawn Claude command, wait for callback, check artifact, evaluate pass condition. Use the same mock helpers pattern from existing tests.
 
 Key test cases:
+
 - Step passes on first attempt
 - Step fails and retries up to max_retries
 - Artifact missing after Claude exits
@@ -724,6 +769,7 @@ Expected: PASS
 Test the orchestration loop: init context, iterate steps calling StepExecutor, handle goto on failure, run post-steps, cleanup.
 
 Key test cases:
+
 - Runs all steps in order when all pass
 - Stops on step failure (no goto)
 - Follows goto directive on step failure
@@ -769,6 +815,7 @@ git commit -m "refactor(agentboard): split workflow-runner into orchestrator + s
 ## Task 6: Pinia Store
 
 **Files:**
+
 - Modify: `package.json` (add pinia + @pinia/nuxt)
 - Modify: `nuxt.config.ts` (add @pinia/nuxt module)
 - Create: `app/stores/cards.ts`
@@ -831,8 +878,8 @@ export const useCardStore = defineStore("cards", () => {
   const error = ref<string | null>(null);
 
   // Getters
-  const selectedCard = computed(() =>
-    cards.value.find((c) => c.id === selectedCardId.value) ?? null,
+  const selectedCard = computed(
+    () => cards.value.find((c) => c.id === selectedCardId.value) ?? null,
   );
 
   const columnCards = computed(() => {
@@ -855,9 +902,7 @@ export const useCardStore = defineStore("cards", () => {
     return counts;
   });
 
-  const activeCards = computed(() =>
-    cards.value.filter((c) => c.status === "running"),
-  );
+  const activeCards = computed(() => cards.value.filter((c) => c.status === "running"));
 
   // Actions
   async function fetchCards(boardId = 1) {
@@ -933,9 +978,19 @@ export const useCardStore = defineStore("cards", () => {
   }
 
   return {
-    cards, selectedCardId, selectedCard, loading, error,
-    columnCards, columnCounts, activeCards,
-    fetchCards, moveCard, createCard, deleteCard, selectCard,
+    cards,
+    selectedCardId,
+    selectedCard,
+    loading,
+    error,
+    columnCards,
+    columnCounts,
+    activeCards,
+    fetchCards,
+    moveCard,
+    createCard,
+    deleteCard,
+    selectCard,
     bindWebSocket,
   };
 });
@@ -958,6 +1013,7 @@ export default defineNuxtPlugin(() => {
 Replace all `useCards()` and `useBoard()` calls with `useCardStore()`. Remove local card state management. The page becomes a thin shell that reads from the store.
 
 Key changes:
+
 - `const { cards, fetchCards, moveCard, createCard } = useCards()` → `const store = useCardStore()`
 - `const { columnCards, columnCounts } = useBoard(cards)` → `store.columnCards`, `store.columnCounts`
 - `selectedCardId` local ref → `store.selectedCardId`

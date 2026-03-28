@@ -63,13 +63,43 @@ export class CardService {
 
   /** Mark card complete: status=review_ready, column=review */
   async markComplete(cardId: number): Promise<void> {
-    await this.updateStatus(cardId, "review_ready");
-    await this.moveToColumn(cardId, "review");
+    await this.deps.db
+      .update(cards)
+      .set({ status: "review_ready", column: "review", updatedAt: new Date() })
+      .where(eq(cards.id, cardId));
+
+    this.deps.eventBus.emit("card:status-changed", {
+      cardId,
+      status: "review_ready" as CardStatus,
+    });
+    this.deps.eventBus.emit("card:moved", {
+      cardId,
+      fromColumn: "in_progress" as Column,
+      toColumn: "review" as Column,
+    });
   }
 
   /** Insert a row into the cardEvents table */
   async logEvent(cardId: number, event: string, detail?: string): Promise<void> {
     await this.deps.db.insert(cardEvents).values({ cardId, event, detail });
+  }
+
+  /** Batch-fetch dependency IDs for a set of cards */
+  async getDepsMap(cardIds: number[]): Promise<Map<number, number[]>> {
+    const map = new Map<number, number[]>();
+    if (cardIds.length === 0) return map;
+
+    const deps = await this.deps.db
+      .select()
+      .from(cardDependencies)
+      .where(inArray(cardDependencies.cardId, cardIds));
+
+    for (const dep of deps) {
+      const existing = map.get(dep.cardId) ?? [];
+      existing.push(dep.dependsOnCardId);
+      map.set(dep.cardId, existing);
+    }
+    return map;
   }
 
   /**
@@ -92,22 +122,34 @@ export class CardService {
       .from(cards)
       .where(inArray(cards.id, dependentCardIds));
 
+    const blocked = blockedCards.filter((c) => c.status === "blocked");
+    if (blocked.length === 0) return [];
+
+    // Batch-load all deps for blocked cards + check which dep cards are done
+    const allDeps = await this.getDepsMap(blocked.map((c) => c.id));
+    const allDepIds = [...new Set([...allDeps.values()].flat())];
+    const depCardStatuses = new Map<number, string>();
+    if (allDepIds.length > 0) {
+      const depCards = await this.deps.db
+        .select({ id: cards.id, status: cards.status })
+        .from(cards)
+        .where(inArray(cards.id, allDepIds));
+      for (const c of depCards) {
+        depCardStatuses.set(c.id, c.status);
+      }
+    }
+
     const unblockedIds: number[] = [];
 
-    for (const card of blockedCards) {
-      if (card.status !== "blocked") continue;
-
-      const deps = await this.getDeps(card.id);
-      const allMet = await this.allDepsMet(deps);
+    for (const card of blocked) {
+      const deps = allDeps.get(card.id) ?? [];
+      const allMet =
+        deps.length > 0 && deps.every((depId) => depCardStatuses.get(depId) === "done");
 
       if (allMet) {
         await this.deps.db
           .update(cards)
-          .set({
-            column: "ready",
-            status: "idle",
-            updatedAt: new Date(),
-          })
+          .set({ column: "ready", status: "idle", updatedAt: new Date() })
           .where(eq(cards.id, card.id));
 
         unblockedIds.push(card.id);
@@ -116,28 +158,6 @@ export class CardService {
     }
 
     return unblockedIds;
-  }
-
-  /** Get dependency card IDs for a card */
-  private async getDeps(cardId: number): Promise<number[]> {
-    const rows = await this.deps.db
-      .select({ dependsOnCardId: cardDependencies.dependsOnCardId })
-      .from(cardDependencies)
-      .where(eq(cardDependencies.cardId, cardId));
-    return rows.map((r) => r.dependsOnCardId);
-  }
-
-  /** Check if all dependency card IDs are in 'done' status */
-  private async allDepsMet(depIds: number[]): Promise<boolean> {
-    if (depIds.length === 0) return true;
-
-    const depCards = await this.deps.db
-      .select({ id: cards.id, status: cards.status })
-      .from(cards)
-      .where(inArray(cards.id, depIds));
-
-    if (depCards.length !== depIds.length) return false;
-    return depCards.every((c) => c.status === "done");
   }
 }
 

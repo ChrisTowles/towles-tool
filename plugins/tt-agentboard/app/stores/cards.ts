@@ -65,20 +65,6 @@ export const useCardStore = defineStore("cards", () => {
     return grouped;
   });
 
-  const columnCounts = computed(() => {
-    const counts: Record<Column, number> = {
-      backlog: 0,
-      ready: 0,
-      in_progress: 0,
-      review: 0,
-      done: 0,
-    };
-    for (const col of COLUMNS) {
-      counts[col] = columnCards.value[col].length;
-    }
-    return counts;
-  });
-
   const totalCards = computed(() => cards.value.length);
 
   const activeCards = computed(() => cards.value.filter((c) => c.status === "running").length);
@@ -166,10 +152,14 @@ export const useCardStore = defineStore("cards", () => {
 
   // --- WebSocket integration ---
 
+  let wsBound = false;
+
   function bindWebSocket(ws: {
     on: (type: string, handler: (event: BoardEvent) => void) => void;
     off: (type: string, handler: (event: BoardEvent) => void) => void;
   }) {
+    if (wsBound) return;
+    wsBound = true;
     const handleMoved = (event: BoardEvent) => {
       const { cardId, toColumn } = event as CardMovedEvent;
       const card = cards.value.find((c) => c.id === cardId);
@@ -212,14 +202,6 @@ export const useCardStore = defineStore("cards", () => {
     ws.on("card:created", handleCreated);
     ws.on("card:deleted", handleDeleted);
     ws.on("workflow:completed", handleWorkflowCompleted);
-
-    return () => {
-      ws.off("card:moved", handleMoved);
-      ws.off("card:status-changed", handleStatusChanged);
-      ws.off("card:created", handleCreated);
-      ws.off("card:deleted", handleDeleted);
-      ws.off("workflow:completed", handleWorkflowCompleted);
-    };
   }
 
   return {
@@ -231,7 +213,6 @@ export const useCardStore = defineStore("cards", () => {
     // Getters
     selectedCard,
     columnCards,
-    columnCounts,
     totalCards,
     activeCards,
     // Actions

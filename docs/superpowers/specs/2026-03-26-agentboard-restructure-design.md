@@ -20,24 +20,24 @@ import type { AgentActivityEvent } from "../domains/execution/types";
 
 export interface EventMap {
   // Card domain
-  "card:created":        { cardId: number };
-  "card:moved":          { cardId: number; fromColumn: Column; toColumn: Column };
+  "card:created": { cardId: number };
+  "card:moved": { cardId: number; fromColumn: Column; toColumn: Column };
   "card:status-changed": { cardId: number; status: CardStatus };
-  "card:deleted":        { cardId: number };
+  "card:deleted": { cardId: number };
 
   // Execution domain
-  "slot:claimed":        { slotId: number; cardId: number };
-  "slot:released":       { slotId: number };
-  "step:started":        { cardId: number; stepId: string };
-  "step:completed":      { cardId: number; stepId: string; passed: boolean };
-  "step:failed":         { cardId: number; stepId: string; retryNumber: number };
-  "workflow:completed":  { cardId: number; status: "success" | "failed" };
-  "agent:output":        { cardId: number; content: string };
-  "agent:activity":      { cardId: number; event: AgentActivityEvent; timestamp: number };
-  "agent:waiting":       { cardId: number; question: string };
+  "slot:claimed": { slotId: number; cardId: number };
+  "slot:released": { slotId: number };
+  "step:started": { cardId: number; stepId: string };
+  "step:completed": { cardId: number; stepId: string; passed: boolean };
+  "step:failed": { cardId: number; stepId: string; retryNumber: number };
+  "workflow:completed": { cardId: number; status: "success" | "failed" };
+  "agent:output": { cardId: number; content: string };
+  "agent:activity": { cardId: number; event: AgentActivityEvent; timestamp: number };
+  "agent:waiting": { cardId: number; question: string };
 
   // Infrastructure domain
-  "github:issue-found":  { issueNumber: number; repoId: number };
+  "github:issue-found": { issueNumber: number; repoId: number };
 }
 ```
 
@@ -140,12 +140,12 @@ server/
 
 ### Domain boundaries
 
-| Domain | Owns | Depends on |
-|--------|------|------------|
-| **cards** | Card state, columns, dependencies, repos, boards, plans | shared/db |
-| **execution** | Running agents, workflows, steps, slots, logs | cards (read card state), infra (tmux, git, github) |
-| **infra** | External tool wrappers (tmux, git, gh, stream parsing) | nothing |
-| **shared** | Event bus, DB connection | nothing |
+| Domain        | Owns                                                    | Depends on                                         |
+| ------------- | ------------------------------------------------------- | -------------------------------------------------- |
+| **cards**     | Card state, columns, dependencies, repos, boards, plans | shared/db                                          |
+| **execution** | Running agents, workflows, steps, slots, logs           | cards (read card state), infra (tmux, git, github) |
+| **infra**     | External tool wrappers (tmux, git, gh, stream parsing)  | nothing                                            |
+| **shared**    | Event bus, DB connection                                | nothing                                            |
 
 Dependency rule: `infra` depends on nothing. `cards` depends on `shared`. `execution` depends on `cards` + `infra` + `shared`. No circular dependencies.
 
@@ -175,13 +175,19 @@ Owns the step loop and workflow lifecycle. Does NOT know how to run a step.
 ```typescript
 export class WorkflowOrchestrator {
   constructor(deps: {
-    db; eventBus; logger;
+    db;
+    eventBus;
+    logger;
     cardService: CardService;
     stepExecutor: StepExecutor;
     slotAllocator: SlotAllocator;
-    tmuxManager; contextBundler;
-    workflowLoader; logCardEvent;
-    execSync; existsSync; readFileSync;  // from node:fs/child_process, injected for testability
+    tmuxManager;
+    contextBundler;
+    workflowLoader;
+    logCardEvent;
+    execSync;
+    existsSync;
+    readFileSync; // from node:fs/child_process, injected for testability
   }) {}
 
   async run(cardId: number): Promise<void> {
@@ -192,8 +198,12 @@ export class WorkflowOrchestrator {
       for (const step of ctx.workflow.steps) {
         const result = await this.deps.stepExecutor.execute(ctx, step);
         if (!result.passed) {
-          if (step.on_fail?.goto) { /* jump to step */ }
-          else { await this.fail(ctx, step.id); return; }
+          if (step.on_fail?.goto) {
+            /* jump to step */
+          } else {
+            await this.fail(ctx, step.id);
+            return;
+          }
         }
       }
       await this.runPostSteps(ctx);
@@ -214,9 +224,13 @@ Runs a single step. Knows about Claude CLI, hooks, artifacts, pass conditions.
 ```typescript
 export class StepExecutor {
   constructor(deps: {
-    db; eventBus; logger;
-    tmuxManager; contextBundler;
-    streamTailer; hookWriter;
+    db;
+    eventBus;
+    logger;
+    tmuxManager;
+    contextBundler;
+    streamTailer;
+    hookWriter;
     logCardEvent;
   }) {}
 
@@ -227,13 +241,21 @@ export class StepExecutor {
       const callbackResult = await this.waitForCallback(ctx.cardId);
 
       if (!this.checkArtifact(ctx, step)) {
-        this.deps.eventBus.emit("step:failed", { cardId: ctx.cardId, stepId: step.id, retryNumber: retry });
+        this.deps.eventBus.emit("step:failed", {
+          cardId: ctx.cardId,
+          stepId: step.id,
+          retryNumber: retry,
+        });
         continue;
       }
 
       const passed = this.evaluatePassCondition(step, ctx);
       if (passed) {
-        this.deps.eventBus.emit("step:completed", { cardId: ctx.cardId, stepId: step.id, passed: true });
+        this.deps.eventBus.emit("step:completed", {
+          cardId: ctx.cardId,
+          stepId: step.id,
+          passed: true,
+        });
         return { passed: true, artifact: this.readArtifact(ctx, step) };
       }
     }
@@ -275,8 +297,12 @@ Every card state change goes through `CardService`. No more ad-hoc `db.update(ca
 ```typescript
 export const cardDependencies = sqliteTable("card_dependencies", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  cardId: integer("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),
-  dependsOnCardId: integer("depends_on_card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),
+  cardId: integer("card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
+  dependsOnCardId: integer("depends_on_card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
 });
 ```
 
@@ -288,17 +314,17 @@ Drop the `dependsOn` text column from `cards`.
 
 Add `onDelete: "cascade"` to all foreign key references:
 
-| Child table | Parent | Current | New |
-|-------------|--------|---------|-----|
-| `cards.boardId` | boards | no cascade | cascade |
-| `cards.repoId` | repositories | no cascade | set null |
-| `cards.planId` | plans | no cascade | set null |
-| `workspaceSlots.repoId` | repositories | no cascade | cascade |
-| `workflowRuns.cardId` | cards | no cascade | cascade |
-| `workflowRuns.slotId` | workspaceSlots | no cascade | set null |
-| `stepRuns.workflowRunId` | workflowRuns | no cascade | cascade |
-| `cardEvents.cardId` | cards | no cascade | cascade |
-| `agentLogs.workflowRunId` | workflowRuns | no cascade | cascade |
+| Child table               | Parent         | Current    | New      |
+| ------------------------- | -------------- | ---------- | -------- |
+| `cards.boardId`           | boards         | no cascade | cascade  |
+| `cards.repoId`            | repositories   | no cascade | set null |
+| `cards.planId`            | plans          | no cascade | set null |
+| `workspaceSlots.repoId`   | repositories   | no cascade | cascade  |
+| `workflowRuns.cardId`     | cards          | no cascade | cascade  |
+| `workflowRuns.slotId`     | workspaceSlots | no cascade | set null |
+| `stepRuns.workflowRunId`  | workflowRuns   | no cascade | cascade  |
+| `cardEvents.cardId`       | cards          | no cascade | cascade  |
+| `agentLogs.workflowRunId` | workflowRuns   | no cascade | cascade  |
 
 Deleting a card cascades to its workflow runs, step runs, events, and logs. No orphaned records.
 
@@ -326,29 +352,42 @@ export const useCardStore = defineStore("cards", () => {
   const error = ref<string | null>(null);
 
   // Getters
-  const selectedCard = computed(() =>
-    cards.value.find((c) => c.id === selectedCardId.value) ?? null,
+  const selectedCard = computed(
+    () => cards.value.find((c) => c.id === selectedCardId.value) ?? null,
   );
   const columnCards = computed(() => groupByColumn(cards.value));
   const columnCounts = computed(() => countByColumn(cards.value));
-  const activeCards = computed(() =>
-    cards.value.filter((c) => c.status === "running"),
-  );
+  const activeCards = computed(() => cards.value.filter((c) => c.status === "running"));
 
   // Actions
-  async function fetchCards(boardId?: number) { /* GET /api/cards */ }
+  async function fetchCards(boardId?: number) {
+    /* GET /api/cards */
+  }
   async function moveCard(cardId: number, column: Column, position: number) {
     // Optimistic update
     const card = cards.value.find((c) => c.id === cardId);
-    if (card) { card.column = column; card.position = position; }
+    if (card) {
+      card.column = column;
+      card.position = position;
+    }
     // POST /api/cards/{id}/move
     // Revert on error
   }
-  async function createCard(data: NewCardData) { /* POST /api/cards */ }
-  async function deleteCard(cardId: number) { /* DELETE /api/cards/{id} */ }
-  async function startCard(cardId: number) { /* move + POST agent start */ }
-  async function retryCard(cardId: number) { /* same */ }
-  async function selectCard(cardId: number) { /* set selectedCardId, fetch detail */ }
+  async function createCard(data: NewCardData) {
+    /* POST /api/cards */
+  }
+  async function deleteCard(cardId: number) {
+    /* DELETE /api/cards/{id} */
+  }
+  async function startCard(cardId: number) {
+    /* move + POST agent start */
+  }
+  async function retryCard(cardId: number) {
+    /* same */
+  }
+  async function selectCard(cardId: number) {
+    /* set selectedCardId, fetch detail */
+  }
 
   // WebSocket integration — called once on app mount
   function bindWebSocket(ws: ReturnType<typeof useWebSocket>) {
@@ -368,10 +407,21 @@ export const useCardStore = defineStore("cards", () => {
   }
 
   return {
-    cards, selectedCardId, selectedCard, loading, error,
-    columnCards, columnCounts, activeCards,
-    fetchCards, moveCard, createCard, deleteCard,
-    startCard, retryCard, selectCard,
+    cards,
+    selectedCardId,
+    selectedCard,
+    loading,
+    error,
+    columnCards,
+    columnCounts,
+    activeCards,
+    fetchCards,
+    moveCard,
+    createCard,
+    deleteCard,
+    startCard,
+    retryCard,
+    selectCard,
     bindWebSocket,
   };
 });
@@ -379,25 +429,26 @@ export const useCardStore = defineStore("cards", () => {
 
 ### What it replaces
 
-| Old composable | Merged into | Notes |
-|----------------|-------------|-------|
-| `useCards()` | `useCardStore` | fetchCards, moveCard, createCard |
-| `useBoard()` | `useCardStore` getters | columnCards, columnCounts, activeCards |
-| `useWebSocket().bindCards()` | `useCardStore.bindWebSocket()` | WS event → store mutation |
+| Old composable               | Merged into                    | Notes                                  |
+| ---------------------------- | ------------------------------ | -------------------------------------- |
+| `useCards()`                 | `useCardStore`                 | fetchCards, moveCard, createCard       |
+| `useBoard()`                 | `useCardStore` getters         | columnCards, columnCounts, activeCards |
+| `useWebSocket().bindCards()` | `useCardStore.bindWebSocket()` | WS event → store mutation              |
 
 ### What stays as composables
 
-| Composable | Reason |
-|------------|--------|
-| `useWebSocket()` | Transport layer, not card-specific state |
-| `useVoice()` | Browser API wrapper, independent |
-| `useKeyboardShortcuts()` | Input handling, independent |
-| `useNotifications()` | Browser Notification API, reads from WS events |
-| `useCardUrls()` | Pure computed URL builders |
+| Composable               | Reason                                         |
+| ------------------------ | ---------------------------------------------- |
+| `useWebSocket()`         | Transport layer, not card-specific state       |
+| `useVoice()`             | Browser API wrapper, independent               |
+| `useKeyboardShortcuts()` | Input handling, independent                    |
+| `useNotifications()`     | Browser Notification API, reads from WS events |
+| `useCardUrls()`          | Pure computed URL builders                     |
 
 ### Integration
 
 `app/plugins/init-store.client.ts`:
+
 ```typescript
 export default defineNuxtPlugin(() => {
   const cardStore = useCardStore();
@@ -415,13 +466,13 @@ Components use `const store = useCardStore()` instead of calling multiple compos
 
 Each phase is independently deployable and testable.
 
-| Phase | What | Dependencies |
-|-------|------|-------------|
-| **1** | Typed event bus | None |
-| **2** | DB schema improvements (join table, cascades) + migration | None |
-| **3** | Domain directory restructure (move files, update imports) | Phase 1 (uses new event bus) |
+| Phase | What                                                                        | Dependencies                    |
+| ----- | --------------------------------------------------------------------------- | ------------------------------- |
+| **1** | Typed event bus                                                             | None                            |
+| **2** | DB schema improvements (join table, cascades) + migration                   | None                            |
+| **3** | Domain directory restructure (move files, update imports)                   | Phase 1 (uses new event bus)    |
 | **4** | Workflow-runner decomposition (orchestrator + step-executor + card-service) | Phase 3 (new directories exist) |
-| **5** | Pinia store + composable consolidation | Phase 1 (typed events for WS) |
-| **6** | Tests for all new services | Phase 4 |
+| **5** | Pinia store + composable consolidation                                      | Phase 1 (typed events for WS)   |
+| **6** | Tests for all new services                                                  | Phase 4                         |
 
 Phases 1 and 2 can run in parallel. Phase 5 can start as soon as Phase 1 is done (independent of server restructure).
