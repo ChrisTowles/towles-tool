@@ -1,7 +1,7 @@
 {
   "name": "tt-ac",
   "description": "Auto-Claude pipeline: automated issue-to-PR workflows using Claude Code",
-  "version": "0.0.77",
+  "version": "0.0.78",
   "author": {
     "name": "Chris Towles"
   }
