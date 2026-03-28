@@ -79,6 +79,28 @@ export class CardService {
     });
   }
 
+  /** Mark card done: status=done, column=done */
+  async markDone(cardId: number): Promise<void> {
+    const rows = await this.deps.db.select().from(cards).where(eq(cards.id, cardId));
+    if (rows.length === 0) return;
+    const fromColumn = (rows[0]!.column ?? "review") as Column;
+
+    await this.deps.db
+      .update(cards)
+      .set({ status: "done", column: "done", updatedAt: new Date() })
+      .where(eq(cards.id, cardId));
+
+    this.deps.eventBus.emit("card:status-changed", {
+      cardId,
+      status: "done" as CardStatus,
+    });
+    this.deps.eventBus.emit("card:moved", {
+      cardId,
+      fromColumn,
+      toColumn: "done" as Column,
+    });
+  }
+
   /** Insert a row into the cardEvents table */
   async logEvent(cardId: number, event: string, detail?: string): Promise<void> {
     await this.deps.db.insert(cardEvents).values({ cardId, event, detail });

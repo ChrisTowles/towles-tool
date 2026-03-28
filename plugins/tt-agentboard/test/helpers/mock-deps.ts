@@ -90,6 +90,7 @@ export function createMockCardService() {
     moveToColumn: vi.fn().mockResolvedValue(undefined),
     markFailed: vi.fn().mockResolvedValue(undefined),
     markComplete: vi.fn().mockResolvedValue(undefined),
+    markDone: vi.fn().mockResolvedValue(undefined),
     logEvent: vi.fn().mockResolvedValue(undefined),
     resolveDependencies: vi.fn().mockResolvedValue([]),
     getDepsMap: vi.fn().mockResolvedValue(new Map()),

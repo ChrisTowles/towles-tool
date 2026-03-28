@@ -133,6 +133,48 @@ describe("CardService", () => {
     });
   });
 
+  describe("markDone()", () => {
+    it("sets status=done + column=done and emits both events", async () => {
+      const selectChain: Record<string, unknown> = {};
+      selectChain.from = vi.fn().mockReturnValue(selectChain);
+      selectChain.where = vi.fn().mockResolvedValue([{ id: 1, column: "review" }]);
+      mockDb.select = vi.fn().mockReturnValue(selectChain);
+
+      const updateChain: Record<string, unknown> = {};
+      updateChain.set = vi.fn().mockReturnValue(updateChain);
+      updateChain.where = vi.fn().mockResolvedValue(undefined);
+      mockDb.update = vi.fn().mockReturnValue(updateChain);
+
+      await service.markDone(1);
+
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "done", column: "done" }),
+      );
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
+        cardId: 1,
+        status: "done",
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
+        cardId: 1,
+        fromColumn: "review",
+        toColumn: "done",
+      });
+    });
+
+    it("does nothing if card not found", async () => {
+      const selectChain: Record<string, unknown> = {};
+      selectChain.from = vi.fn().mockReturnValue(selectChain);
+      selectChain.where = vi.fn().mockResolvedValue([]);
+      mockDb.select = vi.fn().mockReturnValue(selectChain);
+
+      await service.markDone(999);
+
+      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+  });
+
   describe("logEvent()", () => {
     it("inserts into cardEvents table", async () => {
       const insertChain: Record<string, unknown> = {};

@@ -127,6 +127,42 @@ describe("GitHubService", () => {
     });
   });
 
+  describe("isPrMerged()", () => {
+    it("returns true when PR state is MERGED", async () => {
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify({ state: "MERGED", mergedAt: "2026-03-28T00:00:00Z" }),
+      );
+
+      const result = await service.isPrMerged("org", "repo", 42);
+
+      expect(result).toBe(true);
+      expect(mockExecSync).toHaveBeenCalledWith(
+        expect.stringContaining("pr view 42 --repo org/repo"),
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
+    });
+
+    it("returns false when PR is still open", async () => {
+      mockExecSync.mockReturnValueOnce(
+        JSON.stringify({ state: "OPEN", mergedAt: null }),
+      );
+
+      const result = await service.isPrMerged("org", "repo", 42);
+
+      expect(result).toBe(false);
+    });
+
+    it("returns false when gh command fails", async () => {
+      mockExecSync.mockImplementationOnce(() => {
+        throw new Error("gh not found");
+      });
+
+      const result = await service.isPrMerged("org", "repo", 42);
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe("createBranch()", () => {
     it("creates branch via gh api", async () => {
       // First call: get ref SHA

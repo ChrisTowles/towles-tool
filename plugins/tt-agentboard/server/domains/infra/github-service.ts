@@ -132,6 +132,17 @@ export class GitHubService {
     return { branchName, sha: typeof sha === "string" ? sha : sha.object.sha };
   }
 
+  async isPrMerged(owner: string, repo: string, prNumber: number): Promise<boolean> {
+    try {
+      const result = this.ghJson<{ state: string; mergedAt: string | null }>(
+        `pr view ${prNumber} --repo ${owner}/${repo} --json state,mergedAt`,
+      );
+      return result.state === "MERGED" || result.mergedAt !== null;
+    } catch {
+      return false;
+    }
+  }
+
   async createPr({ owner, repo, title, body, head, base }: CreatePrOptions) {
     // gh pr create returns the URL on stdout (no --json support)
     const url = this.ghExec(
