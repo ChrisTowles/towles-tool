@@ -3,12 +3,12 @@ import type { EventMap } from "../shared/event-bus";
 import { logger } from "../utils/logger";
 
 /**
- * Detect agent completion from stream-json result events.
+ * Detect workflow step completion from stream-json result events.
  *
- * Claude Code's HTTP Stop hooks don't fire in `-p` (print) mode.
- * Instead, we watch the stream-tailer's parsed events for the `result`
- * event which means Claude finished. When detected, we POST to the
- * same complete/failure endpoint the Stop hook would have hit.
+ * For multi-step workflows, the step-executor pipes claude output to
+ * .claude-stream.ndjson via tee. The stream-tailer watches that file
+ * and emits agent:activity events. This plugin detects the final
+ * "result" event and triggers the step-complete callback.
  */
 export default defineNitroPlugin(() => {
   const processed = new Set<string>();
