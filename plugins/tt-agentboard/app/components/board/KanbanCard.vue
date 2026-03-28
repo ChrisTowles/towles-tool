@@ -20,12 +20,13 @@ const borderClass = computed(
   () => STATUS_BORDER_CLASSES[props.card.status as CardStatus] ?? "border-zinc-700",
 );
 
+const now = useNow({ interval: 1000 });
+
 const elapsedTime = computed(() => {
   if (props.card.status === "idle") return null;
   const ref = props.card.status === "running" ? props.card.updatedAt : props.card.createdAt;
   const start = new Date(ref).getTime();
-  const now = Date.now();
-  const seconds = Math.floor((now - start) / 1000);
+  const seconds = Math.floor((now.value.getTime() - start) / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;

@@ -54,29 +54,13 @@ async function fetchDiff() {
 }
 
 // Poll every 5s, but stop when status is terminal
-const pollInterval = ref<ReturnType<typeof setInterval> | null>(null);
-
-function stopPolling() {
-  if (pollInterval.value) {
-    clearInterval(pollInterval.value);
-    pollInterval.value = null;
-  }
-}
-
-function startPolling() {
-  stopPolling();
-  pollInterval.value = setInterval(fetchDiff, 5000);
-}
+const { pause, resume } = useIntervalFn(fetchDiff, 5000, { immediate: false });
 
 onMounted(() => {
   fetchDiff();
   if (!props.status || !TERMINAL_STATUSES.has(props.status)) {
-    startPolling();
+    resume();
   }
-});
-
-onUnmounted(() => {
-  stopPolling();
 });
 
 // Stop polling when status becomes terminal; do one final fetch then stop
@@ -85,9 +69,9 @@ watch(
   (newStatus) => {
     if (newStatus && TERMINAL_STATUSES.has(newStatus)) {
       fetchDiff();
-      stopPolling();
-    } else if (!pollInterval.value) {
-      startPolling();
+      pause();
+    } else {
+      resume();
     }
   },
 );

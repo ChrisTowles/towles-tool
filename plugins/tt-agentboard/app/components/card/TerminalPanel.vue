@@ -76,29 +76,19 @@ async function fetchTerminal() {
 }
 
 // Handle resize
-const resizeObserver = ref<ResizeObserver | null>(null);
+useResizeObserver(terminalRef, () => {
+  fitAddon.value?.fit();
+});
 
 onMounted(() => {
   initTerminal();
   fetchTerminal();
-
-  resizeObserver.value = new ResizeObserver(() => {
-    fitAddon.value?.fit();
-  });
-  if (terminalRef.value) {
-    resizeObserver.value.observe(terminalRef.value);
-  }
 });
 
 // Poll for updates
-const pollInterval = ref<ReturnType<typeof setInterval> | null>(null);
-onMounted(() => {
-  pollInterval.value = setInterval(fetchTerminal, 2000);
-});
+useIntervalFn(fetchTerminal, 2000);
 
 onUnmounted(() => {
-  if (pollInterval.value) clearInterval(pollInterval.value);
-  resizeObserver.value?.disconnect();
   terminal.value?.dispose();
 });
 
