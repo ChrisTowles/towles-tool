@@ -32,16 +32,10 @@ const visible = computed(() => store.showToast || store.showBanner);
       "
     >
       <span class="mb-3 text-5xl">{{ icon }}</span>
-      <p
-        class="mb-1 text-lg font-bold"
-        :class="isEscalated ? 'text-amber-200' : 'text-zinc-100'"
-      >
+      <p class="mb-1 text-lg font-bold" :class="isEscalated ? 'text-amber-200' : 'text-zinc-100'">
         {{ isEscalated ? "You really need a break" : "Time for a break" }}
       </p>
-      <p
-        v-if="isEscalated"
-        class="mb-2 text-xs text-amber-400/80"
-      >
+      <p v-if="isEscalated" class="mb-2 text-xs text-amber-400/80">
         You've been working for over {{ store.config.escalationThresholdMinutes }} minutes straight
       </p>
       <p class="mb-6 text-sm text-zinc-400">{{ store.currentPrompt }}</p>
@@ -49,9 +43,7 @@ const visible = computed(() => store.showToast || store.showBanner);
         <button
           class="rounded-lg px-6 py-2 text-sm font-semibold text-white transition-colors"
           :class="
-            isEscalated
-              ? 'bg-amber-600 hover:bg-amber-500'
-              : 'bg-emerald-600 hover:bg-emerald-500'
+            isEscalated ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'
           "
           @click="store.completeBreak()"
         >
