@@ -191,6 +191,11 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Break reminder prompt — big, centered, unmissable -->
+    <ClientOnly>
+      <BreaksBreakPrompt />
+    </ClientOnly>
+
     <!-- Onboarding prompt (no repos & no slots) -->
     <div v-if="!loading && showOnboarding" class="px-4 py-8 sm:px-6">
       <div

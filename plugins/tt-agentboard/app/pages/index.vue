@@ -243,12 +243,6 @@ useKeyboardShortcuts({
 
 <template>
   <div class="flex h-screen flex-col">
-    <!-- Break reminder overlays -->
-    <ClientOnly>
-      <BreaksBreakBanner />
-      <BreaksBreakToast />
-    </ClientOnly>
-
     <!-- Split: Board + Detail Panel -->
     <div class="flex flex-1 overflow-hidden">
       <!-- Board (full width when no card selected, left half when selected) -->
