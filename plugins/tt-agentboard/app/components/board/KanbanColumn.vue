@@ -20,6 +20,7 @@ const columnClasses: Record<Column, string> = {
   backlog: "border-t-zinc-600",
   ready: "border-t-cyan-500",
   in_progress: "border-t-blue-500",
+  simplify_review: "border-t-amber-500",
   review: "border-t-violet-500",
   done: "border-t-emerald-500",
 };

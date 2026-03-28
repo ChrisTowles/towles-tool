@@ -63,6 +63,9 @@ export class CardService {
 
   /** Mark card complete: status=review_ready, column=review */
   async markComplete(cardId: number): Promise<void> {
+    const rows = await this.deps.db.select().from(cards).where(eq(cards.id, cardId));
+    const fromColumn = (rows[0]?.column ?? "in_progress") as Column;
+
     await this.deps.db
       .update(cards)
       .set({ status: "review_ready", column: "review", updatedAt: new Date() })
@@ -74,7 +77,7 @@ export class CardService {
     });
     this.deps.eventBus.emit("card:moved", {
       cardId,
-      fromColumn: "in_progress" as Column,
+      fromColumn,
       toColumn: "review" as Column,
     });
   }

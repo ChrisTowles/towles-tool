@@ -6,7 +6,7 @@ AgentBoard is a Nuxt 4 app that manages autonomous Claude Code agents via a Kanb
 
 | Concept            | Description                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------- |
-| **Board**          | Kanban board with columns: backlog, ready, in_progress, review, done                  |
+| **Board**          | Kanban board with columns: backlog, ready, in_progress, simplify_review, review, done |
 | **Card**           | A task with title, description, repo, status, optional workflow and GitHub issue link |
 | **Repository**     | A registered Git repo (org, name, default branch, GitHub URL)                         |
 | **Workspace Slot** | A directory (git worktree) tied to a repo. Each running agent needs one slot.         |
@@ -31,6 +31,11 @@ stateDiagram-v2
     in_progress_running --> waiting_input: Notification hook fires
     in_progress_running --> failed: StopFailure / timeout / error
 
+    ready_idle --> simplify_review_running: Moved to simplify_review
+    in_progress_running --> simplify_review_running: Moved to simplify_review
+    simplify_review_running --> review_ready: Simplify+review pass
+    simplify_review_running --> failed: StopFailure / timeout / error
+
     waiting_input --> in_progress_running: User responds
     waiting_input --> review_ready: Stop hook fires
 
@@ -40,13 +45,14 @@ stateDiagram-v2
 
 **Column/status mapping:**
 
-| Column      | Statuses               |
-| ----------- | ---------------------- |
-| backlog     | idle, blocked          |
-| ready       | idle, queued           |
-| in_progress | running, waiting_input |
-| review      | review_ready           |
-| done        | done                   |
+| Column           | Statuses               |
+| ---------------- | ---------------------- |
+| backlog          | idle, blocked          |
+| ready            | idle, queued           |
+| in_progress      | running, waiting_input |
+| simplify_review  | running, waiting_input |
+| review           | review_ready           |
+| done             | done                   |
 
 ## Agent Execution Flow
 

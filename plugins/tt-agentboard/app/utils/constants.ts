@@ -1,10 +1,11 @@
-export const COLUMNS = ["backlog", "ready", "in_progress", "review", "done"] as const;
+export const COLUMNS = ["backlog", "ready", "in_progress", "simplify_review", "review", "done"] as const;
 export type Column = (typeof COLUMNS)[number];
 
 export const COLUMN_LABELS: Record<Column, string> = {
   backlog: "Backlog",
   ready: "Ready",
   in_progress: "In Progress",
+  simplify_review: "Simplify & Review",
   review: "Review",
   done: "Done",
 };
@@ -13,6 +14,7 @@ export const COLUMN_ICONS: Record<Column, string> = {
   backlog: "◇",
   ready: "◆",
   in_progress: "▶",
+  simplify_review: "⟳",
   review: "◉",
   done: "✓",
 };

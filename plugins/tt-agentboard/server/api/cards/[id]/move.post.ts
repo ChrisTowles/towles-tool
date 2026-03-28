@@ -34,6 +34,37 @@ export default defineEventHandler(async (event) => {
 
   await cardService.logEvent(id, "card_moved", `${fromColumn} → ${body.column}`);
 
+  // If moved to simplify_review, set workflow to simplify-review and trigger execution
+  if (body.column === "simplify_review") {
+    // Set the simplify-review workflow and use current branch
+    await db
+      .update(cards)
+      .set({ workflowId: "simplify-review", branchMode: "current" })
+      .where(eq(cards.id, id));
+
+    // Release any stale slots from a previous run
+    const staleSlots = await db
+      .select()
+      .from(workspaceSlots)
+      .where(eq(workspaceSlots.claimedByCardId, id));
+    for (const slot of staleSlots) {
+      await db
+        .update(workspaceSlots)
+        .set({ status: "available", claimedByCardId: null })
+        .where(eq(workspaceSlots.id, slot.id));
+      eventBus.emit("slot:released", { slotId: slot.id });
+    }
+
+    // Kill any stale tmux session
+    const sessionName = `card-${id}`;
+    tmuxManager.stopCapture(sessionName);
+    tmuxManager.killSession(sessionName);
+
+    agentExecutor.startExecution(id).catch(() => {
+      cardService.updateStatus(id, "failed");
+    });
+  }
+
   // If moved to in_progress, clean up stale resources first, then trigger agent
   if (body.column === "in_progress") {
     // Release any stale slots from a previous run
