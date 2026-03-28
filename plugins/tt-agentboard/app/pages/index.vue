@@ -179,17 +179,15 @@ function onCardCreated() {
 }
 
 // Refresh selected card periodically (client-only)
-const detailInterval = ref<ReturnType<typeof setInterval> | null>(null);
-onMounted(() => {
-  watch(selectedCardId, (id) => {
-    if (detailInterval.value) clearInterval(detailInterval.value);
-    if (id) {
-      detailInterval.value = setInterval(fetchSelectedCard, 2000);
-    }
-  });
+const { pause: pauseDetail, resume: resumeDetail } = useIntervalFn(fetchSelectedCard, 2000, {
+  immediate: false,
 });
-onUnmounted(() => {
-  if (detailInterval.value) clearInterval(detailInterval.value);
+watch(selectedCardId, (id) => {
+  if (id) {
+    resumeDetail();
+  } else {
+    pauseDetail();
+  }
 });
 
 // Break reminders — start timer and track input

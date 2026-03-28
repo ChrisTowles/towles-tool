@@ -49,13 +49,7 @@ async function sendAgentResponse(response: string) {
   }).catch(() => {});
 }
 
-const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
-onMounted(() => {
-  refreshInterval.value = setInterval(refresh, 2000);
-});
-onUnmounted(() => {
-  if (refreshInterval.value) clearInterval(refreshInterval.value);
-});
+useIntervalFn(refresh, 2000);
 </script>
 
 <template>

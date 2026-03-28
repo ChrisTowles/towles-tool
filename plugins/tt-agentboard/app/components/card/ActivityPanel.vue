@@ -25,9 +25,10 @@ type ActivityEvent =
 const MAX_EVENTS = 500;
 const events = ref<ActivityEvent[]>([]);
 const container = ref<HTMLElement>();
-const autoScroll = ref(true);
-
 const { on, off, subscribeActivity, unsubscribeActivity } = useWebSocket();
+
+const { arrivedState } = useScroll(container, { offset: { bottom: 40 } });
+const autoScroll = computed(() => arrivedState.bottom);
 
 function handleActivity(raw: { type: string; [key: string]: unknown }) {
   const evt = raw as unknown as AgentActivityEvent;
@@ -48,12 +49,6 @@ function handleActivity(raw: { type: string; [key: string]: unknown }) {
       container.value?.scrollTo({ top: container.value.scrollHeight });
     });
   }
-}
-
-function handleScroll() {
-  if (!container.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = container.value;
-  autoScroll.value = scrollHeight - scrollTop - clientHeight < 40;
 }
 
 const TOOL_COLORS = {
@@ -115,7 +110,6 @@ onUnmounted(() => {
   <div
     ref="container"
     class="h-full overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 font-mono text-[13px]"
-    @scroll="handleScroll"
   >
     <!-- Empty state -->
     <div
