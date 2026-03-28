@@ -1,16 +1,19 @@
 export type VoiceContext = "card-response" | "new-card" | "idle";
 
+// Shared singleton state - persists across all useVoice() calls
+const isListening = ref(false);
+const transcript = ref("");
+const interimTranscript = ref("");
+const isSupported = ref(false);
+const error = ref<string | null>(null);
+const currentContext = ref<VoiceContext>("idle");
+let recognition: SpeechRecognition | null = null;
+let initialized = false;
+
 export function useVoice() {
-  const isListening = ref(false);
-  const transcript = ref("");
-  const interimTranscript = ref("");
-  const isSupported = ref(false);
-  const error = ref<string | null>(null);
-  const currentContext = ref<VoiceContext>("idle");
-
-  let recognition: SpeechRecognition | null = null;
-
   function init() {
+    if (initialized) return;
+    initialized = true;
     const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       isSupported.value = false;
