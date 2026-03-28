@@ -1,4 +1,11 @@
-export const COLUMNS = ["backlog", "ready", "in_progress", "simplify_review", "review", "done"] as const;
+export const COLUMNS = [
+  "backlog",
+  "ready",
+  "in_progress",
+  "simplify_review",
+  "review",
+  "done",
+] as const;
 export type Column = (typeof COLUMNS)[number];
 
 export const COLUMN_LABELS: Record<Column, string> = {

@@ -45,14 +45,14 @@ stateDiagram-v2
 
 **Column/status mapping:**
 
-| Column           | Statuses               |
-| ---------------- | ---------------------- |
-| backlog          | idle, blocked          |
-| ready            | idle, queued           |
-| in_progress      | running, waiting_input |
-| simplify_review  | running, waiting_input |
-| review           | review_ready           |
-| done             | done                   |
+| Column          | Statuses               |
+| --------------- | ---------------------- |
+| backlog         | idle, blocked          |
+| ready           | idle, queued           |
+| in_progress     | running, waiting_input |
+| simplify_review | running, waiting_input |
+| review          | review_ready           |
+| done            | done                   |
 
 ## Agent Execution Flow
 
