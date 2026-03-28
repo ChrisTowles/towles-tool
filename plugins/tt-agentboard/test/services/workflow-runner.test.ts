@@ -87,7 +87,8 @@ describe("workflow-helpers", () => {
     });
 
     it("truncates long titles to 50 chars", () => {
-      const longTitle = "This is a very long card title that exceeds the fifty character slug limit by quite a lot";
+      const longTitle =
+        "This is a very long card title that exceeds the fifty character slug limit by quite a lot";
       const result = buildAgentBranchName(10, longTitle);
       const slug = result.replace("agentboard/10-", "");
       expect(slug.length).toBeLessThanOrEqual(50);

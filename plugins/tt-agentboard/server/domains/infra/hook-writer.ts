@@ -22,12 +22,7 @@ function findScriptSource(): string {
   return resolve(process.cwd(), "scripts", "stop-hook.sh");
 }
 
-function commandHook(
-  cardId: number,
-  port: number,
-  stopEndpoint: string,
-  scriptPath: string,
-) {
+function commandHook(cardId: number, port: number, stopEndpoint: string, scriptPath: string) {
   return [
     {
       matcher: "",
@@ -90,5 +85,7 @@ export function writeHooks(
   };
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-  logger.info(`Wrote lifecycle hooks to ${settingsPath} (command, cardId=${cardId}, endpoint=${stopEndpoint})`);
+  logger.info(
+    `Wrote lifecycle hooks to ${settingsPath} (command, cardId=${cardId}, endpoint=${stopEndpoint})`,
+  );
 }

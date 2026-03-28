@@ -67,10 +67,7 @@ describe("writeHooks()", () => {
     writeHooks(slotPath, 1, 4200, "complete");
 
     const settings = readSettings(slotPath) as {
-      hooks: Record<
-        string,
-        Array<{ hooks: Array<{ command: string }> }>
-      >;
+      hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
     };
     expect(settings.hooks.Stop[0]!.hooks[0]!.command).toContain(
       "AGENTBOARD_STOP_ENDPOINT=complete",
