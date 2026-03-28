@@ -15,9 +15,7 @@ const progressPercent = computed(() => Math.round(progressFraction.value * 100))
 const statusLabel = computed(() => {
   if (store.isPaused) return "Paused";
   if (store.isInFocusMode) {
-    const remaining = Math.round(
-      ((store.focusModeUntil ?? 0) - Date.now()) / 60_000,
-    );
+    const remaining = Math.round(((store.focusModeUntil ?? 0) - Date.now()) / 60_000);
     return `Focus ${remaining}m`;
   }
   if (store.nextBreakIn === null) return "—";

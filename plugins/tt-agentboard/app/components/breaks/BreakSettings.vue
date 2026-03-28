@@ -41,10 +41,7 @@ function save() {
   <div class="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
     <div class="mb-3 flex items-center justify-between">
       <span class="text-xs font-semibold text-zinc-300">Settings</span>
-      <button
-        class="text-zinc-500 transition-colors hover:text-zinc-300"
-        @click="emit('close')"
-      >
+      <button class="text-zinc-500 transition-colors hover:text-zinc-300" @click="emit('close')">
         ✕
       </button>
     </div>
@@ -84,11 +81,7 @@ function save() {
 
     <!-- Sound toggle -->
     <label class="mb-3 flex items-center gap-2">
-      <input
-        v-model="soundEnabled"
-        type="checkbox"
-        class="rounded accent-emerald-500"
-      />
+      <input v-model="soundEnabled" type="checkbox" class="rounded accent-emerald-500" />
       <span class="text-[11px] text-zinc-400">Sound on escalation</span>
     </label>
 
