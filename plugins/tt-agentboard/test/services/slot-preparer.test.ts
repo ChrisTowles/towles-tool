@@ -24,9 +24,7 @@ describe("SlotPreparer", () => {
     it("syncs to main and installs deps", async () => {
       deps.existsSync.mockReturnValue(false);
       // pnpm-lock.yaml exists
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("pnpm-lock.yaml"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("pnpm-lock.yaml"));
 
       const result = await preparer.reset("/workspace/slot-1");
 
@@ -50,9 +48,7 @@ describe("SlotPreparer", () => {
         type: "main_synced",
         detail: "Checked out and pulled main",
       });
-      expect(result.events).toContainEqual(
-        expect.objectContaining({ type: "deps_installed" }),
-      );
+      expect(result.events).toContainEqual(expect.objectContaining({ type: "deps_installed" }));
     });
 
     it("handles git sync failure gracefully", async () => {
@@ -81,9 +77,7 @@ describe("SlotPreparer", () => {
     });
 
     it("detects uv.lock for Python projects", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("uv.lock"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("uv.lock"));
 
       const result = await preparer.reset("/workspace/slot-1");
 
@@ -95,9 +89,7 @@ describe("SlotPreparer", () => {
     });
 
     it("detects bun.lock", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("bun.lock"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("bun.lock"));
 
       const result = await preparer.reset("/workspace/slot-1");
 
@@ -109,9 +101,7 @@ describe("SlotPreparer", () => {
     });
 
     it("detects package-lock.json for npm", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("package-lock.json"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("package-lock.json"));
 
       const result = await preparer.reset("/workspace/slot-1");
 
@@ -123,9 +113,7 @@ describe("SlotPreparer", () => {
     });
 
     it("detects requirements.txt for pip", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("requirements.txt"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("requirements.txt"));
 
       const result = await preparer.reset("/workspace/slot-1");
 
@@ -237,9 +225,7 @@ describe("SlotPreparer", () => {
     });
 
     it("installs deps after branch setup", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("pnpm-lock.yaml"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("pnpm-lock.yaml"));
 
       const result = await preparer.prepare({
         slotPath: "/workspace/slot-1",
@@ -252,9 +238,7 @@ describe("SlotPreparer", () => {
     });
 
     it("continues when install fails", async () => {
-      deps.existsSync.mockImplementation((path: string) =>
-        path.endsWith("pnpm-lock.yaml"),
-      );
+      deps.existsSync.mockImplementation((path: string) => path.endsWith("pnpm-lock.yaml"));
       deps.execSync.mockImplementation((cmd: string) => {
         if (typeof cmd === "string" && cmd.includes("pnpm install")) {
           throw new Error("install failed");
@@ -271,7 +255,10 @@ describe("SlotPreparer", () => {
       expect(result.depsInstalled).toBe(false);
       expect(result.packageManager).toBe("pnpm");
       expect(result.events).toContainEqual(
-        expect.objectContaining({ type: "warn", detail: expect.stringContaining("install failed") }),
+        expect.objectContaining({
+          type: "warn",
+          detail: expect.stringContaining("install failed"),
+        }),
       );
     });
   });
