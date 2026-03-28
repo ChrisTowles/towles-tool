@@ -67,14 +67,17 @@ useIntervalFn(refresh, 2000);
           <span class="text-zinc-700">│</span>
           <span class="text-sm font-semibold text-zinc-200">Card #{{ cardId }}</span>
         </div>
-        <CardActions
-          v-if="card"
-          :card="card"
-          @archive="archiveCard"
-          @retry="retryCard"
-          @start="startCard"
-          @deleted="router.push('/')"
-        />
+        <div class="flex items-center gap-2">
+          <CardQuickActions v-if="card" :card="card" />
+          <CardActions
+            v-if="card"
+            :card="card"
+            @archive="archiveCard"
+            @retry="retryCard"
+            @start="startCard"
+            @deleted="router.push('/')"
+          />
+        </div>
       </div>
     </nav>
 
