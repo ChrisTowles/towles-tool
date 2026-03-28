@@ -91,6 +91,11 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- Break reminder widget -->
+      <ClientOnly>
+        <BreaksBreakWidget class="hidden sm:block" />
+      </ClientOnly>
+
       <div class="flex items-center gap-2">
         <NuxtLink
           to="/workspaces"
