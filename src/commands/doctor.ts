@@ -34,6 +34,7 @@ export default class Doctor extends BaseCommand {
       this.checkCommand("node", ["--version"], /v?([\d.]+)/),
       this.checkCommand("bun", ["--version"], /([\d.]+)/),
       this.checkCommand("pnpm", ["--version"], /([\d.]+)/),
+      this.checkCommand("tsx", ["--version"], /([\d.]+)/),
       this.checkCommand("claude", ["--version"], /([\d.]+)/),
       this.checkCommand("tmux", ["-V"], /tmux ([\d.]+)/),
       this.checkCommand("ttyd", ["--version"], /ttyd version ([\d.]+)/, true),
