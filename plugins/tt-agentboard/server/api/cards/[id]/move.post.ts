@@ -17,7 +17,6 @@ export default defineEventHandler(async (event) => {
   const current = await db.select().from(cards).where(eq(cards.id, id));
   const fromColumn = current[0]?.column ?? "backlog";
 
-  // Move card to the target column (also updates position)
   await db
     .update(cards)
     .set({
@@ -27,7 +26,6 @@ export default defineEventHandler(async (event) => {
     })
     .where(eq(cards.id, id));
 
-  // Emit move event (we handle this manually since we also set position)
   eventBus.emit("card:moved", {
     cardId: id,
     fromColumn,

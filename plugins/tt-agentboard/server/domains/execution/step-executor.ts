@@ -18,6 +18,7 @@ import {
   shellEscape,
 } from "./workflow-helpers";
 import { existsSync as defaultExistsSync, readFileSync as defaultReadFileSync } from "node:fs";
+import type { Logger, EventBus, StreamTailer } from "./types";
 
 export interface WorkflowContext {
   cardId: number;
@@ -63,22 +64,15 @@ export function clearPendingCallback(cardId: number): void {
 
 export interface StepExecutorDeps {
   db: typeof defaultDb;
-  eventBus: { emit: (event: string, ...args: unknown[]) => boolean | void };
-  logger: {
-    info: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
+  eventBus: EventBus;
+  logger: Logger;
   tmuxManager: {
     sendCommand: (sessionName: string, command: string) => void;
   };
   contextBundler: { buildPrompt: (opts: unknown) => string };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
-  streamTailer: {
-    startTailing: (cardId: number, logFilePath: string) => Promise<void>;
-    stopTailing: (cardId: number) => void;
-  };
+  streamTailer: StreamTailer;
   existsSync: typeof defaultExistsSync;
   readFileSync: typeof defaultReadFileSync;
 }

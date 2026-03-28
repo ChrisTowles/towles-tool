@@ -92,6 +92,7 @@ export function createMockCardService() {
     markComplete: vi.fn().mockResolvedValue(undefined),
     logEvent: vi.fn().mockResolvedValue(undefined),
     resolveDependencies: vi.fn().mockResolvedValue([]),
+    getDepsMap: vi.fn().mockResolvedValue(new Map()),
   };
 }
 

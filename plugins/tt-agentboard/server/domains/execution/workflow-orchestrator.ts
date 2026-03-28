@@ -15,15 +15,12 @@ import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
 import { stepExecutor as defaultStepExecutor, clearPendingCallback } from "./step-executor";
 import type { StepExecutor, WorkflowContext } from "./step-executor";
 import { renderTemplate, shellEscape } from "./workflow-helpers";
+import type { Logger, EventBus, StreamTailer } from "./types";
 
 export interface WorkflowOrchestratorDeps {
   db: typeof defaultDb;
-  eventBus: { emit: (event: string, ...args: unknown[]) => boolean | void };
-  logger: {
-    info: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
+  eventBus: EventBus;
+  logger: Logger;
   tmuxManager: {
     isAvailable: () => boolean;
     createSession: (cardId: number, cwd: string) => { sessionName: string; created: boolean };
@@ -39,10 +36,7 @@ export interface WorkflowOrchestratorDeps {
   contextBundler: { buildPrompt: (opts: unknown) => string };
   cardService: CardService;
   stepExecutor: StepExecutor;
-  streamTailer: {
-    startTailing: (cardId: number, logFilePath: string) => Promise<void>;
-    stopTailing: (cardId: number) => void;
-  };
+  streamTailer: StreamTailer;
   execSync: typeof defaultExecSync;
 }
 

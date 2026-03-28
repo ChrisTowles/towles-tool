@@ -112,37 +112,19 @@ describe("CardService", () => {
   });
 
   describe("markComplete()", () => {
-    it("calls updateStatus(review_ready) and moveToColumn(review)", async () => {
-      // First call: updateStatus (update)
-      // Second call: moveToColumn needs select + update
-      let updateCallCount = 0;
-      const updateChain1: Record<string, unknown> = {};
-      updateChain1.set = vi.fn().mockReturnValue(updateChain1);
-      updateChain1.where = vi.fn().mockResolvedValue(undefined);
-
-      const updateChain2: Record<string, unknown> = {};
-      updateChain2.set = vi.fn().mockReturnValue(updateChain2);
-      updateChain2.where = vi.fn().mockResolvedValue(undefined);
-
-      mockDb.update = vi.fn().mockImplementation(() => {
-        updateCallCount++;
-        return updateCallCount === 1 ? updateChain1 : updateChain2;
-      });
-
-      // moveToColumn needs to select card first
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([{ id: 1, column: "in_progress" }]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+    it("sets status=review_ready + column=review in a single update", async () => {
+      const updateChain: Record<string, unknown> = {};
+      updateChain.set = vi.fn().mockReturnValue(updateChain);
+      updateChain.where = vi.fn().mockResolvedValue(undefined);
+      mockDb.update = vi.fn().mockReturnValue(updateChain);
 
       await service.markComplete(1);
 
-      // Should have emitted review_ready status
+      expect(mockDb.update).toHaveBeenCalledTimes(1);
       expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
         cardId: 1,
         status: "review_ready",
       });
-      // Should have emitted card:moved to review
       expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
         cardId: 1,
         fromColumn: "in_progress",
@@ -173,7 +155,7 @@ describe("CardService", () => {
     function setupResolveDb(
       depRows: Array<{ cardId: number }>,
       blockedCards: Array<Record<string, unknown>>,
-      cardDeps: Array<{ dependsOnCardId: number }> = [],
+      cardDeps: Array<{ cardId: number; dependsOnCardId: number }> = [],
       depCards: Array<Record<string, unknown>> = [],
     ) {
       const selectChains: Array<Record<string, unknown>> = [];
@@ -190,13 +172,13 @@ describe("CardService", () => {
       chain1.where = vi.fn().mockResolvedValue(blockedCards);
       selectChains.push(chain1);
 
-      // 3rd: getDeps for blocked card
+      // 3rd: getDepsMap — batch-fetch all deps for blocked cards
       const chain2: Record<string, unknown> = {};
       chain2.from = vi.fn().mockReturnValue(chain2);
       chain2.where = vi.fn().mockResolvedValue(cardDeps);
       selectChains.push(chain2);
 
-      // 4th: allDepsMet check
+      // 4th: depCardStatuses — batch-fetch status of all depended-on cards
       const chain3: Record<string, unknown> = {};
       chain3.from = vi.fn().mockReturnValue(chain3);
       chain3.where = vi.fn().mockResolvedValue(depCards);
@@ -224,7 +206,10 @@ describe("CardService", () => {
       setupResolveDb(
         [{ cardId: 10 }],
         [{ id: 10, status: "blocked" }],
-        [{ dependsOnCardId: 1 }, { dependsOnCardId: 2 }],
+        [
+          { cardId: 10, dependsOnCardId: 1 },
+          { cardId: 10, dependsOnCardId: 2 },
+        ],
         [
           { id: 1, status: "done" },
           { id: 2, status: "done" },
@@ -240,7 +225,10 @@ describe("CardService", () => {
       setupResolveDb(
         [{ cardId: 10 }],
         [{ id: 10, status: "blocked" }],
-        [{ dependsOnCardId: 1 }, { dependsOnCardId: 2 }],
+        [
+          { cardId: 10, dependsOnCardId: 1 },
+          { cardId: 10, dependsOnCardId: 2 },
+        ],
         [
           { id: 1, status: "done" },
           { id: 2, status: "running" },

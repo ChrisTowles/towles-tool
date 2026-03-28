@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { execSync } from "node:child_process";
 
-import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+import {
+  createMockDb,
+  createMockEventBus,
+  createMockLogger,
+  createMockCardService,
+} from "../helpers/mock-deps";
 import { createSessionReconnect } from "../../server/plugins/session-reconnect";
 
 // Track sessions we create so we can clean up
@@ -183,14 +188,7 @@ describe("Session Reconnect Plugin (mocked)", () => {
     vi.clearAllMocks();
     mockDb = createMockDb();
     mockEventBus = createMockEventBus();
-    mockCardService = {
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      moveToColumn: vi.fn().mockResolvedValue(undefined),
-      markFailed: vi.fn().mockResolvedValue(undefined),
-      markComplete: vi.fn().mockResolvedValue(undefined),
-      logEvent: vi.fn().mockResolvedValue(undefined),
-      resolveDependencies: vi.fn().mockResolvedValue([]),
-    };
+    mockCardService = createMockCardService();
     mockTmuxManager = {
       isAvailable: vi.fn().mockReturnValue(true),
       listSessions: vi.fn().mockReturnValue([]),

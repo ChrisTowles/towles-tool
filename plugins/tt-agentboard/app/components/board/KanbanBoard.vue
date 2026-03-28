@@ -63,10 +63,10 @@ async function handleCardMoved(cardId: number, column: Column, position: number)
   await store.moveCard(cardId, column, position);
 }
 
-// Poll every 3s to keep board in sync
+// Stale-data fallback — WS handles real-time, this catches missed events
 const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null);
 onMounted(() => {
-  refreshInterval.value = setInterval(() => store.fetchCards(), 3000);
+  refreshInterval.value = setInterval(() => store.fetchCards(), 60_000);
 });
 onUnmounted(() => {
   if (refreshInterval.value) clearInterval(refreshInterval.value);
