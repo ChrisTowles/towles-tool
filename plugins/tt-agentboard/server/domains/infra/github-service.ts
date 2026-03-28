@@ -84,6 +84,17 @@ export class GitHubService {
     }));
   }
 
+  async isIssueClosed(owner: string, repo: string, issueNumber: number): Promise<boolean> {
+    try {
+      const result = this.ghJson<{ state: string }>(
+        `issue view ${issueNumber} --repo ${owner}/${repo} --json state`,
+      );
+      return result.state.toLowerCase() === "closed";
+    } catch {
+      return false;
+    }
+  }
+
   async createIssue(owner: string, repo: string, title: string, body: string, labels?: string[]) {
     const labelArgs = labels?.length ? labels.map((l) => `--label "${l}"`).join(" ") : "";
     // gh issue create returns the URL on stdout (no --json support)

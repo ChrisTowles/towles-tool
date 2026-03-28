@@ -2,6 +2,7 @@
 const store = useBreakReminderStore();
 
 const showSettings = ref(false);
+const now = useNow({ interval: 1000 });
 
 const progressFraction = computed(() => {
   const total = store.todayStats.completed + store.todayStats.skipped;
@@ -12,15 +13,24 @@ const progressFraction = computed(() => {
 
 const progressPercent = computed(() => Math.round(progressFraction.value * 100));
 
+function formatCountdown(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 const statusLabel = computed(() => {
   if (store.isPaused) return "Paused";
   if (store.isInFocusMode) {
-    const remaining = Math.round(((store.focusModeUntil ?? 0) - Date.now()) / 60_000);
-    return `Focus ${remaining}m`;
+    const remainingSec = Math.max(0, Math.round(((store.focusModeUntil ?? 0) - now.value.getTime()) / 1000));
+    return `Focus ${formatCountdown(remainingSec)}`;
   }
-  if (store.nextBreakIn === null) return "—";
-  if (store.nextBreakIn === 0) return "Due now";
-  return `${store.nextBreakIn}m`;
+  if (!store.lastBreakTimestamp) return "--:--";
+  const elapsedSec = Math.round((now.value.getTime() - store.lastBreakTimestamp) / 1000);
+  const intervalSec = store.config.intervalMinutes * 60;
+  const remainingSec = Math.max(0, intervalSec - elapsedSec);
+  if (remainingSec === 0) return "Due now";
+  return formatCountdown(remainingSec);
 });
 </script>
 

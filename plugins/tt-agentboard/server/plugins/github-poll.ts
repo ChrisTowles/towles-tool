@@ -2,7 +2,7 @@ import { db } from "../shared/db";
 import { cards, boards, repositories, workflowRuns, workspaceSlots } from "../shared/db/schema";
 import { and, eq } from "drizzle-orm";
 import { eventBus } from "../shared/event-bus";
-import { isGitHubConfigured } from "../domains/infra/github-service";
+import { isGitHubConfigured, getGitHubService } from "../domains/infra/github-service";
 import { gitQuery } from "../domains/infra/git";
 import { cardService } from "../domains/cards/card-service";
 import { logger } from "../utils/logger";
@@ -115,33 +115,51 @@ export default defineNitroPlugin(async () => {
         .from(workflowRuns);
       const branchByCard = new Map(allRuns.map((r) => [r.cardId, r.branch]));
 
+      const gh = getGitHubService();
+
+      const markDone = async (cardId: number, reason: string) => {
+        await db
+          .update(cards)
+          .set({ status: "done", column: "done", updatedAt: new Date() })
+          .where(eq(cards.id, cardId));
+        await cardService.logEvent(cardId, "auto_done", reason);
+        eventBus.emit("card:status-changed", { cardId, status: "done" });
+        logger.info(`Card #${cardId} moved to done — ${reason}`);
+      };
+
       for (const card of reviewCards) {
         if (!card.repoId) continue;
 
         const branch = branchByCard.get(card.id);
-        if (!branch || branch === "unknown") continue;
-
-        const slotPath = await getValidSlot(card.repoId);
-        if (!slotPath) continue;
-
         const repo = repoMap.get(card.repoId);
-        const baseBranch = repo?.defaultBranch ?? "main";
+        let merged = false;
 
-        // Deduplicate base branch fetch per repo
-        const fetchKey = `${slotPath}::${baseBranch}`;
-        if (!fetched.has(fetchKey)) {
-          await gitQuery(slotPath, ["fetch", "origin", baseBranch]);
-          fetched.add(fetchKey);
+        // Try git-based branch merge check
+        if (branch && branch !== "unknown") {
+          const slotPath = await getValidSlot(card.repoId);
+          if (slotPath) {
+            const baseBranch = repo?.defaultBranch ?? "main";
+            const fetchKey = `${slotPath}::${baseBranch}`;
+            if (!fetched.has(fetchKey)) {
+              await gitQuery(slotPath, ["fetch", "origin", baseBranch]);
+              fetched.add(fetchKey);
+            }
+            if (await isBranchMerged(slotPath, branch, baseBranch)) {
+              await markDone(card.id, `Branch ${branch} merged into ${baseBranch}`);
+              merged = true;
+            }
+          }
         }
 
-        if (await isBranchMerged(slotPath, branch, baseBranch)) {
-          await db
-            .update(cards)
-            .set({ status: "done", column: "done", updatedAt: new Date() })
-            .where(eq(cards.id, card.id));
-          await cardService.logEvent(card.id, "branch_merged", `Branch ${branch} merged into ${baseBranch}`);
-          eventBus.emit("card:status-changed", { cardId: card.id, status: "done" });
-          logger.info(`Card #${card.id} moved to done — branch ${branch} merged into ${baseBranch}`);
+        // Fall back to GitHub issue closed check
+        if (!merged && card.githubIssueNumber && repo?.org && repo?.name) {
+          try {
+            if (await gh.isIssueClosed(repo.org, repo.name, card.githubIssueNumber)) {
+              await markDone(card.id, `Issue #${card.githubIssueNumber} closed`);
+            }
+          } catch (err) {
+            logger.debug(`Failed to check issue #${card.githubIssueNumber} for card #${card.id}: ${err}`);
+          }
         }
       }
     } catch (err) {
