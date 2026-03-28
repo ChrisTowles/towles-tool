@@ -1,7 +1,7 @@
 {
   "name": "tt",
   "description": "Core dev workflow commands: interview-me, write-prd, prd-to-issues, tdd, improve-architecture, refine-text, task.",
-  "version": "0.0.80",
+  "version": "0.0.81",
   "author": {
     "name": "Chris Towles"
   }
