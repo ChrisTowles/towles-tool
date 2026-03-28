@@ -71,6 +71,8 @@ export async function getCard(id: number) {
     repoId: number;
     planId: number | null;
     dependsOn: number[];
+    currentStepId: string | null;
+    retryCount: number;
   }>(`/api/cards/${id}`);
 }
 
