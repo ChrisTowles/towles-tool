@@ -1,5 +1,5 @@
 ---
-description: Create, list, and manage Claude Code tasks in the current session
+description: Create, list, and manage Claude Code tasks in the current session. Use when asked to "create tasks", "track work", "list tasks", or "mark task done".
 allowed-tools: TaskCreate(*), TaskUpdate(*), TaskList(*), TaskGet(*)
 ---
 

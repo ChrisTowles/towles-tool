@@ -1,6 +1,6 @@
 ---
 name: towles-tool
-description: Use towles-tool (`tt`) CLI for git helpers, journaling, and developer utilities.
+description: Use towles-tool (`tt`) CLI for git helpers, journaling, and developer utilities. Use when asked about "tt commands", "create branch from issue", "daily notes", "meeting notes", or "check dependencies".
 ---
 
 # towles-tool CLI
