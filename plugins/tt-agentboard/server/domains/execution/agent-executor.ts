@@ -2,6 +2,8 @@ import { db as defaultDb } from "../../shared/db";
 import { cardEvents, cards, workflowRuns } from "../../shared/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
+import { ttydManager as defaultTtydManager } from "../infra/ttyd-manager";
+import type { TtydManager } from "../infra/ttyd-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
 import { workflowLoader as defaultWorkflowLoader } from "./workflow-loader";
@@ -41,6 +43,7 @@ export interface AgentExecutorDeps {
   cardService: CardService;
   mkdirSync: typeof mkdirSync;
   writeFileSync: typeof writeFileSync;
+  ttydManager: Pick<TtydManager, "isAvailable" | "attach">;
 }
 
 /**
@@ -69,6 +72,7 @@ export class AgentExecutor {
       cardService: defaultCardService,
       mkdirSync,
       writeFileSync,
+      ttydManager: defaultTtydManager,
       ...deps,
     };
   }
@@ -168,6 +172,12 @@ export class AgentExecutor {
         "tmux_session_created",
         `session=${sessionName}, cwd=${slot.path}`,
       );
+    }
+
+    // Auto-start ttyd for interactive terminal access
+    if (this.deps.ttydManager.isAvailable()) {
+      const { port } = this.deps.ttydManager.attach(cardId);
+      await this.deps.cardService.logEvent(cardId, "ttyd_started", `port=${port}`);
     }
 
     // Check for existing branch from a previous run (resume/rerun case)

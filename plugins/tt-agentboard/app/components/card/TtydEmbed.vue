@@ -42,6 +42,10 @@ async function detach() {
   ttydUrl.value = "";
 }
 
+onMounted(() => {
+  attach();
+});
+
 onUnmounted(() => {
   if (attached.value) {
     detach();
