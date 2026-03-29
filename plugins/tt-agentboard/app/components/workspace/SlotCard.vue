@@ -15,6 +15,8 @@ interface GitInfo {
   ahead: number | null;
   behind: number | null;
   dirty: boolean | null;
+  lastCommitDate: string | null;
+  isStale: boolean;
 }
 
 const props = defineProps<{
@@ -37,6 +39,14 @@ const statusColors: Record<string, string> = {
 const gitInfo = ref<GitInfo | null>(null);
 const resetting = ref(false);
 const releasing = ref(false);
+
+const lastCommitAgo = computed(() => {
+  if (!gitInfo.value?.lastCommitDate) return null;
+  const days = Math.floor((Date.now() - new Date(gitInfo.value.lastCommitDate).getTime()) / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+});
 
 const parsedPorts = computed(() => {
   if (!props.slot.portConfig) return null;
@@ -99,6 +109,18 @@ watch(() => props.slot.status, fetchGitInfo);
           >
             {{ slot.status }}
           </span>
+          <span
+            v-if="gitInfo?.isStale"
+            class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400"
+          >
+            Stale
+          </span>
+          <span
+            v-if="gitInfo?.dirty"
+            class="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400"
+          >
+            Dirty
+          </span>
         </div>
         <p class="mt-1 font-mono text-xs text-zinc-500 break-all">{{ slot.path }}</p>
 
@@ -128,6 +150,9 @@ watch(() => props.slot.status, fetchGitInfo);
           >
             dirty
           </span>
+          <span v-if="lastCommitAgo" class="text-[10px] text-zinc-600">
+            Last commit: {{ lastCommitAgo }}
+          </span>
         </div>
       </div>
     </div>
@@ -149,6 +174,18 @@ watch(() => props.slot.status, fetchGitInfo);
       <div v-if="slot.claimedByCardId" class="text-[10px] font-mono text-blue-400">
         claimed by card #{{ slot.claimedByCardId }}
       </div>
+    </div>
+
+    <!-- Stale/Dirty reset prompt -->
+    <div v-if="gitInfo?.isStale || gitInfo?.dirty" class="mb-3">
+      <button
+        type="button"
+        class="rounded border border-amber-700 bg-amber-950/50 px-2 py-1 text-[10px] font-medium text-amber-400 transition-colors hover:bg-amber-900/50"
+        :disabled="resetting"
+        @click="resetToMain"
+      >
+        {{ resetting ? "Resetting..." : "Reset to main" }}
+      </button>
     </div>
 
     <!-- Actions -->
