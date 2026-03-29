@@ -18,12 +18,12 @@ const label = computed(() => COLUMN_LABELS[props.column]);
 const icon = computed(() => COLUMN_ICONS[props.column]);
 
 const columnClasses: Record<Column, string> = {
-  backlog: "border-t-zinc-600",
   ready: "border-t-cyan-500",
   in_progress: "border-t-blue-500",
   simplify_review: "border-t-purple-500",
   review: "border-t-violet-500",
   done: "border-t-emerald-500",
+  archived: "border-t-zinc-600",
 };
 
 // Animate count badge on change
@@ -81,7 +81,7 @@ function onDragChange(evt: { added?: { element: { id: number }; newIndex: number
     <div class="flex-1 space-y-2 overflow-y-auto px-3 pb-3" style="max-height: calc(100vh - 180px)">
       <ClientOnly>
         <draggable
-          :list="cards"
+          :model-value="cards"
           :group="{ name: 'cards', pull: true, put: true }"
           item-key="id"
           ghost-class="opacity-30"
@@ -111,10 +111,7 @@ function onDragChange(evt: { added?: { element: { id: number }; newIndex: number
         class="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-8 text-center"
       >
         <p class="text-xs text-zinc-600">
-          {{ column === "backlog" ? "No cards yet" : "Drop cards here" }}
-        </p>
-        <p v-if="column === 'backlog'" class="mt-1 text-[10px] text-zinc-700">
-          Click "+ New Card" to get started
+          Drop cards here
         </p>
       </div>
     </div>

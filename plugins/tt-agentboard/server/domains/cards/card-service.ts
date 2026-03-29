@@ -53,7 +53,7 @@ export class CardService {
     if (rows.length === 0) {
       throw new Error(`Card ${cardId} not found`);
     }
-    const fromColumn = rows[0]!.column ?? "backlog";
+    const fromColumn = rows[0]!.column ?? "ready";
 
     await this.deps.db
       .update(cards)

@@ -44,12 +44,12 @@ export const useCardStore = defineStore("cards", () => {
 
   const columnCards = computed(() => {
     const grouped: Record<Column, Card[]> = {
-      backlog: [],
       ready: [],
       in_progress: [],
       simplify_review: [],
       review: [],
       done: [],
+      archived: [],
     };
 
     for (const card of cards.value) {

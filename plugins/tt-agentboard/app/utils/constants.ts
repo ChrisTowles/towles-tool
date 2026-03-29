@@ -1,5 +1,4 @@
 export const COLUMNS = [
-  "backlog",
   "ready",
   "in_progress",
   "simplify_review",
@@ -10,7 +9,6 @@ export const COLUMNS = [
 export type Column = (typeof COLUMNS)[number];
 
 export const COLUMN_LABELS: Record<Column, string> = {
-  backlog: "Backlog",
   ready: "Ready",
   in_progress: "In Progress",
   simplify_review: "Simplify + Review",
@@ -20,7 +18,6 @@ export const COLUMN_LABELS: Record<Column, string> = {
 };
 
 export const COLUMN_ICONS: Record<Column, string> = {
-  backlog: "◇",
   ready: "◆",
   in_progress: "▶",
   simplify_review: "⟳",
@@ -62,7 +59,7 @@ export const STATUS_LABELS: Record<CardStatus, string> = {
 };
 
 export const STATUS_DESCRIPTIONS: Record<CardStatus, string> = {
-  idle: "Card is waiting in the backlog",
+  idle: "Card is waiting to be started",
   queued: "No workspace slot available — will start when one opens up",
   running: "Agent is actively working on this card",
   waiting_input: "Agent is paused and needs your input",
