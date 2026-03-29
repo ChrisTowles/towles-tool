@@ -208,7 +208,9 @@ async function submit() {
                 type="button"
                 :disabled="!prompt.trim() || improving"
                 class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-amber-500 hover:bg-amber-500/10 hover:text-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
-                :class="improving ? 'border-amber-500 bg-amber-500/10 text-amber-400 animate-pulse' : ''"
+                :class="
+                  improving ? 'border-amber-500 bg-amber-500/10 text-amber-400 animate-pulse' : ''
+                "
                 @click="improvePrompt"
               >
                 {{ improving ? "Improving..." : "Improve" }}
