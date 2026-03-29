@@ -24,6 +24,7 @@ const startColumn = ref<"ready" | "backlog">("ready");
 const submitting = ref(false);
 const submitError = ref("");
 const improving = ref(false);
+const attempted = ref(false);
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 const cardStore = useCardStore();
@@ -108,8 +109,11 @@ async function improvePrompt() {
   }
 }
 
+const canSubmit = computed(() => prompt.value.trim() && repoId.value != null);
+
 async function submit() {
-  if (!prompt.value.trim() || submitting.value) return;
+  attempted.value = true;
+  if (!canSubmit.value || submitting.value) return;
   submitError.value = "";
   submitting.value = true;
   const text = prompt.value.trim();
@@ -129,6 +133,7 @@ async function submit() {
     workflowId.value = undefined;
     executionMode.value = "headless";
     branchMode.value = "create";
+    attempted.value = false;
     emit("created");
   } else {
     submitError.value = "Failed to create card. Check the server logs for details.";
@@ -184,8 +189,16 @@ async function submit() {
             rows="4"
             placeholder="What should the agent do? e.g. Fix the login bug in auth.ts — the session token expires too early..."
             autofocus
-            class="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
+            class="w-full resize-none rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none"
+            :class="
+              attempted && !prompt.trim()
+                ? 'border-red-500 focus:border-red-500'
+                : 'border-zinc-700 focus:border-blue-500'
+            "
           />
+          <p v-if="attempted && !prompt.trim()" class="mt-1 text-[11px] text-red-400">
+            Prompt is required.
+          </p>
           <div class="mt-1.5 flex items-center justify-between">
             <p class="text-[10px] text-zinc-600">
               First line becomes the card title. Full text is sent as the prompt to Claude.
@@ -223,7 +236,7 @@ async function submit() {
           <label
             class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
           >
-            Repository
+            Repository <span class="text-red-400">*</span>
           </label>
           <!-- Quick select: top 5 most-used repos -->
           <div v-if="quickSelectRepos.length" class="mb-2 flex flex-wrap gap-1.5">
@@ -244,9 +257,14 @@ async function submit() {
           </div>
           <select
             v-model="repoId"
-            class="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-blue-500 focus:outline-none"
+            class="w-full rounded-lg border bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none"
+            :class="
+              attempted && repoId == null
+                ? 'border-red-500 focus:border-red-500'
+                : 'border-zinc-700 focus:border-blue-500'
+            "
           >
-            <option :value="undefined">None</option>
+            <option :value="undefined">Select a repository...</option>
             <option v-for="repo in repos" :key="repo.id" :value="repo.id">
               {{ repo.org ? `${repo.org}/` : "" }}{{ repo.name
               }}{{
@@ -256,6 +274,9 @@ async function submit() {
               }}
             </option>
           </select>
+          <p v-if="attempted && repoId == null" class="mt-1 text-[11px] text-red-400">
+            Please select a repository.
+          </p>
           <p v-if="repos && repos.length === 0" class="mt-1.5 text-[11px] text-amber-500/80">
             No repos registered. Add a workspace slot in
             <NuxtLink to="/workspaces" class="font-medium underline">Workspaces</NuxtLink>
@@ -404,7 +425,7 @@ async function submit() {
           </button>
           <button
             type="submit"
-            :disabled="!prompt.trim() || submitting"
+            :disabled="(attempted && !canSubmit) || submitting"
             class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {{ submitting ? "Creating..." : "Create Card" }}
