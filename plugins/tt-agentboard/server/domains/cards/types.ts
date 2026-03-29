@@ -1,4 +1,4 @@
-export type Column = "backlog" | "ready" | "in_progress" | "simplify_review" | "review" | "done";
+export type Column = "ready" | "in_progress" | "simplify_review" | "review" | "done" | "archived";
 export type CardStatus =
   | "idle"
   | "queued"

@@ -232,7 +232,7 @@ const allVisibleCards = computed(() => {
   const { columnCards } = storeToRefs(store);
   const cols = columnCards.value;
   const result: number[] = [];
-  for (const col of ["backlog", "ready", "in_progress", "review", "done"] as const) {
+  for (const col of ["ready", "in_progress", "simplify_review", "review", "done"] as const) {
     for (const card of cols[col]) {
       result.push(card.id);
     }

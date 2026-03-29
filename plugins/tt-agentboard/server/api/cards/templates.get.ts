@@ -8,7 +8,7 @@ interface CardTemplate {
   prompt: string;
   executionMode: "headless" | "interactive";
   branchMode: "create" | "current";
-  column: "ready" | "backlog";
+  column: "ready";
 }
 
 export default defineEventHandler(() => {

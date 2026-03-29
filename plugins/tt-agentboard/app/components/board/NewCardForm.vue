@@ -20,7 +20,7 @@ const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);
 const executionMode = ref<"headless" | "interactive">("headless");
 const branchMode = ref<"create" | "current">("create");
-const startColumn = ref<"ready" | "backlog">("ready");
+const startColumn = ref<"ready">("ready");
 const submitting = ref(false);
 const submitError = ref("");
 const improving = ref(false);
@@ -37,7 +37,7 @@ interface CardTemplate {
   prompt: string;
   executionMode: "headless" | "interactive";
   branchMode: "create" | "current";
-  column: "ready" | "backlog";
+  column: "ready";
 }
 
 const { data: templates } = useFetch<CardTemplate[]>("/api/cards/templates");
@@ -283,44 +283,6 @@ async function submit() {
             No repos registered. Add a workspace slot in
             <NuxtLink to="/workspaces" class="font-medium underline">Workspaces</NuxtLink>
             first to enable agent execution.
-          </p>
-        </div>
-
-        <!-- Start column -->
-        <div>
-          <label
-            class="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
-          >
-            Start In
-          </label>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors"
-              :class="
-                startColumn === 'ready'
-                  ? 'border-cyan-500 bg-cyan-500/10 text-cyan-400'
-                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
-              "
-              @click="startColumn = 'ready'"
-            >
-              Ready
-            </button>
-            <button
-              type="button"
-              class="flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors"
-              :class="
-                startColumn === 'backlog'
-                  ? 'border-zinc-500 bg-zinc-500/10 text-zinc-300'
-                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
-              "
-              @click="startColumn = 'backlog'"
-            >
-              Backlog
-            </button>
-          </div>
-          <p class="mt-1.5 text-[11px] text-zinc-600">
-            Ready cards can be started immediately. Backlog cards are parked for later.
           </p>
         </div>
 

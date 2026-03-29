@@ -11,7 +11,7 @@ export default defineNitroPlugin(() => {
       for (const cardId of unblocked) {
         eventBus.emit("card:moved", {
           cardId,
-          fromColumn: "backlog",
+          fromColumn: "ready",
           toColumn: "ready",
         });
         eventBus.emit("card:status-changed", { cardId, status: "idle" });

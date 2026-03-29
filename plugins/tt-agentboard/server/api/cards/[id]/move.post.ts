@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   // Fetch current column before update
   const current = await db.select().from(cards).where(eq(cards.id, id));
-  const fromColumn = current[0]?.column ?? "backlog";
+  const fromColumn = current[0]?.column ?? "ready";
 
   await db
     .update(cards)

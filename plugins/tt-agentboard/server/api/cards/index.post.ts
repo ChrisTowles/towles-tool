@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
       title: body.title,
       description: body.description,
       repoId: body.repoId,
-      column: body.column || "backlog",
+      column: body.column || "ready",
       position: body.position || 0,
       executionMode: body.executionMode || "auto-claude",
       branchMode: body.branchMode || "create",

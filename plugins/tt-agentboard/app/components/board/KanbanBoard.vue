@@ -78,11 +78,12 @@ const filteredColumnCards = computed(() => {
   if (!q) return columnCards.value;
 
   const result: Record<Column, Card[]> = {
-    backlog: [],
     ready: [],
     in_progress: [],
+    simplify_review: [],
     review: [],
     done: [],
+    archived: [],
   };
 
   for (const col of COLUMNS) {
