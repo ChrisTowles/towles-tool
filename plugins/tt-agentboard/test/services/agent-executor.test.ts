@@ -93,7 +93,7 @@ describe("AgentExecutor", () => {
         workflowId: "nonexistent",
         title: "Test Card",
         description: "Do something",
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -118,7 +118,7 @@ describe("AgentExecutor", () => {
         repoId: 1,
         workflowId: null,
         title: "Test",
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -137,7 +137,7 @@ describe("AgentExecutor", () => {
         repoId: 1,
         workflowId: null,
         title: "Test",
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -156,7 +156,7 @@ describe("AgentExecutor", () => {
         workflowId: null,
         title: "Test Card",
         description: "Implement feature",
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -178,14 +178,14 @@ describe("AgentExecutor", () => {
       expect(cmd).toContain("Implement feature");
     });
 
-    it("uses tt auto-claude for headless mode", async () => {
+    it("uses tt auto-claude for auto-claude mode", async () => {
       const card = {
         id: 1,
         repoId: 1,
         workflowId: null,
         title: "Test",
         description: null,
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -203,14 +203,14 @@ describe("AgentExecutor", () => {
       expect(sendCommandCall[1]).toContain("tt auto-claude");
     });
 
-    it("uses raw claude for interactive mode", async () => {
+    it("uses raw claude for claude mode", async () => {
       const card = {
         id: 1,
         repoId: 1,
         workflowId: null,
         title: "Test",
         description: "do stuff",
-        executionMode: "interactive",
+        executionMode: "claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -236,7 +236,7 @@ describe("AgentExecutor", () => {
         workflowId: null,
         title: "Fix the bug",
         description: null,
-        executionMode: "headless",
+        executionMode: "auto-claude",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);

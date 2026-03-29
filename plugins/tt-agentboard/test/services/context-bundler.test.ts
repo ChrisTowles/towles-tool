@@ -21,7 +21,7 @@ function makeCard(overrides: Partial<Record<string, unknown>> = {}) {
     repoId: 1,
     column: "in_progress" as const,
     position: 0,
-    executionMode: "headless" as const,
+    executionMode: "auto-claude" as const,
     status: "running" as const,
     planId: null,
     branchMode: "create" as const,

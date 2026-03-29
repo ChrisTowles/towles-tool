@@ -6,6 +6,6 @@ prompt: |
   2. Fix the underlying code (not the test) unless the test is wrong
   3. Verify the fix by re-running the test
   4. Commit the fix with a descriptive message
-executionMode: headless
+executionMode: auto-claude
 branchMode: create
 column: ready

@@ -36,7 +36,7 @@ const elapsedTime = computed(() => {
   return `${days}d ${hours % 24}h`;
 });
 
-const modeIcon = computed(() => (props.card.executionMode === "interactive" ? "⌨" : "⚡"));
+const modeIcon = computed(() => (props.card.executionMode === "claude" ? "⌨" : "⚡"));
 
 // Diff stats — fetch once for review_ready or running cards
 const diffStats = ref<{ files: number; additions: number; deletions: number } | null>(null);
@@ -83,9 +83,9 @@ watch(
       <span
         class="shrink-0 text-xs"
         :title="
-          card.executionMode === 'headless'
-            ? 'Headless — runs without interaction'
-            : 'Interactive — can request input'
+          card.executionMode === 'auto-claude'
+            ? 'Auto-Claude — retry loop, runs autonomously'
+            : 'Claude — plain session in tmux'
         "
         >{{ modeIcon }}</span
       >

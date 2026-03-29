@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
       repoId: body.repoId,
       column: body.column || "backlog",
       position: body.position || 0,
-      executionMode: body.executionMode || "headless",
+      executionMode: body.executionMode || "auto-claude",
       branchMode: body.branchMode || "create",
       workflowId: body.workflowId,
     })
