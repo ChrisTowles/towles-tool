@@ -14,6 +14,8 @@ import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
 import type { SlotPreparer } from "./slot-preparer";
 import { streamTailer as defaultStreamTailer } from "../infra/stream-tailer";
+import { ttydManager as defaultTtydManager } from "../infra/ttyd-manager";
+import type { TtydManager } from "../infra/ttyd-manager";
 import { stepExecutor as defaultStepExecutor, clearPendingCallback } from "./step-executor";
 import type { StepExecutor, WorkflowContext } from "./step-executor";
 import { buildAgentBranchName, renderTemplate, shellEscape } from "./workflow-helpers";
@@ -41,6 +43,7 @@ export interface WorkflowOrchestratorDeps {
   stepExecutor: StepExecutor;
   streamTailer: StreamTailer;
   execSync: typeof defaultExecSync;
+  ttydManager: Pick<TtydManager, "isAvailable" | "attach">;
 }
 
 export class WorkflowOrchestrator {
@@ -60,6 +63,7 @@ export class WorkflowOrchestrator {
       stepExecutor: defaultStepExecutor,
       streamTailer: defaultStreamTailer,
       execSync: defaultExecSync,
+      ttydManager: defaultTtydManager,
       ...deps,
     };
   }
@@ -201,6 +205,12 @@ export class WorkflowOrchestrator {
         "tmux_session_created",
         `session=${sessionName}, cwd=${slot.path}`,
       );
+    }
+
+    // Auto-start ttyd for interactive terminal access
+    if (this.deps.ttydManager.isAvailable()) {
+      const { port } = this.deps.ttydManager.attach(cardId);
+      await this.deps.cardService.logEvent(cardId, "ttyd_started", `port=${port}`);
     }
 
     // Start output capture
