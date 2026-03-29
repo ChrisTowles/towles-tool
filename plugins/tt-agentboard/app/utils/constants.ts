@@ -5,6 +5,7 @@ export const COLUMNS = [
   "simplify_review",
   "review",
   "done",
+  "archived",
 ] as const;
 export type Column = (typeof COLUMNS)[number];
 
@@ -15,6 +16,7 @@ export const COLUMN_LABELS: Record<Column, string> = {
   simplify_review: "Simplify + Review",
   review: "Review",
   done: "Done",
+  archived: "Archived",
 };
 
 export const COLUMN_ICONS: Record<Column, string> = {
@@ -24,6 +26,7 @@ export const COLUMN_ICONS: Record<Column, string> = {
   simplify_review: "⟳",
   review: "◉",
   done: "✓",
+  archived: "▪",
 };
 
 export type CardStatus =
@@ -70,8 +73,8 @@ export const STATUS_DESCRIPTIONS: Record<CardStatus, string> = {
 };
 
 export const EXECUTION_MODE_LABELS: Record<string, string> = {
-  headless: "Headless",
-  interactive: "Interactive",
+  "auto-claude": "Auto-Claude",
+  claude: "Claude",
 };
 
 export const PR_GRANULARITY_LABELS: Record<string, string> = {

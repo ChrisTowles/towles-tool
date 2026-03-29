@@ -78,7 +78,7 @@ describe("GitHub Issue → Card → Agent → PR Round-Trip (integration)", () =
     beforeAll(async () => {
       const card = await createTestCard(repoId, "Test: Integration card", {
         githubIssueNumber: 100,
-        executionMode: "headless",
+        executionMode: "auto-claude",
       });
       cardId = card.id;
     });
@@ -110,7 +110,7 @@ describe("GitHub Issue → Card → Agent → PR Round-Trip (integration)", () =
     beforeAll(async () => {
       const card = await createTestCard(repoId, "PR Test: Create feature", {
         githubIssueNumber: 200,
-        executionMode: "headless",
+        executionMode: "auto-claude",
       });
       cardId = card.id;
 

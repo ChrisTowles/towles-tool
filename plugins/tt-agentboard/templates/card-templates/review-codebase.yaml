@@ -7,6 +7,6 @@ prompt: |
   - Security vulnerabilities (injection, auth, data exposure)
   - Code duplication and opportunities for reuse
   - Performance bottlenecks
-executionMode: headless
+executionMode: auto-claude
 branchMode: current
 column: ready

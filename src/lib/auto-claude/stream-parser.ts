@@ -56,6 +56,37 @@ function toolDetail(block: Record<string, unknown>): string {
   return "";
 }
 
+function parseContentBlock(block: Record<string, unknown>): AgentActivityEvent | null {
+  if (block.type === "tool_use" && typeof block.name === "string") {
+    return {
+      kind: "tool_use",
+      name: block.name,
+      detail: toolDetail(block),
+      input:
+        typeof block.input === "object" && block.input !== null
+          ? (block.input as Record<string, unknown>)
+          : {},
+    };
+  }
+
+  if (block.type === "thinking") {
+    const text = typeof block.thinking === "string" ? block.thinking : "";
+    return {
+      kind: "thinking",
+      summary: truncate(text.split("\n")[0].trim(), 120),
+    };
+  }
+
+  if (block.type === "text" && typeof block.text === "string") {
+    return {
+      kind: "text",
+      content: block.text,
+    };
+  }
+
+  return null;
+}
+
 /** Parse a single NDJSON line from Claude Code's stream-json output */
 export function parseStreamLine(line: string): AgentActivityEvent | null {
   if (!line.trim()) return null;
@@ -87,34 +118,7 @@ export function parseStreamLine(line: string): AgentActivityEvent | null {
       typeof inner.content_block === "object" &&
       inner.content_block !== null
     ) {
-      const block = inner.content_block as Record<string, unknown>;
-
-      if (block.type === "tool_use" && typeof block.name === "string") {
-        return {
-          kind: "tool_use",
-          name: block.name,
-          detail: toolDetail(block),
-          input:
-            typeof block.input === "object" && block.input !== null
-              ? (block.input as Record<string, unknown>)
-              : {},
-        };
-      }
-
-      if (block.type === "thinking") {
-        const text = typeof block.thinking === "string" ? block.thinking : "";
-        return {
-          kind: "thinking",
-          summary: truncate(text.split("\n")[0].trim(), 120),
-        };
-      }
-
-      if (block.type === "text" && typeof block.text === "string") {
-        return {
-          kind: "text",
-          content: block.text,
-        };
-      }
+      return parseContentBlock(inner.content_block as Record<string, unknown>);
     }
   }
 
@@ -122,35 +126,10 @@ export function parseStreamLine(line: string): AgentActivityEvent | null {
   if (event.type === "assistant" && typeof event.message === "object" && event.message !== null) {
     const message = event.message as Record<string, unknown>;
     if (Array.isArray(message.content)) {
-      for (const item of message.content) {
-        if (typeof item !== "object" || item === null) continue;
-        const block = item as Record<string, unknown>;
-
-        if (block.type === "tool_use" && typeof block.name === "string") {
-          return {
-            kind: "tool_use",
-            name: block.name,
-            detail: toolDetail(block),
-            input:
-              typeof block.input === "object" && block.input !== null
-                ? (block.input as Record<string, unknown>)
-                : {},
-          };
-        }
-
-        if (block.type === "thinking") {
-          const text = typeof block.thinking === "string" ? block.thinking : "";
-          return {
-            kind: "thinking",
-            summary: truncate(text.split("\n")[0].trim(), 120),
-          };
-        }
-
-        if (block.type === "text" && typeof block.text === "string") {
-          return {
-            kind: "text",
-            content: block.text,
-          };
+      for (const block of message.content) {
+        if (typeof block === "object" && block !== null) {
+          const parsed = parseContentBlock(block as Record<string, unknown>);
+          if (parsed) return parsed;
         }
       }
     }

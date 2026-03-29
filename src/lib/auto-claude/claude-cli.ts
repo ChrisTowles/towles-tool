@@ -7,6 +7,7 @@ import { getConfig } from "./config.js";
 import { sleep } from "./shell.js";
 import { spawnClaude as defaultSpawnClaude } from "./spawn-claude.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
+import { parseStreamLine } from "./stream-parser.js";
 
 // ── Claude CLI ──
 
@@ -74,6 +75,31 @@ export async function runClaude(opts: {
   throw lastError ?? new Error("runClaude failed after all retries");
 }
 
+function logActivityEvent(event: ReturnType<typeof parseStreamLine>, log: ClaudeLogger): void {
+  if (!event) return;
+
+  switch (event.kind) {
+    case "tool_use":
+      log.info(
+        `  ${pc.dim("\u21B3")} ${event.name}${event.detail ? pc.dim(` ${event.detail}`) : ""}`,
+      );
+      break;
+    case "thinking":
+      log.info(
+        `  ${pc.dim("\u21B3")} ${pc.italic("thinking")}${event.summary ? pc.dim(` ${event.summary}`) : ""}`,
+      );
+      break;
+    case "text":
+      if (event.content.trim()) {
+        log.info(`  ${pc.dim("\u21B3")} ${pc.dim(event.content.split("\n")[0].trim())}`);
+      }
+      break;
+    case "result":
+      // Handled separately via capturedResult
+      break;
+  }
+}
+
 function runClaudeStreaming(
   args: string[],
   spawnFn: SpawnClaudeFn,
@@ -93,19 +119,28 @@ function runClaudeStreaming(
 
     rl.on("line", (line) => {
       if (!line.trim()) return;
-      try {
-        const event = JSON.parse(line) as Record<string, unknown>;
-        handleStreamEvent(event, log, (turns) => {
-          turnCount = turns;
-        });
 
-        if ("result" in event && "is_error" in event && "num_turns" in event) {
-          capturedResult = {
-            result: String(event.result ?? ""),
-            is_error: Boolean(event.is_error),
-            total_cost_usd: Number(event.total_cost_usd ?? 0),
-            num_turns: Number(event.num_turns),
-          };
+      const activity = parseStreamLine(line);
+      logActivityEvent(activity, log);
+
+      if (activity?.kind === "result") {
+        capturedResult = {
+          result: "",
+          is_error: activity.isError,
+          total_cost_usd: activity.costUsd,
+          num_turns: activity.numTurns,
+        };
+      }
+
+      // Track turn count from intermediate events (parser returns null for these)
+      try {
+        const raw = JSON.parse(line) as Record<string, unknown>;
+        if (typeof raw.num_turns === "number" && !("result" in raw)) {
+          turnCount = raw.num_turns as number;
+        }
+        // Capture the result text from the final event
+        if ("result" in raw && capturedResult) {
+          capturedResult.result = String(raw.result ?? "");
         }
       } catch {
         // Skip non-JSON lines
@@ -128,75 +163,4 @@ function runClaudeStreaming(
       }
     });
   });
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "\u2026" : s;
-}
-
-function toolDetail(block: Record<string, unknown>): string {
-  const input =
-    typeof block.input === "object" && block.input !== null
-      ? (block.input as Record<string, unknown>)
-      : null;
-  if (!input) return "";
-
-  const filePath = input.file_path ?? input.path;
-  if (typeof filePath === "string") {
-    let detail = pc.dim(` ${filePath}`);
-    // Show edit context for Edit tool
-    if (typeof input.old_string === "string" && typeof input.new_string === "string") {
-      const old = truncate(input.old_string.split("\n")[0].trim(), 40);
-      const replacement = truncate(input.new_string.split("\n")[0].trim(), 40);
-      detail += pc.dim(` "${old}" → "${replacement}"`);
-    }
-    return detail;
-  }
-  if (typeof input.pattern === "string") return pc.dim(` ${input.pattern}`);
-  if (typeof input.command === "string") {
-    return pc.dim(` ${truncate(input.command, 60)}`);
-  }
-  // TodoWrite/TaskCreate — show subject
-  if (typeof input.subject === "string") return pc.dim(` ${truncate(input.subject, 60)}`);
-  return "";
-}
-
-function logToolUse(block: Record<string, unknown>, log: ClaudeLogger): void {
-  const name = block.name;
-  if (typeof name === "string") {
-    log.info(`  ${pc.dim("\u21B3")} ${name}${toolDetail(block)}`);
-  }
-}
-
-function handleStreamEvent(
-  event: Record<string, unknown>,
-  log: ClaudeLogger,
-  onTurn: (count: number) => void,
-): void {
-  // Only handle stream_event — assistant turn events duplicate the same tools
-  if (event.type === "stream_event" && typeof event.event === "object" && event.event !== null) {
-    const inner = event.event as Record<string, unknown>;
-
-    if (
-      inner.type === "content_block_start" &&
-      typeof inner.content_block === "object" &&
-      inner.content_block !== null
-    ) {
-      const block = inner.content_block as Record<string, unknown>;
-      if (block.type === "tool_use") {
-        logToolUse(block, log);
-      } else if (block.type === "thinking") {
-        const thinkingText =
-          typeof block.thinking === "string" && block.thinking.length > 0
-            ? pc.dim(` ${truncate(block.thinking.split("\n")[0].trim(), 60)}`)
-            : "";
-        log.info(`  ${pc.dim("\u21B3")} ${pc.italic("thinking")}${thinkingText}`);
-      }
-    }
-  }
-
-  // Turn count tracking
-  if (typeof event.num_turns === "number" && !("result" in event)) {
-    onTurn(event.num_turns as number);
-  }
 }

@@ -8,6 +8,6 @@ prompt: |
   - Missing or excessive abstractions
   - Code that could use existing utilities
   Keep all existing behavior — this is a pure refactor.
-executionMode: headless
+executionMode: auto-claude
 branchMode: create
 column: ready

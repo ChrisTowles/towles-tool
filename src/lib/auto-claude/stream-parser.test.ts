@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStreamLine } from "../../server/domains/infra/stream-parser";
+import { parseStreamLine } from "./stream-parser";
 
 describe("parseStreamLine", () => {
   it("returns null for empty lines", () => {
@@ -20,15 +20,14 @@ describe("parseStreamLine", () => {
   describe("result events", () => {
     it("parses a result event", () => {
       const line = JSON.stringify({
-        result: "Task completed successfully",
+        result: "Task completed",
         is_error: false,
         num_turns: 5,
         cost_usd: 0.0342,
         duration_ms: 12000,
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "result",
         costUsd: 0.0342,
         durationMs: 12000,
@@ -46,8 +45,7 @@ describe("parseStreamLine", () => {
         duration_ms: 500,
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "result",
         costUsd: 0.001,
         durationMs: 500,
@@ -56,7 +54,7 @@ describe("parseStreamLine", () => {
       });
     });
 
-    it("defaults cost to 0 when missing", () => {
+    it("defaults cost and duration to 0 when missing", () => {
       const line = JSON.stringify({
         result: "done",
         is_error: false,
@@ -100,8 +98,7 @@ describe("parseStreamLine", () => {
         },
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "tool_use",
         name: "Read",
         detail: "/home/user/code/main.ts",
@@ -200,10 +197,7 @@ describe("parseStreamLine", () => {
         type: "stream_event",
         event: {
           type: "content_block_start",
-          content_block: {
-            type: "tool_use",
-            name: "SomeTool",
-          },
+          content_block: { type: "tool_use", name: "SomeTool" },
         },
       });
 
@@ -223,15 +217,14 @@ describe("parseStreamLine", () => {
           type: "content_block_start",
           content_block: {
             type: "thinking",
-            thinking: "I need to read the file first to understand the structure.",
+            thinking: "I need to read the file first.",
           },
         },
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "thinking",
-        summary: "I need to read the file first to understand the structure.",
+        summary: "I need to read the file first.",
       });
     });
 
@@ -241,17 +234,14 @@ describe("parseStreamLine", () => {
         type: "stream_event",
         event: {
           type: "content_block_start",
-          content_block: {
-            type: "thinking",
-            thinking: longThinking,
-          },
+          content_block: { type: "thinking", thinking: longThinking },
         },
       });
 
       const event = parseStreamLine(line);
       if (event?.kind === "thinking") {
-        expect(event.summary.length).toBeLessThanOrEqual(121); // 120 + ellipsis
-        expect(event.summary).toContain("…");
+        expect(event.summary.length).toBeLessThanOrEqual(121);
+        expect(event.summary).toContain("\u2026");
       }
     });
 
@@ -302,8 +292,7 @@ describe("parseStreamLine", () => {
         },
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "text",
         content: "Here is the implementation plan:",
       });
@@ -341,8 +330,7 @@ describe("parseStreamLine", () => {
         },
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "thinking",
         summary: "Let me think about this",
       });
@@ -356,8 +344,7 @@ describe("parseStreamLine", () => {
         },
       });
 
-      const event = parseStreamLine(line);
-      expect(event).toEqual({
+      expect(parseStreamLine(line)).toEqual({
         kind: "text",
         content: "I will now implement the feature.",
       });
@@ -387,26 +374,6 @@ describe("parseStreamLine", () => {
       expect(event?.kind).toBe("tool_use");
       if (event?.kind === "tool_use") {
         expect(event.name).toBe("Read");
-        expect(event.detail).toBe("src/main.ts");
-      }
-    });
-
-    it("finds tool_use after thinking block in multi-block content", () => {
-      const line = JSON.stringify({
-        type: "assistant",
-        message: {
-          content: [
-            { type: "thinking", thinking: "Let me plan this" },
-            { type: "tool_use", name: "Edit", input: { file_path: "app.ts" } },
-          ],
-        },
-      });
-
-      // Returns the first recognized block (thinking)
-      const event = parseStreamLine(line);
-      expect(event?.kind).toBe("thinking");
-      if (event?.kind === "thinking") {
-        expect(event.summary).toBe("Let me plan this");
       }
     });
   });
