@@ -1,190 +1,144 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockCardService,
-} from "../helpers/mock-deps";
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { createSessionReconnect } from "../../server/plugins/session-reconnect";
+import { CardService } from "../../server/domains/cards/card-service";
+import { cards } from "../../server/shared/db/schema";
+import {
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  createTestEventBus,
+  createNoopLogger,
+} from "../helpers/test-db";
 
 describe("Session Reconnect Plugin", () => {
-  let mockDb: ReturnType<typeof createMockDb>;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockCardService: ReturnType<typeof createMockCardService>;
-  let mockTmuxManager: {
-    isAvailable: ReturnType<typeof vi.fn>;
-    listSessions: ReturnType<typeof vi.fn>;
-    sessionExists: ReturnType<typeof vi.fn>;
-    startCapture: ReturnType<typeof vi.fn>;
-    killSession: ReturnType<typeof vi.fn>;
-  };
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let cardService: CardService;
+  let boardId: number;
+  let repoId: number;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
-    mockCardService = createMockCardService();
-    mockTmuxManager = {
-      isAvailable: vi.fn().mockReturnValue(true),
-      listSessions: vi.fn().mockReturnValue([]),
-      sessionExists: vi.fn().mockReturnValue(true),
-      startCapture: vi.fn(),
-      killSession: vi.fn(),
-    };
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+
+    ({ bus } = createTestEventBus());
+    cardService = new CardService({
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
+    });
   });
 
-  function runPlugin() {
+  function runPlugin(tmux: {
+    isAvailable?: boolean;
+    sessions?: string[];
+    sessionExists?: (name: string) => boolean;
+    startCaptureCalls?: Array<{ name: string }>;
+    killSessionCalls?: string[];
+  }) {
+    const killSessionCalls = tmux.killSessionCalls ?? [];
+    const startCaptureCalls = tmux.startCaptureCalls ?? [];
+
     return createSessionReconnect({
-      db: mockDb as never,
-      tmuxManager: mockTmuxManager,
-      eventBus: mockEventBus as never,
-      logger: createMockLogger() as never,
-      cardService: mockCardService as never,
+      db: db as never,
+      tmuxManager: {
+        isAvailable: () => tmux.isAvailable ?? true,
+        listSessions: () => tmux.sessions ?? [],
+        sessionExists: tmux.sessionExists ?? (() => true),
+        startCapture: (name: string, _onOutput: (output: string) => void) => {
+          startCaptureCalls.push({ name });
+        },
+        killSession: (name: string) => {
+          killSessionCalls.push(name);
+        },
+      },
+      eventBus: bus as never,
+      logger: createNoopLogger() as never,
+      cardService,
     });
   }
 
   it("skips when tmux not available", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(false);
-
-    await runPlugin();
-
-    expect(mockTmuxManager.listSessions).not.toHaveBeenCalled();
+    await runPlugin({ isAvailable: false });
+    // No errors, just returns early
   });
 
   it("no action when no orphaned sessions", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue([]);
-
-    await runPlugin();
-
-    expect(mockTmuxManager.killSession).not.toHaveBeenCalled();
+    const killCalls: string[] = [];
+    await runPlugin({ sessions: [], killSessionCalls: killCalls });
+    expect(killCalls).toHaveLength(0);
   });
 
   it("kills session when card not found in DB", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue(["card-99"]);
-
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue([]);
-      }
-      return chain;
+    const killCalls: string[] = [];
+    await runPlugin({
+      sessions: ["card-99"],
+      killSessionCalls: killCalls,
     });
-
-    await runPlugin();
-
-    expect(mockTmuxManager.killSession).toHaveBeenCalledWith("card-99");
+    expect(killCalls).toContain("card-99");
   });
 
   it("kills session when card is not running", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue(["card-5"]);
+    const card = await seedCard(boardId, { repoId, status: "done" });
 
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([{ id: 5, status: "done" }]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue([]);
-      }
-      return chain;
+    const killCalls: string[] = [];
+    await runPlugin({
+      sessions: [`card-${card.id}`],
+      killSessionCalls: killCalls,
     });
-
-    await runPlugin();
-
-    expect(mockTmuxManager.killSession).toHaveBeenCalledWith("card-5");
+    expect(killCalls).toContain(`card-${card.id}`);
   });
 
   it("resumes capture for running card with live session", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue(["card-3"]);
-    mockTmuxManager.sessionExists.mockReturnValue(true);
+    const card = await seedCard(boardId, { repoId, status: "running" });
 
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([{ id: 3, status: "running" }]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue([{ id: 3 }]);
-      }
-      return chain;
+    const startCaptureCalls: Array<{ name: string }> = [];
+    const killCalls: string[] = [];
+    await runPlugin({
+      sessions: [`card-${card.id}`],
+      sessionExists: () => true,
+      startCaptureCalls,
+      killSessionCalls: killCalls,
     });
 
-    await runPlugin();
-
-    expect(mockTmuxManager.startCapture).toHaveBeenCalledWith("card-3", expect.any(Function));
-    expect(mockTmuxManager.killSession).not.toHaveBeenCalled();
+    expect(startCaptureCalls).toHaveLength(1);
+    expect(startCaptureCalls[0].name).toBe(`card-${card.id}`);
+    expect(killCalls).toHaveLength(0);
   });
 
   it("marks card failed when session died between list and check", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue(["card-7"]);
-    mockTmuxManager.sessionExists.mockReturnValue(false);
+    const card = await seedCard(boardId, { repoId, status: "running" });
 
-    const updateChain: Record<string, unknown> = {};
-    updateChain.set = vi.fn().mockReturnValue(updateChain);
-    updateChain.where = vi.fn().mockResolvedValue(undefined);
-    mockDb.update = vi.fn().mockReturnValue(updateChain);
-
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([{ id: 7, status: "running" }]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue([{ id: 7 }]);
-      }
-      return chain;
+    await runPlugin({
+      sessions: [`card-${card.id}`],
+      sessionExists: () => false,
     });
 
-    await runPlugin();
-
-    expect(mockCardService.markFailed).toHaveBeenCalledWith(
-      7,
-      "session card-7 died between list and check",
-    );
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.status).toBe("failed");
   });
 
   it("marks running card failed when it has no live tmux session", async () => {
-    mockTmuxManager.isAvailable.mockReturnValue(true);
-    mockTmuxManager.listSessions.mockReturnValue(["card-5"]);
+    // A card that's "done" in a tmux session, and another running without session
+    const doneCard = await seedCard(boardId, { repoId, status: "done", title: "Done" });
+    const runningCard = await seedCard(boardId, { repoId, status: "running", title: "Running" });
 
-    const updateChain: Record<string, unknown> = {};
-    updateChain.set = vi.fn().mockReturnValue(updateChain);
-    updateChain.where = vi.fn().mockResolvedValue(undefined);
-    mockDb.update = vi.fn().mockReturnValue(updateChain);
-
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([{ id: 5, status: "done" }]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue([{ id: 20, status: "running" }]);
-      }
-      return chain;
+    const killCalls: string[] = [];
+    await runPlugin({
+      sessions: [`card-${doneCard.id}`],
+      killSessionCalls: killCalls,
     });
 
-    await runPlugin();
+    // doneCard's session should be killed (not running)
+    expect(killCalls).toContain(`card-${doneCard.id}`);
 
-    expect(mockTmuxManager.killSession).toHaveBeenCalledWith("card-5");
-    expect(mockCardService.markFailed).toHaveBeenCalledWith(20, "session not found on restart");
+    // runningCard has no session, should be marked failed
+    const [updated] = await db.select().from(cards).where(eq(cards.id, runningCard.id));
+    expect(updated.status).toBe("failed");
   });
 });

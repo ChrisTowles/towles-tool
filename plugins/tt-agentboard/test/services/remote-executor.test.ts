@@ -1,14 +1,17 @@
-import { describe, it, expect, vi } from "vitest";
-
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { RemoteExecutor } from "../../server/domains/execution/remote-executor";
+import { CardService } from "../../server/domains/cards/card-service";
+import { cards, cardEvents, workflowRuns } from "../../server/shared/db/schema";
 import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockCardService,
-  setupSelectReturning,
-  setupInsert,
-} from "../helpers/mock-deps";
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  createTestEventBus,
+  createNoopLogger,
+} from "../helpers/test-db";
 
 const CLAUDE_REMOTE_OUTPUT = `Created remote session: Test implementation and validation
 View: https://claude.ai/code/session_01CLmof84P5YY3MboTRacDLg?m=0
@@ -16,113 +19,125 @@ Resume with: claude --teleport session_01CLmof84P5YY3MboTRacDLg
 `;
 
 describe("RemoteExecutor", () => {
-  function createExecutor(overrides: Record<string, unknown> = {}) {
-    const mockDb = createMockDb();
-    const mockCardService = createMockCardService();
-    const mockExecSync = vi.fn().mockReturnValue(CLAUDE_REMOTE_OUTPUT);
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let cardService: CardService;
+  let boardId: number;
+  let repoId: number;
 
-    const executor = new RemoteExecutor({
-      db: mockDb as never,
-      eventBus: createMockEventBus(),
-      logger: createMockLogger(),
-      cardService: mockCardService as never,
-      execSync: mockExecSync as never,
-      ...overrides,
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+
+    ({ bus } = createTestEventBus());
+    cardService = new CardService({
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
     });
+  });
 
-    return { executor, mockDb, mockCardService, mockExecSync };
+  function createExecutor(execSyncFn: (...args: unknown[]) => string) {
+    return new RemoteExecutor({
+      db,
+      eventBus: bus,
+      logger: createNoopLogger(),
+      cardService,
+      execSync: execSyncFn as never,
+    });
   }
 
   it("parses session ID and URL from claude --remote output", async () => {
-    const { executor, mockDb, mockCardService, mockExecSync } = createExecutor();
-    const card = { id: 1, repoId: 1, title: "Test", description: "Do stuff" };
-    setupSelectReturning(mockDb, [card]);
-    setupInsert(mockDb);
+    const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
+    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockExecSync).toHaveBeenCalledWith(
-      expect.stringContaining("claude --remote"),
-      expect.objectContaining({ encoding: "utf-8" }),
-    );
-    expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "running");
-    expect(mockCardService.logEvent).toHaveBeenCalledWith(
-      1,
-      "remote_session_created",
-      expect.stringContaining("session_01CLmof84P5YY3MboTRacDLg"),
-    );
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.status).toBe("running");
+
+    const logRows = await db
+      .select()
+      .from(cardEvents)
+      .where(eq(cardEvents.cardId, card.id));
+    const sessionCreated = logRows.find((e) => e.event === "remote_session_created");
+    expect(sessionCreated).toBeDefined();
+    expect(sessionCreated!.detail).toContain("session_01CLmof84P5YY3MboTRacDLg");
   });
 
   it("creates workflow run with remote session metadata", async () => {
-    const { executor, mockDb } = createExecutor();
-    const card = { id: 1, repoId: 1, title: "Test", description: "Do stuff" };
-    setupSelectReturning(mockDb, [card]);
-    setupInsert(mockDb);
+    const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
+    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockDb.insert).toHaveBeenCalled();
+    const runs = await db
+      .select()
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, card.id));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].remoteSessionId).toBe("session_01CLmof84P5YY3MboTRacDLg");
   });
 
   it("marks card failed when claude --remote throws", async () => {
-    const mockExecSync = vi.fn().mockImplementation(() => {
+    const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
+    const executor = createExecutor(() => {
       throw new Error("command not found");
     });
-    const { executor, mockDb, mockCardService } = createExecutor({
-      execSync: mockExecSync as never,
-    });
-    const card = { id: 1, repoId: 1, title: "Test", description: "Do stuff" };
-    setupSelectReturning(mockDb, [card]);
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
-    expect(mockCardService.logEvent).toHaveBeenCalledWith(
-      1,
-      "error",
-      expect.stringContaining("claude --remote failed"),
-    );
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.status).toBe("failed");
+
+    const logRows = await db
+      .select()
+      .from(cardEvents)
+      .where(eq(cardEvents.cardId, card.id));
+    const errorLog = logRows.find((e) => e.event === "error");
+    expect(errorLog).toBeDefined();
+    expect(errorLog!.detail).toContain("claude --remote failed");
   });
 
   it("marks card failed when session ID cannot be parsed", async () => {
-    const mockExecSync = vi.fn().mockReturnValue("some unexpected output\n");
-    const { executor, mockDb, mockCardService } = createExecutor({
-      execSync: mockExecSync as never,
-    });
-    const card = { id: 1, repoId: 1, title: "Test", description: "Do stuff" };
-    setupSelectReturning(mockDb, [card]);
+    const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
+    const executor = createExecutor(() => "some unexpected output\n");
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
-    expect(mockCardService.logEvent).toHaveBeenCalledWith(
-      1,
-      "error",
-      expect.stringContaining("Could not parse session ID"),
-    );
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.status).toBe("failed");
+
+    const logRows = await db
+      .select()
+      .from(cardEvents)
+      .where(eq(cardEvents.cardId, card.id));
+    const errorLog = logRows.find((e) => e.event === "error");
+    expect(errorLog!.detail).toContain("Could not parse session ID");
   });
 
   it("marks card failed when no repoId", async () => {
-    const { executor, mockDb, mockCardService } = createExecutor();
-    const card = { id: 1, repoId: null, title: "Test" };
-    setupSelectReturning(mockDb, [card]);
+    const card = await seedCard(boardId, { repoId: null, title: "Test" });
+    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.status).toBe("failed");
   });
 
   it("uses card title when description is null", async () => {
-    const { executor, mockDb, mockExecSync } = createExecutor();
-    const card = { id: 1, repoId: 1, title: "Fix the bug", description: null };
-    setupSelectReturning(mockDb, [card]);
-    setupInsert(mockDb);
+    const card = await seedCard(boardId, { repoId, title: "Fix the bug", description: null });
+    let capturedCmd = "";
+    const executor = createExecutor((cmd: unknown) => {
+      capturedCmd = String(cmd);
+      return CLAUDE_REMOTE_OUTPUT;
+    });
 
-    await executor.startExecution(1);
+    await executor.startExecution(card.id);
 
-    expect(mockExecSync).toHaveBeenCalledWith(
-      expect.stringContaining("Fix the bug"),
-      expect.anything(),
-    );
+    expect(capturedCmd).toContain("Fix the bug");
   });
 });

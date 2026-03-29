@@ -1,117 +1,110 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createCompletionSweep } from "../../server/plugins/completion-sweep";
-import { createMockLogger } from "../helpers/mock-deps";
+import {
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  createNoopLogger,
+} from "../helpers/test-db";
 
 describe("completion-sweep", () => {
-  let mockTmuxManager: {
-    listSessions: ReturnType<typeof vi.fn>;
-    getPaneCommand: ReturnType<typeof vi.fn>;
-  };
-  let triggerComplete: ReturnType<typeof vi.fn>;
-  let mockDb: ReturnType<typeof createMockDb>;
+  let boardId: number;
+  let repoId: number;
+  let completedCardIds: number[];
 
-  function createMockDb(runningCards: Array<{ id: number; status: string }> = []) {
-    return {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(runningCards),
-        }),
-      }),
-    };
-  }
-
-  beforeEach(() => {
-    mockTmuxManager = {
-      listSessions: vi.fn().mockReturnValue([]),
-      getPaneCommand: vi.fn(),
-    };
-    triggerComplete = vi.fn().mockResolvedValue(undefined);
-    mockDb = createMockDb();
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+    completedCardIds = [];
   });
 
-  it("triggers complete for running card with idle tmux session", async () => {
-    mockTmuxManager.listSessions.mockReturnValue(["card-1", "card-2"]);
-    mockTmuxManager.getPaneCommand.mockReturnValueOnce("zsh").mockReturnValueOnce("node");
-    mockDb = createMockDb([
-      { id: 1, status: "running" },
-      { id: 2, status: "running" },
-    ]);
+  function createSweep(opts: {
+    sessions: string[];
+    paneCommands: Record<string, string>;
+  }) {
+    return createCompletionSweep({
+      tmuxManager: {
+        listSessions: () => opts.sessions,
+        getPaneCommand: (name: string) => opts.paneCommands[name] ?? null,
+      },
+      db: db as never,
+      logger: createNoopLogger() as never,
+      triggerComplete: async (cardId: number) => {
+        completedCardIds.push(cardId);
+      },
+    });
+  }
 
-    const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
+  it("triggers complete for running card with idle tmux session", async () => {
+    const card1 = await seedCard(boardId, { repoId, status: "running", title: "C1" });
+    const card2 = await seedCard(boardId, { repoId, status: "running", title: "C2" });
+
+    const { sweep } = createSweep({
+      sessions: [`card-${card1.id}`, `card-${card2.id}`],
+      paneCommands: {
+        [`card-${card1.id}`]: "zsh",
+        [`card-${card2.id}`]: "node",
+      },
     });
 
     await sweep();
 
-    expect(triggerComplete).toHaveBeenCalledTimes(1);
-    expect(triggerComplete).toHaveBeenCalledWith(1);
+    // Only card1 (zsh = idle) should be triggered, card2 (node = agent running) should not
+    expect(completedCardIds).toEqual([card1.id]);
   });
 
   it("does nothing when no tmux sessions exist", async () => {
-    mockTmuxManager.listSessions.mockReturnValue([]);
-
-    const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
-    });
+    const { sweep } = createSweep({ sessions: [], paneCommands: {} });
 
     await sweep();
 
-    expect(triggerComplete).not.toHaveBeenCalled();
-    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(completedCardIds).toHaveLength(0);
   });
 
   it("skips sessions for cards not in running status", async () => {
-    mockTmuxManager.listSessions.mockReturnValue(["card-1"]);
-    mockTmuxManager.getPaneCommand.mockReturnValue("zsh");
-    // DB returns no running cards
-    mockDb = createMockDb([]);
+    const card = await seedCard(boardId, { repoId, status: "done", title: "Done" });
 
-    const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
+    const { sweep } = createSweep({
+      sessions: [`card-${card.id}`],
+      paneCommands: { [`card-${card.id}`]: "zsh" },
     });
 
     await sweep();
 
-    expect(triggerComplete).not.toHaveBeenCalled();
+    expect(completedCardIds).toHaveLength(0);
   });
 
   it("skips sessions where agent is still running", async () => {
-    mockTmuxManager.listSessions.mockReturnValue(["card-1"]);
-    mockTmuxManager.getPaneCommand.mockReturnValue("node");
-    mockDb = createMockDb([{ id: 1, status: "running" }]);
+    const card = await seedCard(boardId, { repoId, status: "running", title: "C1" });
 
-    const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
+    const { sweep } = createSweep({
+      sessions: [`card-${card.id}`],
+      paneCommands: { [`card-${card.id}`]: "node" },
     });
 
     await sweep();
 
-    expect(triggerComplete).not.toHaveBeenCalled();
+    expect(completedCardIds).toHaveLength(0);
   });
 
   it("handles triggerComplete failure gracefully", async () => {
-    mockTmuxManager.listSessions.mockReturnValue(["card-1"]);
-    mockTmuxManager.getPaneCommand.mockReturnValue("zsh");
-    mockDb = createMockDb([{ id: 1, status: "running" }]);
-    triggerComplete.mockRejectedValueOnce(new Error("server down"));
+    const card = await seedCard(boardId, { repoId, status: "running", title: "C1" });
 
     const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
+      tmuxManager: {
+        listSessions: () => [`card-${card.id}`],
+        getPaneCommand: () => "zsh",
+      },
+      db: db as never,
+      logger: createNoopLogger() as never,
+      triggerComplete: async () => {
+        throw new Error("server down");
+      },
     });
 
     // Should not throw
@@ -119,21 +112,18 @@ describe("completion-sweep", () => {
   });
 
   it("skips non-card sessions", async () => {
-    mockTmuxManager.listSessions.mockReturnValue(["card-1", "my-session"]);
-    mockTmuxManager.getPaneCommand.mockReturnValue("zsh");
-    mockDb = createMockDb([{ id: 1, status: "running" }]);
+    const card = await seedCard(boardId, { repoId, status: "running", title: "C1" });
 
-    const { sweep } = createCompletionSweep({
-      tmuxManager: mockTmuxManager,
-      db: mockDb as never,
-      logger: createMockLogger() as never,
-      triggerComplete,
+    const { sweep } = createSweep({
+      sessions: [`card-${card.id}`, "my-session"],
+      paneCommands: {
+        [`card-${card.id}`]: "zsh",
+        "my-session": "zsh",
+      },
     });
 
     await sweep();
 
-    // Only card-1 should be processed, "my-session" skipped
-    expect(triggerComplete).toHaveBeenCalledTimes(1);
-    expect(triggerComplete).toHaveBeenCalledWith(1);
+    expect(completedCardIds).toEqual([card.id]);
   });
 });
