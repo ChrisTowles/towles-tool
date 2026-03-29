@@ -1,8 +1,10 @@
 import { createInterface } from "node:readline";
+import { join } from "node:path";
 
 import consola from "consola";
 import pc from "picocolors";
 
+import { fileExists, readFile } from "../../utils/fs.js";
 import { getConfig } from "./config.js";
 import { sleep } from "./shell.js";
 import { spawnClaude as defaultSpawnClaude } from "./spawn-claude.js";
@@ -52,6 +54,20 @@ export async function runClaude(opts: {
   ];
 
   log.info(`${pc.dim("▶")} Calling Claude${opts.maxTurns ? ` (max ${opts.maxTurns} turns)` : ""}…`);
+
+  // Log the system prompt (CLAUDE.md auto-loaded by Claude Code)
+  const claudeMdPath = join(process.cwd(), "CLAUDE.md");
+  if (fileExists(claudeMdPath)) {
+    const systemPrompt = readFile(claudeMdPath);
+    log.info(`\n${pc.bold(pc.cyan("── System Prompt (CLAUDE.md) ──"))}\n${pc.dim(systemPrompt.trimEnd())}\n`);
+  }
+
+  // Log the resolved prompt being sent
+  const promptPath = join(process.cwd(), opts.promptFile);
+  if (fileExists(promptPath)) {
+    const promptContent = readFile(promptPath);
+    log.info(`\n${pc.bold(pc.cyan(`── Prompt (${opts.promptFile}) ──`))}\n${pc.dim(promptContent.trimEnd())}\n`);
+  }
 
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {
