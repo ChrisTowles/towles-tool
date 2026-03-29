@@ -39,6 +39,8 @@ export interface AgentExecutorDeps {
   workflowOrchestrator: { run: (cardId: number) => Promise<void> };
   writeHooks: typeof defaultWriteHooks;
   cardService: CardService;
+  mkdirSync: typeof mkdirSync;
+  writeFileSync: typeof writeFileSync;
 }
 
 /**
@@ -65,6 +67,8 @@ export class AgentExecutor {
       workflowOrchestrator: defaultWorkflowOrchestrator,
       writeHooks: defaultWriteHooks,
       cardService: defaultCardService,
+      mkdirSync,
+      writeFileSync,
       ...deps,
     };
   }
@@ -224,9 +228,9 @@ export class AgentExecutor {
     let command: string;
     if (card.executionMode !== "interactive") {
       const promptDir = resolve(slot.path, ".agentboard");
-      mkdirSync(promptDir, { recursive: true });
+      this.deps.mkdirSync(promptDir, { recursive: true });
       const promptFile = resolve(promptDir, `card-${cardId}-prompt.md`);
-      writeFileSync(promptFile, finalPrompt);
+      this.deps.writeFileSync(promptFile, finalPrompt);
       const logPath = getCardLogPath(cardId);
       command = buildStreamingCommand(
         ["-p", "--dangerously-skip-permissions", `@${promptFile}`],

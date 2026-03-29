@@ -50,6 +50,8 @@ describe("AgentExecutor", () => {
       cardService: mockCardService as never,
       execSync: createMockExecSync() as never,
       existsSync: vi.fn().mockReturnValue(false) as never,
+      mkdirSync: vi.fn() as never,
+      writeFileSync: vi.fn() as never,
     });
     vi.clearAllMocks();
   });
@@ -174,43 +176,65 @@ describe("AgentExecutor", () => {
       expect(mockTmuxManager.createSession).toHaveBeenCalledWith(1, "/workspace/slot-1");
       expect(mockTmuxManager.startCapture).toHaveBeenCalled();
       const cmd = mockTmuxManager.sendCommand.mock.calls[0]![1] as string;
-      expect(cmd).toContain("tt auto-claude");
-      expect(cmd).toContain("Implement feature");
+      expect(cmd).toContain("@");
+      expect(cmd).toContain("card-1-prompt.md");
     });
 
-    it("uses tt auto-claude for auto-claude mode", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
-        title: "Test",
-        description: null,
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
-
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
-
-      await executor.startExecution(1);
-
-      const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toContain("tt auto-claude");
-    });
-
-    it("uses raw claude for claude mode", async () => {
+    it("writes prompt file and sends streaming command for non-interactive mode", async () => {
       const card = {
         id: 1,
         repoId: 1,
         workflowId: null,
         title: "Test",
         description: "do stuff",
-        executionMode: "claude",
+        executionMode: "auto-claude",
+      };
+      setupSelectReturning(mockDb, [card]);
+      setupUpdate(mockDb);
+      setupInsert(mockDb);
+
+      const mockMkdir = vi.fn();
+      const mockWriteFile = vi.fn();
+      executor = new AgentExecutor(4200, {
+        db: mockDb as never,
+        eventBus: mockEventBus,
+        logger: createMockLogger(),
+        tmuxManager: mockTmuxManager,
+        slotAllocator: mockSlotAllocator as never,
+        workflowLoader: mockWorkflowLoader,
+        workflowOrchestrator: mockWorkflowOrchestrator,
+        writeHooks: mockWriteHooks as never,
+        cardService: mockCardService as never,
+        mkdirSync: mockMkdir as never,
+        writeFileSync: mockWriteFile as never,
+      });
+
+      mockTmuxManager.isAvailable.mockReturnValue(true);
+      mockSlotAllocator.claimSlot.mockResolvedValue({
+        id: 1,
+        path: "/workspace/slot-1",
+      } as never);
+
+      await executor.startExecution(1);
+
+      expect(mockMkdir).toHaveBeenCalled();
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining("card-1-prompt.md"),
+        "do stuff",
+      );
+      const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
+      expect(sendCommandCall[1]).toContain("@");
+      expect(sendCommandCall[1]).toContain("card-1-prompt.md");
+    });
+
+    it("uses interactive claude for interactive mode", async () => {
+      const card = {
+        id: 1,
+        repoId: 1,
+        workflowId: null,
+        title: "Test",
+        description: "do stuff",
+        executionMode: "interactive",
       };
       setupSelectReturning(mockDb, [card]);
       setupUpdate(mockDb);
@@ -225,8 +249,7 @@ describe("AgentExecutor", () => {
       await executor.startExecution(1);
 
       const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toContain("claude");
-      expect(sendCommandCall[1]).not.toContain("tt auto-claude");
+      expect(sendCommandCall[1]).toBe("claude");
     });
 
     it("uses card title as prompt when description is null", async () => {
@@ -242,6 +265,21 @@ describe("AgentExecutor", () => {
       setupUpdate(mockDb);
       setupInsert(mockDb);
 
+      const mockWriteFile = vi.fn();
+      executor = new AgentExecutor(4200, {
+        db: mockDb as never,
+        eventBus: mockEventBus,
+        logger: createMockLogger(),
+        tmuxManager: mockTmuxManager,
+        slotAllocator: mockSlotAllocator as never,
+        workflowLoader: mockWorkflowLoader,
+        workflowOrchestrator: mockWorkflowOrchestrator,
+        writeHooks: mockWriteHooks as never,
+        cardService: mockCardService as never,
+        mkdirSync: vi.fn() as never,
+        writeFileSync: mockWriteFile as never,
+      });
+
       mockTmuxManager.isAvailable.mockReturnValue(true);
       mockSlotAllocator.claimSlot.mockResolvedValue({
         id: 1,
@@ -250,8 +288,10 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(1);
 
-      const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toContain("Fix the bug");
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining("card-1-prompt.md"),
+        "Fix the bug",
+      );
     });
   });
 });
