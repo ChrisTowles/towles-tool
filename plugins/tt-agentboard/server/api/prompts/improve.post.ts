@@ -26,14 +26,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { stdout } = await execFileAsync(
       "claude",
-      [
-        "-p",
-        userPrompt,
-        "--model",
-        "haiku",
-        "--system-prompt",
-        systemPrompt,
-      ],
+      ["-p", userPrompt, "--model", "haiku", "--system-prompt", systemPrompt],
       {
         timeout: 30_000,
         maxBuffer: 1024 * 1024,

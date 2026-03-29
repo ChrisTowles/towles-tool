@@ -42,7 +42,9 @@ const releasing = ref(false);
 
 const lastCommitAgo = computed(() => {
   if (!gitInfo.value?.lastCommitDate) return null;
-  const days = Math.floor((Date.now() - new Date(gitInfo.value.lastCommitDate).getTime()) / 86_400_000);
+  const days = Math.floor(
+    (Date.now() - new Date(gitInfo.value.lastCommitDate).getTime()) / 86_400_000,
+  );
   if (days === 0) return "today";
   if (days === 1) return "1 day ago";
   return `${days} days ago`;

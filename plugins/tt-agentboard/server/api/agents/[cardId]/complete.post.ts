@@ -104,7 +104,11 @@ export default defineEventHandler(async (event) => {
     if (existsSync(logPath)) {
       const lines = readFileSync(logPath, "utf-8").trim().split("\n");
       const resultLine = lines.findLast((l) => {
-        try { return JSON.parse(l).type === "result"; } catch { return false; }
+        try {
+          return JSON.parse(l).type === "result";
+        } catch {
+          return false;
+        }
       });
       if (resultLine) {
         await cardService.logEvent(cardId, "agent_result", resultLine);
