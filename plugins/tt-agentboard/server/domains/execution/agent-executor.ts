@@ -15,6 +15,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildAgentBranchName, buildStreamingCommand, getCardLogPath } from "./workflow-helpers";
 import { cardService as defaultCardService } from "../cards/card-service";
+import { remoteExecutor as defaultRemoteExecutor } from "./remote-executor";
+import type { RemoteExecutor } from "./remote-executor";
 import type { CardService } from "../cards/card-service";
 import type { SlotPreparer } from "./slot-preparer";
 import type { Logger, EventBus } from "./types";
@@ -44,6 +46,7 @@ export interface AgentExecutorDeps {
   mkdirSync: typeof mkdirSync;
   writeFileSync: typeof writeFileSync;
   ttydManager: Pick<TtydManager, "isAvailable" | "attach">;
+  remoteExecutor: Pick<RemoteExecutor, "startExecution">;
 }
 
 /**
@@ -73,6 +76,7 @@ export class AgentExecutor {
       mkdirSync,
       writeFileSync,
       ttydManager: defaultTtydManager,
+      remoteExecutor: defaultRemoteExecutor,
       ...deps,
     };
   }
@@ -116,6 +120,12 @@ export class AgentExecutor {
         "workflow_not_found",
         `workflow=${card.workflowId}, falling back to single-prompt`,
       );
+    }
+
+    // Remote execution — no local slot/tmux needed
+    if (card.executionMode === "remote") {
+      await this.deps.remoteExecutor.startExecution(cardId);
+      return;
     }
 
     // Single-prompt execution (no workflow)

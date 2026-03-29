@@ -18,7 +18,7 @@ const emit = defineEmits<{
 const prompt = ref(props.initialTitle ?? "");
 const repoId = ref<number | undefined>(undefined);
 const workflowId = ref<string | undefined>(undefined);
-const executionMode = ref<"headless" | "interactive">("headless");
+const executionMode = ref<"headless" | "interactive" | "remote">("headless");
 const branchMode = ref<"create" | "current">("create");
 const startColumn = ref<"ready">("ready");
 const submitting = ref(false);
@@ -35,7 +35,7 @@ interface CardTemplate {
   name: string;
   description: string;
   prompt: string;
-  executionMode: "headless" | "interactive";
+  executionMode: "headless" | "interactive" | "remote";
   branchMode: "create" | "current";
   column: "ready";
 }
@@ -318,12 +318,26 @@ async function submit() {
             >
               ⌨ Interactive
             </button>
+            <button
+              type="button"
+              class="flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors"
+              :class="
+                executionMode === 'remote'
+                  ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
+              "
+              @click="executionMode = 'remote'"
+            >
+              ☁ Remote
+            </button>
           </div>
           <p class="mt-1.5 text-[11px] text-zinc-600">
             {{
               executionMode === "headless"
                 ? "Runs autonomously with --dangerously-skip-permissions."
-                : "Runs in tmux — attach to interact with the agent."
+                : executionMode === "interactive"
+                  ? "Runs in tmux — attach to interact with the agent."
+                  : "Runs on Anthropic cloud via claude --remote. No local slot needed."
             }}
           </p>
         </div>

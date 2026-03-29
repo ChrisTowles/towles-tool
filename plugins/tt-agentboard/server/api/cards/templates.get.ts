@@ -6,7 +6,7 @@ interface CardTemplate {
   name: string;
   description: string;
   prompt: string;
-  executionMode: "headless" | "interactive";
+  executionMode: "headless" | "interactive" | "remote";
   branchMode: "create" | "current";
   column: "ready";
 }
