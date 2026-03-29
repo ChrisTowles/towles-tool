@@ -99,6 +99,13 @@ export function createMockCardService() {
 
 export type MockCardService = ReturnType<typeof createMockCardService>;
 
+/** Create a mock RemoteExecutor */
+export function createMockRemoteExecutor() {
+  return {
+    startExecution: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 /** Create a mock WorkflowRunner */
 export function createMockWorkflowRunner() {
   return {

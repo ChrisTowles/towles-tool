@@ -41,7 +41,9 @@ export const cards = sqliteTable("cards", {
     enum: ["backlog", "ready", "in_progress", "simplify_review", "review", "done"],
   }).default("ready"),
   position: integer("position").notNull().default(0),
-  executionMode: text("execution_mode", { enum: ["headless", "interactive"] }).default("headless"),
+  executionMode: text("execution_mode", { enum: ["headless", "interactive", "remote"] }).default(
+    "headless",
+  ),
   branchMode: text("branch_mode", { enum: ["create", "current"] }).default("create"),
   status: text("status", {
     enum: [

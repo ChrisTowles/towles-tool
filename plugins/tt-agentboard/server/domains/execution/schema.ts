@@ -24,6 +24,8 @@ export const workflowRuns = sqliteTable("workflow_runs", {
   workflowId: text("workflow_id").notNull(),
   slotId: integer("slot_id").references(() => workspaceSlots.id, { onDelete: "set null" }),
   tmuxSession: text("tmux_session"),
+  remoteSessionId: text("remote_session_id"),
+  remoteSessionUrl: text("remote_session_url"),
   branch: text("branch"),
   startedAt: integer("started_at", { mode: "timestamp" }),
   endedAt: integer("ended_at", { mode: "timestamp" }),

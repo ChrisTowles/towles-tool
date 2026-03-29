@@ -60,14 +60,18 @@ export async function runClaude(opts: {
     log.info(
       `\n${pc.bold(pc.cyan("── System Prompt (CLAUDE.md) ──"))}\n${pc.dim(systemPrompt.trimEnd())}\n`,
     );
-  } catch { /* CLAUDE.md not present */ }
+  } catch {
+    /* CLAUDE.md not present */
+  }
 
   try {
     const promptContent = readFile(join(process.cwd(), opts.promptFile));
     log.info(
       `\n${pc.bold(pc.cyan(`── Prompt (${opts.promptFile}) ──`))}\n${pc.dim(promptContent.trimEnd())}\n`,
     );
-  } catch { /* prompt file not present */ }
+  } catch {
+    /* prompt file not present */
+  }
 
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= PROCESS_RETRIES; attempt++) {

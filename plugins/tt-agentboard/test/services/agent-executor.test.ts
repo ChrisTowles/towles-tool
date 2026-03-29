@@ -9,6 +9,7 @@ import {
   createMockSlotAllocator,
   createMockWorkflowLoader,
   createMockWorkflowOrchestrator,
+  createMockRemoteExecutor,
   createMockExecSync,
   createMockCardService,
   setupSelectReturning,
@@ -27,6 +28,7 @@ describe("AgentExecutor", () => {
   let mockWorkflowOrchestrator: ReturnType<typeof createMockWorkflowOrchestrator>;
   let mockWriteHooks: ReturnType<typeof vi.fn>;
   let mockCardService: ReturnType<typeof createMockCardService>;
+  let mockRemoteExecutor: ReturnType<typeof createMockRemoteExecutor>;
 
   beforeEach(() => {
     mockDb = createMockDb();
@@ -37,6 +39,7 @@ describe("AgentExecutor", () => {
     mockWorkflowOrchestrator = createMockWorkflowOrchestrator();
     mockWriteHooks = vi.fn();
     mockCardService = createMockCardService();
+    mockRemoteExecutor = createMockRemoteExecutor();
 
     executor = new AgentExecutor(4200, {
       db: mockDb as never,
@@ -52,6 +55,7 @@ describe("AgentExecutor", () => {
       existsSync: vi.fn().mockReturnValue(false) as never,
       mkdirSync: vi.fn() as never,
       writeFileSync: vi.fn() as never,
+      remoteExecutor: mockRemoteExecutor as never,
     });
     vi.clearAllMocks();
   });
@@ -86,6 +90,16 @@ describe("AgentExecutor", () => {
       await executor.startExecution(1);
 
       expect(mockWorkflowOrchestrator.run).toHaveBeenCalledWith(1);
+    });
+
+    it("delegates to remoteExecutor when executionMode is remote", async () => {
+      const card = { id: 1, repoId: 1, workflowId: null, title: "Test", executionMode: "remote" };
+      setupSelectReturning(mockDb, [card]);
+
+      await executor.startExecution(1);
+
+      expect(mockRemoteExecutor.startExecution).toHaveBeenCalledWith(1);
+      expect(mockTmuxManager.createSession).not.toHaveBeenCalled();
     });
 
     it("falls back to single prompt when workflow not found", async () => {

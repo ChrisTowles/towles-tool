@@ -15,7 +15,7 @@ export interface Card {
   repoId: number | null;
   column: Column;
   position: number;
-  executionMode: "headless" | "interactive";
+  executionMode: "headless" | "interactive" | "remote";
   status: CardStatus;
   planId: number | null;
   dependsOn: number[];
