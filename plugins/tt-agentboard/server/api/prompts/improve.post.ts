@@ -1,19 +1,9 @@
-export default defineEventHandler(async (event) => {
-  const body = await readBody<{ prompt: string }>(event);
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
-  if (!body?.prompt?.trim()) {
-    throw createError({ statusCode: 400, message: "prompt is required" });
-  }
+const execFileAsync = promisify(execFile);
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw createError({
-      statusCode: 500,
-      message: "ANTHROPIC_API_KEY environment variable is not set",
-    });
-  }
-
-  const systemPrompt = `You are a prompt improvement assistant for a developer task board.
+const systemPrompt = `You are a prompt improvement assistant for a developer task board.
 Your job is to take a rough prompt/task description and improve it to be clearer, more specific, and more actionable for a Claude Code agent.
 
 Rules:
@@ -24,42 +14,50 @@ Rules:
 - Make acceptance criteria explicit when possible
 - Output ONLY the improved prompt text, no preamble or explanation`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Improve this agent prompt:\n\n${body.prompt.trim()}`,
-        },
-      ],
-    }),
-  });
+export default defineEventHandler(async (event) => {
+  const body = await readBody<{ prompt: string }>(event);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw createError({
-      statusCode: response.status,
-      message: `Anthropic API error: ${errorText}`,
-    });
+  if (!body?.prompt?.trim()) {
+    throw createError({ statusCode: 400, message: "prompt is required" });
   }
 
-  const data = (await response.json()) as {
-    content: Array<{ type: string; text: string }>;
-  };
-  const improved =
-    data.content
-      ?.filter((c) => c.type === "text")
-      .map((c) => c.text)
-      .join("") ?? "";
+  const userPrompt = `Improve this agent prompt:\n\n${body.prompt.trim()}`;
 
-  return { improved };
+  try {
+    const { stdout } = await execFileAsync(
+      "claude",
+      [
+        "-p",
+        userPrompt,
+        "--model",
+        "haiku",
+        "--system-prompt",
+        systemPrompt,
+      ],
+      {
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env },
+      },
+    );
+
+    const improved = stdout.trim();
+    if (!improved) {
+      throw createError({ statusCode: 502, message: "Claude CLI returned empty output" });
+    }
+
+    return { improved };
+  } catch (e: unknown) {
+    const err = e as { code?: string; stderr?: string; message?: string };
+    if (err.code === "ENOENT") {
+      throw createError({
+        statusCode: 500,
+        message: "claude CLI not found — ensure Claude Code is installed and on PATH",
+      });
+    }
+    throw createError({
+      statusCode: 502,
+      message: `Claude CLI error: ${err.stderr || err.message || "unknown error"}`,
+    });
+  }
 });
