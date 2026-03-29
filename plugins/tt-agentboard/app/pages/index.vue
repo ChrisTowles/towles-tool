@@ -7,9 +7,7 @@ const store = useCardStore();
 const route = useRoute();
 const router = useRouter();
 
-const selectedCardId = ref<number | null>(
-  route.query.card ? Number(route.query.card) : null,
-);
+const selectedCardId = ref<number | null>(route.query.card ? Number(route.query.card) : null);
 const selectedCard = ref<Card | null>(null);
 const selectedCardLoading = ref(false);
 const showNewCardForm = ref(false);

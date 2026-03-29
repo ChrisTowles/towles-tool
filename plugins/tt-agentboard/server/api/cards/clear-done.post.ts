@@ -8,10 +8,7 @@ import { cardService } from "~~/server/domains/cards/card-service";
  * POST /api/cards/clear-done
  */
 export default defineEventHandler(async () => {
-  const doneCards = await db
-    .select({ id: cards.id })
-    .from(cards)
-    .where(eq(cards.status, "done"));
+  const doneCards = await db.select({ id: cards.id }).from(cards).where(eq(cards.status, "done"));
 
   for (const card of doneCards) {
     await cardService.deleteCard(card.id);

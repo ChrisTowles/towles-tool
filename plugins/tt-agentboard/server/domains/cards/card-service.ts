@@ -1,5 +1,12 @@
 import { db as defaultDb } from "../../shared/db";
-import { cards, cardEvents, cardDependencies, workflowRuns, stepRuns, workspaceSlots } from "../../shared/db/schema";
+import {
+  cards,
+  cardEvents,
+  cardDependencies,
+  workflowRuns,
+  stepRuns,
+  workspaceSlots,
+} from "../../shared/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
@@ -109,7 +116,10 @@ export class CardService {
 
     // Delete related records
     await this.deps.db.delete(cardEvents).where(eq(cardEvents.cardId, cardId));
-    const runs = await this.deps.db.select().from(workflowRuns).where(eq(workflowRuns.cardId, cardId));
+    const runs = await this.deps.db
+      .select()
+      .from(workflowRuns)
+      .where(eq(workflowRuns.cardId, cardId));
     for (const run of runs) {
       await this.deps.db.delete(stepRuns).where(eq(stepRuns.workflowRunId, run.id));
     }

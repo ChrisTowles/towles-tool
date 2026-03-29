@@ -22,7 +22,10 @@ function formatCountdown(totalSeconds: number): string {
 const statusLabel = computed(() => {
   if (store.isPaused) return "Paused";
   if (store.isInFocusMode) {
-    const remainingSec = Math.max(0, Math.round(((store.focusModeUntil ?? 0) - now.value.getTime()) / 1000));
+    const remainingSec = Math.max(
+      0,
+      Math.round(((store.focusModeUntil ?? 0) - now.value.getTime()) / 1000),
+    );
     return `Focus ${formatCountdown(remainingSec)}`;
   }
   if (!store.lastBreakTimestamp) return "--:--";

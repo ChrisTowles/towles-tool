@@ -13,6 +13,7 @@
 ### Task 1: Persist agent output — build command with tee
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/server/domains/execution/agent-executor.ts`
 - Modify: `plugins/tt-agentboard/server/domains/execution/workflow-helpers.ts`
 
@@ -26,7 +27,11 @@ import { mkdirSync } from "node:fs";
 
 const LOG_DIR = resolve(
   process.env.AGENTBOARD_DATA_DIR ??
-    resolve(process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "towles-tool", "agentboard"),
+    resolve(
+      process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"),
+      "towles-tool",
+      "agentboard",
+    ),
   "logs",
 );
 
@@ -62,6 +67,7 @@ command = buildStreamingCommand(
 ```
 
 Add imports at top of agent-executor.ts:
+
 ```typescript
 import { buildStreamingCommand, getCardLogPath } from "./workflow-helpers";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -84,6 +90,7 @@ git commit -m "feat(agentboard): persist agent output to NDJSON log file via tee
 ### Task 2: Persist agent output — API endpoint and cleanup in complete.post.ts
 
 **Files:**
+
 - Create: `plugins/tt-agentboard/server/api/agents/[cardId]/output.get.ts`
 - Modify: `plugins/tt-agentboard/server/api/agents/[cardId]/complete.post.ts`
 
@@ -114,26 +121,30 @@ export default defineEventHandler(async (event) => {
 In `complete.post.ts`, replace the capture-pane block (lines 97-111) with a log file summary:
 
 ```typescript
-  // Save summary from NDJSON log file (replaces tmux capture-pane snapshot)
-  const sessionName = `card-${cardId}`;
-  tmuxManager.stopCapture(sessionName);
-  try {
-    const { getCardLogPath } = await import("~~/server/domains/execution/workflow-helpers");
-    const { existsSync, readFileSync } = await import("node:fs");
-    const logPath = getCardLogPath(cardId);
-    if (existsSync(logPath)) {
-      const lines = readFileSync(logPath, "utf-8").trim().split("\n");
-      // Store last result line as completion summary
-      const resultLine = lines.findLast((l) => {
-        try { return JSON.parse(l).type === "result"; } catch { return false; }
-      });
-      if (resultLine) {
-        await cardService.logEvent(cardId, "agent_result", resultLine);
+// Save summary from NDJSON log file (replaces tmux capture-pane snapshot)
+const sessionName = `card-${cardId}`;
+tmuxManager.stopCapture(sessionName);
+try {
+  const { getCardLogPath } = await import("~~/server/domains/execution/workflow-helpers");
+  const { existsSync, readFileSync } = await import("node:fs");
+  const logPath = getCardLogPath(cardId);
+  if (existsSync(logPath)) {
+    const lines = readFileSync(logPath, "utf-8").trim().split("\n");
+    // Store last result line as completion summary
+    const resultLine = lines.findLast((l) => {
+      try {
+        return JSON.parse(l).type === "result";
+      } catch {
+        return false;
       }
+    });
+    if (resultLine) {
+      await cardService.logEvent(cardId, "agent_result", resultLine);
     }
-  } catch {
-    // Non-fatal
   }
+} catch {
+  // Non-fatal
+}
 ```
 
 - [ ] **Step 3: Verify endpoint returns log data**
@@ -153,6 +164,7 @@ git commit -m "feat(agentboard): add output endpoint and save result summary on 
 ### Task 3: Retry with failure context
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/server/domains/execution/agent-executor.ts`
 
 - [ ] **Step 1: Add retry context injection to runSinglePrompt**
@@ -160,37 +172,34 @@ git commit -m "feat(agentboard): add output endpoint and save result summary on 
 In `agent-executor.ts`, after the `const prompt = card.description ?? card.title;` line (around line 203), add:
 
 ```typescript
-    // Check if this is a retry — if previous runs exist, prepend failure context
-    let finalPrompt = prompt;
-    if (previousRuns.length > 0) {
-      const failureEvents = await this.deps.db
-        .select({ detail: cardEvents.detail })
-        .from(cardEvents)
-        .where(
-          and(
-            eq(cardEvents.cardId, cardId),
-            eq(cardEvents.event, "failed"),
-          ),
-        )
-        .orderBy(desc(cardEvents.id))
-        .limit(1);
+// Check if this is a retry — if previous runs exist, prepend failure context
+let finalPrompt = prompt;
+if (previousRuns.length > 0) {
+  const failureEvents = await this.deps.db
+    .select({ detail: cardEvents.detail })
+    .from(cardEvents)
+    .where(and(eq(cardEvents.cardId, cardId), eq(cardEvents.event, "failed")))
+    .orderBy(desc(cardEvents.id))
+    .limit(1);
 
-      const failureReason = failureEvents[0]?.detail;
-      if (failureReason) {
-        finalPrompt = `PREVIOUS ATTEMPT FAILED:\n${failureReason}\n\nPlease try a different approach. Original task:\n${prompt}`;
-      }
-    }
+  const failureReason = failureEvents[0]?.detail;
+  if (failureReason) {
+    finalPrompt = `PREVIOUS ATTEMPT FAILED:\n${failureReason}\n\nPlease try a different approach. Original task:\n${prompt}`;
+  }
+}
 ```
 
 Add imports at top:
+
 ```typescript
 import { cardEvents } from "../../shared/db/schema";
 import { and, desc } from "drizzle-orm";
 ```
 
 Then update the prompt file write to use `finalPrompt`:
+
 ```typescript
-    writeFileSync(promptFile, finalPrompt);
+writeFileSync(promptFile, finalPrompt);
 ```
 
 - [ ] **Step 2: Verify by retrying a failed card**
@@ -211,6 +220,7 @@ git commit -m "feat(agentboard): prepend failure context on card retry"
 ### Task 4: Card templates — YAML files and API endpoint
 
 **Files:**
+
 - Create: `plugins/tt-agentboard/templates/card-templates/review-codebase.yaml`
 - Create: `plugins/tt-agentboard/templates/card-templates/update-dependencies.yaml`
 - Create: `plugins/tt-agentboard/templates/card-templates/fix-failing-tests.yaml`
@@ -220,6 +230,7 @@ git commit -m "feat(agentboard): prepend failure context on card retry"
 - [ ] **Step 1: Create template YAML files**
 
 `templates/card-templates/review-codebase.yaml`:
+
 ```yaml
 name: Review Codebase
 description: Full codebase review for bugs, security, and quality
@@ -236,6 +247,7 @@ column: ready
 ```
 
 `templates/card-templates/update-dependencies.yaml`:
+
 ```yaml
 name: Update Dependencies
 description: Update all deps to latest compatible versions and fix breakages
@@ -249,6 +261,7 @@ column: ready
 ```
 
 `templates/card-templates/fix-failing-tests.yaml`:
+
 ```yaml
 name: Fix Failing Tests
 description: Run tests, identify failures, and fix them
@@ -264,6 +277,7 @@ column: ready
 ```
 
 `templates/card-templates/refactor-module.yaml`:
+
 ```yaml
 name: Refactor Module
 description: Refactor a specific module for clarity and maintainability
@@ -330,6 +344,7 @@ git commit -m "feat(agentboard): add card template YAML files and API endpoint"
 ### Task 5: Card templates — UI template picker in NewCardForm
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/app/components/board/NewCardForm.vue`
 
 - [ ] **Step 1: Add template fetching and selection to script setup**
@@ -361,21 +376,21 @@ function applyTemplate(template: CardTemplate) {
 Add above the prompt textarea in the template:
 
 ```html
-    <!-- Template picker -->
-    <div v-if="templates?.length" class="mb-3">
-      <label class="mb-1 block text-xs font-medium text-zinc-400">Template</label>
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="tmpl in templates"
-          :key="tmpl.name"
-          class="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-          :title="tmpl.description"
-          @click="applyTemplate(tmpl)"
-        >
-          {{ tmpl.name }}
-        </button>
-      </div>
-    </div>
+<!-- Template picker -->
+<div v-if="templates?.length" class="mb-3">
+  <label class="mb-1 block text-xs font-medium text-zinc-400">Template</label>
+  <div class="flex flex-wrap gap-1.5">
+    <button
+      v-for="tmpl in templates"
+      :key="tmpl.name"
+      class="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+      :title="tmpl.description"
+      @click="applyTemplate(tmpl)"
+    >
+      {{ tmpl.name }}
+    </button>
+  </div>
+</div>
 ```
 
 - [ ] **Step 3: Verify in browser**
@@ -394,6 +409,7 @@ git commit -m "feat(agentboard): add template picker to new card form"
 ### Task 6: Slot health — enhanced git-info endpoint
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/server/api/slots/[id]/git-info.get.ts`
 
 - [ ] **Step 1: Add lastCommitDate and isStale to git-info response**
@@ -462,6 +478,7 @@ git commit -m "feat(agentboard): add lastCommitDate and isStale to slot git-info
 ### Task 7: Slot health — UI indicators in SlotCard
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/app/components/workspace/SlotCard.vue`
 
 - [ ] **Step 1: Update GitInfo interface and add computed helpers**
@@ -480,7 +497,9 @@ interface GitInfo {
 
 const lastCommitAgo = computed(() => {
   if (!gitInfo.value?.lastCommitDate) return null;
-  const days = Math.floor((Date.now() - new Date(gitInfo.value.lastCommitDate).getTime()) / 86_400_000);
+  const days = Math.floor(
+    (Date.now() - new Date(gitInfo.value.lastCommitDate).getTime()) / 86_400_000,
+  );
   if (days === 0) return "today";
   if (days === 1) return "1 day ago";
   return `${days} days ago`;
@@ -492,40 +511,40 @@ const lastCommitAgo = computed(() => {
 In the SlotCard template, after the status badge, add health indicators:
 
 ```html
-        <!-- Health indicators -->
-        <span
-          v-if="gitInfo?.isStale"
-          class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400"
-        >
-          Stale
-        </span>
-        <span
-          v-if="gitInfo?.dirty"
-          class="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400"
-        >
-          Dirty
-        </span>
+<!-- Health indicators -->
+<span
+  v-if="gitInfo?.isStale"
+  class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400"
+>
+  Stale
+</span>
+<span
+  v-if="gitInfo?.dirty"
+  class="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400"
+>
+  Dirty
+</span>
 ```
 
 Add last commit date in the git info section:
 
 ```html
-        <span v-if="lastCommitAgo" class="text-[10px] text-zinc-600">
-          Last commit: {{ lastCommitAgo }}
-        </span>
+<span v-if="lastCommitAgo" class="text-[10px] text-zinc-600">
+  Last commit: {{ lastCommitAgo }}
+</span>
 ```
 
 Make the "Reset to main" button more prominent when stale:
 
 ```html
-        <button
-          v-if="gitInfo?.isStale || gitInfo?.dirty"
-          class="rounded border border-amber-700 bg-amber-950/50 px-2 py-1 text-[10px] font-medium text-amber-400 transition-colors hover:bg-amber-900/50"
-          :disabled="resetting"
-          @click="resetToMain"
-        >
-          {{ resetting ? "Resetting..." : "Reset to main" }}
-        </button>
+<button
+  v-if="gitInfo?.isStale || gitInfo?.dirty"
+  class="rounded border border-amber-700 bg-amber-950/50 px-2 py-1 text-[10px] font-medium text-amber-400 transition-colors hover:bg-amber-900/50"
+  :disabled="resetting"
+  @click="resetToMain"
+>
+  {{ resetting ? "Resetting..." : "Reset to main" }}
+</button>
 ```
 
 - [ ] **Step 3: Verify in browser**
@@ -544,6 +563,7 @@ git commit -m "feat(agentboard): add stale/dirty indicators to slot cards"
 ### Task 8: Slot health — summary bar on workspaces page
 
 **Files:**
+
 - Modify: `plugins/tt-agentboard/app/pages/workspaces/index.vue`
 
 - [ ] **Step 1: Add slot health summary to workspaces page**
@@ -605,10 +625,7 @@ const summary = computed(() => {
   <div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
     <div class="mb-6 flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <NuxtLink
-          to="/"
-          class="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-        >
+        <NuxtLink to="/" class="text-xs text-zinc-500 transition-colors hover:text-zinc-300">
           &larr; Board
         </NuxtLink>
         <h1 class="text-xl font-bold text-zinc-100">Workspaces</h1>
@@ -626,24 +643,15 @@ const summary = computed(() => {
       v-if="summary && summary.total > 0"
       class="mb-4 flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-xs font-mono"
     >
-      <span class="text-zinc-400">
-        {{ summary.available }}/{{ summary.total }} available
-      </span>
-      <span v-if="summary.stale > 0" class="text-amber-400">
-        {{ summary.stale }} stale
-      </span>
-      <span v-if="summary.dirty > 0" class="text-red-400">
-        {{ summary.dirty }} dirty
-      </span>
+      <span class="text-zinc-400"> {{ summary.available }}/{{ summary.total }} available </span>
+      <span v-if="summary.stale > 0" class="text-amber-400"> {{ summary.stale }} stale </span>
+      <span v-if="summary.dirty > 0" class="text-red-400"> {{ summary.dirty }} dirty </span>
       <span v-if="summary.stale === 0 && summary.dirty === 0" class="text-emerald-400">
         All healthy
       </span>
     </div>
 
-    <div
-      v-if="!needsSetup"
-      class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4"
-    >
+    <div v-if="!needsSetup" class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
       <WorkspaceSlotRegistry />
     </div>
 

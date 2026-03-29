@@ -59,7 +59,11 @@ export function buildStreamingCommand(args: string[], logFilePath: string): stri
 
 const LOG_DIR = resolve(
   process.env.AGENTBOARD_DATA_DIR ??
-    resolve(process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "towles-tool", "agentboard"),
+    resolve(
+      process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"),
+      "towles-tool",
+      "agentboard",
+    ),
   "logs",
 );
 

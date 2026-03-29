@@ -55,7 +55,11 @@ export default defineNitroPlugin(async () => {
   );
 
   // Check if branch commits are already in main
-  const isBranchMerged = async (repoPath: string, branch: string, baseBranch: string): Promise<boolean> => {
+  const isBranchMerged = async (
+    repoPath: string,
+    branch: string,
+    baseBranch: string,
+  ): Promise<boolean> => {
     // Fetch base branch — if this fails, can't check anything
     const fetchBase = await gitQuery(repoPath, ["fetch", "origin", baseBranch]);
     if (fetchBase === null) return false;
@@ -158,7 +162,9 @@ export default defineNitroPlugin(async () => {
               await markDone(card.id, `Issue #${card.githubIssueNumber} closed`);
             }
           } catch (err) {
-            logger.debug(`Failed to check issue #${card.githubIssueNumber} for card #${card.id}: ${err}`);
+            logger.debug(
+              `Failed to check issue #${card.githubIssueNumber} for card #${card.id}: ${err}`,
+            );
           }
         }
       }
