@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { logger } from "../../utils/logger";
 
 /** Check if artifact content satisfies a pass condition */
@@ -52,4 +55,15 @@ export function buildClaudeCommand(args: string[]): string {
 export function buildStreamingCommand(args: string[], logFilePath: string): string {
   args.push("--output-format", "stream-json", "--verbose");
   return `${buildClaudeCommand(args)} 2>&1 | tee ${shellEscape(logFilePath)}`;
+}
+
+const LOG_DIR = resolve(
+  process.env.AGENTBOARD_DATA_DIR ??
+    resolve(process.env.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "towles-tool", "agentboard"),
+  "logs",
+);
+
+export function getCardLogPath(cardId: number): string {
+  mkdirSync(LOG_DIR, { recursive: true });
+  return resolve(LOG_DIR, `card-${cardId}.ndjson`);
 }

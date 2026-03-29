@@ -9,7 +9,9 @@ import { workflowOrchestrator as defaultWorkflowOrchestrator } from "./workflow-
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { writeHooks as defaultWriteHooks } from "../infra/hook-writer";
-import { buildAgentBranchName, shellEscape } from "./workflow-helpers";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { buildAgentBranchName, buildStreamingCommand, getCardLogPath } from "./workflow-helpers";
 import { cardService as defaultCardService } from "../cards/card-service";
 import type { CardService } from "../cards/card-service";
 import type { SlotPreparer } from "./slot-preparer";
@@ -205,10 +207,16 @@ export class AgentExecutor {
     // Build the tmux command based on execution mode
     let command: string;
     if (card.executionMode !== "interactive") {
-      // Headless: use `tt auto-claude` for structured terminal output
-      command = `tt auto-claude ${shellEscape(prompt)}`;
+      const promptDir = resolve(slot.path, ".agentboard");
+      mkdirSync(promptDir, { recursive: true });
+      const promptFile = resolve(promptDir, `card-${cardId}-prompt.md`);
+      writeFileSync(promptFile, prompt);
+      const logPath = getCardLogPath(cardId);
+      command = buildStreamingCommand(
+        ["-p", "--dangerously-skip-permissions", `@${promptFile}`],
+        logPath,
+      );
     } else {
-      // Interactive: launch claude directly — user interacts via tmux attach
       command = `claude`;
     }
 
