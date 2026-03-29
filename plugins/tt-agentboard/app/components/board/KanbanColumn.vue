@@ -110,9 +110,7 @@ function onDragChange(evt: { added?: { element: { id: number }; newIndex: number
         v-if="cards.length === 0"
         class="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-8 text-center"
       >
-        <p class="text-xs text-zinc-600">
-          Drop cards here
-        </p>
+        <p class="text-xs text-zinc-600">Drop cards here</p>
       </div>
     </div>
   </div>
