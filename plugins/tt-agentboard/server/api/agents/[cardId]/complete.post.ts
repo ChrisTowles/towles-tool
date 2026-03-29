@@ -94,9 +94,26 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Kill tmux session and release slot so next card can start
+  // Save summary from NDJSON log file (replaces tmux capture-pane snapshot)
   const sessionName = `card-${cardId}`;
   tmuxManager.stopCapture(sessionName);
+  try {
+    const { getCardLogPath } = await import("~~/server/domains/execution/workflow-helpers");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const logPath = getCardLogPath(cardId);
+    if (existsSync(logPath)) {
+      const lines = readFileSync(logPath, "utf-8").trim().split("\n");
+      const resultLine = lines.findLast((l) => {
+        try { return JSON.parse(l).type === "result"; } catch { return false; }
+      });
+      if (resultLine) {
+        await cardService.logEvent(cardId, "agent_result", resultLine);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
   const killed = tmuxManager.killSession(sessionName);
   if (killed) {
     await cardService.logEvent(cardId, "tmux_session_killed", `session=${sessionName}`);
