@@ -58,10 +58,7 @@ describe("RemoteExecutor", () => {
     const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
     expect(updated.status).toBe("running");
 
-    const logRows = await db
-      .select()
-      .from(cardEvents)
-      .where(eq(cardEvents.cardId, card.id));
+    const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
     const sessionCreated = logRows.find((e) => e.event === "remote_session_created");
     expect(sessionCreated).toBeDefined();
     expect(sessionCreated!.detail).toContain("session_01CLmof84P5YY3MboTRacDLg");
@@ -73,10 +70,7 @@ describe("RemoteExecutor", () => {
 
     await executor.startExecution(card.id);
 
-    const runs = await db
-      .select()
-      .from(workflowRuns)
-      .where(eq(workflowRuns.cardId, card.id));
+    const runs = await db.select().from(workflowRuns).where(eq(workflowRuns.cardId, card.id));
     expect(runs).toHaveLength(1);
     expect(runs[0].remoteSessionId).toBe("session_01CLmof84P5YY3MboTRacDLg");
   });
@@ -92,10 +86,7 @@ describe("RemoteExecutor", () => {
     const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
     expect(updated.status).toBe("failed");
 
-    const logRows = await db
-      .select()
-      .from(cardEvents)
-      .where(eq(cardEvents.cardId, card.id));
+    const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
     const errorLog = logRows.find((e) => e.event === "error");
     expect(errorLog).toBeDefined();
     expect(errorLog!.detail).toContain("claude --remote failed");
@@ -110,10 +101,7 @@ describe("RemoteExecutor", () => {
     const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
     expect(updated.status).toBe("failed");
 
-    const logRows = await db
-      .select()
-      .from(cardEvents)
-      .where(eq(cardEvents.cardId, card.id));
+    const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
     const errorLog = logRows.find((e) => e.event === "error");
     expect(errorLog!.detail).toContain("Could not parse session ID");
   });
