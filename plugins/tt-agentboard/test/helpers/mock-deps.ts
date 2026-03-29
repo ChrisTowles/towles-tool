@@ -6,6 +6,7 @@ export function createMockDb() {
     const chain: Record<string, unknown> = {};
     chain.from = vi.fn().mockReturnValue(chain);
     chain.where = vi.fn().mockReturnValue(chain);
+    chain.orderBy = vi.fn().mockReturnValue(chain);
     chain.set = vi.fn().mockReturnValue(chain);
     chain.limit = vi.fn().mockResolvedValue([]);
     chain.values = vi.fn().mockReturnValue(chain);
@@ -136,7 +137,11 @@ export function createMockExecSync() {
 export function setupSelectReturning(mockDb: MockDb, rows: unknown[]) {
   const selectChain: Record<string, unknown> = {};
   selectChain.from = vi.fn().mockReturnValue(selectChain);
-  selectChain.where = vi.fn().mockResolvedValue(rows);
+  selectChain.where = vi.fn().mockReturnValue(selectChain);
+  selectChain.orderBy = vi.fn().mockReturnValue(selectChain);
+  selectChain.limit = vi.fn().mockResolvedValue(rows);
+  // Make the chain itself thenable so awaiting at any point resolves to rows
+  selectChain.then = (resolve: (v: unknown) => void) => resolve(rows);
   mockDb.select = vi.fn().mockReturnValue(selectChain);
 }
 

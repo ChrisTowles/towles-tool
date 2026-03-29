@@ -28,6 +28,10 @@
 - Hook config: `.claude/settings.local.json` in each slot directory
 - Completion sweep plugin detects missed hooks via tmux `pane_current_command`
 
+## Bug Fixing
+
+- If you find a pre-existing bug or test failure (not introduced by your changes), fix it anyway — don't skip it.
+
 ## Git & PRs
 
 - Always rebase merge: `gh pr merge --rebase --admin`
