@@ -1,0 +1,11 @@
+name: Fix Failing Tests
+description: Run tests, identify failures, and fix them
+prompt: |
+  Run the full test suite. For each failing test:
+  1. Identify the root cause of the failure
+  2. Fix the underlying code (not the test) unless the test is wrong
+  3. Verify the fix by re-running the test
+  4. Commit the fix with a descriptive message
+executionMode: headless
+branchMode: create
+column: ready
