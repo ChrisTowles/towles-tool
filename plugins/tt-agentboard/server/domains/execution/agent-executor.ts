@@ -1,6 +1,6 @@
 import { db as defaultDb } from "../../shared/db";
-import { cards, workflowRuns } from "../../shared/db/schema";
-import { eq } from "drizzle-orm";
+import { cardEvents, cards, workflowRuns } from "../../shared/db/schema";
+import { and, desc, eq } from "drizzle-orm";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
@@ -204,13 +204,29 @@ export class AgentExecutor {
 
     const prompt = card.description ?? card.title;
 
+    // Check if this is a retry — if previous runs exist, prepend failure context
+    let finalPrompt = prompt;
+    if (previousRuns.length > 0) {
+      const failureEvents = await this.deps.db
+        .select({ detail: cardEvents.detail })
+        .from(cardEvents)
+        .where(and(eq(cardEvents.cardId, cardId), eq(cardEvents.event, "failed")))
+        .orderBy(desc(cardEvents.id))
+        .limit(1);
+
+      const failureReason = failureEvents[0]?.detail;
+      if (failureReason) {
+        finalPrompt = `PREVIOUS ATTEMPT FAILED:\n${failureReason}\n\nPlease try a different approach. Original task:\n${prompt}`;
+      }
+    }
+
     // Build the tmux command based on execution mode
     let command: string;
     if (card.executionMode !== "interactive") {
       const promptDir = resolve(slot.path, ".agentboard");
       mkdirSync(promptDir, { recursive: true });
       const promptFile = resolve(promptDir, `card-${cardId}-prompt.md`);
-      writeFileSync(promptFile, prompt);
+      writeFileSync(promptFile, finalPrompt);
       const logPath = getCardLogPath(cardId);
       command = buildStreamingCommand(
         ["-p", "--dangerously-skip-permissions", `@${promptFile}`],
