@@ -45,7 +45,10 @@ describe("StreamTailer", () => {
 
     const activityEvents = findEvents(events, "agent:activity");
     expect(activityEvents.length).toBeGreaterThanOrEqual(1);
-    const event = activityEvents[0].data as { cardId: number; event: { kind: string; name: string } };
+    const event = activityEvents[0].data as {
+      cardId: number;
+      event: { kind: string; name: string };
+    };
     expect(event.cardId).toBe(1);
     expect(event.event.kind).toBe("tool_use");
     expect(event.event.name).toBe("Read");
@@ -67,7 +70,7 @@ describe("StreamTailer", () => {
 
     const activityEvents = findEvents(events, "agent:activity");
     const resultEvents = activityEvents.filter(
-      (e) => ((e.data as { event: { kind: string } }).event.kind === "result"),
+      (e) => (e.data as { event: { kind: string } }).event.kind === "result",
     );
     expect(resultEvents.length).toBeGreaterThanOrEqual(1);
     expect((resultEvents[0].data as { cardId: number }).cardId).toBe(2);
@@ -100,9 +103,7 @@ describe("StreamTailer", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     const activityEvents = findEvents(events, "agent:activity");
-    const kinds = activityEvents.map(
-      (e) => (e.data as { event: { kind: string } }).event.kind,
-    );
+    const kinds = activityEvents.map((e) => (e.data as { event: { kind: string } }).event.kind);
     expect(kinds).toContain("thinking");
     expect(kinds).toContain("tool_use");
     expect(kinds).toContain("text");

@@ -63,10 +63,12 @@ describe("StepExecutor", () => {
     };
   });
 
-  function createExecutor(overrides: {
-    existsSyncFn?: () => boolean;
-    readFileSyncFn?: () => string;
-  } = {}) {
+  function createExecutor(
+    overrides: {
+      existsSyncFn?: () => boolean;
+      readFileSyncFn?: () => string;
+    } = {},
+  ) {
     return new StepExecutor(4200, {
       db,
       eventBus: bus,

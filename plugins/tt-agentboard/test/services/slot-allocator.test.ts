@@ -28,7 +28,9 @@ describe("SlotAllocator", () => {
       db,
       eventBus: bus,
       logger: createNoopLogger() as never,
-      slotPreparer: { reset: async () => ({ events: [], depsInstalled: false, packageManager: null }) } as never,
+      slotPreparer: {
+        reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
+      } as never,
     });
   });
 

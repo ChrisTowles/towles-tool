@@ -16,10 +16,12 @@ import {
 } from "../helpers/test-db";
 
 /** Minimal tmux stub for tests (system boundary — must use manual DI) */
-function createTmuxStub(overrides: {
-  isAvailable?: boolean;
-  sendCommandCalls?: Array<{ session: string; cmd: string }>;
-} = {}) {
+function createTmuxStub(
+  overrides: {
+    isAvailable?: boolean;
+    sendCommandCalls?: Array<{ session: string; cmd: string }>;
+  } = {},
+) {
   const sendCommandCalls = overrides.sendCommandCalls ?? [];
   return {
     isAvailable: () => overrides.isAvailable ?? true,
@@ -62,12 +64,14 @@ describe("AgentExecutor", () => {
     });
   });
 
-  function createExecutor(opts: {
-    tmuxAvailable?: boolean;
-    sendCommandCalls?: Array<{ session: string; cmd: string }>;
-    writeFileCalls?: Array<{ path: string; content: string }>;
-    writeHooksCalls?: Array<{ slotPath: string; cardId: number }>;
-  } = {}) {
+  function createExecutor(
+    opts: {
+      tmuxAvailable?: boolean;
+      sendCommandCalls?: Array<{ session: string; cmd: string }>;
+      writeFileCalls?: Array<{ path: string; content: string }>;
+      writeHooksCalls?: Array<{ slotPath: string; cardId: number }>;
+    } = {},
+  ) {
     const sendCommandCalls = opts.sendCommandCalls ?? [];
     const writeFileCalls = opts.writeFileCalls ?? [];
     const writeHooksCalls = opts.writeHooksCalls ?? [];
@@ -83,12 +87,10 @@ describe("AgentExecutor", () => {
       slotAllocator: {
         claimSlot: async (rId: number, cardId: number) => {
           // Find an available slot in the DB for the repo
-          const slots = await db.select().from(
-            (await import("../../server/shared/db/schema")).workspaceSlots,
-          );
-          const available = slots.find(
-            (s) => s.repoId === rId && s.status === "available",
-          );
+          const slots = await db
+            .select()
+            .from((await import("../../server/shared/db/schema")).workspaceSlots);
+          const available = slots.find((s) => s.repoId === rId && s.status === "available");
           return available ? { id: available.id, path: available.path } : null;
         },
         releaseSlot: async () => {},
@@ -157,10 +159,26 @@ describe("AgentExecutor", () => {
         eventBus: bus,
         logger: createNoopLogger(),
         tmuxManager: createTmuxStub(),
-        slotAllocator: { claimSlot: async () => null, releaseSlot: async () => {}, getSlotForCard: async () => null },
-        slotPreparer: { prepare: async () => ({ branch: "", events: [], depsInstalled: false, packageManager: null }), reset: async () => ({ events: [], depsInstalled: false, packageManager: null }) } as never,
+        slotAllocator: {
+          claimSlot: async () => null,
+          releaseSlot: async () => {},
+          getSlotForCard: async () => null,
+        },
+        slotPreparer: {
+          prepare: async () => ({
+            branch: "",
+            events: [],
+            depsInstalled: false,
+            packageManager: null,
+          }),
+          reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
+        } as never,
         workflowLoader: { get: () => ({ name: "plan", steps: [] }) },
-        workflowOrchestrator: { run: async (cid: number) => { orchestratorRuns.push(cid); } },
+        workflowOrchestrator: {
+          run: async (cid: number) => {
+            orchestratorRuns.push(cid);
+          },
+        },
         writeHooks: (() => {}) as never,
         cardService,
         mkdirSync: (() => {}) as never,
@@ -312,9 +330,7 @@ describe("AgentExecutor", () => {
 
       await executor.startExecution(card.id);
 
-      const promptWrite = writeFileCalls.find((c) =>
-        c.path.includes(`card-${card.id}-prompt.md`),
-      );
+      const promptWrite = writeFileCalls.find((c) => c.path.includes(`card-${card.id}-prompt.md`));
       expect(promptWrite).toBeDefined();
       expect(promptWrite!.content).toBe("Fix the bug");
     });

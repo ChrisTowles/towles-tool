@@ -1,13 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createCompletionSweep } from "../../server/plugins/completion-sweep";
-import {
-  db,
-  cleanDb,
-  seedBoard,
-  seedRepo,
-  seedCard,
-  createNoopLogger,
-} from "../helpers/test-db";
+import { db, cleanDb, seedBoard, seedRepo, seedCard, createNoopLogger } from "../helpers/test-db";
 
 describe("completion-sweep", () => {
   let boardId: number;
@@ -23,10 +16,7 @@ describe("completion-sweep", () => {
     completedCardIds = [];
   });
 
-  function createSweep(opts: {
-    sessions: string[];
-    paneCommands: Record<string, string>;
-  }) {
+  function createSweep(opts: { sessions: string[]; paneCommands: Record<string, string> }) {
     return createCompletionSweep({
       tmuxManager: {
         listSessions: () => opts.sessions,

@@ -19,20 +19,17 @@ import {
 describe("remote-poll", () => {
   describe("checkRemoteSessionStatus", () => {
     it("returns completed for finished sessions", () => {
-      const exec = (() =>
-        JSON.stringify([{ id: "session_abc", status: "completed" }])) as never;
+      const exec = (() => JSON.stringify([{ id: "session_abc", status: "completed" }])) as never;
       expect(checkRemoteSessionStatus("session_abc", exec)).toBe("completed");
     });
 
     it("returns running for active sessions", () => {
-      const exec = (() =>
-        JSON.stringify([{ id: "session_abc", status: "running" }])) as never;
+      const exec = (() => JSON.stringify([{ id: "session_abc", status: "running" }])) as never;
       expect(checkRemoteSessionStatus("session_abc", exec)).toBe("running");
     });
 
     it("returns failed for errored sessions", () => {
-      const exec = (() =>
-        JSON.stringify([{ id: "session_abc", status: "failed" }])) as never;
+      const exec = (() => JSON.stringify([{ id: "session_abc", status: "failed" }])) as never;
       expect(checkRemoteSessionStatus("session_abc", exec)).toBe("failed");
     });
 
@@ -71,9 +68,7 @@ describe("remote-poll", () => {
       });
     });
 
-    function createDeps(
-      execSyncFn: (...args: unknown[]) => string,
-    ): RemotePollDeps {
+    function createDeps(execSyncFn: (...args: unknown[]) => string): RemotePollDeps {
       return {
         db: db as never,
         logger: createNoopLogger(),
@@ -97,9 +92,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() =>
-        JSON.stringify([{ id: "session_abc", status: "completed" }]),
-      );
+      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "completed" }]));
 
       await pollRemoteSessions(deps);
 
@@ -117,9 +110,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() =>
-        JSON.stringify([{ id: "session_abc", status: "failed" }]),
-      );
+      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "failed" }]));
 
       await pollRemoteSessions(deps);
 
@@ -134,9 +125,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() =>
-        JSON.stringify([{ id: "session_abc", status: "running" }]),
-      );
+      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "running" }]));
 
       await pollRemoteSessions(deps);
 

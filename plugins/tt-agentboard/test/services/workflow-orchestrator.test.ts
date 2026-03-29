@@ -26,8 +26,13 @@ function createTmuxStub(opts: { isAvailable?: boolean } = {}) {
       created: true,
     }),
     startCapture: (_name: string, _cb: (data: string) => void) => {},
-    stopCapture: (name: string) => { stopCaptureCalls.push(name); },
-    killSession: (name: string) => { killSessionCalls.push(name); return true; },
+    stopCapture: (name: string) => {
+      stopCaptureCalls.push(name);
+    },
+    killSession: (name: string) => {
+      killSessionCalls.push(name);
+      return true;
+    },
     stopCaptureCalls,
     killSessionCalls,
   };
@@ -55,11 +60,13 @@ describe("WorkflowOrchestrator", () => {
     });
   });
 
-  function createOrchestrator(opts: {
-    tmuxAvailable?: boolean;
-    workflow?: Record<string, unknown>;
-    stepResults?: Array<{ passed: boolean; artifact?: string }>;
-  } = {}) {
+  function createOrchestrator(
+    opts: {
+      tmuxAvailable?: boolean;
+      workflow?: Record<string, unknown>;
+      stepResults?: Array<{ passed: boolean; artifact?: string }>;
+    } = {},
+  ) {
     const tmux = createTmuxStub({ isAvailable: opts.tmuxAvailable });
     let stepCallIdx = 0;
     const stepResults = opts.stepResults ?? [{ passed: true, artifact: "content" }];
@@ -75,12 +82,12 @@ describe("WorkflowOrchestrator", () => {
           claimSlot: async (rId: number, _cardId: number) => {
             const { workspaceSlots } = await import("../../server/shared/db/schema");
             const slots = await db.select().from(workspaceSlots);
-            const available = slots.find(
-              (s) => s.repoId === rId && s.status === "available",
-            );
+            const available = slots.find((s) => s.repoId === rId && s.status === "available");
             return available ? { id: available.id, path: available.path } : null;
           },
-          releaseSlot: async (slotId: number) => { releasedSlotIds.push(slotId); },
+          releaseSlot: async (slotId: number) => {
+            releasedSlotIds.push(slotId);
+          },
         },
         slotPreparer: {
           prepare: async () => ({
@@ -165,8 +172,19 @@ describe("WorkflowOrchestrator", () => {
         eventBus: bus,
         logger: createNoopLogger(),
         tmuxManager: createTmuxStub(),
-        slotAllocator: { claimSlot: async () => ({ id: 1, path: "/ws" }), releaseSlot: async () => {} },
-        slotPreparer: { prepare: async () => ({ branch: "", events: [], depsInstalled: false, packageManager: null }), reset: async () => ({ events: [], depsInstalled: false, packageManager: null }) } as never,
+        slotAllocator: {
+          claimSlot: async () => ({ id: 1, path: "/ws" }),
+          releaseSlot: async () => {},
+        },
+        slotPreparer: {
+          prepare: async () => ({
+            branch: "",
+            events: [],
+            depsInstalled: false,
+            packageManager: null,
+          }),
+          reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
+        } as never,
         workflowLoader: { get: () => undefined },
         contextBundler: { buildPrompt: () => "" },
         cardService,
@@ -323,7 +341,9 @@ describe("WorkflowOrchestrator", () => {
         tmuxManager: tmux,
         slotAllocator: {
           claimSlot: async () => ({ id: slot.id, path: slot.path }),
-          releaseSlot: async (id: number) => { releasedSlotIds.push(id); },
+          releaseSlot: async (id: number) => {
+            releasedSlotIds.push(id);
+          },
         },
         slotPreparer: {
           prepare: async () => ({
@@ -344,7 +364,9 @@ describe("WorkflowOrchestrator", () => {
         contextBundler: { buildPrompt: () => "" },
         cardService,
         stepExecutor: {
-          execute: async () => { throw new Error("boom"); },
+          execute: async () => {
+            throw new Error("boom");
+          },
         } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
         execSync: (() => "") as never,

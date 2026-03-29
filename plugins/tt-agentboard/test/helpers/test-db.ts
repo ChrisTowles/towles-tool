@@ -96,10 +96,7 @@ export async function seedPlan(name = "test-plan") {
 
 /** Create card dependencies */
 export async function seedDependency(cardId: number, dependsOnCardId: number) {
-  const [row] = await db
-    .insert(cardDependencies)
-    .values({ cardId, dependsOnCardId })
-    .returning();
+  const [row] = await db.insert(cardDependencies).values({ cardId, dependsOnCardId }).returning();
   return row;
 }
 
