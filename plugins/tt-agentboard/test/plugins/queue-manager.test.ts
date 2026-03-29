@@ -1,136 +1,104 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockCardService,
-} from "../helpers/mock-deps";
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { createQueueManager } from "../../server/plugins/queue-manager";
+import { CardService } from "../../server/domains/cards/card-service";
+import { cards } from "../../server/shared/db/schema";
+import {
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  seedSlot,
+  createTestEventBus,
+  createNoopLogger,
+} from "../helpers/test-db";
 
 describe("Queue Manager Plugin", () => {
-  let slotReleasedHandler: (data: { slotId: number }) => Promise<void>;
-  let mockDb: ReturnType<typeof createMockDb>;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockAgentExecutor: { startExecution: ReturnType<typeof vi.fn> };
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let boardId: number;
+  let repoId: number;
+  let executedCardIds: number[];
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+    executedCardIds = [];
 
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
-    mockAgentExecutor = { startExecution: vi.fn().mockResolvedValue(undefined) };
+    ({ bus } = createTestEventBus());
 
-    createQueueManager({
-      db: mockDb as never,
-      eventBus: mockEventBus as never,
-      logger: createMockLogger() as never,
-      agentExecutor: mockAgentExecutor,
-      cardService: createMockCardService() as never,
+    const cardService = new CardService({
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
     });
 
-    // Extract the registered handler
-    const slotReleasedCall = mockEventBus.on.mock.calls.find(
-      (c: unknown[]) => c[0] === "slot:released",
-    );
-    expect(slotReleasedCall).toBeTruthy();
-    slotReleasedHandler = slotReleasedCall![1] as (data: { slotId: number }) => Promise<void>;
+    createQueueManager({
+      db: db as never,
+      eventBus: bus as never,
+      logger: createNoopLogger() as never,
+      agentExecutor: {
+        startExecution: async (cardId: number) => {
+          executedCardIds.push(cardId);
+        },
+      },
+      cardService,
+    });
   });
 
   it("starts next queued card when slot released", async () => {
-    const slot = { id: 1, repoId: 1 };
-    const queuedCard = { id: 10, column: "in_progress", status: "queued", repoId: 1 };
-
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      chain.where = vi.fn().mockReturnValue(chain);
-      chain.orderBy = vi.fn().mockReturnValue(chain);
-
-      if (selectCount === 1) {
-        // Slot query
-        chain.where = vi.fn().mockResolvedValue([slot]);
-      } else if (selectCount === 2) {
-        // Running cards count
-        chain.where = vi.fn().mockResolvedValue([]); // 0 running
-      } else {
-        // Queued cards for repo
-        chain.where = vi.fn().mockReturnValue(chain);
-        chain.orderBy = vi.fn().mockReturnValue(chain);
-        chain.limit = vi.fn().mockResolvedValue([queuedCard]);
-      }
-      return chain;
+    const slot = await seedSlot(repoId, { path: "/ws/slot-1", status: "available" });
+    const card = await seedCard(boardId, {
+      repoId,
+      column: "in_progress",
+      status: "queued",
     });
 
-    const updateChain: Record<string, unknown> = {};
-    updateChain.set = vi.fn().mockReturnValue(updateChain);
-    updateChain.where = vi.fn().mockResolvedValue(undefined);
-    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    bus.emit("slot:released", { slotId: slot.id });
 
-    await slotReleasedHandler({ slotId: 1 });
+    // Give the async handler time to run
+    await new Promise((r) => setTimeout(r, 50));
 
-    expect(mockDb.update).toHaveBeenCalled();
-    expect(mockAgentExecutor.startExecution).toHaveBeenCalledWith(10);
+    expect(executedCardIds).toContain(card.id);
+
+    // Card should have been moved to in_progress
+    const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+    expect(updated.column).toBe("in_progress");
   });
 
   it("skips when slot not found", async () => {
-    const selectChain: Record<string, unknown> = {};
-    selectChain.from = vi.fn().mockReturnValue(selectChain);
-    selectChain.where = vi.fn().mockResolvedValue([]);
-    mockDb.select = vi.fn().mockReturnValue(selectChain);
+    bus.emit("slot:released", { slotId: 999 });
 
-    await slotReleasedHandler({ slotId: 999 });
+    await new Promise((r) => setTimeout(r, 50));
 
-    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
+    expect(executedCardIds).toHaveLength(0);
   });
 
   it("skips when MAX_CONCURRENT reached", async () => {
-    const slot = { id: 1, repoId: 1 };
-    const runningCards = [{ id: 1 }, { id: 2 }, { id: 3 }]; // 3 = default MAX_CONCURRENT
+    const slot = await seedSlot(repoId, { path: "/ws/slot-1", status: "available" });
+    // Create 3 running cards (default max concurrent)
+    await seedCard(boardId, { repoId, status: "running", title: "R1" });
+    await seedCard(boardId, { repoId, status: "running", title: "R2" });
+    await seedCard(boardId, { repoId, status: "running", title: "R3" });
+    await seedCard(boardId, { repoId, status: "queued", column: "in_progress", title: "Q1" });
 
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([slot]);
-      } else {
-        chain.where = vi.fn().mockResolvedValue(runningCards);
-      }
-      return chain;
-    });
+    bus.emit("slot:released", { slotId: slot.id });
 
-    await slotReleasedHandler({ slotId: 1 });
+    await new Promise((r) => setTimeout(r, 50));
 
-    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
+    expect(executedCardIds).toHaveLength(0);
   });
 
   it("does nothing when no queued cards for repo", async () => {
-    const slot = { id: 1, repoId: 1 };
+    const slot = await seedSlot(repoId, { path: "/ws/slot-1", status: "available" });
 
-    let selectCount = 0;
-    mockDb.select = vi.fn().mockImplementation(() => {
-      selectCount++;
-      const chain: Record<string, unknown> = {};
-      chain.from = vi.fn().mockReturnValue(chain);
-      chain.where = vi.fn().mockReturnValue(chain);
-      chain.orderBy = vi.fn().mockReturnValue(chain);
+    bus.emit("slot:released", { slotId: slot.id });
 
-      if (selectCount === 1) {
-        chain.where = vi.fn().mockResolvedValue([slot]);
-      } else if (selectCount === 2) {
-        chain.where = vi.fn().mockResolvedValue([]); // 0 running
-      } else {
-        chain.limit = vi.fn().mockResolvedValue([]); // no queued
-      }
-      return chain;
-    });
+    await new Promise((r) => setTimeout(r, 50));
 
-    await slotReleasedHandler({ slotId: 1 });
-
-    expect(mockAgentExecutor.startExecution).not.toHaveBeenCalled();
+    expect(executedCardIds).toHaveLength(0);
   });
 });

@@ -1,157 +1,143 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createMockDb, createMockEventBus, createMockLogger } from "../../helpers/mock-deps";
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { CardService } from "../../../server/domains/cards/card-service";
+import { cards, cardEvents } from "../../../server/shared/db/schema";
+import {
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  seedDependency,
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+} from "../../helpers/test-db";
 
 describe("CardService", () => {
   let service: CardService;
-  let mockDb: ReturnType<typeof createMockDb>;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockLogger: ReturnType<typeof createMockLogger>;
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let events: ReturnType<typeof createTestEventBus>["events"];
+  let boardId: number;
+  let repoId: number;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
-    mockLogger = createMockLogger();
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+
+    ({ bus, events } = createTestEventBus());
     service = new CardService({
-      db: mockDb as never,
-      eventBus: mockEventBus as never,
-      logger: mockLogger as never,
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
     });
   });
 
   describe("updateStatus()", () => {
     it("updates DB and emits card:status-changed", async () => {
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      const card = await seedCard(boardId, { repoId });
 
-      await service.updateStatus(1, "running");
+      await service.updateStatus(card.id, "running");
 
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "running" }));
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "running",
-      });
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("running");
+
+      const statusEvents = findEvents(events, "card:status-changed");
+      expect(statusEvents).toHaveLength(1);
+      expect(statusEvents[0].data).toEqual({ cardId: card.id, status: "running" });
     });
   });
 
   describe("moveToColumn()", () => {
     it("fetches card, updates DB column, emits card:moved with fromColumn", async () => {
-      // Setup select to return current card
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([{ id: 1, column: "ready" }]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+      const card = await seedCard(boardId, { repoId, column: "ready" });
 
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      await service.moveToColumn(card.id, "in_progress");
 
-      await service.moveToColumn(1, "in_progress");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.column).toBe("in_progress");
 
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(updateChain.set).toHaveBeenCalledWith(
-        expect.objectContaining({ column: "in_progress" }),
-      );
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
-        cardId: 1,
+      const movedEvents = findEvents(events, "card:moved");
+      expect(movedEvents).toHaveLength(1);
+      expect(movedEvents[0].data).toEqual({
+        cardId: card.id,
         fromColumn: "ready",
         toColumn: "in_progress",
       });
     });
 
     it("throws if card not found", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
       await expect(service.moveToColumn(999, "done")).rejects.toThrow("Card 999 not found");
     });
   });
 
   describe("markFailed()", () => {
     it("calls updateStatus(failed) and logEvent with reason", async () => {
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      const card = await seedCard(boardId, { repoId });
 
-      const insertChain: Record<string, unknown> = {};
-      insertChain.values = vi.fn().mockReturnValue(insertChain);
-      insertChain.returning = vi.fn().mockResolvedValue([{ id: 1 }]);
-      mockDb.insert = vi.fn().mockReturnValue(insertChain);
+      await service.markFailed(card.id, "tmux crashed");
 
-      await service.markFailed(1, "tmux crashed");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("failed");
 
-      // Should have updated status to failed
-      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "failed",
-      });
-      // Should have logged event
-      expect(mockDb.insert).toHaveBeenCalled();
+      const statusEvents = findEvents(events, "card:status-changed");
+      expect(statusEvents).toHaveLength(1);
+      expect(statusEvents[0].data).toEqual({ cardId: card.id, status: "failed" });
+
+      const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
+      expect(logRows).toHaveLength(1);
+      expect(logRows[0].event).toBe("failed");
+      expect(logRows[0].detail).toBe("tmux crashed");
     });
 
     it("calls updateStatus(failed) without logEvent when no reason", async () => {
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      const card = await seedCard(boardId, { repoId });
 
-      await service.markFailed(1);
+      await service.markFailed(card.id);
 
-      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
-      expect(mockDb.insert).not.toHaveBeenCalled();
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("failed");
+
+      const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
+      expect(logRows).toHaveLength(0);
     });
   });
 
   describe("markComplete()", () => {
     it("sets status=review_ready + column=review, emits actual fromColumn", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([{ column: "in_progress" }]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+      const card = await seedCard(boardId, { repoId, column: "in_progress" });
 
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      await service.markComplete(card.id);
 
-      await service.markComplete(1);
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("review_ready");
+      expect(updated.column).toBe("review");
 
-      expect(mockDb.update).toHaveBeenCalledTimes(1);
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:status-changed", {
-        cardId: 1,
-        status: "review_ready",
-      });
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
-        cardId: 1,
+      const statusEvents = findEvents(events, "card:status-changed");
+      expect(statusEvents).toHaveLength(1);
+      expect(statusEvents[0].data).toEqual({ cardId: card.id, status: "review_ready" });
+
+      const movedEvents = findEvents(events, "card:moved");
+      expect(movedEvents).toHaveLength(1);
+      expect(movedEvents[0].data).toEqual({
+        cardId: card.id,
         fromColumn: "in_progress",
         toColumn: "review",
       });
     });
 
     it("emits simplify_review as fromColumn when card was in that column", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockResolvedValue([{ column: "simplify_review" }]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+      const card = await seedCard(boardId, { repoId, column: "simplify_review" });
 
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      await service.markComplete(card.id);
 
-      await service.markComplete(1);
-
-      expect(mockEventBus.emit).toHaveBeenCalledWith("card:moved", {
-        cardId: 1,
+      const movedEvents = findEvents(events, "card:moved");
+      expect(movedEvents).toHaveLength(1);
+      expect(movedEvents[0].data).toEqual({
+        cardId: card.id,
         fromColumn: "simplify_review",
         toColumn: "review",
       });
@@ -160,108 +146,64 @@ describe("CardService", () => {
 
   describe("logEvent()", () => {
     it("inserts into cardEvents table", async () => {
-      const insertChain: Record<string, unknown> = {};
-      insertChain.values = vi.fn().mockReturnValue(insertChain);
-      insertChain.returning = vi.fn().mockResolvedValue([{ id: 1 }]);
-      mockDb.insert = vi.fn().mockReturnValue(insertChain);
+      const card = await seedCard(boardId, { repoId });
 
-      await service.logEvent(1, "execution_start", "some detail");
+      await service.logEvent(card.id, "execution_start", "some detail");
 
-      expect(mockDb.insert).toHaveBeenCalled();
-      expect(insertChain.values).toHaveBeenCalledWith({
-        cardId: 1,
-        event: "execution_start",
-        detail: "some detail",
-      });
+      const logRows = await db.select().from(cardEvents).where(eq(cardEvents.cardId, card.id));
+      expect(logRows).toHaveLength(1);
+      expect(logRows[0].event).toBe("execution_start");
+      expect(logRows[0].detail).toBe("some detail");
     });
   });
 
   describe("resolveDependencies()", () => {
-    function setupResolveDb(
-      depRows: Array<{ cardId: number }>,
-      blockedCards: Array<Record<string, unknown>>,
-      cardDeps: Array<{ cardId: number; dependsOnCardId: number }> = [],
-      depCards: Array<Record<string, unknown>> = [],
-    ) {
-      const selectChains: Array<Record<string, unknown>> = [];
-
-      // 1st: find cards depending on completedCardId
-      const chain0: Record<string, unknown> = {};
-      chain0.from = vi.fn().mockReturnValue(chain0);
-      chain0.where = vi.fn().mockResolvedValue(depRows);
-      selectChains.push(chain0);
-
-      // 2nd: fetch blocked cards
-      const chain1: Record<string, unknown> = {};
-      chain1.from = vi.fn().mockReturnValue(chain1);
-      chain1.where = vi.fn().mockResolvedValue(blockedCards);
-      selectChains.push(chain1);
-
-      // 3rd: getDepsMap — batch-fetch all deps for blocked cards
-      const chain2: Record<string, unknown> = {};
-      chain2.from = vi.fn().mockReturnValue(chain2);
-      chain2.where = vi.fn().mockResolvedValue(cardDeps);
-      selectChains.push(chain2);
-
-      // 4th: depCardStatuses — batch-fetch status of all depended-on cards
-      const chain3: Record<string, unknown> = {};
-      chain3.from = vi.fn().mockReturnValue(chain3);
-      chain3.where = vi.fn().mockResolvedValue(depCards);
-      selectChains.push(chain3);
-
-      let callIdx = 0;
-      mockDb.select = vi.fn().mockImplementation(() => selectChains[callIdx++]);
-
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
-
-      return { updateChain };
-    }
-
     it("returns empty when no cards depend on completed card", async () => {
-      setupResolveDb([], []);
+      const card = await seedCard(boardId, { repoId, status: "done" });
 
-      const result = await service.resolveDependencies(1);
+      const result = await service.resolveDependencies(card.id);
       expect(result).toEqual([]);
     });
 
     it("unblocks cards when all deps are done", async () => {
-      setupResolveDb(
-        [{ cardId: 10 }],
-        [{ id: 10, status: "blocked" }],
-        [
-          { cardId: 10, dependsOnCardId: 1 },
-          { cardId: 10, dependsOnCardId: 2 },
-        ],
-        [
-          { id: 1, status: "done" },
-          { id: 2, status: "done" },
-        ],
-      );
+      const cardA = await seedCard(boardId, { repoId, status: "done", title: "A" });
+      const cardB = await seedCard(boardId, { repoId, status: "done", title: "B" });
+      const cardC = await seedCard(boardId, {
+        repoId,
+        status: "blocked",
+        column: "ready",
+        title: "C",
+      });
 
-      const result = await service.resolveDependencies(1);
-      expect(result).toEqual([10]);
-      expect(mockDb.update).toHaveBeenCalled();
+      await seedDependency(cardC.id, cardA.id);
+      await seedDependency(cardC.id, cardB.id);
+
+      const result = await service.resolveDependencies(cardA.id);
+      expect(result).toEqual([cardC.id]);
+
+      const [updated] = await db.select().from(cards).where(eq(cards.id, cardC.id));
+      expect(updated.status).toBe("idle");
+      expect(updated.column).toBe("ready");
     });
 
     it("does NOT unblock when some deps still pending", async () => {
-      setupResolveDb(
-        [{ cardId: 10 }],
-        [{ id: 10, status: "blocked" }],
-        [
-          { cardId: 10, dependsOnCardId: 1 },
-          { cardId: 10, dependsOnCardId: 2 },
-        ],
-        [
-          { id: 1, status: "done" },
-          { id: 2, status: "running" },
-        ],
-      );
+      const cardA = await seedCard(boardId, { repoId, status: "done", title: "A" });
+      const cardB = await seedCard(boardId, { repoId, status: "running", title: "B" });
+      const cardC = await seedCard(boardId, {
+        repoId,
+        status: "blocked",
+        column: "ready",
+        title: "C",
+      });
 
-      const result = await service.resolveDependencies(1);
+      await seedDependency(cardC.id, cardA.id);
+      await seedDependency(cardC.id, cardB.id);
+
+      const result = await service.resolveDependencies(cardA.id);
       expect(result).toEqual([]);
+
+      const [updated] = await db.select().from(cards).where(eq(cards.id, cardC.id));
+      expect(updated.status).toBe("blocked");
     });
   });
 });

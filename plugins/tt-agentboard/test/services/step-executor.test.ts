@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-
 import { StepExecutor, resolveStepComplete } from "../../server/domains/execution/step-executor";
 import type { WorkflowContext } from "../../server/domains/execution/step-executor";
 import type { WorkflowStep } from "../../server/domains/execution/workflow-loader";
 import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockContextBundler,
-  createMockCardService,
-  createMockStreamTailer,
-} from "../helpers/mock-deps";
-import type { MockDb } from "../helpers/mock-deps";
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  seedSlot,
+  seedWorkflowRun,
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+} from "../helpers/test-db";
 
 function makeStep(overrides: Partial<WorkflowStep> = {}): WorkflowStep {
   return {
@@ -22,63 +24,78 @@ function makeStep(overrides: Partial<WorkflowStep> = {}): WorkflowStep {
   };
 }
 
-function makeContext(overrides: Partial<WorkflowContext> = {}): WorkflowContext {
-  return {
-    cardId: 1,
-    card: { id: 1, githubIssueNumber: 42, title: "Test card" },
-    repo: { id: 1, name: "test-repo" },
-    workflow: { steps: [], branch_template: "ab/card-{card_id}" },
-    slotPath: "/workspace/slot-1",
-    slotId: 1,
-    sessionName: "card-1",
-    workflowRunId: 1,
-    branch: "ab/card-1",
-    previousArtifacts: new Map(),
-    ...overrides,
-  };
-}
-
 describe("StepExecutor", () => {
-  let executor: StepExecutor;
-  let mockDb: MockDb;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockCardService: ReturnType<typeof createMockCardService>;
-  let mockExistsSync: ReturnType<typeof vi.fn>;
-  let mockReadFileSync: ReturnType<typeof vi.fn>;
-  let mockStreamTailer: ReturnType<typeof createMockStreamTailer>;
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let events: ReturnType<typeof createTestEventBus>["events"];
+  let existsSyncReturn: boolean;
+  let readFileSyncReturn: string;
+  let ctx: WorkflowContext;
 
-  beforeEach(() => {
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
-    mockCardService = createMockCardService();
-    mockExistsSync = vi.fn().mockReturnValue(true);
-    mockReadFileSync = vi.fn().mockReturnValue("PASS\ndetails");
-    mockStreamTailer = createMockStreamTailer();
+  beforeEach(async () => {
+    cleanDb();
+    existsSyncReturn = true;
+    readFileSyncReturn = "PASS\ndetails";
 
-    executor = new StepExecutor(4200, {
-      db: mockDb as never,
-      eventBus: mockEventBus,
-      logger: createMockLogger(),
-      tmuxManager: { sendCommand: vi.fn() },
-      contextBundler: createMockContextBundler(),
-      writeHooks: vi.fn(),
-      cardService: mockCardService as never,
-      streamTailer: mockStreamTailer,
-      existsSync: mockExistsSync as never,
-      readFileSync: mockReadFileSync as never,
+    ({ bus, events } = createTestEventBus());
+
+    // Seed real data for the context
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    const card = await seedCard(board.id, {
+      repoId: repo.id,
+      title: "Test card",
+      githubIssueNumber: 42,
     });
-    vi.clearAllMocks();
+    const slot = await seedSlot(repo.id, { path: "/workspace/slot-1" });
+    const run = await seedWorkflowRun(card.id, { slotId: slot.id });
+
+    ctx = {
+      cardId: card.id,
+      card: { id: card.id, githubIssueNumber: 42, title: "Test card" },
+      repo: { id: repo.id, name: "test-repo" },
+      workflow: { steps: [], branch_template: "ab/card-{card_id}" },
+      slotPath: "/workspace/slot-1",
+      slotId: slot.id,
+      sessionName: `card-${card.id}`,
+      workflowRunId: run.id,
+      branch: `ab/card-${card.id}`,
+      previousArtifacts: new Map(),
+    };
   });
 
-  it("passes on first attempt when artifact exists and no pass_condition", async () => {
-    // Arrange: resolveStepComplete fires immediately after waitForStepComplete is set up
-    // We use a microtask to resolve the callback right after execute starts waiting
-    const originalExecute = executor.execute.bind(executor);
-    const executePromise = originalExecute(makeContext(), makeStep(), new Map());
+  function createExecutor(overrides: {
+    existsSyncFn?: () => boolean;
+    readFileSyncFn?: () => string;
+  } = {}) {
+    return new StepExecutor(4200, {
+      db,
+      eventBus: bus,
+      logger: createNoopLogger(),
+      tmuxManager: { sendCommand: () => {} },
+      contextBundler: { buildPrompt: () => "test prompt" },
+      writeHooks: () => {},
+      cardService: {
+        updateStatus: async () => {},
+        moveToColumn: async () => {},
+        markFailed: async () => {},
+        markComplete: async () => {},
+        logEvent: async () => {},
+        resolveDependencies: async () => [],
+        getDepsMap: async () => new Map(),
+      } as never,
+      streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
+      existsSync: (overrides.existsSyncFn ?? (() => existsSyncReturn)) as never,
+      readFileSync: (overrides.readFileSyncFn ?? (() => readFileSyncReturn)) as never,
+    });
+  }
 
-    // Resolve the pending callback shortly after
+  it("passes on first attempt when artifact exists and no pass_condition", async () => {
+    const executor = createExecutor();
+
+    const executePromise = executor.execute(ctx, makeStep(), new Map());
+
     await vi.waitFor(() => {
-      const resolved = resolveStepComplete(1);
+      const resolved = resolveStepComplete(ctx.cardId);
       expect(resolved).toBe(true);
     });
 
@@ -86,24 +103,25 @@ describe("StepExecutor", () => {
 
     expect(result.passed).toBe(true);
     expect(result.artifact).toBe("PASS\ndetails");
-    expect(mockEventBus.emit).toHaveBeenCalledWith(
-      "step:started",
-      expect.objectContaining({ cardId: 1, stepId: "plan" }),
-    );
-    expect(mockEventBus.emit).toHaveBeenCalledWith(
-      "step:completed",
-      expect.objectContaining({ cardId: 1, stepId: "plan", passed: true }),
-    );
+
+    const startedEvents = findEvents(events, "step:started");
+    expect(startedEvents).toHaveLength(1);
+    expect((startedEvents[0].data as { stepId: string }).stepId).toBe("plan");
+
+    const completedEvents = findEvents(events, "step:completed");
+    expect(completedEvents).toHaveLength(1);
+    expect((completedEvents[0].data as { passed: boolean }).passed).toBe(true);
   });
 
   it("passes when artifact exists and pass_condition is met", async () => {
+    readFileSyncReturn = "PASS\ndetails";
+    const executor = createExecutor();
     const step = makeStep({ pass_condition: "first_line_equals:PASS" });
-    mockReadFileSync.mockReturnValue("PASS\ndetails");
 
-    const executePromise = executor.execute(makeContext(), step, new Map());
+    const executePromise = executor.execute(ctx, step, new Map());
 
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     const result = await executePromise;
@@ -111,30 +129,31 @@ describe("StepExecutor", () => {
   });
 
   it("fails when artifact is missing after Claude exits", async () => {
-    mockExistsSync.mockReturnValue(false);
+    existsSyncReturn = false;
+    const executor = createExecutor();
 
-    const executePromise = executor.execute(makeContext(), makeStep(), new Map());
+    const executePromise = executor.execute(ctx, makeStep(), new Map());
 
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     const result = await executePromise;
     expect(result.passed).toBe(false);
-    expect(mockEventBus.emit).toHaveBeenCalledWith(
-      "step:failed",
-      expect.objectContaining({ cardId: 1, stepId: "plan" }),
-    );
+
+    const failedEvents = findEvents(events, "step:failed");
+    expect(failedEvents).toHaveLength(1);
   });
 
   it("fails when pass_condition is not met", async () => {
+    readFileSyncReturn = "FAIL\ndetails";
+    const executor = createExecutor();
     const step = makeStep({ pass_condition: "first_line_equals:PASS" });
-    mockReadFileSync.mockReturnValue("FAIL\ndetails");
 
-    const executePromise = executor.execute(makeContext(), step, new Map());
+    const executePromise = executor.execute(ctx, step, new Map());
 
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     const result = await executePromise;
@@ -142,43 +161,44 @@ describe("StepExecutor", () => {
   });
 
   it("retries up to max_retries on failure", async () => {
-    const step = makeStep({ max_retries: 1, pass_condition: "first_line_equals:PASS" });
-    // First attempt fails, second passes
     let callCount = 0;
-    mockReadFileSync.mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? "FAIL\nretry needed" : "PASS\nsuccess";
+    const executor = createExecutor({
+      readFileSyncFn: () => {
+        callCount++;
+        return callCount === 1 ? "FAIL\nretry needed" : "PASS\nsuccess";
+      },
     });
 
-    const executePromise = executor.execute(makeContext(), step, new Map());
+    const step = makeStep({ max_retries: 1, pass_condition: "first_line_equals:PASS" });
+    const executePromise = executor.execute(ctx, step, new Map());
 
     // Resolve first attempt
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     // Resolve second attempt (retry)
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     const result = await executePromise;
     expect(result.passed).toBe(true);
-    // step:failed should have been emitted once for the first failed attempt
-    expect(mockEventBus.emit).toHaveBeenCalledWith(
-      "step:failed",
-      expect.objectContaining({ retryNumber: 0 }),
-    );
+
+    const failedEvents = findEvents(events, "step:failed");
+    expect(failedEvents).toHaveLength(1);
+    expect((failedEvents[0].data as { retryNumber: number }).retryNumber).toBe(0);
   });
 
   it("stores artifact content in previousArtifacts map", async () => {
+    readFileSyncReturn = "plan content here";
+    const executor = createExecutor();
     const artifacts = new Map<string, string>();
-    mockReadFileSync.mockReturnValue("plan content here");
 
-    const executePromise = executor.execute(makeContext(), makeStep(), artifacts);
+    const executePromise = executor.execute(ctx, makeStep(), artifacts);
 
     await vi.waitFor(() => {
-      expect(resolveStepComplete(1)).toBe(true);
+      expect(resolveStepComplete(ctx.cardId)).toBe(true);
     });
 
     await executePromise;

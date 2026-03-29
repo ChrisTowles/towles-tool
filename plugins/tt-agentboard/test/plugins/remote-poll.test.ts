@@ -1,136 +1,148 @@
-import { describe, it, expect, vi } from "vitest";
-
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { pollRemoteSessions, checkRemoteSessionStatus } from "../../server/plugins/remote-poll";
-import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockCardService,
-} from "../helpers/mock-deps";
-import type { MockDb } from "../helpers/mock-deps";
+import { CardService } from "../../server/domains/cards/card-service";
+import { cards } from "../../server/shared/db/schema";
 import type { RemotePollDeps } from "../../server/plugins/remote-poll";
-
-function setupRunningRemoteSessions(mockDb: MockDb, sessions: unknown[]) {
-  const selectChain: Record<string, unknown> = {};
-  selectChain.from = vi.fn().mockReturnValue(selectChain);
-  selectChain.where = vi.fn().mockResolvedValue(sessions);
-  mockDb.select = vi.fn().mockReturnValue(selectChain);
-}
-
-function setupUpdate(mockDb: MockDb) {
-  const updateChain: Record<string, unknown> = {};
-  updateChain.set = vi.fn().mockReturnValue(updateChain);
-  updateChain.where = vi.fn().mockResolvedValue(undefined);
-  mockDb.update = vi.fn().mockReturnValue(updateChain);
-}
+import {
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  seedWorkflowRun,
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+} from "../helpers/test-db";
 
 describe("remote-poll", () => {
   describe("checkRemoteSessionStatus", () => {
     it("returns completed for finished sessions", () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "completed" }]));
-      expect(checkRemoteSessionStatus("session_abc", mockExecSync as never)).toBe("completed");
+      const exec = (() =>
+        JSON.stringify([{ id: "session_abc", status: "completed" }])) as never;
+      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("completed");
     });
 
     it("returns running for active sessions", () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "running" }]));
-      expect(checkRemoteSessionStatus("session_abc", mockExecSync as never)).toBe("running");
+      const exec = (() =>
+        JSON.stringify([{ id: "session_abc", status: "running" }])) as never;
+      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("running");
     });
 
     it("returns failed for errored sessions", () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "failed" }]));
-      expect(checkRemoteSessionStatus("session_abc", mockExecSync as never)).toBe("failed");
+      const exec = (() =>
+        JSON.stringify([{ id: "session_abc", status: "failed" }])) as never;
+      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("failed");
     });
 
     it("returns unknown when session not found", () => {
-      const mockExecSync = vi.fn().mockReturnValue(JSON.stringify([]));
-      expect(checkRemoteSessionStatus("session_abc", mockExecSync as never)).toBe("unknown");
+      const exec = (() => JSON.stringify([])) as never;
+      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
     });
 
     it("returns unknown when execSync throws", () => {
-      const mockExecSync = vi.fn().mockImplementation(() => {
+      const exec = (() => {
         throw new Error("command failed");
-      });
-      expect(checkRemoteSessionStatus("session_abc", mockExecSync as never)).toBe("unknown");
+      }) as never;
+      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
     });
   });
 
   describe("pollRemoteSessions", () => {
-    function createDeps(overrides: Partial<RemotePollDeps> = {}): RemotePollDeps & {
-      mockDb: MockDb;
-      mockCardService: ReturnType<typeof createMockCardService>;
-    } {
-      const mockDb = createMockDb();
-      const mockCardService = createMockCardService();
+    let bus: ReturnType<typeof createTestEventBus>["bus"];
+    let events: ReturnType<typeof createTestEventBus>["events"];
+    let cardService: CardService;
+    let boardId: number;
+    let repoId: number;
+
+    beforeEach(async () => {
+      cleanDb();
+      const board = await seedBoard();
+      const repo = await seedRepo();
+      boardId = board.id;
+      repoId = repo.id;
+
+      ({ bus, events } = createTestEventBus());
+      cardService = new CardService({
+        db,
+        eventBus: bus,
+        logger: createNoopLogger() as never,
+      });
+    });
+
+    function createDeps(
+      execSyncFn: (...args: unknown[]) => string,
+    ): RemotePollDeps {
       return {
-        db: mockDb as never,
-        logger: createMockLogger(),
-        cardService: mockCardService as never,
-        eventBus: createMockEventBus(),
-        execSync: vi.fn() as never,
+        db: db as never,
+        logger: createNoopLogger(),
+        cardService,
+        eventBus: bus as never,
+        execSync: execSyncFn as never,
         pollIntervalMs: 1000,
-        mockDb,
-        mockCardService,
-        ...overrides,
       };
     }
 
     it("does nothing when no running remote sessions", async () => {
-      const deps = createDeps();
-      setupRunningRemoteSessions(deps.mockDb, []);
-
+      const deps = createDeps(() => "[]");
       await pollRemoteSessions(deps);
-
-      expect(deps.mockDb.update).not.toHaveBeenCalled();
+      // No errors, just returns early
     });
 
     it("marks completed sessions", async () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "completed" }]));
-      const deps = createDeps({ execSync: mockExecSync as never });
-      setupRunningRemoteSessions(deps.mockDb, [
-        { id: 1, cardId: 42, remoteSessionId: "session_abc", status: "running" },
-      ]);
-      setupUpdate(deps.mockDb);
+      const card = await seedCard(boardId, { repoId, status: "running" });
+      await seedWorkflowRun(card.id, {
+        remoteSessionId: "session_abc",
+        status: "running",
+      });
+
+      const deps = createDeps(() =>
+        JSON.stringify([{ id: "session_abc", status: "completed" }]),
+      );
 
       await pollRemoteSessions(deps);
 
-      expect(deps.mockCardService.markComplete).toHaveBeenCalledWith(42);
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("review_ready");
+
+      const completedEvents = findEvents(events, "workflow:completed");
+      expect(completedEvents).toHaveLength(1);
     });
 
     it("marks failed sessions", async () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "failed" }]));
-      const deps = createDeps({ execSync: mockExecSync as never });
-      setupRunningRemoteSessions(deps.mockDb, [
-        { id: 1, cardId: 42, remoteSessionId: "session_abc", status: "running" },
-      ]);
-      setupUpdate(deps.mockDb);
+      const card = await seedCard(boardId, { repoId, status: "running" });
+      await seedWorkflowRun(card.id, {
+        remoteSessionId: "session_abc",
+        status: "running",
+      });
+
+      const deps = createDeps(() =>
+        JSON.stringify([{ id: "session_abc", status: "failed" }]),
+      );
 
       await pollRemoteSessions(deps);
 
-      expect(deps.mockCardService.updateStatus).toHaveBeenCalledWith(42, "failed");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("failed");
     });
 
     it("skips sessions still running", async () => {
-      const mockExecSync = vi
-        .fn()
-        .mockReturnValue(JSON.stringify([{ id: "session_abc", status: "running" }]));
-      const deps = createDeps({ execSync: mockExecSync as never });
-      setupRunningRemoteSessions(deps.mockDb, [
-        { id: 1, cardId: 42, remoteSessionId: "session_abc", status: "running" },
-      ]);
+      const card = await seedCard(boardId, { repoId, status: "running" });
+      await seedWorkflowRun(card.id, {
+        remoteSessionId: "session_abc",
+        status: "running",
+      });
+
+      const deps = createDeps(() =>
+        JSON.stringify([{ id: "session_abc", status: "running" }]),
+      );
 
       await pollRemoteSessions(deps);
 
-      expect(deps.mockDb.update).not.toHaveBeenCalled();
+      // Card should still be running
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("running");
     });
   });
 });

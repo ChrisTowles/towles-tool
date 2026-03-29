@@ -1,42 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createMockLogger } from "../helpers/mock-deps";
 import { StreamTailer } from "../../server/domains/infra/stream-tailer";
+import { createTestEventBus, createNoopLogger, findEvents } from "../helpers/test-db";
 
 describe("StreamTailer", () => {
   let testDir: string;
   let logFile: string;
   let streamTailer: StreamTailer;
-  const emittedEvents: Array<{ cardId: number; event: unknown; timestamp: number }> = [];
-  let mockEventBus: {
-    emit: ReturnType<typeof vi.fn>;
-    on: ReturnType<typeof vi.fn>;
-    off: ReturnType<typeof vi.fn>;
-  };
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let events: ReturnType<typeof createTestEventBus>["events"];
 
   beforeEach(() => {
-    emittedEvents.length = 0;
-
     testDir = join(tmpdir(), `stream-tailer-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
     logFile = join(testDir, "test.ndjson");
     writeFileSync(logFile, "");
 
-    mockEventBus = {
-      emit: vi.fn((type: string, data: unknown) => {
-        if (type === "agent:activity") {
-          emittedEvents.push(data as { cardId: number; event: unknown; timestamp: number });
-        }
-      }),
-      on: vi.fn(),
-      off: vi.fn(),
-    };
+    ({ bus, events } = createTestEventBus());
 
     streamTailer = new StreamTailer({
-      eventBus: mockEventBus as never,
-      logger: createMockLogger() as never,
+      eventBus: bus as never,
+      logger: createNoopLogger() as never,
     });
   });
 
@@ -55,21 +41,19 @@ describe("StreamTailer", () => {
     writeFileSync(logFile, toolLine + "\n");
 
     await streamTailer.startTailing(1, logFile);
-
-    // Give a small delay for async processing
     await new Promise((r) => setTimeout(r, 100));
 
-    expect(emittedEvents.length).toBeGreaterThanOrEqual(1);
-    const event = emittedEvents[0];
+    const activityEvents = findEvents(events, "agent:activity");
+    expect(activityEvents.length).toBeGreaterThanOrEqual(1);
+    const event = activityEvents[0].data as { cardId: number; event: { kind: string; name: string } };
     expect(event.cardId).toBe(1);
-    expect((event.event as { kind: string }).kind).toBe("tool_use");
-    expect((event.event as { name: string }).name).toBe("Read");
+    expect(event.event.kind).toBe("tool_use");
+    expect(event.event.name).toBe("Read");
   });
 
   it("picks up new lines appended after tailing starts", async () => {
     await streamTailer.startTailing(2, logFile);
 
-    // Append a line after tailing started
     const resultLine = JSON.stringify({
       result: "Done",
       is_error: false,
@@ -79,14 +63,14 @@ describe("StreamTailer", () => {
     });
     appendFileSync(logFile, resultLine + "\n");
 
-    // Wait for fs.watch to trigger and process
     await new Promise((r) => setTimeout(r, 500));
 
-    const resultEvents = emittedEvents.filter(
-      (e) => (e.event as { kind: string }).kind === "result",
+    const activityEvents = findEvents(events, "agent:activity");
+    const resultEvents = activityEvents.filter(
+      (e) => ((e.data as { event: { kind: string } }).event.kind === "result"),
     );
     expect(resultEvents.length).toBeGreaterThanOrEqual(1);
-    expect(resultEvents[0].cardId).toBe(2);
+    expect((resultEvents[0].data as { cardId: number }).cardId).toBe(2);
   });
 
   it("parses multiple event types in sequence", async () => {
@@ -115,7 +99,10 @@ describe("StreamTailer", () => {
     await streamTailer.startTailing(3, logFile);
     await new Promise((r) => setTimeout(r, 100));
 
-    const kinds = emittedEvents.map((e) => (e.event as { kind: string }).kind);
+    const activityEvents = findEvents(events, "agent:activity");
+    const kinds = activityEvents.map(
+      (e) => (e.data as { event: { kind: string } }).event.kind,
+    );
     expect(kinds).toContain("thinking");
     expect(kinds).toContain("tool_use");
     expect(kinds).toContain("text");
@@ -137,16 +124,15 @@ describe("StreamTailer", () => {
     await streamTailer.startTailing(4, logFile);
     await new Promise((r) => setTimeout(r, 100));
 
-    // Only the Grep tool_use should have been emitted
-    expect(emittedEvents.length).toBe(1);
-    expect((emittedEvents[0].event as { name: string }).name).toBe("Grep");
+    const activityEvents = findEvents(events, "agent:activity");
+    expect(activityEvents.length).toBe(1);
+    expect((activityEvents[0].data as { event: { name: string } }).event.name).toBe("Grep");
   });
 
   it("stops tailing when stopTailing is called", async () => {
     await streamTailer.startTailing(5, logFile);
     streamTailer.stopTailing(5);
 
-    // Append after stop — should NOT be picked up
     appendFileSync(
       logFile,
       JSON.stringify({
@@ -160,14 +146,15 @@ describe("StreamTailer", () => {
 
     await new Promise((r) => setTimeout(r, 300));
 
-    const postStopEvents = emittedEvents.filter((e) => e.cardId === 5);
-    expect(postStopEvents.length).toBe(0);
+    const activityEvents = findEvents(events, "agent:activity").filter(
+      (e) => (e.data as { cardId: number }).cardId === 5,
+    );
+    expect(activityEvents.length).toBe(0);
   });
 
   it("replaces existing tailer when startTailing is called again", async () => {
     await streamTailer.startTailing(6, logFile);
 
-    // Start again with same cardId — should not error
     const logFile2 = join(testDir, "test2.ndjson");
     writeFileSync(
       logFile2,
@@ -182,7 +169,10 @@ describe("StreamTailer", () => {
     await streamTailer.startTailing(6, logFile2);
     await new Promise((r) => setTimeout(r, 100));
 
-    const textEvents = emittedEvents.filter((e) => (e.event as { kind: string }).kind === "text");
+    const activityEvents = findEvents(events, "agent:activity");
+    const textEvents = activityEvents.filter(
+      (e) => (e.data as { event: { kind: string } }).event.kind === "text",
+    );
     expect(textEvents.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -199,8 +189,10 @@ describe("StreamTailer", () => {
     await streamTailer.startTailing(7, logFile);
     await new Promise((r) => setTimeout(r, 100));
 
-    expect(emittedEvents.length).toBe(1);
-    expect(emittedEvents[0].timestamp).toBeGreaterThanOrEqual(before);
-    expect(emittedEvents[0].timestamp).toBeLessThanOrEqual(Date.now());
+    const activityEvents = findEvents(events, "agent:activity");
+    expect(activityEvents.length).toBe(1);
+    const ts = (activityEvents[0].data as { timestamp: number }).timestamp;
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(ts).toBeLessThanOrEqual(Date.now());
   });
 });

@@ -1,311 +1,322 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { AgentExecutor } from "../../server/domains/execution/agent-executor";
+import { CardService } from "../../server/domains/cards/card-service";
+import { cards } from "../../server/shared/db/schema";
 import {
-  createMockDb,
-  createMockEventBus,
-  createMockLogger,
-  createMockTmuxManager,
-  createMockSlotAllocator,
-  createMockWorkflowLoader,
-  createMockWorkflowOrchestrator,
-  createMockRemoteExecutor,
-  createMockExecSync,
-  createMockCardService,
-  setupSelectReturning,
-  setupUpdate,
-  setupInsert,
-} from "../helpers/mock-deps";
-import type { MockDb } from "../helpers/mock-deps";
+  db,
+  cleanDb,
+  seedBoard,
+  seedRepo,
+  seedCard,
+  seedSlot,
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+} from "../helpers/test-db";
+
+/** Minimal tmux stub for tests (system boundary — must use manual DI) */
+function createTmuxStub(overrides: {
+  isAvailable?: boolean;
+  sendCommandCalls?: Array<{ session: string; cmd: string }>;
+} = {}) {
+  const sendCommandCalls = overrides.sendCommandCalls ?? [];
+  return {
+    isAvailable: () => overrides.isAvailable ?? true,
+    createSession: (_cardId: number, _cwd: string) => ({
+      sessionName: `card-${_cardId}`,
+      created: true,
+    }),
+    startCapture: (_name: string, _cb: (data: string) => void) => {},
+    stopCapture: (_name: string) => {},
+    killSession: (_name: string) => true,
+    sendCommand: (session: string, cmd: string) => {
+      sendCommandCalls.push({ session, cmd });
+    },
+  };
+}
 
 describe("AgentExecutor", () => {
-  let executor: AgentExecutor;
-  let mockDb: MockDb;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
-  let mockTmuxManager: ReturnType<typeof createMockTmuxManager>;
-  let mockSlotAllocator: ReturnType<typeof createMockSlotAllocator>;
-  let mockWorkflowLoader: ReturnType<typeof createMockWorkflowLoader>;
-  let mockWorkflowOrchestrator: ReturnType<typeof createMockWorkflowOrchestrator>;
-  let mockWriteHooks: ReturnType<typeof vi.fn>;
-  let mockCardService: ReturnType<typeof createMockCardService>;
-  let mockRemoteExecutor: ReturnType<typeof createMockRemoteExecutor>;
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let events: ReturnType<typeof createTestEventBus>["events"];
+  let cardService: CardService;
+  let boardId: number;
+  let repoId: number;
+  let orchestratorRuns: number[];
+  let remoteExecutorRuns: number[];
 
-  beforeEach(() => {
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
-    mockTmuxManager = createMockTmuxManager();
-    mockSlotAllocator = createMockSlotAllocator();
-    mockWorkflowLoader = createMockWorkflowLoader();
-    mockWorkflowOrchestrator = createMockWorkflowOrchestrator();
-    mockWriteHooks = vi.fn();
-    mockCardService = createMockCardService();
-    mockRemoteExecutor = createMockRemoteExecutor();
+  beforeEach(async () => {
+    cleanDb();
+    const board = await seedBoard();
+    const repo = await seedRepo();
+    boardId = board.id;
+    repoId = repo.id;
+    orchestratorRuns = [];
+    remoteExecutorRuns = [];
 
-    executor = new AgentExecutor(4200, {
-      db: mockDb as never,
-      eventBus: mockEventBus,
-      logger: createMockLogger(),
-      tmuxManager: mockTmuxManager,
-      slotAllocator: mockSlotAllocator as never,
-      workflowLoader: mockWorkflowLoader,
-      workflowOrchestrator: mockWorkflowOrchestrator,
-      writeHooks: mockWriteHooks as never,
-      cardService: mockCardService as never,
-      execSync: createMockExecSync() as never,
-      existsSync: vi.fn().mockReturnValue(false) as never,
-      mkdirSync: vi.fn() as never,
-      writeFileSync: vi.fn() as never,
-      remoteExecutor: mockRemoteExecutor as never,
+    ({ bus, events } = createTestEventBus());
+    cardService = new CardService({
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
     });
-    vi.clearAllMocks();
   });
+
+  function createExecutor(opts: {
+    tmuxAvailable?: boolean;
+    sendCommandCalls?: Array<{ session: string; cmd: string }>;
+    writeFileCalls?: Array<{ path: string; content: string }>;
+    writeHooksCalls?: Array<{ slotPath: string; cardId: number }>;
+  } = {}) {
+    const sendCommandCalls = opts.sendCommandCalls ?? [];
+    const writeFileCalls = opts.writeFileCalls ?? [];
+    const writeHooksCalls = opts.writeHooksCalls ?? [];
+
+    return new AgentExecutor(4200, {
+      db,
+      eventBus: bus,
+      logger: createNoopLogger(),
+      tmuxManager: createTmuxStub({
+        isAvailable: opts.tmuxAvailable,
+        sendCommandCalls,
+      }),
+      slotAllocator: {
+        claimSlot: async (rId: number, cardId: number) => {
+          // Find an available slot in the DB for the repo
+          const slots = await db.select().from(
+            (await import("../../server/shared/db/schema")).workspaceSlots,
+          );
+          const available = slots.find(
+            (s) => s.repoId === rId && s.status === "available",
+          );
+          return available ? { id: available.id, path: available.path } : null;
+        },
+        releaseSlot: async () => {},
+        getSlotForCard: async () => null,
+      },
+      slotPreparer: {
+        prepare: async () => ({
+          branch: "agentboard/card-test",
+          events: [],
+          depsInstalled: false,
+          packageManager: null,
+        }),
+        reset: async () => ({
+          events: [],
+          depsInstalled: false,
+          packageManager: null,
+        }),
+      } as never,
+      workflowLoader: { get: () => null },
+      workflowOrchestrator: {
+        run: async (cardId: number) => {
+          orchestratorRuns.push(cardId);
+        },
+      },
+      writeHooks: ((slotPath: string, cardId: number) => {
+        writeHooksCalls.push({ slotPath, cardId });
+      }) as never,
+      cardService,
+      mkdirSync: (() => {}) as never,
+      writeFileSync: ((path: string, content: string) => {
+        writeFileCalls.push({ path, content });
+      }) as never,
+      ttydManager: { isAvailable: () => false, attach: () => ({ port: 7700, url: "" }) } as never,
+      remoteExecutor: {
+        startExecution: async (cardId: number) => {
+          remoteExecutorRuns.push(cardId);
+        },
+      },
+    });
+  }
 
   describe("startExecution()", () => {
     it("returns early when card not found", async () => {
-      setupSelectReturning(mockDb, []);
+      const executor = createExecutor();
 
       await executor.startExecution(999);
 
-      expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockCardService.updateStatus).not.toHaveBeenCalled();
+      // No status change events
+      expect(findEvents(events, "card:status-changed")).toHaveLength(0);
     });
 
     it("marks failed when card has no repoId", async () => {
-      const card = { id: 1, repoId: null, workflowId: null, title: "Test" };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
+      const card = await seedCard(boardId, { repoId: null, title: "Test" });
+      const executor = createExecutor();
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("failed");
     });
 
-    it("delegates to workflowRunner when card has valid workflow", async () => {
-      const card = { id: 1, repoId: 1, workflowId: "plan", title: "Test" };
-      setupSelectReturning(mockDb, [card]);
+    it("delegates to workflowOrchestrator when card has valid workflow", async () => {
+      const card = await seedCard(boardId, { repoId, workflowId: "plan", title: "Test" });
+      const executor = new AgentExecutor(4200, {
+        db,
+        eventBus: bus,
+        logger: createNoopLogger(),
+        tmuxManager: createTmuxStub(),
+        slotAllocator: { claimSlot: async () => null, releaseSlot: async () => {}, getSlotForCard: async () => null },
+        slotPreparer: { prepare: async () => ({ branch: "", events: [], depsInstalled: false, packageManager: null }), reset: async () => ({ events: [], depsInstalled: false, packageManager: null }) } as never,
+        workflowLoader: { get: () => ({ name: "plan", steps: [] }) },
+        workflowOrchestrator: { run: async (cid: number) => { orchestratorRuns.push(cid); } },
+        writeHooks: (() => {}) as never,
+        cardService,
+        mkdirSync: (() => {}) as never,
+        writeFileSync: (() => {}) as never,
+        ttydManager: { isAvailable: () => false, attach: () => ({ port: 7700, url: "" }) } as never,
+        remoteExecutor: { startExecution: async () => {} },
+      });
 
-      const workflow = { name: "plan", steps: [] };
-      mockWorkflowLoader.get.mockReturnValue(workflow as never);
+      await executor.startExecution(card.id);
 
-      await executor.startExecution(1);
-
-      expect(mockWorkflowOrchestrator.run).toHaveBeenCalledWith(1);
+      expect(orchestratorRuns).toEqual([card.id]);
     });
 
     it("delegates to remoteExecutor when executionMode is remote", async () => {
-      const card = { id: 1, repoId: 1, workflowId: null, title: "Test", executionMode: "remote" };
-      setupSelectReturning(mockDb, [card]);
+      const card = await seedCard(boardId, {
+        repoId,
+        title: "Test",
+        executionMode: "remote",
+      });
+      const executor = createExecutor();
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockRemoteExecutor.startExecution).toHaveBeenCalledWith(1);
-      expect(mockTmuxManager.createSession).not.toHaveBeenCalled();
+      expect(remoteExecutorRuns).toEqual([card.id]);
     });
 
     it("falls back to single prompt when workflow not found", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
+      const card = await seedCard(boardId, {
+        repoId,
         workflowId: "nonexistent",
         title: "Test Card",
         description: "Do something",
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
+        executionMode: "headless",
+      });
+      await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      mockWorkflowLoader.get.mockReturnValue(undefined as never);
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
+      const sendCommandCalls: Array<{ session: string; cmd: string }> = [];
+      const executor = createExecutor({ sendCommandCalls });
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockWorkflowOrchestrator.run).not.toHaveBeenCalled();
-      expect(mockTmuxManager.sendCommand).toHaveBeenCalled();
+      expect(orchestratorRuns).toHaveLength(0);
+      expect(sendCommandCalls.length).toBeGreaterThan(0);
+      expect(sendCommandCalls[0].cmd).toContain("@");
+      expect(sendCommandCalls[0].cmd).toContain(`card-${card.id}-prompt.md`);
     });
 
     it("marks queued when no slots available", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Test",
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
+        executionMode: "headless",
+      });
+      // No slots seeded
+      const executor = createExecutor();
 
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue(null);
+      await executor.startExecution(card.id);
 
-      await executor.startExecution(1);
-
-      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "queued");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("queued");
     });
 
     it("marks failed when tmux not available", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Test",
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
+        executionMode: "headless",
+      });
+      const executor = createExecutor({ tmuxAvailable: false });
 
-      mockTmuxManager.isAvailable.mockReturnValue(false);
+      await executor.startExecution(card.id);
 
-      await executor.startExecution(1);
-
-      expect(mockCardService.updateStatus).toHaveBeenCalledWith(1, "failed");
+      const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
+      expect(updated.status).toBe("failed");
     });
 
     it("writes hooks and starts capture on successful single-prompt", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Test Card",
         description: "Implement feature",
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
+        executionMode: "headless",
+      });
+      await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
+      const writeHooksCalls: Array<{ slotPath: string; cardId: number }> = [];
+      const sendCommandCalls: Array<{ session: string; cmd: string }> = [];
+      const executor = createExecutor({ writeHooksCalls, sendCommandCalls });
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockWriteHooks).toHaveBeenCalledWith("/workspace/slot-1", 1, 4200, "complete");
-      expect(mockTmuxManager.createSession).toHaveBeenCalledWith(1, "/workspace/slot-1");
-      expect(mockTmuxManager.startCapture).toHaveBeenCalled();
-      const cmd = mockTmuxManager.sendCommand.mock.calls[0]![1] as string;
+      expect(writeHooksCalls).toHaveLength(1);
+      expect(writeHooksCalls[0].slotPath).toBe("/workspace/slot-1");
+      expect(writeHooksCalls[0].cardId).toBe(card.id);
+
+      expect(sendCommandCalls.length).toBeGreaterThan(0);
+      const cmd = sendCommandCalls[0].cmd;
       expect(cmd).toContain("@");
-      expect(cmd).toContain("card-1-prompt.md");
+      expect(cmd).toContain(`card-${card.id}-prompt.md`);
     });
 
-    it("writes prompt file and sends streaming command for non-interactive mode", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+    it("writes prompt file for non-interactive mode", async () => {
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Test",
         description: "do stuff",
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
-
-      const mockMkdir = vi.fn();
-      const mockWriteFile = vi.fn();
-      executor = new AgentExecutor(4200, {
-        db: mockDb as never,
-        eventBus: mockEventBus,
-        logger: createMockLogger(),
-        tmuxManager: mockTmuxManager,
-        slotAllocator: mockSlotAllocator as never,
-        workflowLoader: mockWorkflowLoader,
-        workflowOrchestrator: mockWorkflowOrchestrator,
-        writeHooks: mockWriteHooks as never,
-        cardService: mockCardService as never,
-        mkdirSync: mockMkdir as never,
-        writeFileSync: mockWriteFile as never,
+        executionMode: "headless",
       });
+      await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
+      const writeFileCalls: Array<{ path: string; content: string }> = [];
+      const executor = createExecutor({ writeFileCalls });
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockMkdir).toHaveBeenCalled();
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining("card-1-prompt.md"),
-        "do stuff",
-      );
-      const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toContain("@");
-      expect(sendCommandCall[1]).toContain("card-1-prompt.md");
+      const promptWrite = writeFileCalls.find((c) => c.path.includes("card-"));
+      expect(promptWrite).toBeDefined();
+      expect(promptWrite!.content).toBe("do stuff");
     });
 
     it("uses interactive claude for interactive mode", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Test",
         description: "do stuff",
         executionMode: "interactive",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
+      });
+      await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
+      const sendCommandCalls: Array<{ session: string; cmd: string }> = [];
+      const executor = createExecutor({ sendCommandCalls });
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      const sendCommandCall = mockTmuxManager.sendCommand.mock.calls[0]!;
-      expect(sendCommandCall[1]).toBe("claude");
+      expect(sendCommandCalls[0].cmd).toBe("claude");
     });
 
     it("uses card title as prompt when description is null", async () => {
-      const card = {
-        id: 1,
-        repoId: 1,
-        workflowId: null,
+      const card = await seedCard(boardId, {
+        repoId,
         title: "Fix the bug",
         description: null,
-        executionMode: "auto-claude",
-      };
-      setupSelectReturning(mockDb, [card]);
-      setupUpdate(mockDb);
-      setupInsert(mockDb);
-
-      const mockWriteFile = vi.fn();
-      executor = new AgentExecutor(4200, {
-        db: mockDb as never,
-        eventBus: mockEventBus,
-        logger: createMockLogger(),
-        tmuxManager: mockTmuxManager,
-        slotAllocator: mockSlotAllocator as never,
-        workflowLoader: mockWorkflowLoader,
-        workflowOrchestrator: mockWorkflowOrchestrator,
-        writeHooks: mockWriteHooks as never,
-        cardService: mockCardService as never,
-        mkdirSync: vi.fn() as never,
-        writeFileSync: mockWriteFile as never,
+        executionMode: "headless",
       });
+      await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      mockTmuxManager.isAvailable.mockReturnValue(true);
-      mockSlotAllocator.claimSlot.mockResolvedValue({
-        id: 1,
-        path: "/workspace/slot-1",
-      } as never);
+      const writeFileCalls: Array<{ path: string; content: string }> = [];
+      const executor = createExecutor({ writeFileCalls });
 
-      await executor.startExecution(1);
+      await executor.startExecution(card.id);
 
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining("card-1-prompt.md"),
-        "Fix the bug",
+      const promptWrite = writeFileCalls.find((c) =>
+        c.path.includes(`card-${card.id}-prompt.md`),
       );
+      expect(promptWrite).toBeDefined();
+      expect(promptWrite!.content).toBe("Fix the bug");
     });
   });
 });

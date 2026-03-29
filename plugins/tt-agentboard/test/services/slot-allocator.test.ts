@@ -1,119 +1,100 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createMockDb, createMockEventBus, createMockLogger } from "../helpers/mock-deps";
+import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { SlotAllocator } from "../../server/domains/execution/slot-allocator";
+import { workspaceSlots } from "../../server/shared/db/schema";
+import {
+  db,
+  cleanDb,
+  seedRepo,
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+  seedSlot,
+} from "../helpers/test-db";
 
 describe("SlotAllocator", () => {
   let allocator: SlotAllocator;
-  let mockDb: ReturnType<typeof createMockDb>;
-  let mockEventBus: ReturnType<typeof createMockEventBus>;
+  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let events: ReturnType<typeof createTestEventBus>["events"];
+  let repoId: number;
 
-  beforeEach(() => {
-    mockDb = createMockDb();
-    mockEventBus = createMockEventBus();
+  beforeEach(async () => {
+    cleanDb();
+    const repo = await seedRepo();
+    repoId = repo.id;
+
+    ({ bus, events } = createTestEventBus());
     allocator = new SlotAllocator({
-      db: mockDb as never,
-      eventBus: mockEventBus as never,
-      logger: createMockLogger() as never,
+      db,
+      eventBus: bus,
+      logger: createNoopLogger() as never,
+      slotPreparer: { reset: async () => ({ events: [], depsInstalled: false, packageManager: null }) } as never,
     });
-    vi.clearAllMocks();
   });
 
   describe("claimSlot()", () => {
     it("claims available slot and returns it", async () => {
-      const slot = {
-        id: 1,
-        repoId: 1,
-        path: "/workspace/slot-1",
-        portConfig: null,
-        envPath: null,
-        status: "available",
-        claimedByCardId: null,
-        createdAt: new Date(),
-      };
+      const slot = await seedSlot(repoId, { path: "/workspace/slot-1" });
 
-      // select chain returns available slot
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockReturnValue(selectChain);
-      selectChain.limit = vi.fn().mockResolvedValue([slot]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
-      // update chain
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
-
-      const result = await allocator.claimSlot(1, 42);
+      const result = await allocator.claimSlot(repoId, 42);
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe(1);
+      expect(result!.id).toBe(slot.id);
       expect(result!.status).toBe("claimed");
       expect(result!.claimedByCardId).toBe(42);
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(mockEventBus.emit).toHaveBeenCalledWith("slot:claimed", { slotId: 1, cardId: 42 });
+
+      // Verify DB was updated
+      const [dbSlot] = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, slot.id));
+      expect(dbSlot.status).toBe("claimed");
+      expect(dbSlot.claimedByCardId).toBe(42);
+
+      const claimedEvents = findEvents(events, "slot:claimed");
+      expect(claimedEvents).toHaveLength(1);
+      expect(claimedEvents[0].data).toEqual({ slotId: slot.id, cardId: 42 });
     });
 
     it("returns null when no slots available", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockReturnValue(selectChain);
-      selectChain.limit = vi.fn().mockResolvedValue([]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
-      const result = await allocator.claimSlot(1, 42);
+      const result = await allocator.claimSlot(repoId, 42);
 
       expect(result).toBeNull();
-      expect(mockDb.update).not.toHaveBeenCalled();
-      expect(mockEventBus.emit).not.toHaveBeenCalled();
+      expect(findEvents(events, "slot:claimed")).toHaveLength(0);
     });
   });
 
   describe("releaseSlot()", () => {
     it("marks slot as available and emits event", async () => {
-      const updateChain: Record<string, unknown> = {};
-      updateChain.set = vi.fn().mockReturnValue(updateChain);
-      updateChain.where = vi.fn().mockResolvedValue(undefined);
-      mockDb.update = vi.fn().mockReturnValue(updateChain);
+      const slot = await seedSlot(repoId, {
+        path: "/workspace/slot-1",
+        status: "claimed",
+        claimedByCardId: 42,
+      });
 
-      await allocator.releaseSlot(5);
+      await allocator.releaseSlot(slot.id);
 
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(mockEventBus.emit).toHaveBeenCalledWith("slot:released", { slotId: 5 });
+      const [dbSlot] = await db.select().from(workspaceSlots).where(eq(workspaceSlots.id, slot.id));
+      expect(dbSlot.status).toBe("available");
+      expect(dbSlot.claimedByCardId).toBeNull();
+
+      const releasedEvents = findEvents(events, "slot:released");
+      expect(releasedEvents).toHaveLength(1);
+      expect(releasedEvents[0].data).toEqual({ slotId: slot.id });
     });
   });
 
   describe("getSlotForCard()", () => {
     it("returns slot when card has one claimed", async () => {
-      const slot = {
-        id: 3,
-        repoId: 1,
+      const slot = await seedSlot(repoId, {
         path: "/workspace/slot-3",
-        portConfig: null,
-        envPath: null,
         status: "claimed",
         claimedByCardId: 42,
-        createdAt: new Date(),
-      };
-
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockReturnValue(selectChain);
-      selectChain.limit = vi.fn().mockResolvedValue([slot]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
+      });
 
       const result = await allocator.getSlotForCard(42);
       expect(result).not.toBeNull();
-      expect(result!.id).toBe(3);
+      expect(result!.id).toBe(slot.id);
     });
 
     it("returns null when card has no slot", async () => {
-      const selectChain: Record<string, unknown> = {};
-      selectChain.from = vi.fn().mockReturnValue(selectChain);
-      selectChain.where = vi.fn().mockReturnValue(selectChain);
-      selectChain.limit = vi.fn().mockResolvedValue([]);
-      mockDb.select = vi.fn().mockReturnValue(selectChain);
-
       const result = await allocator.getSlotForCard(99);
       expect(result).toBeNull();
     });
