@@ -23,6 +23,7 @@ const branchMode = ref<"create" | "current">("create");
 const startColumn = ref<"ready" | "backlog">("ready");
 const submitting = ref(false);
 const submitError = ref("");
+const improving = ref(false);
 
 const { data: repos } = useFetch<Repo[]>("/api/repos");
 const cardStore = useCardStore();
@@ -68,6 +69,25 @@ function generateTitle(text: string): string {
   const firstLine = text.split("\n")[0]?.trim() ?? text.trim();
   if (firstLine.length <= 60) return firstLine;
   return firstLine.slice(0, 57) + "...";
+}
+
+async function improvePrompt() {
+  if (!prompt.value.trim() || improving.value) return;
+  improving.value = true;
+  submitError.value = "";
+  try {
+    const { improved } = await $fetch<{ improved: string }>("/api/prompts/improve", {
+      method: "POST",
+      body: { prompt: prompt.value.trim() },
+    });
+    if (improved) {
+      prompt.value = improved;
+    }
+  } catch (e) {
+    submitError.value = e instanceof Error ? e.message : "Failed to improve prompt";
+  } finally {
+    improving.value = false;
+  }
 }
 
 async function submit() {
@@ -135,20 +155,31 @@ async function submit() {
             <p class="text-[10px] text-zinc-600">
               First line becomes the card title. Full text is sent as the prompt to Claude.
             </p>
-            <button
-              v-if="isSupported"
-              type="button"
-              class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
-              :class="
-                isListening
-                  ? 'border-red-500 bg-red-500/10 text-red-400 animate-pulse'
-                  : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
-              "
-              @click="toggleVoice"
-            >
-              <span class="text-sm">{{ isListening ? "●" : "🎤" }}</span>
-              {{ isListening ? "Stop" : "Dictate" }}
-            </button>
+            <div class="flex gap-1.5">
+              <button
+                type="button"
+                :disabled="!prompt.trim() || improving"
+                class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-amber-500 hover:bg-amber-500/10 hover:text-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                :class="improving ? 'border-amber-500 bg-amber-500/10 text-amber-400 animate-pulse' : ''"
+                @click="improvePrompt"
+              >
+                {{ improving ? "Improving..." : "Improve" }}
+              </button>
+              <button
+                v-if="isSupported"
+                type="button"
+                class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
+                :class="
+                  isListening
+                    ? 'border-red-500 bg-red-500/10 text-red-400 animate-pulse'
+                    : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-700'
+                "
+                @click="toggleVoice"
+              >
+                <span class="text-sm">{{ isListening ? "●" : "🎤" }}</span>
+                {{ isListening ? "Stop" : "Dictate" }}
+              </button>
+            </div>
           </div>
         </div>
 
