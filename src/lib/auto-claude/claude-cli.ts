@@ -59,14 +59,18 @@ export async function runClaude(opts: {
   const claudeMdPath = join(process.cwd(), "CLAUDE.md");
   if (fileExists(claudeMdPath)) {
     const systemPrompt = readFile(claudeMdPath);
-    log.info(`\n${pc.bold(pc.cyan("── System Prompt (CLAUDE.md) ──"))}\n${pc.dim(systemPrompt.trimEnd())}\n`);
+    log.info(
+      `\n${pc.bold(pc.cyan("── System Prompt (CLAUDE.md) ──"))}\n${pc.dim(systemPrompt.trimEnd())}\n`,
+    );
   }
 
   // Log the resolved prompt being sent
   const promptPath = join(process.cwd(), opts.promptFile);
   if (fileExists(promptPath)) {
     const promptContent = readFile(promptPath);
-    log.info(`\n${pc.bold(pc.cyan(`── Prompt (${opts.promptFile}) ──`))}\n${pc.dim(promptContent.trimEnd())}\n`);
+    log.info(
+      `\n${pc.bold(pc.cyan(`── Prompt (${opts.promptFile}) ──`))}\n${pc.dim(promptContent.trimEnd())}\n`,
+    );
   }
 
   let lastError: Error | undefined;
