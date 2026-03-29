@@ -16,17 +16,27 @@ export default defineEventHandler(async (event) => {
   const repos = await db.select().from(repositories).where(eq(repositories.id, slot.repoId));
   const defaultBranch = repos[0]?.defaultBranch ?? "main";
 
-  const [branch, aheadStr, behindStr, porcelain] = await Promise.all([
+  const [branch, aheadStr, behindStr, porcelain, lastCommitDate] = await Promise.all([
     gitQuery(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
     gitQuery(cwd, ["rev-list", `origin/${defaultBranch}..HEAD`, "--count"]),
     gitQuery(cwd, ["rev-list", `HEAD..origin/${defaultBranch}`, "--count"]),
     gitQuery(cwd, ["status", "--porcelain"]),
+    gitQuery(cwd, ["log", "-1", "--format=%cI"]),
   ]);
 
-  return {
-    branch,
-    ahead: aheadStr !== null ? Number(aheadStr) : null,
-    behind: behindStr !== null ? Number(behindStr) : null,
-    dirty: porcelain !== null ? porcelain.length > 0 : null,
-  };
+  const ahead = aheadStr !== null ? Number(aheadStr) : null;
+  const behind = behindStr !== null ? Number(behindStr) : null;
+  const dirty = porcelain !== null ? porcelain.length > 0 : null;
+
+  // Stale: branch >7 days old OR >20 commits behind main
+  let isStale = false;
+  if (lastCommitDate) {
+    const daysSinceCommit = (Date.now() - new Date(lastCommitDate).getTime()) / 86_400_000;
+    isStale = daysSinceCommit > 7;
+  }
+  if (behind !== null && behind > 20) {
+    isStale = true;
+  }
+
+  return { branch, ahead, behind, dirty, lastCommitDate, isStale };
 });
