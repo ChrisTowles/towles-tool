@@ -29,6 +29,24 @@ const cardStore = useCardStore();
 const { createCard } = cardStore;
 const { isListening, transcript, interimTranscript, isSupported, toggle } = useVoice();
 
+interface CardTemplate {
+  name: string;
+  description: string;
+  prompt: string;
+  executionMode: "headless" | "interactive";
+  branchMode: "create" | "current";
+  column: "ready" | "backlog";
+}
+
+const { data: templates } = useFetch<CardTemplate[]>("/api/cards/templates");
+
+function applyTemplate(template: CardTemplate) {
+  prompt.value = template.prompt.trim();
+  executionMode.value = template.executionMode;
+  branchMode.value = template.branchMode;
+  startColumn.value = template.column;
+}
+
 // Top 5 most-used repos based on existing cards
 const quickSelectRepos = computed(() => {
   if (!repos.value?.length) return [];
@@ -117,6 +135,23 @@ async function submit() {
 
       <!-- Form -->
       <form class="space-y-4 px-5 py-4" @submit.prevent="submit">
+        <!-- Template picker -->
+        <div v-if="templates?.length" class="mb-3">
+          <label class="mb-1 block text-xs font-medium text-zinc-400">Template</label>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="tmpl in templates"
+              :key="tmpl.name"
+              type="button"
+              class="rounded border border-zinc-700 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+              :title="tmpl.description"
+              @click="applyTemplate(tmpl)"
+            >
+              {{ tmpl.name }}
+            </button>
+          </div>
+        </div>
+
         <!-- Prompt -->
         <div>
           <label
