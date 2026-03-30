@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { WorkflowOrchestrator } from "../../server/domains/execution/workflow-orchestrator";
 import { CardService } from "../../server/domains/cards/card-service";
-import { cards } from "../../server/shared/db/schema";
+import { cards, workspaceSlots } from "../../server/shared/db/schema";
 import {
   db,
   cleanDb,
@@ -13,34 +13,28 @@ import {
   createTestEventBus,
   createNoopLogger,
   findEvents,
+  createTmuxStub,
 } from "../helpers/test-db";
+import type { TestBus, TestEvents } from "../helpers/test-db";
 
-/** Minimal tmux stub */
-function createTmuxStub(opts: { isAvailable?: boolean } = {}) {
-  const stopCaptureCalls: string[] = [];
-  const killSessionCalls: string[] = [];
-  return {
-    isAvailable: () => opts.isAvailable ?? true,
-    createSession: (_cardId: number, _cwd: string) => ({
-      sessionName: `card-${_cardId}`,
-      created: true,
-    }),
-    startCapture: (_name: string, _cb: (data: string) => void) => {},
-    stopCapture: (name: string) => {
-      stopCaptureCalls.push(name);
-    },
-    killSession: (name: string) => {
-      killSessionCalls.push(name);
-      return true;
-    },
-    stopCaptureCalls,
-    killSessionCalls,
-  };
-}
+const NOOP_SLOT_PREPARER = {
+  prepare: async () => ({
+    branch: "ab/card-test",
+    events: [],
+    depsInstalled: false,
+    packageManager: null,
+  }),
+  reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
+} as never;
+
+const NOOP_TTYD = {
+  isAvailable: () => false,
+  attach: () => ({ port: 7700, url: "" }),
+} as never;
 
 describe("WorkflowOrchestrator", () => {
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
-  let events: ReturnType<typeof createTestEventBus>["events"];
+  let bus: TestBus;
+  let events: TestEvents;
   let cardService: CardService;
   let boardId: number;
   let repoId: number;
@@ -79,8 +73,7 @@ describe("WorkflowOrchestrator", () => {
         logger: createNoopLogger(),
         tmuxManager: tmux,
         slotAllocator: {
-          claimSlot: async (rId: number, _cardId: number) => {
-            const { workspaceSlots } = await import("../../server/shared/db/schema");
+          claimSlot: async (rId: number) => {
             const slots = await db.select().from(workspaceSlots);
             const available = slots.find((s) => s.repoId === rId && s.status === "available");
             return available ? { id: available.id, path: available.path } : null;
@@ -89,19 +82,7 @@ describe("WorkflowOrchestrator", () => {
             releasedSlotIds.push(slotId);
           },
         },
-        slotPreparer: {
-          prepare: async () => ({
-            branch: "ab/card-test",
-            events: [],
-            depsInstalled: false,
-            packageManager: null,
-          }),
-          reset: async () => ({
-            events: [],
-            depsInstalled: false,
-            packageManager: null,
-          }),
-        } as never,
+        slotPreparer: NOOP_SLOT_PREPARER,
         workflowLoader: {
           get: () =>
             opts.workflow ?? {
@@ -119,13 +100,9 @@ describe("WorkflowOrchestrator", () => {
             return result;
           },
         } as never,
-        streamTailer: {
-          startTailing: async () => {},
-          stopTailing: () => {},
-          stopAll: () => {},
-        },
+        streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
         execSync: (() => "") as never,
-        ttydManager: { isAvailable: () => false, attach: () => ({ port: 7700, url: "" }) } as never,
+        ttydManager: NOOP_TTYD,
       }),
       tmux,
       releasedSlotIds,
@@ -135,9 +112,7 @@ describe("WorkflowOrchestrator", () => {
   describe("initContext (via run)", () => {
     it("returns early when card not found", async () => {
       const { orchestrator } = createOrchestrator();
-
       await orchestrator.run(999);
-
       expect(findEvents(events, "workflow:completed")).toHaveLength(0);
     });
 
@@ -165,36 +140,28 @@ describe("WorkflowOrchestrator", () => {
       const card = await seedCard(boardId, { repoId, workflowId: "nonexistent", title: "Test" });
       await seedSlot(repoId, { path: "/ws/slot-1" });
 
-      createOrchestrator({ workflow: undefined as never });
-      // Override workflowLoader to return undefined
-      const orch2 = new WorkflowOrchestrator({
+      // Provide explicit null workflow to bypass the ?? default
+      const tmux = createTmuxStub();
+      const orchestrator = new WorkflowOrchestrator({
         db,
         eventBus: bus,
         logger: createNoopLogger(),
-        tmuxManager: createTmuxStub(),
+        tmuxManager: tmux,
         slotAllocator: {
           claimSlot: async () => ({ id: 1, path: "/ws" }),
           releaseSlot: async () => {},
         },
-        slotPreparer: {
-          prepare: async () => ({
-            branch: "",
-            events: [],
-            depsInstalled: false,
-            packageManager: null,
-          }),
-          reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
-        } as never,
+        slotPreparer: NOOP_SLOT_PREPARER,
         workflowLoader: { get: () => undefined },
         contextBundler: { buildPrompt: () => "" },
         cardService,
         stepExecutor: { execute: async () => ({ passed: true }) } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
         execSync: (() => "") as never,
-        ttydManager: { isAvailable: () => false, attach: () => ({ port: 7700, url: "" }) } as never,
+        ttydManager: NOOP_TTYD,
       });
 
-      await orch2.run(card.id);
+      await orchestrator.run(card.id);
 
       const [updated] = await db.select().from(cards).where(eq(cards.id, card.id));
       expect(updated.status).toBe("failed");
@@ -225,7 +192,6 @@ describe("WorkflowOrchestrator", () => {
         title: "Test",
         branchMode: "create",
       });
-      // No slots seeded
 
       const { orchestrator } = createOrchestrator();
 
@@ -345,15 +311,7 @@ describe("WorkflowOrchestrator", () => {
             releasedSlotIds.push(id);
           },
         },
-        slotPreparer: {
-          prepare: async () => ({
-            branch: "ab/test",
-            events: [],
-            depsInstalled: false,
-            packageManager: null,
-          }),
-          reset: async () => ({ events: [], depsInstalled: false, packageManager: null }),
-        } as never,
+        slotPreparer: NOOP_SLOT_PREPARER,
         workflowLoader: {
           get: () => ({
             name: "plan",
@@ -370,7 +328,7 @@ describe("WorkflowOrchestrator", () => {
         } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
         execSync: (() => "") as never,
-        ttydManager: { isAvailable: () => false, attach: () => ({ port: 7700, url: "" }) } as never,
+        ttydManager: NOOP_TTYD,
       });
 
       await orchestrator.run(card.id);

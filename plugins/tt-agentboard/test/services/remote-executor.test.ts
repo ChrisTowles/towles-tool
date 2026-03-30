@@ -12,6 +12,7 @@ import {
   createTestEventBus,
   createNoopLogger,
 } from "../helpers/test-db";
+import type { TestBus } from "../helpers/test-db";
 
 const CLAUDE_REMOTE_OUTPUT = `Created remote session: Test implementation and validation
 View: https://claude.ai/code/session_01CLmof84P5YY3MboTRacDLg?m=0
@@ -19,7 +20,7 @@ Resume with: claude --teleport session_01CLmof84P5YY3MboTRacDLg
 `;
 
 describe("RemoteExecutor", () => {
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let bus: TestBus;
   let cardService: CardService;
   let boardId: number;
   let repoId: number;

@@ -14,6 +14,7 @@ import {
   createNoopLogger,
   findEvents,
 } from "../helpers/test-db";
+import type { TestBus, TestEvents } from "../helpers/test-db";
 
 function makeStep(overrides: Partial<WorkflowStep> = {}): WorkflowStep {
   return {
@@ -25,8 +26,8 @@ function makeStep(overrides: Partial<WorkflowStep> = {}): WorkflowStep {
 }
 
 describe("StepExecutor", () => {
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
-  let events: ReturnType<typeof createTestEventBus>["events"];
+  let bus: TestBus;
+  let events: TestEvents;
   let existsSyncReturn: boolean;
   let readFileSyncReturn: string;
   let ctx: WorkflowContext;

@@ -13,11 +13,12 @@ import {
   createNoopLogger,
   findEvents,
 } from "../../helpers/test-db";
+import type { TestBus, TestEvents } from "../../helpers/test-db";
 
 describe("CardService", () => {
   let service: CardService;
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
-  let events: ReturnType<typeof createTestEventBus>["events"];
+  let bus: TestBus;
+  let events: TestEvents;
   let boardId: number;
   let repoId: number;
 
