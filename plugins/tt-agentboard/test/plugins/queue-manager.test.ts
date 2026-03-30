@@ -13,9 +13,10 @@ import {
   createTestEventBus,
   createNoopLogger,
 } from "../helpers/test-db";
+import type { TestBus } from "../helpers/test-db";
 
 describe("Queue Manager Plugin", () => {
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let bus: TestBus;
   let boardId: number;
   let repoId: number;
   let executedCardIds: number[];
@@ -58,8 +59,6 @@ describe("Queue Manager Plugin", () => {
     });
 
     bus.emit("slot:released", { slotId: slot.id });
-
-    // Give the async handler time to run
     await new Promise((r) => setTimeout(r, 50));
 
     expect(executedCardIds).toContain(card.id);

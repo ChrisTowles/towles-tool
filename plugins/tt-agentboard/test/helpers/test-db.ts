@@ -72,6 +72,8 @@ export async function seedCard(
   return row;
 }
 
+let slotCounter = 0;
+
 /** Create a test workspace slot, returns the inserted row */
 export async function seedSlot(
   repoId: number,
@@ -81,7 +83,7 @@ export async function seedSlot(
     .insert(workspaceSlots)
     .values({
       repoId,
-      path: `/tmp/test-slot-${Date.now()}`,
+      path: `/tmp/test-slot-${++slotCounter}`,
       ...overrides,
     })
     .returning();
@@ -172,3 +174,47 @@ export function createNoopLogger() {
   const noop = () => {};
   return { info: noop, warn: noop, error: noop, debug: noop };
 }
+
+// ---------------------------------------------------------------------------
+// Type aliases for common test patterns
+// ---------------------------------------------------------------------------
+
+export type TestBus = ReturnType<typeof createTestEventBus>["bus"];
+export type TestEvents = ReturnType<typeof createTestEventBus>["events"];
+
+// ---------------------------------------------------------------------------
+// Tmux stub (shared across executor/orchestrator/plugin tests)
+// ---------------------------------------------------------------------------
+
+export function createTmuxStub(opts: { isAvailable?: boolean } = {}) {
+  const sendCommandCalls: Array<{ session: string; cmd: string }> = [];
+  const stopCaptureCalls: string[] = [];
+  const killSessionCalls: string[] = [];
+  const startCaptureCalls: Array<{ name: string }> = [];
+  return {
+    isAvailable: () => opts.isAvailable ?? true,
+    createSession: (_cardId: number, _cwd: string) => ({
+      sessionName: `card-${_cardId}`,
+      created: true,
+    }),
+    startCapture: (name: string, _cb: (data: string) => void) => {
+      startCaptureCalls.push({ name });
+    },
+    stopCapture: (name: string) => {
+      stopCaptureCalls.push(name);
+    },
+    killSession: (name: string) => {
+      killSessionCalls.push(name);
+      return true;
+    },
+    sendCommand: (session: string, cmd: string) => {
+      sendCommandCalls.push({ session, cmd });
+    },
+    sendCommandCalls,
+    stopCaptureCalls,
+    killSessionCalls,
+    startCaptureCalls,
+  };
+}
+
+export type TmuxStub = ReturnType<typeof createTmuxStub>;

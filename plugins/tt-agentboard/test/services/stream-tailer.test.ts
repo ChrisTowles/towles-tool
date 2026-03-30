@@ -3,14 +3,19 @@ import { writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { StreamTailer } from "../../server/domains/infra/stream-tailer";
-import { createTestEventBus, createNoopLogger, findEvents } from "../helpers/test-db";
+import {
+  createTestEventBus,
+  createNoopLogger,
+  findEvents,
+} from "../helpers/test-db";
+import type { TestBus, TestEvents } from "../helpers/test-db";
 
 describe("StreamTailer", () => {
   let testDir: string;
   let logFile: string;
   let streamTailer: StreamTailer;
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
-  let events: ReturnType<typeof createTestEventBus>["events"];
+  let bus: TestBus;
+  let events: TestEvents;
 
   beforeEach(() => {
     testDir = join(tmpdir(), `stream-tailer-test-${Date.now()}`);

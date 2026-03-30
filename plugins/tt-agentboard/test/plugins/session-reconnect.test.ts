@@ -12,9 +12,10 @@ import {
   createTestEventBus,
   createNoopLogger,
 } from "../helpers/test-db";
+import type { TestBus } from "../helpers/test-db";
 
 describe("Session Reconnect Plugin", () => {
-  let bus: ReturnType<typeof createTestEventBus>["bus"];
+  let bus: TestBus;
   let cardService: CardService;
   let boardId: number;
   let repoId: number;

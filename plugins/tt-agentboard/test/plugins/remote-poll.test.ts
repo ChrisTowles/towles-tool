@@ -15,6 +15,7 @@ import {
   createNoopLogger,
   findEvents,
 } from "../helpers/test-db";
+import type { TestBus, TestEvents } from "../helpers/test-db";
 
 describe("remote-poll", () => {
   describe("checkRemoteSessionStatus", () => {
@@ -47,8 +48,8 @@ describe("remote-poll", () => {
   });
 
   describe("pollRemoteSessions", () => {
-    let bus: ReturnType<typeof createTestEventBus>["bus"];
-    let events: ReturnType<typeof createTestEventBus>["events"];
+    let bus: TestBus;
+    let events: TestEvents;
     let cardService: CardService;
     let boardId: number;
     let repoId: number;
