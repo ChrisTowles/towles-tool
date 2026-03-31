@@ -96,12 +96,12 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@opentelemetry/api@1.9.0)(@types/node@22.16.3)(happy-dom@20.8.8)(jiti@2.6.1)(jsdom@28.1.0)(terser@5.46.1)(tsx@4.20.3)(yaml@2.8.3)
 
-  plugins/tt-agentboard2:
+  plugins/tt-agentboard:
     dependencies:
-      '@tt-agentboard2/mux-tmux':
+      '@tt-agentboard/mux-tmux':
         specifier: workspace:*
         version: link:packages/mux-tmux
-      '@tt-agentboard2/runtime':
+      '@tt-agentboard/runtime':
         specifier: workspace:*
         version: link:packages/runtime
     devDependencies:
@@ -112,12 +112,12 @@ importers:
         specifier: ^5.8.3
         version: 5.8.3
 
-  plugins/tt-agentboard2/apps/server:
+  plugins/tt-agentboard/apps/server:
     dependencies:
-      '@tt-agentboard2/mux-tmux':
+      '@tt-agentboard/mux-tmux':
         specifier: workspace:*
         version: link:../../packages/mux-tmux
-      '@tt-agentboard2/runtime':
+      '@tt-agentboard/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
     devDependencies:
@@ -128,7 +128,7 @@ importers:
         specifier: ^5
         version: 5.8.3
 
-  plugins/tt-agentboard2/apps/tui:
+  plugins/tt-agentboard/apps/tui:
     dependencies:
       '@opentui/core':
         specifier: ^0.1.88
@@ -136,10 +136,10 @@ importers:
       '@opentui/solid':
         specifier: ^0.1.88
         version: 0.1.93(solid-js@1.9.12)(stage-js@1.0.1)(typescript@5.8.3)(web-tree-sitter@0.25.10)
-      '@tt-agentboard2/mux-tmux':
+      '@tt-agentboard/mux-tmux':
         specifier: workspace:*
         version: link:../../packages/mux-tmux
-      '@tt-agentboard2/runtime':
+      '@tt-agentboard/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
       solid-js:
@@ -153,9 +153,9 @@ importers:
         specifier: ^5
         version: 5.8.3
 
-  plugins/tt-agentboard2/packages/mux-tmux:
+  plugins/tt-agentboard/packages/mux-tmux:
     dependencies:
-      '@tt-agentboard2/runtime':
+      '@tt-agentboard/runtime':
         specifier: workspace:*
         version: link:../runtime
     devDependencies:
@@ -166,7 +166,7 @@ importers:
         specifier: ^5
         version: 5.8.3
 
-  plugins/tt-agentboard2/packages/runtime:
+  plugins/tt-agentboard/packages/runtime:
     devDependencies:
       '@types/bun':
         specifier: latest

@@ -8,7 +8,7 @@
 
 ## AgentBoard2 Architecture
 
-- Tmux sidebar TUI plugin: `plugins/tt-agentboard2/`
+- Tmux sidebar TUI plugin: `plugins/tt-agentboard/`
 - Bun monorepo with workspaces: `apps/server`, `apps/tui`, `packages/runtime`, `packages/mux-tmux`
 - Agent slots: git clones in `~/code/p/towles-tool-repos/towles-tool-slot-{1..5}`
 

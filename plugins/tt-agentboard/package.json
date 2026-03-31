@@ -1,0 +1,27 @@
+{
+  "name": "@towles/tt-agentboard",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "start": "bun run scripts/start.ts",
+    "server": "bun run apps/server/src/main.ts",
+    "tui": "bun run apps/tui/src/index.tsx",
+    "dev:server": "bun --watch run apps/server/src/main.ts",
+    "dev:tui": "bun --watch run apps/tui/src/index.tsx",
+    "test": "bun test packages/runtime/test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tt-agentboard/mux-tmux": "workspace:*",
+    "@tt-agentboard/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.8.3"
+  }
+}
