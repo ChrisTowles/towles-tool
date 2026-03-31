@@ -6,7 +6,10 @@ import { x } from "tinyexec";
 import { debugArg } from "../shared.js";
 
 export default defineCommand({
-  meta: { name: "branch-clean", description: "Delete local branches that have been merged into main" },
+  meta: {
+    name: "branch-clean",
+    description: "Delete local branches that have been merged into main",
+  },
   args: {
     debug: debugArg,
     force: {

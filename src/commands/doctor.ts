@@ -106,7 +106,9 @@ function checkAgentBoard(): {
   return results;
 }
 
-async function checkClaudePlugins(): Promise<{ name: string; ok: boolean; installHint?: string }[]> {
+async function checkClaudePlugins(): Promise<
+  { name: string; ok: boolean; installHint?: string }[]
+> {
   const requiredPlugins = [
     {
       id: "code-simplifier@claude-plugins-official",
@@ -146,7 +148,6 @@ export default defineCommand({
       checkCommand("gh", ["--version"], /gh version ([\d.]+)/),
       checkCommand("node", ["--version"], /v?([\d.]+)/),
       checkCommand("bun", ["--version"], /([\d.]+)/),
-      checkCommand("tsx", ["--version"], /([\d.]+)/),
       checkCommand("claude", ["--version"], /([\d.]+)/),
       checkCommand("tmux", ["-V"], /tmux ([\d.]+)/),
       checkCommand("ttyd", ["--version"], /ttyd version ([\d.]+)/, true),

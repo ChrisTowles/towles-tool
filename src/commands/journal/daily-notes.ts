@@ -15,7 +15,10 @@ import {
 } from "../../lib/journal/index.js";
 
 export default defineCommand({
-  meta: { name: "daily-notes", description: "Weekly files with daily sections for ongoing work and notes" },
+  meta: {
+    name: "daily-notes",
+    description: "Weekly files with daily sections for ongoing work and notes",
+  },
   args: {
     debug: debugArg,
   },

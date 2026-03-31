@@ -24,6 +24,5 @@ export default defineCommand({
     consola.warn("Working Directory:");
     consola.log(`  ${process.cwd()}`);
     consola.log("");
-
   },
 });

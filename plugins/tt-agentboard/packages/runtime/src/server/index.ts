@@ -60,13 +60,7 @@ export function startServer(
   const tracker = new AgentTracker();
   const metadataStore = new SessionMetadataStore();
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const sessionOrderPath = join(
-    home,
-    ".config",
-    "towles-tool",
-    "agentboard",
-    "session-order.json",
-  );
+  const sessionOrderPath = join(home, ".config", "towles-tool", "agentboard", "session-order.json");
   const sessionOrder = new SessionOrder(sessionOrderPath);
 
   // Clear previous log on server start

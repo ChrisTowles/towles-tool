@@ -1,7 +1,7 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Syncs version from package.json to all plugin.json files
- * Run via: pnpm tsx scripts/sync-versions.ts
+ * Run via: bun run scripts/sync-versions.ts
  */
 
 import { join } from "node:path";
