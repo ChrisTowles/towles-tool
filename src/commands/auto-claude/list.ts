@@ -1,61 +1,50 @@
-import { Flags } from "@oclif/core";
+import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { Fzf } from "fzf";
 import prompts from "prompts";
 import type { Choice } from "prompts";
 
-import { BaseCommand } from "../base.js";
+import { debugArg } from "../shared.js";
 import { buildIssueChoices, computeColumnLayout } from "../gh/branch.js";
 import { STEP_NAMES, fetchIssue, initConfig, runPipeline } from "../../lib/auto-claude/index.js";
 import type { StepName } from "../../lib/auto-claude/index.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import { getTerminalColumns } from "../../utils/render.js";
 
-export default class AutoClaudeList extends BaseCommand {
-  static override description = "Interactively pick an auto-claude issue to process";
-
-  static override examples = [
-    {
-      description: "Browse auto-claude labeled issues",
-      command: "<%= config.bin %> auto-claude list",
-    },
-    {
-      description: "Pick an issue and run until plan step",
-      command: "<%= config.bin %> auto-claude list --until plan",
-    },
-  ];
-
-  static override flags = {
-    ...BaseCommand.baseFlags,
-    until: Flags.string({
-      char: "u",
+export default defineCommand({
+  meta: { name: "list", description: "Interactively pick an auto-claude issue to process" },
+  args: {
+    debug: debugArg,
+    until: {
+      type: "string" as const,
+      alias: "u",
       description: `Stop after this step (${STEP_NAMES.join(", ")})`,
-      options: [...STEP_NAMES],
-    }),
-    label: Flags.string({
+    },
+    label: {
+      type: "string" as const,
       description: "Trigger label (default: auto-claude)",
-    }),
-    "main-branch": Flags.string({
+    },
+    "main-branch": {
+      type: "string" as const,
       description: "Override main branch detection",
-    }),
-    "scope-path": Flags.string({
+    },
+    "scope-path": {
+      type: "string" as const,
       description: "Path within repo to scope work (default: .)",
-    }),
-  };
-
-  async run(): Promise<void> {
-    const { flags } = await this.parse(AutoClaudeList);
-
+    },
+  },
+  async run({ args }) {
     const cfg = await initConfig({
-      triggerLabel: flags.label,
-      mainBranch: flags["main-branch"],
-      scopePath: flags["scope-path"],
+      triggerLabel: args.label,
+      mainBranch: args["main-branch"],
+      scopePath: args["scope-path"],
     });
 
     const cliInstalled = await isGithubCliInstalled();
     if (!cliInstalled) {
-      this.error("GitHub CLI (gh) is not installed");
+      consola.error("GitHub CLI (gh) is not installed");
+      process.exit(1);
     }
 
     const issues = await getIssues({ cwd: process.cwd(), label: cfg.triggerLabel });
@@ -89,7 +78,7 @@ export default class AutoClaudeList extends BaseCommand {
         {
           onCancel: () => {
             consola.info(colors.dim("Canceled"));
-            this.exit(0);
+            process.exit(0);
           },
         },
       );
@@ -101,14 +90,15 @@ export default class AutoClaudeList extends BaseCommand {
 
       const ctx = await fetchIssue(result.issueNumber);
       if (!ctx) {
-        this.error(`Could not fetch issue #${result.issueNumber}`);
+        consola.error(`Could not fetch issue #${result.issueNumber}`);
+        process.exit(1);
       }
 
-      const untilStep = flags.until as StepName | undefined;
+      const untilStep = args.until as StepName | undefined;
       await runPipeline(ctx, untilStep);
     } catch (e) {
       consola.error(e);
-      this.exit(1);
+      process.exit(1);
     }
-  }
-}
+  },
+});

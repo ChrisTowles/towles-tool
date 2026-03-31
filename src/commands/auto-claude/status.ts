@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
 
@@ -8,7 +9,7 @@ import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
 import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
 import { ARTIFACTS } from "../../lib/auto-claude/prompt-templates/index.js";
 import { LABELS } from "../../lib/auto-claude/labels.js";
-import { BaseCommand } from "../base.js";
+import { debugArg } from "../shared.js";
 
 /** All labels that indicate an issue is part of the auto-claude pipeline. */
 const ALL_AC_LABELS = ["auto-claude", ...Object.values(LABELS)] as const;
@@ -86,22 +87,14 @@ export async function fetchAllAcIssues(cwd: string): Promise<Issue[]> {
   return [...issueMap.values()].sort((a, b) => a.number - b.number);
 }
 
-export default class AutoClaudeStatus extends BaseCommand {
-  static override description = "Show pipeline status for auto-claude issues";
-
-  static override aliases = ["ac:status"];
-
-  static override examples = [
-    {
-      description: "Show status of all auto-claude issues",
-      command: "<%= config.bin %> auto-claude status",
-    },
-  ];
-
-  async run(): Promise<void> {
+export default defineCommand({
+  meta: { name: "status", description: "Show pipeline status for auto-claude issues" },
+  args: { debug: debugArg },
+  async run() {
     const cliInstalled = await isGithubCliInstalled();
     if (!cliInstalled) {
-      this.error("GitHub CLI (gh) is not installed");
+      consola.error("GitHub CLI (gh) is not installed");
+      process.exit(1);
     }
 
     const cwd = process.cwd();
@@ -119,5 +112,5 @@ export default class AutoClaudeStatus extends BaseCommand {
       const artifacts = checkArtifacts(issue.number, cwd);
       consola.log(formatIssueStatus(issue, artifacts));
     }
-  }
-}
+  },
+});

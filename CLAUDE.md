@@ -2,11 +2,12 @@
 
 ## Build & Test
 
-- `pnpm test` — run all tests (vitest)
-- `pnpm lint` — oxlint (pre-commit hook runs format + lint:fix + typecheck)
+- `bun test` — run all tests (vitest)
+- `bun run lint` — oxlint (pre-commit hook runs format + lint:fix + typecheck)
+- CLI framework: citty (from unjs), runtime: bun
 - Pre-existing console.log warnings in `scripts/sync-versions.ts` are expected, not errors
 
-## AgentBoard2 Architecture
+## AgentBoard Architecture
 
 - Tmux sidebar TUI plugin: `plugins/tt-agentboard/`
 - Bun monorepo with workspaces: `apps/server`, `apps/tui`, `packages/runtime`, `packages/mux-tmux`

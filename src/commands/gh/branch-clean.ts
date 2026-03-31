@@ -1,52 +1,34 @@
-import { Flags } from "@oclif/core";
+import { defineCommand } from "citty";
 import { colors } from "consola/utils";
 import consola from "consola";
 import { x } from "tinyexec";
 
-import { BaseCommand } from "../base.js";
+import { debugArg } from "../shared.js";
 
-/**
- * Clean up merged branches
- */
-export default class BranchClean extends BaseCommand {
-  static override description = "Delete local branches that have been merged into main";
-
-  static override examples = [
-    { description: "Clean merged branches", command: "<%= config.bin %> <%= command.id %>" },
-    {
-      description: "Preview without deleting",
-      command: "<%= config.bin %> <%= command.id %> --dry-run",
-    },
-    { description: "Skip confirmation", command: "<%= config.bin %> <%= command.id %> --force" },
-    {
-      description: "Check against develop",
-      command: "<%= config.bin %> <%= command.id %> --base develop",
-    },
-  ];
-
-  static override flags = {
-    ...BaseCommand.baseFlags,
-    force: Flags.boolean({
-      char: "f",
+export default defineCommand({
+  meta: { name: "branch-clean", description: "Delete local branches that have been merged into main" },
+  args: {
+    debug: debugArg,
+    force: {
+      type: "boolean",
+      alias: "f",
       description: "Skip confirmation prompt",
       default: false,
-    }),
-    "dry-run": Flags.boolean({
-      char: "d",
+    },
+    dryRun: {
+      type: "boolean",
       description: "Preview branches without deleting",
       default: false,
-    }),
-    base: Flags.string({
-      char: "b",
+    },
+    base: {
+      type: "string",
+      alias: "b",
       description: "Base branch to check against",
       default: "main",
-    }),
-  };
-
-  async run(): Promise<void> {
-    const { flags } = await this.parse(BranchClean);
-    const baseBranch = flags.base;
-    const dryRun = flags["dry-run"];
+    },
+  },
+  async run({ args }) {
+    const baseBranch = args.base;
 
     // Get current branch
     const currentResult = await x("git", ["branch", "--show-current"]);
@@ -73,12 +55,12 @@ export default class BranchClean extends BaseCommand {
       consola.log(`  - ${branch}`);
     }
 
-    if (dryRun) {
+    if (args.dryRun) {
       consola.info(colors.yellow("Dry run - no branches deleted"));
       return;
     }
 
-    if (!flags.force) {
+    if (!args.force) {
       const answer = await consola.prompt(`Delete ${toDelete.length} branch(es)?`, {
         type: "confirm",
         initial: false,
@@ -112,5 +94,5 @@ export default class BranchClean extends BaseCommand {
     if (failed > 0) {
       consola.warn(colors.yellow(`Failed to delete ${failed} branch(es)`));
     }
-  }
-}
+  },
+});

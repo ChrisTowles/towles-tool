@@ -1,9 +1,10 @@
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
-import { BaseCommand } from "../base.js";
+import { withSettings, debugArg } from "../shared.js";
 import { JOURNAL_TYPES } from "../../types/journal.js";
 import {
   createJournalContent,
@@ -13,29 +14,18 @@ import {
   openInEditor,
 } from "../../lib/journal/index.js";
 
-/**
- * Create or open daily notes journal file
- */
-export default class DailyNotes extends BaseCommand {
-  static override aliases = ["today"];
-  static override description = "Weekly files with daily sections for ongoing work and notes";
-
-  static override examples = [
-    {
-      description: "Open weekly notes for today",
-      command: "<%= config.bin %> <%= command.id %>",
-    },
-    { description: "Using alias", command: "<%= config.bin %> today" },
-  ];
-
-  async run(): Promise<void> {
-    await this.parse(DailyNotes);
+export default defineCommand({
+  meta: { name: "daily-notes", description: "Weekly files with daily sections for ongoing work and notes" },
+  args: {
+    debug: debugArg,
+  },
+  async run({ args }) {
+    const { settings } = await withSettings(args.debug);
 
     try {
-      const journalSettings = this.userSettings.journalSettings;
+      const journalSettings = settings.journalSettings;
       const templateDir = journalSettings.templateDir;
 
-      // Ensure templates exist on first run
       ensureTemplatesExist(templateDir);
 
       const currentDate = new Date();
@@ -46,7 +36,6 @@ export default class DailyNotes extends BaseCommand {
         title: "",
       });
 
-      // Ensure journal directory exists
       ensureDirectoryExists(path.dirname(fileInfo.fullPath));
 
       if (existsSync(fileInfo.fullPath)) {
@@ -58,7 +47,7 @@ export default class DailyNotes extends BaseCommand {
       }
 
       await openInEditor({
-        editor: this.userSettings.preferredEditor,
+        editor: settings.preferredEditor,
         filePath: fileInfo.fullPath,
         folderPath: journalSettings.baseFolder,
       });
@@ -66,5 +55,5 @@ export default class DailyNotes extends BaseCommand {
       consola.warn(`Error creating daily-notes file:`, error);
       process.exit(1);
     }
-  }
-}
+  },
+});

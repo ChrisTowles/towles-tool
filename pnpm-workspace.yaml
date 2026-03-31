@@ -1,4 +1,0 @@
-packages:
-  - "plugins/tt-agentboard"
-  - "plugins/tt-agentboard/apps/*"
-  - "plugins/tt-agentboard/packages/*"

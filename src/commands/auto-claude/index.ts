@@ -2,10 +2,10 @@ import { rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { Args, Flags } from "@oclif/core";
+import { defineCommand } from "citty";
 import consola from "consola";
 
-import { BaseCommand } from "../base.js";
+import { debugArg } from "../shared.js";
 import {
   STEP_NAMES,
   fetchIssue,
@@ -21,95 +21,75 @@ import {
 } from "../../lib/auto-claude/index.js";
 import type { IssueContext, StepName } from "../../lib/auto-claude/index.js";
 
-export default class AutoClaude extends BaseCommand {
-  static override aliases = ["ac"];
-
-  static override description = "Automated issue-to-PR pipeline using Claude Code";
-
-  static override args = {
-    prompt: Args.string({
-      description: "Run a single prompt (skips issue pipeline)",
+export default defineCommand({
+  meta: { name: "auto-claude", description: "Automated issue-to-PR pipeline using Claude Code" },
+  args: {
+    prompt: {
+      type: "positional" as const,
       required: false,
-    }),
-  };
-
-  static override examples = [
-    {
-      description: "Run a single prompt",
-      command: '<%= config.bin %> auto-claude "Fix the login bug in auth.ts"',
+      description: "Run a single prompt (skips issue pipeline)",
     },
-    {
-      description: "Process a specific issue",
-      command: "<%= config.bin %> auto-claude --issue 42",
-    },
-    {
-      description: "Run until plan step",
-      command: "<%= config.bin %> auto-claude --issue 42 --until plan",
-    },
-    {
-      description: "Reset local state for an issue",
-      command: "<%= config.bin %> auto-claude --reset 42",
-    },
-    {
-      description: "Loop mode: poll for labeled issues",
-      command: "<%= config.bin %> auto-claude --loop",
-    },
-    {
-      description: "Loop with custom interval",
-      command: "<%= config.bin %> auto-claude --loop --interval 45",
-    },
-  ];
-
-  static override flags = {
-    ...BaseCommand.baseFlags,
-    "max-turns": Flags.integer({
+    debug: debugArg,
+    "max-turns": {
+      type: "string" as const,
       description: "Maximum conversation turns for prompt mode (default: 10)",
-      default: 10,
-    }),
-    issue: Flags.integer({
-      char: "i",
+      default: "10",
+    },
+    issue: {
+      type: "string" as const,
+      alias: "i",
       description: "Process a specific issue number",
-    }),
-    until: Flags.string({
-      char: "u",
+    },
+    until: {
+      type: "string" as const,
+      alias: "u",
       description: `Stop after this step (${STEP_NAMES.join(", ")})`,
-      options: [...STEP_NAMES],
-    }),
-    reset: Flags.integer({
+    },
+    reset: {
+      type: "string" as const,
       description: "Delete local state for an issue (force restart)",
-    }),
-    model: Flags.string({
+    },
+    model: {
+      type: "string" as const,
       description: "Claude model to use (default: opus)",
       default: "opus",
-    }),
-    loop: Flags.boolean({
+    },
+    loop: {
+      type: "boolean" as const,
       description: "Poll for labeled issues continuously",
       default: false,
-    }),
-    interval: Flags.integer({
+    },
+    interval: {
+      type: "string" as const,
       description: "Poll interval in minutes (default: 30)",
-    }),
-    limit: Flags.integer({
+    },
+    limit: {
+      type: "string" as const,
       description: "Max issues per iteration (default: 1)",
-      default: 1,
-    }),
-    label: Flags.string({
+      default: "1",
+    },
+    label: {
+      type: "string" as const,
       description: "Trigger label (default: auto-claude)",
-    }),
-    "main-branch": Flags.string({
+    },
+    "main-branch": {
+      type: "string" as const,
       description: "Override main branch detection",
-    }),
-    "scope-path": Flags.string({
+    },
+    "scope-path": {
+      type: "string" as const,
       description: "Path within repo to scope work (default: .)",
-    }),
-  };
-
-  async run(): Promise<void> {
-    const { args, flags } = await this.parse(AutoClaude);
-
+    },
+  },
+  subCommands: {
+    list: () => import("./list.js").then((m) => m.default),
+    status: () => import("./status.js").then((m) => m.default),
+    retry: () => import("./retry.js").then((m) => m.default),
+  },
+  async run({ args }) {
     // Prompt mode: run a single prompt with structured output, skip issue pipeline
     if (args.prompt) {
-      await initConfig({ model: flags.model });
+      await initConfig({ model: args.model });
 
       const promptDir = join(tmpdir(), "tt-auto-claude");
       mkdirSync(promptDir, { recursive: true });
@@ -118,41 +98,44 @@ export default class AutoClaude extends BaseCommand {
 
       const result = await runClaude({
         promptFile,
-        maxTurns: flags["max-turns"],
+        maxTurns: Number(args["max-turns"]),
       });
 
       if (result.is_error) {
-        this.error("Claude reported an error", { exit: 1 });
+        consola.error("Claude reported an error");
+        process.exit(1);
       }
       return;
     }
 
     // Issue pipeline mode
     const cfg = await initConfig({
-      triggerLabel: flags.label,
-      mainBranch: flags["main-branch"],
-      scopePath: flags["scope-path"],
-      model: flags.model,
+      triggerLabel: args.label,
+      mainBranch: args["main-branch"],
+      scopePath: args["scope-path"],
+      model: args.model,
     });
 
-    if (flags.reset) {
-      const issueDir = join(process.cwd(), `.auto-claude/issue-${flags.reset}`);
-      log(`Resetting state for issue-${flags.reset}...`);
+    const resetIssue = args.reset ? Number(args.reset) : undefined;
+    if (resetIssue) {
+      const issueDir = join(process.cwd(), `.auto-claude/issue-${resetIssue}`);
+      log(`Resetting state for issue-${resetIssue}...`);
       rmSync(issueDir, { recursive: true, force: true });
       log(`Cleaned ${issueDir}`);
       return;
     }
 
-    const untilStep = flags.until as StepName | undefined;
-    const loopMode = flags.loop;
-    const intervalMs = (flags.interval ?? cfg.loopIntervalMinutes) * 60_000;
-    const limit = flags.limit ?? 1;
+    const untilStep = args.until as StepName | undefined;
+    const loopMode = args.loop as boolean;
+    const intervalMs = (args.interval ? Number(args.interval) : cfg.loopIntervalMinutes) * 60_000;
+    const limit = Number(args.limit);
 
     if (loopMode) {
       registerShutdownHandlers();
       log(`Loop mode — interval: ${intervalMs / 60_000}min, limit: ${limit}`);
     }
 
+    const issueNumber = args.issue ? Number(args.issue) : undefined;
     let iteration = 0;
 
     do {
@@ -177,8 +160,8 @@ export default class AutoClaude extends BaseCommand {
 
       log("Fetching labeled issues…");
       let contexts: IssueContext[];
-      if (flags.issue) {
-        const ctx = await fetchIssue(flags.issue);
+      if (issueNumber) {
+        const ctx = await fetchIssue(issueNumber);
         contexts = ctx ? [ctx] : [];
       } else {
         contexts = await fetchIssues(limit);
@@ -212,8 +195,8 @@ export default class AutoClaude extends BaseCommand {
     } while (loopMode);
 
     log("Done.");
-  }
-}
+  },
+});
 
 async function syncWithRemote(): Promise<void> {
   const cfg = getConfig();

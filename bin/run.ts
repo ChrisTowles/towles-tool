@@ -1,5 +1,6 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 
-import { execute } from "@oclif/core";
+import { runMain } from "citty";
+import { main } from "../src/cli.js";
 
-await execute({ dir: import.meta.url });
+runMain(main);

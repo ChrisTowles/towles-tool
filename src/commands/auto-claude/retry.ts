@@ -1,12 +1,12 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { Flags } from "@oclif/core";
+import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
 import prompts from "prompts";
 
-import { BaseCommand } from "../base.js";
+import { debugArg } from "../shared.js";
 import { initConfig } from "../../lib/auto-claude/index.js";
 import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/labels.js";
 import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
@@ -47,54 +47,41 @@ export async function retryIssues(
   return selected.length;
 }
 
-export default class AutoClaudeRetry extends BaseCommand {
-  static override description = "Retry failed auto-claude issues by swapping labels";
-
-  static override examples = [
-    {
-      description: "Interactively pick failed issues to retry",
-      command: "<%= config.bin %> auto-claude retry",
-    },
-    {
-      description: "Retry a specific issue",
-      command: "<%= config.bin %> auto-claude retry --issue 42",
-    },
-    {
-      description: "Retry and clean local artifacts",
-      command: "<%= config.bin %> auto-claude retry --issue 42 --clean",
-    },
-  ];
-
-  static override flags = {
-    ...BaseCommand.baseFlags,
-    issue: Flags.integer({
-      char: "i",
+export default defineCommand({
+  meta: { name: "retry", description: "Retry failed auto-claude issues by swapping labels" },
+  args: {
+    debug: debugArg,
+    issue: {
+      type: "string" as const,
+      alias: "i",
       description: "Issue number to retry",
-    }),
-    clean: Flags.boolean({
+    },
+    clean: {
+      type: "boolean" as const,
       description: "Delete local .auto-claude/issue-{N}/ artifacts",
       default: false,
-    }),
-  };
-
-  async run(): Promise<void> {
-    const { flags } = await this.parse(AutoClaudeRetry);
+    },
+  },
+  async run({ args }) {
+    const issueNumber = args.issue ? Number(args.issue) : undefined;
 
     const cfg = await initConfig();
 
     const cliInstalled = await isGithubCliInstalled();
     if (!cliInstalled) {
-      this.error("GitHub CLI (gh) is not installed");
+      consola.error("GitHub CLI (gh) is not installed");
+      process.exit(1);
     }
 
     const failedIssues = await getIssues({ cwd: process.cwd(), label: LABELS.failed });
 
     let selected: Issue[];
 
-    if (flags.issue) {
-      const match = failedIssues.find((i) => i.number === flags.issue);
+    if (issueNumber) {
+      const match = failedIssues.find((i) => i.number === issueNumber);
       if (!match) {
-        this.error(`Issue #${flags.issue} not found with '${LABELS.failed}' label`);
+        consola.error(`Issue #${issueNumber} not found with '${LABELS.failed}' label`);
+        process.exit(1);
       }
       selected = [match];
     } else {
@@ -122,7 +109,7 @@ export default class AutoClaudeRetry extends BaseCommand {
         {
           onCancel: () => {
             consola.info(colors.dim("Canceled"));
-            this.exit(0);
+            process.exit(0);
           },
         },
       );
@@ -135,7 +122,7 @@ export default class AutoClaudeRetry extends BaseCommand {
       selected = failedIssues.filter((i) => result.selected.includes(i.number));
     }
 
-    const count = await retryIssues(cfg.repo, cfg.triggerLabel, selected, flags.clean);
+    const count = await retryIssues(cfg.repo, cfg.triggerLabel, selected, args.clean as boolean);
     consola.box(`Retried ${count} issue(s)`);
-  }
-}
+  },
+});

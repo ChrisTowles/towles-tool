@@ -1,10 +1,10 @@
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { Args } from "@oclif/core";
+import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
-import { BaseCommand } from "../base.js";
+import { withSettings, debugArg } from "../shared.js";
 import { JOURNAL_TYPES } from "../../types/journal.js";
 import {
   createMeetingContent,
@@ -14,42 +14,25 @@ import {
   openInEditor,
 } from "../../lib/journal/index.js";
 
-/**
- * Create or open meeting notes file
- */
-export default class Meeting extends BaseCommand {
-  static override description = "Structured meeting notes with agenda and action items";
-
-  static override args = {
-    title: Args.string({
-      description: "Meeting title",
+export default defineCommand({
+  meta: { name: "meeting", description: "Structured meeting notes with agenda and action items" },
+  args: {
+    debug: debugArg,
+    title: {
+      type: "positional",
       required: false,
-    }),
-  };
-
-  static override examples = [
-    {
-      description: "Create meeting note (prompts for title)",
-      command: "<%= config.bin %> <%= command.id %>",
+      description: "Meeting title",
     },
-    {
-      description: "Create with title",
-      command: '<%= config.bin %> <%= command.id %> "Sprint Planning"',
-    },
-    { description: "Using alias", command: '<%= config.bin %> m "Standup"' },
-  ];
-
-  async run(): Promise<void> {
-    const { args } = await this.parse(Meeting);
+  },
+  async run({ args }) {
+    const { settings } = await withSettings(args.debug);
 
     try {
-      const journalSettings = this.userSettings.journalSettings;
+      const journalSettings = settings.journalSettings;
       const templateDir = journalSettings.templateDir;
 
-      // Ensure templates exist on first run
       ensureTemplatesExist(templateDir);
 
-      // Prompt for title if not provided
       let title = args.title || "";
       if (title.trim().length === 0) {
         title = await consola.prompt(`Enter meeting title:`, {
@@ -65,7 +48,6 @@ export default class Meeting extends BaseCommand {
         title,
       });
 
-      // Ensure journal directory exists
       ensureDirectoryExists(path.dirname(fileInfo.fullPath));
 
       if (existsSync(fileInfo.fullPath)) {
@@ -77,7 +59,7 @@ export default class Meeting extends BaseCommand {
       }
 
       await openInEditor({
-        editor: this.userSettings.preferredEditor,
+        editor: settings.preferredEditor,
         filePath: fileInfo.fullPath,
         folderPath: journalSettings.baseFolder,
       });
@@ -85,5 +67,5 @@ export default class Meeting extends BaseCommand {
       consola.warn(`Error creating meeting file:`, error);
       process.exit(1);
     }
-  }
-}
+  },
+});

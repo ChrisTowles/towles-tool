@@ -1,42 +1,29 @@
+import { defineCommand } from "citty";
 import consola from "consola";
-import { BaseCommand } from "./base.js";
+import { withSettings, debugArg } from "./shared.js";
 
-/**
- * Display current configuration settings
- */
-export default class Config extends BaseCommand {
-  static override description = "Display current configuration settings";
-
-  static override examples = [
-    { description: "Display configuration", command: "<%= config.bin %> <%= command.id %>" },
-    { description: "Use alias", command: "<%= config.bin %> cfg" },
-  ];
-
-  async run(): Promise<void> {
-    await this.parse(Config);
+export default defineCommand({
+  meta: { name: "config", description: "Display current configuration settings" },
+  args: { debug: debugArg },
+  async run({ args }) {
+    const { settingsFile, settings } = await withSettings(args.debug);
 
     consola.info("Configuration");
     consola.log("");
 
-    consola.info(`Settings File: ${this.settingsFile.path}`);
+    consola.info(`Settings File: ${settingsFile.path}`);
     consola.log("");
 
     consola.warn("User Config:");
-    consola.log(`  Daily Path Template: ${this.userSettings.journalSettings.dailyPathTemplate}`);
-    consola.log(
-      `  Meeting Path Template: ${this.userSettings.journalSettings.meetingPathTemplate}`,
-    );
-    consola.log(`  Note Path Template: ${this.userSettings.journalSettings.notePathTemplate}`);
-    consola.log(`  Editor: ${this.userSettings.preferredEditor}`);
+    consola.log(`  Daily Path Template: ${settings.journalSettings.dailyPathTemplate}`);
+    consola.log(`  Meeting Path Template: ${settings.journalSettings.meetingPathTemplate}`);
+    consola.log(`  Note Path Template: ${settings.journalSettings.notePathTemplate}`);
+    consola.log(`  Editor: ${settings.preferredEditor}`);
     consola.log("");
 
     consola.warn("Working Directory:");
     consola.log(`  ${process.cwd()}`);
     consola.log("");
 
-    consola.info("Shell Completions:");
-    consola.log("  Run `tt completion` to generate shell completions");
-    consola.log("  Bash/Zsh: tt completion >> ~/.bashrc (or ~/.zshrc)");
-    consola.log("  Fish: tt completion > ~/.config/fish/completions/tt.fish");
-  }
-}
+  },
+});

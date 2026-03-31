@@ -29,9 +29,9 @@
     "access": "public"
   },
   "scripts": {
-    "version:sync": "pnpm tsx scripts/sync-versions.ts",
-    "prepublishOnly": "pnpm run version:sync",
-    "dev": "tsx bin/run.ts",
+    "version:sync": "bun run scripts/sync-versions.ts",
+    "prepublishOnly": "bun run version:sync",
+    "dev": "bun run bin/run.ts",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint",
@@ -49,7 +49,7 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.4",
     "@anthropic-ai/sdk": "^0.56.0",
-    "@oclif/core": "^4.3.2",
+    "citty": "^0.1.6",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
     "fzf": "^0.5.2",
@@ -62,7 +62,6 @@
     "zod": "^4.0.5"
   },
   "devDependencies": {
-    "@oclif/test": "^4.1.10",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/luxon": "^3.6.2",
     "@types/node": "^22.16.3",
@@ -73,36 +72,14 @@
     "oxlint": "^1.7.0",
     "promptfoo": "^0.121.2",
     "simple-git-hooks": "^2.13.0",
-    "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^4.0.17"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm format && pnpm lint:fix && pnpm typecheck && claude plugin validate ."
+    "pre-commit": "bun run format && bun run lint:fix && bun run typecheck && claude plugin validate ."
   },
-  "oclif": {
-    "bin": "tt",
-    "commands": "./src/commands",
-    "dirname": "towles-tool",
-    "topicSeparator": " "
-  },
-  "packageManager": "pnpm@10.27.0",
-  "pnpm": {
-    "patchedDependencies": {
-      "prompts@2.4.2": "patches/prompts.patch"
-    },
-    "onlyBuiltDependencies": [
-      "@anthropic-ai/claude-code",
-      "@parcel/watcher",
-      "@playwright/browser-chromium",
-      "@swc/core",
-      "better-sqlite3",
-      "esbuild",
-      "onnxruntime-node",
-      "protobufjs",
-      "sharp",
-      "simple-git-hooks"
-    ]
+  "patchedDependencies": {
+    "prompts@2.4.2": "patches/prompts.patch"
   },
   "trustedDependencies": [
     "@anthropic-ai/claude-code"
