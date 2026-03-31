@@ -1,9 +1,0 @@
-name: Update Dependencies
-description: Update all deps to latest compatible versions and fix breakages
-prompt: |
-  Update all dependencies to their latest compatible versions.
-  Run the test suite after each major update. Fix any breakages
-  caused by the updates. Commit each update separately.
-executionMode: auto-claude
-branchMode: create
-column: ready

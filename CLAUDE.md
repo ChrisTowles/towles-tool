@@ -4,22 +4,17 @@
 
 - `pnpm test` — run all tests (vitest)
 - `pnpm lint` — oxlint (pre-commit hook runs format + lint:fix + typecheck)
-- `cd plugins/tt-agentboard && pnpm vitest run test/services/ test/plugins/` — agentboard tests only
 - Pre-existing console.log warnings in `scripts/sync-versions.ts` are expected, not errors
 
-## AgentBoard Architecture
+## AgentBoard2 Architecture
 
-- Server code: `plugins/tt-agentboard/server/domains/` (cards, execution, infra)
-- Plugins: `plugins/tt-agentboard/server/plugins/` (Nitro auto-loaded)
-- DB: drizzle ORM + SQLite, schema in `server/domains/*/schema.ts`
+- Tmux sidebar TUI plugin: `plugins/tt-agentboard2/`
+- Bun monorepo with workspaces: `apps/server`, `apps/tui`, `packages/runtime`, `packages/mux-tmux`
 - Agent slots: git clones in `~/code/p/towles-tool-repos/towles-tool-slot-{1..5}`
-- Agents run in tmux sessions named `card-{id}`
 
 ## Testing Conventions
 
 - vi.mock is BANNED (oxlint rule: error). Use constructor dependency injection instead.
-- Mock helpers: `test/helpers/mock-deps.ts` exports `createMockExecSync`, `createMockLogger`, `createMockEventBus`
-- Test DI pattern: `new Service({ execSync: mockExecSync as never, logger: mockLogger })`
 
 ## Claude Code Hooks
 
