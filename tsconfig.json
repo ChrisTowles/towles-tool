@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "exclude": ["plugins/tt-agentboard", "plugins/tt-agentboard2"]
+  "exclude": ["plugins/tt-agentboard", "plugins/tt-agentboard"]
 }
