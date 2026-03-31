@@ -5,7 +5,7 @@ import { createMockLogger } from "../helpers/mock-deps";
 function createMockDeps() {
   return {
     logger: createMockLogger() as never,
-    execSync: vi.fn().mockReturnValue(Buffer.from("")),
+    exec: vi.fn().mockResolvedValue({ stdout: "", exitCode: 0 }),
     existsSync: vi.fn().mockReturnValue(false),
   };
 }
@@ -29,16 +29,16 @@ describe("SlotPreparer", () => {
       const result = await preparer.reset("/workspace/slot-1");
 
       // Should clean, checkout main, pull
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout -- . && git clean -fd",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout main && git pull --ff-only",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
       // Should install deps
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "pnpm install --frozen-lockfile",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -52,11 +52,11 @@ describe("SlotPreparer", () => {
     });
 
     it("handles git sync failure gracefully", async () => {
-      deps.execSync.mockImplementation((cmd: string) => {
+      deps.exec.mockImplementation(async (cmd: string) => {
         if (typeof cmd === "string" && cmd.includes("git checkout main")) {
           throw new Error("not a git repo");
         }
-        return Buffer.from("");
+        return { stdout: "", exitCode: 0 };
       });
 
       const result = await preparer.reset("/workspace/slot-1");
@@ -81,7 +81,7 @@ describe("SlotPreparer", () => {
 
       const result = await preparer.reset("/workspace/slot-1");
 
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "uv sync --frozen",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -93,7 +93,7 @@ describe("SlotPreparer", () => {
 
       const result = await preparer.reset("/workspace/slot-1");
 
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "bun install --frozen-lockfile",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -105,7 +105,7 @@ describe("SlotPreparer", () => {
 
       const result = await preparer.reset("/workspace/slot-1");
 
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "npm ci",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -117,7 +117,7 @@ describe("SlotPreparer", () => {
 
       const result = await preparer.reset("/workspace/slot-1");
 
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "pip install -r requirements.txt",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -134,16 +134,16 @@ describe("SlotPreparer", () => {
       });
 
       // Should clean + checkout main + pull
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout -- . && git clean -fd",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout main && git pull --ff-only",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
       // Should create branch
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout -b agentboard/card-42",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -162,16 +162,16 @@ describe("SlotPreparer", () => {
       });
 
       // Should NOT sync to main
-      expect(deps.execSync).not.toHaveBeenCalledWith(
+      expect(deps.exec).not.toHaveBeenCalledWith(
         "git checkout main && git pull --ff-only",
         expect.anything(),
       );
       // Should fetch and checkout the branch
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git fetch origin feature/my-branch",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout feature/my-branch",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -187,11 +187,11 @@ describe("SlotPreparer", () => {
       });
 
       // Should checkout the existing branch, NOT sync to main
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout agentboard/card-42-prev",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
-      expect(deps.execSync).not.toHaveBeenCalledWith(
+      expect(deps.exec).not.toHaveBeenCalledWith(
         "git checkout main && git pull --ff-only",
         expect.anything(),
       );
@@ -199,11 +199,11 @@ describe("SlotPreparer", () => {
     });
 
     it("falls back to existing branch when create fails", async () => {
-      deps.execSync.mockImplementation((cmd: string) => {
+      deps.exec.mockImplementation(async (cmd: string) => {
         if (typeof cmd === "string" && cmd.includes("checkout -b")) {
           throw new Error("branch already exists");
         }
-        return Buffer.from("");
+        return { stdout: "", exitCode: 0 };
       });
 
       const result = await preparer.prepare({
@@ -213,7 +213,7 @@ describe("SlotPreparer", () => {
       });
 
       // Should try checkout -b, fail, then checkout existing
-      expect(deps.execSync).toHaveBeenCalledWith(
+      expect(deps.exec).toHaveBeenCalledWith(
         "git checkout agentboard/card-42",
         expect.objectContaining({ cwd: "/workspace/slot-1" }),
       );
@@ -239,11 +239,11 @@ describe("SlotPreparer", () => {
 
     it("continues when install fails", async () => {
       deps.existsSync.mockImplementation((path: string) => path.endsWith("pnpm-lock.yaml"));
-      deps.execSync.mockImplementation((cmd: string) => {
+      deps.exec.mockImplementation(async (cmd: string) => {
         if (typeof cmd === "string" && cmd.includes("pnpm install")) {
           throw new Error("install failed");
         }
-        return Buffer.from("");
+        return { stdout: "", exitCode: 0 };
       });
 
       const result = await preparer.prepare({

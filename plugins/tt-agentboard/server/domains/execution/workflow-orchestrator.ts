@@ -1,7 +1,6 @@
 import { db as defaultDb } from "../../shared/db";
 import { cards, workflowRuns, repositories } from "../../shared/db/schema";
 import { eq } from "drizzle-orm";
-import { execSync as defaultExecSync } from "node:child_process";
 import { tmuxManager as defaultTmuxManager } from "../infra/tmux-manager";
 import { slotAllocator as defaultSlotAllocator } from "./slot-allocator";
 import { slotPreparer as defaultSlotPreparer } from "./slot-preparer";
@@ -19,6 +18,8 @@ import type { TtydManager } from "../infra/ttyd-manager";
 import { stepExecutor as defaultStepExecutor, clearPendingCallback } from "./step-executor";
 import type { StepExecutor, WorkflowContext } from "./step-executor";
 import { buildAgentBranchName, renderTemplate, shellEscape } from "./workflow-helpers";
+import { ptyExecShell as defaultPtyExecShell } from "../infra/pty-exec";
+import type { PtyExecShellFn } from "../infra/pty-exec";
 import type { Logger, EventBus, StreamTailer } from "./types";
 
 export interface WorkflowOrchestratorDeps {
@@ -42,7 +43,7 @@ export interface WorkflowOrchestratorDeps {
   cardService: CardService;
   stepExecutor: StepExecutor;
   streamTailer: StreamTailer;
-  execSync: typeof defaultExecSync;
+  exec: PtyExecShellFn;
   ttydManager: Pick<TtydManager, "isAvailable" | "attach">;
 }
 
@@ -62,7 +63,7 @@ export class WorkflowOrchestrator {
       cardService: defaultCardService,
       stepExecutor: defaultStepExecutor,
       streamTailer: defaultStreamTailer,
-      execSync: defaultExecSync,
+      exec: defaultPtyExecShell,
       ttydManager: defaultTtydManager,
       ...deps,
     };
@@ -266,18 +267,17 @@ export class WorkflowOrchestrator {
 
     // Push branch and create PR via git/gh CLI
     try {
-      this.deps.execSync(`git push -u origin ${ctx.branch}`, {
+      await this.deps.exec(`git push -u origin ${ctx.branch}`, {
         cwd: ctx.slotPath,
-        stdio: "ignore",
       });
 
       const base = (ctx.repo as { defaultBranch?: string }).defaultBranch ?? "main";
-      const prUrl = this.deps.execSync(
+      const result = await this.deps.exec(
         `gh pr create --title ${shellEscape(prTitle)} --body "Automated by AgentBoard" --base ${base} --head ${ctx.branch}`,
-        { cwd: ctx.slotPath, encoding: "utf-8" },
-      ) as unknown as string;
+        { cwd: ctx.slotPath },
+      );
 
-      this.deps.logger.info(`PR created for card ${ctx.cardId}: ${prUrl.trim()}`);
+      this.deps.logger.info(`PR created for card ${ctx.cardId}: ${result.stdout.trim()}`);
     } catch (err) {
       this.deps.logger.error(`Failed to create PR for card ${ctx.cardId}:`, err);
     }

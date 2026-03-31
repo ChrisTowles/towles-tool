@@ -1,7 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { ptyExec } from "~~/server/domains/infra/pty-exec";
 
 const systemPrompt = `You are a prompt improvement assistant for a developer task board.
 Your job is to take a rough prompt/task description and improve it to be clearer, more specific, and more actionable for a Claude Code agent.
@@ -24,17 +21,13 @@ export default defineEventHandler(async (event) => {
   const userPrompt = `Improve this agent prompt:\n\n${body.prompt.trim()}`;
 
   try {
-    const { stdout } = await execFileAsync(
+    const result = await ptyExec(
       "claude",
       ["-p", userPrompt, "--model", "haiku", "--system-prompt", systemPrompt],
-      {
-        timeout: 30_000,
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env },
-      },
+      { timeout: 30_000 },
     );
 
-    const improved = stdout.trim();
+    const improved = result.stdout.trim();
     if (!improved) {
       throw createError({ statusCode: 502, message: "Claude CLI returned empty output" });
     }
@@ -42,7 +35,7 @@ export default defineEventHandler(async (event) => {
     return { improved };
   } catch (e: unknown) {
     const err = e as { code?: string; stderr?: string; message?: string };
-    if (err.code === "ENOENT") {
+    if (err.code === "ENOENT" || err.message?.includes("ENOENT")) {
       throw createError({
         statusCode: 500,
         message: "claude CLI not found — ensure Claude Code is installed and on PATH",
@@ -50,7 +43,7 @@ export default defineEventHandler(async (event) => {
     }
     throw createError({
       statusCode: 502,
-      message: `Claude CLI error: ${err.stderr || err.message || "unknown error"}`,
+      message: `Claude CLI error: ${err.message || "unknown error"}`,
     });
   }
 });

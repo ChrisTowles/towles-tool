@@ -1,5 +1,6 @@
 import { tmuxManager } from "~~/server/domains/infra/tmux-manager";
 import { getCardId } from "~~/server/utils/params";
+import { ptyExecShell } from "~~/server/domains/infra/pty-exec";
 
 /**
  * Get the terminal output from a card's tmux session.
@@ -17,12 +18,11 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const { execSync } = await import("node:child_process");
-    const output = execSync(`tmux capture-pane -t ${sessionName} -p -e -S -500`, {
-      encoding: "utf-8",
-      timeout: 3000,
-    });
-    return { exists: true, output };
+    const result = await ptyExecShell(
+      `tmux capture-pane -t ${sessionName} -p -e -S -500`,
+      { timeout: 3000 },
+    );
+    return { exists: true, output: result.stdout };
   } catch {
     return { exists: false, output: "" };
   }

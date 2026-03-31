@@ -1,12 +1,13 @@
-import { execSync as defaultExecSync } from "node:child_process";
 import { existsSync as defaultExistsSync } from "node:fs";
 import { join } from "node:path";
 import { logger as defaultLogger } from "../../utils/logger";
+import { ptyExecShell as defaultPtyExecShell } from "../infra/pty-exec";
+import type { PtyExecShellFn } from "../infra/pty-exec";
 import type { Logger } from "./types";
 
 export interface SlotPreparerDeps {
   logger: Logger;
-  execSync: typeof defaultExecSync;
+  exec: PtyExecShellFn;
   existsSync: typeof defaultExistsSync;
 }
 
@@ -66,7 +67,7 @@ export class SlotPreparer {
   constructor(deps: Partial<SlotPreparerDeps> = {}) {
     this.deps = {
       logger: defaultLogger,
-      execSync: defaultExecSync,
+      exec: defaultPtyExecShell,
       existsSync: defaultExistsSync,
       ...deps,
     };
@@ -79,8 +80,8 @@ export class SlotPreparer {
   async reset(slotPath: string): Promise<ResetSlotResult> {
     const events: SlotEvent[] = [];
 
-    this.syncToMain(slotPath, events);
-    const { installed, packageManager } = this.installDeps(slotPath, events);
+    await this.syncToMain(slotPath, events);
+    const { installed, packageManager } = await this.installDeps(slotPath, events);
 
     this.deps.logger.info(`Slot reset complete: ${slotPath}`);
     return { depsInstalled: installed, packageManager, events };
@@ -96,28 +97,27 @@ export class SlotPreparer {
 
     if (options.existingBranch) {
       // Resume case: checkout existing branch from previous run
-      branch = this.checkoutBranch(options.slotPath, options.existingBranch, events);
+      branch = await this.checkoutBranch(options.slotPath, options.existingBranch, events);
     } else if (options.branchMode === "create") {
       // New work: sync with main, then create branch
-      branch = this.syncMainAndBranch(options.slotPath, options.branch, events);
+      branch = await this.syncMainAndBranch(options.slotPath, options.branch, events);
     } else {
       // branchMode="current": checkout the specified branch
-      branch = this.checkoutBranch(options.slotPath, options.branch, events);
+      branch = await this.checkoutBranch(options.slotPath, options.branch, events);
     }
 
     // Install deps (cached from reset, so typically fast)
-    const { installed, packageManager } = this.installDeps(options.slotPath, events);
+    const { installed, packageManager } = await this.installDeps(options.slotPath, events);
 
     return { branch, depsInstalled: installed, packageManager, events };
   }
 
   /** Clean working tree, checkout main, pull latest */
-  private syncToMain(slotPath: string, events: SlotEvent[]): void {
+  private async syncToMain(slotPath: string, events: SlotEvent[]): Promise<void> {
     // Discard any leftover changes
     try {
-      this.deps.execSync("git checkout -- . && git clean -fd", {
+      await this.deps.exec("git checkout -- . && git clean -fd", {
         cwd: slotPath,
-        stdio: "ignore",
         timeout: 5000,
       });
     } catch {
@@ -126,9 +126,8 @@ export class SlotPreparer {
 
     // Checkout main and pull
     try {
-      this.deps.execSync("git checkout main && git pull --ff-only", {
+      await this.deps.exec("git checkout main && git pull --ff-only", {
         cwd: slotPath,
-        stdio: "ignore",
         timeout: 15000,
       });
       events.push({ type: "main_synced", detail: "Checked out and pulled main" });
@@ -138,32 +137,39 @@ export class SlotPreparer {
   }
 
   /** Sync with main then create a new branch */
-  private syncMainAndBranch(slotPath: string, branchName: string, events: SlotEvent[]): string {
-    this.syncToMain(slotPath, events);
+  private async syncMainAndBranch(
+    slotPath: string,
+    branchName: string,
+    events: SlotEvent[],
+  ): Promise<string> {
+    await this.syncToMain(slotPath, events);
 
     // Create branch
     try {
-      this.deps.execSync(`git checkout -b ${branchName}`, { cwd: slotPath, stdio: "ignore" });
+      await this.deps.exec(`git checkout -b ${branchName}`, { cwd: slotPath });
       events.push({ type: "branch_created", detail: branchName });
       return branchName;
     } catch {
       // Branch may exist — try switching to it
       try {
-        this.deps.execSync(`git checkout ${branchName}`, { cwd: slotPath, stdio: "ignore" });
+        await this.deps.exec(`git checkout ${branchName}`, { cwd: slotPath });
         events.push({ type: "branch_reused", detail: branchName });
         return branchName;
       } catch {
-        return this.getCurrentBranch(slotPath, events);
+        return await this.getCurrentBranch(slotPath, events);
       }
     }
   }
 
   /** Checkout an existing branch (for branchMode="current" or resume) */
-  private checkoutBranch(slotPath: string, branch: string, events: SlotEvent[]): string {
+  private async checkoutBranch(
+    slotPath: string,
+    branch: string,
+    events: SlotEvent[],
+  ): Promise<string> {
     try {
-      this.deps.execSync(`git fetch origin ${branch}`, {
+      await this.deps.exec(`git fetch origin ${branch}`, {
         cwd: slotPath,
-        stdio: "ignore",
         timeout: 15000,
       });
     } catch {
@@ -171,28 +177,25 @@ export class SlotPreparer {
     }
 
     try {
-      this.deps.execSync(`git checkout ${branch}`, {
+      await this.deps.exec(`git checkout ${branch}`, {
         cwd: slotPath,
-        stdio: "ignore",
         timeout: 10000,
       });
       events.push({ type: "branch_checked_out", detail: branch });
       return branch;
     } catch {
       events.push({ type: "warn", detail: `Could not checkout branch ${branch}` });
-      return this.getCurrentBranch(slotPath, events);
+      return await this.getCurrentBranch(slotPath, events);
     }
   }
 
-  private getCurrentBranch(slotPath: string, events: SlotEvent[]): string {
+  private async getCurrentBranch(slotPath: string, events: SlotEvent[]): Promise<string> {
     try {
-      const current = (
-        this.deps.execSync("git rev-parse --abbrev-ref HEAD", {
-          cwd: slotPath,
-          encoding: "utf-8",
-          timeout: 3000,
-        }) as unknown as string
-      ).trim();
+      const result = await this.deps.exec("git rev-parse --abbrev-ref HEAD", {
+        cwd: slotPath,
+        timeout: 3000,
+      });
+      const current = result.stdout.trim();
       events.push({ type: "branch_fallback", detail: current });
       return current;
     } catch {
@@ -201,27 +204,27 @@ export class SlotPreparer {
   }
 
   /** Detect and run the appropriate package manager */
-  private installDeps(
+  private async installDeps(
     slotPath: string,
     events: SlotEvent[],
-  ): { installed: boolean; packageManager: string | null } {
+  ): Promise<{ installed: boolean; packageManager: string | null }> {
     for (const { file, manager, command } of LOCKFILES) {
       if (this.deps.existsSync(join(slotPath, file))) {
-        return this.runInstall(slotPath, manager, command, events);
+        return await this.runInstall(slotPath, manager, command, events);
       }
     }
 
     return { installed: false, packageManager: null };
   }
 
-  private runInstall(
+  private async runInstall(
     slotPath: string,
     name: string,
     command: string,
     events: SlotEvent[],
-  ): { installed: boolean; packageManager: string } {
+  ): Promise<{ installed: boolean; packageManager: string }> {
     try {
-      this.deps.execSync(command, { cwd: slotPath, stdio: "ignore", timeout: 120000 });
+      await this.deps.exec(command, { cwd: slotPath, timeout: 120000 });
       events.push({ type: "deps_installed", detail: `${name}: ${command}` });
       return { installed: true, packageManager: name };
     } catch {

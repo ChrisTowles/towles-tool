@@ -1,9 +1,17 @@
-import { execFileSync } from "node:child_process";
+import { spawn } from "zigpty";
 import { platform } from "node:os";
 import { logger } from "~~/server/utils/logger";
 
 function systemOpen(): string {
   return platform() === "darwin" ? "open" : "xdg-open";
+}
+
+/** Spawn a fire-and-forget command via PTY */
+function fireAndForget(cmd: string, args: string[]) {
+  const pty = spawn(cmd, args, { cols: 80, rows: 24 });
+  pty.onExit(() => {
+    pty.close();
+  });
 }
 
 /**
@@ -12,7 +20,7 @@ function systemOpen(): string {
  */
 export function openUrl(url: string) {
   logger.info(`Opening URL: ${url}`);
-  execFileSync(systemOpen(), [url], { stdio: "ignore" });
+  fireAndForget(systemOpen(), [url]);
 }
 
 /**
@@ -20,7 +28,7 @@ export function openUrl(url: string) {
  */
 export function openInVscode(path: string) {
   logger.info(`Opening in VS Code: ${path}`);
-  execFileSync("code", [path], { stdio: "ignore" });
+  fireAndForget("code", [path]);
 }
 
 /**
@@ -28,5 +36,5 @@ export function openInVscode(path: string) {
  */
 export function openFile(path: string) {
   logger.info(`Opening file: ${path}`);
-  execFileSync(systemOpen(), [path], { stdio: "ignore" });
+  fireAndForget(systemOpen(), [path]);
 }

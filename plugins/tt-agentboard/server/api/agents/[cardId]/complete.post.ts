@@ -6,6 +6,7 @@ import { eventBus } from "~~/server/shared/event-bus";
 import { logger } from "~~/server/utils/logger";
 import { getCardId, requireCard } from "~~/server/utils/params";
 import { cardService } from "~~/server/domains/cards/card-service";
+import { ptyExecShell } from "~~/server/domains/infra/pty-exec";
 
 /**
  * Callback endpoint for Claude Code Stop hook.
@@ -48,12 +49,11 @@ export default defineEventHandler(async (event) => {
       .where(eq(workflowRuns.cardId, cardId))
       .limit(1);
     if (run[0]?.branch) {
-      const { execSync } = await import("node:child_process");
-      const prJson = execSync(`gh pr list --head ${run[0].branch} --json number --limit 1`, {
-        encoding: "utf-8",
-        timeout: 5000,
-      }).trim();
-      const prs = JSON.parse(prJson);
+      const result = await ptyExecShell(
+        `gh pr list --head ${run[0].branch} --json number --limit 1`,
+        { timeout: 5000 },
+      );
+      const prs = JSON.parse(result.stdout.trim());
       if (prs.length > 0) {
         await db.update(cards).set({ githubPrNumber: prs[0].number }).where(eq(cards.id, cardId));
       }
@@ -71,18 +71,15 @@ export default defineEventHandler(async (event) => {
 
   for (const slot of claimedSlots) {
     try {
-      const { execSync } = await import("node:child_process");
-      const status = execSync("git status --porcelain", {
+      const statusResult = await ptyExecShell("git status --porcelain", {
         cwd: slot.path,
-        encoding: "utf-8",
         timeout: 5000,
-      }).trim();
-      if (status) {
-        execSync(`git add -A && git commit -m "agentboard: card #${cardId} — ${card.title}"`, {
-          cwd: slot.path,
-          stdio: "ignore",
-          timeout: 10000,
-        });
+      });
+      if (statusResult.stdout.trim()) {
+        await ptyExecShell(
+          `git add -A && git commit -m "agentboard: card #${cardId} — ${card.title}"`,
+          { cwd: slot.path, timeout: 10000 },
+        );
         await cardService.logEvent(
           cardId,
           "auto_committed",

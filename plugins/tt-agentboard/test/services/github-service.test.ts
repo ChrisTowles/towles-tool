@@ -4,14 +4,14 @@ import { GitHubService } from "../../server/domains/infra/github-service";
 
 describe("GitHubService", () => {
   let service: GitHubService;
-  let mockExecSync: ReturnType<typeof vi.fn>;
+  let mockExec: ReturnType<typeof vi.fn>;
   let mockEventBus: ReturnType<typeof createMockEventBus>;
 
   beforeEach(() => {
-    mockExecSync = vi.fn();
+    mockExec = vi.fn();
     mockEventBus = createMockEventBus();
     service = new GitHubService({
-      execSync: mockExecSync as never,
+      exec: mockExec as never,
       eventBus: mockEventBus as never,
       logger: createMockLogger() as never,
     });
@@ -24,8 +24,8 @@ describe("GitHubService", () => {
 
   describe("getOpenIssues()", () => {
     it("fetches issues via gh CLI", async () => {
-      mockExecSync.mockReturnValueOnce(
-        JSON.stringify([
+      mockExec.mockResolvedValueOnce({
+        stdout: JSON.stringify([
           {
             number: 1,
             title: "Bug report",
@@ -34,7 +34,8 @@ describe("GitHubService", () => {
             url: "https://github.com/org/repo/issues/1",
           },
         ]),
-      );
+        exitCode: 0,
+      });
 
       const issues = await service.getOpenIssues("org", "repo");
 
@@ -42,17 +43,16 @@ describe("GitHubService", () => {
       expect(issues[0]!.number).toBe(1);
       expect(issues[0]!.title).toBe("Bug report");
       expect(issues[0]!.labels).toEqual(["bug"]);
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining("issue list --repo org/repo"),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
     });
   });
 
   describe("getIssuesWithLabel()", () => {
     it("fetches issues with the specified label", async () => {
-      mockExecSync.mockReturnValueOnce(
-        JSON.stringify([
+      mockExec.mockResolvedValueOnce({
+        stdout: JSON.stringify([
           {
             number: 5,
             title: "Labeled issue",
@@ -61,38 +61,38 @@ describe("GitHubService", () => {
             url: "https://github.com/org/repo/issues/5",
           },
         ]),
-      );
+        exitCode: 0,
+      });
 
       const issues = await service.getIssuesWithLabel("org", "repo", "agentboard");
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.labels).toEqual(["agentboard"]);
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining('--label "agentboard"'),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
     });
   });
 
   describe("createIssue()", () => {
     it("creates issue and returns data", async () => {
-      mockExecSync.mockReturnValueOnce(
-        JSON.stringify({ number: 42, url: "https://github.com/org/repo/issues/42" }),
-      );
+      mockExec.mockResolvedValueOnce({
+        stdout: JSON.stringify({ number: 42, url: "https://github.com/org/repo/issues/42" }),
+        exitCode: 0,
+      });
 
       const result = await service.createIssue("org", "repo", "New issue", "body", ["bug"]);
 
       expect(result.number).toBe(42);
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining("issue create --repo org/repo"),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
     });
   });
 
   describe("transitionLabels()", () => {
     it("edits labels via gh issue edit", async () => {
-      mockExecSync.mockReturnValueOnce("");
+      mockExec.mockResolvedValueOnce({ stdout: "", exitCode: 0 });
 
       await service.transitionLabels({
         owner: "org",
@@ -102,17 +102,14 @@ describe("GitHubService", () => {
         add: ["done"],
       });
 
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining("issue edit org/repo#1"),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining('--remove-label "in-progress"'),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining('--add-label "done"'),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
     });
 
@@ -123,29 +120,33 @@ describe("GitHubService", () => {
         issueNumber: 1,
       });
 
-      expect(mockExecSync).not.toHaveBeenCalled();
+      expect(mockExec).not.toHaveBeenCalled();
     });
   });
 
   describe("createBranch()", () => {
     it("creates branch via gh api", async () => {
       // First call: get ref SHA
-      mockExecSync.mockReturnValueOnce(JSON.stringify({ object: { sha: "abc123" } }));
+      mockExec.mockResolvedValueOnce({
+        stdout: JSON.stringify({ object: { sha: "abc123" } }),
+        exitCode: 0,
+      });
       // Second call: create ref
-      mockExecSync.mockReturnValueOnce("");
+      mockExec.mockResolvedValueOnce({ stdout: "", exitCode: 0 });
 
       const result = await service.createBranch("org", "repo", "feature/test", "main");
 
       expect(result.branchName).toBe("feature/test");
-      expect(mockExecSync).toHaveBeenCalledTimes(2);
+      expect(mockExec).toHaveBeenCalledTimes(2);
     });
   });
 
   describe("createPr()", () => {
     it("creates pull request", async () => {
-      mockExecSync.mockReturnValueOnce(
-        JSON.stringify({ number: 10, url: "https://github.com/org/repo/pull/10" }),
-      );
+      mockExec.mockResolvedValueOnce({
+        stdout: JSON.stringify({ number: 10, url: "https://github.com/org/repo/pull/10" }),
+        exitCode: 0,
+      });
 
       const result = await service.createPr({
         owner: "org",
@@ -157,9 +158,8 @@ describe("GitHubService", () => {
       });
 
       expect(result.number).toBe(10);
-      expect(mockExecSync).toHaveBeenCalledWith(
+      expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining("pr create --repo org/repo"),
-        expect.objectContaining({ encoding: "utf-8" }),
       );
     });
   });
@@ -174,8 +174,8 @@ describe("GitHubService", () => {
     });
 
     it("polls immediately and emits events for found issues", async () => {
-      mockExecSync.mockReturnValue(
-        JSON.stringify([
+      mockExec.mockResolvedValue({
+        stdout: JSON.stringify([
           {
             number: 1,
             title: "Issue",
@@ -184,7 +184,8 @@ describe("GitHubService", () => {
             url: "https://github.com/org/repo/issues/1",
           },
         ]),
-      );
+        exitCode: 0,
+      });
 
       service.startPolling(
         [{ owner: "org", repo: "repo", repoId: 1, triggerLabel: "agentboard" }],

@@ -1,6 +1,7 @@
-import { execSync } from "node:child_process";
 import { eventBus } from "../../shared/event-bus";
 import { logger } from "../../utils/logger";
+import { ptyExecShell as defaultPtyExecShell } from "./pty-exec";
+import type { PtyExecShellFn } from "./pty-exec";
 
 interface GitHubIssue {
   number: number;
@@ -36,7 +37,7 @@ interface GhIssue {
 }
 
 export interface GitHubServiceDeps {
-  execSync: typeof execSync;
+  exec: PtyExecShellFn;
   eventBus: typeof eventBus;
   logger: typeof logger;
 }
@@ -46,20 +47,21 @@ export class GitHubService {
   private deps: GitHubServiceDeps;
 
   constructor(deps: Partial<GitHubServiceDeps> = {}) {
-    this.deps = { execSync, eventBus, logger, ...deps };
+    this.deps = { exec: defaultPtyExecShell, eventBus, logger, ...deps };
   }
 
-  private ghExec(args: string): string {
-    return this.deps.execSync(`gh ${args}`, { encoding: "utf-8" }).trim();
+  private async ghExec(args: string): Promise<string> {
+    const result = await this.deps.exec(`gh ${args}`);
+    return result.stdout.trim();
   }
 
-  private ghJson<T>(args: string): T {
-    const output = this.ghExec(args);
+  private async ghJson<T>(args: string): Promise<T> {
+    const output = await this.ghExec(args);
     return JSON.parse(output) as T;
   }
 
   async getIssuesWithLabel(owner: string, repo: string, label: string): Promise<GitHubIssue[]> {
-    const raw = this.ghJson<GhIssue[]>(
+    const raw = await this.ghJson<GhIssue[]>(
       `issue list --repo ${owner}/${repo} --label "${label}" --json number,title,body,labels,url --state open --limit 100`,
     );
     return raw.map((issue) => ({
@@ -72,7 +74,7 @@ export class GitHubService {
   }
 
   async getOpenIssues(owner: string, repo: string): Promise<GitHubIssue[]> {
-    const raw = this.ghJson<GhIssue[]>(
+    const raw = await this.ghJson<GhIssue[]>(
       `issue list --repo ${owner}/${repo} --json number,title,body,labels,url --state open --limit 100`,
     );
     return raw.map((issue) => ({
@@ -86,7 +88,7 @@ export class GitHubService {
 
   async isIssueClosed(owner: string, repo: string, issueNumber: number): Promise<boolean> {
     try {
-      const result = this.ghJson<{ state: string }>(
+      const result = await this.ghJson<{ state: string }>(
         `issue view ${issueNumber} --repo ${owner}/${repo} --json state`,
       );
       return result.state.toLowerCase() === "closed";
@@ -98,7 +100,7 @@ export class GitHubService {
   async createIssue(owner: string, repo: string, title: string, body: string, labels?: string[]) {
     const labelArgs = labels?.length ? labels.map((l) => `--label "${l}"`).join(" ") : "";
     // gh issue create returns the URL on stdout (no --json support)
-    const url = this.ghExec(
+    const url = await this.ghExec(
       `issue create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" ${labelArgs}`,
     );
     const numMatch = url.match(/\/issues\/(\d+)/);
@@ -123,7 +125,7 @@ export class GitHubService {
     if (editArgs.length === 0) return;
 
     try {
-      this.ghExec(`issue edit ${owner}/${repo}#${issueNumber} ${editArgs.join(" ")}`);
+      await this.ghExec(`issue edit ${owner}/${repo}#${issueNumber} ${editArgs.join(" ")}`);
     } catch (error) {
       this.deps.logger.debug(`Label transition failed for issue #${issueNumber}: ${error}`);
     }
@@ -131,12 +133,12 @@ export class GitHubService {
 
   async createBranch(owner: string, repo: string, branchName: string, baseBranch: string = "main") {
     // Use gh api to get the base ref SHA, then create the branch
-    const sha = this.ghJson<{ object: { sha: string } }>(
+    const sha = await this.ghJson<{ object: { sha: string } }>(
       `api repos/${owner}/${repo}/git/ref/heads/${baseBranch} --jq .object.sha`,
     );
 
     // For branch creation, use the API directly
-    this.ghExec(
+    await this.ghExec(
       `api repos/${owner}/${repo}/git/refs -f ref="refs/heads/${branchName}" -f sha="${typeof sha === "string" ? sha : sha.object.sha}"`,
     );
 
@@ -145,7 +147,7 @@ export class GitHubService {
 
   async createPr({ owner, repo, title, body, head, base }: CreatePrOptions) {
     // gh pr create returns the URL on stdout (no --json support)
-    const url = this.ghExec(
+    const url = await this.ghExec(
       `pr create --repo ${owner}/${repo} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --base ${base} --head ${head}`,
     );
     const numMatch = url.match(/\/pull\/(\d+)/);
@@ -206,10 +208,10 @@ export function getGitHubService(): GitHubService {
 
 let _ghAuthCache: boolean | null = null;
 
-export function isGitHubConfigured(): boolean {
+export async function isGitHubConfigured(): Promise<boolean> {
   if (_ghAuthCache !== null) return _ghAuthCache;
   try {
-    execSync("gh auth status", { encoding: "utf-8", stdio: "pipe" });
+    await defaultPtyExecShell("gh auth status");
     _ghAuthCache = true;
   } catch {
     _ghAuthCache = false;

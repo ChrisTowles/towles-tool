@@ -1,10 +1,11 @@
-import { execSync as defaultExecSync } from "node:child_process";
 import { db as defaultDb } from "../../shared/db";
 import { cards, workflowRuns } from "../../shared/db/schema";
 import { eq } from "drizzle-orm";
 import { eventBus as defaultEventBus } from "../../shared/event-bus";
 import { logger as defaultLogger } from "../../utils/logger";
 import { cardService as defaultCardService } from "../cards/card-service";
+import { ptyExec as defaultPtyExec } from "../infra/pty-exec";
+import type { PtyExecFn } from "../infra/pty-exec";
 import type { CardService } from "../cards/card-service";
 import type { Logger, EventBus } from "./types";
 
@@ -13,7 +14,7 @@ export interface RemoteExecutorDeps {
   eventBus: EventBus;
   logger: Logger;
   cardService: CardService;
-  execSync: typeof defaultExecSync;
+  exec: PtyExecFn;
 }
 
 const SESSION_ID_RE = /Resume with: claude --teleport (session_\w+)/;
@@ -28,7 +29,7 @@ export class RemoteExecutor {
       eventBus: defaultEventBus,
       logger: defaultLogger,
       cardService: defaultCardService,
-      execSync: defaultExecSync,
+      exec: defaultPtyExec,
       ...deps,
     };
   }
@@ -53,12 +54,8 @@ export class RemoteExecutor {
 
     let stdout: string;
     try {
-      stdout = this.deps
-        .execSync(`claude --remote "${prompt.replace(/"/g, '\\"')}"`, {
-          encoding: "utf-8",
-          timeout: 30_000,
-        })
-        .toString();
+      const result = await this.deps.exec("claude", ["--remote", prompt], { timeout: 30_000 });
+      stdout = result.stdout;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await this.deps.cardService.logEvent(cardId, "error", `claude --remote failed: ${msg}`);

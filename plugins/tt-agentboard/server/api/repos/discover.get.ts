@@ -1,9 +1,9 @@
-import { execSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { db } from "~~/server/shared/db";
 import { repositories } from "~~/server/shared/db/schema";
 import { readConfig } from "~~/server/utils/config";
+import { ptyExec } from "~~/server/domains/infra/pty-exec";
 
 interface DiscoveredRepo {
   path: string;
@@ -13,17 +13,17 @@ interface DiscoveredRepo {
   alreadyRegistered: boolean;
 }
 
-function parseGitRemote(repoPath: string): {
+async function parseGitRemote(repoPath: string): Promise<{
   org: string | null;
   name: string;
   githubUrl: string | null;
-} {
+}> {
   try {
-    const url = execSync("git remote get-url origin", {
+    const result = await ptyExec("git", ["remote", "get-url", "origin"], {
       cwd: repoPath,
-      encoding: "utf-8",
       timeout: 3000,
-    }).trim();
+    });
+    const url = result.stdout.trim();
 
     const match = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
     if (match) {
@@ -62,11 +62,15 @@ function findRepoDirs(dir: string): string[] {
   return repos;
 }
 
-function discoverRepos(scanPaths: string[]): DiscoveredRepo[] {
-  return scanPaths.flatMap((scanPath) => {
+async function discoverRepos(scanPaths: string[]): Promise<DiscoveredRepo[]> {
+  const repoPaths = scanPaths.flatMap((scanPath) => {
     if (!existsSync(scanPath)) return [];
-    return findRepoDirs(scanPath).map((repoPath) => {
-      const remote = parseGitRemote(repoPath);
+    return findRepoDirs(scanPath);
+  });
+
+  const results = await Promise.all(
+    repoPaths.map(async (repoPath) => {
+      const remote = await parseGitRemote(repoPath);
       return {
         path: repoPath,
         name: remote.name,
@@ -74,8 +78,10 @@ function discoverRepos(scanPaths: string[]): DiscoveredRepo[] {
         githubUrl: remote.githubUrl,
         alreadyRegistered: false,
       };
-    });
-  });
+    }),
+  );
+
+  return results;
 }
 
 export default defineEventHandler(async () => {
@@ -86,7 +92,7 @@ export default defineEventHandler(async () => {
     return { repos: [], scanPaths: [] };
   }
 
-  const allRepos = discoverRepos(scanPaths);
+  const allRepos = await discoverRepos(scanPaths);
 
   // Deduplicate by path
   const seen = new Set<string>();

@@ -2,7 +2,8 @@ import { db as defaultDb } from "../shared/db";
 import { workflowRuns } from "../shared/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger as defaultLogger } from "../utils/logger";
-import { execSync as defaultExecSync } from "node:child_process";
+import { ptyExecShell as defaultPtyExecShell } from "../domains/infra/pty-exec";
+import type { PtyExecShellFn } from "../domains/infra/pty-exec";
 import { cardService as defaultCardService } from "../domains/cards/card-service";
 import { eventBus as defaultEventBus } from "../shared/event-bus";
 import type { CardService } from "../domains/cards/card-service";
@@ -12,20 +13,19 @@ export interface RemotePollDeps {
   logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
   cardService: CardService;
   eventBus: { emit: (event: string, data: unknown) => void };
-  execSync: typeof defaultExecSync;
+  exec: PtyExecShellFn;
   pollIntervalMs: number;
 }
 
-export function checkRemoteSessionStatus(
+export async function checkRemoteSessionStatus(
   sessionId: string,
-  execSync: typeof defaultExecSync,
-): "running" | "completed" | "failed" | "unknown" {
+  exec: PtyExecShellFn,
+): Promise<"running" | "completed" | "failed" | "unknown"> {
   try {
-    const output = execSync(`claude sessions list --json`, {
-      encoding: "utf-8",
+    const result = await exec(`claude sessions list --json`, {
       timeout: 15_000,
     });
-    const sessions = JSON.parse(output) as Array<{ id: string; status: string }>;
+    const sessions = JSON.parse(result.stdout) as Array<{ id: string; status: string }>;
     const session = sessions.find((s) => s.id === sessionId);
     if (!session) return "unknown";
     if (session.status === "completed" || session.status === "done") return "completed";
@@ -47,7 +47,7 @@ export async function pollRemoteSessions(deps: RemotePollDeps): Promise<void> {
   deps.logger.info(`Remote poll: checking ${running.length} remote session(s)`);
 
   for (const run of running) {
-    const status = checkRemoteSessionStatus(run.remoteSessionId!, deps.execSync);
+    const status = await checkRemoteSessionStatus(run.remoteSessionId!, deps.exec);
 
     if (status === "completed") {
       await deps.db
@@ -85,7 +85,7 @@ export default defineNitroPlugin(() => {
     logger: defaultLogger,
     cardService: defaultCardService,
     eventBus: defaultEventBus,
-    execSync: defaultExecSync,
+    exec: defaultPtyExecShell,
     pollIntervalMs: 30_000,
   };
 
