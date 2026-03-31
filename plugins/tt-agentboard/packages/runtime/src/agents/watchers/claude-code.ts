@@ -174,6 +174,14 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         latestStatus = determineStatus(entry);
       }
 
+      // If "running" but journal file is stale, the process likely exited
+      if (latestStatus === "running") {
+        try {
+          const mtime = (await stat(filePath)).mtimeMs;
+          if (Date.now() - mtime > 10_000) latestStatus = "idle";
+        } catch {}
+      }
+
       this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir });
       return;
     }

@@ -1,4 +1,4 @@
-import { readFileSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
+import { readFileSync, statSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { MuxProvider } from "../contracts/mux";
@@ -1128,6 +1128,15 @@ export function startServer(
             } catch {
               continue;
             }
+          }
+
+          // If status is "running" but journal hasn't been written to recently,
+          // the Claude process likely exited — downgrade to "idle".
+          if (lastStatus === "running") {
+            try {
+              const mtime = statSync(filePath).mtimeMs;
+              if (Date.now() - mtime > 10_000) lastStatus = "idle";
+            } catch {}
           }
 
           return { threadName, status: lastStatus };
