@@ -40,7 +40,9 @@ describe("RemoteExecutor", () => {
     });
   });
 
-  function createExecutor(execFn: (...args: unknown[]) => Promise<{ stdout: string; exitCode: number }>) {
+  function createExecutor(
+    execFn: (...args: unknown[]) => Promise<{ stdout: string; exitCode: number }>,
+  ) {
     return new RemoteExecutor({
       db,
       eventBus: bus,
@@ -95,7 +97,10 @@ describe("RemoteExecutor", () => {
 
   it("marks card failed when session ID cannot be parsed", async () => {
     const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
-    const executor = createExecutor(async () => ({ stdout: "some unexpected output\n", exitCode: 0 }));
+    const executor = createExecutor(async () => ({
+      stdout: "some unexpected output\n",
+      exitCode: 0,
+    }));
 
     await executor.startExecution(card.id);
 

@@ -104,9 +104,7 @@ describe("GitHub Round-Trip Integration", () => {
 
       expect(result.number).toBe(99);
       // Verify the command properly escaped the title
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining("pr create"),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("pr create"));
     });
   });
 

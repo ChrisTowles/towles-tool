@@ -18,10 +18,9 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const result = await ptyExecShell(
-      `tmux capture-pane -t ${sessionName} -p -e -S -500`,
-      { timeout: 3000 },
-    );
+    const result = await ptyExecShell(`tmux capture-pane -t ${sessionName} -p -e -S -500`, {
+      timeout: 3000,
+    });
     return { exists: true, output: result.stdout };
   } catch {
     return { exists: false, output: "" };
