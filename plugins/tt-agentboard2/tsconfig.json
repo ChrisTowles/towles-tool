@@ -8,10 +8,12 @@
     "strict": true,
     "strictNullChecks": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
-    "skipDefaultLibCheck": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "types": ["@types/bun"]
   },
-  "exclude": ["plugins/tt-agentboard", "plugins/tt-agentboard2"]
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts"]
 }

@@ -1,2 +1,5 @@
 packages:
   - "plugins/tt-agentboard"
+  - "plugins/tt-agentboard2"
+  - "plugins/tt-agentboard2/apps/*"
+  - "plugins/tt-agentboard2/packages/*"

@@ -1,0 +1,20 @@
+{
+  "name": "@tt-agentboard2/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "types": "src/main.ts",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts"
+  },
+  "dependencies": {
+    "@tt-agentboard2/mux-tmux": "workspace:*",
+    "@tt-agentboard2/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
