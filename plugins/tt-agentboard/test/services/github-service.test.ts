@@ -43,9 +43,7 @@ describe("GitHubService", () => {
       expect(issues[0]!.number).toBe(1);
       expect(issues[0]!.title).toBe("Bug report");
       expect(issues[0]!.labels).toEqual(["bug"]);
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining("issue list --repo org/repo"),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("issue list --repo org/repo"));
     });
   });
 
@@ -68,9 +66,7 @@ describe("GitHubService", () => {
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.labels).toEqual(["agentboard"]);
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining('--label "agentboard"'),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining('--label "agentboard"'));
     });
   });
 
@@ -102,15 +98,11 @@ describe("GitHubService", () => {
         add: ["done"],
       });
 
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining("issue edit org/repo#1"),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("issue edit org/repo#1"));
       expect(mockExec).toHaveBeenCalledWith(
         expect.stringContaining('--remove-label "in-progress"'),
       );
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining('--add-label "done"'),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining('--add-label "done"'));
     });
 
     it("does nothing when no labels to add or remove", async () => {
@@ -158,9 +150,7 @@ describe("GitHubService", () => {
       });
 
       expect(result.number).toBe(10);
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining("pr create --repo org/repo"),
-      );
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining("pr create --repo org/repo"));
     });
   });
 
