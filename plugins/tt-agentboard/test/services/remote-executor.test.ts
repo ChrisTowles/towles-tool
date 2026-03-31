@@ -40,19 +40,19 @@ describe("RemoteExecutor", () => {
     });
   });
 
-  function createExecutor(execSyncFn: (...args: unknown[]) => string) {
+  function createExecutor(execFn: (...args: unknown[]) => Promise<{ stdout: string; exitCode: number }>) {
     return new RemoteExecutor({
       db,
       eventBus: bus,
       logger: createNoopLogger(),
       cardService,
-      execSync: execSyncFn as never,
+      exec: execFn as never,
     });
   }
 
   it("parses session ID and URL from claude --remote output", async () => {
     const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
-    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
+    const executor = createExecutor(async () => ({ stdout: CLAUDE_REMOTE_OUTPUT, exitCode: 0 }));
 
     await executor.startExecution(card.id);
 
@@ -67,7 +67,7 @@ describe("RemoteExecutor", () => {
 
   it("creates workflow run with remote session metadata", async () => {
     const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
-    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
+    const executor = createExecutor(async () => ({ stdout: CLAUDE_REMOTE_OUTPUT, exitCode: 0 }));
 
     await executor.startExecution(card.id);
 
@@ -78,7 +78,7 @@ describe("RemoteExecutor", () => {
 
   it("marks card failed when claude --remote throws", async () => {
     const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
-    const executor = createExecutor(() => {
+    const executor = createExecutor(async () => {
       throw new Error("command not found");
     });
 
@@ -95,7 +95,7 @@ describe("RemoteExecutor", () => {
 
   it("marks card failed when session ID cannot be parsed", async () => {
     const card = await seedCard(boardId, { repoId, title: "Test", description: "Do stuff" });
-    const executor = createExecutor(() => "some unexpected output\n");
+    const executor = createExecutor(async () => ({ stdout: "some unexpected output\n", exitCode: 0 }));
 
     await executor.startExecution(card.id);
 
@@ -109,7 +109,7 @@ describe("RemoteExecutor", () => {
 
   it("marks card failed when no repoId", async () => {
     const card = await seedCard(boardId, { repoId: null, title: "Test" });
-    const executor = createExecutor(() => CLAUDE_REMOTE_OUTPUT);
+    const executor = createExecutor(async () => ({ stdout: CLAUDE_REMOTE_OUTPUT, exitCode: 0 }));
 
     await executor.startExecution(card.id);
 
@@ -119,14 +119,14 @@ describe("RemoteExecutor", () => {
 
   it("uses card title when description is null", async () => {
     const card = await seedCard(boardId, { repoId, title: "Fix the bug", description: null });
-    let capturedCmd = "";
-    const executor = createExecutor((cmd: unknown) => {
-      capturedCmd = String(cmd);
-      return CLAUDE_REMOTE_OUTPUT;
+    let capturedArgs: unknown[] = [];
+    const executor = createExecutor(async (...args: unknown[]) => {
+      capturedArgs = args;
+      return { stdout: CLAUDE_REMOTE_OUTPUT, exitCode: 0 };
     });
 
     await executor.startExecution(card.id);
 
-    expect(capturedCmd).toContain("Fix the bug");
+    expect(capturedArgs[1]).toContain("Fix the bug");
   });
 });

@@ -3,11 +3,7 @@ import { writeFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { StreamTailer } from "../../server/domains/infra/stream-tailer";
-import {
-  createTestEventBus,
-  createNoopLogger,
-  findEvents,
-} from "../helpers/test-db";
+import { createTestEventBus, createNoopLogger, findEvents } from "../helpers/test-db";
 import type { TestBus, TestEvents } from "../helpers/test-db";
 
 describe("StreamTailer", () => {

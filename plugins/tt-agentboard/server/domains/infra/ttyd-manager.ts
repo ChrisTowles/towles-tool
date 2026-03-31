@@ -1,16 +1,18 @@
-import type { ChildProcess } from "node:child_process";
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "zigpty";
+import type { IPty } from "zigpty";
 import { logger } from "../../utils/logger";
+import { ptyExecShell as defaultPtyExecShell } from "./pty-exec";
+import type { PtyExecShellFn } from "./pty-exec";
 
 interface TtydInstance {
   cardId: number;
   port: number;
-  process: ChildProcess;
+  process: IPty;
 }
 
 export interface TtydManagerDeps {
   spawn: typeof spawn;
-  execSync: typeof execSync;
+  exec: PtyExecShellFn;
   logger: typeof logger;
 }
 
@@ -21,19 +23,26 @@ export class TtydManager {
   private deps: TtydManagerDeps;
 
   constructor(deps: Partial<TtydManagerDeps> = {}) {
-    this.deps = { spawn, execSync, logger, ...deps };
+    this.deps = { spawn, exec: defaultPtyExecShell, logger, ...deps };
   }
 
   /** Check if ttyd is available on the system (cached after first call) */
   isAvailable(): boolean {
     if (this._ttydAvailable !== null) return this._ttydAvailable;
     try {
-      this.deps.execSync("which ttyd", { stdio: "ignore" });
+      // Synchronous check using zigpty spawn — fire and forget, check exit code
+      const pty = this.deps.spawn("which", ["ttyd"], { cols: 80, rows: 24 });
+      pty.onExit(({ exitCode }) => {
+        this._ttydAvailable = exitCode === 0;
+      });
+      // Optimistic: assume available until onExit fires
+      // For the first call, we'll check asynchronously
       this._ttydAvailable = true;
+      return this._ttydAvailable;
     } catch {
       this._ttydAvailable = false;
+      return false;
     }
-    return this._ttydAvailable;
   }
 
   /** Get the next available port */
@@ -60,20 +69,13 @@ export class TtydManager {
       "ttyd",
       ["--port", String(port), "--writable", "tmux", "attach", "-t", sessionName],
       {
-        stdio: "ignore",
-        detached: true,
+        cols: 80,
+        rows: 24,
       },
     );
 
-    proc.unref();
-
-    proc.on("error", (err) => {
-      this.deps.logger.error(`ttyd error for card ${cardId}:`, err);
-      this.instances.delete(cardId);
-    });
-
-    proc.on("exit", (code) => {
-      this.deps.logger.info(`ttyd for card ${cardId} exited with code ${code}`);
+    proc.onExit(({ exitCode }) => {
+      this.deps.logger.info(`ttyd for card ${cardId} exited with code ${exitCode}`);
       this.instances.delete(cardId);
     });
 
@@ -89,7 +91,7 @@ export class TtydManager {
     if (!instance) return false;
 
     try {
-      instance.process.kill("SIGTERM");
+      instance.process.kill();
     } catch {
       // Already dead
     }

@@ -62,9 +62,14 @@ export type MockEventBus = ReturnType<typeof createMockEventBus>;
 // System-boundary mocks (used by tmux-manager, github-service, etc.)
 // ---------------------------------------------------------------------------
 
-/** Create a mock execSync function */
+/** Create a mock execSync function (legacy — used by tmux-manager tests) */
 export function createMockExecSync() {
   return vi.fn().mockReturnValue(Buffer.from(""));
+}
+
+/** Create a mock ptyExec/ptyExecShell function */
+export function createMockPtyExec() {
+  return vi.fn().mockResolvedValue({ stdout: "", exitCode: 0 });
 }
 
 /** Create a mock CardService — used by integration tests */

@@ -1,10 +1,10 @@
 import { db } from "~~/server/shared/db";
 import { cards, workflowRuns, workspaceSlots, repositories } from "~~/server/shared/db/schema";
 import { eq } from "drizzle-orm";
-import { execSync } from "node:child_process";
 import { getCardId, requireCard } from "~~/server/utils/params";
 import { cardService } from "~~/server/domains/cards/card-service";
 import { logger } from "~~/server/utils/logger";
+import { ptyExecShell } from "~~/server/domains/infra/pty-exec";
 
 /**
  * Create a PR for a card's branch.
@@ -67,18 +67,19 @@ export default defineEventHandler(async (event) => {
 
   try {
     // Ensure we're on the correct branch before pushing
-    execSync(`git checkout ${branch}`, { cwd, stdio: "ignore", timeout: 10000 });
+    await ptyExecShell(`git checkout ${branch}`, { cwd, timeout: 10000 });
 
     // Push the branch
-    execSync(`git push -u origin ${branch}`, { cwd, stdio: "ignore", timeout: 30000 });
+    await ptyExecShell(`git push -u origin ${branch}`, { cwd, timeout: 30000 });
 
     // Create PR — gh pr create returns the PR URL on stdout
     const prTitle = card.title;
     const prBody = card.description ?? "";
-    const prUrl = execSync(
+    const result = await ptyExecShell(
       `gh pr create --title "${prTitle.replace(/"/g, '\\"')}" --body "${prBody.replace(/"/g, '\\"')}" --base ${base} --head ${branch}`,
-      { cwd, encoding: "utf-8", timeout: 30000 },
-    ).trim();
+      { cwd, timeout: 30000 },
+    );
+    const prUrl = result.stdout.trim();
 
     // Extract PR number from URL (e.g., https://github.com/.../pull/42)
     const prNumMatch = prUrl.match(/\/pull\/(\d+)/);

@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { ptyExec } from "./pty-exec";
 
 /** Run a git command. Returns stdout. Throws on error. */
 export async function gitRun(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd });
-  return stdout.trim();
+  const result = await ptyExec("git", args, { cwd });
+  return result.stdout.trim();
 }
 
 /** Run a git command. Returns stdout or null on error. */

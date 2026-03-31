@@ -19,31 +19,31 @@ import type { TestBus, TestEvents } from "../helpers/test-db";
 
 describe("remote-poll", () => {
   describe("checkRemoteSessionStatus", () => {
-    it("returns completed for finished sessions", () => {
-      const exec = (() => JSON.stringify([{ id: "session_abc", status: "completed" }])) as never;
-      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("completed");
+    it("returns completed for finished sessions", async () => {
+      const exec = (async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "completed" }]), exitCode: 0 })) as never;
+      expect(await checkRemoteSessionStatus("session_abc", exec)).toBe("completed");
     });
 
-    it("returns running for active sessions", () => {
-      const exec = (() => JSON.stringify([{ id: "session_abc", status: "running" }])) as never;
-      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("running");
+    it("returns running for active sessions", async () => {
+      const exec = (async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "running" }]), exitCode: 0 })) as never;
+      expect(await checkRemoteSessionStatus("session_abc", exec)).toBe("running");
     });
 
-    it("returns failed for errored sessions", () => {
-      const exec = (() => JSON.stringify([{ id: "session_abc", status: "failed" }])) as never;
-      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("failed");
+    it("returns failed for errored sessions", async () => {
+      const exec = (async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "failed" }]), exitCode: 0 })) as never;
+      expect(await checkRemoteSessionStatus("session_abc", exec)).toBe("failed");
     });
 
-    it("returns unknown when session not found", () => {
-      const exec = (() => JSON.stringify([])) as never;
-      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
+    it("returns unknown when session not found", async () => {
+      const exec = (async () => ({ stdout: JSON.stringify([]), exitCode: 0 })) as never;
+      expect(await checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
     });
 
-    it("returns unknown when execSync throws", () => {
-      const exec = (() => {
+    it("returns unknown when exec throws", async () => {
+      const exec = (async () => {
         throw new Error("command failed");
       }) as never;
-      expect(checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
+      expect(await checkRemoteSessionStatus("session_abc", exec)).toBe("unknown");
     });
   });
 
@@ -69,19 +69,19 @@ describe("remote-poll", () => {
       });
     });
 
-    function createDeps(execSyncFn: (...args: unknown[]) => string): RemotePollDeps {
+    function createDeps(execFn: (...args: unknown[]) => Promise<{ stdout: string; exitCode: number }>): RemotePollDeps {
       return {
         db: db as never,
         logger: createNoopLogger(),
         cardService,
         eventBus: bus as never,
-        execSync: execSyncFn as never,
+        exec: execFn as never,
         pollIntervalMs: 1000,
       };
     }
 
     it("does nothing when no running remote sessions", async () => {
-      const deps = createDeps(() => "[]");
+      const deps = createDeps(async () => ({ stdout: "[]", exitCode: 0 }));
       await pollRemoteSessions(deps);
       // No errors, just returns early
     });
@@ -93,7 +93,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "completed" }]));
+      const deps = createDeps(async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "completed" }]), exitCode: 0 }));
 
       await pollRemoteSessions(deps);
 
@@ -111,7 +111,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "failed" }]));
+      const deps = createDeps(async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "failed" }]), exitCode: 0 }));
 
       await pollRemoteSessions(deps);
 
@@ -126,7 +126,7 @@ describe("remote-poll", () => {
         status: "running",
       });
 
-      const deps = createDeps(() => JSON.stringify([{ id: "session_abc", status: "running" }]));
+      const deps = createDeps(async () => ({ stdout: JSON.stringify([{ id: "session_abc", status: "running" }]), exitCode: 0 }));
 
       await pollRemoteSessions(deps);
 

@@ -101,7 +101,7 @@ describe("WorkflowOrchestrator", () => {
           },
         } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
-        execSync: (() => "") as never,
+        exec: (async () => ({ stdout: "", exitCode: 0 })) as never,
         ttydManager: NOOP_TTYD,
       }),
       tmux,
@@ -157,7 +157,7 @@ describe("WorkflowOrchestrator", () => {
         cardService,
         stepExecutor: { execute: async () => ({ passed: true }) } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
-        execSync: (() => "") as never,
+        exec: (async () => ({ stdout: "", exitCode: 0 })) as never,
         ttydManager: NOOP_TTYD,
       });
 
@@ -327,7 +327,7 @@ describe("WorkflowOrchestrator", () => {
           },
         } as never,
         streamTailer: { startTailing: async () => {}, stopTailing: () => {}, stopAll: () => {} },
-        execSync: (() => "") as never,
+        exec: (async () => ({ stdout: "", exitCode: 0 })) as never,
         ttydManager: NOOP_TTYD,
       });
 

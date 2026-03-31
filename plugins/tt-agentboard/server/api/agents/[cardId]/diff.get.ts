@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "~~/server/shared/db";
 import { workspaceSlots, workflowRuns } from "~~/server/shared/db/schema";
 import { getCardId } from "~~/server/utils/params";
+import { ptyExecShell } from "~~/server/domains/infra/pty-exec";
 
 interface DiffLine {
   type: "add" | "delete" | "context";
@@ -99,25 +100,22 @@ export default defineEventHandler(async (event) => {
     return { hasDiff: false, files: [], raw: "" };
   }
 
-  const { execSync } = await import("node:child_process");
-
   let raw = "";
   try {
     if (branch) {
       // Diff the card's branch against main — safe even if slot is reused by another card
-      raw = execSync(`git diff origin/main...${branch}`, {
+      const result = await ptyExecShell(`git diff origin/main...${branch}`, {
         cwd: slotPath,
-        encoding: "utf-8",
         timeout: 5000,
-        stdio: ["pipe", "pipe", "pipe"],
       });
+      raw = result.stdout;
     } else {
       // No branch recorded — fall back to uncommitted changes (active execution)
-      raw = execSync("git diff HEAD", {
+      const result = await ptyExecShell("git diff HEAD", {
         cwd: slotPath,
-        encoding: "utf-8",
         timeout: 5000,
       });
+      raw = result.stdout;
     }
   } catch {
     return { hasDiff: false, files: [], raw: "" };
