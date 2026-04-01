@@ -20,7 +20,9 @@ function getGhEditCalls() {
   return mockExecSafe.mock.calls
     .filter(
       (call: unknown[]) =>
-        call[0] === "gh" && (call[1] as string[])?.[0] === "issue" && (call[1] as string[])?.[1] === "edit",
+        call[0] === "gh" &&
+        (call[1] as string[])?.[0] === "issue" &&
+        (call[1] as string[])?.[1] === "edit",
     )
     .map((call: unknown[]) => call[1] as string[]);
 }

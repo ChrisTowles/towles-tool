@@ -24,12 +24,7 @@ import {
   resolveTheme,
   saveConfig,
 } from "@tt-agentboard/runtime";
-import type {
-  ServerMessage,
-  SessionData,
-  ClientCommand,
-  Theme,
-} from "@tt-agentboard/runtime";
+import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agentboard/runtime";
 import { TmuxClient } from "@tt-agentboard/mux-tmux";
 import { SessionCard } from "./components/SessionCard";
 import { DetailPanel } from "./components/DetailPanel";

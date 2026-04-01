@@ -31,7 +31,15 @@ const gitInfoCache = new Map<string, { info: GitInfo; ts: number }>();
 const GIT_CACHE_TTL_MS = 5000;
 
 export function getGitInfo(dir: string): GitInfo {
-  const empty: GitInfo = { branch: "", dirty: false, isWorktree: false, filesChanged: 0, linesAdded: 0, linesRemoved: 0, commitsDelta: 0 };
+  const empty: GitInfo = {
+    branch: "",
+    dirty: false,
+    isWorktree: false,
+    filesChanged: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
+    commitsDelta: 0,
+  };
   if (!dir) return empty;
 
   const cached = gitInfoCache.get(dir);
@@ -62,8 +70,18 @@ export function getGitInfo(dir: string): GitInfo {
   // Commits ahead/behind origin/main
   // Commits ahead(+) or behind(-) origin/main
   let commitsDelta = 0;
-  const originMain = shell(["git", "-C", dir, "rev-parse", "--verify", "origin/main"]) ? "origin/main" : "origin/master";
-  const aheadBehind = shell(["git", "-C", dir, "rev-list", "--left-right", "--count", `${originMain}...HEAD`]);
+  const originMain = shell(["git", "-C", dir, "rev-parse", "--verify", "origin/main"])
+    ? "origin/main"
+    : "origin/master";
+  const aheadBehind = shell([
+    "git",
+    "-C",
+    dir,
+    "rev-list",
+    "--left-right",
+    "--count",
+    `${originMain}...HEAD`,
+  ]);
   if (aheadBehind) {
     const [behind, ahead] = aheadBehind.split("\t");
     commitsDelta = (Number(ahead) || 0) - (Number(behind) || 0);

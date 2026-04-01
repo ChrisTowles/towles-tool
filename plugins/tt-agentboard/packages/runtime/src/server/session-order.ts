@@ -53,7 +53,9 @@ export class SessionOrder {
     this.order = this.order.filter((n) => nameSet.has(n));
     this.hidden = new Set([...this.hidden].filter((n) => nameSet.has(n)));
     // Add new sessions in sorted position
-    const newNames = names.filter((n) => !this.order.includes(n)).sort((a, b) => a.localeCompare(b));
+    const newNames = names
+      .filter((n) => !this.order.includes(n))
+      .sort((a, b) => a.localeCompare(b));
     for (const n of newNames) {
       // Insert alphabetically among existing entries
       const idx = this.order.findIndex((existing) => existing.localeCompare(n) > 0);

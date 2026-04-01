@@ -90,24 +90,28 @@ Solid.js app rendered via OpenTUI. Connects to server over WebSocket.
 #### TUI Components
 
 **`SessionCard`** (`components/SessionCard.tsx`) — session list item
+
 - Row 1: session name (truncated to 18 chars) + status icon (braille spinner when running, `●` for unseen terminal states)
 - Row 2: git branch + listening port hint (`⌁4201`, or `⌁4201+2` for multiple)
 - Row 3: metadata summary (status text + progress like `3/5` or `42%`)
 - Left accent bar colored by state: green (current), yellow (running), red (error), peach (interrupted), lavender (focused), teal (unseen done)
 
 **`DetailPanel`** (`components/DetailPanel.tsx`) — expanded view for focused session
+
 - Drag-resizable separator (height persisted per session in config)
 - Truncated working directory
 - Agent list via `AgentListItem` sub-component (see below)
 - Metadata section: status line with tone icon + progress, last 8 log entries
 
 **`AgentListItem`** (inside `DetailPanel.tsx`) — single agent instance row
+
 - Status icon: braille spinner (running), `◉` (waiting), `✓` (done), `✗` (error), `⚠` (interrupted)
 - Agent name, thread name, status text
 - Dismiss `✕` button (hover turns red), click row to focus the agent's tmux pane
 - Flash animation on click
 
 **`HelpOverlay`** (inline in `index.tsx`) — modal overlay
+
 - Shows all keybindings in a bordered dialog
 - Dismissed by pressing any key
 

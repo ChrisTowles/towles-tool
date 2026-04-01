@@ -144,9 +144,7 @@ export function SessionCard(props: SessionCardProps) {
           {/* Row 2: branch */}
           <Show when={props.session.branch}>
             <text truncate>
-              <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
-                {truncBranch()}
-              </span>
+              <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>{truncBranch()}</span>
             </text>
           </Show>
 
