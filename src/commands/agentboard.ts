@@ -14,12 +14,11 @@ const PLUGIN_DIR = resolve(import.meta.dirname, "../../plugins/tt-agentboard");
 // Keybinding defaults
 const DEFAULT_KEY = "a";
 const TMUX_BINDINGS = { toggle: "t", focus: "s" } as const;
-const RUN_SHELL_LINE = `run-shell '${PLUGIN_DIR}/agentboard.tmux'`;
+const RUN_SHELL_LINE = "run-shell 'tt agentboard init'";
 const MARKER = "# agentboard";
 
 function findTmuxConf(): string | null {
   const candidates = [
-    resolve(process.env.HOME ?? "~", ".tmux.conf"),
     resolve(process.env.HOME ?? "~", ".config/tmux/tmux.conf"),
   ];
   for (const path of candidates) {
@@ -123,7 +122,7 @@ function setup(): void {
   }
 
   const content = readFileSync(editPath, "utf8");
-  if (content.includes("agentboard.tmux")) {
+  if (content.includes(MARKER)) {
     consola.success("Already installed in tmux.conf");
     reloadTmux();
     return;
@@ -227,6 +226,122 @@ async function ensureServerUp(): Promise<boolean> {
   return false;
 }
 
+function tmuxDisplay(fmt: string): string {
+  try {
+    const r = spawnSync("tmux", ["display-message", "-p", fmt], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return (r.stdout ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function tmuxContext(): string {
+  return tmuxDisplay("#{client_tty}|#{session_name}|#{window_id}");
+}
+
+function resetTmuxKeys(): void {
+  spawnSync("tmux", ["switch-client", "-T", "root"], { stdio: "pipe" });
+}
+
+function findSidebarPane(windowId: string): string | null {
+  try {
+    const r = spawnSync("tmux", ["list-panes", "-t", windowId, "-F", "#{pane_id} #{pane_title}"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    for (const line of (r.stdout ?? "").trim().split("\n")) {
+      const [paneId, title] = line.split(" ", 2);
+      if (title === "agentboard-sidebar" && paneId) return paneId;
+    }
+  } catch {}
+  return null;
+}
+
+function tmux(...args: string[]): void {
+  spawnSync("tmux", args, { stdio: "pipe" });
+}
+
+function init(): void {
+  const port = process.env.TT_AGENTBOARD_PORT ?? "4201";
+  const host = process.env.TT_AGENTBOARD_HOST ?? "127.0.0.1";
+
+  // Read tmux options with defaults
+  const keyResult = spawnSync("tmux", ["show-option", "-gqv", "@agentboard-key"], {
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const key = (keyResult.stdout ?? "").trim() || DEFAULT_KEY;
+
+  // Export to tmux environment
+  tmux("set-environment", "-g", "TT_AGENTBOARD_PORT", port);
+  tmux("set-environment", "-g", "TT_AGENTBOARD_HOST", host);
+
+  // Bind keybindings via command table "agentboard"
+  tmux("bind-key", "-T", "prefix", key, "switch-client", "-T", "agentboard");
+  tmux("bind-key", "-T", "agentboard", TMUX_BINDINGS.toggle, "run-shell", "tt agentboard run --toggle");
+  tmux("bind-key", "-T", "agentboard", TMUX_BINDINGS.focus, "run-shell", "tt agentboard run --focus");
+
+  // Number keys 1-9 switch to session by index
+  for (let i = 1; i <= 9; i++) {
+    tmux(
+      "bind-key", "-T", "agentboard", String(i), "run-shell",
+      `curl -s -X POST 'http://${host}:${port}/switch-index?index=${i}' -d "$(tmux display-message -p '#{q:client_tty}|#{q:session_name}|#{q:window_id}')" >/dev/null 2>&1 || true`,
+    );
+  }
+
+  // Hooks (fallback for when server isn't running yet)
+  const hookPost = (path: string, body?: string) => {
+    const bodyArg = body ? ` -d \\"${body}\\"` : "";
+    return `run-shell -b "curl -s -X POST http://${host}:${port}${path}${bodyArg} >/dev/null 2>&1 || true"`;
+  };
+  const focusBody = "#{q:client_tty}|#{q:session_name}|#{q:window_id}";
+  const resizeBody = "#{q:pane_id}|#{q:session_name}|#{q:window_id}|#{q:pane_width}|#{q:window_width}";
+
+  tmux("set-hook", "-g", "client-session-changed", hookPost("/focus", focusBody));
+  tmux("set-hook", "-g", "after-select-window", hookPost("/ensure-sidebar", focusBody));
+  tmux("set-hook", "-g", "after-resize-pane", hookPost("/resize-sidebars", resizeBody));
+}
+
+async function runToggle(): Promise<void> {
+  if (!(await ensureServerUp())) process.exit(0);
+  const ctx = tmuxContext();
+  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(() => {});
+  resetTmuxKeys();
+}
+
+async function runFocus(): Promise<void> {
+  const windowId = tmuxDisplay("#{window_id}");
+  if (!windowId) process.exit(0);
+
+  // If sidebar already exists, just focus it
+  const existing = findSidebarPane(windowId);
+  if (existing) {
+    spawnSync("tmux", ["select-pane", "-t", existing], { stdio: "pipe" });
+    resetTmuxKeys();
+    return;
+  }
+
+  // Otherwise, ensure server + toggle sidebar on
+  if (!(await ensureServerUp())) process.exit(0);
+  const ctx = tmuxContext();
+  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(() => {});
+
+  // Wait for sidebar pane to appear
+  for (let i = 0; i < 20; i++) {
+    const paneId = findSidebarPane(windowId);
+    if (paneId) {
+      spawnSync("tmux", ["select-pane", "-t", paneId], { stdio: "pipe" });
+      resetTmuxKeys();
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  resetTmuxKeys();
+}
+
 async function restart(): Promise<void> {
   ensureDeps();
 
@@ -293,8 +408,10 @@ export default defineCommand({
     subcommand: {
       type: "positional",
       required: false,
-      description: "Subcommand: setup, uninstall, server, tui, start, restart, keys",
+      description: "Subcommand: setup, uninstall, server, tui, start, restart, run, keys",
     },
+    toggle: { type: "boolean", description: "Toggle sidebar (used with 'run')" },
+    focus: { type: "boolean", description: "Focus sidebar (used with 'run')" },
   },
   async run({ args }) {
     switch (args.subcommand) {
@@ -315,6 +432,14 @@ export default defineCommand({
         break;
       case "restart":
         await restart();
+        break;
+      case "init":
+        init();
+        break;
+      case "run":
+        if (args.toggle) await runToggle();
+        else if (args.focus) await runFocus();
+        else consola.error("Usage: tt agentboard run --toggle | --focus");
         break;
       case "keys":
         showKeys();

@@ -1677,7 +1677,23 @@ export function startServer(
       }
 
       if (server.upgrade(req, { data: {} })) return;
-      return new Response("agentboard server", { status: 200 });
+      return Response.json({
+        name: "agentboard server",
+        routes: [
+          "POST /refresh",
+          "POST /resize-sidebars",
+          "POST /focus",
+          "POST /toggle",
+          "POST /quit",
+          "POST /switch-index?index=N",
+          "POST /ensure-sidebar",
+          "POST /set-status",
+          "POST /set-progress",
+          "POST /log",
+          "POST /clear-log",
+          "WS   /",
+        ],
+      });
     },
     websocket: {
       open(ws) {

@@ -39,6 +39,8 @@
     "test": "vitest run",
     "test:watch": "CI=DisableCallingClaude vitest watch",
     "typecheck": "tsgo --noEmit --incremental",
+    "link": "bun link",
+    "link:show": "readlink -f $(which towles-tool)",
     "prepare": "simple-git-hooks"
   },
   "dependencies": {

@@ -54,7 +54,7 @@ Order: happy path -> edge cases -> error handling -> integration points
 
 ### 6. Final check
 
-- Run full test suite, `pnpm typecheck`, `pnpm lint`
+- Run full test suite, `bun typecheck`, `bun lint`
 - Commit
 
 ## Rules

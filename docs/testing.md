@@ -7,9 +7,9 @@ Uses [vitest](https://vitest.dev/) configured in `vitest.config.ts`. Tests are c
 ### Running Tests
 
 ```bash
-pnpm test               # Run all vitest tests
-pnpm test:watch          # Watch mode (auto-skips API tests via CI=DisableCallingClaude)
-pnpm test -- path        # Filter by path (e.g. pnpm test -- auto-claude)
+bun test               # Run all vitest tests
+bun test:watch          # Watch mode (auto-skips API tests via CI=DisableCallingClaude)
+bun test -- path        # Filter by path (e.g. bun test -- auto-claude)
 ```
 
 ### Prompt Template Testing
@@ -17,11 +17,11 @@ pnpm test -- path        # Filter by path (e.g. pnpm test -- auto-claude)
 Uses [promptfoo](https://promptfoo.dev/) to validate prompt templates render correctly. Echo provider renders without calling an LLM; LLM variant uses Anthropic API.
 
 ```bash
-pnpm test:prompts                  # All echo prompt tests (root + plugins)
-pnpm test:prompts:root             # Root promptfoo config only (auto-claude templates)
-pnpm test:prompts:tt-core          # tt-core plugin prompt tests
-pnpm test:prompts:tt-core:llm      # LLM-based eval (needs ANTHROPIC_API_KEY)
-pnpm test:prompts:tt-auto-claude   # tt-auto-claude plugin prompt tests
+bun test:prompts                  # All echo prompt tests (root + plugins)
+bun test:prompts:root             # Root promptfoo config only (auto-claude templates)
+bun test:prompts:tt-core          # tt-core plugin prompt tests
+bun test:prompts:tt-core:llm      # LLM-based eval (needs ANTHROPIC_API_KEY)
+bun test:prompts:tt-auto-claude   # tt-auto-claude plugin prompt tests
 ```
 
 ### Environment Variables

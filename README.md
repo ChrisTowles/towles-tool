@@ -17,8 +17,8 @@ claude plugin update tt@towles-tool
 ```bash
 git clone https://github.com/ChrisTowles/towles-tool.git
 cd towles-tool
-pnpm install
-pnpm start
+bun install
+bun start
 ```
 
 ## CLI Commands

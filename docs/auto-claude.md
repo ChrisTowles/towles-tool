@@ -62,8 +62,8 @@ Templates are language/toolchain agnostic — project-specific details come from
 Uses [promptfoo](https://promptfoo.dev/) with the `echo` provider to verify prompt template structure without calling an LLM. Tests assert that each template contains expected instructions, tokens, and sections.
 
 ```bash
-pnpm test:prompts          # Run all prompt template assertions
-pnpm dlx promptfoo view    # View results in browser
+bun test:prompts          # Run all prompt template assertions
+bunx promptfoo view       # View results in browser
 ```
 
 Config: `promptfooconfig.yaml` at project root. Cache/output in `.promptfoo/` (gitignored).

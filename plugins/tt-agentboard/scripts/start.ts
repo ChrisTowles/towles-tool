@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
 // Start agentboard: launch the server, then open tmux with the plugin loaded.
 
-import { ensureServer, resolvePluginDir } from "./lib/server-common";
-import { join, basename } from "node:path";
+import { ensureServer } from "./lib/server-common";
+import { basename } from "node:path";
 
-const pluginDir = resolvePluginDir();
-const pluginEntry = join(pluginDir, "agentboard.tmux");
 const sessionName = process.argv[2] || basename(process.cwd());
 
 // 1. Boot the server (spawns in background if not already running)
@@ -15,15 +13,14 @@ if (!alive) {
   process.exit(1);
 }
 
+function initPlugin(): void {
+  Bun.spawnSync(["tt", "agentboard", "init"], { stdout: "inherit", stderr: "inherit" });
+}
+
 // 2. Check if already inside tmux
 if (process.env.TMUX) {
-  // Already in tmux — just source the plugin to register hooks/keybindings
   console.log("Already inside tmux. Loading agentboard plugin…");
-  Bun.spawnSync(["bash", pluginEntry], {
-    stdout: "inherit",
-    stderr: "inherit",
-    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
-  });
+  initPlugin();
   process.exit(0);
 }
 
@@ -34,7 +31,6 @@ const checkSession = Bun.spawnSync(["tmux", "has-session", "-t", sessionName], {
 });
 
 if (checkSession.exitCode === 0) {
-  // Session exists — attach and source the plugin
   console.log(`Attaching to existing tmux session "${sessionName}"…`);
   Bun.spawnSync(["tmux", "attach-session", "-t", sessionName], {
     stdout: "inherit",
@@ -42,21 +38,11 @@ if (checkSession.exitCode === 0) {
     stdin: "inherit",
   });
 } else {
-  // Create new session (detached), source plugin, then attach
   Bun.spawnSync(["tmux", "new-session", "-d", "-s", sessionName], {
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
-
-  // Source the plugin inside the new session to register hooks + keybindings
-  Bun.spawnSync(["bash", pluginEntry], {
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
-  });
-
-  // Attach
+  initPlugin();
   Bun.spawnSync(["tmux", "attach-session", "-t", sessionName], {
     stdout: "inherit",
     stderr: "inherit",

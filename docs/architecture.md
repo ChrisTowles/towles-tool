@@ -89,6 +89,6 @@ Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 - **Testing**: vitest with `@oclif/test` for command testing
 - **Linting**: oxlint
 - **Formatting**: oxfmt
-- **Package Manager**: pnpm
+- **Package Manager**: bun
 - **Git Hooks**: simple-git-hooks with lint-staged (runs oxfmt + oxlint on pre-commit)
 - **Terminal Graphics**: consola - use `consola.box({ title, message })` for styled boxes, `consola.info/warn/error` for styled logs

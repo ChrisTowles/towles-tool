@@ -66,7 +66,7 @@ plugins/tt-agentboard/
     runtime/       Shared types, themes, agent watchers
     mux-tmux/      Tmux provider (session/pane management)
   scripts/         Tmux keybinding scripts
-  agentboard.tmux Tmux plugin entry
+  (tmux init via `tt agentboard init`)
 ```
 
 ### Server

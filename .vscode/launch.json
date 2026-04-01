@@ -1,11 +1,11 @@
 {
   "configurations": [
     {
-      "name": "Launch via pnpm",
+      "name": "Launch via bun",
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "bun",
       "runtimeArgs": ["start", "git-commit"]
     }
   ]
