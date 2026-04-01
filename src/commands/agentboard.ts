@@ -18,9 +18,7 @@ const RUN_SHELL_LINE = "run-shell 'tt agentboard init'";
 const MARKER = "# agentboard";
 
 function findTmuxConf(): string | null {
-  const candidates = [
-    resolve(process.env.HOME ?? "~", ".config/tmux/tmux.conf"),
-  ];
+  const candidates = [resolve(process.env.HOME ?? "~", ".config/tmux/tmux.conf")];
   for (const path of candidates) {
     try {
       const real = existsSync(path) ? path : null;
@@ -281,13 +279,31 @@ function init(): void {
 
   // Bind keybindings via command table "agentboard"
   tmux("bind-key", "-T", "prefix", key, "switch-client", "-T", "agentboard");
-  tmux("bind-key", "-T", "agentboard", TMUX_BINDINGS.toggle, "run-shell", "tt agentboard run --toggle");
-  tmux("bind-key", "-T", "agentboard", TMUX_BINDINGS.focus, "run-shell", "tt agentboard run --focus");
+  tmux(
+    "bind-key",
+    "-T",
+    "agentboard",
+    TMUX_BINDINGS.toggle,
+    "run-shell",
+    "tt agentboard run --toggle",
+  );
+  tmux(
+    "bind-key",
+    "-T",
+    "agentboard",
+    TMUX_BINDINGS.focus,
+    "run-shell",
+    "tt agentboard run --focus",
+  );
 
   // Number keys 1-9 switch to session by index
   for (let i = 1; i <= 9; i++) {
     tmux(
-      "bind-key", "-T", "agentboard", String(i), "run-shell",
+      "bind-key",
+      "-T",
+      "agentboard",
+      String(i),
+      "run-shell",
       `curl -s -X POST 'http://${host}:${port}/switch-index?index=${i}' -d "$(tmux display-message -p '#{q:client_tty}|#{q:session_name}|#{q:window_id}')" >/dev/null 2>&1 || true`,
     );
   }
@@ -298,7 +314,8 @@ function init(): void {
     return `run-shell -b "curl -s -X POST http://${host}:${port}${path}${bodyArg} >/dev/null 2>&1 || true"`;
   };
   const focusBody = "#{q:client_tty}|#{q:session_name}|#{q:window_id}";
-  const resizeBody = "#{q:pane_id}|#{q:session_name}|#{q:window_id}|#{q:pane_width}|#{q:window_width}";
+  const resizeBody =
+    "#{q:pane_id}|#{q:session_name}|#{q:window_id}|#{q:pane_width}|#{q:window_width}";
 
   tmux("set-hook", "-g", "client-session-changed", hookPost("/focus", focusBody));
   tmux("set-hook", "-g", "after-select-window", hookPost("/ensure-sidebar", focusBody));
@@ -308,7 +325,9 @@ function init(): void {
 async function runToggle(): Promise<void> {
   if (!(await ensureServerUp())) process.exit(0);
   const ctx = tmuxContext();
-  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(() => {});
+  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(
+    () => {},
+  );
   resetTmuxKeys();
 }
 
@@ -327,7 +346,9 @@ async function runFocus(): Promise<void> {
   // Otherwise, ensure server + toggle sidebar on
   if (!(await ensureServerUp())) process.exit(0);
   const ctx = tmuxContext();
-  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(() => {});
+  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(
+    () => {},
+  );
 
   // Wait for sidebar pane to appear
   for (let i = 0; i < 20; i++) {
