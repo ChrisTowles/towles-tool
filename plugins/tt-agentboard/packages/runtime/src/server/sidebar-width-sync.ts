@@ -42,8 +42,8 @@ export function resolveSidebarWidthFromResizeContext(params: {
   const pane = panes.find((candidate) => candidate.paneId === ctx.paneId);
   if (!pane) return null;
 
-  const width = pane.width ?? ctx.width;
-  const windowWidth = pane.windowWidth ?? ctx.windowWidth;
+  const width = ctx.width ?? pane.width;
+  const windowWidth = ctx.windowWidth ?? pane.windowWidth;
   if (width == null || windowWidth == null) return null;
 
   const suppressed = suppressedByPane.get(pane.paneId);

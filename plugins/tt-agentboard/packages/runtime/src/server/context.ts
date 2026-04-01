@@ -34,7 +34,6 @@ export interface ServerContext {
   sidebarWidth: number;
   sidebarPosition: "left" | "right";
   sidebarVisible: boolean;
-  scriptsDir: string;
   home: string;
 
   // Session/focus state
@@ -56,7 +55,6 @@ export interface ServerContext {
   suppressedSidebarResizeAcks: Map<string, SidebarResizeSuppression>;
   sidebarSnapshots: Map<string, { width?: number; windowWidth?: number }>;
   pendingSidebarResize: ReturnType<typeof setTimeout> | null;
-  pendingSidebarResizeCtx: SidebarResizeContext | undefined;
   sidebarPaneCache: { provider: FullSidebarCapable; panes: SidebarPane[] }[] | null;
   sidebarPaneCacheTs: number;
   ensureSidebarTimer: ReturnType<typeof setTimeout> | null;

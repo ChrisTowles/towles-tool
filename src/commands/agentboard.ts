@@ -38,6 +38,14 @@ function ensureDeps(): void {
     process.exit(1);
   }
 
+  if (!existsSync(PLUGIN_DIR)) {
+    consola.error(`Agentboard plugin directory not found: ${PLUGIN_DIR}`);
+    consola.error(
+      "If installed globally, ensure the 'plugins' directory is included in the package.",
+    );
+    process.exit(1);
+  }
+
   const runtimeNodeModules = resolve(PLUGIN_DIR, "packages/runtime/node_modules");
   if (!existsSync(runtimeNodeModules)) {
     consola.info("Installing agentboard dependencies...");
@@ -308,7 +316,7 @@ function init(): void {
     );
   }
 
-  // Hooks (fallback for when server isn't running yet)
+  // Hooks — must match server's setupHooks() in provider.ts
   const hookPost = (path: string, body?: string) => {
     const bodyArg = body ? ` -d \\"${body}\\"` : "";
     return `run-shell -b "curl -s -X POST http://${host}:${port}${path}${bodyArg} >/dev/null 2>&1 || true"`;
@@ -317,8 +325,17 @@ function init(): void {
   const resizeBody =
     "#{q:pane_id}|#{q:session_name}|#{q:window_id}|#{q:pane_width}|#{q:window_width}";
 
-  tmux("set-hook", "-g", "client-session-changed", hookPost("/focus", focusBody));
+  tmux(
+    "set-hook",
+    "-g",
+    "client-session-changed",
+    `${hookPost("/focus", focusBody)} ; ${hookPost("/ensure-sidebar", focusBody)}`,
+  );
+  tmux("set-hook", "-g", "session-created", hookPost("/refresh"));
+  tmux("set-hook", "-g", "session-closed", hookPost("/refresh"));
+  tmux("set-hook", "-g", "client-resized", hookPost("/resize-sidebars"));
   tmux("set-hook", "-g", "after-select-window", hookPost("/ensure-sidebar", focusBody));
+  tmux("set-hook", "-g", "after-new-window", hookPost("/ensure-sidebar", focusBody));
   tmux("set-hook", "-g", "after-resize-pane", hookPost("/resize-sidebars", resizeBody));
 }
 

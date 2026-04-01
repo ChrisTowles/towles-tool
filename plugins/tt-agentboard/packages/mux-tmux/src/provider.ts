@@ -173,7 +173,6 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     windowId: string,
     width: number,
     position: SidebarPosition,
-    scriptsDir: string,
   ): string | null {
     // Find the edge pane to split against
     const panes = this.tmux.listPanes({ scope: "window", target: windowId });
@@ -225,7 +224,7 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
       before: position === "left",
       fullWindow: true,
       size: width,
-      command: `REFOCUS_WINDOW=${windowId} exec ${scriptsDir}/start.sh`,
+      command: `REFOCUS_WINDOW=${windowId} exec tt agentboard tui`,
     });
 
     if (!newPane) {

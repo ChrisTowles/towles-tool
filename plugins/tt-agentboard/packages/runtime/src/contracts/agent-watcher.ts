@@ -24,7 +24,7 @@ export interface AgentWatcherContext {
  *
  * To add a new watcher:
  *   1. Create a file implementing AgentWatcher
- *   2. Register it via PluginAPI.registerWatcher() or in start.ts
+ *   2. Register it via PluginAPI.registerWatcher() or in the server entry point
  */
 export interface AgentWatcher {
   /** Unique name for this watcher (e.g. "amp", "claude-code") */

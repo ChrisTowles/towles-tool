@@ -28,14 +28,11 @@ export function invalidateSidebarPaneCache(ctx: ServerContext): void {
 }
 
 export function scheduleSidebarResize(ctx: ServerContext, resizeCtx?: SidebarResizeContext): void {
-  if (resizeCtx) ctx.pendingSidebarResizeCtx = resizeCtx;
   resizeSidebars(ctx, resizeCtx);
   if (ctx.pendingSidebarResize) clearTimeout(ctx.pendingSidebarResize);
   ctx.pendingSidebarResize = setTimeout(() => {
-    const nextCtx = ctx.pendingSidebarResizeCtx;
-    ctx.pendingSidebarResizeCtx = undefined;
     ctx.pendingSidebarResize = null;
-    resizeSidebars(ctx, nextCtx);
+    resizeSidebars(ctx);
   }, 120);
 }
 
@@ -139,16 +136,9 @@ export function ensureSidebarInWindow(
       windowId,
       sidebarWidth: ctx.sidebarWidth,
       sidebarPosition: ctx.sidebarPosition,
-      scriptsDir: ctx.scriptsDir,
     });
     try {
-      const newPaneId = p.spawnSidebar(
-        curSession,
-        windowId,
-        ctx.sidebarWidth,
-        ctx.sidebarPosition,
-        ctx.scriptsDir,
-      );
+      const newPaneId = p.spawnSidebar(curSession, windowId, ctx.sidebarWidth, ctx.sidebarPosition);
       debugLog("ensure", "spawn result", { newPaneId });
     } finally {
       ctx.pendingSidebarSpawns.delete(spawnKey);

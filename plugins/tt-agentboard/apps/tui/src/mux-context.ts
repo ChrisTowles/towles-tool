@@ -10,7 +10,7 @@ export function detectMuxContext(): MuxContext {
 }
 
 /** Refocus the main (non-sidebar) pane after TUI capability detection finishes.
- *  This must happen from the TUI process — doing it from start.sh races with
+ *  This must happen from the TUI process — doing it from the server races with
  *  capability query responses and leaks escape sequences to the main pane. */
 export function refocusMainPane(muxCtx: MuxContext): void {
   if (muxCtx.type === "tmux") {

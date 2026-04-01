@@ -12,13 +12,19 @@ claude plugin install tt@towles-tool
 claude plugin update tt@towles-tool
 ```
 
+### Global Install
+
+```bash
+bun install -g towles-tool
+```
+
 ### From Source
 
 ```bash
 git clone https://github.com/ChrisTowles/towles-tool.git
 cd towles-tool
 bun install
-bun start
+bun link
 ```
 
 ## CLI Commands

@@ -81,7 +81,7 @@ function persistDetailPanelHeight(sessionName: string, height: number): void {
 }
 
 /** Refocus the main (non-sidebar) pane after TUI capability detection finishes.
- *  This must happen from the TUI process — doing it from start.sh races with
+ *  This must happen from the TUI process — doing it from the server races with
  *  capability query responses and leaks escape sequences to the main pane. */
 function refocusMainPane() {
   if (muxCtx.type === "tmux") {
@@ -361,7 +361,7 @@ function App() {
       tmuxPane: process.env.TMUX_PANE ?? null,
     });
     // Refocus the main pane once terminal capability detection finishes.
-    // This avoids the race where start.sh refocuses too early and capability
+    // This avoids the race where the server refocuses too early and capability
     // responses leak as garbage text into the main pane.
     let startupRefocused = false;
     const doStartupRefocus = () => {

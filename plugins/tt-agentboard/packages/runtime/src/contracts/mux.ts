@@ -78,7 +78,6 @@ export interface SidebarCapable {
     windowId: string,
     width: number,
     position: SidebarPosition,
-    scriptsDir: string,
   ): string | null;
   hideSidebar(paneId: string): void;
   killSidebarPane(paneId: string): void;

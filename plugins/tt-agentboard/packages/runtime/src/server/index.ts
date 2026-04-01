@@ -77,18 +77,9 @@ export function startServer(
   let sidebarPosition: "left" | "right" = config.sidebarPosition ?? "left";
   let sidebarVisible = false;
 
-  // The sidebar launcher lives with the TUI app, not the tmux integration layer.
-  const scriptsDir = (() => {
-    const envDir = process.env.TT_AGENTBOARD_DIR;
-    if (envDir) return join(envDir, "apps", "tui", "scripts");
-    // Fallback: relative to this file
-    return join(import.meta.dir, "..", "..", "..", "..", "apps", "tui", "scripts");
-  })();
-
   log("server", "config loaded", {
     sidebarWidth,
     sidebarPosition,
-    scriptsDir,
     theme: currentTheme,
     configKeys: Object.keys(config),
   });
@@ -533,18 +524,14 @@ export function startServer(
   const suppressedSidebarResizeAcks = new Map<string, SidebarResizeSuppression>();
   let sidebarSnapshots = new Map<string, { width?: number; windowWidth?: number }>();
   let pendingSidebarResize: ReturnType<typeof setTimeout> | null = null;
-  let pendingSidebarResizeCtx: SidebarResizeContext | undefined;
 
   function scheduleSidebarResize(ctx?: SidebarResizeContext): void {
-    if (ctx) pendingSidebarResizeCtx = ctx;
     resizeSidebars(ctx);
     if (pendingSidebarResize) clearTimeout(pendingSidebarResize);
     // tmux can finish layout changes slightly after the pane appears.
     pendingSidebarResize = setTimeout(() => {
-      const nextCtx = pendingSidebarResizeCtx;
-      pendingSidebarResizeCtx = undefined;
       pendingSidebarResize = null;
-      resizeSidebars(nextCtx);
+      resizeSidebars();
     }, 120);
   }
 
@@ -642,16 +629,9 @@ export function startServer(
         windowId,
         sidebarWidth,
         sidebarPosition,
-        scriptsDir,
       });
       try {
-        const newPaneId = p.spawnSidebar(
-          curSession,
-          windowId,
-          sidebarWidth,
-          sidebarPosition,
-          scriptsDir,
-        );
+        const newPaneId = p.spawnSidebar(curSession, windowId, sidebarWidth, sidebarPosition);
         log("ensure", "spawn result", { newPaneId });
         // Do NOT refocus the main pane here — the TUI handles it.
         // For fresh spawns, the TUI refocuses after capability detection.
@@ -705,6 +685,7 @@ export function startServer(
   // --- Sidebar resize enforcement ---
 
   function resizeSidebars(ctx?: SidebarResizeContext) {
+    if (ctx?.paneId) invalidateSidebarPaneCache();
     const panesByProvider = listSidebarPanesByProvider();
     const allPanes = panesByProvider.flatMap(({ panes }) => panes);
 
