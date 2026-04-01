@@ -1,12 +1,24 @@
 # towles-tool
 
-## Build & Test
+## Commands
 
 - `bun test` — run all tests (vitest)
-- `bun run lint` — oxlint (pre-commit hook runs format + lint:fix + typecheck)
-- CLI framework: citty (from unjs), runtime: bun
+- `bun test -- auto-claude` — filter tests by path
+- `bun run dev` — run CLI locally (`bin/run.ts`)
+- `bun run lint` — oxlint
+- `bun run format` — oxfmt
+- `bun typecheck` — tsgo
+- `bun run link` — register global `tt` symlink via `bun link`
+- `bun run link:show` — show which slot the global `tt` points to
+- Pre-commit hook runs: format + lint:fix + typecheck
 
-## AgentBoard Architecture
+## Architecture
+
+- CLI framework: oclif (`src/commands/`), citty for agentboard command
+- Runtime: bun
+- Formatter: oxfmt, Linter: oxlint, Type checker: tsgo
+
+## AgentBoard
 
 - Tmux sidebar TUI plugin: `plugins/tt-agentboard/`
 - Bun monorepo with workspaces: `apps/server`, `apps/tui`, `packages/runtime`, `packages/mux-tmux`
