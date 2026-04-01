@@ -5,7 +5,6 @@
 - `bun test` — run all tests (vitest)
 - `bun run lint` — oxlint (pre-commit hook runs format + lint:fix + typecheck)
 - CLI framework: citty (from unjs), runtime: bun
-- Pre-existing console.log warnings in `scripts/sync-versions.ts` are expected, not errors
 
 ## AgentBoard Architecture
 

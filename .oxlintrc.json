@@ -71,7 +71,7 @@
     "no-class-assign": "error",
     "no-compare-neg-zero": "error",
     "no-cond-assign": ["error", "always"],
-    "no-console": "warn",
+    "no-console": "off",
     "no-const-assign": "error",
     "no-control-regex": "error",
     "no-debugger": "error",
@@ -280,7 +280,6 @@
       "files": ["**/*.md/**/*.?([cm])[jt]s?(x)"],
       "rules": {
         "no-alert": "off",
-        "no-console": "off",
         "no-labels": "off",
         "no-lone-blocks": "off",
         "no-unused-expressions": "off",
@@ -289,23 +288,5 @@
         "unicode-bom": "off"
       }
     },
-    {
-      "files": ["**/scripts/**/*.?([cm])[jt]s?(x)"],
-      "rules": {
-        "no-console": "off"
-      }
-    },
-    {
-      "files": ["**/cli/**/*.?([cm])[jt]s?(x)", "**/cli.?([cm])[jt]s?(x)"],
-      "rules": {
-        "no-console": "off"
-      }
-    },
-    {
-      "files": ["**/*.config.?([cm])[jt]s?(x)", "**/*.config.*.?([cm])[jt]s?(x)"],
-      "rules": {
-        "no-console": "off"
-      }
-    }
   ]
 }
