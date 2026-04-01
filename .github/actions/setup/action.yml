@@ -1,30 +1,16 @@
-name: Setup pnpm and Node.js
-description: Install pnpm and Node.js with caching
+name: Setup Bun
+description: Install Bun with caching
 
 inputs:
-  node-version:
-    description: Node.js version
-    required: false
-    default: "22"
-  registry-url:
-    description: npm registry URL (for publishing)
-    required: false
-    default: ""
   install-args:
-    description: Additional args for pnpm install
+    description: Additional args for bun install
     required: false
     default: ""
 
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v4
+    - uses: oven-sh/setup-bun@v2
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: ${{ inputs.node-version }}
-        cache: pnpm
-        registry-url: ${{ inputs.registry-url }}
-
-    - run: pnpm install ${{ inputs.install-args }}
+    - run: bun install ${{ inputs.install-args }}
       shell: bash
