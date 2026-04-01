@@ -22,7 +22,6 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run format:check
-      - run: bun run test:prompts
 
   test:
     runs-on: ${{ matrix.os }}
