@@ -22,7 +22,7 @@ if (process.env.TMUX) {
   Bun.spawnSync(["bash", pluginEntry], {
     stdout: "inherit",
     stderr: "inherit",
-    env: { ...process.env, AGENTBOARD2_DIR: pluginDir },
+    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
   process.exit(0);
 }
@@ -46,14 +46,14 @@ if (checkSession.exitCode === 0) {
   Bun.spawnSync(["tmux", "new-session", "-d", "-s", sessionName], {
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, AGENTBOARD2_DIR: pluginDir },
+    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
 
   // Source the plugin inside the new session to register hooks + keybindings
   Bun.spawnSync(["bash", pluginEntry], {
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, AGENTBOARD2_DIR: pluginDir },
+    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
 
   // Attach

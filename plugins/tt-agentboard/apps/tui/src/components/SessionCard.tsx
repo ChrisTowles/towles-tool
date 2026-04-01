@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { SessionData, Theme } from "@tt-agentboard/runtime";
 import { SPINNERS, UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
+import { DiffStats } from "./DiffStats";
 
 export interface SessionCardProps {
   session: SessionData;
@@ -75,11 +76,9 @@ export function SessionCard(props: SessionCardProps) {
     return b.length > 30 ? b.slice(0, 29) + "…" : b;
   };
 
-  const portHint = () => {
-    const ports = props.session.ports ?? [];
-    if (ports.length === 0) return "";
-    if (ports.length === 1) return `⌁${ports[0]}`;
-    return `⌁${ports[0]}+${ports.length - 1}`;
+  const hasDiff = () => {
+    const { linesAdded, linesRemoved, commitsDelta, filesChanged } = props.session;
+    return !!(linesAdded || linesRemoved || commitsDelta || filesChanged);
   };
 
   const metaSummary = () => {
@@ -142,25 +141,18 @@ export function SessionCard(props: SessionCardProps) {
             </Show>
           </box>
 
-          {/* Row 2: branch plus a compact local-port hint when available */}
-          <Show when={props.session.branch || portHint()}>
-            <box flexDirection="row">
-              <Show when={props.session.branch}>
-                <text truncate flexGrow={1}>
-                  <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
-                    {truncBranch()}
-                  </span>
-                </text>
-              </Show>
-              <Show when={portHint()}>
-                <text flexShrink={0}>
-                  <span style={{ fg: props.isFocused ? P().sky : P().overlay0 }}>
-                    {props.session.branch ? " " : ""}
-                    {portHint()}
-                  </span>
-                </text>
-              </Show>
-            </box>
+          {/* Row 2: branch */}
+          <Show when={props.session.branch}>
+            <text truncate>
+              <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
+                {truncBranch()}
+              </span>
+            </text>
+          </Show>
+
+          {/* Row 3: git diff stats */}
+          <Show when={hasDiff()}>
+            <DiffStats session={props.session} palette={() => P()} />
           </Show>
 
           {/* Row 3: metadata summary (status + progress) */}

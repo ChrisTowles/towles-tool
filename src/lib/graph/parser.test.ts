@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type { ReadFileFn } from "./parser";
 import { calculateCutoffMs, filterByDays, parseJsonl, quickTokenCount } from "./parser";
 
-const mockReadFileSync: ReadFileFn = vi.fn();
+const mockReadFileSync = vi.fn() as Mock & ReadFileFn;
 
 // ── Pure functions (no mocking needed) ──
 
@@ -67,7 +68,7 @@ describe("filterByDays", () => {
 
 describe("parseJsonl", () => {
   it("parses valid JSONL lines", () => {
-    vi.mocked(mockReadFileSync).mockReturnValue(
+    mockReadFileSync.mockReturnValue(
       '{"type":"user","sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}\n{"type":"assistant","sessionId":"s1","timestamp":"2025-01-01T00:01:00Z"}\n',
     );
     const entries = parseJsonl("/fake/path.jsonl", mockReadFileSync);
@@ -77,7 +78,7 @@ describe("parseJsonl", () => {
   });
 
   it("skips empty lines", () => {
-    vi.mocked(mockReadFileSync).mockReturnValue(
+    mockReadFileSync.mockReturnValue(
       '{"type":"user","sessionId":"s1","timestamp":"t"}\n\n\n{"type":"assistant","sessionId":"s1","timestamp":"t"}\n',
     );
     const entries = parseJsonl("/fake/path.jsonl", mockReadFileSync);
@@ -85,7 +86,7 @@ describe("parseJsonl", () => {
   });
 
   it("skips invalid JSON lines", () => {
-    vi.mocked(mockReadFileSync).mockReturnValue(
+    mockReadFileSync.mockReturnValue(
       '{"type":"user","sessionId":"s1","timestamp":"t"}\nnot-json\n{"type":"assistant","sessionId":"s1","timestamp":"t"}\n',
     );
     const entries = parseJsonl("/fake/path.jsonl", mockReadFileSync);
@@ -93,7 +94,7 @@ describe("parseJsonl", () => {
   });
 
   it("returns empty array for empty file", () => {
-    vi.mocked(mockReadFileSync).mockReturnValue("");
+    mockReadFileSync.mockReturnValue("");
     const entries = parseJsonl("/fake/path.jsonl", mockReadFileSync);
     expect(entries).toHaveLength(0);
   });
@@ -109,7 +110,7 @@ describe("quickTokenCount", () => {
         message: { usage: { input_tokens: 200, output_tokens: 75 } },
       }),
     ].join("\n");
-    vi.mocked(mockReadFileSync).mockReturnValue(lines);
+    mockReadFileSync.mockReturnValue(lines);
     expect(quickTokenCount("/fake/path.jsonl", mockReadFileSync)).toBe(425);
   });
 
@@ -118,12 +119,12 @@ describe("quickTokenCount", () => {
       JSON.stringify({ message: { content: "text" } }),
       JSON.stringify({ message: { usage: { input_tokens: 100, output_tokens: 50 } } }),
     ].join("\n");
-    vi.mocked(mockReadFileSync).mockReturnValue(lines);
+    mockReadFileSync.mockReturnValue(lines);
     expect(quickTokenCount("/fake/path.jsonl", mockReadFileSync)).toBe(150);
   });
 
   it("returns 0 for unreadable files", () => {
-    vi.mocked(mockReadFileSync).mockImplementation(() => {
+    mockReadFileSync.mockImplementation(() => {
       throw new Error("ENOENT");
     });
     expect(quickTokenCount("/missing/file.jsonl", mockReadFileSync)).toBe(0);
@@ -133,12 +134,12 @@ describe("quickTokenCount", () => {
     const lines = JSON.stringify({
       message: { usage: { input_tokens: 100 } },
     });
-    vi.mocked(mockReadFileSync).mockReturnValue(lines);
+    mockReadFileSync.mockReturnValue(lines);
     expect(quickTokenCount("/fake/path.jsonl", mockReadFileSync)).toBe(100);
   });
 
   it("skips invalid JSON lines gracefully", () => {
-    vi.mocked(mockReadFileSync).mockReturnValue(
+    mockReadFileSync.mockReturnValue(
       '{"message":{"usage":{"input_tokens":50,"output_tokens":50}}}\nbadline\n',
     );
     expect(quickTokenCount("/fake/path.jsonl", mockReadFileSync)).toBe(100);

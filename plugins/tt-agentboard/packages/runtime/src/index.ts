@@ -38,7 +38,7 @@ export {
   INSTALL_LOG,
 } from "./debug";
 export { loadConfig, saveConfig } from "./config";
-export type { Agentboard2Config } from "./config";
+export type { AgentboardConfig } from "./config";
 export { resolveTheme, BUILTIN_THEMES, DEFAULT_THEME } from "./themes";
 export type { Theme, ThemePalette, PartialTheme } from "./themes";
 export { startServer } from "./server/index";

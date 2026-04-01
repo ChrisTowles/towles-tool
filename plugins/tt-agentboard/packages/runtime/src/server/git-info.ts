@@ -20,25 +20,65 @@ export interface GitInfo {
   branch: string;
   dirty: boolean;
   isWorktree: boolean;
+  filesChanged: number;
+  linesAdded: number;
+  linesRemoved: number;
+  /** Positive = ahead of origin/main, negative = behind */
+  commitsDelta: number;
 }
 
 const gitInfoCache = new Map<string, { info: GitInfo; ts: number }>();
 const GIT_CACHE_TTL_MS = 5000;
 
 export function getGitInfo(dir: string): GitInfo {
-  if (!dir) return { branch: "", dirty: false, isWorktree: false };
+  const empty: GitInfo = { branch: "", dirty: false, isWorktree: false, filesChanged: 0, linesAdded: 0, linesRemoved: 0, commitsDelta: 0 };
+  if (!dir) return empty;
 
   const cached = gitInfoCache.get(dir);
   if (cached && Date.now() - cached.ts < GIT_CACHE_TTL_MS) return cached.info;
 
   const branch = shell(["git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD"]);
-  if (!branch) return { branch: "", dirty: false, isWorktree: false };
+  if (!branch) return empty;
   const gitDir = shell(["git", "-C", dir, "rev-parse", "--git-dir"]);
   const statusOut = shell(["git", "-C", dir, "status", "--porcelain"]);
+
+  // Uncommitted diff stats (unstaged + staged)
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const cmd of [
+    ["git", "-C", dir, "diff", "--numstat"],
+    ["git", "-C", dir, "diff", "--cached", "--numstat"],
+  ]) {
+    const out = shell(cmd);
+    if (!out) continue;
+    for (const line of out.split("\n")) {
+      const [added, removed] = line.split("\t");
+      if (added === "-" || removed === "-") continue; // binary
+      linesAdded += Number(added) || 0;
+      linesRemoved += Number(removed) || 0;
+    }
+  }
+
+  // Commits ahead/behind origin/main
+  // Commits ahead(+) or behind(-) origin/main
+  let commitsDelta = 0;
+  const originMain = shell(["git", "-C", dir, "rev-parse", "--verify", "origin/main"]) ? "origin/main" : "origin/master";
+  const aheadBehind = shell(["git", "-C", dir, "rev-list", "--left-right", "--count", `${originMain}...HEAD`]);
+  if (aheadBehind) {
+    const [behind, ahead] = aheadBehind.split("\t");
+    commitsDelta = (Number(ahead) || 0) - (Number(behind) || 0);
+  }
+
+  const filesChanged = statusOut ? statusOut.split("\n").filter(Boolean).length : 0;
+
   const info: GitInfo = {
     branch,
     dirty: statusOut.length > 0,
     isWorktree: gitDir.includes("/worktrees/"),
+    filesChanged,
+    linesAdded,
+    linesRemoved,
+    commitsDelta,
   };
   gitInfoCache.set(dir, { info, ts: Date.now() });
   return info;

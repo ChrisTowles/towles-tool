@@ -46,16 +46,21 @@ export class SessionOrder {
     }
   }
 
-  /** Sync with current session names — adds new ones at end, removes stale ones. */
+  /** Sync with current session names — adds new ones alphabetically, removes stale ones. */
   sync(names: string[]): void {
     const nameSet = new Set(names);
     // Remove sessions that no longer exist
     this.order = this.order.filter((n) => nameSet.has(n));
     this.hidden = new Set([...this.hidden].filter((n) => nameSet.has(n)));
-    // Add new sessions at the end
-    for (const n of names) {
-      if (!this.order.includes(n)) {
+    // Add new sessions in sorted position
+    const newNames = names.filter((n) => !this.order.includes(n)).sort((a, b) => a.localeCompare(b));
+    for (const n of newNames) {
+      // Insert alphabetically among existing entries
+      const idx = this.order.findIndex((existing) => existing.localeCompare(n) > 0);
+      if (idx === -1) {
         this.order.push(n);
+      } else {
+        this.order.splice(idx, 0, n);
       }
     }
   }

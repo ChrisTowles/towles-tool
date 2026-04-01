@@ -14,13 +14,12 @@ import {
 import type { Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { TextAttributes } from "@opentui/core";
-import type { MouseEvent, InputRenderable, KeyEvent } from "@opentui/core";
+import type { MouseEvent } from "@opentui/core";
 
 import {
   ensureServer,
   SERVER_PORT,
   SERVER_HOST,
-  BUILTIN_THEMES,
   loadConfig,
   resolveTheme,
   saveConfig,
@@ -30,9 +29,11 @@ import type {
   SessionData,
   ClientCommand,
   Theme,
-  MetadataTone,
 } from "@tt-agentboard/runtime";
 import { TmuxClient } from "@tt-agentboard/mux-tmux";
+import { SessionCard } from "./components/SessionCard";
+import { DetailPanel } from "./components/DetailPanel";
+import { StatusBar } from "./components/StatusBar";
 
 // Detect tmux context (tmux only)
 type MuxContext = { type: "tmux"; sdk: TmuxClient; paneId: string } | { type: "none" };
@@ -47,42 +48,14 @@ function detectMuxContext(): MuxContext {
 const muxCtx = detectMuxContext();
 
 const SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const UNSEEN_ICON = "●";
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
-const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 const DEFAULT_DETAIL_PANEL_HEIGHT = 10;
 const MIN_DETAIL_PANEL_HEIGHT = 4;
 const DIVIDER = "─".repeat(200);
 const RESIZE_DEBUG_LOG = "/tmp/agentboard-tui-resize.log";
 
-const TONE_ICONS: Record<MetadataTone, string> = {
-  neutral: "·",
-  info: "ℹ",
-  success: "✓",
-  warn: "⚠",
-  error: "✗",
-};
-
-function toneColor(
-  tone: MetadataTone | undefined,
-  palette: ReturnType<() => Theme["palette"]>,
-): string {
-  switch (tone) {
-    case "success":
-      return palette.green;
-    case "error":
-      return palette.red;
-    case "warn":
-      return palette.yellow;
-    case "info":
-      return palette.blue;
-    default:
-      return palette.overlay0;
-  }
-}
-
-const TUI_DEBUG = !!process.env.AGENTBOARD2_DEBUG;
+const TUI_DEBUG = !!process.env.TT_AGENTBOARD_DEBUG;
 
 function logResizeDebug(message: string, data?: Record<string, unknown>): void {
   if (!TUI_DEBUG) return;
@@ -190,9 +163,8 @@ function App() {
   const [focusedAgentIdx, setFocusedAgentIdx] = createSignal(0);
 
   // --- Modal state ---
-  const [modal, setModal] = createSignal<"none" | "theme-picker" | "confirm-kill">("none");
+  const [modal, setModal] = createSignal<"none" | "confirm-kill" | "help">("none");
   const [killTarget, setKillTarget] = createSignal<string | null>(null);
-  let themeBeforePreview: Theme | null = null;
 
   const [clientTty, setClientTty] = createSignal(getClientTty());
   let ws: WebSocket | null = null;
@@ -304,26 +276,6 @@ function App() {
       threadId: agent.threadId,
       threadName: agent.threadName,
     });
-  }
-
-  function applyTheme(themeName: string) {
-    send({ type: "set-theme", theme: themeName });
-  }
-
-  function previewTheme(themeName: string) {
-    setTheme(resolveTheme(themeName));
-  }
-
-  function resizeDetailPanel(delta: -1 | 1) {
-    const nextHeight = clampDetailPanelHeight(detailPanelHeight() + delta);
-    if (nextHeight === detailPanelHeight()) return;
-
-    setDetailPanelHeight(nextHeight);
-
-    const sessionName = detailPanelSessionName();
-    if (sessionName) {
-      persistDetailPanelHeight(sessionName, nextHeight);
-    }
   }
 
   function beginDetailResize(event: MouseEvent) {
@@ -541,8 +493,9 @@ function App() {
   useKeyboard((key) => {
     const currentModal = modal();
 
-    // --- Theme picker modal: input handles all keys via onKeyDown ---
-    if (currentModal === "theme-picker") {
+    // --- Help modal ---
+    if (currentModal === "help") {
+      setModal("none");
       return;
     }
 
@@ -600,23 +553,18 @@ function App() {
       case "h":
         if (panelFocus() === "agents") {
           setPanelFocus("sessions");
-        } else {
-          resizeDetailPanel(-1);
         }
         break;
       case "right":
-      case "l":
-        if (panelFocus() === "sessions") {
-          const data = focusedData();
-          const agents = data?.agents ?? [];
-          if (agents.length > 0) {
-            setPanelFocus("agents");
-            setFocusedAgentIdx((idx) => Math.min(idx, agents.length - 1));
-          } else {
-            resizeDetailPanel(1);
-          }
+      case "l": {
+        const data = focusedData();
+        const agents = data?.agents ?? [];
+        if (panelFocus() === "sessions" && agents.length > 0) {
+          setPanelFocus("agents");
+          setFocusedAgentIdx((idx) => Math.min(idx, agents.length - 1));
         }
         break;
+      }
       case "return": {
         if (panelFocus() === "agents") {
           activateFocusedAgent();
@@ -639,8 +587,7 @@ function App() {
         send({ type: "refresh" });
         break;
       case "t":
-        themeBeforePreview = theme();
-        setModal("theme-picker");
+        // reserved — was theme picker
         break;
       case "u":
         send({ type: "show-all-sessions" });
@@ -670,6 +617,9 @@ function App() {
       case "c":
         createNewSession();
         break;
+      case "?":
+        setModal("help");
+        break;
       default: {
         if (key.number) {
           const idx = Number.parseInt(key.name, 10) - 1;
@@ -696,42 +646,13 @@ function App() {
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={P().crust}>
       {/* Header */}
-      <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
-        <text>
-          <span style={{ fg: P().mauve, attributes: BOLD }}>{"  AgentBoard"}</span>
-        </text>
-        <text>
-          <span style={{ fg: P().overlay1 }}>{"  "}</span>
-          <span style={{ fg: P().subtext0, attributes: BOLD }}>Sessions</span>
-          <span style={{ fg: P().overlay0 }}> {String(sessions.length)}</span>
-          {runningCount() > 0 ? (
-            <span style={{ fg: P().yellow }}>
-              {" "}
-              {"⚡"}
-              {runningCount()}
-            </span>
-          ) : (
-            ""
-          )}
-          {errorCount() > 0 ? (
-            <span style={{ fg: P().red }}>
-              {" "}
-              {"✗"}
-              {errorCount()}
-            </span>
-          ) : (
-            ""
-          )}
-          {unseenCount() > 0 ? (
-            <span style={{ fg: P().teal }}>
-              {" "}
-              {"●"} {unseenCount()}
-            </span>
-          ) : (
-            ""
-          )}
-        </text>
-      </box>
+      <StatusBar
+        sessionCount={sessions.length}
+        runningCount={runningCount()}
+        errorCount={errorCount()}
+        unseenCount={unseenCount()}
+        theme={theme}
+      />
 
       {/* Session list */}
       <scrollbox flexGrow={1} flexShrink={1} paddingTop={1}>
@@ -754,65 +675,6 @@ function App() {
           )}
         </For>
       </scrollbox>
-
-      {/* Listening ports for focused session — above detail panel */}
-      <Show when={focusedData()?.ports?.length}>
-        {(_) => {
-          const portRows = () => {
-            const ports = focusedData()?.ports ?? [];
-            const maxPerRow = 3;
-            const rows: number[][] = [];
-            for (let i = 0; i < ports.length; i += maxPerRow) {
-              rows.push(ports.slice(i, i + maxPerRow));
-            }
-            return rows;
-          };
-          return (
-            <box flexDirection="column" flexShrink={0} paddingLeft={2}>
-              <For each={portRows()}>
-                {(ports, rowIndex) => (
-                  <box flexDirection="row" paddingRight={1}>
-                    <text flexShrink={0}>
-                      <span
-                        style={{
-                          fg: rowIndex() === 0 ? P().overlay0 : P().surface2,
-                          attributes: DIM,
-                        }}
-                      >
-                        {rowIndex() === 0 ? "local " : "      "}
-                      </span>
-                    </text>
-                    <For each={ports}>
-                      {(port, portIndex) => (
-                        <box flexDirection="row" flexShrink={0}>
-                          <text
-                            onMouseDown={() => {
-                              Bun.spawn(
-                                [
-                                  process.platform === "darwin" ? "open" : "xdg-open",
-                                  `http://localhost:${port}`,
-                                ],
-                                { stdout: "ignore", stderr: "ignore" },
-                              );
-                            }}
-                          >
-                            <span style={{ fg: P().sky, attributes: BOLD }}>{String(port)}</span>
-                          </text>
-                          <Show when={portIndex() < ports.length - 1}>
-                            <text>
-                              <span style={{ fg: P().surface2 }}>{" · "}</span>
-                            </text>
-                          </Show>
-                        </box>
-                      )}
-                    </For>
-                  </box>
-                )}
-              </For>
-            </box>
-          );
-        }}
-      </Show>
 
       {/* Detail panel — focused session info, draggable height */}
       <Show when={focusedData()}>
@@ -883,7 +745,7 @@ function App() {
             <span style={{ fg: P().overlay0 }}>{"⏎"}</span>
             <span style={{ fg: P().overlay1 }}>{" go  "}</span>
             <span style={{ fg: P().overlay0 }}>{"→"}</span>
-            <span style={{ fg: P().overlay1 }}>{" agents  "}</span>
+            <span style={{ fg: P().overlay1 }}>{" detail  "}</span>
             <span style={{ fg: P().overlay0 }}>{"d"}</span>
             <span style={{ fg: P().overlay1 }}>{" hide  "}</span>
             <span style={{ fg: P().overlay0 }}>{"x"}</span>
@@ -891,28 +753,6 @@ function App() {
           </text>
         </Show>
       </box>
-
-      {/* Theme picker overlay */}
-      <Show when={modal() === "theme-picker"}>
-        <ThemePicker
-          palette={P}
-          onSelect={(name) => {
-            themeBeforePreview = null;
-            applyTheme(name);
-            setModal("none");
-          }}
-          onPreview={(name) => {
-            previewTheme(name);
-          }}
-          onClose={() => {
-            if (themeBeforePreview) {
-              setTheme(themeBeforePreview);
-              themeBeforePreview = null;
-            }
-            setModal("none");
-          }}
-        />
-      </Show>
 
       {/* Kill confirmation overlay */}
       <Show when={modal() === "confirm-kill"}>
@@ -950,80 +790,34 @@ function App() {
           </box>
         </box>
       </Show>
+
+      {/* Help overlay */}
+      <Show when={modal() === "help"}>
+        <HelpOverlay palette={P} onClose={() => setModal("none")} />
+      </Show>
     </box>
   );
 }
 
-// --- Theme Picker ---
+// --- Help Overlay ---
 
-interface ThemePickerProps {
-  palette: Accessor<Theme["palette"]>;
-  onSelect: (name: string) => void;
-  onPreview: (name: string) => void;
-  onClose: () => void;
-}
-
-function ThemePicker(props: ThemePickerProps) {
-  let inputRef: InputRenderable;
-
-  const [query, setQuery] = createSignal("");
-  const [selected, setSelected] = createSignal(0);
-
-  const filtered = createMemo(() => {
-    const q = query().toLowerCase();
-    if (!q) return THEME_NAMES;
-    return THEME_NAMES.filter((name) => name.toLowerCase().includes(q));
-  });
-
-  function move(direction: -1 | 1) {
-    const list = filtered();
-    if (!list.length) return;
-    let next = selected() + direction;
-    if (next < 0) next = list.length - 1;
-    if (next >= list.length) next = 0;
-    setSelected(next);
-    const name = list[next];
-    if (name) props.onPreview(name);
-  }
-
-  function confirm() {
-    const name = filtered()[selected()];
-    if (name) props.onSelect(name);
-  }
-
-  function handleKeyDown(e: KeyEvent) {
-    if (e.name === "up") {
-      e.preventDefault();
-      move(-1);
-    } else if (e.name === "down") {
-      e.preventDefault();
-      move(1);
-    } else if (e.name === "return") {
-      e.preventDefault();
-      confirm();
-    } else if (e.name === "escape") {
-      e.preventDefault();
-      props.onClose();
-    }
-  }
-
-  function handleInput(value: string) {
-    setQuery(value);
-    setSelected(0);
-  }
-
-  const MAX_VISIBLE = 12;
-
-  const scrollOffset = createMemo(() => {
-    const sel = selected();
-    if (sel < MAX_VISIBLE) return 0;
-    return sel - MAX_VISIBLE + 1;
-  });
-
-  const visibleItems = createMemo(() => {
-    const list = filtered();
-    return list.slice(scrollOffset(), scrollOffset() + MAX_VISIBLE);
-  });
+function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () => void }) {
+  const P = () => props.palette();
+  const keys: [string, string][] = [
+    ["j/k ↑↓", "Move focus"],
+    ["Enter", "Switch to session"],
+    ["1-9", "Jump to session"],
+    ["Tab", "Cycle sessions"],
+    ["n/c", "New session"],
+    ["d", "Hide session"],
+    ["x", "Kill session"],
+    ["r", "Refresh"],
+    ["u", "Show all sessions"],
+    ["→/l", "Detail panel"],
+    ["←/h/Esc", "Back to sessions"],
+    ["Alt+↑↓", "Reorder sessions"],
+    ["q", "Quit"],
+  ];
 
   return (
     <box
@@ -1039,567 +833,39 @@ function ThemePicker(props: ThemePickerProps) {
       <box
         border
         borderStyle="rounded"
-        borderColor={props.palette().blue}
-        backgroundColor={props.palette().mantle}
+        borderColor={P().blue}
+        backgroundColor={P().mantle}
         padding={1}
         flexDirection="column"
         width={30}
       >
         <text>
-          <span style={{ fg: props.palette().blue, attributes: BOLD }}>Select Theme</span>
+          <span style={{ fg: P().blue, attributes: BOLD }}>Keybindings</span>
         </text>
         <box height={1}>
-          <text style={{ fg: props.palette().surface2 }}>{DIVIDER}</text>
+          <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
-        <box border borderColor={props.palette().surface1} marginBottom={1}>
-          <input
-            ref={(r: InputRenderable) => {
-              inputRef = r;
-              inputRef.focus();
-            }}
-            value={query()}
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            placeholder="Search themes…"
-            backgroundColor={props.palette().surface0}
-            focusedBackgroundColor={props.palette().surface0}
-            textColor={props.palette().text}
-            cursorColor={props.palette().blue}
-            placeholderColor={props.palette().overlay0}
-          />
-        </box>
-        <Show
-          when={filtered().length > 0}
-          fallback={
-            <box paddingLeft={1}>
-              <text style={{ fg: props.palette().overlay0 }}>No matches</text>
+        <For each={keys}>
+          {([key, desc]) => (
+            <box flexDirection="row" paddingLeft={1}>
+              <box width={12} flexShrink={0}>
+                <text>
+                  <span style={{ fg: P().sky }}>{key}</span>
+                </text>
+              </box>
+              <text truncate>
+                <span style={{ fg: P().subtext0 }}>{desc}</span>
+              </text>
             </box>
-          }
-        >
-          <For each={visibleItems()}>
-            {(name) => {
-              const idx = createMemo(() => filtered().indexOf(name));
-              const isSel = createMemo(() => idx() === selected());
-              return (
-                <box
-                  paddingLeft={1}
-                  paddingRight={1}
-                  backgroundColor={isSel() ? props.palette().surface0 : undefined}
-                >
-                  <text style={{ fg: isSel() ? props.palette().text : props.palette().subtext0 }}>
-                    {isSel() ? "▸ " : "  "}
-                    {name}
-                  </text>
-                </box>
-              );
-            }}
-          </For>
-          <Show when={filtered().length > MAX_VISIBLE}>
-            <text style={{ fg: props.palette().overlay0, attributes: DIM }}>
-              {"  "}↕ {filtered().length - MAX_VISIBLE} more
-            </text>
-          </Show>
-        </Show>
-        <box height={1}>
-          <text style={{ fg: props.palette().surface2 }}>{DIVIDER}</text>
-        </box>
-        <text style={{ fg: props.palette().overlay0 }}>
-          <span style={{ attributes: DIM }}>↑↓</span>
-          {" browse  "}
-          <span style={{ attributes: DIM }}>⏎</span>
-          {" select  "}
-          <span style={{ attributes: DIM }}>esc</span>
-          {" close"}
-        </text>
-      </box>
-    </box>
-  );
-}
-
-// --- Detail Panel ---
-
-interface DetailPanelProps {
-  session: SessionData;
-  theme: Accessor<Theme>;
-  statusColors: Accessor<Theme["status"]>;
-  spinIdx: Accessor<number>;
-  focusedAgentIdx: number;
-  onDismissAgent: (agent: SessionData["agents"][number]) => void;
-  onFocusAgentPane: (agent: SessionData["agents"][number]) => void;
-  isResizeHover: boolean;
-  isResizing: boolean;
-  onResizeStart: (event: MouseEvent) => void;
-  onResizeDrag: (event: MouseEvent) => void;
-  onResizeEnd: (event?: MouseEvent) => void;
-  onResizeHoverChange: (hovered: boolean) => void;
-}
-
-function DetailPanel(props: DetailPanelProps) {
-  const P = () => props.theme().palette;
-
-  const agents = () => props.session.agents ?? [];
-  const hasAgents = () => agents().length > 0;
-  const meta = () => props.session.metadata;
-  const hasMeta = () => !!meta();
-  const visibleLogs = () => {
-    const m = meta();
-    if (!m || m.logs.length === 0) return [];
-    return m.logs.slice(-8);
-  };
-
-  const truncDir = () => {
-    const d = props.session.dir;
-    if (!d) return "";
-    const home = process.env.HOME ?? "";
-    const short = home && d.startsWith(home) ? "~" + d.slice(home.length) : d;
-    return short.length > 24 ? "…" + short.slice(short.length - 23) : short;
-  };
-
-  return (
-    <box flexDirection="column" flexShrink={0} paddingLeft={1}>
-      <box height={1}>
-        <text
-          selectable={false}
-          onMouseDown={(event) => {
-            logResizeDebug("separator:onMouseDown", {
-              x: event.x,
-              y: event.y,
-              button: event.button,
-              session: props.session.name,
-            });
-            event.preventDefault();
-            props.onResizeStart(event);
-          }}
-          onMouseDrag={(event) => {
-            logResizeDebug("separator:onMouseDrag", {
-              x: event.x,
-              y: event.y,
-              button: event.button,
-              session: props.session.name,
-            });
-            event.preventDefault();
-            props.onResizeDrag(event);
-          }}
-          onMouseDragEnd={(event) => {
-            logResizeDebug("separator:onMouseDragEnd", {
-              x: event.x,
-              y: event.y,
-              button: event.button,
-              session: props.session.name,
-            });
-            event.preventDefault();
-            props.onResizeEnd(event);
-          }}
-          onMouseUp={(event) => {
-            logResizeDebug("separator:onMouseUp", {
-              x: event.x,
-              y: event.y,
-              button: event.button,
-              session: props.session.name,
-            });
-            event.preventDefault();
-            props.onResizeEnd(event);
-          }}
-          onMouseOver={() => props.onResizeHoverChange(true)}
-          onMouseOut={() => {
-            if (!props.isResizing) props.onResizeHoverChange(false);
-          }}
-          style={{
-            fg: props.isResizing ? P().blue : props.isResizeHover ? P().overlay1 : P().surface2,
-          }}
-        >
-          {DIVIDER}
-        </text>
-      </box>
-
-      {/* Directory */}
-      <text truncate>
-        <span style={{ fg: P().overlay0, attributes: DIM }}>{truncDir()}</span>
-      </text>
-
-      {/* Agent instances */}
-      <Show when={hasAgents()}>
-        <For each={agents()}>
-          {(agent, i) => (
-            <AgentListItem
-              agent={agent}
-              palette={P}
-              statusColors={props.statusColors}
-              spinIdx={props.spinIdx}
-              isKeyboardFocused={i() === props.focusedAgentIdx}
-              onDismiss={() => props.onDismissAgent(agent)}
-              onFocusPane={() => props.onFocusAgentPane(agent)}
-            />
           )}
         </For>
-      </Show>
-
-      {/* Metadata: status, progress, logs */}
-      <Show when={hasMeta()}>
-        {(_) => {
-          const m = meta()!;
-          const progressText = () => {
-            const p = m.progress;
-            if (!p) return "";
-            if (p.current != null && p.total != null) return `${p.current}/${p.total}`;
-            if (p.percent != null) return `${Math.round(p.percent * 100)}%`;
-            return "";
-          };
-          return (
-            <box flexDirection="column">
-              <box height={1} />
-
-              {/* Status + progress on one line */}
-              <Show when={m.status || m.progress}>
-                <box flexDirection="row" paddingRight={1}>
-                  <Show when={m.status}>
-                    <text truncate flexGrow={1}>
-                      <span style={{ fg: toneColor(m.status!.tone, P()) }}>
-                        {TONE_ICONS[m.status!.tone ?? "neutral"]} {m.status!.text}
-                      </span>
-                    </text>
-                  </Show>
-                  <Show when={m.progress}>
-                    <text flexShrink={0}>
-                      <span style={{ fg: P().sky }}>
-                        {m.status ? " · " : ""}
-                        {progressText()}
-                        {m.progress!.label ? ` ${m.progress!.label}` : ""}
-                      </span>
-                    </text>
-                  </Show>
-                </box>
-              </Show>
-
-              {/* Log entries */}
-              <Show when={visibleLogs().length > 0}>
-                <For each={visibleLogs()}>
-                  {(entry) => (
-                    <text truncate>
-                      <span style={{ fg: toneColor(entry.tone, P()), attributes: DIM }}>
-                        {TONE_ICONS[entry.tone ?? "neutral"]}
-                      </span>
-                      <Show when={entry.source}>
-                        <span
-                          style={{ fg: P().surface2, attributes: DIM }}
-                        >{` [${entry.source}]`}</span>
-                      </Show>
-                      <span style={{ fg: P().overlay0 }}> {entry.message}</span>
-                    </text>
-                  )}
-                </For>
-              </Show>
-            </box>
-          );
-        }}
-      </Show>
-    </box>
-  );
-}
-
-interface AgentListItemProps {
-  agent: SessionData["agents"][number];
-  palette: Accessor<Theme["palette"]>;
-  statusColors: Accessor<Theme["status"]>;
-  spinIdx: Accessor<number>;
-  isKeyboardFocused: boolean;
-  onDismiss: () => void;
-  onFocusPane: () => void;
-}
-
-function AgentListItem(props: AgentListItemProps) {
-  const P = () => props.palette();
-  const SC = () => props.statusColors();
-  const [isDismissHover, setIsDismissHover] = createSignal(false);
-  const [isFlash, setIsFlash] = createSignal(false);
-
-  const isTerminal = () => ["done", "error", "interrupted"].includes(props.agent.status);
-  const isUnseen = () => isTerminal() && props.agent.unseen === true;
-
-  const icon = () => {
-    if (isUnseen()) return UNSEEN_ICON;
-    if (isTerminal())
-      return props.agent.status === "done" ? "✓" : props.agent.status === "error" ? "✗" : "⚠";
-    if (props.agent.status === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (props.agent.status === "waiting") return "◉";
-    return "○";
-  };
-
-  const color = () => {
-    if (isTerminal()) {
-      if (props.agent.status === "error") return P().red;
-      if (props.agent.status === "interrupted") return P().peach;
-      return isUnseen() ? P().teal : P().green;
-    }
-    return SC()[props.agent.status];
-  };
-
-  const statusText = () => {
-    if (props.agent.status === "running") return "running";
-    if (props.agent.status === "done") return "done";
-    if (props.agent.status === "error") return "error";
-    if (props.agent.status === "interrupted") return "stopped";
-    if (props.agent.status === "waiting") return "waiting";
-    return "";
-  };
-
-  const triggerFlash = () => {
-    setIsFlash(true);
-    setTimeout(() => setIsFlash(false), 150);
-  };
-
-  const bgColor = () => {
-    if (isFlash()) return P().surface1;
-    if (props.isKeyboardFocused) return P().surface0;
-    return "transparent";
-  };
-
-  return (
-    <box
-      flexDirection="column"
-      flexShrink={0}
-      onMouseDown={(event) => {
-        // Don't trigger focus if clicking the dismiss button
-        if ((event.target as any)?.id === "dismiss") return;
-        if (TUI_DEBUG)
-          appendFileSync(
-            "/tmp/agentboard-tui-agent-click.log",
-            `[${new Date().toISOString()}] clicked agent=${props.agent.agent} thread=${props.agent.threadName ?? "?"}\n`,
-          );
-        triggerFlash();
-        props.onFocusPane();
-      }}
-    >
-      <box height={1} />
-      <box flexDirection="row" backgroundColor={bgColor()} paddingLeft={1}>
-        {/* Content column — name row + thread name row */}
-        <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          {/* Row 1: icon + agent name + status + dismiss */}
-          <box flexDirection="row">
-            <text flexGrow={1} truncate>
-              <span style={{ fg: color() }}>{icon()}</span>
-              <span
-                style={{
-                  fg: props.isKeyboardFocused ? P().text : P().subtext1,
-                  attributes: props.isKeyboardFocused ? BOLD : undefined,
-                }}
-              >
-                {" "}
-                {props.agent.agent}
-              </span>
-            </text>
-            <Show when={!isTerminal() || !isUnseen()}>
-              <text flexShrink={0}>
-                <span style={{ fg: color(), attributes: DIM }}>{statusText()}</span>
-              </text>
-            </Show>
-            <text
-              flexShrink={0}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                props.onDismiss();
-              }}
-              onMouseOver={() => setIsDismissHover(true)}
-              onMouseOut={() => setIsDismissHover(false)}
-            >
-              <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{" ✕"}</span>
-            </text>
-          </box>
-
-          {/* Row 2: thread name */}
-          <Show when={props.agent.threadName}>
-            <text truncate>
-              <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
-                {props.agent.threadName}
-              </span>
-            </text>
-          </Show>
+        <box height={1}>
+          <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
+        <text style={{ fg: P().overlay0 }}>
+          <span style={{ attributes: DIM }}>Press any key to close</span>
+        </text>
       </box>
-    </box>
-  );
-}
-
-// --- Session Card ---
-
-interface SessionCardProps {
-  session: SessionData;
-  index: number;
-  isFocused: boolean;
-  isCurrent: boolean;
-  spinIdx: Accessor<number>;
-  theme: Accessor<Theme>;
-  statusColors: Accessor<Theme["status"]>;
-  onSelect: () => void;
-}
-
-function SessionCard(props: SessionCardProps) {
-  const P = () => props.theme().palette;
-  const SC = () => props.statusColors();
-
-  const status = () => props.session.agentState?.status ?? "idle";
-  const unseen = () => props.session.unseen;
-
-  const isUnseenTerminal = () => unseen() && ["done", "error", "interrupted"].includes(status());
-
-  const accentColor = () => {
-    if (props.isCurrent) return P().green;
-    if (isUnseenTerminal()) return unseenAccentColor();
-    const s = status();
-    if (s === "error") return P().red;
-    if (s === "interrupted") return P().peach;
-    if (s === "running") return P().yellow;
-    if (props.isFocused) return P().lavender;
-    return "transparent";
-  };
-
-  const unseenAccentColor = () => {
-    const s = status();
-    if (s === "error") return P().red;
-    if (s === "interrupted") return P().peach;
-    return P().teal;
-  };
-
-  const hasAgent = () => (props.session.agents?.length ?? 0) > 0;
-
-  const statusIcon = () => {
-    const s = status();
-    if (s === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (isUnseenTerminal()) return UNSEEN_ICON;
-    if (!hasAgent()) return "○";
-    return "";
-  };
-
-  const statusColor = () => {
-    if (isUnseenTerminal()) return unseenAccentColor();
-    if (!hasAgent()) return P().surface2;
-    return SC()[status()];
-  };
-
-  const nameColor = () => {
-    if (props.isFocused) return P().text;
-    if (props.isCurrent) return P().subtext1;
-    return P().subtext0;
-  };
-
-  const indexColor = () => {
-    if (props.isFocused) return P().subtext0;
-    return P().surface2;
-  };
-
-  const truncName = () => {
-    const n = props.session.name;
-    return n.length > 18 ? n.slice(0, 17) + "…" : n;
-  };
-
-  const truncBranch = () => {
-    const b = props.session.branch;
-    if (!b) return "";
-    return b.length > 30 ? b.slice(0, 29) + "…" : b;
-  };
-
-  const portHint = () => {
-    const ports = props.session.ports ?? [];
-    if (ports.length === 0) return "";
-    if (ports.length === 1) return `⌁${ports[0]}`;
-    return `⌁${ports[0]}+${ports.length - 1}`;
-  };
-
-  const metaSummary = () => {
-    const meta = props.session.metadata;
-    if (!meta) return "";
-    const parts: string[] = [];
-    if (meta.status) parts.push(meta.status.text);
-    if (meta.progress) {
-      if (meta.progress.current != null && meta.progress.total != null) {
-        parts.push(`${meta.progress.current}/${meta.progress.total}`);
-      } else if (meta.progress.percent != null) {
-        parts.push(`${Math.round(meta.progress.percent * 100)}%`);
-      }
-      if (meta.progress.label) parts.push(meta.progress.label);
-    }
-    return parts.join(" · ");
-  };
-
-  const metaTone = () => props.session.metadata?.status?.tone;
-
-  const bgColor = () => {
-    if (props.isFocused) return P().surface1;
-    return "transparent";
-  };
-
-  return (
-    <box flexDirection="column" flexShrink={0}>
-      <box
-        flexDirection="row"
-        backgroundColor={bgColor()}
-        onMouseDown={props.onSelect}
-        paddingLeft={1}
-      >
-        {/* Left accent — space-preserving, only colored for meaningful states */}
-        <text style={{ fg: accentColor() }}>{accentColor() === "transparent" ? " " : "▌"}</text>
-
-        {/* Index */}
-        <box width={3} flexShrink={0}>
-          <text style={{ fg: indexColor() }}>{String(props.index).padStart(2)}</text>
-        </box>
-
-        {/* Content */}
-        <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          {/* Row 1: name + status */}
-          <box flexDirection="row">
-            <text truncate flexGrow={1}>
-              <span
-                style={{
-                  fg: nameColor(),
-                  attributes: props.isFocused || props.isCurrent ? BOLD : undefined,
-                }}
-              >
-                {truncName()}
-              </span>
-            </text>
-            <Show when={statusIcon()}>
-              <text flexShrink={0}>
-                <span style={{ fg: statusColor() }}> {statusIcon()}</span>
-              </text>
-            </Show>
-          </box>
-
-          {/* Row 2: branch plus a compact local-port hint when available */}
-          <Show when={props.session.branch || portHint()}>
-            <box flexDirection="row">
-              <Show when={props.session.branch}>
-                <text truncate flexGrow={1}>
-                  <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
-                    {truncBranch()}
-                  </span>
-                </text>
-              </Show>
-              <Show when={portHint()}>
-                <text flexShrink={0}>
-                  <span style={{ fg: props.isFocused ? P().sky : P().overlay0 }}>
-                    {props.session.branch ? " " : ""}
-                    {portHint()}
-                  </span>
-                </text>
-              </Show>
-            </box>
-          </Show>
-
-          {/* Row 3: metadata summary (status + progress) */}
-          <Show when={metaSummary()}>
-            <text truncate>
-              <span style={{ fg: toneColor(metaTone(), P()), attributes: DIM }}>
-                {metaSummary()}
-              </span>
-            </text>
-          </Show>
-        </box>
-      </box>
-
-      {/* Breathing room — 1 empty line between cards */}
-      <box height={1} />
     </box>
   );
 }

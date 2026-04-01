@@ -1,4 +1,4 @@
-# AgentBoard2
+# AgentBoard
 
 Tmux sidebar TUI for monitoring sessions and AI agents. Based on [opensessions](https://github.com/nicholasgasior/opensessions).
 
@@ -38,10 +38,10 @@ tt agentboard setup
 | `1-9`                     | Jump to session             |
 | `d`                       | Hide session                |
 | `x`                       | Kill session (with confirm) |
-| `t`                       | Theme picker                |
 | `r`                       | Refresh                     |
 | `u`                       | Show all sessions           |
-| `n` / `c`                 | New session                 |
+| `n` / `c`                 | New session (fzf picker)    |
+| `?`                       | Help overlay                |
 | `q`                       | Quit                        |
 
 ### Agent Detail Panel
@@ -60,7 +60,7 @@ tt agentboard setup
 ```
 plugins/tt-agentboard/
   apps/
-    server/        WebSocket server (port 7392)
+    server/        WebSocket server (port 4201)
     tui/           OpenTUI + Solid.js terminal UI
   packages/
     runtime/       Shared types, themes, agent watchers
@@ -84,8 +84,38 @@ Solid.js app rendered via OpenTUI. Connects to server over WebSocket.
 
 - Session cards with accent bars, status icons, branch info
 - Resizable detail panel with agent list + metadata
-- 19 builtin themes (Catppuccin, Tokyo Night, Gruvbox, Nord, Dracula, etc.)
 - Mouse support (click, drag to resize)
+- Help overlay (`?`)
+
+#### TUI Components
+
+**`SessionCard`** (`components/SessionCard.tsx`) — session list item
+- Row 1: session name (truncated to 18 chars) + status icon (braille spinner when running, `●` for unseen terminal states)
+- Row 2: git branch + listening port hint (`⌁4201`, or `⌁4201+2` for multiple)
+- Row 3: metadata summary (status text + progress like `3/5` or `42%`)
+- Left accent bar colored by state: green (current), yellow (running), red (error), peach (interrupted), lavender (focused), teal (unseen done)
+
+**`DetailPanel`** (`components/DetailPanel.tsx`) — expanded view for focused session
+- Drag-resizable separator (height persisted per session in config)
+- Truncated working directory
+- Agent list via `AgentListItem` sub-component (see below)
+- Metadata section: status line with tone icon + progress, last 8 log entries
+
+**`AgentListItem`** (inside `DetailPanel.tsx`) — single agent instance row
+- Status icon: braille spinner (running), `◉` (waiting), `✓` (done), `✗` (error), `⚠` (interrupted)
+- Agent name, thread name, status text
+- Dismiss `✕` button (hover turns red), click row to focus the agent's tmux pane
+- Flash animation on click
+
+**`HelpOverlay`** (inline in `index.tsx`) — modal overlay
+- Shows all keybindings in a bordered dialog
+- Dismissed by pressing any key
+
+#### TUI Utilities
+
+- `constants.ts` — shared icons (`SPINNERS`, `UNSEEN_ICON`, `TONE_ICONS`), spark blocks for sparkline charts, theme list, tone-to-color mapping
+- `mux-context.ts` — tmux detection, pane refocus after startup, client TTY and session name resolution
+- `detail-panel-height.ts` — per-session detail panel height persistence (min 4 rows, default 10)
 
 ## Configuration
 
@@ -107,19 +137,20 @@ tt agentboard uninstall  # Remove from tmux
 tt agentboard server     # Start server manually
 tt agentboard tui        # Start TUI manually
 tt agentboard keys       # Show keybindings
+tt agentboard restart    # Kill stash sessions, ensure server, toggle sidebar on
 ```
 
 ## Agent Watchers
 
 Detects and tracks AI coding agents running in tmux sessions:
 
-- **Claude Code** - reads `~/.claude/sessions/` and project journals
+- **Claude Code** - reads `~/.claude/projects/` JSONL journals
 - **Amp** - detects from pane titles
 - **Codex** - reads `~/.codex/logs_1.sqlite`
 - **OpenCode** - reads log files via `lsof`
 
 ## Themes
 
-Press `t` in the sidebar to open the theme picker. Available themes:
+Theme is set via config file. Available themes:
 
 catppuccin-mocha, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, tokyo-night, gruvbox-dark, nord, dracula, github-dark, one-dark, kanagawa, everforest, material, cobalt2, flexoki, ayu, aura, matrix, transparent

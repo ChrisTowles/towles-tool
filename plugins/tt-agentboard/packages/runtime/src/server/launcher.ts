@@ -32,8 +32,8 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
   });
 }
 
-function resolveAgentboard2Dir(): string {
-  if (process.env.AGENTBOARD2_DIR) return process.env.AGENTBOARD2_DIR;
+function resolveAgentboardDir(): string {
+  if (process.env.TT_AGENTBOARD_DIR) return process.env.TT_AGENTBOARD_DIR;
   // Walk up from packages/runtime/src/server/ to the plugin root
   return new URL("../../../..", import.meta.url).pathname;
 }
@@ -50,13 +50,13 @@ export async function ensureServer(): Promise<void> {
     }
   }
 
-  const pluginDir = resolveAgentboard2Dir();
+  const pluginDir = resolveAgentboardDir();
   const serverPath = resolveServerEntryPath(pluginDir);
 
   const proc = Bun.spawn([process.execPath, "run", serverPath], {
     stdio: ["ignore", "ignore", Bun.file(SERVER_ERR_LOG)],
     cwd: pluginDir,
-    env: { ...process.env, AGENTBOARD2_DIR: pluginDir },
+    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
   proc.unref();
 

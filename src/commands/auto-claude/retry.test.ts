@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import consola from "consola";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { Mock } from "vitest";
+
 import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
 import { LABELS } from "../../lib/auto-claude/labels.js";
 import { retryIssues } from "./retry.js";
@@ -12,15 +14,15 @@ import { retryIssues } from "./retry.js";
 // Suppress consola output during tests
 consola.level = -999;
 
-const mockExecSafe: ExecSafeFn = vi.fn().mockResolvedValue({ stdout: "", ok: true });
+const mockExecSafe = vi.fn().mockResolvedValue({ stdout: "", ok: true }) as Mock & ExecSafeFn;
 
 function getGhEditCalls() {
-  return vi
-    .mocked(mockExecSafe)
-    .mock.calls.filter(
-      ([cmd, args]) => cmd === "gh" && args?.[0] === "issue" && args?.[1] === "edit",
+  return mockExecSafe.mock.calls
+    .filter(
+      (call: unknown[]) =>
+        call[0] === "gh" && (call[1] as string[])?.[0] === "issue" && (call[1] as string[])?.[1] === "edit",
     )
-    .map(([, args]) => args as string[]);
+    .map((call: unknown[]) => call[1] as string[]);
 }
 
 describe("retryIssues", () => {

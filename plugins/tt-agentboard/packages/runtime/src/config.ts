@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import type { PartialTheme } from "./themes";
 
-export interface Agentboard2Config {
+export interface AgentboardConfig {
   /** Explicit mux provider name (overrides auto-detect) */
   mux?: string;
   /** Custom server port */
@@ -22,7 +22,7 @@ export interface Agentboard2Config {
   detailPanelHeights?: Record<string, number>;
 }
 
-const DEFAULTS: Agentboard2Config = {
+const DEFAULTS: AgentboardConfig = {
   plugins: [],
 };
 
@@ -30,7 +30,7 @@ const DEFAULTS: Agentboard2Config = {
  * Load config from ~/.config/towles-tool/agentboard/config.json
  * @param homeDir — override home directory (for testing)
  */
-export function loadConfig(homeDir?: string): Agentboard2Config {
+export function loadConfig(homeDir?: string): AgentboardConfig {
   const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
   const configPath = join(home, ".config", "towles-tool", "agentboard", "config.json");
 
@@ -40,7 +40,7 @@ export function loadConfig(homeDir?: string): Agentboard2Config {
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<Agentboard2Config>;
+    const parsed = JSON.parse(raw) as Partial<AgentboardConfig>;
     return {
       ...DEFAULTS,
       ...parsed,
@@ -57,7 +57,7 @@ export function loadConfig(homeDir?: string): Agentboard2Config {
  * @param updates — partial config fields to write
  * @param homeDir — override home directory (for testing)
  */
-export function saveConfig(updates: Partial<Agentboard2Config>, homeDir?: string): void {
+export function saveConfig(updates: Partial<AgentboardConfig>, homeDir?: string): void {
   const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
   const configDir = join(home, ".config", "towles-tool", "agentboard");
   const configPath = join(configDir, "config.json");

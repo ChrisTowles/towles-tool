@@ -1,10 +1,13 @@
 import { defineCommand } from "citty";
-import { execSync } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import consola from "consola";
 import { colors } from "consola/utils";
 import { debugArg } from "./shared.js";
+
+const SERVER_HOST = "127.0.0.1";
+const SERVER_PORT = 4201;
 
 const PLUGIN_DIR = resolve(import.meta.dirname, "../../plugins/tt-agentboard");
 
@@ -95,8 +98,8 @@ function showKeys(): void {
       `  1-9         jump to session`,
       `  d           hide session`,
       `  x           kill session`,
-      `  t           theme picker`,
       `  r           refresh`,
+      `  ?           help`,
       `  q           quit`,
     ].join("\n"),
   );
@@ -193,6 +196,81 @@ function startServer(): void {
   });
 }
 
+async function serverAlive(): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/`, {
+      signal: AbortSignal.timeout(500),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureServerUp(): Promise<boolean> {
+  if (await serverAlive()) return true;
+
+  const serverEntry = resolve(PLUGIN_DIR, "apps/server/src/main.ts");
+  consola.info("Starting agentboard server...");
+  const child = spawn("bun", ["run", serverEntry], {
+    stdio: "ignore",
+    cwd: PLUGIN_DIR,
+    detached: true,
+    env: { ...process.env, AGENTBOARD_DIR: PLUGIN_DIR },
+  });
+  child.unref();
+
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (await serverAlive()) return true;
+  }
+  return false;
+}
+
+async function restart(): Promise<void> {
+  ensureDeps();
+
+  // 1. Kill stash sessions left over from hidden sidebars
+  try {
+    const result = spawnSync("tmux", ["list-sessions", "-F", "#{session_name}"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const sessions = (result.stdout ?? "").trim().split("\n").filter(Boolean);
+    for (const name of sessions) {
+      if (name.startsWith("_ab_stash")) {
+        spawnSync("tmux", ["kill-session", "-t", name], { stdio: "pipe" });
+        consola.info(`Killed stash session: ${name}`);
+      }
+    }
+  } catch {
+    // no tmux or no sessions
+  }
+
+  // 2. Ensure server is running
+  if (!(await ensureServerUp())) {
+    consola.error("Failed to start agentboard server");
+    process.exit(1);
+  }
+  consola.success("Server is running");
+
+  // 3. Toggle sidebar on (the server spawns sidebars in all active windows)
+  try {
+    const res = await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, {
+      method: "POST",
+      body: "",
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.ok) {
+      consola.success("Sidebar toggled on for all sessions");
+    } else {
+      consola.warn(`Toggle returned: ${res.status}`);
+    }
+  } catch (err) {
+    consola.error("Failed to toggle sidebar:", err);
+  }
+}
+
 function startTui(): void {
   ensureDeps();
 
@@ -215,7 +293,7 @@ export default defineCommand({
     subcommand: {
       type: "positional",
       required: false,
-      description: "Subcommand: setup, uninstall, server, tui, start, keys",
+      description: "Subcommand: setup, uninstall, server, tui, start, restart, keys",
     },
   },
   async run({ args }) {
@@ -234,6 +312,9 @@ export default defineCommand({
         break;
       case "start":
         startTui();
+        break;
+      case "restart":
+        await restart();
         break;
       case "keys":
         showKeys();

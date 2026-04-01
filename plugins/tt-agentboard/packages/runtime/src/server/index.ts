@@ -30,7 +30,7 @@ function parseTone(v: unknown): MetadataTone | undefined {
 // --- Debug logger ---
 
 const DEBUG_LOG = "/tmp/agentboard-debug.log";
-const DEBUG_ENABLED = !!process.env.AGENTBOARD2_DEBUG;
+const DEBUG_ENABLED = !!process.env.TT_AGENTBOARD_DEBUG;
 
 function log(category: string, msg: string, data?: Record<string, unknown>) {
   if (!DEBUG_ENABLED) return;
@@ -79,7 +79,7 @@ export function startServer(
 
   // The sidebar launcher lives with the TUI app, not the tmux integration layer.
   const scriptsDir = (() => {
-    const envDir = process.env.AGENTBOARD2_DIR;
+    const envDir = process.env.TT_AGENTBOARD_DIR;
     if (envDir) return join(envDir, "apps", "tui", "scripts");
     // Fallback: relative to this file
     return join(import.meta.dir, "..", "..", "..", "..", "apps", "tui", "scripts");
@@ -130,6 +130,11 @@ export function startServer(
     return map;
   }
 
+  /** Encode a path the same way Claude Code does: replace `/` with `-`. */
+  function encodeProjectDir(dir: string): string {
+    return dir.replace(/\//g, "-");
+  }
+
   const watcherCtx: AgentWatcherContext = {
     resolveSession(projectDir: string): string | null {
       const map = getDirSessionMap();
@@ -137,6 +142,14 @@ export function startServer(
       if (direct) return direct;
       for (const [dir, name] of map) {
         if (projectDir.startsWith(dir + "/") || dir.startsWith(projectDir + "/")) return name;
+      }
+      // Fallback: the decoded projectDir may be wrong due to dash ambiguity.
+      // Re-encode each known session dir and check if the encoded form matches
+      // as a prefix of the (still-encoded) input.
+      const encoded = encodeProjectDir(projectDir);
+      for (const [dir, name] of map) {
+        const encodedDir = encodeProjectDir(dir);
+        if (encoded.startsWith(encodedDir) || encodedDir.startsWith(encoded)) return name;
       }
       return null;
     },
@@ -283,6 +296,10 @@ export function startServer(
           branch: git.branch,
           dirty: git.dirty,
           isWorktree: git.isWorktree,
+          filesChanged: git.filesChanged,
+          linesAdded: git.linesAdded,
+          linesRemoved: git.linesRemoved,
+          commitsDelta: git.commitsDelta,
           unseen: tracker.isUnseen(name),
           panes,
           ports: getSessionPorts(name),

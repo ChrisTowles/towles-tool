@@ -13,6 +13,10 @@ export interface SessionData {
   branch: string;
   dirty: boolean;
   isWorktree: boolean;
+  filesChanged: number;
+  linesAdded: number;
+  linesRemoved: number;
+  commitsDelta: number;
   unseen: boolean;
   panes: number;
   ports: number[];

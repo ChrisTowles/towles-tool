@@ -275,6 +275,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             continue;
           }
           if (now - fileStat.mtimeMs > STALE_MS) continue;
+          // Lazily watch dirs that become active
+          this.watchDir(dirPath);
           await this.processFile(filePath, projectDir);
         }
       }
@@ -300,6 +302,37 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     }
   }
 
+  private watchedDirs = new Set<string>();
+
+  private watchDir(dirPath: string): void {
+    if (this.watchedDirs.has(dirPath)) return;
+    const projectDir = decodeProjectDir(basename(dirPath));
+    try {
+      const w = watch(dirPath, (_eventType, filename) => {
+        if (!filename?.endsWith(".jsonl")) return;
+        this.processFile(join(dirPath, filename), projectDir);
+      });
+      this.fsWatchers.push(w);
+      this.watchedDirs.add(dirPath);
+    } catch {}
+  }
+
+  private hasRecentFiles(dirPath: string): boolean {
+    const fs = require("node:fs") as typeof import("node:fs");
+    try {
+      const files = fs.readdirSync(dirPath);
+      const now = Date.now();
+      for (const file of files) {
+        if (!file.endsWith(".jsonl")) continue;
+        try {
+          const s = fs.statSync(join(dirPath, file));
+          if (now - s.mtimeMs < STALE_MS) return true;
+        } catch {}
+      }
+    } catch {}
+    return false;
+  }
+
   private setupWatchers(): void {
     let dirs: string[];
     try {
@@ -308,22 +341,19 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       return;
     }
 
+    const fs = require("node:fs") as typeof import("node:fs");
     for (const dir of dirs) {
       const dirPath = join(this.projectsDir, dir);
       try {
-        if (!require("node:fs").statSync(dirPath).isDirectory()) continue;
+        if (!fs.statSync(dirPath).isDirectory()) continue;
       } catch {
         continue;
       }
 
-      const projectDir = decodeProjectDir(dir);
-      try {
-        const w = watch(dirPath, (_eventType, filename) => {
-          if (!filename?.endsWith(".jsonl")) return;
-          this.processFile(join(dirPath, filename), projectDir);
-        });
-        this.fsWatchers.push(w);
-      } catch {}
+      // Only watch directories that have recently-modified files
+      if (this.hasRecentFiles(dirPath)) {
+        this.watchDir(dirPath);
+      }
     }
 
     // Watch projects dir for new project directories
@@ -332,19 +362,11 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         if (eventType !== "rename" || !filename) return;
         const dirPath = join(this.projectsDir, filename);
         try {
-          if (!require("node:fs").statSync(dirPath).isDirectory()) return;
+          if (!fs.statSync(dirPath).isDirectory()) return;
         } catch {
           return;
         }
-
-        const projectDir = decodeProjectDir(filename);
-        try {
-          const sub = watch(dirPath, (_et, fn) => {
-            if (!fn?.endsWith(".jsonl")) return;
-            this.processFile(join(dirPath, fn), projectDir);
-          });
-          this.fsWatchers.push(sub);
-        } catch {}
+        this.watchDir(dirPath);
       });
       this.fsWatchers.push(w);
     } catch {}

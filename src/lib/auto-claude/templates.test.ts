@@ -1,9 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import type { Mock } from "vitest";
 
 import { resolveTemplate } from "./templates";
 import type { TemplateFsDeps, TokenValues } from "./templates";
 
-function createMockFs(): TemplateFsDeps {
+function createMockFs(): TemplateFsDeps & {
+  readFileSync: Mock;
+  writeFileSync: Mock;
+  mkdirSync: Mock;
+} {
   return {
     readFileSync: vi.fn().mockReturnValue(""),
     writeFileSync: vi.fn(),
@@ -12,7 +17,7 @@ function createMockFs(): TemplateFsDeps {
 }
 
 describe("resolveTemplate", () => {
-  let mockFs: TemplateFsDeps;
+  let mockFs: ReturnType<typeof createMockFs>;
 
   beforeEach(() => {
     mockFs = createMockFs();
@@ -25,13 +30,13 @@ describe("resolveTemplate", () => {
   };
 
   it("replaces all token placeholders in template", () => {
-    vi.mocked(mockFs.readFileSync).mockReturnValue(
+    mockFs.readFileSync.mockReturnValue(
       "Scope: {{SCOPE_PATH}}\nDir: {{ISSUE_DIR}}\nBranch: {{MAIN_BRANCH}}",
     );
 
     resolveTemplate("plan.md", tokens, "/tmp/issues/42", mockFs);
 
-    const writtenContent = vi.mocked(mockFs.writeFileSync).mock.calls[0][1];
+    const writtenContent = mockFs.writeFileSync.mock.calls[0][1];
     expect(writtenContent).toContain("/home/user/project");
     expect(writtenContent).toContain("/tmp/issues/42");
     expect(writtenContent).toContain("main");
@@ -43,16 +48,16 @@ describe("resolveTemplate", () => {
       ...tokens,
       REVIEW_FEEDBACK: "Needs more tests",
     };
-    vi.mocked(mockFs.readFileSync).mockReturnValue("Feedback: {{REVIEW_FEEDBACK}}");
+    mockFs.readFileSync.mockReturnValue("Feedback: {{REVIEW_FEEDBACK}}");
 
     resolveTemplate("review.md", tokensWithFeedback, "/tmp/issues/42", mockFs);
 
-    const writtenContent = vi.mocked(mockFs.writeFileSync).mock.calls[0][1];
+    const writtenContent = mockFs.writeFileSync.mock.calls[0][1];
     expect(writtenContent).toContain("Needs more tests");
   });
 
   it("creates output directory recursively", () => {
-    vi.mocked(mockFs.readFileSync).mockReturnValue("template content");
+    mockFs.readFileSync.mockReturnValue("template content");
 
     resolveTemplate("plan.md", tokens, "/tmp/issues/42", mockFs);
 
@@ -60,7 +65,7 @@ describe("resolveTemplate", () => {
   });
 
   it("writes resolved template to issue dir", () => {
-    vi.mocked(mockFs.readFileSync).mockReturnValue("simple content");
+    mockFs.readFileSync.mockReturnValue("simple content");
 
     resolveTemplate("plan.md", tokens, "/tmp/issues/42", mockFs);
 
@@ -72,7 +77,7 @@ describe("resolveTemplate", () => {
   });
 
   it("returns relative path from cwd", () => {
-    vi.mocked(mockFs.readFileSync).mockReturnValue("content");
+    mockFs.readFileSync.mockReturnValue("content");
 
     const result = resolveTemplate("plan.md", tokens, "/tmp/issues/42", mockFs);
     // Should be a relative path (not starting with /)
@@ -80,11 +85,11 @@ describe("resolveTemplate", () => {
   });
 
   it("handles multiple occurrences of the same token", () => {
-    vi.mocked(mockFs.readFileSync).mockReturnValue("{{MAIN_BRANCH}} and {{MAIN_BRANCH}} again");
+    mockFs.readFileSync.mockReturnValue("{{MAIN_BRANCH}} and {{MAIN_BRANCH}} again");
 
     resolveTemplate("plan.md", tokens, "/tmp/issues/42", mockFs);
 
-    const writtenContent = vi.mocked(mockFs.writeFileSync).mock.calls[0][1];
+    const writtenContent = mockFs.writeFileSync.mock.calls[0][1];
     expect(writtenContent).toBe("main and main again");
   });
 });

@@ -1,14 +1,14 @@
 import { SERVER_PORT, SERVER_HOST, SERVER_ERR_LOG } from "@tt-agentboard/runtime";
 
-const PORT = Number(process.env.AGENTBOARD2_PORT) || SERVER_PORT;
-const HOST = process.env.AGENTBOARD2_HOST || SERVER_HOST;
+const PORT = Number(process.env.TT_AGENTBOARD_PORT) || SERVER_PORT;
+const HOST = process.env.TT_AGENTBOARD_HOST || SERVER_HOST;
 
 export function resolvePluginDir(): string {
-  if (process.env.AGENTBOARD2_DIR) return process.env.AGENTBOARD2_DIR;
+  if (process.env.TT_AGENTBOARD_DIR) return process.env.TT_AGENTBOARD_DIR;
 
   // Try reading from tmux environment
   try {
-    const r = Bun.spawnSync(["tmux", "show-environment", "-g", "AGENTBOARD2_DIR"], {
+    const r = Bun.spawnSync(["tmux", "show-environment", "-g", "TT_AGENTBOARD_DIR"], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -39,7 +39,7 @@ export async function ensureServer(): Promise<boolean> {
   const proc = Bun.spawn([process.execPath, "run", serverEntry], {
     stdio: ["ignore", "ignore", Bun.file(SERVER_ERR_LOG)],
     cwd: pluginDir,
-    env: { ...process.env, AGENTBOARD2_DIR: pluginDir },
+    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
   });
   proc.unref();
 
