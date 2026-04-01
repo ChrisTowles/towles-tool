@@ -21,6 +21,8 @@ export function SessionCard(props: SessionCardProps) {
 
   const status = () => props.session.agentState?.status ?? "idle";
   const unseen = () => props.session.unseen;
+  const runningAgents = () =>
+    props.session.agents?.filter((a) => a.status === "running").length ?? 0;
 
   const isUnseenTerminal = () => unseen() && ["done", "error", "interrupted"].includes(status());
 
@@ -136,7 +138,11 @@ export function SessionCard(props: SessionCardProps) {
             </text>
             <Show when={statusIcon()}>
               <text flexShrink={0}>
-                <span style={{ fg: statusColor() }}> {statusIcon()}</span>
+                <span style={{ fg: statusColor() }}>
+                  {" "}
+                  {statusIcon()}
+                  {runningAgents() > 1 ? String(runningAgents()) : ""}
+                </span>
               </text>
             </Show>
           </box>

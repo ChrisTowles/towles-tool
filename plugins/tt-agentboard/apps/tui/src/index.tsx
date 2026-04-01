@@ -626,12 +626,12 @@ function App() {
     }
   });
 
-  const runningCount = createMemo(
-    () => sessions.filter((s) => s.agentState?.status === "running").length,
+  const runningAgentCount = createMemo(() =>
+    sessions.reduce((n, s) => n + (s.agents?.filter((a) => a.status === "running").length ?? 0), 0),
   );
 
-  const errorCount = createMemo(
-    () => sessions.filter((s) => s.agentState?.status === "error").length,
+  const errorAgentCount = createMemo(() =>
+    sessions.reduce((n, s) => n + (s.agents?.filter((a) => a.status === "error").length ?? 0), 0),
   );
 
   const unseenCount = createMemo(() => sessions.filter((s) => s.unseen).length);
@@ -643,8 +643,8 @@ function App() {
       {/* Header */}
       <StatusBar
         sessionCount={sessions.length}
-        runningCount={runningCount()}
-        errorCount={errorCount()}
+        runningCount={runningAgentCount()}
+        errorCount={errorAgentCount()}
         unseenCount={unseenCount()}
         theme={theme}
       />
