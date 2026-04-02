@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import stripAnsi from "strip-ansi";
 import type { Issue } from "@towles/shared";
 import { buildIssueChoices, computeColumnLayout } from "./branch";
 
@@ -92,13 +91,13 @@ describe("buildIssueChoices", () => {
 
   it("includes issue title text in description", () => {
     const choices = buildIssueChoices(issues, layout);
-    const desc = stripAnsi(choices[0].description!);
+    const desc = Bun.stripANSI(choices[0].description!);
     expect(desc).toContain("Short bug");
   });
 
   it("includes label names in description", () => {
     const choices = buildIssueChoices(issues, layout);
-    const desc = stripAnsi(choices[1].description!);
+    const desc = Bun.stripANSI(choices[1].description!);
     expect(desc).toContain("enhancement");
     expect(desc).toContain("priority");
   });
@@ -106,7 +105,7 @@ describe("buildIssueChoices", () => {
   it("handles issues with no labels", () => {
     const choices = buildIssueChoices(issues, layout);
     // Issue #7 has no labels — description should still contain the title
-    const desc = stripAnsi(choices[2].description!);
+    const desc = Bun.stripANSI(choices[2].description!);
     expect(desc).toContain("Docs update");
   });
 
