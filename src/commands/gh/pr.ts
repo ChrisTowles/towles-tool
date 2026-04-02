@@ -4,7 +4,7 @@ import consola from "consola";
 import { colors } from "consola/utils";
 
 import { debugArg } from "../shared.js";
-import { isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
+import { isGithubCliInstalled } from "@towles/shared";
 
 function generatePrContent(branch: string, commits: string[]): { title: string; body: string } {
   // Extract issue number from branch name if present (e.g., feature/123-some-feature)

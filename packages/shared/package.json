@@ -1,0 +1,16 @@
+{
+  "name": "@towles/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "consola": "^3.4.2",
+    "strip-ansi": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.8.3"
+  }
+}

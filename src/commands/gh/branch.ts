@@ -6,11 +6,16 @@ import { colors } from "consola/utils";
 import { Fzf } from "fzf";
 
 import { debugArg } from "../shared.js";
-import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
-import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
-import { git } from "../../utils/git/exec.js";
-import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
-import { getTerminalColumns, limitText, printWithHexColor } from "../../utils/render.js";
+import type { Issue } from "@towles/shared";
+import {
+  createBranchNameFromIssue,
+  getIssues,
+  getTerminalColumns,
+  git,
+  isGithubCliInstalled,
+  limitText,
+  printWithHexColor,
+} from "@towles/shared";
 
 export interface ColumnLayout {
   longestNumber: number;
