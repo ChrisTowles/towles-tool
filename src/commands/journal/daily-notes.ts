@@ -6,13 +6,10 @@ import consola from "consola";
 import { colors } from "consola/utils";
 import { withSettings, debugArg } from "../shared.js";
 import { JOURNAL_TYPES } from "../../types/journal.js";
-import {
-  createJournalContent,
-  ensureDirectoryExists,
-  ensureTemplatesExist,
-  generateJournalFileInfoByType,
-  openInEditor,
-} from "../../lib/journal/index.js";
+import { ensureDirectoryExists } from "./fs.js";
+import { openInEditor } from "./editor.js";
+import { createJournalContent, ensureTemplatesExist } from "./templates.js";
+import { generateJournalFileInfoByType } from "./paths.js";
 
 export default defineCommand({
   meta: {

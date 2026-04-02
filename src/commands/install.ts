@@ -7,7 +7,7 @@ import {
   loadClaudeSettings,
   applyRecommendedSettings,
   saveClaudeSettings,
-} from "../lib/install/claude-settings.js";
+} from "./claude-settings.js";
 
 export default defineCommand({
   meta: {
@@ -69,7 +69,7 @@ async function ensureClaudePlugins(): Promise<void> {
   const requiredPlugins = [
     {
       id: "tt@towles-tool",
-      name: "tt-core",
+      name: "core",
       marketplaceUrl: "https://github.com/ChrisTowles/towles-tool",
       marketplace: "towles-tool",
     },

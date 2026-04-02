@@ -6,20 +6,15 @@ import { defineCommand } from "citty";
 import consola from "consola";
 
 import { debugArg } from "../shared.js";
-import {
-  STEP_NAMES,
-  fetchIssue,
-  fetchIssues,
-  getConfig,
-  git,
-  initConfig,
-  log,
-  logBanner,
-  runClaude,
-  runPipeline,
-  sleep,
-} from "../../lib/auto-claude/index.js";
-import type { IssueContext, StepName } from "../../lib/auto-claude/index.js";
+import { STEP_NAMES, runPipeline } from "./pipeline.js";
+import { fetchIssue, fetchIssues } from "./steps/fetch-issues.js";
+import { getConfig, initConfig } from "./config.js";
+import { git } from "@towles/shared";
+import { runClaude } from "./claude-cli.js";
+import { sleep } from "./shell.js";
+import { log, logBanner } from "./utils.js";
+import type { IssueContext } from "./utils.js";
+import type { StepName } from "./prompt-templates/index.js";
 
 export default defineCommand({
   meta: { name: "auto-claude", description: "Automated issue-to-PR pipeline using Claude Code" },

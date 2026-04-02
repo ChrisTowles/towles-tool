@@ -1,7 +1,7 @@
 import path from "node:path";
 import consola from "consola";
 import { DateTime } from "luxon";
-import { getMondayOfWeek } from "../../utils/date-utils.js";
+import { getMondayOfWeek } from "@towles/shared";
 import type { JournalSettings } from "../../config/settings.js";
 import { JOURNAL_TYPES } from "../../types/journal.js";
 import type { JournalType } from "../../types/journal.js";

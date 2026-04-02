@@ -7,40 +7,20 @@ import { x } from "tinyexec";
 import consola from "consola";
 
 import { debugArg } from "../shared.js";
-import {
-  buildAllSessionsTreemap,
-  buildBarChartData,
-  buildSessionTreemap,
-  findRecentSessions,
-  findSessionPath,
-  generateTreemapHtml,
-  openInBrowser,
-  parseJsonl,
-  startServer,
-  waitForShutdown,
-} from "../../lib/graph/index.js";
+import { buildAllSessionsTreemap, buildSessionTreemap } from "./treemap.js";
+import { buildBarChartData, findRecentSessions, findSessionPath } from "./sessions.js";
+import { generateTreemapHtml } from "./render.js";
+import { openInBrowser, startServer, waitForShutdown } from "./server.js";
+import { parseJsonl } from "./parser.js";
 
 // Re-export public API for consumers and tests
-export {
-  analyzeSession,
-  buildAllSessionsTreemap,
-  buildBarChartData,
-  buildSessionTreemap,
-  calculateCutoffMs,
-  extractSessionLabel,
-  filterByDays,
-  findRecentSessions,
-  findSessionPath,
-  generateTreemapHtml,
-  parseJsonl,
-} from "../../lib/graph/index.js";
-export type {
-  BarChartData,
-  BarChartDay,
-  ProjectBar,
-  SessionResult,
-  TreemapNode,
-} from "../../lib/graph/index.js";
+export { analyzeSession } from "./analyzer.js";
+export { buildAllSessionsTreemap, buildSessionTreemap } from "./treemap.js";
+export { buildBarChartData, findRecentSessions, findSessionPath } from "./sessions.js";
+export { calculateCutoffMs, filterByDays, parseJsonl } from "./parser.js";
+export { extractSessionLabel } from "./labels.js";
+export { generateTreemapHtml } from "./render.js";
+export type { BarChartData, BarChartDay, ProjectBar, SessionResult, TreemapNode } from "./types.js";
 
 export default defineCommand({
   meta: { name: "graph", description: "Generate interactive HTML treemap from session token data" },

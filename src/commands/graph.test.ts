@@ -2,7 +2,7 @@
  * Tests for graph command --days filtering and bar chart data
  */
 import { describe, it, expect } from "vitest";
-import { analyzeSession, calculateCutoffMs, filterByDays } from "../lib/graph/index.js";
+import { analyzeSession, calculateCutoffMs, filterByDays } from "./graph/index.js";
 
 describe("graph --days filtering", () => {
   describe("calculateCutoffMs", () => {

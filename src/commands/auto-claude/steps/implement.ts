@@ -4,8 +4,7 @@ import consola from "consola";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
-import { fileExists, readFile } from "../../../utils/fs.js";
-import { git } from "../../../utils/git/exec.js";
+import { fileExists, git, readFile } from "@towles/shared";
 import { runClaude } from "../claude-cli.js";
 import { resolveTemplate } from "../templates.js";
 import { buildTokens, log, logStep } from "../utils.js";

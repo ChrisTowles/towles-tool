@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
-import { LABELS } from "../../lib/auto-claude/labels.js";
+import type { Issue } from "@towles/shared";
+import { LABELS } from "./labels.js";
 import { checkArtifacts, findAcLabel, formatIssueStatus } from "./status.js";
 
 // ── Test fixtures ──

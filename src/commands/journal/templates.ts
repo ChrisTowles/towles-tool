@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import consola from "consola";
 import { colors } from "consola/utils";
-import { formatDate, getWeekInfo } from "../../utils/date-utils.js";
+import { formatDate, getWeekInfo } from "@towles/shared";
 import { ensureDirectoryExists } from "./fs.js";
 
 // Default template file names

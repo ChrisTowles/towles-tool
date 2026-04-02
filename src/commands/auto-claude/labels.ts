@@ -1,4 +1,4 @@
-import { execSafe as defaultExecSafe } from "../../utils/git/exec.js";
+import { execSafe as defaultExecSafe } from "@towles/shared";
 
 // ── Label helpers ──
 

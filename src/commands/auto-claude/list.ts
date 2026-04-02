@@ -7,10 +7,11 @@ import type { Choice } from "prompts";
 
 import { debugArg } from "../shared.js";
 import { buildIssueChoices, computeColumnLayout } from "../gh/branch.js";
-import { STEP_NAMES, fetchIssue, initConfig, runPipeline } from "../../lib/auto-claude/index.js";
-import type { StepName } from "../../lib/auto-claude/index.js";
-import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
-import { getTerminalColumns } from "../../utils/render.js";
+import { STEP_NAMES, runPipeline } from "./pipeline.js";
+import { fetchIssue } from "./steps/fetch-issues.js";
+import { initConfig } from "./config.js";
+import type { StepName } from "./prompt-templates/index.js";
+import { getIssues, getTerminalColumns, isGithubCliInstalled } from "@towles/shared";
 
 export default defineCommand({
   meta: { name: "list", description: "Interactively pick an auto-claude issue to process" },

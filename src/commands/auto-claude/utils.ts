@@ -3,9 +3,15 @@ import { join } from "node:path";
 import consola from "consola";
 import pc from "picocolors";
 
-import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
-import { createBranchNameFromIssue } from "../../utils/git/branch-name.js";
-import { execSafe, git } from "../../utils/git/exec.js";
+import {
+  createBranchNameFromIssue,
+  ensureDir,
+  execSafe,
+  fileExists,
+  git,
+  readFile,
+  writeFile,
+} from "@towles/shared";
 import { runClaude } from "./claude-cli.js";
 import { getConfig } from "./config.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
@@ -14,7 +20,7 @@ import { resolveTemplate } from "./templates.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
 import type { TokenValues } from "./templates.js";
 
-export { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs.js";
+export { ensureDir, fileExists, readFile, writeFile } from "@towles/shared";
 
 // ── Issue context ──
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import consola from "consola";
 import pc from "picocolors";
 
-import { readFile } from "../../utils/fs.js";
+import { readFile } from "@towles/shared";
 import { getConfig } from "./config.js";
 import { sleep } from "./shell.js";
 import { spawnClaude as defaultSpawnClaude } from "./spawn-claude.js";

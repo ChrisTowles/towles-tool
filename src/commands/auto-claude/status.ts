@@ -5,10 +5,10 @@ import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
 
-import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
-import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
-import { ARTIFACTS } from "../../lib/auto-claude/prompt-templates/index.js";
-import { LABELS } from "../../lib/auto-claude/labels.js";
+import type { Issue } from "@towles/shared";
+import { getIssues, isGithubCliInstalled } from "@towles/shared";
+import { ARTIFACTS } from "./prompt-templates/index.js";
+import { LABELS } from "./labels.js";
 import { debugArg } from "../shared.js";
 
 /** All labels that indicate an issue is part of the auto-claude pipeline. */
