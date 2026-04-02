@@ -28,10 +28,7 @@ export async function initConfig(
     const result = await run(
       "gh",
       ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-      {
-        nodeOptions: { cwd: process.cwd() },
-        throwOnError: true,
-      },
+      { throwOnError: true },
     );
     repo = result.stdout.trim();
   }
@@ -42,7 +39,6 @@ export async function initConfig(
   if (!mainBranch) {
     try {
       const result = await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
-        nodeOptions: { cwd: process.cwd() },
         throwOnError: true,
       });
       mainBranch = result.stdout.trim().replace("refs/remotes/origin/", "");
