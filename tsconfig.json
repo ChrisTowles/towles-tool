@@ -11,7 +11,8 @@
     "esModuleInterop": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node", "@types/bun"]
   },
-  "exclude": ["plugins/tt-agentboard", "plugins/tt-agentboard"]
+  "include": ["src/**/*.ts", "bin/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["packages"]
 }

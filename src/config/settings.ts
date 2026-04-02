@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import * as fs from "node:fs";
+import { mkdir, readFile, writeFile, access } from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import consola from "consola";
@@ -54,35 +54,39 @@ function createDefaultSettings(): UserSettings {
   return UserSettingsSchema.parse({});
 }
 
-function createAndSaveDefaultSettings(): UserSettings {
+async function createAndSaveDefaultSettings(): Promise<UserSettings> {
   const userSettings = createDefaultSettings();
-  saveSettings({
+  await saveSettings({
     path: USER_SETTINGS_PATH,
     settings: userSettings,
   });
   return userSettings;
 }
 
-export function saveSettings(settingsFile: SettingsFile): void {
+export async function saveSettings(settingsFile: SettingsFile): Promise<void> {
   try {
-    // Ensure the directory exists
     const dirPath = path.dirname(settingsFile.path);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-
-    fs.writeFileSync(settingsFile.path, JSON.stringify(settingsFile.settings, null, 2), "utf-8");
+    await mkdir(dirPath, { recursive: true });
+    await writeFile(settingsFile.path, JSON.stringify(settingsFile.settings, null, 2), "utf-8");
   } catch (error) {
     consola.error("Error saving user settings file:", error);
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
 export async function loadSettings(): Promise<SettingsFile> {
   let userSettings: UserSettings | null = null;
 
-  // Load user settings
-  if (fs.existsSync(USER_SETTINGS_PATH)) {
-    const userContent = fs.readFileSync(USER_SETTINGS_PATH, "utf-8");
+  if (await fileExists(USER_SETTINGS_PATH)) {
+    const userContent = await readFile(USER_SETTINGS_PATH, "utf-8");
     const parsedUserSettings: unknown = JSON.parse(userContent);
 
     userSettings = UserSettingsSchema.parse(parsedUserSettings);
@@ -94,7 +98,7 @@ export async function loadSettings(): Promise<SettingsFile> {
         settings: userSettings,
       };
 
-      saveSettings(tempSettingsFile);
+      await saveSettings(tempSettingsFile);
     }
   } else {
     // Settings file doesn't exist
@@ -103,7 +107,7 @@ export async function loadSettings(): Promise<SettingsFile> {
     if (isNonInteractive) {
       // Auto-create in CI/non-TTY environments
       consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
-      userSettings = createAndSaveDefaultSettings();
+      userSettings = await createAndSaveDefaultSettings();
     } else {
       // Interactive: ask user if they want to create it
       const confirmed = await consola.prompt(
@@ -115,7 +119,7 @@ export async function loadSettings(): Promise<SettingsFile> {
       if (!confirmed) {
         throw new Error(`Settings file not found and user chose not to create it.`);
       }
-      userSettings = createAndSaveDefaultSettings();
+      userSettings = await createAndSaveDefaultSettings();
     }
   }
 
