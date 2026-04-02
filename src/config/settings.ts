@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { mkdir, readFile, writeFile, access } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import consola from "consola";
@@ -73,43 +73,26 @@ export async function saveSettings(settingsFile: SettingsFile): Promise<void> {
   }
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function loadSettings(): Promise<SettingsFile> {
   let userSettings: UserSettings | null = null;
 
-  if (await fileExists(USER_SETTINGS_PATH)) {
+  try {
     const userContent = await readFile(USER_SETTINGS_PATH, "utf-8");
     const parsedUserSettings: unknown = JSON.parse(userContent);
 
     userSettings = UserSettingsSchema.parse(parsedUserSettings);
-    // made add a save here if the default values differ from the current values
     if (JSON.stringify(parsedUserSettings) !== JSON.stringify(userSettings)) {
       consola.warn(`Settings file ${USER_SETTINGS_PATH} has been updated with default values.`);
-      const tempSettingsFile: SettingsFile = {
-        path: USER_SETTINGS_PATH,
-        settings: userSettings,
-      };
-
-      await saveSettings(tempSettingsFile);
+      await saveSettings({ path: USER_SETTINGS_PATH, settings: userSettings });
     }
-  } else {
-    // Settings file doesn't exist
+  } catch {
+    // Settings file doesn't exist — create it
     const isNonInteractive = process.env.CI || !process.stdout.isTTY;
 
     if (isNonInteractive) {
-      // Auto-create in CI/non-TTY environments
       consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
       userSettings = await createAndSaveDefaultSettings();
     } else {
-      // Interactive: ask user if they want to create it
       const confirmed = await consola.prompt(
         `Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`,
         {

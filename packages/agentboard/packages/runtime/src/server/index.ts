@@ -73,7 +73,7 @@ export function startServer(
   const config = loadConfig();
   let currentTheme: string | undefined =
     typeof config.theme === "string" ? config.theme : undefined;
-  let sidebarWidth = config.sidebarWidth ?? 26;
+  let sidebarWidth = config.sidebarWidth ?? 35;
   let sidebarPosition: "left" | "right" = config.sidebarPosition ?? "left";
   let sidebarVisible = false;
 
