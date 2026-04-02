@@ -1,36 +1,47 @@
 import stripAnsi from "strip-ansi";
-import { x } from "tinyexec";
-import type { Output } from "tinyexec";
 
-import { execSafe } from "./exec.js";
+import { exec, execSafe } from "./exec.js";
+
+export interface ExecOutput {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
 
 export type XFn = (
   cmd: string,
   args?: string[],
   opts?: Record<string, unknown>,
-) => PromiseLike<Output>;
+) => PromiseLike<ExecOutput>;
 
-export async function isGithubCliInstalled(exec: XFn = x as XFn): Promise<boolean> {
+async function defaultX(cmd: string, args: string[] = []): Promise<ExecOutput> {
+  const proc = Bun.spawn([cmd, ...args], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
+  const exitCode = await proc.exited;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  return { stdout, stderr, exitCode };
+}
+
+export async function isGithubCliInstalled(execFn: XFn = defaultX): Promise<boolean> {
   try {
-    const proc = await exec("gh", ["--version"]);
+    const proc = await execFn("gh", ["--version"]);
     return proc.stdout.includes("https://github.com/cli/cli");
   } catch {
-    // gh CLI not installed or not accessible
     return false;
   }
 }
 
 export async function gh<T = unknown>(args: string[]): Promise<T> {
-  const result = await x("gh", args, { nodeOptions: { cwd: process.cwd() }, throwOnError: true });
-  return JSON.parse(result.stdout.trim()) as T;
+  const stdout = await exec("gh", args);
+  return JSON.parse(stdout) as T;
 }
 
 export async function ghRaw(
   args: string[],
-  exec?: (cmd: string, args: string[]) => Promise<{ stdout: string; ok: boolean }>,
+  execFn?: (cmd: string, args: string[]) => Promise<{ stdout: string; ok: boolean }>,
 ): Promise<string> {
-  const execFn = exec ?? execSafe;
-  const result = await execFn("gh", args);
+  const fn = execFn ?? execSafe;
+  const result = await fn("gh", args);
   return result.stdout;
 }
 
@@ -48,7 +59,7 @@ export async function getIssues({
   assignedToMe,
   cwd,
   label,
-  exec = x as XFn,
+  exec: execFn = defaultX,
 }: {
   assignedToMe?: boolean;
   cwd: string;
@@ -65,8 +76,7 @@ export async function getIssues({
     args.push("--label", label);
   }
 
-  const result = await exec("gh", args);
-  // Setting NO_COLOR=1 didn't remove colors so had to use stripAnsi
+  const result = await execFn("gh", args);
   const stripped = stripAnsi(result.stdout);
 
   try {

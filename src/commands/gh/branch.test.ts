@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import stripAnsi from "strip-ansi";
-import type { Issue } from "../../utils/git/gh-cli-wrapper";
+import type { Issue } from "@towles/shared";
 import { buildIssueChoices, computeColumnLayout } from "./branch";
 
 const issues: Issue[] = [
