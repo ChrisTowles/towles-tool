@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
+import { version } from "../package.json";
 
 export const main = defineCommand({
-  meta: { name: "tt", description: "towles-tool — personal CLI utilities" },
+  meta: { name: "tt", version, description: "towles-tool — personal CLI utilities" },
   subCommands: {
     config: () => import("./commands/config.js").then((m) => m.default),
     doctor: () => import("./commands/doctor.js").then((m) => m.default),
