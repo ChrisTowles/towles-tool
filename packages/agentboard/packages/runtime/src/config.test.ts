@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, saveConfig } from "../src/config";
+import { loadConfig, saveConfig } from "./config";
 
 const TEST_HOME = join(import.meta.dir, ".test-home");
 const CONFIG_DIR = join(TEST_HOME, ".config", "towles-tool", "agentboard");

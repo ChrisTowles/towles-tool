@@ -9,7 +9,7 @@ import { debugArg } from "./shared.js";
 const SERVER_HOST = "127.0.0.1";
 const SERVER_PORT = 4201;
 
-const PLUGIN_DIR = resolve(import.meta.dirname, "../../plugins/tt-agentboard");
+const PLUGIN_DIR = resolve(import.meta.dirname, "../../packages/agentboard");
 
 // Keybinding defaults
 const DEFAULT_KEY = "a";

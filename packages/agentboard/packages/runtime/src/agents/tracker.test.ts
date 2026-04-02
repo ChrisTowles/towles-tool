@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { AgentTracker, instanceKey } from "../src/agents/tracker";
-import type { AgentEvent } from "../src/contracts/agent";
+import { AgentTracker, instanceKey } from "./tracker";
+import type { AgentEvent } from "../contracts/agent";
 
 function makeEvent(overrides: Partial<AgentEvent> = {}): AgentEvent {
   return {
