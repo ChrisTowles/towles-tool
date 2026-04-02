@@ -1,5 +1,3 @@
-import stripAnsi from "strip-ansi";
-
 import { exec, execSafe } from "./exec.js";
 
 export interface ExecOutput {
@@ -77,7 +75,7 @@ export async function getIssues({
   }
 
   const result = await execFn("gh", args);
-  const stripped = stripAnsi(result.stdout);
+  const stripped = Bun.stripANSI(result.stdout);
 
   try {
     return JSON.parse(stripped) as Issue[];
