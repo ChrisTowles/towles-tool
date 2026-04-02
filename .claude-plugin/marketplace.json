@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "tt",
-      "source": "./plugins/tt-core",
+      "source": "./packages/core",
       "description": "Ralph autonomous runner, observability tools, git workflows, and journaling commands"
     }
   ]
