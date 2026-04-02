@@ -1,5 +1,5 @@
 import consola from "consola";
-import { x } from "tinyexec";
+import { run } from "@towles/shared";
 import { z } from "zod/v4";
 
 export const AutoClaudeConfigSchema = z.object({
@@ -25,7 +25,7 @@ export async function initConfig(
   // Auto-detect repo
   let repo = overrides.repo;
   if (!repo) {
-    const result = await x(
+    const result = await run(
       "gh",
       ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
       {
@@ -41,7 +41,7 @@ export async function initConfig(
   let mainBranch = overrides.mainBranch;
   if (!mainBranch) {
     try {
-      const result = await x("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
+      const result = await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
         nodeOptions: { cwd: process.cwd() },
         throwOnError: true,
       });

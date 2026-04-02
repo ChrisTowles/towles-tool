@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { x } from "tinyexec";
+import { run } from "@towles/shared";
 import consola from "consola";
 
 import { debugArg } from "../shared.js";
@@ -132,7 +132,7 @@ export default defineCommand({
     } else if (args.open) {
       consola.info("\n📈 Opening treemap...");
       const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-      await x(openCmd, [outputPath]);
+      await run(openCmd, [outputPath]);
     }
   },
 });

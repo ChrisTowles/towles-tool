@@ -1,3 +1,30 @@
+export interface XResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export interface XOptions {
+  throwOnError?: boolean;
+  nodeOptions?: { cwd?: string };
+}
+
+/**
+ * Run a command and return stdout, stderr, and exitCode.
+ * Drop-in replacement for tinyexec's `x()`.
+ */
+export async function run(cmd: string, args: string[] = [], options?: XOptions): Promise<XResult> {
+  const cwd = options?.nodeOptions?.cwd ?? process.cwd();
+  const proc = Bun.spawn([cmd, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const exitCode = await proc.exited;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  if (options?.throwOnError && exitCode !== 0) {
+    throw new Error(`Command failed (exit ${exitCode}): ${cmd} ${args.join(" ")}\n${stderr}`);
+  }
+  return { stdout, stderr, exitCode };
+}
+
 export async function exec(cmd: string, args: string[]): Promise<string> {
   const proc = Bun.spawn([cmd, ...args], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
   const exitCode = await proc.exited;

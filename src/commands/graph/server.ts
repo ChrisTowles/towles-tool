@@ -1,5 +1,5 @@
 import * as http from "node:http";
-import { x } from "tinyexec";
+import { run } from "@towles/shared";
 
 /**
  * Start a local HTTP server to serve the generated HTML.
@@ -54,7 +54,7 @@ export async function startServer(
  */
 export function openInBrowser(url: string): void {
   const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-  x(openCmd, [url]);
+  run(openCmd, [url]);
 }
 
 /**

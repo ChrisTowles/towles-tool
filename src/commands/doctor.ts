@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { defineCommand } from "citty";
 import consola from "consola";
-import { x } from "tinyexec";
+import { run } from "@towles/shared";
 import { colors } from "consola/utils";
 import { debugArg } from "./shared.js";
 
@@ -20,7 +20,7 @@ async function checkCommand(
   optional = false,
 ): Promise<CheckResult> {
   try {
-    const result = await x(name, args);
+    const result = await run(name, args);
     const output = result.stdout + result.stderr;
     const match = output.match(versionPattern);
     return {
@@ -41,7 +41,7 @@ async function checkCommand(
 
 async function checkGhAuth(): Promise<{ ok: boolean }> {
   try {
-    const result = await x("gh", ["auth", "status"]);
+    const result = await run("gh", ["auth", "status"]);
     return { ok: result.exitCode === 0 };
   } catch {
     consola.debug("GitHub CLI auth check failed");
@@ -118,7 +118,7 @@ async function checkClaudePlugins(): Promise<
   ];
 
   try {
-    const result = await x("claude", ["plugin", "list", "--json"]);
+    const result = await run("claude", ["plugin", "list", "--json"]);
     const plugins: { id: string }[] = JSON.parse(result.stdout);
     const installedIds = new Set(plugins.map((p) => p.id));
 

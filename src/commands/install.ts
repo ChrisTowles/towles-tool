@@ -64,7 +64,7 @@ export default defineCommand({
 });
 
 async function ensureClaudePlugins(): Promise<void> {
-  const { x } = await import("tinyexec");
+  const { run } = await import("@towles/shared");
 
   const requiredPlugins = [
     {
@@ -81,7 +81,7 @@ async function ensureClaudePlugins(): Promise<void> {
 
   let installedIds = new Set<string>();
   try {
-    const result = await x("claude", ["plugin", "list", "--json"]);
+    const result = await run("claude", ["plugin", "list", "--json"]);
     const plugins: { id: string }[] = JSON.parse(result.stdout);
     installedIds = new Set(plugins.map((p) => p.id));
   } catch {
@@ -91,7 +91,7 @@ async function ensureClaudePlugins(): Promise<void> {
   for (const plugin of requiredPlugins) {
     if (plugin.marketplaceUrl && !installedIds.has(plugin.id)) {
       try {
-        await x("claude", ["plugin", "marketplace", "add", plugin.marketplaceUrl]);
+        await run("claude", ["plugin", "marketplace", "add", plugin.marketplaceUrl]);
         consola.log(colors.dim(`  Added marketplace: ${plugin.marketplace}`));
       } catch {
         // marketplace may already be added
@@ -111,7 +111,7 @@ async function ensureClaudePlugins(): Promise<void> {
     });
 
     if (answer) {
-      const result = await x("claude", ["plugin", "install", plugin.id, "--scope", "user"]);
+      const result = await run("claude", ["plugin", "install", plugin.id, "--scope", "user"]);
       if (result.exitCode === 0) {
         consola.log(colors.green(`✓ ${plugin.name} installed`));
       } else {

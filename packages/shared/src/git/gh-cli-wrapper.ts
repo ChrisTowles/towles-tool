@@ -1,24 +1,11 @@
-import { exec, execSafe } from "./exec.js";
-
-export interface ExecOutput {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
+import { exec, execSafe, run as defaultX } from "./exec.js";
+import type { XResult } from "./exec.js";
 
 export type XFn = (
   cmd: string,
   args?: string[],
   opts?: Record<string, unknown>,
-) => PromiseLike<ExecOutput>;
-
-async function defaultX(cmd: string, args: string[] = []): Promise<ExecOutput> {
-  const proc = Bun.spawn([cmd, ...args], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
-  const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  return { stdout, stderr, exitCode };
-}
+) => PromiseLike<XResult>;
 
 export async function isGithubCliInstalled(execFn: XFn = defaultX): Promise<boolean> {
   try {
