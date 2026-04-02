@@ -1,10 +1,9 @@
 import { defineCommand } from "citty";
-import { x } from "tinyexec";
+import { run, isGithubCliInstalled } from "@towles/shared";
 import consola from "consola";
 import { colors } from "consola/utils";
 
 import { debugArg } from "../shared.js";
-import { isGithubCliInstalled } from "@towles/shared";
 
 function generatePrContent(branch: string, commits: string[]): { title: string; body: string } {
   // Extract issue number from branch name if present (e.g., feature/123-some-feature)
@@ -85,7 +84,7 @@ export default defineCommand({
     }
 
     // Get current branch
-    const branchResult = await x("git", ["branch", "--show-current"]);
+    const branchResult = await run("git", ["branch", "--show-current"]);
     const currentBranch = branchResult.stdout.trim();
 
     if (!currentBranch) {
@@ -102,7 +101,7 @@ export default defineCommand({
     consola.info(`Base branch: ${colors.cyan(args.base)}`);
 
     // Get commits between base and current branch
-    const logResult = await x("git", ["log", `${args.base}..HEAD`, "--pretty=format:%s"]);
+    const logResult = await run("git", ["log", `${args.base}..HEAD`, "--pretty=format:%s"]);
 
     const commits = logResult.stdout.trim().split("\n").filter(Boolean);
 
@@ -135,12 +134,12 @@ export default defineCommand({
     }
 
     // Push branch if needed
-    const statusResult = await x("git", ["status", "-sb"]);
+    const statusResult = await run("git", ["status", "-sb"]);
     const needsPush = !statusResult.stdout.includes("origin/");
 
     if (needsPush) {
       consola.info("Pushing branch to remote...");
-      await x("git", ["push", "-u", "origin", currentBranch]);
+      await run("git", ["push", "-u", "origin", currentBranch]);
     }
 
     // Create PR
@@ -150,7 +149,7 @@ export default defineCommand({
       prArgs.push("--draft");
     }
 
-    const prResult = await x("gh", prArgs);
+    const prResult = await run("gh", prArgs);
     const prUrl = prResult.stdout.trim();
 
     consola.success(`PR created: ${colors.cyan(prUrl)}`);
