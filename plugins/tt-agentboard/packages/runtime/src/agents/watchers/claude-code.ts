@@ -145,7 +145,30 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const threadId = basename(filePath, ".jsonl");
     const prev = this.sessions.get(threadId);
 
-    if (prev && size === prev.fileSize) return;
+    if (prev && size === prev.fileSize) {
+      // Post-seed: if status is "running" but journal hasn't been written to
+      // in >10s, the process likely exited — downgrade to "idle".
+      if (this.seeded && prev.status === "running") {
+        try {
+          const mtime = (await stat(filePath)).mtimeMs;
+          if (Date.now() - mtime > 10_000) {
+            prev.status = "idle";
+            const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
+            if (session) {
+              this.ctx?.emit({
+                agent: "claude-code",
+                session,
+                status: "idle",
+                ts: Date.now(),
+                threadId,
+                threadName: prev.threadName,
+              });
+            }
+          }
+        } catch {}
+      }
+      return;
+    }
 
     // Seed mode: read last entry to capture real status for post-seed emit
     if (!this.seeded) {
