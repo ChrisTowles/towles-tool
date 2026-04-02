@@ -1,6 +1,6 @@
 import consola from "consola";
 import { getConfig } from "../config.js";
-import { gh } from "../../../utils/git/gh-cli-wrapper.js";
+import { gh } from "@towles/shared";
 import { buildIssueContext, log } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 

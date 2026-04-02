@@ -78,7 +78,7 @@ describe("auto-claude e2e: full pipeline lifecycle", () => {
         return { stdout: "", ok: true };
       }
       // Pass through non-gh commands to real exec
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });
@@ -221,7 +221,7 @@ describe("auto-claude e2e: label state transitions", () => {
         }
         return { stdout: "", ok: true };
       }
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });
@@ -369,7 +369,7 @@ describe("auto-claude e2e: retry loop behavior", () => {
         }
         return { stdout: "", ok: true };
       }
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });
@@ -511,7 +511,7 @@ describe("auto-claude e2e: --until flag behavior", () => {
       if (cmd === "gh") {
         return { stdout: "[]", ok: true };
       }
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });
@@ -661,7 +661,7 @@ describe("auto-claude e2e: git operations", () => {
         }
         return { stdout: "", ok: true };
       }
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });
@@ -791,7 +791,7 @@ describe("auto-claude e2e: edge cases", () => {
       if (cmd === "gh") {
         return { stdout: "[]", ok: true };
       }
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });

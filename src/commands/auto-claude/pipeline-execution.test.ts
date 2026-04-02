@@ -57,7 +57,7 @@ describe("runPipeline", () => {
         return { stdout: "[]", ok: true };
       }
       // Pass through non-gh commands to real exec
-      const { execSafe } = await import("../../utils/git/exec");
+      const { execSafe } = await import("@towles/shared");
       return execSafe(cmd, args);
     }) as ExecSafeFn;
   });

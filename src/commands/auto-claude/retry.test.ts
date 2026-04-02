@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { Mock } from "vitest";
 
-import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
-import { LABELS } from "../../lib/auto-claude/labels.js";
+import type { ExecSafeFn } from "./labels.js";
+import { LABELS } from "./labels.js";
 import { retryIssues } from "./retry.js";
 
 // Suppress consola output during tests

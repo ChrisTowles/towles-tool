@@ -7,11 +7,11 @@ import { colors } from "consola/utils";
 import prompts from "prompts";
 
 import { debugArg } from "../shared.js";
-import { initConfig } from "../../lib/auto-claude/index.js";
-import { LABELS, removeLabel, setLabel } from "../../lib/auto-claude/labels.js";
-import type { ExecSafeFn } from "../../lib/auto-claude/labels.js";
-import { getIssues, isGithubCliInstalled } from "../../utils/git/gh-cli-wrapper.js";
-import type { Issue } from "../../utils/git/gh-cli-wrapper.js";
+import { initConfig } from "./config.js";
+import { LABELS, removeLabel, setLabel } from "./labels.js";
+import type { ExecSafeFn } from "./labels.js";
+import { getIssues, isGithubCliInstalled } from "@towles/shared";
+import type { Issue } from "@towles/shared";
 
 /**
  * Core retry logic: swap labels on failed issues to re-trigger the pipeline.
