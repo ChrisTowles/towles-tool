@@ -19,10 +19,15 @@
     "towles-tool": "./bin/run.ts",
     "tt": "./bin/run.ts"
   },
+  "workspaces": [
+    "packages/*",
+    "packages/agentboard/apps/*",
+    "packages/agentboard/packages/*"
+  ],
   "files": [
     "bin",
+    "packages",
     "patches",
-    "plugins",
     "src"
   ],
   "type": "module",
@@ -47,6 +52,7 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.4",
     "@anthropic-ai/sdk": "^0.56.0",
+    "@towles/shared": "workspace:*",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
@@ -60,6 +66,7 @@
     "zod": "^4.0.5"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/luxon": "^3.6.2",
     "@types/node": "^22.16.3",
