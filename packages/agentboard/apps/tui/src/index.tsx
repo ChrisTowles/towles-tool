@@ -740,13 +740,28 @@ function App() {
           fallback={
             <KeyHints
               palette={P}
-              hints={[["←", "back"], ["⏎", "focus"], ["d", "dismiss"], ["x", "kill"]]}
+              hints={[
+                ["←", "back"],
+                ["⏎", "focus"],
+                ["d", "dismiss"],
+                ["x", "kill"],
+              ]}
             />
           }
         >
           <KeyHints
             palette={P}
-            hints={[["⇥", "cycle"], ["⏎", "go"], ["→", "detail"], ["n", "new"], ["d", "hide"], ["x", "kill"], ["r", "refresh"], ["q", "quit"], ["?", "help"]]}
+            hints={[
+              ["⇥", "cycle"],
+              ["⏎", "go"],
+              ["→", "detail"],
+              ["n", "new"],
+              ["d", "hide"],
+              ["x", "kill"],
+              ["r", "refresh"],
+              ["q", "quit"],
+              ["?", "help"],
+            ]}
           />
         </Show>
       </box>
