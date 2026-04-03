@@ -337,6 +337,7 @@ function init(): void {
   tmux("set-hook", "-g", "after-select-window", hookPost("/ensure-sidebar", focusBody));
   tmux("set-hook", "-g", "after-new-window", hookPost("/ensure-sidebar", focusBody));
   tmux("set-hook", "-g", "after-resize-pane", hookPost("/resize-sidebars", resizeBody));
+
 }
 
 async function runToggle(): Promise<void> {
@@ -407,20 +408,27 @@ async function restart(): Promise<void> {
   }
   consola.success("Server is running");
 
-  // 3. Toggle sidebar on (the server spawns sidebars in all active windows)
+  // 3. Bootstrap sidebars — refresh session list, then ensure-sidebar for
+  //    each active client's window so sidebars appear without interaction.
+  const base = `http://${SERVER_HOST}:${SERVER_PORT}`;
+  await fetch(`${base}/refresh`, { method: "POST", signal: AbortSignal.timeout(2000) }).catch(() => {});
+
   try {
-    const res = await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, {
-      method: "POST",
-      body: "",
-      signal: AbortSignal.timeout(2000),
+    const clients = spawnSync("tmux", ["list-clients", "-F", "#{client_tty}|#{session_name}|#{window_id}"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
     });
-    if (res.ok) {
-      consola.success("Sidebar toggled on for all sessions");
-    } else {
-      consola.warn(`Toggle returned: ${res.status}`);
+    const lines = (clients.stdout ?? "").trim().split("\n").filter(Boolean);
+    for (const ctx of lines) {
+      await fetch(`${base}/ensure-sidebar`, {
+        method: "POST",
+        body: ctx,
+        signal: AbortSignal.timeout(2000),
+      }).catch(() => {});
     }
+    consola.success(`Sidebars ensured for ${lines.length} client(s)`);
   } catch (err) {
-    consola.error("Failed to toggle sidebar:", err);
+    consola.error("Failed to bootstrap sidebars:", err);
   }
 }
 
