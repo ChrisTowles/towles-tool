@@ -8,7 +8,7 @@ import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watch
 import { AgentTracker, instanceKey } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
 import { SessionMetadataStore } from "./metadata-store";
-import { loadConfig, saveConfig } from "../config";
+import { loadConfig, saveConfig, loadPreferredEditor } from "../config";
 import { resolveSidebarWidthFromResizeContext, snapshotSidebarWindows } from "./sidebar-width-sync";
 import type { SidebarResizeContext, SidebarResizeSuppression } from "./sidebar-width-sync";
 import { shell, getGitInfo, syncGitWatchers, teardownGitWatchers } from "./git-info";
@@ -319,6 +319,7 @@ export function startServer(
       currentSession,
       theme: currentTheme,
       sidebarWidth,
+      preferredEditor: loadPreferredEditor(),
       ts: Date.now(),
     };
   }

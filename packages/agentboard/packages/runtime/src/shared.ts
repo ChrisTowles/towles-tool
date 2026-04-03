@@ -36,6 +36,7 @@ export interface ServerState {
   currentSession: string | null;
   theme: string | undefined;
   sidebarWidth: number;
+  preferredEditor: string;
   ts: number;
 }
 
