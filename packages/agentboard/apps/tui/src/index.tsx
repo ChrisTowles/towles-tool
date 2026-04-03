@@ -165,6 +165,7 @@ function App() {
   const [connected, setConnected] = createSignal(false);
   const [spinIdx, setSpinIdx] = createSignal(0);
   const [detailPanelHeight, setDetailPanelHeight] = createSignal(DEFAULT_DETAIL_PANEL_HEIGHT);
+  const [preferredEditor, setPreferredEditor] = createSignal("code");
   const [isDetailResizeHover, setIsDetailResizeHover] = createSignal(false);
   const [isDetailResizing, setIsDetailResizing] = createSignal(false);
   const detailPanelSessionName = createMemo(() => focusedSession() ?? mySession());
@@ -370,6 +371,17 @@ function App() {
     });
   }
 
+  function openInEditor() {
+    const data = focusedData();
+    if (!data?.dir) return;
+    const editor = preferredEditor();
+    Bun.spawn([editor, data.dir], {
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore",
+    });
+  }
+
   onMount(() => {
     logResizeDebug("mount", {
       startupSessionName,
@@ -429,6 +441,7 @@ function App() {
             setFocusedSession(startupFocus);
             setCurrentSession(msg.currentSession);
             setTheme(resolveTheme(msg.theme));
+            if (msg.preferredEditor) setPreferredEditor(msg.preferredEditor);
           } else if (msg.type === "focus") {
             setFocusedSession(msg.focusedSession);
             setCurrentSession(msg.currentSession);
@@ -625,6 +638,9 @@ function App() {
         }
         break;
       }
+      case "e":
+        openInEditor();
+        break;
       case "n":
         createNewSession();
         break;
@@ -756,6 +772,7 @@ function App() {
               ["⏎", "go"],
               ["→", "detail"],
               ["n", "new"],
+              ["e", "edit"],
               ["d", "hide"],
               ["x", "kill"],
               ["r", "refresh"],
@@ -821,6 +838,7 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
     ["1-9", "Jump to session"],
     ["Tab", "Cycle sessions"],
     ["n", "New session"],
+    ["e", "Open in editor"],
     ["d", "Hide session"],
     ["x", "Kill session"],
     ["r", "Refresh"],
