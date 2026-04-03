@@ -36,10 +36,25 @@ export const JournalSettingsSchema = z.object({
 
 export type JournalSettings = z.infer<typeof JournalSettingsSchema>;
 
+export const AgentboardSettingsSchema = z.object({
+  mux: z.string().optional(),
+  port: z.number().optional(),
+  theme: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
+  sidebarWidth: z.number().optional(),
+  sidebarPosition: z.enum(["left", "right"]).optional(),
+  keybinding: z.string().optional(),
+  detailPanelHeights: z.record(z.string(), z.number()).optional(),
+});
+
+export type AgentboardSettings = z.infer<typeof AgentboardSettingsSchema>;
+
 export const UserSettingsSchema = z.object({
   preferredEditor: z.string().default("code"),
   journalSettings: JournalSettingsSchema.optional().transform(
     (v) => v ?? JournalSettingsSchema.parse({}),
+  ),
+  agentboard: AgentboardSettingsSchema.optional().transform(
+    (v) => v ?? AgentboardSettingsSchema.parse({}),
   ),
 });
 
