@@ -90,38 +90,6 @@ export class PluginLoader {
   }
 
   /**
-   * Load community plugins from npm package names.
-   * Each package should `export default function(api: PluginAPI) { ... }`
-   * or have a package.json "agentboard" field pointing to the entry file.
-   *
-   * Returns names of successfully loaded packages.
-   */
-  loadPackages(packageNames: string[]): string[] {
-    const loaded: string[] = [];
-    const api = this.createAPI();
-
-    for (const pkg of packageNames) {
-      try {
-        const mod = require(pkg);
-        const factory: PluginFactory | undefined =
-          typeof mod.default === "function"
-            ? mod.default
-            : typeof mod === "function"
-              ? mod
-              : undefined;
-        if (factory) {
-          factory(api);
-          loaded.push(pkg);
-        }
-      } catch {
-        // Package not installed or broken — skip
-      }
-    }
-
-    return loaded;
-  }
-
-  /**
    * Load a single factory from a file path.
    */
   private loadFactory(filePath: string, api: PluginAPI): boolean {
@@ -145,7 +113,7 @@ export class PluginLoader {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     return {
       registeredMuxProviders: this.registry.list(),
-      configPath: join(home, ".config", "towles-tool", "agentboard", "config.json"),
+      configPath: join(home, ".config", "towles-tool", "towles-tool.settings.json"),
       serverPort: SERVER_PORT,
     };
   }
