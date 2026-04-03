@@ -609,7 +609,6 @@ function App() {
         break;
       }
       case "n":
-      case "c":
         createNewSession();
         break;
       case "?":
@@ -741,10 +740,18 @@ function App() {
             <span style={{ fg: P().overlay1 }}>{" go  "}</span>
             <span style={{ fg: P().overlay0 }}>{"→"}</span>
             <span style={{ fg: P().overlay1 }}>{" detail  "}</span>
+            <span style={{ fg: P().overlay0 }}>{"n"}</span>
+            <span style={{ fg: P().overlay1 }}>{" new  "}</span>
             <span style={{ fg: P().overlay0 }}>{"d"}</span>
             <span style={{ fg: P().overlay1 }}>{" hide  "}</span>
             <span style={{ fg: P().overlay0 }}>{"x"}</span>
-            <span style={{ fg: P().overlay1 }}>{" kill"}</span>
+            <span style={{ fg: P().overlay1 }}>{" kill  "}</span>
+            <span style={{ fg: P().overlay0 }}>{"r"}</span>
+            <span style={{ fg: P().overlay1 }}>{" refresh  "}</span>
+            <span style={{ fg: P().overlay0 }}>{"q"}</span>
+            <span style={{ fg: P().overlay1 }}>{" quit  "}</span>
+            <span style={{ fg: P().overlay0 }}>{"?"}</span>
+            <span style={{ fg: P().overlay1 }}>{" help"}</span>
           </text>
         </Show>
       </box>
@@ -803,7 +810,7 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
     ["Enter", "Switch to session"],
     ["1-9", "Jump to session"],
     ["Tab", "Cycle sessions"],
-    ["n/c", "New session"],
+    ["n", "New session"],
     ["d", "Hide session"],
     ["x", "Kill session"],
     ["r", "Refresh"],

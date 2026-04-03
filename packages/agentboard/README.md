@@ -40,7 +40,7 @@ tt agentboard setup
 | `x`                       | Kill session (with confirm) |
 | `r`                       | Refresh                     |
 | `u`                       | Show all sessions           |
-| `n` / `c`                 | New session (fzf picker)    |
+| `n`                       | New session (fzf picker)    |
 | `?`                       | Help overlay                |
 | `q`                       | Quit                        |
 
