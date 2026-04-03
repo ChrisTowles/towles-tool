@@ -75,6 +75,7 @@ export function startServer(
     typeof config.theme === "string" ? config.theme : undefined;
   let sidebarWidth = config.sidebarWidth ?? 35;
   let sidebarPosition: "left" | "right" = config.sidebarPosition ?? "left";
+  let preferredEditor = loadPreferredEditor();
   let sidebarVisible = false;
 
   log("server", "config loaded", {
@@ -319,7 +320,7 @@ export function startServer(
       currentSession,
       theme: currentTheme,
       sidebarWidth,
-      preferredEditor: loadPreferredEditor(),
+      preferredEditor,
       ts: Date.now(),
     };
   }
