@@ -8,7 +8,6 @@ import {
   startServer,
 } from "@tt-agentboard/runtime";
 import { TmuxProvider } from "@tt-agentboard/mux-tmux";
-import { join } from "node:path";
 
 const config = loadConfig();
 const loader = new PluginLoader();
@@ -21,27 +20,13 @@ try {
   console.error("Failed to initialize tmux provider:", err);
 }
 
-const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-const pluginDir = join(home, ".config", "towles-tool", "agentboard", "plugins");
-const localPlugins = loader.loadDir(pluginDir);
-if (localPlugins.length > 0) {
-  console.log(`Loaded local plugins: ${localPlugins.join(", ")}`);
-}
-
-if (config.plugins.length > 0) {
-  const npmPlugins = loader.loadPackages(config.plugins);
-  if (npmPlugins.length > 0) {
-    console.log(`Loaded npm plugins: ${npmPlugins.join(", ")}`);
-  }
-}
-
 const mux = loader.resolve(config.mux);
 if (!mux) {
   console.error(
     "No terminal multiplexer detected.\n" +
       `Registered providers: ${loader.registry.list().join(", ") || "(none)"}\n` +
       "$TMUX environment variable is not set — are you running inside a tmux session?\n" +
-      "Set 'mux' in ~/.config/towles-tool/agentboard/config.json to override.",
+      "Set 'mux' in your towles-tool settings to override.",
   );
   process.exit(1);
 }
