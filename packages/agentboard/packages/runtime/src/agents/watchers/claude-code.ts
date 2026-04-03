@@ -147,11 +147,11 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
 
     if (prev && size === prev.fileSize) {
       // Post-seed: if status is "running" but journal hasn't been written to
-      // in >10s, the process likely exited — downgrade to "idle".
+      // in >2min, the process likely exited — downgrade to "idle".
       if (this.seeded && prev.status === "running") {
         try {
           const mtime = (await stat(filePath)).mtimeMs;
-          if (Date.now() - mtime > 10_000) {
+          if (Date.now() - mtime > 120_000) {
             prev.status = "idle";
             const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
             if (session) {
@@ -201,7 +201,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       if (latestStatus === "running") {
         try {
           const mtime = (await stat(filePath)).mtimeMs;
-          if (Date.now() - mtime > 10_000) latestStatus = "idle";
+          if (Date.now() - mtime > 120_000) latestStatus = "idle";
         } catch {}
       }
 
