@@ -19,6 +19,9 @@ tsconfig.tsbuildinfo
 # promptfoo cache/output
 .promptfoo/
 
+# superpowers skill plans/docs
+docs/superpowers/
+
 # auto-claude artifacts
 .auto-claude/
 .auto-claude/**/prompt-*.md
