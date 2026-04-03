@@ -18,6 +18,7 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import type { AgentStatus } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../../contracts/agent-watcher";
+import { JOURNAL_IDLE_TIMEOUT_MS } from "../../shared";
 
 // --- Types ---
 
@@ -151,7 +152,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       if (this.seeded && prev.status === "running") {
         try {
           const mtime = (await stat(filePath)).mtimeMs;
-          if (Date.now() - mtime > 120_000) {
+          if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) {
             prev.status = "idle";
             const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
             if (session) {
@@ -201,7 +202,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       if (latestStatus === "running") {
         try {
           const mtime = (await stat(filePath)).mtimeMs;
-          if (Date.now() - mtime > 120_000) latestStatus = "idle";
+          if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) latestStatus = "idle";
         } catch {}
       }
 

@@ -1,0 +1,23 @@
+{
+  "skill_name": "typescript-best-practices",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm defining a set of user roles for my app -- admin, editor, viewer. What's the best way to type this in TypeScript?",
+      "expected_output": "Should recommend `as const` array with derived union type, NOT a TypeScript enum. Should explain why enums are avoided.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I have a function that can return a success with data or fail in 3 different ways (not found, permission denied, validation error). How should I type the return value?",
+      "expected_output": "Should recommend a discriminated union with a consistent tag field. Should show exhaustive switch pattern with never check.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I have userId, teamId, and orgId all as strings and I keep mixing them up in function calls. How do I prevent that at the type level?",
+      "expected_output": "Should recommend branded types using string & { readonly __brand: 'X' } pattern. Should show constructor functions.",
+      "files": []
+    }
+  ]
+}

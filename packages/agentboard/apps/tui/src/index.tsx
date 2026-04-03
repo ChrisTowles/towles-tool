@@ -133,6 +133,23 @@ function getLocalSessionName(): string | null {
   return null;
 }
 
+function KeyHints(props: { hints: [string, string][]; palette: Accessor<Theme["palette"]> }) {
+  return (
+    <text>
+      <For each={props.hints}>
+        {([key, label], i) => (
+          <>
+            <span style={{ fg: props.palette().overlay0 }}>{key}</span>
+            <span style={{ fg: props.palette().overlay1 }}>
+              {i() < props.hints.length - 1 ? ` ${label}  ` : ` ${label}`}
+            </span>
+          </>
+        )}
+      </For>
+    </text>
+  );
+}
+
 function App() {
   const renderer = useRenderer();
 
@@ -721,38 +738,16 @@ function App() {
         <Show
           when={panelFocus() === "sessions"}
           fallback={
-            <text>
-              <span style={{ fg: P().overlay0 }}>{"←"}</span>
-              <span style={{ fg: P().overlay1 }}>{" back  "}</span>
-              <span style={{ fg: P().overlay0 }}>{"⏎"}</span>
-              <span style={{ fg: P().overlay1 }}>{" focus  "}</span>
-              <span style={{ fg: P().overlay0 }}>{"d"}</span>
-              <span style={{ fg: P().overlay1 }}>{" dismiss  "}</span>
-              <span style={{ fg: P().overlay0 }}>{"x"}</span>
-              <span style={{ fg: P().overlay1 }}>{" kill"}</span>
-            </text>
+            <KeyHints
+              palette={P}
+              hints={[["←", "back"], ["⏎", "focus"], ["d", "dismiss"], ["x", "kill"]]}
+            />
           }
         >
-          <text>
-            <span style={{ fg: P().overlay0 }}>{"⇥"}</span>
-            <span style={{ fg: P().overlay1 }}>{" cycle  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"⏎"}</span>
-            <span style={{ fg: P().overlay1 }}>{" go  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"→"}</span>
-            <span style={{ fg: P().overlay1 }}>{" detail  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"n"}</span>
-            <span style={{ fg: P().overlay1 }}>{" new  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"d"}</span>
-            <span style={{ fg: P().overlay1 }}>{" hide  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"x"}</span>
-            <span style={{ fg: P().overlay1 }}>{" kill  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"r"}</span>
-            <span style={{ fg: P().overlay1 }}>{" refresh  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"q"}</span>
-            <span style={{ fg: P().overlay1 }}>{" quit  "}</span>
-            <span style={{ fg: P().overlay0 }}>{"?"}</span>
-            <span style={{ fg: P().overlay1 }}>{" help"}</span>
-          </text>
+          <KeyHints
+            palette={P}
+            hints={[["⇥", "cycle"], ["⏎", "go"], ["→", "detail"], ["n", "new"], ["d", "hide"], ["x", "kill"], ["r", "refresh"], ["q", "quit"], ["?", "help"]]}
+          />
         </Show>
       </box>
 
