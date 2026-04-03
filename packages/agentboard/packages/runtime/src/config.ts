@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import type { PartialTheme } from "./themes";
 
@@ -28,10 +28,8 @@ function settingsPath(homeDir?: string): string {
 }
 
 function readSettingsFile(homeDir?: string): Record<string, unknown> {
-  const filePath = settingsPath(homeDir);
-  if (!existsSync(filePath)) return {};
   try {
-    return JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+    return JSON.parse(readFileSync(settingsPath(homeDir), "utf-8")) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -67,8 +65,7 @@ export function saveConfig(updates: Partial<AgentboardConfig>, homeDir?: string)
 
   settings.agentboard = merged;
 
-  const dirPath = join(filePath, "..");
-  mkdirSync(dirPath, { recursive: true });
+  mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(settings, null, 2) + "\n");
 }
 
