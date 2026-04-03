@@ -8,8 +8,6 @@ export interface AgentboardConfig {
   mux?: string;
   /** Custom server port */
   port?: number;
-  /** Community plugin package names to load */
-  plugins: string[];
   /** Theme: builtin name (e.g. "catppuccin-latte") or partial inline theme object */
   theme?: string | PartialTheme;
   /** Sidebar column width (default 26) */
@@ -22,49 +20,64 @@ export interface AgentboardConfig {
   detailPanelHeights?: Record<string, number>;
 }
 
-const DEFAULTS: AgentboardConfig = {
-  plugins: [],
-};
+const DEFAULTS: AgentboardConfig = {};
 
-/**
- * Load config from ~/.config/towles-tool/agentboard/config.json
- * @param homeDir — override home directory (for testing)
- */
-export function loadConfig(homeDir?: string): AgentboardConfig {
+function settingsPath(homeDir?: string): string {
   const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const configPath = join(home, ".config", "towles-tool", "agentboard", "config.json");
+  return join(home, ".config", "towles-tool", "towles-tool.settings.json");
+}
 
-  if (!existsSync(configPath)) {
-    return { ...DEFAULTS };
-  }
-
+function readSettingsFile(homeDir?: string): Record<string, unknown> {
+  const filePath = settingsPath(homeDir);
+  if (!existsSync(filePath)) return {};
   try {
-    const raw = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<AgentboardConfig>;
-    return {
-      ...DEFAULTS,
-      ...parsed,
-      plugins: parsed.plugins ?? DEFAULTS.plugins,
-    };
+    return JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
   } catch {
-    return { ...DEFAULTS };
+    return {};
   }
 }
 
 /**
- * Save partial config updates to ~/.config/towles-tool/agentboard/config.json
- * Merges with existing config on disk to preserve fields.
+ * Load agentboard config from ~/.config/towles-tool/towles-tool.settings.json
+ * under the "agentboard" key.
+ * @param homeDir — override home directory (for testing)
+ */
+export function loadConfig(homeDir?: string): AgentboardConfig {
+  const settings = readSettingsFile(homeDir);
+  const agentboard = settings.agentboard;
+
+  if (!agentboard || typeof agentboard !== "object") {
+    return { ...DEFAULTS };
+  }
+
+  return { ...DEFAULTS, ...(agentboard as Partial<AgentboardConfig>) };
+}
+
+/**
+ * Save partial agentboard config updates to the main settings file.
+ * Merges with existing agentboard config to preserve fields.
  * @param updates — partial config fields to write
  * @param homeDir — override home directory (for testing)
  */
 export function saveConfig(updates: Partial<AgentboardConfig>, homeDir?: string): void {
-  const home = homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const configDir = join(home, ".config", "towles-tool", "agentboard");
-  const configPath = join(configDir, "config.json");
-
-  const existing = loadConfig(homeDir);
+  const filePath = settingsPath(homeDir);
+  const settings = readSettingsFile(homeDir);
+  const existing = (settings.agentboard ?? {}) as Partial<AgentboardConfig>;
   const merged = { ...existing, ...updates };
 
-  mkdirSync(configDir, { recursive: true });
-  writeFileSync(configPath, JSON.stringify(merged, null, 2) + "\n");
+  settings.agentboard = merged;
+
+  const dirPath = join(filePath, "..");
+  mkdirSync(dirPath, { recursive: true });
+  writeFileSync(filePath, JSON.stringify(settings, null, 2) + "\n");
+}
+
+/**
+ * Load preferredEditor from the main settings file.
+ * @param homeDir — override home directory (for testing)
+ */
+export function loadPreferredEditor(homeDir?: string): string {
+  const settings = readSettingsFile(homeDir);
+  const editor = settings.preferredEditor;
+  return typeof editor === "string" && editor.length > 0 ? editor : "code";
 }
