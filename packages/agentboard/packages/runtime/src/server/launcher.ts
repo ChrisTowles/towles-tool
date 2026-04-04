@@ -33,13 +33,12 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
 }
 
 function resolveAgentboardDir(): string {
-  if (process.env.TT_AGENTBOARD_DIR) return process.env.TT_AGENTBOARD_DIR;
-  // Walk up from packages/runtime/src/server/ to the plugin root
+  // Walk up from packages/runtime/src/server/ to the agentboard root
   return new URL("../../../..", import.meta.url).pathname;
 }
 
-function resolveServerEntryPath(pluginDir: string): string {
-  return join(pluginDir, "apps", "server", "src", "main.ts");
+function resolveServerEntryPath(dir: string): string {
+  return join(dir, "apps", "server", "src", "main.ts");
 }
 
 export async function ensureServer(): Promise<void> {
@@ -50,13 +49,12 @@ export async function ensureServer(): Promise<void> {
     }
   }
 
-  const pluginDir = resolveAgentboardDir();
-  const serverPath = resolveServerEntryPath(pluginDir);
+  const dir = resolveAgentboardDir();
+  const serverPath = resolveServerEntryPath(dir);
 
   const proc = Bun.spawn([process.execPath, "run", serverPath], {
     stdio: ["ignore", "ignore", Bun.file(SERVER_ERR_LOG)],
-    cwd: pluginDir,
-    env: { ...process.env, TT_AGENTBOARD_DIR: pluginDir },
+    cwd: dir,
   });
   proc.unref();
 
