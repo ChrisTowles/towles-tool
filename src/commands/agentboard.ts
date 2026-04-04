@@ -6,8 +6,8 @@ import consola from "consola";
 import { colors } from "consola/utils";
 import { debugArg } from "./shared.js";
 
-const SERVER_HOST = "127.0.0.1";
-const SERVER_PORT = 4201;
+const SERVER_HOST = process.env.TT_AGENTBOARD_HOST || "127.0.0.1";
+const SERVER_PORT = Number(process.env.TT_AGENTBOARD_PORT) || 4201;
 
 // Keybinding defaults
 const DEFAULT_KEY = "a";
@@ -146,14 +146,14 @@ function uninstall(): void {
   }
 
   const content = readFileSync(editPath, "utf8");
-  if (!content.includes("agentboard")) {
+  if (!content.includes(MARKER) && !content.includes(RUN_SHELL_LINE)) {
     consola.info("agentboard not found in tmux.conf");
     return;
   }
 
   const newContent = content
     .split("\n")
-    .filter((line) => !line.includes("agentboard"))
+    .filter((line) => !line.includes(MARKER) && !line.includes(RUN_SHELL_LINE))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
 
@@ -333,12 +333,13 @@ async function runFocus(): Promise<void> {
     return;
   }
 
-  // Otherwise, ensure server + toggle sidebar on
+  // Otherwise, ensure server + open sidebar
   if (!(await ensureServerUp())) process.exit(0);
   const ctx = tmuxContext();
-  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, { method: "POST", body: ctx }).catch(
-    () => {},
-  );
+  await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/ensure-sidebar`, {
+    method: "POST",
+    body: ctx,
+  }).catch(() => {});
 
   // Wait for sidebar pane to appear
   for (let i = 0; i < 20; i++) {

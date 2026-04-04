@@ -1,7 +1,10 @@
 import type { AgentStatus, AgentEvent } from "./contracts/agent";
 
-export const SERVER_PORT = 4201;
-export const SERVER_HOST = "127.0.0.1";
+export const DEFAULT_SERVER_PORT = 4201;
+export const DEFAULT_SERVER_HOST = "127.0.0.1";
+
+export const SERVER_PORT: number = Number(process.env.TT_AGENTBOARD_PORT) || DEFAULT_SERVER_PORT;
+export const SERVER_HOST: string = process.env.TT_AGENTBOARD_HOST || DEFAULT_SERVER_HOST;
 export const PID_FILE = "/tmp/agentboard.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
