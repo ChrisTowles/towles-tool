@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import type { MuxProvider } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
+import { TERMINAL_STATUSES } from "../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
 import { AgentTracker, instanceKey } from "../agents/tracker";
 import { SessionOrder } from "./session-order";
@@ -197,6 +198,22 @@ export function startServer(
     if (!paneAgents || paneAgents.size === 0) return watcherAgents;
 
     const result = [...watcherAgents];
+
+    // Correct watcher statuses using pane liveness: if a watcher reports
+    // a terminal status but the pane scanner confirms the process is alive,
+    // the agent is between turns — override to "running".
+    for (const [, presence] of paneAgents) {
+      if (!presence.threadId) continue;
+      const matchIdx = result.findIndex(
+        (a) => a.agent === presence.agent && a.threadId === presence.threadId,
+      );
+      if (matchIdx === -1) continue;
+      const tracked = result[matchIdx]!;
+      if (TERMINAL_STATUSES.has(tracked.status)) {
+        result[matchIdx] = { ...tracked, status: "running", paneId: presence.paneId };
+      }
+    }
+
     // Build a set of tracked agent:threadId keys for matching
     const trackedByKey = new Set(watcherAgents.map((a) => instanceKey(a.agent, a.threadId)));
     // Also track which agent names + threadIds are covered by watchers

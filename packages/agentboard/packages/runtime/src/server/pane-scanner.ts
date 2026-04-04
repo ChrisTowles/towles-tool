@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { AgentStatus } from "../contracts/agent";
+import { TERMINAL_STATUSES } from "../contracts/agent";
 import type { SidebarPane } from "../contracts/mux";
 import type { ServerContext, PaneAgentPresence } from "./context";
 import { shell } from "./git-info";
@@ -98,6 +99,11 @@ function resolveClaudeCodePaneInfo(
     const threadId: string | undefined = data.sessionId;
     if (!threadId) return {};
     const journalInfo = resolveClaudeCodeJournalInfo(threadId);
+    // Process is alive (found via process tree), so terminal journal status
+    // is a between-turn artifact — override to running.
+    if (journalInfo.status && TERMINAL_STATUSES.has(journalInfo.status)) {
+      journalInfo.status = "running";
+    }
     return { threadId, ...journalInfo };
   } catch {
     return {};
