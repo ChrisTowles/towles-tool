@@ -24,7 +24,7 @@ Then read the resulting file with the `Read` tool to view it visually.
 ## Full workflow
 
 1. Run the bash command above to capture the screen
-2. Get the filename from the output (latest Screenshot_*.png in /tmp)
+2. Get the filename from the output (latest Screenshot\_\*.png in /tmp)
 3. Use `Read` tool on the PNG path — Claude Code will render it as an image
 4. Analyze the screenshot and report findings
 
