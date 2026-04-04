@@ -20,6 +20,7 @@ import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agent
 import { SessionCard } from "./components/SessionCard";
 import { DetailPanel } from "./components/DetailPanel";
 import { StatusBar } from "./components/StatusBar";
+import { computeSessionStatusCounts } from "./session-status";
 import {
   detectMuxContext,
   refocusMainPane,
@@ -583,6 +584,7 @@ function App() {
   );
 
   const unseenCount = createMemo(() => sessions.filter((s) => s.unseen).length);
+  const sessionStatusCounts = createMemo(() => computeSessionStatusCounts(sessions));
 
   const isFocused = createSelector(focusedSession);
 
@@ -594,6 +596,7 @@ function App() {
         runningCount={runningAgentCount()}
         errorCount={errorAgentCount()}
         unseenCount={unseenCount()}
+        sessionStatusCounts={sessionStatusCounts()}
         theme={theme}
       />
 
