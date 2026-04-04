@@ -9,7 +9,9 @@ import { debugArg } from "./shared.js";
 const SERVER_HOST = "127.0.0.1";
 const SERVER_PORT = 4201;
 
-const PLUGIN_DIR = resolve(import.meta.dirname, "../../packages/agentboard");
+function agentboardDir(): string {
+  return resolve(import.meta.dirname, "../../packages/agentboard");
+}
 
 // Keybinding defaults
 const DEFAULT_KEY = "a";
@@ -38,18 +40,10 @@ function ensureDeps(): void {
     process.exit(1);
   }
 
-  if (!existsSync(PLUGIN_DIR)) {
-    consola.error(`Agentboard plugin directory not found: ${PLUGIN_DIR}`);
-    consola.error(
-      "If installed globally, ensure the 'plugins' directory is included in the package.",
-    );
+  const dir = agentboardDir();
+  if (!existsSync(dir)) {
+    consola.error(`Agentboard directory not found: ${dir}`);
     process.exit(1);
-  }
-
-  const runtimeNodeModules = resolve(PLUGIN_DIR, "packages/runtime/node_modules");
-  if (!existsSync(runtimeNodeModules)) {
-    consola.info("Installing agentboard dependencies...");
-    execSync("bun install", { cwd: PLUGIN_DIR, stdio: "inherit" });
   }
 }
 
@@ -188,16 +182,13 @@ function uninstall(): void {
 function startServer(): void {
   ensureDeps();
 
-  const serverEntry = resolve(PLUGIN_DIR, "apps/server/src/main.ts");
+  const dir = agentboardDir();
+  const serverEntry = resolve(dir, "apps/server/src/main.ts");
   consola.info("Starting agentboard server (foreground, Ctrl+C to stop)...");
 
   execSync(`bun run ${serverEntry}`, {
     stdio: "inherit",
-    cwd: PLUGIN_DIR,
-    env: {
-      ...process.env,
-      AGENTBOARD_DIR: PLUGIN_DIR,
-    },
+    cwd: dir,
   });
 }
 
@@ -215,13 +206,13 @@ async function serverAlive(): Promise<boolean> {
 async function ensureServerUp(): Promise<boolean> {
   if (await serverAlive()) return true;
 
-  const serverEntry = resolve(PLUGIN_DIR, "apps/server/src/main.ts");
+  const dir = agentboardDir();
+  const serverEntry = resolve(dir, "apps/server/src/main.ts");
   consola.info("Starting agentboard server...");
   const child = spawn("bun", ["run", serverEntry], {
     stdio: "ignore",
-    cwd: PLUGIN_DIR,
+    cwd: dir,
     detached: true,
-    env: { ...process.env, AGENTBOARD_DIR: PLUGIN_DIR },
   });
   child.unref();
 
@@ -442,15 +433,12 @@ async function restart(): Promise<void> {
 function startTui(): void {
   ensureDeps();
 
-  const tuiEntry = resolve(PLUGIN_DIR, "apps/tui/src/index.tsx");
+  const dir = agentboardDir();
+  const tuiEntry = resolve(dir, "apps/tui/src/index.tsx");
 
   execSync(`bun run ${tuiEntry}`, {
     stdio: "inherit",
-    cwd: resolve(PLUGIN_DIR, "apps/tui"),
-    env: {
-      ...process.env,
-      AGENTBOARD_DIR: PLUGIN_DIR,
-    },
+    cwd: resolve(dir, "apps/tui"),
   });
 }
 
