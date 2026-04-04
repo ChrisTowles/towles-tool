@@ -9,6 +9,7 @@ import {
   UNSEEN_ICON,
   BOLD,
   DIM,
+  DIVIDER,
   SPARK_BLOCKS,
   TONE_ICONS,
   toneColor,
@@ -135,7 +136,7 @@ export function DetailPanel(props: DetailPanelProps) {
             fg: props.isResizing ? P().blue : props.isResizeHover ? P().overlay1 : P().surface2,
           }}
         >
-          {"─".repeat(200)}
+          {DIVIDER}
         </text>
       </box>
 
