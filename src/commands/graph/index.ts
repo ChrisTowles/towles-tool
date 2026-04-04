@@ -8,6 +8,7 @@ import consola from "consola";
 
 import { debugArg } from "../shared.js";
 import { buildAllSessionsTreemap, buildSessionTreemap } from "./treemap.js";
+import type { BarChartData } from "./types.js";
 import { buildBarChartData, findRecentSessions, findSessionPath } from "./sessions.js";
 import { generateTreemapHtml } from "./render.js";
 import { openInBrowser, startServer, waitForShutdown } from "./server.js";
@@ -66,7 +67,7 @@ export default defineCommand({
 
     const sessionId = args.session;
     let treemapData;
-    let barChartData = { days: [] as any[] };
+    let barChartData: BarChartData = { days: [] };
 
     if (!sessionId) {
       // All sessions mode

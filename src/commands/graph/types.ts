@@ -23,6 +23,8 @@ export interface JournalEntry {
     content?: ContentBlock[] | string;
   };
   uuid?: string;
+  gitBranch?: string;
+  slug?: string;
 }
 
 export interface ToolData {

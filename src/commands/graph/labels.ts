@@ -11,11 +11,11 @@ export function extractSessionLabel(entries: JournalEntry[], sessionId: string):
 
   for (const entry of entries) {
     // Extract metadata from any entry
-    if (!gitBranch && (entry as any).gitBranch) {
-      gitBranch = (entry as any).gitBranch;
+    if (!gitBranch && entry.gitBranch) {
+      gitBranch = entry.gitBranch;
     }
-    if (!slug && (entry as any).slug) {
-      slug = (entry as any).slug;
+    if (!slug && entry.slug) {
+      slug = entry.slug;
     }
 
     if (!entry.message) continue;
