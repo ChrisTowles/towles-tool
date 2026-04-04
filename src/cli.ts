@@ -4,7 +4,7 @@ import { version } from "../package.json";
 export const main = defineCommand({
   meta: { name: "tt", version, description: "towles-tool — personal CLI utilities" },
   subCommands: {
-    config: () => import("./commands/config.js").then((m) => m.default),
+    config: () => import("./commands/config/index.js").then((m) => m.default),
     doctor: () => import("./commands/doctor.js").then((m) => m.default),
     install: () => import("./commands/install.js").then((m) => m.default),
     agentboard: () => import("./commands/agentboard.js").then((m) => m.default),

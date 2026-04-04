@@ -1,9 +1,9 @@
 import { defineCommand } from "citty";
 import consola from "consola";
-import { withSettings, debugArg } from "./shared.js";
+import { withSettings, debugArg } from "../shared.js";
 
 export default defineCommand({
-  meta: { name: "config", description: "Display current configuration settings" },
+  meta: { name: "show", description: "Display current configuration settings" },
   args: { debug: debugArg },
   async run({ args }) {
     const { settingsFile, settings } = await withSettings(args.debug);
