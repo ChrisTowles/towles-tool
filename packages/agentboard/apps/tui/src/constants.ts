@@ -8,6 +8,7 @@ export const UNSEEN_ICON = "●";
 export const BOLD = TextAttributes.BOLD;
 export const DIM = TextAttributes.DIM;
 export const SPARK_BLOCKS = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+export const DIVIDER = "─".repeat(200);
 
 export const THEME_NAMES = Object.keys(BUILTIN_THEMES);
 export const DEFAULT_DETAIL_PANEL_HEIGHT = 10;

@@ -29,6 +29,7 @@ import { TmuxClient } from "@tt-agentboard/mux-tmux";
 import { SessionCard } from "./components/SessionCard";
 import { DetailPanel } from "./components/DetailPanel";
 import { StatusBar } from "./components/StatusBar";
+import { DIVIDER } from "./constants";
 
 // Detect tmux context (tmux only)
 type MuxContext = { type: "tmux"; sdk: TmuxClient; paneId: string } | { type: "none" };
@@ -47,7 +48,6 @@ const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 const DEFAULT_DETAIL_PANEL_HEIGHT = 10;
 const MIN_DETAIL_PANEL_HEIGHT = 4;
-const DIVIDER = "─".repeat(200);
 const RESIZE_DEBUG_LOG = "/tmp/agentboard-tui-resize.log";
 
 const TUI_DEBUG = !!process.env.TT_AGENTBOARD_DEBUG;
