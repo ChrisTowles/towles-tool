@@ -6,6 +6,7 @@ import { defineCommand } from "citty";
 import consola from "consola";
 
 import { debugArg } from "../shared.js";
+import { printExplain, printStepTemplate } from "./explain.js";
 import { STEP_NAMES, runPipeline } from "./pipeline.js";
 import { fetchIssue, fetchIssues } from "./steps/fetch-issues.js";
 import { getConfig, initConfig } from "./config.js";
@@ -75,6 +76,15 @@ export default defineCommand({
       type: "string" as const,
       description: "Path within repo to scope work (default: .)",
     },
+    explain: {
+      type: "boolean" as const,
+      description: "Print a summary of all pipeline steps and exit",
+      default: false,
+    },
+    "step-template": {
+      type: "string" as const,
+      description: `Print the raw prompt template for a step and exit (${STEP_NAMES.join(", ")})`,
+    },
   },
   subCommands: {
     list: () => import("./list.js").then((m) => m.default),
@@ -82,6 +92,23 @@ export default defineCommand({
     retry: () => import("./retry.js").then((m) => m.default),
   },
   async run({ args }) {
+    // Explain mode: print pipeline summary and exit
+    if (args.explain) {
+      printExplain();
+      return;
+    }
+
+    // Step template mode: print raw template and exit
+    if (args["step-template"]) {
+      try {
+        printStepTemplate(args["step-template"] as string);
+      } catch (e) {
+        consola.error(e instanceof Error ? e.message : String(e));
+        process.exit(1);
+      }
+      return;
+    }
+
     // Prompt mode: run a single prompt with structured output, skip issue pipeline
     if (args.prompt) {
       await initConfig({ model: args.model });
