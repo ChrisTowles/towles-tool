@@ -58,6 +58,13 @@ export const UserSettingsSchema = z.object({
   ),
 });
 
+/** Schema without transforms — safe for JSON Schema export */
+export const UserSettingsRawSchema = z.object({
+  preferredEditor: z.string().default("code"),
+  journalSettings: JournalSettingsSchema.optional(),
+  agentboard: AgentboardSettingsSchema.optional(),
+});
+
 type UserSettings = z.infer<typeof UserSettingsSchema>;
 
 export interface SettingsFile {
