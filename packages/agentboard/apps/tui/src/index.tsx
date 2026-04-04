@@ -133,20 +133,35 @@ function getLocalSessionName(): string | null {
   return null;
 }
 
-function KeyHints(props: { hints: [string, string][]; palette: Accessor<Theme["palette"]> }) {
+function KeyHints(props: { hints: [string, string][]; palette: Accessor<Theme["palette"]>; cols?: number }) {
+  const cols = () => props.cols ?? 2;
+  const rows = () => {
+    const pairs: [string, string][][] = [];
+    for (let i = 0; i < props.hints.length; i += cols()) {
+      pairs.push(props.hints.slice(i, i + cols()));
+    }
+    return pairs;
+  };
+
   return (
-    <text>
-      <For each={props.hints}>
-        {([key, label], i) => (
-          <>
-            <span style={{ fg: props.palette().overlay0 }}>{key}</span>
-            <span style={{ fg: props.palette().overlay1 }}>
-              {i() < props.hints.length - 1 ? ` ${label}  ` : ` ${label}`}
-            </span>
-          </>
+    <box flexDirection="column">
+      <For each={rows()}>
+        {(row) => (
+          <box flexDirection="row">
+            <For each={row}>
+              {([key, label]) => (
+                <box width={16} flexShrink={0}>
+                  <text>
+                    <span style={{ fg: props.palette().overlay0 }}>{key}</span>
+                    <span style={{ fg: props.palette().overlay1 }}>{` ${label}`}</span>
+                  </text>
+                </box>
+              )}
+            </For>
+          </box>
         )}
       </For>
-    </text>
+    </box>
   );
 }
 
