@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import consola from "consola";
 import { readFile, writeFile, fileExists } from "@towles/shared";
 import type { DoctorRunResult } from "./checks.js";
 
@@ -22,7 +23,8 @@ export function loadHistory(historyPath?: string): DoctorRunResult[] {
   if (!fileExists(path)) return [];
   try {
     return JSON.parse(readFile(path));
-  } catch {
+  } catch (err) {
+    consola.debug(`Failed to parse doctor history at ${path}:`, err);
     return [];
   }
 }
