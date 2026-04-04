@@ -15,4 +15,4 @@ export {
 } from "./client";
 
 // Re-export TmuxProvider from provider module
-export { TmuxProvider, type TmuxProviderSettings } from "./provider";
+export { TmuxProvider, SIDEBAR_PANE_TITLE, type TmuxProviderSettings } from "./provider";

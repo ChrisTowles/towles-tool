@@ -25,7 +25,7 @@ import {
   saveConfig,
 } from "@tt-agentboard/runtime";
 import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agentboard/runtime";
-import { TmuxClient } from "@tt-agentboard/mux-tmux";
+import { TmuxClient, SIDEBAR_PANE_TITLE } from "@tt-agentboard/mux-tmux";
 import { SessionCard } from "./components/SessionCard";
 import { DetailPanel } from "./components/DetailPanel";
 import { StatusBar } from "./components/StatusBar";
@@ -80,6 +80,11 @@ function persistDetailPanelHeight(sessionName: string, height: number): void {
   });
 }
 
+/** Ensure this sidebar pane is titled so getActiveSessionDirs() can filter it out. */
+if (muxCtx.type === "tmux") {
+  muxCtx.sdk.setPaneTitle(muxCtx.paneId, SIDEBAR_PANE_TITLE);
+}
+
 /** Refocus the main (non-sidebar) pane after TUI capability detection finishes.
  *  This must happen from the TUI process — doing it from the server races with
  *  capability query responses and leaks escape sequences to the main pane. */
@@ -102,7 +107,7 @@ function refocusMainPane() {
         { stdout: "pipe", stderr: "pipe" },
       );
       const lines = r.stdout.toString().trim().split("\n");
-      const main = lines.find((l) => !l.includes("agentboard-sidebar"));
+      const main = lines.find((l) => !l.includes(SIDEBAR_PANE_TITLE));
       if (main) {
         const paneId = main.split(" ")[0];
         Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });

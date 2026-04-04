@@ -266,18 +266,40 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         }
 
         for (const file of files) {
-          if (!file.endsWith(".jsonl")) continue;
-          const filePath = join(dirPath, file);
-          let fileStat;
-          try {
-            fileStat = await stat(filePath);
-          } catch {
-            continue;
+          if (file.endsWith(".jsonl")) {
+            const filePath = join(dirPath, file);
+            let fileStat;
+            try {
+              fileStat = await stat(filePath);
+            } catch {
+              continue;
+            }
+            if (now - fileStat.mtimeMs > STALE_MS) continue;
+            this.watchDir(dirPath, projectDir);
+            await this.processFile(filePath, projectDir);
+          } else {
+            // Scan subagent directories: <session-id>/subagents/*.jsonl
+            const subagentsDir = join(dirPath, file, "subagents");
+            let subFiles: string[];
+            try {
+              subFiles = await readdir(subagentsDir);
+            } catch {
+              continue;
+            }
+            for (const subFile of subFiles) {
+              if (!subFile.endsWith(".jsonl")) continue;
+              const filePath = join(subagentsDir, subFile);
+              let fileStat;
+              try {
+                fileStat = await stat(filePath);
+              } catch {
+                continue;
+              }
+              if (now - fileStat.mtimeMs > STALE_MS) continue;
+              this.watchDir(subagentsDir, projectDir);
+              await this.processFile(filePath, projectDir);
+            }
           }
-          if (now - fileStat.mtimeMs > STALE_MS) continue;
-          // Lazily watch dirs that become active
-          this.watchDir(dirPath);
-          await this.processFile(filePath, projectDir);
         }
       }
     } finally {
@@ -304,9 +326,9 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
 
   private watchedDirs = new Set<string>();
 
-  private watchDir(dirPath: string): void {
+  private watchDir(dirPath: string, explicitProjectDir?: string): void {
     if (this.watchedDirs.has(dirPath)) return;
-    const projectDir = decodeProjectDir(basename(dirPath));
+    const projectDir = explicitProjectDir ?? decodeProjectDir(basename(dirPath));
     try {
       const w = watch(dirPath, (_eventType, filename) => {
         if (!filename?.endsWith(".jsonl")) return;
@@ -350,10 +372,26 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         continue;
       }
 
+      const projectDir = decodeProjectDir(dir);
+
       // Only watch directories that have recently-modified files
       if (this.hasRecentFiles(dirPath)) {
-        this.watchDir(dirPath);
+        this.watchDir(dirPath, projectDir);
       }
+
+      // Also watch subagent directories
+      try {
+        const entries = fs.readdirSync(dirPath);
+        for (const entry of entries) {
+          if (entry.endsWith(".jsonl")) continue;
+          const subagentsDir = join(dirPath, entry, "subagents");
+          try {
+            if (fs.statSync(subagentsDir).isDirectory() && this.hasRecentFiles(subagentsDir)) {
+              this.watchDir(subagentsDir, projectDir);
+            }
+          } catch {}
+        }
+      } catch {}
     }
 
     // Watch projects dir for new project directories

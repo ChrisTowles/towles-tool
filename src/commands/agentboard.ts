@@ -400,14 +400,18 @@ async function restart(): Promise<void> {
     // no tmux or no sessions
   }
 
-  // 2. Ensure server is running
+  // 2. Re-register tmux hooks and keybindings (lost on tmux restart)
+  init();
+  consola.success("Hooks and keybindings re-registered");
+
+  // 3. Ensure server is running
   if (!(await ensureServerUp())) {
     consola.error("Failed to start agentboard server");
     process.exit(1);
   }
   consola.success("Server is running");
 
-  // 3. Toggle sidebar on (the server spawns sidebars in all active windows)
+  // 4. Toggle sidebar on (the server spawns sidebars in all active windows)
   try {
     const res = await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/toggle`, {
       method: "POST",

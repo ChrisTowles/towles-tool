@@ -24,7 +24,7 @@ function plog(msg: string, data?: Record<string, unknown>) {
 }
 
 const STASH_SESSION = "_ab_stash";
-const SIDEBAR_PANE_TITLE = "agentboard-sidebar";
+export const SIDEBAR_PANE_TITLE = "agentboard-sidebar";
 
 export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapable, BatchCapable {
   readonly specificationVersion = "v1" as const;
