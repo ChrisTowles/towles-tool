@@ -83,10 +83,7 @@ export function extractDateFromFilename(filePath: string): Date | null {
 /**
  * Search journal files for a query string, returning matches with context.
  */
-export function searchJournalFiles(
-  files: string[],
-  options: SearchOptions,
-): SearchMatch[] {
+export function searchJournalFiles(files: string[], options: SearchOptions): SearchMatch[] {
   const { query, type, startDate, endDate, contextLines = 2 } = options;
   const lowerQuery = query.toLowerCase();
   const matches: SearchMatch[] = [];
@@ -229,7 +226,9 @@ export default defineCommand({
         return;
       }
 
-      consola.info(`Found ${colors.green(String(matches.length))} match(es) for "${colors.cyan(args.query)}":\n`);
+      consola.info(
+        `Found ${colors.green(String(matches.length))} match(es) for "${colors.cyan(args.query)}":\n`,
+      );
 
       // Group matches by file
       const byFile = new Map<string, SearchMatch[]>();

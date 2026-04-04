@@ -49,9 +49,7 @@ describe("journal search", () => {
     });
 
     it("detects meeting", () => {
-      expect(inferTypeFromPath("/journal/2026/01/meetings/standup.md")).toBe(
-        JOURNAL_TYPES.MEETING,
-      );
+      expect(inferTypeFromPath("/journal/2026/01/meetings/standup.md")).toBe(JOURNAL_TYPES.MEETING);
     });
 
     it("detects note", () => {
