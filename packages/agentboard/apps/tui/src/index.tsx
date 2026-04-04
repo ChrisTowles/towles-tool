@@ -32,13 +32,17 @@ import {
   getStoredDetailPanelHeight,
   persistDetailPanelHeight,
 } from "./detail-panel-height";
-import { SPINNERS, BOLD, DIM, DIVIDER, logResizeDebug } from "./constants";
+import { SPINNERS, BOLD, DIM, DEFAULT_DETAIL_PANEL_HEIGHT, DIVIDER, logResizeDebug } from "./constants";
 
 const muxCtx = detectMuxContext();
 
 const TUI_DEBUG = !!process.env.TT_AGENTBOARD_DEBUG;
 
-function KeyHints(props: { hints: [string, string][]; palette: Accessor<Theme["palette"]>; cols?: number }) {
+function KeyHints(props: {
+  hints: [string, string][];
+  palette: Accessor<Theme["palette"]>;
+  cols?: number;
+}) {
   const cols = () => props.cols ?? 2;
   const rows = () => {
     const pairs: [string, string][][] = [];
