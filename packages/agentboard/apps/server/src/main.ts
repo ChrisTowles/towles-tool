@@ -8,6 +8,7 @@ import {
   startServer,
 } from "@tt-agentboard/runtime";
 import { TmuxProvider } from "@tt-agentboard/mux-tmux";
+import consola from "consola";
 
 const config = loadConfig();
 const loader = new PluginLoader();
@@ -17,12 +18,12 @@ try {
   const provider = new TmuxProvider();
   loader.registerMux(provider);
 } catch (err) {
-  console.error("Failed to initialize tmux provider:", err);
+  consola.error("Failed to initialize tmux provider:", err);
 }
 
 const mux = loader.resolve(config.mux);
 if (!mux) {
-  console.error(
+  consola.error(
     "No terminal multiplexer detected.\n" +
       `Registered providers: ${loader.registry.list().join(", ") || "(none)"}\n` +
       "$TMUX environment variable is not set — are you running inside a tmux session?\n" +
@@ -38,8 +39,8 @@ loader.registerWatcher(new OpenCodeAgentWatcher());
 
 const watchers = loader.getWatchers();
 if (watchers.length > 0) {
-  console.log(`Agent watchers: ${watchers.map((watcher) => watcher.name).join(", ")}`);
+  consola.info(`Agent watchers: ${watchers.map((watcher) => watcher.name).join(", ")}`);
 }
 
-console.log(`Primary mux provider: ${mux.name}`);
+consola.info(`Primary mux provider: ${mux.name}`);
 startServer(mux, [], watchers);

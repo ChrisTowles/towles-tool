@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@tt-agentboard/mux-tmux": "workspace:*",
-    "@tt-agentboard/runtime": "workspace:*"
+    "@tt-agentboard/runtime": "workspace:*",
+    "consola": "^3.4.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
