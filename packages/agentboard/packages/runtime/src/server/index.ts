@@ -198,35 +198,26 @@ export function startServer(
     if (!paneAgents || paneAgents.size === 0) return watcherAgents;
 
     const result = [...watcherAgents];
-
-    // Correct watcher statuses using pane liveness: if a watcher reports
-    // a terminal status but the pane scanner confirms the process is alive,
-    // the agent is between turns — override to "running".
-    for (const [, presence] of paneAgents) {
-      if (!presence.threadId) continue;
-      const matchIdx = result.findIndex(
-        (a) => a.agent === presence.agent && a.threadId === presence.threadId,
-      );
-      if (matchIdx === -1) continue;
-      const tracked = result[matchIdx]!;
-      if (TERMINAL_STATUSES.has(tracked.status)) {
-        result[matchIdx] = { ...tracked, status: "running", paneId: presence.paneId };
-      }
-    }
-
-    // Build a set of tracked agent:threadId keys for matching
-    const trackedByKey = new Set(watcherAgents.map((a) => instanceKey(a.agent, a.threadId)));
-    // Also track which agent names + threadIds are covered by watchers
-    const trackedThreadIds = new Set(
-      watcherAgents.filter((a) => a.threadId).map((a) => `${a.agent}:${a.threadId}`),
+    const trackedByKey = new Map(
+      result.map((a, i) => [instanceKey(a.agent, a.threadId), i]),
     );
 
     for (const [, presence] of paneAgents) {
-      // If the pane scanner resolved a threadId, check if watcher already tracks it
-      if (presence.threadId && trackedThreadIds.has(`${presence.agent}:${presence.threadId}`))
+      const key = instanceKey(presence.agent, presence.threadId);
+      const trackedIdx = trackedByKey.get(key);
+
+      if (trackedIdx != null) {
+        // Watcher already tracks this agent — correct terminal statuses
+        // using pane liveness (process is confirmed alive, so terminal
+        // journal status is a between-turn artifact).
+        const tracked = result[trackedIdx]!;
+        if (TERMINAL_STATUSES.has(tracked.status)) {
+          tracked.status = "running";
+          tracked.paneId = presence.paneId;
+        }
         continue;
-      // Check by instanceKey as well
-      if (trackedByKey.has(instanceKey(presence.agent, presence.threadId))) continue;
+      }
+
       // If we have no threadId from pane scan and watcher tracks any instance of this agent, skip
       if (!presence.threadId && watcherAgents.some((a) => a.agent === presence.agent)) continue;
 
