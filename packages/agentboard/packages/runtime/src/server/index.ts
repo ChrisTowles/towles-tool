@@ -198,9 +198,7 @@ export function startServer(
     if (!paneAgents || paneAgents.size === 0) return watcherAgents;
 
     const result = [...watcherAgents];
-    const trackedByKey = new Map(
-      result.map((a, i) => [instanceKey(a.agent, a.threadId), i]),
-    );
+    const trackedByKey = new Map(result.map((a, i) => [instanceKey(a.agent, a.threadId), i]));
 
     for (const [, presence] of paneAgents) {
       const key = instanceKey(presence.agent, presence.threadId);

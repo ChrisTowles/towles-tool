@@ -20,10 +20,7 @@ describe("determineStatus", () => {
       determineStatus({
         message: {
           role: "assistant",
-          content: [
-            { type: "text", text: "Let me check that." },
-            { type: "tool_use" },
-          ],
+          content: [{ type: "text", text: "Let me check that." }, { type: "tool_use" }],
         },
       }),
     ).toBe("running");

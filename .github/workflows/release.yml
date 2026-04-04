@@ -66,8 +66,8 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Upgrade npm for OIDC provenance
-        run: npm install -g npm@latest && npm --version
+      - name: Verify npm supports provenance
+        run: npm --version
 
       - name: Bump version
         run: bunx bumpp ${{ inputs.bump_type || 'patch' }} --yes --no-commit --no-tag --no-push
