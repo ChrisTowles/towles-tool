@@ -1,159 +1,51 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve, join } from "node:path";
 import { defineCommand } from "citty";
 import consola from "consola";
-import { run } from "@towles/shared";
 import { colors } from "consola/utils";
 import { debugArg } from "./shared.js";
+import { runAllChecks, checkAgentBoard, checkClaudePlugins } from "./doctor/checks.js";
+import { loadHistory, saveHistory, diffRuns } from "./doctor/history.js";
+import type { DiffEntry } from "./doctor/history.js";
 
-interface CheckResult {
-  name: string;
-  version: string | null;
-  ok: boolean;
-  warning?: string;
-}
-
-async function checkCommand(
-  name: string,
-  args: string[],
-  versionPattern: RegExp,
-  optional = false,
-): Promise<CheckResult> {
-  try {
-    const result = await run(name, args);
-    const output = result.stdout + result.stderr;
-    const match = output.match(versionPattern);
-    return {
-      name,
-      version: match?.[1] ?? output.trim().slice(0, 20),
-      ok: true,
-    };
-  } catch {
-    consola.debug(`Tool check failed for "${name}"`);
-    return {
-      name,
-      version: null,
-      ok: optional,
-      warning: optional ? "optional, not installed" : undefined,
-    };
-  }
-}
-
-async function checkGhAuth(): Promise<{ ok: boolean }> {
-  try {
-    const result = await run("gh", ["auth", "status"]);
-    return { ok: result.exitCode === 0 };
-  } catch {
-    consola.debug("GitHub CLI auth check failed");
-    return { ok: false };
-  }
-}
-
-function checkAgentBoard(): {
-  name: string;
-  value: string;
-  ok: boolean;
-  warning?: string;
-  hint?: string;
-}[] {
-  const results: { name: string; value: string; ok: boolean; warning?: string; hint?: string }[] =
-    [];
-
-  const defaultDataDir = resolve(
-    process.env.XDG_CONFIG_HOME ?? resolve(process.env.HOME ?? "~", ".config"),
-    "towles-tool",
-    "agentboard",
-  );
-  const dataDir = process.env.AGENTBOARD_DATA_DIR ?? defaultDataDir;
-  const dbPath = join(dataDir, "agentboard.db");
-  const configPath = join(dataDir, "config.json");
-
-  const dbExists = existsSync(dbPath);
-  results.push({
-    name: "database",
-    value: dbExists ? dbPath : "not found",
-    ok: dbExists,
-    hint: dbExists ? undefined : "Run: tt ag (starts server and creates DB automatically)",
-  });
-
-  let repoPaths: string[] = [];
-  if (existsSync(configPath)) {
-    try {
-      const config = JSON.parse(readFileSync(configPath, "utf-8"));
-      repoPaths = config.repoPaths ?? [];
-    } catch {
-      // Corrupted config
-    }
-  }
-
-  results.push({
-    name: "scan paths",
-    value: repoPaths.length > 0 ? repoPaths.join(", ") : "none configured",
-    ok: repoPaths.length > 0,
-    warning: repoPaths.length === 0 ? "no scan paths" : undefined,
-    hint:
-      repoPaths.length === 0
-        ? "Run: tt ag → open Workspaces → run the onboarding wizard"
-        : undefined,
-  });
-
-  results.push({
-    name: "data dir",
-    value: dataDir,
-    ok: true,
-  });
-
-  return results;
-}
-
-async function checkClaudePlugins(): Promise<
-  { name: string; ok: boolean; installHint?: string }[]
-> {
-  const requiredPlugins = [
-    {
-      id: "code-simplifier@claude-plugins-official",
-      name: "code-simplifier",
-      installCmd: "claude plugin install code-simplifier@claude-plugins-official --scope user",
-    },
-  ];
-
-  try {
-    const result = await run("claude", ["plugin", "list", "--json"]);
-    const plugins: { id: string }[] = JSON.parse(result.stdout);
-    const installedIds = new Set(plugins.map((p) => p.id));
-
-    return requiredPlugins.map((p) => ({
-      name: p.name,
-      ok: installedIds.has(p.id),
-      installHint: installedIds.has(p.id) ? undefined : `Run: ${p.installCmd}`,
-    }));
-  } catch {
-    consola.debug("Failed to list Claude plugins");
-    return requiredPlugins.map((p) => ({
-      name: p.name,
-      ok: false,
-      installHint: `Run: ${p.installCmd}`,
-    }));
+function formatDiffEntry(entry: DiffEntry): string {
+  switch (entry.change) {
+    case "added":
+      return `${colors.green("+")} ${entry.category}/${entry.name}: added${entry.newValue ? ` (${entry.newValue})` : ""}`;
+    case "removed":
+      return `${colors.red("-")} ${entry.category}/${entry.name}: removed${entry.oldValue ? ` (was ${entry.oldValue})` : ""}`;
+    case "upgraded":
+      return `${colors.green("↑")} ${entry.category}/${entry.name}: ${entry.oldValue} → ${entry.newValue}`;
+    case "downgraded":
+      return `${colors.yellow("↓")} ${entry.category}/${entry.name}: ${entry.oldValue} → ${entry.newValue}`;
+    case "passed":
+      return `${colors.green("✓")} ${entry.category}/${entry.name}: now passing`;
+    case "failed":
+      return `${colors.red("✗")} ${entry.category}/${entry.name}: now failing`;
+    default:
+      return `  ${entry.category}/${entry.name}: unchanged`;
   }
 }
 
 export default defineCommand({
   meta: { name: "doctor", description: "Check system dependencies and environment" },
-  args: { debug: debugArg },
-  async run() {
+  args: {
+    debug: debugArg,
+    track: {
+      type: "boolean",
+      description: "Save check results to history",
+      default: false,
+    },
+    diff: {
+      type: "boolean",
+      description: "Compare current run against last tracked run",
+      default: false,
+    },
+  },
+  async run({ args }) {
     consola.info("Checking dependencies...\n");
 
-    const checks: CheckResult[] = await Promise.all([
-      checkCommand("git", ["--version"], /git version ([\d.]+)/),
-      checkCommand("gh", ["--version"], /gh version ([\d.]+)/),
-      checkCommand("node", ["--version"], /v?([\d.]+)/),
-      checkCommand("bun", ["--version"], /([\d.]+)/),
-      checkCommand("claude", ["--version"], /([\d.]+)/),
-      checkCommand("tmux", ["-V"], /tmux ([\d.]+)/),
-      checkCommand("ttyd", ["--version"], /ttyd version ([\d.]+)/, true),
-    ]);
+    const result = await runAllChecks();
 
-    for (const check of checks) {
+    for (const check of result.tools) {
       const icon = check.ok
         ? colors.green("✓")
         : check.warning
@@ -167,14 +59,13 @@ export default defineCommand({
     }
 
     consola.log("");
-    const ghAuth = await checkGhAuth();
-    const authIcon = ghAuth.ok ? colors.green("✓") : colors.yellow("⚠");
-    consola.log(`${authIcon} gh auth: ${ghAuth.ok ? "authenticated" : "not authenticated"}`);
-    if (!ghAuth.ok) {
+    const authIcon = result.ghAuth ? colors.green("✓") : colors.yellow("⚠");
+    consola.log(`${authIcon} gh auth: ${result.ghAuth ? "authenticated" : "not authenticated"}`);
+    if (!result.ghAuth) {
       consola.log(`  ${colors.dim("Run: gh auth login")}`);
     }
 
-    const nodeCheck = checks.find((c) => c.name === "node");
+    const nodeCheck = result.tools.find((c) => c.name === "node");
     if (nodeCheck?.version) {
       const major = Number.parseInt(nodeCheck.version.split(".")[0], 10);
       if (major < 18) {
@@ -210,8 +101,8 @@ export default defineCommand({
     }
 
     const allOk =
-      checks.every((c) => c.ok || !!c.warning) &&
-      ghAuth.ok &&
+      result.tools.every((c) => c.ok || !!c.warning) &&
+      result.ghAuth &&
       pluginChecks.every((c) => c.ok) &&
       agentboardChecks.every((c) => c.ok || !!c.warning);
     consola.log("");
@@ -219,6 +110,29 @@ export default defineCommand({
       consola.log(colors.green("All checks passed!"));
     } else {
       consola.log(colors.yellow("Some checks failed. See above for details."));
+    }
+
+    if (args.track) {
+      saveHistory(result);
+      consola.log(colors.dim("\nResults saved to history."));
+    }
+
+    if (args.diff) {
+      const history = loadHistory();
+      if (history.length === 0) {
+        consola.log(colors.yellow("\nNo previous runs tracked. Use --track to save a run first."));
+      } else {
+        const previous = history[history.length - 1];
+        const diffs = diffRuns(previous, result);
+        consola.log(colors.bold(`\nChanges since last tracked run (${previous.timestamp}):`));
+        if (diffs.length === 0) {
+          consola.log(colors.dim("  No changes detected."));
+        } else {
+          for (const entry of diffs) {
+            consola.log(`  ${formatDiffEntry(entry)}`);
+          }
+        }
+      }
     }
   },
 });
