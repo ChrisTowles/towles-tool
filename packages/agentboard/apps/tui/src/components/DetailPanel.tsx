@@ -289,7 +289,7 @@ function AgentListItem(props: AgentListItemProps) {
       flexShrink={0}
       onMouseDown={(event) => {
         // Don't trigger focus if clicking the dismiss button
-        if ((event.target as any)?.id === "dismiss") return;
+        if (event.target?.id === "dismiss") return;
         appendFileSync(
           TUI_AGENT_CLICK_LOG,
           `[${new Date().toISOString()}] clicked agent=${props.agent.agent} thread=${props.agent.threadName ?? "?"}\n`,
