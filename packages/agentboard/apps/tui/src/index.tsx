@@ -13,125 +13,29 @@ import {
 } from "solid-js";
 import type { Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { TextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 
-import {
-  ensureServer,
-  SERVER_PORT,
-  SERVER_HOST,
-  loadConfig,
-  resolveTheme,
-  saveConfig,
-} from "@tt-agentboard/runtime";
+import { ensureServer, SERVER_PORT, SERVER_HOST, resolveTheme } from "@tt-agentboard/runtime";
 import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agentboard/runtime";
-import { TmuxClient } from "@tt-agentboard/mux-tmux";
 import { SessionCard } from "./components/SessionCard";
 import { DetailPanel } from "./components/DetailPanel";
 import { StatusBar } from "./components/StatusBar";
-
-// Detect tmux context (tmux only)
-type MuxContext = { type: "tmux"; sdk: TmuxClient; paneId: string } | { type: "none" };
-
-function detectMuxContext(): MuxContext {
-  if (process.env.TMUX_PANE && process.env.TMUX) {
-    return { type: "tmux", sdk: new TmuxClient(), paneId: process.env.TMUX_PANE };
-  }
-  return { type: "none" };
-}
+import {
+  detectMuxContext,
+  refocusMainPane,
+  getClientTty,
+  getLocalSessionName,
+} from "./mux-context";
+import {
+  clampDetailPanelHeight,
+  getStoredDetailPanelHeight,
+  persistDetailPanelHeight,
+} from "./detail-panel-height";
+import { SPINNERS, BOLD, DIM, DEFAULT_DETAIL_PANEL_HEIGHT, logResizeDebug } from "./constants";
 
 const muxCtx = detectMuxContext();
-
-const SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const BOLD = TextAttributes.BOLD;
-const DIM = TextAttributes.DIM;
-const DEFAULT_DETAIL_PANEL_HEIGHT = 10;
-const MIN_DETAIL_PANEL_HEIGHT = 4;
 const DIVIDER = "─".repeat(200);
-const RESIZE_DEBUG_LOG = "/tmp/agentboard-tui-resize.log";
-
 const TUI_DEBUG = !!process.env.TT_AGENTBOARD_DEBUG;
-
-function logResizeDebug(message: string, data?: Record<string, unknown>): void {
-  if (!TUI_DEBUG) return;
-  const ts = new Date().toISOString();
-  const extra = data ? ` ${JSON.stringify(data)}` : "";
-  try {
-    appendFileSync(RESIZE_DEBUG_LOG, `[${ts}] [pid:${process.pid}] ${message}${extra}\n`);
-  } catch {}
-}
-
-function clampDetailPanelHeight(height: number): number {
-  return Math.max(MIN_DETAIL_PANEL_HEIGHT, Math.round(height));
-}
-
-function getStoredDetailPanelHeight(sessionName: string): number {
-  const stored = loadConfig().detailPanelHeights?.[sessionName];
-  return typeof stored === "number" ? clampDetailPanelHeight(stored) : DEFAULT_DETAIL_PANEL_HEIGHT;
-}
-
-function persistDetailPanelHeight(sessionName: string, height: number): void {
-  const config = loadConfig();
-  saveConfig({
-    detailPanelHeights: {
-      ...(config.detailPanelHeights ?? {}),
-      [sessionName]: clampDetailPanelHeight(height),
-    },
-  });
-}
-
-/** Refocus the main (non-sidebar) pane after TUI capability detection finishes.
- *  This must happen from the TUI process — doing it from the server races with
- *  capability query responses and leaks escape sequences to the main pane. */
-function refocusMainPane() {
-  if (muxCtx.type === "tmux") {
-    try {
-      // Use the TUI's own pane ID to find its current window (handles stash restore
-      // where the pane may have moved to a different window than the original).
-      const windowId =
-        process.env.REFOCUS_WINDOW ||
-        Bun.spawnSync(["tmux", "display-message", "-t", muxCtx.paneId, "-p", "#{window_id}"], {
-          stdout: "pipe",
-          stderr: "pipe",
-        })
-          .stdout.toString()
-          .trim();
-      if (!windowId) return;
-      const r = Bun.spawnSync(
-        ["tmux", "list-panes", "-t", windowId, "-F", "#{pane_id} #{pane_title}"],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      const lines = r.stdout.toString().trim().split("\n");
-      const main = lines.find((l) => !l.includes("agentboard-sidebar"));
-      if (main) {
-        const paneId = main.split(" ")[0];
-        Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });
-      }
-    } catch {}
-  }
-}
-
-function getClientTty(): string {
-  if (muxCtx.type === "tmux") {
-    const { sdk, paneId } = muxCtx;
-    const sessName = sdk.display("#{session_name}", { target: paneId });
-    if (sessName) {
-      const clients = sdk.listClients();
-      const client = clients.find((c) => c.sessionName === sessName);
-      if (client) return client.tty;
-    }
-    return sdk.getClientTty();
-  }
-  return "";
-}
-
-function getLocalSessionName(): string | null {
-  if (muxCtx.type === "tmux") {
-    const sessionName = muxCtx.sdk.display("#{session_name}", { target: muxCtx.paneId });
-    return sessionName || null;
-  }
-  return null;
-}
 
 function KeyHints(props: { hints: [string, string][]; palette: Accessor<Theme["palette"]> }) {
   return (
@@ -179,12 +83,12 @@ function App() {
   const [modal, setModal] = createSignal<"none" | "confirm-kill" | "help">("none");
   const [killTarget, setKillTarget] = createSignal<string | null>(null);
 
-  const [clientTty, setClientTty] = createSignal(getClientTty());
+  const [clientTty, setClientTty] = createSignal(getClientTty(muxCtx));
   let ws: WebSocket | null = null;
   let startupFocusSynced = false;
   let detailResizeStartY = 0;
   let detailResizeStartHeight = DEFAULT_DETAIL_PANEL_HEIGHT;
-  const startupSessionName = getLocalSessionName();
+  const startupSessionName = getLocalSessionName(muxCtx);
 
   const focusedData = createMemo(() => sessions.find((s) => s.name === focusedSession()) ?? null);
 
@@ -204,7 +108,7 @@ function App() {
   }
 
   function reIdentify() {
-    const sessionName = getLocalSessionName();
+    const sessionName = getLocalSessionName(muxCtx);
     if (!sessionName) return;
 
     if (muxCtx.type === "tmux") {
@@ -292,14 +196,15 @@ function App() {
   }
 
   function beginDetailResize(event: MouseEvent) {
-    logResizeDebug("beginDetailResize", {
-      button: event.button,
-      x: event.x,
-      y: event.y,
-      currentHeight: detailPanelHeight(),
-      session: detailPanelSessionName(),
-      target: event.target?.id ?? null,
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("beginDetailResize", {
+        button: event.button,
+        x: event.x,
+        y: event.y,
+        currentHeight: detailPanelHeight(),
+        session: detailPanelSessionName(),
+        target: event.target?.id ?? null,
+      });
     if (event.button !== 0) return;
     (renderer as any).setCapturedRenderable?.(event.target ?? undefined);
     detailResizeStartY = event.y;
@@ -309,36 +214,39 @@ function App() {
   }
 
   function handleDetailResizeDrag(event: MouseEvent) {
-    logResizeDebug("handleDetailResizeDrag", {
-      x: event.x,
-      y: event.y,
-      isResizing: isDetailResizing(),
-      startY: detailResizeStartY,
-      startHeight: detailResizeStartHeight,
-      currentHeight: detailPanelHeight(),
-      session: detailPanelSessionName(),
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("handleDetailResizeDrag", {
+        x: event.x,
+        y: event.y,
+        isResizing: isDetailResizing(),
+        startY: detailResizeStartY,
+        startHeight: detailResizeStartHeight,
+        currentHeight: detailPanelHeight(),
+        session: detailPanelSessionName(),
+      });
     if (!isDetailResizing()) return;
     const delta = detailResizeStartY - event.y;
     const nextHeight = clampDetailPanelHeight(detailResizeStartHeight + delta);
     setDetailPanelHeight(nextHeight);
-    logResizeDebug("handleDetailResizeDrag:applied", {
-      delta,
-      nextHeight,
-      session: detailPanelSessionName(),
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("handleDetailResizeDrag:applied", {
+        delta,
+        nextHeight,
+        session: detailPanelSessionName(),
+      });
     event.stopPropagation();
   }
 
   function endDetailResize(event?: MouseEvent) {
-    logResizeDebug("endDetailResize", {
-      x: event?.x,
-      y: event?.y,
-      isResizing: isDetailResizing(),
-      currentHeight: detailPanelHeight(),
-      session: detailPanelSessionName(),
-      target: event?.target?.id ?? null,
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("endDetailResize", {
+        x: event?.x,
+        y: event?.y,
+        isResizing: isDetailResizing(),
+        currentHeight: detailPanelHeight(),
+        session: detailPanelSessionName(),
+        target: event?.target?.id ?? null,
+      });
     if (!isDetailResizing()) return;
     (renderer as any).setCapturedRenderable?.(undefined);
     setIsDetailResizing(false);
@@ -347,10 +255,11 @@ function App() {
     const sessionName = detailPanelSessionName();
     if (sessionName) {
       persistDetailPanelHeight(sessionName, detailPanelHeight());
-      logResizeDebug("endDetailResize:persisted", {
-        session: sessionName,
-        height: detailPanelHeight(),
-      });
+      if (TUI_DEBUG)
+        logResizeDebug("endDetailResize:persisted", {
+          session: sessionName,
+          height: detailPanelHeight(),
+        });
     }
 
     event?.stopPropagation();
@@ -383,12 +292,13 @@ function App() {
   }
 
   onMount(() => {
-    logResizeDebug("mount", {
-      startupSessionName,
-      localSessionName: getLocalSessionName(),
-      muxType: muxCtx.type,
-      tmuxPane: process.env.TMUX_PANE ?? null,
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("mount", {
+        startupSessionName,
+        localSessionName: getLocalSessionName(muxCtx),
+        muxType: muxCtx.type,
+        tmuxPane: process.env.TMUX_PANE ?? null,
+      });
     // Refocus the main pane once terminal capability detection finishes.
     // This avoids the race where the server refocuses too early and capability
     // responses leak as garbage text into the main pane.
@@ -396,7 +306,7 @@ function App() {
     const doStartupRefocus = () => {
       if (startupRefocused) return;
       startupRefocused = true;
-      refocusMainPane();
+      refocusMainPane(muxCtx);
     };
     renderer.on("capabilities", doStartupRefocus);
     // Fallback: if no capability response arrives within 2s, refocus anyway
@@ -492,19 +402,21 @@ function App() {
     const sessionName = detailPanelSessionName();
     if (!sessionName) return;
     const storedHeight = getStoredDetailPanelHeight(sessionName);
-    logResizeDebug("loadStoredDetailPanelHeight", {
-      session: sessionName,
-      storedHeight,
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("loadStoredDetailPanelHeight", {
+        session: sessionName,
+        storedHeight,
+      });
     setDetailPanelHeight(storedHeight);
   });
 
   createEffect(() => {
-    logResizeDebug("detailPanelHeight:changed", {
-      height: detailPanelHeight(),
-      session: detailPanelSessionName(),
-      isResizing: isDetailResizing(),
-    });
+    if (TUI_DEBUG)
+      logResizeDebug("detailPanelHeight:changed", {
+        height: detailPanelHeight(),
+        session: detailPanelSessionName(),
+        isResizing: isDetailResizing(),
+      });
   });
 
   useKeyboard((key) => {
