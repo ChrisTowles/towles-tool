@@ -49,12 +49,12 @@ export async function ensureServer(): Promise<void> {
     }
   }
 
-  const dir = resolveAgentboardDir();
-  const serverPath = resolveServerEntryPath(dir);
+  const agentboardDir = resolveAgentboardDir();
+  const serverPath = resolveServerEntryPath(agentboardDir);
 
   const proc = Bun.spawn([process.execPath, "run", serverPath], {
     stdio: ["ignore", "ignore", Bun.file(SERVER_ERR_LOG)],
-    cwd: dir,
+    cwd: agentboardDir,
   });
   proc.unref();
 

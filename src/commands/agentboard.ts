@@ -9,9 +9,7 @@ import { debugArg } from "./shared.js";
 const SERVER_HOST = "127.0.0.1";
 const SERVER_PORT = 4201;
 
-function agentboardDir(): string {
-  return resolve(import.meta.dirname, "../../packages/agentboard");
-}
+const AGENTBOARD_DIR = resolve(import.meta.dirname, "../../packages/agentboard");
 
 // Keybinding defaults
 const DEFAULT_KEY = "a";
@@ -40,7 +38,7 @@ function ensureDeps(): void {
     process.exit(1);
   }
 
-  const dir = agentboardDir();
+  const dir = AGENTBOARD_DIR;
   if (!existsSync(dir)) {
     consola.error(`Agentboard directory not found: ${dir}`);
     process.exit(1);
@@ -182,7 +180,7 @@ function uninstall(): void {
 function startServer(): void {
   ensureDeps();
 
-  const dir = agentboardDir();
+  const dir = AGENTBOARD_DIR;
   const serverEntry = resolve(dir, "apps/server/src/main.ts");
   consola.info("Starting agentboard server (foreground, Ctrl+C to stop)...");
 
@@ -206,7 +204,7 @@ async function serverAlive(): Promise<boolean> {
 async function ensureServerUp(): Promise<boolean> {
   if (await serverAlive()) return true;
 
-  const dir = agentboardDir();
+  const dir = AGENTBOARD_DIR;
   const serverEntry = resolve(dir, "apps/server/src/main.ts");
   consola.info("Starting agentboard server...");
   const child = spawn("bun", ["run", serverEntry], {
@@ -433,7 +431,7 @@ async function restart(): Promise<void> {
 function startTui(): void {
   ensureDeps();
 
-  const dir = agentboardDir();
+  const dir = AGENTBOARD_DIR;
   const tuiEntry = resolve(dir, "apps/tui/src/index.tsx");
 
   execSync(`bun run ${tuiEntry}`, {
