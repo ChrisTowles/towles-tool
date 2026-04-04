@@ -3,6 +3,7 @@ import consola from "consola";
 import { colors } from "consola/utils";
 import { debugArg } from "./shared.js";
 import { runAllChecks, checkAgentBoard, checkClaudePlugins } from "./doctor/checks.js";
+import { formatDoctorJson } from "./doctor/format.js";
 import { loadHistory, saveHistory, diffRuns } from "./doctor/history.js";
 import type { DiffEntry } from "./doctor/history.js";
 
@@ -39,11 +40,25 @@ export default defineCommand({
       description: "Compare current run against last tracked run",
       default: false,
     },
+    format: {
+      type: "string",
+      description: "Output format: text (default) or json",
+      default: "text",
+    },
   },
   async run({ args }) {
-    consola.info("Checking dependencies...\n");
+    const isJson = args.format === "json";
+
+    if (!isJson) {
+      consola.info("Checking dependencies...\n");
+    }
 
     const result = await runAllChecks();
+
+    if (isJson) {
+      console.log(formatDoctorJson(result));
+      return;
+    }
 
     for (const check of result.tools) {
       const icon = check.ok
