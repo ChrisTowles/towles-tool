@@ -1,4 +1,4 @@
-import { Show, For } from "solid-js";
+import { Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { Theme } from "@tt-agentboard/runtime";
 import { STATUS_ICONS } from "@tt-agentboard/runtime";
@@ -19,25 +19,8 @@ export interface StatusBarProps {
   theme: Accessor<Theme>;
 }
 
-interface BadgeConfig {
-  label: string;
-  count: number;
-  color: (p: Theme["palette"]) => string;
-  icon: string;
-}
-
 export function StatusBar(props: StatusBarProps) {
   const P = () => props.theme().palette;
-
-  const badges = (): BadgeConfig[] => {
-    const counts = props.sessionStatusCounts;
-    const all: BadgeConfig[] = [
-      { label: "active", count: counts.active, color: (p) => p.green, icon: STATUS_ICONS.running },
-      { label: "error", count: counts.error, color: (p) => p.red, icon: STATUS_ICONS.error },
-      { label: "idle", count: counts.idle, color: (p) => p.surface2, icon: STATUS_ICONS.idle },
-    ];
-    return all.filter((b) => b.count > 0);
-  };
 
   return (
     <box flexDirection="column" paddingLeft={1} paddingTop={1} paddingBottom={0} flexShrink={0}>
@@ -69,21 +52,24 @@ export function StatusBar(props: StatusBarProps) {
           </span>
         </Show>
       </text>
-      <Show when={badges().length > 0}>
+      <Show when={props.sessionStatusCounts.active + props.sessionStatusCounts.error + props.sessionStatusCounts.idle > 0}>
         <text>
           <span style={{ fg: P().overlay1 }}>{"  "}</span>
-          <For each={badges()}>
-            {(badge, i) => (
-              <>
-                <Show when={i() > 0}>
-                  <span style={{ fg: P().surface2 }}> </span>
-                </Show>
-                <span style={{ fg: badge.color(P()) }}>
-                  {badge.icon} {badge.count} {badge.label}
-                </span>
-              </>
-            )}
-          </For>
+          <Show when={props.sessionStatusCounts.active > 0}>
+            <span style={{ fg: P().green }}>
+              {STATUS_ICONS.running} {props.sessionStatusCounts.active} active{"  "}
+            </span>
+          </Show>
+          <Show when={props.sessionStatusCounts.error > 0}>
+            <span style={{ fg: P().red }}>
+              {STATUS_ICONS.error} {props.sessionStatusCounts.error} error{"  "}
+            </span>
+          </Show>
+          <Show when={props.sessionStatusCounts.idle > 0}>
+            <span style={{ fg: P().surface2 }}>
+              {STATUS_ICONS.idle} {props.sessionStatusCounts.idle} idle
+            </span>
+          </Show>
         </text>
       </Show>
     </box>
