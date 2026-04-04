@@ -770,7 +770,7 @@ function App() {
             hints={[
               ["⇥", "cycle"],
               ["⏎", "go"],
-              ["→", "detail"],
+              ["→", "select"],
               ["n", "new"],
               ["e", "edit"],
               ["d", "hide"],
@@ -843,11 +843,15 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
     ["x", "Kill session"],
     ["r", "Refresh"],
     ["u", "Show all sessions"],
-    ["→/l", "Detail panel"],
+    ["→/l", "Select panel"],
     ["←/h/Esc", "Back to sessions"],
     ["Alt+↑↓", "Reorder sessions"],
     ["q", "Quit"],
   ];
+
+  const COLS = 2;
+  const rows = Math.ceil(keys.length / COLS);
+  const columns = Array.from({ length: COLS }, (_, c) => keys.slice(c * rows, (c + 1) * rows));
 
   return (
     <box
@@ -867,7 +871,7 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
         backgroundColor={P().mantle}
         padding={1}
         flexDirection="column"
-        width={30}
+        width={56}
       >
         <text>
           <span style={{ fg: P().blue, attributes: BOLD }}>Keybindings</span>
@@ -875,20 +879,28 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
         <box height={1}>
           <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
-        <For each={keys}>
-          {([key, desc]) => (
-            <box flexDirection="row" paddingLeft={1}>
-              <box width={12} flexShrink={0}>
-                <text>
-                  <span style={{ fg: P().sky }}>{key}</span>
-                </text>
+        <box flexDirection="row">
+          <For each={columns}>
+            {(col) => (
+              <box flexDirection="column" flexGrow={1}>
+                <For each={col}>
+                  {([key, desc]) => (
+                    <box flexDirection="row" paddingLeft={1}>
+                      <box width={12} flexShrink={0}>
+                        <text>
+                          <span style={{ fg: P().sky }}>{key}</span>
+                        </text>
+                      </box>
+                      <text truncate>
+                        <span style={{ fg: P().subtext0 }}>{desc}</span>
+                      </text>
+                    </box>
+                  )}
+                </For>
               </box>
-              <text truncate>
-                <span style={{ fg: P().subtext0 }}>{desc}</span>
-              </text>
-            </box>
-          )}
-        </For>
+            )}
+          </For>
+        </box>
         <box height={1}>
           <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
