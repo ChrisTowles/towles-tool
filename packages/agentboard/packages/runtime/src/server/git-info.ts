@@ -1,6 +1,7 @@
 import { existsSync, watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { join } from "node:path";
+import consola from "consola";
 import type { SessionData } from "../shared";
 
 // --- Shell helper (for git commands only) ---
@@ -151,8 +152,8 @@ export function syncGitWatchers(sessions: SessionData[], broadcastFn: () => void
     try {
       const watcher = watch(headPath, () => onGitHeadChange(broadcastFn));
       gitHeadWatchers.set(dir, watcher);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      consola.debug(`Failed to watch git HEAD at ${headPath}:`, err);
     }
   }
 }
