@@ -166,8 +166,8 @@ describe("extractSessionLabel", () => {
   });
 
   it("falls back to gitBranch", () => {
-    const entries = [makeEntry({ type: "user" }) as any];
-    (entries[0] as any).gitBranch = "feat/new-feature";
+    const entries = [makeEntry({ type: "user" })];
+    entries[0].gitBranch = "feat/new-feature";
     expect(extractSessionLabel(entries, "abc12345")).toBe("feat/new-feature");
   });
 
@@ -209,8 +209,8 @@ describe("extractSessionLabel", () => {
   });
 
   it("uses slug fallback for short labels after cleanup", () => {
-    const entries = [makeEntry() as any];
-    (entries[0] as any).slug = "my-slug";
+    const entries = [makeEntry()];
+    entries[0].slug = "my-slug";
     expect(extractSessionLabel(entries, "abc12345")).toBe("my-slug");
   });
 });
