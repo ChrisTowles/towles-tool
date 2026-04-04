@@ -233,7 +233,9 @@ function findSidebarPane(windowId: string): string | null {
       const [paneId, title] = line.split(" ", 2);
       if (title === "agentboard-sidebar" && paneId) return paneId;
     }
-  } catch {}
+  } catch (err) {
+    consola.debug(`findSidebarPane failed for window ${windowId}:`, err);
+  }
   return null;
 }
 
