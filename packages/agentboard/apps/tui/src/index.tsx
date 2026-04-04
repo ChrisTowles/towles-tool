@@ -458,6 +458,9 @@ function App() {
             }
           } else if (msg.type === "re-identify") {
             reIdentify();
+          } else if (msg.type === "quit") {
+            if (ws) ws.close();
+            renderer.destroy();
           }
         });
 
@@ -473,17 +476,6 @@ function App() {
     };
 
     onCleanup(() => socket.close());
-
-    // Listen for quit messages from server
-    socket.addEventListener("message", (event) => {
-      try {
-        const msg = JSON.parse(event.data as string);
-        if (msg.type === "quit") {
-          if (ws) ws.close();
-          renderer.destroy();
-        }
-      } catch {}
-    });
   });
 
   const hasRunning = createMemo(() => sessions.some((s) => s.agentState?.status === "running"));
@@ -610,9 +602,6 @@ function App() {
       }
       case "r":
         send({ type: "refresh" });
-        break;
-      case "t":
-        // reserved — was theme picker
         break;
       case "u":
         send({ type: "show-all-sessions" });
@@ -855,7 +844,6 @@ const HELP_COLUMNS = Array.from({ length: HELP_COLS }, (_, c) =>
 
 function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () => void }) {
   const P = () => props.palette();
-
   return (
     <box
       position="absolute"
