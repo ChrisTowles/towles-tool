@@ -6,5 +6,6 @@ export default defineCommand({
     "daily-notes": () => import("./daily-notes.js").then((m) => m.default),
     note: () => import("./note.js").then((m) => m.default),
     meeting: () => import("./meeting.js").then((m) => m.default),
+    search: () => import("./search.js").then((m) => m.default),
   },
 });
