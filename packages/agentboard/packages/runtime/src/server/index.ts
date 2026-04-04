@@ -12,7 +12,7 @@ import { loadConfig, saveConfig, loadPreferredEditor } from "../config";
 import { resolveSidebarWidthFromResizeContext, snapshotSidebarWindows } from "./sidebar-width-sync";
 import type { SidebarResizeContext, SidebarResizeSuppression } from "./sidebar-width-sync";
 import { shell, getGitInfo, syncGitWatchers, teardownGitWatchers } from "./git-info";
-import { refreshPortSnapshot, getSessionPorts } from "./port-scanner";
+import { refreshPortSnapshot, getSessionPorts, startPortPoll } from "./port-scanner";
 import {
   SERVER_PORT,
   SERVER_HOST,
@@ -1438,20 +1438,7 @@ export function startServer(
 
   // --- Port polling (detect new/stopped listeners every 10s) ---
 
-  const PORT_POLL_INTERVAL_MS = 10_000;
   let portPollTimer: ReturnType<typeof setInterval> | null = null;
-
-  function startPortPoll() {
-    // Run initial snapshot immediately so first broadcast has ports
-    if (lastState) {
-      refreshPortSnapshot(lastState.sessions.map((s) => s.name));
-    }
-    portPollTimer = setInterval(() => {
-      if (!lastState || clientCount === 0) return;
-      const changed = refreshPortSnapshot(lastState.sessions.map((s) => s.name));
-      if (changed) broadcastState();
-    }, PORT_POLL_INTERVAL_MS);
-  }
 
   function cleanup() {
     for (const w of allWatchers) w.stop();
@@ -1721,7 +1708,7 @@ export function startServer(
     refreshPortSnapshot(allMuxSessions);
   }
   broadcastState();
-  startPortPoll();
+  portPollTimer = startPortPoll({ lastState, clientCount, broadcastState });
   startPaneScan();
   // Run initial pane scan
   refreshPaneAgents();
