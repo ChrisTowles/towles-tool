@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { connect } from "node:net";
 import { SERVER_PORT, SERVER_HOST, PID_FILE } from "../shared";
 import { SERVER_ERR_LOG } from "../debug";
@@ -32,15 +31,6 @@ async function isPortOpen(host: string, port: number, timeoutMs = 200): Promise<
   });
 }
 
-function resolveAgentboardDir(): string {
-  // Walk up from packages/runtime/src/server/ to the agentboard root
-  return new URL("../../../..", import.meta.url).pathname;
-}
-
-function resolveServerEntryPath(dir: string): string {
-  return join(dir, "apps", "server", "src", "main.ts");
-}
-
 export async function ensureServer(): Promise<void> {
   if (existsSync(PID_FILE)) {
     const pid = Number.parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
@@ -49,12 +39,8 @@ export async function ensureServer(): Promise<void> {
     }
   }
 
-  const agentboardDir = resolveAgentboardDir();
-  const serverPath = resolveServerEntryPath(agentboardDir);
-
-  const proc = Bun.spawn([process.execPath, "run", serverPath], {
+  const proc = Bun.spawn(["tt", "agentboard", "server"], {
     stdio: ["ignore", "ignore", Bun.file(SERVER_ERR_LOG)],
-    cwd: agentboardDir,
   });
   proc.unref();
 

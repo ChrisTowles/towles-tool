@@ -9,8 +9,6 @@ import { debugArg } from "./shared.js";
 const SERVER_HOST = "127.0.0.1";
 const SERVER_PORT = 4201;
 
-const AGENTBOARD_DIR = resolve(import.meta.dirname, "../../packages/agentboard");
-
 // Keybinding defaults
 const DEFAULT_KEY = "a";
 const TMUX_BINDINGS = { toggle: "t", focus: "s" } as const;
@@ -30,16 +28,11 @@ function findTmuxConf(): string | null {
   return null;
 }
 
-function ensureDeps(): void {
+function ensureBun(): void {
   try {
     execSync("bun --version", { stdio: "pipe" });
   } catch {
     consola.error("bun is required but not found. Install: https://bun.sh");
-    process.exit(1);
-  }
-
-  if (!existsSync(AGENTBOARD_DIR)) {
-    consola.error(`Agentboard directory not found: ${AGENTBOARD_DIR}`);
     process.exit(1);
   }
 }
@@ -102,7 +95,7 @@ function showKeys(): void {
 }
 
 function setup(): void {
-  ensureDeps();
+  ensureBun();
 
   const confPath = findTmuxConf();
   if (!confPath) {
@@ -177,14 +170,15 @@ function uninstall(): void {
 }
 
 function startServer(): void {
-  ensureDeps();
+  ensureBun();
 
-  const serverEntry = resolve(AGENTBOARD_DIR, "apps/server/src/main.ts");
+  const agentboardDir = resolve(import.meta.dirname, "../../packages/agentboard");
+  const serverEntry = resolve(agentboardDir, "apps/server/src/main.ts");
   consola.info("Starting agentboard server (foreground, Ctrl+C to stop)...");
 
   execSync(`bun run ${serverEntry}`, {
     stdio: "inherit",
-    cwd: AGENTBOARD_DIR,
+    cwd: agentboardDir,
   });
 }
 
@@ -202,11 +196,9 @@ async function serverAlive(): Promise<boolean> {
 async function ensureServerUp(): Promise<boolean> {
   if (await serverAlive()) return true;
 
-  const serverEntry = resolve(AGENTBOARD_DIR, "apps/server/src/main.ts");
   consola.info("Starting agentboard server...");
-  const child = spawn("bun", ["run", serverEntry], {
+  const child = spawn("tt", ["agentboard", "server"], {
     stdio: "ignore",
-    cwd: AGENTBOARD_DIR,
     detached: true,
   });
   child.unref();
@@ -367,7 +359,7 @@ async function runFocus(): Promise<void> {
 }
 
 async function restart(): Promise<void> {
-  ensureDeps();
+  ensureBun();
 
   // 1. Kill stash sessions left over from hidden sidebars
   try {
@@ -426,13 +418,14 @@ async function restart(): Promise<void> {
 }
 
 function startTui(): void {
-  ensureDeps();
+  ensureBun();
 
-  const tuiEntry = resolve(AGENTBOARD_DIR, "apps/tui/src/index.tsx");
+  const agentboardDir = resolve(import.meta.dirname, "../../packages/agentboard");
+  const tuiEntry = resolve(agentboardDir, "apps/tui/src/index.tsx");
 
   execSync(`bun run ${tuiEntry}`, {
     stdio: "inherit",
-    cwd: resolve(AGENTBOARD_DIR, "apps/tui"),
+    cwd: resolve(agentboardDir, "apps/tui"),
   });
 }
 
