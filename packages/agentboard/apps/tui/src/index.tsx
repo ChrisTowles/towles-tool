@@ -830,28 +830,31 @@ function App() {
 
 // --- Help Overlay ---
 
+const HELP_KEYS: [string, string][] = [
+  ["j/k ↑↓", "Move focus"],
+  ["Enter", "Switch to session"],
+  ["1-9", "Jump to session"],
+  ["Tab", "Cycle sessions"],
+  ["n", "New session"],
+  ["e", "Open in editor"],
+  ["d", "Hide session"],
+  ["x", "Kill session"],
+  ["r", "Refresh"],
+  ["u", "Show all sessions"],
+  ["→/l", "Select panel"],
+  ["←/h/Esc", "Back to sessions"],
+  ["Alt+↑↓", "Reorder sessions"],
+  ["q", "Quit"],
+];
+
+const HELP_COLS = 2;
+const HELP_ROWS = Math.ceil(HELP_KEYS.length / HELP_COLS);
+const HELP_COLUMNS = Array.from({ length: HELP_COLS }, (_, c) =>
+  HELP_KEYS.slice(c * HELP_ROWS, (c + 1) * HELP_ROWS),
+);
+
 function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () => void }) {
   const P = () => props.palette();
-  const keys: [string, string][] = [
-    ["j/k ↑↓", "Move focus"],
-    ["Enter", "Switch to session"],
-    ["1-9", "Jump to session"],
-    ["Tab", "Cycle sessions"],
-    ["n", "New session"],
-    ["e", "Open in editor"],
-    ["d", "Hide session"],
-    ["x", "Kill session"],
-    ["r", "Refresh"],
-    ["u", "Show all sessions"],
-    ["→/l", "Select panel"],
-    ["←/h/Esc", "Back to sessions"],
-    ["Alt+↑↓", "Reorder sessions"],
-    ["q", "Quit"],
-  ];
-
-  const COLS = 2;
-  const rows = Math.ceil(keys.length / COLS);
-  const columns = Array.from({ length: COLS }, (_, c) => keys.slice(c * rows, (c + 1) * rows));
 
   return (
     <box
@@ -880,7 +883,7 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
           <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
         <box flexDirection="row">
-          <For each={columns}>
+          <For each={HELP_COLUMNS}>
             {(col) => (
               <box flexDirection="column" flexGrow={1}>
                 <For each={col}>
