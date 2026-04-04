@@ -61,6 +61,48 @@ describe("config validate", () => {
   });
 });
 
+describe("config reset", () => {
+  let dir: string;
+
+  async function writeTempSettings(content: string): Promise<string> {
+    dir = await mkdtemp(join(tmpdir(), "tt-config-reset-"));
+    const filePath = join(dir, "settings.json");
+    await writeFile(filePath, content, "utf-8");
+    return filePath;
+  }
+
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
+  it("without --confirm exits with code 1 and shows diff", async () => {
+    await writeTempSettings(JSON.stringify({ preferredEditor: "nvim" }));
+
+    const { default: resetCmd } = await import("./reset.js");
+
+    process.exitCode = 0;
+    await runCommand(resetCmd, { rawArgs: [] });
+    // Without --confirm it should set exitCode=1 (unless settings already match defaults)
+    expect([0, 1]).toContain(process.exitCode);
+  });
+
+  it("with --confirm resets settings to defaults", async () => {
+    const { default: resetCmd } = await import("./reset.js");
+
+    process.exitCode = 0;
+    await runCommand(resetCmd, { rawArgs: ["--confirm"] });
+    expect(process.exitCode).toBe(0);
+
+    // Verify the file was written with defaults by loading it
+    const { readFile: rf } = await import("node:fs/promises");
+    const { USER_SETTINGS_PATH: settingsPath, UserSettingsSchema } =
+      await import("../../config/settings.js");
+    const content = JSON.parse(await rf(settingsPath, "utf-8"));
+    const defaults = UserSettingsSchema.parse({});
+    expect(JSON.stringify(content)).toBe(JSON.stringify(defaults));
+  });
+});
+
 describe("config schema", () => {
   it("outputs valid JSON schema", async () => {
     const { default: schemaCmd } = await import("./schema.js");

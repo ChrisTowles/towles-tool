@@ -6,5 +6,6 @@ export default defineCommand({
     show: () => import("./show.js").then((m) => m.default),
     validate: () => import("./validate.js").then((m) => m.default),
     schema: () => import("./schema.js").then((m) => m.default),
+    reset: () => import("./reset.js").then((m) => m.default),
   },
 });
