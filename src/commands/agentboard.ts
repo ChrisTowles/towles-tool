@@ -38,9 +38,8 @@ function ensureDeps(): void {
     process.exit(1);
   }
 
-  const dir = AGENTBOARD_DIR;
-  if (!existsSync(dir)) {
-    consola.error(`Agentboard directory not found: ${dir}`);
+  if (!existsSync(AGENTBOARD_DIR)) {
+    consola.error(`Agentboard directory not found: ${AGENTBOARD_DIR}`);
     process.exit(1);
   }
 }
@@ -180,13 +179,12 @@ function uninstall(): void {
 function startServer(): void {
   ensureDeps();
 
-  const dir = AGENTBOARD_DIR;
-  const serverEntry = resolve(dir, "apps/server/src/main.ts");
+  const serverEntry = resolve(AGENTBOARD_DIR, "apps/server/src/main.ts");
   consola.info("Starting agentboard server (foreground, Ctrl+C to stop)...");
 
   execSync(`bun run ${serverEntry}`, {
     stdio: "inherit",
-    cwd: dir,
+    cwd: AGENTBOARD_DIR,
   });
 }
 
@@ -204,12 +202,11 @@ async function serverAlive(): Promise<boolean> {
 async function ensureServerUp(): Promise<boolean> {
   if (await serverAlive()) return true;
 
-  const dir = AGENTBOARD_DIR;
-  const serverEntry = resolve(dir, "apps/server/src/main.ts");
+  const serverEntry = resolve(AGENTBOARD_DIR, "apps/server/src/main.ts");
   consola.info("Starting agentboard server...");
   const child = spawn("bun", ["run", serverEntry], {
     stdio: "ignore",
-    cwd: dir,
+    cwd: AGENTBOARD_DIR,
     detached: true,
   });
   child.unref();
@@ -431,12 +428,11 @@ async function restart(): Promise<void> {
 function startTui(): void {
   ensureDeps();
 
-  const dir = AGENTBOARD_DIR;
-  const tuiEntry = resolve(dir, "apps/tui/src/index.tsx");
+  const tuiEntry = resolve(AGENTBOARD_DIR, "apps/tui/src/index.tsx");
 
   execSync(`bun run ${tuiEntry}`, {
     stdio: "inherit",
-    cwd: resolve(dir, "apps/tui"),
+    cwd: resolve(AGENTBOARD_DIR, "apps/tui"),
   });
 }
 
