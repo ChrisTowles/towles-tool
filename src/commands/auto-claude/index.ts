@@ -90,6 +90,7 @@ export default defineCommand({
     list: () => import("./list.js").then((m) => m.default),
     status: () => import("./status.js").then((m) => m.default),
     retry: () => import("./retry.js").then((m) => m.default),
+    "config-init": () => import("./config-init.js").then((m) => m.default),
   },
   async run({ args }) {
     // Explain mode: print pipeline summary and exit
