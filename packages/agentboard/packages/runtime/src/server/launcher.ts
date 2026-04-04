@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { connect } from "node:net";
 import { SERVER_PORT, SERVER_HOST, PID_FILE } from "../shared";
 import { SERVER_ERR_LOG } from "../debug";
@@ -37,6 +37,10 @@ export async function ensureServer(): Promise<void> {
     if (!Number.isNaN(pid) && isProcessAlive(pid) && (await isPortOpen(SERVER_HOST, SERVER_PORT))) {
       return;
     }
+    // Stale PID file — remove before spawning a new server
+    try {
+      unlinkSync(PID_FILE);
+    } catch {}
   }
 
   const proc = Bun.spawn(["tt", "agentboard", "server"], {

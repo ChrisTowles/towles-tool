@@ -18,12 +18,7 @@ const MARKER = "# agentboard";
 function findTmuxConf(): string | null {
   const candidates = [resolve(process.env.HOME ?? "~", ".config/tmux/tmux.conf")];
   for (const path of candidates) {
-    try {
-      const real = existsSync(path) ? path : null;
-      if (real) return real;
-    } catch {
-      continue;
-    }
+    if (existsSync(path)) return path;
   }
   return null;
 }
@@ -95,8 +90,6 @@ function showKeys(): void {
 }
 
 function setup(): void {
-  ensureBun();
-
   const confPath = findTmuxConf();
   if (!confPath) {
     consola.warn("No tmux.conf found. Add this line manually:");
@@ -453,8 +446,6 @@ export default defineCommand({
         startServer();
         break;
       case "tui":
-        startTui();
-        break;
       case "start":
         startTui();
         break;
