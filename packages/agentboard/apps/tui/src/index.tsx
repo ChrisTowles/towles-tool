@@ -388,8 +388,9 @@ function App() {
 
             if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
               startupFocusSynced = true;
+              const oldFocus = focusedSession();
               setFocusedSession(msg.name);
-              if (focusedSession() !== msg.name) {
+              if (oldFocus !== msg.name) {
                 startupFocusToPublish = msg.name;
               }
             }
