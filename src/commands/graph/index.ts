@@ -10,6 +10,8 @@ import { debugArg } from "../shared.js";
 import { buildAllSessionsTreemap, buildSessionTreemap } from "./treemap.js";
 import type { BarChartData } from "./types.js";
 import { buildBarChartData, findRecentSessions, findSessionPath } from "./sessions.js";
+import { buildSessionRows, formatCsv, formatJson } from "./format.js";
+import type { OutputFormat } from "./format.js";
 import { generateTreemapHtml } from "./render.js";
 import { openInBrowser, startServer, waitForShutdown } from "./server.js";
 import { parseJsonl } from "./parser.js";
@@ -21,7 +23,9 @@ export { buildBarChartData, findRecentSessions, findSessionPath } from "./sessio
 export { calculateCutoffMs, filterByDays, parseJsonl } from "./parser.js";
 export { extractSessionLabel } from "./labels.js";
 export { generateTreemapHtml } from "./render.js";
+export { buildSessionRows, formatCsv, formatJson } from "./format.js";
 export type { BarChartData, BarChartDay, ProjectBar, SessionResult, TreemapNode } from "./types.js";
+export type { OutputFormat, SessionRow } from "./format.js";
 
 export default defineCommand({
   meta: { name: "graph", description: "Generate interactive HTML treemap from session token data" },
@@ -54,10 +58,22 @@ export default defineCommand({
       description: "Filter to sessions from last N days (0=no limit, default: 7)",
       default: "7",
     },
+    format: {
+      type: "string" as const,
+      alias: "f",
+      description: "Output format: html (default), json, csv",
+      default: "html",
+    },
   },
   async run({ args }) {
     const port = Number(args.port);
     const days = Number(args.days);
+    const format = args.format as OutputFormat;
+
+    if (!["html", "json", "csv"].includes(format)) {
+      consola.error(`Invalid format "${format}". Use: html, json, csv`);
+      process.exit(1);
+    }
 
     const projectsDir = path.join(os.homedir(), ".claude", "projects");
     if (!fs.existsSync(projectsDir)) {
@@ -66,11 +82,47 @@ export default defineCommand({
     }
 
     const sessionId = args.session;
+
+    // JSON/CSV output: flat session rows to stdout
+    if (format === "json" || format === "csv") {
+      const sessions = sessionId
+        ? (() => {
+            const sessionPath = findSessionPath(projectsDir, sessionId);
+            if (!sessionPath) {
+              consola.error(`Session ${sessionId} not found`);
+              process.exit(1);
+            }
+            const stat = fs.statSync(sessionPath);
+            const project = path.basename(path.dirname(sessionPath));
+            return [
+              {
+                sessionId,
+                path: sessionPath,
+                date: stat.mtime.toLocaleDateString("en-CA"),
+                tokens: 0,
+                project,
+                mtime: stat.mtimeMs,
+              },
+            ];
+          })()
+        : findRecentSessions(projectsDir, 500, days);
+
+      if (sessions.length === 0) {
+        consola.error("No sessions found");
+        process.exit(1);
+      }
+
+      const rows = buildSessionRows(sessions);
+      const output = format === "json" ? formatJson(rows) : formatCsv(rows);
+      process.stdout.write(output + "\n");
+      return;
+    }
+
+    // HTML output (existing behavior)
     let treemapData;
     let barChartData: BarChartData = { days: [] };
 
     if (!sessionId) {
-      // All sessions mode
       const sessions = findRecentSessions(projectsDir, 500, days);
       if (sessions.length === 0) {
         consola.error("No sessions found");
@@ -82,7 +134,6 @@ export default defineCommand({
       treemapData = buildAllSessionsTreemap(sessions);
       barChartData = buildBarChartData(sessions);
     } else {
-      // Single session mode
       const sessionPath = findSessionPath(projectsDir, sessionId);
       if (!sessionPath) {
         consola.error(`Session ${sessionId} not found`);
@@ -92,13 +143,10 @@ export default defineCommand({
       consola.info(`📊 Generating treemap for session ${sessionId}...`);
       const entries = parseJsonl(sessionPath);
       treemapData = buildSessionTreemap(sessionId, entries);
-      // Bar chart not meaningful for single session, leave empty
     }
 
-    // Generate HTML
     const html = generateTreemapHtml(treemapData, barChartData);
 
-    // Write output file
     const reportsDir = path.join(os.homedir(), ".claude", "reports");
     if (!fs.existsSync(reportsDir)) {
       fs.mkdirSync(reportsDir, { recursive: true });
@@ -127,7 +175,6 @@ export default defineCommand({
         openInBrowser(url);
       }
 
-      // Keep server running until Ctrl+C
       await waitForShutdown(server);
       consola.info("\n👋 Stopping server...");
     } else if (args.open) {
