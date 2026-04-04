@@ -27,6 +27,10 @@ async function main() {
   console.log(`Package version: ${version}`);
 
   // Find all plugin directories
+  if (!(await fileExists(PLUGINS_DIR))) {
+    console.log("No plugins directory found, skipping.");
+    return;
+  }
   const entries = await readdir(PLUGINS_DIR, { withFileTypes: true });
   const pluginDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
 
