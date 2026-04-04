@@ -52,7 +52,14 @@ export function StatusBar(props: StatusBarProps) {
           </span>
         </Show>
       </text>
-      <Show when={props.sessionStatusCounts.active + props.sessionStatusCounts.error + props.sessionStatusCounts.idle > 0}>
+      <Show
+        when={
+          props.sessionStatusCounts.active +
+            props.sessionStatusCounts.error +
+            props.sessionStatusCounts.idle >
+          0
+        }
+      >
         <text>
           <span style={{ fg: P().overlay1 }}>{"  "}</span>
           <Show when={props.sessionStatusCounts.active > 0}>

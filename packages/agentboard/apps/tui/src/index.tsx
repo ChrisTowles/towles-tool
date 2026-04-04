@@ -32,7 +32,14 @@ import {
   getStoredDetailPanelHeight,
   persistDetailPanelHeight,
 } from "./detail-panel-height";
-import { SPINNERS, BOLD, DIM, DEFAULT_DETAIL_PANEL_HEIGHT, DIVIDER, logResizeDebug } from "./constants";
+import {
+  SPINNERS,
+  BOLD,
+  DIM,
+  DEFAULT_DETAIL_PANEL_HEIGHT,
+  DIVIDER,
+  logResizeDebug,
+} from "./constants";
 
 const muxCtx = detectMuxContext();
 
