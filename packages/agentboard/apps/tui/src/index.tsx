@@ -110,6 +110,16 @@ function App() {
   const [modal, setModal] = createSignal<"none" | "confirm-kill" | "help">("none");
   const [killTarget, setKillTarget] = createSignal<string | null>(null);
 
+  // --- Transient toast (footer) ---
+  type ToastTone = "error" | "info" | "success";
+  const [toast, setToast] = createSignal<{ message: string; tone: ToastTone } | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function showToast(message: string, tone: ToastTone = "info") {
+    setToast({ message, tone });
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => setToast(null), 4000);
+  }
+
   const [clientTty, setClientTty] = createSignal(getClientTty(muxCtx));
   let ws: WebSocket | null = null;
   let startupFocusSynced = false;
@@ -119,8 +129,14 @@ function App() {
 
   const focusedData = createMemo(() => sessions.find((s) => s.name === focusedSession()) ?? null);
 
-  function send(cmd: ClientCommand) {
-    if (connected() && ws) ws.send(JSON.stringify(cmd));
+  function send(cmd: ClientCommand, successMsg?: string): boolean {
+    if (connected() && ws) {
+      ws.send(JSON.stringify(cmd));
+      if (successMsg) showToast(successMsg, "success");
+      return true;
+    }
+    showToast("not connected to agentboard server", "error");
+    return false;
   }
 
   function switchToSession(name: string) {
@@ -180,13 +196,16 @@ function App() {
         "/tmp/agentboard-tui-agent-click.log",
         `[${new Date().toISOString()}] keyboard focus-agent-pane session=${data.name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`,
       );
-    send({
-      type: "focus-agent-pane",
-      session: data.name,
-      agent: agent.agent,
-      threadId: agent.threadId,
-      threadName: agent.threadName,
-    });
+    send(
+      {
+        type: "focus-agent-pane",
+        session: data.name,
+        agent: agent.agent,
+        threadId: agent.threadId,
+        threadName: agent.threadName,
+      },
+      `focusing ${agent.agent}`,
+    );
   }
 
   function dismissFocusedAgent() {
@@ -194,17 +213,13 @@ function App() {
     const agents = data?.agents ?? [];
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
-    send({
-      type: "dismiss-agent",
-      session: data.name,
-      agent: agent.agent,
-      threadId: agent.threadId,
-    });
-    // Adjust index if we dismissed the last item
+    send(
+      { type: "dismiss-agent", session: data.name, agent: agent.agent, threadId: agent.threadId },
+      `dismissed ${agent.agent}`,
+    );
     if (focusedAgentIdx() >= agents.length - 1 && agents.length > 1) {
       setFocusedAgentIdx(agents.length - 2);
     }
-    // If no agents left, go back to sessions
     if (agents.length <= 1) setPanelFocus("sessions");
   }
 
@@ -213,13 +228,16 @@ function App() {
     const agents = data?.agents ?? [];
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
-    send({
-      type: "kill-agent-pane",
-      session: data.name,
-      agent: agent.agent,
-      threadId: agent.threadId,
-      threadName: agent.threadName,
-    });
+    send(
+      {
+        type: "kill-agent-pane",
+        session: data.name,
+        agent: agent.agent,
+        threadId: agent.threadId,
+        threadName: agent.threadName,
+      },
+      `killed ${agent.agent} pane`,
+    );
   }
 
   function beginDetailResize(event: MouseEvent) {
@@ -311,11 +329,27 @@ function App() {
     const data = focusedData();
     if (!data?.dir) return;
     const editor = preferredEditor();
-    Bun.spawn([editor, data.dir], {
-      stdout: "ignore",
-      stderr: "ignore",
-      stdin: "ignore",
-    });
+    try {
+      const proc = Bun.spawn([editor, data.dir], {
+        stdout: "ignore",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+      showToast(`opening ${data.dir} in ${editor}`, "success");
+      void proc.exited.then((code) => {
+        if (code !== 0) {
+          logResizeDebug("openInEditor failed", { editor, dir: data.dir, code });
+          showToast(`failed to open editor "${editor}" (exit ${code})`, "error");
+        }
+      });
+    } catch (err) {
+      logResizeDebug("openInEditor spawn threw", {
+        editor,
+        dir: data.dir,
+        error: String(err),
+      });
+      showToast(`failed to spawn editor "${editor}": ${String(err)}`, "error");
+    }
   }
 
   onMount(() => {
@@ -340,6 +374,7 @@ function App() {
     const refocusTimeout = setTimeout(doStartupRefocus, 2000);
 
     onCleanup(() => {
+      if (toastTimer) clearTimeout(toastTimer);
       clearTimeout(refocusTimeout);
       renderer.removeListener("capabilities", doStartupRefocus);
     });
@@ -460,7 +495,7 @@ function App() {
     if (currentModal === "confirm-kill") {
       if (key.name === "y") {
         const target = killTarget();
-        if (target) send({ type: "kill-session", name: target });
+        if (target) send({ type: "kill-session", name: target }, `killed ${target}`);
         setKillTarget(null);
         setModal("none");
       } else {
@@ -541,20 +576,11 @@ function App() {
         break;
       }
       case "r":
-        send({ type: "refresh" });
+        send({ type: "refresh" }, "refreshing sessions");
         break;
-      case "u":
-        send({ type: "show-all-sessions" });
+      case "d":
+        if (panelFocus() === "agents") dismissFocusedAgent();
         break;
-      case "d": {
-        if (panelFocus() === "agents") {
-          dismissFocusedAgent();
-        } else {
-          const focused = focusedSession();
-          if (focused) send({ type: "hide-session", name: focused });
-        }
-        break;
-      }
       case "x": {
         if (panelFocus() === "agents") {
           killFocusedAgentPane();
@@ -682,6 +708,20 @@ function App() {
         <box height={1}>
           <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
+        <Show when={toast()}>
+          {(t) => (
+            <box height={1}>
+              <text
+                style={{
+                  fg:
+                    t().tone === "error" ? P().red : t().tone === "success" ? P().green : P().blue,
+                }}
+              >
+                {t().message}
+              </text>
+            </box>
+          )}
+        </Show>
         <Show
           when={panelFocus() === "sessions"}
           fallback={
@@ -700,11 +740,10 @@ function App() {
             palette={P}
             hints={[
               ["⇥", "cycle"],
-              ["⏎", "go"],
-              ["→", "select"],
+              ["⏎", "switch"],
+              ["→", "agents"],
               ["n", "new"],
               ["e", "edit"],
-              ["d", "hide"],
               ["x", "kill"],
               ["r", "refresh"],
               ["q", "quit"],
@@ -768,11 +807,9 @@ const HELP_KEYS: [string, string][] = [
   ["Tab", "Cycle sessions"],
   ["n", "New session"],
   ["e", "Open in editor"],
-  ["d", "Hide session"],
   ["x", "Kill session"],
   ["r", "Refresh"],
-  ["u", "Show all sessions"],
-  ["→/l", "Select panel"],
+  ["→/l", "Agents panel"],
   ["←/h/Esc", "Back to sessions"],
   ["Alt+↑↓", "Reorder sessions"],
   ["q", "Quit"],
