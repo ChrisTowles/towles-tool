@@ -3,7 +3,6 @@ import { dirname } from "node:path";
 
 interface PersistedSessionOrder {
   order?: unknown;
-  hidden?: unknown;
 }
 
 /**
@@ -16,7 +15,6 @@ interface PersistedSessionOrder {
  */
 export class SessionOrder {
   private order: string[] = [];
-  private hidden = new Set<string>();
   private readonly persistPath: string | null;
 
   constructor(persistPath?: string) {
@@ -33,11 +31,6 @@ export class SessionOrder {
             if (Array.isArray(persisted.order)) {
               this.order = persisted.order.filter((n): n is string => typeof n === "string");
             }
-            if (Array.isArray(persisted.hidden)) {
-              this.hidden = new Set(
-                persisted.hidden.filter((n): n is string => typeof n === "string"),
-              );
-            }
           }
         }
       } catch {
@@ -51,7 +44,6 @@ export class SessionOrder {
     const nameSet = new Set(names);
     // Remove sessions that no longer exist
     this.order = this.order.filter((n) => nameSet.has(n));
-    this.hidden = new Set([...this.hidden].filter((n) => nameSet.has(n)));
     // Add new sessions in sorted position
     const newNames = names
       .filter((n) => !this.order.includes(n))
@@ -78,48 +70,21 @@ export class SessionOrder {
     this.save();
   }
 
-  /** Hide a session from the panel without touching the underlying mux session. */
-  hide(name: string): void {
-    if (!this.order.includes(name) || this.hidden.has(name)) return;
-    this.hidden.add(name);
-    this.save();
-  }
-
-  /** Make a previously hidden session visible again. */
-  show(name: string): void {
-    if (!this.hidden.delete(name)) return;
-    if (!this.order.includes(name)) {
-      this.order.push(name);
-    }
-    this.save();
-  }
-
-  /** Restore all hidden sessions back into the panel. */
-  showAll(): void {
-    if (this.hidden.size === 0) return;
-    this.hidden.clear();
-    this.save();
-  }
-
   /** Apply the custom order to a list of session names. Returns sorted names. */
   apply(names: string[]): string[] {
     const posMap = new Map(this.order.map((n, i) => [n, i]));
-    return names
-      .filter((n) => !this.hidden.has(n))
-      .sort((a, b) => {
-        const pa = posMap.get(a) ?? Infinity;
-        const pb = posMap.get(b) ?? Infinity;
-        return pa - pb;
-      });
+    return [...names].sort((a, b) => {
+      const pa = posMap.get(a) ?? Infinity;
+      const pb = posMap.get(b) ?? Infinity;
+      return pa - pb;
+    });
   }
 
   private save(): void {
     if (!this.persistPath) return;
     try {
       mkdirSync(dirname(this.persistPath), { recursive: true });
-      const serialized =
-        this.hidden.size === 0 ? this.order : { order: this.order, hidden: [...this.hidden] };
-      writeFileSync(this.persistPath, JSON.stringify(serialized) + "\n");
+      writeFileSync(this.persistPath, JSON.stringify(this.order) + "\n");
     } catch {
       // Best-effort — don't crash if write fails
     }

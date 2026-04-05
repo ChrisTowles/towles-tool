@@ -248,13 +248,8 @@ export function startServer(
       return a.name.localeCompare(b.name);
     });
 
-    const currentSession = getCurrentSession();
-
     // Sync custom ordering with current session list
     sessionOrder.sync(allMuxSessions.map((s) => s.name));
-    if (currentSession) {
-      sessionOrder.show(currentSession);
-    }
 
     // Apply custom ordering
     const orderedNames = sessionOrder.apply(allMuxSessions.map((s) => s.name));
@@ -1364,14 +1359,6 @@ export function startServer(
       }
       case "new-session":
         mux.createSession();
-        broadcastState();
-        break;
-      case "hide-session":
-        sessionOrder.hide(cmd.name);
-        broadcastState();
-        break;
-      case "show-all-sessions":
-        sessionOrder.showAll();
         broadcastState();
         break;
       case "kill-session": {
