@@ -78,7 +78,7 @@
     "vitest": "^4.0.17"
   },
   "simple-git-hooks": {
-    "pre-commit": "git diff --cached --name-only --diff-filter=ACMR > /tmp/.staged-files && bun run format && bun run lint:fix && xargs git add < /tmp/.staged-files && bun run typecheck && claude plugin validate ."
+    "pre-commit": "bun run format:check && bun run lint && bun run typecheck && claude plugin validate ."
   },
   "patchedDependencies": {
     "prompts@2.4.2": "patches/prompts.patch"
