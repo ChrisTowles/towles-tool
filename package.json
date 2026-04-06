@@ -78,7 +78,7 @@
     "vitest": "^4.0.17"
   },
   "simple-git-hooks": {
-    "pre-commit": "bun run format && bun run lint:fix && bun run typecheck && claude plugin validate ."
+    "pre-commit": "bun run format && bun run lint:fix && git add -u && bun run typecheck && claude plugin validate ."
   },
   "patchedDependencies": {
     "prompts@2.4.2": "patches/prompts.patch"
