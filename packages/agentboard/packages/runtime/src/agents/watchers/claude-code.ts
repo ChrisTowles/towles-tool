@@ -47,9 +47,9 @@ const STALE_MS = 5 * 60 * 1000;
 
 // --- Status detection ---
 
-export function determineStatus(entry: JournalEntry): AgentStatus {
+export function determineStatus(entry: JournalEntry): AgentStatus | null {
   const msg = entry.message;
-  if (!msg?.role) return "idle";
+  if (!msg?.role) return null;
 
   const content = msg.content;
   const items: ContentItem[] = Array.isArray(content)
@@ -59,13 +59,16 @@ export function determineStatus(entry: JournalEntry): AgentStatus {
       : [];
 
   if (msg.role === "assistant") {
-    const hasToolUse = items.some((c) => c.type === "tool_use");
-    return hasToolUse ? "running" : "done";
+    const toolUses = items.filter((c) => c.type === "tool_use");
+    if (toolUses.length === 0) return "done";
+    // AskUserQuestion means the agent is waiting for user input, not running
+    const allWaiting = toolUses.every((c) => (c as any).name === "AskUserQuestion");
+    return allWaiting ? "waiting" : "running";
   }
 
   if (msg.role === "user") return "running";
 
-  return "idle";
+  return null;
 }
 
 function extractThreadName(entry: JournalEntry): string | undefined {
@@ -195,7 +198,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           const name = extractThreadName(entry);
           if (name) threadName = name;
         }
-        latestStatus = determineStatus(entry);
+        latestStatus = determineStatus(entry) ?? latestStatus;
       }
 
       // If "running" but journal file is stale, the process likely exited
@@ -238,7 +241,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         if (name) threadName = name;
       }
 
-      latestStatus = determineStatus(entry);
+      latestStatus = determineStatus(entry) ?? latestStatus;
     }
 
     const prevStatus = prev?.status;

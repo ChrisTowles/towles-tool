@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { execSync, spawn, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import consola from "consola";
 import { colors } from "consola/utils";
@@ -184,6 +184,23 @@ async function serverAlive(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+const PID_FILE = "/tmp/agentboard.pid";
+
+function stopServer(): boolean {
+  if (!existsSync(PID_FILE)) return false;
+  const pid = Number.parseInt(readFileSync(PID_FILE, "utf8").trim(), 10);
+  if (Number.isNaN(pid)) return false;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // process already dead
+  }
+  try {
+    unlinkSync(PID_FILE);
+  } catch {}
+  return true;
 }
 
 async function ensureServerUp(): Promise<boolean> {
@@ -374,7 +391,15 @@ async function restart(): Promise<void> {
     // no tmux or no sessions
   }
 
-  // 2. Ensure server is running
+  // 2. Stop existing server, then start fresh
+  const wasStopped = stopServer();
+  if (wasStopped) {
+    // Wait for port to free up
+    for (let i = 0; i < 20; i++) {
+      if (!(await serverAlive())) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
   if (!(await ensureServerUp())) {
     consola.error("Failed to start agentboard server");
     process.exit(1);
