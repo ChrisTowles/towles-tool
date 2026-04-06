@@ -100,9 +100,9 @@ function resolveClaudeCodePaneInfo(
     if (!threadId) return {};
     const journalInfo = resolveClaudeCodeJournalInfo(threadId);
     // Process is alive (found via process tree), so terminal journal status
-    // is a between-turn artifact — override to running.
+    // means it's waiting for user input.
     if (journalInfo.status && TERMINAL_STATUSES.has(journalInfo.status)) {
-      journalInfo.status = "running";
+      journalInfo.status = "waiting";
     }
     return { threadId, ...journalInfo };
   } catch {
@@ -143,7 +143,14 @@ function resolveClaudeCodeJournalInfo(threadId: string): {
 
             if (msg.role === "assistant") {
               const items = Array.isArray(msg.content) ? msg.content : [];
-              lastStatus = items.some((c: any) => c.type === "tool_use") ? "running" : "done";
+              const toolUses = items.filter((c: any) => c.type === "tool_use");
+              if (toolUses.length === 0) {
+                lastStatus = "done";
+              } else {
+                lastStatus = toolUses.every((c: any) => c.name === "AskUserQuestion")
+                  ? "waiting"
+                  : "running";
+              }
             } else if (msg.role === "user") {
               lastStatus = "running";
             }

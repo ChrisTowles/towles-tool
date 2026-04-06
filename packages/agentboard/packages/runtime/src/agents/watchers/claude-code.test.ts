@@ -2,13 +2,13 @@ import { describe, it, expect } from "bun:test";
 import { determineStatus } from "./claude-code";
 
 describe("determineStatus", () => {
-  it('returns "idle" when no message', () => {
-    expect(determineStatus({})).toBe("idle");
-    expect(determineStatus({ message: undefined })).toBe("idle");
+  it("returns null when no message", () => {
+    expect(determineStatus({})).toBeNull();
+    expect(determineStatus({ message: undefined })).toBeNull();
   });
 
-  it('returns "idle" when message has no role', () => {
-    expect(determineStatus({ message: { content: "hi" } })).toBe("idle");
+  it("returns null when message has no role", () => {
+    expect(determineStatus({ message: { content: "hi" } })).toBeNull();
   });
 
   it('returns "running" for user messages', () => {
@@ -53,11 +53,11 @@ describe("determineStatus", () => {
     ).toBe("done");
   });
 
-  it('returns "idle" for unknown roles', () => {
+  it("returns null for unknown roles", () => {
     expect(
       determineStatus({
         message: { role: "system", content: "system message" },
       }),
-    ).toBe("idle");
+    ).toBeNull();
   });
 });

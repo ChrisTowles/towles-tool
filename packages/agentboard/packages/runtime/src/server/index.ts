@@ -187,6 +187,22 @@ export function startServer(
     return null;
   }
 
+  /** If any pane agent is alive for this session, override terminal agentState to waiting. */
+  function overrideTerminalIfPaneAlive(
+    sessionName: string,
+    state: AgentEvent | null,
+  ): AgentEvent | null {
+    if (!state || !TERMINAL_STATUSES.has(state.status)) return state;
+    const paneAgents = paneAgentsBySession.get(sessionName);
+    if (!paneAgents || paneAgents.size === 0) return state;
+    for (const presence of paneAgents.values()) {
+      if (presence.agent === state.agent && presence.threadId === state.threadId) {
+        return { ...state, status: "waiting" };
+      }
+    }
+    return state;
+  }
+
   /** Merge pane-detected agents into watcher-provided agents for a session.
    *  Watcher events take precedence — pane presence only adds synthetic entries
    *  for agents that aren't already tracked by watchers. */
@@ -205,12 +221,11 @@ export function startServer(
       const trackedIdx = trackedByKey.get(key);
 
       if (trackedIdx != null) {
-        // Watcher already tracks this agent — correct terminal statuses
-        // using pane liveness (process is confirmed alive, so terminal
-        // journal status is a between-turn artifact).
+        // Watcher already tracks this agent — process is confirmed alive,
+        // so terminal journal status means it's waiting for user input.
         const tracked = result[trackedIdx]!;
         if (TERMINAL_STATUSES.has(tracked.status)) {
-          tracked.status = "running";
+          tracked.status = "waiting";
           tracked.paneId = presence.paneId;
         }
         continue;
@@ -298,7 +313,7 @@ export function startServer(
           ports: getSessionPorts(name),
           windows,
           uptime,
-          agentState: tracker.getState(name),
+          agentState: overrideTerminalIfPaneAlive(name, tracker.getState(name)),
           agents: mergeAgentsWithPanePresence(name, tracker.getAgents(name)),
           eventTimestamps: tracker.getEventTimestamps(name),
           metadata: metadataStore.get(name),
@@ -1079,8 +1094,12 @@ export function startServer(
       const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
       const threadId: string | undefined = data.sessionId;
       if (!threadId) return {};
-      // Try to get thread name and status from the journal
       const journalInfo = resolveClaudeCodeJournalInfo(threadId);
+      // Process is alive (found via process tree), so terminal journal status
+      // means it's waiting for user input.
+      if (journalInfo.status && TERMINAL_STATUSES.has(journalInfo.status)) {
+        journalInfo.status = "waiting";
+      }
       return { threadId, ...journalInfo };
     } catch {
       return {};
@@ -1119,10 +1138,16 @@ export function startServer(
                 if (t && !t.startsWith("<") && !t.startsWith("{")) threadName = t.slice(0, 80);
               }
 
-              // Determine status from last entry (same logic as ClaudeCodeAgentWatcher)
               if (msg.role === "assistant") {
                 const items = Array.isArray(msg.content) ? msg.content : [];
-                lastStatus = items.some((c: any) => c.type === "tool_use") ? "running" : "done";
+                const toolUses = items.filter((c: any) => c.type === "tool_use");
+                if (toolUses.length === 0) {
+                  lastStatus = "done";
+                } else {
+                  lastStatus = toolUses.every((c: any) => c.name === "AskUserQuestion")
+                    ? "waiting"
+                    : "running";
+                }
               } else if (msg.role === "user") {
                 lastStatus = "running";
               }
