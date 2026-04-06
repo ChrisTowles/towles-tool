@@ -1,10 +1,6 @@
 ---
 name: screenshot
-description: >
-  Take a desktop screenshot for visual validation. Use this skill when you need to verify
-  UI changes, check the agentboard sidebar, validate TUI rendering, or confirm any visual
-  state on screen. Trigger when the user says "take a screenshot", "show me the screen",
-  "check the UI", "validate visually", or when you need to self-validate a visual change.
+description: "Take a desktop screenshot for visual validation using cosmic-screenshot on Wayland. Use this skill when you need to verify UI changes, check the agentboard sidebar, validate TUI rendering, or confirm any visual state on screen. Trigger when the user says 'take a screenshot', 'show me the screen', 'check the UI', 'validate visually', or when you need to self-validate a visual change."
 user_invocable: true
 ---
 
@@ -25,8 +21,9 @@ Then read the resulting file with the `Read` tool to view it visually.
 
 1. Run the bash command above to capture the screen
 2. Get the filename from the output (latest Screenshot\_\*.png in /tmp)
-3. Use `Read` tool on the PNG path — Claude Code will render it as an image
-4. Analyze the screenshot and report findings
+3. If no Screenshot\_\*.png is found, verify cosmic-screenshot is running and re-run the command without `2>/dev/null` to check stderr
+4. Use `Read` tool on the PNG path — Claude Code will render it as an image
+5. Analyze the screenshot and report findings
 
 ## When to use
 

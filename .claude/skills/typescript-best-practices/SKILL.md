@@ -1,12 +1,6 @@
 ---
 name: typescript-best-practices
-description: >
-  Opinionated TypeScript patterns for production-grade code — focused on type composition,
-  Zod integration, and patterns Claude wouldn't suggest by default. Use this skill whenever
-  writing new TypeScript files, reviewing TypeScript code, setting up TypeScript projects,
-  refactoring TypeScript, or when the user asks about TypeScript patterns, conventions, or
-  idioms. Also trigger when the user mentions types, interfaces, generics, Zod schemas,
-  discriminated unions, branded types, or TypeScript configuration. Applies to .ts and .tsx files.
+description: "Generates Zod validation schemas from types, converts enums to as-const unions, applies branded type patterns with Zod .transform(), builds discriminated unions for results/errors/state machines, and configures DeepImmutable state trees. Use when writing or refactoring .ts/.tsx files that need advanced TypeScript patterns — discriminated unions, branded types, Zod schemas, as-const unions, or strict type composition. Also trigger on mentions of generics, type narrowing, or TypeScript configuration."
 ---
 
 # TypeScript Best Practices
@@ -41,9 +35,6 @@ export const INTERNAL_MODES = [
 ] as const satisfies readonly PermissionMode[];
 ```
 
-The `satisfies` verifies the array matches the expected type without widening the literals.
-Without it, a typo like `'atuo'` silently becomes part of the union.
-
 ---
 
 ## 2. Discriminated Unions — Results, Errors, State Machines
@@ -70,23 +61,7 @@ export type PluginError =
   | { errorType: "timeout"; pluginId: string; timeoutMs: number };
 ```
 
-Always pair with an exhaustive handler — the compiler catches new unhandled variants:
-
-```typescript
-export function getPluginErrorMessage(error: PluginError): string {
-  switch (error.errorType) {
-    case "invalidManifest":
-      return `Invalid manifest at ${error.path}: ${error.details}`;
-    case "loadFailed":
-      return `Failed to load ${error.pluginId}: ${error.cause.message}`;
-    case "permissionDenied":
-      return `Plugin ${error.pluginId} denied: ${error.permission}`;
-    case "timeout":
-      return `Plugin ${error.pluginId} timed out after ${error.timeoutMs}ms`;
-  }
-  // No default needed — TypeScript enforces exhaustiveness if return type is string
-}
-```
+Always pair with an exhaustive switch handler (no `default` needed — TypeScript enforces exhaustiveness).
 
 **State machines** — make illegal states unrepresentable:
 
@@ -175,9 +150,6 @@ export type BashCommandHook = Extract<HookCommand, { type: "command" }>;
 export type PromptHook = Extract<HookCommand, { type: "prompt" }>;
 ```
 
-This is important because it keeps variants in sync. If you change the schema, `Extract`
-automatically picks up the change. A manually-written type would silently drift.
-
 **Use `z.partialRecord()`** for optional keys instead of `z.record().partial()`.
 
 ---
@@ -235,15 +207,11 @@ export const INTERNAL_MODES = [
 ] as const satisfies readonly PermissionMode[];
 ```
 
-Use `satisfies` whenever you're defining a value that conforms to a wider interface but whose
-literal types matter downstream (discriminant fields, route names, event types).
-
 ---
 
 ## 7. DeepImmutable State Trees
 
-Wrap state types in `DeepImmutable<T>` so mutation is a compile error everywhere, not just
-at the top level:
+Wrap state types in `DeepImmutable<T>` so mutation is a compile error everywhere:
 
 ```typescript
 type DeepImmutable<T> =
@@ -298,14 +266,11 @@ export function extractConnectionErrorDetails(error: unknown): ConnectionErrorDe
 }
 ```
 
-The depth limit prevents infinite loops from circular `.cause` chains (they exist in the wild).
-
 ---
 
 ## 9. Async Generators for Streaming + Retries
 
-When an operation can partially succeed or needs to report progress during retries,
-use `AsyncGenerator` — it yields progress and returns the final value:
+Use `AsyncGenerator` to yield progress from retryable operations and return the final value:
 
 ```typescript
 export async function* withRetry<T>(
@@ -325,9 +290,6 @@ export async function* withRetry<T>(
   throw new Error("Max retries exceeded");
 }
 ```
-
-The caller processes `yield` values for progress/logging and gets the final `T` from `return`.
-This separates the retry policy from the progress rendering without callbacks.
 
 ---
 
