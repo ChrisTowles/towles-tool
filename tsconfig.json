@@ -11,8 +11,11 @@
     "esModuleInterop": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true,
-    "types": ["node", "@types/bun"]
+    "types": ["node", "@types/bun"],
+    "paths": {
+      "@towles/shared": ["./packages/shared/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "bin/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["packages"]
+  "include": ["src/**/*.ts", "bin/**/*.ts", "scripts/**/*.ts", "packages/shared/src/**/*.ts"],
+  "exclude": ["packages/agentboard"]
 }
