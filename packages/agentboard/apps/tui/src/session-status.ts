@@ -7,7 +7,7 @@ export function computeSessionStatusCounts(sessions: SessionData[]): SessionStat
   let idle = 0;
   for (const s of sessions) {
     const status = s.agentState?.status;
-    if (status === "running" || status === "waiting") {
+    if (status === "running" || status === "waiting" || status === "question") {
       active++;
     } else if (status === "error") {
       error++;
