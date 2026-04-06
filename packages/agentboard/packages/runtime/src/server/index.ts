@@ -1145,7 +1145,7 @@ export function startServer(
                   lastStatus = "done";
                 } else {
                   lastStatus = toolUses.every((c: any) => c.name === "AskUserQuestion")
-                    ? "waiting"
+                    ? "question"
                     : "running";
                 }
               } else if (msg.role === "user") {

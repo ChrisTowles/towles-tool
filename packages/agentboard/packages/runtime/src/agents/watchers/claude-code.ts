@@ -61,9 +61,8 @@ export function determineStatus(entry: JournalEntry): AgentStatus | null {
   if (msg.role === "assistant") {
     const toolUses = items.filter((c) => c.type === "tool_use");
     if (toolUses.length === 0) return "done";
-    // AskUserQuestion means the agent is waiting for user input, not running
-    const allWaiting = toolUses.every((c) => (c as any).name === "AskUserQuestion");
-    return allWaiting ? "waiting" : "running";
+    const allAsking = toolUses.every((c) => (c as any).name === "AskUserQuestion");
+    return allAsking ? "question" : "running";
   }
 
   if (msg.role === "user") return "running";

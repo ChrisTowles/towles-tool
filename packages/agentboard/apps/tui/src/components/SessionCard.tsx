@@ -34,6 +34,7 @@ export function SessionCard(props: SessionCardProps) {
     if (s === "interrupted") return P().peach;
     if (s === "running") return P().yellow;
     if (s === "waiting") return P().blue;
+    if (s === "question") return P().green;
     if (props.isFocused) return P().lavender;
     return "transparent";
   };
@@ -49,6 +50,7 @@ export function SessionCard(props: SessionCardProps) {
     const s = status();
     if (s === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
     if (s === "waiting") return "◉";
+    if (s === "question") return "?";
     if (isUnseenTerminal()) return UNSEEN_ICON;
     return "";
   };

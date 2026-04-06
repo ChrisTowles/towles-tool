@@ -6,6 +6,7 @@ const TERMINAL_PRUNE_MS = 5 * 60 * 1000;
 
 const STATUS_PRIORITY: Record<string, number> = {
   running: 5,
+  question: 4,
   error: 4,
   interrupted: 3,
   waiting: 2,

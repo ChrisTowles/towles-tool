@@ -252,6 +252,7 @@ function AgentListItem(props: AgentListItemProps) {
       return props.agent.status === "done" ? "✓" : props.agent.status === "error" ? "✗" : "⚠";
     if (props.agent.status === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
     if (props.agent.status === "waiting") return "◉";
+    if (props.agent.status === "question") return "?";
     return "○";
   };
 
@@ -270,6 +271,7 @@ function AgentListItem(props: AgentListItemProps) {
     if (props.agent.status === "error") return "error";
     if (props.agent.status === "interrupted") return "stopped";
     if (props.agent.status === "waiting") return "waiting";
+    if (props.agent.status === "question") return "question";
     return "";
   };
 
