@@ -133,18 +133,36 @@ export function startServer(
       const map = getDirSessionMap();
       const direct = map.get(projectDir);
       if (direct) return direct;
+      // Find the most specific (longest) matching session dir.
+      // Without this, a project dir like /a/b could match /a/b/c (session1)
+      // before /a/b/c/d (session2), assigning it to the wrong session.
+      let bestMatch: string | null = null;
+      let bestLen = 0;
       for (const [dir, name] of map) {
-        if (projectDir.startsWith(dir + "/") || dir.startsWith(projectDir + "/")) return name;
+        if (projectDir.startsWith(dir + "/") || dir.startsWith(projectDir + "/")) {
+          if (dir.length > bestLen) {
+            bestLen = dir.length;
+            bestMatch = name;
+          }
+        }
       }
+      if (bestMatch) return bestMatch;
       // Fallback: the decoded projectDir may be wrong due to dash ambiguity.
       // Re-encode each known session dir and check if the encoded form matches
       // as a prefix of the (still-encoded) input.
       const encoded = encodeProjectDir(projectDir);
+      bestMatch = null;
+      bestLen = 0;
       for (const [dir, name] of map) {
         const encodedDir = encodeProjectDir(dir);
-        if (encoded.startsWith(encodedDir) || encodedDir.startsWith(encoded)) return name;
+        if (encoded.startsWith(encodedDir) || encodedDir.startsWith(encoded)) {
+          if (encodedDir.length > bestLen) {
+            bestLen = encodedDir.length;
+            bestMatch = name;
+          }
+        }
       }
-      return null;
+      return bestMatch;
     },
     emit(event: AgentEvent) {
       tracker.applyEvent(event, { seed: !watchersSeeded });
