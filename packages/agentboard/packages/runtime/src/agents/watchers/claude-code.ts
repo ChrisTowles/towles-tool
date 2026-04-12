@@ -25,6 +25,7 @@ import { JOURNAL_IDLE_TIMEOUT_MS } from "../../shared";
 interface ContentItem {
   type?: string;
   text?: string;
+  name?: string;
 }
 
 interface JournalEntry {
@@ -61,7 +62,7 @@ export function determineStatus(entry: JournalEntry): AgentStatus | null {
   if (msg.role === "assistant") {
     const toolUses = items.filter((c) => c.type === "tool_use");
     if (toolUses.length === 0) return "done";
-    const allAsking = toolUses.every((c) => (c as any).name === "AskUserQuestion");
+    const allAsking = toolUses.every((c) => c.name === "AskUserQuestion");
     return allAsking ? "question" : "running";
   }
 
