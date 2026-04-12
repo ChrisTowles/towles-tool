@@ -1,3 +1,25 @@
+import type {
+  TextBlock,
+  ThinkingBlock,
+  ToolUseBlock,
+} from "@anthropic-ai/sdk/resources/messages/messages";
+
+function isToolUseBlock(
+  block: Record<string, unknown>,
+): block is ToolUseBlock & Record<string, unknown> {
+  return block.type === "tool_use" && typeof block.name === "string";
+}
+
+function isThinkingBlock(
+  block: Record<string, unknown>,
+): block is ThinkingBlock & Record<string, unknown> {
+  return block.type === "thinking";
+}
+
+function isTextBlock(block: Record<string, unknown>): block is TextBlock & Record<string, unknown> {
+  return block.type === "text" && typeof block.text === "string";
+}
+
 export interface AgentToolEvent {
   kind: "tool_use";
   name: string;
@@ -57,7 +79,7 @@ function toolDetail(block: Record<string, unknown>): string {
 }
 
 function parseContentBlock(block: Record<string, unknown>): AgentActivityEvent | null {
-  if (block.type === "tool_use" && typeof block.name === "string") {
+  if (isToolUseBlock(block)) {
     return {
       kind: "tool_use",
       name: block.name,
@@ -69,7 +91,7 @@ function parseContentBlock(block: Record<string, unknown>): AgentActivityEvent |
     };
   }
 
-  if (block.type === "thinking") {
+  if (isThinkingBlock(block)) {
     const text = typeof block.thinking === "string" ? block.thinking : "";
     return {
       kind: "thinking",
@@ -77,7 +99,7 @@ function parseContentBlock(block: Record<string, unknown>): AgentActivityEvent |
     };
   }
 
-  if (block.type === "text" && typeof block.text === "string") {
+  if (isTextBlock(block)) {
     return {
       kind: "text",
       content: block.text,
