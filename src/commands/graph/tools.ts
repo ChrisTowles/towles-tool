@@ -68,7 +68,7 @@ export function extractToolData(
   const toolBlocks: Array<{ name: string; detail?: string }> = [];
   for (const block of content) {
     if (block.type === "tool_use" && block.name) {
-      const detail = extractToolDetail(block.name, block.input);
+      const detail = extractToolDetail(block.name, block.input as Record<string, unknown>);
       toolBlocks.push({ name: block.name, detail });
     }
   }

@@ -33,8 +33,15 @@ function makeAssistantEntry(
     message: {
       role: "assistant",
       model,
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
-      content: content ?? [{ type: "text", text: "response" }],
+      usage: {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        cache_read_input_tokens: null,
+        cache_creation_input_tokens: null,
+        server_tool_use: null,
+        service_tier: null,
+      },
+      content: content ?? [{ type: "text" as const, text: "response", citations: null }],
       ...extra,
     },
   });
@@ -76,8 +83,15 @@ describe("analyzeSession", () => {
         message: {
           role: "assistant",
           model: "claude-opus-4",
-          usage: { input_tokens: 1000, output_tokens: 0, cache_read_input_tokens: 800 },
-          content: [{ type: "text", text: "hi" }],
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 0,
+            cache_read_input_tokens: 800,
+            cache_creation_input_tokens: null,
+            server_tool_use: null,
+            service_tier: null,
+          },
+          content: [{ type: "text" as const, text: "hi", citations: null }],
         },
       }),
     ];
@@ -87,9 +101,9 @@ describe("analyzeSession", () => {
 
   it("counts repeated file reads", () => {
     const content: ContentBlock[] = [
-      { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
-      { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
-      { type: "tool_use", name: "Read", input: { file_path: "/b.ts" } },
+      { type: "tool_use" as const, id: "tool-1", name: "Read", input: { file_path: "/a.ts" } },
+      { type: "tool_use" as const, id: "tool-2", name: "Read", input: { file_path: "/a.ts" } },
+      { type: "tool_use" as const, id: "tool-3", name: "Read", input: { file_path: "/b.ts" } },
     ];
     const entries = [makeAssistantEntry("claude-opus-4", 100, 50, content)];
     const result = analyzeSession(entries);
@@ -145,7 +159,7 @@ describe("extractSessionLabel", () => {
         type: "user",
         message: {
           role: "user",
-          content: [{ type: "text", text: "Array content message" }],
+          content: [{ type: "text" as const, text: "Array content message", citations: null }],
         },
       }),
     ];
@@ -158,7 +172,7 @@ describe("extractSessionLabel", () => {
         type: "assistant",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "I'll help you with that" }],
+          content: [{ type: "text" as const, text: "I'll help you with that", citations: null }],
         },
       }),
     ];
@@ -314,14 +328,14 @@ describe("extractToolData", () => {
   });
 
   it("returns empty when no tool_use blocks", () => {
-    const content: ContentBlock[] = [{ type: "text", text: "hello" }];
+    const content: ContentBlock[] = [{ type: "text" as const, text: "hello", citations: null }];
     expect(extractToolData(content, 100, 50)).toEqual([]);
   });
 
   it("extracts tool calls and distributes tokens", () => {
     const content: ContentBlock[] = [
-      { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
-      { type: "tool_use", name: "Bash", input: { command: "ls" } },
+      { type: "tool_use" as const, id: "tool-1", name: "Read", input: { file_path: "/a.ts" } },
+      { type: "tool_use" as const, id: "tool-2", name: "Bash", input: { command: "ls" } },
     ];
     const result = extractToolData(content, 200, 100);
     expect(result).toHaveLength(2);
@@ -343,11 +357,11 @@ describe("aggregateSessionTools", () => {
   it("aggregates tools across entries", () => {
     const entries = [
       makeAssistantEntry("claude-opus-4", 100, 50, [
-        { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
+        { type: "tool_use" as const, id: "tool-1", name: "Read", input: { file_path: "/a.ts" } },
       ]),
       makeAssistantEntry("claude-opus-4", 200, 100, [
-        { type: "tool_use", name: "Read", input: { file_path: "/b.ts" } },
-        { type: "tool_use", name: "Bash", input: { command: "ls" } },
+        { type: "tool_use" as const, id: "tool-2", name: "Read", input: { file_path: "/b.ts" } },
+        { type: "tool_use" as const, id: "tool-3", name: "Bash", input: { command: "ls" } },
       ]),
     ];
     const result = aggregateSessionTools(entries);
@@ -359,10 +373,10 @@ describe("aggregateSessionTools", () => {
   it("sorts by total token usage descending", () => {
     const entries = [
       makeAssistantEntry("claude-opus-4", 100, 50, [
-        { type: "tool_use", name: "Bash", input: { command: "ls" } },
+        { type: "tool_use" as const, id: "tool-1", name: "Bash", input: { command: "ls" } },
       ]),
       makeAssistantEntry("claude-opus-4", 1000, 500, [
-        { type: "tool_use", name: "Read", input: { file_path: "/a.ts" } },
+        { type: "tool_use" as const, id: "tool-2", name: "Read", input: { file_path: "/a.ts" } },
       ]),
     ];
     const result = aggregateSessionTools(entries);

@@ -1,11 +1,7 @@
 // Types for parsing Claude Code session JSONL files
-export interface ContentBlock {
-  type: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-}
+import type { ContentBlock, Usage } from "@anthropic-ai/sdk/resources/messages/messages";
+
+export type { ContentBlock };
 
 export interface JournalEntry {
   type: string;
@@ -14,12 +10,7 @@ export interface JournalEntry {
   message?: {
     role: "user" | "assistant";
     model?: string;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
+    usage?: Usage;
     content?: ContentBlock[] | string;
   };
   uuid?: string;

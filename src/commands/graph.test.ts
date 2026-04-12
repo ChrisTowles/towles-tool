@@ -98,7 +98,14 @@ describe("analyzeSession (bar chart token aggregation)", () => {
       message: {
         role: "assistant" as const,
         model,
-        usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+        usage: {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          cache_read_input_tokens: null,
+          cache_creation_input_tokens: null,
+          server_tool_use: null,
+          service_tier: null,
+        },
       },
     };
   }
