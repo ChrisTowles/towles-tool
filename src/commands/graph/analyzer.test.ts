@@ -13,14 +13,12 @@ import { extractToolData, extractToolDetail, sanitizeString, truncateDetail } fr
 
 // ── Helpers ──
 
-let toolIdCounter = 0;
-
 function textBlock(text: string): ContentBlock {
   return { type: "text" as const, text, citations: null };
 }
 
 function toolUseBlock(name: string, input: Record<string, unknown>): ContentBlock {
-  return { type: "tool_use" as const, id: `tool-${++toolIdCounter}`, name, input };
+  return { type: "tool_use" as const, id: "tool-stub", name, input };
 }
 
 function makeUsage(overrides: Partial<Usage> = {}): Usage {
