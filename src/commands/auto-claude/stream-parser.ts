@@ -13,7 +13,7 @@ function isToolUseBlock(
 function isThinkingBlock(
   block: Record<string, unknown>,
 ): block is ThinkingBlock & Record<string, unknown> {
-  return block.type === "thinking";
+  return block.type === "thinking" && typeof block.thinking === "string";
 }
 
 function isTextBlock(block: Record<string, unknown>): block is TextBlock & Record<string, unknown> {
@@ -92,10 +92,9 @@ function parseContentBlock(block: Record<string, unknown>): AgentActivityEvent |
   }
 
   if (isThinkingBlock(block)) {
-    const text = typeof block.thinking === "string" ? block.thinking : "";
     return {
       kind: "thinking",
-      summary: truncate(text.split("\n")[0].trim(), 120),
+      summary: truncate(block.thinking.split("\n")[0].trim(), 120),
     };
   }
 

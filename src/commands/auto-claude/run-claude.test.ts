@@ -83,7 +83,7 @@ describe("runClaude (injected spawnFn)", () => {
       type: "stream_event",
       event: {
         type: "content_block_start",
-        content_block: { type: "thinking" },
+        content_block: { type: "thinking", thinking: "Let me consider this" },
       },
     };
     const toolEvent = {

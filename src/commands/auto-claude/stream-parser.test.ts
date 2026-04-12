@@ -263,7 +263,7 @@ describe("parseStreamLine", () => {
       }
     });
 
-    it("handles empty thinking", () => {
+    it("rejects thinking block without string thinking field", () => {
       const line = JSON.stringify({
         type: "stream_event",
         event: {
@@ -272,10 +272,7 @@ describe("parseStreamLine", () => {
         },
       });
 
-      const event = parseStreamLine(line);
-      if (event?.kind === "thinking") {
-        expect(event.summary).toBe("");
-      }
+      expect(parseStreamLine(line)).toBeNull();
     });
   });
 
