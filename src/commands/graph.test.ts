@@ -2,7 +2,20 @@
  * Tests for graph command --days filtering and bar chart data
  */
 import { describe, it, expect } from "vitest";
+import type { Usage } from "@anthropic-ai/sdk/resources/messages/messages";
 import { analyzeSession, calculateCutoffMs, filterByDays } from "./graph/index.js";
+
+function makeUsage(overrides: Partial<Usage> = {}): Usage {
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_input_tokens: null,
+    cache_creation_input_tokens: null,
+    server_tool_use: null,
+    service_tier: null,
+    ...overrides,
+  };
+}
 
 describe("graph --days filtering", () => {
   describe("calculateCutoffMs", () => {
@@ -98,14 +111,7 @@ describe("analyzeSession (bar chart token aggregation)", () => {
       message: {
         role: "assistant" as const,
         model,
-        usage: {
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          cache_read_input_tokens: null,
-          cache_creation_input_tokens: null,
-          server_tool_use: null,
-          service_tier: null,
-        },
+        usage: makeUsage({ input_tokens: inputTokens, output_tokens: outputTokens }),
       },
     };
   }
