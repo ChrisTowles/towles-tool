@@ -103,7 +103,7 @@ export function SessionCard(props: SessionCardProps) {
   const metaTone = () => props.session.metadata?.status?.tone;
 
   const bgColor = () => {
-    if (props.isFocused) return P().surface1;
+    if (props.isFocused) return P().surface0;
     return "transparent";
   };
 
@@ -243,8 +243,8 @@ function AgentRow(props: AgentRowProps) {
   });
 
   const bgColor = () => {
-    if (isFlash()) return P().surface1;
-    if (props.isKeyboardFocused) return P().surface0;
+    if (isFlash()) return P().surface2;
+    if (props.isKeyboardFocused) return P().surface1;
     return "transparent";
   };
 
