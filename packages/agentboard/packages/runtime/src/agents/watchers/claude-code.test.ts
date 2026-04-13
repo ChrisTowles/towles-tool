@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { determineStatus, summaryToDetails } from "./claude-code";
+import { determineStatus, summaryToDetails, extractLastTool } from "./claude-code";
 import type { ClaudeUsageSummary } from "./claude-usage";
 
 describe("determineStatus", () => {
@@ -96,5 +96,68 @@ describe("summaryToDetails", () => {
     expect(details.cacheTtlMs).toBeUndefined();
     expect(details.cacheExpiresAt).toBeUndefined();
     expect(details.model).toBe("claude-haiku-4-5");
+  });
+});
+
+describe("extractLastTool", () => {
+  it("returns undefined when no entries", () => {
+    expect(extractLastTool([])).toBeUndefined();
+  });
+
+  it("returns undefined when no assistant tool_use entries", () => {
+    expect(
+      extractLastTool([
+        { message: { role: "assistant", content: [{ type: "text", text: "hello" }] } },
+        { message: { role: "user", content: "hi" } },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("returns tool name from the most recent assistant tool_use", () => {
+    expect(
+      extractLastTool([
+        { message: { role: "assistant", content: [{ type: "tool_use", name: "Read" }] } },
+      ]),
+    ).toBe("Read");
+  });
+
+  it("prefers the latest entry when multiple tool_use present", () => {
+    expect(
+      extractLastTool([
+        { message: { role: "assistant", content: [{ type: "tool_use", name: "Read" }] } },
+        { message: { role: "user", content: "ok" } },
+        { message: { role: "assistant", content: [{ type: "tool_use", name: "Edit" }] } },
+      ]),
+    ).toBe("Edit");
+  });
+
+  it("skips AskUserQuestion (not a real tool use for display)", () => {
+    expect(
+      extractLastTool([
+        { message: { role: "assistant", content: [{ type: "tool_use", name: "Read" }] } },
+        {
+          message: {
+            role: "assistant",
+            content: [{ type: "tool_use", name: "AskUserQuestion" }],
+          },
+        },
+      ]),
+    ).toBe("Read");
+  });
+
+  it("returns the first tool name if a turn has multiple tool_use items", () => {
+    expect(
+      extractLastTool([
+        {
+          message: {
+            role: "assistant",
+            content: [
+              { type: "tool_use", name: "Read" },
+              { type: "tool_use", name: "Grep" },
+            ],
+          },
+        },
+      ]),
+    ).toBe("Read");
   });
 });

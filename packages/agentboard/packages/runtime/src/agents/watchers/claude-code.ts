@@ -46,6 +46,7 @@ interface SessionState {
   threadName?: string;
   projectDir?: string;
   usage?: ClaudeUsageSummary;
+  lastTool?: string;
 }
 
 const POLL_MS = 2000;
@@ -95,6 +96,23 @@ function extractThreadName(entry: JournalEntry): string | undefined {
   return text.slice(0, 80);
 }
 
+export function extractLastTool(entries: JournalEntry[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]!;
+    const msg = entry.message;
+    if (msg?.role !== "assistant") continue;
+    const content = msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      if (item.type !== "tool_use") continue;
+      if (!item.name) continue;
+      if (item.name === "AskUserQuestion") continue;
+      return item.name;
+    }
+  }
+  return undefined;
+}
+
 /** Decode Claude's encoded project dir name back to a path.
  * Claude Code encodes `/` as `-` with no escape for literal dashes,
  * so paths like `/home/user/my-project` are ambiguous with `/home/user/my/project`.
@@ -116,6 +134,15 @@ export function summaryToDetails(
     cacheTtlMs: s.cacheTtlMs ?? undefined,
     lastActivityAt: s.lastActivityAt,
   };
+}
+
+function buildDetails(
+  usage: ClaudeUsageSummary | undefined,
+  lastTool: string | undefined,
+): import("../../contracts/agent").AgentEventDetails | undefined {
+  if (!usage && !lastTool) return undefined;
+  const base = usage ? summaryToDetails(usage) : {};
+  return lastTool ? { ...base, lastTool } : base;
 }
 
 // --- Watcher implementation ---
@@ -198,7 +225,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
               ts: Date.now(),
               threadId,
               threadName: prev.threadName,
-              details: prev.usage ? summaryToDetails(prev.usage) : undefined,
+              details: buildDetails(prev.usage, prev.lastTool),
             });
           }
         }
@@ -237,6 +264,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       }
 
       const usage = extractUsageSummary(parsed) ?? undefined;
+      const lastTool = extractLastTool(parsed) ?? undefined;
 
       // If "running" but journal file is stale, the process likely exited
       if (latestStatus === "running") {
@@ -252,6 +280,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         threadName,
         projectDir,
         usage,
+        lastTool,
       });
       return;
     }
@@ -291,6 +320,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     // Merge new usage summary onto the previous one (incremental reads may not include the latest assistant turn)
     const newUsage = extractUsageSummary(parsed);
     const usage = newUsage ?? prev?.usage;
+    const newLastTool = extractLastTool(parsed);
+    const lastTool = newLastTool ?? prev?.lastTool;
 
     if (latestStatus === "running") {
       const pid = await this.pidLookup.pidForThread(threadId);
@@ -306,6 +337,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       threadName,
       projectDir,
       usage,
+      lastTool,
     });
 
     if (latestStatus !== prevStatus) {
@@ -318,7 +350,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           ts: Date.now(),
           threadId,
           threadName,
-          details: usage ? summaryToDetails(usage) : undefined,
+          details: buildDetails(usage, lastTool),
         });
       }
     }
@@ -396,7 +428,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             ts: Date.now(),
             threadId,
             threadName: state.threadName,
-            details: state.usage ? summaryToDetails(state.usage) : undefined,
+            details: buildDetails(state.usage, state.lastTool),
           });
         }
       }
