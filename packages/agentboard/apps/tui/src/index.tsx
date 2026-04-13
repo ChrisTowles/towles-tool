@@ -684,15 +684,9 @@ const HELP_KEYS: [string, string][] = [
   ["→/l", "Agents panel"],
   ["←/h/Esc", "Back to sessions"],
   ["Alt+↑↓", "Reorder sessions"],
-  ["Alt+Shift+↑↓", "Move to top/bottom"],
+  ["Alt+Shift+↑↓", "To top/bottom"],
   ["q", "Quit"],
 ];
-
-const HELP_COLS = 2;
-const HELP_ROWS = Math.ceil(HELP_KEYS.length / HELP_COLS);
-const HELP_COLUMNS = Array.from({ length: HELP_COLS }, (_, c) =>
-  HELP_KEYS.slice(c * HELP_ROWS, (c + 1) * HELP_ROWS),
-);
 
 function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () => void }) {
   const P = () => props.palette();
@@ -714,7 +708,7 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
         backgroundColor={P().mantle}
         padding={1}
         flexDirection="column"
-        width={56}
+        width={32}
       >
         <text>
           <span style={{ fg: P().blue, attributes: BOLD }}>Keybindings</span>
@@ -722,24 +716,18 @@ function HelpOverlay(props: { palette: Accessor<Theme["palette"]>; onClose: () =
         <box height={1}>
           <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
         </box>
-        <box flexDirection="row">
-          <For each={HELP_COLUMNS}>
-            {(col) => (
-              <box flexDirection="column" flexGrow={1}>
-                <For each={col}>
-                  {([key, desc]) => (
-                    <box flexDirection="row" paddingLeft={1}>
-                      <box width={12} flexShrink={0}>
-                        <text>
-                          <span style={{ fg: P().sky }}>{key}</span>
-                        </text>
-                      </box>
-                      <text truncate>
-                        <span style={{ fg: P().subtext0 }}>{desc}</span>
-                      </text>
-                    </box>
-                  )}
-                </For>
+        <box flexDirection="column">
+          <For each={HELP_KEYS}>
+            {([key, desc]) => (
+              <box flexDirection="row">
+                <box width={14} flexShrink={0}>
+                  <text truncate>
+                    <span style={{ fg: P().sky }}>{key}</span>
+                  </text>
+                </box>
+                <text truncate>
+                  <span style={{ fg: P().subtext0 }}>{desc}</span>
+                </text>
               </box>
             )}
           </For>
