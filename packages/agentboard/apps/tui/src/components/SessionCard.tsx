@@ -301,7 +301,7 @@ function AgentRow(props: AgentRowProps) {
         </text>
       </Show>
 
-      <Show when={props.agent.details}>
+      <Show when={props.agent.status === "running" && props.agent.details}>
         {(d) => {
           const details = d();
           const model = () => (details.model ? shortModel(details.model) : "");
