@@ -375,13 +375,11 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
-  // Shared 1s clock for cache-countdown bars and elapsed-time displays.
-  // Ticks whenever any agent is running or has an active cache.
+  // Shared 1s clock for elapsed-time displays.
+  // Ticks only while any agent is running.
   const [now, setNow] = createSignal(Date.now());
   const needsTicker = createMemo(() =>
-    sessions.some((s) =>
-      s.agents?.some((a) => a.details?.cacheExpiresAt != null || a.status === "running"),
-    ),
+    sessions.some((s) => s.agents?.some((a) => a.status === "running")),
   );
   createEffect(() => {
     if (!needsTicker()) return;
