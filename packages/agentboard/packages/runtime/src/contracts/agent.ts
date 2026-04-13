@@ -20,6 +20,8 @@ export interface AgentEventDetails {
   cacheTtlMs?: number;
   /** Epoch ms of the most recent assistant entry in the journal */
   lastActivityAt?: number;
+  /** Name of the most recent tool invoked by the agent (e.g. "Read", "Bash", "Edit"). Populated only by the claude-code watcher. */
+  lastTool?: string;
 }
 
 export interface AgentEvent {
