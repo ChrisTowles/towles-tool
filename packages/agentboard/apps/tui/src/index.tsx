@@ -24,7 +24,6 @@ import type {
 } from "@tt-agentboard/runtime";
 import { SessionCard } from "./components/SessionCard";
 import { StatusBar } from "./components/StatusBar";
-import { computeSessionStatusCounts } from "./session-status";
 import {
   detectMuxContext,
   refocusMainPane,
@@ -528,7 +527,6 @@ function App() {
   );
 
   const unseenCount = createMemo(() => sessions.filter((s) => s.unseen).length);
-  const sessionStatusCounts = createMemo(() => computeSessionStatusCounts(sessions));
 
   const isFocused = createSelector(focusedSession);
 
@@ -540,7 +538,6 @@ function App() {
         runningCount={runningAgentCount()}
         errorCount={errorAgentCount()}
         unseenCount={unseenCount()}
-        sessionStatusCounts={sessionStatusCounts()}
         theme={theme}
       />
 
