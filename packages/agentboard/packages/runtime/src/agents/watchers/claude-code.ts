@@ -105,7 +105,7 @@ function decodeProjectDir(encoded: string): string {
 
 // --- Usage summary → AgentEventDetails ---
 
-function summaryToDetails(
+export function summaryToDetails(
   s: ClaudeUsageSummary,
 ): import("../../contracts/agent").AgentEventDetails {
   return {
