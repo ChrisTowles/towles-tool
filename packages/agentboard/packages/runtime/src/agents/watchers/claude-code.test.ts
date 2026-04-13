@@ -145,6 +145,19 @@ describe("extractLastTool", () => {
     ).toBe("Read");
   });
 
+  it("returns undefined when only AskUserQuestion tool_use entries exist", () => {
+    expect(
+      extractLastTool([
+        {
+          message: {
+            role: "assistant",
+            content: [{ type: "tool_use", name: "AskUserQuestion" }],
+          },
+        },
+      ]),
+    ).toBeUndefined();
+  });
+
   it("returns the first tool name if a turn has multiple tool_use items", () => {
     expect(
       extractLastTool([
