@@ -52,18 +52,17 @@ function shortModel(model: string): string {
   return stripped;
 }
 
-function formatCacheRemaining(expiresAt: number, now: number): string {
-  const ms = expiresAt - now;
-  if (ms <= 0) return "cold";
-  const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min >= 60) {
-    const hrs = Math.floor(min / 60);
-    const rem = min % 60;
-    return `${hrs}h${rem}m`;
-  }
-  return `${min}m${sec.toString().padStart(2, "0")}s`;
+const CACHE_BAR_WIDTH = 10;
+const CACHE_BAR_FILLED = "▰";
+const CACHE_BAR_EMPTY = "▱";
+
+/** Render a drain-down bar: full = freshly cached, empty = expired. */
+function cacheBar(expiresAt: number, ttlMs: number, now: number): string {
+  const remaining = expiresAt - now;
+  if (remaining <= 0 || ttlMs <= 0) return CACHE_BAR_EMPTY.repeat(CACHE_BAR_WIDTH);
+  const fraction = Math.max(0, Math.min(1, remaining / ttlMs));
+  const filled = Math.round(fraction * CACHE_BAR_WIDTH);
+  return CACHE_BAR_FILLED.repeat(filled) + CACHE_BAR_EMPTY.repeat(CACHE_BAR_WIDTH - filled);
 }
 
 // --- Detail Panel ---
@@ -374,26 +373,34 @@ function AgentListItem(props: AgentListItemProps) {
             </text>
           </Show>
 
-          {/* Row 3: model + cache countdown */}
+          {/* Row 3: model + cache-remaining progress bar */}
           <Show when={props.agent.details}>
             {(d) => {
               const details = d();
               const model = () => (details.model ? shortModel(details.model) : "");
-              const cacheText = () =>
-                details.cacheExpiresAt != null
-                  ? `Cache ${formatCacheRemaining(details.cacheExpiresAt, now())}`
-                  : null;
+              const hasCache = () => details.cacheExpiresAt != null && details.cacheTtlMs != null;
+              const bar = () =>
+                hasCache() ? cacheBar(details.cacheExpiresAt!, details.cacheTtlMs!, now()) : "";
+              const barColor = () => {
+                if (!hasCache()) return P().overlay0;
+                const remaining = details.cacheExpiresAt! - now();
+                if (remaining <= 0) return P().overlay0;
+                const fraction = remaining / details.cacheTtlMs!;
+                if (fraction > 0.5) return P().green;
+                if (fraction > 0.2) return P().yellow;
+                return P().peach;
+              };
               return (
-                <Show when={model() || cacheText()}>
+                <Show when={model() || hasCache()}>
                   <text truncate>
                     <Show when={model()}>
                       <span style={{ fg: P().subtext0, attributes: DIM }}>{model()}</span>
                     </Show>
-                    <Show when={cacheText()}>
-                      <span style={{ fg: P().sky, attributes: DIM }}>
-                        {model() ? " · " : ""}
-                        {cacheText()}
+                    <Show when={hasCache()}>
+                      <span style={{ fg: P().overlay0, attributes: DIM }}>
+                        {model() ? " · cache " : "cache "}
                       </span>
+                      <span style={{ fg: barColor() }}>{bar()}</span>
                     </Show>
                   </text>
                 </Show>
