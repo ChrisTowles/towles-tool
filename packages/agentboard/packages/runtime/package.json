@@ -8,6 +8,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.56.0",
     "consola": "^3.4.2"
   },
   "devDependencies": {
