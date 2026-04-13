@@ -616,20 +616,12 @@ function App() {
             />
           }
         >
-          <KeyHints
-            palette={P}
-            hints={[
-              ["⇥", "cycle"],
-              ["⏎", "switch"],
-              ["→", "agents"],
-              ["n", "new"],
-              ["e", "edit"],
-              ["x", "kill"],
-              ["r", "refresh"],
-              ["q", "quit"],
-              ["?", "help"],
-            ]}
-          />
+          <box height={1}>
+            <text>
+              <span style={{ fg: P().overlay0 }}>?</span>
+              <span style={{ fg: P().overlay1 }}> help</span>
+            </text>
+          </box>
         </Show>
       </box>
 
