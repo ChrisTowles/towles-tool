@@ -4,7 +4,8 @@ import type { AgentStatus, SessionData, Theme } from "@tt-agentboard/runtime";
 import { truncate } from "@tt-agentboard/runtime";
 import { UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
-import { cacheBarVisual, shortModel } from "./cache-bar";
+import { shortModel } from "./cache-bar";
+import { formatElapsed } from "./elapsed";
 import { liveStatusIcon, unseenTerminalColor } from "./status-visuals";
 import { familyColor } from "./family-color";
 
@@ -261,15 +262,17 @@ function AgentRow(props: AgentRowProps) {
       <box flexDirection="row">
         <text flexGrow={1} truncate>
           <span style={{ fg: color() }}>{icon()}</span>
-          <span
-            style={{
-              fg: props.isKeyboardFocused ? P().text : P().subtext1,
-              attributes: props.isKeyboardFocused ? BOLD : undefined,
-            }}
-          >
-            {" "}
-            {props.agent.agent}
-          </span>
+          <Show when={props.agent.status === "running" && props.agent.details?.lastActivityAt}>
+            <span
+              style={{
+                fg: props.isKeyboardFocused ? P().subtext0 : P().overlay1,
+                attributes: DIM,
+              }}
+            >
+              {" "}
+              {formatElapsed(props.now() - (props.agent.details?.lastActivityAt ?? props.now()))}
+            </span>
+          </Show>
         </text>
         <Show when={!isUnseen()}>
           <text flexShrink={0}>
@@ -302,26 +305,17 @@ function AgentRow(props: AgentRowProps) {
         {(d) => {
           const details = d();
           const model = () => (details.model ? shortModel(details.model) : "");
-          const hasCache = () => details.cacheExpiresAt != null && details.cacheTtlMs != null;
-          const visual = () =>
-            hasCache()
-              ? cacheBarVisual(details.cacheExpiresAt!, details.cacheTtlMs!, props.now(), P())
-              : null;
+          const tool = () => details.lastTool;
           return (
-            <Show when={model() || hasCache()}>
+            <Show when={model() || tool()}>
               <text truncate>
                 <Show when={model()}>
                   <span style={{ fg: P().subtext0, attributes: DIM }}>{model()}</span>
                 </Show>
-                <Show when={visual()}>
-                  {(v) => (
-                    <>
-                      <span style={{ fg: P().overlay0, attributes: DIM }}>
-                        {model() ? " · cache " : "cache "}
-                      </span>
-                      <span style={{ fg: v().color }}>{v().bar}</span>
-                    </>
-                  )}
+                <Show when={tool()}>
+                  <span style={{ fg: P().overlay0, attributes: DIM }}>{model() ? " · " : ""}</span>
+                  <span style={{ fg: P().teal, attributes: DIM }}>⟶ </span>
+                  <span style={{ fg: P().subtext0 }}>{tool()}</span>
                 </Show>
               </text>
             </Show>
