@@ -14,21 +14,27 @@ const AGENT_TITLE_PATTERNS: Record<string, string[]> = {
   opencode: ["opencode"],
 };
 
-/** Build parent->children map from a single ps snapshot (avoids per-pane pgrep calls). */
+/** Build parent->children map from a single ps snapshot (avoids per-pane pgrep calls).
+ *  Skips stopped (T) and zombie (Z) processes — they have a comm but aren't actively running. */
 function buildProcessTree(): { childrenOf: Map<number, number[]>; commOf: Map<number, string> } {
   const childrenOf = new Map<number, number[]>();
   const commOf = new Map<number, string>();
-  const psResult = Bun.spawnSync(["ps", "-eo", "pid=,ppid=,comm="], {
+  const psResult = Bun.spawnSync(["ps", "-eo", "pid=,ppid=,stat=,comm="], {
     stdout: "pipe",
     stderr: "pipe",
   });
   for (const line of psResult.stdout.toString().trim().split("\n")) {
     const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
+    if (parts.length < 4) continue;
     const pid = Number.parseInt(parts[0], 10);
     const ppid = Number.parseInt(parts[1], 10);
-    const comm = parts.slice(2).join(" ").toLowerCase();
+    const stat = parts[2] ?? "";
+    const comm = parts.slice(3).join(" ").toLowerCase();
     if (Number.isNaN(pid) || Number.isNaN(ppid)) continue;
+    // First char of stat is the primary process state.
+    // T = stopped (e.g. Ctrl+Z), Z = zombie, X = dead. Treat all as not-running.
+    const state = stat.charAt(0);
+    if (state === "T" || state === "Z" || state === "X") continue;
     commOf.set(pid, comm);
     let arr = childrenOf.get(ppid);
     if (!arr) {
