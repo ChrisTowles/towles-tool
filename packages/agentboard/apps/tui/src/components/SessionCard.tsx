@@ -1,8 +1,19 @@
-import { Show } from "solid-js";
+import { createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { SessionData, Theme } from "@tt-agentboard/runtime";
+import type { AgentStatus, SessionData, Theme } from "@tt-agentboard/runtime";
 import { SPINNERS, UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
+import { cacheBar, cacheBarColor, shortModel } from "./cache-bar";
+
+const STATUS_TEXT: Record<AgentStatus, string> = {
+  idle: "",
+  running: "running",
+  done: "done",
+  error: "error",
+  waiting: "waiting",
+  question: "question",
+  interrupted: "stopped",
+};
 
 export interface SessionCardProps {
   session: SessionData;
@@ -12,7 +23,10 @@ export interface SessionCardProps {
   spinIdx: Accessor<number>;
   theme: Accessor<Theme>;
   statusColors: Accessor<Theme["status"]>;
+  focusedAgentIdx: number;
   onSelect: () => void;
+  onDismissAgent: (agent: SessionData["agents"][number]) => void;
+  onFocusAgentPane: (agent: SessionData["agents"][number]) => void;
 }
 
 export function SessionCard(props: SessionCardProps) {
@@ -110,6 +124,16 @@ export function SessionCard(props: SessionCardProps) {
     return "transparent";
   };
 
+  const agents = () => props.session.agents ?? [];
+
+  const [now, setNow] = createSignal(Date.now());
+  const needsTicker = createMemo(() => agents().some((a) => a.details?.cacheExpiresAt != null));
+  createEffect(() => {
+    if (!needsTicker()) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(id));
+  });
+
   return (
     <box flexDirection="column" flexShrink={0}>
       <box
@@ -118,17 +142,13 @@ export function SessionCard(props: SessionCardProps) {
         onMouseDown={props.onSelect}
         paddingLeft={1}
       >
-        {/* Left accent — space-preserving, only colored for meaningful states */}
         <text style={{ fg: accentColor() }}>{accentColor() === "transparent" ? " " : "▌"}</text>
 
-        {/* Index */}
         <box width={3} flexShrink={0}>
           <text style={{ fg: indexColor() }}>{String(props.index).padStart(2)}</text>
         </box>
 
-        {/* Content */}
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          {/* Row 1: name + status */}
           <box flexDirection="row">
             <text truncate flexGrow={1}>
               <span
@@ -151,19 +171,16 @@ export function SessionCard(props: SessionCardProps) {
             </Show>
           </box>
 
-          {/* Row 2: branch */}
           <Show when={props.session.branch}>
             <text truncate>
               <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>{truncBranch()}</span>
             </text>
           </Show>
 
-          {/* Row 3: git diff stats */}
           <Show when={hasDiff()}>
             <DiffStats session={props.session} palette={() => P()} />
           </Show>
 
-          {/* Row 3: metadata summary (status + progress) */}
           <Show when={metaSummary()}>
             <text truncate>
               <span style={{ fg: toneColor(metaTone(), P()), attributes: DIM }}>
@@ -171,11 +188,165 @@ export function SessionCard(props: SessionCardProps) {
               </span>
             </text>
           </Show>
+
+          <For each={agents()}>
+            {(agent, i) => (
+              <AgentRow
+                agent={agent}
+                palette={P}
+                statusColors={props.statusColors}
+                spinIdx={props.spinIdx}
+                now={now}
+                isKeyboardFocused={i() === props.focusedAgentIdx}
+                onDismiss={() => props.onDismissAgent(agent)}
+                onFocusPane={() => props.onFocusAgentPane(agent)}
+              />
+            )}
+          </For>
         </box>
       </box>
 
-      {/* Breathing room — 1 empty line between cards */}
       <box height={1} />
+    </box>
+  );
+}
+
+interface AgentRowProps {
+  agent: SessionData["agents"][number];
+  palette: Accessor<Theme["palette"]>;
+  statusColors: Accessor<Theme["status"]>;
+  spinIdx: Accessor<number>;
+  now: Accessor<number>;
+  isKeyboardFocused: boolean;
+  onDismiss: () => void;
+  onFocusPane: () => void;
+}
+
+function AgentRow(props: AgentRowProps) {
+  const P = () => props.palette();
+  const SC = () => props.statusColors();
+  const [isDismissHover, setIsDismissHover] = createSignal(false);
+  const [isFlash, setIsFlash] = createSignal(false);
+
+  const isTerminal = () => ["done", "error", "interrupted"].includes(props.agent.status);
+  const isUnseen = () => isTerminal() && props.agent.unseen === true;
+
+  const icon = () => {
+    if (isUnseen()) return UNSEEN_ICON;
+    if (isTerminal())
+      return props.agent.status === "done" ? "✓" : props.agent.status === "error" ? "✗" : "⚠";
+    if (props.agent.status === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
+    if (props.agent.status === "waiting") return "◉";
+    if (props.agent.status === "question") return "?";
+    return "○";
+  };
+
+  const color = () => {
+    if (isTerminal()) {
+      if (props.agent.status === "error") return P().red;
+      if (props.agent.status === "interrupted") return P().peach;
+      return isUnseen() ? P().teal : P().green;
+    }
+    return SC()[props.agent.status];
+  };
+
+  const statusText = () => STATUS_TEXT[props.agent.status];
+
+  let flashTimer: ReturnType<typeof setTimeout> | null = null;
+  const triggerFlash = () => {
+    setIsFlash(true);
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => setIsFlash(false), 150);
+  };
+  onCleanup(() => {
+    if (flashTimer) clearTimeout(flashTimer);
+  });
+
+  const bgColor = () => {
+    if (isFlash()) return P().surface1;
+    if (props.isKeyboardFocused) return P().surface0;
+    return "transparent";
+  };
+
+  return (
+    <box
+      flexDirection="column"
+      flexShrink={0}
+      backgroundColor={bgColor()}
+      onMouseDown={(event) => {
+        if (event.target?.id === "dismiss") return;
+        triggerFlash();
+        props.onFocusPane();
+      }}
+    >
+      <box flexDirection="row">
+        <text flexGrow={1} truncate>
+          <span style={{ fg: color() }}>{icon()}</span>
+          <span
+            style={{
+              fg: props.isKeyboardFocused ? P().text : P().subtext1,
+              attributes: props.isKeyboardFocused ? BOLD : undefined,
+            }}
+          >
+            {" "}
+            {props.agent.agent}
+          </span>
+        </text>
+        <Show when={!isUnseen()}>
+          <text flexShrink={0}>
+            <span style={{ fg: color(), attributes: DIM }}>{statusText()}</span>
+          </text>
+        </Show>
+        <text
+          flexShrink={0}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.onDismiss();
+          }}
+          onMouseOver={() => setIsDismissHover(true)}
+          onMouseOut={() => setIsDismissHover(false)}
+        >
+          <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{" ✕"}</span>
+        </text>
+      </box>
+
+      <Show when={props.agent.threadName}>
+        <text truncate>
+          <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
+            {props.agent.threadName!.replace(/\s+/g, " ").trim()}
+          </span>
+        </text>
+      </Show>
+
+      <Show when={props.agent.details}>
+        {(d) => {
+          const details = d();
+          const model = () => (details.model ? shortModel(details.model) : "");
+          const hasCache = () => details.cacheExpiresAt != null && details.cacheTtlMs != null;
+          const bar = () =>
+            hasCache() ? cacheBar(details.cacheExpiresAt!, details.cacheTtlMs!, props.now()) : "";
+          const barColor = () =>
+            hasCache()
+              ? cacheBarColor(details.cacheExpiresAt!, details.cacheTtlMs!, props.now(), P())
+              : P().overlay0;
+          return (
+            <Show when={model() || hasCache()}>
+              <text truncate>
+                <Show when={model()}>
+                  <span style={{ fg: P().subtext0, attributes: DIM }}>{model()}</span>
+                </Show>
+                <Show when={hasCache()}>
+                  <span style={{ fg: P().overlay0, attributes: DIM }}>
+                    {model() ? " · cache " : "cache "}
+                  </span>
+                  <span style={{ fg: barColor() }}>{bar()}</span>
+                </Show>
+              </text>
+            </Show>
+          );
+        }}
+      </Show>
     </box>
   );
 }

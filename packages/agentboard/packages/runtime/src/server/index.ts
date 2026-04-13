@@ -229,9 +229,19 @@ export function startServer(
     watcherAgents: AgentEvent[],
   ): AgentEvent[] {
     const paneAgents = paneAgentsBySession.get(sessionName);
-    if (!paneAgents || paneAgents.size === 0) return watcherAgents;
 
-    const result = [...watcherAgents];
+    // Drop agents whose pane has closed. Tracker only prunes terminals on a
+    // timeout, so non-terminal agents (waiting/running/question) would otherwise
+    // linger forever after their tmux pane is killed.
+    const livePaneAgents = watcherAgents.filter((a) => {
+      if (!a.paneId) return true;
+      if (TERMINAL_STATUSES.has(a.status)) return true;
+      return paneAgents?.has(instanceKey(a.agent, a.threadId)) ?? false;
+    });
+
+    if (!paneAgents || paneAgents.size === 0) return livePaneAgents;
+
+    const result = [...livePaneAgents];
     const trackedByKey = new Map(result.map((a, i) => [instanceKey(a.agent, a.threadId), i]));
 
     for (const [, presence] of paneAgents) {

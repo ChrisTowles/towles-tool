@@ -7,21 +7,10 @@ export const SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧",
 export const UNSEEN_ICON = "●";
 export const BOLD = TextAttributes.BOLD;
 export const DIM = TextAttributes.DIM;
-export const SPARK_BLOCKS = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 export const DIVIDER = "─".repeat(200);
 
 export const THEME_NAMES = Object.keys(BUILTIN_THEMES);
-export const DEFAULT_DETAIL_PANEL_HEIGHT = 10;
-export const MIN_DETAIL_PANEL_HEIGHT = 4;
 export { TUI_RESIZE_LOG };
-
-export const TONE_ICONS: Record<MetadataTone, string> = {
-  neutral: "·",
-  info: "ℹ",
-  success: "✓",
-  warn: "⚠",
-  error: "✗",
-};
 
 export function toneColor(tone: MetadataTone | undefined, palette: Theme["palette"]): string {
   switch (tone) {
