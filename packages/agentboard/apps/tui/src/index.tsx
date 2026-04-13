@@ -550,7 +550,6 @@ function App() {
           {(session, i) => (
             <SessionCard
               session={session}
-              index={i() + 1}
               isFocused={isFocused(session.name)}
               isCurrent={session.name === currentSession()}
               spinIdx={spinIdx}
