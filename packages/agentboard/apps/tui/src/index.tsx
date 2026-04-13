@@ -244,10 +244,17 @@ function App() {
     if (!data?.dir) return;
     const editor = preferredEditor();
     try {
+      // Strip tmux env vars so the editor (and any terminal it opens) isn't
+      // locked into our outer tmux session.
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.TMUX;
+      delete cleanEnv.TMUX_PANE;
+      delete cleanEnv.TMUX_PLUGIN_MANAGER_PATH;
       const proc = Bun.spawn([editor, data.dir], {
         stdout: "ignore",
         stderr: "ignore",
         stdin: "ignore",
+        env: cleanEnv,
       });
       showToast(`opening ${data.dir} in ${editor}`, "success");
       void proc.exited.then((code) => {
