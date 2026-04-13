@@ -19,6 +19,10 @@ import { homedir } from "node:os";
 import type { AgentStatus } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../../contracts/agent-watcher";
 import { JOURNAL_IDLE_TIMEOUT_MS } from "../../shared";
+import { createClaudePidLookup } from "./claude-pid";
+import type { ClaudePidLookup } from "./claude-pid";
+import { extractUsageSummary } from "./claude-usage";
+import type { ClaudeUsageSummary } from "./claude-usage";
 
 // --- Types ---
 
@@ -41,6 +45,7 @@ interface SessionState {
   fileSize: number;
   threadName?: string;
   projectDir?: string;
+  usage?: ClaudeUsageSummary;
 }
 
 const POLL_MS = 2000;
@@ -98,6 +103,21 @@ function decodeProjectDir(encoded: string): string {
   return encoded.replace(/-/g, "/");
 }
 
+// --- Usage summary → AgentEventDetails ---
+
+function summaryToDetails(
+  s: ClaudeUsageSummary,
+): import("../../contracts/agent").AgentEventDetails {
+  return {
+    model: s.model,
+    contextUsed: s.contextUsed,
+    contextMax: s.contextMax,
+    cacheExpiresAt: s.cacheExpiresAt ?? undefined,
+    cacheTtlMs: s.cacheTtlMs ?? undefined,
+    lastActivityAt: s.lastActivityAt,
+  };
+}
+
 // --- Watcher implementation ---
 
 export class ClaudeCodeAgentWatcher implements AgentWatcher {
@@ -110,9 +130,11 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
   private projectsDir: string;
   private scanning = false;
   private seeded = false;
+  private pidLookup: ClaudePidLookup;
 
-  constructor() {
+  constructor(pidLookup: ClaudePidLookup = createClaudePidLookup()) {
     this.projectsDir = join(homedir(), ".claude", "projects");
+    this.pidLookup = pidLookup;
   }
 
   start(ctx: AgentWatcherContext): void {
@@ -150,26 +172,36 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const prev = this.sessions.get(threadId);
 
     if (prev && size === prev.fileSize) {
-      // Post-seed: if status is "running" but journal hasn't been written to
-      // in >2min, the process likely exited — downgrade to "idle".
+      // Post-seed: check if the process is actually still alive.
       if (this.seeded && prev.status === "running") {
-        try {
-          const mtime = (await stat(filePath)).mtimeMs;
-          if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) {
-            prev.status = "idle";
-            const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
-            if (session) {
-              this.ctx?.emit({
-                agent: "claude-code",
-                session,
-                status: "idle",
-                ts: Date.now(),
-                threadId,
-                threadName: prev.threadName,
-              });
-            }
+        const pid = await this.pidLookup.pidForThread(threadId);
+        const processGone = pid != null && !this.pidLookup.isAlive(pid);
+
+        let becomeIdle = false;
+        if (processGone) {
+          becomeIdle = true;
+        } else {
+          try {
+            const mtime = (await stat(filePath)).mtimeMs;
+            if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) becomeIdle = true;
+          } catch {}
+        }
+
+        if (becomeIdle) {
+          prev.status = "idle";
+          const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
+          if (session) {
+            this.ctx?.emit({
+              agent: "claude-code",
+              session,
+              status: "idle",
+              ts: Date.now(),
+              threadId,
+              threadName: prev.threadName,
+              details: prev.usage ? summaryToDetails(prev.usage) : undefined,
+            });
           }
-        } catch {}
+        }
       }
       return;
     }
@@ -184,22 +216,27 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       }
 
       const lines = text.split("\n").filter(Boolean);
-      let latestStatus: AgentStatus = "idle";
-      let threadName: string | undefined;
 
+      const parsed: JournalEntry[] = [];
       for (const line of lines) {
-        let entry: JournalEntry;
         try {
-          entry = JSON.parse(line);
+          parsed.push(JSON.parse(line) as JournalEntry);
         } catch {
           continue;
         }
+      }
+
+      let latestStatus: AgentStatus = "idle";
+      let threadName: string | undefined;
+      for (const entry of parsed) {
         if (!threadName) {
           const name = extractThreadName(entry);
           if (name) threadName = name;
         }
         latestStatus = determineStatus(entry) ?? latestStatus;
       }
+
+      const usage = extractUsageSummary(parsed) ?? undefined;
 
       // If "running" but journal file is stale, the process likely exited
       if (latestStatus === "running") {
@@ -209,7 +246,13 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         } catch {}
       }
 
-      this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir });
+      this.sessions.set(threadId, {
+        status: latestStatus,
+        fileSize: size,
+        threadName,
+        projectDir,
+        usage,
+      });
       return;
     }
 
@@ -225,27 +268,45 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     }
 
     const lines = text.split("\n").filter(Boolean);
-    let latestStatus: AgentStatus = prev?.status ?? "idle";
-    let threadName = prev?.threadName;
 
+    const parsed: JournalEntry[] = [];
     for (const line of lines) {
-      let entry: JournalEntry;
       try {
-        entry = JSON.parse(line);
+        parsed.push(JSON.parse(line) as JournalEntry);
       } catch {
         continue;
       }
+    }
 
+    let latestStatus: AgentStatus = prev?.status ?? "idle";
+    let threadName = prev?.threadName;
+    for (const entry of parsed) {
       if (!threadName) {
         const name = extractThreadName(entry);
         if (name) threadName = name;
       }
-
       latestStatus = determineStatus(entry) ?? latestStatus;
     }
 
+    // Merge new usage summary onto the previous one (incremental reads may not include the latest assistant turn)
+    const newUsage = extractUsageSummary(parsed);
+    const usage = newUsage ?? prev?.usage;
+
+    if (latestStatus === "running") {
+      const pid = await this.pidLookup.pidForThread(threadId);
+      if (pid != null && !this.pidLookup.isAlive(pid)) {
+        latestStatus = "idle";
+      }
+    }
+
     const prevStatus = prev?.status;
-    this.sessions.set(threadId, { status: latestStatus, fileSize: size, threadName, projectDir });
+    this.sessions.set(threadId, {
+      status: latestStatus,
+      fileSize: size,
+      threadName,
+      projectDir,
+      usage,
+    });
 
     if (latestStatus !== prevStatus) {
       const session = this.ctx.resolveSession(projectDir);
@@ -257,6 +318,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           ts: Date.now(),
           threadId,
           threadName,
+          details: usage ? summaryToDetails(usage) : undefined,
         });
       }
     }
@@ -265,6 +327,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
   private async scan(): Promise<void> {
     if (this.scanning || !this.ctx) return;
     this.scanning = true;
+    this.pidLookup.invalidate();
 
     try {
       let dirs: string[];
@@ -313,15 +376,27 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         // Emit seeded sessions with non-idle status (like amp watcher does)
         for (const [threadId, state] of this.sessions) {
           if (state.status === "idle" || !state.projectDir) continue;
+
+          let status = state.status;
+          if (status === "running") {
+            const pid = await this.pidLookup.pidForThread(threadId);
+            if (pid != null && !this.pidLookup.isAlive(pid)) {
+              status = "idle";
+              state.status = "idle";
+              continue;
+            }
+          }
+
           const session = this.ctx?.resolveSession(state.projectDir);
           if (!session) continue;
           this.ctx?.emit({
             agent: "claude-code",
             session,
-            status: state.status,
+            status,
             ts: Date.now(),
             threadId,
             threadName: state.threadName,
+            details: state.usage ? summaryToDetails(state.usage) : undefined,
           });
         }
       }
