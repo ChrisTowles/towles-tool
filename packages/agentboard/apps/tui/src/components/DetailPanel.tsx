@@ -44,17 +44,7 @@ export function buildSparkline(
     .join("");
 }
 
-// --- Context / cache display helpers ---
-
-const BAR_FILLED = "▰";
-const BAR_EMPTY = "▱";
-const BAR_WIDTH = 10;
-
-function contextBar(pct: number): string {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const filled = Math.round((clamped / 100) * BAR_WIDTH);
-  return BAR_FILLED.repeat(filled) + BAR_EMPTY.repeat(BAR_WIDTH - filled);
-}
+// --- Model / cache display helpers ---
 
 function shortModel(model: string): string {
   if (!model) return "";
@@ -384,38 +374,29 @@ function AgentListItem(props: AgentListItemProps) {
             </text>
           </Show>
 
-          {/* Row 3: context bar + model + cache countdown */}
+          {/* Row 3: model + cache countdown */}
           <Show when={props.agent.details}>
             {(d) => {
               const details = d();
-              const pct = () =>
-                details.contextUsed && details.contextMax
-                  ? Math.round((details.contextUsed / details.contextMax) * 100)
-                  : 0;
-              const bar = () => contextBar(pct());
-              const barColor = () => {
-                const p = pct();
-                if (p < 40) return P().green;
-                if (p < 60) return P().yellow;
-                if (p < 80) return P().peach;
-                return P().red;
-              };
               const model = () => (details.model ? shortModel(details.model) : "");
               const cacheText = () =>
                 details.cacheExpiresAt != null
                   ? `Cache ${formatCacheRemaining(details.cacheExpiresAt, now())}`
                   : null;
               return (
-                <text truncate>
-                  <span style={{ fg: barColor() }}>{bar()}</span>
-                  <span style={{ fg: P().overlay0, attributes: DIM }}> {pct()}%</span>
-                  <Show when={model()}>
-                    <span style={{ fg: P().subtext0, attributes: DIM }}> · {model()}</span>
-                  </Show>
-                  <Show when={cacheText()}>
-                    <span style={{ fg: P().sky, attributes: DIM }}> · {cacheText()}</span>
-                  </Show>
-                </text>
+                <Show when={model() || cacheText()}>
+                  <text truncate>
+                    <Show when={model()}>
+                      <span style={{ fg: P().subtext0, attributes: DIM }}>{model()}</span>
+                    </Show>
+                    <Show when={cacheText()}>
+                      <span style={{ fg: P().sky, attributes: DIM }}>
+                        {model() ? " · " : ""}
+                        {cacheText()}
+                      </span>
+                    </Show>
+                  </text>
+                </Show>
               );
             }}
           </Show>
