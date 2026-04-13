@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { MouseEvent } from "@opentui/core";
 import type { SessionData, Theme } from "@tt-agentboard/runtime";
@@ -42,6 +42,38 @@ export function buildSparkline(
       return SPARK_BLOCKS[level];
     })
     .join("");
+}
+
+// --- Context / cache display helpers ---
+
+const BAR_FILLED = "▰";
+const BAR_EMPTY = "▱";
+const BAR_WIDTH = 10;
+
+function contextBar(pct: number): string {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled = Math.round((clamped / 100) * BAR_WIDTH);
+  return BAR_FILLED.repeat(filled) + BAR_EMPTY.repeat(BAR_WIDTH - filled);
+}
+
+function shortModel(model: string): string {
+  if (!model) return "";
+  const stripped = model.replace(/^claude-/, "").replace(/\[1m\]$/i, "");
+  return stripped;
+}
+
+function formatCacheRemaining(expiresAt: number, now: number): string {
+  const ms = expiresAt - now;
+  if (ms <= 0) return "cold";
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min >= 60) {
+    const hrs = Math.floor(min / 60);
+    const rem = min % 60;
+    return `${hrs}h${rem}m`;
+  }
+  return `${min}m${sec.toString().padStart(2, "0")}s`;
 }
 
 // --- Detail Panel ---
@@ -242,6 +274,11 @@ function AgentListItem(props: AgentListItemProps) {
   const SC = () => props.statusColors();
   const [isDismissHover, setIsDismissHover] = createSignal(false);
   const [isFlash, setIsFlash] = createSignal(false);
+  const [now, setNow] = createSignal(Date.now());
+  // Tick every second while any details.cacheExpiresAt is in the future
+  // (cheap; only runs while component is mounted)
+  const ticker = setInterval(() => setNow(Date.now()), 1000);
+  onCleanup(() => clearInterval(ticker));
 
   const isTerminal = () => ["done", "error", "interrupted"].includes(props.agent.status);
   const isUnseen = () => isTerminal() && props.agent.unseen === true;
@@ -345,6 +382,42 @@ function AgentListItem(props: AgentListItemProps) {
                 {props.agent.threadName}
               </span>
             </text>
+          </Show>
+
+          {/* Row 3: context bar + model + cache countdown */}
+          <Show when={props.agent.details}>
+            {(d) => {
+              const details = d();
+              const pct = () =>
+                details.contextUsed && details.contextMax
+                  ? Math.round((details.contextUsed / details.contextMax) * 100)
+                  : 0;
+              const bar = () => contextBar(pct());
+              const barColor = () => {
+                const p = pct();
+                if (p < 40) return P().green;
+                if (p < 60) return P().yellow;
+                if (p < 80) return P().peach;
+                return P().red;
+              };
+              const model = () => (details.model ? shortModel(details.model) : "");
+              const cacheText = () =>
+                details.cacheExpiresAt != null
+                  ? `Cache ${formatCacheRemaining(details.cacheExpiresAt, now())}`
+                  : null;
+              return (
+                <text truncate>
+                  <span style={{ fg: barColor() }}>{bar()}</span>
+                  <span style={{ fg: P().overlay0, attributes: DIM }}> {pct()}%</span>
+                  <Show when={model()}>
+                    <span style={{ fg: P().subtext0, attributes: DIM }}> · {model()}</span>
+                  </Show>
+                  <Show when={cacheText()}>
+                    <span style={{ fg: P().sky, attributes: DIM }}> · {cacheText()}</span>
+                  </Show>
+                </text>
+              );
+            }}
           </Show>
         </box>
       </box>
