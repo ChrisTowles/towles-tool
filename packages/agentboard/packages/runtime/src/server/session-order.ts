@@ -5,6 +5,8 @@ interface PersistedSessionOrder {
   order?: unknown;
 }
 
+export type ReorderDelta = "up" | "down" | "top" | "bottom";
+
 /**
  * Maintains custom session ordering for reorder-session commands.
  * Stores an ordered list of session names. The `apply` method takes
@@ -59,8 +61,8 @@ export class SessionOrder {
     }
   }
 
-  /** Move a session: delta -1 = up, 1 = down, "top" / "bottom" = jump to end. */
-  reorder(name: string, delta: -1 | 1 | "top" | "bottom"): void {
+  /** Move a session up/down by one, or jump it to top/bottom of the order. */
+  reorder(name: string, delta: ReorderDelta): void {
     const idx = this.order.indexOf(name);
     if (idx === -1) return;
     if (delta === "top") {
@@ -68,7 +70,8 @@ export class SessionOrder {
     } else if (delta === "bottom") {
       this.order = [...this.order.filter((n) => n !== name), name];
     } else {
-      const newIdx = idx + delta;
+      const step = delta === "up" ? -1 : 1;
+      const newIdx = idx + step;
       if (newIdx < 0 || newIdx >= this.order.length) return;
       [this.order[idx], this.order[newIdx]] = [this.order[newIdx]!, this.order[idx]!];
     }

@@ -15,7 +15,13 @@ import type { Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 
 import { ensureServer, SERVER_PORT, SERVER_HOST, resolveTheme } from "@tt-agentboard/runtime";
-import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agentboard/runtime";
+import type {
+  ServerMessage,
+  SessionData,
+  ClientCommand,
+  ReorderDelta,
+  Theme,
+} from "@tt-agentboard/runtime";
 import { SessionCard } from "./components/SessionCard";
 import { StatusBar } from "./components/StatusBar";
 import { computeSessionStatusCounts } from "./session-status";
@@ -369,6 +375,18 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
+  // Shared 1s clock for cache-countdown bars. One ticker for all cards,
+  // gated on whether any agent across all sessions is actively cached.
+  const [now, setNow] = createSignal(Date.now());
+  const hasActiveCache = createMemo(() =>
+    sessions.some((s) => s.agents?.some((a) => a.details?.cacheExpiresAt != null)),
+  );
+  createEffect(() => {
+    if (!hasActiveCache()) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(id));
+  });
+
   useKeyboard((key) => {
     const currentModal = modal();
 
@@ -397,13 +415,8 @@ function App() {
     if ((key.meta || key.option) && (key.name === "up" || key.name === "down")) {
       const focused = focusedSession();
       if (focused) {
-        const delta: -1 | 1 | "top" | "bottom" = key.shift
-          ? key.name === "up"
-            ? "top"
-            : "bottom"
-          : key.name === "up"
-            ? -1
-            : 1;
+        const up = key.name === "up";
+        const delta: ReorderDelta = key.shift ? (up ? "top" : "bottom") : up ? "up" : "down";
         send({ type: "reorder-session", name: focused, delta });
       }
       return;
@@ -541,6 +554,7 @@ function App() {
               isFocused={isFocused(session.name)}
               isCurrent={session.name === currentSession()}
               spinIdx={spinIdx}
+              now={now}
               theme={theme}
               statusColors={S}
               focusedAgentIdx={

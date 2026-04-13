@@ -61,9 +61,11 @@ export type {
   QuitNotify,
   ServerMessage,
   ClientCommand,
+  ReorderDelta,
   MetadataTone,
   MetadataStatus,
   MetadataProgress,
   MetadataLogEntry,
   SessionMetadata,
 } from "./shared";
+export { truncate } from "./text-utils";

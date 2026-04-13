@@ -1,11 +1,8 @@
 import type { MetadataTone, SessionMetadata } from "../shared";
+import { truncate } from "../text-utils";
 
 const MAX_LOGS = 50;
 const MAX_MESSAGE_LENGTH = 500;
-
-function truncate(s: string, max: number = MAX_MESSAGE_LENGTH): string {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
-}
 
 export class SessionMetadataStore {
   private store = new Map<string, SessionMetadata>();
@@ -62,7 +59,7 @@ export class SessionMetadataStore {
   ): void {
     const meta = this.getOrCreate(session);
     meta.logs.push({
-      message: truncate(entry.message),
+      message: truncate(entry.message, MAX_MESSAGE_LENGTH),
       tone: entry.tone,
       source: entry.source ? truncate(entry.source, 50) : undefined,
       ts: Date.now(),
