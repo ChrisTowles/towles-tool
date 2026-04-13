@@ -67,10 +67,12 @@ export function SessionCard(props: SessionCardProps) {
     return SC()[status()];
   };
 
+  const familyHue = () => familyColor(props.session.name, P());
+
   const nameColor = () => {
     if (props.isFocused) return P().text;
     if (props.isCurrent) return P().subtext1;
-    return familyColor(props.session.name, P());
+    return familyHue();
   };
 
   const truncName = () => truncate(props.session.name, 18);
@@ -116,10 +118,10 @@ export function SessionCard(props: SessionCardProps) {
       >
         <text style={{ fg: accentColor() }}>{accentColor() === "transparent" ? " " : "▌"}</text>
 
-        <Show when={!props.isFocused && !props.isCurrent}>
+        <Show when={accentColor() === "transparent"}>
           <box width={1} flexShrink={0}>
             <text>
-              <span style={{ fg: familyColor(props.session.name, P()), attributes: DIM }}>▎</span>
+              <span style={{ fg: familyHue(), attributes: DIM }}>▎</span>
             </text>
           </box>
         </Show>
