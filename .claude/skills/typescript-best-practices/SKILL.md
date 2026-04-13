@@ -1,12 +1,7 @@
 ---
 name: typescript-best-practices
-description: >
-  Opinionated TypeScript patterns for production-grade code — focused on type composition,
-  Zod integration, and patterns Claude wouldn't suggest by default. Use this skill whenever
-  writing new TypeScript files, reviewing TypeScript code, setting up TypeScript projects,
-  refactoring TypeScript, or when the user asks about TypeScript patterns, conventions, or
-  idioms. Also trigger when the user mentions types, interfaces, generics, Zod schemas,
-  discriminated unions, branded types, or TypeScript configuration. Applies to .ts and .tsx files.
+description: Opinionated TypeScript patterns for production-grade code — focused on type composition, Zod integration, and patterns Claude wouldn't suggest by default. Use this skill whenever writing new TypeScript files, reviewing TypeScript code, setting up TypeScript projects, refactoring TypeScript, or when the user asks about TypeScript patterns, conventions, or idioms. Also trigger when the user mentions types, interfaces, generics, Zod schemas, discriminated unions, branded types, or TypeScript configuration. Applies to .ts and .tsx files.
+user_invocable: true
 ---
 
 # TypeScript Best Practices

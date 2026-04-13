@@ -1,10 +1,6 @@
 ---
 name: screenshot
-description: >
-  Take a desktop screenshot for visual validation. Use this skill when you need to verify
-  UI changes, check the agentboard sidebar, validate TUI rendering, or confirm any visual
-  state on screen. Trigger when the user says "take a screenshot", "show me the screen",
-  "check the UI", "validate visually", or when you need to self-validate a visual change.
+description: Take a desktop screenshot for visual validation. Use this skill when you need to verify UI changes, check the agentboard sidebar, validate TUI rendering, or confirm any visual state on screen. Trigger when the user says "take a screenshot", "show me the screen", "check the UI", "validate visually", or when you need to self-validate a visual change.
 user_invocable: true
 ---
 

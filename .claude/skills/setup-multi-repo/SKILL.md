@@ -1,9 +1,6 @@
 ---
 name: setup-multi-repo
-description: >
-  Set up a multi-clone repo folder structure with a primary clone and 5 slot clones for
-  parallel Claude Code agent work. Use when the user says "set up multi-repo", "setup slots",
-  "create repo slots", or wants to create the same folder pattern used for towles-tool-repos.
+description: Set up a multi-clone repo folder structure with a primary clone and 5 slot clones for parallel Claude Code agent work. Use when the user says "set up multi-repo", "setup slots", "create repo slots", or wants to create the same folder pattern used for towles-tool-repos.
 user_invocable: true
 ---
 
