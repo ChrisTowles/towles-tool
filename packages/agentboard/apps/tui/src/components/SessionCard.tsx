@@ -6,6 +6,7 @@ import { UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
 import { cacheBarVisual, shortModel } from "./cache-bar";
 import { liveStatusIcon, unseenTerminalColor } from "./status-visuals";
+import { familyColor } from "./family-color";
 
 const STATUS_TEXT: Record<AgentStatus, string> = {
   idle: "",
@@ -19,7 +20,6 @@ const STATUS_TEXT: Record<AgentStatus, string> = {
 
 export interface SessionCardProps {
   session: SessionData;
-  index: number;
   isFocused: boolean;
   isCurrent: boolean;
   spinIdx: Accessor<number>;
@@ -70,12 +70,7 @@ export function SessionCard(props: SessionCardProps) {
   const nameColor = () => {
     if (props.isFocused) return P().text;
     if (props.isCurrent) return P().subtext1;
-    return P().subtext0;
-  };
-
-  const indexColor = () => {
-    if (props.isFocused) return P().subtext0;
-    return P().surface2;
+    return familyColor(props.session.name, P());
   };
 
   const truncName = () => truncate(props.session.name, 18);
@@ -121,9 +116,13 @@ export function SessionCard(props: SessionCardProps) {
       >
         <text style={{ fg: accentColor() }}>{accentColor() === "transparent" ? " " : "▌"}</text>
 
-        <box width={3} flexShrink={0}>
-          <text style={{ fg: indexColor() }}>{String(props.index).padStart(2)}</text>
-        </box>
+        <Show when={!props.isFocused && !props.isCurrent}>
+          <box width={1} flexShrink={0}>
+            <text>
+              <span style={{ fg: familyColor(props.session.name, P()), attributes: DIM }}>▎</span>
+            </text>
+          </box>
+        </Show>
 
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
           <box flexDirection="row">
