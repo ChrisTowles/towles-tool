@@ -112,7 +112,7 @@ export type ClientCommand =
   | { type: "switch-index"; index: number }
   | { type: "new-session" }
   | { type: "kill-session"; name: string }
-  | { type: "reorder-session"; name: string; delta: -1 | 1 }
+  | { type: "reorder-session"; name: string; delta: -1 | 1 | "top" | "bottom" }
   | { type: "refresh" }
   | { type: "move-focus"; delta: -1 | 1 }
   | { type: "focus-session"; name: string }

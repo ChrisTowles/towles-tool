@@ -59,14 +59,19 @@ export class SessionOrder {
     }
   }
 
-  /** Move a session by delta (-1 = up, 1 = down). */
-  reorder(name: string, delta: -1 | 1): void {
+  /** Move a session: delta -1 = up, 1 = down, "top" / "bottom" = jump to end. */
+  reorder(name: string, delta: -1 | 1 | "top" | "bottom"): void {
     const idx = this.order.indexOf(name);
     if (idx === -1) return;
-    const newIdx = idx + delta;
-    if (newIdx < 0 || newIdx >= this.order.length) return;
-    // Swap
-    [this.order[idx], this.order[newIdx]] = [this.order[newIdx]!, this.order[idx]!];
+    if (delta === "top") {
+      this.order = [name, ...this.order.filter((n) => n !== name)];
+    } else if (delta === "bottom") {
+      this.order = [...this.order.filter((n) => n !== name), name];
+    } else {
+      const newIdx = idx + delta;
+      if (newIdx < 0 || newIdx >= this.order.length) return;
+      [this.order[idx], this.order[newIdx]] = [this.order[newIdx]!, this.order[idx]!];
+    }
     this.save();
   }
 

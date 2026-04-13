@@ -13,12 +13,10 @@ import {
 } from "solid-js";
 import type { Accessor } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import type { MouseEvent } from "@opentui/core";
 
 import { ensureServer, SERVER_PORT, SERVER_HOST, resolveTheme } from "@tt-agentboard/runtime";
 import type { ServerMessage, SessionData, ClientCommand, Theme } from "@tt-agentboard/runtime";
 import { SessionCard } from "./components/SessionCard";
-import { DetailPanel } from "./components/DetailPanel";
 import { StatusBar } from "./components/StatusBar";
 import { computeSessionStatusCounts } from "./session-status";
 import {
@@ -27,19 +25,7 @@ import {
   getClientTty,
   getLocalSessionName,
 } from "./mux-context";
-import {
-  clampDetailPanelHeight,
-  getStoredDetailPanelHeight,
-  persistDetailPanelHeight,
-} from "./detail-panel-height";
-import {
-  SPINNERS,
-  BOLD,
-  DIM,
-  DEFAULT_DETAIL_PANEL_HEIGHT,
-  DIVIDER,
-  logResizeDebug,
-} from "./constants";
+import { SPINNERS, BOLD, DIM, DIVIDER, logResizeDebug } from "./constants";
 
 const muxCtx = detectMuxContext();
 
@@ -92,14 +78,9 @@ function App() {
   const [sessions, setSessions] = createStore<SessionData[]>([]);
   const [focusedSession, setFocusedSession] = createSignal<string | null>(null);
   const [currentSession, setCurrentSession] = createSignal<string | null>(null);
-  const [mySession, setMySession] = createSignal<string | null>(null);
   const [connected, setConnected] = createSignal(false);
   const [spinIdx, setSpinIdx] = createSignal(0);
-  const [detailPanelHeight, setDetailPanelHeight] = createSignal(DEFAULT_DETAIL_PANEL_HEIGHT);
   const [preferredEditor, setPreferredEditor] = createSignal("code");
-  const [isDetailResizeHover, setIsDetailResizeHover] = createSignal(false);
-  const [isDetailResizing, setIsDetailResizing] = createSignal(false);
-  const detailPanelSessionName = createMemo(() => focusedSession() ?? mySession());
 
   // --- Panel focus: sessions list vs agent detail ---
   type PanelFocus = "sessions" | "agents";
@@ -123,8 +104,6 @@ function App() {
   const [clientTty, setClientTty] = createSignal(getClientTty(muxCtx));
   let ws: WebSocket | null = null;
   let startupFocusSynced = false;
-  let detailResizeStartY = 0;
-  let detailResizeStartHeight = DEFAULT_DETAIL_PANEL_HEIGHT;
   const startupSessionName = getLocalSessionName(muxCtx);
 
   const focusedData = createMemo(() => sessions.find((s) => s.name === focusedSession()) ?? null);
@@ -240,76 +219,6 @@ function App() {
     );
   }
 
-  function beginDetailResize(event: MouseEvent) {
-    if (TUI_DEBUG)
-      logResizeDebug("beginDetailResize", {
-        button: event.button,
-        x: event.x,
-        y: event.y,
-        currentHeight: detailPanelHeight(),
-        session: detailPanelSessionName(),
-        target: event.target?.id ?? null,
-      });
-    if (event.button !== 0) return;
-    (renderer as any).setCapturedRenderable?.(event.target ?? undefined);
-    detailResizeStartY = event.y;
-    detailResizeStartHeight = detailPanelHeight();
-    setIsDetailResizing(true);
-    event.stopPropagation();
-  }
-
-  function handleDetailResizeDrag(event: MouseEvent) {
-    if (TUI_DEBUG)
-      logResizeDebug("handleDetailResizeDrag", {
-        x: event.x,
-        y: event.y,
-        isResizing: isDetailResizing(),
-        startY: detailResizeStartY,
-        startHeight: detailResizeStartHeight,
-        currentHeight: detailPanelHeight(),
-        session: detailPanelSessionName(),
-      });
-    if (!isDetailResizing()) return;
-    const delta = detailResizeStartY - event.y;
-    const nextHeight = clampDetailPanelHeight(detailResizeStartHeight + delta);
-    setDetailPanelHeight(nextHeight);
-    if (TUI_DEBUG)
-      logResizeDebug("handleDetailResizeDrag:applied", {
-        delta,
-        nextHeight,
-        session: detailPanelSessionName(),
-      });
-    event.stopPropagation();
-  }
-
-  function endDetailResize(event?: MouseEvent) {
-    if (TUI_DEBUG)
-      logResizeDebug("endDetailResize", {
-        x: event?.x,
-        y: event?.y,
-        isResizing: isDetailResizing(),
-        currentHeight: detailPanelHeight(),
-        session: detailPanelSessionName(),
-        target: event?.target?.id ?? null,
-      });
-    if (!isDetailResizing()) return;
-    (renderer as any).setCapturedRenderable?.(undefined);
-    setIsDetailResizing(false);
-    setIsDetailResizeHover(false);
-
-    const sessionName = detailPanelSessionName();
-    if (sessionName) {
-      persistDetailPanelHeight(sessionName, detailPanelHeight());
-      if (TUI_DEBUG)
-        logResizeDebug("endDetailResize:persisted", {
-          session: sessionName,
-          height: detailPanelHeight(),
-        });
-    }
-
-    event?.stopPropagation();
-  }
-
   function createNewSession() {
     if (muxCtx.type !== "tmux") {
       send({ type: "new-session" });
@@ -418,7 +327,6 @@ function App() {
             setFocusedSession(msg.focusedSession);
             setCurrentSession(msg.currentSession);
           } else if (msg.type === "your-session") {
-            setMySession(msg.name);
             if (msg.clientTty) setClientTty(msg.clientTty);
 
             if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
@@ -461,27 +369,6 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
-  createEffect(() => {
-    const sessionName = detailPanelSessionName();
-    if (!sessionName) return;
-    const storedHeight = getStoredDetailPanelHeight(sessionName);
-    if (TUI_DEBUG)
-      logResizeDebug("loadStoredDetailPanelHeight", {
-        session: sessionName,
-        storedHeight,
-      });
-    setDetailPanelHeight(storedHeight);
-  });
-
-  createEffect(() => {
-    if (TUI_DEBUG)
-      logResizeDebug("detailPanelHeight:changed", {
-        height: detailPanelHeight(),
-        session: detailPanelSessionName(),
-        isResizing: isDetailResizing(),
-      });
-  });
-
   useKeyboard((key) => {
     const currentModal = modal();
 
@@ -506,11 +393,17 @@ function App() {
     }
 
     // --- Normal mode keybindings ---
-    // Alt+Up / Alt+Down → reorder session
+    // Alt+Up/Down → reorder session ±1. Alt+Shift+Up/Down → jump to top/bottom.
     if ((key.meta || key.option) && (key.name === "up" || key.name === "down")) {
       const focused = focusedSession();
       if (focused) {
-        const delta: -1 | 1 = key.name === "up" ? -1 : 1;
+        const delta: -1 | 1 | "top" | "bottom" = key.shift
+          ? key.name === "up"
+            ? "top"
+            : "bottom"
+          : key.name === "up"
+            ? -1
+            : 1;
         send({ type: "reorder-session", name: focused, delta });
       }
       return;
@@ -650,58 +543,35 @@ function App() {
               spinIdx={spinIdx}
               theme={theme}
               statusColors={S}
+              focusedAgentIdx={
+                isFocused(session.name) && panelFocus() === "agents" ? focusedAgentIdx() : -1
+              }
               onSelect={() => {
                 setFocusedSession(session.name);
                 send({ type: "focus-session", name: session.name });
                 switchToSession(session.name);
               }}
-            />
-          )}
-        </For>
-      </scrollbox>
-
-      {/* Detail panel — focused session info, draggable height */}
-      <Show when={focusedData()}>
-        {(data) => (
-          <scrollbox height={detailPanelHeight()} maxHeight={detailPanelHeight()} flexShrink={0}>
-            <DetailPanel
-              session={data()}
-              theme={theme}
-              statusColors={S}
-              spinIdx={spinIdx}
-              focusedAgentIdx={panelFocus() === "agents" ? focusedAgentIdx() : -1}
               onDismissAgent={(agent) => {
                 send({
                   type: "dismiss-agent",
-                  session: data().name,
+                  session: session.name,
                   agent: agent.agent,
                   threadId: agent.threadId,
                 });
               }}
               onFocusAgentPane={(agent) => {
-                if (TUI_DEBUG)
-                  appendFileSync(
-                    "/tmp/agentboard-tui-agent-click.log",
-                    `[${new Date().toISOString()}] sending focus-agent-pane session=${data().name} agent=${agent.agent} threadId=${agent.threadId} threadName=${agent.threadName}\n`,
-                  );
                 send({
                   type: "focus-agent-pane",
-                  session: data().name,
+                  session: session.name,
                   agent: agent.agent,
                   threadId: agent.threadId,
                   threadName: agent.threadName,
                 });
               }}
-              isResizeHover={isDetailResizeHover()}
-              isResizing={isDetailResizing()}
-              onResizeStart={beginDetailResize}
-              onResizeDrag={handleDetailResizeDrag}
-              onResizeEnd={endDetailResize}
-              onResizeHoverChange={setIsDetailResizeHover}
             />
-          </scrollbox>
-        )}
-      </Show>
+          )}
+        </For>
+      </scrollbox>
 
       {/* Footer */}
       <box flexDirection="column" paddingLeft={1} paddingBottom={1} paddingTop={0} flexShrink={0}>
@@ -812,6 +682,7 @@ const HELP_KEYS: [string, string][] = [
   ["→/l", "Agents panel"],
   ["←/h/Esc", "Back to sessions"],
   ["Alt+↑↓", "Reorder sessions"],
+  ["Alt+Shift+↑↓", "Move to top/bottom"],
   ["q", "Quit"],
 ];
 

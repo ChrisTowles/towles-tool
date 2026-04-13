@@ -16,8 +16,6 @@ export interface AgentboardConfig {
   sidebarPosition?: "left" | "right";
   /** Tmux prefix key for sidebar toggle (default "s") */
   keybinding?: string;
-  /** Persisted detail panel heights keyed by mux session name */
-  detailPanelHeights?: Record<string, number>;
 }
 
 const DEFAULTS: AgentboardConfig = {};
