@@ -114,7 +114,7 @@ Solid.js app rendered via OpenTUI. Connects to server over WebSocket.
 
 - `constants.ts` — shared icons (`SPINNERS`, `UNSEEN_ICON`), theme list, tone-to-color mapping
 - `mux-context.ts` — tmux detection, pane refocus after startup, client TTY and session name resolution
-- `components/cache-bar.ts` — cache-countdown bar helpers (`cacheBar`, `cacheBarColor`, `shortModel`)
+- `components/cache-bar.ts` — `shortModel` helper for displaying agent model names
 
 ## Configuration
 
