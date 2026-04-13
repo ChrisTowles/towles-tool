@@ -375,14 +375,16 @@ function App() {
     onCleanup(() => clearInterval(interval));
   });
 
-  // Shared 1s clock for cache-countdown bars. One ticker for all cards,
-  // gated on whether any agent across all sessions is actively cached.
+  // Shared 1s clock for cache-countdown bars and elapsed-time displays.
+  // Ticks whenever any agent is running or has an active cache.
   const [now, setNow] = createSignal(Date.now());
-  const hasActiveCache = createMemo(() =>
-    sessions.some((s) => s.agents?.some((a) => a.details?.cacheExpiresAt != null)),
+  const needsTicker = createMemo(() =>
+    sessions.some((s) =>
+      s.agents?.some((a) => a.details?.cacheExpiresAt != null || a.status === "running"),
+    ),
   );
   createEffect(() => {
-    if (!hasActiveCache()) return;
+    if (!needsTicker()) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     onCleanup(() => clearInterval(id));
   });
