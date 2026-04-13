@@ -1,4 +1,7 @@
 import type { AgentStatus, AgentEvent } from "./contracts/agent";
+import type { ReorderDelta } from "./server/session-order";
+
+export type { ReorderDelta };
 
 export const DEFAULT_SERVER_PORT = 4201;
 export const DEFAULT_SERVER_HOST = "127.0.0.1";
@@ -112,7 +115,7 @@ export type ClientCommand =
   | { type: "switch-index"; index: number }
   | { type: "new-session" }
   | { type: "kill-session"; name: string }
-  | { type: "reorder-session"; name: string; delta: -1 | 1 | "top" | "bottom" }
+  | { type: "reorder-session"; name: string; delta: ReorderDelta }
   | { type: "refresh" }
   | { type: "move-focus"; delta: -1 | 1 }
   | { type: "focus-session"; name: string }

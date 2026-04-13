@@ -1,9 +1,11 @@
-import { createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js";
+import { createSignal, For, Show, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { AgentStatus, SessionData, Theme } from "@tt-agentboard/runtime";
-import { SPINNERS, UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
+import { truncate } from "@tt-agentboard/runtime";
+import { UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
-import { cacheBar, cacheBarColor, shortModel } from "./cache-bar";
+import { cacheBarVisual, shortModel } from "./cache-bar";
+import { liveStatusIcon, unseenTerminalColor } from "./status-visuals";
 
 const STATUS_TEXT: Record<AgentStatus, string> = {
   idle: "",
@@ -21,6 +23,7 @@ export interface SessionCardProps {
   isFocused: boolean;
   isCurrent: boolean;
   spinIdx: Accessor<number>;
+  now: Accessor<number>;
   theme: Accessor<Theme>;
   statusColors: Accessor<Theme["status"]>;
   focusedAgentIdx: number;
@@ -42,7 +45,7 @@ export function SessionCard(props: SessionCardProps) {
 
   const accentColor = () => {
     if (props.isCurrent) return P().green;
-    if (isUnseenTerminal()) return unseenAccentColor();
+    if (isUnseenTerminal()) return unseenTerminalColor(status(), P());
     const s = status();
     if (s === "error") return P().red;
     if (s === "interrupted") return P().peach;
@@ -53,24 +56,14 @@ export function SessionCard(props: SessionCardProps) {
     return "transparent";
   };
 
-  const unseenAccentColor = () => {
-    const s = status();
-    if (s === "error") return P().red;
-    if (s === "interrupted") return P().peach;
-    return P().teal;
-  };
-
   const statusIcon = () => {
-    const s = status();
-    if (s === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (s === "waiting") return "◉";
-    if (s === "question") return "?";
-    if (isUnseenTerminal()) return UNSEEN_ICON;
-    return "";
+    const live = liveStatusIcon(status(), props.spinIdx());
+    if (live) return live;
+    return isUnseenTerminal() ? UNSEEN_ICON : "";
   };
 
   const statusColor = () => {
-    if (isUnseenTerminal()) return unseenAccentColor();
+    if (isUnseenTerminal()) return unseenTerminalColor(status(), P());
     return SC()[status()];
   };
 
@@ -85,16 +78,8 @@ export function SessionCard(props: SessionCardProps) {
     return P().surface2;
   };
 
-  const truncName = () => {
-    const n = props.session.name;
-    return n.length > 18 ? n.slice(0, 17) + "…" : n;
-  };
-
-  const truncBranch = () => {
-    const b = props.session.branch;
-    if (!b) return "";
-    return b.length > 30 ? b.slice(0, 29) + "…" : b;
-  };
+  const truncName = () => truncate(props.session.name, 18);
+  const truncBranch = () => (props.session.branch ? truncate(props.session.branch, 30) : "");
 
   const hasDiff = () => {
     const { linesAdded, linesRemoved, commitsDelta, filesChanged } = props.session;
@@ -125,14 +110,6 @@ export function SessionCard(props: SessionCardProps) {
   };
 
   const agents = () => props.session.agents ?? [];
-
-  const [now, setNow] = createSignal(Date.now());
-  const needsTicker = createMemo(() => agents().some((a) => a.details?.cacheExpiresAt != null));
-  createEffect(() => {
-    if (!needsTicker()) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    onCleanup(() => clearInterval(id));
-  });
 
   return (
     <box flexDirection="column" flexShrink={0}>
@@ -196,7 +173,7 @@ export function SessionCard(props: SessionCardProps) {
                 palette={P}
                 statusColors={props.statusColors}
                 spinIdx={props.spinIdx}
-                now={now}
+                now={props.now}
                 isKeyboardFocused={i() === props.focusedAgentIdx}
                 onDismiss={() => props.onDismissAgent(agent)}
                 onFocusPane={() => props.onFocusAgentPane(agent)}
@@ -233,19 +210,20 @@ function AgentRow(props: AgentRowProps) {
 
   const icon = () => {
     if (isUnseen()) return UNSEEN_ICON;
-    if (isTerminal())
-      return props.agent.status === "done" ? "✓" : props.agent.status === "error" ? "✗" : "⚠";
-    if (props.agent.status === "running") return SPINNERS[props.spinIdx() % SPINNERS.length]!;
-    if (props.agent.status === "waiting") return "◉";
-    if (props.agent.status === "question") return "?";
-    return "○";
+    if (isTerminal()) {
+      if (props.agent.status === "done") return "✓";
+      if (props.agent.status === "error") return "✗";
+      return "⚠";
+    }
+    return liveStatusIcon(props.agent.status, props.spinIdx()) || "○";
   };
 
   const color = () => {
     if (isTerminal()) {
+      if (isUnseen()) return unseenTerminalColor(props.agent.status, P());
       if (props.agent.status === "error") return P().red;
       if (props.agent.status === "interrupted") return P().peach;
-      return isUnseen() ? P().teal : P().green;
+      return P().green;
     }
     return SC()[props.agent.status];
   };
@@ -324,23 +302,25 @@ function AgentRow(props: AgentRowProps) {
           const details = d();
           const model = () => (details.model ? shortModel(details.model) : "");
           const hasCache = () => details.cacheExpiresAt != null && details.cacheTtlMs != null;
-          const bar = () =>
-            hasCache() ? cacheBar(details.cacheExpiresAt!, details.cacheTtlMs!, props.now()) : "";
-          const barColor = () =>
+          const visual = () =>
             hasCache()
-              ? cacheBarColor(details.cacheExpiresAt!, details.cacheTtlMs!, props.now(), P())
-              : P().overlay0;
+              ? cacheBarVisual(details.cacheExpiresAt!, details.cacheTtlMs!, props.now(), P())
+              : null;
           return (
             <Show when={model() || hasCache()}>
               <text truncate>
                 <Show when={model()}>
                   <span style={{ fg: P().subtext0, attributes: DIM }}>{model()}</span>
                 </Show>
-                <Show when={hasCache()}>
-                  <span style={{ fg: P().overlay0, attributes: DIM }}>
-                    {model() ? " · cache " : "cache "}
-                  </span>
-                  <span style={{ fg: barColor() }}>{bar()}</span>
+                <Show when={visual()}>
+                  {(v) => (
+                    <>
+                      <span style={{ fg: P().overlay0, attributes: DIM }}>
+                        {model() ? " · cache " : "cache "}
+                      </span>
+                      <span style={{ fg: v().color }}>{v().bar}</span>
+                    </>
+                  )}
                 </Show>
               </text>
             </Show>
