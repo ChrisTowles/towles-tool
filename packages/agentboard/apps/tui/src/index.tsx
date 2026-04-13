@@ -417,6 +417,13 @@ function App() {
     }
 
     // --- Normal mode keybindings ---
+    // Help: "?" arrives as {name: "/", shift: true} under Kitty keyboard protocol,
+    // or as {name: "?"} in raw mode. Match both.
+    if (key.name === "?" || (key.name === "/" && key.shift)) {
+      setModal("help");
+      return;
+    }
+
     // Alt+Up/Down → reorder session ±1. Alt+Shift+Up/Down → jump to top/bottom.
     if ((key.meta || key.option) && (key.name === "up" || key.name === "down")) {
       const focused = focusedSession();
@@ -510,9 +517,6 @@ function App() {
         break;
       case "n":
         createNewSession();
-        break;
-      case "?":
-        setModal("help");
         break;
       default: {
         if (key.number) {
