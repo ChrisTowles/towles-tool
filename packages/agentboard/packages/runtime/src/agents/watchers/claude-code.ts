@@ -264,7 +264,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       }
 
       const usage = extractUsageSummary(parsed) ?? undefined;
-      const lastTool = extractLastTool(parsed) ?? undefined;
+      const lastTool = extractLastTool(parsed);
 
       // If "running" but journal file is stale, the process likely exited
       if (latestStatus === "running") {
