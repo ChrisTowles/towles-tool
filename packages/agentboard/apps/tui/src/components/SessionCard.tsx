@@ -4,7 +4,7 @@ import type { AgentStatus, SessionData, Theme } from "@tt-agentboard/runtime";
 import { truncate } from "@tt-agentboard/runtime";
 import { UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
-import { shortModel } from "./cache-bar";
+import { shortModel } from "./short-model";
 import { formatElapsed } from "./elapsed";
 import { liveStatusIcon, unseenTerminalColor } from "./status-visuals";
 import { familyColor } from "./family-color";
@@ -294,11 +294,13 @@ function AgentRow(props: AgentRowProps) {
       </box>
 
       <Show when={props.agent.threadName}>
-        <text truncate>
-          <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
-            {props.agent.threadName!.replace(/\s+/g, " ").trim()}
-          </span>
-        </text>
+        <box height={2} flexShrink={0}>
+          <text>
+            <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
+              {truncate(props.agent.threadName!.replace(/\s+/g, " ").trim(), 60)}
+            </span>
+          </text>
+        </box>
       </Show>
 
       <Show when={props.agent.status === "running" && props.agent.details}>
