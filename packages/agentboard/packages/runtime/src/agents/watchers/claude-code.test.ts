@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { determineStatus } from "./claude-code";
+import { determineStatus, summaryToDetails } from "./claude-code";
+import type { ClaudeUsageSummary } from "./claude-usage";
 
 describe("determineStatus", () => {
   it("returns null when no message", () => {
@@ -59,5 +60,41 @@ describe("determineStatus", () => {
         message: { role: "system", content: "system message" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("summaryToDetails", () => {
+  it("maps all fields including cache", () => {
+    const s: ClaudeUsageSummary = {
+      model: "claude-opus-4-6",
+      contextUsed: 1000,
+      contextMax: 200_000,
+      cacheTtlMs: 300_000,
+      cacheExpiresAt: 1_700_000_000_000,
+      lastActivityAt: 1_699_999_700_000,
+    };
+    expect(summaryToDetails(s)).toEqual({
+      model: "claude-opus-4-6",
+      contextUsed: 1000,
+      contextMax: 200_000,
+      cacheTtlMs: 300_000,
+      cacheExpiresAt: 1_700_000_000_000,
+      lastActivityAt: 1_699_999_700_000,
+    });
+  });
+
+  it("omits cache fields when null (converts to undefined)", () => {
+    const s: ClaudeUsageSummary = {
+      model: "claude-haiku-4-5",
+      contextUsed: 500,
+      contextMax: 200_000,
+      cacheTtlMs: null,
+      cacheExpiresAt: null,
+      lastActivityAt: 1_700_000_000_000,
+    };
+    const details = summaryToDetails(s);
+    expect(details.cacheTtlMs).toBeUndefined();
+    expect(details.cacheExpiresAt).toBeUndefined();
+    expect(details.model).toBe("claude-haiku-4-5");
   });
 });
