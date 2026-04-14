@@ -18,7 +18,7 @@ function textBlock(text: string): ContentBlock {
 }
 
 function toolUseBlock(name: string, input: Record<string, unknown>): ContentBlock {
-  return { type: "tool_use" as const, id: "tool-stub", name, input };
+  return { type: "tool_use" as const, id: "tool-stub", name, input, caller: { type: "direct" } };
 }
 
 function makeUsage(overrides: Partial<Usage> = {}): Usage {
@@ -27,6 +27,8 @@ function makeUsage(overrides: Partial<Usage> = {}): Usage {
     output_tokens: 0,
     cache_read_input_tokens: null,
     cache_creation_input_tokens: null,
+    cache_creation: null,
+    inference_geo: null,
     server_tool_use: null,
     service_tier: null,
     ...overrides,

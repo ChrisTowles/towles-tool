@@ -12,8 +12,8 @@
   "dependencies": {
     "@babel/core": "^7.28.0",
     "@babel/preset-typescript": "^7.27.1",
-    "@opentui/core": "^0.1.88",
-    "@opentui/solid": "^0.1.88",
+    "@opentui/core": "^0.1.99",
+    "@opentui/solid": "^0.1.99",
     "@tt-agentboard/mux-tmux": "workspace:*",
     "@tt-agentboard/runtime": "workspace:*",
     "babel-plugin-module-resolver": "^5.0.2",

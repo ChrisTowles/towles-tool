@@ -50,32 +50,32 @@
     "prepare": "simple-git-hooks"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.4",
-    "@anthropic-ai/sdk": "^0.56.0",
+    "@anthropic-ai/claude-code": "^2.1.107",
+    "@anthropic-ai/sdk": "^0.88.0",
     "@towles/shared": "workspace:*",
-    "citty": "^0.1.6",
+    "citty": "^0.2.2",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
     "fzf": "^0.5.2",
-    "luxon": "^3.7.1",
+    "luxon": "^3.7.2",
     "neverthrow": "^8.2.0",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
-    "zod": "^4.0.5"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/d3-hierarchy": "^3.1.7",
-    "@types/luxon": "^3.6.2",
-    "@types/node": "^22.16.3",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^25.6.0",
     "@types/prompts": "^2.4.9",
-    "@typescript/native-preview": "^7.0.0-dev.20260111.1",
-    "bumpp": "^10.4.0",
-    "oxfmt": "^0.24.0",
-    "oxlint": "^1.7.0",
-    "simple-git-hooks": "^2.13.0",
-    "typescript": "^5.8.3",
-    "vitest": "^4.0.17"
+    "@typescript/native-preview": "^7.0.0-dev.20260414.1",
+    "bumpp": "^11.0.1",
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0",
+    "simple-git-hooks": "^2.13.1",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
   },
   "bundledDependencies": [
     "@towles/shared"
