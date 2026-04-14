@@ -1,11 +1,9 @@
 import { join } from "node:path";
 
-import consola from "consola";
-
 import { execSafe, fileExists, ghRaw, git, readFile, writeFile } from "@towles/shared";
 import { getConfig } from "../config.js";
+import { logger } from "../logger.js";
 import { ARTIFACTS } from "../prompt-templates/index.js";
-import { log } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 import type { ExecSafeFn } from "../labels.js";
 
@@ -14,7 +12,7 @@ export async function createPr(ctx: IssueContext, exec?: ExecSafeFn): Promise<st
 
   const existingUrl = await getExistingPrUrl(ctx.branch, exec);
   if (existingUrl) {
-    log(`PR already exists: ${existingUrl}`);
+    logger.info(`PR already exists: ${existingUrl}`);
     return existingUrl;
   }
 
@@ -68,12 +66,12 @@ export async function createPr(ctx: IssueContext, exec?: ExecSafeFn): Promise<st
   }
 
   writeFile(join(ctx.issueDir, ARTIFACTS.prUrl), prUrl);
-  log(`PR created: ${prUrl}`);
+  logger.info(`PR created: ${prUrl}`);
 
   try {
     await attachArtifacts(ctx, prUrl, exec);
   } catch (e) {
-    consola.warn(`Artifact upload failed (non-blocking): ${e}`);
+    logger.warn(`Artifact upload failed (non-blocking): ${e}`);
   }
 
   return prUrl;
@@ -84,7 +82,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string, exec?: ExecSafe
   const tag = `ac-issue-${ctx.number}`;
   const cfg = getConfig();
 
-  log("Archiving pipeline artifacts…");
+  logger.info("Archiving pipeline artifacts…");
   await execSafe("tar", [
     "czf",
     archivePath,
@@ -95,7 +93,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string, exec?: ExecSafe
     ".",
   ]);
 
-  log("Uploading artifacts to GitHub release…");
+  logger.info("Uploading artifacts to GitHub release…");
   await ghRaw(["release", "delete", tag, "--yes", "--repo", cfg.repo], exec);
 
   await ghRaw(
@@ -119,7 +117,7 @@ async function attachArtifacts(ctx: IssueContext, prUrl: string, exec?: ExecSafe
   );
 
   if (!assetUrl) {
-    consola.warn("Could not get artifact download URL — skipping PR comment");
+    logger.warn("Could not get artifact download URL — skipping PR comment");
     return;
   }
 
@@ -154,7 +152,7 @@ async function getExistingPrUrl(branch: string, exec?: ExecSafeFn): Promise<stri
     const prs = JSON.parse(out) as Array<{ url: string }>;
     return prs.length > 0 ? prs[0].url : null;
   } catch {
-    consola.debug(`Failed to parse PR list JSON for branch "${branch}"`);
+    logger.debug(`Failed to parse PR list JSON for branch "${branch}"`);
     return null;
   }
 }

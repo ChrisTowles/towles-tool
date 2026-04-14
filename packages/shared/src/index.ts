@@ -1,3 +1,4 @@
+export { AppError } from "./errors.js";
 export { ensureDir, fileExists, readFile, writeFile } from "./fs.js";
 export { getTerminalColumns, limitText, printWithHexColor } from "./render.js";
 export { formatDate, generateJournalFilename, getMondayOfWeek, getWeekInfo } from "./date-utils.js";

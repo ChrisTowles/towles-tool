@@ -1,7 +1,7 @@
-import consola from "consola";
-import { getConfig } from "../config.js";
 import { gh } from "@towles/shared";
-import { buildIssueContext, log } from "../utils.js";
+import { getConfig } from "../config.js";
+import { logger } from "../logger.js";
+import { buildIssueContext } from "../utils.js";
 import type { IssueContext } from "../utils.js";
 
 interface GhIssue {
@@ -14,7 +14,7 @@ interface GhIssue {
 export async function fetchIssues(limit?: number): Promise<IssueContext[]> {
   const cfg = getConfig();
 
-  log(`Scanning ${cfg.repo} for issues labeled "${cfg.triggerLabel}"...`);
+  logger.info(`Scanning ${cfg.repo} for issues labeled "${cfg.triggerLabel}"...`);
 
   let issues: GhIssue[];
   try {
@@ -31,16 +31,16 @@ export async function fetchIssues(limit?: number): Promise<IssueContext[]> {
       "number,title,body,labels",
     ]);
   } catch (e) {
-    log(`Warning: could not fetch issues from ${cfg.repo}: ${e}`);
+    logger.warn(`Could not fetch issues from ${cfg.repo}: ${e}`);
     return [];
   }
 
   if (issues.length === 0) {
-    log("No issues found.");
+    logger.info("No issues found.");
     return [];
   }
 
-  log(`Found ${issues.length} issue(s).`);
+  logger.info(`Found ${issues.length} issue(s).`);
 
   const selected = limit != null ? issues.slice(0, limit) : issues;
   return selected.map((issue) => buildIssueContext(issue, cfg.repo, cfg.scopePath));
@@ -61,7 +61,7 @@ export async function fetchIssue(issueNumber: number): Promise<IssueContext | un
     ]);
     return buildIssueContext(issue, cfg.repo, cfg.scopePath);
   } catch {
-    consola.debug(`Could not fetch issue #${issueNumber} from ${cfg.repo}`);
+    logger.debug(`Could not fetch issue #${issueNumber} from ${cfg.repo}`);
     return undefined;
   }
 }

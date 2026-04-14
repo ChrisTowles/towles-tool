@@ -360,7 +360,9 @@ function App() {
         if (startupFocusToPublish) {
           send({ type: "focus-session", name: startupFocusToPublish });
         }
-      } catch {}
+      } catch {
+        // intentionally ignored: socket setup errors are non-fatal at startup
+      }
     };
 
     socket.onclose = () => {

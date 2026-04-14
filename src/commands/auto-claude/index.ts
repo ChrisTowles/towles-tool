@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { defineCommand } from "citty";
-import consola from "consola";
 
 import { debugArg } from "../shared.js";
 import { printExplain, printStepTemplate } from "./explain.js";
@@ -12,8 +11,9 @@ import { fetchIssue, fetchIssues } from "./steps/fetch-issues.js";
 import { getConfig, initConfig } from "./config.js";
 import { git } from "@towles/shared";
 import { runClaude } from "./claude-cli.js";
+import { logger } from "./logger.js";
 import { sleep } from "./shell.js";
-import { log, logBanner } from "./utils.js";
+import { logBanner } from "./utils.js";
 import type { IssueContext } from "./utils.js";
 import type { StepName } from "./prompt-templates/index.js";
 
@@ -104,7 +104,7 @@ export default defineCommand({
       try {
         printStepTemplate(args["step-template"] as string);
       } catch (e) {
-        consola.error(e instanceof Error ? e.message : String(e));
+        logger.error(e instanceof Error ? e.message : String(e));
         process.exit(1);
       }
       return;
@@ -125,7 +125,7 @@ export default defineCommand({
       });
 
       if (result.is_error) {
-        consola.error("Claude reported an error");
+        logger.error("Claude reported an error");
         process.exit(1);
       }
       return;
@@ -142,9 +142,9 @@ export default defineCommand({
     const resetIssue = args.reset ? Number(args.reset) : undefined;
     if (resetIssue) {
       const issueDir = join(process.cwd(), `.auto-claude/issue-${resetIssue}`);
-      log(`Resetting state for issue-${resetIssue}...`);
+      logger.info(`Resetting state for issue-${resetIssue}...`);
       rmSync(issueDir, { recursive: true, force: true });
-      log(`Cleaned ${issueDir}`);
+      logger.info(`Cleaned ${issueDir}`);
       return;
     }
 
@@ -155,7 +155,7 @@ export default defineCommand({
 
     if (loopMode) {
       registerShutdownHandlers();
-      log(`Loop mode — interval: ${intervalMs / 60_000}min, limit: ${limit}`);
+      logger.info(`Loop mode — interval: ${intervalMs / 60_000}min, limit: ${limit}`);
     }
 
     const issueNumber = args.issue ? Number(args.issue) : undefined;
@@ -172,16 +172,16 @@ export default defineCommand({
       try {
         await syncWithRemote();
       } catch (e) {
-        log(`Sync failed: ${e instanceof Error ? e.message : String(e)}`);
+        logger.warn(`Sync failed: ${e instanceof Error ? e.message : String(e)}`);
         if (loopMode) {
-          log(`Will retry in ${Math.round(intervalMs / 1000)}s...`);
+          logger.info(`Will retry in ${Math.round(intervalMs / 1000)}s...`);
           await sleep(intervalMs);
           continue;
         }
         throw e;
       }
 
-      log("Fetching labeled issues…");
+      logger.info("Fetching labeled issues…");
       let contexts: IssueContext[];
       if (issueNumber) {
         const ctx = await fetchIssue(issueNumber);
@@ -191,19 +191,19 @@ export default defineCommand({
       }
 
       if (contexts.length === 0) {
-        log("No issues to process.");
+        logger.info("No issues to process.");
       } else {
-        log(`Processing ${contexts.length} issue(s)...\n`);
+        logger.info(`Processing ${contexts.length} issue(s)...\n`);
 
         for (const ctx of contexts) {
           const issueStart = Date.now();
           try {
             await runPipeline(ctx, untilStep);
           } catch (e) {
-            consola.error(`Pipeline error for ${ctx.repo}#${ctx.number}:`, e);
+            logger.error(`Pipeline error for ${ctx.repo}#${ctx.number}:`, e);
           } finally {
             const elapsed = ((Date.now() - issueStart) / 1000).toFixed(1);
-            log(`Completed ${ctx.repo}#${ctx.number} in ${elapsed}s`);
+            logger.info(`Completed ${ctx.repo}#${ctx.number} in ${elapsed}s`);
           }
         }
       }
@@ -211,23 +211,23 @@ export default defineCommand({
       if (loopMode) {
         const waitMs = Math.max(0, intervalMs - (Date.now() - iterationStart));
         if (waitMs > 0) {
-          log(`Waiting ${Math.round(waitMs / 1000)}s until next iteration...`);
+          logger.info(`Waiting ${Math.round(waitMs / 1000)}s until next iteration...`);
           await sleep(waitMs);
         }
       }
     } while (loopMode);
 
-    log("Done.");
+    logger.info("Done.");
   },
 });
 
 async function syncWithRemote(): Promise<void> {
   const cfg = getConfig();
-  log("Syncing with remote...");
+  logger.info("Syncing with remote...");
   await git(["fetch", "--all", "--prune"]);
   const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
   if (branch !== cfg.mainBranch) {
-    log(`Warning: on branch "${branch}", switching to ${cfg.mainBranch}...`);
+    logger.warn(`On branch "${branch}", switching to ${cfg.mainBranch}...`);
     await git(["checkout", cfg.mainBranch]).catch(() => {
       // Best-effort checkout — may fail if working tree is dirty
     });
@@ -235,9 +235,9 @@ async function syncWithRemote(): Promise<void> {
   const status = await git(["status", "--porcelain"]);
   if (status.length > 0) {
     const files = status.trim().split("\n");
-    consola.warn(`Working tree has ${files.length} uncommitted change(s):`);
+    logger.warn(`Working tree has ${files.length} uncommitted change(s):`);
     for (const file of files) {
-      consola.warn(`  ${file.trim()}`);
+      logger.warn(`  ${file.trim()}`);
     }
   }
   await git(["pull", cfg.remote, cfg.mainBranch]);
@@ -246,7 +246,7 @@ async function syncWithRemote(): Promise<void> {
 function registerShutdownHandlers(): void {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
-      log(`Received ${signal}, shutting down...`);
+      logger.info(`Received ${signal}, shutting down...`);
       setTimeout(() => process.exit(1), 5_000).unref();
       git(["checkout", getConfig().mainBranch])
         .catch(() => {

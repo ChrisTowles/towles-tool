@@ -15,5 +15,7 @@ export function debugLog(category: string, msg: string, data?: Record<string, un
   const line = `[${ts}] [${category}] ${msg}${extra}\n`;
   try {
     appendFileSync(DEBUG_LOG, line);
-  } catch {}
+  } catch {
+    // intentionally ignored: debug log file write is best-effort
+  }
 }

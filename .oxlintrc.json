@@ -82,7 +82,7 @@
     "no-empty": [
       "error",
       {
-        "allowEmptyCatch": true
+        "allowEmptyCatch": false
       }
     ],
     "no-empty-character-class": "off",

@@ -14,6 +14,7 @@ import {
 } from "@towles/shared";
 import { runClaude } from "./claude-cli.js";
 import { getConfig } from "./config.js";
+import { logger } from "./logger.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
 import { resolveTemplate } from "./templates.js";
 
@@ -100,10 +101,6 @@ function findNthBlankLine(lines: string[], n: number): number {
 
 // ── Logging ──
 
-export function log(msg: string): void {
-  consola.info(`[auto-claude] ${msg}`);
-}
-
 export function logBanner(label: string, width = 60): void {
   const inner = `  ${label}  `;
   const totalDashes = Math.max(0, width - inner.length - 2);
@@ -131,7 +128,7 @@ export async function ensureBranch(branch: string): Promise<void> {
   const hadDirtyTree = status.ok && status.stdout.length > 0;
   if (hadDirtyTree) {
     await git(["stash", "push", "-m", `auto-claude: before switching to ${branch}`]);
-    log("Stashed uncommitted changes");
+    logger.info("Stashed uncommitted changes");
   }
 
   // Check if branch exists locally (rev-parse is reliable, no output parsing)
@@ -147,7 +144,7 @@ export async function ensureBranch(branch: string): Promise<void> {
     await git(["checkout", branch]);
     return;
   } catch {
-    /* doesn't exist remotely */
+    // intentionally ignored: branch doesn't exist remotely, fall through to create it
   }
 
   // Create new branch from main
@@ -195,12 +192,12 @@ export async function runStepWithArtifact(opts: StepRunnerOptions): Promise<bool
   });
 
   if (result.is_error) {
-    consola.error(`${stepName} step failed: ${result.result}`);
+    logger.error(`${stepName} step failed: ${result.result}`);
     return false;
   }
 
   if (!isValid(artifactPath)) {
-    consola.error(`${stepName} step did not produce expected artifact`);
+    logger.error(`${stepName} step did not produce expected artifact`);
     return false;
   }
 

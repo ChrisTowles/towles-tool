@@ -34,7 +34,9 @@ export function refocusMainPane(muxCtx: MuxContext): void {
         const paneId = main.split(" ")[0];
         Bun.spawnSync(["tmux", "select-pane", "-t", paneId], { stdout: "pipe", stderr: "pipe" });
       }
-    } catch {}
+    } catch {
+      // intentionally ignored: pane discovery is best-effort
+    }
   }
 }
 

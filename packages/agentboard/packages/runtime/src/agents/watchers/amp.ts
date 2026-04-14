@@ -129,13 +129,17 @@ export class AmpAgentWatcher implements AgentWatcher {
     if (this.fsWatcher) {
       try {
         this.fsWatcher.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: watcher may already be closed during shutdown
+      }
       this.fsWatcher = null;
     }
     if (this.sessionWatcher) {
       try {
         this.sessionWatcher.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: watcher may already be closed during shutdown
+      }
       this.sessionWatcher = null;
     }
     if (this.pollTimer) {

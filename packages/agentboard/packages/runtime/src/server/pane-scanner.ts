@@ -170,7 +170,9 @@ function resolveClaudeCodeJournalInfo(threadId: string): {
         continue;
       }
     }
-  } catch {}
+  } catch {
+    // intentionally ignored: Claude projects dir missing or unreadable
+  }
   return {};
 }
 
@@ -197,10 +199,13 @@ function resolveCodexPaneInfo(
       .get(`pid:${agentPid}:%`);
     if (row?.thread_id) return { threadId: row.thread_id };
   } catch {
+    // intentionally ignored: Codex sqlite query failed — no thread info available
   } finally {
     try {
       db.close();
-    } catch {}
+    } catch {
+      // intentionally ignored: best-effort sqlite handle cleanup
+    }
   }
   return {};
 }

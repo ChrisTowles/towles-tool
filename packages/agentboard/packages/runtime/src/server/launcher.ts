@@ -40,7 +40,9 @@ export async function ensureServer(): Promise<void> {
     // Stale PID file — remove before spawning a new server
     try {
       unlinkSync(PID_FILE);
-    } catch {}
+    } catch {
+      // intentionally ignored: PID file may already be gone
+    }
   }
 
   const proc = Bun.spawn(["tt", "agentboard", "server"], {

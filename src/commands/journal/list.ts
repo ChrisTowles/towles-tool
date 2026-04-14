@@ -33,6 +33,7 @@ export function collectJournalEntries(files: string[], baseDir: string): Journal
     try {
       size = statSync(filePath).size;
     } catch {
+      // intentionally ignored: skip files that can't be stat'd (deleted, permission)
       continue;
     }
     entries.push({
@@ -204,7 +205,7 @@ export default defineCommand({
       }
 
       consola.info(`Showing ${colors.green(String(result.length))} journal entries:\n`);
-      console.log(renderTable(result));
+      consola.log(renderTable(result));
     } catch (error) {
       consola.error("Failed to list journal entries:", error);
       process.exit(1);

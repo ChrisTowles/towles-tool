@@ -9,8 +9,9 @@ import { stepImplement } from "./steps/implement.js";
 import { stepPlan, stepReview, stepSimplify } from "./steps/simple-steps.js";
 import { LABELS, ensureLabelsExist, removeLabel, setLabel } from "./labels.js";
 import type { ExecSafeFn } from "./labels.js";
+import { logger } from "./logger.js";
+
 import { ensureDir, execSafe, fileExists, ghRaw, git, readFile, writeFile } from "@towles/shared";
-import { log } from "./utils.js";
 import type { IssueContext } from "./utils.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
 
@@ -29,14 +30,14 @@ export async function runPipeline(
   const cfg = getConfig();
   const exec = deps?.exec;
   const spawnFn = deps?.spawnFn;
-  log(`Pipeline starting for ${ctx.repo}#${ctx.number}: ${ctx.title}`);
+  logger.info(`Pipeline starting for ${ctx.repo}#${ctx.number}: ${ctx.title}`);
 
   ensureDir(ctx.issueDir);
   const ramblingsPath = join(ctx.issueDir, ARTIFACTS.initialRamblings);
   if (!fileExists(ramblingsPath)) {
     const content = `# ${ctx.title}\n\n> ${ctx.repo}#${ctx.number}\n\n${ctx.body ?? ""}`;
     writeFile(ramblingsPath, content);
-    log("Saved initial-ramblings.md");
+    logger.info("Saved initial-ramblings.md");
   }
 
   // Label management
@@ -51,7 +52,7 @@ export async function runPipeline(
       return;
     }
     if (untilStep === "plan") {
-      log(`Pipeline paused after "plan" (--until plan)`);
+      logger.info(`Pipeline paused after "plan" (--until plan)`);
       return;
     }
 
@@ -71,7 +72,7 @@ export async function runPipeline(
         return;
       }
       if (untilStep === "implement") {
-        log(`Pipeline paused after "implement" (--until implement)`);
+        logger.info(`Pipeline paused after "implement" (--until implement)`);
         return;
       }
 
@@ -81,7 +82,7 @@ export async function runPipeline(
         return;
       }
       if (untilStep === "simplify") {
-        log(`Pipeline paused after "simplify" (--until simplify)`);
+        logger.info(`Pipeline paused after "simplify" (--until simplify)`);
         return;
       }
 
@@ -91,7 +92,7 @@ export async function runPipeline(
         return;
       }
       if (untilStep === "review") {
-        log(`Pipeline paused after "review" (--until review)`);
+        logger.info(`Pipeline paused after "review" (--until review)`);
         return;
       }
 
@@ -101,13 +102,13 @@ export async function runPipeline(
         await removeLabel(ctx.repo, ctx.number, LABELS.inProgress, exec);
         await setLabel(ctx.repo, ctx.number, LABELS.success, exec);
         await setLabel(ctx.repo, ctx.number, LABELS.review, exec);
-        log(`Pipeline complete for ${ctx.repo}#${ctx.number} — ${prUrl}`);
+        logger.info(`Pipeline complete for ${ctx.repo}#${ctx.number} — ${prUrl}`);
         return;
       }
 
       // Review failed
       if (attempt < maxRetries) {
-        log(
+        logger.warn(
           `Review did not pass (attempt ${attempt + 1}/${maxRetries + 1}), retrying implement→simplify→review…`,
         );
       }
@@ -151,7 +152,7 @@ async function handleFailure(
       exec,
     );
   }
-  log(`Pipeline stopped at "${stepName}" for ${ctx.repo}#${ctx.number}`);
+  logger.info(`Pipeline stopped at "${stepName}" for ${ctx.repo}#${ctx.number}`);
 }
 
 async function checkoutMain(): Promise<void> {
@@ -165,7 +166,7 @@ async function checkoutMain(): Promise<void> {
     const idx = lines.findIndex((l) => l.includes("auto-claude: before switching to"));
     if (idx >= 0) {
       await execSafe("git", ["stash", "pop", `stash@{${idx}}`]);
-      log("Restored stashed changes");
+      logger.info("Restored stashed changes");
     }
   }
 }

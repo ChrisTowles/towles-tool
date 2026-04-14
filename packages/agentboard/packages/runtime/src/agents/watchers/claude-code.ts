@@ -175,7 +175,9 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     for (const w of this.fsWatchers) {
       try {
         w.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: watcher may already be closed during shutdown
+      }
     }
     this.fsWatchers = [];
     if (this.pollTimer) {
@@ -211,7 +213,9 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           try {
             const mtime = (await stat(filePath)).mtimeMs;
             if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) becomeIdle = true;
-          } catch {}
+          } catch {
+            // intentionally ignored: stat failure leaves becomeIdle unchanged
+          }
         }
 
         if (becomeIdle) {
@@ -271,7 +275,9 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         try {
           const mtime = (await stat(filePath)).mtimeMs;
           if (Date.now() - mtime > JOURNAL_IDLE_TIMEOUT_MS) latestStatus = "idle";
-        } catch {}
+        } catch {
+          // intentionally ignored: stat failure leaves status unchanged
+        }
       }
 
       this.sessions.set(threadId, {
@@ -448,7 +454,9 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       });
       this.fsWatchers.push(w);
       this.watchedDirs.add(dirPath);
-    } catch {}
+    } catch {
+      // intentionally ignored: watching dir is best-effort, will retry on next setup
+    }
   }
 
   private hasRecentFiles(dirPath: string): boolean {
@@ -461,9 +469,13 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         try {
           const s = fs.statSync(join(dirPath, file));
           if (now - s.mtimeMs < STALE_MS) return true;
-        } catch {}
+        } catch {
+          // intentionally ignored: skip unreadable file
+        }
       }
-    } catch {}
+    } catch {
+      // intentionally ignored: dir unreadable, treat as no recent files
+    }
     return false;
   }
 
@@ -503,6 +515,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         this.watchDir(dirPath);
       });
       this.fsWatchers.push(w);
-    } catch {}
+    } catch {
+      // intentionally ignored: top-level watch is best-effort
+    }
   }
 }

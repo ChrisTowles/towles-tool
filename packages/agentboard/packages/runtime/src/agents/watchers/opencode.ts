@@ -86,7 +86,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
     }
     try {
       this.db?.close();
-    } catch {}
+    } catch {
+      // intentionally ignored: best-effort sqlite handle cleanup
+    }
     this.db = null;
     this.ctx = null;
   }
@@ -124,7 +126,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
       } catch {
         try {
           this.db.close();
-        } catch {}
+        } catch {
+          // intentionally ignored: best-effort sqlite handle cleanup
+        }
         this.db = null;
         return;
       }
@@ -153,7 +157,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
               for (const pr of partRows) {
                 try {
                   lastParts.push(JSON.parse(pr.data));
-                } catch {}
+                } catch {
+                  // intentionally ignored: skip malformed part JSON
+                }
               }
             }
           } catch {
@@ -164,7 +170,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
           if (lastMsg) {
             try {
               lastMsgData = JSON.parse(lastMsg.data);
-            } catch {}
+            } catch {
+              // intentionally ignored: leave lastMsgData null on parse failure
+            }
           }
 
           const status = determineStatus(lastMsgData, lastParts);
@@ -211,7 +219,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
             for (const pr of partRows) {
               try {
                 lastParts.push(JSON.parse(pr.data));
-              } catch {}
+              } catch {
+                // intentionally ignored: skip malformed part JSON
+              }
             }
           }
         } catch {
@@ -222,7 +232,9 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
         if (lastMsg) {
           try {
             lastMsgData = JSON.parse(lastMsg.data);
-          } catch {}
+          } catch {
+            // intentionally ignored: leave lastMsgData null on parse failure
+          }
         }
 
         const status = determineStatus(lastMsgData, lastParts);

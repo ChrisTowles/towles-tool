@@ -199,7 +199,9 @@ function stopServer(): boolean {
   }
   try {
     unlinkSync(PID_FILE);
-  } catch {}
+  } catch {
+    // intentionally ignored: PID file may already be gone
+  }
   return true;
 }
 

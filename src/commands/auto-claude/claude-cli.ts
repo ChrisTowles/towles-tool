@@ -1,11 +1,11 @@
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 
-import consola from "consola";
 import pc from "picocolors";
 
-import { readFile } from "@towles/shared";
+import { AppError, readFile } from "@towles/shared";
 import { getConfig } from "./config.js";
+import { logger } from "./logger.js";
 import { sleep } from "./shell.js";
 import { spawnClaude as defaultSpawnClaude } from "./spawn-claude.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
@@ -28,6 +28,13 @@ export interface ClaudeLogger {
   log: (...args: unknown[]) => void;
 }
 
+/** Raised when the Claude CLI process fails after all retries. */
+export class ClaudeProcessError extends AppError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super("claude_process_failed", message, options);
+  }
+}
+
 const PROCESS_RETRIES = 3;
 const PROCESS_RETRY_DELAY_MS = 5_000;
 
@@ -39,7 +46,7 @@ export async function runClaude(opts: {
 }): Promise<ClaudeResult> {
   const cfg = getConfig();
   const spawnFn = opts.spawnFn ?? defaultSpawnClaude;
-  const log = opts.logger ?? consola;
+  const log = opts.logger ?? logger;
   const args = [
     "-p",
     "--output-format",
@@ -61,7 +68,7 @@ export async function runClaude(opts: {
       `\n${pc.bold(pc.cyan("── System Prompt (CLAUDE.md) ──"))}\n${pc.dim(systemPrompt.trimEnd())}\n`,
     );
   } catch {
-    /* CLAUDE.md not present */
+    // intentionally ignored: CLAUDE.md is optional
   }
 
   try {
@@ -70,7 +77,7 @@ export async function runClaude(opts: {
       `\n${pc.bold(pc.cyan(`── Prompt (${opts.promptFile}) ──`))}\n${pc.dim(promptContent.trimEnd())}\n`,
     );
   } catch {
-    /* prompt file not present */
+    // intentionally ignored: prompt file preview is optional
   }
 
   let lastError: Error | undefined;
@@ -92,7 +99,9 @@ export async function runClaude(opts: {
       }
     }
   }
-  throw lastError ?? new Error("runClaude failed after all retries");
+  throw new ClaudeProcessError(`runClaude failed after ${PROCESS_RETRIES} attempts`, {
+    cause: lastError,
+  });
 }
 
 function logActivityEvent(event: ReturnType<typeof parseStreamLine>, log: ClaudeLogger): void {

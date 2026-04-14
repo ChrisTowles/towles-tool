@@ -32,5 +32,7 @@ export function logResizeDebug(message: string, data?: Record<string, unknown>):
   const extra = data ? ` ${JSON.stringify(data)}` : "";
   try {
     appendFileSync(TUI_RESIZE_LOG, `[${ts}] [pid:${process.pid}] ${message}${extra}\n`);
-  } catch {}
+  } catch {
+    // intentionally ignored: debug log file write is best-effort
+  }
 }

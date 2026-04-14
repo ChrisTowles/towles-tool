@@ -240,12 +240,12 @@ export default defineCommand({
 
       for (const [filePath, fileMatches] of byFile) {
         const relative = path.relative(baseFolder, filePath);
-        console.log(colors.bold(colors.cyan(relative)));
+        consola.log(colors.bold(colors.cyan(relative)));
         for (const m of fileMatches) {
           for (const line of m.context) {
-            console.log(line);
+            consola.log(line);
           }
-          console.log("");
+          consola.log("");
         }
       }
     } catch (error) {

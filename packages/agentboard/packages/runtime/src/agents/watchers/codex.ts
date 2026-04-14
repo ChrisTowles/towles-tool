@@ -212,7 +212,9 @@ export class CodexAgentWatcher implements AgentWatcher {
     if (this.fsWatcher) {
       try {
         this.fsWatcher.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: watcher may already be closed during shutdown
+      }
       this.fsWatcher = null;
     }
     if (this.pollTimer) {
@@ -238,7 +240,9 @@ export class CodexAgentWatcher implements AgentWatcher {
         if (entry.id && entry.thread_name) {
           names.set(entry.id, entry.thread_name);
         }
-      } catch {}
+      } catch {
+        // intentionally ignored: skip malformed JSON line
+      }
     }
 
     this.threadNames = names;
@@ -359,6 +363,8 @@ export class CodexAgentWatcher implements AgentWatcher {
         if (!filename?.endsWith(".jsonl")) return;
         this.processFile(join(this.sessionsDir, filename));
       });
-    } catch {}
+    } catch {
+      // intentionally ignored: sessions dir watch is best-effort
+    }
   }
 }

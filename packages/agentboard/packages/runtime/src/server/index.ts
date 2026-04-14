@@ -1,6 +1,9 @@
 import { readFileSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+import consola from "consola";
+
 import type { MuxProvider } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
 import type { AgentEvent } from "../contracts/agent";
@@ -40,7 +43,9 @@ function log(category: string, msg: string, data?: Record<string, unknown>) {
   const line = `[${ts}] [${category}] ${msg}${extra}\n`;
   try {
     appendFileSync(DEBUG_LOG, line);
-  } catch {}
+  } catch {
+    // intentionally ignored: debug log file write is best-effort
+  }
 }
 
 // shell, getGitInfo, invalidateGitCache imported from ./git-info
@@ -67,7 +72,9 @@ export function startServer(
   // Clear previous log on server start
   try {
     writeFileSync(DEBUG_LOG, "");
-  } catch {}
+  } catch {
+    // intentionally ignored: clearing debug log is best-effort
+  }
   log("server", "starting", { providers: allProviders.map((p) => p.name) });
 
   // Load initial theme from config
@@ -840,7 +847,9 @@ export function startServer(
       try {
         const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
         if (data.sessionId === threadId) return pane.id;
-      } catch {}
+      } catch {
+        // intentionally ignored: Claude session file missing or malformed — try next pane
+      }
     }
     return undefined;
   }
@@ -870,7 +879,9 @@ export function startServer(
     } finally {
       try {
         db.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: best-effort sqlite handle cleanup
+      }
     }
     return undefined;
   }
@@ -894,7 +905,9 @@ export function startServer(
         const logText = readFileSync(pathMatch[1], "utf-8");
         const match = logText.match(/ses_[A-Za-z0-9]+/);
         if (match?.[0] === threadId) return pane.id;
-      } catch {}
+      } catch {
+        // intentionally ignored: OpenCode log file unreadable — try next pane
+      }
     }
     return undefined;
   }
@@ -1189,7 +1202,9 @@ export function startServer(
           continue;
         }
       }
-    } catch {}
+    } catch {
+      // intentionally ignored: Claude projects dir missing or unreadable
+    }
     return {};
   }
 
@@ -1216,10 +1231,13 @@ export function startServer(
         .get(`pid:${agentPid}:%`);
       if (row?.thread_id) return { threadId: row.thread_id };
     } catch {
+      // intentionally ignored: Codex sqlite query failed — no thread info available
     } finally {
       try {
         db.close();
-      } catch {}
+      } catch {
+        // intentionally ignored: best-effort sqlite handle cleanup
+      }
     }
     return {};
   }
@@ -1498,7 +1516,9 @@ export function startServer(
     if (idleTimer) clearTimeout(idleTimer);
     try {
       unlinkSync(PID_FILE);
-    } catch {}
+    } catch {
+      // intentionally ignored: PID file may already be gone during shutdown
+    }
     for (const p of allProviders) p.cleanupHooks();
   }
 
@@ -1542,7 +1562,9 @@ export function startServer(
             const name = body.trim().replace(/^"+|"+$/g, "");
             if (name) handleFocus(name);
           }
-        } catch {}
+        } catch {
+          // intentionally ignored: malformed focus body is non-fatal, respond ok
+        }
         return new Response("ok", { status: 200 });
       }
 
@@ -1553,7 +1575,9 @@ export function startServer(
           log("http", "POST /toggle", { ctx });
           toggleSidebar(ctx);
           broadcastState();
-        } catch {}
+        } catch {
+          // intentionally ignored: malformed toggle body is non-fatal, respond ok
+        }
         return new Response("ok", { status: 200 });
       }
 
@@ -1573,7 +1597,9 @@ export function startServer(
           const ctx = parseContext(body) ?? undefined;
           log("http", "POST /switch-index", { index, ctx });
           switchToVisibleIndex(index, ctx?.clientTty);
-        } catch {}
+        } catch {
+          // intentionally ignored: malformed switch-index body is non-fatal, respond ok
+        }
         return new Response("ok", { status: 200 });
       }
 
@@ -1585,7 +1611,9 @@ export function startServer(
           // Debounce ensure-sidebar during rapid switching — intermediate sessions
           // don't need full sidebar validation immediately.
           debouncedEnsureSidebar(ctx ?? undefined);
-        } catch {}
+        } catch {
+          // intentionally ignored: malformed ensure-sidebar body is non-fatal, respond ok
+        }
         return new Response("ok", { status: 200 });
       }
 
@@ -1737,7 +1765,9 @@ export function startServer(
           const cmd = JSON.parse(msg as string) as ClientCommand;
           log("ws", "command", { type: cmd.type });
           handleCommand(cmd, ws);
-        } catch {}
+        } catch {
+          // intentionally ignored: malformed websocket command is non-fatal
+        }
       },
     },
   });
@@ -1775,5 +1805,5 @@ export function startServer(
   });
 
   const names = allProviders.map((p) => p.name).join(", ");
-  console.log(`agentboard server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${names})`);
+  consola.info(`agentboard server listening on ${SERVER_HOST}:${SERVER_PORT} (mux: ${names})`);
 }
