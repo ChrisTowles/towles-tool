@@ -12,6 +12,12 @@
 - `bun run link:show` — show which slot the global `tt` points to
 - Pre-commit hook runs: format + lint:fix + typecheck
 
+## Claude workflow
+
+- `/verify` — run format-check + lint + typecheck + test in one shot. Use before commits and PRs.
+- `verify-app` subagent — same plus CLI entrypoint and AgentBoard workspace resolution. Dispatch when verifying after risky changes.
+- `parallel-slots` skill — when to fan out across `~/code/p/towles-tool-repos/towles-tool-slot-*`.
+
 ## Architecture
 
 - CLI framework: oclif (`src/commands/`), citty for agentboard command
@@ -38,6 +44,13 @@
 ## Bug Fixing
 
 - If you find a pre-existing bug or test failure (not introduced by your changes), fix it anyway — don't skip it.
+
+## Working Style
+
+- Plan mode (`Shift+Tab` ×2) for any non-trivial change. Align on a plan first; one-shot the implementation after.
+- Verification is the #1 quality multiplier. After edits: typecheck, lint, run the touched tests. Don't claim done without proof.
+- Always finish migrations. Partial migrations confuse models the same way they confuse humans — leave the codebase in one shape, not half a shape.
+- Hard cutover, no backwards-compat shims. Match the user's global rule.
 
 ## Git & PRs
 
