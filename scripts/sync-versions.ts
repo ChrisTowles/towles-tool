@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { readdir, readFile, writeFile, access } from "node:fs/promises";
 
 const ROOT = join(import.meta.dirname, "..");
-const PLUGINS_DIR = join(ROOT, "plugins");
+const PLUGINS_DIR = join(ROOT, "packages");
 
 async function fileExists(path: string): Promise<boolean> {
   try {

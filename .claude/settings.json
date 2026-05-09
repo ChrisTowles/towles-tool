@@ -1,5 +1,72 @@
 {
   "enabledPlugins": {
     "tt@towles-tool": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bun test:*)",
+      "Bash(bun run lint:*)",
+      "Bash(bun run lint\\:fix:*)",
+      "Bash(bun run format:*)",
+      "Bash(bun run format\\:check:*)",
+      "Bash(bun typecheck:*)",
+      "Bash(bun run dev:*)",
+      "Bash(bun run link:*)",
+      "Bash(bun run link\\:show:*)",
+      "Bash(bun install:*)",
+      "Bash(bun pm ls:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git rebase:*)",
+      "Bash(git stash:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr status:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh release view:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(jq:*)",
+      "Bash(tt:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; case \"$f\" in *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.json|*.md) [ -f \"$f\" ] && bunx oxfmt --write \"$f\" >/dev/null 2>&1 || true ;; esac; }"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun typecheck >/dev/null 2>&1 || echo 'TYPECHECK_FAILED: run `bun typecheck` to see errors'"
+          }
+        ]
+      }
+    ]
   }
 }
