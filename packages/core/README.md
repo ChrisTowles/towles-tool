@@ -10,6 +10,13 @@ Core workflow automation commands for Claude Code.
 | `/tt:improve` | Explore codebase and suggest improvements     |
 | `/tt:refine`  | Fix grammar/spelling in files                 |
 
+## Skills
+
+| Skill               | Description                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `tt:towles-tool`    | `tt` CLI reference: git/gh helpers, journaling, dependency checks.                 |
+| `tt:parallel-slots` | Fan out parallel Claude Code agents across slot clones of any repo, via `tt gh *`. |
+
 ## Installation
 
 ```bash
