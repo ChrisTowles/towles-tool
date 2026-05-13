@@ -1,6 +1,6 @@
 ---
 name: parallel-slots
-description: Use when the user wants to dispatch parallel Claude Code agents across slot clones of a repo, asks to "fan out", "run N in parallel", "use the slots", or wants to coordinate multiple isolated working copies of the same repo. Explains the slot directory layout, when to fan out vs. stay in primary, and the `tt` workflow that ties slots together.
+description: Use when the user wants to dispatch parallel Claude Code agents across slot clones of a repo, asks to "fan out", "run N in parallel", "use the slots", or wants to coordinate multiple isolated working copies of the same repo. Explains the slot directory layout, when to fan out vs. stay in primary, and the `gh`-driven workflow that ties slots together.
 user_invocable: true
 ---
 
@@ -20,7 +20,7 @@ The slot pattern lets you run independent Claude Code sessions on the same repo 
   <repo>-slot-5/
 ```
 
-Each slot is a full clone of the same GitHub remote, not a worktree. They check out branches independently. Use `tt` for all git/GitHub operations inside a slot — it wraps `gh` and keeps branch/PR flows consistent across repos. If the repo ships a tmux sidebar (e.g. AgentBoard in towles-tool), it watches every slot and surfaces completion via the stop-hook sweep.
+Each slot is a full clone of the same GitHub remote, not a worktree. They check out branches independently. Use the `gh` CLI for all GitHub-side operations (issue → branch, PR create, PR merge, status). If the repo ships a tmux sidebar (e.g. AgentBoard in towles-tool), it watches every slot and surfaces completion via the stop-hook sweep.
 
 ## When to fan out
 
@@ -38,8 +38,8 @@ Stay in primary when:
 ## Dispatch flow
 
 1. Pick a free slot (any slot whose sidebar pane is idle).
-2. `cd` into it and confirm the working tree is clean (`gh repo view` + `gh status` if you want a remote-aware read).
-3. Sync main and branch off via `tt gh branch` — it pulls the latest default branch from GitHub and creates a topic branch (optionally seeded from a GitHub issue).
+2. `cd` into it and confirm the working tree is clean.
+3. Branch off from a GitHub issue: `gh issue develop <issue-number> --checkout` — creates a remote branch tied to the issue and switches the slot to it. If there's no issue, name the branch and use `gh pr checkout <pr>` later if you need to hop onto a colleague's PR.
 4. Hand the task to Claude in that slot — either via the repo's sidebar TUI or by running `tt auto-claude` with a prompt.
 5. Watch the sidebar pane for completion. The stop-hook prints results back to it.
 
@@ -56,11 +56,11 @@ Before merging from a slot, run that repo's verify command (`/verify` in towles-
 
 ## Shipping from a slot
 
-Open the PR with `tt gh pr` so the title/body conventions stay consistent across repos. Merge via `gh pr merge --rebase --admin` (the user's standard merge style).
+Open the PR with `gh pr create` (use `--fill` to seed title/body from commits, or pass `--title`/`--body` explicitly). Merge with `gh pr merge --rebase --admin` — the standard merge style.
 
 ## Cleanup
 
-After a slot's branch is merged, in that slot run `tt gh branch-clean` — it drops local branches whose remote is gone, using `gh` to confirm merge state. Or use `compound-engineering:ce-clean-gone-branches` to bulk-prune across multiple slots.
+After a slot's branch is merged: confirm with `gh pr status` that the slot's PR is merged, then prune the local branch. Use `compound-engineering:ce-clean-gone-branches` to bulk-prune across multiple slots in one pass.
 
 ## Anti-patterns
 
