@@ -148,6 +148,56 @@ export class AgentTracker {
     }
   }
 
+  /**
+   * When multiple instances of the same agent share a paneId, keep only the most recent.
+   * The currently-live instance is pinned by the pane scanner, so this only removes superseded
+   * predecessors (e.g. a Claude Code session that was /exited and replaced in the same pane).
+   */
+  pruneSupersededByPane(): void {
+    for (const [session, sessionInstances] of this.instances) {
+      const groups = new Map<string, { key: string; ts: number }[]>();
+      for (const [key, event] of sessionInstances) {
+        if (!event.paneId) continue;
+        const groupKey = `${event.paneId}\0${event.agent}`;
+        const ts = event.details?.lastActivityAt ?? event.ts;
+        const list = groups.get(groupKey) ?? [];
+        list.push({ key, ts });
+        groups.set(groupKey, list);
+      }
+      for (const list of groups.values()) {
+        if (list.length < 2) continue;
+        list.sort((a, b) => b.ts - a.ts);
+        for (let i = 1; i < list.length; i++) {
+          const k = list[i]!.key;
+          if (this.isPinned(session, k)) continue;
+          sessionInstances.delete(k);
+          this.unseenInstances.delete(this.unseenKey(session, k));
+        }
+      }
+      if (sessionInstances.size === 0) {
+        this.instances.delete(session);
+      }
+    }
+  }
+
+  /** Auto-prune any instance whose last activity is older than timeoutMs, regardless of status. Skips pinned. */
+  pruneStale(timeoutMs: number): void {
+    const now = Date.now();
+    for (const [session, sessionInstances] of this.instances) {
+      for (const [key, event] of sessionInstances) {
+        if (this.isPinned(session, key)) continue;
+        const lastSeen = event.details?.lastActivityAt ?? event.ts;
+        if (now - lastSeen > timeoutMs) {
+          sessionInstances.delete(key);
+          this.unseenInstances.delete(this.unseenKey(session, key));
+        }
+      }
+      if (sessionInstances.size === 0) {
+        this.instances.delete(session);
+      }
+    }
+  }
+
   /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or pinned */
   pruneTerminal(): void {
     const now = Date.now();

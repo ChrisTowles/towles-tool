@@ -16,7 +16,7 @@ function makeUsage(overrides: Partial<Usage> = {}): Usage {
     server_tool_use: null,
     service_tier: null,
     ...overrides,
-  };
+  } as unknown as Usage;
 }
 
 describe("graph --days filtering", () => {

@@ -18,7 +18,13 @@ function textBlock(text: string): ContentBlock {
 }
 
 function toolUseBlock(name: string, input: Record<string, unknown>): ContentBlock {
-  return { type: "tool_use" as const, id: "tool-stub", name, input, caller: { type: "direct" } };
+  return {
+    type: "tool_use" as const,
+    id: "tool-stub",
+    name,
+    input,
+    caller: { type: "direct" },
+  } as unknown as ContentBlock;
 }
 
 function makeUsage(overrides: Partial<Usage> = {}): Usage {
@@ -32,7 +38,7 @@ function makeUsage(overrides: Partial<Usage> = {}): Usage {
     server_tool_use: null,
     service_tier: null,
     ...overrides,
-  };
+  } as unknown as Usage;
 }
 
 function makeEntry(overrides: Partial<JournalEntry> = {}): JournalEntry {

@@ -152,6 +152,117 @@ describe("AgentTracker", () => {
     });
   });
 
+  describe("pruneStale", () => {
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+
+    it("prunes waiting agents older than threshold", () => {
+      tracker.applyEvent(makeEvent({ status: "waiting", ts: Date.now() - TWELVE_HOURS - 1000 }));
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).toBeNull();
+    });
+
+    it("prunes running agents older than threshold", () => {
+      tracker.applyEvent(makeEvent({ status: "running", ts: Date.now() - TWELVE_HOURS - 1000 }));
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).toBeNull();
+    });
+
+    it("leaves fresh agents alone", () => {
+      tracker.applyEvent(makeEvent({ status: "waiting", ts: Date.now() - 1000 }));
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("respects pinned instances", () => {
+      tracker.applyEvent(makeEvent({ status: "waiting", ts: Date.now() - TWELVE_HOURS - 1000 }));
+      tracker.setPinnedInstances("main", ["claude-code"]);
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("uses details.lastActivityAt when present", () => {
+      tracker.applyEvent(
+        makeEvent({
+          status: "waiting",
+          ts: Date.now() - TWELVE_HOURS - 1000,
+          details: { lastActivityAt: Date.now() - 1000 },
+        }),
+      );
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("falls back to event.ts when lastActivityAt missing", () => {
+      tracker.applyEvent(makeEvent({ status: "waiting", ts: Date.now() - TWELVE_HOURS - 1000 }));
+      tracker.pruneStale(TWELVE_HOURS);
+      expect(tracker.getState("main")).toBeNull();
+    });
+  });
+
+  describe("pruneSupersededByPane", () => {
+    it("drops older instance when same agent reappears with new threadId in same pane", () => {
+      tracker.applyEvent(
+        makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }),
+      );
+      tracker.applyEvent(
+        makeEvent({ threadId: "t2", status: "running", paneId: "%5", ts: 2000 }),
+      );
+      tracker.setPinnedInstances("main", ["claude-code:t2"]);
+      tracker.pruneSupersededByPane();
+      const agents = tracker.getAgents("main");
+      expect(agents).toHaveLength(1);
+      expect(agents[0]!.threadId).toBe("t2");
+    });
+
+    it("keeps both when instances are in different panes", () => {
+      tracker.applyEvent(
+        makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }),
+      );
+      tracker.applyEvent(
+        makeEvent({ threadId: "t2", status: "running", paneId: "%7", ts: 2000 }),
+      );
+      tracker.pruneSupersededByPane();
+      expect(tracker.getAgents("main")).toHaveLength(2);
+    });
+
+    it("keeps both when they're different agent types in the same pane", () => {
+      tracker.applyEvent(makeEvent({ agent: "claude-code", paneId: "%5", ts: 1000 }));
+      tracker.applyEvent(makeEvent({ agent: "amp", paneId: "%5", ts: 2000 }));
+      tracker.pruneSupersededByPane();
+      expect(tracker.getAgents("main")).toHaveLength(2);
+    });
+
+    it("ignores instances without a paneId", () => {
+      tracker.applyEvent(makeEvent({ threadId: "t1", paneId: undefined, ts: 1000 }));
+      tracker.applyEvent(makeEvent({ threadId: "t2", paneId: undefined, ts: 2000 }));
+      tracker.pruneSupersededByPane();
+      expect(tracker.getAgents("main")).toHaveLength(2);
+    });
+
+    it("uses details.lastActivityAt for recency comparison", () => {
+      tracker.applyEvent(
+        makeEvent({
+          threadId: "t1",
+          paneId: "%5",
+          ts: 5000,
+          details: { lastActivityAt: 9000 },
+        }),
+      );
+      tracker.applyEvent(
+        makeEvent({
+          threadId: "t2",
+          paneId: "%5",
+          ts: 6000,
+          details: { lastActivityAt: 7000 },
+        }),
+      );
+      tracker.pruneSupersededByPane();
+      const agents = tracker.getAgents("main");
+      expect(agents).toHaveLength(1);
+      expect(agents[0]!.threadId).toBe("t1");
+    });
+  });
+
   describe("multi-thread support", () => {
     it("tracks multiple threads for the same agent", () => {
       tracker.applyEvent(makeEvent({ threadId: "t1", status: "running" }));
