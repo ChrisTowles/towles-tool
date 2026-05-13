@@ -201,12 +201,8 @@ describe("AgentTracker", () => {
 
   describe("pruneSupersededByPane", () => {
     it("drops older instance when same agent reappears with new threadId in same pane", () => {
-      tracker.applyEvent(
-        makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }),
-      );
-      tracker.applyEvent(
-        makeEvent({ threadId: "t2", status: "running", paneId: "%5", ts: 2000 }),
-      );
+      tracker.applyEvent(makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }));
+      tracker.applyEvent(makeEvent({ threadId: "t2", status: "running", paneId: "%5", ts: 2000 }));
       tracker.setPinnedInstances("main", ["claude-code:t2"]);
       tracker.pruneSupersededByPane();
       const agents = tracker.getAgents("main");
@@ -215,12 +211,8 @@ describe("AgentTracker", () => {
     });
 
     it("keeps both when instances are in different panes", () => {
-      tracker.applyEvent(
-        makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }),
-      );
-      tracker.applyEvent(
-        makeEvent({ threadId: "t2", status: "running", paneId: "%7", ts: 2000 }),
-      );
+      tracker.applyEvent(makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }));
+      tracker.applyEvent(makeEvent({ threadId: "t2", status: "running", paneId: "%7", ts: 2000 }));
       tracker.pruneSupersededByPane();
       expect(tracker.getAgents("main")).toHaveLength(2);
     });
