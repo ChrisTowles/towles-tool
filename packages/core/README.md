@@ -12,10 +12,10 @@ Core workflow automation commands for Claude Code.
 
 ## Skills
 
-| Skill               | Description                                                                        |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `tt:towles-tool`    | `tt` CLI reference: git/gh helpers, journaling, dependency checks.                 |
-| `tt:parallel-slots` | Fan out parallel Claude Code agents across slot clones of any repo, via `tt gh *`. |
+| Skill               | Description                                                                       |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `tt:towles-tool`    | `tt` CLI reference: git/gh helpers, journaling, dependency checks.                |
+| `tt:parallel-slots` | Fan out parallel Claude Code agents across slot clones of any repo, via `gh` CLI. |
 
 ## Installation
 
