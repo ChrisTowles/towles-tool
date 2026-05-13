@@ -11,6 +11,7 @@ export const SERVER_HOST: string = process.env.TT_AGENTBOARD_HOST || DEFAULT_SER
 export const PID_FILE = "/tmp/agentboard.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
+export const STALE_AGENT_TIMEOUT_MS = 12 * 60 * 60 * 1000;
 export const JOURNAL_IDLE_TIMEOUT_MS = 120_000;
 
 export interface SessionData {

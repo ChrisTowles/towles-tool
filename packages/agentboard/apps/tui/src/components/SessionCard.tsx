@@ -232,6 +232,15 @@ function AgentRow(props: AgentRowProps) {
 
   const statusText = () => STATUS_TEXT[props.agent.status];
 
+  const isCacheExpired = () => {
+    const details = props.agent.details;
+    if (!details) return false;
+    const now = props.now();
+    if (details.cacheExpiresAt != null) return now > details.cacheExpiresAt;
+    if (details.lastActivityAt != null) return now - details.lastActivityAt > 60 * 60 * 1000;
+    return false;
+  };
+
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
   const triggerFlash = () => {
     setIsFlash(true);
@@ -323,6 +332,12 @@ function AgentRow(props: AgentRowProps) {
             </Show>
           );
         }}
+      </Show>
+
+      <Show when={isCacheExpired()}>
+        <text truncate>
+          <span style={{ fg: P().overlay0, attributes: DIM }}>cache expired</span>
+        </text>
       </Show>
     </box>
   );
