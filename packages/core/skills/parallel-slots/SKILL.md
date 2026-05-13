@@ -1,0 +1,69 @@
+---
+name: parallel-slots
+description: Use when the user wants to dispatch parallel Claude Code agents across slot clones of a repo, asks to "fan out", "run N in parallel", "use the slots", or wants to coordinate multiple isolated working copies of the same repo. Explains the slot directory layout, when to fan out vs. stay in primary, and the `tt` workflow that ties slots together.
+user_invocable: true
+---
+
+# Parallel slots
+
+The slot pattern lets you run independent Claude Code sessions on the same repo without stepping on each other. Mirrors Boris Cherny's "5 terminal tabs, each a separate git checkout" workflow.
+
+## Layout
+
+```
+~/code/<scope>/<repo>-repos/
+  <repo>-primary/   # interactive work
+  <repo>-slot-1/    # parallel agent slot
+  <repo>-slot-2/
+  <repo>-slot-3/
+  <repo>-slot-4/
+  <repo>-slot-5/
+```
+
+Each slot is a full clone of the same GitHub remote, not a worktree. They check out branches independently. Use `tt` for all git/GitHub operations inside a slot — it wraps `gh` and keeps branch/PR flows consistent across repos. If the repo ships a tmux sidebar (e.g. AgentBoard in towles-tool), it watches every slot and surfaces completion via the stop-hook sweep.
+
+## When to fan out
+
+Fan out (use slots) when:
+
+- Three or more independent tasks would benefit from running simultaneously (e.g. one PR, one bug, one refactor).
+- A task is risky and you want a clean, throwaway slot that won't pollute primary's working tree.
+- You're iterating on the agent harness itself and want to leave primary stable.
+
+Stay in primary when:
+
+- The work is sequential or all the changes need to land in the same commit.
+- You're reading/exploring; spinning a slot just adds overhead.
+
+## Dispatch flow
+
+1. Pick a free slot (any slot whose sidebar pane is idle).
+2. `cd` into it and confirm the working tree is clean (`gh repo view` + `gh status` if you want a remote-aware read).
+3. Sync main and branch off via `tt gh branch` — it pulls the latest default branch from GitHub and creates a topic branch (optionally seeded from a GitHub issue).
+4. Hand the task to Claude in that slot — either via the repo's sidebar TUI or by running `tt auto-claude` with a prompt.
+5. Watch the sidebar pane for completion. The stop-hook prints results back to it.
+
+## Coordination rules
+
+- Never run two agents on the _same_ branch in two slots — push/pull races destroy work.
+- Branch names should be unique per slot for the duration of the run.
+- If a slot's working tree is dirty when you arrive, treat it as in-progress work — investigate before resetting.
+- Pre-commit hooks (format + lint + typecheck) run in every slot, so `--no-verify` is forbidden.
+
+## Verifying a slot's output
+
+Before merging from a slot, run that repo's verify command (`/verify` in towles-tool) inside it. Don't trust the slot's own self-report; the agent that wrote the change is not the right reviewer.
+
+## Shipping from a slot
+
+Open the PR with `tt gh pr` so the title/body conventions stay consistent across repos. Merge via `gh pr merge --rebase --admin` (the user's standard merge style).
+
+## Cleanup
+
+After a slot's branch is merged, in that slot run `tt gh branch-clean` — it drops local branches whose remote is gone, using `gh` to confirm merge state. Or use `compound-engineering:ce-clean-gone-branches` to bulk-prune across multiple slots.
+
+## Anti-patterns
+
+- Spinning all 5 slots on the same task "for redundancy". You'll spend the time merging conflicts.
+- Treating slots as long-lived workspaces. They are scratch checkouts — keep them transient.
+- Editing files in primary while a slot has them open. Stay in one or the other for any given file.
