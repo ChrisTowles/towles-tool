@@ -555,43 +555,53 @@ function App() {
       />
 
       {/* Session list */}
-      <scrollbox flexGrow={1} flexShrink={1} paddingTop={1}>
+      <scrollbox flexGrow={1} flexShrink={1} paddingTop={0}>
+        <box height={1}>
+          <text style={{ fg: P().overlay0 }}>{DIVIDER}</text>
+        </box>
         <For each={sessions}>
           {(session, i) => (
-            <SessionCard
-              session={session}
-              isFocused={isFocused(session.name)}
-              isCurrent={session.name === currentSession()}
-              spinIdx={spinIdx}
-              now={now}
-              theme={theme}
-              statusColors={S}
-              focusedAgentIdx={
-                isFocused(session.name) && panelFocus() === "agents" ? focusedAgentIdx() : -1
-              }
-              onSelect={() => {
-                setFocusedSession(session.name);
-                send({ type: "focus-session", name: session.name });
-                switchToSession(session.name);
-              }}
-              onDismissAgent={(agent) => {
-                send({
-                  type: "dismiss-agent",
-                  session: session.name,
-                  agent: agent.agent,
-                  threadId: agent.threadId,
-                });
-              }}
-              onFocusAgentPane={(agent) => {
-                send({
-                  type: "focus-agent-pane",
-                  session: session.name,
-                  agent: agent.agent,
-                  threadId: agent.threadId,
-                  threadName: agent.threadName,
-                });
-              }}
-            />
+            <box flexDirection="column" flexShrink={0}>
+              <Show when={i() > 0}>
+                <box height={1}>
+                  <text style={{ fg: P().surface2 }}>{DIVIDER}</text>
+                </box>
+              </Show>
+              <SessionCard
+                session={session}
+                isFocused={isFocused(session.name)}
+                isCurrent={session.name === currentSession()}
+                spinIdx={spinIdx}
+                now={now}
+                theme={theme}
+                statusColors={S}
+                focusedAgentIdx={
+                  isFocused(session.name) && panelFocus() === "agents" ? focusedAgentIdx() : -1
+                }
+                onSelect={() => {
+                  setFocusedSession(session.name);
+                  send({ type: "focus-session", name: session.name });
+                  switchToSession(session.name);
+                }}
+                onDismissAgent={(agent) => {
+                  send({
+                    type: "dismiss-agent",
+                    session: session.name,
+                    agent: agent.agent,
+                    threadId: agent.threadId,
+                  });
+                }}
+                onFocusAgentPane={(agent) => {
+                  send({
+                    type: "focus-agent-pane",
+                    session: session.name,
+                    agent: agent.agent,
+                    threadId: agent.threadId,
+                    threadName: agent.threadName,
+                  });
+                }}
+              />
+            </box>
           )}
         </For>
       </scrollbox>

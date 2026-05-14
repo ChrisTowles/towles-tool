@@ -1,6 +1,6 @@
 import { createSignal, For, Show, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { AgentStatus, SessionData, Theme } from "@tt-agentboard/runtime";
+import type { SessionData, Theme } from "@tt-agentboard/runtime";
 import { truncate } from "@tt-agentboard/runtime";
 import { UNSEEN_ICON, BOLD, DIM, toneColor } from "../constants";
 import { DiffStats } from "./DiffStats";
@@ -8,16 +8,6 @@ import { shortModel } from "./short-model";
 import { formatElapsed } from "./elapsed";
 import { liveStatusIcon, unseenTerminalColor } from "./status-visuals";
 import { familyColor } from "./family-color";
-
-const STATUS_TEXT: Record<AgentStatus, string> = {
-  idle: "",
-  running: "running",
-  done: "done",
-  error: "error",
-  waiting: "waiting",
-  question: "question",
-  interrupted: "stopped",
-};
 
 export interface SessionCardProps {
   session: SessionData;
@@ -77,7 +67,7 @@ export function SessionCard(props: SessionCardProps) {
   };
 
   const truncName = () => truncate(props.session.name, 18);
-  const truncBranch = () => (props.session.branch ? truncate(props.session.branch, 30) : "");
+  const truncBranch = () => (props.session.branch ? truncate(props.session.branch, 45) : "");
 
   const hasDiff = () => {
     const { linesAdded, linesRemoved, commitsDelta, filesChanged } = props.session;
@@ -128,7 +118,7 @@ export function SessionCard(props: SessionCardProps) {
         </Show>
 
         <box flexDirection="column" flexGrow={1} paddingRight={1}>
-          <box flexDirection="row">
+          <box flexDirection="row" height={1}>
             <text truncate flexGrow={1}>
               <span
                 style={{
@@ -139,25 +129,32 @@ export function SessionCard(props: SessionCardProps) {
                 {truncName()}
               </span>
             </text>
-            <Show when={statusIcon()}>
-              <text flexShrink={0}>
-                <span style={{ fg: statusColor() }}>
-                  {" "}
-                  {statusIcon()}
-                  {runningAgents() > 1 ? String(runningAgents()) : ""}
-                </span>
-              </text>
+            <Show when={hasDiff()}>
+              <box flexShrink={0} paddingLeft={1}>
+                <DiffStats session={props.session} palette={() => P()} />
+              </box>
             </Show>
+            <box width={3} flexShrink={0}>
+              <Show when={statusIcon()}>
+                <text>
+                  <span style={{ fg: statusColor() }}>
+                    {" "}
+                    {statusIcon()}
+                    {runningAgents() > 1 ? String(runningAgents()) : ""}
+                  </span>
+                </text>
+              </Show>
+            </box>
           </box>
 
           <Show when={props.session.branch}>
-            <text truncate>
-              <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>{truncBranch()}</span>
-            </text>
-          </Show>
-
-          <Show when={hasDiff()}>
-            <DiffStats session={props.session} palette={() => P()} />
+            <box flexDirection="row" height={1}>
+              <text truncate flexShrink={1}>
+                <span style={{ fg: props.isFocused ? P().pink : P().overlay0 }}>
+                  {truncBranch()}
+                </span>
+              </text>
+            </box>
           </Show>
 
           <Show when={metaSummary()}>
@@ -184,8 +181,6 @@ export function SessionCard(props: SessionCardProps) {
           </For>
         </box>
       </box>
-
-      <box height={1} />
     </box>
   );
 }
@@ -230,15 +225,15 @@ function AgentRow(props: AgentRowProps) {
     return SC()[props.agent.status];
   };
 
-  const statusText = () => STATUS_TEXT[props.agent.status];
-
-  const isCacheExpired = () => {
+  const cacheLabel = () => {
     const details = props.agent.details;
-    if (!details) return false;
-    const now = props.now();
-    if (details.cacheExpiresAt != null) return now > details.cacheExpiresAt;
-    if (details.lastActivityAt != null) return now - details.lastActivityAt > 60 * 60 * 1000;
-    return false;
+    if (!details) return null;
+    const expiresAt =
+      details.cacheExpiresAt ??
+      (details.lastActivityAt != null ? details.lastActivityAt + 60 * 60 * 1000 : null);
+    if (expiresAt == null) return null;
+    const minutesLeft = Math.ceil((expiresAt - props.now()) / 60_000);
+    return minutesLeft <= 0 ? "cache expired" : `cache ${minutesLeft}m`;
   };
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -268,10 +263,20 @@ function AgentRow(props: AgentRowProps) {
         props.onFocusPane();
       }}
     >
-      <box flexDirection="row">
-        <text flexGrow={1} truncate>
+      <box flexDirection="row" height={1}>
+        <text flexShrink={0}>
           <span style={{ fg: color() }}>{icon()}</span>
-          <Show when={props.agent.status === "running" && props.agent.details?.lastActivityAt}>
+        </text>
+        <text flexGrow={1} flexShrink={1} truncate>
+          <Show when={props.agent.threadName}>
+            <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
+              {" "}
+              {truncate(props.agent.threadName!.replace(/\s+/g, " ").trim(), 40)}
+            </span>
+          </Show>
+        </text>
+        <Show when={props.agent.status === "running" && props.agent.details?.lastActivityAt}>
+          <text flexShrink={0}>
             <span
               style={{
                 fg: props.isKeyboardFocused ? P().subtext0 : P().overlay1,
@@ -281,11 +286,6 @@ function AgentRow(props: AgentRowProps) {
               {" "}
               {formatElapsed(props.now() - (props.agent.details?.lastActivityAt ?? props.now()))}
             </span>
-          </Show>
-        </text>
-        <Show when={!isUnseen()}>
-          <text flexShrink={0}>
-            <span style={{ fg: color(), attributes: DIM }}>{statusText()}</span>
           </text>
         </Show>
         <text
@@ -301,16 +301,6 @@ function AgentRow(props: AgentRowProps) {
           <span style={{ fg: isDismissHover() ? P().red : P().overlay0 }}>{" ✕"}</span>
         </text>
       </box>
-
-      <Show when={props.agent.threadName}>
-        <box height={2} flexShrink={0}>
-          <text>
-            <span style={{ fg: isUnseen() ? color() : P().overlay0 }}>
-              {truncate(props.agent.threadName!.replace(/\s+/g, " ").trim(), 60)}
-            </span>
-          </text>
-        </box>
-      </Show>
 
       <Show when={props.agent.status === "running" && props.agent.details}>
         {(d) => {
@@ -334,9 +324,9 @@ function AgentRow(props: AgentRowProps) {
         }}
       </Show>
 
-      <Show when={isCacheExpired()}>
+      <Show when={cacheLabel()}>
         <text truncate>
-          <span style={{ fg: P().overlay0, attributes: DIM }}>cache expired</span>
+          <span style={{ fg: P().overlay0, attributes: DIM }}>{cacheLabel()}</span>
         </text>
       </Show>
     </box>
