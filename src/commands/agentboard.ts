@@ -188,21 +188,37 @@ async function serverAlive(): Promise<boolean> {
 
 const PID_FILE = "/tmp/agentboard.pid";
 
-function stopServer(): boolean {
-  if (!existsSync(PID_FILE)) return false;
-  const pid = Number.parseInt(readFileSync(PID_FILE, "utf8").trim(), 10);
-  if (Number.isNaN(pid)) return false;
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch {
-    // process already dead
+async function stopServer(): Promise<boolean> {
+  // Preferred path: terminate the process named in the PID file.
+  if (existsSync(PID_FILE)) {
+    const pid = Number.parseInt(readFileSync(PID_FILE, "utf8").trim(), 10);
+    if (!Number.isNaN(pid)) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // process already dead
+      }
+      try {
+        unlinkSync(PID_FILE);
+      } catch {
+        // intentionally ignored: PID file may already be gone
+      }
+      return true;
+    }
   }
-  try {
-    unlinkSync(PID_FILE);
-  } catch {
-    // intentionally ignored: PID file may already be gone
+
+  // Fallback: the PID file is missing/stale but a server is still squatting
+  // the port (e.g. file rotated out from under a long-lived process). Ask it
+  // to shut itself down so restart actually replaces it instead of no-oping.
+  if (await serverAlive()) {
+    await fetch(`http://${SERVER_HOST}:${SERVER_PORT}/shutdown`, {
+      method: "POST",
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
+    return true;
   }
-  return true;
+
+  return false;
 }
 
 async function ensureServerUp(): Promise<boolean> {
@@ -394,7 +410,7 @@ async function restart(): Promise<void> {
   }
 
   // 2. Stop existing server, then start fresh
-  const wasStopped = stopServer();
+  const wasStopped = await stopServer();
   if (wasStopped) {
     // Wait for port to free up
     for (let i = 0; i < 20; i++) {

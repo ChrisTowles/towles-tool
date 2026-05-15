@@ -1600,6 +1600,17 @@ export function startServer(
         return new Response("ok", { status: 200 });
       }
 
+      if (req.method === "POST" && url.pathname === "/shutdown") {
+        log("http", "POST /shutdown");
+        // Defer exit so this response flushes first; lets `tt agentboard
+        // restart` terminate a server whose PID file was lost/rotated.
+        setTimeout(() => {
+          cleanup();
+          process.exit(0);
+        }, 50);
+        return new Response("ok", { status: 200 });
+      }
+
       if (req.method === "POST" && url.pathname === "/switch-index") {
         try {
           const index = Number.parseInt(url.searchParams.get("index") ?? "", 10);
