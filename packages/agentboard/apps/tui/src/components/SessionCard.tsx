@@ -259,6 +259,9 @@ function AgentRow(props: AgentRowProps) {
       backgroundColor={bgColor()}
       onMouseDown={(event) => {
         if (event.target?.id === "dismiss") return;
+        // Stop the click bubbling to SessionCard's onSelect, which would fire
+        // switch-session and clobber the precise pane that onFocusPane selects.
+        event.stopPropagation();
         triggerFlash();
         props.onFocusPane();
       }}

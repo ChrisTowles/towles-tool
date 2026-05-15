@@ -931,6 +931,7 @@ export function startServer(
     const raw = shell([
       "tmux",
       "list-panes",
+      "-s",
       "-t",
       sessionName,
       "-F",
@@ -999,6 +1000,15 @@ export function startServer(
     if (!targetPaneId) return;
 
     log("focus-agent-pane", "focusing", { sessionName, agentName, paneId: targetPaneId });
+    // The agent's pane may live in a different session/window than the one the
+    // client is attached to. switch-client moves the active client to the
+    // agent's session, select-window to its window, select-pane to the pane.
+    // We deliberately omit `-c <tty>`: clients can share a tty name (e.g. a
+    // stale suspended duplicate), making `-c` match the wrong client and
+    // silently no-op. Without `-c`, tmux targets the most-recently-active
+    // client, which is the real interactive one.
+    shell(["tmux", "switch-client", "-t", sessionName]);
+    shell(["tmux", "select-window", "-t", targetPaneId]);
     shell(["tmux", "select-pane", "-t", targetPaneId]);
 
     const existing = pendingHighlightResets.get(targetPaneId);
