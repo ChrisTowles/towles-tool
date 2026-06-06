@@ -1,7 +1,7 @@
 {
   "name": "tt",
   "description": "Core dev workflow skills: interview-me, write-prd, prd-to-issues, tdd, improve-architecture, refine-text, task, diagnose, triage, review, prototype, handoff, parallel-slots, towles-tool.",
-  "version": "0.0.135",
+  "version": "0.0.136",
   "author": {
     "name": "Chris Towles"
   }
