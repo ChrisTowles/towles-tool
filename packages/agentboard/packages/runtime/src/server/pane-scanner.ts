@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { AgentStatus } from "../contracts/agent";
 import { TERMINAL_STATUSES } from "../contracts/agent";
+import { instanceKey } from "../agents/tracker";
 import type { SidebarPane } from "../contracts/mux";
 import type { ServerContext, PaneAgentPresence } from "./context";
 import { shell } from "./git-info";
@@ -311,9 +312,15 @@ export function refreshPaneAgents(ctx: ServerContext): void {
   }
 
   const nextBySession = scanAllTmuxPaneAgents(ctx.listSidebarPanesByProvider);
+  // Pin by tracker instance key (agent[:threadId]) so live panes match the
+  // watcher-tracked instances. The map keys are pane-based (agent:pane:<id>) and
+  // would never match, leaving live agents unpinned and exposed to pruning.
   const allPinnedKeys = new Map<string, string[]>();
   for (const [session, agents] of nextBySession) {
-    allPinnedKeys.set(session, [...agents.keys()]);
+    allPinnedKeys.set(
+      session,
+      [...agents.values()].map((p) => instanceKey(p.agent, p.threadId)),
+    );
   }
 
   // Check if anything changed
