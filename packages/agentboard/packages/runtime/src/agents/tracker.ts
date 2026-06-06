@@ -198,6 +198,30 @@ export class AgentTracker {
     }
   }
 
+  /**
+   * Auto-prune "idle" instances older than timeoutMs unless pinned.
+   * An agent only becomes idle when its process is gone or its journal stalled, so an
+   * unpinned idle instance is a dead session (e.g. a Claude session left behind by /clear).
+   * Live agents are pinned by the pane scanner and re-added via pane presence, so they survive.
+   */
+  pruneIdle(timeoutMs: number): void {
+    const now = Date.now();
+    for (const [session, sessionInstances] of this.instances) {
+      for (const [key, event] of sessionInstances) {
+        if (event.status !== "idle") continue;
+        if (this.isPinned(session, key)) continue;
+        const lastSeen = event.details?.lastActivityAt ?? event.ts;
+        if (now - lastSeen > timeoutMs) {
+          sessionInstances.delete(key);
+          this.unseenInstances.delete(this.unseenKey(session, key));
+        }
+      }
+      if (sessionInstances.size === 0) {
+        this.instances.delete(session);
+      }
+    }
+  }
+
   /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or pinned */
   pruneTerminal(): void {
     const now = Date.now();

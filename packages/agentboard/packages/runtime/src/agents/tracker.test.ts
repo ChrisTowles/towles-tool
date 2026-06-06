@@ -199,6 +199,62 @@ describe("AgentTracker", () => {
     });
   });
 
+  describe("pruneIdle", () => {
+    const GRACE = 30_000;
+
+    it("prunes idle agents older than threshold", () => {
+      tracker.applyEvent(makeEvent({ status: "idle", ts: Date.now() - GRACE - 1000 }));
+      tracker.pruneIdle(GRACE);
+      expect(tracker.getState("main")).toBeNull();
+    });
+
+    it("leaves fresh idle agents alone", () => {
+      tracker.applyEvent(makeEvent({ status: "idle", ts: Date.now() - 1000 }));
+      tracker.pruneIdle(GRACE);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("does not prune non-idle agents", () => {
+      tracker.applyEvent(makeEvent({ status: "done", ts: Date.now() - GRACE - 1000 }));
+      tracker.pruneIdle(GRACE);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("respects pinned instances (live pane keeps the agent)", () => {
+      tracker.applyEvent(
+        makeEvent({ threadId: "t1", status: "idle", ts: Date.now() - GRACE - 1000 }),
+      );
+      tracker.setPinnedInstances("main", ["claude-code:t1"]);
+      tracker.pruneIdle(GRACE);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+
+    it("prunes the cleared session but keeps the live one", () => {
+      // Simulates /clear: old session (t1) went idle, new session (t2) is live + pinned.
+      tracker.applyEvent(
+        makeEvent({ threadId: "t1", status: "idle", ts: Date.now() - GRACE - 1000 }),
+      );
+      tracker.applyEvent(makeEvent({ threadId: "t2", status: "running", ts: Date.now() }));
+      tracker.setPinnedInstances("main", ["claude-code:t2"]);
+      tracker.pruneIdle(GRACE);
+      const agents = tracker.getAgents("main");
+      expect(agents).toHaveLength(1);
+      expect(agents[0]!.threadId).toBe("t2");
+    });
+
+    it("uses details.lastActivityAt when present", () => {
+      tracker.applyEvent(
+        makeEvent({
+          status: "idle",
+          ts: Date.now() - GRACE - 1000,
+          details: { lastActivityAt: Date.now() - 1000 },
+        }),
+      );
+      tracker.pruneIdle(GRACE);
+      expect(tracker.getState("main")).not.toBeNull();
+    });
+  });
+
   describe("pruneSupersededByPane", () => {
     it("drops older instance when same agent reappears with new threadId in same pane", () => {
       tracker.applyEvent(makeEvent({ threadId: "t1", status: "waiting", paneId: "%5", ts: 1000 }));

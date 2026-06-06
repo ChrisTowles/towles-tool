@@ -12,6 +12,10 @@ export const PID_FILE = "/tmp/agentboard.pid";
 export const SERVER_IDLE_TIMEOUT_MS = 30_000;
 export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
 export const STALE_AGENT_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+// An agent only goes "idle" once its process is gone / journal stalled, so an
+// unpinned idle instance is a dead session (e.g. a Claude session after /clear).
+// Prune it shortly after, leaving a brief grace for the pane scan to (re)pin live ones.
+export const IDLE_PRUNE_MS = 30_000;
 export const JOURNAL_IDLE_TIMEOUT_MS = 120_000;
 
 export interface SessionData {

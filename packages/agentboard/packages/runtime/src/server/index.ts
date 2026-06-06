@@ -24,6 +24,7 @@ import {
   SERVER_IDLE_TIMEOUT_MS,
   STUCK_RUNNING_TIMEOUT_MS,
   STALE_AGENT_TIMEOUT_MS,
+  IDLE_PRUNE_MS,
 } from "../shared";
 import type { ServerState, SessionData, ClientCommand, FocusUpdate, MetadataTone } from "../shared";
 
@@ -393,6 +394,7 @@ export function startServer(
     tracker.pruneStuck(STUCK_RUNNING_TIMEOUT_MS);
     tracker.pruneTerminal();
     tracker.pruneStale(STALE_AGENT_TIMEOUT_MS);
+    tracker.pruneIdle(IDLE_PRUNE_MS);
     tracker.pruneSupersededByPane();
     lastState = computeState();
     syncGitWatchers(lastState.sessions, broadcastState);
