@@ -580,6 +580,7 @@ export function startServer(
 
   const pendingSidebarSpawns = new Set<string>();
   const suppressedSidebarResizeAcks = new Map<string, SidebarResizeSuppression>();
+  const sidebarWindowResizeCooldown = new Map<string, number>();
   let sidebarSnapshots = new Map<string, { width?: number; windowWidth?: number }>();
   let pendingSidebarResize: ReturnType<typeof setTimeout> | null = null;
 
@@ -757,6 +758,7 @@ export function startServer(
       panes: allPanes,
       previousByWindow: sidebarSnapshots,
       suppressedByPane: suppressedSidebarResizeAcks,
+      windowResizeCooldown: sidebarWindowResizeCooldown,
     });
 
     if (nextSidebarWidth != null && nextSidebarWidth !== sidebarWidth) {
