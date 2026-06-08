@@ -7,6 +7,14 @@ export type AgentStatus =
   | "question"
   | "interrupted";
 
+/** A sub-agent spawned by the parent session — workflow fan-out or a background Task/Agent. */
+export interface SubagentInfo {
+  /** Sub-agent type, e.g. "Explore", "general-purpose", or a workflow agent label. */
+  agentType?: string;
+  /** Short human description of the sub-agent's task (from its meta.json). */
+  description?: string;
+}
+
 export interface AgentEventDetails {
   /** Model name from most recent assistant turn (e.g. "claude-opus-4-6") */
   model?: string;
@@ -22,6 +30,12 @@ export interface AgentEventDetails {
   lastActivityAt?: number;
   /** Name of the most recent tool invoked by the agent (e.g. "Read", "Bash", "Edit"). Populated only by the claude-code watcher. */
   lastTool?: string;
+  /**
+   * Currently-active sub-agents (workflow fan-out / background Tasks), judged by recent
+   * journal mtime. Empty/undefined when the session has no live sub-agents.
+   * Populated only by the claude-code watcher.
+   */
+  subagents?: SubagentInfo[];
 }
 
 export interface AgentEvent {

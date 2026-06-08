@@ -1,6 +1,16 @@
 import { describe, it, expect } from "bun:test";
-import { determineStatus, summaryToDetails, extractLastTool } from "./claude-code";
+import { mkdtemp, mkdir, writeFile, utimes, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  determineStatus,
+  summaryToDetails,
+  extractLastTool,
+  subagentSignature,
+  readActiveSubagents,
+} from "./claude-code";
 import type { ClaudeUsageSummary } from "./claude-usage";
+import type { SubagentInfo } from "../../contracts/agent";
 
 describe("determineStatus", () => {
   it("returns null when no message", () => {
@@ -172,5 +182,129 @@ describe("extractLastTool", () => {
         },
       ]),
     ).toBe("Read");
+  });
+});
+
+describe("subagentSignature", () => {
+  it("is empty for no sub-agents", () => {
+    expect(subagentSignature([])).toBe("");
+  });
+
+  it("is order-independent", () => {
+    const a: SubagentInfo[] = [
+      { agentType: "Explore", description: "find code" },
+      { agentType: "general-purpose", description: "fix bug" },
+    ];
+    const b: SubagentInfo[] = [
+      { agentType: "general-purpose", description: "fix bug" },
+      { agentType: "Explore", description: "find code" },
+    ];
+    expect(subagentSignature(a)).toBe(subagentSignature(b));
+  });
+
+  it("changes when an agent is added or removed", () => {
+    const one: SubagentInfo[] = [{ agentType: "Explore", description: "find code" }];
+    const two: SubagentInfo[] = [
+      { agentType: "Explore", description: "find code" },
+      { agentType: "Plan", description: "design" },
+    ];
+    expect(subagentSignature(one)).not.toBe(subagentSignature(two));
+  });
+
+  it("tolerates missing fields", () => {
+    expect(subagentSignature([{}])).toBe(" ");
+  });
+});
+
+describe("readActiveSubagents", () => {
+  const NOW = 1_700_000_000_000;
+  const ACTIVE_MTIME = NOW - 10_000; // 10s ago: well within the 2-min active window
+  const STALE_MTIME = NOW - 5 * 60_000; // 5m ago: finished agent, should be excluded
+
+  async function makeSubagentsDir(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "agentboard-subagents-"));
+    const dir = join(root, "subagents");
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  async function writeAgent(
+    dir: string,
+    id: string,
+    mtimeMs: number,
+    meta?: { agentType?: string; description?: string },
+  ): Promise<void> {
+    const jsonl = join(dir, `agent-${id}.jsonl`);
+    await writeFile(jsonl, '{"type":"user"}\n');
+    if (meta) await writeFile(join(dir, `agent-${id}.meta.json`), JSON.stringify(meta));
+    const sec = mtimeMs / 1000;
+    await utimes(jsonl, sec, sec);
+  }
+
+  it("returns [] when the directory does not exist", async () => {
+    expect(await readActiveSubagents(join(tmpdir(), "nope-does-not-exist-xyz"), NOW)).toEqual([]);
+  });
+
+  it("includes recently-active agents with meta", async () => {
+    const dir = await makeSubagentsDir();
+    try {
+      await writeAgent(dir, "aaa", ACTIVE_MTIME, {
+        agentType: "Explore",
+        description: "find code",
+      });
+      const result = await readActiveSubagents(dir, NOW);
+      expect(result).toEqual([{ agentType: "Explore", description: "find code" }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes agents whose journal is stale (finished)", async () => {
+    const dir = await makeSubagentsDir();
+    try {
+      await writeAgent(dir, "live", ACTIVE_MTIME, { agentType: "Explore" });
+      await writeAgent(dir, "dead", STALE_MTIME, { agentType: "Plan" });
+      const result = await readActiveSubagents(dir, NOW);
+      expect(result).toEqual([{ agentType: "Explore", description: undefined }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts an agent even when its meta.json is missing", async () => {
+    const dir = await makeSubagentsDir();
+    try {
+      await writeAgent(dir, "nometa", ACTIVE_MTIME);
+      const result = await readActiveSubagents(dir, NOW);
+      expect(result).toEqual([{}]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sorts most-recently-active first", async () => {
+    const dir = await makeSubagentsDir();
+    try {
+      await writeAgent(dir, "older", NOW - 60_000, { agentType: "older" });
+      await writeAgent(dir, "newer", NOW - 5_000, { agentType: "newer" });
+      const result = await readActiveSubagents(dir, NOW);
+      expect(result.map((s) => s.agentType)).toEqual(["newer", "older"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores non-agent files in the directory", async () => {
+    const dir = await makeSubagentsDir();
+    try {
+      await writeAgent(dir, "real", ACTIVE_MTIME, { agentType: "Explore" });
+      const stray = join(dir, "notes.txt");
+      await writeFile(stray, "ignore me");
+      await utimes(stray, ACTIVE_MTIME / 1000, ACTIVE_MTIME / 1000);
+      const result = await readActiveSubagents(dir, NOW);
+      expect(result).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -327,6 +327,40 @@ function AgentRow(props: AgentRowProps) {
         }}
       </Show>
 
+      <Show when={props.agent.status === "running" && props.agent.details?.subagents?.length}>
+        {(_count) => {
+          const subagents = () => props.agent.details?.subagents ?? [];
+          return (
+            <>
+              <text truncate>
+                <span style={{ fg: P().mauve, attributes: DIM }}>⚡ </span>
+                <span style={{ fg: P().subtext0 }}>
+                  {subagents().length} agent{subagents().length === 1 ? "" : "s"}
+                </span>
+              </text>
+              <For each={subagents()}>
+                {(sa) => (
+                  <text truncate>
+                    <span style={{ fg: P().overlay0, attributes: DIM }}>{"  ↳ "}</span>
+                    <Show when={sa.agentType}>
+                      <span style={{ fg: P().teal, attributes: DIM }}>{sa.agentType}</span>
+                    </Show>
+                    <Show when={sa.description}>
+                      <span style={{ fg: P().overlay0, attributes: DIM }}>
+                        {sa.agentType ? " · " : ""}
+                      </span>
+                      <span style={{ fg: P().subtext0 }}>
+                        {truncate(sa.description!.replace(/\s+/g, " ").trim(), 40)}
+                      </span>
+                    </Show>
+                  </text>
+                )}
+              </For>
+            </>
+          );
+        }}
+      </Show>
+
       <Show when={cacheLabel()}>
         <text truncate>
           <span style={{ fg: P().overlay0, attributes: DIM }}>{cacheLabel()}</span>

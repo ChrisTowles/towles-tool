@@ -16,7 +16,7 @@ import type { FSWatcher } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import type { AgentStatus } from "../../contracts/agent";
+import type { AgentStatus, SubagentInfo } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../../contracts/agent-watcher";
 import { JOURNAL_IDLE_TIMEOUT_MS } from "../../shared";
 import { createClaudePidLookup } from "./claude-pid";
@@ -47,10 +47,14 @@ interface SessionState {
   projectDir?: string;
   usage?: ClaudeUsageSummary;
   lastTool?: string;
+  subagents?: SubagentInfo[];
+  /** Stable signature of `subagents`, used to detect changes without deep comparison. */
+  subagentSig?: string;
 }
 
 const POLL_MS = 2000;
 const STALE_MS = 5 * 60 * 1000;
+const JSONL_SUFFIX = ".jsonl";
 
 // --- Status detection ---
 
@@ -113,6 +117,71 @@ export function extractLastTool(entries: JournalEntry[]): string | undefined {
   return undefined;
 }
 
+// --- Sub-agent (workflow / background Task) detection ---
+
+interface SubagentMeta {
+  agentType?: string;
+  description?: string;
+}
+
+/** Build a stable, order-independent signature for a set of sub-agents so the watcher
+ * can detect changes (a new agent spinning up, one going idle) without deep comparison. */
+export function subagentSignature(subagents: SubagentInfo[]): string {
+  return subagents
+    .map((s) => `${s.agentType ?? ""} ${s.description ?? ""}`)
+    .sort()
+    .join("");
+}
+
+/**
+ * Scan a session's `subagents/` directory for currently-active sub-agents.
+ *
+ * Claude Code writes each sub-agent (workflow fan-out, background Task/Agent) to
+ * `<session-id>/subagents/agent-<id>.jsonl` with a sibling `agent-<id>.meta.json`.
+ * A sub-agent counts as "active" when its journal was modified within
+ * `JOURNAL_IDLE_TIMEOUT_MS` — finished agents leave stale files behind.
+ *
+ * Returns most-recently-active first. Best-effort: missing dir / unreadable meta yields fewer entries.
+ */
+export async function readActiveSubagents(
+  subagentsDir: string,
+  now: number,
+): Promise<SubagentInfo[]> {
+  let files: string[];
+  try {
+    files = await readdir(subagentsDir);
+  } catch {
+    return [];
+  }
+
+  const active: { info: SubagentInfo; mtimeMs: number }[] = [];
+  for (const file of files) {
+    if (!file.startsWith("agent-") || !file.endsWith(JSONL_SUFFIX)) continue;
+    const filePath = join(subagentsDir, file);
+
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await stat(filePath)).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (now - mtimeMs > JOURNAL_IDLE_TIMEOUT_MS) continue;
+
+    let info: SubagentInfo = {};
+    const metaPath = `${filePath.slice(0, -JSONL_SUFFIX.length)}.meta.json`;
+    try {
+      const meta = JSON.parse(await Bun.file(metaPath).text()) as SubagentMeta;
+      info = { agentType: meta.agentType, description: meta.description };
+    } catch {
+      // intentionally ignored: meta may not be written yet; still count the agent
+    }
+    active.push({ info, mtimeMs });
+  }
+
+  active.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return active.map((a) => a.info);
+}
+
 /** Decode Claude's encoded project dir name back to a path.
  * Claude Code encodes `/` as `-` with no escape for literal dashes,
  * so paths like `/home/user/my-project` are ambiguous with `/home/user/my/project`.
@@ -139,10 +208,14 @@ export function summaryToDetails(
 function buildDetails(
   usage: ClaudeUsageSummary | undefined,
   lastTool: string | undefined,
+  subagents: SubagentInfo[] | undefined,
 ): import("../../contracts/agent").AgentEventDetails | undefined {
-  if (!usage && !lastTool) return undefined;
+  const hasSubagents = subagents != null && subagents.length > 0;
+  if (!usage && !lastTool && !hasSubagents) return undefined;
   const base = usage ? summaryToDetails(usage) : {};
-  return lastTool ? { ...base, lastTool } : base;
+  if (lastTool) base.lastTool = lastTool;
+  if (hasSubagents) base.subagents = subagents;
+  return base;
 }
 
 // --- Watcher implementation ---
@@ -200,6 +273,12 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const threadId = basename(filePath, ".jsonl");
     const prev = this.sessions.get(threadId);
 
+    // Sub-agents (workflow fan-out / background Tasks) write to a sibling dir while the
+    // parent journal can stay static for minutes — scan on every poll, not just on growth.
+    const subagentsDir = join(filePath.slice(0, -JSONL_SUFFIX.length), "subagents");
+    const subagents = await readActiveSubagents(subagentsDir, Date.now());
+    const subagentSig = subagentSignature(subagents);
+
     if (prev && size === prev.fileSize) {
       // Post-seed: check if the process is actually still alive.
       if (this.seeded && prev.status === "running") {
@@ -220,6 +299,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
 
         if (becomeIdle) {
           prev.status = "idle";
+          prev.subagents = subagents;
+          prev.subagentSig = subagentSig;
           const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
           if (session) {
             this.ctx?.emit({
@@ -229,9 +310,28 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
               ts: Date.now(),
               threadId,
               threadName: prev.threadName,
-              details: buildDetails(prev.usage, prev.lastTool),
+              details: buildDetails(prev.usage, prev.lastTool, subagents),
             });
           }
+          return;
+        }
+      }
+
+      // Main journal unchanged, but the live sub-agent set may have shifted (workflow progress).
+      if (subagentSig !== (prev.subagentSig ?? "")) {
+        prev.subagents = subagents;
+        prev.subagentSig = subagentSig;
+        const session = prev.projectDir ? this.ctx?.resolveSession(prev.projectDir) : undefined;
+        if (session) {
+          this.ctx?.emit({
+            agent: "claude-code",
+            session,
+            status: prev.status,
+            ts: Date.now(),
+            threadId,
+            threadName: prev.threadName,
+            details: buildDetails(prev.usage, prev.lastTool, subagents),
+          });
         }
       }
       return;
@@ -287,6 +387,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         projectDir,
         usage,
         lastTool,
+        subagents,
+        subagentSig,
       });
       return;
     }
@@ -344,9 +446,11 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       projectDir,
       usage,
       lastTool,
+      subagents,
+      subagentSig,
     });
 
-    if (latestStatus !== prevStatus) {
+    if (latestStatus !== prevStatus || subagentSig !== (prev?.subagentSig ?? "")) {
       const session = this.ctx.resolveSession(projectDir);
       if (session) {
         this.ctx.emit({
@@ -356,7 +460,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           ts: Date.now(),
           threadId,
           threadName,
-          details: buildDetails(usage, lastTool),
+          details: buildDetails(usage, lastTool, subagents),
         });
       }
     }
@@ -434,7 +538,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             ts: Date.now(),
             threadId,
             threadName: state.threadName,
-            details: buildDetails(state.usage, state.lastTool),
+            details: buildDetails(state.usage, state.lastTool, state.subagents),
           });
         }
       }
