@@ -7,6 +7,14 @@ export type AgentStatus =
   | "question"
   | "interrupted";
 
+/** State of a self-paced `/loop` — the session scheduled its own next wake-up via ScheduleWakeup. */
+export interface LoopInfo {
+  /** Epoch ms when the loop is scheduled to fire next. In the past once the loop has ended. */
+  nextWakeAt: number;
+  /** Short reason the session gave for the scheduled wake-up. */
+  reason?: string;
+}
+
 /** A sub-agent spawned by the parent session — workflow fan-out or a background Task/Agent. */
 export interface SubagentInfo {
   /** Sub-agent type, e.g. "Explore", "general-purpose", or a workflow agent label. */
@@ -36,6 +44,12 @@ export interface AgentEventDetails {
    * Populated only by the claude-code watcher.
    */
   subagents?: SubagentInfo[];
+  /**
+   * Set when the session is running a self-paced `/loop` (scheduled its next wake via
+   * ScheduleWakeup). `nextWakeAt` in the future = sleeping between iterations.
+   * Populated only by the claude-code watcher.
+   */
+  loop?: LoopInfo;
 }
 
 export interface AgentEvent {

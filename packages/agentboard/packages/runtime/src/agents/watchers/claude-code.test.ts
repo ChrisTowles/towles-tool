@@ -8,6 +8,7 @@ import {
   extractLastTool,
   subagentSignature,
   readActiveSubagents,
+  extractLoopState,
 } from "./claude-code";
 import type { ClaudeUsageSummary } from "./claude-usage";
 import type { SubagentInfo } from "../../contracts/agent";
@@ -182,6 +183,58 @@ describe("extractLastTool", () => {
         },
       ]),
     ).toBe("Read");
+  });
+});
+
+describe("extractLoopState", () => {
+  const TS = "2026-06-08T21:00:00.000Z";
+  const TS_MS = Date.parse(TS);
+
+  const wakeup = (delaySeconds: number, reason?: string, ts = TS) => ({
+    type: "assistant" as const,
+    timestamp: ts,
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", name: "ScheduleWakeup", input: { delaySeconds, reason } }],
+    },
+  });
+
+  it("returns undefined when no ScheduleWakeup present", () => {
+    expect(
+      extractLoopState([
+        { message: { role: "assistant", content: [{ type: "tool_use", name: "Read" }] } },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("computes nextWakeAt from timestamp + delaySeconds and keeps the reason", () => {
+    expect(extractLoopState([wakeup(240, "watch the deploy")])).toEqual({
+      nextWakeAt: TS_MS + 240_000,
+      reason: "watch the deploy",
+    });
+  });
+
+  it("uses the most recent ScheduleWakeup when several exist", () => {
+    const later = "2026-06-08T21:10:00.000Z";
+    const result = extractLoopState([wakeup(60, "first"), wakeup(120, "second", later)]);
+    expect(result).toEqual({ nextWakeAt: Date.parse(later) + 120_000, reason: "second" });
+  });
+
+  it("returns undefined when the entry has no parseable timestamp", () => {
+    const w = wakeup(60, "x");
+    w.timestamp = "not-a-date";
+    expect(extractLoopState([w])).toBeUndefined();
+  });
+
+  it("ignores ScheduleWakeup that is not a tool_use (e.g. tool definition text)", () => {
+    expect(
+      extractLoopState([
+        {
+          timestamp: TS,
+          message: { role: "assistant", content: [{ type: "text", text: "ScheduleWakeup" }] },
+        },
+      ]),
+    ).toBeUndefined();
   });
 });
 

@@ -361,6 +361,29 @@ function AgentRow(props: AgentRowProps) {
         }}
       </Show>
 
+      <Show
+        when={
+          props.agent.details?.loop && props.agent.details.loop.nextWakeAt > props.now()
+            ? props.agent.details.loop
+            : undefined
+        }
+      >
+        {(loop) => (
+          <text truncate>
+            <span style={{ fg: P().lavender, attributes: DIM }}>⟳ </span>
+            <span style={{ fg: P().subtext0 }}>
+              loops in {formatElapsed(loop().nextWakeAt - props.now())}
+            </span>
+            <Show when={loop().reason}>
+              <span style={{ fg: P().overlay0, attributes: DIM }}>
+                {" · "}
+                {truncate(loop().reason!.replace(/\s+/g, " ").trim(), 36)}
+              </span>
+            </Show>
+          </text>
+        )}
+      </Show>
+
       <Show when={cacheLabel()}>
         <text truncate>
           <span style={{ fg: P().overlay0, attributes: DIM }}>{cacheLabel()}</span>
