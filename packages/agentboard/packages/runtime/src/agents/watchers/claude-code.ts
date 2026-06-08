@@ -16,7 +16,7 @@ import type { FSWatcher } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import type { AgentStatus, SubagentInfo } from "../../contracts/agent";
+import type { AgentStatus, SubagentInfo, LoopInfo } from "../../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../../contracts/agent-watcher";
 import { JOURNAL_IDLE_TIMEOUT_MS } from "../../shared";
 import { createClaudePidLookup } from "./claude-pid";
@@ -30,10 +30,12 @@ interface ContentItem {
   type?: string;
   text?: string;
   name?: string;
+  input?: { delaySeconds?: number; reason?: string };
 }
 
 interface JournalEntry {
   type?: string;
+  timestamp?: string;
   message?: {
     role?: string;
     content?: ContentItem[] | string;
@@ -50,6 +52,7 @@ interface SessionState {
   subagents?: SubagentInfo[];
   /** Stable signature of `subagents`, used to detect changes without deep comparison. */
   subagentSig?: string;
+  loop?: LoopInfo;
 }
 
 const POLL_MS = 2000;
@@ -112,6 +115,26 @@ export function extractLastTool(entries: JournalEntry[]): string | undefined {
       if (!item.name) continue;
       if (item.name === "AskUserQuestion") continue;
       return item.name;
+    }
+  }
+  return undefined;
+}
+
+/** Extract self-paced `/loop` state from the most recent ScheduleWakeup tool call.
+ * Returns the scheduled next-wake time; the caller treats a future `nextWakeAt` as
+ * "looping, sleeping between iterations" and a past one as "loop ended". */
+export function extractLoopState(entries: JournalEntry[]): LoopInfo | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]!;
+    if (entry.message?.role !== "assistant") continue;
+    const content = entry.message.content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      if (item.type !== "tool_use" || item.name !== "ScheduleWakeup") continue;
+      const delaySeconds = item.input?.delaySeconds;
+      const scheduledAt = entry.timestamp ? Date.parse(entry.timestamp) : Number.NaN;
+      if (typeof delaySeconds !== "number" || Number.isNaN(scheduledAt)) return undefined;
+      return { nextWakeAt: scheduledAt + delaySeconds * 1000, reason: item.input?.reason };
     }
   }
   return undefined;
@@ -209,12 +232,14 @@ function buildDetails(
   usage: ClaudeUsageSummary | undefined,
   lastTool: string | undefined,
   subagents: SubagentInfo[] | undefined,
+  loop: LoopInfo | undefined,
 ): import("../../contracts/agent").AgentEventDetails | undefined {
   const hasSubagents = subagents != null && subagents.length > 0;
-  if (!usage && !lastTool && !hasSubagents) return undefined;
+  if (!usage && !lastTool && !hasSubagents && !loop) return undefined;
   const base = usage ? summaryToDetails(usage) : {};
   if (lastTool) base.lastTool = lastTool;
   if (hasSubagents) base.subagents = subagents;
+  if (loop) base.loop = loop;
   return base;
 }
 
@@ -310,7 +335,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
               ts: Date.now(),
               threadId,
               threadName: prev.threadName,
-              details: buildDetails(prev.usage, prev.lastTool, subagents),
+              details: buildDetails(prev.usage, prev.lastTool, subagents, prev.loop),
             });
           }
           return;
@@ -330,7 +355,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             ts: Date.now(),
             threadId,
             threadName: prev.threadName,
-            details: buildDetails(prev.usage, prev.lastTool, subagents),
+            details: buildDetails(prev.usage, prev.lastTool, subagents, prev.loop),
           });
         }
       }
@@ -369,6 +394,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
 
       const usage = extractUsageSummary(parsed) ?? undefined;
       const lastTool = extractLastTool(parsed);
+      const loop = extractLoopState(parsed);
 
       // If "running" but journal file is stale, the process likely exited
       if (latestStatus === "running") {
@@ -389,6 +415,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         lastTool,
         subagents,
         subagentSig,
+        loop,
       });
       return;
     }
@@ -430,6 +457,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
     const usage = newUsage ?? prev?.usage;
     const newLastTool = extractLastTool(parsed);
     const lastTool = newLastTool ?? prev?.lastTool;
+    const loop = extractLoopState(parsed) ?? prev?.loop;
 
     if (latestStatus === "running") {
       const pid = await this.pidLookup.pidForThread(threadId);
@@ -448,9 +476,14 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       lastTool,
       subagents,
       subagentSig,
+      loop,
     });
 
-    if (latestStatus !== prevStatus || subagentSig !== (prev?.subagentSig ?? "")) {
+    if (
+      latestStatus !== prevStatus ||
+      subagentSig !== (prev?.subagentSig ?? "") ||
+      loop?.nextWakeAt !== prev?.loop?.nextWakeAt
+    ) {
       const session = this.ctx.resolveSession(projectDir);
       if (session) {
         this.ctx.emit({
@@ -460,7 +493,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
           ts: Date.now(),
           threadId,
           threadName,
-          details: buildDetails(usage, lastTool, subagents),
+          details: buildDetails(usage, lastTool, subagents, loop),
         });
       }
     }
@@ -538,7 +571,7 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
             ts: Date.now(),
             threadId,
             threadName: state.threadName,
-            details: buildDetails(state.usage, state.lastTool, state.subagents),
+            details: buildDetails(state.usage, state.lastTool, state.subagents, state.loop),
           });
         }
       }
