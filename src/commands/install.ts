@@ -64,7 +64,7 @@ export default defineCommand({
 });
 
 async function ensureClaudePlugins(): Promise<void> {
-  const { run } = await import("@towles/shared");
+  const { run } = await import("../lib/index.js");
 
   const requiredPlugins = [
     {

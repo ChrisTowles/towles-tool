@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { getConfig } from "../config.js";
 import { ARTIFACTS, STEP_LABELS, TEMPLATES } from "../prompt-templates/index.js";
-import { fileExists, git, readFile } from "@towles/shared";
+import { fileExists, git, readFile } from "../../../lib/index.js";
 import { runClaude } from "../claude-cli.js";
 import { logger } from "../logger.js";
 import { resolveTemplate } from "../templates.js";

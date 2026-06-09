@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { run, isGithubCliInstalled } from "@towles/shared";
+import { run, isGithubCliInstalled } from "../../lib/index.js";
 import consola from "consola";
 import { colors } from "consola/utils";
 

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import consola from "consola";
-import { readFile, writeFile, fileExists } from "@towles/shared";
+import { readFile, writeFile, fileExists } from "../../lib/index.js";
 import type { DoctorRunResult } from "./checks.js";
 
 const MAX_HISTORY = 50;

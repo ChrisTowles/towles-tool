@@ -10,8 +10,8 @@ import { debugArg } from "../shared.js";
 import { initConfig } from "./config.js";
 import { LABELS, removeLabel, setLabel } from "./labels.js";
 import type { ExecSafeFn } from "./labels.js";
-import { getIssues, isGithubCliInstalled } from "@towles/shared";
-import type { Issue } from "@towles/shared";
+import { getIssues, isGithubCliInstalled } from "../../lib/index.js";
+import type { Issue } from "../../lib/index.js";
 
 /**
  * Core retry logic: swap labels on failed issues to re-trigger the pipeline.

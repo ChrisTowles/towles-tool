@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@towles/shared";
+import type { Issue } from "../../lib/index.js";
 import { buildIssueChoices, computeColumnLayout } from "./branch";
 
 const issues: Issue[] = [

@@ -53,7 +53,6 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.107",
     "@anthropic-ai/sdk": "^0.88.0",
-    "@towles/shared": "workspace:*",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
@@ -78,9 +77,6 @@
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
-  "bundledDependencies": [
-    "@towles/shared"
-  ],
   "simple-git-hooks": {
     "pre-commit": "bun run format:check && bun run lint && bun run typecheck && claude plugin validate ."
   },

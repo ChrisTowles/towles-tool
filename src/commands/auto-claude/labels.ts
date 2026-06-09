@@ -1,4 +1,4 @@
-import { execSafe as defaultExecSafe } from "@towles/shared";
+import { execSafe as defaultExecSafe } from "../../lib/index.js";
 
 // ── Label helpers ──
 

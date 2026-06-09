@@ -1,5 +1,5 @@
 import * as http from "node:http";
-import { run } from "@towles/shared";
+import { run } from "../../lib/index.js";
 
 /**
  * Start a local HTTP server to serve the generated HTML.

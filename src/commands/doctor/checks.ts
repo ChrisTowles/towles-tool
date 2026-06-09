@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import consola from "consola";
-import { run } from "@towles/shared";
+import { run } from "../../lib/index.js";
 
 export interface CheckResult {
   name: string;

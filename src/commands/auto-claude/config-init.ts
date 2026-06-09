@@ -5,7 +5,7 @@ import { defineCommand } from "citty";
 import consola from "consola";
 import prompts from "prompts";
 
-import { git, run } from "@towles/shared";
+import { git, run } from "../../lib/index.js";
 import { debugArg } from "../shared.js";
 import { AutoClaudeConfigSchema } from "./config.js";
 import {

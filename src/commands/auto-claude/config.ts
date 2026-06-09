@@ -1,5 +1,5 @@
 import consola from "consola";
-import { run } from "@towles/shared";
+import { run } from "../../lib/index.js";
 import { z } from "zod/v4";
 
 export const AutoClaudeConfigSchema = z.object({

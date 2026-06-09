@@ -11,7 +11,15 @@ import { LABELS, ensureLabelsExist, removeLabel, setLabel } from "./labels.js";
 import type { ExecSafeFn } from "./labels.js";
 import { logger } from "./logger.js";
 
-import { ensureDir, execSafe, fileExists, ghRaw, git, readFile, writeFile } from "@towles/shared";
+import {
+  ensureDir,
+  execSafe,
+  fileExists,
+  ghRaw,
+  git,
+  readFile,
+  writeFile,
+} from "../../lib/index.js";
 import type { IssueContext } from "./utils.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
 
