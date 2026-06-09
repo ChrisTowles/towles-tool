@@ -26,3 +26,6 @@ docs/superpowers/
 .auto-claude/
 .auto-claude/**/prompt-*.md
 .claude-stream.ndjson
+
+# npm publish staging (scripts/pack-publish.ts)
+dist-pack/
