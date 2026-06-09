@@ -96,7 +96,12 @@ jobs:
           if npm view @towles/tool@$VERSION version 2>/dev/null; then
             echo "Version $VERSION already published — skipping"
           else
-            npm publish --access public --provenance
+            # Build a consumer-safe tarball with bun (see scripts/pack-publish.ts):
+            # npm can't bundle the @towles/shared workspace dep, so external
+            # installs were shipping an unresolvable "@towles/shared: workspace:*".
+            # Then publish the prebuilt tarball with npm to keep provenance.
+            bun run pack:publish
+            npm publish ./dist-pack/towles-tool-$VERSION.tgz --access public --provenance
           fi
 
       - name: Create GitHub Release
