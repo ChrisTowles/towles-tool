@@ -174,7 +174,7 @@ function startServer(): void {
   ensureBun();
 
   const agentboardDir = resolve(import.meta.dirname, "../../packages/agentboard");
-  const serverEntry = resolve(agentboardDir, "apps/server/src/main.ts");
+  const serverEntry = resolve(agentboardDir, "src/server/main.ts");
   consola.info("Starting agentboard server (foreground, Ctrl+C to stop)...");
 
   execSync(`bun run ${serverEntry}`, {
@@ -195,7 +195,7 @@ async function serverAlive(): Promise<boolean> {
 }
 
 const PID_FILE = "/tmp/agentboard.pid";
-// Matches SERVER_ERR_LOG in packages/agentboard/packages/runtime/src/debug.ts.
+// Matches SERVER_ERR_LOG in packages/agentboard/src/runtime/debug.ts.
 const SERVER_ERR_LOG = "/tmp/agentboard-server-err.log";
 
 async function stopServer(): Promise<boolean> {
@@ -518,11 +518,11 @@ function startTui(): void {
   ensureBun();
 
   const agentboardDir = resolve(import.meta.dirname, "../../packages/agentboard");
-  const tuiEntry = resolve(agentboardDir, "apps/tui/src/index.tsx");
+  const tuiEntry = resolve(agentboardDir, "src/tui/index.tsx");
 
   execSync(`bun run ${tuiEntry}`, {
     stdio: "inherit",
-    cwd: resolve(agentboardDir, "apps/tui"),
+    cwd: resolve(agentboardDir, "src/tui"),
   });
 }
 

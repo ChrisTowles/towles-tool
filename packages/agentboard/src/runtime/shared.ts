@@ -1,0 +1,192 @@
+import type { AgentStatus, AgentEvent } from "./contracts/agent";
+import type { ReorderDelta } from "./server/session-order";
+
+export type { ReorderDelta };
+
+export const DEFAULT_SERVER_PORT = 4201;
+export const DEFAULT_SERVER_HOST = "127.0.0.1";
+
+export const SERVER_PORT: number = Number(process.env.TT_AGENTBOARD_PORT) || DEFAULT_SERVER_PORT;
+export const SERVER_HOST: string = process.env.TT_AGENTBOARD_HOST || DEFAULT_SERVER_HOST;
+export const PID_FILE = "/tmp/agentboard.pid";
+export const SERVER_IDLE_TIMEOUT_MS = 30_000;
+export const STUCK_RUNNING_TIMEOUT_MS = 3 * 60 * 1000;
+export const STALE_AGENT_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+// An agent only goes "idle" once its process is gone / journal stalled, so an
+// unpinned idle instance is a dead session (e.g. a Claude session after /clear).
+// Prune it shortly after, leaving a brief grace for the pane scan to (re)pin live ones.
+export const IDLE_PRUNE_MS = 30_000;
+export const JOURNAL_IDLE_TIMEOUT_MS = 120_000;
+
+export interface SessionData {
+  name: string;
+  createdAt: number;
+  dir: string;
+  branch: string;
+  dirty: boolean;
+  isWorktree: boolean;
+  filesChanged: number;
+  linesAdded: number;
+  linesRemoved: number;
+  commitsDelta: number;
+  unseen: boolean;
+  panes: number;
+  ports: number[];
+  windows: number;
+  uptime: string;
+  agentState: AgentEvent | null;
+  agents: AgentEvent[];
+  eventTimestamps: number[];
+  metadata?: SessionMetadata | null;
+}
+
+export interface ServerState {
+  type: "state";
+  sessions: SessionData[];
+  focusedSession: string | null;
+  currentSession: string | null;
+  theme: string | undefined;
+  sidebarWidth: number;
+  preferredEditor: string;
+  ts: number;
+}
+
+export interface FocusUpdate {
+  type: "focus";
+  focusedSession: string | null;
+  currentSession: string | null;
+}
+
+export interface ResizeNotify {
+  type: "resize";
+  width: number;
+}
+
+export interface QuitNotify {
+  type: "quit";
+}
+
+export interface YourSession {
+  type: "your-session";
+  name: string;
+  clientTty: string | null;
+}
+
+export interface ReIdentify {
+  type: "re-identify";
+}
+
+export type ServerMessage =
+  | ServerState
+  | FocusUpdate
+  | ResizeNotify
+  | QuitNotify
+  | YourSession
+  | ReIdentify;
+
+// --- Programmatic metadata (agent/script-pushed) ---
+
+export type MetadataTone = "neutral" | "info" | "success" | "warn" | "error";
+
+export interface MetadataStatus {
+  text: string;
+  tone?: MetadataTone;
+  ts: number;
+}
+
+export interface MetadataProgress {
+  current?: number;
+  total?: number;
+  percent?: number;
+  label?: string;
+  ts: number;
+}
+
+export interface MetadataLogEntry {
+  message: string;
+  tone?: MetadataTone;
+  source?: string;
+  ts: number;
+}
+
+export interface SessionMetadata {
+  status: MetadataStatus | null;
+  progress: MetadataProgress | null;
+  logs: MetadataLogEntry[];
+}
+
+export type ClientCommand =
+  | { type: "switch-session"; name: string; clientTty?: string }
+  | { type: "switch-index"; index: number }
+  | { type: "new-session" }
+  | { type: "kill-session"; name: string }
+  | { type: "reorder-session"; name: string; delta: ReorderDelta }
+  | { type: "refresh" }
+  | { type: "move-focus"; delta: -1 | 1 }
+  | { type: "focus-session"; name: string }
+  | { type: "mark-seen"; name: string }
+  | { type: "dismiss-agent"; session: string; agent: string; threadId?: string }
+  | { type: "set-theme"; theme: string }
+  | { type: "identify"; clientTty: string }
+  | { type: "report-width"; width: number }
+  | { type: "quit" }
+  | { type: "identify-pane"; paneId: string; sessionName: string }
+  | {
+      type: "focus-agent-pane";
+      session: string;
+      agent: string;
+      threadId?: string;
+      threadName?: string;
+    }
+  | {
+      type: "kill-agent-pane";
+      session: string;
+      agent: string;
+      threadId?: string;
+      threadName?: string;
+    };
+
+// Catppuccin Mocha palette
+export const C = {
+  blue: "#89b4fa",
+  lavender: "#b4befe",
+  pink: "#cba6f7",
+  mauve: "#cba6f7",
+  yellow: "#f9e2af",
+  green: "#a6e3a1",
+  red: "#f38ba8",
+  peach: "#fab387",
+  teal: "#94e2d5",
+  sky: "#89dceb",
+  text: "#cdd6f4",
+  subtext0: "#a6adc8",
+  subtext1: "#bac2de",
+  overlay0: "#6c7086",
+  overlay1: "#7f849c",
+  surface0: "#313244",
+  surface1: "#45475a",
+  surface2: "#585b70",
+  base: "#1e1e2e",
+  mantle: "#181825",
+  crust: "#11111b",
+} as const;
+
+export const STATUS_COLORS: Record<AgentStatus, string> = {
+  idle: C.surface2,
+  running: C.yellow,
+  done: C.green,
+  error: C.red,
+  waiting: C.blue,
+  question: C.sky,
+  interrupted: C.peach,
+};
+
+export const STATUS_ICONS: Record<AgentStatus, string> = {
+  idle: "○",
+  running: "●",
+  done: "✓",
+  error: "✗",
+  waiting: "◉",
+  question: "?",
+  interrupted: "⚠",
+};
