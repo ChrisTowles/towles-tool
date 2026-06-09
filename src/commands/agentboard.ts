@@ -1,6 +1,14 @@
 import { defineCommand } from "citty";
 import { execSync, spawn, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  realpathSync,
+  unlinkSync,
+  openSync,
+  closeSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import consola from "consola";
 import { colors } from "consola/utils";
@@ -187,6 +195,8 @@ async function serverAlive(): Promise<boolean> {
 }
 
 const PID_FILE = "/tmp/agentboard.pid";
+// Matches SERVER_ERR_LOG in packages/agentboard/packages/runtime/src/debug.ts.
+const SERVER_ERR_LOG = "/tmp/agentboard-server-err.log";
 
 async function stopServer(): Promise<boolean> {
   // Preferred path: terminate the process named in the PID file.
@@ -221,20 +231,70 @@ async function stopServer(): Promise<boolean> {
   return false;
 }
 
+interface ServerExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+// Build a human-readable reason for why the spawned server never bound the
+// port, drawing on the spawn error, the child's exit status, and the captured
+// server log. Keeps the silent `exit 1` from being undiagnosable.
+function describeServerStartFailure(spawnError: Error | null, exit: ServerExit | null): string {
+  const parts: string[] = [];
+  if (spawnError) {
+    parts.push(
+      (spawnError as NodeJS.ErrnoException).code === "ENOENT"
+        ? "could not launch `tt` (not found on PATH for the spawned process)"
+        : `failed to spawn server: ${spawnError.message}`,
+    );
+  }
+  if (exit && (exit.code ?? 0) !== 0) {
+    parts.push(`server process exited early (code ${exit.code}, signal ${exit.signal ?? "none"})`);
+  }
+  const log = existsSync(SERVER_ERR_LOG) ? readFileSync(SERVER_ERR_LOG, "utf8").trim() : "";
+  if (log) {
+    parts.push(`server log (${SERVER_ERR_LOG}):\n${log.split("\n").slice(-12).join("\n")}`);
+  } else if (parts.length === 0) {
+    parts.push(`no server output captured; see ${SERVER_ERR_LOG}`);
+  }
+  return parts.join("\n");
+}
+
 async function ensureServerUp(): Promise<boolean> {
   if (await serverAlive()) return true;
 
   consola.info("Starting agentboard server...");
+
+  // Capture the spawned server's output and exit so a crash (port already in
+  // use, missing `tt` on PATH, etc.) surfaces a reason instead of a bare exit 1.
+  const errFd = openSync(SERVER_ERR_LOG, "w");
+  let spawnError: Error | null = null;
+  let exit: ServerExit | null = null;
+
   const child = spawn("tt", ["agentboard", "server"], {
-    stdio: "ignore",
+    stdio: ["ignore", errFd, errFd],
     detached: true,
   });
+  child.on("error", (err) => {
+    spawnError = err;
+  });
+  child.on("exit", (code, signal) => {
+    exit = { code, signal };
+  });
   child.unref();
+  closeSync(errFd);
 
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 100));
     if (await serverAlive()) return true;
+    // A healthy server runs forever; if it already errored or exited, the
+    // remaining wait is wasted — fail fast with the captured reason.
+    if (spawnError || exit) break;
   }
+
+  consola.error(
+    `agentboard server did not come up on ${SERVER_HOST}:${SERVER_PORT}\n${describeServerStartFailure(spawnError, exit)}`,
+  );
   return false;
 }
 
@@ -418,10 +478,8 @@ async function restart(): Promise<void> {
       await new Promise((r) => setTimeout(r, 100));
     }
   }
-  if (!(await ensureServerUp())) {
-    consola.error("Failed to start agentboard server");
-    process.exit(1);
-  }
+  // ensureServerUp already logs the captured failure reason.
+  if (!(await ensureServerUp())) process.exit(1);
   consola.success("Server is running");
 
   // 3. Bootstrap sidebars — refresh session list, then ensure-sidebar for
