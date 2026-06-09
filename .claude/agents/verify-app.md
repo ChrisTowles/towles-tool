@@ -20,14 +20,14 @@ Run these commands sequentially from the repo root. Stop on the first failure an
 3. `bun typecheck`
 4. `bun test`
 5. `bun run dev --help` — confirms the CLI entrypoint resolves and oclif loads without crashing.
-6. `bun pm ls --filter '@tt-agentboard/*' 2>&1 | head -20` — confirms the agentboard workspaces are linked. If the list is empty, that's a failure (workspaces unresolved).
+6. `cd packages/agentboard && bun run typecheck` — typechecks the agentboard source (the root `bun typecheck` excludes it). Confirms cross-domain relative imports under `src/` resolve. A `Cannot find module` here means the flat layout or a dep hoist is broken.
 
 ## Output format
 
 On success, output one line and stop:
 
 ```
-verify-app: PASS (format, lint, typecheck, test, cli, workspaces)
+verify-app: PASS (format, lint, typecheck, test, cli, agentboard-typecheck)
 ```
 
 On failure, output:

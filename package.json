@@ -20,9 +20,7 @@
     "tt": "./bin/run.ts"
   },
   "workspaces": [
-    "packages/*",
-    "packages/agentboard/apps/*",
-    "packages/agentboard/packages/*"
+    "packages/*"
   ],
   "files": [
     "bin",
@@ -53,6 +51,8 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.107",
     "@anthropic-ai/sdk": "^0.88.0",
+    "@opentui/core": "^0.1.99",
+    "@opentui/solid": "^0.1.99",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "d3-hierarchy": "^3.1.2",
@@ -61,6 +61,7 @@
     "neverthrow": "^8.2.0",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
+    "solid-js": "^1.9.11",
     "zod": "^4.3.6"
   },
   "devDependencies": {

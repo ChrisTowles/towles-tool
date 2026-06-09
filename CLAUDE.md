@@ -27,7 +27,7 @@
 ## AgentBoard
 
 - Tmux sidebar TUI plugin: `packages/agentboard/`
-- Bun monorepo with workspaces: `apps/server`, `apps/tui`, `packages/runtime`, `packages/mux-tmux`
+- Single package, source split by domain under `src/`: `src/server`, `src/tui`, `src/runtime`, `src/mux-tmux`. Cross-domain imports are relative (e.g. `../runtime/index`) — no `@tt-agentboard/*` workspace packages. Runs as source under bun from a global install.
 - Agent slots: git clones in `~/code/p/towles-tool-repos/towles-tool-slot-{1..5}`
 
 ## Testing Conventions
