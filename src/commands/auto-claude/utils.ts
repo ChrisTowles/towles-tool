@@ -11,7 +11,7 @@ import {
   git,
   readFile,
   writeFile,
-} from "@towles/shared";
+} from "../../lib/index.js";
 import { runClaude } from "./claude-cli.js";
 import { getConfig } from "./config.js";
 import { logger } from "./logger.js";
@@ -21,7 +21,7 @@ import { resolveTemplate } from "./templates.js";
 import type { SpawnClaudeFn } from "./spawn-claude.js";
 import type { TokenValues } from "./templates.js";
 
-export { ensureDir, fileExists, readFile, writeFile } from "@towles/shared";
+export { ensureDir, fileExists, readFile, writeFile } from "../../lib/index.js";
 
 // ── Issue context ──
 

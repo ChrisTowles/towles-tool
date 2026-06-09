@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import consola from "consola";
 import { colors } from "consola/utils";
-import { ensureDir } from "@towles/shared";
+import { ensureDir } from "../../lib/index.js";
 
 /**
  * Create journal directory if it doesn't exist

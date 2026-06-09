@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { execSafe, fileExists, ghRaw, git, readFile, writeFile } from "@towles/shared";
+import { execSafe, fileExists, ghRaw, git, readFile, writeFile } from "../../../lib/index.js";
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { ARTIFACTS } from "../prompt-templates/index.js";

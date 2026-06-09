@@ -1,4 +1,4 @@
-import { gh } from "@towles/shared";
+import { gh } from "../../../lib/index.js";
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { buildIssueContext } from "../utils.js";

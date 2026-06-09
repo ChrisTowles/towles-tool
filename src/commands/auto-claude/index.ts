@@ -9,7 +9,7 @@ import { printExplain, printStepTemplate } from "./explain.js";
 import { STEP_NAMES, runPipeline } from "./pipeline.js";
 import { fetchIssue, fetchIssues } from "./steps/fetch-issues.js";
 import { getConfig, initConfig } from "./config.js";
-import { git } from "@towles/shared";
+import { git } from "../../lib/index.js";
 import { runClaude } from "./claude-cli.js";
 import { logger } from "./logger.js";
 import { sleep } from "./shell.js";

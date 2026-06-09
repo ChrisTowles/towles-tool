@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { Issue } from "@towles/shared";
+import type { Issue } from "../../lib/index.js";
 import { LABELS } from "./labels.js";
 import { checkArtifacts, findAcLabel, formatIssueStatus } from "./status.js";
 

@@ -6,7 +6,7 @@ import { colors } from "consola/utils";
 import { Fzf } from "fzf";
 
 import { debugArg } from "../shared.js";
-import type { Issue } from "@towles/shared";
+import type { Issue } from "../../lib/index.js";
 import {
   createBranchNameFromIssue,
   getIssues,
@@ -15,7 +15,7 @@ import {
   isGithubCliInstalled,
   limitText,
   printWithHexColor,
-} from "@towles/shared";
+} from "../../lib/index.js";
 
 export interface ColumnLayout {
   longestNumber: number;

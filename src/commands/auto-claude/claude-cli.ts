@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import pc from "picocolors";
 
-import { AppError, readFile } from "@towles/shared";
+import { AppError, readFile } from "../../lib/index.js";
 import { getConfig } from "./config.js";
 import { logger } from "./logger.js";
 import { sleep } from "./shell.js";

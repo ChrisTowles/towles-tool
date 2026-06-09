@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { run } from "@towles/shared";
+import { run } from "../../lib/index.js";
 import consola from "consola";
 
 import { debugArg } from "../shared.js";

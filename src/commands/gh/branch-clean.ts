@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { colors } from "consola/utils";
 import consola from "consola";
-import { run } from "@towles/shared";
+import { run } from "../../lib/index.js";
 
 import { debugArg } from "../shared.js";
 

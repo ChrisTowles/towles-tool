@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { writeFile } from "@towles/shared";
+import { writeFile } from "../lib/index.js";
 
 export interface ClaudeSettings {
   cleanupPeriodDays?: number;

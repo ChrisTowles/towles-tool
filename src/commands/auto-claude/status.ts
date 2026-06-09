@@ -5,8 +5,8 @@ import { defineCommand } from "citty";
 import consola from "consola";
 import { colors } from "consola/utils";
 
-import type { Issue } from "@towles/shared";
-import { getIssues, isGithubCliInstalled } from "@towles/shared";
+import type { Issue } from "../../lib/index.js";
+import { getIssues, isGithubCliInstalled } from "../../lib/index.js";
 import { ARTIFACTS } from "./prompt-templates/index.js";
 import { LABELS } from "./labels.js";
 import { debugArg } from "../shared.js";

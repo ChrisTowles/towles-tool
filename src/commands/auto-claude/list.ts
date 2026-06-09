@@ -11,7 +11,7 @@ import { STEP_NAMES, runPipeline } from "./pipeline.js";
 import { fetchIssue } from "./steps/fetch-issues.js";
 import { initConfig } from "./config.js";
 import type { StepName } from "./prompt-templates/index.js";
-import { getIssues, getTerminalColumns, isGithubCliInstalled } from "@towles/shared";
+import { getIssues, getTerminalColumns, isGithubCliInstalled } from "../../lib/index.js";
 
 export default defineCommand({
   meta: { name: "list", description: "Interactively pick an auto-claude issue to process" },
