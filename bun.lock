@@ -7,7 +7,6 @@
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.107",
         "@anthropic-ai/sdk": "^0.88.0",
-        "@towles/shared": "workspace:*",
         "citty": "^0.2.2",
         "consola": "^3.4.2",
         "d3-hierarchy": "^3.1.2",
@@ -98,17 +97,6 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5",
-      },
-    },
-    "packages/shared": {
-      "name": "@towles/shared",
-      "version": "0.1.0",
-      "dependencies": {
-        "consola": "^3.4.2",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.8.3",
       },
     },
   },
@@ -474,8 +462,6 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
-
-    "@towles/shared": ["@towles/shared@workspace:packages/shared"],
 
     "@towles/tt-agentboard": ["@towles/tt-agentboard@workspace:packages/agentboard"],
 
@@ -924,8 +910,6 @@
     "@jimp/plugin-threshold/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "@jimp/types/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
-
-    "@towles/shared/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@towles/tt-agentboard/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
