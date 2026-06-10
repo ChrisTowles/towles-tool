@@ -27,7 +27,13 @@ import {
   STALE_AGENT_TIMEOUT_MS,
   IDLE_PRUNE_MS,
 } from "../shared";
-import type { ServerState, SessionData, ClientCommand, FocusUpdate, MetadataTone } from "../shared";
+import type {
+  ServerState,
+  SessionData,
+  ClientCommand,
+  SessionViewed,
+  MetadataTone,
+} from "../shared";
 
 const VALID_TONES = new Set<string>(["neutral", "info", "success", "warn", "error"]);
 function parseTone(v: unknown): MetadataTone | undefined {
@@ -98,10 +104,15 @@ export function startServer(
     configKeys: Object.keys(config),
   });
 
-  // Bootstrap active sessions — boot-time snapshot, only used for initial seeding
-  const bootSession = mux.getCurrentSession();
-  if (bootSession) {
-    tracker.setActiveSessions([bootSession]);
+  // Bootstrap active sessions — every session a client is attached to counts
+  // as "being viewed" (a single getCurrentSession() is first-client-wins when
+  // multiple terminals are attached). Falls back to the provider's notion of
+  // current session when no clients are attached yet.
+  const bootSessions = listAttachedClientSessions();
+  const bootFallback = mux.getCurrentSession();
+  if (bootSessions.length === 0 && bootFallback) bootSessions.push(bootFallback);
+  if (bootSessions.length > 0) {
+    tracker.setActiveSessions(bootSessions);
   }
 
   // --- Agent watcher context ---
@@ -186,15 +197,15 @@ export function startServer(
   let watchersSeeded = false;
   setTimeout(() => {
     watchersSeeded = true;
-    // Re-apply focus for the current session to clear seed-unseen flags
+    // Clear seed-unseen flags for every session a client is viewing
     // (handleFocus already ran before seed events arrived)
-    const current = getCurrentSession();
-    if (current && tracker.handleFocus(current)) {
-      broadcastState();
+    let cleared = false;
+    for (const name of listAttachedClientSessions()) {
+      cleared = tracker.handleFocus(name) || cleared;
     }
+    if (cleared) broadcastState();
   }, 3000);
 
-  let focusedSession: string | null = null;
   let lastState: ServerState | null = null;
   let clientCount = 0;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -360,16 +371,9 @@ export function startServer(
 
     metadataStore.pruneSessions(new Set(sessions.map((s) => s.name)));
 
-    if (sessions.length === 0) {
-      focusedSession = null;
-    } else if (!focusedSession || !sessions.some((s) => s.name === focusedSession)) {
-      focusedSession = sessions.find((s) => s.name === bootSession)?.name ?? sessions[0]!.name;
-    }
-
     return {
       type: "state",
       sessions,
-      focusedSession,
       theme: currentTheme,
       sidebarWidth,
       preferredEditor,
@@ -400,40 +404,17 @@ export function startServer(
     server.publish("sidebar", msg);
   }
 
-  function broadcastFocusOnly(sender?: any) {
-    if (!lastState) return;
-    lastState = { ...lastState, focusedSession };
-    const msg: FocusUpdate = { type: "focus", focusedSession };
-    const payload = JSON.stringify(msg);
-    if (sender) {
-      sender.publish("sidebar", payload);
-    } else {
-      server.publish("sidebar", payload);
-    }
-  }
-
-  function moveFocus(delta: -1 | 1, sender?: any) {
-    if (!lastState || lastState.sessions.length === 0) return;
-    const sessions = lastState.sessions;
-    const currentIdx = sessions.findIndex((s) => s.name === focusedSession);
-    const newIdx = Math.max(
-      0,
-      Math.min(sessions.length - 1, (currentIdx === -1 ? 0 : currentIdx) + delta),
-    );
-    focusedSession = sessions[newIdx]!.name;
-    broadcastFocusOnly(sender);
-  }
-
-  function setFocus(name: string, sender?: any) {
-    if (lastState && lastState.sessions.some((s) => s.name === name)) {
-      focusedSession = name;
-      broadcastFocusOnly(sender);
-    }
+  /** Tell TUIs a client is now viewing `name` — they use it only to reset
+   * their local pending-switch marker. Card selection is per-TUI, never
+   * broadcast: with multiple terminals attached there is no one true
+   * "focused session" the server could own. */
+  function publishSessionViewed(name: string) {
+    const msg: SessionViewed = { type: "session-viewed", name };
+    server.publish("sidebar", JSON.stringify(msg));
   }
 
   function handleFocus(name: string): void {
-    focusedSession = name;
-    // Rescan pane agents when session focus changes
+    // Rescan pane agents when a client moves to another session
     refreshPaneAgents();
     const hadUnseen = tracker.handleFocus(name);
     if (hadUnseen && lastState) {
@@ -446,13 +427,12 @@ export function startServer(
           agents: s.agents.map((a) => ({ ...a, unseen: false })),
         };
       });
-      lastState = { ...lastState, sessions: updatedSessions, focusedSession };
+      lastState = { ...lastState, sessions: updatedSessions };
       server.publish("sidebar", JSON.stringify(lastState));
     } else if (hadUnseen) {
       broadcastState();
-    } else {
-      broadcastFocusOnly();
     }
+    publishSessionViewed(name);
   }
 
   function switchToVisibleIndex(index: number, target?: SwitchTarget): void {
@@ -786,21 +766,6 @@ export function startServer(
 
   // --- Focus agent pane (click-to-focus from TUI) ---
 
-  /** Walk up to 3 levels of child processes looking for a command matching any pattern */
-  function matchProcessTree(pid: string, patterns: string[], depth = 0): boolean {
-    if (depth > 2) return false;
-    const children = shell(["pgrep", "-P", pid]);
-    if (!children) return false;
-    for (const childPid of children.split("\n")) {
-      const trimmed = childPid.trim();
-      if (!trimmed) continue;
-      const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
-      if (childCmd && patterns.some((pat) => childCmd.toLowerCase().includes(pat))) return true;
-      if (matchProcessTree(trimmed, patterns, depth + 1)) return true;
-    }
-    return false;
-  }
-
   const AGENT_TITLE_PATTERNS: Record<string, string[]> = {
     amp: ["amp"],
     "claude-code": ["claude"],
@@ -812,29 +777,18 @@ export function startServer(
   const PANE_HIGHLIGHT_MS = 300;
   const pendingHighlightResets = new Map<string, ReturnType<typeof setTimeout>>();
 
-  /** Walk child processes (up to 3 levels) to find a process matching `name`, returning its PID. */
-  function findChildPid(pid: string, name: string, depth = 0): string | undefined {
-    if (depth > 2) return undefined;
-    const children = shell(["pgrep", "-P", pid]);
-    if (!children) return undefined;
-    for (const childPid of children.split("\n")) {
-      const trimmed = childPid.trim();
-      if (!trimmed) continue;
-      const childCmd = shell(["ps", "-p", trimmed, "-o", "comm="]);
-      if (childCmd?.trim().toLowerCase().includes(name)) return trimmed;
-      const found = findChildPid(trimmed, name, depth + 1);
-      if (found) return found;
-    }
-    return undefined;
-  }
-
-  type PaneEntry = { id: string; pid: string; cmd: string; title: string };
+  type PaneEntry = { id: string; pid: number; cmd: string; title: string };
+  type ProcessTree = ReturnType<typeof buildProcessTree>;
 
   /** Claude Code: ~/.claude/sessions/<pid>.json → sessionId */
-  function resolveClaudeCodePane(panes: PaneEntry[], threadId: string): string | undefined {
+  function resolveClaudeCodePane(
+    panes: PaneEntry[],
+    threadId: string,
+    tree: ProcessTree,
+  ): string | undefined {
     const sessionsDir = join(homedir(), ".claude", "sessions");
     for (const pane of panes) {
-      const agentPid = findChildPid(pane.pid, "claude");
+      const agentPid = findChildPidFast(pane.pid, "claude", tree);
       if (!agentPid) continue;
       try {
         const data = JSON.parse(readFileSync(join(sessionsDir, `${agentPid}.json`), "utf-8"));
@@ -847,7 +801,11 @@ export function startServer(
   }
 
   /** Codex: logs_1.sqlite process_uuid='pid:<PID>:*' → thread_id */
-  function resolveCodexPane(panes: PaneEntry[], threadId: string): string | undefined {
+  function resolveCodexPane(
+    panes: PaneEntry[],
+    threadId: string,
+    tree: ProcessTree,
+  ): string | undefined {
     const dbPath = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "logs_1.sqlite");
     let db: any;
     try {
@@ -859,7 +817,7 @@ export function startServer(
 
     try {
       for (const pane of panes) {
-        const agentPid = findChildPid(pane.pid, "codex");
+        const agentPid = findChildPidFast(pane.pid, "codex", tree);
         if (!agentPid) continue;
         const row = db
           .query(
@@ -879,11 +837,15 @@ export function startServer(
   }
 
   /** OpenCode: lsof → log file → grep session ID */
-  function resolveOpenCodePane(panes: PaneEntry[], threadId: string): string | undefined {
+  function resolveOpenCodePane(
+    panes: PaneEntry[],
+    threadId: string,
+    tree: ProcessTree,
+  ): string | undefined {
     for (const pane of panes) {
-      const agentPid = findChildPid(pane.pid, "opencode");
+      const agentPid = findChildPidFast(pane.pid, "opencode", tree);
       if (!agentPid) continue;
-      const lsofOut = shell(["lsof", "-p", agentPid]);
+      const lsofOut = shell(["lsof", "-p", String(agentPid)]);
       if (!lsofOut) continue;
       // Find the log file path from open file descriptors
       const logLine = lsofOut
@@ -928,13 +890,13 @@ export function startServer(
     ]);
     if (!raw) return undefined;
 
-    const panes = raw.split("\n").map((line) => {
+    const panes: PaneEntry[] = raw.split("\n").map((line) => {
       const idx1 = line.indexOf("|");
       const idx2 = line.indexOf("|", idx1 + 1);
       const idx3 = line.indexOf("|", idx2 + 1);
       return {
         id: line.slice(0, idx1),
-        pid: line.slice(idx1 + 1, idx2),
+        pid: Number.parseInt(line.slice(idx1 + 1, idx2), 10),
         cmd: line.slice(idx2 + 1, idx3),
         title: line.slice(idx3 + 1),
       };
@@ -946,10 +908,14 @@ export function startServer(
     }
     const nonSidebar = panes.filter((p) => !sidebarPaneIds.has(p.id));
 
+    // One ps snapshot for all panes — same fast path as the periodic scan,
+    // instead of recursive pgrep/ps per child per pane.
+    const tree = buildProcessTree();
+
     let targetPaneId: string | undefined;
 
     if (agentName === "claude-code" && threadId) {
-      targetPaneId = resolveClaudeCodePane(nonSidebar, threadId);
+      targetPaneId = resolveClaudeCodePane(nonSidebar, threadId, tree);
     }
     if (!targetPaneId && agentName === "amp" && threadName) {
       targetPaneId = nonSidebar.find(
@@ -957,10 +923,10 @@ export function startServer(
       )?.id;
     }
     if (!targetPaneId && agentName === "codex" && threadId) {
-      targetPaneId = resolveCodexPane(nonSidebar, threadId);
+      targetPaneId = resolveCodexPane(nonSidebar, threadId, tree);
     }
     if (!targetPaneId && agentName === "opencode" && threadId) {
-      targetPaneId = resolveOpenCodePane(nonSidebar, threadId);
+      targetPaneId = resolveOpenCodePane(nonSidebar, threadId, tree);
     }
     if (!targetPaneId) {
       targetPaneId = nonSidebar.find((p) =>
@@ -969,7 +935,7 @@ export function startServer(
     }
     if (!targetPaneId) {
       for (const pane of nonSidebar) {
-        if (matchProcessTree(pane.pid, patterns)) {
+        if (matchProcessTreeFast(pane.pid, patterns, tree)) {
           targetPaneId = pane.id;
           break;
         }
@@ -992,6 +958,13 @@ export function startServer(
       })
       .filter((c) => c.tty);
     return resolveSwitchTargets(clients, fromSession);
+  }
+
+  /** Sessions that currently have at least one attached client (deduped). */
+  function listAttachedClientSessions(): string[] {
+    const out = shell(["tmux", "list-clients", "-F", "#{client_session}"]);
+    if (!out) return [];
+    return [...new Set(out.split("\n").filter(Boolean))];
   }
 
   function focusAgentPane(
@@ -1433,16 +1406,12 @@ export function startServer(
 
         p.switchSession(cmd.name, { fromSession });
 
-        // Optimistic server-side focus update — so other TUI instances see the
-        // change immediately via broadcastFocusOnly, without waiting for the
-        // tmux hook round-trip. The hook's /focus POST will reconcile if needed.
-        focusedSession = cmd.name;
+        // Optimistic — clear unseen flags and tell TUIs in the target session
+        // a client is arriving, without waiting for the tmux hook round-trip.
+        // The hook's /focus POST will reconcile if needed.
         const hadUnseen = tracker.handleFocus(cmd.name);
-        if (hadUnseen) {
-          broadcastState();
-        } else {
-          broadcastFocusOnly();
-        }
+        if (hadUnseen) broadcastState();
+        publishSessionViewed(cmd.name);
 
         break;
       }
@@ -1468,12 +1437,6 @@ export function startServer(
       case "refresh":
         broadcastState();
         break;
-      case "move-focus":
-        moveFocus(cmd.delta, ws);
-        break;
-      case "focus-session":
-        setFocus(cmd.name, ws);
-        break;
       case "mark-seen":
         if (tracker.markSeen(cmd.name)) broadcastState();
         break;
@@ -1495,7 +1458,6 @@ export function startServer(
         // Store this client's session so switches can be routed to the
         // client(s) actually attached to it
         clientSessionNames.set(ws, cmd.sessionName);
-        ws.send(JSON.stringify({ type: "your-session", name: cmd.sessionName }));
         break;
       case "focus-agent-pane":
         log("handleCommand", "focus-agent-pane received", {

@@ -43,16 +43,20 @@ export interface SessionData {
 export interface ServerState {
   type: "state";
   sessions: SessionData[];
-  focusedSession: string | null;
   theme: string | undefined;
   sidebarWidth: number;
   preferredEditor: string;
   ts: number;
 }
 
-export interface FocusUpdate {
-  type: "focus";
-  focusedSession: string | null;
+/**
+ * A client (terminal) is now viewing this session — fired by the tmux focus
+ * hook and optimistically on switch-session. TUIs use it only to reset their
+ * local pending-switch marker; card selection is per-TUI, never broadcast.
+ */
+export interface SessionViewed {
+  type: "session-viewed";
+  name: string;
 }
 
 export interface ResizeNotify {
@@ -64,22 +68,11 @@ export interface QuitNotify {
   type: "quit";
 }
 
-export interface YourSession {
-  type: "your-session";
-  name: string;
-}
-
 export interface ReIdentify {
   type: "re-identify";
 }
 
-export type ServerMessage =
-  | ServerState
-  | FocusUpdate
-  | ResizeNotify
-  | QuitNotify
-  | YourSession
-  | ReIdentify;
+export type ServerMessage = ServerState | SessionViewed | ResizeNotify | QuitNotify | ReIdentify;
 
 // --- Programmatic metadata (agent/script-pushed) ---
 
@@ -119,8 +112,6 @@ export type ClientCommand =
   | { type: "kill-session"; name: string }
   | { type: "reorder-session"; name: string; delta: ReorderDelta }
   | { type: "refresh" }
-  | { type: "move-focus"; delta: -1 | 1 }
-  | { type: "focus-session"; name: string }
   | { type: "mark-seen"; name: string }
   | { type: "dismiss-agent"; session: string; agent: string; threadId?: string }
   | { type: "set-theme"; theme: string }
