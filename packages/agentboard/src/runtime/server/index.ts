@@ -87,7 +87,9 @@ export function startServer(
   let sidebarWidth = config.sidebarWidth ?? 35;
   let sidebarPosition: "left" | "right" = config.sidebarPosition ?? "left";
   let preferredEditor = loadPreferredEditor();
-  let sidebarVisible = false;
+  // Visible by default so a fresh server (including `tt agentboard restart`)
+  // spawns sidebars on the first ensure-sidebar without needing a toggle.
+  let sidebarVisible = true;
 
   log("server", "config loaded", {
     sidebarWidth,
@@ -679,18 +681,29 @@ export function startServer(
   }
 
   // Debounced ensure-sidebar — collapses rapid hook-fired calls during fast
-  // session switching into a single check after switching settles.
+  // session switching into a single check after switching settles. Pending
+  // contexts are keyed by window so near-simultaneous calls for different
+  // windows (e.g. restart bootstrapping one per attached client) each get
+  // ensured instead of last-write-wins dropping all but one.
   let ensureSidebarTimer: ReturnType<typeof setTimeout> | null = null;
-  let ensureSidebarPendingCtx: { session: string; windowId: string } | undefined;
+  const ensureSidebarPendingCtxs = new Map<string, { session: string; windowId: string }>();
+  let ensureSidebarPendingNoCtx = false;
 
   function debouncedEnsureSidebar(ctx?: { session: string; windowId: string }): void {
-    if (ctx) ensureSidebarPendingCtx = ctx;
+    if (ctx) ensureSidebarPendingCtxs.set(ctx.windowId, ctx);
+    else ensureSidebarPendingNoCtx = true;
     if (ensureSidebarTimer) clearTimeout(ensureSidebarTimer);
     ensureSidebarTimer = setTimeout(() => {
       ensureSidebarTimer = null;
-      const nextCtx = ensureSidebarPendingCtx;
-      ensureSidebarPendingCtx = undefined;
-      ensureSidebarInWindow(undefined, nextCtx);
+      const ctxs = [...ensureSidebarPendingCtxs.values()];
+      ensureSidebarPendingCtxs.clear();
+      const noCtx = ensureSidebarPendingNoCtx;
+      ensureSidebarPendingNoCtx = false;
+      if (ctxs.length === 0 && noCtx) {
+        ensureSidebarInWindow(undefined, undefined);
+        return;
+      }
+      for (const c of ctxs) ensureSidebarInWindow(undefined, c);
     }, 150);
   }
 

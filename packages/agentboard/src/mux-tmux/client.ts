@@ -435,13 +435,6 @@ export class TmuxClient {
   }
 
   /**
-   * Get the client TTY for the current client
-   */
-  getClientTty(): string {
-    return this.display("#{client_tty}");
-  }
-
-  /**
    * Get session directory (pane_current_path of the active pane)
    */
   getSessionDir(target: string): string {
