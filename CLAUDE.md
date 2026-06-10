@@ -29,6 +29,10 @@
 - Tmux sidebar TUI plugin: `packages/agentboard/`
 - Single package, source split by domain under `src/`: `src/server`, `src/tui`, `src/runtime`, `src/mux-tmux`. Cross-domain imports are relative (e.g. `../runtime/index`) — no `@tt-agentboard/*` workspace packages. Runs as source under bun from a global install.
 - Agent slots: git clones in `~/code/p/towles-tool-repos/towles-tool-slot-{1..5}`
+- Multi-client invariant: "current"/"focused" session is per-client or per-TUI, never a server global. Resolve attached clients at action time (`fromSession` → `tmux list-clients`); stored ttys go stale.
+- Sidebar handoff: each session has its own sidebar TUI process. A session switch moves the viewer to a _different_ TUI — click feedback must relay via the `session-viewed` event's `select` payload, not local state in the originating TUI.
+- Live debugging: server WS on `127.0.0.1:4201`; `TT_AGENTBOARD_DEBUG=1` logs to `/tmp/agentboard-debug.log`; `tt agentboard restart` picks up source changes (runs from source via bun link).
+- tmux format gotcha: in scripts, `display-message -p "#{session_name}"` is pane-context (where the script runs); use `list-clients -F "#{client_session}"` to verify what a client is actually viewing.
 
 ## Testing Conventions
 
