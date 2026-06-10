@@ -520,9 +520,12 @@ function startTui(): void {
   const agentboardDir = resolve(import.meta.dirname, "../../packages/agentboard");
   const tuiEntry = resolve(agentboardDir, "src/tui/index.tsx");
 
-  execSync(`bun run ${tuiEntry}`, {
+  // The solid JSX transform must be preloaded explicitly: `bun pm pack`
+  // silently excludes bunfig.toml, so a cwd-based config never survives
+  // a published install.
+  execSync(`bun run --preload @opentui/solid/preload ${tuiEntry}`, {
     stdio: "inherit",
-    cwd: resolve(agentboardDir, "src/tui"),
+    cwd: agentboardDir,
   });
 }
 
