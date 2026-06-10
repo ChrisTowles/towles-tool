@@ -58,7 +58,7 @@ export {
 export type {
   SessionData,
   ServerState,
-  FocusUpdate,
+  SessionViewed,
   ResizeNotify,
   QuitNotify,
   ServerMessage,

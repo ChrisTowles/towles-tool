@@ -101,7 +101,6 @@ function App() {
   }
 
   let ws: WebSocket | null = null;
-  let startupFocusSynced = false;
   const startupSessionName = getLocalSessionName(muxCtx);
 
   // --- Current session (the ● you-are-here marker) ---
@@ -160,8 +159,9 @@ function App() {
 
     if (!next || next === current) return;
 
+    // Selection is local to this TUI — never sent to the server. Broadcasting
+    // it would move the selection in every other sidebar too.
     setFocusedSession(next);
-    send({ type: "focus-session", name: next });
   }
 
   function moveAgentFocus(delta: -1 | 1) {
@@ -314,42 +314,30 @@ function App() {
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data as string) as ServerMessage;
-        let startupFocusToPublish: string | null = null;
         batch(() => {
           if (msg.type === "state") {
-            const startupFocus =
-              !startupFocusSynced &&
-              startupSessionName &&
-              msg.sessions.some((session) => session.name === startupSessionName)
-                ? startupSessionName
-                : msg.focusedSession;
-
-            if (startupFocus === startupSessionName) {
-              startupFocusSynced = true;
-              if (msg.focusedSession !== startupSessionName) {
-                startupFocusToPublish = startupSessionName;
-              }
-            }
-
             setSessions(reconcile(msg.sessions, { key: "name" }));
-            setFocusedSession(startupFocus);
-            if (startupFocus === startupSessionName) setPendingSwitch(null);
+            // Selection is local — initialize to this sidebar's own session,
+            // and repair it if the selected session disappeared.
+            const selected = focusedSession();
+            if (!selected || !msg.sessions.some((s) => s.name === selected)) {
+              setFocusedSession(
+                msg.sessions.find((s) => s.name === startupSessionName)?.name ??
+                  msg.sessions[0]?.name ??
+                  null,
+              );
+            }
+            // Drop the optimistic switch marker if its target no longer exists.
+            const pending = pendingSwitch();
+            if (pending && !msg.sessions.some((s) => s.name === pending)) {
+              setPendingSwitch(null);
+            }
             setTheme(resolveTheme(msg.theme));
             if (msg.preferredEditor) setPreferredEditor(msg.preferredEditor);
-          } else if (msg.type === "focus") {
-            setFocusedSession(msg.focusedSession);
-            // A focus naming this session means a client is viewing it again —
-            // any optimistic switch-away marker is stale.
-            if (msg.focusedSession === startupSessionName) setPendingSwitch(null);
-          } else if (msg.type === "your-session") {
-            if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
-              startupFocusSynced = true;
-              const oldFocus = focusedSession();
-              setFocusedSession(msg.name);
-              if (oldFocus !== msg.name) {
-                startupFocusToPublish = msg.name;
-              }
-            }
+          } else if (msg.type === "session-viewed") {
+            // A client is viewing this session again — any optimistic
+            // switch-away marker is stale.
+            if (msg.name === startupSessionName) setPendingSwitch(null);
           } else if (msg.type === "re-identify") {
             reIdentify();
           } else if (msg.type === "quit") {
@@ -357,10 +345,6 @@ function App() {
             renderer.destroy();
           }
         });
-
-        if (startupFocusToPublish) {
-          send({ type: "focus-session", name: startupFocusToPublish });
-        }
       } catch {
         // intentionally ignored: socket setup errors are non-fatal at startup
       }
@@ -581,7 +565,6 @@ function App() {
                 }
                 onSelect={() => {
                   setFocusedSession(session.name);
-                  send({ type: "focus-session", name: session.name });
                   switchToSession(session.name);
                 }}
                 onDismissAgent={(agent) => {
