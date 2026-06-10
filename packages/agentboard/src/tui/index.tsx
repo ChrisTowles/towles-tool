@@ -577,12 +577,14 @@ function App() {
                     threadId: agent.threadId,
                   });
                 }}
-                onFocusAgentPane={(agent) => {
+                onFocusAgentPane={(agent, idx) => {
                   // The click switches this terminal to the agent's session —
-                  // move the local selection and current marker with it.
-                  // (The row's onMouseDown stops propagation, so the card's
-                  // onSelect doesn't run for agent-row clicks.)
+                  // move the local selection, agent-row highlight, and current
+                  // marker with it. (The row's onMouseDown stops propagation,
+                  // so the card's onSelect doesn't run for agent-row clicks.)
                   setFocusedSession(session.name);
+                  setPanelFocus("agents");
+                  setFocusedAgentIdx(idx);
                   setPendingSwitch(session.name);
                   send({
                     type: "focus-agent-pane",
