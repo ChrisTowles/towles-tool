@@ -229,7 +229,7 @@ function App() {
       send({ type: "new-session" });
       return;
     }
-    const scriptPath = new URL("../scripts/sessionizer.sh", import.meta.url).pathname;
+    const scriptPath = new URL("./scripts/sessionizer.sh", import.meta.url).pathname;
     muxCtx.sdk.displayPopup({
       command: `bash "${scriptPath}"`,
       title: " new session ",
