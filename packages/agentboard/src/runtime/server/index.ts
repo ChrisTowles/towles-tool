@@ -404,12 +404,14 @@ export function startServer(
     server.publish("sidebar", msg);
   }
 
-  /** Tell TUIs a client is now viewing `name` — they use it only to reset
-   * their local pending-switch marker. Card selection is per-TUI, never
-   * broadcast: with multiple terminals attached there is no one true
-   * "focused session" the server could own. */
-  function publishSessionViewed(name: string) {
-    const msg: SessionViewed = { type: "session-viewed", name };
+  /** Tell TUIs a client is now viewing `name` — they use it to reset their
+   * local pending-switch marker. Card selection is per-TUI: with multiple
+   * terminals attached there is no one true "focused session" the server
+   * could own. `select` is the handoff exception — a sidebar action switched
+   * the viewer to another session's sidebar, and that destination sidebar
+   * should highlight what was clicked. */
+  function publishSessionViewed(name: string, select?: SessionViewed["select"]) {
+    const msg: SessionViewed = { type: "session-viewed", name, select };
     server.publish("sidebar", JSON.stringify(msg));
   }
 
@@ -967,13 +969,14 @@ export function startServer(
     return [...new Set(out.split("\n").filter(Boolean))];
   }
 
+  /** Returns true when a pane was resolved and the viewer was switched to it. */
   function focusAgentPane(
     sessionName: string,
     agentName: string,
     threadId?: string,
     threadName?: string,
     fromSession?: string,
-  ): void {
+  ): boolean {
     log("focus-agent-pane", "received", {
       sessionName,
       agentName,
@@ -982,7 +985,7 @@ export function startServer(
       fromSession,
     });
     const targetPaneId = resolveAgentPaneId(sessionName, agentName, threadId, threadName);
-    if (!targetPaneId) return;
+    if (!targetPaneId) return false;
 
     log("focus-agent-pane", "focusing", { sessionName, agentName, paneId: targetPaneId });
     // The agent's pane may live in a different session/window than the one the
@@ -1023,6 +1026,7 @@ export function startServer(
         pendingHighlightResets.delete(targetPaneId);
       }, PANE_HIGHLIGHT_MS),
     );
+    return true;
   }
 
   function killAgentPane(
@@ -1408,10 +1412,11 @@ export function startServer(
 
         // Optimistic — clear unseen flags and tell TUIs in the target session
         // a client is arriving, without waiting for the tmux hook round-trip.
-        // The hook's /focus POST will reconcile if needed.
+        // The hook's /focus POST will reconcile if needed. Carry the selection
+        // so the destination sidebar highlights the clicked card.
         const hadUnseen = tracker.handleFocus(cmd.name);
         if (hadUnseen) broadcastState();
-        publishSessionViewed(cmd.name);
+        publishSessionViewed(cmd.name, { session: cmd.name });
 
         break;
       }
@@ -1459,21 +1464,30 @@ export function startServer(
         // client(s) actually attached to it
         clientSessionNames.set(ws, cmd.sessionName);
         break;
-      case "focus-agent-pane":
+      case "focus-agent-pane": {
         log("handleCommand", "focus-agent-pane received", {
           session: cmd.session,
           agent: cmd.agent,
           threadId: cmd.threadId,
           threadName: cmd.threadName,
         });
-        focusAgentPane(
+        const switched = focusAgentPane(
           cmd.session,
           cmd.agent,
           cmd.threadId,
           cmd.threadName,
           clientSessionNames.get(ws),
         );
+        // The viewer just landed on the agent session's sidebar — hand the
+        // clicked-agent selection over so that sidebar highlights it.
+        if (switched) {
+          publishSessionViewed(cmd.session, {
+            session: cmd.session,
+            agent: { agent: cmd.agent, threadId: cmd.threadId },
+          });
+        }
         break;
+      }
       case "kill-agent-pane":
         log("handleCommand", "kill-agent-pane received", {
           session: cmd.session,

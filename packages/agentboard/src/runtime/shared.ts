@@ -51,12 +51,19 @@ export interface ServerState {
 
 /**
  * A client (terminal) is now viewing this session — fired by the tmux focus
- * hook and optimistically on switch-session. TUIs use it only to reset their
- * local pending-switch marker; card selection is per-TUI, never broadcast.
+ * hook and optimistically on sidebar-initiated switches. TUIs in the named
+ * session reset their local pending-switch marker. Card selection stays
+ * per-TUI; `select` is the one exception: when a sidebar action caused the
+ * switch, the destination sidebar adopts this selection so the clicked
+ * card/agent is highlighted after the viewer lands on it.
  */
 export interface SessionViewed {
   type: "session-viewed";
   name: string;
+  select?: {
+    session: string;
+    agent?: { agent: string; threadId?: string };
+  };
 }
 
 export interface ResizeNotify {
