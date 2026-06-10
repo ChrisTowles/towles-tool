@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "server": "bun run src/server/main.ts",
-    "tui": "bun run src/tui/index.tsx",
+    "tui": "bun run --preload @opentui/solid/preload src/tui/index.tsx",
     "dev:server": "bun --watch run src/server/main.ts",
-    "dev:tui": "bun --watch run src/tui/index.tsx",
+    "dev:tui": "bun --watch run --preload @opentui/solid/preload src/tui/index.tsx",
     "test": "bun test src/runtime",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
