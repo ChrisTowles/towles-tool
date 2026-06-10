@@ -10,7 +10,9 @@ export type {
   BatchCapable,
   FullMuxProvider,
   MuxProviderSettings,
+  SwitchTarget,
 } from "./contracts/mux";
+export { resolveSwitchTargets } from "./client-routing";
 export {
   isWindowCapable,
   isSidebarCapable,

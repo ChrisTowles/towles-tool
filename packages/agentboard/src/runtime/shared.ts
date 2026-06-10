@@ -44,7 +44,6 @@ export interface ServerState {
   type: "state";
   sessions: SessionData[];
   focusedSession: string | null;
-  currentSession: string | null;
   theme: string | undefined;
   sidebarWidth: number;
   preferredEditor: string;
@@ -54,7 +53,6 @@ export interface ServerState {
 export interface FocusUpdate {
   type: "focus";
   focusedSession: string | null;
-  currentSession: string | null;
 }
 
 export interface ResizeNotify {
@@ -69,7 +67,6 @@ export interface QuitNotify {
 export interface YourSession {
   type: "your-session";
   name: string;
-  clientTty: string | null;
 }
 
 export interface ReIdentify {
@@ -116,7 +113,7 @@ export interface SessionMetadata {
 }
 
 export type ClientCommand =
-  | { type: "switch-session"; name: string; clientTty?: string }
+  | { type: "switch-session"; name: string }
   | { type: "switch-index"; index: number }
   | { type: "new-session" }
   | { type: "kill-session"; name: string }
@@ -127,7 +124,6 @@ export type ClientCommand =
   | { type: "mark-seen"; name: string }
   | { type: "dismiss-agent"; session: string; agent: string; threadId?: string }
   | { type: "set-theme"; theme: string }
-  | { type: "identify"; clientTty: string }
   | { type: "report-width"; width: number }
   | { type: "quit" }
   | { type: "identify-pane"; paneId: string; sessionName: string }

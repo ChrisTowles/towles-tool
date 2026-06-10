@@ -24,12 +24,7 @@ import type {
 } from "../runtime/index";
 import { SessionCard } from "./components/SessionCard";
 import { StatusBar } from "./components/StatusBar";
-import {
-  detectMuxContext,
-  refocusMainPane,
-  getClientTty,
-  getLocalSessionName,
-} from "./mux-context";
+import { detectMuxContext, refocusMainPane, getLocalSessionName } from "./mux-context";
 import { SPINNERS, BOLD, DIM, DIVIDER, logResizeDebug } from "./constants";
 
 const muxCtx = detectMuxContext();
@@ -82,7 +77,6 @@ function App() {
 
   const [sessions, setSessions] = createStore<SessionData[]>([]);
   const [focusedSession, setFocusedSession] = createSignal<string | null>(null);
-  const [currentSession, setCurrentSession] = createSignal<string | null>(null);
   const [connected, setConnected] = createSignal(false);
   const [spinIdx, setSpinIdx] = createSignal(0);
   const [preferredEditor, setPreferredEditor] = createSignal("code");
@@ -106,10 +100,19 @@ function App() {
     toastTimer = setTimeout(() => setToast(null), 4000);
   }
 
-  const [clientTty, setClientTty] = createSignal(getClientTty(muxCtx));
   let ws: WebSocket | null = null;
   let startupFocusSynced = false;
   const startupSessionName = getLocalSessionName(muxCtx);
+
+  // --- Current session (the ● you-are-here marker) ---
+  // This TUI lives in a pane inside `startupSessionName`; anyone seeing it is
+  // attached to that session, so "current" is the local session — not a server
+  // global. (The server can't know one true current session once multiple
+  // clients are attached.) `pendingSwitch` optimistically marks the target of
+  // a click/Tab until the view actually moves away; it resets when a focus
+  // broadcast says this session is being viewed again.
+  const [pendingSwitch, setPendingSwitch] = createSignal<string | null>(null);
+  const currentSession = () => pendingSwitch() ?? startupSessionName;
 
   const focusedData = createMemo(() => sessions.find((s) => s.name === focusedSession()) ?? null);
 
@@ -127,7 +130,7 @@ function App() {
     // Optimistic local update — makes rapid Tab repeat instant by removing
     // the server/hook round-trip from the next-Tab decision.
     // The server's focus/state broadcast will reconcile if needed.
-    setCurrentSession(name);
+    setPendingSwitch(name);
     setFocusedSession(name);
     setPanelFocus("sessions");
     setFocusedAgentIdx(0);
@@ -305,8 +308,6 @@ function App() {
 
     socket.onopen = () => {
       setConnected(true);
-      const tty = clientTty();
-      if (tty) send({ type: "identify", clientTty: tty });
       reIdentify();
     };
 
@@ -332,15 +333,15 @@ function App() {
 
             setSessions(reconcile(msg.sessions, { key: "name" }));
             setFocusedSession(startupFocus);
-            setCurrentSession(msg.currentSession);
+            if (startupFocus === startupSessionName) setPendingSwitch(null);
             setTheme(resolveTheme(msg.theme));
             if (msg.preferredEditor) setPreferredEditor(msg.preferredEditor);
           } else if (msg.type === "focus") {
             setFocusedSession(msg.focusedSession);
-            setCurrentSession(msg.currentSession);
+            // A focus naming this session means a client is viewing it again —
+            // any optimistic switch-away marker is stale.
+            if (msg.focusedSession === startupSessionName) setPendingSwitch(null);
           } else if (msg.type === "your-session") {
-            if (msg.clientTty) setClientTty(msg.clientTty);
-
             if (!startupFocusSynced && sessions.some((session) => session.name === msg.name)) {
               startupFocusSynced = true;
               const oldFocus = focusedSession();

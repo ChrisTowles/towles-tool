@@ -29,6 +29,22 @@ export interface SidebarPane {
 /** Position for sidebar placement */
 export type SidebarPosition = "left" | "right";
 
+/**
+ * Which client(s) a session switch should move.
+ *
+ * - `clientTty`: switch exactly this client. Only safe when the tty was
+ *   resolved at action time (e.g. a tmux keybinding expanding #{client_tty}).
+ * - `fromSession`: switch every client currently attached to this session —
+ *   the session whose sidebar initiated the switch. Resolved at switch time,
+ *   so it cannot go stale the way a stored tty can.
+ *
+ * With neither set, providers fall back to their most-recently-active client.
+ */
+export interface SwitchTarget {
+  readonly clientTty?: string;
+  readonly fromSession?: string;
+}
+
 /** Provider-specific metadata (escape hatch — like ai-sdk's providerMetadata) */
 export type MuxProviderMetadata = Record<string, Record<string, unknown>>;
 
@@ -47,7 +63,7 @@ export interface MuxProviderV1 {
 
   // Session CRUD
   listSessions(): MuxSessionInfo[];
-  switchSession(name: string, clientTty?: string): void;
+  switchSession(name: string, target?: SwitchTarget): void;
   getCurrentSession(): string | null;
   getSessionDir(name: string): string;
   getPaneCount(name: string): number;

@@ -4,8 +4,9 @@ import { homedir } from "node:os";
 
 import consola from "consola";
 
-import type { MuxProvider } from "../contracts/mux";
+import type { MuxProvider, SwitchTarget } from "../contracts/mux";
 import { isFullSidebarCapable, isBatchCapable } from "../contracts/mux";
+import { resolveSwitchTargets } from "../client-routing";
 import type { AgentEvent } from "../contracts/agent";
 import { TERMINAL_STATUSES } from "../contracts/agent";
 import type { AgentWatcher, AgentWatcherContext } from "../contracts/agent-watcher";
@@ -95,10 +96,10 @@ export function startServer(
     configKeys: Object.keys(config),
   });
 
-  // Bootstrap active sessions
-  const currentSession = mux.getCurrentSession();
-  if (currentSession) {
-    tracker.setActiveSessions([currentSession]);
+  // Bootstrap active sessions — boot-time snapshot, only used for initial seeding
+  const bootSession = mux.getCurrentSession();
+  if (bootSession) {
+    tracker.setActiveSessions([bootSession]);
   }
 
   // --- Agent watcher context ---
@@ -195,11 +196,8 @@ export function startServer(
   let lastState: ServerState | null = null;
   let clientCount = 0;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  const clientTtys = new WeakMap<object, string>();
   const clientSessionNames = new WeakMap<object, string>();
   const sessionProviders = new Map<string, MuxProvider>();
-  // Map session name → client TTY (from hook context, for multi-client setups)
-  const clientTtyBySession = new Map<string, string>();
 
   function getCurrentSession(): string | null {
     // Try all providers until one returns a session
@@ -363,14 +361,13 @@ export function startServer(
     if (sessions.length === 0) {
       focusedSession = null;
     } else if (!focusedSession || !sessions.some((s) => s.name === focusedSession)) {
-      focusedSession = sessions.find((s) => s.name === currentSession)?.name ?? sessions[0]!.name;
+      focusedSession = sessions.find((s) => s.name === bootSession)?.name ?? sessions[0]!.name;
     }
 
     return {
       type: "state",
       sessions,
       focusedSession,
-      currentSession,
       theme: currentTheme,
       sidebarWidth,
       preferredEditor,
@@ -390,7 +387,6 @@ export function startServer(
   }
 
   function broadcastStateImmediate() {
-    invalidateCurrentSessionCache();
     tracker.pruneStuck(STUCK_RUNNING_TIMEOUT_MS);
     tracker.pruneTerminal();
     tracker.pruneStale(STALE_AGENT_TIMEOUT_MS);
@@ -402,28 +398,10 @@ export function startServer(
     server.publish("sidebar", msg);
   }
 
-  // Lightweight current-session cache — avoids a tmux subprocess per focus update
-  let cachedCurrentSession: string | null = null;
-  let cachedCurrentSessionTs = 0;
-  const CURRENT_SESSION_CACHE_TTL = 500; // ms — short TTL, just enough to coalesce rapid switches
-
-  function getCachedCurrentSession(): string | null {
-    const now = Date.now();
-    if (now - cachedCurrentSessionTs < CURRENT_SESSION_CACHE_TTL) return cachedCurrentSession;
-    cachedCurrentSession = getCurrentSession();
-    cachedCurrentSessionTs = now;
-    return cachedCurrentSession;
-  }
-
-  function invalidateCurrentSessionCache(): void {
-    cachedCurrentSessionTs = 0;
-  }
-
   function broadcastFocusOnly(sender?: any) {
     if (!lastState) return;
-    const currentSession = getCachedCurrentSession();
-    lastState = { ...lastState, focusedSession, currentSession };
-    const msg: FocusUpdate = { type: "focus", focusedSession, currentSession };
+    lastState = { ...lastState, focusedSession };
+    const msg: FocusUpdate = { type: "focus", focusedSession };
     const payload = JSON.stringify(msg);
     if (sender) {
       sender.publish("sidebar", payload);
@@ -453,13 +431,11 @@ export function startServer(
 
   function handleFocus(name: string): void {
     focusedSession = name;
-    invalidateCurrentSessionCache();
     // Rescan pane agents when session focus changes
     refreshPaneAgents();
     const hadUnseen = tracker.handleFocus(name);
     if (hadUnseen && lastState) {
       // Patch unseen flags in-place — avoids a full computeState with many subprocesses
-      const currentSession = getCachedCurrentSession();
       const updatedSessions = lastState.sessions.map((s) => {
         if (s.name !== name) return s;
         return {
@@ -468,7 +444,7 @@ export function startServer(
           agents: s.agents.map((a) => ({ ...a, unseen: false })),
         };
       });
-      lastState = { ...lastState, sessions: updatedSessions, focusedSession, currentSession };
+      lastState = { ...lastState, sessions: updatedSessions, focusedSession };
       server.publish("sidebar", JSON.stringify(lastState));
     } else if (hadUnseen) {
       broadcastState();
@@ -477,7 +453,7 @@ export function startServer(
     }
   }
 
-  function switchToVisibleIndex(index: number, clientTty?: string): void {
+  function switchToVisibleIndex(index: number, target?: SwitchTarget): void {
     if (!lastState) {
       broadcastState();
     }
@@ -489,7 +465,7 @@ export function startServer(
 
     const name = lastState.sessions[idx]!.name;
     const p = sessionProviders.get(name) ?? mux;
-    p.switchSession(name, clientTty);
+    p.switchSession(name, target);
   }
 
   // --- Sidebar management ---
@@ -510,15 +486,11 @@ export function startServer(
     // New format: pipe-separated "clientTty|session|windowId"
     const pipeParts = trimmed.split("|");
     if (pipeParts.length === 3 && pipeParts[1] && pipeParts[2]) {
-      const ctx = {
+      return {
         clientTty: pipeParts[0] || undefined,
         session: pipeParts[1],
         windowId: pipeParts[2],
       };
-      if (ctx.clientTty && ctx.session) {
-        clientTtyBySession.set(ctx.session, ctx.clientTty);
-      }
-      return ctx;
     }
 
     // Legacy format: "session:windowId"
@@ -993,13 +965,36 @@ export function startServer(
     return targetPaneId;
   }
 
+  /** Ttys of clients currently attached to `fromSession` — the clients whose
+   * sidebar initiated an action and should therefore be the ones switched. */
+  function listAttachedClientTtys(fromSession: string | undefined): string[] {
+    if (!fromSession) return [];
+    const out = shell(["tmux", "list-clients", "-F", "#{client_tty}|#{client_session}"]);
+    if (!out) return [];
+    const clients = out
+      .split("\n")
+      .map((line) => {
+        const [tty, sessionName] = line.split("|");
+        return { tty: tty ?? "", sessionName: sessionName ?? "" };
+      })
+      .filter((c) => c.tty);
+    return resolveSwitchTargets(clients, fromSession);
+  }
+
   function focusAgentPane(
     sessionName: string,
     agentName: string,
     threadId?: string,
     threadName?: string,
+    fromSession?: string,
   ): void {
-    log("focus-agent-pane", "received", { sessionName, agentName, threadId, threadName });
+    log("focus-agent-pane", "received", {
+      sessionName,
+      agentName,
+      threadId,
+      threadName,
+      fromSession,
+    });
     const targetPaneId = resolveAgentPaneId(sessionName, agentName, threadId, threadName);
     if (!targetPaneId) return;
 
@@ -1007,11 +1002,17 @@ export function startServer(
     // The agent's pane may live in a different session/window than the one the
     // client is attached to. switch-client moves the active client to the
     // agent's session, select-window to its window, select-pane to the pane.
-    // We deliberately omit `-c <tty>`: clients can share a tty name (e.g. a
-    // stale suspended duplicate), making `-c` match the wrong client and
-    // silently no-op. Without `-c`, tmux targets the most-recently-active
-    // client, which is the real interactive one.
-    shell(["tmux", "switch-client", "-t", sessionName]);
+    // Switch the client(s) attached to the sidebar's own session — resolved at
+    // action time, so a multi-terminal setup moves the terminal that was
+    // clicked in, not whichever client happens to be most-recently-active.
+    const ttys = listAttachedClientTtys(fromSession);
+    if (ttys.length === 0) {
+      shell(["tmux", "switch-client", "-t", sessionName]);
+    } else {
+      for (const tty of ttys) {
+        shell(["tmux", "switch-client", "-c", tty, "-t", sessionName]);
+      }
+    }
     shell(["tmux", "select-window", "-t", targetPaneId]);
     shell(["tmux", "select-pane", "-t", targetPaneId]);
 
@@ -1408,27 +1409,21 @@ export function startServer(
 
   function handleCommand(cmd: ClientCommand, ws: any) {
     switch (cmd.type) {
-      case "identify":
-        clientTtys.set(ws, cmd.clientTty);
-        break;
       case "switch-session": {
-        // Resolve TTY: hook-derived (authoritative) > client-provided > stored
-        const clientSess = clientSessionNames.get(ws);
-        const tty =
-          (clientSess ? clientTtyBySession.get(clientSess) : undefined) ??
-          cmd.clientTty ??
-          clientTtys.get(ws);
-        log("switch-session", "switching", { target: cmd.name, tty, clientSess });
+        // Switch the client(s) attached to the session whose sidebar sent the
+        // command, resolved at switch time. A stored tty goes stale the moment
+        // that client moves to another session — with two terminals attached it
+        // routes the switch to the wrong terminal.
+        const fromSession = clientSessionNames.get(ws);
+        log("switch-session", "switching", { target: cmd.name, fromSession });
         const p = sessionProviders.get(cmd.name) ?? mux;
 
-        p.switchSession(cmd.name, tty);
+        p.switchSession(cmd.name, { fromSession });
 
         // Optimistic server-side focus update — so other TUI instances see the
         // change immediately via broadcastFocusOnly, without waiting for the
         // tmux hook round-trip. The hook's /focus POST will reconcile if needed.
         focusedSession = cmd.name;
-        cachedCurrentSession = cmd.name;
-        cachedCurrentSessionTs = Date.now();
         const hadUnseen = tracker.handleFocus(cmd.name);
         if (hadUnseen) {
           broadcastState();
@@ -1439,10 +1434,8 @@ export function startServer(
         break;
       }
       case "switch-index": {
-        const clientSess = clientSessionNames.get(ws);
-        const tty =
-          (clientSess ? clientTtyBySession.get(clientSess) : undefined) ?? clientTtys.get(ws);
-        switchToVisibleIndex(cmd.index, tty);
+        const fromSession = clientSessionNames.get(ws);
+        switchToVisibleIndex(cmd.index, { fromSession });
         break;
       }
       case "new-session":
@@ -1486,15 +1479,10 @@ export function startServer(
         quitAll();
         break;
       case "identify-pane":
-        // Store this client's session, reply with session + authoritative client TTY
+        // Store this client's session so switches can be routed to the
+        // client(s) actually attached to it
         clientSessionNames.set(ws, cmd.sessionName);
-        ws.send(
-          JSON.stringify({
-            type: "your-session",
-            name: cmd.sessionName,
-            clientTty: clientTtyBySession.get(cmd.sessionName) ?? null,
-          }),
-        );
+        ws.send(JSON.stringify({ type: "your-session", name: cmd.sessionName }));
         break;
       case "focus-agent-pane":
         log("handleCommand", "focus-agent-pane received", {
@@ -1503,7 +1491,13 @@ export function startServer(
           threadId: cmd.threadId,
           threadName: cmd.threadName,
         });
-        focusAgentPane(cmd.session, cmd.agent, cmd.threadId, cmd.threadName);
+        focusAgentPane(
+          cmd.session,
+          cmd.agent,
+          cmd.threadId,
+          cmd.threadName,
+          clientSessionNames.get(ws),
+        );
         break;
       case "kill-agent-pane":
         log("handleCommand", "kill-agent-pane received", {
@@ -1624,7 +1618,9 @@ export function startServer(
           const body = await req.text();
           const ctx = parseContext(body) ?? undefined;
           log("http", "POST /switch-index", { index, ctx });
-          switchToVisibleIndex(index, ctx?.clientTty);
+          // ctx.clientTty comes from tmux expanding #{client_tty} at keypress
+          // time — fresh, so targeting that exact client is correct here.
+          switchToVisibleIndex(index, { clientTty: ctx?.clientTty });
         } catch {
           // intentionally ignored: malformed switch-index body is non-fatal, respond ok
         }

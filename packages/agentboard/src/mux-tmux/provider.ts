@@ -4,12 +4,13 @@ import type {
   ActiveWindow,
   SidebarPane,
   SidebarPosition,
+  SwitchTarget,
   WindowCapable,
   SidebarCapable,
   BatchCapable,
 } from "../runtime/index";
 import { TmuxClient } from "./client";
-import { debugLog } from "../runtime/index";
+import { debugLog, resolveSwitchTargets } from "../runtime/index";
 
 /** Settings for creating a tmux provider (ai-sdk style) */
 export interface TmuxProviderSettings {
@@ -47,8 +48,22 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     }));
   }
 
-  switchSession(name: string, clientTty?: string): void {
-    this.tmux.switchClient(name, clientTty ? { clientTty } : undefined);
+  switchSession(name: string, target?: SwitchTarget): void {
+    if (target?.clientTty) {
+      this.tmux.switchClient(name, { clientTty: target.clientTty });
+      return;
+    }
+    const ttys = target?.fromSession
+      ? resolveSwitchTargets(this.tmux.listClients(), target.fromSession)
+      : [];
+    if (ttys.length === 0) {
+      // No known origin — let tmux pick its most-recently-active client.
+      this.tmux.switchClient(name);
+      return;
+    }
+    for (const tty of ttys) {
+      this.tmux.switchClient(name, { clientTty: tty });
+    }
   }
 
   getCurrentSession(): string | null {

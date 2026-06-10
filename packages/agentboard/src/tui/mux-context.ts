@@ -40,20 +40,6 @@ export function refocusMainPane(muxCtx: MuxContext): void {
   }
 }
 
-export function getClientTty(muxCtx: MuxContext): string {
-  if (muxCtx.type === "tmux") {
-    const { sdk, paneId } = muxCtx;
-    const sessName = sdk.display("#{session_name}", { target: paneId });
-    if (sessName) {
-      const clients = sdk.listClients();
-      const client = clients.find((c) => c.sessionName === sessName);
-      if (client) return client.tty;
-    }
-    return sdk.getClientTty();
-  }
-  return "";
-}
-
 export function getLocalSessionName(muxCtx: MuxContext): string | null {
   if (muxCtx.type === "tmux") {
     const sessionName = muxCtx.sdk.display("#{session_name}", { target: muxCtx.paneId });
