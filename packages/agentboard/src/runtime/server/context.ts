@@ -1,5 +1,5 @@
 import type { Server } from "bun";
-import type { MuxProvider, FullSidebarCapable, SidebarPane } from "../contracts/mux";
+import type { MuxProvider, FullSidebarCapable, SidebarPane, SwitchTarget } from "../contracts/mux";
 import type { AgentTracker } from "../agents/tracker";
 import type { SessionOrder } from "./session-order";
 import type { SessionMetadataStore } from "./metadata-store";
@@ -41,14 +41,8 @@ export interface ServerContext {
   lastState: ServerState | null;
   clientCount: number;
   idleTimer: ReturnType<typeof setTimeout> | null;
-  clientTtys: WeakMap<object, string>;
   clientSessionNames: WeakMap<object, string>;
   sessionProviders: Map<string, MuxProvider>;
-  clientTtyBySession: Map<string, string>;
-
-  // Current session cache
-  cachedCurrentSession: string | null;
-  cachedCurrentSessionTs: number;
 
   // Sidebar state
   pendingSidebarSpawns: Set<string>;
@@ -77,8 +71,6 @@ export interface ServerContext {
   broadcastState: () => void;
   broadcastFocusOnly: (sender?: any) => void;
   getCurrentSession: () => string | null;
-  getCachedCurrentSession: () => string | null;
-  invalidateCurrentSessionCache: () => void;
   getProvidersWithSidebar: () => FullSidebarCapable[];
   listSidebarPanesByProvider: () => { provider: FullSidebarCapable; panes: SidebarPane[] }[];
   invalidateSidebarPaneCache: () => void;
@@ -96,12 +88,13 @@ export interface ServerContext {
   scheduleSidebarResize: (ctx?: SidebarResizeContext) => void;
   resizeSidebars: (ctx?: SidebarResizeContext) => void;
   quitAll: () => void;
-  switchToVisibleIndex: (index: number, clientTty?: string) => void;
+  switchToVisibleIndex: (index: number, target?: SwitchTarget) => void;
   focusAgentPane: (
     sessionName: string,
     agentName: string,
     threadId?: string,
     threadName?: string,
+    fromSession?: string,
   ) => void;
   killAgentPane: (
     sessionName: string,
