@@ -178,6 +178,8 @@ function App() {
     const agents = data?.agents ?? [];
     const agent = agents[focusedAgentIdx()];
     if (!agent || !data) return;
+    // Focusing the agent's pane switches this terminal to its session.
+    setPendingSwitch(data.name);
     if (TUI_DEBUG)
       appendFileSync(
         "/tmp/agentboard-tui-agent-click.log",
@@ -576,6 +578,12 @@ function App() {
                   });
                 }}
                 onFocusAgentPane={(agent) => {
+                  // The click switches this terminal to the agent's session —
+                  // move the local selection and current marker with it.
+                  // (The row's onMouseDown stops propagation, so the card's
+                  // onSelect doesn't run for agent-row clicks.)
+                  setFocusedSession(session.name);
+                  setPendingSwitch(session.name);
                   send({
                     type: "focus-agent-pane",
                     session: session.name,
