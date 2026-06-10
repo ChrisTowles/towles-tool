@@ -23,7 +23,7 @@ export interface SessionCardProps {
   focusedAgentIdx: number;
   onSelect: () => void;
   onDismissAgent: (agent: SessionData["agents"][number]) => void;
-  onFocusAgentPane: (agent: SessionData["agents"][number]) => void;
+  onFocusAgentPane: (agent: SessionData["agents"][number], index: number) => void;
 }
 
 export function SessionCard(props: SessionCardProps) {
@@ -178,7 +178,7 @@ export function SessionCard(props: SessionCardProps) {
                 now={props.now}
                 isKeyboardFocused={i() === props.focusedAgentIdx}
                 onDismiss={() => props.onDismissAgent(agent)}
-                onFocusPane={() => props.onFocusAgentPane(agent)}
+                onFocusPane={() => props.onFocusAgentPane(agent, i())}
               />
             )}
           </For>
