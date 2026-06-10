@@ -337,9 +337,31 @@ function App() {
             setTheme(resolveTheme(msg.theme));
             if (msg.preferredEditor) setPreferredEditor(msg.preferredEditor);
           } else if (msg.type === "session-viewed") {
-            // A client is viewing this session again — any optimistic
-            // switch-away marker is stale.
-            if (msg.name === startupSessionName) setPendingSwitch(null);
+            if (msg.name === startupSessionName) {
+              // A client is viewing this session again — any optimistic
+              // switch-away marker is stale.
+              setPendingSwitch(null);
+              // Selection handoff: a sidebar action moved the viewer here.
+              // Adopt the selection so the card/agent clicked in the
+              // originating sidebar is the one highlighted in this sidebar.
+              const sel = msg.select;
+              if (sel && sessions.some((s) => s.name === sel.session)) {
+                setFocusedSession(sel.session);
+                const agentSel = sel.agent;
+                if (agentSel) {
+                  const data = sessions.find((s) => s.name === sel.session);
+                  const idx = (data?.agents ?? []).findIndex(
+                    (a) => a.agent === agentSel.agent && a.threadId === agentSel.threadId,
+                  );
+                  if (idx >= 0) {
+                    setPanelFocus("agents");
+                    setFocusedAgentIdx(idx);
+                  }
+                } else {
+                  setPanelFocus("sessions");
+                }
+              }
+            }
           } else if (msg.type === "re-identify") {
             reIdentify();
           } else if (msg.type === "quit") {
