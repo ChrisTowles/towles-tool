@@ -78,10 +78,6 @@ export class TmuxProvider implements MuxProviderV1, WindowCapable, SidebarCapabl
     return this.tmux.getPaneCount(name);
   }
 
-  getClientTty(): string {
-    return this.tmux.getClientTty();
-  }
-
   createSession(name?: string, dir?: string): void {
     this.tmux.newSession({ name, cwd: dir });
   }

@@ -52,7 +52,7 @@ export interface ServerContext {
   sidebarPaneCache: { provider: FullSidebarCapable; panes: SidebarPane[] }[] | null;
   sidebarPaneCacheTs: number;
   ensureSidebarTimer: ReturnType<typeof setTimeout> | null;
-  ensureSidebarPendingCtx: { session: string; windowId: string } | undefined;
+  ensureSidebarPendingCtxs: Map<string, { session: string; windowId: string }>;
 
   // Pane agent scanning
   paneAgentsBySession: Map<string, Map<string, PaneAgentPresence>>;

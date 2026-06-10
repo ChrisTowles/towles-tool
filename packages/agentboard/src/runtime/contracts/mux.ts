@@ -67,7 +67,6 @@ export interface MuxProviderV1 {
   getCurrentSession(): string | null;
   getSessionDir(name: string): string;
   getPaneCount(name: string): number;
-  getClientTty(): string;
   createSession(name?: string, dir?: string): void;
   killSession(name: string): void;
 
