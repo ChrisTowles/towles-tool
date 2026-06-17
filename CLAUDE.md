@@ -2,7 +2,8 @@
 
 ## Commands
 
-- `bun test` — run all tests (vitest)
+- `bun test` — run all tests (bun's native runner)
+- `bun run test` — run all tests via vitest (node workers — no `Bun` global; keep src runtime-portable)
 - `bun test -- auto-claude` — filter tests by path
 - `bun run dev` — run CLI locally (`bin/run.ts`)
 - `bun run lint` — oxlint

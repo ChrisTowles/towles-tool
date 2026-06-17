@@ -135,6 +135,18 @@ export function searchJournalFiles(files: string[], options: SearchOptions): Sea
 }
 
 /**
+ * Parse `YYYY-MM-DD` to local midnight. `new Date("YYYY-MM-DD")` is UTC
+ * midnight, which lands on the previous local day in UTC-negative timezones
+ * and disagrees with the local dates from extractDateFromFilename.
+ */
+function parseLocalDate(value: string): Date {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return new Date(Number.NaN);
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day));
+}
+
+/**
  * Parse a date range string like `2026-01-01..2026-03-01`.
  */
 export function parseDateRange(range: string): { startDate: Date; endDate: Date } {
@@ -143,8 +155,8 @@ export function parseDateRange(range: string): { startDate: Date; endDate: Date 
     throw new Error(`Invalid date range format: "${range}". Expected: YYYY-MM-DD..YYYY-MM-DD`);
   }
   const [startStr, endStr] = parts;
-  const startDate = new Date(startStr);
-  const endDate = new Date(endStr);
+  const startDate = parseLocalDate(startStr);
+  const endDate = parseLocalDate(endStr);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     throw new TypeError(`Invalid dates in range: "${range}". Expected: YYYY-MM-DD..YYYY-MM-DD`);
   }

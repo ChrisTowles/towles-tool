@@ -1,4 +1,5 @@
 import { exec, execSafe, run as defaultX } from "./exec.js";
+import { stripAnsi } from "../render.js";
 import type { XResult } from "./exec.js";
 
 export type XFn = (
@@ -62,7 +63,7 @@ export async function getIssues({
   }
 
   const result = await execFn("gh", args);
-  const stripped = Bun.stripANSI(result.stdout);
+  const stripped = stripAnsi(result.stdout);
 
   try {
     return JSON.parse(stripped) as Issue[];

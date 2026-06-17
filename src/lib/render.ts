@@ -4,6 +4,15 @@ export function getTerminalColumns(): number {
   return process.stdout?.columns || 80;
 }
 
+/**
+ * Strip ANSI escape sequences. Regex instead of Bun.stripANSI so it also
+ * works under vitest's node workers, not just the bun runtime.
+ */
+export function stripAnsi(text: string): string {
+  // oxlint-disable-next-line no-control-regex -- matching ESC is the whole point
+  return text.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
+}
+
 export const limitText = (text: string, maxWidth: number): string => {
   if (text.length <= maxWidth) return text;
   // subtract 1 so room for the ellipsis
