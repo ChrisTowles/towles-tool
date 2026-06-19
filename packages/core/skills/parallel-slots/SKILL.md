@@ -1,6 +1,6 @@
 ---
 name: parallel-slots
-description: Use when the user wants to dispatch parallel Claude Code agents across slot clones of a repo, asks to "fan out", "run N in parallel", "use the slots", or wants to coordinate multiple isolated working copies of the same repo. Explains the slot directory layout, when to fan out vs. stay in primary, and the `gh`-driven workflow that ties slots together.
+description: Use when the user wants to dispatch parallel Claude Code agents across slot clones of a repo, asks to "fan out", "run N in parallel", "use the slots", or wants to coordinate multiple isolated working copies of the same repo. Explains the slot directory layout, when to fan out vs. work in a single slot, and the `gh`-driven workflow that ties slots together.
 user_invocable: true
 ---
 
@@ -12,8 +12,7 @@ The slot pattern lets you run independent Claude Code sessions on the same repo 
 
 ```
 ~/code/<scope>/<repo>-repos/
-  <repo>-primary/   # interactive work
-  <repo>-slot-1/    # parallel agent slot
+  <repo>-slot-1/    # interchangeable slot — interactive or agent work
   <repo>-slot-2/
   <repo>-slot-3/
   <repo>-slot-4/
@@ -24,16 +23,16 @@ Each slot is a full clone of the same GitHub remote, not a worktree. They check 
 
 ## When to fan out
 
-Fan out (use slots) when:
+Fan out (use multiple slots) when:
 
 - Three or more independent tasks would benefit from running simultaneously (e.g. one PR, one bug, one refactor).
-- A task is risky and you want a clean, throwaway slot that won't pollute primary's working tree.
-- You're iterating on the agent harness itself and want to leave primary stable.
+- A task is risky and you want a clean, throwaway slot that won't pollute another slot's working tree.
+- You're iterating on the agent harness itself and want to leave your current slot stable.
 
-Stay in primary when:
+Stay in a single slot when:
 
 - The work is sequential or all the changes need to land in the same commit.
-- You're reading/exploring; spinning a slot just adds overhead.
+- You're reading/exploring; spinning up more slots just adds overhead.
 
 ## Dispatch flow
 
@@ -66,4 +65,4 @@ After a slot's branch is merged: confirm with `gh pr status` that the slot's PR 
 
 - Spinning all 5 slots on the same task "for redundancy". You'll spend the time merging conflicts.
 - Treating slots as long-lived workspaces. They are scratch checkouts — keep them transient.
-- Editing files in primary while a slot has them open. Stay in one or the other for any given file.
+- Editing the same files in two slots at once. Stay in one slot for any given file.
