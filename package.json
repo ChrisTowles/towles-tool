@@ -58,7 +58,6 @@
     "d3-hierarchy": "^3.1.2",
     "fzf": "^0.5.2",
     "luxon": "^3.7.2",
-    "neverthrow": "^8.2.0",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
     "solid-js": "^1.9.11",

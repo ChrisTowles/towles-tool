@@ -22,10 +22,5 @@ tsconfig.tsbuildinfo
 # superpowers skill plans/docs
 docs/superpowers/
 
-# auto-claude artifacts
-.auto-claude/
-.auto-claude/**/prompt-*.md
-.claude-stream.ndjson
-
 # npm publish staging (scripts/pack-publish.ts)
 dist-pack/

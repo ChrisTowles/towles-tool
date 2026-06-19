@@ -30,9 +30,6 @@
 - `src/utils/date-utils.ts` - Date formatting using Luxon
 - `src/lib/journal/` - Journal template and file generation utilities
 
-- `auto-claude` (alias: `ac`) - Automated issue-to-PR pipeline using Claude Code (research → plan → implement → review → PR)
-- `auto-claude list` - Interactively pick an auto-claude labeled issue to process
-
 ## Claude Code Plugin Architecture
 
 **Plugin Marketplace**: `.claude-plugin/marketplace.json`
@@ -64,22 +61,12 @@ Dev workflow commands (invoked as `/tt:<command>`):
 
 Skill: `towles-tool` - Reference for `tt` CLI (git, journal, utils)
 
-### `tt-auto-claude` (named `tt-ac`)
-
-Auto-claude pipeline commands (invoked as `/tt-ac:<command>`):
-
-- `create-issue` - Create GitHub issue with auto-claude label and pipeline labels
-- `list` - List current auto-claude issues
-
-Skill: `auto-claude` - How the auto-claude pipeline works
-
 Plugins are located in `plugins/` with `.claude-plugin/plugin.json` manifests.
 
 ## Error Handling Convention
 
-- **Internal pipeline calls**: Use `git()` / throwing `exec()` — failures are exceptional and should abort the step.
+- **Internal calls**: Use `git()` / throwing `exec()` — failures are exceptional and should abort.
 - **Probing / optional operations**: Use `execSafe()` — when failure is an expected branch (e.g., checking if a branch exists).
-- **neverthrow**: Reserved for `runClaude()` results where the caller must explicitly handle success/failure.
 - **Never** mix: don't catch a throwing call just to convert to `{ ok }`. Pick the right function upfront.
 
 ## Technology Stack
