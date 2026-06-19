@@ -108,6 +108,58 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
 
   private seeded = false;
 
+  /** Read a session's latest message + its parts and derive the current status.
+   * Returns null if the message query throws (caller should skip the row). */
+  private readSessionStatus(sessionId: string): AgentStatus | null {
+    let lastMsg: MessageRow | null = null;
+    const lastParts: PartData[] = [];
+    try {
+      lastMsg = this.db
+        .query(
+          `SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created DESC LIMIT 1`,
+        )
+        .get(sessionId);
+      if (lastMsg) {
+        const partRows: { data: string }[] = this.db
+          .query(`SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC`)
+          .all(lastMsg.id);
+        for (const pr of partRows) {
+          try {
+            lastParts.push(JSON.parse(pr.data));
+          } catch {
+            // intentionally ignored: skip malformed part JSON
+          }
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    let lastMsgData: MessageData | null = null;
+    if (lastMsg) {
+      try {
+        lastMsgData = JSON.parse(lastMsg.data);
+      } catch {
+        // intentionally ignored: leave lastMsgData null on parse failure
+      }
+    }
+
+    return determineStatus(lastMsgData, lastParts);
+  }
+
+  private emitSession(row: SessionRow, status: AgentStatus): void {
+    const session = this.ctx?.resolveSession(row.directory);
+    if (!session) return;
+    this.ctx?.emit({
+      agent: "opencode",
+      session,
+      status,
+      ts: Date.now(),
+      threadId: row.id,
+      ...(row.title && { threadName: row.title }),
+    });
+  }
+
   private poll(): void {
     if (!this.ctx || this.polling) return;
     this.polling = true;
@@ -142,54 +194,10 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
 
         // Emit seeded sessions by reading their current status (like amp watcher does)
         for (const row of sessions) {
-          let lastMsg: MessageRow | null = null;
-          let lastParts: PartData[] = [];
-          try {
-            lastMsg = this.db
-              .query(
-                `SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created DESC LIMIT 1`,
-              )
-              .get(row.id);
-            if (lastMsg) {
-              const partRows: { data: string }[] = this.db
-                .query(`SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC`)
-                .all(lastMsg.id);
-              for (const pr of partRows) {
-                try {
-                  lastParts.push(JSON.parse(pr.data));
-                } catch {
-                  // intentionally ignored: skip malformed part JSON
-                }
-              }
-            }
-          } catch {
-            continue;
-          }
-
-          let lastMsgData: MessageData | null = null;
-          if (lastMsg) {
-            try {
-              lastMsgData = JSON.parse(lastMsg.data);
-            } catch {
-              // intentionally ignored: leave lastMsgData null on parse failure
-            }
-          }
-
-          const status = determineStatus(lastMsgData, lastParts);
-          if (status === "idle") continue;
+          const status = this.readSessionStatus(row.id);
+          if (status === null || status === "idle") continue;
           this.sessionStatuses.set(row.id, status);
-
-          const session = this.ctx.resolveSession(row.directory);
-          if (!session) continue;
-
-          this.ctx.emit({
-            agent: "opencode",
-            session,
-            status,
-            ts: Date.now(),
-            threadId: row.id,
-            ...(row.title && { threadName: row.title }),
-          });
+          this.emitSession(row, status);
         }
         return;
       }
@@ -203,56 +211,12 @@ export class OpenCodeAgentWatcher implements AgentWatcher {
         // OpenCode is actively writing to this session right now.
         if (prev === undefined) continue;
 
-        let lastMsg: MessageRow | null = null;
-        let lastParts: PartData[] = [];
-        try {
-          lastMsg = this.db
-            .query(
-              `SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created DESC LIMIT 1`,
-            )
-            .get(row.id);
-
-          if (lastMsg) {
-            const partRows: { data: string }[] = this.db
-              .query(`SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC`)
-              .all(lastMsg.id);
-            for (const pr of partRows) {
-              try {
-                lastParts.push(JSON.parse(pr.data));
-              } catch {
-                // intentionally ignored: skip malformed part JSON
-              }
-            }
-          }
-        } catch {
-          continue;
-        }
-
-        let lastMsgData: MessageData | null = null;
-        if (lastMsg) {
-          try {
-            lastMsgData = JSON.parse(lastMsg.data);
-          } catch {
-            // intentionally ignored: leave lastMsgData null on parse failure
-          }
-        }
-
-        const status = determineStatus(lastMsgData, lastParts);
+        const status = this.readSessionStatus(row.id);
+        if (status === null) continue;
         const prevStatus = this.sessionStatuses.get(row.id);
         if (prevStatus === status) continue;
         this.sessionStatuses.set(row.id, status);
-
-        const session = this.ctx.resolveSession(row.directory);
-        if (!session) continue;
-
-        this.ctx.emit({
-          agent: "opencode",
-          session,
-          status,
-          ts: Date.now(),
-          threadId: row.id,
-          ...(row.title && { threadName: row.title }),
-        });
+        this.emitSession(row, status);
       }
     } finally {
       this.polling = false;

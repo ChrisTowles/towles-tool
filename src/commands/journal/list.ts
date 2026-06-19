@@ -6,8 +6,12 @@ import consola from "consola";
 import { colors } from "consola/utils";
 import { withSettings, debugArg } from "../shared.js";
 import type { JournalType } from "../../types/journal.js";
-import { JOURNAL_TYPES } from "../../types/journal.js";
-import { collectMarkdownFiles, inferTypeFromPath, extractDateFromFilename } from "./search.js";
+import {
+  collectMarkdownFiles,
+  inferTypeFromPath,
+  extractDateFromFilename,
+  parseTypeFilter,
+} from "./search.js";
 
 export interface JournalEntry {
   filePath: string;
@@ -128,12 +132,6 @@ export function renderTable(entries: JournalEntry[]): string {
   return lines.join("\n");
 }
 
-const VALID_TYPES = new Set<string>([
-  JOURNAL_TYPES.DAILY_NOTES,
-  JOURNAL_TYPES.MEETING,
-  JOURNAL_TYPES.NOTE,
-]);
-
 export default defineCommand({
   meta: {
     name: "list",
@@ -164,17 +162,7 @@ export default defineCommand({
       const baseFolder = settings.journalSettings.baseFolder;
       const journalDir = path.join(baseFolder, "journal");
 
-      // Validate --type
-      let typeFilter: JournalType | undefined;
-      if (args.type) {
-        if (!VALID_TYPES.has(args.type)) {
-          consola.error(
-            `Invalid type "${args.type}". Must be one of: ${[...VALID_TYPES].join(", ")}`,
-          );
-          process.exit(1);
-        }
-        typeFilter = args.type as JournalType;
-      }
+      const typeFilter = parseTypeFilter(args.type);
 
       // Parse --limit
       const limit = args.limit ? Number.parseInt(args.limit, 10) : 20;

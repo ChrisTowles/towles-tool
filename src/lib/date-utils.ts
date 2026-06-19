@@ -10,7 +10,7 @@ export function getMondayOfWeek(date: Date): Date {
   return newDate;
 }
 
-interface weekInfo {
+interface WeekInfo {
   mondayDate: Date;
   tuesdayDate: Date;
   wednesdayDate: Date;
@@ -18,22 +18,19 @@ interface weekInfo {
   fridayDate: Date;
 }
 
-export function getWeekInfo(mondayDate: Date): weekInfo {
-  const tuesdayDate = new Date(mondayDate);
-  tuesdayDate.setDate(mondayDate.getDate() + 1);
-  const wednesdayDate = new Date(mondayDate);
-  wednesdayDate.setDate(mondayDate.getDate() + 2);
-  const thursdayDate = new Date(mondayDate);
-  thursdayDate.setDate(mondayDate.getDate() + 3);
-  const fridayDate = new Date(mondayDate);
-  fridayDate.setDate(mondayDate.getDate() + 4);
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(date.getDate() + days);
+  return result;
+}
 
+export function getWeekInfo(mondayDate: Date): WeekInfo {
   return {
     mondayDate,
-    tuesdayDate,
-    wednesdayDate,
-    thursdayDate,
-    fridayDate,
+    tuesdayDate: addDays(mondayDate, 1),
+    wednesdayDate: addDays(mondayDate, 2),
+    thursdayDate: addDays(mondayDate, 3),
+    fridayDate: addDays(mondayDate, 4),
   };
 }
 
@@ -49,6 +46,6 @@ export function formatDate(date: Date): string {
  * Format: YYYY-MM-DD-week.md (always uses Monday's date)
  */
 export function generateJournalFilename(date: Date = new Date()): string {
-  const monday = getMondayOfWeek(new Date(date));
+  const monday = getMondayOfWeek(date);
   return `${formatDate(monday)}-week.md`;
 }

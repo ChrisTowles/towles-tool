@@ -35,18 +35,18 @@ export function resolvePathTemplate(
       }
 
       if (token.startsWith("monday:")) {
-        const mondayToken = token.substring(7); // Remove 'monday:' prefix
+        const mondayToken = token.slice("monday:".length);
         const mondayDateTime = DateTime.fromJSDate(mondayDate, { zone: "local" });
         return mondayDateTime.toFormat(mondayToken);
       }
 
       const result = dateTime.toFormat(token);
-      // Check if the result contains suspicious patterns that indicate invalid tokens
-      // This is a heuristic to detect when Luxon produces garbage output for invalid tokens
+      // Luxon emits garbage rather than throwing for invalid tokens, so detect
+      // it heuristically: implausibly long output, very long number runs, or UTC.
       const isLikelyInvalid =
         token.includes("invalid") ||
-        result.length > 20 || // Very long results are likely garbage
-        (result.length > token.length * 2 && /\d{10,}/.test(result)) || // Contains very long numbers
+        result.length > 20 ||
+        (result.length > token.length * 2 && /\d{10,}/.test(result)) ||
         result.includes("UTC");
 
       if (isLikelyInvalid) {
@@ -54,9 +54,9 @@ export function resolvePathTemplate(
         return match;
       }
       return result;
-    } catch (error) {
+    } catch {
       consola.warn(`Invalid date format token: ${token}`);
-      return match; // Return original token if format is invalid
+      return match;
     }
   });
 }

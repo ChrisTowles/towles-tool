@@ -72,16 +72,9 @@ export interface SettingsFile {
   path: string;
 }
 
-function createDefaultSettings(): UserSettings {
-  return UserSettingsSchema.parse({});
-}
-
 async function createAndSaveDefaultSettings(): Promise<UserSettings> {
-  const userSettings = createDefaultSettings();
-  await saveSettings({
-    path: USER_SETTINGS_PATH,
-    settings: userSettings,
-  });
+  const userSettings = UserSettingsSchema.parse({});
+  await saveSettings({ path: USER_SETTINGS_PATH, settings: userSettings });
   return userSettings;
 }
 
@@ -96,40 +89,31 @@ export async function saveSettings(settingsFile: SettingsFile): Promise<void> {
 }
 
 export async function loadSettings(): Promise<SettingsFile> {
-  let userSettings: UserSettings | null = null;
-
   try {
     const userContent = await readFile(USER_SETTINGS_PATH, "utf-8");
     const parsedUserSettings: unknown = JSON.parse(userContent);
+    const settings = UserSettingsSchema.parse(parsedUserSettings);
 
-    userSettings = UserSettingsSchema.parse(parsedUserSettings);
-    if (JSON.stringify(parsedUserSettings) !== JSON.stringify(userSettings)) {
+    if (JSON.stringify(parsedUserSettings) !== JSON.stringify(settings)) {
       consola.warn(`Settings file ${USER_SETTINGS_PATH} has been updated with default values.`);
-      await saveSettings({ path: USER_SETTINGS_PATH, settings: userSettings });
+      await saveSettings({ path: USER_SETTINGS_PATH, settings });
     }
+    return { path: USER_SETTINGS_PATH, settings };
   } catch {
-    // Settings file doesn't exist — create it
+    // Settings file is missing or unparseable — (re)create it from defaults
     const isNonInteractive = process.env.CI || !process.stdout.isTTY;
-
-    if (isNonInteractive) {
-      consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
-      userSettings = await createAndSaveDefaultSettings();
-    } else {
+    if (!isNonInteractive) {
       const confirmed = await consola.prompt(
         `Settings file not found. Create ${colors.cyan(USER_SETTINGS_PATH)}?`,
-        {
-          type: "confirm",
-        },
+        { type: "confirm" },
       );
       if (!confirmed) {
         throw new Error(`Settings file not found and user chose not to create it.`);
       }
-      userSettings = await createAndSaveDefaultSettings();
+    } else {
+      consola.info(`Creating settings file: ${USER_SETTINGS_PATH}`);
     }
+    const settings = await createAndSaveDefaultSettings();
+    return { path: USER_SETTINGS_PATH, settings };
   }
-
-  return {
-    path: USER_SETTINGS_PATH,
-    settings: userSettings!,
-  };
 }

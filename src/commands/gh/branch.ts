@@ -63,9 +63,7 @@ export default defineCommand({
     },
   },
   async run({ args }) {
-    // Check prerequisites
-    const cliInstalled = await isGithubCliInstalled();
-    if (!cliInstalled) {
+    if (!(await isGithubCliInstalled())) {
       consola.error("Github CLI not installed");
       process.exit(1);
     }
@@ -76,9 +74,8 @@ export default defineCommand({
     if (currentIssues.length === 0) {
       consola.log(colors.yellow("No issues found, check assignments"));
       process.exit(1);
-    } else {
-      consola.log(colors.green(`${currentIssues.length} Issues found assigned to you`));
     }
+    consola.log(colors.green(`${currentIssues.length} Issues found assigned to you`));
 
     const layout = computeColumnLayout(currentIssues, getTerminalColumns());
     const choices = buildIssueChoices(currentIssues, layout);

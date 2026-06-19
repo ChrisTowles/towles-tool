@@ -56,7 +56,7 @@ export function collectMarkdownFiles(dir: string): string[] {
  */
 export function inferTypeFromPath(filePath: string): JournalType | null {
   const lower = filePath.toLowerCase();
-  if (lower.includes("/daily-notes/") || lower.includes("daily-notes")) {
+  if (lower.includes("daily-notes")) {
     return JOURNAL_TYPES.DAILY_NOTES;
   }
   if (lower.includes("/meetings/") || lower.includes("/meeting/")) {
@@ -169,6 +169,19 @@ const VALID_TYPES = new Set<string>([
   JOURNAL_TYPES.NOTE,
 ]);
 
+/**
+ * Validate a raw `--type` arg, exiting the process with an error if invalid.
+ * Returns the parsed type, or undefined when no type was provided.
+ */
+export function parseTypeFilter(rawType: string | undefined): JournalType | undefined {
+  if (!rawType) return undefined;
+  if (!VALID_TYPES.has(rawType)) {
+    consola.error(`Invalid type "${rawType}". Must be one of: ${[...VALID_TYPES].join(", ")}`);
+    process.exit(1);
+  }
+  return rawType as JournalType;
+}
+
 export default defineCommand({
   meta: {
     name: "search",
@@ -199,17 +212,7 @@ export default defineCommand({
       const baseFolder = settings.journalSettings.baseFolder;
       const journalDir = path.join(baseFolder, "journal");
 
-      // Validate --type
-      let typeFilter: JournalType | undefined;
-      if (args.type) {
-        if (!VALID_TYPES.has(args.type)) {
-          consola.error(
-            `Invalid type "${args.type}". Must be one of: ${[...VALID_TYPES].join(", ")}`,
-          );
-          process.exit(1);
-        }
-        typeFilter = args.type as JournalType;
-      }
+      const typeFilter = parseTypeFilter(args.type);
 
       // Parse --range
       let startDate: Date | undefined;

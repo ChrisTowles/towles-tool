@@ -85,27 +85,27 @@ export default defineCommand({
 
     // JSON/CSV output: flat session rows to stdout
     if (format === "json" || format === "csv") {
-      const sessions = sessionId
-        ? (() => {
-            const sessionPath = findSessionPath(projectsDir, sessionId);
-            if (!sessionPath) {
-              consola.error(`Session ${sessionId} not found`);
-              process.exit(1);
-            }
-            const stat = fs.statSync(sessionPath);
-            const project = path.basename(path.dirname(sessionPath));
-            return [
-              {
-                sessionId,
-                path: sessionPath,
-                date: stat.mtime.toLocaleDateString("en-CA"),
-                tokens: 0,
-                project,
-                mtime: stat.mtimeMs,
-              },
-            ];
-          })()
-        : findRecentSessions(projectsDir, 500, days);
+      let sessions;
+      if (sessionId) {
+        const sessionPath = findSessionPath(projectsDir, sessionId);
+        if (!sessionPath) {
+          consola.error(`Session ${sessionId} not found`);
+          process.exit(1);
+        }
+        const stat = fs.statSync(sessionPath);
+        sessions = [
+          {
+            sessionId,
+            path: sessionPath,
+            date: stat.mtime.toLocaleDateString("en-CA"),
+            tokens: 0,
+            project: path.basename(path.dirname(sessionPath)),
+            mtime: stat.mtimeMs,
+          },
+        ];
+      } else {
+        sessions = findRecentSessions(projectsDir, 500, days);
+      }
 
       if (sessions.length === 0) {
         consola.error("No sessions found");

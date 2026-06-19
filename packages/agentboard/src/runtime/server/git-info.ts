@@ -68,7 +68,6 @@ export function getGitInfo(dir: string): GitInfo {
     }
   }
 
-  // Commits ahead/behind origin/main
   // Commits ahead(+) or behind(-) origin/main
   let commitsDelta = 0;
   const originMain = shell(["git", "-C", dir, "rev-parse", "--verify", "origin/main"])

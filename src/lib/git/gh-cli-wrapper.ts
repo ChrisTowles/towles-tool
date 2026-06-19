@@ -24,10 +24,9 @@ export async function gh<T = unknown>(args: string[]): Promise<T> {
 
 export async function ghRaw(
   args: string[],
-  execFn?: (cmd: string, args: string[]) => Promise<{ stdout: string; ok: boolean }>,
+  execFn: (cmd: string, args: string[]) => Promise<{ stdout: string; ok: boolean }> = execSafe,
 ): Promise<string> {
-  const fn = execFn ?? execSafe;
-  const result = await fn("gh", args);
+  const result = await execFn("gh", args);
   return result.stdout;
 }
 

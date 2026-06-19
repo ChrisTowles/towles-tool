@@ -54,15 +54,16 @@ export async function checkGhAuth(): Promise<{ ok: boolean }> {
   }
 }
 
-export function checkAgentBoard(): {
+export interface AgentBoardCheck {
   name: string;
   value: string;
   ok: boolean;
   warning?: string;
   hint?: string;
-}[] {
-  const results: { name: string; value: string; ok: boolean; warning?: string; hint?: string }[] =
-    [];
+}
+
+export function checkAgentBoard(): AgentBoardCheck[] {
+  const results: AgentBoardCheck[] = [];
 
   const defaultDataDir = resolve(
     process.env.XDG_CONFIG_HOME ?? resolve(process.env.HOME ?? "~", ".config"),
@@ -111,9 +112,13 @@ export function checkAgentBoard(): {
   return results;
 }
 
-export async function checkClaudePlugins(): Promise<
-  { name: string; ok: boolean; installHint?: string }[]
-> {
+export interface PluginCheck {
+  name: string;
+  ok: boolean;
+  installHint?: string;
+}
+
+export async function checkClaudePlugins(): Promise<PluginCheck[]> {
   const requiredPlugins = [
     {
       id: "code-simplifier@claude-plugins-official",
