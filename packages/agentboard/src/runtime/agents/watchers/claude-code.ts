@@ -205,6 +205,38 @@ export async function readActiveSubagents(
   return active.map((a) => a.info);
 }
 
+/** Parse newline-delimited JSON journal text into entries, skipping malformed lines. */
+function parseJournalLines(text: string): JournalEntry[] {
+  const parsed: JournalEntry[] = [];
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    try {
+      parsed.push(JSON.parse(line) as JournalEntry);
+    } catch {
+      // intentionally ignored: skip malformed JSON line
+    }
+  }
+  return parsed;
+}
+
+/** Walk entries in order, carrying forward the latest status and first thread name found. */
+function scanEntries(
+  entries: JournalEntry[],
+  startStatus: AgentStatus,
+  startThreadName: string | undefined,
+): { status: AgentStatus; threadName: string | undefined } {
+  let status = startStatus;
+  let threadName = startThreadName;
+  for (const entry of entries) {
+    if (!threadName) {
+      const name = extractThreadName(entry);
+      if (name) threadName = name;
+    }
+    status = determineStatus(entry) ?? status;
+  }
+  return { status, threadName };
+}
+
 /** Decode Claude's encoded project dir name back to a path.
  * Claude Code encodes `/` as `-` with no escape for literal dashes,
  * so paths like `/home/user/my-project` are ambiguous with `/home/user/my/project`.
@@ -371,26 +403,8 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
         return;
       }
 
-      const lines = text.split("\n").filter(Boolean);
-
-      const parsed: JournalEntry[] = [];
-      for (const line of lines) {
-        try {
-          parsed.push(JSON.parse(line) as JournalEntry);
-        } catch {
-          continue;
-        }
-      }
-
-      let latestStatus: AgentStatus = "idle";
-      let threadName: string | undefined;
-      for (const entry of parsed) {
-        if (!threadName) {
-          const name = extractThreadName(entry);
-          if (name) threadName = name;
-        }
-        latestStatus = determineStatus(entry) ?? latestStatus;
-      }
+      const parsed = parseJournalLines(text);
+      let { status: latestStatus, threadName } = scanEntries(parsed, "idle", undefined);
 
       const usage = extractUsageSummary(parsed) ?? undefined;
       const lastTool = extractLastTool(parsed);
@@ -431,26 +445,12 @@ export class ClaudeCodeAgentWatcher implements AgentWatcher {
       return;
     }
 
-    const lines = text.split("\n").filter(Boolean);
-
-    const parsed: JournalEntry[] = [];
-    for (const line of lines) {
-      try {
-        parsed.push(JSON.parse(line) as JournalEntry);
-      } catch {
-        continue;
-      }
-    }
-
-    let latestStatus: AgentStatus = prev?.status ?? "idle";
-    let threadName = prev?.threadName;
-    for (const entry of parsed) {
-      if (!threadName) {
-        const name = extractThreadName(entry);
-        if (name) threadName = name;
-      }
-      latestStatus = determineStatus(entry) ?? latestStatus;
-    }
+    const parsed = parseJournalLines(text);
+    let { status: latestStatus, threadName } = scanEntries(
+      parsed,
+      prev?.status ?? "idle",
+      prev?.threadName,
+    );
 
     // Merge new usage summary onto the previous one (incremental reads may not include the latest assistant turn)
     const newUsage = extractUsageSummary(parsed);

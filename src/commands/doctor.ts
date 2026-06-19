@@ -7,6 +7,13 @@ import { formatDoctorJson } from "./doctor/format.js";
 import { loadHistory, saveHistory, diffRuns } from "./doctor/history.js";
 import type { DiffEntry } from "./doctor/history.js";
 
+/** Green check when ok, yellow warning when warning text is present, otherwise red cross. */
+function statusIcon(ok: boolean, hasWarning: boolean): string {
+  if (ok) return colors.green("✓");
+  if (hasWarning) return colors.yellow("⚠");
+  return colors.red("✗");
+}
+
 function formatDiffEntry(entry: DiffEntry): string {
   switch (entry.change) {
     case "added":
@@ -61,11 +68,7 @@ export default defineCommand({
     }
 
     for (const check of result.tools) {
-      const icon = check.ok
-        ? colors.green("✓")
-        : check.warning
-          ? colors.yellow("⚠")
-          : colors.red("✗");
+      const icon = statusIcon(check.ok, !!check.warning);
       const version = check.version ?? "not found";
       consola.log(`${icon} ${check.name}: ${version}`);
       if (check.warning) {
@@ -104,11 +107,7 @@ export default defineCommand({
     consola.log(colors.bold("AgentBoard:"));
     const agentboardChecks = checkAgentBoard();
     for (const check of agentboardChecks) {
-      const icon = check.ok
-        ? colors.green("✓")
-        : check.warning
-          ? colors.yellow("⚠")
-          : colors.red("✗");
+      const icon = statusIcon(check.ok, !!check.warning);
       consola.log(`${icon} ${check.name}: ${check.value}`);
       if (check.hint) {
         consola.log(`  ${colors.dim(check.hint)}`);

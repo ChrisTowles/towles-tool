@@ -40,6 +40,34 @@ function parseTone(v: unknown): MetadataTone | undefined {
   return typeof v === "string" && VALID_TONES.has(v) ? (v as MetadataTone) : undefined;
 }
 
+/** True when two pane-agent snapshots differ in their sessions or per-session instance keys. */
+function paneAgentSetsDiffer(
+  prev: Map<string, Map<string, unknown>>,
+  next: Map<string, Map<string, unknown>>,
+): boolean {
+  if (prev.size !== next.size) return true;
+  for (const [session, agents] of next) {
+    const prevAgents = prev.get(session);
+    if (!prevAgents || prevAgents.size !== agents.size) return true;
+    for (const key of agents.keys()) {
+      if (!prevAgents.has(key)) return true;
+    }
+  }
+  return false;
+}
+
+/** Format seconds-since-epoch creation time as a short uptime string (e.g. "2d3h", "5m"). */
+function formatUptime(createdAt: number): string {
+  const diff = Math.floor(Date.now() / 1000) - createdAt;
+  if (Number.isNaN(diff) || diff < 0) return "";
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const mins = Math.floor((diff % 3600) / 60);
+  if (days > 0) return `${days}d${hours}h`;
+  if (hours > 0) return `${hours}h${mins}m`;
+  return `${mins}m`;
+}
+
 // --- Debug logger ---
 
 const DEBUG_LOG = "/tmp/agentboard-debug.log";
@@ -56,12 +84,6 @@ function log(category: string, msg: string, data?: Record<string, unknown>) {
     // intentionally ignored: debug log file write is best-effort
   }
 }
-
-// shell, getGitInfo, invalidateGitCache imported from ./git-info
-
-// refreshPortSnapshot, getSessionPorts imported from ./port-scanner
-
-// syncGitWatchers, teardownGitWatchers imported from ./git-info
 
 // --- Server startup ---
 
@@ -253,15 +275,15 @@ export function startServer(
     // Drop agents whose pane has closed. Tracker only prunes terminals on a
     // timeout, so non-terminal agents (waiting/running/question) would otherwise
     // linger forever after their tmux pane is killed.
-    const livePaneAgents = watcherAgents.filter((a) => {
+    const liveWatcherAgents = watcherAgents.filter((a) => {
       if (!a.paneId) return true;
       if (TERMINAL_STATUSES.has(a.status)) return true;
       return paneAgents?.has(instanceKey(a.agent, a.threadId)) ?? false;
     });
 
-    if (!paneAgents || paneAgents.size === 0) return livePaneAgents;
+    if (!paneAgents || paneAgents.size === 0) return liveWatcherAgents;
 
-    const result = [...livePaneAgents];
+    const result = [...liveWatcherAgents];
     const trackedByKey = new Map(result.map((a, i) => [instanceKey(a.agent, a.threadId), i]));
 
     for (const [, presence] of paneAgents) {
@@ -334,17 +356,6 @@ export function startServer(
         const providerPaneCounts = paneCountMaps.get(provider);
         const panes = providerPaneCounts?.get(name) ?? provider.getPaneCount(name);
 
-        let uptime = "";
-        const diff = Math.floor(Date.now() / 1000) - createdAt;
-        if (!Number.isNaN(diff) && diff >= 0) {
-          const days = Math.floor(diff / 86400);
-          const hours = Math.floor((diff % 86400) / 3600);
-          const mins = Math.floor((diff % 3600) / 60);
-          if (days > 0) uptime = `${days}d${hours}h`;
-          else if (hours > 0) uptime = `${hours}h${mins}m`;
-          else uptime = `${mins}m`;
-        }
-
         return {
           name,
           createdAt,
@@ -360,7 +371,7 @@ export function startServer(
           panes,
           ports: getSessionPorts(name),
           windows,
-          uptime,
+          uptime: formatUptime(createdAt),
           agentState: overrideTerminalIfPaneAlive(name, tracker.getState(name)),
           agents: mergeAgentsWithPanePresence(name, tracker.getAgents(name)),
           eventTimestamps: tracker.getEventTimestamps(name),
@@ -458,14 +469,19 @@ export function startServer(
     return allProviders.filter(isFullSidebarCapable);
   }
 
+  /** Strip surrounding whitespace and quote characters from a POST body. */
+  function unquoteBody(body: string): string {
+    return body
+      .trim()
+      .replace(/^"+|"+$/g, "")
+      .replace(/^'+|'+$/g, "");
+  }
+
   /** Parse "clientTty|session|windowId" or legacy "session:windowId" context from POST body */
   function parseContext(
     body: string,
   ): { clientTty?: string; session: string; windowId: string } | null {
-    const trimmed = body
-      .trim()
-      .replace(/^"+|"+$/g, "")
-      .replace(/^'+|'+$/g, "");
+    const trimmed = unquoteBody(body);
 
     // New format: pipe-separated "clientTty|session|windowId"
     const pipeParts = trimmed.split("|");
@@ -487,10 +503,7 @@ export function startServer(
   }
 
   function parseResizeContext(body: string): SidebarResizeContext | null {
-    const trimmed = body
-      .trim()
-      .replace(/^"+|"+$/g, "")
-      .replace(/^'+|'+$/g, "");
+    const trimmed = unquoteBody(body);
     if (!trimmed) return null;
 
     const [paneId, sessionName, windowId, widthRaw, windowWidthRaw] = trimmed.split("|");
@@ -1358,25 +1371,7 @@ export function startServer(
       allPinnedKeys.set(session, [...agents.keys()]);
     }
 
-    // Check if anything changed
-    let changed = paneAgentsBySession.size !== nextBySession.size;
-    if (!changed) {
-      for (const [session, agents] of nextBySession) {
-        const prev = paneAgentsBySession.get(session);
-        if (!prev || prev.size !== agents.size) {
-          changed = true;
-          break;
-        }
-        for (const key of agents.keys()) {
-          if (!prev.has(key)) {
-            changed = true;
-            break;
-          }
-        }
-        if (changed) break;
-      }
-    }
-
+    const changed = paneAgentSetsDiffer(paneAgentsBySession, nextBySession);
     paneAgentsBySession = nextBySession;
 
     // Update tracker pinning for all sessions

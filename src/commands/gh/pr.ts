@@ -76,14 +76,11 @@ export default defineCommand({
     },
   },
   async run({ args }) {
-    // Check prerequisites
-    const cliInstalled = await isGithubCliInstalled();
-    if (!cliInstalled) {
+    if (!(await isGithubCliInstalled())) {
       consola.error("GitHub CLI not installed");
       process.exit(1);
     }
 
-    // Get current branch
     const branchResult = await run("git", ["branch", "--show-current"]);
     const currentBranch = branchResult.stdout.trim();
 

@@ -14,15 +14,10 @@ export function sanitizeString(str: string): string {
  */
 export function truncateDetail(str: string | undefined, maxLen = 30): string | undefined {
   if (!str) return undefined;
-  // Sanitize control characters first
   const sanitized = sanitizeString(str);
   // For file paths, show just the filename
-  if (sanitized.includes("/")) {
-    const parts = sanitized.split("/");
-    const filename = parts[parts.length - 1];
-    return filename.length > maxLen ? filename.slice(0, maxLen - 3) + "..." : filename;
-  }
-  return sanitized.length > maxLen ? sanitized.slice(0, maxLen - 3) + "..." : sanitized;
+  const text = sanitized.includes("/") ? sanitized.split("/").pop()! : sanitized;
+  return text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
 }
 
 /**

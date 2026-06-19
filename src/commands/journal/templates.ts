@@ -106,6 +106,17 @@ function renderTemplate(template: string, vars: Record<string, string>): string 
 }
 
 /**
+ * Format a time as 24-hour HH:mm.
+ */
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Create initial journal content with date header
  */
 export function createJournalContent({
@@ -161,11 +172,7 @@ export function createMeetingContent({
   templateDir?: string;
 }): string {
   const dateStr = formatDate(date);
-  const timeStr = date.toLocaleTimeString("en-US", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const timeStr = formatTime(date);
   const meetingTitle = title || "Meeting";
 
   // Try external template first
@@ -216,11 +223,7 @@ export function createNoteContent({
   templateDir?: string;
 }): string {
   const dateStr = formatDate(date);
-  const timeStr = date.toLocaleTimeString("en-US", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const timeStr = formatTime(date);
   const noteTitle = title || "Note";
 
   // Try external template first

@@ -312,7 +312,7 @@ export class TmuxClient {
 
   listWindows(options?: { scope?: "all" } | { scope: "session"; target: string }): WindowInfo[] {
     const args = ["list-windows"];
-    if (!options || options.scope === "all" || !options.scope) {
+    if (!options || !options.scope || options.scope === "all") {
       args.push("-a");
     } else if (options.scope === "session") {
       args.push("-t", options.target);

@@ -32,6 +32,16 @@ export class AgentTracker {
     return `${session}\0${key}`;
   }
 
+  /** Remove an instance and its unseen flag from a session's instance map. */
+  private removeInstance(
+    session: string,
+    sessionInstances: Map<string, AgentEvent>,
+    key: string,
+  ): void {
+    sessionInstances.delete(key);
+    this.unseenInstances.delete(this.unseenKey(session, key));
+  }
+
   applyEvent(event: AgentEvent, options?: { seed?: boolean }): void {
     const key = instanceKey(event.agent, event.threadId);
 
@@ -102,18 +112,19 @@ export class AgentTracker {
     return this.eventTimestamps.get(session) ?? [];
   }
 
-  markSeen(session: string): boolean {
-    const hadUnseen = this.isUnseen(session);
-    if (!hadUnseen) return false;
-
-    // Clear unseen flags for all instances — keep the instances themselves
-    // (pruneTerminal will remove seen terminal instances after timeout)
+  /** Clear unseen flags for every instance in a session, keeping the instances themselves
+   * (pruneTerminal removes seen terminal instances after a timeout). */
+  private clearUnseen(session: string): void {
     const sessionInstances = this.instances.get(session);
-    if (sessionInstances) {
-      for (const key of sessionInstances.keys()) {
-        this.unseenInstances.delete(this.unseenKey(session, key));
-      }
+    if (!sessionInstances) return;
+    for (const key of sessionInstances.keys()) {
+      this.unseenInstances.delete(this.unseenKey(session, key));
     }
+  }
+
+  markSeen(session: string): boolean {
+    if (!this.isUnseen(session)) return false;
+    this.clearUnseen(session);
     return true;
   }
 
@@ -122,10 +133,9 @@ export class AgentTracker {
     if (!sessionInstances) return false;
 
     const key = instanceKey(agent, threadId);
-    const removed = sessionInstances.delete(key);
-    if (!removed) return false;
+    if (!sessionInstances.has(key)) return false;
 
-    this.unseenInstances.delete(this.unseenKey(session, key));
+    this.removeInstance(session, sessionInstances, key);
     if (sessionInstances.size === 0) {
       this.instances.delete(session);
     }
@@ -138,8 +148,7 @@ export class AgentTracker {
       for (const [key, event] of sessionInstances) {
         if (event.status === "running" && now - event.ts > timeoutMs) {
           if (this.isPinned(session, key)) continue;
-          sessionInstances.delete(key);
-          this.unseenInstances.delete(this.unseenKey(session, key));
+          this.removeInstance(session, sessionInstances, key);
         }
       }
       if (sessionInstances.size === 0) {
@@ -170,8 +179,26 @@ export class AgentTracker {
         for (let i = 1; i < list.length; i++) {
           const k = list[i]!.key;
           if (this.isPinned(session, k)) continue;
-          sessionInstances.delete(k);
-          this.unseenInstances.delete(this.unseenKey(session, k));
+          this.removeInstance(session, sessionInstances, k);
+        }
+      }
+      if (sessionInstances.size === 0) {
+        this.instances.delete(session);
+      }
+    }
+  }
+
+  /** Prune instances older than timeoutMs (by last activity) unless pinned, optionally
+   * restricted to a single status. Shared by pruneStale (all statuses) and pruneIdle. */
+  private pruneByAge(timeoutMs: number, onlyStatus?: AgentEvent["status"]): void {
+    const now = Date.now();
+    for (const [session, sessionInstances] of this.instances) {
+      for (const [key, event] of sessionInstances) {
+        if (onlyStatus && event.status !== onlyStatus) continue;
+        if (this.isPinned(session, key)) continue;
+        const lastSeen = event.details?.lastActivityAt ?? event.ts;
+        if (now - lastSeen > timeoutMs) {
+          this.removeInstance(session, sessionInstances, key);
         }
       }
       if (sessionInstances.size === 0) {
@@ -182,20 +209,7 @@ export class AgentTracker {
 
   /** Auto-prune any instance whose last activity is older than timeoutMs, regardless of status. Skips pinned. */
   pruneStale(timeoutMs: number): void {
-    const now = Date.now();
-    for (const [session, sessionInstances] of this.instances) {
-      for (const [key, event] of sessionInstances) {
-        if (this.isPinned(session, key)) continue;
-        const lastSeen = event.details?.lastActivityAt ?? event.ts;
-        if (now - lastSeen > timeoutMs) {
-          sessionInstances.delete(key);
-          this.unseenInstances.delete(this.unseenKey(session, key));
-        }
-      }
-      if (sessionInstances.size === 0) {
-        this.instances.delete(session);
-      }
-    }
+    this.pruneByAge(timeoutMs);
   }
 
   /**
@@ -205,21 +219,7 @@ export class AgentTracker {
    * Live agents are pinned by the pane scanner and re-added via pane presence, so they survive.
    */
   pruneIdle(timeoutMs: number): void {
-    const now = Date.now();
-    for (const [session, sessionInstances] of this.instances) {
-      for (const [key, event] of sessionInstances) {
-        if (event.status !== "idle") continue;
-        if (this.isPinned(session, key)) continue;
-        const lastSeen = event.details?.lastActivityAt ?? event.ts;
-        if (now - lastSeen > timeoutMs) {
-          sessionInstances.delete(key);
-          this.unseenInstances.delete(this.unseenKey(session, key));
-        }
-      }
-      if (sessionInstances.size === 0) {
-        this.instances.delete(session);
-      }
-    }
+    this.pruneByAge(timeoutMs, "idle");
   }
 
   /** Auto-prune terminal instances older than timeout, but only if instance is not unseen or pinned */
@@ -232,7 +232,7 @@ export class AgentTracker {
         if (this.unseenInstances.has(ukey)) continue; // Don't prune unseen — user hasn't looked yet
         if (this.isPinned(session, key)) continue; // Don't prune agents backed by live panes
         if (now - event.ts > TERMINAL_PRUNE_MS) {
-          sessionInstances.delete(key);
+          this.removeInstance(session, sessionInstances, key);
         }
       }
       if (sessionInstances.size === 0) {
@@ -265,16 +265,7 @@ export class AgentTracker {
     this.active.add(session);
 
     const hadUnseen = this.isUnseen(session);
-    if (hadUnseen) {
-      // Clear unseen flags — keep terminal instances visible (as "seen")
-      // pruneTerminal will clean them up after timeout
-      const sessionInstances = this.instances.get(session);
-      if (sessionInstances) {
-        for (const key of sessionInstances.keys()) {
-          this.unseenInstances.delete(this.unseenKey(session, key));
-        }
-      }
-    }
+    if (hadUnseen) this.clearUnseen(session);
     return hadUnseen;
   }
 
