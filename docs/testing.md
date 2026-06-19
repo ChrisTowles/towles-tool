@@ -9,7 +9,7 @@ Uses [vitest](https://vitest.dev/) configured in `vitest.config.ts`. Tests are c
 ```bash
 bun test               # Run all vitest tests
 bun test:watch          # Watch mode (auto-skips API tests via CI=DisableCallingClaude)
-bun test -- path        # Filter by path (e.g. bun test -- auto-claude)
+bun test -- path        # Filter by path (e.g. bun test -- journal)
 ```
 
 ### Prompt Template Testing
@@ -18,10 +18,8 @@ Uses [promptfoo](https://promptfoo.dev/) to validate prompt templates render cor
 
 ```bash
 bun test:prompts                  # All echo prompt tests (root + plugins)
-bun test:prompts:root             # Root promptfoo config only (auto-claude templates)
 bun test:prompts:tt-core          # tt-core plugin prompt tests
 bun test:prompts:tt-core:llm      # LLM-based eval (needs ANTHROPIC_API_KEY)
-bun test:prompts:tt-auto-claude   # tt-auto-claude plugin prompt tests
 ```
 
 ### Environment Variables
@@ -30,9 +28,8 @@ bun test:prompts:tt-auto-claude   # tt-auto-claude plugin prompt tests
 
 ### Test Coverage
 
-17 test files covering:
+Test files cover:
 
-- **Commands**: `config`, `graph`, `gh/branch`, `auto-claude/retry`, `auto-claude/status`
-- **Auto-claude lib**: pipeline, pipeline-execution, config, prompt-templates, run-claude, steps, utils, utils-execution
+- **Commands**: `config`, `graph`, `gh/branch`, `doctor`, `journal`
 - **Utilities**: date-utils, branch-name, gh-cli-wrapper, render
 - **Prompt templates**: promptfoo configs validate structure of plan/implement/simplify/review prompts and plugin command prompts

@@ -4,7 +4,7 @@
 
 - `bun test` — run all tests (bun's native runner)
 - `bun run test` — run all tests via vitest (node workers — no `Bun` global; keep src runtime-portable)
-- `bun test -- auto-claude` — filter tests by path
+- `bun test -- journal` — filter tests by path
 - `bun run dev` — run CLI locally (`bin/run.ts`)
 - `bun run lint` — oxlint
 - `bun run format` — oxfmt
@@ -61,4 +61,3 @@
 
 - Always rebase merge: `gh pr merge --rebase --admin`
 - Branch protection enabled with admin bypass
-- `tt auto-claude` wraps `claude -p --output-format stream-json`

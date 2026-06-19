@@ -40,7 +40,7 @@ Stay in primary when:
 1. Pick a free slot (any slot whose sidebar pane is idle).
 2. `cd` into it and confirm the working tree is clean.
 3. Branch off from a GitHub issue: `gh issue develop <issue-number> --checkout` — creates a remote branch tied to the issue and switches the slot to it. If there's no issue, name the branch and use `gh pr checkout <pr>` later if you need to hop onto a colleague's PR.
-4. Hand the task to Claude in that slot — either via the repo's sidebar TUI or by running `tt auto-claude` with a prompt.
+4. Hand the task to Claude in that slot via the repo's sidebar TUI.
 5. Watch the sidebar pane for completion. The stop-hook prints results back to it.
 
 ## Coordination rules

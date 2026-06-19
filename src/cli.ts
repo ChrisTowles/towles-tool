@@ -13,8 +13,6 @@ export const main = defineCommand({
     pr: () => import("./commands/gh/pr.js").then((m) => m.default),
     journal: () => import("./commands/journal/index.js").then((m) => m.default),
     today: () => import("./commands/journal/daily-notes.js").then((m) => m.default),
-    "auto-claude": () => import("./commands/auto-claude/index.js").then((m) => m.default),
-    ac: () => import("./commands/auto-claude/index.js").then((m) => m.default),
     graph: () => import("./commands/graph/index.js").then((m) => m.default),
   },
 });
