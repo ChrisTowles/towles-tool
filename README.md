@@ -45,7 +45,7 @@ tt auto-claude --reset 42               # Reset state for an issue
 tt auto-claude --loop                    # Start polling loop
 ```
 
-**Slot-based workflow:** Run auto-claude in a dedicated clone of the repo — not the one you're actively editing. Keep 3-5 clones (e.g. `slot-1`, `slot-2`, `slot-primary`) so each issue gets its own isolated environment. `slot-primary` is typically the one open in VS Code for manual work; the numbered slots run auto-claude independently. Each slot has its own `.env` so services and ports don't collide between slots. Claude Code's worktree feature may replace this approach in the future, but full repo clones have been more reliable in practice.
+**Slot-based workflow:** Run auto-claude in a dedicated clone of the repo — not the one you're actively editing. Keep 3-5 clones (e.g. `slot-1`, `slot-2`, …) so each issue gets its own isolated environment. Slots are interchangeable — open one in VS Code for manual work and let the others run auto-claude independently. Each slot has its own `.env` so services and ports don't collide between slots. Claude Code's worktree feature may replace this approach in the future, but full repo clones have been more reliable in practice.
 
 #### Pipeline Steps
 
