@@ -1,4 +1,5 @@
 import { debugLog } from "../debug";
+import { startSessionPoll } from "./poll";
 
 // Global port snapshot — refreshed by the port poll timer, read by computeState.
 // Runs lsof + ps once for ALL sessions instead of per-session.
@@ -138,18 +139,13 @@ export function getSessionPorts(sessionName: string): number[] {
 }
 
 export function startPortPoll(ctx: {
-  lastState: { sessions: { name: string }[] } | null;
-  clientCount: number;
+  getSessions: () => { name: string }[] | null;
+  getClientCount: () => number;
   broadcastState: () => void;
 }): ReturnType<typeof setInterval> {
-  // Run initial snapshot immediately so first broadcast has ports
-  if (ctx.lastState) {
-    refreshPortSnapshot(ctx.lastState.sessions.map((s) => s.name));
-  }
-  const PORT_POLL_INTERVAL_MS = 10_000;
-  return setInterval(() => {
-    if (!ctx.lastState || ctx.clientCount === 0) return;
-    const changed = refreshPortSnapshot(ctx.lastState.sessions.map((s) => s.name));
-    if (changed) ctx.broadcastState();
-  }, PORT_POLL_INTERVAL_MS);
+  return startSessionPoll({
+    intervalMs: 10_000,
+    ...ctx,
+    tick: (sessions) => refreshPortSnapshot(sessions.map((s) => s.name)),
+  });
 }
