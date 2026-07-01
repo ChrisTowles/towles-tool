@@ -23,7 +23,6 @@ export interface SessionData {
   createdAt: number;
   dir: string;
   branch: string;
-  dirty: boolean;
   isWorktree: boolean;
   filesChanged: number;
   linesAdded: number;

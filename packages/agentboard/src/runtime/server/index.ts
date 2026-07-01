@@ -16,7 +16,7 @@ import { SessionMetadataStore } from "./metadata-store";
 import { loadConfig, saveConfig, loadPreferredEditor } from "../config";
 import { resolveSidebarWidthFromResizeContext, snapshotSidebarWindows } from "./sidebar-width-sync";
 import type { SidebarResizeContext, SidebarResizeSuppression } from "./sidebar-width-sync";
-import { shell, getGitInfo, syncGitWatchers, teardownGitWatchers } from "./git-info";
+import { shell, getGitInfo, syncGitWatchers, teardownGitWatchers, startGitPoll } from "./git-info";
 import { refreshPortSnapshot, getSessionPorts, startPortPoll } from "./port-scanner";
 import {
   SERVER_PORT,
@@ -361,7 +361,6 @@ export function startServer(
           createdAt,
           dir,
           branch: git.branch,
-          dirty: git.dirty,
           isWorktree: git.isWorktree,
           filesChanged: git.filesChanged,
           linesAdded: git.linesAdded,
@@ -1498,12 +1497,14 @@ export function startServer(
   // --- Port polling (detect new/stopped listeners every 10s) ---
 
   let portPollTimer: ReturnType<typeof setInterval> | null = null;
+  let gitPollTimer: ReturnType<typeof setInterval> | null = null;
 
   function cleanup() {
     for (const w of allWatchers) w.stop();
     if (watcherBroadcastTimer) clearTimeout(watcherBroadcastTimer);
     teardownGitWatchers();
     if (portPollTimer) clearInterval(portPollTimer);
+    if (gitPollTimer) clearInterval(gitPollTimer);
     if (paneScanTimer) clearInterval(paneScanTimer);
     if (pendingSidebarResize) clearTimeout(pendingSidebarResize);
     for (const timer of pendingHighlightResets.values()) clearTimeout(timer);
@@ -1792,7 +1793,16 @@ export function startServer(
     refreshPortSnapshot(allMuxSessions);
   }
   broadcastState();
-  portPollTimer = startPortPoll({ lastState, clientCount, broadcastState });
+  portPollTimer = startPortPoll({
+    getSessions: () => lastState?.sessions ?? null,
+    getClientCount: () => clientCount,
+    broadcastState,
+  });
+  gitPollTimer = startGitPoll({
+    getSessions: () => lastState?.sessions ?? null,
+    getClientCount: () => clientCount,
+    broadcastState,
+  });
   startPaneScan();
   // Run initial pane scan
   refreshPaneAgents();
