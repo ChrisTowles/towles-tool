@@ -434,7 +434,7 @@ export function BoardScreen() {
               variant="ghost"
               size="sm"
               className="px-2 text-xs text-muted-foreground"
-              title="Archive closed tasks finished over 7 days ago — hidden, not deleted"
+              title="Archive all closed tasks now — hidden, not deleted"
               onClick={archiveDone}
             >
               Archive done
