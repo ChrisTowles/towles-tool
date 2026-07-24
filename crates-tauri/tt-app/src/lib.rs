@@ -290,6 +290,7 @@ pub fn run() {
                 emit: emit.clone(),
                 scan: scan.clone(),
                 needs_since: Mutex::new(tt_agentboard::bridge::NeedsSince::new()),
+                ever_live: Mutex::new(std::collections::HashSet::new()),
             });
 
             // Compiler-diagnostics hub for the Claude Code IDE bridge: fed by

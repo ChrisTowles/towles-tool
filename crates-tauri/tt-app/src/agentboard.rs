@@ -3,6 +3,7 @@
 //! the `agentboard://state` event, and the `ab_*` commands. Agent state is
 //! derived by scanning `~/.claude` (see `lib.rs`), not pushed over HTTP.
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -29,6 +30,11 @@ pub struct Ab {
     /// session's waiting-age is stable (see `tt_agentboard::bridge::NeedsSince`).
     /// Every payload the app stamps threads through this.
     pub needs_since: Mutex<tt_agentboard::bridge::NeedsSince>,
+    /// Session ids observed with a live PTY at least once, carried across
+    /// recomputes so [`prune_dead_shells`] can tell "this shell just exited"
+    /// from "this shell's PTY hasn't started yet" (the latter is true for the
+    /// brief window between `ab_add_session` and the following `term_start`).
+    pub ever_live: Mutex<HashSet<String>>,
 }
 
 /// Stamp `SessionData.live`/`shellKind`/`portDrift` from the app's PTY
@@ -68,6 +74,43 @@ pub fn stamp_pty_state(
     tt_agentboard::bridge::recompute_needs(payload, since, now);
 }
 
+/// Delete a plain shell's session record the moment its PTY exits, instead of
+/// leaving a permanent "Off" row — an exited shell never comes back on its
+/// own, unlike an agent pane, whose `agent_state` still carries meaningful
+/// (last-known) status after its PTY closes. Must run after
+/// [`stamp_pty_state`], which is what makes `session.live` truthful.
+///
+/// `ever_live` guards against pruning a session that simply hasn't spawned
+/// its PTY yet: `ab_add_session` persists the record and notifies the
+/// emitter *before* the frontend's follow-up `term_start` call lands, so a
+/// payload built in that window would otherwise see `live: false` on a
+/// brand-new session and delete it out from under the user.
+fn prune_dead_shells(
+    payload: &mut StatePayload,
+    engine: &Mutex<Engine>,
+    ever_live: &Mutex<HashSet<String>>,
+) {
+    let mut engine = engine.lock().unwrap();
+    let mut ever_live = ever_live.lock().unwrap();
+    for repo in &mut payload.repos {
+        for folder in &mut repo.folders {
+            folder.sessions.retain(|session| {
+                if session.live {
+                    ever_live.insert(session.id.clone());
+                    return true;
+                }
+                let was_live = ever_live.remove(&session.id);
+                let dead_shell = was_live && session.agent_state.is_none();
+                if dead_shell {
+                    tracing::info!(session_id = %session.id, "session.pruned_exited_shell");
+                    engine.close_session(&session.id);
+                }
+                !dead_shell
+            });
+        }
+    }
+}
+
 /// The stamped payload, recomputed now. Shared by `ab_get_state` and emitters.
 /// The agent snapshot (claude CLI + `/proc` + transcript reads) is collected
 /// BEFORE taking the engine lock so its subprocess work can't stall other
@@ -88,6 +131,7 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
         &mut ab.needs_since.lock().unwrap(),
         now_ms(),
     );
+    prune_dead_shells(&mut payload, &ab.engine, &ab.ever_live);
     payload
 }
 
@@ -169,6 +213,7 @@ pub fn ab_mark_seen(state: State<Ab>, app: AppHandle, name: String) {
             &mut state.needs_since.lock().unwrap(),
             now_ms(),
         );
+        prune_dead_shells(&mut payload, &state.engine, &state.ever_live);
         let _ = app.emit(STATE_EVENT, payload);
     }
 }
