@@ -70,3 +70,15 @@ export function buildDiffTree(paths: string[]): DiffTreeNode[] {
 
   return finalize(root);
 }
+
+/** Reorder a path-keyed list into the order `buildDiffTree` renders it —
+ * folders before files, alphabetical at each level — so a stacked list of the
+ * same files (the diff pane's Monaco column) reads top-to-bottom in lockstep
+ * with the tree rail beside it. Git's own `name-status` order is a flat sort by
+ * full path, which interleaves differently (a root-level `.env` sorts first
+ * there but renders last in the tree). */
+export function sortToTreeOrder<T extends { path: string }>(items: readonly T[]): T[] {
+  const walk = (nodes: DiffTreeNode[]): T[] =>
+    nodes.flatMap((node) => (node.kind === "file" ? [items[node.index]] : walk(node.children)));
+  return walk(buildDiffTree(items.map((it) => it.path)));
+}

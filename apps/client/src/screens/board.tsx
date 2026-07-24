@@ -838,9 +838,7 @@ function Card({
                 <>
                   <DropdownMenuItem onSelect={() => onReopen(task)}>
                     Start task
-                    <span className="ml-auto text-[10px] text-muted-foreground">
-                      new worktree
-                    </span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">new worktree</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
