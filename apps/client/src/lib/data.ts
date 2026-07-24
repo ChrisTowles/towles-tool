@@ -653,8 +653,8 @@ export const taskDelete = (
     { schema: TaskDeleteOutcomeSchema },
   );
 
-/** Archive closed tasks finished more than the backend's window (7 days) ago —
- * they leave the board but the rows survive. */
+/** Archive every currently-closed task now — they leave the board but the
+ * rows survive. */
 export const storeArchiveDone = () => invoke<void>("store_archive_done");
 
 /** Bring one archived task back onto the board. */

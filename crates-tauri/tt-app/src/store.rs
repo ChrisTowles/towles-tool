@@ -500,18 +500,19 @@ pub fn store_update_task(
     Ok(())
 }
 
-/// Archive finished todos older than [`tt_store::ARCHIVE_AFTER_MS`] off the
-/// active board, then re-emit the snapshot — the "Archive done" button. Rows
-/// are hidden, never deleted (the collector-side sweep in `tt-collect` does
-/// the same on its own cadence; this is the don't-wait affordance). The
-/// cutoff is derived from the wall clock here, at the command boundary — the
-/// store takes plain instants. Returns the number of todos archived.
+/// Archive every currently-closed todo off the active board right now, then
+/// re-emit the snapshot — the "Archive done" button. Rows are hidden, never
+/// deleted. This is a deliberate manual action, so it archives immediately
+/// rather than respecting [`tt_store::ARCHIVE_AFTER_MS`] — that grace period
+/// is only for the unattended collector-side sweep in `tt-collect`, which
+/// keeps recently-closed work visible until a human hasn't acted on it for a
+/// while. Returns the number of todos archived.
 #[tauri::command]
 pub fn store_archive_done(app: AppHandle, state: State<StoreState>) -> Result<usize, String> {
     let now = now_ms();
     let archived = with_store(&state, |store| {
         store
-            .archive_closed_tasks(now - tt_store::ARCHIVE_AFTER_MS, now)
+            .archive_closed_tasks(now + 1, now)
             .map_err(|e| format!("archive_closed_tasks failed: {e}"))
     })?;
     tracing::info!(count = archived, "task.done_archived");
