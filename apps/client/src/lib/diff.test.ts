@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDiffTree } from "./diff";
+import { buildDiffTree, sortToTreeOrder } from "./diff";
 
 describe("buildDiffTree", () => {
   it("groups files under their shared directories", () => {
@@ -32,5 +32,38 @@ describe("buildDiffTree", () => {
     const [a, b] = src.children;
     if (a.kind !== "file" || b.kind !== "file") throw new Error("expected files");
     expect([a.index, b.index]).toEqual([0, 1]);
+  });
+});
+
+describe("sortToTreeOrder", () => {
+  it("puts files in the order the tree rail renders them", () => {
+    // git name-status order: a flat sort by full path.
+    const files = [
+      { path: ".env.dev" },
+      { path: "docs/entra.md" },
+      { path: "packages/web-portal/CLAUDE.md" },
+      { path: "packages/web-portal/app/page.tsx" },
+    ];
+    expect(sortToTreeOrder(files).map((f) => f.path)).toEqual([
+      "docs/entra.md",
+      "packages/web-portal/app/page.tsx",
+      "packages/web-portal/CLAUDE.md",
+      ".env.dev",
+    ]);
+  });
+
+  it("keeps the full item, not just the path", () => {
+    const files = [
+      { path: "b.ts", status: "M" },
+      { path: "src/a.ts", status: "A" },
+    ];
+    expect(sortToTreeOrder(files)).toEqual([
+      { path: "src/a.ts", status: "A" },
+      { path: "b.ts", status: "M" },
+    ]);
+  });
+
+  it("returns an empty list unchanged", () => {
+    expect(sortToTreeOrder([])).toEqual([]);
   });
 });

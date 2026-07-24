@@ -15,7 +15,7 @@ import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-b
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Checkbox } from "@/components/ui/checkbox";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
-import { buildDiffTree, type DiffTreeNode } from "@/lib/diff";
+import { buildDiffTree, sortToTreeOrder, type DiffTreeNode } from "@/lib/diff";
 import { ideReadFile, useIdeConnected } from "@/lib/ide";
 import { invoke, isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -338,7 +338,10 @@ export function DiffPane({
     if (!dir) return;
     setRefreshing(true);
     const list = await invoke<ChangedFile[]>("ab_get_diff_files", { dir, mode, baseBranch });
-    const nextFiles = list.unwrapOr([]);
+    // Tree order, not git's flat path sort: the rail and the stacked Monaco
+    // diffs render from this one array, so ordering it here is what keeps the
+    // two columns scrolling in lockstep.
+    const nextFiles = sortToTreeOrder(list.unwrapOr([]));
     setFiles(nextFiles);
     // Prune reviewed marks for paths that dropped out of the change set
     // (renamed/reverted/committed) — everything else keeps its mark across a
