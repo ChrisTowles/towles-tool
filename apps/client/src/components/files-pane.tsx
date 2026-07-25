@@ -441,7 +441,7 @@ export function FilesPane({
                     collapsedSize="0%"
                     onResize={syncModeFromPanels}
                   >
-                    <FilePreview dir={dir} path={open} kind={previewKind} />
+                    <FilePreview dir={dir} path={open} kind={previewKind} onOpenPath={setOpen} />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : (
