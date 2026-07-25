@@ -611,6 +611,9 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         // that untrack a no-op, so it reports nothing and there is no double
         // note.
         engine.remove_repo(self.dir);
+        // Nothing else keyed by the dead directory may outlive it in memory —
+        // see `Engine::forget_checkout`.
+        engine.forget_checkout(self.dir);
         notes
     }
 }

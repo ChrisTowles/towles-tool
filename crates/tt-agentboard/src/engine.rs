@@ -12,7 +12,7 @@
 //! methods ([`Engine::compute_payload_with`], [`Engine::store_git_info`]).
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::bridge::{StatePayload, assemble_state};
@@ -110,6 +110,11 @@ pub struct Engine {
     /// caller that panics or drops its `spawn_blocking` result before storing
     /// can never strand a dir out of the poll rotation forever.
     git_pending: HashMap<String, i64>,
+    /// Checkouts this process removed ([`Self::forget_checkout`]), suppressed
+    /// from worktree discovery until something exists at the path again. Not
+    /// persisted and deliberately not time-based: it is emptied by the paths
+    /// themselves coming back, and a restart re-derives everything from git.
+    removed_checkouts: HashSet<String>,
     watchers: Vec<Box<dyn AgentWatcher + Send>>,
     theme: Option<String>,
     preferred_editor: String,
@@ -237,6 +242,7 @@ impl Engine {
             )),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            removed_checkouts: HashSet::new(),
             watchers: vec![Box::new(ClaudeCodeAgentWatcher::with_defaults(
                 scope.clone(),
             ))],
@@ -299,10 +305,18 @@ impl Engine {
     /// process gitoxide made that chain far cheaper, not free. The host warms
     /// the cache out of band instead (see the watcher-scan block and
     /// `ab_add_repo` in `crates-tauri/tt-app/src/lib.rs` / `agentboard.rs`).
+    ///
+    /// Being cache-only is also why discovery is filtered through
+    /// [`Self::removed_checkouts`] — see [`Self::forget_checkout`].
     fn expand_with_worktrees(&mut self) -> Vec<String> {
+        // A path that exists again (a new task created where an old one was)
+        // is a live checkout, not a suppressed one — and dropping it here is
+        // also what keeps the set from growing for the process's lifetime.
+        self.removed_checkouts.retain(|dir| !Path::new(dir).is_dir());
         let base = self.repo_paths.clone();
         let cache = &self.git_cache;
-        merge_worktree_dirs(&base, |dir| cache.get(dir).worktree_dirs)
+        let removed = &self.removed_checkouts;
+        merge_worktree_dirs(&base, |dir| cache.get(dir).worktree_dirs, |wt| !removed.contains(wt))
     }
 
     /// Tracked repos plus their discovered worktrees, as absolute checkout
@@ -471,8 +485,20 @@ impl Engine {
     /// Store one repo's freshly computed git info. Returns whether it differs
     /// from the cached value, so the host can skip re-emitting an unchanged
     /// snapshot.
-    pub fn store_git_info(&mut self, dir: &str, info: crate::git_info::GitInfo, now: i64) -> bool {
-        let changed = self.git_cache.get(dir) != info;
+    ///
+    /// A compute that couldn't read the repository at all keeps the folder's
+    /// structural identity rather than blanking it — see
+    /// [`crate::git_info::preserve_identity_on_failed_read`] for why that
+    /// matters to the rail's row grouping.
+    pub fn store_git_info(
+        &mut self,
+        dir: &str,
+        mut info: crate::git_info::GitInfo,
+        now: i64,
+    ) -> bool {
+        let previous = self.git_cache.get(dir);
+        crate::git_info::preserve_identity_on_failed_read(dir, &previous, &mut info);
+        let changed = previous != info;
         self.git_cache.insert(dir, info, now);
         self.git_pending.remove(dir);
         changed
@@ -918,6 +944,40 @@ impl Engine {
         ids
     }
 
+    /// Forget a checkout this process just removed (a deleted worktree task),
+    /// so the rail stops showing it *now* rather than a poll cycle or three
+    /// later. Called from the removal sequence's `after_removal` hook,
+    /// alongside [`Self::close_folder`] and [`Self::remove_repo`].
+    ///
+    /// Untracking alone doesn't clear the row, because a task worktree is
+    /// usually not a `repos.json` entry at all — it reaches the rail through
+    /// [`Self::expand_with_worktrees`]' discovery, which reads its *parent's*
+    /// cached `worktree_dirs`. Removing a worktree moves no ref, so nothing
+    /// invalidates that entry: the parent keeps rediscovering the dead
+    /// directory until its own recompute re-derives the sibling set, and each
+    /// poll in between re-renders the task as a "directory missing" ghost. So
+    /// the dir goes into [`Self::removed_checkouts`], which discovery filters
+    /// against — a suppression, not a probe, because the identical-looking
+    /// ghost left by a bare `rm -rf` (git's `.git/worktrees/<name>`
+    /// registration still standing) *must* keep its row: that row's Untrack is
+    /// what prunes the registration (`ab_remove_repo` →
+    /// [`crate::git_info::prune_stale_worktree`]), and there is no other way to
+    /// clear it from the app. Only a removal we performed — where
+    /// `git worktree remove` already ran — is safe to hide, and the
+    /// suppression survives a recompute that was already in flight with the
+    /// pre-removal sibling list.
+    ///
+    /// Also drops the dir's cached git info and any outstanding compute claim,
+    /// so nothing keyed by the dead directory outlives it: a stale claim would
+    /// hold the path out of the poll rotation for [`GIT_PENDING_GUARD_MS`], and
+    /// the cached info would be served to a *new* task created at the same path
+    /// (see [`crate::git_info::GitInfoCache::forget`]).
+    pub fn forget_checkout(&mut self, dir: &str) -> bool {
+        self.removed_checkouts.insert(dir.to_string());
+        self.git_pending.remove(dir);
+        self.git_cache.forget(dir)
+    }
+
     pub fn set_status(&mut self, session: &str, input: Option<StatusInput>, now: i64) {
         self.metadata.set_status(session, input, now);
     }
@@ -943,9 +1003,15 @@ impl Engine {
 /// [`crate::types::RepoData`] row is decided later, structurally, by
 /// [`crate::bridge::assemble_state`] matching each entry's
 /// [`crate::git_info::GitInfo::common_dir`] — not by anything recorded here.
+///
+/// `keep` filters *discovered* worktrees only — a `repo_paths` entry is the
+/// user's own tracking decision and always keeps its row, ghost or not. See
+/// [`Engine::forget_checkout`] for what the filter is for and why it can't
+/// simply be "the directory still exists".
 fn merge_worktree_dirs(
     repo_paths: &[String],
     mut worktrees_of: impl FnMut(&str) -> Vec<String>,
+    keep: impl Fn(&str) -> bool,
 ) -> Vec<String> {
     // Emits each tracked repo immediately followed by its own discovered
     // worktrees, so the result carries `repoPaths` order — which *is* the
@@ -963,6 +1029,9 @@ fn merge_worktree_dirs(
         // the one consistent, non-arbitrary ordering every entry has.
         let wts = worktrees_of(dir);
         for wt in wts {
+            if !keep(&wt) {
+                continue;
+            }
             if seen.insert(wt.clone()) {
                 all.push(wt);
             }
@@ -975,13 +1044,23 @@ fn merge_worktree_dirs(
 mod merge_worktree_dirs_tests {
     use super::merge_worktree_dirs;
 
+    /// Nothing suppressed — the default for tests that aren't about the
+    /// discovery filter.
+    fn all_exist(_: &str) -> bool {
+        true
+    }
+
     #[test]
     fn appends_discovered_worktrees_after_configured_paths() {
         let repo_paths = vec!["/repo/main".to_string()];
-        let all = merge_worktree_dirs(&repo_paths, |dir| {
-            assert_eq!(dir, "/repo/main");
-            vec!["/repo/.claude/worktrees/feat".to_string()]
-        });
+        let all = merge_worktree_dirs(
+            &repo_paths,
+            |dir| {
+                assert_eq!(dir, "/repo/main");
+                vec!["/repo/.claude/worktrees/feat".to_string()]
+            },
+            all_exist,
+        );
         assert_eq!(all, vec!["/repo/main", "/repo/.claude/worktrees/feat"]);
     }
 
@@ -990,17 +1069,21 @@ mod merge_worktree_dirs_tests {
         // e.g. towles-tool-rs-task-2 manually added even though it's also a
         // worktree of towles-tool-rs-task-1 — must not appear twice.
         let repo_paths = vec!["/repo/task-1".to_string(), "/repo/task-2".to_string()];
-        let all = merge_worktree_dirs(&repo_paths, |dir| match dir {
-            "/repo/task-1" => vec!["/repo/task-2".to_string()],
-            _ => vec![],
-        });
+        let all = merge_worktree_dirs(
+            &repo_paths,
+            |dir| match dir {
+                "/repo/task-1" => vec!["/repo/task-2".to_string()],
+                _ => vec![],
+            },
+            all_exist,
+        );
         assert_eq!(all, repo_paths);
     }
 
     #[test]
     fn no_worktrees_leaves_the_list_unchanged() {
         let repo_paths = vec!["/repo/plain-clone".to_string()];
-        let all = merge_worktree_dirs(&repo_paths, |_| vec![]);
+        let all = merge_worktree_dirs(&repo_paths, |_| vec![], all_exist);
         assert_eq!(all, repo_paths);
     }
 
@@ -1010,10 +1093,35 @@ mod merge_worktree_dirs_tests {
         // an alphabetical sort would flip that, which is exactly what this
         // guards against.
         let repo_paths = vec!["/repo/main".to_string()];
-        let all = merge_worktree_dirs(&repo_paths, |_| {
-            vec!["/repo/zzz-older".to_string(), "/repo/aaa-newer".to_string()]
-        });
+        let all = merge_worktree_dirs(
+            &repo_paths,
+            |_| vec!["/repo/zzz-older".to_string(), "/repo/aaa-newer".to_string()],
+            all_exist,
+        );
         assert_eq!(all, vec!["/repo/main", "/repo/zzz-older", "/repo/aaa-newer"]);
+    }
+
+    /// The reported bug: a just-removed task is still listed by its parent's
+    /// (not-yet-recomputed) `worktree_dirs`, and must not come back as a
+    /// "directory missing" ghost.
+    #[test]
+    fn drops_a_discovered_worktree_the_filter_rejects() {
+        let repo_paths = vec!["/repo/main".to_string()];
+        let all = merge_worktree_dirs(
+            &repo_paths,
+            |_| vec!["/repo/wt/live".to_string(), "/repo/wt/removed".to_string()],
+            |dir| dir != "/repo/wt/removed",
+        );
+        assert_eq!(all, vec!["/repo/main", "/repo/wt/live"]);
+    }
+
+    /// …while the filter never applies to a tracked path: that ghost's row is
+    /// the only place its `repos.json` entry can be untracked from.
+    #[test]
+    fn the_filter_never_drops_a_tracked_path() {
+        let repo_paths = vec!["/repo/main".to_string(), "/repo/moved-away".to_string()];
+        let all = merge_worktree_dirs(&repo_paths, |_| vec![], |dir| dir != "/repo/moved-away");
+        assert_eq!(all, repo_paths);
     }
 }
 
@@ -1040,6 +1148,7 @@ impl Engine {
             collapse: crate::collapse::CollapseStore::new(None),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            removed_checkouts: HashSet::new(),
             watchers: vec![],
             theme: None,
             preferred_editor: "code".to_string(),
@@ -1172,6 +1281,79 @@ mod engine_tests {
 
         // An unrelated dir has no owner.
         assert_eq!(e.find_worktree_owner("/repo/elsewhere"), None);
+    }
+
+    /// The reported bug, at the seam the rail actually reads: a removed task
+    /// is still in its parent's cached `worktree_dirs` (nothing invalidates
+    /// that entry — removing a worktree moves no ref), so discovery kept
+    /// re-emitting it as a "directory missing" ghost until the parent's own
+    /// recompute happened to land.
+    #[test]
+    fn a_removed_checkout_leaves_discovery_immediately() {
+        let (_tmp, mut e) = engine();
+        let wt = "/repo/main/.claude/worktrees/feat-thing";
+        assert!(e.add_repo("/repo/main"));
+        e.store_git_info(
+            "/repo/main",
+            crate::git_info::GitInfo { worktree_dirs: vec![wt.to_string()], ..Default::default() },
+            1000,
+        );
+        e.store_git_info(wt, git_info("feat/thing"), 1000);
+        assert!(e.watch_targets().contains(&wt.to_string()));
+
+        assert!(e.forget_checkout(wt), "the worktree's own cache entry went");
+
+        assert!(!e.watch_targets().contains(&wt.to_string()));
+        // …even though the parent still lists it: a recompute that was already
+        // in flight when the removal ran stores the pre-removal sibling set,
+        // and that must not resurrect the row either.
+        e.store_git_info(
+            "/repo/main",
+            crate::git_info::GitInfo { worktree_dirs: vec![wt.to_string()], ..Default::default() },
+            2000,
+        );
+        assert!(!e.watch_targets().contains(&wt.to_string()));
+    }
+
+    /// The suppression is only for checkouts *we* removed. A worktree deleted
+    /// out from under us (a bare `rm -rf`) keeps its ghost row, because that
+    /// row's Untrack is the only thing that prunes git's still-standing
+    /// `.git/worktrees/<name>` registration.
+    #[test]
+    fn a_worktree_removed_outside_the_app_keeps_its_ghost_row() {
+        let (_tmp, mut e) = engine();
+        let wt = "/repo/main/.claude/worktrees/feat-gone";
+        assert!(e.add_repo("/repo/main"));
+        e.store_git_info(
+            "/repo/main",
+            crate::git_info::GitInfo { worktree_dirs: vec![wt.to_string()], ..Default::default() },
+            1000,
+        );
+
+        assert!(e.watch_targets().contains(&wt.to_string()));
+        assert_eq!(e.find_worktree_owner(wt), Some("/repo/main".to_string()));
+    }
+
+    /// A new task created where a removed one stood is a live checkout again —
+    /// the suppression must not outlive the directory's absence (and this is
+    /// also what bounds the set).
+    #[test]
+    fn a_path_that_exists_again_is_no_longer_suppressed() {
+        let (tmp, mut e) = engine();
+        let wt = tmp.path().join("reused-worktree");
+        let wt_s = wt.to_string_lossy().to_string();
+        assert!(e.add_repo("/repo/main"));
+        e.store_git_info(
+            "/repo/main",
+            crate::git_info::GitInfo { worktree_dirs: vec![wt_s.clone()], ..Default::default() },
+            1000,
+        );
+
+        e.forget_checkout(&wt_s);
+        assert!(!e.watch_targets().contains(&wt_s));
+
+        std::fs::create_dir(&wt).unwrap();
+        assert!(e.watch_targets().contains(&wt_s));
     }
 
     // --- git-cache change detection -----------------------------------------
