@@ -50,6 +50,7 @@ import {
   abSetSessionPurpose,
   prForFolder,
   previewPaneId,
+  agentPaneId,
   sessionLabel,
   sleep,
   taskForFolder,
@@ -98,9 +99,10 @@ import { toast } from "sonner";
  * status is reported, never re-rendered (the real TUI is the PTY). All
  * opened terminals live in one flat mounted pool (hidden unless in the
  * active folder's active window) so scrollback survives switching and
- * regrouping. A folder's diff and its file tree each open as their own pane
- * in the same tiling (never a modal), so you review while the agents keep
- * working. Layout persists via
+ * regrouping. A folder's diff, its file tree, its live preview, and a
+ * rendered Claude session (`AgentPane` — structured turns instead of PTY
+ * scrollback, `chat` in the lens chip) each open as their own pane in the same
+ * tiling (never a modal), so you review while the agents keep working. Layout persists via
  * debounced `ab_save_windows`. Shortcuts come from the registry in
  * lib/shortcuts.tsx (⌘D new session, ⌘⇧W close session, ⌘⇧G diff pane,
  * ⌘⇧N/⌘⇧P jump to the next/previous session that needs you — `cycleNeedsYou`
@@ -380,6 +382,13 @@ export function AgentboardScreen() {
     // named — a fallback show still puts the user in front of that folder.
     ackFolder(dir);
     openPreview(dir);
+  }
+
+  // Same, for a rendered Claude session rooted in this folder — structured
+  // turns beside the folder's terminals.
+  function openAgent(dir: string) {
+    setActiveFolderDir(dir);
+    addPaneToActive(dir, agentPaneId(dir));
   }
 
   // Claude called the openFile tool → open (or focus) that folder's files
@@ -1122,6 +1131,7 @@ export function AgentboardScreen() {
                               onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
+                              onOpenAgent={openAgent}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
                               taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
                               onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
@@ -1177,6 +1187,7 @@ export function AgentboardScreen() {
                   onOpenDiff={openDiff}
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
+                  onOpenAgent={openAgent}
                   onNewSession={newSession}
                   onNewTask={newTaskForActiveRepo}
                   onRemoveRepo={requestRemoveRepo}
@@ -1192,6 +1203,7 @@ export function AgentboardScreen() {
                   onFocusWindow={actions.focusWindow}
                   onNewWindow={() => void newWindow(activeFolderDir)}
                   onNewSession={() => void newSession(activeFolderDir)}
+                  onNewChat={() => openAgent(activeFolderDir)}
                   onCloseSession={() => {
                     if (selected) void closeSession(selected.sessionId);
                   }}

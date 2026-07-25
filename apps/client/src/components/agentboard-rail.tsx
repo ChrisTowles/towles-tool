@@ -20,6 +20,7 @@ import {
   CommittedChip,
   UncommittedChip,
   FilesButton,
+  AgentButton,
   PreviewButton,
   Dot,
   DotCount,
@@ -367,6 +368,7 @@ export function RepoGroup({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
+  onOpenAgent,
   quietDirs,
   quietRevealed,
   onToggleQuiet,
@@ -419,6 +421,8 @@ export function RepoGroup({
   onOpenFiles: (dir: string) => void;
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
+  /** Opens the folder's rendered-agent pane in its focused window. */
+  onOpenAgent: (dir: string) => void;
   /** Dirs the hide-inactive filter tucks behind a "N quiet" stub (empty/
    * undefined when the filter is off). Quiet folders demote to the stub
    * instead of vanishing — nothing ever silently disappears from the rail. */
@@ -581,6 +585,7 @@ export function RepoGroup({
           onOpenDiff={() => onOpenDiff(folder.dir)}
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
+          onOpenAgent={() => onOpenAgent(folder.dir)}
         />
         {taskFormOpen && (
           <InlineNewTask
@@ -735,6 +740,7 @@ export function RepoGroup({
                   onOpenDiff={() => onOpenDiff(folder.dir)}
                   onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
+                  onOpenAgent={() => onOpenAgent(folder.dir)}
                 />
                 {!fCollapsed && <div className="pb-1">{sessionRows(folder)}</div>}
               </motion.div>
@@ -823,6 +829,7 @@ function FolderHeader({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
+  onOpenAgent,
 }: {
   scope: "repo" | "folder";
   /** repo.name at repo scope, folder.name at folder scope. */
@@ -870,6 +877,7 @@ function FolderHeader({
   onOpenFiles: () => void;
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: () => void;
+  onOpenAgent: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
   const progress = folder.metadata?.progress;
@@ -1105,6 +1113,7 @@ function FolderHeader({
               reflow; pointer-events gates ghost clicks while invisible. */}
           <span className="pointer-events-none flex items-center gap-1.5 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
             <FilesButton onOpen={onOpenFiles} />
+            <AgentButton onOpen={onOpenAgent} />
             {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
           </span>
           {pr && <PrChip pr={pr} stats={folder} />}

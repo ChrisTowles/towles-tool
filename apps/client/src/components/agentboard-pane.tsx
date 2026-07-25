@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2, X } from "lucide-react";
 import {
+  AgentButton,
   AgentStatusLine,
   BaseMovedChip,
   ComparedBaseBadge,
@@ -70,6 +71,7 @@ export function WorkingContext({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
+  onOpenAgent,
   onNewSession,
   onNewTask,
   onRemoveRepo,
@@ -97,6 +99,8 @@ export function WorkingContext({
   onOpenFiles: (dir: string) => void;
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
+  /** Opens the folder's rendered-agent pane. */
+  onOpenAgent: (dir: string) => void;
   /** Starts a new session (shell) in this checkout. */
   onNewSession: (dir: string) => void;
   /** Toggles the inline new-task form open/closed for this repo (worktree
@@ -199,6 +203,7 @@ export function WorkingContext({
           <UncommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
           <CommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
           <FilesButton onOpen={() => onOpenFiles(folder.dir)} />
+          <AgentButton onOpen={() => onOpenAgent(folder.dir)} />
           {folder.hasLaunchConfig && <PreviewButton onOpen={() => onOpenPreview(folder.dir)} />}
           {pr && <PrChip pr={pr} stats={folder} />}
           {task &&

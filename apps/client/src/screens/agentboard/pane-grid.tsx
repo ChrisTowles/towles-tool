@@ -1,16 +1,19 @@
 import { TerminalSquare } from "lucide-react";
 import { PanePlaceholder } from "@/components/agentboard-bits";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
+import { AgentPane } from "@/components/agent-pane";
 import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import {
+  agentPaneDir,
   diffPaneDir,
   exitPaneSession,
   filesPaneDir,
   isDiffPane,
   isExitPane,
+  isAgentPane,
   isFilesPane,
   isPreviewPane,
   paneRects,
@@ -213,6 +216,22 @@ export function PaneGrid(props: {
           />,
         );
       })}
+      {/* Agent panes: a Claude Code session in this folder rendered as
+          structured turns rather than PTY scrollback. Sits beside the folder's
+          terminals — comprehension coming back, where they are precision going
+          in. */}
+      {panes
+        .filter(isAgentPane)
+        .map((id) =>
+          paneBox(
+            id,
+            <AgentPane
+              folder={folderByDir.get(agentPaneDir(id) ?? "")}
+              focused={focusedPaneId === id}
+              onClose={() => onRemovePane(id)}
+            />,
+          ),
+        )}
       {/* Tombstones: a shell that died on its own, holding the task it died in.
           The pane id says which kind this is, so this pass can't overlap the
           terminal pass above — a session is either its own id or its `~exit:`
@@ -255,7 +274,7 @@ export function PaneGrid(props: {
           <TerminalSquare className="size-10" />
           <p className="text-sm">
             {activeFolderDir
-              ? "No open panes — click a session in the rail to open it here."
+              ? "No open panes — click a session in the rail, or use ✦ chat above for a Claude session rendered as structured turns."
               : "Select a folder in the rail to see its sessions."}
           </p>
         </div>

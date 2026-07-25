@@ -4,6 +4,7 @@
 //! Also owns the embedded terminals (`terminal`): PTYs the app spawns and
 //! kills on window close, rendered by xterm.js in the agentboard screen.
 
+mod agent;
 mod agentboard;
 mod asset;
 mod claude_sessions;
@@ -635,6 +636,7 @@ pub fn run() {
         })
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
+        .manage(agent::AgentState::default())
         .manage(launch::LaunchState::default())
         .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
@@ -710,6 +712,9 @@ pub fn run() {
             agentboard::ab_get_commit_stats,
             launch::launch_configs,
             launch::launch_register,
+            agent::agent_start,
+            agent::agent_send,
+            agent::agent_stop,
             preview::preview_capture,
             preview::preview_read_artifact,
             preview::preview_write_feedback,

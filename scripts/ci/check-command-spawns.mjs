@@ -13,7 +13,7 @@
 //   - any `#[cfg(test)]`-gated code (unit tests)
 //   - a whole module declared `#[cfg(test)] mod foo;` — the gate is on the
 //     declaration, so the module's own file has nothing in it to detect
-//   - the three audited detached-spawn prod sites, which each call
+//   - the audited detached-spawn prod sites, which each call
 //     `record_detached_spawn` before the raw spawn.
 //
 // Run from the repo root: `node scripts/ci/check-command-spawns.mjs`
@@ -30,6 +30,10 @@ const ALLOWED_FILES = new Set([
   "crates-tauri/tt-app/src/terminal.rs",
   "crates-tauri/tt-app/src/agentboard.rs",
   "crates-tauri/tt-app/src/lsp.rs",
+  // The `claude` agent behind the chat pane: it streams over stdin/stdout for
+  // the life of the pane, so it has no exit code to wait on here and can't use
+  // tt-exec's run-to-completion paths.
+  "crates/tt-agent/src/session.rs",
   "crates/tt-telemetry/build.rs",
 ]);
 
