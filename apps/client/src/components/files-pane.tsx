@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { CodeViewer, type ViewerAnchor } from "@/components/code-viewer";
+import { EditableToggle } from "@/components/editable-toggle";
 import { ClaudeBadge, IconBtn, LspBadge, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { FilePreview, previewKindFor } from "@/components/file-preview";
@@ -36,7 +37,10 @@ import { folderStatsKey, type FolderData } from "@/lib/agentboard";
  * routes through the views override's open fallback into the viewer;
  * selecting text streams to the folder's Claude session, and two gestures
  * mention explicitly: the header @ button sends the whole file, while the
- * viewer's selection chip (or ⌘⇧A) sends just the highlighted lines. Long
+ * viewer's selection chip (or ⌘⇧A) sends just the highlighted lines. The
+ * viewer opens read-only and the toolbar's toggle arms editing (edits then
+ * auto-save) — the pane is mostly read while an agent works in the same tree,
+ * so typing into it has to be deliberate. Long
  * lines wrap by default (toggle in the
  * viewer toolbar); Markdown/HTML files pick between code, a resizable split,
  * and the rendered page alone, and any file can lift the whole pane out of
@@ -80,6 +84,10 @@ export function FilesPane({
   }, [open, dirty, onOpenFileChange]);
 
   const [wordWrap, setWordWrap] = useState(true);
+  // The viewer opens locked — see `EditableToggle`. Per-pane, not per-file:
+  // arming edit mode once shouldn't have to be repeated for every file in the
+  // same sitting (a *new* checkout does re-lock, with `dir` below).
+  const [editable, setEditable] = useState(false);
   const [viewMode, setViewMode] = useState<EditorViewMode>("code");
   const [fullscreen, setFullscreen] = useState(false);
   const explorerRef = useRef<HTMLDivElement>(null);
@@ -101,6 +109,7 @@ export function FilesPane({
     prevDirRef.current = dir;
     setOpen(null);
     setDirty(false);
+    setEditable(false);
   }, [dir]);
 
   useEffect(() => {
@@ -253,86 +262,101 @@ export function FilesPane({
       <div className="flex min-w-0 flex-1 flex-col">
         {open ? (
           <>
-            <div className="flex shrink-0 items-center gap-2 border-b bg-card px-3 py-1.5">
-              <span className="min-w-0 truncate font-mono text-xs text-foreground" title={open}>
-                {open}
-              </span>
-              {dirty && (
-                <span
-                  title="Unsaved changes — autosaves after a pause; ⌘S saves now"
-                  className="size-1.5 shrink-0 rounded-full bg-amber-500"
-                />
-              )}
-              <span className="shrink-0 text-[10.5px] text-muted-foreground">
-                editable · autosaves
-              </span>
-              <IconBtn
-                title={
-                  wordWrap
-                    ? "Wrapping long lines — click to scroll instead"
-                    : "Scrolling long lines — click to wrap instead"
-                }
-                onClick={() => setWordWrap((w) => !w)}
-                className={cn("ml-auto", wordWrap && "text-violet-500")}
-              >
-                <WrapText className="size-3.5" />
-              </IconBtn>
-              {previewKind && (
-                <span className="flex shrink-0 items-center gap-0.5">
-                  {(
-                    [
-                      { mode: "code", icon: Code2, title: "Code only" },
-                      {
-                        mode: "split",
-                        icon: Columns2,
-                        title: `Code and ${previewKind} side by side`,
-                      },
-                      { mode: "preview", icon: Eye, title: `Rendered ${previewKind} only` },
-                    ] as const
-                  ).map(({ mode, icon: Icon, title }) => (
-                    <IconBtn
-                      key={mode}
-                      title={title}
-                      onClick={() => {
-                        setViewMode(mode);
-                        uiAction("files.view_mode", "agentboard", mode);
-                      }}
-                      className={viewMode === mode ? "text-violet-500" : undefined}
-                    >
-                      <Icon className="size-3.5" />
-                    </IconBtn>
-                  ))}
+            {/* `1fr auto 1fr`, the same three-column row `PaneChrome` uses
+             * when it's given a center slot — the lock lands in the same
+             * place whichever pane you're in, instead of sliding with the
+             * open file's path length. */}
+            <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-card px-3 py-1.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate font-mono text-xs text-foreground" title={open}>
+                  {open}
                 </span>
-              )}
-              <IconBtn
-                title={fullscreen ? "Exit fullscreen (Escape)" : "Fill the window"}
-                onClick={() => {
-                  setFullscreen((f) => !f);
-                  uiAction("files.fullscreen", "agentboard", fullscreen ? "off" : "on");
+                {dirty && (
+                  <span
+                    title="Unsaved changes — autosaves after a pause; ⌘S saves now"
+                    className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                  />
+                )}
+              </span>
+              <EditableToggle
+                editable={editable}
+                subject="this file"
+                onChange={(next) => {
+                  setEditable(next);
+                  uiAction("files.editable", "agentboard", next ? "on" : "off");
                 }}
-                className={fullscreen ? "text-violet-500" : undefined}
-              >
-                {fullscreen ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
+              />
+              {/* `min-w-max` so the toolbar's buttons can't spill leftward
+               * over the centered toggle — see `PaneChrome`'s grid. */}
+              <span className="flex min-w-max items-center justify-end gap-2">
+                <IconBtn
+                  title={
+                    wordWrap
+                      ? "Wrapping long lines — click to scroll instead"
+                      : "Scrolling long lines — click to wrap instead"
+                  }
+                  onClick={() => setWordWrap((w) => !w)}
+                  className={wordWrap ? "text-violet-500" : undefined}
+                >
+                  <WrapText className="size-3.5" />
+                </IconBtn>
+                {previewKind && (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    {(
+                      [
+                        { mode: "code", icon: Code2, title: "Code only" },
+                        {
+                          mode: "split",
+                          icon: Columns2,
+                          title: `Code and ${previewKind} side by side`,
+                        },
+                        { mode: "preview", icon: Eye, title: `Rendered ${previewKind} only` },
+                      ] as const
+                    ).map(({ mode, icon: Icon, title }) => (
+                      <IconBtn
+                        key={mode}
+                        title={title}
+                        onClick={() => {
+                          setViewMode(mode);
+                          uiAction("files.view_mode", "agentboard", mode);
+                        }}
+                        className={viewMode === mode ? "text-violet-500" : undefined}
+                      >
+                        <Icon className="size-3.5" />
+                      </IconBtn>
+                    ))}
+                  </span>
                 )}
-              </IconBtn>
-              <button
-                type="button"
-                title={
-                  connected
-                    ? "Mention this whole file to the Claude session — select lines and press ⌘⇧A to mention just those"
-                    : "Run `claude` in this folder's terminal first"
-                }
-                onClick={() => mention(open)}
-                className={cn(
-                  "flex shrink-0 items-center gap-0.5 rounded-sm px-1.5 py-0.5 font-mono text-[10.5px]",
-                  connected ? "text-violet-500 hover:bg-accent" : "text-muted-foreground/50",
-                )}
-              >
-                <AtSign className="size-3" /> send to claude
-              </button>
+                <IconBtn
+                  title={fullscreen ? "Exit fullscreen (Escape)" : "Fill the window"}
+                  onClick={() => {
+                    setFullscreen((f) => !f);
+                    uiAction("files.fullscreen", "agentboard", fullscreen ? "off" : "on");
+                  }}
+                  className={fullscreen ? "text-violet-500" : undefined}
+                >
+                  {fullscreen ? (
+                    <Minimize2 className="size-3.5" />
+                  ) : (
+                    <Maximize2 className="size-3.5" />
+                  )}
+                </IconBtn>
+                <button
+                  type="button"
+                  title={
+                    connected
+                      ? "Mention this whole file to the Claude session — select lines and press ⌘⇧A to mention just those"
+                      : "Run `claude` in this folder's terminal first"
+                  }
+                  onClick={() => mention(open)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-0.5 rounded-sm px-1.5 py-0.5 font-mono text-[10.5px]",
+                    connected ? "text-violet-500 hover:bg-accent" : "text-muted-foreground/50",
+                  )}
+                >
+                  <AtSign className="size-3" /> send to claude
+                </button>
+              </span>
             </div>
             <div className="min-h-0 flex-1">
               {previewKind ? (
@@ -352,6 +376,7 @@ export function FilesPane({
                       dir={dir}
                       path={open}
                       wordWrap={wordWrap}
+                      editable={editable}
                       connected={connected}
                       anchor={
                         openRequest && openRequest.path === open
@@ -378,6 +403,7 @@ export function FilesPane({
                   dir={dir}
                   path={open}
                   wordWrap={wordWrap}
+                  editable={editable}
                   connected={connected}
                   anchor={
                     openRequest && openRequest.path === open
