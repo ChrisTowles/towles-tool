@@ -13,7 +13,7 @@ use tt_claude_code::{
 };
 
 use crate::Result;
-use crate::analyzer::{analyze_session, extract_project_name};
+use crate::analyzer::{MODEL_FAMILIES, analyze_session, extract_project_name};
 use crate::parser::calculate_cutoff_ms;
 use crate::types::{BarChartDay, ModelBar, ProjectBar};
 
@@ -45,6 +45,9 @@ pub struct SessionDetail {
     pub repeated_reads: i64,
     /// Estimated USD cost, priced per model (see [`crate::pricing`]).
     pub cost_usd: f64,
+    /// `cost_usd` split by model family, indexed as
+    /// [`crate::analyzer::MODEL_FAMILIES`].
+    pub cost_by_model: [f64; 4],
     /// Number of human prompts in the session.
     pub user_turns: i64,
     /// Human prompt text, newline-joined, capped — the search corpus.
@@ -153,6 +156,7 @@ pub fn scan_sessions_detailed(
             fable_tokens: analysis.fable_tokens,
             repeated_reads: analysis.repeated_reads,
             cost_usd: analysis.cost_usd,
+            cost_by_model: analysis.cost_by_model,
             user_turns,
             prompt_blob: user_prompt_blob(&entries, PROMPT_BLOB_MAX_BYTES),
             prompt_times_ms,
@@ -195,58 +199,77 @@ pub fn ledger_totals(details: &[SessionDetail]) -> LedgerTotals {
     t
 }
 
-/// Per-day per-repo billable tokens, dates ascending, repos descending by
-/// tokens within a day. Same shape the treemap HTML's bar chart consumes.
+/// Per-day per-repo billable tokens plus the day's estimated cost, dates
+/// ascending, repos descending by tokens within a day. Same shape the treemap
+/// HTML's bar chart consumes.
 pub fn build_ledger_days(details: &[SessionDetail]) -> Vec<BarChartDay> {
-    let mut by_date: std::collections::BTreeMap<String, Vec<(String, i64)>> = Default::default();
+    let mut by_date: std::collections::BTreeMap<String, Vec<ProjectBar>> = Default::default();
     for d in details {
         let projects = by_date.entry(d.date.clone()).or_default();
-        match projects.iter_mut().find(|(p, _)| *p == d.project) {
-            Some(existing) => existing.1 += d.billable(),
-            None => projects.push((d.project.clone(), d.billable())),
+        match projects.iter_mut().find(|p| p.project == d.project) {
+            Some(existing) => {
+                existing.total_tokens += d.billable();
+                existing.cost_usd += d.cost_usd;
+            }
+            None => projects.push(ProjectBar {
+                project: d.project.clone(),
+                total_tokens: d.billable(),
+                cost_usd: d.cost_usd,
+            }),
         }
     }
     by_date
         .into_iter()
         .map(|(date, mut projects)| {
-            projects.sort_by_key(|(_, tokens)| std::cmp::Reverse(*tokens));
-            BarChartDay {
-                date,
-                projects: projects
-                    .into_iter()
-                    .map(|(project, total_tokens)| ProjectBar { project, total_tokens })
-                    .collect(),
-            }
+            projects.sort_by_key(|p| std::cmp::Reverse(p.total_tokens));
+            let cost_usd = projects.iter().map(|p| p.cost_usd).sum();
+            BarChartDay { date, projects, cost_usd }
         })
         .collect()
 }
 
-/// Billable tokens per repo, descending.
+/// Billable tokens and cost per repo, descending by tokens.
 pub fn build_ledger_project_totals(details: &[SessionDetail]) -> Vec<ProjectBar> {
-    let mut totals: Vec<(String, i64)> = Vec::new();
+    let mut totals: Vec<ProjectBar> = Vec::new();
     for d in details {
-        match totals.iter_mut().find(|(p, _)| *p == d.project) {
-            Some(existing) => existing.1 += d.billable(),
-            None => totals.push((d.project.clone(), d.billable())),
+        match totals.iter_mut().find(|p| p.project == d.project) {
+            Some(existing) => {
+                existing.total_tokens += d.billable();
+                existing.cost_usd += d.cost_usd;
+            }
+            None => totals.push(ProjectBar {
+                project: d.project.clone(),
+                total_tokens: d.billable(),
+                cost_usd: d.cost_usd,
+            }),
         }
     }
-    totals.sort_by_key(|(_, tokens)| std::cmp::Reverse(*tokens));
-    totals.into_iter().map(|(project, total_tokens)| ProjectBar { project, total_tokens }).collect()
+    totals.sort_by_key(|p| std::cmp::Reverse(p.total_tokens));
+    totals
 }
 
-/// Billable tokens per model family, descending — no re-parse.
+/// Billable tokens and cost per model family, descending by tokens — no
+/// re-parse.
 pub fn build_ledger_model_totals(details: &[SessionDetail]) -> Vec<ModelBar> {
-    let sums = details.iter().fold([0i64; 4], |mut acc, d| {
-        acc[0] += d.opus_tokens;
-        acc[1] += d.sonnet_tokens;
-        acc[2] += d.haiku_tokens;
-        acc[3] += d.fable_tokens;
+    let (tokens, costs) = details.iter().fold(([0i64; 4], [0f64; 4]), |mut acc, d| {
+        acc.0[0] += d.opus_tokens;
+        acc.0[1] += d.sonnet_tokens;
+        acc.0[2] += d.haiku_tokens;
+        acc.0[3] += d.fable_tokens;
+        for (slot, cost) in acc.1.iter_mut().zip(d.cost_by_model) {
+            *slot += cost;
+        }
         acc
     });
-    let mut bars: Vec<ModelBar> = [("Opus", 0), ("Sonnet", 1), ("Haiku", 2), ("Fable", 3)]
+    let mut bars: Vec<ModelBar> = MODEL_FAMILIES
         .into_iter()
-        .filter(|(_, i)| sums[*i] > 0)
-        .map(|(model, i)| ModelBar { model: model.to_string(), total_tokens: sums[i] })
+        .enumerate()
+        .filter(|(i, _)| tokens[*i] > 0)
+        .map(|(i, model)| ModelBar {
+            model: model.to_string(),
+            total_tokens: tokens[i],
+            cost_usd: costs[i],
+        })
         .collect();
     bars.sort_by_key(|b| std::cmp::Reverse(b.total_tokens));
     bars
@@ -328,6 +351,7 @@ mod tests {
             fable_tokens: input + output,
             repeated_reads: 0,
             cost_usd: 0.0,
+            cost_by_model: [0.0; 4],
             user_turns: 0,
             prompt_blob: String::new(),
             prompt_times_ms: Vec::new(),
@@ -372,6 +396,53 @@ mod tests {
         assert_eq!(days[0].projects[0].project, "beta");
         assert_eq!(days[0].projects[1].total_tokens, 150);
         assert_eq!(days[1].projects[0].total_tokens, 15);
+    }
+
+    #[test]
+    fn day_cost_sums_every_session_that_day() {
+        let mut a = detail("alpha", "2026-07-10", 100, 0);
+        a.cost_usd = 1.25;
+        let mut b = detail("beta", "2026-07-10", 300, 0);
+        b.cost_usd = 0.75;
+        let mut c = detail("alpha", "2026-07-11", 10, 5);
+        c.cost_usd = 0.5;
+        let days = build_ledger_days(&[a, b, c]);
+        assert_eq!(days[0].cost_usd, 2.0);
+        // beta ranks first on tokens (300 vs alpha's 100), and carries its own cost.
+        assert_eq!(days[0].projects[0].cost_usd, 0.75);
+        assert_eq!(days[0].projects[1].cost_usd, 1.25);
+        assert_eq!(days[1].cost_usd, 0.5);
+    }
+
+    #[test]
+    fn project_totals_carry_cost() {
+        let mut a = detail("alpha", "2026-07-10", 100, 0);
+        a.cost_usd = 1.25;
+        let mut b = detail("alpha", "2026-07-11", 50, 0);
+        b.cost_usd = 0.25;
+        let mut c = detail("beta", "2026-07-10", 300, 0);
+        c.cost_usd = 4.0;
+        let bars = build_ledger_project_totals(&[a, b, c]);
+        assert_eq!(bars[0].project, "beta");
+        assert_eq!(bars[0].cost_usd, 4.0);
+        assert_eq!(bars[1].project, "alpha");
+        assert_eq!(bars[1].cost_usd, 1.5);
+    }
+
+    #[test]
+    fn model_totals_split_cost_by_family() {
+        let mut a = detail("alpha", "2026-07-10", 100, 0);
+        a.opus_tokens = 200;
+        a.fable_tokens = 0;
+        a.cost_by_model = [3.0, 0.0, 0.0, 0.0];
+        let mut b = detail("beta", "2026-07-10", 10, 0);
+        b.fable_tokens = 10;
+        b.cost_by_model = [0.0, 0.0, 0.0, 1.5];
+        let bars = build_ledger_model_totals(&[a, b]);
+        assert_eq!(bars[0].model, "Opus");
+        assert_eq!(bars[0].cost_usd, 3.0);
+        assert_eq!(bars[1].model, "Fable");
+        assert_eq!(bars[1].cost_usd, 1.5);
     }
 
     #[test]
