@@ -46,6 +46,13 @@ jobs:
             vt_or_app:
               - 'crates/tt-vt/**'
               - 'crates-tauri/tt-app/**'
+              # tt-jarvis and tt-pane are excluded from the plain `rust` job
+              # (GTK dev-deps, Bevy from a git fork), so the GTK-provisioned
+              # `rust-tauri` job is their ONLY coverage. Leaving them out of
+              # this filter would mean a change touching only those crates ran
+              # no Rust CI at all.
+              - 'crates/tt-jarvis/**'
+              - 'crates-tauri/tt-pane/**'
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'rust-toolchain.toml'
@@ -88,14 +95,22 @@ jobs:
       # needs webkit2gtk/GTK system libs for the Tauri shell, still uncovered by
       # CI). Everything else — every other Tauri-free crate under crates/ plus
       # crates-cli/tt-cli — is covered here.
+      #
+      # crates/tt-jarvis and crates-tauri/tt-pane are excluded for the same
+      # class of reason. tt-jarvis is Tauri-free and so *looks* like it belongs
+      # here, but its dev-dependencies pull in gtk for the cadence benchmark, so
+      # `--all-targets` needs glib-2.0/GTK system libs this runner does not
+      # install; it also builds Bevy from a git fork, which dominates the job's
+      # wall-clock. tt-pane needs both GTK and Tauri. Both are covered by the
+      # `rust-tauri` job, which provisions webkit2gtk/GTK.
       - name: rustfmt
         run: cargo fmt --check
 
       - name: clippy
-        run: cargo clippy --workspace --exclude tt-vt --exclude tt-app --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
 
       - name: test
-        run: cargo test --workspace --exclude tt-vt --exclude tt-app
+        run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
 
   rust-vt:
     name: Rust tt-vt (zig + ghostty)
@@ -287,3 +302,19 @@ jobs:
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
         run: cargo test -p tt-app --no-default-features
+
+      # The native Bevy pane. Excluded from the plain `rust` job because
+      # tt-jarvis's dev-dependencies need GTK (the cadence benchmark) and it
+      # builds Bevy from a git fork — but this job already provisions GTK *and*
+      # already compiles Bevy transitively via tt-app -> tt-pane -> tt-jarvis,
+      # so covering them here is nearly free and keeps them from having no lint
+      # coverage at all.
+      - name: clippy (native pane)
+        env:
+          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
+        run: cargo clippy -p tt-jarvis -p tt-pane --all-targets -- -D warnings
+
+      - name: test (native pane)
+        env:
+          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
+        run: cargo test -p tt-jarvis -p tt-pane
