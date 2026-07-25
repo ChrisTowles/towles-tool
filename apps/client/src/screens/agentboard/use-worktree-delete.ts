@@ -13,8 +13,9 @@ import { uiAction } from "@/lib/ui-action";
 export type WorktreeDelete = {
   /** Ask to delete a worktree — always confirms (it deletes from disk). */
   requestDeleteWorktree: (dir: string, label: string) => void;
-  /** Confirms the close-task dialog (button click *and* the mod+Enter
-   * shortcut, so the two paths can't drift — telemetry included). */
+  /** Confirms the close-task dialog (button click *and* the
+   * mod+shift+Enter shortcut, so the two paths can't drift — telemetry
+   * included). */
   confirmDeleteWorktree: () => void;
   /** Folder dirs mid-delete — the rail dims/disables those rows. */
   deletingDirs: Set<string>;
@@ -50,6 +51,11 @@ export type WorktreeDelete = {
    * still-in-flight attempt. Every exit from the blocked dialog goes here. */
   endDeleteFlow: (dir: string | undefined) => void;
   stopPortAndRetry: (blocked: BlockedDelete, port: number) => Promise<void>;
+  /** Delete anyway from the blocked dialog — its destructive button *and* the
+   * same mod+shift+Enter that confirmed the first dialog, so the two paths
+   * can't drift. Inert while an action is in flight, mirroring the button's
+   * own disabled state; a no-op when no blocked dialog is open. */
+  forceDeleteBlocked: () => void;
   /** `force` skips every guard — only ever passed from the blocked dialog's
    * force button, which names what's being discarded. */
   performDeleteWorktree: (
@@ -253,6 +259,18 @@ export function useWorktreeDelete(args: {
 
   const blockedDeleteDir = blockedDelete?.target.dirs[0];
   const blockedRemovalInFlight = blockedDeleteDir != null && deletingDirs.has(blockedDeleteDir);
+  const deleteBusy = stoppingPort !== null || blockedRemovalInFlight;
+
+  function forceDeleteBlocked() {
+    // The busy check is what makes the keystroke safe to hold: the button is
+    // disabled mid-stop/mid-removal, and a shortcut that ignored that could
+    // start a second removal of the same worktree.
+    if (!blockedDelete || deleteBusy) return;
+    const { target, outcome } = blockedDelete;
+    uiAction("agentboard.force_delete_worktree", "agentboard", outcome ?? "no-task");
+    endDeleteFlow(blockedDeleteDir);
+    void performDeleteWorktree(target, { force: true, outcome });
+  }
 
   return {
     requestDeleteWorktree,
@@ -268,10 +286,11 @@ export function useWorktreeDelete(args: {
     blockedDelete,
     blockedDeleteDir,
     blockedRemovalInFlight,
-    deleteBusy: stoppingPort !== null || blockedRemovalInFlight,
+    deleteBusy,
     stoppingPort,
     endDeleteFlow,
     stopPortAndRetry,
+    forceDeleteBlocked,
     performDeleteWorktree,
   };
 }

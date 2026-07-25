@@ -70,6 +70,7 @@ export function BlockedDeleteDialog({
    * refusal must not read as an authoritative one. */
   messages,
   /** Locks the destructive actions: a delete or a stop+retry is in flight. */
+  forceHint,
   busy = false,
   /** Locks *cancel* specifically. Deliberately separate from `busy`: during a
    * port stop, backing out is still real (the retry checks the flow and stands
@@ -96,6 +97,10 @@ export function BlockedDeleteDialog({
   cancelDisabled?: boolean;
   stoppingPort?: number | null;
   onStopPort?: (port: number) => void;
+  /** Keycaps for the shortcut that fires `onForce`, when the owning screen has
+   * one — the Agentboard's delete flow does, the Board's card delete doesn't,
+   * so it's optional rather than a hint that names a chord doing nothing. */
+  forceHint?: string;
   onForce: () => void;
 }) {
   return (
@@ -166,7 +171,12 @@ export function BlockedDeleteDialog({
             enough that crowding it against keep reads as one two-part button. */}
         <AlertDialogFooter className="sm:justify-between">
           <AlertDialogCancel disabled={cancelDisabled}>{cancelLabel}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={busy} onClick={onForce}>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={busy}
+            onClick={onForce}
+            title={forceHint ? `Delete anyway (${forceHint})` : undefined}
+          >
             {forceDeleteLabel(blockers)}
           </AlertDialogAction>
         </AlertDialogFooter>

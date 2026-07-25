@@ -82,17 +82,32 @@ describe("editable-target override", () => {
     expect(SHORTCUTS["ab-new-task"].allowInEditable).toBe(true);
     expect(SHORTCUTS["ab-remove-task"].allowInEditable).toBe(true);
     expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "d" }))).toBe(true);
-    expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "Backspace" }))).toBe(
+    expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "Delete" }))).toBe(
       true,
     );
   });
 
-  it("remove-task is mod+shift+backspace — plain backspace stays with the shell", () => {
+  it("remove-task is mod+shift+delete — plain Delete stays with the shell", () => {
     expect(
-      matchesShortcut("ab-remove-task", key({ ctrlKey: true, shiftKey: true, key: "Backspace" })),
+      matchesShortcut("ab-remove-task", key({ ctrlKey: true, shiftKey: true, key: "Delete" })),
     ).toBe(true);
-    expect(matchesShortcut("ab-remove-task", key({ key: "Backspace" }))).toBe(false);
-    expect(matchesShortcut("ab-remove-task", key({ ctrlKey: true, key: "Backspace" }))).toBe(false);
+    expect(matchesShortcut("ab-remove-task", key({ key: "Delete" }))).toBe(false);
+    expect(matchesShortcut("ab-remove-task", key({ ctrlKey: true, key: "Delete" }))).toBe(false);
+  });
+
+  it("the delete flow confirms on mod+shift+enter — same chord as the delete, twice", () => {
+    expect(
+      matchesShortcut(
+        "ab-confirm-close-worktree",
+        key({ ctrlKey: true, shiftKey: true, key: "Enter" }),
+      ),
+    ).toBe(true);
+    // Plain and unshifted Enter stay with the focused dialog button / the
+    // bare-Enter "jump into the terminal" binding.
+    expect(matchesShortcut("ab-confirm-close-worktree", key({ key: "Enter" }))).toBe(false);
+    expect(matchesShortcut("ab-confirm-close-worktree", key({ ctrlKey: true, key: "Enter" }))).toBe(
+      false,
+    );
   });
 
   it("new-session (mod+d) stays gated — Ctrl+D is EOF at a shell prompt", () => {

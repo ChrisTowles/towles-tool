@@ -913,7 +913,20 @@ export function AgentboardScreen() {
           if (deletingDirs.has(activeFolder.dir)) return;
           requestDeleteWorktree(activeFolder.dir, activeFolder.name);
         },
-        "ab-confirm-close-worktree": worktreeDelete.confirmDeleteWorktree,
+        // One chord for the whole delete flow: it confirms the first dialog,
+        // and — when the guards refuse and the blocked dialog takes its place
+        // — presses that dialog's destructive button. Blocked wins the tie
+        // because only one of the two is ever open. With neither open the
+        // handler declines (`false`), leaving the keystroke to the browser
+        // rather than eating it.
+        "ab-confirm-close-worktree": () => {
+          if (worktreeDelete.blockedDelete) {
+            worktreeDelete.forceDeleteBlocked();
+            return;
+          }
+          if (!worktreeDelete.confirmDeleteWt) return false;
+          worktreeDelete.confirmDeleteWorktree();
+        },
         "ab-close-session": () => {
           if (selected) void closeSession(selected.sessionId);
         },
@@ -958,6 +971,8 @@ export function AgentboardScreen() {
         worktreeDelete.confirmDeleteWt,
         worktreeDelete.deleteWtTask,
         worktreeDelete.deleteWtOutcome,
+        worktreeDelete.blockedDelete,
+        worktreeDelete.deleteBusy,
       ],
     ),
     "agentboard",
@@ -1212,14 +1227,8 @@ export function AgentboardScreen() {
           const blocked = worktreeDelete.blockedDelete;
           if (blocked) void worktreeDelete.stopPortAndRetry(blocked, port);
         }}
-        onForce={() => {
-          const blocked = worktreeDelete.blockedDelete;
-          if (blocked) {
-            const { target, outcome } = blocked;
-            worktreeDelete.endDeleteFlow(worktreeDelete.blockedDeleteDir);
-            void worktreeDelete.performDeleteWorktree(target, { force: true, outcome });
-          }
-        }}
+        forceHint={shortcutHint("ab-confirm-close-worktree")}
+        onForce={worktreeDelete.forceDeleteBlocked}
       />
 
       <StartClaudeDialog
