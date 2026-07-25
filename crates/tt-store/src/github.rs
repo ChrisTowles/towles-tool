@@ -103,13 +103,36 @@ impl Store {
     /// The tracked repo root for a given `owner/repo` slug, if the identity
     /// cache currently knows it. `task_create` validates its `repo` argument
     /// against this instead of matching a dir/basename.
+    ///
+    /// Prefer [`Store::tracked_repo_for_owner_repo`], which also hands back the
+    /// stored slug so a caller can persist the canonical spelling rather than
+    /// whatever casing it was passed.
     pub fn repo_root_for_owner_repo(&self, owner_repo: &str) -> Result<Option<String>> {
+        Ok(self.tracked_repo_for_owner_repo(owner_repo)?.map(|(root, _)| root))
+    }
+
+    /// The tracked `(repo_root, owner_repo)` for a given slug, matched
+    /// **case-insensitively** and returning the identity cache's own spelling.
+    ///
+    /// Both halves exist for the same reason. GitHub slugs are case-preserving
+    /// but not case-sensitive, and this repo has more than one source for them:
+    /// `gh` reports `ChrisTowles/towles-tool-rs` on issue and PR rows, while the
+    /// origin-derived cache historically stored a folded copy. An exact-match
+    /// lookup therefore rejected the *correct* casing and accepted only the
+    /// folded one, and callers then persisted the folded string — which the
+    /// Board treats as a different repo, splitting one repo's cards across two
+    /// identically-labelled swimlanes. Matching loosely and writing back the
+    /// stored spelling keeps every new row on one identity.
+    pub fn tracked_repo_for_owner_repo(
+        &self,
+        owner_repo: &str,
+    ) -> Result<Option<(String, String)>> {
         use rusqlite::OptionalExtension;
         self.conn
             .query_row(
-                "SELECT repo_root FROM repos WHERE owner_repo = ?1",
+                "SELECT repo_root, owner_repo FROM repos WHERE owner_repo = ?1 COLLATE NOCASE",
                 params![owner_repo],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .map_err(Error::from)

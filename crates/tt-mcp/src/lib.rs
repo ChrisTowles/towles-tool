@@ -599,21 +599,27 @@ impl Dispatcher {
         let notes = args.get("notes").and_then(Value::as_str);
         let goal = args.get("goal").and_then(Value::as_str);
 
-        let repo_root =
-            self.store.repo_root_for_owner_repo(repo_arg).map_err(|e| e.to_string())?.ok_or_else(
-                || {
-                    let slugs = self.store.repo_slugs().unwrap_or_default();
-                    unknown_repo_message(repo_arg, &slugs)
-                },
-            )?;
+        // Matched case-insensitively, and the row is stamped with the tracked
+        // repo's own spelling rather than `repo_arg` — a caller passing
+        // `christowles/x` must not mint a second identity beside the
+        // `gh`-reported `ChrisTowles/x` that every issue, PR and existing task
+        // carries, or the Board splits one repo across two identical lanes.
+        let (repo_root, repo) = self
+            .store
+            .tracked_repo_for_owner_repo(repo_arg)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                let slugs = self.store.repo_slugs().unwrap_or_default();
+                unknown_repo_message(repo_arg, &slugs)
+            })?;
 
         let task =
             self.store.add_task(title, status, notes, goal, now_ms).map_err(|e| e.to_string())?;
         self.store
-            .set_task_worktree(task.id, &repo_root, Some(repo_arg), None, None)
+            .set_task_worktree(task.id, &repo_root, Some(&repo), None, None)
             .map_err(|e| e.to_string())?;
         let task = self.store.task_by_id(task.id).map_err(|e| e.to_string())?;
-        tracing::info!(task_id = task.id, repo = %repo_arg, %status, "task.created");
+        tracing::info!(task_id = task.id, %repo, %status, "task.created");
         Ok(json!({ "task": task }))
     }
 
@@ -1368,6 +1374,24 @@ mod tests {
         let texts: Vec<&str> =
             open["tasks"].as_array().unwrap().iter().map(|t| t["text"].as_str().unwrap()).collect();
         assert!(texts.contains(&"port the CLI"), "created task missing: {texts:?}");
+    }
+
+    /// A caller that gets the slug's casing "wrong" must still land in the one
+    /// real swimlane. Before this, the lookup was an exact match against a
+    /// case-folded identity cache: it rejected `gh`'s own casing outright, and
+    /// the casing it *did* accept got stamped onto the row verbatim — so every
+    /// MCP-created task drifted into a second, identically-labelled Board lane.
+    #[test]
+    fn task_create_normalizes_the_repo_slug_casing() {
+        let mut dispatcher = dispatcher();
+        let result = call_tool(
+            &mut dispatcher,
+            "task_create",
+            json!({ "repo": REPO_SLUG.to_uppercase(), "title": "shouty repo arg" }),
+        );
+        // Stamped with the tracked repo's spelling, not the caller's.
+        assert_eq!(result["task"]["worktree"]["repo"], REPO_SLUG);
+        assert_eq!(result["task"]["worktree"]["repoRoot"], REPO_DIR);
     }
 
     #[test]

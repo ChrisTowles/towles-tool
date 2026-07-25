@@ -13,10 +13,29 @@ export const NO_REPO_GROUP = "__no_repo__";
  */
 export type TaskGroup = {
   key: string;
+  /** The lane's `owner/name` in its own casing, for display and deep links.
+   * `NO_REPO_GROUP` for the catch-all bucket. Distinct from `key`, which is
+   * case-folded so casing variants can't split the lane. */
+  slug: string;
   /** What the lane header shows — the bare repo name, not `owner/name`. */
   label: string;
   tasks: TaskItem[];
 };
+
+/**
+ * Fold a repo slug to its grouping key.
+ *
+ * GitHub slugs are case-preserving but not case-sensitive, and this app has
+ * more than one source for them: `gh` reports `ChrisTowles/towles-tool-rs` on
+ * issue and PR rows, while the origin-derived tracked-repo cache once stored a
+ * folded copy, which `task_create` then stamped onto new tasks. Grouping on the
+ * raw string turned those into two lanes that `repoGroupLabel` rendered
+ * identically — one repo, apparently duplicated on the Board. Comparing folded
+ * makes that unrepresentable, including for rows already written.
+ */
+export function foldRepoKey(slug: string): string {
+  return slug === NO_REPO_GROUP ? slug : slug.toLowerCase();
+}
 
 /**
  * The repo a task belongs to, as a stable grouping key.
@@ -34,10 +53,11 @@ export type TaskGroup = {
  *    into a lane keyed by GitHub identity. It only exists so a task bound to a
  *    repo with no parseable GitHub origin still gets a named lane.
  *
- * Exported for direct unit tests; production code goes through
+ * Returns the slug in its own casing — see [`taskRepoKey`] for the folded
+ * grouping key. Exported for direct unit tests; production code goes through
  * [`groupTasksByRepo`].
  */
-export function taskRepoKey(task: TaskItem): string {
+export function taskRepoSlug(task: TaskItem): string {
   const taskRepo = task.worktree?.repo?.trim();
   if (taskRepo) return taskRepo;
 
@@ -54,6 +74,12 @@ export function taskRepoKey(task: TaskItem): string {
   }
 
   return NO_REPO_GROUP;
+}
+
+/** The repo a task groups under, case-folded so casing variants of one slug
+ * share a lane. Use [`taskRepoSlug`] when displaying the repo. */
+export function taskRepoKey(task: TaskItem): string {
+  return foldRepoKey(taskRepoSlug(task));
 }
 
 /** The slice of an Agentboard rail repo row this module resolves against —
@@ -86,7 +112,8 @@ export function railRepoKeyForTask(repos: RailRepoRow[], task: TaskItem): string
   const ghKey = taskRepoKey(task);
   if (ghKey === NO_REPO_GROUP) return null;
   for (const repo of repos) {
-    if (ownerRepoFromOrigin(repo.originUrl) === ghKey) return repo.key;
+    const originKey = ownerRepoFromOrigin(repo.originUrl);
+    if (originKey && foldRepoKey(originKey) === ghKey) return repo.key;
   }
   return null;
 }
@@ -141,16 +168,23 @@ export function bucketByStatus(tasks: TaskItem[]): Record<TaskStatus, TaskItem[]
  * task list, so filtering to nothing also removes the lane.
  */
 export function groupTasksByRepo(tasks: TaskItem[]): TaskGroup[] {
-  const byKey = new Map<string, TaskItem[]>();
+  // Keyed folded so casing variants merge; the lane's display slug is the first
+  // spelling seen, so a lane still renders GitHub's own casing.
+  const byKey = new Map<string, { slug: string; tasks: TaskItem[] }>();
   for (const task of tasks) {
     const key = taskRepoKey(task);
     const bucket = byKey.get(key);
-    if (bucket) bucket.push(task);
-    else byKey.set(key, [task]);
+    if (bucket) bucket.tasks.push(task);
+    else byKey.set(key, { slug: taskRepoSlug(task), tasks: [task] });
   }
 
   return [...byKey.entries()]
-    .map(([key, groupTasks]) => ({ key, label: repoGroupLabel(key), tasks: groupTasks }))
+    .map(([key, { slug, tasks: groupTasks }]) => ({
+      key,
+      slug,
+      label: repoGroupLabel(slug),
+      tasks: groupTasks,
+    }))
     .toSorted((a, b) => {
       if (a.key === NO_REPO_GROUP) return 1;
       if (b.key === NO_REPO_GROUP) return -1;

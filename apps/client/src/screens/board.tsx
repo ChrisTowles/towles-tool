@@ -62,11 +62,14 @@ import { countByStatus } from "@/lib/board-metrics";
 import { matchesTaskFilter } from "@/lib/board-filter";
 import {
   bucketByStatus,
+  foldRepoKey,
   groupTasksByRepo,
   NO_REPO_GROUP,
   railRepoKeyForTask,
   repoGroupLabel,
   taskRepoKey,
+  taskRepoSlug,
+  type TaskGroup,
 } from "@/lib/board-groups";
 import { useFocusTarget } from "@/lib/focus-target";
 import { openExternalUrl } from "@/lib/open-url";
@@ -170,8 +173,10 @@ export function BoardScreen() {
     const m = new Map<string, RepoMeta>();
     for (const r of agentState.repos) {
       if (!r.meta) continue;
+      // Folded to match how lanes and cards key themselves — an origin URL's
+      // casing need not match the slug a task was stamped with.
       const key = ownerRepoFromOrigin(r.originUrl);
-      if (key) m.set(key, r.meta);
+      if (key) m.set(foldRepoKey(key), r.meta);
     }
     return m;
   }, [agentState.repos]);
@@ -230,7 +235,9 @@ export function BoardScreen() {
   // the flattening). Persisted in the shared settings file.
   const [groupByRepo, setGroupByRepo] = useBoardGroupByRepo();
   const lanes = useMemo(() => {
-    const groups = groupByRepo ? grouped : [{ key: ALL_TASKS_LANE, label: "", tasks: visible }];
+    const groups: TaskGroup[] = groupByRepo
+      ? grouped
+      : [{ key: ALL_TASKS_LANE, slug: ALL_TASKS_LANE, label: "", tasks: visible }];
     return groups.map((g) => ({ ...g, columns: bucketByStatus(g.tasks) }));
   }, [grouped, groupByRepo, visible]);
 
@@ -542,7 +549,7 @@ export function BoardScreen() {
                             lane.key === NO_REPO_GROUP &&
                               "font-normal italic text-muted-foreground",
                           )}
-                          title={lane.key === NO_REPO_GROUP ? undefined : lane.key}
+                          title={lane.key === NO_REPO_GROUP ? undefined : lane.slug}
                         >
                           {lane.label}
                         </span>
@@ -559,6 +566,7 @@ export function BoardScreen() {
                         >
                           {lane.columns[status].map((task) => {
                             const repoKey = taskRepoKey(task);
+                            const repoSlug = taskRepoSlug(task);
                             const railKey = railRepoKeyForTask(agentState.repos, task);
                             return (
                               <Card
@@ -569,7 +577,7 @@ export function BoardScreen() {
                                 repoLabel={
                                   groupByRepo || repoKey === NO_REPO_GROUP
                                     ? undefined
-                                    : repoGroupLabel(repoKey)
+                                    : repoGroupLabel(repoSlug)
                                 }
                                 onOpenAgentboard={
                                   railKey ? () => openOnAgentboard(railKey) : undefined
