@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TELEMETRY_FILTERS, loadTelemetryFilters } from "@/lib/telemetry";
+import {
+  DEFAULT_TELEMETRY_FILTERS,
+  fmtDuration,
+  focusShare,
+  loadTelemetryFilters,
+  type AttentionSummary,
+} from "@/lib/telemetry";
 
 describe("loadTelemetryFilters", () => {
   it("nothing stored falls back to all defaults", () => {
@@ -47,5 +53,61 @@ describe("loadTelemetryFilters", () => {
       target: "all",
       query: "",
     });
+  });
+});
+
+describe("fmtDuration", () => {
+  it("drops to the coarsest two units that still say something", () => {
+    expect(fmtDuration(8_000)).toBe("8s");
+    // A real subprocess that took 400ms must not read as a flat zero.
+    expect(fmtDuration(400)).toBe("<1s");
+    expect(fmtDuration(0)).toBe("0s");
+    expect(fmtDuration(90_000)).toBe("1m 30s");
+    expect(fmtDuration(120_000)).toBe("2m");
+    expect(fmtDuration(4 * 3_600_000 + 12 * 60_000)).toBe("4h 12m");
+    // A whole number of hours drops the empty minutes rather than reading "4h 0m".
+    expect(fmtDuration(4 * 3_600_000)).toBe("4h");
+  });
+
+  it("floors at zero rather than rendering a negative duration", () => {
+    expect(fmtDuration(-5_000)).toBe("0s");
+  });
+});
+
+describe("focusShare", () => {
+  const base = {
+    date: "2026-07-25",
+    recordCount: 10,
+    firstTs: null,
+    lastTs: null,
+    elapsedMs: 0,
+    focus: {
+      focusedMs: 0,
+      sessionCount: 0,
+      longestMs: 0,
+      fragmentCount: 0,
+      departures: 0,
+      sessions: [],
+    },
+    actions: { total: 0, screenSwitches: 0, byScreen: [], byAction: [] },
+    notifications: { fired: 0, skipped: 0 },
+    machine: { spawnCount: 0, totalMs: 0, failures: 0, byExecutable: [] },
+    hours: [],
+  } satisfies AttentionSummary;
+
+  it("is a whole percent of elapsed uptime", () => {
+    const summary = { ...base, elapsedMs: 8_000, focus: { ...base.focus, focusedMs: 2_000 } };
+    expect(focusShare(summary)).toBe(25);
+  });
+
+  it("is null on a day too empty for the ratio to mean anything", () => {
+    expect(focusShare(base)).toBeNull();
+  });
+
+  /** Focus stretches are clamped to the last record, so this shouldn't
+   * happen — but a clock jump inside the log must not render "104%". */
+  it("clamps above 100 rather than reporting an impossible share", () => {
+    const summary = { ...base, elapsedMs: 1_000, focus: { ...base.focus, focusedMs: 5_000 } };
+    expect(focusShare(summary)).toBe(100);
   });
 });

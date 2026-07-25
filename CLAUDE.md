@@ -393,6 +393,19 @@ Cargo workspace + npm workspace (`apps/client` only):
     disk on every request rather than caching (the log is small and bounded
     by spawns/discrete actions, never per-keystroke input) and refreshes on a
     manual button and when the screen regains focus, not live-tailed.
+    Its **Attention** tab is the payoff for the completeness rule above:
+    `tt_telemetry::summarize` (`crates/tt-telemetry/src/attention.rs`) folds a
+    day's records into focused time and its longest unbroken stretch (paired
+    from `window.focus_changed`), gestures per screen and in-app screen
+    switches (`ui.action`), interruptions (`notify_needs_you`), and subprocess
+    wait (`process.spawn`) — the day's shape, which exists only because every
+    one of those is logged. **It aggregates in Rust behind its own
+    `telemetry_attention` command, not in a frontend `useMemo` over the
+    records the Log tab already holds**: a busy day is 75,000+ records, and
+    the summary is a few hundred bytes. Two counting rules there look like
+    bugs and aren't — an *event*'s identity comes from its `message`, since
+    its `name` is the throwaway `event <file>:<line>`, and hour buckets are
+    local while the day file's boundary is UTC.
   - `tt-ide` — Claude Code IDE-protocol core: the MCP/JSON-RPC dispatcher and
     lockfile schema the app uses to pose as an "IDE" a Claude Code CLI session
     connects to. Transport-free by design (sockets, auth, clocks live in

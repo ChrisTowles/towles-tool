@@ -35,6 +35,96 @@ export const telemetryDays = () => invoke<string[]>("telemetry_days");
 export const telemetryEvents = (date: string) =>
   invoke<TelemetryRecord[]>("telemetry_events", { date });
 
+/**
+ * One day's attention picture, aggregated by `tt-telemetry`'s `summarize`
+ * (see `crates/tt-telemetry/src/attention.rs` for what each number means and
+ * how focus stretches are paired). Deliberately a separate command rather
+ * than a `useMemo` over the records `telemetryEvents` already returns: an
+ * actively-used day runs to 75,000+ records, and aggregating in Rust turns
+ * that into a few hundred bytes over IPC.
+ */
+export type AttentionSummary = {
+  date: string;
+  recordCount: number;
+  firstTs: string | null;
+  lastTs: string | null;
+  /** Wall-clock between the first and last record — the app's uptime, which
+   * focused time is a share of. */
+  elapsedMs: number;
+  focus: {
+    focusedMs: number;
+    sessionCount: number;
+    longestMs: number;
+    /** Stretches under two minutes: glances, not work. */
+    fragmentCount: number;
+    /** Times focus left the window — context switches away from the app. */
+    departures: number;
+    sessions: FocusSession[];
+  };
+  actions: {
+    total: number;
+    /** In-app screen changes, distinct from `focus.departures`. */
+    screenSwitches: number;
+    byScreen: Count[];
+    byAction: Count[];
+  };
+  notifications: { fired: number; skipped: number };
+  machine: {
+    spawnCount: number;
+    /** Summed span durations; concurrent spawns overlap, so this can exceed
+     * `elapsedMs`. */
+    totalMs: number;
+    failures: number;
+    byExecutable: { name: string; count: number; totalMs: number }[];
+  };
+  /** Always 24 entries, `hour` in local time — empty hours included so the
+   * chart shows real gaps instead of compressing them away. */
+  hours: { hour: number; focusedMs: number; actions: number; spawns: number }[];
+};
+
+export type FocusSession = {
+  start: string;
+  end: string;
+  durationMs: number;
+  /** The app exited (or the day ended) still focused, so this stretch is a
+   * lower bound rather than a measurement. */
+  openEnded: boolean;
+};
+
+export type Count = { key: string; count: number };
+
+/** One day's attention picture. */
+export const telemetryAttention = (date: string) =>
+  invoke<AttentionSummary>("telemetry_attention", { date });
+
+/**
+ * `4h 12m` / `12m 30s` / `8s` — a duration at the coarsest two units that
+ * still say something. Distinct from `fmtElapsed`'s `1:02:30` clock, which
+ * reads as a stopwatch; these are day-scale totals where "4h 12m" is the
+ * shape the eye wants and the seconds are noise.
+ *
+ * Anything non-zero under a second is `<1s`, never `0s` — the executable
+ * breakdown lists real subprocesses that really did run, and rendering their
+ * total as a flat zero reads as "this didn't happen".
+ */
+export function fmtDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  if (s === 0 && ms > 0) return "<1s";
+  return `${s}s`;
+}
+
+/** `focusedMs` as a whole-percent share of `elapsedMs`, or null when the day
+ * is too empty for the ratio to mean anything. */
+export function focusShare(summary: AttentionSummary): number | null {
+  if (summary.elapsedMs <= 0) return null;
+  return Math.min(100, Math.round((summary.focus.focusedMs / summary.elapsedMs) * 100));
+}
+
 export const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"] as const;
 export type LevelFilter = "all" | (typeof LEVELS)[number];
 export type KindFilter = "all" | "event" | "span";

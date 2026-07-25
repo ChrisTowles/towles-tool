@@ -87,7 +87,7 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
     id: "telemetry",
     title: "Telemetry",
     icon: Zap,
-    keywords: ["events", "otel", "telemetry", "spans", "log", "tracing"],
+    keywords: ["events", "otel", "telemetry", "spans", "log", "tracing", "attention", "focus"],
     fullBleed: true,
   },
   "task-explorer": {
