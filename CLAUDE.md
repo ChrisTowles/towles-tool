@@ -169,6 +169,36 @@ Rules when working in a task:
   concurrently. Instance state (tt.db, sessions/windows) is scoped per
   checkout via `tt_config::state_scope()`; shared stores (settings, tracked
   repos) are one machine-wide copy.
+- **Attribute a running process to its worktree before acting on it.** Several
+  tasks run `tt-app`/vite at once and they are identical by process name, so
+  `readlink /proc/<pid>/cwd` is the thing that tells you whose it is:
+
+  ```sh
+  pgrep -af "tt-app|vite"        # every instance on the machine
+  readlink /proc/<pid>/cwd       # which checkout owns that one
+  pkill -f "<task-name>.*tt-app" # kill only ever scoped to one task
+  ```
+
+  A bare `pkill -f "tauri dev"` or `killall` matches every task's processes,
+  which is why `.claude/hooks/guard-task-pkill.sh` rejects the unscoped forms.
+
+  **"The MCP tools aren't there"** is the common case, and its cause is
+  counter-intuitive: the server is one-per-machine **bind-or-skip**, so an app
+  that started while another instance held `8787` serves nothing *for its whole
+  life* and never retries. A running `tt-app` is therefore no evidence that MCP
+  is up.
+
+  ```sh
+  curl -s -m 5 -X POST http://127.0.0.1:8787/mcp \
+    -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'  # empty => nobody serving
+  ss -ltnp | grep 8787                                    # who bound it, if anyone
+  ```
+
+  The fix is to start an app from your own checkout — the port is free, so it
+  binds. The app shows this itself (`Not serving · another instance holds the
+  port`), but that surface is useless when the app is the thing that's down,
+  and `tt task ports` lists only `${tt:port}` claims, never the fixed `8787`.
 - Task logic lives in `crates/tt-tasks` (template grammar, removal guards,
   pure decisions) with shared orchestration in `tt_tasks::ops`; the CLI and
   the app's `task_create` command are thin shells over it. Change behavior
@@ -301,8 +331,7 @@ Cargo workspace + npm workspace (`apps/client` only):
     `task_prompt` feeds it into a `task_start` prompt, so a summary folded in
     there would come back as instructions to the next session. It records only:
     it never closes the task or touches the worktree, because confirming a task
-    is done is the user's job (the dynamic flow's prompt says the same — see
-    `dynamicFlowPrompt` in `apps/client/src/lib/agentboard.ts`).
+    is done is the user's job.
     **`task_start` and `task_delete` are the two tools that cannot work from the
     dispatcher alone**, and both enter through the injected `TaskHost`; a
     dispatcher without one refuses rather than half-doing the job. `task_delete`
@@ -503,14 +532,7 @@ Cargo workspace + npm workspace (`apps/client` only):
   (cross-repo kanban of tasks — #339's unit of work: issue/PR link chips,
   task branch, attach/detach + promote-to-issue; done rolls up from GitHub),
   and **Agentboard** (repos + per-repo terminals; its `+` flow creates a
-  task whose worktree is an attribute of the task). The `+` form's
-  **Dynamic** option launches the task's Claude session in plan mode with the
-  goal wrapped by `dynamicFlowPrompt` (`apps/client/src/lib/agentboard.ts`):
-  once the user approves the plan in the PTY, the session implements, runs
-  `/code-review low --fix` and `/simplify`, rebases onto the base branch,
-  opens the PR, and merges it — the merged PR then auto-attaches to the task
-  and rolls it to `done` via the existing collect-side
-  `auto_attach_worktree_prs`/`rollup_task_statuses` path (no new backend state).
+  task whose worktree is an attribute of the task).
   Terminals are a canvas renderer over **libghostty-vt** terminal state in
   Rust (`crates/tt-vt`); the PTY host
   (`crates-tauri/tt-app/src/terminal.rs`) spawns shells with portable-pty and
@@ -626,6 +648,29 @@ etc.). The points below are repo-specific specializations of that doc.
   survive it. `apps/client/src/lib/rail-motion.ts` is the canonical config.
 - **Every user action in the app must emit its OTel event** — event shape
   and exclusions in the `tt-telemetry` bullet in Architecture.
+- **This is an agent interface, not a harness.** The classification is the
+  rule. An agent interface owns the channel between the human and the agents
+  in both directions — precision handing work in, comprehension getting it
+  back (Karpathy's Software 3.0 framing: generation is cheap, *verification*
+  is the bottleneck, and a GUI is what makes checking fast). A harness owns
+  how the model does the work. Claude Code is the harness, and it gets smarter
+  on a budget no one here can match; the interface is the half this repo can
+  actually move. So a feature earns its place by widening the channel, never by
+  trying to make the agent better at its job — that second kind can't even be
+  evaluated here, since honestly improving a harness means A/B-testing against
+  measured output quality, and anything cheaper is vibe testing under ten
+  scenarios. The fix is never "test it better", it's "that belongs in the
+  harness."
+
+  The tell in code is a prompt authored in this repo that reads like a
+  procedure — "implement it, then run /code-review, then rebase, then open the
+  PR". Every prompt here asks a question and parses a JSON answer back (the
+  `+` form's improvers via `task_suggest`, the calendar collectors), and every
+  one is a user-editable string in settings rather than a pipeline compiled
+  into the app: **a question this app acts on, never a procedure the model
+  follows.** Wanting a multi-step agent workflow is legitimate — it belongs in
+  `packages/core` as a slash command or skill, invoked deliberately, where
+  Claude Code runs it.
 - **No CLI-parity requirement.** The app is the primary product; each feature
   picks its natural surface. App-only features don't need a `tt` subcommand,
   and terminal-native tools (journal, gh, doctor) don't need app screens. The
