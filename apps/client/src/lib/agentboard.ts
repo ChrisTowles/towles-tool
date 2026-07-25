@@ -1251,7 +1251,7 @@ export function modelContextLabel(d: AgentEventDetails | null | undefined): stri
  * both spends a rail line saying one thing twice. The slug rules mirror
  * `tt-git`'s `slug()` (`crates/tt-git/src/branch_name.rs`): lowercase, trim,
  * anything outside `[0-9a-z_-]` to `-`, collapse runs, strip trailing `-`.
- * A main checkout (`towles-tool-rs` on `main`) never matches, so it keeps
+ * A main checkout (`towles-tool` on `main`) never matches, so it keeps
  * its branch label. */
 export function branchRedundant(folderName: string, branch: string | null | undefined): boolean {
   if (!branch) return false;

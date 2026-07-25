@@ -573,21 +573,21 @@ mod tests {
         let tracker = AgentTracker::new();
         let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
-        store.ensure_default("/r/towles-tool-rs", 1);
-        store.ensure_default("/r/towles-tool-rs/.claude/worktrees/aardvark-task", 1);
+        store.ensure_default("/r/towles-tool", 1);
+        store.ensure_default("/r/towles-tool/.claude/worktrees/aardvark-task", 1);
         let mut git = HashMap::new();
         git.insert(
-            "/r/towles-tool-rs".to_string(),
+            "/r/towles-tool".to_string(),
             GitInfo {
-                common_dir: "/r/towles-tool-rs/.git".into(),
+                common_dir: "/r/towles-tool/.git".into(),
                 is_worktree: false,
                 ..Default::default()
             },
         );
         git.insert(
-            "/r/towles-tool-rs/.claude/worktrees/aardvark-task".to_string(),
+            "/r/towles-tool/.claude/worktrees/aardvark-task".to_string(),
             GitInfo {
-                common_dir: "/r/towles-tool-rs/.git".into(),
+                common_dir: "/r/towles-tool/.git".into(),
                 is_worktree: true,
                 ..Default::default()
             },
@@ -597,9 +597,9 @@ mod tests {
         let entries = vec![
             RepoEntry {
                 name: "aardvark-task".into(),
-                dir: "/r/towles-tool-rs/.claude/worktrees/aardvark-task".into(),
+                dir: "/r/towles-tool/.claude/worktrees/aardvark-task".into(),
             },
-            RepoEntry { name: "towles-tool-rs".into(), dir: "/r/towles-tool-rs".into() },
+            RepoEntry { name: "towles-tool".into(), dir: "/r/towles-tool".into() },
         ];
         let payload = assemble_state(
             &entries,
@@ -616,8 +616,8 @@ mod tests {
             0,
         );
         assert_eq!(payload.repos.len(), 1);
-        assert_eq!(payload.repos[0].key, "path:/r/towles-tool-rs", "key anchors to the primary");
-        assert_eq!(payload.repos[0].name, "towles-tool-rs", "name anchors to the primary");
+        assert_eq!(payload.repos[0].key, "path:/r/towles-tool", "key anchors to the primary");
+        assert_eq!(payload.repos[0].name, "towles-tool", "name anchors to the primary");
     }
 
     #[test]

@@ -577,21 +577,18 @@ mod tests {
     #[test]
     fn tracked_repo_lookup_folds_case_and_returns_the_stored_spelling() {
         let s = Store::open_in_memory().unwrap();
-        s.reconcile_repos(
-            &[("/repo/a".to_string(), "ChrisTowles/towles-tool-rs".to_string())],
-            100,
-        )
-        .unwrap();
+        s.reconcile_repos(&[("/repo/a".to_string(), "ChrisTowles/towles-tool".to_string())], 100)
+            .unwrap();
 
         for probe in [
-            "ChrisTowles/towles-tool-rs",
-            "christowles/towles-tool-rs",
-            "CHRISTOWLES/TOWLES-TOOL-RS",
+            "ChrisTowles/towles-tool",
+            "christowles/towles-tool",
+            "CHRISTOWLES/TOWLES-TOOL",
         ] {
             let found = s.tracked_repo_for_owner_repo(probe).unwrap();
             assert_eq!(
                 found.as_ref().map(|(root, repo)| (root.as_str(), repo.as_str())),
-                Some(("/repo/a", "ChrisTowles/towles-tool-rs")),
+                Some(("/repo/a", "ChrisTowles/towles-tool")),
                 "failed for {probe}"
             );
         }

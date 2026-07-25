@@ -18,7 +18,7 @@
 //! - An [`layer::EventLogLayer`] writes the structured record to
 //!   `<data_dir>/telemetry/events-<date>.jsonl`, instance-scoped so each
 //!   worktree gets its own log. **The naive unscoped path is a trap**: for a
-//!   process run from a `towles-tool-rs` checkout, `tt_config::state_scope()`
+//!   process run from a `towles-tool` checkout, `tt_config::state_scope()`
 //!   always resolves `<data_dir>` to a *scoped* directory —
 //!   `~/.local/share/towles-tool/tasks/<scope>/telemetry/…` — never the bare
 //!   `~/.local/share/towles-tool/telemetry/…`. That bare path exists on disk

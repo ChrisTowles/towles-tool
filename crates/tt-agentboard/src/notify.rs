@@ -24,7 +24,7 @@ use crate::types::NeedsYouReason;
 pub struct NeedsYouEdge {
     /// Stable session id (the PTY `term_id`).
     pub session_id: String,
-    /// Repo display name (e.g. `towles-tool-rs`).
+    /// Repo display name (e.g. `towles-tool`).
     pub repo: String,
     /// Session display name (e.g. `shell 1`).
     pub session: String,

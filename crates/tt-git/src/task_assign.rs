@@ -90,8 +90,8 @@ pub fn repo_slug_from_remote(url: &str) -> Option<String> {
 }
 
 /// Extract the GitHub `owner/name` slug from a git remote URL, **keeping the
-/// remote's own casing** — `ChrisTowles/towles-tool-rs`, not
-/// `christowles/towles-tool-rs`.
+/// remote's own casing** — `ChrisTowles/towles-tool`, not
+/// `christowles/towles-tool`.
 ///
 /// This is the variant to use when recording a repo's *identity* (the
 /// tracked-repo cache the app's `task_create` validates against). Every other
@@ -144,17 +144,17 @@ mod tests {
     #[test]
     fn normalize_equates_ssh_https_and_scp_forms() {
         let forms = [
-            "git@github.com:ChrisTowles/towles-tool-rs.git",
-            "https://github.com/ChrisTowles/towles-tool-rs.git",
-            "https://github.com/christowles/towles-tool-rs",
-            "https://github.com/ChrisTowles/towles-tool-rs/",
-            "ssh://git@github.com/ChrisTowles/towles-tool-rs",
-            "  git@github.com:ChrisTowles/towles-tool-rs.git\n",
+            "git@github.com:ChrisTowles/towles-tool.git",
+            "https://github.com/ChrisTowles/towles-tool.git",
+            "https://github.com/christowles/towles-tool",
+            "https://github.com/ChrisTowles/towles-tool/",
+            "ssh://git@github.com/ChrisTowles/towles-tool",
+            "  git@github.com:ChrisTowles/towles-tool.git\n",
         ];
         for form in forms {
             assert_eq!(
                 normalize_remote_url(form),
-                "github.com/christowles/towles-tool-rs",
+                "github.com/christowles/towles-tool",
                 "failed for {form}"
             );
         }
@@ -179,22 +179,22 @@ mod tests {
     #[test]
     fn preserving_case_slug_keeps_the_remotes_own_casing() {
         let forms = [
-            "git@github.com:ChrisTowles/towles-tool-rs.git",
-            "https://github.com/ChrisTowles/towles-tool-rs.git",
-            "https://github.com/ChrisTowles/towles-tool-rs/",
-            "ssh://git@github.com/ChrisTowles/towles-tool-rs",
-            "  git@github.com:ChrisTowles/towles-tool-rs.git\n",
+            "git@github.com:ChrisTowles/towles-tool.git",
+            "https://github.com/ChrisTowles/towles-tool.git",
+            "https://github.com/ChrisTowles/towles-tool/",
+            "ssh://git@github.com/ChrisTowles/towles-tool",
+            "  git@github.com:ChrisTowles/towles-tool.git\n",
         ];
         for form in forms {
             assert_eq!(
                 repo_slug_from_remote_preserving_case(form).as_deref(),
-                Some("ChrisTowles/towles-tool-rs"),
+                Some("ChrisTowles/towles-tool"),
                 "failed for {form}"
             );
             // The comparison variant still folds, so remote equality is unchanged.
             assert_eq!(
                 repo_slug_from_remote(form).as_deref(),
-                Some("christowles/towles-tool-rs"),
+                Some("christowles/towles-tool"),
                 "failed for {form}"
             );
         }
@@ -209,15 +209,15 @@ mod tests {
     #[test]
     fn repo_slug_extracts_owner_name_from_every_form() {
         let forms = [
-            "git@github.com:ChrisTowles/towles-tool-rs.git",
-            "https://github.com/ChrisTowles/towles-tool-rs.git",
-            "https://github.com/christowles/towles-tool-rs",
-            "ssh://git@github.com/ChrisTowles/towles-tool-rs",
+            "git@github.com:ChrisTowles/towles-tool.git",
+            "https://github.com/ChrisTowles/towles-tool.git",
+            "https://github.com/christowles/towles-tool",
+            "ssh://git@github.com/ChrisTowles/towles-tool",
         ];
         for form in forms {
             assert_eq!(
                 repo_slug_from_remote(form).as_deref(),
-                Some("christowles/towles-tool-rs"),
+                Some("christowles/towles-tool"),
                 "failed for {form}"
             );
         }
@@ -233,8 +233,8 @@ mod tests {
     fn validate_for_repo_matches_issue_slug_against_task_remote() {
         assert_eq!(
             validate_task_for_repo(
-                "ChrisTowles/towles-tool-rs",
-                "git@github.com:christowles/towles-tool-rs.git",
+                "ChrisTowles/towles-tool",
+                "git@github.com:christowles/towles-tool.git",
                 0,
                 0,
             ),
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn validate_for_repo_rejects_a_different_repo() {
         let err = validate_task_for_repo(
-            "ChrisTowles/towles-tool-rs",
+            "ChrisTowles/towles-tool",
             "git@github.com:someone/other-repo.git",
             0,
             0,

@@ -1126,8 +1126,8 @@ mod merge_worktree_dirs_tests {
 
     #[test]
     fn dedupes_a_worktree_already_configured_explicitly() {
-        // e.g. towles-tool-rs-task-2 manually added even though it's also a
-        // worktree of towles-tool-rs-task-1 — must not appear twice.
+        // e.g. towles-tool-task-2 manually added even though it's also a
+        // worktree of towles-tool-task-1 — must not appear twice.
         let repo_paths = vec!["/repo/task-1".to_string(), "/repo/task-2".to_string()];
         let all = merge_worktree_dirs(
             &repo_paths,

@@ -378,7 +378,7 @@ struct RequiredPlugin {
 /// the marketplace slug and plugin id can't drift between hints. Raw `claude
 /// plugin` commands: the `tt install` command that used to wrap them was
 /// removed in the 2026-07-19 CLI trim.
-const APP_PLUGIN_INSTALL_CMD: &str = "claude plugin marketplace add ChrisTowles/towles-tool-rs \
+const APP_PLUGIN_INSTALL_CMD: &str = "claude plugin marketplace add ChrisTowles/towles-tool \
                                       && claude plugin enable towles-tool-app@towles-tool";
 
 /// Claude plugins the workflows expect: `code-simplifier` (an official

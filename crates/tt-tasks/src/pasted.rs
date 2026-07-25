@@ -300,7 +300,7 @@ mod tests {
     fn scope_name_slugs_repo_and_branch() {
         assert_eq!(scope_name("blog", "feat/paste-images"), "blog-feat-paste-images");
         // Case is preserved, matching how task directories are named.
-        assert_eq!(scope_name("towles-tool-rs", "fix/Thing"), "towles-tool-rs-fix-Thing");
+        assert_eq!(scope_name("towles-tool", "fix/Thing"), "towles-tool-fix-Thing");
     }
 
     #[test]

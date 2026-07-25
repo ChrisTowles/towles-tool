@@ -43,6 +43,6 @@ target as an argument.
 ## Installation
 
 ```bash
-claude plugin marketplace add ChrisTowles/towles-tool-rs
+claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin enable tt@towles-tool
 ```

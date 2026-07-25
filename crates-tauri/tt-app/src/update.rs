@@ -5,7 +5,7 @@
 use tauri::{AppHandle, Emitter};
 
 /// The GitHub repo releases are published to.
-const REPO: &str = "ChrisTowles/towles-tool-rs";
+const REPO: &str = "ChrisTowles/towles-tool";
 
 /// Event the frontend listens for (`update-banner.tsx`). Fired only when a
 /// newer release exists — a no-update result is never pushed, so the frontend

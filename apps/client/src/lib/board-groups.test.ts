@@ -40,8 +40,8 @@ describe("taskRepoKey", () => {
   });
 
   it("falls back to the repo root's basename when nothing else identifies a repo", () => {
-    const t = task({ worktree: { repoRoot: "/home/c/code/p/towles-tool-rs", branch: "b" } });
-    expect(taskRepoKey(t)).toBe("towles-tool-rs");
+    const t = task({ worktree: { repoRoot: "/home/c/code/p/towles-tool", branch: "b" } });
+    expect(taskRepoKey(t)).toBe("towles-tool");
   });
 
   it("prefers a linked repo over the repo root's basename", () => {
@@ -81,7 +81,7 @@ describe("taskRepoKey", () => {
 });
 
 describe("repo slug casing", () => {
-  // Regression: `gh` reports `ChrisTowles/towles-tool-rs` on issue/PR rows,
+  // Regression: `gh` reports `ChrisTowles/towles-tool` on issue/PR rows,
   // while the origin-derived tracked-repo cache stored a folded copy that
   // `task_create` stamped onto new tasks. Grouping on the raw string produced
   // two lanes that `repoGroupLabel` rendered identically — one repo showing up
@@ -90,11 +90,11 @@ describe("repo slug casing", () => {
     const groups = groupTasksByRepo([
       task({
         id: 1,
-        worktree: { repoRoot: "/r", repo: "ChrisTowles/towles-tool-rs", branch: "a" },
+        worktree: { repoRoot: "/r", repo: "ChrisTowles/towles-tool", branch: "a" },
       }),
       task({
         id: 2,
-        worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" },
+        worktree: { repoRoot: "/r", repo: "christowles/towles-tool", branch: "b" },
       }),
     ]);
     expect(groups).toHaveLength(1);
@@ -115,12 +115,12 @@ describe("repo slug casing", () => {
       {
         key: "repo-1",
         dir: "/elsewhere",
-        originUrl: "git@github.com:ChrisTowles/towles-tool-rs.git",
+        originUrl: "git@github.com:ChrisTowles/towles-tool.git",
         folders: [],
       },
     ];
     const t = task({
-      worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" },
+      worktree: { repoRoot: "/r", repo: "christowles/towles-tool", branch: "b" },
     });
     expect(railRepoKeyForTask(repos, t)).toBe("repo-1");
   });
@@ -132,7 +132,7 @@ describe("repo slug casing", () => {
 
 describe("repoGroupLabel", () => {
   it("strips the owner", () => {
-    expect(repoGroupLabel("chris/towles-tool-rs")).toBe("towles-tool-rs");
+    expect(repoGroupLabel("chris/towles-tool")).toBe("towles-tool");
   });
 
   it("passes a bare name through", () => {
@@ -191,7 +191,7 @@ describe("railRepoKeyForTask", () => {
     {
       key: "path:/code/p/tt-rs",
       dir: "/code/p/tt-rs",
-      originUrl: "git@github.com:ChrisTowles/towles-tool-rs.git",
+      originUrl: "git@github.com:ChrisTowles/towles-tool.git",
       folders: [{ dir: "/code/p/tt-rs" }, { dir: "/code/p/tt-rs/.claude/worktrees/feat-x" }],
     },
     {

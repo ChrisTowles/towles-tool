@@ -15,7 +15,7 @@
 //! ## Task-scoped state
 //!
 //! Chris runs many worktree clones of this repo concurrently
-//! (`…/towles-tool-rs-task-N`). To stop concurrent dev instances from clobbering
+//! (`…/towles-tool-task-N`). To stop concurrent dev instances from clobbering
 //! one shared settings file / tt.db / agentboard dir, this module derives a
 //! *scope* from the running instance and, when scoped, nests all mutable state
 //! under `…/towles-tool/tasks/<scope>/…`. See [`state_scope`] for the rule.
@@ -830,8 +830,8 @@ fn detect_scope() -> Scope {
 /// Resolution order:
 /// 1. [`STATE_SCOPE_ENV`] if set (empty forces unscoped, non-empty forces that name).
 /// 2. Otherwise walk up from the current working directory to a checkout of *this*
-///    repo and use its root directory name (e.g. `towles-tool-rs-primary`), repo-
-///    qualified for `tasks/<name>` checkouts (e.g. `towles-tool-rs-task-migrate`).
+///    repo and use its root directory name (e.g. `towles-tool-primary`), repo-
+///    qualified for `tasks/<name>` checkouts (e.g. `towles-tool-task-migrate`).
 ///
 /// A checkout is recognised by a `crates/tt-config` directory at its root — a
 /// marker unique to this workspace — so an installed `tt` run from an arbitrary
@@ -1757,13 +1757,13 @@ mod tests {
 
     #[test]
     fn task_checkout_dir_derives_scope() {
-        let dir = task_checkout("towles-tool-rs");
-        let root = dir.path().join("towles-tool-rs");
+        let dir = task_checkout("towles-tool");
+        let root = dir.path().join("towles-tool");
         // From the root and from a nested subdir, the scope is the root's name.
-        assert_eq!(task_scope_from_dir(&root), Some("towles-tool-rs".to_string()));
+        assert_eq!(task_scope_from_dir(&root), Some("towles-tool".to_string()));
         assert_eq!(
             task_scope_from_dir(&root.join("crates").join("tt-store").join("src")),
-            Some("towles-tool-rs".to_string())
+            Some("towles-tool".to_string())
         );
     }
 
@@ -1773,10 +1773,9 @@ mod tests {
         // carries the main checkout's name so same-named tasks of different
         // repos never share state.
         let dir = TempDir::new().unwrap();
-        let task =
-            dir.path().join("towles-tool-rs").join(".claude").join("worktrees").join("migrate");
+        let task = dir.path().join("towles-tool").join(".claude").join("worktrees").join("migrate");
         std::fs::create_dir_all(task.join("crates").join("tt-config")).unwrap();
-        assert_eq!(task_scope_from_dir(&task), Some("towles-tool-rs-migrate".to_string()));
+        assert_eq!(task_scope_from_dir(&task), Some("towles-tool-migrate".to_string()));
     }
 
     #[test]
@@ -1799,17 +1798,17 @@ mod tests {
     #[test]
     fn main_checkout_scope_collapses_worktree_task_to_the_main_checkout() {
         let dir = TempDir::new().unwrap();
-        let main = dir.path().join("towles-tool-rs");
+        let main = dir.path().join("towles-tool");
         let task = main.join(".claude").join("worktrees").join("feat-thing");
         std::fs::create_dir_all(main.join("crates").join("tt-config")).unwrap();
         std::fs::create_dir_all(task.join("crates").join("tt-config")).unwrap();
 
         // The main checkout scopes by its own name either way...
-        assert_eq!(main_checkout_scope_from_dir(&main), Some("towles-tool-rs".to_string()));
+        assert_eq!(main_checkout_scope_from_dir(&main), Some("towles-tool".to_string()));
         // ...and so does a task nested under it, unlike `task_scope_from_dir`,
         // which qualifies the task with the repo name instead of collapsing it.
-        assert_eq!(main_checkout_scope_from_dir(&task), Some("towles-tool-rs".to_string()));
-        assert_eq!(task_scope_from_dir(&task), Some("towles-tool-rs-feat-thing".to_string()));
+        assert_eq!(main_checkout_scope_from_dir(&task), Some("towles-tool".to_string()));
+        assert_eq!(task_scope_from_dir(&task), Some("towles-tool-feat-thing".to_string()));
     }
 
     #[test]
@@ -1826,7 +1825,7 @@ mod tests {
 
     #[test]
     fn sanitize_scope_keeps_scope_names_and_strips_others() {
-        assert_eq!(sanitize_scope("towles-tool-rs-task-2"), "towles-tool-rs-task-2");
+        assert_eq!(sanitize_scope("towles-tool-task-2"), "towles-tool-task-2");
         assert_eq!(sanitize_scope("  weird/name space "), "weird-name-space");
     }
 
@@ -1859,11 +1858,8 @@ mod tests {
     #[test]
     fn auto_scope_nests_instance_but_not_shared() {
         let base = PathBuf::from("/home/x/.config/towles-tool");
-        let auto = Scope::Auto("towles-tool-rs-thing".into());
-        assert_eq!(
-            nest(base.clone(), &auto, true),
-            base.join("tasks").join("towles-tool-rs-thing")
-        );
+        let auto = Scope::Auto("towles-tool-thing".into());
+        assert_eq!(nest(base.clone(), &auto, true), base.join("tasks").join("towles-tool-thing"));
         assert_eq!(nest(base.clone(), &auto, false), base);
     }
 
@@ -1916,23 +1912,19 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "") };
-        let dirs = instance_state_dirs_for_scope("towles-tool-rs-thing");
+        let dirs = instance_state_dirs_for_scope("towles-tool-thing");
         assert!(!dirs.is_empty());
         for dir in &dirs {
-            assert!(
-                dir.ends_with("towles-tool/tasks/towles-tool-rs-thing"),
-                "got {}",
-                dir.display()
-            );
+            assert!(dir.ends_with("towles-tool/tasks/towles-tool-thing"), "got {}", dir.display());
         }
         assert!(instance_state_dirs_for_scope("  ").is_empty());
 
         // A FORCED scope nests the targets too — a test world's task state
         // lives under the forced nest, never at the real machine paths.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "test-world") };
-        for dir in instance_state_dirs_for_scope("towles-tool-rs-thing") {
+        for dir in instance_state_dirs_for_scope("towles-tool-thing") {
             assert!(
-                dir.ends_with("tasks/test-world/tasks/towles-tool-rs-thing"),
+                dir.ends_with("tasks/test-world/tasks/towles-tool-thing"),
                 "got {}",
                 dir.display()
             );

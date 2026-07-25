@@ -116,7 +116,7 @@ impl Store {
     ///
     /// Both halves exist for the same reason. GitHub slugs are case-preserving
     /// but not case-sensitive, and this repo has more than one source for them:
-    /// `gh` reports `ChrisTowles/towles-tool-rs` on issue and PR rows, while the
+    /// `gh` reports `ChrisTowles/towles-tool` on issue and PR rows, while the
     /// origin-derived cache historically stored a folded copy. An exact-match
     /// lookup therefore rejected the *correct* casing and accepted only the
     /// folded one, and callers then persisted the folded string — which the

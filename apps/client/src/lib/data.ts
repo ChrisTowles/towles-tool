@@ -593,7 +593,7 @@ export function fmtAge(ms: number, now: number): string {
 }
 
 /**
- * Name of the checkout/task this window is running (e.g. `towles-tool-rs-task-2`),
+ * Name of the checkout/task this window is running (e.g. `towles-tool-task-2`),
  * from the Rust `app_task` command. `null` outside Tauri (plain-Vite browser dev)
  * so the header badge is hidden there. Lets several tasks' windows be told apart.
  */
