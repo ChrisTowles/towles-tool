@@ -408,13 +408,11 @@ impl tt_mcp::TaskHost for AppTaskHost {
             branch: req.branch,
             base: req.base,
             prompt: req.prompt,
-            dynamic: req.dynamic,
         };
         tracing::info!(
             task_id = req.id,
             text = %req.text,
             branch = %payload.branch,
-            dynamic = payload.dynamic,
             "task.start_requested"
         );
         self.app
@@ -437,7 +435,6 @@ struct TaskStartPayload {
     branch: String,
     base: Option<String>,
     prompt: String,
-    dynamic: bool,
 }
 
 /// Accept connections until the task is aborted. One failed connection recycles

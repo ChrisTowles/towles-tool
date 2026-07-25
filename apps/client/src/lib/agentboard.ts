@@ -1493,10 +1493,6 @@ export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type ClaudeLaunchOptions = {
   model?: ClaudeModel;
   effort?: ClaudeEffort;
-  /** Start the session in a specific permission mode (`claude
-   * --permission-mode`). The dynamic-task flow launches in `plan` so the
-   * session explores and presents a plan before any edit is possible. */
-  permissionMode?: "plan";
 };
 
 /** The `claude` invocation for a session's PTY: bare, or with an initial
@@ -1509,68 +1505,9 @@ export function claudeCommand(prompt: string, options?: ClaudeLaunchOptions): st
     "claude",
     options?.model ? `--model ${shellQuote(options.model)}` : null,
     options?.effort ? `--effort ${shellQuote(options.effort)}` : null,
-    options?.permissionMode ? `--permission-mode ${shellQuote(options.permissionMode)}` : null,
     trimmed ? shellQuote(trimmed) : null,
   ].filter((p): p is string => p != null);
   return `${parts.join(" ")}\r`;
-}
-
-/** Wrap a dynamic task's goal with the delivery pipeline the session runs
- * once its plan is approved: implement → `/code-review low --fix` →
- * `/simplify` → rebase onto the base branch → PR → merge. The session is
- * launched in plan mode (see `ClaudeLaunchOptions.permissionMode`), so "the
- * plan is approved" is the user's interactive approval in the PTY — after
- * that gate the instructions carry the session all the way to a merged PR,
- * and the merged PR is what rolls the board task to done (PR auto-attach +
- * status rollup on collect).
- *
- * `base` should be the *effective* base ref (`TaskCreated.baseLabel`, e.g.
- * `origin/main`), not the local branch name: inside the task's worktree a
- * fetch never advances the local base ref, so "rebase onto main" would mean
- * stale history.
- *
- * The ending is spelled out as a fixed exit protocol rather than left open,
- * because an open ending is expensive in exactly the moment the work is
- * already finished. A session that merges from inside a worktree hits
- * `gh pr merge`'s post-merge attempt to check the base branch out here, which
- * git refuses (the main checkout holds it) — harmless, and deterministic
- * enough to pre-announce, so no session ever spends a turn rediscovering it.
- * Then, having no way to remove the directory it is standing in or kill its
- * own PTY, it writes prose asking the user to do it. Both are cut off here:
- * teardown is the user's — confirming a task is done is *how they know* it is
- * done — and the wrap-up goes to the card via the `task_summary` MCP tool,
- * where it outlives the worktree, instead of into a scrollback that dies
- * with it. `taskId` is that card; without one (a create whose board row
- * failed) the summary step is simply omitted. */
-export function dynamicFlowPrompt(goal: string, base: string, taskId?: number): string {
-  const trimmed = goal.trim();
-  // Single line by construction — like `promptWithImages`, this is typed into
-  // a PTY inside a quoted arg, where a literal newline drops zsh to PS2.
-  return [
-    trimmed ? `${trimmed} — ` : "",
-    "This is a dynamic task: after your plan is approved, deliver it all the way ",
-    "to a merged PR without stopping to ask. You are in a dedicated worktree on ",
-    `this task's branch; the target branch is ${base}. Once the plan is approved: `,
-    "(1) implement it, verifying with the project's build/lint/test commands, and ",
-    "commit; (2) run /code-review low --fix; (3) run /simplify; commit what those ",
-    `two change; (4) fetch and rebase this branch onto the latest ${base}, `,
-    "resolving conflicts; (5) push and open the PR with gh pr create; (6) merge it ",
-    "with gh pr merge, using a strategy the repo allows — but if the merge is ",
-    "blocked by required checks or reviews you cannot satisfy, stop and report ",
-    "instead of forcing it. Expected and not a failure: after a successful merge ",
-    "gh prints a fatal error about the base branch already being checked out by ",
-    "another worktree — that is gh's local post-merge step, the merge itself ",
-    "landed server-side, so treat it as success and do not investigate it. ",
-    taskId === undefined
-      ? ""
-      : `Then record what you did on this task's board card: call the towles-tool MCP tool task_summary with id ${taskId} and a short summary — what landed (PR number and merge commit), what CI said, decisions worth knowing, anything still open. `,
-    "The card rolls to done on its own once the merged PR is detected, so do ",
-    "not change the task's status yourself. ",
-    "Then stop, with a brief wrap-up and nothing after it. Do not clean up: ",
-    "leave the worktree in place, do not run tt task rm or tt task clean, and do ",
-    "not kill background processes. Chris confirms the task is done and tears it ",
-    "down himself.",
-  ].join("");
 }
 
 /** MIME types the new-task form accepts off the clipboard — the same closed
@@ -1814,7 +1751,6 @@ export type AgentboardNav =
       goal: string;
       branch: string;
       base?: string;
-      dynamic: boolean;
     };
 
 let pendingNav: AgentboardNav | null = null;

@@ -40,7 +40,6 @@ import {
   folderPaneDir,
   isCacheExpiring,
   claudeCommand,
-  dynamicFlowPrompt,
   isFolderQuiet,
   isPasteableImage,
   issuesForFolder,
@@ -1591,80 +1590,18 @@ describe("promptWithImages", () => {
 });
 
 describe("claudeCommand", () => {
-  it("passes --permission-mode before the prompt when asked", () => {
-    expect(claudeCommand("do it", { permissionMode: "plan" })).toBe(
-      "claude --permission-mode 'plan' 'do it'\r",
+  it("quotes the prompt as a single argument", () => {
+    expect(claudeCommand("do it")).toBe("claude 'do it'\r");
+  });
+
+  it("passes --model and --effort before the prompt", () => {
+    expect(claudeCommand("do it", { model: "sonnet", effort: "high" })).toBe(
+      "claude --model 'sonnet' --effort 'high' 'do it'\r",
     );
   });
 
-  it("omits the flag by default", () => {
-    expect(claudeCommand("do it")).toBe("claude 'do it'\r");
-  });
-});
-
-describe("dynamicFlowPrompt", () => {
-  it("leads with the goal and carries the whole post-approval pipeline in order", () => {
-    const prompt = dynamicFlowPrompt("add dark mode", "main");
-    expect(prompt.startsWith("add dark mode — ")).toBe(true);
-    // The steps must appear in delivery order — implement, review, simplify,
-    // rebase, PR, merge — since the session executes them as written.
-    const order = [
-      "implement",
-      "/code-review low --fix",
-      "/simplify",
-      "rebase",
-      "gh pr create",
-      "gh pr merge",
-    ];
-    const positions = order.map((s) => prompt.indexOf(s));
-    expect(positions.every((p) => p >= 0)).toBe(true);
-    expect(positions.toSorted((a, b) => a - b)).toEqual(positions);
-  });
-
-  it("names the actual base branch, not a hardcoded main", () => {
-    const prompt = dynamicFlowPrompt("fix", "release/2.0");
-    expect(prompt).toContain("release/2.0");
-    expect(prompt).not.toContain("main");
-  });
-
-  it("carries an effective origin/ base ref through verbatim as the rebase target", () => {
-    // Callers pass `TaskCreated.baseLabel` (`origin/main`, not `main`) —
-    // inside the task's worktree a fetch never advances local `main`, so the
-    // prompt must name the remote-tracking ref.
-    const prompt = dynamicFlowPrompt("fix", "origin/main");
-    expect(prompt).toContain("rebase this branch onto the latest origin/main");
-  });
-
-  it("stands alone when the goal is empty (image-only ask)", () => {
-    const prompt = dynamicFlowPrompt("  ", "main");
-    expect(prompt.startsWith("This is a dynamic task")).toBe(true);
-  });
-
-  it("never emits a newline — typed into a PTY inside a quoted arg", () => {
-    expect(dynamicFlowPrompt("goal", "main")).not.toContain("\n");
-  });
-
-  it("pre-announces gh's post-merge worktree error so no session diagnoses it", () => {
-    const prompt = dynamicFlowPrompt("fix", "origin/main");
-    expect(prompt).toContain("Expected and not a failure");
-    expect(prompt).toContain("already being checked out by another worktree");
-  });
-
-  it("forbids self-teardown — the user confirms a task is done", () => {
-    const prompt = dynamicFlowPrompt("fix", "origin/main");
-    expect(prompt).toContain("tt task rm");
-    expect(prompt).toContain("Do not clean up");
-    expect(prompt).toContain("not kill background processes");
-  });
-
-  it("routes the wrap-up to the board card when the task has one", () => {
-    const prompt = dynamicFlowPrompt("fix", "origin/main", 42);
-    expect(prompt).toContain("task_summary with id 42");
-  });
-
-  it("omits the summary step for a task with no board card", () => {
-    const prompt = dynamicFlowPrompt("fix", "origin/main");
-    expect(prompt).not.toContain("task_summary");
+  it("starts a bare session when the prompt is empty", () => {
+    expect(claudeCommand("  ")).toBe("claude\r");
   });
 });
 

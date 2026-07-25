@@ -123,13 +123,9 @@ export type NewTaskSubmit = {
   issues: IssueItem[];
   /** False for "Task only": create the board task but no worktree/agent. */
   worktree: boolean;
-  /** True for a dynamic task: Claude launches in plan mode, and once the
-   * user approves the plan in the PTY it delivers all the way to a merged
-   * PR (`dynamicFlowPrompt`) — the merge is what closes the board task. */
-  dynamic: boolean;
   /** False to create the worktree and its session but leave the PTY at a
    * bare shell — no `claude` line typed. For work you want the task for but
-   * intend to drive yourself. Forces `dynamic` off. */
+   * intend to drive yourself. */
   launchClaude: boolean;
 };
 
@@ -139,8 +135,6 @@ export type TaskCreated = {
   dir: string;
   branch: string;
   base: string;
-  /** The ref the task effectively branched from — see `TaskCreatedSchema`. */
-  baseLabel: string;
   warnings: string[];
 };
 
@@ -185,10 +179,7 @@ export type PendingTask = {
   /** The board task created at submit (#339) — carried so a retry binds the
    * task to the same task instead of minting a duplicate card. */
   taskId?: number;
-  /** Carried so a retry launches the same flow the submit asked for. */
-  dynamic: boolean;
-  /** Carried for the same reason — a retry of a no-Claude create must not
-   * suddenly start one. */
+  /** Carried so a retry of a no-Claude create must not suddenly start one. */
   launchClaude: boolean;
   /** The repo's origin URL, for the task task binding's `owner/name`. */
   repoOriginUrl?: string | null;
@@ -299,10 +290,6 @@ export function InlineNewTask({
   // running so only that button shows the spinner text.
   const [improvers, setImprovers] = useState<PromptImprover[]>([FALLBACK_IMPROVER]);
   const [moreOpen, setMoreOpen] = useState(false);
-  // Off by default: a dynamic task merges its own PR, which is a bigger
-  // grant than "start Claude on a goal" — opting in is per-task, never
-  // remembered, so it's always a deliberate choice.
-  const [dynamic, setDynamic] = useState(false);
   // Launching Claude on the goal is the whole point of the flow, so it's on
   // by default; unchecking it is the "I just want the worktree" escape hatch.
   const [launchClaude, setLaunchClaude] = useState(true);
@@ -657,14 +644,11 @@ export function InlineNewTask({
       showError("Give a goal (or pick an issue) first.");
       return;
     }
-    const isDynamic = worktree && dynamic;
     const action = !worktree
       ? "task.create_only"
-      : isDynamic
-        ? "task.start_dynamic"
-        : launchClaude
-          ? "task.start"
-          : "task.start_no_claude";
+      : launchClaude
+        ? "task.start"
+        : "task.start_no_claude";
     uiAction(action, "agentboard");
     onSubmit({
       goal: goal.trim(),
@@ -678,7 +662,6 @@ export function InlineNewTask({
       imagePaths,
       issues: issuesToAttach,
       worktree,
-      dynamic: isDynamic,
       launchClaude,
     });
   }
@@ -1031,34 +1014,11 @@ export function InlineNewTask({
         <Checkbox
           id="new-task-launch-claude"
           checked={launchClaude}
-          onCheckedChange={(v) => {
-            const on = v === true;
-            setLaunchClaude(on);
-            // Clear the subordinate option rather than masking it at every
-            // read: a dynamic task *is* a Claude session, so leaving it set
-            // while it renders unchecked would silently restore it here.
-            if (!on) setDynamic(false);
-          }}
+          onCheckedChange={(v) => setLaunchClaude(v === true)}
           className="mt-0.5"
         />
         <span className="text-[11px] leading-snug text-muted-foreground">
           Start Claude on the goal — off leaves the new task at a bare shell
-        </span>
-      </label>
-      <label
-        htmlFor="new-task-dynamic"
-        className="flex cursor-pointer items-start gap-2 has-disabled:cursor-not-allowed"
-        title="Launches Claude in plan mode. Once you approve its plan in the terminal, it implements the work, runs /code-review low --fix and /simplify, rebases on the base branch, opens the PR, and merges it — the board task closes when the merge lands."
-      >
-        <Checkbox
-          id="new-task-dynamic"
-          checked={dynamic}
-          disabled={!launchClaude}
-          onCheckedChange={(v) => setDynamic(v === true)}
-          className="mt-0.5"
-        />
-        <span className="text-[11px] leading-snug text-muted-foreground peer-disabled:opacity-50">
-          Dynamic — after you approve the plan: review, simplify, rebase, PR, merge
         </span>
       </label>
       {notice && (

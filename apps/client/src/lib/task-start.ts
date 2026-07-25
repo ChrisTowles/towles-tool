@@ -23,7 +23,6 @@ const TaskStartPayloadSchema = z.object({
   branch: z.string(),
   base: z.string().nullish(),
   prompt: z.string(),
-  dynamic: z.boolean(),
 });
 
 export type TaskStartPayload = z.infer<typeof TaskStartPayloadSchema>;
@@ -62,7 +61,6 @@ export function startTaskNav(payload: TaskStartPayload, repos: RepoData[]) {
     goal: payload.prompt,
     branch: payload.branch,
     base: payload.base ?? undefined,
-    dynamic: payload.dynamic,
   };
 }
 

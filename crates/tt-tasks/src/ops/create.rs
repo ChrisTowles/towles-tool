@@ -66,7 +66,7 @@ pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
     let base = opts.base.clone().unwrap_or_else(|| base_branch(&sr.checkout));
     // The ref this task effectively branches from — probed after the fetch so
     // a just-created remote counterpart counts, and carried on the result as
-    // `base_label` so the UI and the dynamic-flow prompt name the same ref
+    // `base_label`, which the create's telemetry span records as the ref
     // creation actually used (agreeing with `checkout_branches`' labels).
     let effective = effective_origin_base(&sr.checkout, &base);
     if let Some(upstream) = &effective {

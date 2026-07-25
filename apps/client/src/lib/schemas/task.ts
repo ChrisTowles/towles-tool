@@ -10,10 +10,6 @@ export const TaskCreatedSchema = z.object({
   dir: z.string(),
   branch: z.string(),
   base: z.string(),
-  /** The ref the task effectively branched from — `origin/<base>` when the
-   * creation-time fast-forward applied, else `base`. What the dynamic-flow
-   * prompt names as its rebase target. */
-  baseLabel: z.string(),
   warnings: z.array(z.string()),
 });
 

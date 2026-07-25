@@ -120,8 +120,6 @@ pub struct TaskStartRequest {
     /// What the agent is told to do — the row's `goal` plus its `notes`, which
     /// is where a task's real handoff context lives.
     pub prompt: String,
-    /// Run the plan-first dynamic flow rather than starting straight in.
-    pub dynamic: bool,
 }
 
 /// What a [`TaskHost::delete_task`] attempt produced.
@@ -717,7 +715,6 @@ impl Dispatcher {
             .get("id")
             .and_then(Value::as_i64)
             .ok_or_else(|| "missing required argument: id".to_string())?;
-        let dynamic = args.get("dynamic").and_then(Value::as_bool).unwrap_or(false);
         let branch_arg =
             args.get("branch").and_then(Value::as_str).map(str::trim).filter(|b| !b.is_empty());
         let base = args
@@ -792,7 +789,6 @@ impl Dispatcher {
             branch: branch.clone(),
             base,
             prompt,
-            dynamic,
         })?;
 
         Ok(json!({
@@ -800,7 +796,6 @@ impl Dispatcher {
             "id": id,
             "text": task.text,
             "branch": branch,
-            "dynamic": dynamic,
         }))
     }
 
@@ -1061,7 +1056,6 @@ pub fn tool_definitions() -> Value {
                     "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
                     "branch": { "type": "string", "description": "Branch to create for the task. Omitted: derived by slugging the task's title, the same way `tt task new` does." },
                     "base": { "type": "string", "description": "Ref to branch from. Omitted: the repo's default branch." },
-                    "dynamic": { "type": "boolean", "description": "Start the session in plan-first mode — the agent proposes a plan and waits for approval before implementing, then reviews, rebases, opens and merges the PR. Default false, which starts work immediately." },
                 },
                 "required": ["id"],
             },
@@ -1675,7 +1669,7 @@ mod tests {
     /// fields a test asserts on — the whole point is that the dispatcher
     /// resolved them from the row, so the host does no reads of its own.
     type StartCalls =
-        std::sync::Arc<std::sync::Mutex<Vec<(i64, String, String, Option<String>, String, bool)>>>;
+        std::sync::Arc<std::sync::Mutex<Vec<(i64, String, String, Option<String>, String)>>>;
 
     struct FakeHost {
         answer: std::sync::Mutex<Option<Result<TaskDeletion, String>>>,
@@ -1701,7 +1695,6 @@ mod tests {
                 req.branch,
                 req.base,
                 req.prompt,
-                req.dynamic,
             ));
             Ok(())
         }
@@ -1763,23 +1756,21 @@ mod tests {
         assert_eq!(result["status"], "starting");
         assert_eq!(result["id"], id);
         assert_eq!(result["branch"], "collapse-git_info-s-eight-spawns");
-        assert_eq!(result["dynamic"], false);
 
         let starts = starts.lock().unwrap();
         assert_eq!(starts.len(), 1);
-        let (got_id, repo_root, branch, base, prompt, dynamic) = &starts[0];
+        let (got_id, repo_root, branch, base, prompt) = &starts[0];
         assert_eq!(*got_id, id);
         assert_eq!(repo_root, REPO_DIR);
         assert_eq!(branch, "collapse-git_info-s-eight-spawns");
         assert_eq!(*base, None);
-        assert!(!dynamic);
         // Goal leads, notes follow — the title is not the instruction.
         assert!(prompt.starts_with("Cut the per-folder git subprocess count"), "{prompt}");
         assert!(prompt.contains("Work in git_info.rs only."), "{prompt}");
     }
 
     #[test]
-    fn task_start_passes_an_explicit_branch_base_and_dynamic_through() {
+    fn task_start_passes_an_explicit_branch_and_base_through() {
         let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
         let created =
             call_tool(&mut dispatcher, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
@@ -1788,14 +1779,13 @@ mod tests {
         call_tool(
             &mut dispatcher,
             "task_start",
-            json!({ "id": id, "branch": "fix/thing", "base": "develop", "dynamic": true }),
+            json!({ "id": id, "branch": "fix/thing", "base": "develop" }),
         );
 
         let starts = starts.lock().unwrap();
-        let (_, _, branch, base, _, dynamic) = &starts[0];
+        let (_, _, branch, base, _) = &starts[0];
         assert_eq!(branch, "fix/thing");
         assert_eq!(base.as_deref(), Some("develop"));
-        assert!(dynamic);
     }
 
     /// Starting a task that already holds a worktree would orphan the running

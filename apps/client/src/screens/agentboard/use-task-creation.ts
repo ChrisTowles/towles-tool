@@ -8,7 +8,6 @@ import type {
 } from "@/components/inline-new-task";
 import {
   abSetSessionPurpose,
-  dynamicFlowPrompt,
   ownerRepoFromOrigin,
   promptWithImages,
   type ClaudeLaunchOptions,
@@ -208,7 +207,6 @@ export function useTaskCreation(args: {
         options: input.options,
         imagePaths: input.imagePaths,
         taskId,
-        dynamic: input.dynamic,
         launchClaude: input.launchClaude,
         repoOriginUrl: repo.originUrl,
         startedAt: Date.now(),
@@ -254,26 +252,13 @@ export function useTaskCreation(args: {
     const label =
       input.goal ||
       (imagePaths.length ? `attached ${imagePaths.length === 1 ? "image" : "images"}` : "");
-    // A dynamic task wraps the goal with the post-plan-approval delivery
-    // pipeline and launches in plan mode — the base comes from the resolved
-    // create (what the branch actually forked from), not the form field, and
-    // uses `baseLabel` (`origin/main`, not `main`) because inside the task's
-    // worktree a fetch never advances the *local* base ref: telling the
-    // session to rebase onto plain `main` would rebase onto stale history.
-    // Otherwise the goal is launched exactly as it reads in the form. Prompt
-    // improvers rewrite that field *before* submit (see `inline-new-task.tsx`),
-    // so there is deliberately nothing to apply here — what you saw is what
-    // launches.
-    const goalPrompt = input.dynamic
-      ? dynamicFlowPrompt(input.goal, created.baseLabel, taskId)
-      : input.goal;
-    const launchOptions: ClaudeLaunchOptions = input.dynamic
-      ? { ...input.options, permissionMode: "plan" }
-      : input.options;
+    // The goal is launched exactly as it reads in the form. Prompt improvers
+    // rewrite that field *before* submit (see `inline-new-task.tsx`), so there
+    // is deliberately nothing to apply here — what you saw is what launches.
     // "Start Claude on the goal" unchecked → no prompt, which is already how
     // `taskCreated` says "don't type anything into the PTY".
-    const prompt = input.launchClaude ? promptWithImages(goalPrompt, imagePaths) : "";
-    await taskCreated(created, prompt, launchOptions, label, focusAtSubmit);
+    const prompt = input.launchClaude ? promptWithImages(input.goal, imagePaths) : "";
+    await taskCreated(created, prompt, input.options, label, focusAtSubmit);
   }
 
   // A task the inline form just created: track it in the rail, mount its
@@ -360,7 +345,6 @@ export function useTaskCreation(args: {
         // duplicate card. (Issues are already attached to it, too.)
         issues: [],
         worktree: true,
-        dynamic: p.dynamic,
         launchClaude: p.launchClaude,
         taskId: p.taskId,
       },
