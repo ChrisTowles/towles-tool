@@ -137,6 +137,25 @@ impl Store {
         self.task_by_id(id)
     }
 
+    /// Record what the agent working this task reported when it finished — a
+    /// full replace of `summary`, stamped with `now_ms`. A replace rather than
+    /// an append so a retried write (the same report sent twice) leaves one
+    /// copy, not two. Blank input clears the summary. Returns the updated
+    /// task, or [`Error::TaskNotFound`] when no task has `id`.
+    pub fn set_task_summary(&self, id: i64, summary: &str, now_ms: i64) -> Result<TaskItem> {
+        let trimmed = summary.trim();
+        let (text, at) =
+            if trimmed.is_empty() { (None, None) } else { (Some(trimmed), Some(now_ms)) };
+        let affected = self.conn.execute(
+            "UPDATE tasks SET summary = ?1, summary_at = ?2 WHERE id = ?3",
+            params![text, at, id],
+        )?;
+        if affected == 0 {
+            return Err(Error::TaskNotFound(id));
+        }
+        self.task_by_id(id)
+    }
+
     /// Delete a task permanently, cascading its issue/PR link rows. Returns
     /// [`Error::TaskNotFound`] when no task has `id`.
     pub fn delete_task(&self, id: i64) -> Result<()> {
@@ -499,6 +518,8 @@ impl Store {
             let outcome: Option<String> = r.get(11)?;
             let archived_at: Option<i64> = r.get(12)?;
             let goal: Option<String> = r.get(13)?;
+            let summary: Option<String> = r.get(14)?;
+            let summary_at: Option<i64> = r.get(15)?;
             // Keyed on `repo_root` alone: a repo-bound task with no worktree
             // yet still has a worktree binding, and dropping it here would hide
             // the task's repo from the Board's swimlanes.
@@ -519,6 +540,8 @@ impl Store {
                 outcome,
                 archived_at,
                 goal,
+                summary,
+                summary_at,
                 worktree,
                 issues: Vec::new(),
                 prs: Vec::new(),

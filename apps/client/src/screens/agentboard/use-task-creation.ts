@@ -265,7 +265,7 @@ export function useTaskCreation(args: {
     // so there is deliberately nothing to apply here — what you saw is what
     // launches.
     const goalPrompt = input.dynamic
-      ? dynamicFlowPrompt(input.goal, created.baseLabel)
+      ? dynamicFlowPrompt(input.goal, created.baseLabel, taskId)
       : input.goal;
     const launchOptions: ClaudeLaunchOptions = input.dynamic
       ? { ...input.options, permissionMode: "plan" }

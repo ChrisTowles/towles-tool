@@ -10,7 +10,7 @@ use rusqlite::{Connection, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 16;
+pub(crate) const SCHEMA_VERSION: i64 = 17;
 
 /// Schema v1. Every statement is `IF NOT EXISTS` so `migrate` is idempotent.
 const SCHEMA_V1: &str = "\
@@ -215,6 +215,7 @@ impl Store {
         // that predates a column silently drops it, the same trap v4's `notes`
         // dodges by living here rather than before v7.
         self.migrate_tasks_goal_v16()?;
+        self.migrate_tasks_summary_v17()?;
         self.migrate_events_v9()?;
         self.migrate_events_v10_iso()?;
         // After v10, never inside SCHEMA_V1: that batch runs before the
@@ -349,6 +350,34 @@ impl Store {
         }
         if !has_goal {
             self.conn.execute_batch("ALTER TABLE tasks ADD COLUMN goal TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// v17: `summary`/`summary_at` — what the agent that worked the task
+    /// reported when it finished, written once through the MCP `task_summary`
+    /// tool. It lives on the row rather than in `notes` because `notes` is the
+    /// user's own context and is fed *into* a `task_start` prompt: folding an
+    /// agent's exit report into it would make the next session read its
+    /// predecessor's summary as instructions. Same nullable-ADD-COLUMN idiom as
+    /// [`Self::migrate_tasks_notes_v4`].
+    fn migrate_tasks_summary_v17(&self) -> Result<()> {
+        let mut has_summary = false;
+        {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(tasks)")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "summary" {
+                    has_summary = true;
+                }
+            }
+        }
+        if !has_summary {
+            self.conn.execute_batch(
+                "ALTER TABLE tasks ADD COLUMN summary TEXT;
+                 ALTER TABLE tasks ADD COLUMN summary_at INTEGER;",
+            )?;
         }
         Ok(())
     }

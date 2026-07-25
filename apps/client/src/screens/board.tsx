@@ -741,7 +741,9 @@ function Card({
     { kind: "close"; outcome: TaskOutcome } | { kind: "purge" } | null
   >(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const hasNotes = (task.notes ?? "").trim() !== "";
+  const summary = (task.summary ?? "").trim();
   // `closed`/`displayOutcome`/`hasWorktree` are computed backend-side
   // (`TaskItem::with_derived_fields` in tt-store) so every consumer agrees —
   // the card just renders them. A bound worktree means there's a live
@@ -1139,6 +1141,43 @@ function Card({
         <p className="mt-1 text-[11px] leading-tight text-muted-foreground" title={rollupTitle}>
           Rolled up — {rollup.summary}
         </p>
+      )}
+
+      {/* What the agent reported when it finished (MCP `task_summary`). This
+          is the card's copy of a wrap-up that otherwise dies with the
+          worktree's terminal, and it's what the user reads to confirm the
+          work before closing the task — so it renders inline, not behind a
+          tooltip like `notes`. Collapsed to a few lines; click to expand. */}
+      {summary && (
+        <button
+          type="button"
+          onClick={() => setSummaryOpen((open) => !open)}
+          className="mt-2 block w-full rounded border border-dashed bg-muted/30 p-1.5 text-left"
+        >
+          <span className="mb-0.5 flex items-baseline gap-1.5 text-[10px] text-muted-foreground">
+            <span className="font-medium uppercase tracking-wide">Summary</span>
+            {task.summaryAt !== undefined && (
+              <span className="opacity-70">
+                {fmtDate(task.summaryAt)} {fmtClock(task.summaryAt)}
+              </span>
+            )}
+            {/* The affordance: cropped text alone doesn't say it's cropped. */}
+            <span className="ml-auto opacity-70">{summaryOpen ? "less" : "more"}</span>
+          </span>
+          <span
+            className={cn(
+              "block whitespace-pre-wrap text-[11px] leading-snug text-foreground/80",
+              // Collapsed by height, not `line-clamp-*`: the clamp applies
+              // (WebKitGTK reports `-webkit-line-clamp: 4`) but does not take
+              // effect on this text, because `whitespace-pre-wrap` gives it
+              // hard newlines and the engine keeps rendering past the limit.
+              // A max-height crops the same block with no engine dependency.
+              !summaryOpen && "max-h-16 overflow-hidden",
+            )}
+          >
+            {summary}
+          </span>
+        </button>
       )}
 
       <AlertDialog open={confirming != null} onOpenChange={(open) => !open && setConfirming(null)}>

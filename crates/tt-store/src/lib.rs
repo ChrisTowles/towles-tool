@@ -1368,6 +1368,80 @@ mod tests {
     }
 
     #[test]
+    fn set_task_summary_records_the_agents_report_and_stamps_it() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("switch the files pane", "doing", Some("mine"), None, 1).unwrap();
+        assert_eq!(t.summary, None);
+        assert_eq!(t.summary_at, None);
+        let done = s.set_task_summary(t.id, "  PR #510 squashed into main.  ", 500).unwrap();
+        assert_eq!(done.summary.as_deref(), Some("PR #510 squashed into main."));
+        assert_eq!(done.summary_at, Some(500));
+        // The user's own notes are a separate field and stay untouched — the
+        // summary must never end up in what a later `task_start` reads back.
+        assert_eq!(done.notes.as_deref(), Some("mine"));
+        // A retried write replaces rather than appends.
+        let again = s.set_task_summary(t.id, "PR #510 squashed into main.", 900).unwrap();
+        assert_eq!(again.summary.as_deref(), Some("PR #510 squashed into main."));
+        assert_eq!(again.summary_at, Some(900));
+        // And it survives a re-read.
+        assert_eq!(
+            s.get_task(t.id).unwrap().unwrap().summary.as_deref(),
+            Some("PR #510 squashed into main.")
+        );
+    }
+
+    #[test]
+    fn set_task_summary_blank_clears_it_and_unknown_id_errors() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("x", "doing", None, None, 1).unwrap();
+        s.set_task_summary(t.id, "something", 1).unwrap();
+        let cleared = s.set_task_summary(t.id, "   ", 2).unwrap();
+        assert_eq!(cleared.summary, None);
+        assert_eq!(cleared.summary_at, None);
+        let err = s.set_task_summary(999, "ghost", 3).unwrap_err();
+        assert!(matches!(err, Error::TaskNotFound(999)));
+    }
+
+    #[test]
+    fn migrate_adds_summary_columns_to_pre_v17_tasks() {
+        // The v16-era shape: every task column except summary/summary_at.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("tt.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'backlog',
+                    position INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    completed_at INTEGER,
+                    notes TEXT,
+                    worktree_repo_root TEXT,
+                    worktree_repo TEXT,
+                    worktree_branch TEXT,
+                    worktree_dir TEXT,
+                    outcome TEXT,
+                    archived_at INTEGER,
+                    goal TEXT
+                );
+                 INSERT INTO tasks (text, status, position, created_at) VALUES ('old', 'doing', 0, 1);",
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        let cols = task_columns(&s);
+        assert!(cols.contains(&"summary".to_string()));
+        assert!(cols.contains(&"summary_at".to_string()));
+        // The pre-existing row reads back, summary-less, and can take one.
+        let existing = s.open_tasks().unwrap();
+        assert_eq!(existing[0].summary, None);
+        let updated = s.set_task_summary(existing[0].id, "landed", 7).unwrap();
+        assert_eq!(updated.summary.as_deref(), Some("landed"));
+    }
+
+    #[test]
     fn update_task_nonexistent_errors() {
         let s = Store::open_in_memory().unwrap();
         let err = s.update_task(999, "ghost", None).unwrap_err();

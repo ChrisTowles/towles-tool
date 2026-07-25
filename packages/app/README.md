@@ -9,7 +9,8 @@ Points at the desktop app's own MCP server (`crates/tt-mcp`, served over
 loopback HTTP by `tt-app`), so any session with this plugin enabled gets these
 tools without manual `claude mcp add` setup:
 
-- **Board** — `task_list`, `task_status` (reads), `task_create`, `task_start` and
+- **Board** — `task_list`, `task_status` (reads), `task_create`, `task_summary`,
+  `task_start` and
   `task_delete` (writes). `task_create` adds a board card only; `task_start` is
   what turns one into work in progress — it mints the task's git worktree and
   launches a Claude session in it on the task's goal and notes. It answers
@@ -17,7 +18,11 @@ tools without manual `claude mcp add` setup:
   the app, so confirm with `task_list` rather than assuming. `task_delete`
   removes the task's panes and git worktree along with its board row, and
   refuses — deleting nothing — when the worktree still holds uncommitted or
-  unlanded work.
+  unlanded work. `task_summary` is the last thing an agent finishing a task
+  should call: it writes the wrap-up onto the card, which outlives the worktree
+  and its terminal scrollback, so the record is still there when the user comes
+  to confirm the work. It records only — closing the task and removing the
+  worktree stay the user's call.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.

@@ -111,7 +111,8 @@ pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(crate) const EVENT_COLS: &str =
     "id, source, external_id, title, starts_at, ends_at, attendees, location, join_url";
 pub(crate) const TASK_COLS: &str = "id, text, status, position, created_at, completed_at, notes, \
-     worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal";
+     worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal, \
+     summary, summary_at";
 // Aliased to `i`/`p` and joined against `item_dismissals` in the read paths
 // below, so each column list carries its own dismissed_ts.
 pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0)";
@@ -186,6 +187,16 @@ pub struct TaskItem {
     /// set once at creation and never edited afterward.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
+    /// What the agent working the task reported when it finished — the
+    /// durable version of the wrap-up it would otherwise have written into a
+    /// PTY that dies with the worktree. Written through the MCP `task_summary`
+    /// tool; deliberately separate from `notes`, which is the user's own
+    /// context and is read back *into* a `task_start` prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// When `summary` was last written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_at: Option<i64>,
     /// How the task ended (see [`TASK_OUTCOMES`]); `None` while it is open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,

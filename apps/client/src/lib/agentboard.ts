@@ -1527,8 +1527,22 @@ export function claudeCommand(prompt: string, options?: ClaudeLaunchOptions): st
  * `base` should be the *effective* base ref (`TaskCreated.baseLabel`, e.g.
  * `origin/main`), not the local branch name: inside the task's worktree a
  * fetch never advances the local base ref, so "rebase onto main" would mean
- * stale history. */
-export function dynamicFlowPrompt(goal: string, base: string): string {
+ * stale history.
+ *
+ * The ending is spelled out as a fixed exit protocol rather than left open,
+ * because an open ending is expensive in exactly the moment the work is
+ * already finished. A session that merges from inside a worktree hits
+ * `gh pr merge`'s post-merge attempt to check the base branch out here, which
+ * git refuses (the main checkout holds it) — harmless, and deterministic
+ * enough to pre-announce, so no session ever spends a turn rediscovering it.
+ * Then, having no way to remove the directory it is standing in or kill its
+ * own PTY, it writes prose asking the user to do it. Both are cut off here:
+ * teardown is the user's — confirming a task is done is *how they know* it is
+ * done — and the wrap-up goes to the card via the `task_summary` MCP tool,
+ * where it outlives the worktree, instead of into a scrollback that dies
+ * with it. `taskId` is that card; without one (a create whose board row
+ * failed) the summary step is simply omitted. */
+export function dynamicFlowPrompt(goal: string, base: string, taskId?: number): string {
   const trimmed = goal.trim();
   // Single line by construction — like `promptWithImages`, this is typed into
   // a PTY inside a quoted arg, where a literal newline drops zsh to PS2.
@@ -1543,8 +1557,19 @@ export function dynamicFlowPrompt(goal: string, base: string): string {
     "resolving conflicts; (5) push and open the PR with gh pr create; (6) merge it ",
     "with gh pr merge, using a strategy the repo allows — but if the merge is ",
     "blocked by required checks or reviews you cannot satisfy, stop and report ",
-    "instead of forcing it. Then stop: leave the worktree in place — the board ",
-    "task closes itself once the merged PR is detected.",
+    "instead of forcing it. Expected and not a failure: after a successful merge ",
+    "gh prints a fatal error about the base branch already being checked out by ",
+    "another worktree — that is gh's local post-merge step, the merge itself ",
+    "landed server-side, so treat it as success and do not investigate it. ",
+    taskId === undefined
+      ? ""
+      : `Then record what you did on this task's board card: call the towles-tool MCP tool task_summary with id ${taskId} and a short summary — what landed (PR number and merge commit), what CI said, decisions worth knowing, anything still open. `,
+    "The card rolls to done on its own once the merged PR is detected, so do ",
+    "not change the task's status yourself. ",
+    "Then stop, with a brief wrap-up and nothing after it. Do not clean up: ",
+    "leave the worktree in place, do not run tt task rm or tt task clean, and do ",
+    "not kill background processes. Chris confirms the task is done and tears it ",
+    "down himself.",
   ].join("");
 }
 
