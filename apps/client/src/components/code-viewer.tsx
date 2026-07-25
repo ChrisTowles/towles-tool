@@ -18,6 +18,7 @@ import {
 import { AUTOSAVE_DELAY_MS, diskChangeAction } from "@/lib/viewer-refresh";
 import { NotInTauri, errorMessage } from "@/lib/errors";
 import { IdeSelectionOverlay } from "@/components/ide-selection-chip";
+import { EditorContextMenu } from "@/components/editor-context-menu";
 import { ViewerBanner } from "@/components/viewer-banner";
 import {
   mentionRangeFrom,
@@ -508,7 +509,9 @@ export function CodeViewer({
           onMine={() => void resolveConflictRef.current?.("mine")}
         />
       )}
-      <div ref={containerRef} className="h-full w-full" />
+      <EditorContextMenu where="files.editor">
+        <div ref={containerRef} className="h-full w-full" />
+      </EditorContextMenu>
       <IdeSelectionOverlay
         selection={selection}
         connected={connected}

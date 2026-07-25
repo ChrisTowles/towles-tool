@@ -18,6 +18,7 @@ import {
 } from "@/lib/ide";
 import { AUTOSAVE_DELAY_MS, diskChangeAction } from "@/lib/viewer-refresh";
 import { IdeSelectionOverlay } from "@/components/ide-selection-chip";
+import { EditorContextMenu } from "@/components/editor-context-menu";
 import { ViewerBanner } from "@/components/viewer-banner";
 import {
   diffWorkPath,
@@ -864,7 +865,9 @@ export function MonacoMultiDiff({
           onMine={() => void resolveConflicts("mine")}
         />
       )}
-      <div ref={containerRef} className="h-full w-full" />
+      <EditorContextMenu where="diff.editor">
+        <div ref={containerRef} className="h-full w-full" />
+      </EditorContextMenu>
       <IdeSelectionOverlay
         selection={selection?.range ?? null}
         label={selection?.path}
