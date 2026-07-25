@@ -166,7 +166,12 @@ crates/tt-ide                       Tauri-free protocol core: lockfile schema,
   `closeAllDiffTabs`. Tools with app-side effects (`openFile`, `openDiff` and
   the close pair) are intercepted in the app shell before the pure dispatcher:
   `openFile` focuses the Files tab (with `startText`/`endText` anchor
-  selection in Monaco); `openDiff` blocks the CLI's tool call on an in-app
+  selection in Monaco) — **but only when `makeFrontmost` isn't `false`**, which
+  is the one shape the CLI actually sends: its diagnostics tracker calls
+  `openFile` before every file it edits, just so the "IDE" holds the document,
+  and treating that as a request to show something opened a files pane on
+  screen on each agent edit. A background open is now acknowledged and
+  otherwise ignored; `openDiff` blocks the CLI's tool call on an in-app
   accept/reject review (Monaco DiffEditor; accept atomically writes the —
   possibly user-tweaked — proposed contents and answers `FILE_SAVED` +
   contents, reject answers `DIFF_REJECTED` + tab name). Not implemented:

@@ -350,8 +350,11 @@ async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared
     emit_status(app, shared);
 }
 
-/// Emitted when a CLI calls `openFile`: the frontend focuses the folder's
-/// Files tab on that file (optionally selecting `startText`..`endText`).
+/// Emitted when a CLI calls `openFile` *and asks for the foreground*: the
+/// frontend focuses the folder's Files tab on that file (optionally selecting
+/// `startText`..`endText`). A `makeFrontmost: false` call — Claude Code's
+/// pre-edit bookkeeping, see the intercept — emits nothing, because creating a
+/// pane there is a UI change no user asked for.
 pub const OPEN_FILE_EVENT: &str = "ide://open-file";
 /// Emitted when a CLI calls `openDiff`: the frontend shows an accept/reject
 /// review (Monaco DiffEditor) and resolves it via `ide_diff_resolve`.
@@ -502,17 +505,33 @@ fn intercept_app_tool(
     match name {
         "openFile" => {
             let file_path = arg_str("filePath").to_string();
-            let payload = serde_json::json!({
-                "dir": shared.cwd.to_string_lossy(),
-                "filePath": file_path,
-                "startText": args.get("startText"),
-                "endText": args.get("endText"),
-                "selectToEndOfLine": args.get("selectToEndOfLine"),
-            });
-            let _ = app.emit_to(MAIN_WINDOW_LABEL, OPEN_FILE_EVENT, payload);
+            // `makeFrontmost: false` is Claude Code's *background* open, and
+            // it is the only shape its CLI ever sends: the diagnostics tracker
+            // calls `openFile` before every file it edits, purely to make the
+            // IDE hold the document so `getDiagnostics` has something to
+            // report on. Acting on it put a files pane on screen — creating
+            // one and switching the active folder to it — on every agent edit,
+            // with no user gesture anywhere in the chain. Honour the flag: a
+            // pane opens only when something asked to be brought forward.
+            if wants_frontmost(&args) {
+                let payload = serde_json::json!({
+                    "dir": shared.cwd.to_string_lossy(),
+                    "filePath": file_path,
+                    "startText": args.get("startText"),
+                    "endText": args.get("endText"),
+                    "selectToEndOfLine": args.get("selectToEndOfLine"),
+                });
+                let _ = app.emit_to(MAIN_WINDOW_LABEL, OPEN_FILE_EVENT, payload);
+                let result = serde_json::json!({
+                    "success": true,
+                    "message": format!("Opening {file_path} in Towles Tool"),
+                });
+                return Intercept::Reply(tt_ide::tool_result_response(id, &result));
+            }
+            tracing::debug!(dir = %shared.cwd.display(), file = %file_path, "ide.open_file_background");
             let result = serde_json::json!({
                 "success": true,
-                "message": format!("Opening {file_path} in Towles Tool"),
+                "message": format!("Tracking {file_path} in Towles Tool (not brought forward)"),
             });
             Intercept::Reply(tt_ide::tool_result_response(id, &result))
         }
@@ -574,6 +593,13 @@ fn intercept_app_tool(
         }
         _ => Intercept::NotOurs,
     }
+}
+
+/// Whether an `openFile` call wants the file *on screen*. Absent means yes —
+/// VS Code's tool schema defaults `makeFrontmost` to true, and a caller that
+/// omits it is asking for the plain "open this" behaviour.
+fn wants_frontmost(args: &serde_json::Value) -> bool {
+    args.get("makeFrontmost").and_then(serde_json::Value::as_bool).unwrap_or(true)
 }
 
 /// The review UI decided: accept (write `finalContents`, possibly tweaked in
@@ -1158,5 +1184,26 @@ mod fs_command_tests {
         let exists = already_exists("dest.txt");
         assert!(exists.contains(ERR_ALREADY_EXISTS), "{exists}");
         assert!(exists.starts_with("dest.txt"), "{exists}");
+    }
+
+    /// The exact payload Claude Code's diagnostics tracker sends before every
+    /// edit (`ensureFileOpened`) — it must never put a pane on screen.
+    #[test]
+    fn background_open_file_does_not_want_the_foreground() {
+        let args = serde_json::json!({
+            "filePath": "/w/src/main.rs",
+            "preview": false,
+            "startText": "",
+            "endText": "",
+            "selectToEndOfLine": false,
+            "makeFrontmost": false,
+        });
+        assert!(!wants_frontmost(&args));
+    }
+
+    #[test]
+    fn open_file_defaults_to_the_foreground() {
+        assert!(wants_frontmost(&serde_json::json!({ "filePath": "/w/src/main.rs" })));
+        assert!(wants_frontmost(&serde_json::json!({ "makeFrontmost": true })));
     }
 }
