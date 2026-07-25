@@ -35,14 +35,14 @@ describe("matchesTaskFilter", () => {
     const linked = task(
       { text: "Fix the bug" },
       {
-        issues: [{ repo: "octo/towles-tool-rs", number: 339, url: "u", state: "open" }],
+        issues: [{ repo: "octo/towles-tool", number: 339, url: "u", state: "open" }],
         prs: [{ repo: "octo/other", number: 7, url: "u", state: "open", checks: "none" }],
       },
     );
-    expect(matchesTaskFilter(linked, "tool-rs")).toBe(true);
+    expect(matchesTaskFilter(linked, "les-tool")).toBe(true);
     expect(matchesTaskFilter(linked, "#339")).toBe(true);
     expect(matchesTaskFilter(linked, "octo/other")).toBe(true);
-    expect(matchesTaskFilter(task({ text: "Fix the bug" }), "tool-rs")).toBe(false);
+    expect(matchesTaskFilter(task({ text: "Fix the bug" }), "les-tool")).toBe(false);
   });
 
   it("matches against the worktree branch", () => {

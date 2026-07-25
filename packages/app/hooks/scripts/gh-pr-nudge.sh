@@ -47,7 +47,7 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 # signal:
 #   1. An env value the app itself stamps into every terminal it spawns
 #      (TT_SESSION_ID/TT_APP_INSTANCE -- crates-tauri/tt-app/src/terminal.rs).
-#   2. `cwd` is inside a towles-tool-rs checkout (primary or a worktree
+#   2. `cwd` is inside a towles-tool checkout (primary or a worktree
 #      task), recognised the same way tt_config::task_scope_from_dir does:
 #      a `crates/tt-config` directory at some ancestor.
 # Without this, a hook enabled globally would still fire for `gh` commands

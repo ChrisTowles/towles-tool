@@ -61,7 +61,7 @@ describe("startTaskNav", () => {
     repo({
       key: "path:/code/p/tt-rs",
       dir: "/code/p/tt-rs",
-      originUrl: "git@github.com:ChrisTowles/towles-tool-rs.git",
+      originUrl: "git@github.com:ChrisTowles/towles-tool.git",
     } as Partial<RepoData> & Pick<RepoData, "key" | "dir">),
   ];
 

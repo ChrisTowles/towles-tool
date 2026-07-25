@@ -117,14 +117,14 @@ describe("waitForFirstFrame", () => {
 
 function pr(overrides: Partial<PrItem>): PrItem {
   return {
-    repo: "ChrisTowles/towles-tool-rs",
+    repo: "ChrisTowles/towles-tool",
     number: 42,
     title: "a pr",
     branch: "feature/x",
     state: "open",
     checks: "passing",
     reviewState: "none",
-    url: "https://github.com/ChrisTowles/towles-tool-rs/pull/42",
+    url: "https://github.com/ChrisTowles/towles-tool/pull/42",
     updatedTs: 0,
     dismissedTs: 0,
     ...overrides,
@@ -220,7 +220,7 @@ describe("branchRedundant", () => {
   });
 
   it("keeps the label when they differ", () => {
-    expect(branchRedundant("towles-tool-rs", "main")).toBe(false);
+    expect(branchRedundant("towles-tool", "main")).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", "feat/other-branch")).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", null)).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", undefined)).toBe(false);
@@ -286,7 +286,7 @@ describe("prForFolder", () => {
   it("matches on branch when the origin URL contains the PR's owner/name", () => {
     const found = prForFolder(
       [pr({ branch: "feature/x", number: 7 })],
-      "git@github.com:ChrisTowles/towles-tool-rs.git",
+      "git@github.com:ChrisTowles/towles-tool.git",
       "feature/x",
     );
     expect(found?.number).toBe(7);
@@ -294,8 +294,8 @@ describe("prForFolder", () => {
 
   it("matches https origins case-insensitively", () => {
     const found = prForFolder(
-      [pr({ repo: "ChrisTowles/Towles-Tool-RS" })],
-      "https://github.com/christowles/towles-tool-rs.git",
+      [pr({ repo: "ChrisTowles/Towles-Tool" })],
+      "https://github.com/christowles/towles-tool.git",
       "feature/x",
     );
     expect(found).toBeDefined();
@@ -304,7 +304,7 @@ describe("prForFolder", () => {
   it("rejects a same-named branch from a different repo", () => {
     const found = prForFolder(
       [pr({ repo: "someone-else/other-repo" })],
-      "git@github.com:ChrisTowles/towles-tool-rs.git",
+      "git@github.com:ChrisTowles/towles-tool.git",
       "feature/x",
     );
     expect(found).toBeUndefined();
@@ -1626,8 +1626,8 @@ describe("isPasteableImage", () => {
 
 describe("ownerRepoFromOrigin", () => {
   it("parses https, ssh, and scp-like origin urls to owner/name", () => {
-    expect(ownerRepoFromOrigin("https://github.com/ChrisTowles/towles-tool-rs")).toBe(
-      "ChrisTowles/towles-tool-rs",
+    expect(ownerRepoFromOrigin("https://github.com/ChrisTowles/towles-tool")).toBe(
+      "ChrisTowles/towles-tool",
     );
     expect(ownerRepoFromOrigin("https://github.com/octo/widgets.git")).toBe("octo/widgets");
     expect(ownerRepoFromOrigin("git@github.com:octo/widgets.git")).toBe("octo/widgets");

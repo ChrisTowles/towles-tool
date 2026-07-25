@@ -65,7 +65,7 @@ settings file, and update this plugin's `.mcp.json` to match.
 
 The hook is a no-op unless the session looks towles-tool-relevant — either it's
 running inside a terminal the app itself spawned (`TT_SESSION_ID`/
-`TT_APP_INSTANCE` set), or its working directory is inside a towles-tool-rs
+`TT_APP_INSTANCE` set), or its working directory is inside a towles-tool
 checkout (a `crates/tt-config` ancestor). This plugin is meant to be enabled
 globally, so without that guard the hook would still fire — harmlessly, but
 uselessly — for `gh` commands run in unrelated projects. It also does nothing
@@ -75,6 +75,6 @@ picked up on the app's next start otherwise.
 ## Installation
 
 ```bash
-claude plugin marketplace add ChrisTowles/towles-tool-rs
+claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin enable towles-tool-app@towles-tool
 ```

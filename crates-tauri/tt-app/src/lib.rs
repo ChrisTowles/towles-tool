@@ -43,7 +43,7 @@ use agentboard::{Ab, Engine, STATE_EVENT, now_ms};
 use tt_agentboard::fs_notify::{MultiFileNotifier, ScopedDirNotifier};
 
 /// Human-readable name of the checkout this binary was built from — the repo-root
-/// directory (e.g. `task-migrate`, `towles-tool-rs-primary`). Baked in at compile time from
+/// directory (e.g. `task-migrate`, `towles-tool-primary`). Baked in at compile time from
 /// `CARGO_MANIFEST_DIR` (`<root>/crates-tauri/tt-app`), so each task's binary
 /// knows its own task without any runtime cwd/env plumbing. Lets several tasks'
 /// windows be told apart in the title bar, taskbar, and app header.
@@ -811,9 +811,9 @@ mod tests {
         // Main checkout: <root>/crates-tauri/tt-app → <root>'s basename.
         assert_eq!(
             label_from_manifest_dir(Path::new(
-                "/home/u/code/towles-tool-rs-primary/crates-tauri/tt-app"
+                "/home/u/code/towles-tool-primary/crates-tauri/tt-app"
             )),
-            "towles-tool-rs-primary"
+            "towles-tool-primary"
         );
         // Task worktree: the task dir is the label.
         assert_eq!(
@@ -834,7 +834,7 @@ mod tests {
         // Not nested under `.claude/worktrees` → the base identifier is kept.
         assert_eq!(
             app_identifier_from(
-                Path::new("/home/u/code/towles-tool-rs-primary/crates-tauri/tt-app"),
+                Path::new("/home/u/code/towles-tool-primary/crates-tauri/tt-app"),
                 "dev.towles.tool"
             ),
             "dev.towles.tool"

@@ -1060,7 +1060,7 @@ function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
         <SetupStep
           title="Claude Code (recommended)"
           detail="Enable the towles-tool-app plugin — it ships the .mcp.json below."
-          command="claude plugin marketplace add ChrisTowles/towles-tool-rs && claude plugin enable towles-tool-app@towles-tool"
+          command="claude plugin marketplace add ChrisTowles/towles-tool && claude plugin enable towles-tool-app@towles-tool"
         />
         <SetupStep
           title="Claude Code, manual"

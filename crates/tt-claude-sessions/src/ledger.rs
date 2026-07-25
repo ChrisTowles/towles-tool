@@ -361,8 +361,8 @@ mod tests {
     #[test]
     fn normalize_folds_slots_and_worktrees() {
         assert_eq!(
-            normalize_repo_name("-home-ctowles-code-p-towles-tool-repos-towles-tool-rs-slot-2"),
-            "towles-tool-rs"
+            normalize_repo_name("-home-ctowles-code-p-towles-tool-repos-towles-tool-slot-2"),
+            "towles-tool"
         );
         assert_eq!(
             normalize_repo_name(
@@ -374,9 +374,9 @@ mod tests {
         // A session whose cwd was a subdirectory of a slot still folds.
         assert_eq!(
             normalize_repo_name(
-                "-home-ctowles-code-p-towles-tool-repos-towles-tool-rs-slot-0-crates-tauri-tt-app"
+                "-home-ctowles-code-p-towles-tool-repos-towles-tool-slot-0-crates-tauri-tt-app"
             ),
-            "towles-tool-rs"
+            "towles-tool"
         );
         // A non-numeric "slot" suffix is left alone.
         assert_eq!(normalize_repo_name("-home-u-code-time-slot-machine"), "time-slot-machine");

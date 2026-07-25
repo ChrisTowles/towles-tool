@@ -171,14 +171,14 @@ mod tests {
     fn extract_release_reads_tag_and_url() {
         let body = serde_json::json!({
             "tag_name": "v0.2.0",
-            "html_url": "https://github.com/ChrisTowles/towles-tool-rs/releases/tag/v0.2.0",
+            "html_url": "https://github.com/ChrisTowles/towles-tool/releases/tag/v0.2.0",
             "draft": false,
         });
         let release = extract_release(&body).unwrap();
         assert_eq!(release.tag_name, "v0.2.0");
         assert_eq!(
             release.html_url,
-            "https://github.com/ChrisTowles/towles-tool-rs/releases/tag/v0.2.0"
+            "https://github.com/ChrisTowles/towles-tool/releases/tag/v0.2.0"
         );
     }
 

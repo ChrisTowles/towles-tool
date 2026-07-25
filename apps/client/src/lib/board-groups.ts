@@ -26,7 +26,7 @@ export type TaskGroup = {
  * Fold a repo slug to its grouping key.
  *
  * GitHub slugs are case-preserving but not case-sensitive, and this app has
- * more than one source for them: `gh` reports `ChrisTowles/towles-tool-rs` on
+ * more than one source for them: `gh` reports `ChrisTowles/towles-tool` on
  * issue and PR rows, while the origin-derived tracked-repo cache once stored a
  * folded copy, which `task_create` then stamped onto new tasks. Grouping on the
  * raw string turned those into two lanes that `repoGroupLabel` rendered

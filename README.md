@@ -328,7 +328,7 @@ instead of waiting for its normal poll interval.
 Install in Claude Code:
 
 ```sh
-claude plugin marketplace add ChrisTowles/towles-tool-rs
+claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin enable tt@towles-tool
 claude plugin enable towles-tool-app@towles-tool
 ```

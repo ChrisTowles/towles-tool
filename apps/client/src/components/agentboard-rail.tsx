@@ -1088,7 +1088,7 @@ function FolderHeader({
               Falling back to the de-slugified folder name is still the same
               information reformatted, so that case keeps the old redundancy
               check (a worktree task's folder name IS its slugged branch; the
-              main checkout, "towles-tool-rs" on `main`, is never redundant). */}
+              main checkout, "towles-tool" on `main`, is never redundant). */}
           {showBranchLabel && (
             <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} onClick={onToggle} />
           )}
