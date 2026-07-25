@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import { uiAction } from "@/lib/ui-action";
 import type { ScreenId } from "@/lib/screens";
 import { SETTINGS_SAVED_EVENT, loadUserSettings } from "./settings";
@@ -457,9 +458,34 @@ const SCOPE_TITLES: Record<ShortcutScope, string> = {
 };
 
 /**
+ * Per-binding usage over the scored window, for the help overlay's annotation
+ * — fetched when the sheet opens rather than polled, and seeded from whatever
+ * the status bar's poll last saw so the counts are there on the first paint.
+ */
+function useShortcutUsage(open: boolean): Map<string, number> {
+  const [score, setScore] = useState<KeyboardScore | null>(latestKeyboardScore);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void keyboardScore().then((r) => {
+      if (alive && r.isOk()) setScore(r.value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+  return useMemo(() => new Map((score?.byShortcut ?? []).map((s) => [s.id, s.shortcut])), [score]);
+}
+
+/**
  * The `?` help overlay: every registered shortcut, grouped by scope, with
  * platform keycaps. Scopes not currently active render muted so the sheet
  * doubles as discovery ("Agentboard has ⌘D" even while you're on Cockpit).
+ *
+ * Each row also carries how often that binding has actually fired in the last
+ * fortnight (`tt-telemetry`'s keyboard score). It's the cheapest possible
+ * habit surface: the list you open to look something up is also the list that
+ * tells you which ones you've never once used.
  */
 export function ShortcutHelp({
   open,
@@ -470,6 +496,7 @@ export function ShortcutHelp({
   onOpenChange: (open: boolean) => void;
   activeScopes: ShortcutScope[];
 }) {
+  const usage = useShortcutUsage(open);
   const byScope = useMemo(() => {
     const m = new Map<ShortcutScope, Shortcut[]>();
     for (const s of Object.values(SHORTCUTS)) {
@@ -483,7 +510,10 @@ export function ShortcutHelp({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      {/* Capped + scrollable: the registry is long enough (and the rows now
+          carry a usage column) that an uncapped sheet runs off both ends of a
+          laptop window. */}
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
         </DialogHeader>
@@ -508,6 +538,7 @@ export function ShortcutHelp({
                         {s.description}
                         {s.when && <span className="text-muted-foreground"> — {s.when}</span>}
                       </span>
+                      <UsageTally used={usage.get(s.id) ?? 0} />
                     </div>
                   ))}
                 </div>
@@ -517,6 +548,21 @@ export function ShortcutHelp({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** How many times a binding fired in the scored window — muted, right-aligned,
+ * and deliberately *not* scolding for the ones at zero: "not used yet" reads
+ * as an invitation, a red badge would read as a demerit. */
+function UsageTally({ used }: { used: number }) {
+  return (
+    <span
+      className={`w-20 shrink-0 text-right font-mono text-[11px] tabular-nums ${
+        used > 0 ? "text-muted-foreground" : "text-muted-foreground/50"
+      }`}
+    >
+      {used > 0 ? `${used}× / 14d` : "not used yet"}
+    </span>
   );
 }
 

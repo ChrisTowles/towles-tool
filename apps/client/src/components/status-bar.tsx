@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import { Stethoscope } from "lucide-react";
+import { Flame, Keyboard, Stethoscope } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isTauri } from "@/lib/tauri";
 import { claudeUsageLimits, type UsageLimitBar, type UsageLimits } from "@/lib/claude-sessions";
 import { collectorHealth, type CollectorHealth, type CollectorState } from "@/lib/collector-health";
+import {
+  TIER_LABELS,
+  actionsToGoal,
+  fmtShare,
+  tierFor,
+  useKeyboardScore,
+  type KeyboardScore,
+} from "@/lib/keyboard-score";
 import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { taskExplorerSnapshot } from "@/lib/task-explorer";
@@ -181,10 +189,75 @@ function CollectorHealthCluster() {
   );
 }
 
+/**
+ * The keyboard-shortcut habit, always in the corner of the eye: today's
+ * keyboard share of the actions that *have* a shortcut, and the streak of days
+ * that cleared the goal. Deliberately the smallest possible readout — a
+ * percentage and a flame — with the coaching detail (what the goal is, how
+ * close today is, which binding the pointer keeps winning) in the tooltip,
+ * because a habit gauge that competes for attention defeats the app's whole
+ * point. Numbers come from the event log via {@link useKeyboardScore}; opens
+ * the Telemetry screen, whose Attention tab holds the full breakdown.
+ */
+function KeyboardHabit({ score }: { score: KeyboardScore }) {
+  const { openTab } = useWorkspace();
+  const { today, streak } = score;
+  const tier = tierFor(today.share);
+  const remaining = actionsToGoal(today, score.goalShare, score.goalMinActions);
+  const missed = score.topMissed[0];
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          className="flex items-center gap-1 tabular-nums hover:text-foreground"
+          aria-label="Keyboard shortcut habit"
+          onClick={() => openTab("telemetry")}
+        >
+          <Keyboard className="size-3.5" />
+          <span className={today.goalMet ? "text-emerald-600 dark:text-emerald-500" : undefined}>
+            {fmtShare(today.share)}
+          </span>
+          {streak > 0 && (
+            <span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-500">
+              <Flame className="size-3" />
+              {streak}
+            </span>
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="flex flex-col gap-0.5">
+        <span className="font-medium">
+          {tier ? TIER_LABELS[tier] : "No shortcut-bound actions yet today"}
+          {today.goalMet && " · goal met"}
+        </span>
+        <span className="text-muted-foreground">
+          {today.shortcut} by keyboard · {today.mouse} by mouse
+        </span>
+        <span className="text-muted-foreground">
+          {streak > 0 ? `${streak}-day streak` : "No streak yet"} · best {score.bestStreak} · goal{" "}
+          {Math.round(score.goalShare * 100)}% over {score.goalMinActions}+ actions
+        </span>
+        {remaining !== null && (
+          <span className="text-muted-foreground">
+            {remaining} more keyboard {remaining === 1 ? "action" : "actions"} wins today
+          </span>
+        )}
+        {missed && (
+          <span className="text-muted-foreground">
+            Most clicked past its shortcut: {missed.id} ({missed.mouse}×)
+          </span>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function StatusBar() {
   const { openTab } = useWorkspace();
   const usage = useResourceUsage();
   const claudeLimits = useClaudeUsageLimits();
+  const keyboard = useKeyboardScore();
   const version = useAppVersion();
 
   return (
@@ -198,6 +271,7 @@ export function StatusBar() {
       </button>
       <div className="flex items-center gap-3">
         <CollectorHealthCluster />
+        {keyboard && <KeyboardHabit score={keyboard} />}
         {claudeLimits && claudeLimits.bars.length > 0 && (
           <div className="flex items-center gap-2.5 tabular-nums">
             {claudeLimits.bars.map((b) => (

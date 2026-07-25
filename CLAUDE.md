@@ -406,6 +406,21 @@ Cargo workspace + npm workspace (`apps/client` only):
     bugs and aren't — an *event*'s identity comes from its `message`, since
     its `name` is the throwaway `event <file>:<line>`, and hour buckets are
     local while the day file's boundary is UTC.
+    Its **Keyboard** tab is the second payoff, and the one convention a new
+    click handler has to know: an action id of `shortcut.<id>` means a
+    registry binding fired, `mouse.<id>` means the pointer did that same
+    binding's job, and `tt_telemetry::keyboard_score`
+    (`crates/tt-telemetry/src/keyboard.rs`) scores the two against each other
+    into a daily share and a streak. **A click target that is a genuine twin
+    of a shortcut must call `mouseAction(id, screen)`
+    (`apps/client/src/lib/shortcut-coach.ts`) instead of `uiAction` directly**
+    — it emits that record and, at most a few times a day, the toast naming
+    the keys. A twin that emits a plain `uiAction` silently flatters the
+    score; conversely a *near*-twin (a per-row ✕ against "close the selected
+    session") must **not** call it, because it wasn't a keystroke the user
+    passed up. Same aggregate-in-Rust rule as Attention, plus a cache: the
+    score spans a fortnight and the status bar polls it, so finished days are
+    memoized in `telemetry.rs` and only today's file is re-read.
   - `tt-ide` — Claude Code IDE-protocol core: the MCP/JSON-RPC dispatcher and
     lockfile schema the app uses to pose as an "IDE" a Claude Code CLI session
     connects to. Transport-free by design (sockets, auth, clocks live in

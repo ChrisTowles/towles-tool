@@ -171,6 +171,15 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcuts_work_in_terminal: Option<bool>,
 
+    /// Show the one-line "there's a shortcut for that" reminder when a click
+    /// does something a keyboard binding also does. `None` = the built-in
+    /// default (on). Only the *reminder* is switched off — the
+    /// keyboard-vs-mouse tracking behind the Telemetry screen's Keyboard tab
+    /// is part of the event log and has no switch. Only written once the user
+    /// changes it, so the shared settings file stays clean for the TS CLI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shortcut_coach: Option<bool>,
+
     /// Group the Board kanban's tasks into per-repo swimlanes. `None` = the
     /// built-in default (on). Only written once the user changes it, so the
     /// shared settings file stays clean for the TS CLI.
@@ -1583,6 +1592,17 @@ mod tests {
         assert!(!json.contains("shortcutsWorkInTerminal"));
         // …and unset means ON (the frontend applies the default).
         assert!(s.agentboard.shortcuts_work_in_terminal.unwrap_or(true));
+    }
+
+    #[test]
+    fn shortcut_coach_defaults_unset_and_on() {
+        let s = UserSettings::default();
+        // Unset until the user changes it, so the shared file stays clean…
+        assert!(s.agentboard.shortcut_coach.is_none());
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("shortcutCoach"));
+        // …and unset means ON (the frontend applies the default).
+        assert!(s.agentboard.shortcut_coach.unwrap_or(true));
     }
 
     #[test]

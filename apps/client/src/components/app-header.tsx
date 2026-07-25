@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -108,8 +109,11 @@ function ClockCluster() {
 }
 
 export function AppHeader() {
-  const { sidebarCollapsed, toggleSidebar, setPaletteOpen, openSettingsTab, toggleZen } =
+  const { sidebarCollapsed, toggleSidebar, setPaletteOpen, openSettingsTab, toggleZen, activeTab } =
     useWorkspace();
+  // Every control in this header has a shortcut twin, so each click is a
+  // measured (and occasionally coached) miss — see `lib/shortcut-coach.ts`.
+  const clicked = (id: string) => mouseAction(id, activeTab);
 
   return (
     <header className="relative flex h-11 shrink-0 items-center gap-2 border-b px-2">
@@ -119,7 +123,10 @@ export function AppHeader() {
             variant="ghost"
             size="icon-sm"
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={toggleSidebar}
+            onClick={() => {
+              clicked("sidebar");
+              toggleSidebar();
+            }}
           >
             {sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
           </Button>
@@ -141,7 +148,10 @@ export function AppHeader() {
         variant="outline"
         size="sm"
         className="w-56 justify-between text-muted-foreground"
-        onClick={() => setPaletteOpen(true)}
+        onClick={() => {
+          clicked("palette");
+          setPaletteOpen(true);
+        }}
       >
         <span className="flex items-center gap-2">
           <Search className="size-3.5" />
@@ -158,7 +168,10 @@ export function AppHeader() {
             variant="ghost"
             size="icon-sm"
             aria-label="Enter zen focus mode"
-            onClick={toggleZen}
+            onClick={() => {
+              clicked("zen");
+              toggleZen();
+            }}
           >
             <Sparkles />
           </Button>
@@ -174,7 +187,10 @@ export function AppHeader() {
             variant="ghost"
             size="icon-sm"
             aria-label="Open settings"
-            onClick={() => openSettingsTab()}
+            onClick={() => {
+              clicked("settings");
+              openSettingsTab();
+            }}
           >
             <Settings />
           </Button>

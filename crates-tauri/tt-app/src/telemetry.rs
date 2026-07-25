@@ -7,9 +7,12 @@
 //! records) is still read, parsed, and shipped over IPC in full every time
 //! (see `tt-telemetry`'s crate docs for the caveat).
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use tt_telemetry::{AttentionSummary, TelemetryRecord};
+use chrono::{Duration, Utc};
+use tt_telemetry::{AttentionSummary, KeyboardDay, KeyboardScore, TelemetryRecord};
 
 fn telemetry_dir() -> Result<PathBuf, String> {
     tt_config::telemetry_dir().map_err(|e| e.to_string())
@@ -53,4 +56,65 @@ pub async fn telemetry_attention(date: String) -> Result<AttentionSummary, Strin
     })
     .await
     .map_err(|e| format!("telemetry attention task panicked: {e}"))?
+}
+
+/// Days of history the keyboard habit is scored over — a fortnight, matching
+/// the log's own retention, which is the most history there can be.
+const KEYBOARD_WINDOW_DAYS: i64 = 14;
+
+/// Finished days, keyed by date. Unlike the two commands above, this one is
+/// polled (the status-bar indicator) *and* reads a whole window rather than
+/// one day, so an uncached call would re-parse a fortnight of logs — on the
+/// 75,000-record days this crate's docs warn about, several hundred thousand
+/// lines every tick. A past date's file never changes once the date has
+/// rolled over, so caching it is exact rather than a staleness trade; today's
+/// is always re-read.
+static PAST_DAYS: Mutex<Option<HashMap<String, KeyboardDay>>> = Mutex::new(None);
+
+/// The keyboard-shortcut habit: today's keyboard-vs-mouse split, the streak of
+/// days that cleared the goal, and the bindings the pointer keeps winning.
+/// Backs both the status-bar indicator and the Telemetry screen's Attention
+/// tab, so the two can never disagree.
+#[tauri::command]
+pub async fn telemetry_keyboard() -> Result<KeyboardScore, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // The writer names files by UTC date, so the window must be built in
+        // UTC too — a local-midnight window would ask for a date that has no
+        // file and miss the one that does.
+        let today = Utc::now().date_naive();
+        let mut days = Vec::with_capacity(KEYBOARD_WINDOW_DAYS as usize);
+        for back in (0..KEYBOARD_WINDOW_DAYS).rev() {
+            let date = (today - Duration::days(back)).format("%Y-%m-%d").to_string();
+            days.push(keyboard_day(&dir, &date, back == 0)?);
+        }
+        // Days that have fallen out of the window can't be asked for again;
+        // without this the cache grows by one entry per day of app uptime.
+        let oldest = (today - Duration::days(KEYBOARD_WINDOW_DAYS)).format("%Y-%m-%d").to_string();
+        if let Ok(mut cache) = PAST_DAYS.lock()
+            && let Some(entries) = cache.as_mut()
+        {
+            entries.retain(|date, _| *date >= oldest);
+        }
+        Ok(tt_telemetry::keyboard_score(days))
+    })
+    .await
+    .map_err(|e| format!("telemetry keyboard task panicked: {e}"))?
+}
+
+/// One day's split, served from [`PAST_DAYS`] unless it's today (still being
+/// written) — a cache miss reads and summarizes the file.
+fn keyboard_day(dir: &Path, date: &str, is_today: bool) -> Result<KeyboardDay, String> {
+    if !is_today
+        && let Ok(cache) = PAST_DAYS.lock()
+        && let Some(day) = cache.as_ref().and_then(|c| c.get(date))
+    {
+        return Ok(day.clone());
+    }
+    let records = tt_telemetry::read_day(dir, date).map_err(|e| e.to_string())?;
+    let day = tt_telemetry::summarize_keyboard(date, &records);
+    if !is_today && let Ok(mut cache) = PAST_DAYS.lock() {
+        cache.get_or_insert_with(HashMap::new).insert(date.to_string(), day.clone());
+    }
+    Ok(day)
 }

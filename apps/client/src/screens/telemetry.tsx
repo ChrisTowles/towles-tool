@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CircleAlert,
   Gauge,
+  Keyboard,
   LayoutDashboard,
   Lightbulb,
   RefreshCw,
@@ -30,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
+import { keyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import {
   LEVELS,
   loadTelemetryFilters,
@@ -44,6 +46,7 @@ import {
   type TelemetryRecord,
 } from "@/lib/telemetry";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
+import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
@@ -111,6 +114,8 @@ export function TelemetryScreen() {
   const [selected, setSelected] = useState<TelemetryRecord | null>(null);
   const [attention, setAttention] = useState<AttentionSummary | null>(null);
   const [attentionLoading, setAttentionLoading] = useState(false);
+  const [keyboard, setKeyboard] = useState<KeyboardScore | null>(null);
+  const [keyboardLoading, setKeyboardLoading] = useState(false);
 
   useEffect(() => {
     saveTelemetryFilters({ level, kind, target, query });
@@ -149,6 +154,24 @@ export function TelemetryScreen() {
     setAttentionLoading(false);
   }
 
+  /**
+   * The Keyboard tab's read. Takes no day: the habit score spans a fixed
+   * 14-day window (see `screens/telemetry/keyboard-tab.tsx`), so it ignores
+   * the day picker every other tab here obeys.
+   */
+  async function loadKeyboard() {
+    setKeyboardLoading(true);
+    const r = await keyboardScore();
+    r.match({
+      ok: setKeyboard,
+      err: (e) => {
+        setKeyboard(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not score shortcuts: ${errorMessage(e)}`);
+      },
+    });
+    setKeyboardLoading(false);
+  }
+
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
@@ -173,6 +196,7 @@ export function TelemetryScreen() {
     void refreshDays();
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
+    if (tab === "keyboard") void loadKeyboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
 
@@ -185,6 +209,11 @@ export function TelemetryScreen() {
   // tab — the same "fresh off disk, not live-tailed" contract the rest of the
   // screen keeps, with the read scoped to when the tab is actually showing.
   useEffect(() => {
+    if (tab === "keyboard") void loadKeyboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadKeyboard is read fresh, not tracked
+  }, [tab]);
+
+  useEffect(() => {
     if (tab === "attention" && day) void loadAttention(day);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAttention is read fresh, not tracked
   }, [tab, day]);
@@ -194,6 +223,7 @@ export function TelemetryScreen() {
     void refreshDays();
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
+    if (tab === "keyboard") void loadKeyboard();
   }
 
   function switchTab(next: string) {
@@ -332,6 +362,10 @@ export function TelemetryScreen() {
             <Gauge className="size-4" />
             Attention
           </TabsTrigger>
+          <TabsTrigger value="keyboard" className="justify-start gap-2 px-2 py-1.5">
+            <Keyboard className="size-4" />
+            Keyboard
+          </TabsTrigger>
           <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
             <ScrollText className="size-4" />
             Log
@@ -354,6 +388,10 @@ export function TelemetryScreen() {
 
           <TabsContent value="attention" className="p-4">
             <AttentionTab summary={attention} loading={attentionLoading} />
+          </TabsContent>
+
+          <TabsContent value="keyboard" className="p-4">
+            <KeyboardTab score={keyboard} loading={keyboardLoading} />
           </TabsContent>
 
           <TabsContent value="log" className="p-4">

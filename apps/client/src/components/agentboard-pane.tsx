@@ -46,6 +46,7 @@ import {
 } from "@/lib/agentboard";
 import type { PrItem, TaskItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -145,7 +146,10 @@ export function WorkingContext({
           {!missing && (
             <IconBtn
               title={`New session (${shortcutHint("ab-new-session")})`}
-              onClick={() => onNewSession(folder.dir)}
+              onClick={() => {
+                mouseAction("ab-new-session", "agentboard");
+                onNewSession(folder.dir);
+              }}
               className="hover:text-violet-500"
             >
               <Plus className="size-3.5" />
@@ -154,7 +158,10 @@ export function WorkingContext({
           {!missing && (
             <IconBtn
               title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
-              onClick={newTask}
+              onClick={() => {
+                mouseAction("ab-new-task", "agentboard");
+                newTask();
+              }}
               className="hover:text-violet-500"
             >
               <FolderPlus className="size-3.5" />

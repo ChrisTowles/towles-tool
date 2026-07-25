@@ -184,7 +184,7 @@ pub struct Count {
 /// The stable identity of a record: a span's own `name`, or — for an event,
 /// whose `name` is the throwaway `event <file>:<line>` — its message. See the
 /// module docs for why this isn't just `record.name`.
-fn event_name(record: &TelemetryRecord) -> &str {
+pub(crate) fn event_name(record: &TelemetryRecord) -> &str {
     match record.fields.get("message") {
         Some(Value::String(message)) => message,
         _ => &record.name,

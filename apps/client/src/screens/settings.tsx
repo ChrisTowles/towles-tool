@@ -24,7 +24,7 @@ import { appearanceSections } from "./settings/appearance";
 import { journalSections } from "./settings/journal";
 import { collectorsSections, RefreshNowButton } from "./settings/collectors";
 import { agentboardSections } from "./settings/agentboard";
-import { ShortcutsList } from "./settings/shortcuts";
+import { ShortcutCoachRow, ShortcutsList } from "./settings/shortcuts";
 import { AboutInfo } from "./settings/about";
 
 const TABS = [
@@ -209,6 +209,7 @@ export function SettingsScreen() {
               title="Shortcuts"
               note="Keyboard shortcuts (⌘ on macOS, Ctrl elsewhere). Agentboard-scoped ones only fire while that tab is active. Press ? in the app for the same list."
             />
+            {settings && <ShortcutCoachRow settings={settings} update={update} query={query} />}
             <ShortcutsList query={query} />
           </TabsContent>
 
