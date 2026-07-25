@@ -37,10 +37,18 @@ pub struct Ab {
     pub ever_live: Mutex<HashSet<String>>,
 }
 
-/// Stamp `SessionData.live`/`shellKind`/`portDrift` from the app's PTY
-/// registry. The engine assembles them false/None/empty (the Tauri-free crate
-/// can't see PTYs); every payload leaving the app — command return or event —
-/// passes through here first.
+/// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from
+/// the app's PTY registry. The engine assembles them false/None/empty (the
+/// Tauri-free crate can't see PTYs); every payload leaving the app — command
+/// return or event — passes through here first.
+///
+/// Status is the load-bearing one. The engine's verdict comes from
+/// `claude agents --all --json` behind a 60s cache, so on its own it can
+/// insist a session is blocked on the user while its terminal is visibly
+/// mid-turn (and accrue a "waiting 12m" age doing it). The app hosts the PTY
+/// and sees the truth for free, so `tt_agentboard::pty_status` folds that
+/// direct observation over the top — see that module for why output activity
+/// is treated as an absolute veto while silence defers to the engine.
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
@@ -50,12 +58,22 @@ pub fn stamp_pty_state(
     let live = terms.live_ids();
     let shell_kinds = terms.shell_kinds();
     let port_drift = terms.port_drift();
+    let pty_signals = terms.pty_signals();
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
             let mut has_port_drift = false;
             for session in &mut folder.sessions {
                 session.live = live.contains(&session.id);
                 session.shell_kind = shell_kinds.get(&session.id).cloned();
+                // Only sessions this app actually hosts a PTY for: everything
+                // else (another window's session, a row whose shell has
+                // exited) has no direct evidence to apply.
+                if let Some(signal) = pty_signals.get(&session.id)
+                    && let Some(state) = session.agent_state.as_mut()
+                {
+                    state.status =
+                        tt_agentboard::pty_status::resolve_status(Some(state.status), signal, now);
+                }
                 // Only a live PTY's drift is meaningful — a stopped shell's
                 // last-known ports say nothing about anything running now.
                 session.port_drift = if session.live {

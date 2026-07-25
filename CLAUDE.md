@@ -447,7 +447,13 @@ Cargo workspace + npm workspace (`apps/client` only):
     [`crates/tt-vt/CLAUDE.md`](crates/tt-vt/CLAUDE.md) for the Debug-mode
     parser perf trap and other gotchas.
   - `tt-agentboard` — agentboard watchers/engine: repo list, session tracking,
-    needs-you synthesis (consumed by the app shell). Also **the one home of the
+    needs-you synthesis (consumed by the app shell). **Agent status is
+    PTY-first**: `pty_status` folds what the app's terminal directly observes
+    (output activity, Claude Code's `OSC 777` attention notification) over the
+    `claude agents --all --json` verdict, which is cached 60s and used to be
+    impossible to contradict — read that module's docs before touching status,
+    the thresholds are measured against a real session, not guessed. Also
+    **the one home of the
     task-removal sequence** (`task_removal`): guards → host teardown → worktree
     off disk → untrack from `repos.json` → board row closed last (with a
     `TaskOutcome` — see the task-removal bullet in Worktree tasks). It lives here
