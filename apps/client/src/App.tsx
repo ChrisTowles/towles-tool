@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
+import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
@@ -118,6 +119,15 @@ function TaskStartBridge() {
           toast.error(
             `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
           ),
+        () => openTabRef.current("agentboard"),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      subscribePreviewShow(
+        () => reposRef.current,
         () => openTabRef.current("agentboard"),
       ),
     [],

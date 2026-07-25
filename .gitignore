@@ -12,3 +12,6 @@ dist/
 # rendered per-task by `tt task new`/`env` (port claims); .env.local via *.local
 .env
 .DS_Store
+
+# Agent-authored preview artifacts (`preview_show`) — scratch, never committed
+.claude/artifacts/

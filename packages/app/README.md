@@ -23,6 +23,13 @@ tools without manual `claude mcp add` setup:
   and its terminal scrollback, so the record is still there when the user comes
   to confirm the work. It records only — closing the task and removing the
   worktree stay the user's call.
+- **Preview** — `preview_show`. Puts an HTML page you wrote on screen in the
+  app's Preview pane, beside the terminal you're running in: the way to hand
+  back something worth *looking at* — a plan laid out for a decision, a table of
+  what a sweep found, a diagram — rather than as terminal output. Write a single
+  self-contained `.html` file (it renders in a sandboxed frame, so inline the
+  CSS/JS and embed images as data: URIs), then call it with the absolute path.
+  The user can annotate what you showed and send it straight back to you.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.

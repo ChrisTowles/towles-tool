@@ -330,7 +330,9 @@ pub fn spawn(app: AppHandle, port: u16) {
     let _ = store.sweep_old_events(crate::store::now_ms());
 
     let dispatcher = Arc::new(Mutex::new(
-        Dispatcher::new(store).with_task_host(Box::new(AppTaskHost { app: app.clone() })),
+        Dispatcher::new(store)
+            .with_task_host(Box::new(AppTaskHost { app: app.clone() }))
+            .with_preview_host(Box::new(AppPreviewHost { app: app.clone() })),
     ));
 
     SERVING.store(true, Ordering::Relaxed);
@@ -419,6 +421,36 @@ impl tt_mcp::TaskHost for AppTaskHost {
             .emit(TASK_START_EVENT, &payload)
             .map_err(|e| format!("couldn't ask the app to start task {}: {e}", req.id))
     }
+}
+
+/// Lets the `preview_show` MCP tool put an agent-authored HTML artifact on
+/// screen. Emits and returns, like [`AppTaskHost::start_task`] — see
+/// [`tt_mcp::PreviewHost`] for why the hand-off has to work this way.
+struct AppPreviewHost {
+    app: AppHandle,
+}
+
+impl tt_mcp::PreviewHost for AppPreviewHost {
+    fn show(&self, artifact: tt_mcp::PreviewArtifact) -> Result<(), String> {
+        let payload = PreviewShowPayload { path: artifact.path, title: artifact.title };
+        tracing::info!(path = %payload.path, title = %payload.title, "preview.show_requested");
+        self.app
+            .emit(PREVIEW_SHOW_EVENT, &payload)
+            .map_err(|e| format!("couldn't ask the app to show {}: {e}", payload.path))
+    }
+}
+
+/// Asks the frontend to display an HTML artifact in a folder's Preview pane.
+/// Consumed by `apps/client/src/lib/preview-artifact.ts`.
+pub const PREVIEW_SHOW_EVENT: &str = "preview://show";
+
+/// The [`PREVIEW_SHOW_EVENT`] payload — the path only, never the file's
+/// contents; `preview.rs` documents why.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewShowPayload {
+    path: String,
+    title: String,
 }
 
 /// Asks the frontend to start a board task — mint its worktree and launch an

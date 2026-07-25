@@ -153,11 +153,16 @@ jobs:
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
 
+      - name: CPU signature for the zig artifact cache
+        id: cpu
+        uses: ./.github/actions/cpu-signature
+
       - uses: Swatinem/rust-cache@v2
         with:
           # Keep this job's cargo/zig build artifacts separate from the `rust`
-          # job's cache.
-          key: tt-vt
+          # job's cache — and from those built for a different CPU; see the
+          # cpu-signature action for why that is a correctness issue here.
+          key: tt-vt-${{ steps.cpu.outputs.sig }}
 
       - name: clippy (tt-vt)
         env:
@@ -257,11 +262,16 @@ jobs:
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
 
+      - name: CPU signature for the zig artifact cache
+        id: cpu
+        uses: ./.github/actions/cpu-signature
+
       - uses: Swatinem/rust-cache@v2
         with:
           # Keep this job's cargo/zig build artifacts separate from the other
-          # rust jobs' caches.
-          key: tt-app
+          # rust jobs' caches — and from those built for a different CPU; see
+          # the cpu-signature action for why that is a correctness issue here.
+          key: tt-app-${{ steps.cpu.outputs.sig }}
 
       - name: clippy (tt-app)
         env:

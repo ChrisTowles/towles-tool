@@ -70,6 +70,7 @@ import {
 } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
+import type { ArtifactRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
@@ -240,6 +241,14 @@ export function AgentboardScreen() {
   useEffect(() => {
     activeFolderDirRef.current = activeFolderDir;
   });
+  // The rail as it stands *now*, for the same reason: the nav-request handler
+  // below is a mount-only subscription, so reading `repos`/`folderNameByDir`
+  // out of its closure would only ever see the empty first-render snapshot
+  // (the backend hasn't broadcast yet at mount).
+  const railRef = useRef({ repos, folderNameByDir });
+  useEffect(() => {
+    railRef.current = { repos, folderNameByDir };
+  });
 
   // One-shot "prompt cache about to expire" toast per session per cache
   // generation. `cacheExpiresAt` moves forward on every request Claude makes,
@@ -337,6 +346,40 @@ export function AgentboardScreen() {
   function openPreview(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, previewPaneId(dir));
+  }
+
+  // Claude called the preview_show tool → open (or focus) that folder's
+  // preview pane and render the artifact it wrote. Routed here for the same
+  // reason as `ide://open-file` above: only this level can *create* the pane
+  // when none is open, which is the normal case (nobody keeps a preview pane
+  // open on the off chance an agent has something to show).
+  const [artifactRequests, setArtifactRequests] = useState<Record<string, ArtifactRequest>>({});
+  function showArtifact(req: {
+    folderDir: string | null;
+    path: string;
+    title: string;
+    nonce: number;
+  }) {
+    // Where to put an artifact that belongs to no tracked folder: whatever
+    // folder is on screen, else the first one in the rail. The MCP server is
+    // one per machine, so the sessions calling this are frequently in
+    // checkouts *this* app doesn't track — and a page shown in a
+    // slightly-wrong pane beats a page not shown at all. The rail being
+    // completely empty is the only case with nowhere to go.
+    const dir =
+      req.folderDir ?? activeFolderDirRef.current ?? railRef.current.repos[0]?.folders[0]?.dir;
+    if (!dir) {
+      toast.error(`Couldn't show ${req.title} — no checkouts are open on the rail`);
+      return;
+    }
+    setArtifactRequests((prev) => ({
+      ...prev,
+      [dir]: { path: req.path, title: req.title, nonce: req.nonce },
+    }));
+    // Ack the folder the artifact actually landed in, not the one the payload
+    // named — a fallback show still puts the user in front of that folder.
+    ackFolder(dir);
+    openPreview(dir);
   }
 
   // Claude called the openFile tool → open (or focus) that folder's files
@@ -557,7 +600,10 @@ export function AgentboardScreen() {
   // The user is now looking at this folder's rail entry — clear its agents'
   // `unseen` flags (`sessionCatchesEye`'s pulse) via the backend tracker.
   function ackFolder(folderDir: string) {
-    const name = folderNameByDir.get(folderDir);
+    // Read through the ref: the nav-request handler that also calls this is a
+    // mount-only subscription, where the rendered `folderNameByDir` is still
+    // the empty first-render map.
+    const name = railRef.current.folderNameByDir.get(folderDir);
     if (name) void invoke("ab_mark_seen", { name });
   }
 
@@ -798,6 +844,11 @@ export function AgentboardScreen() {
             taskId: req.taskId,
           },
         );
+      } else if (req.kind === "show-artifact") {
+        // The MCP `preview_show` tool — the agent has something to *show*.
+        // `showArtifact` resolves the folder (the payload's may be null) and
+        // acks whichever one it landed in.
+        showArtifact(req);
       } else {
         setActiveFolderDir(req.folderDir);
         ackFolder(req.folderDir);
@@ -1162,6 +1213,7 @@ export function AgentboardScreen() {
                 termAttention={termAttention}
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}
+                artifactRequests={artifactRequests}
                 labelFor={labelFor}
                 focusTerminalRequest={focusTerminalRequest}
                 onSelectSession={selectSession}
