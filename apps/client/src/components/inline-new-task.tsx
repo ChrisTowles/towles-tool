@@ -51,6 +51,7 @@ import {
 } from "@/lib/agentboard";
 import { IssueItem, storeGhIssuesList } from "@/lib/data";
 import { GoalEditor } from "@/components/goal-editor";
+import { ImageLightbox } from "@/components/image-lightbox";
 import { referencedIssueNumbers } from "@/lib/goal-text";
 import { loadUserSettings, type PromptImprover } from "@/lib/settings";
 import { type BaseBranch, BaseBranchesSchema, PastedImagePathsSchema } from "@/lib/schemas/task";
@@ -278,6 +279,9 @@ export function InlineNewTask({
   // screenshot is often the entire brief), and staging once means create and
   // suggest reference the same files instead of writing two copies.
   const [imagePaths, setImagePaths] = useState<string[]>([]);
+  // Which attachment the full-size viewer is showing, by id — see
+  // `ImageLightbox` for why it isn't an index.
+  const [zoomedImageId, setZoomedImageId] = useState<string | null>(null);
   const [staging, setStaging] = useState(false);
   // Stable per-form staging directory. The branch can't key it — it's still
   // being edited while images are pasted.
@@ -613,6 +617,7 @@ export function InlineNewTask({
   function removeImage(id: string) {
     const next = images.filter((img) => img.id !== id);
     setImages(next);
+    if (zoomedImageId === id) setZoomedImageId(null);
     // Restage so the staged set matches what's shown — otherwise a removed
     // image would still be on disk and still land in the prompt.
     void stageImages(next);
@@ -768,12 +773,22 @@ export function InlineNewTask({
         <div className="flex flex-wrap gap-1.5">
           {images.map((img) => (
             <div key={img.id} className="group relative">
-              <img
-                src={img.previewUrl}
-                alt={img.name}
-                title={`${img.name} — attached to the new task's first prompt`}
-                className="size-12 rounded border border-border object-cover"
-              />
+              <button
+                type="button"
+                aria-label={`Zoom ${img.name}`}
+                title={`${img.name} — attached to the new task's first prompt. Click to zoom.`}
+                onClick={() => {
+                  setZoomedImageId(img.id);
+                  uiAction("task.image_zoom", "agentboard");
+                }}
+                className="block cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <img
+                  src={img.previewUrl}
+                  alt={img.name}
+                  className="size-12 rounded border border-border object-cover"
+                />
+              </button>
               <button
                 type="button"
                 aria-label={`Remove ${img.name}`}
@@ -786,6 +801,7 @@ export function InlineNewTask({
           ))}
         </div>
       )}
+      <ImageLightbox images={images} openId={zoomedImageId} onOpenChange={setZoomedImageId} />
       <div className="flex items-center justify-end gap-2">
         <Button
           variant="outline"
