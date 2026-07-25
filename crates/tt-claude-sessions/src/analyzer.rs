@@ -9,6 +9,27 @@ use crate::tools::extract_tool_data;
 use crate::types::ToolData;
 use tt_claude_code::{Content, TranscriptEntry};
 
+/// Model-family display names, in the index order used by
+/// [`SessionAnalysis::cost_by_model`].
+pub const MODEL_FAMILIES: [&str; 4] = ["Opus", "Sonnet", "Haiku", "Fable"];
+
+/// Index into [`MODEL_FAMILIES`] for a model string, or `None` when the family
+/// isn't one we bucket. Same substring matching as [`crate::pricing`], kept as
+/// one function so tokens and cost can never land in different buckets.
+fn family_index(model: &str) -> Option<usize> {
+    if model.contains("opus") {
+        Some(0)
+    } else if model.contains("sonnet") {
+        Some(1)
+    } else if model.contains("haiku") {
+        Some(2)
+    } else if model.contains("fable") {
+        Some(3)
+    } else {
+        None
+    }
+}
+
 /// Token breakdown for a session, produced by [`analyze_session`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionAnalysis {
@@ -29,6 +50,9 @@ pub struct SessionAnalysis {
     /// Estimated USD cost, priced per model from [`crate::pricing`]. Approximate:
     /// unrecognized models contribute nothing, and rates drift over time.
     pub cost_usd: f64,
+    /// `cost_usd` split by model family, indexed as [`MODEL_FAMILIES`]. Sums to
+    /// `cost_usd` — an unrecognized model is priced at zero either way.
+    pub cost_by_model: [f64; 4],
 }
 
 /// Analyze session entries to get a token breakdown by model, plus waste
@@ -44,6 +68,7 @@ pub fn analyze_session(entries: &[TranscriptEntry]) -> SessionAnalysis {
     let mut cache_creation = 0;
     let mut total_input = 0;
     let mut cost_usd = 0.0;
+    let mut cost_by_model = [0.0f64; 4];
     let mut file_read_counts: HashMap<String, i64> = HashMap::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -90,18 +115,21 @@ pub fn analyze_session(entries: &[TranscriptEntry]) -> SessionAnalysis {
         cache_creation += cache_creation_here;
         total_input += input;
 
+        let family = family_index(model);
         if let Some(pricing) = pricing_for(model) {
-            cost_usd += pricing.cost(input, output, cache_read_here, cache_creation_here);
+            let cost = pricing.cost(input, output, cache_read_here, cache_creation_here);
+            cost_usd += cost;
+            if let Some(i) = family {
+                cost_by_model[i] += cost;
+            }
         }
 
-        if model.contains("opus") {
-            opus_tokens += tokens;
-        } else if model.contains("sonnet") {
-            sonnet_tokens += tokens;
-        } else if model.contains("haiku") {
-            haiku_tokens += tokens;
-        } else if model.contains("fable") {
-            fable_tokens += tokens;
+        match family {
+            Some(0) => opus_tokens += tokens,
+            Some(1) => sonnet_tokens += tokens,
+            Some(2) => haiku_tokens += tokens,
+            Some(3) => fable_tokens += tokens,
+            _ => {}
         }
     }
 
@@ -132,6 +160,7 @@ pub fn analyze_session(entries: &[TranscriptEntry]) -> SessionAnalysis {
             0.0
         },
         cost_usd,
+        cost_by_model,
     }
 }
 
@@ -395,6 +424,21 @@ mod tests {
         }];
         // (1000*3 + 500*15 + 800*0.3 + 200*3.75) / 1e6
         assert!((analyze_session(&entries).cost_usd - 0.01149).abs() < 1e-9);
+    }
+
+    #[test]
+    fn analyze_splits_cost_across_families() {
+        let entries = [
+            assistant_entry("claude-opus-4", 1000, 500, None),
+            assistant_entry("claude-3-haiku", 1000, 500, None),
+            assistant_entry("gpt-4-turbo", 1000, 500, None),
+        ];
+        let a = analyze_session(&entries);
+        assert!((a.cost_by_model[0] - 0.0175).abs() < 1e-9); // Opus
+        assert!((a.cost_by_model[2] - 0.0035).abs() < 1e-9); // Haiku
+        assert_eq!(a.cost_by_model[1], 0.0);
+        // The unpriced model contributes to neither the split nor the total.
+        assert!((a.cost_by_model.iter().sum::<f64>() - a.cost_usd).abs() < 1e-9);
     }
 
     #[test]

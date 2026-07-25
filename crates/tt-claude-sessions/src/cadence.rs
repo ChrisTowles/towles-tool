@@ -106,6 +106,7 @@ mod tests {
             fable_tokens: 0,
             repeated_reads: 0,
             cost_usd: 0.0,
+            cost_by_model: [0.0; 4],
             user_turns: prompt_times_ms.len() as i64,
             prompt_blob: String::new(),
             prompt_times_ms,

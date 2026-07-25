@@ -26,6 +26,8 @@ pub struct ToolData {
 pub struct ProjectBar {
     pub project: String,
     pub total_tokens: i64,
+    /// Estimated USD cost for the same sessions (see [`crate::pricing`]).
+    pub cost_usd: f64,
 }
 
 /// One model's aggregated tokens across a set of sessions. Ports the "spend by
@@ -36,12 +38,17 @@ pub struct ProjectBar {
 pub struct ModelBar {
     pub model: String,
     pub total_tokens: i64,
+    /// Estimated USD cost billed to this model family (see [`crate::pricing`]).
+    pub cost_usd: f64,
 }
 
 /// One day of the stacked bar chart: per-project token totals.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BarChartDay {
     /// `YYYY-MM-DD`.
     pub date: String,
     pub projects: Vec<ProjectBar>,
+    /// Estimated USD cost for the day (see [`crate::pricing`]).
+    pub cost_usd: f64,
 }

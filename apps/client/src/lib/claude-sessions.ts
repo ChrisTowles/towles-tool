@@ -10,16 +10,22 @@ import { invoke } from "@/lib/tauri";
 export type ProjectBar = {
   project: string;
   totalTokens: number;
+  /** Estimated USD cost for the same sessions (approximate; priced per model). */
+  costUsd: number;
 };
 
 export type ModelBar = {
   model: string;
   totalTokens: number;
+  /** Estimated USD cost billed to this model family (approximate). */
+  costUsd: number;
 };
 
 export type LedgerDay = {
   date: string;
   projects: ProjectBar[];
+  /** Estimated USD cost for the day (approximate; priced per model). */
+  costUsd: number;
 };
 
 export type LedgerTotals = {

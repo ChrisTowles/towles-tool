@@ -212,9 +212,18 @@ function stackSeries(days: LedgerDay[]): { repos: string[]; rows: Map<string, nu
   return { repos, rows };
 }
 
-/** Stacked day×repo bars. Repos are ranked by window total, so a repo's
- * palette hue matches its row in the "By repo" ranked chart; the "Other" fold
- * stays neutral gray. */
+/** The subset of ECharts' axis-trigger tooltip param we read. */
+type TooltipParam = {
+  axisValue: string;
+  dataIndex: number;
+  marker: string;
+  seriesName: string;
+  value: number | null;
+};
+
+/** Stacked day×repo bars, capped with the day's estimated cost. Repos are
+ * ranked by window total, so a repo's palette hue matches its row in the
+ * "By repo" ranked chart; the "Other" fold stays neutral gray. */
 function DayStackChart({ days }: { days: LedgerDay[] }) {
   const ref = useEChart(
     (chart) => {
@@ -225,9 +234,12 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
       const card = cssVar("--card");
 
       chart.setOption({
-        grid: { left: 8, right: 8, top: 8, bottom: 44, containLabel: true },
+        // Extra headroom up top so the cost label above the tallest bar fits.
+        grid: { left: 8, right: 8, top: 18, bottom: 44, containLabel: true },
         legend: {
           bottom: 0,
+          // Only the repo series — the cost cap carries a label, not an identity.
+          data: repos,
           textStyle: { color: muted, fontSize: 11 },
           itemWidth: 10,
           itemHeight: 10,
@@ -238,7 +250,21 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
           backgroundColor: card,
           borderColor: border,
           textStyle: { color: foreground },
-          valueFormatter: (v: unknown) => `${(v as number).toLocaleString()} tokens`,
+          formatter: (params: TooltipParam[]) => {
+            const first = params[0];
+            if (!first) return "";
+            const lines = params
+              .map(
+                (p) =>
+                  `<div>${p.marker} ${p.seriesName} <b>${(p.value ?? 0).toLocaleString()}</b> tokens</div>`,
+              )
+              .join("");
+            const cost = days[first.dataIndex]?.costUsd ?? 0;
+            return (
+              `<div><b>${first.axisValue}</b></div>${lines}` +
+              `<div style="margin-top:2px;opacity:.75">Est. cost <b>${formatCost(cost)}</b></div>`
+            );
+          },
         },
         xAxis: {
           type: "category",
@@ -252,16 +278,36 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
           splitLine: { lineStyle: { color: border } },
           axisLabel: { color: muted, formatter: (v: number) => formatTokens(v) },
         },
-        series: repos.map((repo, i) => ({
-          name: repo,
-          type: "bar",
-          stack: "day",
-          barMaxWidth: 26,
-          data: rows.get(repo),
-          itemStyle: {
-            color: repo === "Other" ? FALLBACK_COLOR : PALETTE[i % PALETTE.length],
+        series: [
+          ...repos.map((repo, i) => ({
+            name: repo,
+            type: "bar",
+            stack: "day",
+            barMaxWidth: 26,
+            data: rows.get(repo),
+            itemStyle: {
+              color: repo === "Other" ? FALLBACK_COLOR : PALETTE[i % PALETTE.length],
+            },
+          })),
+          // Zero-height cap on the same stack: the only place a label sits at the
+          // top of the whole stack rather than of whichever repo happens to be last.
+          {
+            name: "Est. cost",
+            type: "bar",
+            stack: "day",
+            barMaxWidth: 26,
+            silent: true,
+            tooltip: { show: false },
+            data: days.map(() => 0),
+            label: {
+              show: true,
+              position: "top",
+              color: muted,
+              fontSize: 10.5,
+              formatter: (p: { dataIndex: number }) => formatCost(days[p.dataIndex]?.costUsd ?? 0),
+            },
           },
-        })),
+        ],
       });
     },
     [days],
@@ -274,8 +320,13 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
 
 /** A horizontal ranked bar chart: identity on the axis label, one palette hue
  * per rank (rows are sorted descending, matching the day-stack's ordering so
- * a repo keeps its hue across both charts). */
-function RankedBarChart({ bars }: { bars: { label: string; totalTokens: number }[] }) {
+ * a repo keeps its hue across both charts). Each row is labelled with its
+ * tokens and estimated cost. */
+function RankedBarChart({
+  bars,
+}: {
+  bars: { label: string; totalTokens: number; costUsd: number }[];
+}) {
   const ref = useEChart(
     (chart) => {
       const foreground = cssVar("--foreground");
@@ -283,13 +334,17 @@ function RankedBarChart({ bars }: { bars: { label: string; totalTokens: number }
       const border = cssVar("--border");
       const card = cssVar("--card");
       chart.setOption({
-        grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
+        // Right gutter holds the "tokens · cost" row label.
+        grid: { left: 8, right: 88, top: 8, bottom: 8, containLabel: true },
         tooltip: {
           trigger: "item",
           backgroundColor: card,
           borderColor: border,
           textStyle: { color: foreground },
-          valueFormatter: (v: unknown) => `${(v as number).toLocaleString()} tokens`,
+          formatter: (p: { marker: string; name: string; value: number; dataIndex: number }) =>
+            `<div>${p.marker} <b>${p.name}</b></div>` +
+            `<div>${p.value.toLocaleString()} tokens</div>` +
+            `<div style="opacity:.75">Est. cost <b>${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}</b></div>`,
         },
         xAxis: {
           type: "value",
@@ -321,7 +376,8 @@ function RankedBarChart({ bars }: { bars: { label: string; totalTokens: number }
               show: true,
               position: "right",
               color: muted,
-              formatter: (p: { value: number }) => formatTokens(p.value),
+              formatter: (p: { value: number; dataIndex: number }) =>
+                `${formatTokens(p.value)} · ${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}`,
             },
           },
         ],
