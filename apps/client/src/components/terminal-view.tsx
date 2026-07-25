@@ -917,7 +917,10 @@ export function TerminalView({
       // gets wheel reports, hover motion, middle clicks, and plain left
       // *clicks* — but never left drags or multi-clicks: those are selection
       // gestures, and forwarding them is what made text selection look
-      // broken in every agent pane. A plain left press is therefore held
+      // broken in every agent pane. "Multi-click" here means exactly the
+      // double and triple that `selectionKindForDetail` maps to word and
+      // line; the cycle caps there, so a fourth rapid press is a plain click
+      // again and does reach the program. A plain left press is therefore held
       // back until mouseup — a drag becomes a local selection the program
       // never hears about; a clean click is delivered as a press+release
       // pair. Right-click always stays local (the context menu).

@@ -8,12 +8,20 @@ export type SelectionKind = "drag" | "word" | "line" | "all" | "clear";
 
 /**
  * The selection kind a left mouse-down implies from its click count: a
- * double-click selects the word, a triple (or higher) click the line, and a
- * single click begins a drag range.
+ * double-click selects the word, a triple click the line, and anything else —
+ * a single click, or a fourth and beyond — begins a drag range.
+ *
+ * The cycle is deliberately **capped at three**. `detail` keeps climbing for
+ * as long as the presses stay inside the browser's multi-click interval, so
+ * an uncapped `detail >= 3` meant every press in a sustained click sequence
+ * re-selected a line — and, under copy-on-select, re-took the system
+ * clipboard with it. Past a triple-click the user is just clicking, so it
+ * reads as a plain click (which clears the selection) rather than a fourth
+ * selection gesture.
  */
 export function selectionKindForDetail(detail: number): "word" | "line" | "drag" {
   if (detail === 2) return "word";
-  if (detail >= 3) return "line";
+  if (detail === 3) return "line";
   return "drag";
 }
 
@@ -36,11 +44,12 @@ export function selectionGestureKey(kind: "word" | "line", col: number, row: num
  * selection (never a `clear`), and it did not select what the last auto-copy
  * already took.
  *
- * That last clause is why this takes two keys. `selectionKindForDetail` maps
- * *every* click past the second to `line` (`detail >= 3`), and the word/line
- * branch copies on `mousedown` — so ordinary clicking around inside a pane
- * re-took the system clipboard on every press, once a second or faster, each
- * time with whatever line sat under the cursor. Re-copying a selection the
+ * That last clause is why this takes two keys, and it is a separate guard
+ * from the click-cycle cap in `selectionKindForDetail`. The cap stops a
+ * *sustained* click sequence from selecting a line over and over; this stops
+ * a *deliberate* repeat — double-clicking the same word again, or clicking
+ * back onto a line you already took — from re-taking the clipboard, since
+ * the word/line branch copies on `mousedown`. Re-copying a selection the
  * user never changed is the bug; a genuinely new target still copies.
  */
 export function shouldCopyOnSelect(

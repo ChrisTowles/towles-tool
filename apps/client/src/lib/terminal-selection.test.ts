@@ -11,14 +11,21 @@ describe("selectionKindForDetail", () => {
     expect(selectionKindForDetail(2)).toBe("word");
   });
 
-  it("maps a triple (or higher) click to a line selection", () => {
+  it("maps a triple click to a line selection", () => {
     expect(selectionKindForDetail(3)).toBe("line");
-    expect(selectionKindForDetail(5)).toBe("line");
   });
 
   it("treats a single click (or zero-detail synthetic event) as a drag", () => {
     expect(selectionKindForDetail(1)).toBe("drag");
     expect(selectionKindForDetail(0)).toBe("drag");
+  });
+
+  // Uncapped, a sustained click sequence kept re-selecting the line — and
+  // under copy-on-select kept re-taking the system clipboard with it.
+  it("caps the cycle at three: a fourth click and beyond is a plain click", () => {
+    expect(selectionKindForDetail(4)).toBe("drag");
+    expect(selectionKindForDetail(5)).toBe("drag");
+    expect(selectionKindForDetail(12)).toBe("drag");
   });
 });
 
