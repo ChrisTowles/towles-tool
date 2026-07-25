@@ -1165,7 +1165,31 @@ fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(settings)?;
-    std::fs::write(path, json)?;
+    write_private(path, &json)?;
+    Ok(())
+}
+
+/// Write `contents` to `path` and restrict it to the owner (0600 on unix).
+///
+/// The settings file holds live credentials — the Slack user token
+/// (`xoxp-…`, scoped `im:history`/`im:read`/`chat:write`/`files:read`) and the
+/// app token (`xapp-…`) — so it must not inherit the umask. A plain
+/// `fs::write` under the common 002/022 umask leaves it group- and
+/// world-readable, which is how it shipped: any other account on the machine
+/// could read the tokens straight out of `~/.config/towles-tool/`.
+///
+/// The chmod is applied after the write rather than via `OpenOptions::mode`
+/// because this path also rewrites an *existing* file, whose mode `open`
+/// wouldn't touch — tightening the permissions of a file already on disk is
+/// the case that matters for anyone upgrading. Same pattern as
+/// `tt_ide::lockfile::write` and `tt_tasks::pasted`.
+fn write_private(path: &Path, contents: &str) -> Result<()> {
+    std::fs::write(path, contents)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
@@ -1190,7 +1214,7 @@ fn save_merge_to(path: &Path, settings: &UserSettings) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, serde_json::to_string_pretty(&base)?)?;
+    write_private(path, &serde_json::to_string_pretty(&base)?)?;
     Ok(())
 }
 
@@ -1238,6 +1262,37 @@ mod tests {
 
         let loaded = load_from(&path).unwrap();
         assert_eq!(loaded, settings);
+    }
+
+    /// The settings file holds the Slack `xoxp-`/`xapp-` tokens, so neither
+    /// write path may leave it readable by anyone but the owner — including the
+    /// rewrite of a file that already exists with looser permissions.
+    #[cfg(unix)]
+    #[test]
+    fn saves_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        let settings = UserSettings::default();
+
+        for path in [
+            dir.path().join("fresh.json"),
+            dir.path().join("merged.json"),
+        ] {
+            // Pre-create world-readable, so this asserts the mode is tightened
+            // on an existing file rather than merely inherited at creation.
+            std::fs::write(&path, "{}").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+            if path.ends_with("fresh.json") {
+                save_to(&path, &settings).unwrap();
+            } else {
+                save_merge_to(&path, &settings).unwrap();
+            }
+
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "{} left at {mode:o}", path.display());
+        }
     }
 
     #[test]
