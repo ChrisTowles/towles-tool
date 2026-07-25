@@ -127,7 +127,7 @@ describe("buildAttentionFeed", () => {
     expect(feed).toEqual([]);
   });
 
-  it("carries a gh-prs focus target for PRs and an external url for DMs", () => {
+  it("carries a cockpit focus target for PRs and an external url for DMs", () => {
     const feed = buildAttentionFeed(
       snapshot({
         prs: [pr({ number: 42, checks: "failing" })],
@@ -137,7 +137,7 @@ describe("buildAttentionFeed", () => {
     );
     const prItem = feed.find((i) => i.kind === "pr-ci");
     const dmItem = feed.find((i) => i.kind === "dm");
-    expect(prItem?.target).toEqual({ screen: "gh-prs", kind: "pr", id: "octo/widgets#42" });
+    expect(prItem?.target).toEqual({ screen: "cockpit", kind: "pr", id: "octo/widgets#42" });
     expect(dmItem?.url).toBe("https://slack.example/dm");
     expect(dmItem?.target).toBeUndefined();
   });

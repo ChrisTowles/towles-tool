@@ -1,7 +1,6 @@
 import {
   Activity,
   ChartColumn,
-  GitPullRequest,
   Gauge,
   KanbanSquare,
   MessageCircle,
@@ -20,7 +19,6 @@ export type ScreenId =
   | "slack"
   | "doctor"
   | "claude-sessions"
-  | "gh-prs"
   | "mcp"
   | "telemetry"
   | "task-explorer"
@@ -78,13 +76,6 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
     keywords: ["tokens", "usage", "sessions", "claude code", "history", "repos"],
     fullBleed: true,
   },
-  "gh-prs": {
-    id: "gh-prs",
-    title: "Pull requests",
-    icon: GitPullRequest,
-    keywords: ["github", "gh", "branches", "review", "checks"],
-    fullBleed: true,
-  },
   mcp: {
     id: "mcp",
     title: "MCP server",
@@ -129,7 +120,7 @@ export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
   { label: "Focus", screens: ["cockpit", "board", "agentboard", "slack"] },
   {
     label: "Tools",
-    screens: ["doctor", "claude-sessions", "gh-prs", "mcp", "telemetry", "task-explorer"],
+    screens: ["doctor", "claude-sessions", "mcp", "telemetry", "task-explorer"],
   },
   { label: "App", screens: ["settings"] },
 ];

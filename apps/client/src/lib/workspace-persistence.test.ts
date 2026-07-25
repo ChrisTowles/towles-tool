@@ -20,20 +20,20 @@ describe("loadWorkspaceTabs", () => {
   });
 
   it("drops stale/unknown ids from the open-tabs list", () => {
-    const result = loadWorkspaceTabs("board", JSON.stringify(["board", "gone", "gh-prs"]));
-    expect(result.openTabs).toEqual(["board", "gh-prs"]);
+    const result = loadWorkspaceTabs("board", JSON.stringify(["board", "gone", "telemetry"]));
+    expect(result.openTabs).toEqual(["board", "telemetry"]);
   });
 
   it("ensures the active tab is always present in open tabs", () => {
     // A closed cockpit tab shouldn't be resurrected, but the active tab must
     // still be mounted.
-    const result = loadWorkspaceTabs("gh-prs", JSON.stringify(["board"]));
-    expect(result.openTabs).toContain("gh-prs");
+    const result = loadWorkspaceTabs("telemetry", JSON.stringify(["board"]));
+    expect(result.openTabs).toContain("telemetry");
     expect(result.openTabs).not.toContain("cockpit");
   });
 
   it("does not resurrect a closed tab (only stored ids are restored)", () => {
-    const result = loadWorkspaceTabs("board", JSON.stringify(["board", "gh-prs"]));
+    const result = loadWorkspaceTabs("board", JSON.stringify(["board", "telemetry"]));
     expect(result.openTabs).not.toContain("cockpit");
   });
 
