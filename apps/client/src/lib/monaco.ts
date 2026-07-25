@@ -242,6 +242,77 @@ export async function attachExplorer(container: HTMLElement): Promise<() => void
   return mine;
 }
 
+/**
+ * Which view the singleton sidebar shows. VS Code calls these "view
+ * containers"; the workbench registers the file tree and the search form as
+ * two of them in the same sidebar part, so hosting the part (`attachExplorer`)
+ * hosts whichever one is active — including the one a right-click's "Find in
+ * Folder" switches to behind the app's back.
+ */
+export type SidebarView = "explorer" | "search";
+
+const SIDEBAR_VIEW_IDS: Record<SidebarView, string> = {
+  explorer: "workbench.view.explorer",
+  search: "workbench.view.search",
+};
+
+function sidebarViewForId(id: string | undefined): SidebarView | null {
+  const found = (Object.keys(SIDEBAR_VIEW_IDS) as SidebarView[]).find(
+    (view) => SIDEBAR_VIEW_IDS[view] === id,
+  );
+  return found ?? null;
+}
+
+async function paneComposites() {
+  await loadMonaco();
+  const [api, views] = await Promise.all([
+    import("@codingame/monaco-vscode-api"),
+    import("@codingame/monaco-vscode-views-service-override"),
+  ]);
+  const service = await api.getService(api.IPaneCompositePartService);
+  return { service, sidebar: views.ViewContainerLocation.Sidebar };
+}
+
+/** Show one of the sidebar's views in the attached part, focusing it. */
+export async function openSidebarView(view: SidebarView): Promise<void> {
+  try {
+    const { service, sidebar } = await paneComposites();
+    await service.openPaneComposite(SIDEBAR_VIEW_IDS[view], sidebar, true);
+  } catch (e) {
+    console.error(`[monaco] failed to open the ${view} view`, e);
+  }
+}
+
+/**
+ * Report the sidebar's current view, now and on every change. The workbench
+ * switches views on its own (the Explorer's "Find in Folder" opens search), so
+ * a mode control has to follow the part rather than assume it drives it.
+ * Returns an unsubscribe; a null report means the sidebar shows something this
+ * app doesn't name.
+ */
+export function watchSidebarView(listener: (view: SidebarView | null) => void): () => void {
+  let disposed = false;
+  let dispose: (() => void) | null = null;
+  void (async () => {
+    try {
+      const { service, sidebar } = await paneComposites();
+      if (disposed) return;
+      listener(sidebarViewForId(service.getActivePaneComposite(sidebar)?.getId()));
+      const sub = service.onDidPaneCompositeOpen(({ composite, viewContainerLocation }) => {
+        if (viewContainerLocation === sidebar) listener(sidebarViewForId(composite.getId()));
+      });
+      if (disposed) sub.dispose();
+      else dispose = () => sub.dispose();
+    } catch (e) {
+      console.error("[monaco] failed to watch the sidebar view", e);
+    }
+  })();
+  return () => {
+    disposed = true;
+    dispose?.();
+  };
+}
+
 /** Run a VS Code command by id (e.g. the Explorer's refresh action). Command
  * failures are the command's problem, not the caller's — log and move on. */
 export async function runMonacoCommand(id: string): Promise<void> {
