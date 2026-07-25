@@ -1,0 +1,40 @@
+name: CPU signature
+description: >-
+  Short hash of the runner's CPU feature set, for keying caches that hold
+  natively-compiled build artifacts.
+outputs:
+  sig:
+    description: Twelve-character hash of the runner's CPU feature flags.
+    value: ${{ steps.sig.outputs.sig }}
+runs:
+  using: composite
+  steps:
+    - id: sig
+      shell: bash
+      run: |
+        # Why a cache key needs the CPU in it: `libghostty-vt-sys` compiles
+        # libghostty with zig's *native* target — its build.rs passes
+        # `-Dtarget` only when cross-compiling — so the static library it
+        # installs under `target/` carries whatever instructions the building
+        # runner supported. GitHub's ubuntu pool mixes CPU generations, so a
+        # `target/` restored onto a narrower runner links a library full of
+        # instructions that runner lacks, and the test binary dies with
+        # `SIGILL: illegal instruction` the moment anything reaches that code.
+        # It presents as a crash with no failing test name, reproduces
+        # identically on every re-run (the bad artifact is what got cached),
+        # and passes on every developer machine — nothing about it looks like
+        # a cache problem. Keying on the feature set means a restore can only
+        # hand back instruction-compatible objects; an unseen CPU model just
+        # pays one cold build.
+        flags=$(sed -n 's/^flags[[:space:]]*: //p' /proc/cpuinfo | head -1)
+        if [ -z "$flags" ]; then
+          echo "::error::no 'flags' line in /proc/cpuinfo — refusing to key" \
+            "the zig artifact cache on an unknown CPU" >&2
+          exit 1
+        fi
+        # Word-split deliberately: one flag per line, sorted, so the hash
+        # doesn't move with kernel reordering.
+        # shellcheck disable=SC2086
+        sig=$(printf '%s\n' $flags | sort | md5sum | cut -c1-12)
+        echo "sig=$sig" >> "$GITHUB_OUTPUT"
+        echo "CPU feature signature: $sig"
