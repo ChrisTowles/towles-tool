@@ -44,6 +44,22 @@ fn task_dir(checkout: &Path, name: &str) -> PathBuf {
     checkout.join(".claude").join("worktrees").join(name)
 }
 
+/// A port pool no other test in this binary will touch.
+///
+/// Same reasoning as `task_commands.rs`'s `next_pool` (see its doc for the
+/// full mechanism): `port_occupied` answers by **binding**, so tests sharing
+/// one pool make each other's probes report a phantom listener, and
+/// `tt task clean` runs the same removal guard `tt task rm` does. The floor
+/// also moves below the ephemeral range — 42440-42469 sat inside it
+/// (32768-60999), where any outbound connection's source port can masquerade
+/// as a dev server.
+fn next_pool() -> String {
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(26410);
+    let lo = NEXT.fetch_add(30, std::sync::atomic::Ordering::Relaxed);
+    assert!(lo + 30 < 32768, "test port pools have grown into the ephemeral range");
+    format!("{lo}-{}", lo + 29)
+}
+
 /// Build `<tmp>/demo` like the task lifecycle tests, but with a committed
 /// `crates/tt-config/` marker so the checkouts derive state scopes (`demo`,
 /// `demo-<task>`) and the sweep has something to key on.
@@ -51,7 +67,8 @@ fn make_checkout(tmp: &Path) -> PathBuf {
     let seed = tmp.join("seed");
     std::fs::create_dir_all(seed.join("crates").join("tt-config")).unwrap();
     git(tmp, &["init", "seed"]);
-    std::fs::write(seed.join(".env.example"), "UI_PORT=${tt:port 42440-42469}\n").unwrap();
+    std::fs::write(seed.join(".env.example"), format!("UI_PORT=${{tt:port {}}}\n", next_pool()))
+        .unwrap();
     std::fs::write(seed.join(".gitignore"), ".env\n").unwrap();
     std::fs::write(seed.join("crates").join("tt-config").join(".gitkeep"), "").unwrap();
     git(&seed, &["add", "."]);

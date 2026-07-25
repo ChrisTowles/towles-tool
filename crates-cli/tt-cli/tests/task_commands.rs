@@ -66,25 +66,78 @@ fn task_dir(checkout: &Path, name: &str) -> PathBuf {
     checkout.join(".claude").join("worktrees").join(name)
 }
 
+/// Width of one test's private port pool (see [`next_pool`]).
+const POOL_WIDTH: u16 = 20;
+
+/// First port of the whole range these tests carve their pools out of.
+///
+/// Must sit BELOW the ephemeral range (Linux defaults to 32768-60999) —
+/// `port_occupied`'s bind probe cannot tell a claimed dev server from some
+/// unrelated process that borrowed the port as an outbound source port, so an
+/// in-range pool makes the removal guard fire at random on a busy CI runner.
+/// This bit for real: the old 42410-42429 pool failed
+/// `rm_guards_dirty_and_orphan_commits` with "port 42410 is in use by a
+/// process outside the task's containers". The repo's own pools (1420-1619,
+/// 4420-4619) are below the range for the same reason.
+const POOL_FLOOR: u16 = 24410;
+
+/// A port pool no other test in this binary will touch, as a
+/// `${tt:port LO-HI}` token.
+///
+/// Every test used to share one pool, and every test's tasks therefore claimed
+/// the *same* first free port. That collides with itself, not with the
+/// machine: `port_occupied` answers "is this port free?" by **binding** it, so
+/// while one test's probe holds that bind, a concurrent test's probe of the
+/// same port gets `AddrInUse` and concludes a dev server is running — making
+/// `tt task rm` refuse with `ForeignPortListener` and failing an assertion
+/// that had nothing to do with ports. Cargo runs these tests concurrently in
+/// one binary, so with ~20 tests on one port it landed roughly once every ten
+/// full-suite runs. Moving the shared pool (the previous fix) only changed
+/// which port they all collided on.
+///
+/// Disjoint per-test windows remove the interference outright. The counter is
+/// process-wide, and each pool is claimed by exactly one test's tempdir
+/// registry.
+fn next_pool() -> String {
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(POOL_FLOOR);
+    let lo = NEXT.fetch_add(POOL_WIDTH, std::sync::atomic::Ordering::Relaxed);
+    assert!(
+        lo + POOL_WIDTH < 32768,
+        "test port pools have grown into the ephemeral range — lower POOL_WIDTH or split the suite"
+    );
+    format!("{lo}-{}", lo + POOL_WIDTH - 1)
+}
+
+/// The port window `checkout` was built with, read back from its committed
+/// `.env.example` — so a test can assert "the claim came from my pool"
+/// without knowing which window [`next_pool`] handed it.
+fn pool_of(checkout: &Path) -> std::ops::RangeInclusive<u64> {
+    let template = std::fs::read_to_string(checkout.join(".env.example")).unwrap();
+    let spec = template
+        .split("${tt:port ")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("template declares a port pool");
+    let (lo, hi) = spec.split_once('-').expect("pool reads LO-HI");
+    lo.trim().parse().unwrap()..=hi.trim().parse().unwrap()
+}
+
 /// Build `<tmp>/demo` (a normal clone on main) whose committed
 /// `.env.example` carries `${tt:...}` tokens and a declared `TT_TASK_SETUP`
 /// that drops a marker so tests can prove setup ran in-task.
+///
+/// Returns the checkout; call [`pool_of`] for the port window it was built
+/// with when a test needs to assert on the rendered port.
 fn make_checkout(tmp: &Path) -> PathBuf {
     let seed = tmp.join("seed");
     std::fs::create_dir_all(&seed).unwrap();
     git(tmp, &["init", "seed"]);
     std::fs::write(
         seed.join(".env.example"),
-        // The pool must sit BELOW the ephemeral range (Linux defaults to
-        // 32768-60999) — `port_occupied`'s bind probe cannot tell a claimed
-        // dev server from some unrelated process that borrowed the port as
-        // an outbound source port, so an in-range pool makes the removal
-        // guard fire at random on a busy CI runner. This bit for real: the
-        // old 42410-42429 pool failed `rm_guards_dirty_and_orphan_commits`
-        // with "port 42410 is in use by a process outside the task's
-        // containers". The repo's own pools (1420-1619, 4420-4619) are below
-        // the range for the same reason.
-        "# demo task env\nUI_PORT=${tt:port 24410-24429}\nNAME=${tt:task-name}\nBASE=${tt:base}\nURL=http://localhost:${tt:var UI_PORT}/\nSECRET=\nTT_TASK_SETUP=touch .setup-ran\n",
+        format!(
+            "# demo task env\nUI_PORT=${{tt:port {}}}\nNAME=${{tt:task-name}}\nBASE=${{tt:base}}\nURL=http://localhost:${{tt:var UI_PORT}}/\nSECRET=\nTT_TASK_SETUP=touch .setup-ran\n",
+            next_pool()
+        ),
     )
     .unwrap();
     std::fs::write(seed.join(".gitignore"), ".env\n.setup-ran\n").unwrap();
@@ -121,7 +174,7 @@ fn lifecycle_new_env_ls_rm() {
     assert!(env.contains("NAME=feat-thing"), "env: {env}");
     assert!(env.contains("BASE=main"));
     let ui_port = created["ports"]["UI_PORT"].as_u64().expect("UI_PORT claimed");
-    assert!((24410..=24429).contains(&ui_port));
+    assert!(pool_of(&checkout).contains(&ui_port), "claimed {ui_port}, outside this test's pool");
     assert!(env.contains(&format!("URL=http://localhost:{ui_port}/")));
     assert!(task.join(".tt-task").is_file());
     assert!(
@@ -984,7 +1037,11 @@ fn lockfile_detection_installs_without_declared_setup() {
     let seed = tmp.path().join("seed");
     std::fs::create_dir_all(&seed).unwrap();
     git(tmp.path(), &["init", "seed"]);
-    std::fs::write(seed.join(".env.example"), "UI_PORT=${tt:port 42430-42439}\n").unwrap();
+    // Its own window like every other fixture, and below the ephemeral range
+    // — this one used to hardcode 42430-42439, which is *inside* it (32768+),
+    // exactly what `POOL_FLOOR`'s doc warns against.
+    std::fs::write(seed.join(".env.example"), format!("UI_PORT=${{tt:port {}}}\n", next_pool()))
+        .unwrap();
     std::fs::write(seed.join(".gitignore"), ".env\n").unwrap();
     git(&seed, &["add", "."]);
     git(&seed, &["commit", "-m", "seed"]);

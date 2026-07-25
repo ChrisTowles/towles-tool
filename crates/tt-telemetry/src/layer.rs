@@ -177,6 +177,7 @@ mod tests {
     /// Run `body` with an `EventLogLayer` installed, returning the records it
     /// wrote. Uses a local subscriber so tests never fight over the global one.
     fn capture(body: impl FnOnce()) -> Vec<Value> {
+        let _serialized = crate::serialize_subscriber_tests();
         let dir = tempfile::tempdir().unwrap();
         let mut resource = Map::new();
         resource.insert("service.name".into(), Value::from("tt-test"));
