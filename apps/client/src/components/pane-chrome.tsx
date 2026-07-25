@@ -25,6 +25,7 @@ export function PaneChrome({
   subject,
   subjectTitle,
   controls,
+  center,
   actions,
 }: {
   /** The lens chip (see [`PaneLens`]), plus any always-present marker the
@@ -39,11 +40,26 @@ export function PaneChrome({
   /** Kind-specific controls that sit inline with the subject rather than in
    * the trailing action cluster — the diff pane's baseline toggle. */
   controls?: ReactNode;
+  /** One control given the middle of the row to itself — for the thing worth
+   * hitting without reading the header first (the diff pane's
+   * read-only/editable toggle).
+   *
+   * Passing one switches the row from flex to a `1fr auto 1fr` grid, which is
+   * what makes it centered *against the pane* rather than against whatever
+   * chips happen to sit beside it — a target that slides when the baseline
+   * label goes from `vs main` to `vs feat/whatever` is one you have to look
+   * for every time. Both layouts are kept because the grid's equal side
+   * columns would truncate a long subject (a session's name, a file path) at
+   * half the row, and the panes without a center slot are exactly the ones
+   * whose subject needs that width. A pane too narrow for all three columns
+   * degrades by pushing the center off-center — never by overlapping, which
+   * is what absolute centering did at half width. */
+  center?: ReactNode;
   /** Trailing icon buttons, right-aligned. */
   actions: ReactNode;
 }) {
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-b bg-card px-2 py-1">
+  const leading = (
+    <>
       {lens}
       {subject != null && (
         <>
@@ -62,7 +78,32 @@ export function PaneChrome({
         </>
       )}
       {controls}
-      <span className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</span>
+    </>
+  );
+  const row = "shrink-0 items-center gap-2 border-b bg-card px-2 py-1";
+  if (center == null) {
+    return (
+      <div className={cn("flex", row)}>
+        {leading}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</span>
+      </div>
+    );
+  }
+  return (
+    <div className={cn("grid grid-cols-[1fr_auto_1fr]", row)}>
+      {/* No `min-w-0` on the side columns, deliberately: it would let a column
+       * shrink past its own chips, and since those are `shrink-0` they'd
+       * spill *under* the centered slot — the same overlap absolute
+       * positioning caused. Leaving `min-width: auto` makes a cramped row push
+       * the center aside instead. A truncating subject still collapses, since
+       * it carries `min-w-0` itself. */}
+      <span className="flex min-w-max items-center gap-2">{leading}</span>
+      <span className="flex items-center justify-center">{center}</span>
+      {/* `min-w-max` for the same reason as above, from the other side: a
+       * right column narrower than its buttons doesn't clip them, it spills
+       * them *leftward* out of a `justify-end` cluster and back over the
+       * center. Sized to max-content, the grid moves the center instead. */}
+      <span className="flex min-w-max items-center justify-end gap-1.5">{actions}</span>
     </div>
   );
 }

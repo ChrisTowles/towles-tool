@@ -27,7 +27,10 @@ import {
 } from "@/lib/ide-selection";
 
 /**
- * Monaco editor for one repo file (the Files tab's right pane). Two bridges:
+ * Monaco editor for one repo file (the Files tab's right pane). Opens
+ * **read-only** — the pane header's toggle is what arms typing (see
+ * `EditableToggle`), so reading a file an agent is working in can't edit it
+ * by accident. Two bridges:
  * selections stream to the folder's Claude session as character-precise
  * selection_changed (debounced 300ms, like VS Code), and edits **auto-save**
  * after an `AUTOSAVE_DELAY_MS` typing pause (⌘S is save-now; both take the
@@ -114,6 +117,7 @@ export function CodeViewer({
   path,
   anchor,
   wordWrap = true,
+  editable = false,
   connected = false,
   onDirtyChange,
 }: {
@@ -123,6 +127,11 @@ export function CodeViewer({
   anchor?: ViewerAnchor & { nonce?: number };
   /** Soft-wrap long lines instead of horizontal scrolling. Defaults on. */
   wordWrap?: boolean;
+  /** Accept typing. Defaults off — the pane header's toggle arms it. Only the
+   * *editor* is locked: disk reloads and conflict resolution still write the
+   * model, since those are programmatic edits Monaco's `readOnly` doesn't
+   * block. */
+  editable?: boolean;
   /** A Claude session is live in this folder — enables the @-send gesture. */
   connected?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
@@ -147,6 +156,10 @@ export function CodeViewer({
   onDirtyRef.current = onDirtyChange;
   const wordWrapRef = useRef(wordWrap);
   wordWrapRef.current = wordWrap;
+  // Read at create time; later flips ride the updateOptions effect below —
+  // the editor must not be rebuilt for a mode change (undo stack, scroll).
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
 
@@ -221,6 +234,7 @@ export function CodeViewer({
         occurrencesHighlight: "off",
         contextmenu: false,
         wordWrap: wordWrapRef.current ? "on" : "off",
+        readOnly: !editableRef.current,
       });
       editorRef.current = editor;
       savedVersionRef.current = model.getAlternativeVersionId();
@@ -454,6 +468,10 @@ export function CodeViewer({
   useEffect(() => {
     editorRef.current?.updateOptions({ wordWrap: wordWrap ? "on" : "off" });
   }, [wordWrap]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly: !editable });
+  }, [editable]);
 
   // An open request can ask for a landing spot (startText..endText selection,
   // or a bare :line) — apply it against the live editor. The mount effect

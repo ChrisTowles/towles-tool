@@ -49,14 +49,15 @@ type TextModel = import("monaco-editor").editor.ITextModel;
  * VS Code's multi-diff editor over the whole change set: every file's diff
  * stacked in one scroll with sticky per-file headers, exactly the surface
  * VS Code uses for "view changes". Original sides come from the diff
- * baseline (`ab_get_base_file`), read-only — history isn't editable. Modified
- * sides come from the working tree and are editable in place, and
- * **auto-save**: a `AUTOSAVE_DELAY_MS` pause in typing writes the buffer
- * (Cmd/Ctrl+S is save-now), through the same atomic/mtime-guarded write
- * CodeViewer's manual save uses. A conflicted file never auto-saves — the
- * banner's explicit choice is the only way out — and a widget rebuild or
- * unmount flushes pending edits first, so autosave can't eat the last
- * second of typing.
+ * baseline (`ab_get_base_file`), always read-only — history isn't editable.
+ * Modified sides come from the working tree and are editable in place *once
+ * the header's `editable` toggle is on* (it defaults off — see
+ * `EditableToggle`), and then **auto-save**: a `AUTOSAVE_DELAY_MS` pause in
+ * typing writes the buffer (Cmd/Ctrl+S is save-now), through the same
+ * atomic/mtime-guarded write CodeViewer's manual save uses. A conflicted file
+ * never auto-saves — the banner's explicit choice is the only way out — and a
+ * widget rebuild or unmount flushes pending edits first, so autosave can't
+ * eat the last second of typing.
  * Selections on any modified side stream to the folder's Claude session, and
  * the selection chip (or ⌘⇧A) mentions those lines explicitly — same
  * contract as CodeViewer.
@@ -80,6 +81,7 @@ export function MonacoMultiDiff({
   baseBranch,
   refreshKey,
   baseKey,
+  editable,
   connected = false,
   registerReveal,
   reviewed,
@@ -96,6 +98,9 @@ export function MonacoMultiDiff({
    * the compared ref changed) — refetching read-only base sides on every
    * working-tree keystroke-stats bump would be pure waste. */
   baseKey: string;
+  /** The working-tree sides accept typing. Off by default (the pane's header
+   * toggle arms it) so reading a diff can't edit the files by accident. */
+  editable: boolean;
   /** A Claude session is live in this folder — enables the @-send gesture. */
   connected?: boolean;
   /** Receives a jump-to-file function once the widget is up (null on
@@ -182,6 +187,15 @@ export function MonacoMultiDiff({
   // `reviewed` closure has gone stale.
   const reviewedRef = useRef(reviewed);
   reviewedRef.current = reviewed;
+  // Same shape for `editable`, because each document item exposes `options`
+  // as a *getter* over this ref rather than a value captured at construction:
+  // the multi-diff re-reads `options` on every row (re)bind and whenever
+  // `onOptionsDidChange` fires, so toggling read-only re-renders the open
+  // editors in place instead of rebuilding the whole widget — which would
+  // refetch every side and drop the scroll position mid-review.
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
+  const optionsChangedRef = useRef<{ fire(): void } | null>(null);
 
   // Collapse/expand each file's diff to match its reviewed flag and keep its
   // header checkbox's `.checked` in sync — shared by the post-construction
@@ -406,6 +420,13 @@ export function MonacoMultiDiff({
         const contents = await Promise.all(files.map((f) => fetchSides(dir, f, mode, baseBranch)));
         if (disposed || !containerRef.current) return;
 
+        // One emitter for the whole generation — every item's `options` getter
+        // reads the same `editableRef`, so a single fire re-applies the mode
+        // to every bound editor.
+        const optionsChanged = new eventMod.Emitter<void>();
+        disposables.push(optionsChanged);
+        optionsChangedRef.current = optionsChanged;
+
         const models = new Map<string, { original?: TextModel; modified?: TextModel }>();
         mtimesRef.current = new Map();
         savedVersionsRef.current = new Map();
@@ -436,8 +457,10 @@ export function MonacoMultiDiff({
           return {
             original: entry.original,
             modified: entry.modified,
-            // Base side stays read-only (it's history); working-tree side is
-            // editable. Some workbench feature occasionally tries to resolve
+            // Base side stays read-only (it's history); the working-tree side
+            // follows the header's editable toggle — read via a getter so
+            // `onOptionsDidChange` can flip it without a rebuild.
+            // Some workbench feature occasionally tries to resolve
             // the synthetic tt-diff-work: URI through the full text-model
             // resolver once a file's diff is active — that lookup has no
             // registered provider and rejects, logged as a harmless one-time
@@ -447,7 +470,14 @@ export function MonacoMultiDiff({
             // resolver's own disposal of that handle raced ours and blanked
             // the pane ("TextModel got disposed before DiffEditorWidget model
             // got reset"). The rejection doesn't affect rendering or editing.
-            options: { readOnly: false, originalEditable: false, wordWrap: "on" as const },
+            get options() {
+              return {
+                readOnly: !editableRef.current,
+                originalEditable: false,
+                wordWrap: "on" as const,
+              };
+            },
+            onOptionsDidChange: optionsChanged.event,
           };
         });
         modelsRef.current = models;
@@ -728,6 +758,7 @@ export function MonacoMultiDiff({
       }
       widgetRef.current = null;
       viewModelRef.current = null;
+      optionsChangedRef.current = null;
       itemsByPathRef.current = null;
       checkboxesByPathRef.current = new Map();
       for (const d of disposables.toReversed()) d.dispose();
@@ -772,6 +803,13 @@ export function MonacoMultiDiff({
     // effect above — `reviewed`'s identity is only the trigger.
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- files is read fresh via closure; only reviewed's change should re-run this
   }, [reviewed]);
+
+  // The header's read-only ⇄ editable toggle moved — re-read every bound
+  // editor's options (the getter above answers with the new mode). Skips the
+  // post-construction firing: the items were just built at this mode.
+  useEffect(() => {
+    optionsChangedRef.current?.fire();
+  }, [editable]);
 
   // The diff *baseline* moved (a commit landed, the compared ref changed) —
   // refetch the read-only base sides, concurrently, in place. Skips its

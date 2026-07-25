@@ -11,6 +11,7 @@ import {
 import { ChevronRight, Pencil, RefreshCw, X } from "lucide-react";
 import { DiffReview, type DiffReviewRequest } from "@/components/diff-review";
 import { MonacoMultiDiff, type ChangedFile } from "@/components/diff-monaco";
+import { EditableToggle } from "@/components/editable-toggle";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,6 +19,7 @@ import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 import { buildDiffTree, sortToTreeOrder, type DiffTreeNode } from "@/lib/diff";
 import { ideReadFile, useIdeConnected } from "@/lib/ide";
 import { invoke, isTauri } from "@/lib/tauri";
+import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -224,8 +226,11 @@ const UNCOMMITTED_MODE = {
  * stats change (the 1.5s poll only bumps them on real change), so the diff
  * tracks the agent's edits without a manual refresh; the open file's contents
  * refresh in place. The header's segmented toggle picks the baseline:
- * the whole branch vs main, or just the uncommitted working tree. The full
- * checkout tree is its own pane (`FolderFilesPane`), not a tab here.
+ * the whole branch vs main, or just the uncommitted working tree, and its
+ * read-only/editable toggle decides whether the working-tree sides take
+ * typing at all — locked by default, since this pane is usually read while an
+ * agent edits the same tree. The full checkout tree is its own pane
+ * (`FolderFilesPane`), not a tab here.
  */
 export function DiffPane({
   folder,
@@ -248,6 +253,10 @@ export function DiffPane({
   const taskBaseBranch = folder?.taskBaseBranch?.trim() || null;
   const effectiveBase = baseBranch ?? taskBaseBranch;
   const [mode, setMode] = useState<DiffMode>("main");
+  // The working-tree sides start locked: this pane is for reading a diff
+  // while an agent works in the same tree, and a stray keystroke in a focused
+  // editor used to edit — and auto-save — the file under review.
+  const [editable, setEditable] = useState(false);
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const revealRef = useRef<((path: string) => void) | null>(null);
@@ -361,6 +370,8 @@ export function DiffPane({
     setReviewed(new Set());
     setDirty(new Set());
     setConflict(new Set());
+    // …and a different checkout is locked again, same as a fresh pane.
+    setEditable(false);
   }, [dir]);
 
   // Refetch on mount and whenever the working tree measurably changes.
@@ -481,6 +492,16 @@ export function DiffPane({
             )}
           </>
         }
+        center={
+          <EditableToggle
+            editable={editable}
+            subject="the files in this diff"
+            onChange={(next) => {
+              setEditable(next);
+              uiAction("diff.editable", "agentboard", next ? "on" : "off");
+            }}
+          />
+        }
         actions={
           <>
             <IconBtn
@@ -524,6 +545,7 @@ export function DiffPane({
                 baseBranch={baseBranch}
                 refreshKey={statsKey}
                 baseKey={baseKey}
+                editable={editable}
                 connected={ideConnected}
                 registerReveal={registerReveal}
                 reviewed={reviewed}
