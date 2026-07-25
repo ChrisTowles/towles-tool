@@ -75,7 +75,16 @@ fn make_checkout(tmp: &Path) -> PathBuf {
     git(tmp, &["init", "seed"]);
     std::fs::write(
         seed.join(".env.example"),
-        "# demo task env\nUI_PORT=${tt:port 42410-42429}\nNAME=${tt:task-name}\nBASE=${tt:base}\nURL=http://localhost:${tt:var UI_PORT}/\nSECRET=\nTT_TASK_SETUP=touch .setup-ran\n",
+        // The pool must sit BELOW the ephemeral range (Linux defaults to
+        // 32768-60999) — `port_occupied`'s bind probe cannot tell a claimed
+        // dev server from some unrelated process that borrowed the port as
+        // an outbound source port, so an in-range pool makes the removal
+        // guard fire at random on a busy CI runner. This bit for real: the
+        // old 42410-42429 pool failed `rm_guards_dirty_and_orphan_commits`
+        // with "port 42410 is in use by a process outside the task's
+        // containers". The repo's own pools (1420-1619, 4420-4619) are below
+        // the range for the same reason.
+        "# demo task env\nUI_PORT=${tt:port 24410-24429}\nNAME=${tt:task-name}\nBASE=${tt:base}\nURL=http://localhost:${tt:var UI_PORT}/\nSECRET=\nTT_TASK_SETUP=touch .setup-ran\n",
     )
     .unwrap();
     std::fs::write(seed.join(".gitignore"), ".env\n.setup-ran\n").unwrap();
@@ -112,7 +121,7 @@ fn lifecycle_new_env_ls_rm() {
     assert!(env.contains("NAME=feat-thing"), "env: {env}");
     assert!(env.contains("BASE=main"));
     let ui_port = created["ports"]["UI_PORT"].as_u64().expect("UI_PORT claimed");
-    assert!((42410..=42429).contains(&ui_port));
+    assert!((24410..=24429).contains(&ui_port));
     assert!(env.contains(&format!("URL=http://localhost:{ui_port}/")));
     assert!(task.join(".tt-task").is_file());
     assert!(
