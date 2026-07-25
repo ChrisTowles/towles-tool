@@ -48,6 +48,8 @@ import {
   storeUnarchiveTask,
   taskDelete,
   storeUpdateTask,
+  fmtClock,
+  fmtDate,
   TASK_STATUS_LABEL,
   TASK_STATUSES,
   useStoreSnapshot,
@@ -59,6 +61,7 @@ import {
   type TaskPrLink,
 } from "@/lib/data";
 import { countByStatus } from "@/lib/board-metrics";
+import { taskRollup } from "@/lib/board-rollup";
 import { matchesTaskFilter } from "@/lib/board-filter";
 import {
   bucketByStatus,
@@ -758,6 +761,19 @@ function Card({
     (p) => !task.prs.some((l) => l.repo === p.repo && l.number === p.number),
   );
   const hasLinks = task.issues.length > 0 || task.prs.length > 0;
+  // The collector moves a fully-resolved linked task to `done` on its own, so
+  // a card can finish without anyone touching it (see `lib/board-rollup.ts`).
+  const rollup = taskRollup(task);
+  const rollupTitle = rollup
+    ? [
+        "Moved to done automatically — every linked issue and PR is resolved:",
+        ...rollup.evidence.map((e) => `  ${e.qualified} ${e.state}`),
+        task.completedAt !== undefined &&
+          `Done ${fmtDate(task.completedAt)} at ${fmtClock(task.completedAt)}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : undefined;
   // Repo identity on the card: tinted glyph, colored edge, and (for
   // `style: "tint"`) a background wash mixed into the card's own opaque
   // background.
@@ -1114,6 +1130,15 @@ function Card({
             </Badge>
           )}
         </div>
+      )}
+      {/* Why a card nobody closed is sitting in `done`. The chips above carry
+          the same states, but as decoration — this names the refs as the
+          cause, so an unexpectedly-finished card is self-explaining rather
+          than something to go re-derive on GitHub. */}
+      {rollup && (
+        <p className="mt-1 text-[11px] leading-tight text-muted-foreground" title={rollupTitle}>
+          Rolled up — {rollup.summary}
+        </p>
       )}
 
       <AlertDialog open={confirming != null} onOpenChange={(open) => !open && setConfirming(null)}>
