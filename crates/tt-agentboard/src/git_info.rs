@@ -78,13 +78,24 @@ pub struct GitInfo {
     pub common_dir: String,
     /// Absolute paths of this repo's OTHER `git worktree` checkouts (this dir
     /// excluded), from `git worktree list`: the main checkout plus every
-    /// *managed* task (unmanaged linked worktrees are hidden). Not part of the
-    /// wire payload — the engine uses it to auto-discover sibling checkouts
-    /// that aren't in `repoPaths` yet, in both directions: a tracked primary
-    /// pulls in its tasks, and a tracked task pulls in its primary, so a repo
-    /// group always has its main checkout even when only tasks were ever
-    /// tracked.
+    /// linked worktree, managed task or not. Not part of the wire payload —
+    /// the engine uses it to auto-discover sibling checkouts that aren't in
+    /// `repoPaths` yet, in both directions: a tracked primary pulls in its
+    /// tasks, and a tracked task pulls in its primary, so a repo group always
+    /// has its main checkout even when only tasks were ever tracked.
+    ///
+    /// Whether the *unmanaged* ones (see `unmanaged_worktree_dirs`) actually
+    /// reach the rail is the engine's call, not this module's — see
+    /// [`crate::engine::Engine::expand_with_worktrees`].
     pub worktree_dirs: Vec<String>,
+    /// The subset of `worktree_dirs` that is not a `tt task`-managed worktree
+    /// ([`tt_tasks::is_managed_task`] says no — one Claude Code created via an
+    /// unwired `WorktreeCreate` hook, or added by hand outside the task
+    /// convention). The main checkout is never listed here: it carries no
+    /// marker, but it's what a repo group nests under. Split out rather than
+    /// filtered away so the "show every worktree" setting can be flipped
+    /// without invalidating a single cache entry.
+    pub unmanaged_worktree_dirs: Vec<String>,
     /// True when `dir` doesn't exist on disk (a tracked repo whose checkout was
     /// moved or deleted). Distinguishes a genuinely-missing directory from a
     /// present-but-non-git one — both otherwise yield an empty [`GitInfo`].
@@ -337,6 +348,7 @@ pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mu
     info.origin_url = previous.origin_url.clone();
     info.common_dir = previous.common_dir.clone();
     info.worktree_dirs = previous.worktree_dirs.clone();
+    info.unmanaged_worktree_dirs = previous.unmanaged_worktree_dirs.clone();
     info.is_worktree = previous.is_worktree;
     info.git_dir = previous.git_dir.clone();
     // NOT `structural_key`/`revision_key`: those are revalidation tokens for
@@ -352,6 +364,7 @@ struct Structural {
     origin_url: Option<String>,
     common_dir: String,
     worktree_dirs: Vec<String>,
+    unmanaged_worktree_dirs: Vec<String>,
     structural_key: String,
     git_dir: String,
     is_worktree: bool,
@@ -385,15 +398,18 @@ fn structural_facts(
             origin_url: prev.origin_url.clone(),
             common_dir: prev.common_dir.clone(),
             worktree_dirs: prev.worktree_dirs.clone(),
+            unmanaged_worktree_dirs: prev.unmanaged_worktree_dirs.clone(),
             structural_key,
             git_dir,
             is_worktree,
         },
         None => {
             let common_dir = repo.common_dir().to_string_lossy().into_owned();
+            let (worktree_dirs, unmanaged_worktree_dirs) = other_worktrees(repo, dir);
             Structural {
                 origin_url: repo.origin_url(),
-                worktree_dirs: other_worktrees(repo, dir),
+                worktree_dirs,
+                unmanaged_worktree_dirs,
                 structural_key: structural_fingerprint(&common_dir),
                 common_dir,
                 git_dir,
@@ -416,6 +432,7 @@ fn structural_only(dir: &str, repo: &tt_git::repo::Repo, previous: Option<&GitIn
         origin_url: s.origin_url,
         common_dir: s.common_dir,
         worktree_dirs: s.worktree_dirs,
+        unmanaged_worktree_dirs: s.unmanaged_worktree_dirs,
         structural_key: s.structural_key,
         git_dir: s.git_dir,
         is_worktree: s.is_worktree,
@@ -667,8 +684,15 @@ pub fn compute_git_info(
         .map(|id| id.to_string())
         .unwrap_or_else(|| "HEAD".to_string());
 
-    let Structural { origin_url, common_dir, worktree_dirs, structural_key, git_dir, is_worktree } =
-        structural_facts(dir, &repo, previous);
+    let Structural {
+        origin_url,
+        common_dir,
+        worktree_dirs,
+        unmanaged_worktree_dirs,
+        structural_key,
+        git_dir,
+        is_worktree,
+    } = structural_facts(dir, &repo, previous);
 
     let mut info = working_tree_info(&repo, &branch, is_worktree, &base);
     let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
@@ -677,6 +701,7 @@ pub fn compute_git_info(
     info.origin_url = origin_url;
     info.common_dir = common_dir;
     info.worktree_dirs = worktree_dirs;
+    info.unmanaged_worktree_dirs = unmanaged_worktree_dirs;
     info.structural_key = structural_key;
     info.git_dir = git_dir;
     info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
@@ -795,34 +820,42 @@ fn git_common_dir(dir: &str) -> String {
     open_repo(dir).map(|repo| repo.common_dir().to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// This repo's other checkouts worth showing in the rail (`dir` itself
-/// excluded): the main checkout — no managed task, but kept so a tracked task
-/// pulls its primary into the rail even when the primary was never tracked —
-/// plus every `tt task`-managed worktree. An unmanaged *linked* worktree
-/// ([`tt_tasks::is_managed_task`] says no — one Claude Code created via an
-/// unwired `WorktreeCreate` hook, or added by hand outside the task
-/// convention) must not auto-populate the Folder Rail unprompted. This is the
-/// only place auto-discovered worktree paths enter the engine's discovery
-/// pipeline ([`crate::engine::Engine::expand_with_worktrees`] reads nothing
-/// else), so filtering here is sufficient — no downstream code needs to know
-/// about unmanaged worktrees at all. A directory the user explicitly tracks
-/// (in `repos.json`) is unaffected: this fn only prunes the auto-discovery
-/// candidate list, never the user's own configured paths. Empty for a plain
-/// clone (no linked worktrees) or a non-repo dir.
+/// This repo's other checkouts (`dir` itself excluded), and which of them are
+/// unmanaged — returned as `(all, unmanaged)`, the second a subset of the
+/// first.
+///
+/// `all` is every sibling `git worktree list` reports: the main checkout — no
+/// managed task, but kept so a tracked task pulls its primary into the rail
+/// even when the primary was never tracked — plus every linked worktree.
+/// `unmanaged` names the linked ones that aren't `tt task` worktrees
+/// ([`tt_tasks::is_managed_task`]); by default those don't auto-populate the
+/// Folder Rail, and the `agentboard.showUnmanagedWorktrees` setting is what
+/// lets them ([`crate::engine::Engine::expand_with_worktrees`] applies it —
+/// classifying, not filtering, here is what keeps that toggle from having to
+/// invalidate the git cache). This is the only place auto-discovered worktree
+/// paths enter the engine's discovery pipeline, so classifying here is
+/// sufficient. A directory the user explicitly tracks (in `repos.json`) is
+/// unaffected either way: this fn only describes the auto-discovery candidate
+/// list, never the user's own configured paths. Both empty for a plain clone
+/// (no linked worktrees) or a non-repo dir.
 ///
 /// `dir` is compared canonically: [`tt_git::repo::Repo::worktrees`] reports
 /// resolved paths, and a checkout reached through a symlink must still
 /// recognize itself and drop out of its own sibling list.
-fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
+fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> (Vec<String>, Vec<String>) {
     let self_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| std::path::PathBuf::from(dir));
-    repo.worktrees()
-        .into_iter()
-        .filter(|w| {
-            std::path::Path::new(&w.dir) != self_dir
-                && (w.is_main || tt_tasks::is_managed_task(std::path::Path::new(&w.dir)))
-        })
-        .map(|w| w.dir)
-        .collect()
+    let mut all = Vec::new();
+    let mut unmanaged = Vec::new();
+    for w in repo.worktrees() {
+        if std::path::Path::new(&w.dir) == self_dir {
+            continue;
+        }
+        if !w.is_main && !tt_tasks::is_managed_task(std::path::Path::new(&w.dir)) {
+            unmanaged.push(w.dir.clone());
+        }
+        all.push(w.dir);
+    }
+    (all, unmanaged)
 }
 
 /// Force-remove `worktree_dir`'s registration from the repo checked out at
@@ -1045,8 +1078,8 @@ pub fn list_files(dir: &str, cap: usize) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// [`other_worktrees`] by directory, the shape the old free function had.
-    fn worktree_dirs_of(dir: &str) -> Vec<String> {
+    /// [`other_worktrees`]' `(all, unmanaged)` by directory.
+    fn worktree_dirs_of(dir: &str) -> (Vec<String>, Vec<String>) {
         open_repo(dir).map(|repo| other_worktrees(&repo, dir)).unwrap_or_default()
     }
 
@@ -1175,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    fn worktree_dirs_excludes_unmanaged_worktrees() {
+    fn worktree_dirs_classifies_unmanaged_worktrees() {
         let root = tempfile::TempDir::new().unwrap();
         let main = root.path().join("main");
         std::fs::create_dir(&main).unwrap();
@@ -1220,7 +1253,7 @@ mod tests {
         // An unmanaged worktree: a plain sibling dir, no marker at all —
         // e.g. `claude --worktree` in a repo whose hooks aren't wired, or a
         // worktree someone added by hand.
-        let unmanaged = root.path().join("scratch-ext");
+        let unmanaged_dir = root.path().join("scratch-ext");
         run(
             &main,
             &[
@@ -1229,20 +1262,27 @@ mod tests {
                 "--quiet",
                 "-b",
                 "scratch-ext",
-                unmanaged.to_str().unwrap(),
+                unmanaged_dir.to_str().unwrap(),
             ],
         );
 
-        let dirs = worktree_dirs_of(main.to_str().unwrap());
-        assert_eq!(dirs, vec![managed.to_str().unwrap().to_string()]);
+        // Both siblings are discovered; only the marker-less linked one is
+        // reported as unmanaged, which is what the rail's visibility toggle
+        // switches on.
+        let (mut all, unmanaged) = worktree_dirs_of(main.to_str().unwrap());
+        all.sort();
+        assert_eq!(all, sorted(vec![path_s(&managed), path_s(&unmanaged_dir)]));
+        assert_eq!(unmanaged, vec![path_s(&unmanaged_dir)]);
 
         // From the task's perspective the primary checkout is discovered too —
         // it has no `.tt-task` marker, but it's the main worktree, not an
         // unmanaged linked one. This is what keeps a repo group's main
         // checkout in the rail when only tasks were ever tracked in
-        // repos.json. The unmanaged linked worktree stays hidden either way.
-        let dirs = worktree_dirs_of(managed.to_str().unwrap());
-        assert_eq!(dirs, vec![main.to_str().unwrap().to_string()]);
+        // repos.json.
+        let (mut all, unmanaged) = worktree_dirs_of(managed.to_str().unwrap());
+        all.sort();
+        assert_eq!(all, sorted(vec![path_s(&main), path_s(&unmanaged_dir)]));
+        assert_eq!(unmanaged, vec![path_s(&unmanaged_dir)]);
     }
 
     #[test]
@@ -1291,7 +1331,7 @@ mod tests {
                 .map(|repo| repo.worktrees().into_iter().map(|w| w.dir).collect::<Vec<_>>())
                 .unwrap_or_default()
         };
-        assert!(raw_worktree_dirs(main.to_str().unwrap()).contains(&managed_s(&managed)));
+        assert!(raw_worktree_dirs(main.to_str().unwrap()).contains(&path_s(&managed)));
 
         // Simulate the directory being deleted outside `git worktree remove`/
         // `tt task rm` (a bare `rm -rf`): git's `.git/worktrees/thing`
@@ -1300,18 +1340,23 @@ mod tests {
         // independent of `is_managed_task`'s own separate on-disk check.
         std::fs::remove_dir_all(&managed).unwrap();
         assert!(
-            raw_worktree_dirs(main.to_str().unwrap()).contains(&managed_s(&managed)),
+            raw_worktree_dirs(main.to_str().unwrap()).contains(&path_s(&managed)),
             "a deleted-but-unpruned worktree registration must still be listed by git"
         );
 
         assert!(prune_stale_worktree(main.to_str().unwrap(), managed.to_str().unwrap()));
         assert!(
-            !raw_worktree_dirs(main.to_str().unwrap()).contains(&managed_s(&managed)),
+            !raw_worktree_dirs(main.to_str().unwrap()).contains(&path_s(&managed)),
             "pruning must clear the stale registration"
         );
     }
 
-    fn managed_s(p: &std::path::Path) -> String {
+    fn sorted(mut v: Vec<String>) -> Vec<String> {
+        v.sort();
+        v
+    }
+
+    fn path_s(p: &std::path::Path) -> String {
         p.to_str().unwrap().to_string()
     }
 

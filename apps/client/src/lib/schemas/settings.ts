@@ -112,6 +112,7 @@ const AgentboardBlockSchema = z
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
     hideInactiveRepos: z.boolean().optional(),
+    showUnmanagedWorktrees: z.boolean().optional(),
   })
   .catchall(z.unknown());
 

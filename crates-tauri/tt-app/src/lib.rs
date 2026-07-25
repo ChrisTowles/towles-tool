@@ -687,6 +687,7 @@ pub fn run() {
             agentboard::ab_set_folder_quiet,
             agentboard::ab_set_session_purpose,
             agentboard::ab_set_compact_percent,
+            agentboard::ab_set_show_unmanaged_worktrees,
             agentboard::ab_save_windows,
             agentboard::ab_save_collapsed,
             agentboard::ab_set_status,

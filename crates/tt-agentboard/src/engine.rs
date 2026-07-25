@@ -119,6 +119,16 @@ pub struct Engine {
     theme: Option<String>,
     preferred_editor: String,
     compact_recommend_percent: u8,
+    /// Show auto-discovered worktrees that aren't `tt task` worktrees (see
+    /// [`crate::git_info::GitInfo::unmanaged_worktree_dirs`]) in the rail —
+    /// the `agentboard.showUnmanagedWorktrees` setting. Off by default: a
+    /// worktree someone else's tool made (`claude --worktree` in a repo whose
+    /// `WorktreeCreate` hook isn't wired, a hand-added one) shouldn't populate
+    /// the rail unprompted. Read from settings at construction and updated
+    /// through [`Self::set_show_unmanaged_worktrees`]; applied at discovery
+    /// time in [`Self::expand_with_worktrees`], never baked into the git
+    /// cache, so flipping it takes effect on the next poll with no recompute.
+    show_unmanaged_worktrees: bool,
     seeded_once: bool,
     /// Sticky agent→PTY attribution: thread id (CLI sessionId) → the
     /// `TT_SESSION_ID` read from that agent's process env. Refreshed from live
@@ -219,6 +229,10 @@ impl Engine {
             .agentboard
             .compact_recommend_percent
             .unwrap_or(tt_config::DEFAULT_COMPACT_RECOMMEND_PERCENT);
+        let show_unmanaged_worktrees = settings
+            .agentboard
+            .show_unmanaged_worktrees
+            .unwrap_or(tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES);
 
         Self {
             projects_dir: projects_dir.clone(),
@@ -249,6 +263,7 @@ impl Engine {
             theme,
             preferred_editor,
             compact_recommend_percent,
+            show_unmanaged_worktrees,
             seeded_once: false,
             thread_sessions: HashMap::new(),
             scope,
@@ -284,6 +299,13 @@ impl Engine {
     /// `.claude/worktrees/`) — so a worktree shows up in the rail without the
     /// user adding it to repos.json. Derived live on every call, nothing
     /// persisted, so a `git worktree remove` just stops appearing next poll.
+    ///
+    /// Unless [`Self::show_unmanaged_worktrees`] is on, discovery is limited
+    /// to the main checkout and `tt task` worktrees — a worktree created
+    /// outside the task convention (`claude --worktree` against unwired hooks,
+    /// a hand-added one) stays out of the rail. This is the one place that
+    /// setting is applied; both lists come straight off the cached
+    /// [`crate::git_info::GitInfo`], so toggling it costs no git work.
     /// Distinct from the "multiple clones" pattern (separate `repoPaths`
     /// entries, unrelated repos to git): those are unaffected here.
     ///
@@ -316,7 +338,19 @@ impl Engine {
         let base = self.repo_paths.clone();
         let cache = &self.git_cache;
         let removed = &self.removed_checkouts;
-        merge_worktree_dirs(&base, |dir| cache.get(dir).worktree_dirs, |wt| !removed.contains(wt))
+        let show_unmanaged = self.show_unmanaged_worktrees;
+        merge_worktree_dirs(
+            &base,
+            |dir| {
+                let info = cache.get(dir);
+                if show_unmanaged {
+                    return info.worktree_dirs;
+                }
+                let hidden = info.unmanaged_worktree_dirs;
+                info.worktree_dirs.into_iter().filter(|wt| !hidden.contains(wt)).collect()
+            },
+            |wt| !removed.contains(wt),
+        )
     }
 
     /// Tracked repos plus their discovered worktrees, as absolute checkout
@@ -657,6 +691,23 @@ impl Engine {
         self.compact_recommend_percent = percent;
         if let Ok(mut settings) = tt_config::load() {
             settings.agentboard.compact_recommend_percent = Some(percent);
+            let _ = tt_config::save_merge(&settings);
+        }
+        true
+    }
+
+    /// Show (or hide again) auto-discovered non-task worktrees, persisting to
+    /// the shared settings file (`agentboard.showUnmanagedWorktrees`) via
+    /// `save_merge` so keys the TypeScript CLI owns survive. Returns whether
+    /// anything changed; the caller re-emits so the rail repopulates on the
+    /// next poll (no git recompute — see [`Self::expand_with_worktrees`]).
+    pub fn set_show_unmanaged_worktrees(&mut self, show: bool) -> bool {
+        if show == self.show_unmanaged_worktrees {
+            return false;
+        }
+        self.show_unmanaged_worktrees = show;
+        if let Ok(mut settings) = tt_config::load() {
+            settings.agentboard.show_unmanaged_worktrees = Some(show);
             let _ = tt_config::save_merge(&settings);
         }
         true
@@ -1153,6 +1204,7 @@ impl Engine {
             theme: None,
             preferred_editor: "code".to_string(),
             compact_recommend_percent: 80,
+            show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             seeded_once: false,
             thread_sessions: HashMap::new(),
             scope: InstanceScope::Any,
@@ -1332,6 +1384,40 @@ mod engine_tests {
 
         assert!(e.watch_targets().contains(&wt.to_string()));
         assert_eq!(e.find_worktree_owner(wt), Some("/repo/main".to_string()));
+    }
+
+    /// Discovery hides worktrees `tt task` didn't create until the setting
+    /// says otherwise — and flipping it needs no new git info, since both
+    /// lists were already cached (the field is set directly here rather than
+    /// through `set_show_unmanaged_worktrees`, which would write the real
+    /// settings file).
+    #[test]
+    fn unmanaged_worktrees_are_discovered_only_when_the_setting_is_on() {
+        let (_tmp, mut e) = engine();
+        let task = "/repo/main/.claude/worktrees/feat-thing";
+        let stray = "/elsewhere/claude-worktree";
+        assert!(e.add_repo("/repo/main"));
+        e.store_git_info(
+            "/repo/main",
+            crate::git_info::GitInfo {
+                worktree_dirs: vec![task.to_string(), stray.to_string()],
+                unmanaged_worktree_dirs: vec![stray.to_string()],
+                ..Default::default()
+            },
+            1000,
+        );
+
+        assert_eq!(e.watch_targets(), vec!["/repo/main".to_string(), task.to_string()]);
+
+        e.show_unmanaged_worktrees = true;
+        assert_eq!(
+            e.watch_targets(),
+            vec![
+                "/repo/main".to_string(),
+                task.to_string(),
+                stray.to_string()
+            ]
+        );
     }
 
     /// A new task created where a removed one stood is a live checkout again —
