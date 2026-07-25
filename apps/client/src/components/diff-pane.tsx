@@ -15,7 +15,14 @@ import { EditableToggle } from "@/components/editable-toggle";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
+import { openInExternalEditor } from "@/lib/external-editor";
 import { buildDiffTree, sortToTreeOrder, type DiffTreeNode } from "@/lib/diff";
 import { ideReadFile, useIdeConnected } from "@/lib/ide";
 import { invoke, isTauri } from "@/lib/tauri";
@@ -45,6 +52,7 @@ const STATUS_COLORS: Record<string, string> = {
  * (refreshing, editingBase, reviews) this rail doesn't care about, and its
  * props are stable references except when `files`/`reviewed` actually change. */
 const DiffTreeRail = memo(function DiffTreeRail({
+  dir,
   files,
   reviewed,
   dirty,
@@ -53,6 +61,9 @@ const DiffTreeRail = memo(function DiffTreeRail({
   onToggleReviewed,
   onToggleReviewedMany,
 }: {
+  /** The checkout the listed paths are relative to — what "open in editor"
+   * resolves them against. */
+  dir: string;
   files: ChangedFile[];
   /** Paths the reviewer has checked off. */
   reviewed: ReadonlySet<string>;
@@ -99,97 +110,128 @@ const DiffTreeRail = memo(function DiffTreeRail({
           reviewedCount === 0 ? false : reviewedCount === paths.length ? true : "indeterminate";
         return (
           <li key={node.path}>
-            <div style={{ paddingLeft }} className="flex w-full items-center gap-1 py-0.5">
-              {/* `<label htmlFor>`, not nested in the button below: Radix's
-               * Checkbox renders a button and buttons can't nest. See
-               * apps/client/CLAUDE.md. */}
-              <label
-                htmlFor={`reviewed-${node.path}`}
-                onClick={(e) => e.stopPropagation()}
-                className="flex shrink-0 items-center"
-                title="mark every file in this folder reviewed"
-              >
-                <Checkbox
-                  id={`reviewed-${node.path}`}
-                  checked={checked}
-                  onCheckedChange={(c) => onToggleReviewedMany(paths, c === true)}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setCollapsed((prev) => {
-                    const next = new Set(prev);
-                    if (isCollapsed) next.delete(node.path);
-                    else next.add(node.path);
-                    return next;
-                  })
-                }
-                className="flex min-w-0 flex-1 items-center gap-1 text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                <ChevronRight
-                  className={cn(
-                    "size-3 shrink-0 transition-transform",
-                    !isCollapsed && "rotate-90",
-                  )}
-                />
-                <span className="truncate">{node.name}</span>
-              </button>
-            </div>
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <div style={{ paddingLeft }} className="flex w-full items-center gap-1 py-0.5">
+                  {/* `<label htmlFor>`, not nested in the button below: Radix's
+                   * Checkbox renders a button and buttons can't nest. See
+                   * apps/client/CLAUDE.md. */}
+                  <label
+                    htmlFor={`reviewed-${node.path}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex shrink-0 items-center"
+                    title="mark every file in this folder reviewed"
+                  >
+                    <Checkbox
+                      id={`reviewed-${node.path}`}
+                      checked={checked}
+                      onCheckedChange={(c) => onToggleReviewedMany(paths, c === true)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollapsed((prev) => {
+                        const next = new Set(prev);
+                        if (isCollapsed) next.delete(node.path);
+                        else next.add(node.path);
+                        return next;
+                      })
+                    }
+                    className="flex min-w-0 flex-1 items-center gap-1 text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-3 shrink-0 transition-transform",
+                        !isCollapsed && "rotate-90",
+                      )}
+                    />
+                    <span className="truncate">{node.name}</span>
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  onSelect={() =>
+                    void openInExternalEditor(node.path, { cwd: dir, where: "diff.tree.folder" })
+                  }
+                >
+                  Open folder in external editor
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
             {!isCollapsed && <ul>{renderNodes(node.children, depth + 1)}</ul>}
           </li>
         );
       }
       const file = byPath.get(node.path);
+      // A deleted file has nothing on disk to open — the row still right-clicks
+      // (so the menu doesn't flicker in and out along a tree), the item is just
+      // dead, which reads better than an editor failing to find the path.
+      const deleted = file?.status === "D";
       return (
         <li key={node.path}>
-          <div
-            style={{ paddingLeft: paddingLeft + 14 }}
-            className="flex w-full items-center gap-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            <label
-              htmlFor={`reviewed-${node.path}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex shrink-0 items-center"
-              title="mark reviewed (collapses this file's diff)"
-            >
-              <Checkbox
-                id={`reviewed-${node.path}`}
-                checked={reviewed.has(node.path)}
-                onCheckedChange={() => onToggleReviewed(node.path)}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => onJump(node.path)}
-              title={file?.oldPath ? `${file.oldPath} → ${node.path}` : node.path}
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-            >
-              <span className={cn("shrink-0", STATUS_COLORS[file?.status ?? ""] ?? "")}>
-                {file?.status ?? ""}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
-              {conflict.has(node.path) ? (
-                <span
-                  title="Changed on disk while you have unsaved edits — resolve in the banner"
-                  className="size-1.5 shrink-0 rounded-full bg-red-500"
-                />
-              ) : (
-                dirty.has(node.path) && (
-                  <span
-                    title="Unsaved changes — autosaves after a pause; ⌘S saves now"
-                    className="size-1.5 shrink-0 rounded-full bg-amber-500"
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                style={{ paddingLeft: paddingLeft + 14 }}
+                className="flex w-full items-center gap-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <label
+                  htmlFor={`reviewed-${node.path}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex shrink-0 items-center"
+                  title="mark reviewed (collapses this file's diff)"
+                >
+                  <Checkbox
+                    id={`reviewed-${node.path}`}
+                    checked={reviewed.has(node.path)}
+                    onCheckedChange={() => onToggleReviewed(node.path)}
                   />
-                )
-              )}
-              {file && (file.linesAdded > 0 || file.linesRemoved > 0) && (
-                <span className="shrink-0 pr-1 text-[10px]">
-                  <span className="text-emerald-500">+{file.linesAdded}</span>{" "}
-                  <span className="text-red-500">−{file.linesRemoved}</span>
-                </span>
-              )}
-            </button>
-          </div>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => onJump(node.path)}
+                  title={file?.oldPath ? `${file.oldPath} → ${node.path}` : node.path}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  <span className={cn("shrink-0", STATUS_COLORS[file?.status ?? ""] ?? "")}>
+                    {file?.status ?? ""}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                  {conflict.has(node.path) ? (
+                    <span
+                      title="Changed on disk while you have unsaved edits — resolve in the banner"
+                      className="size-1.5 shrink-0 rounded-full bg-red-500"
+                    />
+                  ) : (
+                    dirty.has(node.path) && (
+                      <span
+                        title="Unsaved changes — autosaves after a pause; ⌘S saves now"
+                        className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                      />
+                    )
+                  )}
+                  {file && (file.linesAdded > 0 || file.linesRemoved > 0) && (
+                    <span className="shrink-0 pr-1 text-[10px]">
+                      <span className="text-emerald-500">+{file.linesAdded}</span>{" "}
+                      <span className="text-red-500">−{file.linesRemoved}</span>
+                    </span>
+                  )}
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem
+                disabled={deleted}
+                onSelect={() =>
+                  void openInExternalEditor(node.path, { cwd: dir, where: "diff.tree" })
+                }
+              >
+                Open in external editor
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </li>
       );
     });
@@ -529,6 +571,7 @@ export function DiffPane({
         ) : (
           <>
             <DiffTreeRail
+              dir={dir!}
               files={files}
               reviewed={reviewed}
               dirty={dirty}
