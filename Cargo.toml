@@ -12,6 +12,7 @@ members = [
   "crates/tt-git",
   "crates/tt-claude-sessions",
   "crates/tt-ide",
+  "crates/tt-jarvis",
   "crates/tt-journal",
   "crates/tt-mcp",
   "crates/tt-tasks",
@@ -23,6 +24,7 @@ members = [
   "crates-cli/tt-cli",
   # Tauri-specific crates
   "crates-tauri/tt-app",
+  "crates-tauri/tt-pane",
 ]
 
 [workspace.dependencies]
@@ -80,6 +82,8 @@ wait-timeout = "0.2.1"
 # Internal crates - shared
 tt-agent = { path = "crates/tt-agent" }
 tt-agentboard = { path = "crates/tt-agentboard" }
+tt-jarvis = { path = "crates/tt-jarvis" }
+tt-pane = { path = "crates-tauri/tt-pane" }
 tt-claude-code = { path = "crates/tt-claude-code" }
 tt-collect = { path = "crates/tt-collect" }
 tt-config = { path = "crates/tt-config" }
@@ -114,3 +118,13 @@ debug = false
 [profile.dev.package.libghostty-vt]
 opt-level = 3
 debug = false
+
+# Bevy and its dependency tree must be optimized even in dev builds — the same
+# reasoning as libghostty-vt above, and Bevy's own documented recommendation. An
+# unoptimized Bevy renders at a small fraction of its release framerate, which
+# would make the native pane look broken in `npm run dev`/`dev:drive` for
+# reasons that have nothing to do with the pane. Applied to all transitive
+# dependencies rather than `bevy` alone, because the cost is in wgpu/naga/glam,
+# not in the facade crate.
+[profile.dev.package."*"]
+opt-level = 3

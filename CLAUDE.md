@@ -4,6 +4,17 @@ Rust rewrite of `towles-tool`: a Tauri 2 desktop app plus the `tt` CLI. Modeled 
 the [Yaak](https://github.com/mountain-loop/yaak) repo structure (see
 [ATTRIBUTION.md](ATTRIBUTION.md)).
 
+## The Towles twins
+
+**Chris** (this repo) and **Patrick** ([`slyedoc`](https://github.com/slyedoc) —
+that spelling, not `slydoc`) are identical twin brothers. Patrick builds
+**Solari**, Bevy's real-time raytraced lighting.
+
+So `crates/tt-jarvis` pins `slyedoc/bevy@solari-rt-pipeline` rather than a
+released Bevy, and running Solari live inside this app is a repo goal (see
+[README.md](README.md)). "My brother's work" in a graphics context means that
+fork.
+
 ## Commands
 
 Rust:
@@ -16,9 +27,20 @@ cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
 ```
 
-`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x) and `tt-app`
-(needs webkit2gtk). Without those prereqs, use CI's variant:
-`--workspace --exclude tt-vt --exclude tt-app`.
+`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
+`tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its
+benchmark, plus Bevy from a git fork — minutes of cold build). Without those
+prereqs, use CI's variant:
+
+```sh
+cargo clippy --workspace --exclude tt-vt --exclude tt-app \
+  --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
+```
+
+Those four are covered by CI's GTK-provisioned `rust-tauri` job instead, and
+that job is path-gated — **a new crate needing GTK must be added to both the
+`--exclude` list and the `vt_or_app` paths-filter in `.github/workflows/ci.yml`,
+or it silently gets no Rust CI at all.**
 
 Desktop app / frontend:
 
@@ -415,10 +437,8 @@ Cargo workspace + npm workspace (`apps/client` only):
     `log::` calls; existing `log::` sites still flow in via the subscriber's
     `tracing-log` bridge.
     **Every user-initiated action must be logged too, not just subprocesses**
-    — see the README's "Core goal" section: this app's whole purpose is
-    helping Chris manage his own focus/attention instead of it becoming a
-    product, and that's only possible if the local event log is a complete,
-    honest record of what happened and when. A new Tauri command triggered by
+    — the log is only useful for answering "where did my attention go" if it
+    is a complete record, and it never leaves the machine. A new Tauri command triggered by
     an explicit user gesture (a click, a confirm, a delete, a shortcut that
     mutates state) needs a `tracing` span or event recording at least the
     action and its outcome — the same way `process.spawn` covers subprocesses.
@@ -526,6 +546,25 @@ Cargo workspace + npm workspace (`apps/client` only):
     (`slashQuery`/`matchCommands`/`slashMenuKey` in `lib/agent.ts`) rather than
     living in the component, because a synthetic-keydown test of a composer
     proves nothing about the real platform.
+  - `tt-jarvis` — the **native pane**: a Bevy scene rendered into a surface it
+    did not create, so a region of the app window is real GPU output rather
+    than DOM. Native rather than WebAssembly or streamed frames because only a
+    native surface can host Solari's ray-tracing pipeline (see
+    [README.md](README.md)).
+
+    Bevy comes from **`slyedoc/bevy@solari-rt-pipeline` (0.20.0-dev)**. Keep it
+    there — tracking that fork is the goal, and `Cargo.lock` pins the revision
+    so builds stay reproducible. Bevy accepts a foreign surface through public
+    API with no renderer fork; `surface.rs`'s module docs explain how, and are
+    the place to read before changing it.
+
+    Two traps, both of which fail as something else:
+    **(1)** a host driving `App::update()` by hand calls
+    `finalize_embedded_app` first, or every `Res<RenderDevice>` system panics
+    with "Resource does not exist" — after a healthy-looking `AdapterInfo`.
+    **(2)** a `wl_subsurface` is *synchronized* by default; `set_desync()` is
+    what keeps the pane's framerate off the parent's. Measured at 0.65 fps
+    synced against 60 desynced, so it is a ceiling rather than a tax.
   - `tt-agentboard` — agentboard watchers/engine: repo list, session tracking,
     needs-you synthesis (consumed by the app shell). **Agent status is
     PTY-first**: `pty_status` folds what the app's terminal directly observes
@@ -739,6 +778,37 @@ etc.). The points below are repo-specific specializations of that doc.
   primary correctness seam.
 - **Hard cutover, no back-compat shims** — replace, don't wrap. (No compat
   layers, no dual-name aliases — the `ttr`→`tt` rename left no `ttr` behind.)
+- **`cargo ... | tail` reports `tail`'s exit code, not cargo's.** A failed
+  build piped into `tail`/`grep`/`head` looks like success — this has already
+  produced a confident "builds clean" on a build with four errors. Either
+  redirect to a file and check the status separately
+  (`cargo build > out.log 2>&1; echo $?`), or grep the output for `^error`
+  and trust that rather than the exit code. Same trap with `set -o pipefail`
+  absent in `scripts/*.sh`.
+- **A measurement can outlive its subject and go *vacuous* — still reporting,
+  no longer measuring.** Discarding transport errors (`let _ = …`) once let a
+  harness keep "rendering" into a dead Wayland connection and report the
+  embedded pane as *28% faster* than baseline, because nothing was being
+  composited any more. Note the direction: removing the real work improved the
+  number, so the bug arrived disguised as success. Two defences, both cheap:
+  panic on the failure of whatever you are measuring *through*, and confirm
+  pixels reached the screen (`cosmic-screenshot`, or a renderer-side capture
+  like `tt_jarvis::jarvis::capture_frame_after` when the window may be
+  offscreen) before believing any figure.
+- **Test windows go on the secondary monitor.** Chris works on the primary
+  while a harness runs, so a window landing there interrupts him once per run.
+  Wayland clients cannot position their own toplevels; target an output by
+  fullscreening on it — GTK `fullscreen_on_monitor(&screen, i)` or
+  `xdg_toplevel.set_fullscreen(output)` — picking the monitor whose geometry
+  `x > 0`, and no-opping on a single-monitor machine.
+- **An occluded Wayland window receives no frame callbacks**, so anything
+  vsync-paced stalls outright rather than slowing down, and reads as a hang.
+  Correct compositor behaviour, and what the real pane wants; it also makes
+  vsync arms unmeasurable on a desktop in use. Measure throughput with
+  `AutoNoVsync`, in short runs — unthrottled presentation floods the
+  compositor, which then hangs up with no protocol error. Monitors differ in
+  refresh (60Hz secondary, 100Hz primary here), so vsync arms compare only
+  within one screen.
 - **Dev tooling must not hardcode ports/paths.** Chris runs multiple worktree
   tasks of this repo concurrently (see the Worktree tasks section above), so
   a fixed port, lockfile path, or other singleton resource makes copies

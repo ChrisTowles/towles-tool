@@ -1,0 +1,22 @@
+[package]
+name = "tt-pane"
+version = "0.1.0"
+edition = "2021"
+description = "Embeds tt-jarvis's Bevy renderer in a native surface inside the Tauri window"
+
+# Not under `crates/`: this needs `tauri` to reach the host window, which the
+# workspace's Tauri-free rule forbids there. The renderer itself stays in
+# `crates/tt-jarvis`, which knows nothing about windows or IPC.
+
+[dependencies]
+tauri = { workspace = true }
+tt-jarvis = { path = "../../crates/tt-jarvis" }
+tracing = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Must match the gtk that `tauri` links (0.18) — `gtk_window()` hands us its
+# types, so a second gtk major in the tree would not typecheck.
+gtk = "0.18"
+wayland-client = "0.31"
