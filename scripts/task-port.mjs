@@ -10,10 +10,14 @@
 // with no rendered `.env` must run `tt task env` (the launchers do this
 // automatically — see `requireDevPort`) or pin TT_DEV_PORT in `.env.local`.
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { spawn, execFileSync } from "node:child_process";
 import { Result } from "better-result";
 import { DevPortInvalid, DevPortUnset, EnvFileUnreadable, TaskEnvRenderFailed } from "./errors.mjs";
+import { macosDevAppEnv } from "./macos-app.mjs";
+
+const scriptsRepoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
  * Read an env file's contents, distinguishing "not there" (`null` — the normal
@@ -339,7 +343,10 @@ export function spawnTauriDev(args, env) {
   const posix = process.platform !== "win32";
   const child = spawn("tauri", args, {
     stdio: "inherit",
-    env,
+    // On macOS this adds the cargo runner that launches the dev binary from
+    // inside a generated `.app`, so the Dock shows our icon instead of the
+    // generic "exec" one (scripts/macos-app.mjs). Empty everywhere else.
+    env: { ...env, ...macosDevAppEnv(scriptsRepoRoot) },
     shell: !posix,
     // Windows has no POSIX process groups; `detached` there just means "own
     // console", which isn't what we want, so leave it plain and rely on the
