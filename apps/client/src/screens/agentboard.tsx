@@ -241,6 +241,14 @@ export function AgentboardScreen() {
   useEffect(() => {
     activeFolderDirRef.current = activeFolderDir;
   });
+  // The rail as it stands *now*, for the same reason: the nav-request handler
+  // below is a mount-only subscription, so reading `repos`/`folderNameByDir`
+  // out of its closure would only ever see the empty first-render snapshot
+  // (the backend hasn't broadcast yet at mount).
+  const railRef = useRef({ repos, folderNameByDir });
+  useEffect(() => {
+    railRef.current = { repos, folderNameByDir };
+  });
 
   // One-shot "prompt cache about to expire" toast per session per cache
   // generation. `cacheExpiresAt` moves forward on every request Claude makes,
@@ -358,7 +366,8 @@ export function AgentboardScreen() {
     // checkouts *this* app doesn't track — and a page shown in a
     // slightly-wrong pane beats a page not shown at all. The rail being
     // completely empty is the only case with nowhere to go.
-    const dir = req.folderDir ?? activeFolderDirRef.current ?? repos[0]?.folders[0]?.dir;
+    const dir =
+      req.folderDir ?? activeFolderDirRef.current ?? railRef.current.repos[0]?.folders[0]?.dir;
     if (!dir) {
       toast.error(`Couldn't show ${req.title} — no checkouts are open on the rail`);
       return;
@@ -367,6 +376,9 @@ export function AgentboardScreen() {
       ...prev,
       [dir]: { path: req.path, title: req.title, nonce: req.nonce },
     }));
+    // Ack the folder the artifact actually landed in, not the one the payload
+    // named — a fallback show still puts the user in front of that folder.
+    ackFolder(dir);
     openPreview(dir);
   }
 
@@ -588,7 +600,10 @@ export function AgentboardScreen() {
   // The user is now looking at this folder's rail entry — clear its agents'
   // `unseen` flags (`sessionCatchesEye`'s pulse) via the backend tracker.
   function ackFolder(folderDir: string) {
-    const name = folderNameByDir.get(folderDir);
+    // Read through the ref: the nav-request handler that also calls this is a
+    // mount-only subscription, where the rendered `folderNameByDir` is still
+    // the empty first-render map.
+    const name = railRef.current.folderNameByDir.get(folderDir);
     if (name) void invoke("ab_mark_seen", { name });
   }
 
@@ -831,7 +846,8 @@ export function AgentboardScreen() {
         );
       } else if (req.kind === "show-artifact") {
         // The MCP `preview_show` tool — the agent has something to *show*.
-        if (req.folderDir) ackFolder(req.folderDir);
+        // `showArtifact` resolves the folder (the payload's may be null) and
+        // acks whichever one it landed in.
         showArtifact(req);
       } else {
         setActiveFolderDir(req.folderDir);

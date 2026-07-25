@@ -181,8 +181,9 @@ fn argb_to_straight_rgba(cropped: CroppedArgb) -> (u32, u32, Vec<u8>) {
 pub struct ArtifactDoc {
     pub path: String,
     pub html: String,
-    /// Last-modified epoch ms, or 0 where the filesystem won't say — the pane
-    /// shows it so "I reloaded and nothing changed" is answerable.
+    /// Last-modified epoch ms, or 0 where the filesystem won't say — carried so
+    /// a reload can tell "the agent rewrote it" from "the same bytes came
+    /// back". Nothing renders it yet.
     pub modified_ms: i64,
 }
 

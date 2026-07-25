@@ -10,8 +10,9 @@
 //! directly, with no server to stand up.
 //!
 //! Exposed tools surface the towles-tool board ([`tt_store`]'s tasks — the #339
-//! unit of work) and the calendar: `task_list`, `task_status`, `task_create`,
-//! `calendar_today`, `calendar_next`, `calendar_set`. The broader
+//! unit of work), the app's Preview pane, and the calendar: `task_list`,
+//! `task_status`, `task_create`, `task_summary`, `task_start`, `task_delete`,
+//! `preview_show`, `calendar_today`, `calendar_next`, `calendar_set`. The broader
 //! dashboard-read tools (`day_brief`, `needs_you`, `snapshot`, `prs_status`,
 //! `issues_open`, `dm_status`, `collect_status`) were pruned in the 2026-07
 //! tool-surface review and have not come back.
@@ -141,6 +142,12 @@ const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 /// discover as a blank pane: a relative path (this server serves every session
 /// on the machine and has no idea what any of them consider "here"), a file
 /// that isn't there, a directory, a non-HTML file, or one too big to inline.
+///
+/// The accepted path comes back **canonical**, because the frontend routes the
+/// artifact to a pane by matching it against the rail's folder paths: a path
+/// carrying `..`, a `./`, or a symlinked prefix (`/tmp` → `/private/tmp` on
+/// macOS) names the right file but matches no folder, so the artifact lands in
+/// a fallback pane instead of the one whose agent wrote it.
 fn validate_artifact_path(raw: &str) -> Result<String, String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
@@ -170,7 +177,10 @@ fn validate_artifact_path(raw: &str) -> Result<String, String> {
             ARTIFACT_MAX_BYTES
         ));
     }
-    Ok(path.to_string_lossy().into_owned())
+    // Keep the caller's path when canonicalization fails — it already passed
+    // `stat`, so a failure here is exotic and not worth refusing over.
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    Ok(resolved.to_string_lossy().into_owned())
 }
 
 /// The pane label for an artifact: the caller's title, else the file's own
@@ -1393,10 +1403,11 @@ mod tests {
 
     // --- preview_show ---
 
+    /// Every `(path, title)` a fake preview host was handed.
+    type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+
     /// A dispatcher whose preview host records what it was asked to show.
-    fn with_preview_host() -> (Dispatcher, std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>)
-    {
-        type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+    fn with_preview_host() -> (Dispatcher, Shown) {
         struct FakePreviewHost {
             shown: Shown,
         }
@@ -1411,11 +1422,13 @@ mod tests {
         (dispatcher().with_preview_host(Box::new(host)), shown)
     }
 
-    /// Write `name` into `dir` and return its absolute path.
+    /// Write `name` into `dir` and return its absolute path — canonical, since
+    /// that is the shape `validate_artifact_path` hands on, and a temp dir is
+    /// behind a symlink on macOS (`/var` → `/private/var`).
     fn artifact_file(dir: &tempfile::TempDir, name: &str, body: &str) -> String {
         let path = dir.path().join(name);
         std::fs::write(&path, body).unwrap();
-        path.to_string_lossy().into_owned()
+        std::fs::canonicalize(&path).unwrap().to_string_lossy().into_owned()
     }
 
     #[test]

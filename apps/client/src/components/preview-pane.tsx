@@ -72,6 +72,13 @@ function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
   return { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
 }
 
+/** A `file://` URL for an absolute path. `encodeURI` alone isn't enough: it
+ * leaves `#` and `?` intact, and either one truncates the path into a fragment
+ * or query — `/tmp/plan #2.html` would open `/tmp/plan%20` and fail. */
+function fileUrl(path: string) {
+  return `file://${encodeURI(path).replaceAll("#", "%23").replaceAll("?", "%3F")}`;
+}
+
 /** A task's live dev server embedded beside its terminals, with draw-on-page
  * annotation sent back to that task's own Claude session as an annotated
  * screenshot. A folder pane (like diff/files): scoped to one checkout, so the
@@ -193,7 +200,10 @@ export function PreviewPane({
         },
         err: (e) => {
           // Surfaced in the pane, not just a toast: the pane is the thing the
-          // agent told the user to look at, so it has to explain itself.
+          // agent told the user to look at, so it has to explain itself. The
+          // previous doc is dropped with it — keeping it would leave
+          // `sourceLabel` naming a file that isn't what's on screen.
+          setDoc(null);
           setDocError(errorMessage(e));
           setShowing("artifact");
         },
@@ -213,7 +223,10 @@ export function PreviewPane({
         setDoc(loaded);
         setDocError(null);
       },
-      err: (e) => setDocError(errorMessage(e)),
+      err: (e) => {
+        setDoc(null);
+        setDocError(errorMessage(e));
+      },
     });
   }
 
@@ -412,6 +425,11 @@ export function PreviewPane({
   // so they light up for either kind of content and stay dark for neither.
   const onArtifact = showing === "artifact" && artifact != null;
   const hasSurface = onArtifact ? doc != null : url !== "";
+  // Reload is the one action that must survive a failed read: an agent that
+  // called `preview_show` a beat before the file was fully written leaves the
+  // pane on an error, and without this the retry button is disabled and (with
+  // no dev server probed) the pane is a dead end.
+  const canReload = onArtifact ? artifactPath != null : url !== "";
   // Where the annotated screenshot came from, for the prompt the feedback is
   // sent with: an artifact's path names it far better than the pane's URL,
   // which for an artifact is whatever dev server it was last pointed at.
@@ -498,7 +516,7 @@ export function PreviewPane({
           <>
             <IconBtn
               title={onArtifact ? "re-read the artifact from disk" : "reload preview"}
-              disabled={!hasSurface}
+              disabled={!canReload}
               className="hover:text-sky-500"
               onClick={() => {
                 if (onArtifact) void reloadArtifact();
@@ -514,7 +532,7 @@ export function PreviewPane({
               className="hover:text-sky-500"
               onClick={() => {
                 uiAction("preview.open_external", "agentboard");
-                void openExternalUrl(onArtifact ? `file://${sourceLabel}` : url);
+                void openExternalUrl(onArtifact ? fileUrl(sourceLabel) : url);
               }}
             >
               <ExternalLink className="size-3" />
