@@ -102,6 +102,16 @@ shared mock file.
 module-eval time on a bad spec or duplicate id — a typo'd shortcut fails
 the build, not silently mismatches at runtime.
 
+Every binding that fires records `shortcut.<id>`, and every *click target that
+does the same thing as a binding* must record `mouse.<id>` by calling
+`mouseAction(id, screen)` (`lib/shortcut-coach.ts`) in place of a plain
+`uiAction` — that pair is the whole input to the keyboard-habit score
+(Telemetry → Keyboard, `crates/tt-telemetry/src/keyboard.rs`) and to the
+occasional "⌘B does that" toast. Only exact twins: a near-twin that scores as
+a missed keystroke makes the number lie, and palette items deliberately score
+as neither. Adding a shortcut with a clickable equivalent means wiring both
+sides, the same way `allowInEditable` means wiring both sides below.
+
 `allowInEditable` is a two-sided contract: it only works if the owning
 component *also* checks `matchesEditableOverride` to yield the keystroke
 instead of consuming it (see `components/terminal-view.tsx`). The whole

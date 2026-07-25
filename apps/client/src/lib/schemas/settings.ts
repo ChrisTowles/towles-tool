@@ -109,6 +109,7 @@ const AgentboardBlockSchema = z
     copyOnSelect: z.boolean().optional(),
     terminalFontSize: z.number().optional(),
     shortcutsWorkInTerminal: z.boolean().optional(),
+    shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
     hideInactiveRepos: z.boolean().optional(),
   })

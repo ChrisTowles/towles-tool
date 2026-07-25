@@ -21,6 +21,7 @@ import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { SCREENS } from "@/lib/screens";
+import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
 import { ShortcutHelpHost, useShortcuts, type ShortcutScope } from "@/lib/shortcuts";
 import { WorkspaceProvider, useWorkspace } from "@/lib/workspace";
 import { SCREEN_COMPONENTS } from "@/screens";
@@ -28,6 +29,9 @@ import { SCREEN_COMPONENTS } from "@/screens";
 /** Global (always-active) bindings + the `?` help overlay. Screen-scoped
  * bindings live with their screens (e.g. Agentboard), gated on their tab. */
 function Shortcuts() {
+  // Keeps the shortcut coach's "should I nudge?" setting live for the click
+  // handlers that can't read it through a hook — see `lib/shortcut-coach.ts`.
+  useShortcutCoachSetting();
   const {
     setPaletteOpen,
     toggleSidebar,

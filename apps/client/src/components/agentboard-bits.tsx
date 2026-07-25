@@ -66,6 +66,7 @@ import {
 } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -551,6 +552,7 @@ export function DiffButton({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            mouseAction("ab-toggle-diff", "agentboard");
             onOpen();
           }}
           className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
@@ -599,6 +601,7 @@ export function FilesButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={(e) => {
         e.stopPropagation();
+        mouseAction("ab-toggle-files", "agentboard");
         onOpen();
       }}
       className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
@@ -1214,7 +1217,13 @@ export function RepoMenu({
             </>
           )}
           {onNewTask && (
-            <DropdownMenuItem onSelect={onNewTask} className="whitespace-nowrap">
+            <DropdownMenuItem
+              onSelect={() => {
+                mouseAction("ab-new-task", "agentboard");
+                onNewTask();
+              }}
+              className="whitespace-nowrap"
+            >
               <FolderPlus className="size-3.5" /> New task…
               <DropdownMenuShortcut>{shortcutHint("ab-new-task")}</DropdownMenuShortcut>
             </DropdownMenuItem>
@@ -1222,7 +1231,10 @@ export function RepoMenu({
           {onDeleteWorktree && (
             <DropdownMenuItem
               variant="destructive"
-              onSelect={onDeleteWorktree}
+              onSelect={() => {
+                mouseAction("ab-remove-task", "agentboard");
+                onDeleteWorktree();
+              }}
               className="whitespace-nowrap"
             >
               <Trash2 className="size-3.5" /> Delete worktree…

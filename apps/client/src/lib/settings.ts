@@ -180,7 +180,10 @@ export type UserSettings = {
    * `terminalFontSize` (canvas terminal font px; unset = 13), and
    * `shortcutsWorkInTerminal` (board-wide action shortcuts, e.g. jump to
    * next/prev session needing you, fire even while a terminal has focus;
-   * unset = on), `boardGroupByRepo` (the Board kanban groups tasks into
+   * unset = on), `shortcutCoach` (show the "there's a shortcut for that"
+   * reminder when a click does a binding's job; unset = on — it gates only the
+   * reminder, never the keyboard-vs-mouse tracking), `boardGroupByRepo` (the
+   * Board kanban groups tasks into
    * per-repo swimlanes; unset = on), and `hideInactiveRepos` (the Agentboard
    * rail's eye-icon "hide inactive repos" filter; unset = off).
    */
@@ -191,6 +194,7 @@ export type UserSettings = {
     copyOnSelect?: boolean;
     terminalFontSize?: number;
     shortcutsWorkInTerminal?: boolean;
+    shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;
     hideInactiveRepos?: boolean;
   } & Record<string, unknown>;

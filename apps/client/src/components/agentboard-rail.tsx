@@ -86,6 +86,7 @@ import {
   type WindowsPayload,
 } from "@/lib/agentboard";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
@@ -207,7 +208,10 @@ export function RailIconStrip({
           <button
             type="button"
             aria-label="Expand the folder rail"
-            onClick={onExpand}
+            onClick={() => {
+              mouseAction("ab-toggle-rail", "agentboard");
+              onExpand();
+            }}
             className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           >
             <PanelLeftOpen className="size-4" />
@@ -653,7 +657,10 @@ export function RepoGroup({
         </button>
         <IconBtn
           title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
-          onClick={() => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })}
+          onClick={() => {
+            mouseAction("ab-new-task", "agentboard");
+            onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
+          }}
           className="hover:text-violet-500"
         >
           <FolderPlus className="size-3.5" />
@@ -1020,7 +1027,10 @@ function FolderHeader({
         {!missing && (
           <IconBtn
             title={`New session (${shortcutHint("ab-new-session")})`}
-            onClick={onNewSession}
+            onClick={() => {
+              mouseAction("ab-new-session", "agentboard");
+              onNewSession();
+            }}
             className="hover:text-violet-500"
           >
             <Plus className="size-3.5" />
@@ -1029,7 +1039,10 @@ function FolderHeader({
         {!missing && onNewTask && (
           <IconBtn
             title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
-            onClick={onNewTask}
+            onClick={() => {
+              mouseAction("ab-new-task", "agentboard");
+              onNewTask();
+            }}
             className="hover:text-violet-500"
           >
             <FolderPlus className="size-3.5" />

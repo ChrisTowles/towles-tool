@@ -749,6 +749,7 @@ pub fn run() {
             telemetry::telemetry_days,
             telemetry::telemetry_events,
             telemetry::telemetry_attention,
+            telemetry::telemetry_keyboard,
             agentboard::ab_open_session_for_cwd,
             doctor::doctor_run,
             settings::settings_get,

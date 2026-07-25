@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -126,7 +127,10 @@ export function WindowStrip(props: {
       </button>
       <button
         type="button"
-        onClick={onNewSession}
+        onClick={() => {
+          mouseAction("ab-new-session", "agentboard");
+          onNewSession();
+        }}
         className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-violet-500 hover:bg-accent/50"
         title={`New session in the focused folder (${shortcutHint("ab-new-session")} or ${shortcutHint("ab-new-terminal-right")})`}
       >
@@ -135,7 +139,10 @@ export function WindowStrip(props: {
       {hasSelection && (
         <button
           type="button"
-          onClick={onCloseSession}
+          onClick={() => {
+            mouseAction("ab-close-session", "agentboard");
+            onCloseSession();
+          }}
           className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent/50"
           title={`Close session (${shortcutHint("ab-close-session")})`}
           aria-label="Close the selected session"

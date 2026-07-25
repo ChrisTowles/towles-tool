@@ -45,6 +45,10 @@
 //!   frontend precisely because of the size problem above: the aggregate is a
 //!   few hundred bytes, so the tab costs one read and a small payload instead
 //!   of shipping a day's records to the webview to re-derive on every render.
+//! - [`summarize_keyboard`]/[`keyboard_score`] read the same records for the
+//!   keyboard-shortcut habit: how much of the day's bound work was done with
+//!   the keys rather than the pointer, and how many days in a row that
+//!   cleared the goal. See `keyboard.rs` for what counts as a duel.
 //!
 //! `tracing-subscriber`'s `tracing-log` feature captures the `log::` macros
 //! still in the tree, so existing call sites keep reporting while individual
@@ -52,6 +56,7 @@
 
 mod attention;
 mod event_log;
+mod keyboard;
 mod layer;
 mod reader;
 mod schema;
@@ -62,6 +67,10 @@ pub use attention::{
     MachineSummary, NotificationSummary, summarize,
 };
 pub use event_log::EventLog;
+pub use keyboard::{
+    GOAL_MIN_ACTIONS, GOAL_SHARE, KeyboardDay, KeyboardScore, ShortcutSplit, keyboard_score,
+    summarize_keyboard,
+};
 pub use layer::EventLogLayer;
 pub use reader::{list_days, read_day};
 pub use types::TelemetryRecord;

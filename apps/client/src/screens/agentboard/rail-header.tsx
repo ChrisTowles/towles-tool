@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { DismissButton } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import type { AttentionItem } from "./use-attention";
@@ -105,7 +106,10 @@ export function RailHeader(props: {
           )}
           <button
             type="button"
-            onClick={onCollapseRail}
+            onClick={() => {
+              mouseAction("ab-toggle-rail", "agentboard");
+              onCollapseRail();
+            }}
             aria-label="Collapse the rail to icons"
             className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
             title={`Collapse the rail to icons (${shortcutHint("ab-toggle-rail")})`}

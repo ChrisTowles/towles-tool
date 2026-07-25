@@ -1,13 +1,49 @@
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
+import { DEFAULT_SHORTCUT_COACH } from "@/lib/shortcut-coach";
 import { SHORTCUTS, shortcutKeys, type ShortcutScope } from "@/lib/shortcuts";
-import { NoMatches } from "./common";
+import type { UserSettings } from "@/lib/settings";
+import { NoMatches, ToggleRow, type Update } from "./common";
 
 export const SCOPE_LABELS: Record<ShortcutScope, string> = {
   global: "",
   agentboard: "Agentboard",
   board: "Board",
 };
+
+/**
+ * The one setting on this tab: whether a click that had a shortcut earns a
+ * one-line reminder of the keys. Off still tracks — the keyboard-vs-mouse
+ * record lives in the event log and feeds the Telemetry screen's Keyboard tab
+ * either way; this only decides whether the app says anything about it.
+ *
+ * Rendered outside `ShortcutsList` (and filtered by the same predicate) so a
+ * query that matches no binding can still surface the switch.
+ */
+export function ShortcutCoachRow({
+  settings,
+  update,
+  query,
+}: {
+  settings: UserSettings;
+  update: Update;
+  query: string;
+}) {
+  const shown =
+    isEmptyQuery(query) ||
+    matchesFilter(query, "Shortcut coach", ["nudge", "reminder", "coach", "keyboard", "habit"]);
+  if (!shown) return null;
+  return (
+    <ToggleRow
+      label="Shortcut coach"
+      description="When you click something a keyboard shortcut also does, show a one-line reminder of the keys. Your keyboard-vs-mouse streak is tracked either way — see Telemetry → Keyboard."
+      checked={settings.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH}
+      onCheckedChange={(v) =>
+        update((s) => ({ ...s, agentboard: { ...s.agentboard, shortcutCoach: v } }))
+      }
+    />
+  );
+}
 
 /** Shortcuts list, filtered by the same predicate (description + when + scope). */
 export function ShortcutsList({ query }: { query: string }) {
