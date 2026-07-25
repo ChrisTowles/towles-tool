@@ -39,6 +39,14 @@ const ArtifactDocSchema = z.object({
 
 export type ArtifactDoc = z.infer<typeof ArtifactDocSchema>;
 
+/** A `file://` URL for an absolute path, for handing an artifact to the real
+ * browser. `encodeURI` alone isn't enough: it leaves `#` and `?` intact, and
+ * either one truncates the rest of the path into a fragment or query —
+ * `/tmp/plan #2.html` would open `/tmp/plan%20`. */
+export function fileUrl(path: string) {
+  return `file://${encodeURI(path).replaceAll("#", "%23").replaceAll("?", "%3F")}`;
+}
+
 /** Read an artifact's HTML for the pane's iframe. Re-invoked on reload. */
 export const previewReadArtifact = (path: string) =>
   invoke("preview_read_artifact", { path }, { schema: ArtifactDocSchema, timeoutMs: 10_000 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RepoData } from "@/lib/agentboard";
-import { folderForArtifact, showArtifactNav } from "@/lib/preview-artifact";
+import { fileUrl, folderForArtifact, showArtifactNav } from "@/lib/preview-artifact";
 
 /** A rail repo row with only the fields the routing reads. */
 function repo(dir: string, folders: string[]): RepoData {
@@ -79,5 +79,30 @@ describe("showArtifactNav", () => {
       folderDir: null,
       path: "/tmp/a.html",
     });
+  });
+});
+
+describe("fileUrl", () => {
+  it("encodes a space so the browser gets the whole path", () => {
+    expect(fileUrl("/tmp/my plan.html")).toBe("file:///tmp/my%20plan.html");
+  });
+
+  /** `encodeURI` leaves both of these alone, and either one silently truncates
+   * the path — `#` into a fragment, `?` into a query — so the browser opens a
+   * shorter path that doesn't exist, or nothing at all. */
+  it("escapes # and ?, which encodeURI does not", () => {
+    expect(fileUrl("/tmp/plan #2.html")).toBe("file:///tmp/plan%20%232.html");
+    expect(fileUrl("/tmp/what?.html")).toBe("file:///tmp/what%3F.html");
+  });
+
+  it("leaves an ordinary path unchanged", () => {
+    expect(fileUrl("/code/p/dawn/report.html")).toBe("file:///code/p/dawn/report.html");
+  });
+
+  /** Percent signs already in the name must survive as data, not be read as an
+   * existing escape — `encodeURI` handles this and the two replaces must not
+   * undo it. */
+  it("keeps a literal % in the file name", () => {
+    expect(fileUrl("/tmp/100%25.html")).toBe("file:///tmp/100%2525.html");
   });
 });

@@ -41,6 +41,7 @@ import { openExternalUrl } from "@/lib/open-url";
 import {
   type ArtifactDoc,
   type ArtifactRequest,
+  fileUrl,
   previewReadArtifact,
 } from "@/lib/preview-artifact";
 import {
@@ -70,13 +71,6 @@ const TOOLS: { tool: AnnotationTool; icon: typeof Pen; title: string }[] = [
 
 function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
   return { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
-}
-
-/** A `file://` URL for an absolute path. `encodeURI` alone isn't enough: it
- * leaves `#` and `?` intact, and either one truncates the path into a fragment
- * or query — `/tmp/plan #2.html` would open `/tmp/plan%20` and fail. */
-function fileUrl(path: string) {
-  return `file://${encodeURI(path).replaceAll("#", "%23").replaceAll("?", "%3F")}`;
 }
 
 /** A task's live dev server embedded beside its terminals, with draw-on-page
