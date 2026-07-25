@@ -24,7 +24,6 @@ import { DevServersButton } from "@/components/dev-servers";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import {
-  branchRedundant,
   comparedBaseLabel,
   fmtElapsed,
   fmtWaitingAge,
@@ -117,13 +116,18 @@ export function WorkingContext({
   // Same gating as the rail headers: no session/task actions on a ghost
   // checkout whose directory is gone.
   const missing = folder.dirMissing;
-  // Same title/branch derivation as the rail's `FolderHeader` — a worktree
-  // task's human-authored title takes line 1, and the branch stays visible
-  // whenever it's carrying information the title doesn't already restate.
+  // Same title derivation as the rail's `FolderHeader` — a worktree task's
+  // human-authored title takes line 1, falling back to the folder name read
+  // as words. Unlike the rail, this header does *not* drop a branch that
+  // merely restates the title: the fallback title is the folder name
+  // humanized (prefix stripped, dashes to spaces), so a task whose branch
+  // slugged to its folder name would show nothing on screen that is actually
+  // the branch — and `vs main` beside it reads like one. This is the roomy
+  // header for the checkout you're looking at; it always answers "what am I
+  // on?" verbatim, copy-pasteable.
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
   const displayTitle =
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
-  const showBranchLabel = Boolean(humanTitle) || !branchRedundant(folder.name, folder.branch);
   const progress = folder.metadata?.progress;
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
@@ -186,7 +190,7 @@ export function WorkingContext({
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           {scope && <span className="shrink-0 font-mono text-muted-foreground/60">{scope}</span>}
           {repoDistinct && <span className="shrink-0 font-medium">{repo.name}</span>}
-          {showBranchLabel && <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />}
+          {folder.branch && <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />}
           {deleting && <DeletingBadge />}
           <ComparedBaseBadge folder={folder} />
           <AheadBehind stats={folder} />
