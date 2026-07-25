@@ -12,21 +12,23 @@
 //! A branch's work reaches the base under three different shapes, and each
 //! shape is invisible to the checks that catch the other two:
 //!
-//! | landing        | `merge-base --is-ancestor` | `git cherry` | tree probe |
-//! |----------------|---------------------------|--------------|------------|
-//! | merge commit   | yes                       | 0            | —          |
-//! | rebase / cherry-pick | no                  | 0            | misses     |
-//! | squash         | no                        | **counts every commit** | yes |
+//! | landing        | reachability | per-commit patch id | cumulative patch id |
+//! |----------------|--------------|---------------------|---------------------|
+//! | merge commit   | yes          | all match           | —                   |
+//! | rebase / cherry-pick | no     | all match           | misses              |
+//! | squash         | no           | **none match**      | matches             |
 //!
 //! Squash is the case that matters most here, because it is how this repo's
 //! PRs land: GitHub replaces the branch's N commits with one new commit whose
-//! SHA *and* patch-id differ from all of them, so both reachability and
-//! `git cherry` report the whole branch as unlanded work. That false alarm is
-//! exactly what made a merged task look unsafe to remove.
+//! SHA *and* patch id differ from all of them, so both reachability and
+//! per-commit patch identity report the whole branch as unlanded work. That
+//! false alarm is exactly what made a merged task look unsafe to remove.
 //!
-//! The tree probe is what closes it: synthesise a commit holding the branch's
-//! *tree* parented on the merge-base, and ask `git cherry` whether that
-//! cumulative diff is already in the base. A squashed branch answers yes.
+//! The cumulative probe is what closes it: take the branch's *whole* diff
+//! since the merge-base as a single patch, and ask whether the base already
+//! contains it. A squashed branch answers yes — that single patch is precisely
+//! what the squash commit holds. See [`tt_git::repo::patch`] for how a patch
+//! id is computed and why it does not need to match `git patch-id`.
 //!
 //! ## Counting what is genuinely left
 //!
@@ -39,8 +41,6 @@
 //! Landedness is *not* monotonic along the branch (an intermediate commit can
 //! reproduce a tree the base never had), so this scans newest-first and stops
 //! at the first landed commit rather than binary-searching.
-
-use std::path::{Path, PathBuf};
 
 /// How a branch's work reached the base branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,18 +148,6 @@ impl WorkState {
     }
 }
 
-/// Count the `+` lines in `git cherry <base> <branch>` output — commits with
-/// no patch-identical twin in the base. `-` lines already landed.
-pub fn cherry_unlanded(output: &str) -> u64 {
-    output.lines().filter(|l| l.trim_start().starts_with('+')).count() as u64
-}
-
-/// Whether a single-line `git cherry` result marks its commit as already
-/// landed (a leading `-`).
-pub fn cherry_says_landed(output: &str) -> bool {
-    output.trim_start().starts_with('-')
-}
-
 /// Decide how a branch landed, given each independently-gathered signal.
 ///
 /// Ordering is by strength of evidence: reachability and patch-identity are
@@ -206,77 +194,55 @@ pub fn classify(
     None
 }
 
-/// Cap on per-commit probes. Each probe is *three* git subprocesses
-/// (`rev-parse`, `commit-tree`, `cherry`) and this runs on the Agentboard's
-/// poll, so the worst case here is ~3× this many spawns. A task branch is
-/// short-lived by construction; one past this many commits falls back to the
-/// `git cherry` count rather than paying an unbounded cost for a number nobody
-/// is reading closely. The scan also stops at the first landed commit, so the
-/// cap only binds on branches where nothing has landed at all.
+/// Cap on per-commit probes. Each probe is a tree diff against the merge-base
+/// — no longer the three subprocesses it once was, but not free either, and
+/// this runs on the Agentboard's poll. A task branch is short-lived by
+/// construction; one past this many commits falls back to the plain
+/// patch-identity count rather than paying an unbounded cost for a number
+/// nobody is reading closely. The scan also stops at the first landed commit,
+/// so the cap only binds on branches where nothing has landed at all.
 const MAX_PROBES: usize = 64;
 
 /// Run every probe against a real repository and assemble the state.
 ///
 /// Best-effort by design: this feeds a status display and a removal guard, so
-/// a git failure degrades to the conservative answer — work is present, the
-/// branch has not landed — rather than erroring. Reporting "nothing to lose"
-/// because git did not answer is the one outcome that could destroy work.
+/// an unreadable repository degrades to the conservative answer — work is
+/// present, the branch has not landed — rather than erroring. Reporting
+/// "nothing to lose" because git did not answer is the one outcome that could
+/// destroy work.
 ///
-/// `git` must return `Some(stdout)` only when git exited **0**, and `None` on
-/// any non-zero exit. That distinction is load-bearing rather than stylistic:
-/// `merge-base --is-ancestor` reports its answer purely through the exit code
-/// and prints nothing, so a closure that returned `Some("")` for a failed run
-/// would read every branch as already merged.
-pub fn probe_work_state<G>(
-    git: &G,
-    dir: &Path,
+/// The whole probe now runs in-process against `repo`. What that removes is
+/// worth naming, because it was the ugliest thing in this module: the squash
+/// check used to need a *real commit object* for `git cherry` to compute a
+/// patch id from, so it ran `commit-tree` to write one — with an explicit
+/// `user.name`/`user.email` because git refuses without an identity and CI
+/// runners have none — and then deleted the resulting loose object by hand so
+/// the poll would not accumulate thousands of dead objects a day. A patch id
+/// computed in memory needs no object, no identity, and no cleanup.
+pub fn probe_work_state(
+    repo: &tt_git::repo::Repo,
     base: &str,
     branch: &str,
     uncommitted: usize,
     orphaned: u64,
     upstream_gone: bool,
-) -> WorkState
-where
-    G: Fn(&Path, &[&str]) -> Option<String>,
-{
+) -> WorkState {
     let mut state =
         WorkState { uncommitted, orphaned, landed: None, unlanded: 0, total_commits: 0 };
 
-    let Some(merge_base) = git(dir, &["merge-base", base, branch]).map(|s| s.trim().to_string())
-    else {
+    let (Some(base_id), Some(branch_id)) = (repo.resolve(base), repo.resolve(branch)) else {
         return state;
     };
-    if merge_base.is_empty() {
+    let Some(merge_base) = repo.merge_base(base, branch) else {
         return state;
-    }
+    };
 
-    // Where the probe's synthetic commits land, so each can be deleted again
-    // once `cherry` has read it. `--git-path` answers with the *common* object
-    // store from inside a linked worktree, which is exactly where the objects
-    // go; an unresolvable path just means they are left for `git gc`.
-    let objects_dir = git(
-        dir,
-        &[
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-path",
-            "objects",
-        ],
-    )
-    .map(|s| PathBuf::from(s.trim()))
-    .filter(|p| p.is_dir());
-    let objects_dir = objects_dir.as_deref();
-
-    let range = format!("{merge_base}..{branch}");
-    let total = git(dir, &["rev-list", "--count", &range])
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .unwrap_or(0);
+    let commits = repo.rev_list(merge_base, branch_id).unwrap_or_default();
+    let total = commits.len() as u64;
     state.total_commits = total;
 
-    let tip = git(dir, &["rev-parse", branch]).map(|s| s.trim().to_string());
-    let base_tip = git(dir, &["rev-parse", base]).map(|s| s.trim().to_string());
-    let tip_equals_base = tip.is_some() && tip == base_tip;
-    let ancestor = git(dir, &["merge-base", "--is-ancestor", branch, base]).is_some();
+    let tip_equals_base = branch_id == base_id;
+    let ancestor = repo.is_ancestor(branch, base);
 
     // Zero commits since the merge-base is ambiguous, and the two readings
     // have opposite consequences. A *fresh* task sits on the base tip and must
@@ -288,9 +254,19 @@ where
         state.landed = (!tip_equals_base && ancestor).then_some(LandedVia::Ancestor);
         return state;
     }
+
+    // The base's patch ids, computed once and reused by every check below —
+    // the per-commit watermark scan included. Under the old shell-out each of
+    // those probes re-ran `git cherry`, which recomputed this same set from
+    // scratch every time.
+    let landed_patches = repo.base_patch_ids(merge_base, base_id);
+    let is_landed = |patch: Option<tt_git::repo::PatchId>| {
+        patch.is_some_and(|patch| landed_patches.contains(&patch))
+    };
+
     let cherry_plus =
-        git(dir, &["cherry", base, branch]).map(|s| cherry_unlanded(&s)).unwrap_or(total);
-    let tree_landed = tree_already_in_base(git, dir, base, &merge_base, branch, objects_dir);
+        commits.iter().filter(|id| !is_landed(repo.patch_id_of_commit(**id))).count() as u64;
+    let tree_landed = is_landed(repo.cumulative_patch_id(merge_base, branch_id));
 
     state.landed =
         classify(ancestor, tip_equals_base, cherry_plus, total, tree_landed, upstream_gone);
@@ -302,111 +278,18 @@ where
     } else if total as usize > MAX_PROBES {
         cherry_plus
     } else {
-        let revs = git(dir, &["rev-list", &range]).unwrap_or_default();
-        let mut newest_first =
-            revs.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>();
-        if newest_first.is_empty() {
-            // `rev-list` failed despite `total > 0`. Falling through to the
-            // scan would return 0 — "nothing outstanding" — on no evidence.
-            cherry_plus
-        } else {
-            // The first entry is the branch tip, whose tree `tree_landed`
-            // already probed; and this arm only runs when that came back
-            // false, so re-probing it would spend three git calls to learn
-            // what we know. Stop at the first landed commit rather than
-            // probing them all: everything past the watermark is discarded by
-            // the count anyway.
-            newest_first.remove(0);
-            let landed_at = newest_first.iter().position(|rev| {
-                tree_already_in_base(git, dir, base, &merge_base, rev, objects_dir)
-            });
-            1 + landed_at.unwrap_or(newest_first.len()) as u64
-        }
+        // The first entry is the branch tip, whose cumulative tree
+        // `tree_landed` already probed; this arm only runs when that came back
+        // false, so re-probing it would spend a tree diff to learn what we
+        // know. Stop at the first landed commit rather than probing them all:
+        // everything past the watermark is discarded by the count anyway.
+        let landed_at = commits[1..]
+            .iter()
+            .position(|rev| is_landed(repo.cumulative_patch_id(merge_base, *rev)));
+        1 + landed_at.unwrap_or(commits.len() - 1) as u64
     };
 
     state
-}
-
-/// Whether `rev`'s tree, taken as a cumulative diff from `merge_base`, is
-/// already present in `base`.
-///
-/// `commit-tree` writes a real (if unreferenced) commit object holding that
-/// tree, because `git cherry` needs something with a patch-id to compare.
-///
-/// Those objects would otherwise accumulate: nothing on this path triggers
-/// git's auto-gc, and `git gc` keeps unreachable objects until
-/// `gc.pruneExpire` (two weeks) even when it does run — on the Agentboard's
-/// poll that is thousands of dead objects a day, each one slowing later
-/// lookups. So the loose object is deleted again as soon as `cherry` has read
-/// it (see [`remove_loose_object`]).
-///
-/// Deleting beats redirecting `GIT_OBJECT_DIRECTORY` at scratch storage: that
-/// changes how *every* command in the probe resolves objects, which is a far
-/// bigger blast radius than removing the single file we know we created.
-fn tree_already_in_base<G>(
-    git: &G,
-    dir: &Path,
-    base: &str,
-    merge_base: &str,
-    rev: &str,
-    objects_dir: Option<&Path>,
-) -> bool
-where
-    G: Fn(&Path, &[&str]) -> Option<String>,
-{
-    let tree_ref = format!("{rev}^{{tree}}");
-    let Some(tree) = git(dir, &["rev-parse", &tree_ref]).map(|s| s.trim().to_string()) else {
-        return false;
-    };
-    // The identity is supplied explicitly because `commit-tree` refuses to run
-    // without one, and the ambient one cannot be relied on: git falls back to
-    // `user@host` from the system, which is absent on CI runners and minimal
-    // containers, where it fails with "Author identity unknown". That failure
-    // is silent here — the probe would just answer "not landed", turning every
-    // squash-merged task back into a false alarm in exactly the environments
-    // nobody is watching. What the identity *is* does not matter: the commit is
-    // deleted below, and `git cherry` compares patch-ids, which ignore it.
-    let Some(synthetic) = git(
-        dir,
-        &[
-            "-c",
-            "user.name=tt",
-            "-c",
-            "user.email=tt@localhost",
-            "commit-tree",
-            &tree,
-            "-p",
-            merge_base,
-            "-m",
-            "tt-landed-probe",
-        ],
-    )
-    .map(|s| s.trim().to_string()) else {
-        return false;
-    };
-    if synthetic.is_empty() {
-        return false;
-    }
-    let landed =
-        git(dir, &["cherry", base, &synthetic]).is_some_and(|out| cherry_says_landed(&out));
-    if let Some(objects) = objects_dir {
-        remove_loose_object(objects, &synthetic);
-    }
-    landed
-}
-
-/// Delete the loose object `sha` from `objects_dir`.
-///
-/// Only ever called on a commit this module just synthesised: unreferenced by
-/// any ref, and holding a tree that already exists elsewhere in the store, so
-/// removing it cannot lose data. Best-effort — if git packed it, or the path
-/// isn't writable, the object simply survives to the next `git gc`.
-fn remove_loose_object(objects_dir: &Path, sha: &str) {
-    if sha.len() < 3 {
-        return;
-    }
-    let (shard, rest) = sha.split_at(2);
-    let _ = std::fs::remove_file(objects_dir.join(shard).join(rest));
 }
 
 #[cfg(test)]
@@ -414,16 +297,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cherry_counts_only_plus_lines() {
-        assert_eq!(cherry_unlanded("+ abc\n- def\n+ 123\n"), 2);
-        assert_eq!(cherry_unlanded("- abc\n- def\n"), 0);
-        assert_eq!(cherry_unlanded(""), 0);
-    }
-
-    #[test]
     fn squash_merge_is_recognised_when_reachability_and_cherry_both_miss() {
         // The headline case: GitHub squashed 2 commits, so the branch is not
-        // an ancestor and `git cherry` reports both as unlanded.
+        // an ancestor and per-commit patch identity matches neither.
         assert_eq!(
             classify(false, false, 2, 2, true, false),
             Some(LandedVia::Squash),

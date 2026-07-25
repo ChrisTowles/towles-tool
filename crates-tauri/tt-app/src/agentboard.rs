@@ -693,22 +693,6 @@ pub fn ab_clear_log(state: State<Ab>, session: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Full unified diff for a folder, for the diff pane. `mode` picks the
-/// baseline: `"uncommitted"` diffs the working tree vs HEAD, anything else
-/// diffs vs the merge-base with `base_branch` (the folder's base-branch
-/// override, from `FolderData.baseBranch`) or origin/main if unset. Empty
-/// string when there's nothing to show. Async: a large working-tree diff is a
-/// real subprocess wait that must not stall the main thread.
-#[tauri::command]
-pub async fn ab_get_diff(dir: String, mode: String, base_branch: Option<String>) -> String {
-    let mode = parse_diff_mode(&mode);
-    tauri::async_runtime::spawn_blocking(move || {
-        tt_agentboard::diff_patch(&dir, mode, base_branch.as_deref())
-    })
-    .await
-    .unwrap_or_default()
-}
-
 fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
     if mode == "uncommitted" {
         tt_agentboard::DiffMode::Uncommitted
@@ -717,9 +701,11 @@ fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
     }
 }
 
-/// Changed-file list for the diff pane's Monaco diff editor — same baseline
-/// rules as [`ab_get_diff`]. Async: rename-aware diffs are real subprocess
-/// waits.
+/// Changed-file list for the diff pane's Monaco diff editor. `mode` picks the
+/// baseline: `"uncommitted"` diffs the working tree vs HEAD, anything else
+/// diffs vs the merge-base with `base_branch` (the folder's base-branch
+/// override, from `FolderData.baseBranch`) or origin/main if unset. Async:
+/// a large branch diff is real work, even in-process.
 #[tauri::command]
 pub async fn ab_get_diff_files(
     dir: String,
@@ -754,9 +740,8 @@ pub async fn ab_get_base_file(
 
 /// Per-commit line-count breakdown for a folder's `DiffButton` hover, oldest
 /// commit first — see `tt_agentboard::commit_stats`. `base_branch` is the
-/// folder's base-branch override, same as [`ab_get_diff`]. Async for the same
-/// reason: a many-commit branch's `git log --numstat` is a real subprocess
-/// wait.
+/// folder's base-branch override, same as [`ab_get_diff_files`]. Async for the
+/// same reason: a many-commit branch means one tree diff per commit.
 #[tauri::command]
 pub async fn ab_get_commit_stats(
     dir: String,

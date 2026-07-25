@@ -14,35 +14,25 @@ use std::time::Duration;
 use tt_git::branch_name::create_branch_name_from_issue;
 use tt_git::task_assign::validate_task_for_repo;
 
-/// Timeout for git plumbing reads in the task (remote/status/stash) and the
-/// local `git checkout -b`.
-const TASK_GIT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Timeout for `gh issue develop` (talks to the network, then fetches).
 const GH_DEVELOP_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Run git in `dir`, requiring exit 0, returning trimmed stdout. Failures come
-/// back as the user-facing error string the frontend surfaces via toast.
-fn git_in(dir: &Path, args: &[&str]) -> Result<String, String> {
-    match tt_exec::run_in_dir_with_timeout("git", args, dir, TASK_GIT_TIMEOUT) {
-        Ok(out) if out.ok() => Ok(out.stdout.trim().to_string()),
-        Ok(out) => Err(format!("git {} failed: {}", args.join(" "), out.stderr.trim())),
-        Err(e) => Err(format!("failed to run git in {}: {e}", dir.display())),
-    }
-}
 
 /// Gather the task's remote/status/stash and run the clean-tree + matching-repo
 /// guard. Returns `Ok(())` only when `task_dir` is a clean checkout of the same
 /// GitHub repo (`owner/name`) the issue belongs to. Hard-fails with no `--force`
 /// escape hatch — the whole point is that a dispatch can never trample a task
 /// holding in-progress work.
+///
+/// A repository that cannot be read fails the guard rather than passing it:
+/// "we could not tell" and "it is clean" must never be the same answer here.
 fn guard_task(repo: &str, task_dir: &Path) -> Result<(), String> {
-    if !task_dir.join(".git").exists() {
-        return Err(format!("{} is not a git checkout (no .git)", task_dir.display()));
-    }
-    let task_remote = git_in(task_dir, &["remote", "get-url", "origin"])?;
-    let status = git_in(task_dir, &["status", "--porcelain"])?;
-    let stashes = git_in(task_dir, &["stash", "list"])?;
-    validate_task_for_repo(repo, &task_remote, &status, &stashes)
+    let git = tt_git::repo::open(task_dir)
+        .map_err(|e| format!("{} is not a usable git checkout: {e}", task_dir.display()))?;
+    let task_remote = git.origin_url().unwrap_or_default();
+    let status = git
+        .status()
+        .map_err(|e| format!("cannot read {}'s working tree: {e}", task_dir.display()))?;
+    validate_task_for_repo(repo, &task_remote, status.len(), git.stash_count())
         .map_err(|blocked| format!("Refusing to use {}: {blocked}", task_dir.display()))
 }
 
@@ -79,9 +69,13 @@ pub async fn cockpit_assign_issue(
 }
 
 /// `cockpit_create_issue_branch`: create a local `feature/<number>-<slug>`
-/// branch (from the issue title) in the task checkout at `task_dir` via
-/// `git checkout -b`, after the same clean-tree guard. Purely local — no `gh`
-/// or network — for starting work without the issue-develop linkage.
+/// branch (from the issue title) in the task checkout at `task_dir`, after the
+/// same clean-tree guard. Purely local — no `gh` or network — for starting work
+/// without the issue-develop linkage.
+///
+/// The guard running first is what makes the branch switch two ref writes
+/// rather than a working-tree checkout; see
+/// [`tt_git::repo::Repo::create_branch_at_head`].
 #[tauri::command]
 pub async fn cockpit_create_issue_branch(
     repo: String,
@@ -93,18 +87,14 @@ pub async fn cockpit_create_issue_branch(
     tauri::async_runtime::spawn_blocking(move || {
         guard_task(&repo, &dir)?;
         let branch = create_branch_name_from_issue(number, &title);
-        match tt_exec::run_in_dir_with_timeout(
-            "git",
-            &["checkout", "-b", &branch],
-            &dir,
-            TASK_GIT_TIMEOUT,
-        ) {
-            Ok(out) if out.ok() => {
+        let git =
+            tt_git::repo::open(&dir).map_err(|e| format!("cannot open {}: {e}", dir.display()))?;
+        match git.create_branch_at_head(&branch) {
+            Ok(()) => {
                 tracing::info!(%repo, number, %branch, "cockpit.issue_branch_created");
                 Ok(format!("Created branch {branch} in {}", dir.display()))
             }
-            Ok(out) => Err(format!("git checkout -b {branch} failed: {}", out.stderr.trim())),
-            Err(e) => Err(format!("failed to run git in {}: {e}", dir.display())),
+            Err(e) => Err(format!("could not create branch {branch}: {e}")),
         }
     })
     .await

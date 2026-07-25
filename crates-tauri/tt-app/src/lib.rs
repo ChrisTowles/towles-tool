@@ -694,7 +694,6 @@ pub fn run() {
             agentboard::ab_log,
             agentboard::ab_clear_log,
             agentboard::ab_open_in_editor,
-            agentboard::ab_get_diff,
             agentboard::ab_get_diff_files,
             agentboard::ab_get_base_file,
             agentboard::ab_get_commit_stats,

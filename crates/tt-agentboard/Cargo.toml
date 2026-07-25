@@ -39,6 +39,9 @@ tt-store = { workspace = true }
 # tt-tasks: reads a worktree's `.tt-task` marker so the diff pane's "vs
 # main" mode compares against the task's actual creation base ref, not always
 # main.
+# tt-git: the in-process git layer (`tt_git::repo`) every read here goes
+# through — refs, graph, status, diffs — instead of spawning `git`.
+tt-git = { workspace = true }
 tt-tasks = { workspace = true }
 
 [dev-dependencies]

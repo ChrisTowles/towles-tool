@@ -295,10 +295,7 @@ pub fn base_refs(checkout: &Path) -> BaseRefs {
     let base = base_branch(checkout);
     let local = format!("refs/heads/{base}");
     let candidate = format!("refs/remotes/origin/{base}");
-    let remote = git_checkout(checkout, &["rev-parse", "--quiet", "--verify", &candidate])
-        .ok()
-        .filter(|o| o.ok())
-        .map(|_| candidate);
+    let remote = repo_at(checkout).ok().filter(|repo| repo.has_rev(&candidate)).map(|_| candidate);
     BaseRefs { base, local, remote }
 }
 
@@ -325,18 +322,15 @@ pub fn work_state(
 ) -> crate::landed::WorkState {
     use crate::landed::{LandedVia, WorkState, probe_work_state};
 
-    // `Some` only on a zero exit — `merge-base --is-ancestor` answers through
-    // the exit code and prints nothing.
-    let probe_git = |dir: &Path, args: &[&str]| -> Option<String> {
-        git_task(dir, args).ok().filter(|o| o.ok()).map(|o| o.stdout)
+    // An unreadable checkout degrades to "holds work", never to "safe to
+    // delete" — the same conservative direction every probe below takes.
+    let Ok(repo) = repo_at(dir) else {
+        return WorkState { uncommitted, orphaned, ..Default::default() };
     };
 
-    let gone = probe_git(dir, &["for-each-ref", branch, "--format=%(upstream:track)"])
-        .map(|out| crate::clean::upstream_gone(&out))
-        .unwrap_or(false);
+    let gone = repo.upstream_gone(branch);
 
-    let probe =
-        |base: &str| probe_work_state(&probe_git, dir, base, branch, uncommitted, orphaned, gone);
+    let probe = |base: &str| probe_work_state(&repo, base, branch, uncommitted, orphaned, gone);
     let proven = |w: &WorkState| w.landed.is_some_and(LandedVia::is_content_proof);
 
     // Judge against the local base first, then the remote-tracking one. A
@@ -357,34 +351,24 @@ pub fn work_state(
     }
 }
 
-/// `git status --porcelain` entry count for a checkout — the uncommitted axis.
+/// Changed-path count for a checkout — the uncommitted axis.
 pub fn uncommitted_count(dir: &Path) -> usize {
-    git_task(dir, &["status", "--porcelain"])
-        .ok()
-        .filter(|o| o.ok())
-        .map(|o| crate::guards::dirty_entry_count(&o.stdout))
-        .unwrap_or(0)
+    repo_at(dir).ok().and_then(|repo| repo.status().ok()).map(|status| status.len()).unwrap_or(0)
 }
 
 /// Commits reachable from no branch and no remote — the orphaned axis, the one
 /// removal genuinely destroys. Base-independent, so it is meaningful even for a
 /// detached HEAD that [`work_state`] cannot otherwise judge.
 pub fn orphaned_count(dir: &Path) -> u64 {
-    git_task(
-        dir,
-        &[
-            "rev-list",
-            "--count",
-            "HEAD",
-            "--not",
-            "--branches",
-            "--remotes",
-        ],
-    )
-    .ok()
-    .filter(|o| o.ok())
-    .and_then(|o| crate::guards::unreachable_commit_count(&o.stdout))
-    .unwrap_or(0)
+    repo_at(dir).map(|repo| repo.orphaned_count()).unwrap_or_default()
+}
+
+/// This checkout's repository, from the process-wide cache.
+///
+/// Every read below goes through it rather than spawning `git`; see
+/// [`tt_git::repo`] for the cache and for what still shells out.
+pub fn repo_at(dir: &Path) -> Result<tt_git::repo::Repo> {
+    tt_git::repo::open(dir).map_err(|e| OpsError::Git(e.to_string()))
 }
 
 /// Epoch-seconds commit time of the newest commit unique to this worktree's
@@ -395,11 +379,7 @@ pub fn orphaned_count(dir: &Path) -> u64 {
 /// checkout sitting on the base branch reports `None`. Landedness is a separate
 /// axis judged by [`work_state`], not by this age.
 pub fn last_own_commit_unix(dir: &Path, base: &str) -> Option<i64> {
-    let range = format!("{base}..HEAD");
-    git_task(dir, &["log", "-1", "--format=%ct", &range])
-        .ok()
-        .filter(|o| o.ok())
-        .and_then(|o| o.stdout.trim().parse::<i64>().ok())
+    repo_at(dir).ok()?.last_own_commit_unix(base)
 }
 
 pub fn git_task(dir: &Path, args: &[&str]) -> Result<tt_exec::Output> {
@@ -415,10 +395,9 @@ pub fn git_task(dir: &Path, args: &[&str]) -> Result<tt_exec::Output> {
 
 /// The checkout's checked-out branch (the repo default), falling back to `main`.
 pub fn base_branch(checkout: &Path) -> String {
-    git_checkout(checkout, &["symbolic-ref", "--short", "HEAD"])
+    repo_at(checkout)
         .ok()
-        .filter(|o| o.ok())
-        .map(|o| o.stdout.trim().to_string())
+        .and_then(|repo| repo.head_branch())
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| "main".to_string())
 }
@@ -466,9 +445,7 @@ fn effective_origin_base(checkout: &Path, base: &str) -> Option<String> {
         return None;
     }
     let upstream = format!("origin/{base}");
-    let exists = git_checkout(checkout, &["rev-parse", "--verify", "--quiet", &upstream])
-        .map(|o| o.ok())
-        .unwrap_or(false);
+    let exists = repo_at(checkout).map(|repo| repo.has_rev(&upstream)).unwrap_or(false);
     exists.then_some(upstream)
 }
 
@@ -487,16 +464,10 @@ pub struct BaseBranch {
 /// sorted.
 pub fn checkout_branches(checkout: &Path) -> Result<Vec<BaseBranch>> {
     let default = base_branch(checkout);
-    let out = git_checkout(checkout, &["for-each-ref", "refs/heads", "--format=%(refname:short)"])?;
-    if !out.ok() {
-        return Err(OpsError::Git(out.stderr.trim().to_string()));
-    }
-    let mut rest: Vec<String> = out
-        .stdout
-        .lines()
-        .map(str::trim)
+    let mut rest: Vec<String> = repo_at(checkout)?
+        .local_branches()
+        .into_iter()
         .filter(|b| !b.is_empty() && *b != default)
-        .map(str::to_string)
         .collect();
     rest.sort();
     // Only the default entry can earn an `origin/` label — the fast-forward
@@ -507,35 +478,32 @@ pub fn checkout_branches(checkout: &Path) -> Result<Vec<BaseBranch>> {
     Ok(branches)
 }
 
-/// Validate `branch` as a git ref via `git check-ref-format --branch` — git
-/// is the authority on legal ref names, so this shells out to it rather than
-/// reimplementing the rules. Stateless: `check-ref-format` needs no repo.
+/// Validate `branch` as a git branch name.
+///
+/// The rules are git's own (`git check-ref-format --branch` used to answer
+/// this), applied here by `gix-validate` — the same implementation gitoxide
+/// enforces when writing a ref, so a name it accepts is a name git accepts.
+/// Stateless: legality is a property of the name, not of any repository.
+///
+/// The name is checked as the full `refs/heads/<branch>` it will become, plus
+/// one rule that belongs to `--branch` specifically rather than to ref format:
+/// a branch may not begin with `-`, which is legal in a ref path but would be
+/// read as an option by every command that takes a branch name.
 pub fn validate_branch_name(branch: &str) -> Result<()> {
-    let out = tt_exec::run("git", &["check-ref-format", "--branch", branch])
-        .map_err(|e| OpsError::Git(e.to_string()))?;
-    if out.ok() {
-        return Ok(());
+    let reject =
+        |detail: String| OpsError::InvalidBranchName { branch: branch.to_string(), detail };
+    if branch.starts_with('-') {
+        return Err(reject("a branch name may not begin with '-'".to_string()));
     }
-    Err(OpsError::InvalidBranchName {
-        branch: branch.to_string(),
-        detail: out.stderr.trim().to_string(),
-    })
+    gix::validate::reference::name(format!("refs/heads/{branch}").as_str().into())
+        .map(|_| ())
+        .map_err(|e| reject(e.to_string()))
 }
 
-/// Is `branch` already a local ref in `checkout`? Read-only — `git
-/// show-ref` needs no fetch and never mutates anything.
+/// Is `branch` already a local ref in `checkout`? Read-only — resolving a ref
+/// needs no fetch and never mutates anything.
 pub fn branch_exists(checkout: &Path, branch: &str) -> bool {
-    git_checkout(
-        checkout,
-        &[
-            "show-ref",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{branch}"),
-        ],
-    )
-    .map(|out| out.ok())
-    .unwrap_or(false)
+    repo_at(checkout).map(|repo| repo.has_rev(&format!("refs/heads/{branch}"))).unwrap_or(false)
 }
 
 /// Preflight for the new-task dialog: is `branch` a legal ref, does it

@@ -8,11 +8,14 @@ follows is a cross-cutting rule that spans multiple files.
 
 ## Locking and ordering
 
-- **Never hold the agentboard `Engine` lock across a git subprocess.**
+- **Never hold the agentboard `Engine` lock across git work.**
   `lib.rs`'s scan task and stat-poll both do git work *outside*
   `engine.lock()` deliberately — on Linux, sync Tauri commands dispatch
-  inline on the GTK main thread, so a lock held across a `git` chain would
-  freeze every `ab_*` command, not just the caller.
+  inline on the GTK main thread, so a lock held across a git chain would
+  freeze every `ab_*` command, not just the caller. Git reads are in-process
+  now (`tt_git::repo`, gitoxide) rather than subprocesses, which makes them
+  ~10–100× faster but does not make them free: a status walk over a large
+  working tree is still real work, and the rule stands unchanged.
 - **Stamp a cache entry with the time its batch *finished*, never the `now`
   the work was scheduled with.** `lib.rs`'s git warm loop takes a fresh
   `now_ms()` *after* `compute_git_info` returns. Reusing the pre-batch `now`
@@ -22,13 +25,13 @@ follows is a cross-cutting rule that spans multiple files.
   wrote ~1 GB/day of telemetry before anyone noticed, because nothing about it
   looks wrong at a glance. The cost is bounded structurally as well:
   `compute_git_info` takes the folder's previous `GitInfo` and skips the
-  landing probe when `probe_key` (HEAD sha + base sha + upstream track) is
-  unchanged, so an idle repo costs three cheap reads instead of up to ~192
-  subprocesses. `is_worktree`/`common_dir`/`worktree_dirs`/`origin_url` get
-  the same treatment for a different reason — they're structural facts (a
-  repo's sibling worktrees, its remote), not working-tree state, so they're
-  memoized off two file mtimes (`structural_key`) instead of re-derived via
-  four more git spawns every poll. All three halves are pinned by tests in
+  landing probe when `probe_key` (HEAD sha + base sha + upstream-gone) is
+  unchanged, so an idle repo costs three cheap reads instead of a full
+  patch-identity probe. `is_worktree`/`common_dir`/`worktree_dirs`/
+  `origin_url` get the same treatment for a different reason — they're
+  structural facts (a repo's sibling worktrees, its remote), not working-tree
+  state, so they're memoized off two file mtimes (`structural_key`) instead
+  of re-derived every poll. All three halves are pinned by tests in
   `git_info.rs` — keep them if you touch any.
 - **The `~/.claude/projects` fs-notify accelerant is scoped to tracked
   checkouts, not the whole tree.** `lib.rs`'s scan loop watches via
@@ -79,7 +82,9 @@ follows is a cross-cutting rule that spans multiple files.
   Measured before/after on this machine (steady state, no session running the
   poll's targets): ~14.8 git spawns/sec pre-fix → ~1.9/sec after, with the
   remainder being exactly this working-tree-state backup poll plus the
-  occasional structural/landing recompute.
+  occasional structural/landing recompute. Those reads are no longer spawns
+  at all since the gitoxide cutover — but the staleness gating still matters
+  for the same reason, and both loops must still respect the same signal.
 - **Every `StatePayload` leaving the app must pass through
   `stamp_pty_state`** (`agentboard.rs`). The Tauri-free engine can't see
   PTYs, so a new command that builds/returns a `StatePayload` without this

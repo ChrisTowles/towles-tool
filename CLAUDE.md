@@ -218,8 +218,22 @@ Cargo workspace + npm workspace (`apps/client` only):
     these paths ad-hoc — call the resolver.
   - `tt-exec` — process/command wrappers.
   - `tt-journal` — journal/note filesystem logic and date-token path templating.
-  - `tt-git` — GitHub/git helpers: branch-name slugging, PR content, merged-branch
-    filtering, issue parsing, picker layout.
+  - `tt-git` — **the one way this workspace reads a git repository**, plus the
+    GitHub helpers (branch-name slugging, remote-slug parsing, the issue→task
+    assignment guard). `tt_git::repo` is an in-process
+    [gitoxide](https://github.com/GitoxideLabs/gitoxide) layer — refs, graph
+    walks, status, diffs, patch identity — behind a **per-folder cache of open
+    repositories** (`tt_git::repo::open`, process-wide). Nothing outside it
+    parses `git` output, because nothing outside it runs `git`: the Agentboard
+    poll alone was ~100k subprocesses a day, and the same answers come back
+    10–100× faster from a cached handle. **Two operations still shell out via
+    `tt-exec`, both because gitoxide has no equivalent**: linked-worktree
+    add/remove/prune (its worktree API is read-only) and `fetch` (network-bound,
+    where in-process buys nothing and would put credential helpers, SSH and a
+    TLS stack on the line). Adding a third git subprocess anywhere else is a
+    regression — extend `tt_git::repo` instead. Read that module's docs before
+    touching it; `repo::patch` in particular explains why its patch ids
+    deliberately do not match `git patch-id`.
   - `tt-claude-sessions` — backs the app's Claude Sessions screen:
     session-JSONL token accounting, the single-parse ledger scan/search path,
     ranked waste insights (`insights`), and the per-session turn/tool
@@ -232,8 +246,9 @@ Cargo workspace + npm workspace (`apps/client` only):
     base branch"** — `tt task ls`/`rm`/`clean` and the Agentboard rail all go
     through `ops::work_state`, never their own git checks, because no single
     git signal covers all three landing shapes (a squash merge is invisible to
-    both `--merged` and `git cherry`, which is what used to make merged tasks
-    look like they still held work). It keeps *uncommitted changes* and
+    both reachability and per-commit patch identity — it is caught only by
+    comparing the branch's *cumulative* diff, which is what used to make merged
+    tasks look like they still held work). It keeps *uncommitted changes* and
     *commits that never reached the base* as separate counts: only the first
     dies with the worktree, and only content-based evidence
     (`LandedVia::is_content_proof`) may justify `clean`'s `git branch -D` — a

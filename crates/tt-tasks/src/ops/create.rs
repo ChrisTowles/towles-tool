@@ -159,6 +159,6 @@ pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
         // `worktree add -b` succeeded, so the branch is ours and still points
         // at base — delete it too, or the retry dies on "branch already
         // exists" after e.g. fixing a template error.
-        let _ = git_checkout(&sr.checkout, &["branch", "-D", &opts.branch]);
+        let _ = crate::ops::repo_at(&sr.checkout).map(|repo| repo.delete_branch(&opts.branch));
     })
 }

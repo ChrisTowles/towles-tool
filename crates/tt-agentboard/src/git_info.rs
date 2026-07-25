@@ -226,57 +226,34 @@ impl GitInfoCache {
     }
 }
 
-/// Prefix `args` with `-C <dir>` for a `git` invocation — shared by every
-/// shell-out in this module.
-fn git_args<'a>(dir: &'a str, args: &[&'a str]) -> Vec<&'a str> {
-    let mut full = vec!["-C", dir];
-    full.extend_from_slice(args);
-    full
+/// This checkout's repository handle, from the process-wide cache
+/// ([`tt_git::repo`]). `None` for a directory that is not a repo — the same
+/// degradation the old `git_out` had, where a failed spawn returned an empty
+/// string and every stat came out zero.
+fn open_repo(dir: &str) -> Option<tt_git::repo::Repo> {
+    tt_git::repo::open(std::path::Path::new(dir)).ok()
 }
 
-/// Run `git -C <dir> <args...>` and return trimmed stdout, or "" on any failure
-/// — including a timeout: a repo on a stale network mount must degrade to
-/// empty stats, not hang its caller. Mirrors the TS `shellAsync` (ignores
-/// stderr and exit code; empty on error).
-fn git_out(dir: &str, args: &[&str]) -> String {
-    match tt_exec::run_with_timeout("git", &git_args(dir, args), std::time::Duration::from_secs(5))
-    {
-        Ok(out) => out.stdout.trim().to_string(),
-        Err(_) => String::new(),
-    }
-}
-
-/// Compute git info for `dir` by shelling out. Ports `computeGitInfo`. Returns
-/// empty [`GitInfo`] when the directory isn't a git repo. This is the thin
-/// subprocess layer — the parsing it delegates to is unit-tested separately.
-///
-/// `base_branch_override` is the folder's manual "vs main" override (see
-/// [`resolve_base_ref`]), threaded in by the caller from
-/// `FolderMetaStore::base_branch_for` — `compute_git_info` has no store
-/// access of its own, only `dir`.
 /// Fingerprint of every input the landing probe reads: `HEAD`'s sha, the
-/// resolved base's sha, and the branch's upstream-track string.
+/// resolved base's sha, and whether the branch's upstream is gone.
 /// `tt_tasks::ops::work_state` is a pure function of those three (its other
 /// arguments are constants at this call site), so an unchanged fingerprint
 /// means the previous landing answer is still exact.
 ///
 /// This is what keeps the poll's cost proportional to *actual git movement*
-/// rather than to elapsed time: three cheap reads stand in for a probe that
-/// costs up to ~192 subprocesses (`MAX_PROBES` commits × 3 spawns each).
+/// rather than to elapsed time. It mattered more when the probe cost up to
+/// ~192 subprocesses; it still earns its keep, since the probe now walks and
+/// diffs trees rather than spawning, and neither is free.
 ///
 /// Returns empty when `HEAD` or the base is unreadable — a partial fingerprint
 /// must never compare equal to a real one, so an unreadable repo re-probes
 /// instead of trusting a half-formed key.
-fn probe_fingerprint(dir: &str, compared_base: &str) -> String {
-    let head = git_out(dir, &["rev-parse", "HEAD"]);
-    let base = git_out(dir, &["rev-parse", compared_base]);
-    if head.is_empty() || base.is_empty() {
+fn probe_fingerprint(repo: &tt_git::repo::Repo, branch: &str, compared_base: &str) -> String {
+    let (Some(head), Some(base)) = (repo.head_id(), repo.resolve(compared_base)) else {
         return String::new();
-    }
-    // Empty is a legitimate answer here (a branch with no upstream), unlike
-    // the two shas above — so it never invalidates the fingerprint.
-    let track = git_out(dir, &["for-each-ref", "HEAD", "--format=%(upstream:track)"]);
-    format!("{head} {base} {track}")
+    };
+    let gone = repo.upstream_gone(&format!("refs/heads/{branch}"));
+    format!("{head} {base} {gone}")
 }
 
 /// Fingerprint of the filesystem facts that govern `is_worktree`/`common_dir`/
@@ -478,9 +455,9 @@ fn revision_fingerprint(
 /// Compute a folder's git info. `previous` is that folder's last cached value,
 /// used to skip repeat work when nothing it depends on has moved: the whole
 /// ref-derived half when the refs haven't moved (see [`revision_fingerprint`]),
-/// and, within a full recompute, the expensive landing probe (see
-/// [`probe_fingerprint`]) and the four structural-fact spawns (see
-/// [`structural_fingerprint`]). Pass `None` to force a full computation.
+/// and, within a full recompute, the landing probe (see [`probe_fingerprint`])
+/// and the four structural facts (see [`structural_fingerprint`]). Pass `None`
+/// to force a full computation.
 pub fn compute_git_info(
     dir: &str,
     base_branch_override: Option<&str>,
@@ -494,14 +471,16 @@ pub fn compute_git_info(
     if !std::path::Path::new(dir).is_dir() {
         return GitInfo { dir_missing: true, ..Default::default() };
     }
+    let Some(repo) = open_repo(dir) else {
+        return GitInfo::default();
+    };
 
     // Fast path: when nothing the ref-derived half reads has moved since the
     // last compute (HEAD/refs unchanged and the base still resolves the same
     // way — see `revision_fingerprint`), reuse `branch`/`compared_base`/ahead/
-    // behind/landing wholesale and pay only for the working-tree half (`status`
-    // + `diff`). That is the sole part no `.git` mtime can stand in for, so it
-    // is the only thing a backup-poll tick over an idle repo should cost —
-    // instead of the ~6 ref-reading spawns a full compute makes.
+    // behind/landing wholesale and pay only for the working-tree half (status
+    // + diff). That is the sole part no `.git` mtime can stand in for, so it
+    // is the only thing a backup-poll tick over an idle repo should cost.
     if let Some(prev) = previous.filter(|p| !p.revision_key.is_empty() && !p.git_dir.is_empty()) {
         let key = revision_fingerprint(
             dir,
@@ -512,20 +491,12 @@ pub fn compute_git_info(
             base_branch_override,
         );
         if !key.is_empty() && key == prev.revision_key {
-            let status_out = git_out(dir, &["status", "--porcelain"]);
             let diff_base =
                 if prev.diff_base.is_empty() { "HEAD" } else { prev.diff_base.as_str() };
-            let diff_out = git_out(dir, &["diff", "--numstat", diff_base]);
-            // Only the working-tree fields are recomputed from the fresh
-            // status/diff; every ref-derived and structural field is carried
-            // from `prev` (the fingerprint match proves they're still exact).
-            let mut info = compute_git_info_from_outputs(
-                &prev.branch,
-                prev.is_worktree,
-                &status_out,
-                &diff_out,
-                "",
-            );
+            // Only the working-tree fields are recomputed; every ref-derived
+            // and structural field is carried from `prev` (the fingerprint
+            // match proves they're still exact).
+            let mut info = working_tree_info(&repo, &prev.branch, prev.is_worktree, diff_base);
             info.commits_ahead = prev.commits_ahead;
             info.commits_behind = prev.commits_behind;
             info.commits_unlanded = prev.commits_unlanded;
@@ -539,50 +510,40 @@ pub fn compute_git_info(
             info.compared_base = prev.compared_base.clone();
             info.diff_base = prev.diff_base.clone();
             info.revision_key = key;
-            // Cheap filesystem facts, not spawns — kept fresh so a launch.json
-            // appearing (not covered by the fingerprint) or a marker change
-            // (which already busted the fingerprint above, so this tick is a
-            // full recompute anyway) shows up without waiting a whole poll.
+            // Cheap filesystem facts, not repository reads — kept fresh so a
+            // launch.json appearing (not covered by the fingerprint) or a
+            // marker change (which already busted the fingerprint above, so
+            // this tick is a full recompute anyway) shows up without waiting a
+            // whole poll.
             info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
             info.has_launch_config = crate::launch::has_launch_file(std::path::Path::new(dir));
             return info;
         }
     }
 
-    let branch = git_out(dir, &["rev-parse", "--abbrev-ref", "HEAD"]);
-    if branch.is_empty() {
+    let Some(branch) = repo.head_branch().filter(|b| !b.is_empty()) else {
         return GitInfo::default();
-    }
-    let status_out = git_out(dir, &["status", "--porcelain"]);
-    let compared_base = resolve_base_ref(dir, base_branch_override);
-    let merge_base = git_out(dir, &["merge-base", "HEAD", &compared_base]);
-    let base = if merge_base.is_empty() { "HEAD".to_string() } else { merge_base };
-    let diff_out = git_out(dir, &["diff", "--numstat", &base]);
-    let ahead_behind = git_out(
-        dir,
-        &[
-            "rev-list",
-            "--left-right",
-            "--count",
-            &format!("{compared_base}...HEAD"),
-        ],
-    );
+    };
+    let compared_base = resolve_base_ref(&repo, dir, base_branch_override);
+    // The diff baseline is the merge-base, not the base tip: a branch's stats
+    // must describe what *it* changed, not also what the base gained since.
+    let base = repo
+        .merge_base("HEAD", &compared_base)
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "HEAD".to_string());
 
     // See `structural_fingerprint`'s doc comment: `is_worktree`/`common_dir`/
     // `worktree_dirs`/`origin_url` are structural facts, not working-tree
     // state, so they're worth revalidating cheaply (two `fs::metadata` calls
-    // against the *previous* `common_dir`) before paying for the four git
-    // spawns that derive them fresh.
+    // against the *previous* `common_dir`) before deriving them again.
     let reuse_structural = previous.filter(|prev| !prev.common_dir.is_empty()).and_then(|prev| {
         let key = structural_fingerprint(&prev.common_dir);
         (!key.is_empty() && key == prev.structural_key).then_some((prev, key))
     });
-    // Resolved from the filesystem, not spawned — see `resolve_git_dir_fs`'s
-    // doc. Cheap enough (one metadata call, maybe one tiny read) that there's
-    // no reason to gate it behind the structural-reuse check like the other
-    // four; it's needed fresh every call regardless, both for `is_worktree`
-    // and for `Engine::control_watch_files`'s per-checkout `HEAD`/`index`
-    // targets.
+    // Resolved from the filesystem, not from the repository — see
+    // `resolve_git_dir_fs`'s doc. Needed fresh every call regardless, both for
+    // `is_worktree` and for `Engine::control_watch_files`' per-checkout
+    // `HEAD`/`index` targets.
     let git_dir = resolve_git_dir_fs(std::path::Path::new(dir));
     let is_worktree_fs =
         git_dir.as_deref().is_some_and(|g| g.to_string_lossy().contains("/worktrees/"));
@@ -591,21 +552,17 @@ pub fn compute_git_info(
         if let Some((prev, key)) = reuse_structural {
             (prev.origin_url.clone(), prev.common_dir.clone(), prev.worktree_dirs.clone(), key)
         } else {
-            let origin_url_raw = git_out(dir, &["remote", "get-url", "origin"]);
-            let origin_url = (!origin_url_raw.is_empty()).then_some(origin_url_raw);
-            let common_dir = git_common_dir(dir);
-            let worktree_dirs = list_other_worktrees(dir);
+            let origin_url = repo.origin_url();
+            let common_dir = repo.common_dir().to_string_lossy().into_owned();
+            let worktree_dirs = other_worktrees(&repo, dir);
             let structural_key = structural_fingerprint(&common_dir);
             (origin_url, common_dir, worktree_dirs, structural_key)
         };
 
-    let mut info = compute_git_info_from_outputs(
-        &branch,
-        is_worktree_fs,
-        &status_out,
-        &diff_out,
-        &ahead_behind,
-    );
+    let mut info = working_tree_info(&repo, &branch, is_worktree_fs, &base);
+    let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
+    info.commits_ahead = ahead;
+    info.commits_behind = behind;
     info.origin_url = origin_url;
     info.common_dir = common_dir;
     info.worktree_dirs = worktree_dirs;
@@ -613,17 +570,11 @@ pub fn compute_git_info(
     info.git_dir = git_dir.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
     info.has_launch_config = crate::launch::has_launch_file(std::path::Path::new(dir));
-    // Only worth the extra shell-outs once there's something to check —
-    // nothing ahead trivially means nothing unlanded.
+    // Only worth probing once there's something to check — nothing ahead
+    // trivially means nothing unlanded.
     if info.commits_ahead > 0 {
-        // Goes through `ops::work_state` rather than calling the probe
-        // directly, for two reasons beyond not duplicating it. It owns the
-        // strict exit-code contract the probe requires (`merge-base
-        // --is-ancestor` answers through its exit status and prints nothing,
-        // so the empty-string-on-failure `git_out` would read every branch as
-        // merged). And it redirects the probe's synthetic commit objects into
-        // scratch storage — which this path, running on the poll loop, is
-        // precisely the caller that cannot afford to skip.
+        // Goes through `ops::work_state` rather than the probe directly, so
+        // there is one implementation of "has this landed" rather than two.
         //
         // `compared_base` is already the resolved ref (see `resolve_base_ref`,
         // which prefers `origin/<name>`), so there is no local-then-remote
@@ -636,8 +587,8 @@ pub fn compute_git_info(
         // actually moved. When it hasn't, the previous answer is not merely a
         // good guess — it is the same computation over the same inputs — so
         // reusing it is exact, not a staleness tradeoff. This is what stops a
-        // hot poll loop from re-running the probe against an idle repo.
-        let fingerprint = probe_fingerprint(dir, &compared_base);
+        // hot poll loop from re-probing an idle repo.
+        let fingerprint = probe_fingerprint(&repo, &branch, &compared_base);
         let reusable = previous
             .filter(|prev| !fingerprint.is_empty() && prev.probe_key == fingerprint)
             .cloned();
@@ -658,8 +609,8 @@ pub fn compute_git_info(
     } else {
         info.commits_unlanded = 0;
     }
-    // The base `diff --numstat` ran against, so the ref-unchanged fast path can
-    // re-diff against the same base without re-spawning `merge-base`.
+    // The base the diff ran against, so the ref-unchanged fast path can
+    // re-diff against the same base without resolving the merge-base again.
     info.diff_base = base;
     // Stamp the revision fingerprint from the values just computed, so the next
     // poll can take the fast path above when nothing ref-derived has moved.
@@ -673,6 +624,33 @@ pub fn compute_git_info(
     );
     info.compared_base = compared_base;
     info
+}
+
+/// The working-tree half of [`GitInfo`]: `dirty`, `files_changed`, and the
+/// cumulative ± against `base`. Every other field is filled by the caller.
+///
+/// Untracked files count toward `files_changed` — they are changes the user
+/// can see — but contribute no line counts, since there is no diff for content
+/// that has never been committed.
+fn working_tree_info(
+    repo: &tt_git::repo::Repo,
+    branch: &str,
+    is_worktree: bool,
+    base: &str,
+) -> GitInfo {
+    let changes = repo.changes_vs(base).unwrap_or_default();
+    let dirty = repo.status().map(|status| status.is_dirty()).unwrap_or(false);
+    let lines_added = changes.iter().map(|c| c.lines_added).sum();
+    let lines_removed = changes.iter().map(|c| c.lines_removed).sum();
+    GitInfo {
+        branch: branch.to_string(),
+        is_worktree,
+        files_changed: changes.len() as i64,
+        lines_added,
+        lines_removed,
+        dirty,
+        ..Default::default()
+    }
 }
 
 /// Fetch `origin` for each distinct repo among `dirs`, deduped by common git
@@ -702,14 +680,7 @@ fn fetch_origin(dir: &str) {
 /// Absolute path to the repo's shared `.git` dir (same for every worktree of
 /// one repo), used to dedup fetches. Empty for a non-repo dir.
 fn git_common_dir(dir: &str) -> String {
-    let raw = git_out(dir, &["rev-parse", "--git-common-dir"]);
-    if raw.is_empty() {
-        return String::new();
-    }
-    let path = std::path::Path::new(&raw);
-    let abs =
-        if path.is_absolute() { path.to_path_buf() } else { std::path::Path::new(dir).join(path) };
-    std::fs::canonicalize(&abs).unwrap_or(abs).to_string_lossy().into_owned()
+    open_repo(dir).map(|repo| repo.common_dir().to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// This repo's other checkouts worth showing in the rail (`dir` itself
@@ -726,73 +697,67 @@ fn git_common_dir(dir: &str) -> String {
 /// (in `repos.json`) is unaffected: this fn only prunes the auto-discovery
 /// candidate list, never the user's own configured paths. Empty for a plain
 /// clone (no linked worktrees) or a non-repo dir.
-fn list_other_worktrees(dir: &str) -> Vec<String> {
-    let out = git_out(dir, &["worktree", "list", "--porcelain"]);
-    parse_worktree_list(&out)
+///
+/// `dir` is compared canonically: [`tt_git::repo::Repo::worktrees`] reports
+/// resolved paths, and a checkout reached through a symlink must still
+/// recognize itself and drop out of its own sibling list.
+fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
+    let self_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| std::path::PathBuf::from(dir));
+    repo.worktrees()
         .into_iter()
         .filter(|w| {
-            w.dir != dir && (w.is_main || tt_tasks::is_managed_task(std::path::Path::new(&w.dir)))
+            std::path::Path::new(&w.dir) != self_dir
+                && (w.is_main || tt_tasks::is_managed_task(std::path::Path::new(&w.dir)))
         })
         .map(|w| w.dir)
         .collect()
 }
 
 /// Force-remove `worktree_dir`'s registration from the repo checked out at
-/// `owner_dir`, then prune. A worktree dir deleted outside `git worktree
-/// remove`/`tt task rm` (a bare `rm -rf`, or the folder moved) is never a
-/// `repos.json` entry (see `merge_worktree_dirs`'s doc — it only ever enters
-/// the rail via `list_other_worktrees`' live discovery), so there is nothing
-/// for the rail's "Untrack" action to remove there; the registration in
-/// `owner_dir`'s `.git/worktrees/<name>` is the only place it's actually
-/// recorded, and `git worktree list --porcelain` keeps reporting it —
-/// `prunable` or not — until that registration is cleared. `--force` is
-/// required since the directory itself is already gone, which a plain
-/// `git worktree remove` refuses. `prune` runs regardless of whether
-/// `remove` succeeded, since a failed remove (e.g. already-pruned) can still
-/// leave a stale entry only `prune` clears. Returns whether `remove`
+/// `owner_dir`, then prune.
+///
+/// One of the two places this module still spawns `git` (the other is
+/// [`fetch_origin`]): gitoxide's worktree API is read-only, with no
+/// linked-worktree removal — see [`tt_git::repo`].
+///
+/// A worktree dir deleted outside `git worktree remove`/`tt task rm` (a bare
+/// `rm -rf`, or the folder moved) is never a `repos.json` entry (see
+/// `merge_worktree_dirs`'s doc — it only ever enters the rail via
+/// [`other_worktrees`]' live discovery), so there is nothing for the rail's
+/// "Untrack" action to remove there; the registration in `owner_dir`'s
+/// `.git/worktrees/<name>` is the only place it's actually recorded, and git
+/// keeps reporting it — `prunable` or not — until that registration is
+/// cleared. `--force` is required since the directory itself is already gone,
+/// which a plain `git worktree remove` refuses. `prune` runs regardless of
+/// whether `remove` succeeded, since a failed remove (e.g. already-pruned) can
+/// still leave a stale entry only `prune` clears. Returns whether `remove`
 /// reported success.
 pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
-    let removed = tt_exec::run_with_timeout_env(
-        "git",
-        &git_args(owner_dir, &["worktree", "remove", "--force", worktree_dir]),
-        tt_exec::GIT_NON_INTERACTIVE_ENV,
-        std::time::Duration::from_secs(10),
-    )
-    .is_ok_and(|out| out.ok());
-    let _ = tt_exec::run_with_timeout_env(
-        "git",
-        &git_args(owner_dir, &["worktree", "prune"]),
-        tt_exec::GIT_NON_INTERACTIVE_ENV,
-        std::time::Duration::from_secs(10),
-    );
+    let git = |args: &[&str]| {
+        let mut full = vec!["-C", owner_dir];
+        full.extend_from_slice(args);
+        tt_exec::run_with_timeout_env(
+            "git",
+            &full,
+            tt_exec::GIT_NON_INTERACTIVE_ENV,
+            std::time::Duration::from_secs(10),
+        )
+    };
+    let removed = git(&["worktree", "remove", "--force", worktree_dir]).is_ok_and(|out| out.ok());
+    let _ = git(&["worktree", "prune"]);
+    // The removed checkout's cached handle would otherwise hold an open object
+    // database against a directory that no longer exists.
+    tt_git::repo::forget(std::path::Path::new(worktree_dir));
     removed
 }
 
-/// One `git worktree list` entry: the checkout's absolute path, and whether it
-/// is the repo's main worktree.
-struct WorktreeEntry {
-    dir: String,
-    is_main: bool,
-}
-
-/// Parse `git worktree list --porcelain` into one [`WorktreeEntry`] per
-/// worktree. The porcelain contract lists the main worktree first — this
-/// parser is where that positional fact becomes the named `is_main`, so
-/// callers never reconstruct it from ordering. Pure — unit-tested on fixture
-/// output.
-fn parse_worktree_list(porcelain: &str) -> Vec<WorktreeEntry> {
-    porcelain
-        .lines()
-        .filter_map(|line| line.strip_prefix("worktree "))
-        .enumerate()
-        .map(|(i, dir)| WorktreeEntry { dir: dir.to_string(), is_main: i == 0 })
-        .collect()
-}
-
 /// origin/main, or origin/master if that's what the remote uses. Ports `resolveOriginMain`.
-fn resolve_origin_main(dir: &str) -> String {
-    let verified = git_out(dir, &["rev-parse", "--verify", "--quiet", "origin/main"]);
-    if verified.is_empty() { "origin/master".to_string() } else { "origin/main".to_string() }
+fn resolve_origin_main(repo: &tt_git::repo::Repo) -> String {
+    if repo.has_rev("origin/main") {
+        "origin/main".to_string()
+    } else {
+        "origin/master".to_string()
+    }
 }
 
 /// The ref every "vs main" comparison compares against — the diff pane's
@@ -813,7 +778,7 @@ fn resolve_origin_main(dir: &str) -> String {
 /// the task was created, and the diff pane wants the current pushed baseline,
 /// matching [`resolve_origin_main`]. Falls back to the local branch only when
 /// no `origin/<name>` ref exists at all (e.g. a base branch never pushed).
-fn resolve_base_ref(dir: &str, base_branch: Option<&str>) -> String {
+fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
     let candidates = [base_branch.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string)]
         .into_iter()
         .flatten()
@@ -821,79 +786,14 @@ fn resolve_base_ref(dir: &str, base_branch: Option<&str>) -> String {
     for name in candidates {
         let name = name.trim_start_matches("origin/");
         let remote = format!("origin/{name}");
-        if !git_out(dir, &["rev-parse", "--verify", "--quiet", &remote]).is_empty() {
+        if repo.has_rev(&remote) {
             return remote;
         }
-        if !git_out(dir, &["rev-parse", "--verify", "--quiet", name]).is_empty() {
+        if repo.has_rev(name) {
             return name.to_string();
         }
     }
-    resolve_origin_main(dir)
-}
-
-/// Pure assembly of [`GitInfo`] from raw git command outputs. Unit-tested on
-/// fixture strings. Ports the parsing half of `computeGitInfo`.
-///
-/// `is_worktree` is resolved by the caller rather than parsed here from a
-/// `--git-dir` string, because `compute_git_info` can source it two ways: a
-/// fresh `rev-parse --git-dir` spawn, or a revalidated previous value (see
-/// [`structural_fingerprint`]) — this pure assembly doesn't need to know which.
-pub fn compute_git_info_from_outputs(
-    branch: &str,
-    is_worktree: bool,
-    status_out: &str,
-    diff_out: &str,
-    ahead_behind: &str,
-) -> GitInfo {
-    let (lines_added, lines_removed, changed_files) = parse_numstat(diff_out);
-
-    // Untracked files aren't in the diff but still count as changed.
-    let untracked = status_out.lines().filter(|l| l.starts_with("??")).count() as i64;
-    let files_changed = changed_files.len() as i64 + untracked;
-    let dirty = status_out.lines().any(|l| !l.trim().is_empty());
-
-    let (commits_ahead, commits_behind) = parse_ahead_behind(ahead_behind);
-    GitInfo {
-        branch: branch.to_string(),
-        is_worktree,
-        files_changed,
-        lines_added,
-        lines_removed,
-        commits_ahead,
-        commits_behind,
-        // Filled by `compute_git_info`, which owns the git shell-outs the
-        // landed probe needs; this pure assembly has no subprocess access.
-        landed: None,
-        dirty,
-        // `compute_git_info` fills this in — it needs `compared_base`, which
-        // this pure parser never sees.
-        commits_unlanded: 0,
-        // The pure parser has no origin/common-dir/worktree-list/task-marker/
-        // base-ref knowledge; `compute_git_info` fills all of these in.
-        // Existence is decided before shelling out, so a parsed result is
-        // never "missing".
-        origin_url: None,
-        common_dir: String::new(),
-        worktree_dirs: Vec::new(),
-        dir_missing: false,
-        task_base_branch: None,
-        compared_base: String::new(),
-        has_launch_config: false,
-        // Stamped by `compute_git_info` alongside the probe it guards; empty
-        // here means "no probe has run", which never compares equal to a real
-        // fingerprint and so can only cause a probe, never skip one.
-        probe_key: String::new(),
-        structural_key: String::new(),
-        // Filled by `compute_git_info` from the filesystem, not spawned;
-        // this pure parser never sees a directory to resolve it from.
-        git_dir: String::new(),
-        // Stamped by `compute_git_info` once it has resolved the base and the
-        // control-file paths; empty here means "never computed", which never
-        // compares equal to a real fingerprint and so can only cause a full
-        // recompute, never skip one.
-        revision_key: String::new(),
-        diff_base: String::new(),
-    }
+    resolve_origin_main(repo)
 }
 
 /// What baseline the diff pane compares the working tree against.
@@ -902,50 +802,8 @@ pub enum DiffMode {
     /// Everything on this branch vs where it forked from origin/main
     /// (merge-base) — committed and uncommitted work alike.
     Main,
-    /// Only what isn't committed yet: `git diff HEAD` (staged + unstaged).
+    /// Only what isn't committed yet: staged + unstaged, vs HEAD.
     Uncommitted,
-}
-
-/// Full unified diff for the diff pane, baseline picked by `mode`. `base_branch`
-/// overrides `DiffMode::Main`'s comparison ref (see [`resolve_base_ref`]);
-/// ignored for `DiffMode::Uncommitted`. Untracked files don't appear in `git
-/// diff`, so they're listed by name in a trailing block rather than silently
-/// dropped. Empty string when `dir` isn't a git repo or has no changes.
-pub fn diff_patch(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> String {
-    if dir.is_empty() {
-        return String::new();
-    }
-    let base = resolve_diff_base(dir, mode, base_branch);
-    let mut patch = git_out(dir, &["diff", &base]);
-
-    let status_out = git_out(dir, &["status", "--porcelain"]);
-    let untracked: Vec<&str> =
-        status_out.lines().filter(|l| l.starts_with("??")).map(|l| l[2..].trim()).collect();
-    if !untracked.is_empty() {
-        if !patch.is_empty() {
-            patch.push_str("\n\n");
-        }
-        patch.push_str("# Untracked files (not shown):\n");
-        for f in untracked {
-            patch.push_str("?? ");
-            patch.push_str(f);
-            patch.push('\n');
-        }
-    }
-    patch
-}
-
-/// The commit the diff pane compares against: merge-base with the resolved
-/// base ref for [`DiffMode::Main`], HEAD for [`DiffMode::Uncommitted`].
-fn resolve_diff_base(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> String {
-    match mode {
-        DiffMode::Main => {
-            let base_ref = resolve_base_ref(dir, base_branch);
-            let merge_base = git_out(dir, &["merge-base", "HEAD", &base_ref]);
-            if merge_base.is_empty() { "HEAD".to_string() } else { merge_base }
-        }
-        DiffMode::Uncommitted => "HEAD".to_string(),
-    }
 }
 
 /// One changed file in the diff pane's file list. `status` is git's
@@ -961,25 +819,56 @@ pub struct DiffFile {
     pub lines_removed: i64,
 }
 
-/// The diff pane's changed-file list, baseline picked like [`diff_patch`]:
-/// `git diff --name-status`/`--numstat` (rename-aware) merged per file, plus
-/// untracked files from `git status` (status `?`, no line counts — they have
-/// no diff yet). Empty when `dir` isn't a repo or nothing changed.
+/// The commit the diff pane compares against: merge-base with the resolved
+/// base ref for [`DiffMode::Main`], HEAD for [`DiffMode::Uncommitted`].
+fn resolve_diff_base(
+    repo: &tt_git::repo::Repo,
+    dir: &str,
+    mode: DiffMode,
+    base_branch: Option<&str>,
+) -> String {
+    match mode {
+        DiffMode::Main => {
+            let base_ref = resolve_base_ref(repo, dir, base_branch);
+            repo.merge_base("HEAD", &base_ref)
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "HEAD".to_string())
+        }
+        DiffMode::Uncommitted => "HEAD".to_string(),
+    }
+}
+
+/// The diff pane's changed-file list, rename-aware, baseline picked by `mode`.
+/// Untracked files appear with status `?` and no line counts — they have no
+/// diff yet. Empty when `dir` isn't a repo or nothing changed.
 pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> Vec<DiffFile> {
     if dir.is_empty() {
         return Vec::new();
     }
-    let base = resolve_diff_base(dir, mode, base_branch);
-    let name_status = git_out(dir, &["diff", "--name-status", "-M", &base]);
-    let numstat = git_out(dir, &["diff", "--numstat", "-M", &base]);
-    let untracked_out = git_out(dir, &["status", "--porcelain"]);
-    parse_diff_files(&name_status, &numstat, &untracked_out)
+    let Some(repo) = open_repo(dir) else {
+        return Vec::new();
+    };
+    let base = resolve_diff_base(&repo, dir, mode, base_branch);
+    let mut files: Vec<DiffFile> = repo
+        .changes_vs(&base)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|change| DiffFile {
+            path: change.path,
+            old_path: change.old_path,
+            status: change.status.to_string(),
+            lines_added: change.lines_added,
+            lines_removed: change.lines_removed,
+        })
+        .collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    files
 }
 
-/// A file's content at the diff baseline (`git show <base>:<path>`), for the
-/// original side of the diff editor. `None` when the file doesn't exist there
-/// (added/untracked) or `dir` isn't a repo. Untrimmed — a stripped trailing
-/// newline would show up as a phantom EOL change.
+/// A file's content at the diff baseline, for the original side of the diff
+/// editor. `None` when the file doesn't exist there (added/untracked), when
+/// `dir` isn't a repo, or when the content isn't valid UTF-8 — the editor has
+/// nothing to show for a binary blob either way.
 pub fn base_file_content(
     dir: &str,
     mode: DiffMode,
@@ -989,88 +878,10 @@ pub fn base_file_content(
     if dir.is_empty() || path.is_empty() {
         return None;
     }
-    let base = resolve_diff_base(dir, mode, base_branch);
-    let spec = format!("{base}:{path}");
-    let out = tt_exec::run_with_timeout(
-        "git",
-        &["-C", dir, "show", &spec],
-        std::time::Duration::from_secs(5),
-    )
-    .ok()?;
-    out.ok().then_some(out.stdout)
-}
-
-/// Pure parse behind [`diff_files`]: merge `--name-status` (status letter +
-/// rename old/new paths) with `--numstat` (per-file ± counts; `-` for binary)
-/// and append `git status --porcelain`'s `??` untracked entries. Both diff
-/// outputs are rename-aware (`-M`), so the numstat path arrow/brace forms are
-/// normalized to the post-rename path before matching.
-fn parse_diff_files(name_status: &str, numstat: &str, untracked_out: &str) -> Vec<DiffFile> {
-    let mut counts: std::collections::HashMap<String, (i64, i64)> =
-        std::collections::HashMap::new();
-    for line in numstat.lines() {
-        let mut parts = line.splitn(3, '\t');
-        let (Some(added), Some(removed), Some(path)) = (parts.next(), parts.next(), parts.next())
-        else {
-            continue;
-        };
-        counts.insert(
-            numstat_new_path(path),
-            (added.parse().unwrap_or(0), removed.parse().unwrap_or(0)),
-        );
-    }
-    let mut files = Vec::new();
-    for line in name_status.lines() {
-        let mut parts = line.split('\t');
-        let Some(status_field) = parts.next() else {
-            continue;
-        };
-        let status = status_field.chars().next().unwrap_or_default();
-        if !status.is_ascii_alphabetic() {
-            continue;
-        }
-        let (old_path, path) = match (parts.next(), parts.next()) {
-            (Some(old), Some(new)) => (Some(old.to_string()), new.to_string()),
-            (Some(only), None) => (None, only.to_string()),
-            _ => continue,
-        };
-        let (lines_added, lines_removed) = counts.get(&path).copied().unwrap_or((0, 0));
-        files.push(DiffFile {
-            path,
-            old_path,
-            status: status.to_string(),
-            lines_added,
-            lines_removed,
-        });
-    }
-    for line in untracked_out.lines() {
-        if let Some(path) = line.strip_prefix("??") {
-            files.push(DiffFile {
-                path: path.trim().to_string(),
-                old_path: None,
-                status: "?".to_string(),
-                lines_added: 0,
-                lines_removed: 0,
-            });
-        }
-    }
-    files
-}
-
-/// Normalize a `--numstat` rename path to the post-rename path: either the
-/// brace form `dir/{old => new}/x` or the whole-path arrow `old => new`.
-fn numstat_new_path(path: &str) -> String {
-    if let (Some(open), Some(close)) = (path.find('{'), path.find('}'))
-        && let Some(arrow) = path[open..close].find(" => ")
-    {
-        let new_part = &path[open + arrow + 4..close];
-        let joined = format!("{}{}{}", &path[..open], new_part, &path[close + 1..]);
-        return joined.replace("//", "/");
-    }
-    if let Some((_, new)) = path.split_once(" => ") {
-        return new.to_string();
-    }
-    path.to_string()
+    let repo = open_repo(dir)?;
+    let base = resolve_diff_base(&repo, dir, mode, base_branch);
+    let content = repo.file_at(&base, path)?;
+    String::from_utf8(content).ok()
 }
 
 /// One commit ahead of `compared_base`, with its own line-count diff — not
@@ -1086,87 +897,27 @@ pub struct CommitStat {
 }
 
 /// Commits on HEAD that `compared_base` doesn't have, oldest first, each with
-/// its own `git diff --numstat` line-count diff. `base_branch` is the same
-/// per-folder override [`compute_git_info`]/[`diff_patch`] take. Empty when
-/// `dir` isn't a repo or nothing is ahead.
+/// its own line-count diff. `base_branch` is the same per-folder override
+/// [`compute_git_info`] takes. Empty when `dir` isn't a repo or nothing is
+/// ahead.
 pub fn commit_stats(dir: &str, base_branch: Option<&str>) -> Vec<CommitStat> {
     if dir.is_empty() {
         return Vec::new();
     }
-    let compared_base = resolve_base_ref(dir, base_branch);
-    let log_out = git_out(
-        dir,
-        &[
-            "log",
-            "--reverse",
-            "--numstat",
-            "--pretty=format:\x01%H\x1f%s",
-            &format!("{compared_base}..HEAD"),
-        ],
-    );
-    parse_commit_stats(&log_out)
-}
-
-/// Pure parse of `git log --reverse --numstat --pretty=format:\x01%H\x1f%s`
-/// output: a `\x01`-prefixed header line per commit (sha/subject split on
-/// `\x1f`), followed by that commit's `--numstat` lines. Unit-tested on
-/// fixture output; the shell-out lives in [`commit_stats`].
-fn parse_commit_stats(log_out: &str) -> Vec<CommitStat> {
-    let mut stats = Vec::new();
-    let mut current: Option<CommitStat> = None;
-    for line in log_out.lines() {
-        if let Some(header) = line.strip_prefix('\x01') {
-            if let Some(c) = current.take() {
-                stats.push(c);
-            }
-            let mut parts = header.splitn(2, '\x1f');
-            let sha = parts.next().unwrap_or("").to_string();
-            let subject = parts.next().unwrap_or("").to_string();
-            current = Some(CommitStat { sha, subject, lines_added: 0, lines_removed: 0 });
-        } else if line.is_empty() {
-            continue;
-        } else if let Some(c) = current.as_mut() {
-            let mut parts = line.splitn(3, '\t');
-            let added = parts.next().unwrap_or("");
-            let removed = parts.next().unwrap_or("");
-            if added != "-" {
-                c.lines_added += added.parse::<i64>().unwrap_or(0);
-            }
-            if removed != "-" {
-                c.lines_removed += removed.parse::<i64>().unwrap_or(0);
-            }
-        }
-    }
-    if let Some(c) = current.take() {
-        stats.push(c);
-    }
-    stats
-}
-
-/// Parse `git diff --numstat` output into (added, removed, changed file set).
-/// Binary files (`-`/`-`) contribute to the file set but not line counts.
-fn parse_numstat(diff_out: &str) -> (i64, i64, HashSet<String>) {
-    let mut lines_added = 0;
-    let mut lines_removed = 0;
-    let mut changed_files: HashSet<String> = HashSet::new();
-    for line in diff_out.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let mut parts = line.splitn(3, '\t');
-        let added = parts.next().unwrap_or("");
-        let removed = parts.next().unwrap_or("");
-        let file = parts.next().unwrap_or("");
-        if !file.is_empty() {
-            changed_files.insert(file.to_string());
-        }
-        if added == "-" || removed == "-" {
-            continue; // binary
-        }
-        lines_added += added.parse::<i64>().unwrap_or(0);
-        lines_removed += removed.parse::<i64>().unwrap_or(0);
-    }
-    (lines_added, lines_removed, changed_files)
+    let Some(repo) = open_repo(dir) else {
+        return Vec::new();
+    };
+    let compared_base = resolve_base_ref(&repo, dir, base_branch);
+    repo.commit_stats(&compared_base)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|stat| CommitStat {
+            sha: stat.sha,
+            subject: stat.subject,
+            lines_added: stat.lines_added,
+            lines_removed: stat.lines_removed,
+        })
+        .collect()
 }
 
 /// Every file in the checkout worth telling a Claude session about: tracked
@@ -1175,80 +926,16 @@ fn parse_numstat(diff_out: &str) -> (i64, i64, HashSet<String>) {
 /// Empty when `dir` isn't a git repo — same degradation as the rest of this
 /// module.
 pub fn list_files(dir: &str, cap: usize) -> Vec<String> {
-    let tracked = git_out(dir, &["ls-files"]);
-    let untracked = git_out(dir, &["ls-files", "--others", "--exclude-standard"]);
-    merge_file_lists(&tracked, &untracked, cap)
-}
-
-/// Pure merge of the two `ls-files` outputs (unit-tested; the subprocess layer
-/// above is not).
-fn merge_file_lists(tracked: &str, untracked: &str, cap: usize) -> Vec<String> {
-    let mut files: Vec<String> = tracked
-        .lines()
-        .chain(untracked.lines())
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect();
-    files.sort();
-    files.dedup();
-    files.truncate(cap);
-    files
-}
-
-/// Parse `git rev-list --left-right --count <origin>...HEAD` ("behind\tahead")
-/// into `(ahead, behind)` counts vs origin/main.
-fn parse_ahead_behind(ahead_behind: &str) -> (i64, i64) {
-    if ahead_behind.is_empty() {
-        return (0, 0);
-    }
-    let mut parts = ahead_behind.split('\t');
-    let behind = parts.next().and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-    let ahead = parts.next().and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0);
-    (ahead, behind)
+    open_repo(dir).and_then(|repo| repo.list_files(cap).ok()).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_commit_stats_splits_header_lines_from_numstat() {
-        let log = "\x01aaa111\x1ffirst commit\n10\t2\tsrc/a.rs\n5\t0\tsrc/b.rs\n\
-            \x01bbb222\x1fsecond commit\n1\t1\tsrc/a.rs\n";
-        let stats = parse_commit_stats(log);
-        assert_eq!(
-            stats,
-            vec![
-                CommitStat {
-                    sha: "aaa111".into(),
-                    subject: "first commit".into(),
-                    lines_added: 15,
-                    lines_removed: 2,
-                },
-                CommitStat {
-                    sha: "bbb222".into(),
-                    subject: "second commit".into(),
-                    lines_added: 1,
-                    lines_removed: 1,
-                },
-            ],
-        );
-    }
-
-    #[test]
-    fn parse_commit_stats_skips_binary_numstat_and_handles_empty_input() {
-        let log = "\x01ccc333\x1fbinary asset\n-\t-\tassets/logo.png\n";
-        assert_eq!(
-            parse_commit_stats(log),
-            vec![CommitStat {
-                sha: "ccc333".into(),
-                subject: "binary asset".into(),
-                lines_added: 0,
-                lines_removed: 0,
-            }],
-        );
-        assert!(parse_commit_stats("").is_empty());
+    /// [`other_worktrees`] by directory, the shape the old free function had.
+    fn worktree_dirs_of(dir: &str) -> Vec<String> {
+        open_repo(dir).map(|repo| other_worktrees(&repo, dir)).unwrap_or_default()
     }
 
     #[test]
@@ -1300,70 +987,6 @@ mod tests {
     }
 
     #[test]
-    fn merge_file_lists_sorts_dedupes_and_caps() {
-        let tracked = "src/b.rs\nsrc/a.rs\nREADME.md\n";
-        let untracked = "notes.txt\nsrc/a.rs\n\n  \n";
-        assert_eq!(
-            merge_file_lists(tracked, untracked, 10),
-            vec!["README.md", "notes.txt", "src/a.rs", "src/b.rs"],
-        );
-        assert_eq!(merge_file_lists(tracked, untracked, 2), vec!["README.md", "notes.txt"]);
-        assert!(merge_file_lists("", "", 10).is_empty());
-    }
-
-    #[test]
-    fn numstat_sums_lines_and_collects_files_skipping_binary() {
-        let diff = "10\t2\tsrc/a.rs\n5\t0\tsrc/b.rs\n-\t-\tassets/logo.png\n";
-        let info = compute_git_info_from_outputs("main", false, "", diff, "");
-        assert_eq!(info.lines_added, 15);
-        assert_eq!(info.lines_removed, 2);
-        // 3 distinct files (including the binary one), no untracked.
-        assert_eq!(info.files_changed, 3);
-    }
-
-    #[test]
-    fn untracked_files_counted_from_porcelain() {
-        let status = "?? new1.txt\n?? new2.txt\n M tracked.rs\n";
-        let diff = "1\t1\ttracked.rs\n";
-        let info = compute_git_info_from_outputs("main", false, status, diff, "");
-        // 1 changed file (tracked.rs) + 2 untracked.
-        assert_eq!(info.files_changed, 3);
-    }
-
-    #[test]
-    fn dirty_reflects_any_porcelain_line_blank_or_not() {
-        let info = compute_git_info_from_outputs("main", false, "", "", "");
-        assert!(!info.dirty);
-        let dirty = compute_git_info_from_outputs("main", false, "?? new.txt\n", "", "");
-        assert!(dirty.dirty);
-    }
-
-    #[test]
-    fn worktree_detected_from_git_dir() {
-        let info = compute_git_info_from_outputs("feat", true, "", "", "");
-        assert!(info.is_worktree);
-        let info2 = compute_git_info_from_outputs("main", false, "", "", "");
-        assert!(!info2.is_worktree);
-    }
-
-    #[test]
-    fn ahead_behind_parsed_as_separate_counts() {
-        // "behind\tahead" → (ahead, behind)
-        assert_eq!(parse_ahead_behind("0\t3"), (3, 0));
-        assert_eq!(parse_ahead_behind("2\t0"), (0, 2));
-        assert_eq!(parse_ahead_behind("1\t4"), (4, 1));
-        assert_eq!(parse_ahead_behind(""), (0, 0));
-    }
-
-    #[test]
-    fn branch_and_ahead_behind_flow_through() {
-        let info = compute_git_info_from_outputs("feature/x", false, "", "", "2\t5");
-        assert_eq!(info.branch, "feature/x");
-        assert_eq!(info.commits_ahead, 5);
-        assert_eq!(info.commits_behind, 2);
-    }
-
-    #[test]
     fn cache_fresh_stale_and_invalidate() {
         let mut cache = GitInfoCache::new();
         let info = GitInfo { branch: "main".into(), ..Default::default() };
@@ -1396,25 +1019,6 @@ mod tests {
         cache.insert("/repo", info.clone(), 1000);
         // Fresh → returns cached value without shelling out to git.
         assert_eq!(cache.get_or_refresh("/repo", 2000), info);
-    }
-
-    #[test]
-    fn worktree_list_parses_each_entry_path() {
-        let porcelain = "worktree /repo/main\nHEAD abc\nbranch refs/heads/main\n\n\
-            worktree /repo/.claude/worktrees/feat\nHEAD def\nbranch refs/heads/feat\n";
-        let entries = parse_worktree_list(porcelain);
-        assert_eq!(
-            entries.iter().map(|e| e.dir.as_str()).collect::<Vec<_>>(),
-            vec!["/repo/main", "/repo/.claude/worktrees/feat"],
-        );
-        // The porcelain contract lists the main worktree first; the parser is
-        // what turns that ordering into the named flag.
-        assert_eq!(entries.iter().map(|e| e.is_main).collect::<Vec<_>>(), vec![true, false]);
-    }
-
-    #[test]
-    fn worktree_list_empty_for_plain_clone_or_blank_output() {
-        assert!(parse_worktree_list("").is_empty());
     }
 
     #[test]
@@ -1517,7 +1121,7 @@ mod tests {
             ],
         );
 
-        let dirs = list_other_worktrees(main.to_str().unwrap());
+        let dirs = worktree_dirs_of(main.to_str().unwrap());
         assert_eq!(dirs, vec![managed.to_str().unwrap().to_string()]);
 
         // From the task's perspective the primary checkout is discovered too —
@@ -1525,7 +1129,7 @@ mod tests {
         // unmanaged linked one. This is what keeps a repo group's main
         // checkout in the rail when only tasks were ever tracked in
         // repos.json. The unmanaged linked worktree stays hidden either way.
-        let dirs = list_other_worktrees(managed.to_str().unwrap());
+        let dirs = worktree_dirs_of(managed.to_str().unwrap());
         assert_eq!(dirs, vec![main.to_str().unwrap().to_string()]);
     }
 
@@ -1571,8 +1175,9 @@ mod tests {
         )
         .unwrap();
         let raw_worktree_dirs = |dir: &str| {
-            let out = git_out(dir, &["worktree", "list", "--porcelain"]);
-            parse_worktree_list(&out).into_iter().map(|w| w.dir).collect::<Vec<_>>()
+            open_repo(dir)
+                .map(|repo| repo.worktrees().into_iter().map(|w| w.dir).collect::<Vec<_>>())
+                .unwrap_or_default()
         };
         assert!(raw_worktree_dirs(main.to_str().unwrap()).contains(&managed_s(&managed)));
 
@@ -1624,15 +1229,27 @@ mod tests {
         let dir = repo.to_str().unwrap();
         // A local branch with no matching remote ref: the override resolves
         // directly to the local branch name.
-        assert_eq!(resolve_base_ref(dir, Some("develop")), "develop");
+        assert_eq!(
+            resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("develop")),
+            "develop"
+        );
         // A leading "origin/" on the override is stripped before re-adding it,
         // so passing either form of the same branch resolves identically.
-        assert_eq!(resolve_base_ref(dir, Some("origin/develop")), "develop");
+        assert_eq!(
+            resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("origin/develop")),
+            "develop"
+        );
         // An override that resolves to nothing (no such branch, no remote)
         // falls back to the origin/main-or-master auto-detect.
-        assert_eq!(resolve_base_ref(dir, Some("no-such-branch")), resolve_origin_main(dir));
+        assert_eq!(
+            resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("no-such-branch")),
+            resolve_origin_main(&open_repo(dir).expect("repo"))
+        );
         // No override at all: same auto-detect.
-        assert_eq!(resolve_base_ref(dir, None), resolve_origin_main(dir));
+        assert_eq!(
+            resolve_base_ref(&open_repo(dir).expect("repo"), dir, None),
+            resolve_origin_main(&open_repo(dir).expect("repo"))
+        );
     }
 
     #[test]
@@ -1671,12 +1288,15 @@ mod tests {
         let dir = repo.to_str().unwrap();
         // No explicit override: the task's own marker base wins over the
         // origin/main auto-detect, and resolves to the origin remote copy.
-        assert_eq!(resolve_base_ref(dir, None), "origin/develop");
+        assert_eq!(resolve_base_ref(&open_repo(dir).expect("repo"), dir, None), "origin/develop");
         // An explicit per-folder override still takes priority over the
         // task's recorded creation base.
         run(&["branch", "release"]);
         run(&["update-ref", "refs/remotes/origin/release", "release"]);
-        assert_eq!(resolve_base_ref(dir, Some("release")), "origin/release");
+        assert_eq!(
+            resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("release")),
+            "origin/release"
+        );
     }
 
     #[test]
@@ -1700,6 +1320,44 @@ mod tests {
         // Present but not a git repo: still not "missing".
         let info = compute_git_info(root.path().to_str().unwrap(), None, None);
         assert!(!info.dir_missing);
+    }
+
+    /// `dirty` and `files_changed` against a real working tree.
+    ///
+    /// These used to be asserted by parsing fixture `--porcelain`/`--numstat`
+    /// strings. There is no such text now, and a fixture would only prove that
+    /// this module can read its own invention — so the assertions moved onto a
+    /// real repository, where they can catch a genuine disagreement about what
+    /// counts as a change.
+    #[test]
+    fn dirty_and_files_changed_track_the_working_tree() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+
+        let clean = compute_git_info(dir, None, None);
+        assert!(!clean.dirty, "a freshly committed tree is not dirty");
+        assert_eq!(clean.files_changed, 0);
+
+        // A tracked file edited but not staged: invisible to `.git` mtimes,
+        // which is exactly why the poll still reads the working tree.
+        std::fs::write(root.path().join("f.txt"), "1\n2\n").unwrap();
+        let edited = compute_git_info(dir, None, None);
+        assert!(edited.dirty);
+        assert_eq!(edited.files_changed, 1);
+        assert_eq!((edited.lines_added, edited.lines_removed), (2, 1));
+
+        // Untracked files have no diff, but they are still changes the user
+        // can see, so they count toward `files_changed` with no line counts.
+        std::fs::write(root.path().join("new.txt"), "fresh\n").unwrap();
+        let untracked = compute_git_info(dir, None, None);
+        assert!(untracked.dirty);
+        assert_eq!(untracked.files_changed, 2);
+        assert_eq!(
+            (untracked.lines_added, untracked.lines_removed),
+            (edited.lines_added, edited.lines_removed),
+            "an untracked file contributes no line counts"
+        );
     }
 
     #[test]
@@ -2013,8 +1671,15 @@ mod tests {
         let resolved = resolve_git_dir_fs(&worktree).expect("real worktree must resolve");
         // The real git-maintained pointer is the ground truth here, not a
         // guess — this is exactly what `rev-parse --git-dir` would answer,
-        // reached with zero subprocess spawns instead.
-        let spawned = git_out(worktree.to_str().unwrap(), &["rev-parse", "--git-dir"]);
+        // reached with zero subprocess spawns instead. The test spawns it
+        // precisely because that is the thing being agreed with.
+        let spawned = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&worktree)
+            .args(["rev-parse", "--git-dir"])
+            .output()
+            .expect("git runs");
+        let spawned = String::from_utf8_lossy(&spawned.stdout).trim().to_string();
         assert_eq!(resolved, std::path::PathBuf::from(spawned));
         assert!(resolved.to_string_lossy().contains("/worktrees/task"));
         assert!(resolved.join("HEAD").is_file(), "the resolved gitdir must have its own HEAD");
@@ -2456,63 +2121,5 @@ mod tests {
         assert_eq!(info.commits_ahead, 3);
         assert_eq!(info.commits_unlanded, 1, "only the post-merge commit is outstanding");
         assert_eq!(info.landed, None, "a branch with new work has not fully landed");
-    }
-
-    #[test]
-    fn from_outputs_never_flags_missing() {
-        // The pure parser only sees git command strings; existence is decided
-        // by `compute_git_info` before any shell-out.
-        let info = compute_git_info_from_outputs("main", false, "", "", "");
-        assert!(!info.dir_missing);
-    }
-
-    #[test]
-    fn parse_diff_files_merges_status_counts_and_untracked() {
-        let name_status =
-            "M\tsrc/a.rs\nA\tsrc/b.rs\nD\told.rs\nR087\tsrc/old_name.rs\tsrc/new_name.rs";
-        let numstat = "3\t1\tsrc/a.rs\n10\t0\tsrc/b.rs\n0\t5\told.rs\n2\t2\tsrc/{old_name.rs => new_name.rs}\n-\t-\tbin.png";
-        let untracked_out = "?? notes.md\n M src/a.rs";
-        let files = parse_diff_files(name_status, numstat, untracked_out);
-        assert_eq!(files.len(), 5);
-        assert_eq!(
-            files[0],
-            DiffFile {
-                path: "src/a.rs".into(),
-                old_path: None,
-                status: "M".into(),
-                lines_added: 3,
-                lines_removed: 1,
-            }
-        );
-        assert_eq!(files[2].status, "D");
-        assert_eq!(
-            files[3],
-            DiffFile {
-                path: "src/new_name.rs".into(),
-                old_path: Some("src/old_name.rs".into()),
-                status: "R".into(),
-                lines_added: 2,
-                lines_removed: 2,
-            }
-        );
-        assert_eq!(
-            files[4],
-            DiffFile {
-                path: "notes.md".into(),
-                old_path: None,
-                status: "?".into(),
-                lines_added: 0,
-                lines_removed: 0,
-            }
-        );
-    }
-
-    #[test]
-    fn numstat_new_path_handles_arrow_forms() {
-        assert_eq!(numstat_new_path("plain/path.rs"), "plain/path.rs");
-        assert_eq!(numstat_new_path("old.rs => new.rs"), "new.rs");
-        assert_eq!(numstat_new_path("src/{old.rs => new.rs}"), "src/new.rs");
-        // A rename out of a directory leaves an empty brace side.
-        assert_eq!(numstat_new_path("src/{lib => }/mod.rs"), "src/mod.rs");
     }
 }

@@ -195,10 +195,8 @@ fn check_stale_tasks() -> Vec<StaleTaskCheck> {
     root.tasks()
         .into_iter()
         .filter_map(|(name, dir)| {
-            let branch = ops::git_task(&dir, &["branch", "--show-current"])
-                .ok()
-                .filter(|o| o.ok())
-                .map(|o| o.stdout.trim().to_string())?;
+            let branch =
+                ops::repo_at(&dir).ok().and_then(|repo| repo.head_branch()).unwrap_or_default();
             // A detached HEAD has no branch to judge; the base branch itself is
             // never a stale task.
             if branch.is_empty() || branch == refs.base {

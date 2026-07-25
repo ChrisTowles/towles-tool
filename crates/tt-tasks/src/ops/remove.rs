@@ -175,10 +175,9 @@ pub fn remove_task(
             .push("fetch --prune failed (offline?) — using local refs for guard checks".into()),
     }
 
-    // One `git status --porcelain` answers both questions below — whether git
-    // works in there at all, and how dirty the tree is. `clean_tasks` calls
-    // this for every merged task, so a second spawn here is per-task waste.
-    let status = git_task(&dir, &["status", "--porcelain"]).ok().filter(|o| o.ok());
+    // One status read answers both questions below — whether git works in
+    // there at all, and how dirty the tree is.
+    let status = crate::ops::repo_at(&dir).ok().and_then(|repo| repo.status().ok());
 
     // broken worktree: git can't even report status
     let Some(status) = status else {
@@ -212,22 +211,8 @@ pub fn remove_task(
         }));
     };
 
-    let dirty = crate::guards::dirty_entry_count(&status.stdout);
-    let unreachable = git_task(
-        &dir,
-        &[
-            "rev-list",
-            "--count",
-            "HEAD",
-            "--not",
-            "--branches",
-            "--remotes",
-        ],
-    )
-    .ok()
-    .filter(|o| o.ok())
-    .and_then(|o| crate::guards::unreachable_commit_count(&o.stdout))
-    .unwrap_or(0);
+    let dirty = status.len();
+    let unreachable = orphaned_count(&dir);
     // Identify the holder of each foreign port, not just its number: the
     // blocker is only actionable if the user can tell which process to stop
     // (see `ports::holder`). Only for ports that actually block — naming the
@@ -260,10 +245,9 @@ pub fn remove_task(
     // output ambiguous: "removed" read as "that work is dealt with". Say
     // plainly what survives and where, so the difference from the uncommitted
     // work the guard above *does* block on is visible.
-    let branch = git_task(&dir, &["branch", "--show-current"])
+    let branch = crate::ops::repo_at(&dir)
         .ok()
-        .filter(|o| o.ok())
-        .map(|o| o.stdout.trim().to_string())
+        .and_then(|repo| repo.head_branch())
         .filter(|b| !b.is_empty());
     if let Some(branch) = &branch {
         let refs = base_refs(&sr.checkout);
@@ -548,9 +532,11 @@ pub fn clean_tasks(
         match remove_task(&rm, &mut |_| {}) {
             Ok(RemoveOutcome::Removed(r)) => {
                 let mut messages = r.messages;
-                match git_checkout(&sr.checkout, &["branch", "-D", &branch]) {
-                    Ok(out) if out.ok() => messages.push(format!("deleted branch {branch}")),
-                    _ => messages.push(format!(
+                match crate::ops::repo_at(&sr.checkout).and_then(|repo| {
+                    repo.delete_branch(&branch).map_err(|e| OpsError::Git(e.to_string()))
+                }) {
+                    Ok(()) => messages.push(format!("deleted branch {branch}")),
+                    Err(_) => messages.push(format!(
                         "could not delete branch {branch} — remove it with `git branch -D`"
                     )),
                 }

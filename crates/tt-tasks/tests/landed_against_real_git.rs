@@ -1,20 +1,60 @@
 //! `landed::probe_work_state` against a real git repository.
 //!
 //! The unit tests in `landed.rs` cover the decision given each signal; these
-//! cover the part that can only break against git itself — that the probes
-//! actually produce those signals. The squash cases are the reason the module
-//! exists, so they are asserted end-to-end rather than trusted.
+//! cover the part that can only break against a real repository — that the
+//! probes actually produce those signals. The squash cases are the reason the
+//! module exists, so they are asserted end-to-end rather than trusted.
+//!
+//! The repositories are still built by `git` itself. Only the *reading* moved
+//! in-process; fixtures made with gix would prove only that it agrees with
+//! itself.
 
 use std::path::Path;
 use std::process::Command;
 
-use tt_tasks::landed::{LandedVia, probe_work_state};
+use tt_tasks::landed::{LandedVia, WorkState, probe_work_state};
 
-/// Run git, mirroring the contract `probe_work_state` documents: `Some(stdout)`
-/// only on a zero exit, `None` otherwise.
-fn git(dir: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").args(args).current_dir(dir).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+/// Probe a checkout the way the task machinery does.
+fn probe(dir: &Path, base: &str, branch: &str, uncommitted: usize, gone: bool) -> WorkState {
+    let repo = tt_git::repo::Repo::open(dir).expect("open repo");
+    probe_work_state(&repo, base, branch, uncommitted, 0, gone)
+}
+
+/// Run `body` with no git identity discoverable anywhere — no global or system
+/// config, no identity environment variables.
+///
+/// Process-global for its duration, so it must not run concurrently with
+/// another test that cares; nothing else here reads these variables.
+fn without_identity<T>(body: impl FnOnce() -> T) -> T {
+    const VARS: [&str; 7] = [
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+        "EMAIL",
+    ];
+    let saved: Vec<(&str, Option<String>)> =
+        VARS.iter().map(|k| (*k, std::env::var(k).ok())).collect();
+    // SAFETY: single-threaded test body; every variable is restored below.
+    unsafe {
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_SYSTEM", "/dev/null");
+        for key in &VARS[2..] {
+            std::env::remove_var(key);
+        }
+    }
+    let out = body();
+    unsafe {
+        for (key, value) in saved {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+    }
+    out
 }
 
 fn run(dir: &Path, args: &[&str]) {
@@ -54,7 +94,7 @@ fn squash_merged_branch_reads_as_landed_with_nothing_outstanding() {
     // Unrelated later work, so the base is not merely the branch's tree.
     commit(dir, "other.txt", "other");
 
-    let state = probe_work_state(&git, dir, "main", "feat/squash", 0, 0, false);
+    let state = probe(dir, "main", "feat/squash", 0, false);
 
     assert_eq!(state.landed, Some(LandedVia::Squash), "squash merge must be detected");
     assert_eq!(state.unlanded, 0, "nothing is outstanding after a squash merge");
@@ -65,12 +105,16 @@ fn squash_merged_branch_reads_as_landed_with_nothing_outstanding() {
 
 /// The probe must not depend on the machine having a git identity.
 ///
-/// `commit-tree` refuses to run without one, and git's fallback to
-/// `user@hostname` is unavailable on CI runners and in minimal containers —
-/// where this failed with "Author identity unknown", making the probe answer
-/// "not landed" for every squash-merged branch. `user.useConfigOnly` disables
-/// exactly that fallback, so this reproduces the environment rather than
-/// simulating it.
+/// This once regressed for a sharp reason: detecting a squash meant writing a
+/// synthetic commit with `commit-tree`, which refuses to run without an
+/// identity — and git's `user@hostname` fallback is unavailable on CI runners
+/// and in minimal containers. Every squash-merged branch there read as "not
+/// landed". The probe now computes patch ids in memory and writes no commit at
+/// all, so there is nothing left to be missing.
+///
+/// The test stays because that is a claim about behavior, not about the
+/// implementation that happens to satisfy it: an identity-less environment
+/// must keep detecting squashes, however the probe is built.
 #[test]
 fn squash_is_detected_even_when_git_has_no_ambient_identity() {
     let tmp = repo();
@@ -90,34 +134,16 @@ fn squash_is_detected_even_when_git_has_no_ambient_identity() {
     run(dir, &["config", "user.useConfigOnly", "true"]);
 
     // Repo config alone is not enough to reproduce a CI runner: the developer
-    // running this almost certainly has a global `user.email`, which git would
-    // find and the test would pass whether or not the probe supplies its own.
-    // Pointing the global and system config at /dev/null (and clearing the
-    // identity env vars) leaves git with nothing, which is the actual
-    // environment this regressed in.
-    let git_without_identity = |dir: &Path, args: &[&str]| -> Option<String> {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .env_remove("GIT_AUTHOR_NAME")
-            .env_remove("GIT_AUTHOR_EMAIL")
-            .env_remove("GIT_COMMITTER_NAME")
-            .env_remove("GIT_COMMITTER_EMAIL")
-            .env_remove("EMAIL")
-            .output()
-            .ok()?;
-        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
-    };
-
-    let state =
-        probe_work_state(&git_without_identity, dir, "main", "feat/no-identity", 0, 0, false);
+    // running this almost certainly has a global `user.email` that would be
+    // found instead. Pointing the global and system config at /dev/null and
+    // clearing the identity env vars for the duration leaves nothing to find,
+    // which is the actual environment this regressed in.
+    let state = without_identity(|| probe(dir, "main", "feat/no-identity", 0, false));
 
     assert_eq!(
         state.landed,
         Some(LandedVia::Squash),
-        "the probe must supply its own identity to commit-tree"
+        "squash detection must not depend on an ambient git identity"
     );
     assert_eq!(state.unlanded, 0);
 }
@@ -138,7 +164,7 @@ fn work_added_after_a_squash_merge_counts_only_the_new_commit() {
     run(dir, &["checkout", "-q", "feat/more"]);
     commit(dir, "c.txt", "c");
 
-    let state = probe_work_state(&git, dir, "main", "feat/more", 0, 0, false);
+    let state = probe(dir, "main", "feat/more", 0, false);
 
     assert_eq!(state.landed, None, "new work after the merge means it has not fully landed");
     assert_eq!(state.total_commits, 3);
@@ -164,7 +190,7 @@ fn rebase_merged_branch_reads_as_landed_under_a_different_sha() {
     run(dir, &["commit", "--amend", "-qm", "add a.txt (rebased onto main)"]);
     commit(dir, "later.txt", "later");
 
-    let state = probe_work_state(&git, dir, "main", "feat/rebase", 0, 0, false);
+    let state = probe(dir, "main", "feat/rebase", 0, false);
 
     assert_eq!(
         state.landed,
@@ -198,7 +224,7 @@ fn branch_absorbed_by_a_merge_commit_is_not_mistaken_for_a_fresh_task() {
     );
     commit(dir, "later.txt", "later");
 
-    let state = probe_work_state(&git, dir, "main", "feat/merged", 0, 0, false);
+    let state = probe(dir, "main", "feat/merged", 0, false);
 
     // Both a merged branch and a fresh task have nothing since their
     // merge-base; only the landing evidence tells them apart, so assert on
@@ -217,7 +243,7 @@ fn genuinely_unmerged_branch_reports_its_commits() {
     commit(dir, "a.txt", "a");
     commit(dir, "b.txt", "b");
 
-    let state = probe_work_state(&git, dir, "main", "feat/open", 0, 0, false);
+    let state = probe(dir, "main", "feat/open", 0, false);
 
     assert_eq!(state.landed, None);
     assert_eq!(state.unlanded, 2);
@@ -230,7 +256,7 @@ fn fresh_task_holds_nothing() {
     let dir = tmp.path();
     run(dir, &["checkout", "-qb", "feat/fresh"]);
 
-    let state = probe_work_state(&git, dir, "main", "feat/fresh", 0, 0, false);
+    let state = probe(dir, "main", "feat/fresh", 0, false);
 
     assert_eq!(state.total_commits, 0, "a fresh task has no commits of its own");
     assert_eq!(state.landed, None, "a fresh task must never read as merged");
@@ -245,7 +271,7 @@ fn uncommitted_and_unlanded_are_reported_as_separate_axes() {
     run(dir, &["checkout", "-qb", "feat/both"]);
     commit(dir, "a.txt", "a");
 
-    let state = probe_work_state(&git, dir, "main", "feat/both", 3, 0, false);
+    let state = probe(dir, "main", "feat/both", 3, false);
 
     assert_eq!(state.uncommitted, 3);
     assert_eq!(state.unlanded, 1);
@@ -261,7 +287,7 @@ fn a_gone_upstream_alone_does_not_outrank_real_unlanded_content() {
     run(dir, &["checkout", "-qb", "feat/gone"]);
     commit(dir, "a.txt", "a");
 
-    let state = probe_work_state(&git, dir, "main", "feat/gone", 0, 0, true);
+    let state = probe(dir, "main", "feat/gone", 0, true);
 
     assert_eq!(
         state.landed,
@@ -277,10 +303,21 @@ fn a_gone_upstream_alone_does_not_outrank_real_unlanded_content() {
     assert_eq!(state.headline(), "1 unlanded, upstream gone");
 }
 
+/// A directory git cannot answer for must never read as merged.
+///
+/// Asserted through `ops::work_state` rather than the probe itself: opening the
+/// repository is what fails now, and that happens one layer up, so this is
+/// where the degradation lives. The probe below it is only ever handed a
+/// repository that opened.
 #[test]
 fn a_failing_git_degrades_to_assuming_work_is_present() {
     let tmp = tempfile::tempdir().unwrap(); // not a repo at all
-    let state = probe_work_state(&git, tmp.path(), "main", "feat/x", 0, 0, false);
+    let refs = tt_tasks::ops::BaseRefs {
+        base: "main".to_string(),
+        local: "refs/heads/main".to_string(),
+        remote: None,
+    };
+    let state = tt_tasks::ops::work_state(&refs, tmp.path(), "refs/heads/feat/x", 0, 0);
     assert_eq!(state.landed, None, "an unanswerable probe must never read as merged");
     // `landed: None` is the load-bearing half: `clean` only removes a task —
     // and force-deletes its branch — when it sees content proof, so a repo git
