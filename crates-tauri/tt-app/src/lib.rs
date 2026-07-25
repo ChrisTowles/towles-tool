@@ -5,6 +5,7 @@
 //! kills on window close, rendered by xterm.js in the agentboard screen.
 
 mod agentboard;
+mod asset;
 mod claude_sessions;
 mod diagnostics;
 mod doctor;
@@ -178,6 +179,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init());
+
+    // Repo bytes (Markdown-preview images and GIFs) served over their own URI
+    // scheme — see `asset`'s module doc for why this isn't base64 over IPC,
+    // and for the two guards that keep a hostile README inside the checkout
+    // the user opened.
+    let builder = asset::register(builder);
 
     // WebdriverIO E2E plugins, only under `--features wdio` (see e2e/):
     // tauri-plugin-wdio exposes the execute/mock IPC surface, and
@@ -630,6 +637,7 @@ pub fn run() {
         .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
         .manage(ide::ViewerWatches::default())
+        .manage(asset::AssetScopes::default())
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
         .on_window_event(|window, event| match event {
@@ -784,6 +792,7 @@ pub fn run() {
             ide::ide_set_open_file,
             ide::ide_set_diff_dirty,
             ide::ide_read_file,
+            asset::asset_allow_dir,
             ide::ide_stat,
             ide::ide_read_dir,
             ide::ide_create_dir,
