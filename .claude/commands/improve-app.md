@@ -17,7 +17,7 @@ given, default to `review` (the safe, look-before-you-build path).
 Run /tt:blindspot on this task first. Then:
 
 1. Brainstorm 15 concrete improvements to this app. Ground them in the actual
-   codebase (read the screens, crates, and docs/MIGRATION.md first — no generic
+   codebase (read the screens, crates, and CLAUDE.md first — no generic
    ideas). Mix of: user-facing features, paper cuts in the three Focus screens,
    terminal/agentboard polish, and code-health items. Respect the product rules
    in CLAUDE.md and memory (no agent-TUI recreation, no repo auto-discovery,

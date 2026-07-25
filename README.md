@@ -156,10 +156,10 @@ the store rides on. There is deliberately no CLI/app
 parity: each feature lands on its natural surface, and the shared logic lives in
 Tauri-free crates that both consume.
 
-> **Status:** in progress. The journal, worktrees, the data-hub
-> store/collectors, the MCP server, the Claude Sessions screen, and the
-> Agentboard screens (with live in-app terminals) are ported. Features land one
-> at a time — see [docs/MIGRATION.md](docs/MIGRATION.md).
+> **Status:** the port off the TypeScript CLI is done — the journal, worktrees,
+> the data-hub store/collectors, the MCP server, the Claude Sessions screen, and
+> the Agentboard screens (with live in-app terminals) all live here. New work is
+> features of the app itself, not ports.
 
 ## Quick start
 
@@ -343,14 +343,16 @@ Cargo workspace with Tauri-free shared crates, a `clap` CLI, and a React + Vite
 frontend (see [ATTRIBUTION.md](ATTRIBUTION.md)). The binary is **`tt`**; the
 `ttr` → `tt` cutover from the TypeScript CLI happened 2026-07-13 — hard
 cutover, no `ttr` alias left behind (see [docs/CUTOVER.md](docs/CUTOVER.md)).
-Features port over selectively per [docs/MIGRATION.md](docs/MIGRATION.md).
+Features were ported over selectively, and that port is complete —
+[docs/MIGRATION.md](docs/MIGRATION.md) is the historical record of what came
+across and what was dropped.
 
 ## More
 
 - [packages/core/README.md](packages/core/README.md) — the `tt` Claude Code plugin in detail
 - [packages/app/README.md](packages/app/README.md) — the `towles-tool-app` Claude Code plugin in detail
 - [ATTRIBUTION.md](ATTRIBUTION.md) — derivation from Yaak and its MIT license
-- [docs/MIGRATION.md](docs/MIGRATION.md) — the feature-port backlog
+- [docs/MIGRATION.md](docs/MIGRATION.md) — historical: the completed feature port off the TS CLI
 - [docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) — Rust/TypeScript coding standards
 - [e2e/README.md](e2e/README.md) — driving the real app shell (live-drive + regression suite)
 - [CLAUDE.md](CLAUDE.md) — project instructions, architecture, and the worktree-task workflow
