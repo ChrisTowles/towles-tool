@@ -29,26 +29,37 @@ using the published [docs](https://code.claude.com/docs/en/desktop) plus the
 installed bundle. Biggest gap first. Read the overlap list under it too: most
 of what this repo does, Desktop now does as well.
 
-- **Full file editor.** The Files pane is a Monaco editor with rust-analyzer
-  bridged over Tauri IPC, so hover and completions work on Rust source, and a
-  file link printed in a terminal opens the file at the clicked line. Desktop's
-  file pane covers spot edits and save, then hands off to "Open in VS Code" for
-  anything more. The LSP bridge here is still a spike: it reports
-  `starting`/`ready`/`failed` in a chip, which is there to decide whether it
-  earns its keep.
+- **Handing work to an agent is one gesture.** The Agentboard `+` takes a
+  half-formed thought and a pasted screenshot, and a prompt improver rewrites
+  it into a goal worth giving an agent — reading the image, so it can name the
+  thing you pointed at — then proposes the title and branch. Submitting mints
+  the worktree, renders its `.env`, runs the repo's setup and starts Claude on
+  that goal, all before you look away. From then on the rail is the monitor:
+  agent state, token burn, uncommitted diff, linked PR. Teardown is the same
+  gesture in reverse, and it refuses while the task still holds work only it
+  can prove.
 
-- **Editor-selection context.** `tt-ide` is an IDE-protocol server, so an
-  outside editor can feed a live selection to a CLI session running in the same
-  folder. Desktop only takes context from its own panes, via spot edits,
-  "Attach as context", and `@`-mention autocomplete.
+  ![The Agentboard + flow: a rough goal plus a pasted screenshot, a prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](docs/images/demos/agentboard.gif)
+
+- **A file editor Claude Code can see into.** `tt-ide` makes the app an IDE-protocol server, so the Monaco editor in the Files pane is wired to the Claude Code session running in that folder's terminal. Highlight lines and the selection streams live into the session — the editor shows `L17-18 live to claude`, the CLI shows `2 lines selected` — and `@ send` turns it into an `@file#L17-18` reference in the prompt. Editing and saving go the same way. Desktop only takes context from its own panes, via spot edits, "Attach as context", and `@`-mention autocomplete; it cannot see a selection in an editor beside it.
+
+  ![Selecting lines in the app's Monaco editor, the selection streaming live into the Claude Code session beside it, sending it as an @file#L17-18 mention, and Claude answering against exactly those lines](docs/images/demos/file-editor.gif)
 
   ![Claude Desktop confirming it can't see highlighted/selected code in an editor](docs/images/wishlist/claude-desktop-no-editor-selection.png)
+
+  The same pane also bridges rust-analyzer over Tauri IPC for hover and
+  completions on Rust source, and a `path:line` link printed in a terminal
+  opens the file at that line. That LSP bridge is still a spike — it reports
+  `starting`/`ready`/`failed` in a chip, which is there to decide whether it
+  earns its keep.
 
 - **Cross-repo work board.** Board is a kanban of tasks spanning every watched
   repo. Each task links 0..N issues, 0..N PRs, and usually a worktree,
   and done rolls up from GitHub PR state. Desktop has nothing like it. Its
   "tasks pane" holds background subagents inside a single session, and no
   cross-repo surface exists.
+
+  ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](docs/images/demos/board.gif)
 
 - **Always-on local event log.** Every subprocess and user action lands as
   JSONL at `<data_dir>/telemetry/events-<date>.jsonl`, rotated daily, tagged
@@ -57,17 +68,35 @@ of what this repo does, Desktop now does as well.
   to a collector you run. I found no sign of an on-disk log that is on by
   default, though I read strings in the bundle rather than watching it run.
 
+  ![The Telemetry screen: today's records, filtered down to process.spawn spans, then one record opened to its full JSON including tt.task](docs/images/demos/telemetry.gif)
+
+- **Guarded task lifecycle.** `tt task new` is one command for the whole
+  hand-off: branch-named worktree, `.env` rendered with its own ports, the
+  repo's declared `TT_TASK_SETUP` run, and the agent started on the goal.
+  `tt task rm`/`clean` is the inverse, and it refuses while the task still
+  holds work that exists nowhere else — uncommitted changes, or commits that
+  never reached base — before running `TT_TASK_TEARDOWN`, freeing the ports
+  and closing the board row. Desktop creates worktrees and auto-archives them
+  on PR merge or close, but there is no setup hook, no port lifecycle, and no
+  removal guard for a branch that never had a PR.
+
+  ![Diagram: tt task new creating a worktree, rendering its .env, running TT_TASK_SETUP and starting the agent; then tt task rm checking for unlanded work before teardown](docs/images/demos/lifecycle.gif)
+
 - **Per-task port isolation.** Both tools put worktrees in
-  `.claude/worktrees/`. The difference is that `${tt:port A-B}` claims in
-  `.env.example` render each task its own `.env`, so ten tasks run ten dev
-  servers without colliding. Desktop's `.worktreeinclude` copies gitignored
-  files verbatim, which hands every worktree the same port.
+  `.claude/worktrees/`. The difference is that `${tt:port A-B}` claims in the
+  checked-in task template render each task its own `.env`, so ten tasks run
+  ten dev servers without colliding. Desktop's `.worktreeinclude` copies
+  gitignored files verbatim, which hands every worktree the same port.
+
+  ![Diagram: three worktrees copying one .env all collide on port 3000, while a ${tt:port} pool claim renders each its own port](docs/images/demos/ports.gif)
 
 - **Squash-merge-aware landing detection.** The `landed` module in `tt-tasks`
   separates uncommitted changes from commits that never reached base, and only
   content-based proof authorizes `git branch -D`. Desktop auto-archives a
   worktree once its PR merges or closes, which covers the common case but
   never has to answer whether a branch with no PR still holds work.
+
+  ![Diagram: after a squash merge, reachability, SHA lookup and per-commit patch identity all report unmerged; only the cumulative diff against base proves the work landed](docs/images/demos/landed.gif)
 
 - ~~**Runs natively on Linux.** Only a community-hacked build of Claude
   Desktop ran on Linux before now.~~ Shipped as an official
