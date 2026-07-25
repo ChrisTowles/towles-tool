@@ -597,6 +597,19 @@ pub fn ab_set_compact_percent(state: State<Ab>, percent: u8) {
     }
 }
 
+/// Show (or hide) auto-discovered worktrees that `tt task` didn't create,
+/// persisting to shared settings. Rust owns this one end to end — the engine
+/// reads it when deciding which checkouts to discover — so the client toggles
+/// it here rather than writing the settings file itself.
+#[tauri::command]
+pub fn ab_set_show_unmanaged_worktrees(state: State<Ab>, show: bool) {
+    let changed = state.engine.lock().unwrap().set_show_unmanaged_worktrees(show);
+    tracing::info!(show, changed, "agentboard.show_unmanaged_worktrees_set");
+    if changed {
+        state.emit.notify_one();
+    }
+}
+
 /// Persist the window layout (frontend-owned; saved debounced from the client).
 /// Deliberately does NOT re-emit — echoing the blob back would clobber
 /// rapid-fire local edits; the client's copy is the live truth.

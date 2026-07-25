@@ -3,6 +3,7 @@ import {
   CircleSlash,
   Eye,
   EyeOff,
+  FolderGit2,
   FolderPlus,
   FolderX,
   GitPullRequest,
@@ -27,6 +28,8 @@ export function RailHeader(props: {
   clearingDismissals: boolean;
   hideInactive: boolean;
   onSetHideInactive: (next: boolean) => void;
+  showUnmanagedWorktrees: boolean;
+  onSetShowUnmanagedWorktrees: (next: boolean) => void;
   onOpenRepoManager: () => void;
   onCleanupMissing: () => void;
   onClearDismissals: () => void;
@@ -39,6 +42,8 @@ export function RailHeader(props: {
     clearingDismissals,
     hideInactive,
     onSetHideInactive,
+    showUnmanagedWorktrees,
+    onSetShowUnmanagedWorktrees,
     onOpenRepoManager,
     onCleanupMissing,
     onClearDismissals,
@@ -91,6 +96,36 @@ export function RailHeader(props: {
             }
           >
             {hideInactive ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              uiAction(
+                "agentboard.show_unmanaged_worktrees",
+                "agentboard",
+                showUnmanagedWorktrees ? "off" : "on",
+              );
+              onSetShowUnmanagedWorktrees(!showUnmanagedWorktrees);
+            }}
+            aria-label={
+              showUnmanagedWorktrees
+                ? "Show only task worktrees"
+                : "Show every git worktree, task or not"
+            }
+            aria-pressed={showUnmanagedWorktrees}
+            className={cn(
+              "rounded-md p-1 hover:bg-accent/50",
+              showUnmanagedWorktrees
+                ? "text-violet-500 hover:text-violet-400"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            title={
+              showUnmanagedWorktrees
+                ? "Showing every git worktree, including ones towles-tool didn't create — click to show only task worktrees"
+                : "Showing only task worktrees — click to also show worktrees created outside towles-tool (e.g. by Claude Code)"
+            }
+          >
+            <FolderGit2 className="size-3.5" />
           </button>
           {dismissedPrCount > 0 && (
             <button

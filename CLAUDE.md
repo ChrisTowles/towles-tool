@@ -122,7 +122,14 @@ and is the reference example.
 The Agentboard rail shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
 header opens the same creation flow as a modal: goal → branch → base, then
-Claude starts on the goal in the new task's terminal.
+Claude starts on the goal in the new task's terminal. Discovery covers the
+main checkout and `tt task` worktrees only; a worktree created outside the
+convention (`claude --worktree` against unwired hooks, a hand-added one — no
+`.tt-task` marker, so `tt_tasks::is_managed_task` says no) reaches the rail
+only when the rail header's worktree toggle
+(`agentboard.showUnmanagedWorktrees`) is on. The engine applies that setting
+at discovery time (`Engine::expand_with_worktrees`), so it never invalidates
+the git cache.
 
 Rules when working in a task:
 

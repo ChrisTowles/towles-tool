@@ -78,7 +78,7 @@ import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
-import { useHideInactiveRepos } from "@/lib/rail-prefs";
+import { useHideInactiveRepos, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -183,6 +183,12 @@ export function AgentboardScreen() {
   // a whole-app preference, not rail-row UI state, so it doesn't belong in the
   // `collapsed` map the way `railCollapsed` does.
   const [hideInactive, setHideInactive] = useHideInactiveRepos();
+  // Whether auto-discovered worktrees that `tt task` didn't create (a bare
+  // `claude --worktree`, a hand-added one) get rail folders at all. Unlike
+  // `hideInactive` this isn't a view filter over `repos` — the backend decides
+  // which checkouts to discover, so the toggle round-trips through Rust and
+  // the rail repopulates from the next `agentboard://state`.
+  const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
   // Per-repo "show me the quiet ones anyway" toggle (the stub row).
   const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -990,6 +996,8 @@ export function AgentboardScreen() {
                     clearingDismissals={attention.clearingDismissals}
                     hideInactive={hideInactive}
                     onSetHideInactive={setHideInactive}
+                    showUnmanagedWorktrees={showUnmanagedWorktrees}
+                    onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
                     onOpenRepoManager={openRepoManager}
                     onCleanupMissing={() => void cleanupMissing()}
                     onClearDismissals={() => void attention.clearDismissals()}

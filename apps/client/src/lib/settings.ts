@@ -184,8 +184,13 @@ export type UserSettings = {
    * reminder when a click does a binding's job; unset = on — it gates only the
    * reminder, never the keyboard-vs-mouse tracking), `boardGroupByRepo` (the
    * Board kanban groups tasks into
-   * per-repo swimlanes; unset = on), and `hideInactiveRepos` (the Agentboard
-   * rail's eye-icon "hide inactive repos" filter; unset = off).
+   * per-repo swimlanes; unset = on), `hideInactiveRepos` (the Agentboard
+   * rail's eye-icon "hide inactive repos" filter; unset = off), and
+   * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees `tt task`
+   * didn't create; unset = off). The last one is the one key here Rust reads
+   * back — the agentboard engine's worktree discovery honours it — so it's
+   * written through the `ab_set_show_unmanaged_worktrees` command, not by
+   * saving settings from the client.
    */
   agentboard?: {
     notify?: boolean;
@@ -197,6 +202,7 @@ export type UserSettings = {
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;
     hideInactiveRepos?: boolean;
+    showUnmanagedWorktrees?: boolean;
   } & Record<string, unknown>;
 };
 
