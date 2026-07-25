@@ -207,6 +207,15 @@ impl GitInfoCache {
         }
     }
 
+    /// Drop `dir`'s entry outright, for a checkout that is gone for good (a
+    /// removed worktree task). Distinct from [`Self::invalidate`], which keeps
+    /// serving the stale value until a recompute replaces it — there will be no
+    /// recompute here, and a later task created at the same path must not
+    /// inherit the dead one's branch and stats. Returns whether an entry went.
+    pub fn forget(&mut self, dir: &str) -> bool {
+        self.entries.remove(dir).is_some()
+    }
+
     /// Recompute git info for `dir` (shells out), cache it at `now_ms`, and return
     /// it. Ports `refreshGitInfo` (synchronous, no in-flight de-dup). No
     /// per-folder base-branch override — callers that have one (the app's
@@ -293,6 +302,126 @@ fn structural_fingerprint(common_dir: &str) -> String {
     match (stamp(base.join("worktrees")), stamp(base.join("config"))) {
         (Some(w), Some(c)) => format!("{w} {c}"),
         _ => String::new(),
+    }
+}
+
+/// Carry a checkout's structural identity across a compute that couldn't read
+/// the repository at all.
+///
+/// [`compute_git_info`] answers with a bare [`GitInfo::default`] when
+/// [`open_repo`] fails — and that can be transient rather than true: a
+/// concurrent `git worktree remove`/`prune` (the task-removal sequence runs
+/// both, in the checkout that owns the worktree being removed) rewrites
+/// `.git/worktrees` while a poll may be mid-read. Storing that answer wholesale
+/// blanks `common_dir`, and [`crate::bridge::assemble_state`] groups rail rows
+/// by exactly that — so an unrelated, still-present checkout would drop out of
+/// its repo's row into a top-level one of its own for a tick or two. Keeping
+/// the previous identity holds the row together; every *stat* still goes empty,
+/// because those really are unknown.
+///
+/// Deliberately narrow:
+/// - only when the incoming answer has no `common_dir` of its own — a real
+///   recompute always wins;
+/// - never for [`GitInfo::dir_missing`], which is a definite answer (the
+///   directory is gone), and whose ghost row is meant to stand alone with its
+///   own Untrack;
+/// - only when `dir` still exists, so a checkout that vanished between the
+///   compute and the store isn't propped up by a stale identity.
+pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mut GitInfo) {
+    if !info.common_dir.is_empty() || info.dir_missing || previous.common_dir.is_empty() {
+        return;
+    }
+    if !std::path::Path::new(dir).is_dir() {
+        return;
+    }
+    info.origin_url = previous.origin_url.clone();
+    info.common_dir = previous.common_dir.clone();
+    info.worktree_dirs = previous.worktree_dirs.clone();
+    info.is_worktree = previous.is_worktree;
+    info.git_dir = previous.git_dir.clone();
+    // NOT `structural_key`/`revision_key`: those are revalidation tokens for
+    // answers this compute never produced. Left empty, the next poll does a
+    // full recompute instead of trusting carried-over facts.
+}
+
+/// What a checkout *is*, independent of where its HEAD points: which
+/// repository it belongs to ([`GitInfo::common_dir`], the Folder Rail's
+/// nesting key), whether it's a linked worktree, its sibling checkouts, and
+/// its remote.
+struct Structural {
+    origin_url: Option<String>,
+    common_dir: String,
+    worktree_dirs: Vec<String>,
+    structural_key: String,
+    git_dir: String,
+    is_worktree: bool,
+}
+
+/// Derive the structural facts, revalidating the previous answer cheaply
+/// first: see [`structural_fingerprint`]'s doc — they're filesystem structure,
+/// not working-tree state, so two `fs::metadata` calls against the *previous*
+/// `common_dir` are worth it before deriving them again.
+///
+/// `git_dir`/`is_worktree` are never reused: they're resolved from the
+/// filesystem rather than the repository (see [`resolve_git_dir_fs`]) and are
+/// needed fresh every call for [`crate::engine::Engine::control_watch_files`]'
+/// per-checkout `HEAD`/`index` targets.
+fn structural_facts(
+    dir: &str,
+    repo: &tt_git::repo::Repo,
+    previous: Option<&GitInfo>,
+) -> Structural {
+    let git_dir = resolve_git_dir_fs(std::path::Path::new(dir));
+    let is_worktree =
+        git_dir.as_deref().is_some_and(|g| g.to_string_lossy().contains("/worktrees/"));
+    let git_dir = git_dir.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+
+    let reuse = previous.filter(|prev| !prev.common_dir.is_empty()).and_then(|prev| {
+        let key = structural_fingerprint(&prev.common_dir);
+        (!key.is_empty() && key == prev.structural_key).then_some((prev, key))
+    });
+    match reuse {
+        Some((prev, structural_key)) => Structural {
+            origin_url: prev.origin_url.clone(),
+            common_dir: prev.common_dir.clone(),
+            worktree_dirs: prev.worktree_dirs.clone(),
+            structural_key,
+            git_dir,
+            is_worktree,
+        },
+        None => {
+            let common_dir = repo.common_dir().to_string_lossy().into_owned();
+            Structural {
+                origin_url: repo.origin_url(),
+                worktree_dirs: other_worktrees(repo, dir),
+                structural_key: structural_fingerprint(&common_dir),
+                common_dir,
+                git_dir,
+                is_worktree,
+            }
+        }
+    }
+}
+
+/// A checkout whose HEAD names no branch: the structural facts, every
+/// ref-derived and working-tree field left at its default.
+///
+/// Deliberately not a bare [`GitInfo::default`] — see the call site. The empty
+/// `revision_key` is also load-bearing: it keeps the next poll off
+/// [`compute_git_info`]'s ref-unchanged fast path, so the moment HEAD lands on
+/// a branch again the full answer is recomputed.
+fn structural_only(dir: &str, repo: &tt_git::repo::Repo, previous: Option<&GitInfo>) -> GitInfo {
+    let s = structural_facts(dir, repo, previous);
+    GitInfo {
+        origin_url: s.origin_url,
+        common_dir: s.common_dir,
+        worktree_dirs: s.worktree_dirs,
+        structural_key: s.structural_key,
+        git_dir: s.git_dir,
+        is_worktree: s.is_worktree,
+        task_base_branch: tt_tasks::read_task_base(std::path::Path::new(dir)),
+        has_launch_config: crate::launch::has_launch_file(std::path::Path::new(dir)),
+        ..Default::default()
     }
 }
 
@@ -520,8 +649,15 @@ pub fn compute_git_info(
         }
     }
 
+    // No branch to report — HEAD is detached (a rebase, a bisect, a checked-out
+    // tag) or unborn. Everything ref-derived is genuinely unknown, but the
+    // *structural* facts are not: which repository this checkout belongs to
+    // doesn't depend on where HEAD points. Returning a bare default here
+    // dropped `common_dir`, and `assemble_state` groups rail rows by exactly
+    // that — so a `git rebase` used to knock a checkout out of its repo's row
+    // and into a top-level one of its own until HEAD landed on a branch again.
     let Some(branch) = repo.head_branch().filter(|b| !b.is_empty()) else {
-        return GitInfo::default();
+        return structural_only(dir, &repo, previous);
     };
     let compared_base = resolve_base_ref(&repo, dir, base_branch_override);
     // The diff baseline is the merge-base, not the base tip: a branch's stats
@@ -531,34 +667,10 @@ pub fn compute_git_info(
         .map(|id| id.to_string())
         .unwrap_or_else(|| "HEAD".to_string());
 
-    // See `structural_fingerprint`'s doc comment: `is_worktree`/`common_dir`/
-    // `worktree_dirs`/`origin_url` are structural facts, not working-tree
-    // state, so they're worth revalidating cheaply (two `fs::metadata` calls
-    // against the *previous* `common_dir`) before deriving them again.
-    let reuse_structural = previous.filter(|prev| !prev.common_dir.is_empty()).and_then(|prev| {
-        let key = structural_fingerprint(&prev.common_dir);
-        (!key.is_empty() && key == prev.structural_key).then_some((prev, key))
-    });
-    // Resolved from the filesystem, not from the repository — see
-    // `resolve_git_dir_fs`'s doc. Needed fresh every call regardless, both for
-    // `is_worktree` and for `Engine::control_watch_files`' per-checkout
-    // `HEAD`/`index` targets.
-    let git_dir = resolve_git_dir_fs(std::path::Path::new(dir));
-    let is_worktree_fs =
-        git_dir.as_deref().is_some_and(|g| g.to_string_lossy().contains("/worktrees/"));
+    let Structural { origin_url, common_dir, worktree_dirs, structural_key, git_dir, is_worktree } =
+        structural_facts(dir, &repo, previous);
 
-    let (origin_url, common_dir, worktree_dirs, structural_key) =
-        if let Some((prev, key)) = reuse_structural {
-            (prev.origin_url.clone(), prev.common_dir.clone(), prev.worktree_dirs.clone(), key)
-        } else {
-            let origin_url = repo.origin_url();
-            let common_dir = repo.common_dir().to_string_lossy().into_owned();
-            let worktree_dirs = other_worktrees(&repo, dir);
-            let structural_key = structural_fingerprint(&common_dir);
-            (origin_url, common_dir, worktree_dirs, structural_key)
-        };
-
-    let mut info = working_tree_info(&repo, &branch, is_worktree_fs, &base);
+    let mut info = working_tree_info(&repo, &branch, is_worktree, &base);
     let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
     info.commits_ahead = ahead;
     info.commits_behind = behind;
@@ -566,7 +678,7 @@ pub fn compute_git_info(
     info.common_dir = common_dir;
     info.worktree_dirs = worktree_dirs;
     info.structural_key = structural_key;
-    info.git_dir = git_dir.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    info.git_dir = git_dir;
     info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
     info.has_launch_config = crate::launch::has_launch_file(std::path::Path::new(dir));
     // Only worth probing once there's something to check — nothing ahead
@@ -2122,5 +2234,82 @@ mod tests {
         assert_eq!(info.commits_ahead, 3);
         assert_eq!(info.commits_unlanded, 1, "only the post-merge commit is outstanding");
         assert_eq!(info.landed, None, "a branch with new work has not fully landed");
+    }
+
+    /// A detached HEAD (mid-rebase, mid-bisect, a checked-out tag) has no
+    /// branch and no stats — but it is still a checkout *of this repository*.
+    /// `common_dir` is the rail's row-grouping key, so answering with a bare
+    /// default used to knock the folder out of its repo's row until HEAD
+    /// landed on a branch again.
+    #[test]
+    fn a_detached_head_keeps_its_repository_identity() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+        let attached = compute_git_info(dir, None, None);
+        assert!(!attached.common_dir.is_empty());
+
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root.path())
+                .args(["checkout", "--quiet", "--detach", "HEAD"])
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        let info = compute_git_info(dir, None, None);
+        assert!(info.branch.is_empty(), "no branch to report");
+        assert_eq!(info.common_dir, attached.common_dir, "…but it's still the same repo");
+        assert!(!info.dir_missing);
+        assert!(
+            info.revision_key.is_empty(),
+            "the next poll must fully recompute once HEAD is back on a branch"
+        );
+    }
+
+    /// A compute that couldn't open the repository at all is not proof the
+    /// checkout stopped being one — a concurrent `git worktree remove`/`prune`
+    /// (which the task-removal sequence runs) can make a read fail mid-flight.
+    /// The identity survives so the row stays grouped; the stats don't.
+    #[test]
+    fn a_failed_read_keeps_the_identity_but_not_the_stats() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+        let good = compute_git_info(dir, None, None);
+        assert!(!good.common_dir.is_empty() && !good.branch.is_empty());
+
+        let mut failed = GitInfo::default();
+        preserve_identity_on_failed_read(dir, &good, &mut failed);
+        assert_eq!(failed.common_dir, good.common_dir);
+        assert_eq!(failed.origin_url, good.origin_url);
+        assert!(failed.branch.is_empty(), "stats are genuinely unknown");
+        assert!(failed.structural_key.is_empty(), "no revalidation token for an answer we lack");
+    }
+
+    /// The narrow cases: a real answer always wins, a gone directory is a
+    /// definite answer (its ghost row stands alone), and a directory that
+    /// vanished before the store isn't propped up by a stale identity.
+    #[test]
+    fn preserving_identity_never_overrides_a_real_answer() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+        let good = compute_git_info(dir, None, None);
+
+        let mut fresh = GitInfo { common_dir: "/other/.git".to_string(), ..Default::default() };
+        preserve_identity_on_failed_read(dir, &good, &mut fresh);
+        assert_eq!(fresh.common_dir, "/other/.git");
+
+        let mut missing = GitInfo { dir_missing: true, ..Default::default() };
+        preserve_identity_on_failed_read(dir, &good, &mut missing);
+        assert!(missing.common_dir.is_empty(), "a ghost row keeps its own top-level row");
+
+        let gone = root.path().join("never-existed");
+        let mut failed = GitInfo::default();
+        preserve_identity_on_failed_read(gone.to_str().unwrap(), &good, &mut failed);
+        assert!(failed.common_dir.is_empty());
     }
 }
