@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
@@ -15,7 +16,8 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AgentboardStateProvider } from "@/lib/agentboard-state";
+import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
+import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { SCREENS } from "@/lib/screens";
@@ -83,6 +85,41 @@ function Shortcuts() {
         ? ["global", "board"]
         : ["global"];
   return <ShortcutHelpHost activeScopes={activeScopes} screen={activeTab} />;
+}
+
+/**
+ * Delivery for the MCP `task_start` tool, subscribed app-wide rather than inside
+ * Agentboard: that screen mounts on first visit, so a listener there would miss
+ * every start on a fresh launch. Opens Agentboard so the pane the start is about
+ * to create is actually on screen. See `lib/task-start.ts`.
+ */
+function TaskStartBridge() {
+  const { openTab } = useWorkspace();
+  const state = useAgentboardState();
+  // Read repos at delivery time, not capture time — a start can land before the
+  // first agentboard snapshot has arrived.
+  const reposRef = useRef(state.repos);
+  reposRef.current = state.repos;
+
+  // `openTab` via a ref for the same reason as `repos`: resubscribing the
+  // backend listener on every tab change would risk dropping an event.
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
+
+  useEffect(
+    () =>
+      subscribeTaskStart(
+        () => reposRef.current,
+        (payload) =>
+          toast.error(
+            `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
+          ),
+        () => openTabRef.current("agentboard"),
+      ),
+    [],
+  );
+
+  return null;
 }
 
 function Workspace() {
@@ -165,6 +202,7 @@ function Workspace() {
 
       {zen && <ZenIndicator onExit={() => setZen(false)} />}
       <Shortcuts />
+      <TaskStartBridge />
       <CommandPalette />
       <QuickLog />
       <ResumePicker />

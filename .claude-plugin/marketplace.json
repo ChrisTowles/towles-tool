@@ -13,7 +13,7 @@
     {
       "name": "towles-tool-app",
       "source": "./packages/app",
-      "description": "Bridges Claude Code to the towles-tool desktop app — its MCP server (board tasks: task_list, task_status, task_create, task_delete) plus a hook that nudges the app to refresh PR/issue data immediately after a gh pr/gh issue mutation. Plus the towles-tool CLI reference skill and the task-onboarding skill."
+      "description": "Bridges Claude Code to the towles-tool desktop app — its MCP server (board tasks: task_list, task_status, task_create, task_start, task_delete) plus a hook that nudges the app to refresh PR/issue data immediately after a gh pr/gh issue mutation. Plus the towles-tool CLI reference skill and the task-onboarding skill."
     }
   ]
 }

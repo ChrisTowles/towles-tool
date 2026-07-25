@@ -86,6 +86,42 @@ pub trait TaskHost: Send {
         force: bool,
         outcome: Option<tt_store::TaskOutcome>,
     ) -> Result<TaskDeletion, String>;
+
+    /// Start the board task described by `req`: mint its worktree on `branch`
+    /// off `base` and launch an agent in it on the task's goal.
+    ///
+    /// Unlike [`TaskHost::delete_task`] this **hands the work off and
+    /// returns** — see [`TaskStartRequest`] for why the completion isn't
+    /// awaited.
+    fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
+}
+
+/// Everything the host needs to start a task, resolved by the dispatcher from
+/// the row so the host does no store reads of its own.
+///
+/// **This is a hand-off, not a completed action.** Minting the worktree is
+/// ordinary blocking work, but *launching the agent* is not: a pane has no PTY
+/// until the frontend renders it, and the goal is typed into that PTY. So the
+/// host can only ask the app to start the task; it cannot stand here and watch
+/// it finish. The tool reports `status: "starting"` accordingly, and
+/// `task_list`/`task_status` are how a caller confirms the worktree appeared.
+/// Reporting a synchronous "started" would be a lie the caller can't check.
+pub struct TaskStartRequest {
+    pub id: i64,
+    /// The row's title, for the host's own logging/labelling.
+    pub text: String,
+    /// The checkout the worktree branches from — the row's bound repo root.
+    pub repo_root: String,
+    /// Branch to create; the dispatcher derives one from `text` when the
+    /// caller doesn't name it, since a task is named after its branch.
+    pub branch: String,
+    /// Base ref, or `None` for the repo's default branch.
+    pub base: Option<String>,
+    /// What the agent is told to do — the row's `goal` plus its `notes`, which
+    /// is where a task's real handoff context lives.
+    pub prompt: String,
+    /// Run the plan-first dynamic flow rather than starting straight in.
+    pub dynamic: bool,
 }
 
 /// What a [`TaskHost::delete_task`] attempt produced.
@@ -387,6 +423,7 @@ impl Dispatcher {
             "task_status" => self.task_status(args),
             "task_create" => self.task_create(args, now_ms),
             "task_delete" => self.task_delete(args),
+            "task_start" => self.task_start(args),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -634,6 +671,107 @@ impl Dispatcher {
     /// this on a task the user still has work in cannot destroy it by
     /// accident. `force: true` is the deliberate override and is reported in
     /// the app's event log as such.
+    /// Start an existing board task — mint its worktree and launch an agent on
+    /// its goal.
+    ///
+    /// Every guard here is a store read the dispatcher can do on its own, and
+    /// each exists because the failure is otherwise silent or destructive:
+    /// starting a task that already holds a worktree would abandon the running
+    /// one, and starting a closed task would resurrect finished work. The
+    /// branch is derived from the title when the caller doesn't name one,
+    /// because tasks are named after their branch.
+    fn task_start(&mut self, args: &Value) -> Result<Value, String> {
+        let id = args
+            .get("id")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "missing required argument: id".to_string())?;
+        let dynamic = args.get("dynamic").and_then(Value::as_bool).unwrap_or(false);
+        let branch_arg =
+            args.get("branch").and_then(Value::as_str).map(str::trim).filter(|b| !b.is_empty());
+        let base = args
+            .get("base")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|b| !b.is_empty())
+            .map(str::to_string);
+
+        // Availability before diagnosis: "this tool can't work here" is a
+        // different class of answer from "that task can't be started", and a
+        // caller shouldn't have to fix its arguments to discover the first.
+        if self.task_host.is_none() {
+            return Err("task_start is unavailable: no task host is attached".to_string());
+        }
+
+        // `task_by_id` answers `TaskNotFound` for an unknown id, so its message
+        // already distinguishes "no such row" from "the store couldn't answer".
+        let task = self.store.task_by_id(id).map_err(|e| e.to_string())?;
+
+        if task.closed {
+            return Err(format!(
+                "task {id} ({:?}) is closed — reopen it on the Board before starting it",
+                task.text
+            ));
+        }
+        let worktree = task.worktree.as_ref();
+        if let Some(dir) = worktree.and_then(|w| w.dir.as_deref()) {
+            return Err(format!(
+                "task {id} ({:?}) already has a worktree at {dir} — starting it again would \
+                 abandon that one",
+                task.text
+            ));
+        }
+        let repo_root = worktree
+            .map(|w| w.repo_root.clone())
+            .filter(|root| !root.trim().is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "task {id} ({:?}) isn't bound to a repo, so there's nothing to branch from",
+                    task.text
+                )
+            })?;
+
+        // A task is named after its branch, so a caller that doesn't pick one
+        // gets the title slugged — the same derivation `tt task new` uses.
+        let branch = match branch_arg {
+            Some(b) => b.to_string(),
+            None => {
+                let slug = tt_git::branch_name::slug(&task.text);
+                if slug.is_empty() {
+                    return Err(format!(
+                        "couldn't derive a branch name from {:?} — pass `branch` explicitly",
+                        task.text
+                    ));
+                }
+                slug
+            }
+        };
+
+        // The goal is what the agent is told to do, and `notes` is where a
+        // task's real handoff context lives — send both. Falling back to the
+        // title keeps a bare row startable.
+        let prompt = task_start_prompt(&task);
+
+        let host =
+            self.task_host.as_ref().expect("checked above, before any of the row guards ran");
+        host.start_task(TaskStartRequest {
+            id,
+            text: task.text.clone(),
+            repo_root,
+            branch: branch.clone(),
+            base,
+            prompt,
+            dynamic,
+        })?;
+
+        Ok(json!({
+            "status": "starting",
+            "id": id,
+            "text": task.text,
+            "branch": branch,
+            "dynamic": dynamic,
+        }))
+    }
+
     fn task_delete(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -789,6 +927,24 @@ fn unknown_calendar_source_message(source: &str, configured: &[String]) -> Strin
     )
 }
 
+/// What the agent starting a task is told to do: its `goal`, then its `notes`
+/// under a header.
+///
+/// Both halves matter, and sending only one is the bug this replaced. The
+/// Board's own "Start task" action passes the card's *title* — which is a label,
+/// not an instruction — so a task carrying a carefully written goal and pages of
+/// handoff notes started an agent that had seen neither. `text` is the last
+/// resort, for a bare row with nothing else on it.
+fn task_start_prompt(task: &tt_store::TaskItem) -> String {
+    let goal = task.goal.as_deref().map(str::trim).filter(|g| !g.is_empty());
+    let notes = task.notes.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let head = goal.unwrap_or(task.text.trim());
+    match notes {
+        Some(notes) => format!("{head}\n\n## Notes\n\n{notes}"),
+        None => head.to_string(),
+    }
+}
+
 /// The repo-validation refusal: names the argument and lists what *is*
 /// tracked (as `owner/repo` slugs), so a caller can self-correct without
 /// another round trip.
@@ -848,6 +1004,20 @@ pub fn tool_definitions() -> Value {
                     "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
                     "outcome": { "type": "string", "enum": ["done", "abandoned"], "description": "How the task ended, recorded on its closed row. Omitted: inferred from the task's own evidence — done if a linked PR merged, else abandoned." },
                     "force": { "type": "boolean", "description": "Skip the guards and delete the worktree anyway, discarding uncommitted changes and unreachable commits for good. Default false." },
+                },
+                "required": ["id"],
+            },
+        },
+        {
+            "name": "task_start",
+            "description": "Start a board task that has no worktree yet: mint its git worktree on a fresh branch and launch a Claude session in it, working on the task's goal and notes. This is how a task goes from a card on the board to actual work in progress. Returns `status: \"starting\"` — the worktree and agent come up asynchronously in the app, so confirm with task_list rather than assuming. Refuses a task that already has a worktree (starting again would abandon the running one) or one that is closed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
+                    "branch": { "type": "string", "description": "Branch to create for the task. Omitted: derived by slugging the task's title, the same way `tt task new` does." },
+                    "base": { "type": "string", "description": "Ref to branch from. Omitted: the repo's default branch." },
+                    "dynamic": { "type": "boolean", "description": "Start the session in plan-first mode — the agent proposes a plan and waits for approval before implementing, then reviews, rebases, opens and merges the PR. Default false, which starts work immediately." },
                 },
                 "required": ["id"],
             },
@@ -1025,6 +1195,7 @@ mod tests {
                 "task_status",
                 "task_create",
                 "task_delete",
+                "task_start",
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
@@ -1413,9 +1584,16 @@ mod tests {
     type HostCalls =
         std::sync::Arc<std::sync::Mutex<Vec<(i64, bool, Option<tt_store::TaskOutcome>)>>>;
 
+    /// Each start request the host was handed, shared with the test. Only the
+    /// fields a test asserts on — the whole point is that the dispatcher
+    /// resolved them from the row, so the host does no reads of its own.
+    type StartCalls =
+        std::sync::Arc<std::sync::Mutex<Vec<(i64, String, String, Option<String>, String, bool)>>>;
+
     struct FakeHost {
         answer: std::sync::Mutex<Option<Result<TaskDeletion, String>>>,
         calls: HostCalls,
+        starts: StartCalls,
     }
 
     impl TaskHost for FakeHost {
@@ -1428,19 +1606,178 @@ mod tests {
             self.calls.lock().unwrap().push((id, force, outcome));
             self.answer.lock().unwrap().take().expect("one delete per test")
         }
+
+        fn start_task(&self, req: TaskStartRequest) -> Result<(), String> {
+            self.starts.lock().unwrap().push((
+                req.id,
+                req.repo_root,
+                req.branch,
+                req.base,
+                req.prompt,
+                req.dynamic,
+            ));
+            Ok(())
+        }
     }
 
     fn with_host(answer: Result<TaskDeletion, String>) -> (Dispatcher, HostCalls) {
+        let (dispatcher, calls, _) = with_host_recording(answer);
+        (dispatcher, calls)
+    }
+
+    fn with_host_recording(
+        answer: Result<TaskDeletion, String>,
+    ) -> (Dispatcher, HostCalls, StartCalls) {
         let calls: HostCalls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let starts: StartCalls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let host = FakeHost {
             answer: std::sync::Mutex::new(Some(answer)),
             calls: std::sync::Arc::clone(&calls),
+            starts: std::sync::Arc::clone(&starts),
         };
-        (dispatcher().with_task_host(Box::new(host)), calls)
+        (dispatcher().with_task_host(Box::new(host)), calls, starts)
     }
 
     fn deleted(name: &str, messages: Vec<String>) -> Result<TaskDeletion, String> {
         Ok(TaskDeletion::Deleted { name: name.to_string(), messages })
+    }
+
+    // -- task_start ---------------------------------------------------------
+
+    /// Same contract as `task_delete`: without a host the tool must refuse
+    /// rather than half-do the job. There is nothing useful it could do alone —
+    /// minting a worktree and launching an agent are both the host's.
+    #[test]
+    fn task_start_without_a_host_refuses() {
+        let mut dispatcher = dispatcher();
+        let message = call_tool_err(&mut dispatcher, "task_start", json!({ "id": 1 }));
+        assert!(message.contains("no task host"), "{message}");
+    }
+
+    /// The dispatcher resolves everything from the row so the host reads
+    /// nothing: repo root from the binding, branch slugged from the title, and
+    /// the prompt as goal + notes.
+    #[test]
+    fn task_start_resolves_branch_repo_and_prompt_from_the_row() {
+        let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
+        let created = call_tool(
+            &mut dispatcher,
+            "task_create",
+            json!({
+                "repo": REPO_SLUG,
+                "title": "Collapse git_info's eight spawns",
+                "goal": "Cut the per-folder git subprocess count from ~8 to 1.",
+                "notes": "Work in git_info.rs only.",
+            }),
+        );
+        let id = created["task"]["id"].as_i64().unwrap();
+
+        let result = call_tool(&mut dispatcher, "task_start", json!({ "id": id }));
+        assert_eq!(result["status"], "starting");
+        assert_eq!(result["id"], id);
+        assert_eq!(result["branch"], "collapse-git_info-s-eight-spawns");
+        assert_eq!(result["dynamic"], false);
+
+        let starts = starts.lock().unwrap();
+        assert_eq!(starts.len(), 1);
+        let (got_id, repo_root, branch, base, prompt, dynamic) = &starts[0];
+        assert_eq!(*got_id, id);
+        assert_eq!(repo_root, REPO_DIR);
+        assert_eq!(branch, "collapse-git_info-s-eight-spawns");
+        assert_eq!(*base, None);
+        assert!(!dynamic);
+        // Goal leads, notes follow — the title is not the instruction.
+        assert!(prompt.starts_with("Cut the per-folder git subprocess count"), "{prompt}");
+        assert!(prompt.contains("Work in git_info.rs only."), "{prompt}");
+    }
+
+    #[test]
+    fn task_start_passes_an_explicit_branch_base_and_dynamic_through() {
+        let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
+        let created =
+            call_tool(&mut dispatcher, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
+        let id = created["task"]["id"].as_i64().unwrap();
+
+        call_tool(
+            &mut dispatcher,
+            "task_start",
+            json!({ "id": id, "branch": "fix/thing", "base": "develop", "dynamic": true }),
+        );
+
+        let starts = starts.lock().unwrap();
+        let (_, _, branch, base, _, dynamic) = &starts[0];
+        assert_eq!(branch, "fix/thing");
+        assert_eq!(base.as_deref(), Some("develop"));
+        assert!(dynamic);
+    }
+
+    /// Starting a task that already holds a worktree would orphan the running
+    /// one — the guard exists so an agent retrying can't do that silently.
+    #[test]
+    fn task_start_refuses_a_task_that_already_has_a_worktree() {
+        let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
+        let created =
+            call_tool(&mut dispatcher, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
+        let id = created["task"]["id"].as_i64().unwrap();
+        dispatcher
+            .store
+            .set_task_worktree(id, REPO_DIR, None, Some("feat/x"), Some("/w/feat-x"))
+            .unwrap();
+
+        let message = call_tool_err(&mut dispatcher, "task_start", json!({ "id": id }));
+        assert!(message.contains("already has a worktree"), "{message}");
+        assert!(starts.lock().unwrap().is_empty(), "host must not be called");
+    }
+
+    #[test]
+    fn task_start_refuses_a_closed_task() {
+        let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
+        let created =
+            call_tool(&mut dispatcher, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
+        let id = created["task"]["id"].as_i64().unwrap();
+        dispatcher.store.close_task(id, tt_store::TaskOutcome::Done, NOW).unwrap();
+
+        let message = call_tool_err(&mut dispatcher, "task_start", json!({ "id": id }));
+        assert!(message.contains("closed"), "{message}");
+        assert!(starts.lock().unwrap().is_empty(), "host must not be called");
+    }
+
+    /// The seeded row has no repo binding, so there is no checkout to branch
+    /// from — that has to be said, not guessed at.
+    #[test]
+    fn task_start_refuses_a_task_with_no_repo_binding() {
+        let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
+        let message = call_tool_err(&mut dispatcher, "task_start", json!({ "id": 1 }));
+        assert!(message.contains("isn't bound to a repo"), "{message}");
+        assert!(starts.lock().unwrap().is_empty(), "host must not be called");
+    }
+
+    #[test]
+    fn task_start_reports_an_unknown_id() {
+        let (mut dispatcher, _, _) = with_host_recording(deleted("unused", vec![]));
+        let message = call_tool_err(&mut dispatcher, "task_start", json!({ "id": 9999 }));
+        assert!(message.to_lowercase().contains("task"), "{message}");
+    }
+
+    #[test]
+    fn start_prompt_prefers_goal_then_falls_back_to_the_title() {
+        // A real row rather than a synthesized one, so the fixture can't drift
+        // from what the store actually hands the dispatcher.
+        let store = Store::open_in_memory().unwrap();
+        let mut task = store.add_task("Card title", "backlog", None, None, NOW).unwrap();
+
+        // Nothing but a title: it's all the agent can be told.
+        assert_eq!(task_start_prompt(&task), "Card title");
+
+        task.goal = Some("  Do the thing.  ".into());
+        assert_eq!(task_start_prompt(&task), "Do the thing.");
+
+        task.notes = Some("Context here.".into());
+        assert_eq!(task_start_prompt(&task), "Do the thing.\n\n## Notes\n\nContext here.");
+
+        // Blank strings are absent, not content.
+        task.goal = Some("   ".into());
+        assert_eq!(task_start_prompt(&task), "Card title\n\n## Notes\n\nContext here.");
     }
 
     /// The whole point of routing deletion through a host: a dispatcher with
