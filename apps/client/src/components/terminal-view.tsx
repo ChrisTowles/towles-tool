@@ -31,6 +31,7 @@ import { linkAt, linkLabel, type TermLink } from "@/lib/term-links";
 import { resolveTermTheme } from "@/lib/term-theme";
 import {
   rowsHaveSelection,
+  selectionGestureKey,
   selectionKindForDetail,
   shouldCopyOnSelect,
 } from "@/lib/terminal-selection";
@@ -894,11 +895,17 @@ export function TerminalView({
         });
         return lastSelect;
       };
-      // Copy a just-made selection to the clipboard when copy-on-select is on.
-      const maybeCopyOnSelect = (kind: "drag" | "word" | "line") => {
-        if (shouldCopyOnSelect(copyOnSelectRef.current, kind)) {
-          void lastSelect.then(copySelection);
-        }
+      // What the last copy-on-select took, so repeating the same gesture
+      // doesn't re-take the system clipboard. Reset whenever the selection is
+      // cleared or the terminal loses focus — both mean "new intent", and
+      // after a trip to another app the user may well want that word back.
+      let lastCopiedGesture: string | null = null;
+      // Copy a just-made selection to the clipboard when copy-on-select is on
+      // and this gesture actually selected something new.
+      const maybeCopyOnSelect = (kind: "drag" | "word" | "line", gesture: string | null) => {
+        if (!shouldCopyOnSelect(copyOnSelectRef.current, kind, gesture, lastCopiedGesture)) return;
+        lastCopiedGesture = gesture;
+        void lastSelect.then(copySelection);
       };
       const cellOf = (e: MouseEvent) => ({
         x: Math.max(0, Math.min(grid.cols - 1, Math.floor(e.offsetX / cellW))),
@@ -910,7 +917,10 @@ export function TerminalView({
       // gets wheel reports, hover motion, middle clicks, and plain left
       // *clicks* — but never left drags or multi-clicks: those are selection
       // gestures, and forwarding them is what made text selection look
-      // broken in every agent pane. A plain left press is therefore held
+      // broken in every agent pane. "Multi-click" here means exactly the
+      // double and triple that `selectionKindForDetail` maps to word and
+      // line; the cycle caps there, so a fourth rapid press is a plain click
+      // again and does reach the program. A plain left press is therefore held
       // back until mouseup — a drag becomes a local selection the program
       // never hears about; a clean click is delivered as a press+release
       // pair. Right-click always stays local (the context menu).
@@ -968,7 +978,10 @@ export function TerminalView({
         const kind = selectionKindForDetail(e.detail);
         if (kind === "word" || kind === "line") {
           void select(kind, cell);
-          maybeCopyOnSelect(kind);
+          // Key on the absolute scrollback row, not the viewport row, so
+          // scrolling to a different part of the buffer and clicking is a
+          // new gesture while re-clicking the same text is not.
+          maybeCopyOnSelect(kind, selectionGestureKey(kind, cell.x, grid.viewportTop + cell.y));
         } else {
           anchor = cell;
           dragged = false;
@@ -1005,6 +1018,7 @@ export function TerminalView({
         }
         if (anchor && !dragged) {
           void select("clear");
+          lastCopiedGesture = null;
           // Deliver the click the program was owed — the press was held back
           // at mousedown so a drag could become a local selection instead.
           if (clickToProgram && mouseToProgram(e)) {
@@ -1012,7 +1026,7 @@ export function TerminalView({
             sendMouse(e, "release", anchor);
           }
         } else if (dragged) {
-          maybeCopyOnSelect("drag");
+          maybeCopyOnSelect("drag", null);
         }
         anchor = null;
         clickToProgram = false;
@@ -1022,7 +1036,10 @@ export function TerminalView({
       // focused terminal — a background pane must not hijack the clipboard.
       const setFocus = (focused: boolean) => void invoke("term_focus", { termId, focused });
       const onFocus = () => setFocus(true);
-      const onBlur = () => setFocus(false);
+      const onBlur = () => {
+        setFocus(false);
+        lastCopiedGesture = null;
+      };
 
       input.addEventListener("keydown", onKeyDown);
       input.addEventListener("keyup", onKeyUp);
