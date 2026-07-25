@@ -7,6 +7,27 @@
  */
 import type { IssueItem, PrItem } from "@/lib/data";
 
+/** localStorage key for the remembered repo selection. Mirrors ACTIVE_TAB_KEY
+ * in workspace-persistence.ts — frontend-owned UI state, not a setting. */
+export const COCKPIT_REPO_FILTER_KEY = "tt-cockpit-repo-filter";
+
+/**
+ * Restore the persisted repo selection from its raw localStorage string.
+ *
+ * Pure and DOM-independent (the caller passes the raw string) so it unit-tests
+ * without a browser. A missing or blank value means "All repos". The stored
+ * name is deliberately *not* validated against the collected repos here: on a
+ * cold start the snapshot hasn't arrived yet, so a repo-list check would
+ * discard every selection. `activeRepo` in the screen already falls back to
+ * "all" for a name that isn't in the current list, and the selection returns
+ * on its own once that repo is collected again.
+ */
+export function loadRepoFilter(raw: string | null): string | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 /**
  * The distinct repos present across the Cockpit's PRs and issues, sorted for a
  * stable chip order. Empty when nothing has been collected yet.
