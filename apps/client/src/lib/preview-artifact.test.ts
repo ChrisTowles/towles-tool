@@ -70,7 +70,14 @@ describe("showArtifactNav", () => {
     expect(showArtifactNav(args, REPOS)?.nonce).not.toBe(showArtifactNav(args, REPOS)?.nonce);
   });
 
-  it("returns nothing for an artifact no folder owns, rather than guessing", () => {
-    expect(showArtifactNav({ path: "/tmp/a.html", title: "A" }, REPOS)).toBeUndefined();
+  /** One app instance serves every Claude session on the machine, so an
+   * artifact from an untracked checkout (or /tmp) is normal — it just has no
+   * preferred folder, and the screen falls back to whatever is on screen. */
+  it("leaves the folder null for an artifact no folder owns, rather than dropping it", () => {
+    expect(showArtifactNav({ path: "/tmp/a.html", title: "A" }, REPOS)).toMatchObject({
+      kind: "show-artifact",
+      folderDir: null,
+      path: "/tmp/a.html",
+    });
   });
 });

@@ -346,12 +346,28 @@ export function AgentboardScreen() {
   // when none is open, which is the normal case (nobody keeps a preview pane
   // open on the off chance an agent has something to show).
   const [artifactRequests, setArtifactRequests] = useState<Record<string, ArtifactRequest>>({});
-  function showArtifact(req: { folderDir: string; path: string; title: string; nonce: number }) {
+  function showArtifact(req: {
+    folderDir: string | null;
+    path: string;
+    title: string;
+    nonce: number;
+  }) {
+    // Where to put an artifact that belongs to no tracked folder: whatever
+    // folder is on screen, else the first one in the rail. The MCP server is
+    // one per machine, so the sessions calling this are frequently in
+    // checkouts *this* app doesn't track — and a page shown in a
+    // slightly-wrong pane beats a page not shown at all. The rail being
+    // completely empty is the only case with nowhere to go.
+    const dir = req.folderDir ?? activeFolderDirRef.current ?? repos[0]?.folders[0]?.dir;
+    if (!dir) {
+      toast.error(`Couldn't show ${req.title} — no checkouts are open on the rail`);
+      return;
+    }
     setArtifactRequests((prev) => ({
       ...prev,
-      [req.folderDir]: { path: req.path, title: req.title, nonce: req.nonce },
+      [dir]: { path: req.path, title: req.title, nonce: req.nonce },
     }));
-    openPreview(req.folderDir);
+    openPreview(dir);
   }
 
   // Claude called the openFile tool → open (or focus) that folder's files
@@ -815,7 +831,7 @@ export function AgentboardScreen() {
         );
       } else if (req.kind === "show-artifact") {
         // The MCP `preview_show` tool — the agent has something to *show*.
-        ackFolder(req.folderDir);
+        if (req.folderDir) ackFolder(req.folderDir);
         showArtifact(req);
       } else {
         setActiveFolderDir(req.folderDir);

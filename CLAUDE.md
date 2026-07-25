@@ -360,7 +360,10 @@ Cargo workspace + npm workspace (`apps/client` only):
     the user can circle a line of the agent's own plan and reply to it. Same
     hand-off shape as `task_start` and for a related reason — the pane is
     folder-scoped, and only the frontend knows which tracked folder a path
-    lives under and how to open a pane there — so the host emits
+    lives under and how to open a pane there (a path under none of them falls
+    back to the folder on screen rather than being refused — one instance
+    serves every session on the machine, so untracked paths are normal) — so
+    the host emits
     `preview://show` (`apps/client/src/lib/preview-artifact.ts`) and the tool
     answers `"showing"`. The event carries the *path*, never the file's bytes:
     the pane reads it back through `preview_read_artifact`, which is what makes

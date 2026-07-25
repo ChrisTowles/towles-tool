@@ -52,10 +52,14 @@ export const previewReadArtifact = (path: string) =>
  * Longest-prefix rather than first-match because worktree tasks nest *inside*
  * their checkout (`<repo>/.claude/worktrees/<task>/`), so a file in a task
  * matches both the task's folder and the main checkout's — and the task is the
- * one whose terminal the agent is sitting in. A path under no tracked folder
- * has no pane to open and comes back undefined; the caller reports that rather
- * than guessing a folder, since showing an artifact in the wrong task's window
- * is worse than saying it couldn't be placed.
+ * one whose terminal the agent is sitting in.
+ *
+ * A path under no tracked folder simply has no *preferred* folder, and comes
+ * back undefined so the caller can fall back (see {@link showArtifactNav}) —
+ * it is not a refusal. Deliberately: the one app instance holding the MCP port
+ * serves every Claude session on the machine, including sessions in checkouts
+ * it doesn't track and scratch files in `/tmp`, and an artifact shown in a
+ * slightly-wrong pane is worth far more than one that isn't shown at all.
  */
 export function folderForArtifact(
   repos: RepoData[],
@@ -72,15 +76,15 @@ export function folderForArtifact(
   return best;
 }
 
-/** Build the Agentboard request for a validated payload, or `undefined` when
- * the artifact sits under no tracked folder. Pure, so the routing is testable
- * without Tauri. */
+/** Build the Agentboard request for a validated payload. `folderDir` is the
+ * folder that *owns* the file, or `null` when none does — the screen resolves
+ * that against whatever folder is on screen (see the handler in
+ * `screens/agentboard.tsx`), because only it knows. Pure, so the routing is
+ * testable without Tauri. */
 export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) {
-  const folder = folderForArtifact(repos, payload.path);
-  if (!folder) return undefined;
   return {
     kind: "show-artifact" as const,
-    folderDir: folder.dir,
+    folderDir: folderForArtifact(repos, payload.path)?.dir ?? null,
     path: payload.path,
     title: payload.title,
     nonce: nextOpenFileNonce(),
@@ -91,16 +95,12 @@ export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) 
  * Subscribe to `preview://show` for the lifetime of the app. `reposNow` reads
  * the current repo list at delivery time rather than closing over it, so an
  * artifact shown before the first snapshot doesn't resolve against a stale
- * empty array.
+ * empty array — which now only costs it the *preferred* folder, not the show.
  *
  * Returns an unsubscribe. A no-op outside Tauri (browser dev has no backend to
  * emit).
  */
-export function subscribePreviewShow(
-  reposNow: () => RepoData[],
-  onUnplaceable: (payload: PreviewShowPayload) => void,
-  onRouted: () => void,
-): () => void {
+export function subscribePreviewShow(reposNow: () => RepoData[], onRouted: () => void): () => void {
   if (!isTauri()) return () => {};
   let unlisten: (() => void) | undefined;
   let cancelled = false;
@@ -114,12 +114,7 @@ export function subscribePreviewShow(
         console.error("preview://show: unexpected payload", parsed.error);
         return;
       }
-      const nav = showArtifactNav(parsed.data, reposNow());
-      if (!nav) {
-        onUnplaceable(parsed.data);
-        return;
-      }
-      requestAgentboardNav(nav);
+      requestAgentboardNav(showArtifactNav(parsed.data, reposNow()));
       // Bring Agentboard forward *after* the request, never by registering a
       // nav listener here — see the same note in `task-start.ts`.
       onRouted();

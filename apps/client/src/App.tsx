@@ -128,8 +128,6 @@ function TaskStartBridge() {
     () =>
       subscribePreviewShow(
         () => reposRef.current,
-        (payload) =>
-          toast.error(`Couldn't show ${payload.title} — ${payload.path} isn't in a tracked folder`),
         () => openTabRef.current("agentboard"),
       ),
     [],
