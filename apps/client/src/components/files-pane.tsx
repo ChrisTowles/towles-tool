@@ -5,9 +5,11 @@ import {
   Code2,
   Columns2,
   Eye,
+  Files,
   Maximize2,
   Minimize2,
   RefreshCw,
+  Search,
   WrapText,
   X,
 } from "lucide-react";
@@ -21,9 +23,12 @@ import { ideMention, useIdeConnected } from "@/lib/ide";
 import { useLspStatus } from "@/lib/lsp-status";
 import {
   attachExplorer,
+  openSidebarView,
   runMonacoCommand,
   setMonacoOpenHandler,
   setMonacoWorkspace,
+  watchSidebarView,
+  type SidebarView,
 } from "@/lib/monaco";
 import { modeForPanels, panelsFor, type EditorViewMode } from "@/lib/editor-view-mode";
 import { uiAction } from "@/lib/ui-action";
@@ -38,6 +43,10 @@ import { folderStatsKey, type FolderData } from "@/lib/agentboard";
  * selecting text streams to the folder's Claude session, and two gestures
  * mention explicitly: the header @ button sends the whole file, while the
  * viewer's selection chip (or ⌘⇧A) sends just the highlighted lines. The
+ * sidebar column's header switches that part between its two views — the file
+ * tree and search — because the workbench also switches it on its own (a tree
+ * row's "Find in Folder"), and without the toggle a right-click was a one-way
+ * trip out of the tree. The
  * viewer opens read-only and the toolbar's toggle arms editing (edits then
  * auto-save) — the pane is mostly read while an agent works in the same tree,
  * so typing into it has to be deliberate. Long
@@ -62,6 +71,7 @@ export function FilesPane({
   connected,
   openRequest,
   onOpenFileChange,
+  onSidebarViewChange,
 }: {
   dir: string;
   connected: boolean;
@@ -72,6 +82,10 @@ export function FilesPane({
    * header has nothing to say but the folder name, which every other pane in
    * the window already says. */
   onOpenFileChange?: (open: { path: string; dirty: boolean } | null) => void;
+  /** Reports which view the sidebar column shows, for the same reason as
+   * `onOpenFileChange` — the pane header would otherwise keep calling itself
+   * the explorer while the column shows the search form. */
+  onSidebarViewChange?: (view: SidebarView | null) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -89,6 +103,16 @@ export function FilesPane({
   // same sitting (a *new* checkout does re-lock, with `dir` below).
   const [editable, setEditable] = useState(false);
   const [viewMode, setViewMode] = useState<EditorViewMode>("code");
+  // The sidebar part is a workbench singleton that switches view without
+  // asking — right-clicking a tree row and picking "Find in Folder" opens
+  // search over the pane. Follow the part instead of tracking our own idea of
+  // the mode, or the toggle disagrees with what's on screen the first time
+  // that happens (and there was no way back to the tree at all before it).
+  const [sidebarView, setSidebarView] = useState<SidebarView | null>(null);
+  useEffect(() => watchSidebarView(setSidebarView), []);
+  useEffect(() => {
+    onSidebarViewChange?.(sidebarView);
+  }, [sidebarView, onSidebarViewChange]);
   const [fullscreen, setFullscreen] = useState(false);
   const explorerRef = useRef<HTMLDivElement>(null);
   const editorPanelRef = useRef<PanelImperativeHandle>(null);
@@ -240,17 +264,39 @@ export function FilesPane({
     >
       <div className="flex w-64 shrink-0 flex-col border-r bg-card">
         <div className="flex shrink-0 items-center gap-1.5 border-b bg-card px-2 py-1.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-            explorer
+          <span className="flex shrink-0 items-center gap-0.5">
+            {(
+              [
+                { view: "explorer", icon: Files, title: "Browse the file tree" },
+                { view: "search", icon: Search, title: "Search this folder" },
+              ] as const
+            ).map(({ view, icon: Icon, title }) => (
+              <IconBtn
+                key={view}
+                title={title}
+                onClick={() => {
+                  void openSidebarView(view);
+                  uiAction("files.sidebar_view", "agentboard", view);
+                }}
+                className={sidebarView === view ? "text-violet-500" : undefined}
+              >
+                <Icon className="size-3.5" />
+              </IconBtn>
+            ))}
           </span>
+          {/* No mode name here — the column is 16rem wide and the LSP chip
+           * already fills it; the pane header above names the mode instead. */}
+          <span className="min-w-0 flex-1" />
           <LspChip dir={dir} />
-          <IconBtn
-            title="refresh the explorer"
-            onClick={() => void runMonacoCommand("workbench.files.action.refreshFilesExplorer")}
-            className="hover:text-sky-500"
-          >
-            <RefreshCw className="size-3" />
-          </IconBtn>
+          {sidebarView !== "search" && (
+            <IconBtn
+              title="refresh the explorer"
+              onClick={() => void runMonacoCommand("workbench.files.action.refreshFilesExplorer")}
+              className="hover:text-sky-500"
+            >
+              <RefreshCw className="size-3" />
+            </IconBtn>
+          )}
         </div>
         <div ref={explorerRef} className="min-h-0 flex-1 overflow-hidden" />
         <div className="shrink-0 border-t bg-card px-2 py-1 text-[10.5px] text-muted-foreground">
@@ -449,6 +495,7 @@ export function FolderFilesPane({
 }) {
   const ideConnected = useIdeConnected(folder?.dir);
   const [openFile, setOpenFile] = useState<{ path: string; dirty: boolean } | null>(null);
+  const [sidebarView, setSidebarView] = useState<SidebarView | null>(null);
 
   // The Explorer's provider has no disk watch (see `lib/monaco-fs.ts`), so a
   // file an agent creates or deletes never appears on its own. The folder's
@@ -499,7 +546,7 @@ export function FolderFilesPane({
               {openFile.dirty && <span className="text-amber-500"> •</span>}
             </>
           ) : (
-            <span className="text-muted-foreground">explorer</span>
+            <span className="text-muted-foreground">{sidebarView ?? "explorer"}</span>
           )
         }
         subjectTitle={openFile?.path}
@@ -520,6 +567,7 @@ export function FolderFilesPane({
           connected={ideConnected}
           openRequest={openRequest}
           onOpenFileChange={setOpenFile}
+          onSidebarViewChange={setSidebarView}
         />
       </div>
     </div>
