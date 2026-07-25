@@ -321,9 +321,9 @@ Cargo workspace + npm workspace (`apps/client` only):
     `crates-tauri/tt-app/src/mcp_http.rs` — read that module's doc before
     touching either half. Tools: `task_list`, `task_status`, `task_create`
     (a #339 board task in a tracked repo's swimlane, same store path as the
-    app's `store_add_task`), `task_summary`, `task_start`, `task_delete`, plus
-    the calendar family `calendar_today`, `calendar_next` and the push-model
-    write `calendar_set`.
+    app's `store_add_task`), `task_summary`, `task_start`, `task_delete`,
+    `preview_show`, plus the calendar family `calendar_today`, `calendar_next`
+    and the push-model write `calendar_set`.
     `task_summary` is how a finished agent leaves a record: it writes the
     wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
     into a PTY scrollback that dies with the worktree. It is a *separate column
@@ -349,7 +349,25 @@ Cargo workspace + npm workspace (`apps/client` only):
     worktree in Rust and leaving the launch to the frontend: that forks the
     start path in two, and the frontend's half already encodes the
     no-PTY-until-rendered and serial-drain rules the second copy would have to
-    restate. The broader
+    restate.
+    **`preview_show` is the third host-backed tool, and the only one pointing
+    the other way**: an agent writes a self-contained HTML page and asks for it
+    to be put on screen in its own task's Preview pane, instead of printing
+    something explainable into a PTY scrollback the user reads linearly and
+    which dies with the worktree. It is the agent→human half of the channel
+    whose human→agent half already existed (draw on the pane, send the
+    annotated screenshot back), and the two share a surface deliberately, so
+    the user can circle a line of the agent's own plan and reply to it. Same
+    hand-off shape as `task_start` and for a related reason — the pane is
+    folder-scoped, and only the frontend knows which tracked folder a path
+    lives under and how to open a pane there — so the host emits
+    `preview://show` (`apps/client/src/lib/preview-artifact.ts`) and the tool
+    answers `"showing"`. The event carries the *path*, never the file's bytes:
+    the pane reads it back through `preview_read_artifact`, which is what makes
+    reload pick up a rewrite, and it renders in a `sandbox="allow-scripts"`
+    `srcDoc` frame (opaque origin — no reach into the app) rather than through
+    Tauri's asset protocol, whose scope would have to be widened to every path
+    on disk to serve one file. The broader
     dashboard-read tools (`day_brief`, `needs_you`, `snapshot`,
     PR/issue/DM/collector reads) were pruned in the 2026-07 tool-surface
     review and have not returned.
@@ -569,7 +587,9 @@ plugins ship today:
 - `towles-tool-app` (`packages/app`) — bridges Claude Code to the desktop
   app itself: registers the app's MCP server with a static checked-in
   `.mcp.json` (`{"type":"http","url":"http://127.0.0.1:8787/mcp"}` — board
-  tasks `task_list`/`task_status`/`task_create`/`task_summary`/`task_start`/`task_delete` plus the calendar family
+  tasks `task_list`/`task_status`/`task_create`/`task_summary`/`task_start`/`task_delete`,
+  `preview_show` (put an HTML page the agent wrote on screen in that task's
+  Preview pane) plus the calendar family
   `calendar_today`/`calendar_next`/`calendar_set`; the app must be running),
   ships the `towles-tool` skill (the `tt` command reference — journaling
   plus the `tt task` subcommands) and the `task-onboarding` skill (guides

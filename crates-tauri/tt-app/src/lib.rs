@@ -701,6 +701,7 @@ pub fn run() {
             launch::launch_configs,
             launch::launch_register,
             preview::preview_capture,
+            preview::preview_read_artifact,
             preview::preview_write_feedback,
             task::task_base_branches,
             task::task_check_branch,

@@ -20,6 +20,7 @@ import {
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
+import type { ArtifactRequest } from "@/lib/preview-artifact";
 import type { TermExit } from "@/lib/term-protocol";
 import { cn } from "@/lib/utils";
 import { paneStyle } from "./helpers";
@@ -54,6 +55,9 @@ export function PaneGrid(props: {
   /** How a *crashed* session's shell died, by session id (tombstone detail). */
   exitLabels: Record<string, string>;
   filesOpenRequests: Record<string, FilesOpenRequest>;
+  /** Artifacts an agent asked to show, by folder dir — see the MCP
+   * `preview_show` tool (`lib/preview-artifact.ts`). */
+  artifactRequests: Record<string, ArtifactRequest>;
   /** The label to lead a session's pane with — live Claude title or backend name. */
   labelFor: (s: SessionData) => string;
   /** Terminal focus request: the session to focus, and a nonce so re-requesting
@@ -81,6 +85,7 @@ export function PaneGrid(props: {
     termAttention,
     exitLabels,
     filesOpenRequests,
+    artifactRequests,
     labelFor,
     focusTerminalRequest,
     onSelectSession,
@@ -196,18 +201,18 @@ export function PaneGrid(props: {
       })}
       {/* Preview panes: a folder's live dev server tiled beside its terminals,
           with draw-on-page feedback. */}
-      {panes
-        .filter(isPreviewPane)
-        .map((id) =>
-          paneBox(
-            id,
-            <PreviewPane
-              folder={folderByDir.get(previewPaneDir(id) ?? "")}
-              focused={focusedPaneId === id}
-              onClose={() => onRemovePane(id)}
-            />,
-          ),
-        )}
+      {panes.filter(isPreviewPane).map((id) => {
+        const dir = previewPaneDir(id) ?? "";
+        return paneBox(
+          id,
+          <PreviewPane
+            folder={folderByDir.get(dir)}
+            focused={focusedPaneId === id}
+            artifact={artifactRequests[dir]}
+            onClose={() => onRemovePane(id)}
+          />,
+        );
+      })}
       {/* Tombstones: a shell that died on its own, holding the task it died in.
           The pane id says which kind this is, so this pass can't overlap the
           terminal pass above — a session is either its own id or its `~exit:`

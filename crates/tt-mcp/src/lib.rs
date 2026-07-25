@@ -96,6 +96,95 @@ pub trait TaskHost: Send {
     fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
 }
 
+/// The app-side half of `preview_show` — the agent→human direction of the
+/// Preview pane.
+///
+/// The pane itself (`apps/client/src/components/preview-pane.tsx`) already
+/// carries human→agent traffic: it embeds a checkout's dev server and sends an
+/// annotated screenshot into that task's session. This is the return path. An
+/// agent that has *finished* something explainable — a plan, a diff walkthrough,
+/// a table of what it found — writes one self-contained HTML file and asks for
+/// it to be put on screen, instead of printing 400 lines into a PTY scrollback
+/// the user has to read linearly and which dies with the worktree.
+///
+/// Like [`TaskHost::start_task`] this is a **hand-off**, for the same reason:
+/// the pane belongs to a folder in the app's rail, and routing the artifact to
+/// it means resolving that folder and opening a pane, neither of which is
+/// visible from this Tauri-free crate. So the host only emits the request, and
+/// the tool answers `"showing"` rather than claiming the user saw it. A
+/// dispatcher with no host refuses outright — silently accepting a show that
+/// reaches no window would tell an agent it had communicated when it hadn't.
+pub trait PreviewHost: Send {
+    /// Put `artifact` on screen in the Preview pane of whichever checkout it
+    /// lives under.
+    fn show(&self, artifact: PreviewArtifact) -> Result<(), String>;
+}
+
+/// A validated artifact to display — see [`PreviewHost`].
+pub struct PreviewArtifact {
+    /// Absolute path to an existing HTML file, checked by the dispatcher.
+    pub path: String,
+    /// What to label the pane with; the file name when the caller gave none.
+    pub title: String,
+}
+
+/// Largest artifact `preview_show` will accept, checked from the same `stat`
+/// that proves the file exists. The frontend reads the whole file into an
+/// iframe `srcdoc`, so an accidental multi-hundred-MB path (a log, a core
+/// dump, a build artifact with an `.html` name) must fail as an answer to the
+/// agent rather than as a frozen window.
+const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Validate a `preview_show` path into the absolute path to show.
+///
+/// Every rejection here is something the agent can fix and would otherwise
+/// discover as a blank pane: a relative path (this server serves every session
+/// on the machine and has no idea what any of them consider "here"), a file
+/// that isn't there, a directory, a non-HTML file, or one too big to inline.
+fn validate_artifact_path(raw: &str) -> Result<String, String> {
+    let path = std::path::Path::new(raw.trim());
+    if path.as_os_str().is_empty() {
+        return Err("missing required argument: path".to_string());
+    }
+    if !path.is_absolute() {
+        return Err(format!(
+            "path must be absolute — {raw:?} is relative, and this server serves every session on \
+             the machine, so it has no working directory to resolve it against"
+        ));
+    }
+    let ext =
+        path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
+    if ext != "html" && ext != "htm" {
+        return Err(format!(
+            "{raw:?} isn't an HTML file — write the artifact as a single self-contained .html page"
+        ));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| format!("can't read {raw:?}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("{raw:?} is not a file"));
+    }
+    if meta.len() > ARTIFACT_MAX_BYTES {
+        return Err(format!(
+            "{raw:?} is {} bytes — the preview inlines the whole file, so keep an artifact under {} bytes",
+            meta.len(),
+            ARTIFACT_MAX_BYTES
+        ));
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// The pane label for an artifact: the caller's title, else the file's own
+/// name — never an empty header, which reads as a broken pane.
+fn artifact_title(path: &str, title: Option<&str>) -> String {
+    match title.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => t.to_string(),
+        None => std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Artifact".to_string()),
+    }
+}
+
 /// Everything the host needs to start a task, resolved by the dispatcher from
 /// the row so the host does no store reads of its own.
 ///
@@ -155,6 +244,9 @@ pub struct Dispatcher {
     /// Injected by the serving transport — see [`TaskHost`]. `None` in tests
     /// and any Tauri-free driver, where `task_delete` refuses.
     task_host: Option<Box<dyn TaskHost>>,
+    /// Injected by the serving transport — see [`PreviewHost`]. `None` in
+    /// tests and any Tauri-free driver, where `preview_show` refuses.
+    preview_host: Option<Box<dyn PreviewHost>>,
     /// `clientInfo` from the session's `initialize` (e.g. `claude-code 2.1`),
     /// stamped onto call-log rows so the app's MCP screen can say who called.
     client: Option<String>,
@@ -248,7 +340,13 @@ impl Outcome {
 impl Dispatcher {
     /// Build a dispatcher over `store`.
     pub fn new(store: Store) -> Dispatcher {
-        Dispatcher { store, task_host: None, client: None, calendar_sources: None }
+        Dispatcher {
+            store,
+            task_host: None,
+            preview_host: None,
+            client: None,
+            calendar_sources: None,
+        }
     }
 
     /// Inject the app-side deletion host — see [`TaskHost`]. The serving
@@ -256,6 +354,14 @@ impl Dispatcher {
     /// refuses.
     pub fn with_task_host(mut self, host: Box<dyn TaskHost>) -> Dispatcher {
         self.task_host = Some(host);
+        self
+    }
+
+    /// Inject the app-side preview host — see [`PreviewHost`]. The serving
+    /// transport in `tt-app` is the only caller; without it `preview_show`
+    /// refuses.
+    pub fn with_preview_host(mut self, host: Box<dyn PreviewHost>) -> Dispatcher {
+        self.preview_host = Some(host);
         self
     }
 
@@ -423,6 +529,7 @@ impl Dispatcher {
             "task_summary" => self.task_summary(args, now_ms),
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
+            "preview_show" => self.preview_show(args),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -799,6 +906,35 @@ impl Dispatcher {
         }))
     }
 
+    /// Put an HTML artifact the agent wrote on screen in the app's Preview
+    /// pane — see [`PreviewHost`] for why this direction exists at all.
+    ///
+    /// Everything checkable is checked here rather than in the host, because
+    /// every failure mode of this tool is silent by nature: a bad path shows
+    /// the user an empty pane and tells the agent nothing. So the path is
+    /// validated down to "an HTML file of a sane size that exists right now",
+    /// and only then handed off.
+    fn preview_show(&mut self, args: &Value) -> Result<Value, String> {
+        let raw = args
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "missing required argument: path".to_string())?;
+
+        // Availability before diagnosis, same as `task_start`: "this tool
+        // can't work here" is a different answer from "that path is wrong".
+        if self.preview_host.is_none() {
+            return Err("preview_show is unavailable: no preview host is attached".to_string());
+        }
+        let path = validate_artifact_path(raw)?;
+        let title = artifact_title(&path, args.get("title").and_then(Value::as_str));
+
+        let host =
+            self.preview_host.as_ref().expect("checked above, before the path was validated");
+        host.show(PreviewArtifact { path: path.clone(), title: title.clone() })?;
+
+        Ok(json!({ "status": "showing", "path": path, "title": title }))
+    }
+
     fn task_delete(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -1061,6 +1197,18 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "preview_show",
+            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first (anywhere — the task's checkout is the natural home), then call this with its absolute path. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Absolute path to the .html file to show. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own." },
+                    "title": { "type": "string", "description": "Short label for the pane header, e.g. \"Migration plan\". Defaults to the file name." },
+                },
+                "required": ["path"],
+            },
+        },
+        {
             "name": "calendar_today",
             "description": "The shape of today: every meeting starting in today's local calendar day, in order. Use it to see where the uninterrupted stretches are before committing to deep work.",
             "inputSchema": no_args(),
@@ -1215,7 +1363,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_exactly_the_task_and_calendar_families() {
+    fn tools_list_is_exactly_the_task_preview_and_calendar_families() {
         let mut dispatcher = dispatcher();
         let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string();
         let response: Value =
@@ -1235,11 +1383,126 @@ mod tests {
                 "task_summary",
                 "task_delete",
                 "task_start",
+                "preview_show",
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
             ]
         );
+    }
+
+    // --- preview_show ---
+
+    /// A dispatcher whose preview host records what it was asked to show.
+    fn with_preview_host() -> (Dispatcher, std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>)
+    {
+        type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+        struct FakePreviewHost {
+            shown: Shown,
+        }
+        impl PreviewHost for FakePreviewHost {
+            fn show(&self, artifact: PreviewArtifact) -> Result<(), String> {
+                self.shown.lock().unwrap().push((artifact.path, artifact.title));
+                Ok(())
+            }
+        }
+        let shown: Shown = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let host = FakePreviewHost { shown: std::sync::Arc::clone(&shown) };
+        (dispatcher().with_preview_host(Box::new(host)), shown)
+    }
+
+    /// Write `name` into `dir` and return its absolute path.
+    fn artifact_file(dir: &tempfile::TempDir, name: &str, body: &str) -> String {
+        let path = dir.path().join(name);
+        std::fs::write(&path, body).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn preview_show_hands_the_artifact_to_the_host() {
+        let (mut dispatcher, shown) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
+
+        let result = call_tool(
+            &mut dispatcher,
+            "preview_show",
+            json!({ "path": path, "title": "The plan" }),
+        );
+
+        assert_eq!(result["status"], "showing");
+        assert_eq!(result["title"], "The plan");
+        assert_eq!(&*shown.lock().unwrap(), &[(path, "The plan".to_string())]);
+    }
+
+    /// A pane with no header reads as broken, so an untitled artifact is
+    /// labelled with its own file name rather than nothing.
+    #[test]
+    fn preview_show_falls_back_to_the_file_name_as_the_title() {
+        let (mut dispatcher, shown) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "findings.html", "<p>hi</p>");
+
+        let result = call_tool(&mut dispatcher, "preview_show", json!({ "path": path }));
+
+        assert_eq!(result["title"], "findings.html");
+        assert_eq!(shown.lock().unwrap()[0].1, "findings.html");
+    }
+
+    /// Availability is answered before the path is: an agent shouldn't have to
+    /// fix its arguments to discover the tool can't work here at all.
+    #[test]
+    fn preview_show_without_a_host_refuses() {
+        let mut dispatcher = dispatcher();
+        let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": "/nope" }));
+        assert!(message.contains("no preview host"), "{message}");
+    }
+
+    /// Every one of these would otherwise land as a blank pane and a cheerful
+    /// success — the whole reason validation lives in the dispatcher.
+    #[test]
+    fn preview_show_refuses_a_path_it_cannot_render() {
+        let dir = tempfile::tempdir().unwrap();
+        let html = artifact_file(&dir, "ok.html", "<p>ok</p>");
+        let text = artifact_file(&dir, "notes.md", "# notes");
+        let relative = "docs/plan.html";
+        let missing = dir.path().join("gone.html").to_string_lossy().into_owned();
+        let directory = dir.path().to_string_lossy().into_owned();
+
+        for (path, expected) in [
+            (relative, "must be absolute"),
+            (missing.as_str(), "can't read"),
+            (text.as_str(), "isn't an HTML file"),
+            (directory.as_str(), "isn't an HTML file"),
+        ] {
+            let (mut dispatcher, shown) = with_preview_host();
+            let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": path }));
+            assert!(message.contains(expected), "for {path}: {message}");
+            assert!(shown.lock().unwrap().is_empty(), "nothing should reach the host for {path}");
+        }
+
+        // …and the control: the valid one goes through.
+        let (mut dispatcher, _) = with_preview_host();
+        call_tool(&mut dispatcher, "preview_show", json!({ "path": html }));
+    }
+
+    /// The frontend inlines the whole file, so an oversized one must come back
+    /// as an answer the agent can act on, not a frozen window.
+    #[test]
+    fn preview_show_refuses_an_oversized_artifact() {
+        let (mut dispatcher, _) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "huge.html", &"x".repeat(ARTIFACT_MAX_BYTES as usize + 1));
+
+        let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": path }));
+        assert!(message.contains("keep an artifact under"), "{message}");
+    }
+
+    /// Showing something changes no store row — the transport must not repaint
+    /// the board for it.
+    #[test]
+    fn preview_show_is_not_a_writing_tool() {
+        assert!(!tool_writes("preview_show"));
     }
 
     /// An epoch-ms instant as the RFC 3339 the tool now speaks, in local time

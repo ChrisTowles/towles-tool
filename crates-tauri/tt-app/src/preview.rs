@@ -15,8 +15,16 @@
 //! `tt_config::pasted_images_dir()` (outside any repo — same reasoning as
 //! `tt_tasks::pasted`) so the frontend can name its path in a prompt typed
 //! into an agent session's PTY.
+//!
+//! `preview_read_artifact` serves the *other* direction — the agent→human one
+//! the `preview_show` MCP tool opens (see [`tt_mcp::PreviewHost`]). It reads an
+//! HTML file the agent wrote so the pane can render it in an iframe `srcdoc`.
+//! Reading it here rather than shipping the file's contents in the
+//! `preview://show` event is what makes reload work: the pane re-invokes this
+//! and picks up whatever the agent has written since, and an event bus never
+//! carries a multi-megabyte string.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tt_tasks::pasted::{self, PastedImage};
 
 /// The preview surface's rectangle in CSS pixels (`getBoundingClientRect`
@@ -165,6 +173,53 @@ fn argb_to_straight_rgba(cropped: CroppedArgb) -> (u32, u32, Vec<u8>) {
         px[3] = a;
     }
     (cropped.width, cropped.height, buf)
+}
+
+/// One agent-authored HTML artifact, ready to drop into an iframe `srcdoc`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactDoc {
+    pub path: String,
+    pub html: String,
+    /// Last-modified epoch ms, or 0 where the filesystem won't say — the pane
+    /// shows it so "I reloaded and nothing changed" is answerable.
+    pub modified_ms: i64,
+}
+
+/// Largest artifact the pane will inline. Mirrors `ARTIFACT_MAX_BYTES` in
+/// `tt-mcp`, which is where an agent's oversized path is normally caught; this
+/// copy guards the paths that don't come through the tool at all — a reload
+/// after the file grew, or a future in-app "open artifact" affordance.
+const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Read an HTML artifact for the preview pane to render.
+///
+/// Deliberately *not* rendered via Tauri's asset protocol: an artifact is a
+/// single self-contained page (the same contract Claude's own artifacts have),
+/// so it needs no relative asset resolution, and `srcdoc` gives it a unique
+/// opaque origin — it can't read the app's storage or reach back through the
+/// frame — with no protocol scope to widen for every path on disk.
+#[tauri::command]
+pub async fn preview_read_artifact(path: String) -> Result<ArtifactDoc, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = std::fs::metadata(&path).map_err(|e| format!("can't read {path}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("{path} is not a file"));
+        }
+        if meta.len() > ARTIFACT_MAX_BYTES {
+            return Err(format!("{path} is too large to preview ({} bytes)", meta.len()));
+        }
+        let html = std::fs::read_to_string(&path).map_err(|e| format!("can't read {path}: {e}"))?;
+        let modified_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        Ok(ArtifactDoc { path, html, modified_ms })
+    })
+    .await
+    .map_err(|e| format!("artifact read task failed: {e}"))?
 }
 
 /// Stage an annotated preview capture as a PNG file and return its absolute

@@ -70,6 +70,7 @@ import {
 } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
+import type { ArtifactRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
@@ -337,6 +338,20 @@ export function AgentboardScreen() {
   function openPreview(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, previewPaneId(dir));
+  }
+
+  // Claude called the preview_show tool → open (or focus) that folder's
+  // preview pane and render the artifact it wrote. Routed here for the same
+  // reason as `ide://open-file` above: only this level can *create* the pane
+  // when none is open, which is the normal case (nobody keeps a preview pane
+  // open on the off chance an agent has something to show).
+  const [artifactRequests, setArtifactRequests] = useState<Record<string, ArtifactRequest>>({});
+  function showArtifact(req: { folderDir: string; path: string; title: string; nonce: number }) {
+    setArtifactRequests((prev) => ({
+      ...prev,
+      [req.folderDir]: { path: req.path, title: req.title, nonce: req.nonce },
+    }));
+    openPreview(req.folderDir);
   }
 
   // Claude called the openFile tool → open (or focus) that folder's files
@@ -798,6 +813,10 @@ export function AgentboardScreen() {
             taskId: req.taskId,
           },
         );
+      } else if (req.kind === "show-artifact") {
+        // The MCP `preview_show` tool — the agent has something to *show*.
+        ackFolder(req.folderDir);
+        showArtifact(req);
       } else {
         setActiveFolderDir(req.folderDir);
         ackFolder(req.folderDir);
@@ -1147,6 +1166,7 @@ export function AgentboardScreen() {
                 termAttention={termAttention}
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}
+                artifactRequests={artifactRequests}
                 labelFor={labelFor}
                 focusTerminalRequest={focusTerminalRequest}
                 onSelectSession={selectSession}

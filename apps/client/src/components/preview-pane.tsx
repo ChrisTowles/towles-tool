@@ -3,6 +3,7 @@ import {
   AppWindow,
   Circle,
   ExternalLink,
+  FileCode2,
   Pen,
   RotateCw,
   Send,
@@ -38,6 +39,11 @@ import { errorMessage } from "@/lib/errors";
 import { launchConfigs } from "@/lib/launch";
 import { openExternalUrl } from "@/lib/open-url";
 import {
+  type ArtifactDoc,
+  type ArtifactRequest,
+  previewReadArtifact,
+} from "@/lib/preview-artifact";
+import {
   ANNOTATION_COLORS,
   ANNOTATION_FONT,
   type Annotation,
@@ -70,10 +76,18 @@ function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
  * annotation sent back to that task's own Claude session as an annotated
  * screenshot. A folder pane (like diff/files): scoped to one checkout, so the
  * dev server comes from *this* folder's `.claude/launch.json` and the feedback
- * targets *this* folder's session — no global URL bar or session picker. */
+ * targets *this* folder's session — no global URL bar or session picker.
+ *
+ * The pane shows one of two things, and the second is the reason it's more
+ * than a browser: a **dev server**, or an **artifact** — an HTML page the
+ * folder's own agent wrote and pushed here with the `preview_show` MCP tool.
+ * Both use the same surface deliberately, so the annotate-and-send flow works
+ * over either: the user can circle a paragraph of the agent's own plan and
+ * send it straight back to the session that wrote it. */
 export function PreviewPane({
   folder,
   focused,
+  artifact,
   onClose,
 }: {
   /** The checkout this pane previews; undefined when it left the rail. */
@@ -81,6 +95,10 @@ export function PreviewPane({
   /** This pane is the one the user last clicked into — see the focus-ring
    * rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused: boolean;
+  /** The artifact this folder's agent last asked to show, if any. Its `nonce`
+   * changes on every `preview_show` call, so re-showing a rewritten file at
+   * the same path re-reads it instead of no-opping. */
+  artifact?: ArtifactRequest;
   /** Removes the pane from its window. */
   onClose: () => void;
 }) {
@@ -91,6 +109,15 @@ export function PreviewPane({
   const [input, setInput] = useState("");
   const [frameKey, setFrameKey] = useState(0);
   const [servers, setServers] = useState<DevServer[]>([]);
+
+  // --- artifact (agent → user) ---
+  // `doc` holds the loaded HTML; `showing` is which of the two surfaces is on
+  // screen. Separate flags rather than a discriminated union because the dev
+  // server's URL must survive a look at an artifact — going back is one click,
+  // not a re-probe.
+  const [doc, setDoc] = useState<ArtifactDoc | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [showing, setShowing] = useState<"server" | "artifact">("server");
 
   // --- annotation ---
   const [tool, setTool] = useState<AnnotationTool | null>(null);
@@ -145,8 +172,55 @@ export function PreviewPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-probe only on a changed dir, not when the label-only folder name changes
   }, [dir]);
 
+  // An agent pushed an artifact (or re-pushed the same path after rewriting
+  // it — hence keying on the nonce, not the path). Reading it here rather than
+  // receiving its HTML in the event is what makes the reload button re-read
+  // the file; see `preview_read_artifact` in `crates-tauri/tt-app/src/
+  // preview.rs`.
+  const artifactPath = artifact?.path;
+  const artifactNonce = artifact?.nonce;
+  useEffect(() => {
+    if (!artifactPath) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await previewReadArtifact(artifactPath);
+      if (cancelled) return;
+      res.match({
+        ok: (loaded) => {
+          setDoc(loaded);
+          setDocError(null);
+          setShowing("artifact");
+        },
+        err: (e) => {
+          // Surfaced in the pane, not just a toast: the pane is the thing the
+          // agent told the user to look at, so it has to explain itself.
+          setDocError(errorMessage(e));
+          setShowing("artifact");
+        },
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [artifactPath, artifactNonce]);
+
+  /** Re-read the artifact from disk — the reload button's artifact half. */
+  async function reloadArtifact() {
+    if (!artifactPath) return;
+    const res = await previewReadArtifact(artifactPath);
+    res.match({
+      ok: (loaded) => {
+        setDoc(loaded);
+        setDocError(null);
+      },
+      err: (e) => setDocError(errorMessage(e)),
+    });
+  }
+
   function navigate(next: string, source: "manual" | "config") {
     const withScheme = /^[a-z]+:\/\//i.test(next) ? next : `http://${next}`;
+    // Navigating is also how you leave an artifact behind.
+    setShowing("server");
     setUrl(withScheme);
     setInput(withScheme);
     setFrameKey((k) => k + 1);
@@ -312,7 +386,7 @@ export function PreviewPane({
       toast.error(`Send failed: ${errorMessage(written.error)}`);
       return;
     }
-    const prompt = feedbackPrompt(comment, url, written.value);
+    const prompt = feedbackPrompt(comment, sourceLabel, written.value);
     const sent = await termWriteRetry(
       target.sessionId,
       feedbackPtyData(prompt, target.agentRunning),
@@ -333,6 +407,16 @@ export function PreviewPane({
     });
   }
 
+  // Which surface the pane is actually showing, and whether there's anything
+  // on it — the annotation tools and the send button are about the *pixels*,
+  // so they light up for either kind of content and stay dark for neither.
+  const onArtifact = showing === "artifact" && artifact != null;
+  const hasSurface = onArtifact ? doc != null : url !== "";
+  // Where the annotated screenshot came from, for the prompt the feedback is
+  // sent with: an artifact's path names it far better than the pane's URL,
+  // which for an artifact is whatever dev server it was last pointed at.
+  const sourceLabel = onArtifact ? (doc?.path ?? artifact.path) : url;
+
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;
 
   return (
@@ -346,64 +430,91 @@ export function PreviewPane({
       <PaneChrome
         lens={<PaneLens kind="web" />}
         controls={
-          <>
-            {servers.length > 0 && (
-              <Select
-                value={servers.find((s) => s.url === url)?.key ?? ""}
-                onValueChange={(key) => {
-                  const s = servers.find((x) => x.key === key);
-                  if (s) navigate(s.url, "config");
+          onArtifact ? (
+            <>
+              {/* An artifact's header is its identity, not a URL bar: the file
+                  is what the agent pointed at, and the way back to the dev
+                  server is one click rather than retyping an address. */}
+              <FileCode2 className="size-3 shrink-0 text-violet-500" />
+              <span className="truncate text-[11px] font-medium">{artifact.title}</span>
+              <span className="truncate font-mono text-[10px] text-muted-foreground">
+                {artifact.path}
+              </span>
+              {url && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="ml-auto shrink-0"
+                  onClick={() => {
+                    setShowing("server");
+                    uiAction("preview.artifact.dismiss", "agentboard");
+                  }}
+                >
+                  Dev server
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              {servers.length > 0 && (
+                <Select
+                  value={servers.find((s) => s.url === url)?.key ?? ""}
+                  onValueChange={(key) => {
+                    const s = servers.find((x) => x.key === key);
+                    if (s) navigate(s.url, "config");
+                  }}
+                >
+                  <SelectTrigger size="xs" className="w-40 text-[11px]">
+                    <SelectValue placeholder="Dev server" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {servers.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        <span
+                          className={cn(
+                            "size-2 rounded-full",
+                            s.listening ? "bg-green-500" : "bg-muted-foreground/40",
+                          )}
+                        />
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && input.trim()) navigate(input.trim(), "manual");
                 }}
-              >
-                <SelectTrigger size="xs" className="w-40 text-[11px]">
-                  <SelectValue placeholder="Dev server" />
-                </SelectTrigger>
-                <SelectContent>
-                  {servers.map((s) => (
-                    <SelectItem key={s.key} value={s.key}>
-                      <span
-                        className={cn(
-                          "size-2 rounded-full",
-                          s.listening ? "bg-green-500" : "bg-muted-foreground/40",
-                        )}
-                      />
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && input.trim()) navigate(input.trim(), "manual");
-              }}
-              placeholder="http://localhost:<port>/"
-              className="h-6 min-w-0 flex-1 font-mono text-[11px]"
-            />
-          </>
+                placeholder="http://localhost:<port>/"
+                className="h-6 min-w-0 flex-1 font-mono text-[11px]"
+              />
+            </>
+          )
         }
         actions={
           <>
             <IconBtn
-              title="reload preview"
-              disabled={!url}
+              title={onArtifact ? "re-read the artifact from disk" : "reload preview"}
+              disabled={!hasSurface}
               className="hover:text-sky-500"
               onClick={() => {
-                setFrameKey((k) => k + 1);
-                uiAction("preview.reload", "agentboard");
+                if (onArtifact) void reloadArtifact();
+                else setFrameKey((k) => k + 1);
+                uiAction("preview.reload", "agentboard", onArtifact ? "artifact" : "server");
               }}
             >
               <RotateCw className="size-3" />
             </IconBtn>
             <IconBtn
               title="open in browser"
-              disabled={!url}
+              disabled={!hasSurface}
               className="hover:text-sky-500"
               onClick={() => {
                 uiAction("preview.open_external", "agentboard");
-                void openExternalUrl(url);
+                void openExternalUrl(onArtifact ? `file://${sourceLabel}` : url);
               }}
             >
               <ExternalLink className="size-3" />
@@ -421,7 +532,30 @@ export function PreviewPane({
 
       {/* Surface: iframe + annotation canvas */}
       <div ref={surfaceRef} className="relative min-h-0 flex-1 overflow-hidden bg-background">
-        {url ? (
+        {onArtifact ? (
+          docError != null ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+              <FileCode2 className="size-6 text-muted-foreground/60" />
+              <div className="text-xs text-muted-foreground">
+                Couldn&apos;t read the artifact the agent pointed at — {docError}
+              </div>
+            </div>
+          ) : (
+            /* Sandboxed, unlike the dev-server frame: an artifact is a page the
+             * agent wrote, so it gets scripts (charts, toggles, tabs) but a
+             * unique opaque origin — no `allow-same-origin`, so it can't reach
+             * the app's storage or back through the frame. `srcDoc` rather than
+             * a file:// src for the same reason, and because an artifact is a
+             * single self-contained page with nothing relative to resolve. */
+            <iframe
+              key={`${artifact.path}\u0000${artifact.nonce}`}
+              srcDoc={doc?.html ?? ""}
+              sandbox="allow-scripts"
+              title={artifact.title}
+              className="absolute inset-0 h-full w-full border-0 bg-white"
+            />
+          )
+        ) : url ? (
           /* Unsandboxed by intent: the previewed page is the user's own local
            * dev server and needs scripts + its own origin (HMR, storage) to
            * function — the combination the sandbox lint flags as useless. */
@@ -482,7 +616,7 @@ export function PreviewPane({
             variant="ghost"
             size="icon"
             title={title}
-            disabled={!url}
+            disabled={!hasSurface}
             className={cn("size-6", tool === t && "bg-accent text-foreground")}
             onClick={() => selectTool(tool === t ? null : t)}
           >
@@ -509,7 +643,7 @@ export function PreviewPane({
               Clear
             </Button>
           )}
-          <Button size="xs" disabled={!url} onClick={() => void openSendDialog()}>
+          <Button size="xs" disabled={!hasSurface} onClick={() => void openSendDialog()}>
             <Send /> Send to agent
           </Button>
         </div>
