@@ -748,6 +748,7 @@ pub fn run() {
             claude_sessions::claude_sessions_cadence,
             telemetry::telemetry_days,
             telemetry::telemetry_events,
+            telemetry::telemetry_attention,
             agentboard::ab_open_session_for_cwd,
             doctor::doctor_run,
             settings::settings_get,

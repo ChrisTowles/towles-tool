@@ -39,17 +39,28 @@
 //!   parse, and IPC payload on every screen focus/refresh. Bounded
 //!   reads/pagination here would be the deeper fix if that cost becomes a
 //!   problem in practice — not yet implemented.
+//! - [`summarize`] reduces one of those days to an [`AttentionSummary`] —
+//!   focused time, gestures per screen, interruptions, subprocess wait — for
+//!   the Telemetry screen's Attention tab. It runs here rather than in the
+//!   frontend precisely because of the size problem above: the aggregate is a
+//!   few hundred bytes, so the tab costs one read and a small payload instead
+//!   of shipping a day's records to the webview to re-derive on every render.
 //!
 //! `tracing-subscriber`'s `tracing-log` feature captures the `log::` macros
 //! still in the tree, so existing call sites keep reporting while individual
 //! seams are converted to spans.
 
+mod attention;
 mod event_log;
 mod layer;
 mod reader;
 mod schema;
 mod types;
 
+pub use attention::{
+    ActionSummary, AttentionSummary, Count, ExecutableStat, FocusSession, FocusSummary, HourBucket,
+    MachineSummary, NotificationSummary, summarize,
+};
 pub use event_log::EventLog;
 pub use layer::EventLogLayer;
 pub use reader::{list_days, read_day};

@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use tt_telemetry::TelemetryRecord;
+use tt_telemetry::{AttentionSummary, TelemetryRecord};
 
 fn telemetry_dir() -> Result<PathBuf, String> {
     tt_config::telemetry_dir().map_err(|e| e.to_string())
@@ -35,4 +35,22 @@ pub async fn telemetry_events(date: String) -> Result<Vec<TelemetryRecord>, Stri
     })
     .await
     .map_err(|e| format!("telemetry read task panicked: {e}"))?
+}
+
+/// One day's attention picture — focused time, gestures per screen,
+/// interruptions, subprocess wait. Reads the same file as
+/// [`telemetry_events`] but aggregates it here, so the Attention tab costs a
+/// few hundred bytes over IPC instead of a day's worth of records; on the
+/// 75,000-record days that motivated the caveat above, that difference is the
+/// whole reason this is its own command rather than a frontend `useMemo` over
+/// the records the Log tab already holds.
+#[tauri::command]
+pub async fn telemetry_attention(date: String) -> Result<AttentionSummary, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let records = tt_telemetry::read_day(&dir, &date).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::summarize(&date, &records))
+    })
+    .await
+    .map_err(|e| format!("telemetry attention task panicked: {e}"))?
 }

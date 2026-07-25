@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CircleAlert,
+  Gauge,
   LayoutDashboard,
   Lightbulb,
   RefreshCw,
@@ -34,12 +35,15 @@ import {
   loadTelemetryFilters,
   saveTelemetryFilters,
   TELEMETRY_FILTERS_KEY,
+  telemetryAttention,
   telemetryDays,
   telemetryEvents,
+  type AttentionSummary,
   type KindFilter,
   type LevelFilter,
   type TelemetryRecord,
 } from "@/lib/telemetry";
+import { AttentionTab } from "@/screens/telemetry/attention-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
@@ -48,7 +52,8 @@ import { uiAction } from "@/lib/ui-action";
  * (`events-<date>.jsonl`): every subprocess span and user-gesture event this
  * checkout has recorded for one day, browsable and searchable. Mirrors the
  * Claude Sessions/MCP layout (header · stat strip · vertical tabs):
- * **Overview** (what's dominating today's log), **Log** (the full
+ * **Overview** (what's dominating today's log), **Attention** (where the day
+ * went — see `screens/telemetry/attention-tab.tsx`), **Log** (the full
  * searchable/filterable list), **Insights** (slowest spans, busiest names).
  * Reads the log fresh off disk rather than caching, and refreshes on the
  * button below and whenever this screen regains focus — not live-tailed.
@@ -104,6 +109,8 @@ export function TelemetryScreen() {
   const [kind, setKind] = useState<KindFilter>(restoredFilters.kind);
   const [target, setTarget] = useState(restoredFilters.target);
   const [selected, setSelected] = useState<TelemetryRecord | null>(null);
+  const [attention, setAttention] = useState<AttentionSummary | null>(null);
+  const [attentionLoading, setAttentionLoading] = useState(false);
 
   useEffect(() => {
     saveTelemetryFilters({ level, kind, target, query });
@@ -120,6 +127,26 @@ export function TelemetryScreen() {
       },
     });
     setLoading(false);
+  }
+
+  /**
+   * The Attention tab's own read. Deliberately separate from `loadEvents`
+   * and only fired while that tab is showing: it re-reads the same file, and
+   * a big day's file is expensive enough (75,000+ records) that paying for it
+   * on every visit to the Log tab would be a real regression. What comes back
+   * is the aggregate, not the records — see `lib/telemetry.ts`.
+   */
+  async function loadAttention(d: string) {
+    setAttentionLoading(true);
+    const r = await telemetryAttention(d);
+    r.match({
+      ok: setAttention,
+      err: (e) => {
+        setAttention(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not summarize telemetry: ${errorMessage(e)}`);
+      },
+    });
+    setAttentionLoading(false);
   }
 
   /** Re-lists the available days and resolves the selected one if unset. */
@@ -145,6 +172,7 @@ export function TelemetryScreen() {
     if (activeTab !== "telemetry") return;
     void refreshDays();
     if (day) void loadEvents(day);
+    if (day && tab === "attention") void loadAttention(day);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
 
@@ -153,10 +181,19 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the day actually changes; loadEvents' identity is not a trigger
   }, [day]);
 
+  // Attention re-reads on a changed day *and* on every switch back to its
+  // tab — the same "fresh off disk, not live-tailed" contract the rest of the
+  // screen keeps, with the read scoped to when the tab is actually showing.
+  useEffect(() => {
+    if (tab === "attention" && day) void loadAttention(day);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAttention is read fresh, not tracked
+  }, [tab, day]);
+
   function manualRefresh() {
     uiAction("telemetry.refresh", "telemetry");
     void refreshDays();
     if (day) void loadEvents(day);
+    if (day && tab === "attention") void loadAttention(day);
   }
 
   function switchTab(next: string) {
@@ -291,6 +328,10 @@ export function TelemetryScreen() {
             <LayoutDashboard className="size-4" />
             Overview
           </TabsTrigger>
+          <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
+            <Gauge className="size-4" />
+            Attention
+          </TabsTrigger>
           <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
             <ScrollText className="size-4" />
             Log
@@ -309,6 +350,10 @@ export function TelemetryScreen() {
               day={day}
               onOpenLog={() => switchTab("log")}
             />
+          </TabsContent>
+
+          <TabsContent value="attention" className="p-4">
+            <AttentionTab summary={attention} loading={attentionLoading} />
           </TabsContent>
 
           <TabsContent value="log" className="p-4">
