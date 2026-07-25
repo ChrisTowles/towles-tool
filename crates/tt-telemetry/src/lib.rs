@@ -62,6 +62,28 @@ mod reader;
 mod schema;
 mod types;
 
+/// Serializes every test in this crate that installs a subscriber to capture
+/// records — `layer::tests::capture`, `disk_filter_tests::records_written`,
+/// and `reader`'s span test.
+///
+/// `tracing::subscriber::with_default` is thread-local, but `tracing`'s
+/// **callsite-interest cache is global**: the first thread to reach a callsite
+/// decides, for every thread, whether it is worth recording. Two of these
+/// tests running concurrently can therefore have one evaluate a callsite while
+/// the other sits between `with_default` calls with no subscriber installed,
+/// caching "never interested" and silently dropping the first one's span. The
+/// same race was measured in `tt-exec` (see `spawn_records`): ~1 failure per
+/// 60 runs, and zero under `--test-threads=1`.
+///
+/// One lock per test *binary* is what's needed, so it lives here at the crate
+/// root rather than being duplicated per module. Poison-tolerant: one
+/// panicking test must fail alone, not cascade.
+#[cfg(test)]
+pub(crate) fn serialize_subscriber_tests() -> std::sync::MutexGuard<'static, ()> {
+    static SUBSCRIBER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SUBSCRIBER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub use attention::{
     ActionSummary, AttentionSummary, Count, ExecutableStat, FocusSession, FocusSummary, HourBucket,
     MachineSummary, NotificationSummary, summarize,
@@ -209,6 +231,7 @@ mod disk_filter_tests {
     /// Run `body` under a `DISK_FILTER`-scoped EventLogLayer; return the number
     /// of records that reached disk.
     fn records_written(body: impl FnOnce()) -> usize {
+        let _serialized = crate::serialize_subscriber_tests();
         let dir = tempfile::tempdir().unwrap();
         let layer = EventLogLayer::new(EventLog::new(dir.path(), 7), Map::new())
             .with_filter(EnvFilter::new(DISK_FILTER));

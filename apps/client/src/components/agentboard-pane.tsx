@@ -2,10 +2,11 @@ import { useState } from "react";
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2, X } from "lucide-react";
 import {
   AgentStatusLine,
-  AheadBehind,
+  BaseMovedChip,
   ComparedBaseBadge,
   DeletingBadge,
-  DiffButton,
+  CommittedChip,
+  UncommittedChip,
   Dot,
   FilesButton,
   FolderLandedBadge,
@@ -193,9 +194,10 @@ export function WorkingContext({
           {folder.branch && <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />}
           {deleting && <DeletingBadge />}
           <ComparedBaseBadge folder={folder} />
-          <AheadBehind stats={folder} />
+          <BaseMovedChip stats={folder} />
           {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
-          <DiffButton stats={folder} onOpen={() => onOpenDiff(folder.dir)} />
+          <UncommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
+          <CommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
           <FilesButton onOpen={() => onOpenFiles(folder.dir)} />
           {folder.hasLaunchConfig && <PreviewButton onOpen={() => onOpenPreview(folder.dir)} />}
           {pr && <PrChip pr={pr} stats={folder} />}

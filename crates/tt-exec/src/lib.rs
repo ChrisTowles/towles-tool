@@ -531,8 +531,30 @@ mod tests {
     /// Run `body` with an event-log-backed subscriber installed, returning the
     /// `process.spawn` records it produced. A local subscriber, so these tests
     /// don't fight over the global one.
+    ///
+    /// **Serialized across the whole binary**, and that is load-bearing rather
+    /// than tidiness. `with_default` installs a *thread-local* subscriber, but
+    /// `tracing`'s callsite-interest cache is **global**: the first time a
+    /// callsite is hit, its interest is computed and cached for every thread.
+    /// With these tests running concurrently, one thread could evaluate
+    /// `spawn_span`'s callsite while another was between `with_default` calls
+    /// (no subscriber on that thread), caching "never interested" — after
+    /// which the other thread's span was silently dropped and its assertions
+    /// read an empty log. It reproduced as
+    /// `a_failed_spawn_is_recorded_rather_than_going_dark` failing with
+    /// `index out of bounds: the len is 0` about once per 60 runs of this
+    /// binary, and never once the suite ran with `--test-threads=1`. Holding
+    /// the lock for the body means only one subscriber is ever installed at a
+    /// time, so the cache can't be built against a subscriber-less thread.
+    ///
+    /// The lock is deliberately poison-tolerant: a body that panics
+    /// (an assertion failing inside `spawn_records`) must fail that one test,
+    /// not cascade into every other test in this module.
     fn spawn_records(body: impl FnOnce()) -> Vec<serde_json::Value> {
         use tracing_subscriber::prelude::*;
+
+        static SUBSCRIBER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _serialized = SUBSCRIBER.lock().unwrap_or_else(|e| e.into_inner());
 
         let dir = tempfile::tempdir().unwrap();
         let layer = tt_telemetry::EventLogLayer::new(

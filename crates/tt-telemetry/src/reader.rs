@@ -106,6 +106,7 @@ mod tests {
             DateTime::parse_from_rfc3339("2026-07-22T12:00:00Z").unwrap().with_timezone(&Utc)
         }
 
+        let _serialized = crate::serialize_subscriber_tests();
         let dir = tempfile::tempdir().unwrap();
         let mut resource = serde_json::Map::new();
         resource.insert("tt.task".into(), Value::from("feat-x"));

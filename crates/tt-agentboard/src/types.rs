@@ -218,17 +218,25 @@ pub struct FolderData {
     pub dir_missing: bool,
     pub branch: String,
     pub is_worktree: bool,
-    pub files_changed: i64,
-    pub lines_added: i64,
-    pub lines_removed: i64,
+    /// The branch's *committed* diff vs `compared_base`, and the working
+    /// tree's *uncommitted* diff vs `HEAD`. Two separate quantities, never
+    /// summed — see [`crate::git_info::GitInfo`]'s doc for why one blended
+    /// number was unreadable.
+    pub committed_files: i64,
+    pub committed_added: i64,
+    pub committed_removed: i64,
+    pub uncommitted_files: i64,
+    pub uncommitted_added: i64,
+    pub uncommitted_removed: i64,
     /// Commits on this branch that origin/main doesn't have.
     pub commits_ahead: i64,
     /// Commits on origin/main that this branch doesn't have.
     pub commits_behind: i64,
     /// True when the working tree has uncommitted changes (staged, unstaged,
-    /// or untracked) — `GitInfo::dirty`. Unlike `files_changed`, which stays
-    /// nonzero for any real branch even once merged, this is the real "no
-    /// uncommitted changes" fact a "safe to delete" check needs.
+    /// or untracked) — `GitInfo::dirty`, i.e. `uncommitted_files > 0`. Unlike
+    /// `committed_files`, which stays nonzero for any real branch even once
+    /// merged, this is the real "no uncommitted changes" fact a "safe to
+    /// delete" check needs.
     pub dirty: bool,
     /// Of `commits_ahead`, how many haven't landed on `compared_base` yet —
     /// `GitInfo::commits_unlanded`. 0 once every commit on this branch is
@@ -259,12 +267,17 @@ pub struct FolderData {
     /// instead of always claiming "vs main". `None` for a non-task checkout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_base_branch: Option<String>,
-    /// The ref `filesChanged`/`linesAdded`/`linesRemoved`/`commitsAhead`/
-    /// `commitsBehind` were actually measured against (`GitInfo::compared_base`)
-    /// — e.g. `"origin/main"` or `"origin/docs/readme-task-clean"`. Empty
-    /// before the folder's git stats have been computed at least once.
+    /// The ref `committed*`/`commitsAhead`/`commitsBehind` were actually
+    /// measured against (`GitInfo::compared_base`) — e.g. `"origin/main"` or
+    /// `"origin/docs/readme-task-clean"`. Empty before the folder's git stats
+    /// have been computed at least once.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub compared_base: String,
+    /// When these git stats were last verified (`GitInfo::computed_at_ms`), so
+    /// the rail can say *when* rather than leaving "unchanged" and "stuck"
+    /// indistinguishable. 0 before the first compute.
+    #[serde(default)]
+    pub computed_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<SessionMetadata>,
     /// True when any live session in this folder has `port_drift` — bubbles

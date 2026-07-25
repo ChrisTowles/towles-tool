@@ -18,31 +18,48 @@ use serde::{Deserialize, Serialize};
 
 /// Working-tree/commit stats for a session directory. Ports `GitInfo`.
 ///
-/// `files_changed`/`lines_added`/`lines_removed` and `commits_ahead`/
-/// `commits_behind` all measure against the *same* baseline: `compared_base`
-/// (see [`resolve_base_ref`]) — a per-folder override, else a worktree's
-/// own creation base, else origin/main-or-master. They agree by construction,
+/// Every stat here measures against the *same* baseline: `compared_base` (see
+/// [`resolve_base_ref`]) — a per-folder override, else a worktree's own
+/// creation base, else origin/main-or-master. They agree by construction,
 /// unlike the old design where the two used different baselines (a branch's
 /// own upstream vs. always origin/main) and could silently disagree.
+///
+/// **The committed and uncommitted diffs are separate quantities and are never
+/// summed.** They answer different questions and carry different consequences:
+/// `uncommitted_*` is what deleting this checkout destroys, `committed_*` is
+/// what survives on the branch. A single blended ± (which is what this struct
+/// used to report, and what `changes_vs(merge_base)` still computes for the
+/// diff pane) belongs to neither the commit count beside it nor the dirty
+/// working tree — reading "15c +679 −22130" it is impossible to tell which of
+/// those lines are in the 15 commits.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GitInfo {
     pub branch: String,
     pub is_worktree: bool,
-    pub files_changed: i64,
-    pub lines_added: i64,
-    pub lines_removed: i64,
+    /// Files touched by `merge_base(HEAD, compared_base)..HEAD` — committed
+    /// work only, the working tree excluded.
+    pub committed_files: i64,
+    pub committed_added: i64,
+    pub committed_removed: i64,
+    /// Files touched between `HEAD` and the working tree — staged, unstaged
+    /// and untracked alike. Untracked files count here but contribute no line
+    /// counts (there is no diff for content that has never been committed),
+    /// matching what the diff pane's `?` rows show.
+    pub uncommitted_files: i64,
+    pub uncommitted_added: i64,
+    pub uncommitted_removed: i64,
     /// Commits on HEAD that `compared_base` doesn't have.
     pub commits_ahead: i64,
     /// Commits on `compared_base` that HEAD doesn't have. Kept separate from
     /// `commits_ahead` (not a signed delta) so "3 ahead, 2 behind" doesn't
     /// collapse to a meaningless "+1".
     pub commits_behind: i64,
-    /// True when `git status --porcelain` reports anything (staged, unstaged,
-    /// or untracked) — an actual dirty working tree. Distinct from
-    /// `files_changed`/`lines_added`/`lines_removed`, which measure the
-    /// branch's whole *committed* diff vs `compared_base` and stay nonzero
-    /// for any real feature branch even once it's merged — those answer "what
-    /// does this branch contain", not "is anything uncommitted".
+    /// Whether the working tree holds anything not yet committed — exactly
+    /// `uncommitted_files > 0`, so the boolean and the number can never
+    /// disagree on screen. Derived from the diff rather than from
+    /// `status().is_dirty()` on purpose: the status walk reports a path whose
+    /// stat cache is stale even when an edit was saved and reverted back to
+    /// identical content, which showed as a dirty badge with nothing to see.
     pub dirty: bool,
     /// Of `commits_ahead`, how many hold changes `compared_base` has never
     /// received. 0 whenever `commits_ahead` is 0, and — unlike `commits_ahead`,
@@ -96,6 +113,18 @@ pub struct GitInfo {
     /// filtered away so the "show every worktree" setting can be flipped
     /// without invalidating a single cache entry.
     pub unmanaged_worktree_dirs: Vec<String>,
+    /// When these numbers were last *verified* against the repository — the
+    /// `now_ms` passed to [`compute_git_info`], stamped on every compute
+    /// including the ref-unchanged fast path, since that path still re-reads
+    /// the working tree and so genuinely re-confirms the answer.
+    ///
+    /// Exists because "is this number stale or is nothing happening?" is
+    /// otherwise unanswerable from the UI: refresh is event-driven off a
+    /// handful of `.git` files with a 60s backup poll ([`GIT_CACHE_TTL_MS`]),
+    /// and the diff baseline is a merge-base that only moves on fetch — so
+    /// long stretches of a correct, unchanging number are normal and look
+    /// identical to a wedged poll. 0 when never computed.
+    pub computed_at_ms: i64,
     /// True when `dir` doesn't exist on disk (a tracked repo whose checkout was
     /// moved or deleted). Distinguishes a genuinely-missing directory from a
     /// present-but-non-git one — both otherwise yield an empty [`GitInfo`].
@@ -232,7 +261,7 @@ impl GitInfoCache {
     /// per-folder base-branch override — callers that have one (the app's
     /// git-stat poll) call [`compute_git_info`] directly instead.
     pub fn refresh(&mut self, dir: &str, now_ms: i64) -> GitInfo {
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, now_ms);
         self.insert(dir, info.clone(), now_ms);
         info
     }
@@ -426,9 +455,15 @@ fn structural_facts(
 /// `revision_key` is also load-bearing: it keeps the next poll off
 /// [`compute_git_info`]'s ref-unchanged fast path, so the moment HEAD lands on
 /// a branch again the full answer is recomputed.
-fn structural_only(dir: &str, repo: &tt_git::repo::Repo, previous: Option<&GitInfo>) -> GitInfo {
+fn structural_only(
+    dir: &str,
+    repo: &tt_git::repo::Repo,
+    previous: Option<&GitInfo>,
+    now_ms: i64,
+) -> GitInfo {
     let s = structural_facts(dir, repo, previous);
     GitInfo {
+        computed_at_ms: now_ms,
         origin_url: s.origin_url,
         common_dir: s.common_dir,
         worktree_dirs: s.worktree_dirs,
@@ -607,6 +642,7 @@ pub fn compute_git_info(
     dir: &str,
     base_branch_override: Option<&str>,
     previous: Option<&GitInfo>,
+    now_ms: i64,
 ) -> GitInfo {
     if dir.is_empty() {
         return GitInfo::default();
@@ -614,7 +650,7 @@ pub fn compute_git_info(
     // A tracked checkout that was moved or deleted: flag it so the rail can show
     // it as a ghost rather than a silent empty-stats folder.
     if !std::path::Path::new(dir).is_dir() {
-        return GitInfo { dir_missing: true, ..Default::default() };
+        return GitInfo { dir_missing: true, computed_at_ms: now_ms, ..Default::default() };
     }
     let Some(repo) = open_repo(dir) else {
         return GitInfo::default();
@@ -641,7 +677,8 @@ pub fn compute_git_info(
             // Only the working-tree fields are recomputed; every ref-derived
             // and structural field is carried from `prev` (the fingerprint
             // match proves they're still exact).
-            let mut info = working_tree_info(&repo, &prev.branch, prev.is_worktree, diff_base);
+            let mut info = diff_stats(&repo, &prev.branch, prev.is_worktree, diff_base);
+            info.computed_at_ms = now_ms;
             info.commits_ahead = prev.commits_ahead;
             info.commits_behind = prev.commits_behind;
             info.commits_unlanded = prev.commits_unlanded;
@@ -674,7 +711,7 @@ pub fn compute_git_info(
     // that — so a `git rebase` used to knock a checkout out of its repo's row
     // and into a top-level one of its own until HEAD landed on a branch again.
     let Some(branch) = repo.head_branch().filter(|b| !b.is_empty()) else {
-        return structural_only(dir, &repo, previous);
+        return structural_only(dir, &repo, previous, now_ms);
     };
     let compared_base = resolve_base_ref(&repo, dir, base_branch_override);
     // The diff baseline is the merge-base, not the base tip: a branch's stats
@@ -694,7 +731,8 @@ pub fn compute_git_info(
         is_worktree,
     } = structural_facts(dir, &repo, previous);
 
-    let mut info = working_tree_info(&repo, &branch, is_worktree, &base);
+    let mut info = diff_stats(&repo, &branch, is_worktree, &base);
+    info.computed_at_ms = now_ms;
     let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
     info.commits_ahead = ahead;
     info.commits_behind = behind;
@@ -762,29 +800,32 @@ pub fn compute_git_info(
     info
 }
 
-/// The working-tree half of [`GitInfo`]: `dirty`, `files_changed`, and the
-/// cumulative ± against `base`. Every other field is filled by the caller.
+/// The two diffs of [`GitInfo`], measured separately and never summed:
+/// `base..HEAD` (committed) and `HEAD`..working tree (uncommitted). Every
+/// other field is filled by the caller.
 ///
-/// Untracked files count toward `files_changed` — they are changes the user
-/// can see — but contribute no line counts, since there is no diff for content
-/// that has never been committed.
-fn working_tree_info(
-    repo: &tt_git::repo::Repo,
-    branch: &str,
-    is_worktree: bool,
-    base: &str,
-) -> GitInfo {
-    let changes = repo.changes_vs(base).unwrap_or_default();
-    let dirty = repo.status().map(|status| status.is_dirty()).unwrap_or(false);
-    let lines_added = changes.iter().map(|c| c.lines_added).sum();
-    let lines_removed = changes.iter().map(|c| c.lines_removed).sum();
+/// Untracked files count toward `uncommitted_files` — they are changes the
+/// user can see, and losing them is exactly what deleting a checkout does —
+/// but contribute no line counts, since there is no diff for content that has
+/// never been committed.
+///
+/// Cost is unchanged from the single blended diff this replaced: one status
+/// walk (inside `changes_vs("HEAD")`, the only part that must touch the
+/// working tree) plus one tree-to-tree walk, versus the one call that did both
+/// at once.
+fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: &str) -> GitInfo {
+    let uncommitted = repo.changes_vs("HEAD").unwrap_or_default();
+    let committed = repo.committed_totals_vs(base).unwrap_or_default();
     GitInfo {
         branch: branch.to_string(),
         is_worktree,
-        files_changed: changes.len() as i64,
-        lines_added,
-        lines_removed,
-        dirty,
+        committed_files: committed.files_changed,
+        committed_added: committed.lines_added,
+        committed_removed: committed.lines_removed,
+        uncommitted_files: uncommitted.len() as i64,
+        uncommitted_added: uncommitted.iter().map(|c| c.lines_added).sum(),
+        uncommitted_removed: uncommitted.iter().map(|c| c.lines_removed).sum(),
+        dirty: !uncommitted.is_empty(),
         ..Default::default()
     }
 }
@@ -1030,10 +1071,18 @@ pub fn base_file_content(
 }
 
 /// One commit ahead of `compared_base`, with its own line-count diff — not
-/// the branch's cumulative total ([`GitInfo::lines_added`]/`lines_removed`
-/// for that). Powers the `DiffButton` hover's per-commit breakdown, oldest
-/// first, so a many-commit branch's ± tally isn't one anonymous blob.
+/// the branch's cumulative total ([`GitInfo::committed_added`]/
+/// `committed_removed` for that). Powers the `CommittedChip` hover's
+/// per-commit breakdown, oldest first, so a many-commit branch's ± tally
+/// isn't one anonymous blob.
+///
+/// `camelCase` like [`DiffFile`] beside it, and not decorative: the frontend
+/// reads `linesAdded`/`linesRemoved`, so without the rename every commit row
+/// rendered a bare `+` and `−` with no number (`undefined` stringifies to
+/// nothing). It went unnoticed because the card's *total* row reads the
+/// folder's own stats, which were correct.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitStat {
     pub sha: String,
     pub subject: String,
@@ -1077,6 +1126,10 @@ pub fn list_files(dir: &str, cap: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fixed clock for `compute_git_info`'s `now_ms` — nothing under test reads
+    /// it back except `computed_at_ms`.
+    const NOW: i64 = 1_700_000_000_000;
 
     /// [`other_worktrees`]' `(all, unmanaged)` by directory.
     fn worktree_dirs_of(dir: &str) -> (Vec<String>, Vec<String>) {
@@ -1466,7 +1519,7 @@ mod tests {
     fn compute_flags_a_missing_dir() {
         let root = tempfile::TempDir::new().unwrap();
         let gone = root.path().join("moved-away");
-        let info = compute_git_info(gone.to_str().unwrap(), None, None);
+        let info = compute_git_info(gone.to_str().unwrap(), None, None, NOW);
         assert!(info.dir_missing);
         assert!(info.branch.is_empty());
     }
@@ -1475,11 +1528,11 @@ mod tests {
     fn compute_does_not_flag_an_existing_dir() {
         let root = tempfile::TempDir::new().unwrap();
         // Present but not a git repo: still not "missing".
-        let info = compute_git_info(root.path().to_str().unwrap(), None, None);
+        let info = compute_git_info(root.path().to_str().unwrap(), None, None, NOW);
         assert!(!info.dir_missing);
     }
 
-    /// `dirty` and `files_changed` against a real working tree.
+    /// `dirty` and the uncommitted counts against a real working tree.
     ///
     /// These used to be asserted by parsing fixture `--porcelain`/`--numstat`
     /// strings. There is no such text now, and a fixture would only prove that
@@ -1487,34 +1540,92 @@ mod tests {
     /// real repository, where they can catch a genuine disagreement about what
     /// counts as a change.
     #[test]
-    fn dirty_and_files_changed_track_the_working_tree() {
+    fn dirty_and_uncommitted_counts_track_the_working_tree() {
         let root = tempfile::TempDir::new().unwrap();
         init_repo(root.path());
         let dir = root.path().to_str().unwrap();
 
-        let clean = compute_git_info(dir, None, None);
+        let clean = compute_git_info(dir, None, None, NOW);
         assert!(!clean.dirty, "a freshly committed tree is not dirty");
-        assert_eq!(clean.files_changed, 0);
+        assert_eq!(clean.uncommitted_files, 0);
+        assert_eq!(clean.computed_at_ms, NOW, "every compute stamps its clock");
 
         // A tracked file edited but not staged: invisible to `.git` mtimes,
         // which is exactly why the poll still reads the working tree.
         std::fs::write(root.path().join("f.txt"), "1\n2\n").unwrap();
-        let edited = compute_git_info(dir, None, None);
+        let edited = compute_git_info(dir, None, None, NOW);
         assert!(edited.dirty);
-        assert_eq!(edited.files_changed, 1);
-        assert_eq!((edited.lines_added, edited.lines_removed), (2, 1));
+        assert_eq!(edited.uncommitted_files, 1);
+        assert_eq!((edited.uncommitted_added, edited.uncommitted_removed), (2, 1));
 
         // Untracked files have no diff, but they are still changes the user
-        // can see, so they count toward `files_changed` with no line counts.
+        // can see, so they count toward `uncommitted_files` with no line counts.
         std::fs::write(root.path().join("new.txt"), "fresh\n").unwrap();
-        let untracked = compute_git_info(dir, None, None);
+        let untracked = compute_git_info(dir, None, None, NOW);
         assert!(untracked.dirty);
-        assert_eq!(untracked.files_changed, 2);
+        assert_eq!(untracked.uncommitted_files, 2);
         assert_eq!(
-            (untracked.lines_added, untracked.lines_removed),
-            (edited.lines_added, edited.lines_removed),
+            (untracked.uncommitted_added, untracked.uncommitted_removed),
+            (edited.uncommitted_added, edited.uncommitted_removed),
             "an untracked file contributes no line counts"
         );
+    }
+
+    /// The whole point of the split: committed work and uncommitted work are
+    /// reported as two disjoint quantities, so neither number can be read as
+    /// belonging to the other. The old single ± measured the working tree
+    /// against the merge-base, which silently folded an uncommitted edit into
+    /// the figure sitting beside the commit count.
+    #[test]
+    fn committed_and_uncommitted_diffs_are_disjoint() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let repo = root.path();
+        let dir = repo.to_str().unwrap();
+        let run = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(repo)
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+
+        // `init_repo`'s file has no trailing newline and no origin ref; give
+        // the base both, so the numbers below are the ones `git diff` prints.
+        std::fs::write(repo.join("f.txt"), "1\n").unwrap();
+        run(&["commit", "--quiet", "-am", "normalize"]);
+        run(&["update-ref", "refs/remotes/origin/main", "main"]);
+
+        // One commit ahead of the base: +2 committed.
+        run(&["checkout", "--quiet", "-b", "feature"]);
+        std::fs::write(repo.join("f.txt"), "1\n2\n3\n").unwrap();
+        run(&["commit", "--quiet", "-am", "add two lines"]);
+
+        let committed_only = compute_git_info(dir, None, None, NOW);
+        assert_eq!(committed_only.commits_ahead, 1);
+        assert_eq!(committed_only.committed_files, 1);
+        assert_eq!((committed_only.committed_added, committed_only.committed_removed), (2, 0));
+        assert!(!committed_only.dirty);
+        assert_eq!(committed_only.uncommitted_files, 0);
+        assert_eq!((committed_only.uncommitted_added, committed_only.uncommitted_removed), (0, 0));
+
+        // Now an uncommitted edit on top. The committed half must not move —
+        // it is a property of the commits, not of the working tree.
+        std::fs::write(repo.join("f.txt"), "1\n2\n3\n4\n5\n").unwrap();
+        let both = compute_git_info(dir, None, None, NOW);
+        assert_eq!(
+            (both.committed_added, both.committed_removed),
+            (committed_only.committed_added, committed_only.committed_removed),
+            "an uncommitted edit must not change what the commits contain"
+        );
+        assert_eq!(both.commits_ahead, 1);
+        assert!(both.dirty);
+        assert_eq!(both.uncommitted_files, 1);
+        assert_eq!((both.uncommitted_added, both.uncommitted_removed), (2, 0));
     }
 
     #[test]
@@ -1540,7 +1651,7 @@ mod tests {
         run(&["commit", "--quiet", "-m", "init"]);
 
         // A non-task checkout has no marker: no task base surfaced.
-        let info = compute_git_info(repo.to_str().unwrap(), None, None);
+        let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert_eq!(info.task_base_branch, None);
 
         // Writing the `.tt-task` marker surfaces its `base=` field, so the
@@ -1550,7 +1661,7 @@ mod tests {
             tt_tasks::marker_contents("s", "develop", "main"),
         )
         .unwrap();
-        let info = compute_git_info(repo.to_str().unwrap(), None, None);
+        let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert_eq!(info.task_base_branch, Some("develop".to_string()));
     }
 
@@ -1596,12 +1707,12 @@ mod tests {
         let dir = repo.to_str().unwrap();
 
         // vs origin/main (auto-detect, no override): both commits count.
-        let vs_main = compute_git_info(dir, None, None);
+        let vs_main = compute_git_info(dir, None, None, NOW);
         assert_eq!(vs_main.compared_base, "origin/main");
         assert_eq!(vs_main.commits_ahead, 2);
 
         // vs an explicit "develop" override: only feature's own commit counts.
-        let vs_develop = compute_git_info(dir, Some("develop"), None);
+        let vs_develop = compute_git_info(dir, Some("develop"), None, NOW);
         assert_eq!(vs_develop.compared_base, "origin/develop");
         assert_eq!(vs_develop.commits_ahead, 1);
     }
@@ -1661,7 +1772,7 @@ mod tests {
         run(&["checkout", "--quiet", "feature"]);
 
         let dir = repo.to_str().unwrap();
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, NOW);
         // Still "ahead" by SHA reachability — feature's own commit is a
         // different object than the one cherry-picked onto main.
         assert_eq!(info.commits_ahead, 1);
@@ -1697,7 +1808,7 @@ mod tests {
         run(&["commit", "--quiet", "-am", "on feature, never merged"]);
 
         let dir = repo.to_str().unwrap();
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, NOW);
         assert_eq!(info.commits_ahead, 1);
         assert_eq!(info.commits_unlanded, 1);
         assert_eq!(info.landed, None, "nothing landed, so the rail must not claim otherwise");
@@ -1761,7 +1872,7 @@ mod tests {
         run(&["commit", "--quiet", "-am", "unlanded work"]);
 
         let dir = repo.to_str().unwrap();
-        let first = compute_git_info(dir, None, None);
+        let first = compute_git_info(dir, None, None, NOW);
         assert_eq!(first.commits_unlanded, 1);
         assert!(!first.probe_key.is_empty(), "a probed repo must carry a fingerprint to reuse");
 
@@ -1769,7 +1880,7 @@ mod tests {
         poisoned.landed = Some("sentinel".to_string());
         poisoned.commits_unlanded = 99;
 
-        let reused = compute_git_info(dir, None, Some(&poisoned));
+        let reused = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_eq!(
             reused.landed.as_deref(),
             Some("sentinel"),
@@ -1783,7 +1894,7 @@ mod tests {
         std::fs::write(repo.join("f.txt"), "3").unwrap();
         run(&["commit", "--quiet", "-am", "more unlanded work"]);
 
-        let reprobed = compute_git_info(dir, None, Some(&poisoned));
+        let reprobed = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_ne!(reprobed.probe_key, first.probe_key, "a moved HEAD must invalidate the memo");
         assert_eq!(reprobed.landed, None);
         assert_eq!(reprobed.commits_unlanded, 2);
@@ -1913,11 +2024,11 @@ mod tests {
         run(&repo, &["commit", "--quiet", "-m", "init"]);
         run(&repo, &["worktree", "add", "-b", "task", worktree.to_str().unwrap()]);
 
-        let main_info = compute_git_info(repo.to_str().unwrap(), None, None);
+        let main_info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert!(!main_info.is_worktree);
         assert_eq!(main_info.git_dir, repo.join(".git").to_string_lossy());
 
-        let task_info = compute_git_info(worktree.to_str().unwrap(), None, None);
+        let task_info = compute_git_info(worktree.to_str().unwrap(), None, None, NOW);
         assert!(task_info.is_worktree);
         assert!(task_info.git_dir.contains("/worktrees/task"));
         assert!(
@@ -1953,7 +2064,7 @@ mod tests {
         run(&["commit", "--quiet", "-m", "init"]);
 
         let dir = repo.to_str().unwrap();
-        let first = compute_git_info(dir, None, None);
+        let first = compute_git_info(dir, None, None, NOW);
         assert!(!first.common_dir.is_empty());
         assert!(
             !first.structural_key.is_empty(),
@@ -1965,7 +2076,7 @@ mod tests {
         let mut poisoned = first.clone();
         poisoned.origin_url = Some("sentinel".to_string());
 
-        let reused = compute_git_info(dir, None, Some(&poisoned));
+        let reused = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_eq!(
             reused.origin_url.as_deref(),
             Some("sentinel"),
@@ -1984,7 +2095,7 @@ mod tests {
             sibling.to_str().unwrap(),
         ]);
 
-        let reprobed = compute_git_info(dir, None, Some(&poisoned));
+        let reprobed = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_ne!(
             reprobed.structural_key, first.structural_key,
             "a new worktree must invalidate the structural memo"
@@ -2032,7 +2143,7 @@ mod tests {
         init_repo(repo);
         let dir = repo.to_str().unwrap();
 
-        let first = compute_git_info(dir, None, None);
+        let first = compute_git_info(dir, None, None, NOW);
         assert!(!first.revision_key.is_empty(), "a resolved repo carries a revision fingerprint");
         assert!(!first.dirty, "the tree is clean after the initial commit");
 
@@ -2046,7 +2157,7 @@ mod tests {
         // Dirty the working tree *after* the first compute.
         std::fs::write(repo.join("untracked.txt"), "x").unwrap();
 
-        let reused = compute_git_info(dir, None, Some(&poisoned));
+        let reused = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_eq!(reused.commits_ahead, 999, "ref-derived half reused, not recomputed");
         assert_eq!(reused.landed.as_deref(), Some("SENTINEL"), "landing answer reused");
         assert_eq!(reused.revision_key, first.revision_key, "fingerprint stable while refs idle");
@@ -2072,7 +2183,7 @@ mod tests {
             );
         };
 
-        let first = compute_git_info(dir, None, None);
+        let first = compute_git_info(dir, None, None, NOW);
         let mut poisoned = first.clone();
         poisoned.landed = Some("SENTINEL".to_string());
 
@@ -2081,7 +2192,7 @@ mod tests {
         std::fs::write(repo.join("f.txt"), "2").unwrap();
         run(&["commit", "--quiet", "-am", "second"]);
 
-        let reprobed = compute_git_info(dir, None, Some(&poisoned));
+        let reprobed = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_ne!(reprobed.revision_key, first.revision_key, "a moved HEAD invalidates the memo");
         assert_ne!(reprobed.landed.as_deref(), Some("SENTINEL"), "a full recompute ran");
     }
@@ -2099,14 +2210,14 @@ mod tests {
             .status()
             .unwrap();
 
-        let first = compute_git_info(dir, None, None);
+        let first = compute_git_info(dir, None, None, NOW);
         let mut poisoned = first.clone();
         poisoned.landed = Some("SENTINEL".to_string());
 
         // Same refs, but a different base override: the fingerprint folds the
         // override in, so it changes and the base is re-resolved rather than the
         // stale ref-derived half being served.
-        let reprobed = compute_git_info(dir, Some("develop"), Some(&poisoned));
+        let reprobed = compute_git_info(dir, Some("develop"), Some(&poisoned), NOW);
         assert_ne!(reprobed.revision_key, first.revision_key, "override change busts the memo");
         assert_ne!(reprobed.landed.as_deref(), Some("SENTINEL"), "a full recompute ran");
     }
@@ -2154,7 +2265,7 @@ mod tests {
         run(&["checkout", "--quiet", "feature"]);
 
         let dir = repo.to_str().unwrap();
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, NOW);
         // Still ahead by SHA reachability — the squash commit is a new object.
         assert_eq!(info.commits_ahead, 2);
         assert_eq!(info.commits_unlanded, 0, "a squash-merged branch holds no outstanding work");
@@ -2202,7 +2313,7 @@ mod tests {
         let count_objects =
             || walkdir(&repo.join(".git").join("objects")).filter(|p| p.is_file()).count();
         let before = count_objects();
-        let info = compute_git_info(repo.to_str().unwrap(), None, None);
+        let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert_eq!(info.commits_unlanded, 3, "the probe actually ran");
         assert_eq!(
             count_objects(),
@@ -2275,7 +2386,7 @@ mod tests {
         run(&["commit", "--quiet", "-m", "c, after the merge"]);
 
         let dir = repo.to_str().unwrap();
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, NOW);
         assert_eq!(info.commits_ahead, 3);
         assert_eq!(info.commits_unlanded, 1, "only the post-merge commit is outstanding");
         assert_eq!(info.landed, None, "a branch with new work has not fully landed");
@@ -2291,7 +2402,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         init_repo(root.path());
         let dir = root.path().to_str().unwrap();
-        let attached = compute_git_info(dir, None, None);
+        let attached = compute_git_info(dir, None, None, NOW);
         assert!(!attached.common_dir.is_empty());
 
         assert!(
@@ -2304,7 +2415,7 @@ mod tests {
                 .success()
         );
 
-        let info = compute_git_info(dir, None, None);
+        let info = compute_git_info(dir, None, None, NOW);
         assert!(info.branch.is_empty(), "no branch to report");
         assert_eq!(info.common_dir, attached.common_dir, "…but it's still the same repo");
         assert!(!info.dir_missing);
@@ -2323,7 +2434,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         init_repo(root.path());
         let dir = root.path().to_str().unwrap();
-        let good = compute_git_info(dir, None, None);
+        let good = compute_git_info(dir, None, None, NOW);
         assert!(!good.common_dir.is_empty() && !good.branch.is_empty());
 
         let mut failed = GitInfo::default();
@@ -2342,7 +2453,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         init_repo(root.path());
         let dir = root.path().to_str().unwrap();
-        let good = compute_git_info(dir, None, None);
+        let good = compute_git_info(dir, None, None, NOW);
 
         let mut fresh = GitInfo { common_dir: "/other/.git".to_string(), ..Default::default() };
         preserve_identity_on_failed_read(dir, &good, &mut fresh);

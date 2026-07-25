@@ -242,9 +242,13 @@ fn build_folder(
         dir_missing: git.dir_missing,
         branch: git.branch.clone(),
         is_worktree: git.is_worktree,
-        files_changed: git.files_changed,
-        lines_added: git.lines_added,
-        lines_removed: git.lines_removed,
+        committed_files: git.committed_files,
+        committed_added: git.committed_added,
+        committed_removed: git.committed_removed,
+        uncommitted_files: git.uncommitted_files,
+        uncommitted_added: git.uncommitted_added,
+        uncommitted_removed: git.uncommitted_removed,
+        computed_at_ms: git.computed_at_ms,
         commits_ahead: git.commits_ahead,
         commits_behind: git.commits_behind,
         dirty: git.dirty,
@@ -445,9 +449,9 @@ mod tests {
             "/r/alpha".to_string(),
             GitInfo {
                 branch: "main".into(),
-                files_changed: 3,
-                lines_added: 10,
-                lines_removed: 2,
+                committed_files: 3,
+                committed_added: 10,
+                committed_removed: 2,
                 commits_ahead: 1,
                 origin_url: Some("git@github.com:me/alpha.git".into()),
                 ..Default::default()
@@ -475,7 +479,7 @@ mod tests {
         let alpha = &payload.repos[0];
         assert_eq!(alpha.name, "alpha"); // derived from origin repo segment
         assert_eq!(alpha.folders[0].branch, "main");
-        assert_eq!(alpha.folders[0].files_changed, 3);
+        assert_eq!(alpha.folders[0].committed_files, 3);
         assert_eq!(alpha.folders[0].sessions.len(), 1);
         // The folder's busy agent lands on its one session.
         assert_eq!(
