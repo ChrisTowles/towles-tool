@@ -507,7 +507,19 @@ fn term_start_blocking(
             }
             VtEvent::Clipboard(text) => {
                 use tauri_plugin_clipboard_manager::ClipboardExt;
-                if app.state::<TermState>().is_focused(&term_id) {
+                let focused = app.state::<TermState>().is_focused(&term_id);
+                // Logged either way — a pane repeatedly *trying* to take the
+                // clipboard is the signal that explains "something keeps
+                // overwriting my clipboard", and it is invisible if only the
+                // writes that pass the focus gate are recorded. Length only,
+                // never the text: the log is plaintext.
+                tracing::info!(
+                    source = "osc52",
+                    bytes = text.len(),
+                    accepted = focused,
+                    "clipboard.write"
+                );
+                if focused {
                     let _ = app.clipboard().write_text(text);
                 }
             }
@@ -849,6 +861,7 @@ pub async fn term_copy(app: AppHandle, term_id: String) -> Result<String, String
             .map_err(|_| "terminal engine did not answer".to_string())?;
         if !text.is_empty() {
             use tauri_plugin_clipboard_manager::ClipboardExt;
+            tracing::info!(source = "terminal_copy", bytes = text.len(), "clipboard.write");
             app.clipboard()
                 .write_text(text.clone())
                 .map_err(|e| format!("clipboard write failed: {e}"))?;
