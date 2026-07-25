@@ -19,10 +19,10 @@
 //! `preview_read_artifact` serves the *other* direction — the agent→human one
 //! the `preview_show` MCP tool opens (see [`tt_mcp::PreviewHost`]). It reads an
 //! HTML file the agent wrote so the pane can render it in an iframe `srcdoc`.
-//! Reading it here rather than shipping the file's contents in the
-//! `preview://show` event is what makes reload work: the pane re-invokes this
-//! and picks up whatever the agent has written since, and an event bus never
-//! carries a multi-megabyte string.
+//! Reading it here rather than shipping the bytes in the `preview://show` event
+//! is what makes reload work: the pane re-invokes this and picks up whatever
+//! the agent has written since, and an event bus never carries a multi-megabyte
+//! string.
 
 use serde::{Deserialize, Serialize};
 use tt_tasks::pasted::{self, PastedImage};
@@ -181,10 +181,6 @@ fn argb_to_straight_rgba(cropped: CroppedArgb) -> (u32, u32, Vec<u8>) {
 pub struct ArtifactDoc {
     pub path: String,
     pub html: String,
-    /// Last-modified epoch ms, or 0 where the filesystem won't say — carried so
-    /// a reload can tell "the agent rewrote it" from "the same bytes came
-    /// back". Nothing renders it yet.
-    pub modified_ms: i64,
 }
 
 /// Largest artifact the pane will inline. Mirrors `ARTIFACT_MAX_BYTES` in
@@ -195,11 +191,10 @@ const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Read an HTML artifact for the preview pane to render.
 ///
-/// Deliberately *not* rendered via Tauri's asset protocol: an artifact is a
-/// single self-contained page (the same contract Claude's own artifacts have),
-/// so it needs no relative asset resolution, and `srcdoc` gives it a unique
-/// opaque origin — it can't read the app's storage or reach back through the
-/// frame — with no protocol scope to widen for every path on disk.
+/// Deliberately *not* served over Tauri's asset protocol, whose scope would
+/// have to be widened to every path on disk. An artifact is a single
+/// self-contained page (the same contract Claude's own artifacts have), so it
+/// needs no relative asset resolution and `srcdoc` costs nothing.
 #[tauri::command]
 pub async fn preview_read_artifact(path: String) -> Result<ArtifactDoc, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -211,13 +206,7 @@ pub async fn preview_read_artifact(path: String) -> Result<ArtifactDoc, String> 
             return Err(format!("{path} is too large to preview ({} bytes)", meta.len()));
         }
         let html = std::fs::read_to_string(&path).map_err(|e| format!("can't read {path}: {e}"))?;
-        let modified_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-        Ok(ArtifactDoc { path, html, modified_ms })
+        Ok(ArtifactDoc { path, html })
     })
     .await
     .map_err(|e| format!("artifact read task failed: {e}"))?

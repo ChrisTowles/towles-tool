@@ -424,14 +424,8 @@ impl tt_mcp::TaskHost for AppTaskHost {
 }
 
 /// Lets the `preview_show` MCP tool put an agent-authored HTML artifact on
-/// screen — see [`tt_mcp::PreviewHost`] for why the tool can't do it itself.
-///
-/// Emits and returns, like [`AppTaskHost::start_task`] and for a related
-/// reason: the Preview pane is folder-scoped, so showing an artifact means
-/// resolving which tracked checkout the file lives under, opening (or focusing)
-/// that folder's pane, and rendering into it. The frontend owns all three —
-/// it holds the rail's folder list and the window layout — so this only says
-/// "show this file", and the tool answers `"showing"`.
+/// screen. Emits and returns, like [`AppTaskHost::start_task`] — see
+/// [`tt_mcp::PreviewHost`] for why the hand-off has to work this way.
 struct AppPreviewHost {
     app: AppHandle,
 }
@@ -451,8 +445,7 @@ impl tt_mcp::PreviewHost for AppPreviewHost {
 pub const PREVIEW_SHOW_EVENT: &str = "preview://show";
 
 /// The [`PREVIEW_SHOW_EVENT`] payload — the path only, never the file's
-/// contents: the pane reads it through `preview_read_artifact` so a reload
-/// picks up later edits (see `preview.rs`).
+/// contents; `preview.rs` documents why.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PreviewShowPayload {

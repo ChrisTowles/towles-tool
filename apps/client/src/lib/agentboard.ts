@@ -1755,9 +1755,8 @@ export type AgentboardNav =
   /** Put an agent-authored HTML artifact on screen in a folder's Preview pane:
    * the MCP `preview_show` tool's delivery (see `lib/preview-artifact.ts`).
    * Read-only like `folder`/`session` — it opens a pane and renders a file,
-   * writing nothing and touching no PTY. `folderDir` is null when the file
-   * lives under no tracked folder; the screen falls back rather than dropping
-   * it, since one app instance serves every session on the machine. */
+   * writing nothing and touching no PTY. `folderDir` is null when no tracked
+   * folder owns the file, which the screen resolves by falling back. */
   | {
       kind: "show-artifact";
       folderDir: string | null;

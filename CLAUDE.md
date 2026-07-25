@@ -352,25 +352,17 @@ Cargo workspace + npm workspace (`apps/client` only):
     restate.
     **`preview_show` is the third host-backed tool, and the only one pointing
     the other way**: an agent writes a self-contained HTML page and asks for it
-    to be put on screen in its own task's Preview pane, instead of printing
-    something explainable into a PTY scrollback the user reads linearly and
-    which dies with the worktree. It is the agent→human half of the channel
-    whose human→agent half already existed (draw on the pane, send the
-    annotated screenshot back), and the two share a surface deliberately, so
-    the user can circle a line of the agent's own plan and reply to it. Same
-    hand-off shape as `task_start` and for a related reason — the pane is
-    folder-scoped, and only the frontend knows which tracked folder a path
-    lives under and how to open a pane there (a path under none of them falls
-    back to the folder on screen rather than being refused — one instance
-    serves every session on the machine, so untracked paths are normal) — so
-    the host emits
-    `preview://show` (`apps/client/src/lib/preview-artifact.ts`) and the tool
-    answers `"showing"`. The event carries the *path*, never the file's bytes:
-    the pane reads it back through `preview_read_artifact`, which is what makes
-    reload pick up a rewrite, and it renders in a `sandbox="allow-scripts"`
-    `srcDoc` frame (opaque origin — no reach into the app) rather than through
-    Tauri's asset protocol, whose scope would have to be widened to every path
-    on disk to serve one file. The broader
+    to be put on screen in its own task's Preview pane. It is the agent→human
+    half of the channel whose human→agent half already existed (draw on the
+    pane, send the annotated screenshot back), and the two share a surface
+    deliberately, so the user can circle a line of the agent's own plan and
+    reply to it. A hand-off like `task_start` and for a related reason — only
+    the frontend knows which tracked folder a path lives under, and a path
+    under none of them falls back to the folder on screen rather than being
+    refused, since one instance serves every session on the machine. The
+    delivery mechanics (path not bytes, the sandboxed `srcDoc` frame) are
+    documented at `tt-mcp`'s `PreviewHost` and
+    `crates-tauri/tt-app/src/preview.rs`. The broader
     dashboard-read tools (`day_brief`, `needs_you`, `snapshot`,
     PR/issue/DM/collector reads) were pruned in the 2026-07 tool-surface
     review and have not returned.

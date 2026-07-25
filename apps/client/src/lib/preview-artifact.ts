@@ -35,13 +35,11 @@ export type ArtifactRequest = { path: string; title: string; nonce: number };
 const ArtifactDocSchema = z.object({
   path: z.string(),
   html: z.string(),
-  modifiedMs: z.number(),
 });
 
 export type ArtifactDoc = z.infer<typeof ArtifactDocSchema>;
 
-/** Read an artifact's HTML for the pane's iframe. Re-invoked on reload, which
- * is why the event carries a path rather than the contents. */
+/** Read an artifact's HTML for the pane's iframe. Re-invoked on reload. */
 export const previewReadArtifact = (path: string) =>
   invoke("preview_read_artifact", { path }, { schema: ArtifactDocSchema, timeoutMs: 10_000 });
 
@@ -54,12 +52,11 @@ export const previewReadArtifact = (path: string) =>
  * matches both the task's folder and the main checkout's — and the task is the
  * one whose terminal the agent is sitting in.
  *
- * A path under no tracked folder simply has no *preferred* folder, and comes
- * back undefined so the caller can fall back (see {@link showArtifactNav}) —
- * it is not a refusal. Deliberately: the one app instance holding the MCP port
- * serves every Claude session on the machine, including sessions in checkouts
- * it doesn't track and scratch files in `/tmp`, and an artifact shown in a
- * slightly-wrong pane is worth far more than one that isn't shown at all.
+ * A path under no tracked folder has no *preferred* folder and comes back
+ * undefined so the caller can fall back — not a refusal. The one app instance
+ * holding the MCP port serves every Claude session on the machine, `/tmp`
+ * scratch files and untracked checkouts included, and an artifact in a
+ * slightly-wrong pane beats one that isn't shown at all.
  */
 export function folderForArtifact(
   repos: RepoData[],
@@ -77,10 +74,8 @@ export function folderForArtifact(
 }
 
 /** Build the Agentboard request for a validated payload. `folderDir` is the
- * folder that *owns* the file, or `null` when none does — the screen resolves
- * that against whatever folder is on screen (see the handler in
- * `screens/agentboard.tsx`), because only it knows. Pure, so the routing is
- * testable without Tauri. */
+ * folder that *owns* the file, or `null` when none does — only the screen can
+ * resolve that fallback. Pure, so the routing is testable without Tauri. */
 export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) {
   return {
     kind: "show-artifact" as const,

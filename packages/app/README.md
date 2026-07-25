@@ -29,11 +29,7 @@ tools without manual `claude mcp add` setup:
   what a sweep found, a diagram — rather than as terminal output. Write a single
   self-contained `.html` file (it renders in a sandboxed frame, so inline the
   CSS/JS and embed images as data: URIs), then call it with the absolute path.
-  The pane is folder-scoped: a file inside a tracked checkout opens in that
-  checkout's pane, and anything else (an untracked repo, `/tmp`) opens in
-  whichever folder is on screen — one app instance serves every session on the
-  machine, so it shows the page rather than refusing it. The user can annotate
-  what you showed and send it straight back to the session that wrote it.
+  The user can annotate what you showed and send it straight back to you.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.

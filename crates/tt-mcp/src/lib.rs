@@ -100,21 +100,20 @@ pub trait TaskHost: Send {
 /// The app-side half of `preview_show` — the agent→human direction of the
 /// Preview pane.
 ///
-/// The pane itself (`apps/client/src/components/preview-pane.tsx`) already
-/// carries human→agent traffic: it embeds a checkout's dev server and sends an
+/// The pane (`apps/client/src/components/preview-pane.tsx`) already carries
+/// human→agent traffic: it embeds a checkout's dev server and sends an
 /// annotated screenshot into that task's session. This is the return path. An
-/// agent that has *finished* something explainable — a plan, a diff walkthrough,
-/// a table of what it found — writes one self-contained HTML file and asks for
-/// it to be put on screen, instead of printing 400 lines into a PTY scrollback
-/// the user has to read linearly and which dies with the worktree.
+/// agent that has *finished* something explainable — a plan, a diff
+/// walkthrough, a table of what it found — writes one self-contained HTML file
+/// and asks for it to be put on screen, instead of printing 400 lines into a
+/// PTY scrollback the user reads linearly and which dies with the worktree.
 ///
-/// Like [`TaskHost::start_task`] this is a **hand-off**, for the same reason:
-/// the pane belongs to a folder in the app's rail, and routing the artifact to
-/// it means resolving that folder and opening a pane, neither of which is
-/// visible from this Tauri-free crate. So the host only emits the request, and
-/// the tool answers `"showing"` rather than claiming the user saw it. A
-/// dispatcher with no host refuses outright — silently accepting a show that
-/// reaches no window would tell an agent it had communicated when it hadn't.
+/// A **hand-off** like [`TaskHost::start_task`]: routing the artifact means
+/// resolving which folder owns it and opening a pane there, neither of them
+/// visible from this Tauri-free crate, so the tool answers `"showing"` rather
+/// than claiming the user saw it. A dispatcher with no host refuses outright —
+/// silently accepting a show that reaches no window would tell an agent it had
+/// communicated when it hadn't.
 pub trait PreviewHost: Send {
     /// Put `artifact` on screen in the Preview pane of whichever checkout it
     /// lives under.
@@ -130,10 +129,10 @@ pub struct PreviewArtifact {
 }
 
 /// Largest artifact `preview_show` will accept, checked from the same `stat`
-/// that proves the file exists. The frontend reads the whole file into an
-/// iframe `srcdoc`, so an accidental multi-hundred-MB path (a log, a core
-/// dump, a build artifact with an `.html` name) must fail as an answer to the
-/// agent rather than as a frozen window.
+/// that proves the file exists. The frontend inlines the whole file, so an
+/// accidental multi-hundred-MB path (a log, a core dump, a build artifact with
+/// an `.html` name) must fail as an answer to the agent rather than as a frozen
+/// window.
 const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Validate a `preview_show` path into the absolute path to show.
@@ -1208,7 +1207,7 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "preview_show",
-            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first (anywhere — the task's checkout is the natural home, but any path works), then call this with its absolute path. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
+            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first — anywhere, though the task's checkout is the natural home — then call this with its absolute path. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

@@ -180,10 +180,7 @@ export function PreviewPane({
   }, [dir]);
 
   // An agent pushed an artifact (or re-pushed the same path after rewriting
-  // it — hence keying on the nonce, not the path). Reading it here rather than
-  // receiving its HTML in the event is what makes the reload button re-read
-  // the file; see `preview_read_artifact` in `crates-tauri/tt-app/src/
-  // preview.rs`.
+  // it — hence keying on the nonce, not the path).
   const artifactPath = artifact?.path;
   const artifactNonce = artifact?.nonce;
   useEffect(() => {
@@ -562,9 +559,7 @@ export function PreviewPane({
             /* Sandboxed, unlike the dev-server frame: an artifact is a page the
              * agent wrote, so it gets scripts (charts, toggles, tabs) but a
              * unique opaque origin — no `allow-same-origin`, so it can't reach
-             * the app's storage or back through the frame. `srcDoc` rather than
-             * a file:// src for the same reason, and because an artifact is a
-             * single self-contained page with nothing relative to resolve. */
+             * the app's storage or back through the frame. */
             <iframe
               key={`${artifact.path}\u0000${artifact.nonce}`}
               srcDoc={doc?.html ?? ""}
