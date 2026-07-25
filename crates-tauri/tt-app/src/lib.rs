@@ -567,7 +567,14 @@ pub fn run() {
                             .into_iter()
                             .filter_map(|(dir, origin_url)| {
                                 let url = origin_url?;
-                                let slug = tt_git::task_assign::repo_slug_from_remote(&url)?;
+                                // Case-preserving: this is the repo's *identity*,
+                                // stored next to `gh`-reported slugs on issue/PR
+                                // rows and grouped on by the Board. A folded copy
+                                // reads as a second repo.
+                                let slug =
+                                    tt_git::task_assign::repo_slug_from_remote_preserving_case(
+                                        &url,
+                                    )?;
                                 Some((dir, slug))
                             })
                             .collect();

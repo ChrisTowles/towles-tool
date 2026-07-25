@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bucketByStatus,
+  foldRepoKey,
   groupTasksByRepo,
   NO_REPO_GROUP,
   railRepoKeyForTask,
@@ -76,6 +77,48 @@ describe("taskRepoKey", () => {
 
   it("returns the no-repo bucket when nothing identifies a repo", () => {
     expect(taskRepoKey(task())).toBe(NO_REPO_GROUP);
+  });
+});
+
+describe("repo slug casing", () => {
+  // Regression: `gh` reports `ChrisTowles/towles-tool-rs` on issue/PR rows,
+  // while the origin-derived tracked-repo cache stored a folded copy that
+  // `task_create` stamped onto new tasks. Grouping on the raw string produced
+  // two lanes that `repoGroupLabel` rendered identically — one repo showing up
+  // twice on the Board.
+  it("groups casing variants of one slug into a single lane", () => {
+    const groups = groupTasksByRepo([
+      task({ id: 1, worktree: { repoRoot: "/r", repo: "ChrisTowles/towles-tool-rs", branch: "a" } }),
+      task({ id: 2, worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" } }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].tasks.map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  it("keeps the repo's own casing for display while folding the grouping key", () => {
+    const groups = groupTasksByRepo([
+      task({ worktree: { repoRoot: "/r", repo: "ChrisTowles/Dawncaster-RE", branch: "a" } }),
+    ]);
+    expect(groups[0].key).toBe("christowles/dawncaster-re");
+    expect(groups[0].slug).toBe("ChrisTowles/Dawncaster-RE");
+    expect(groups[0].label).toBe("Dawncaster-RE");
+  });
+
+  it("matches a rail repo whose origin casing differs from the task's slug", () => {
+    const repos: RailRepoRow[] = [
+      {
+        key: "repo-1",
+        dir: "/elsewhere",
+        originUrl: "git@github.com:ChrisTowles/towles-tool-rs.git",
+        folders: [],
+      },
+    ];
+    const t = task({ worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" } });
+    expect(railRepoKeyForTask(repos, t)).toBe("repo-1");
+  });
+
+  it("leaves the no-repo bucket alone", () => {
+    expect(foldRepoKey(NO_REPO_GROUP)).toBe(NO_REPO_GROUP);
   });
 });
 

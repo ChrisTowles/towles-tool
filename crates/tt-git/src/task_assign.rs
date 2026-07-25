@@ -24,26 +24,58 @@ pub enum TaskBlocked {
     StashNotEmpty { count: usize },
 }
 
+/// Structural half of [`normalize_remote_url`], keeping the URL's own casing:
+/// scheme/credentials stripped, trailing `.git` and `/` dropped, scp-like
+/// `git@host:path` folded to `host/path`.
+///
+/// Case matters here because two different jobs read this. *Comparing* two
+/// remotes wants case folded away (`normalize_remote_url`); recording a repo's
+/// **identity** wants GitHub's own casing preserved, because that identity is
+/// stored alongside slugs that came from `gh` (issues, PRs, task bindings) and
+/// a folded copy would silently become a second, separate repo.
+///
+/// The prefix/suffix probes run against an `to_ascii_lowercase` copy — ASCII
+/// folding is length-preserving, so its byte offsets index the original safely.
+fn normalize_remote_url_preserving_case(url: &str) -> String {
+    let mut s = url.trim().to_string();
+    let lower = s.to_ascii_lowercase();
+    // scp-like syntax: git@host:path → host/path
+    if let Some(rest) = lower.strip_prefix("git@") {
+        s = s[s.len() - rest.len()..].replacen(':', "/", 1);
+    } else {
+        // scheme://[user@]host/path → host/path
+        if let Some(idx) = lower.find("://") {
+            s = s[idx + 3..].to_string();
+        }
+        if let Some(idx) = s.find('@') {
+            s = s[idx + 1..].to_string();
+        }
+    }
+    let s = s.trim_end_matches('/');
+    if s.to_ascii_lowercase().ends_with(".git") {
+        s[..s.len() - 4].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Normalize a git remote URL for equality: `git@github.com:User/Repo.git`,
 /// `https://github.com/user/repo/`, and `ssh://git@github.com/User/repo` all
 /// name the same repo. Lowercased, scheme/credentials stripped, trailing
 /// `.git` and `/` dropped.
 fn normalize_remote_url(url: &str) -> String {
-    let mut s = url.trim().to_lowercase();
-    // scp-like syntax: git@host:path → host/path
-    if let Some(rest) = s.strip_prefix("git@") {
-        s = rest.replacen(':', "/", 1);
-    } else {
-        // scheme://[user@]host/path → host/path
-        if let Some((_, rest)) = s.split_once("://") {
-            s = rest.to_string();
-        }
-        if let Some((_, rest)) = s.split_once('@') {
-            s = rest.to_string();
-        }
+    normalize_remote_url_preserving_case(url).to_lowercase()
+}
+
+/// The trailing `owner/name` pair of an already-normalized remote
+/// (`github.com/owner/name` → `owner/name`). `None` when fewer than two path
+/// segments remain, e.g. a bare host or a local path.
+fn slug_from_normalized(normalized: &str) -> Option<String> {
+    let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() < 2 {
+        return None;
     }
-    let s = s.trim_end_matches('/');
-    s.strip_suffix(".git").unwrap_or(s).to_string()
+    Some(format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1]))
 }
 
 /// Count entries in `git status --porcelain` output — each non-blank line is
@@ -65,16 +97,23 @@ fn stash_count(stash_list: &str) -> usize {
 /// used by the Agentboard poll loop to reconcile `tt-store`'s tracked-repo
 /// identity cache from each repo's git origin.
 pub fn repo_slug_from_remote(url: &str) -> Option<String> {
-    let normalized = normalize_remote_url(url);
-    let mut segments = normalized.split('/').filter(|s| !s.is_empty());
-    // Drop everything before the final owner/name pair.
-    let parts: Vec<&str> = segments.by_ref().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let name = parts[parts.len() - 1];
-    let owner = parts[parts.len() - 2];
-    Some(format!("{owner}/{name}"))
+    slug_from_normalized(&normalize_remote_url(url))
+}
+
+/// Extract the GitHub `owner/name` slug from a git remote URL, **keeping the
+/// remote's own casing** — `ChrisTowles/towles-tool-rs`, not
+/// `christowles/towles-tool-rs`.
+///
+/// This is the variant to use when recording a repo's *identity* (the
+/// tracked-repo cache the app's `task_create` validates against). Every other
+/// identity in the store — issue rows, PR rows, a task's repo binding — carries
+/// the casing `gh` reports, and the Board groups its swimlanes by that string.
+/// Folding case here therefore doesn't just look wrong: it mints a second repo
+/// identity that splits one repo's cards across two identical-looking lanes.
+/// Use [`repo_slug_from_remote`] instead when *comparing* two remotes, where
+/// case must not matter.
+pub fn repo_slug_from_remote_preserving_case(url: &str) -> Option<String> {
+    slug_from_normalized(&normalize_remote_url_preserving_case(url))
 }
 
 /// The in-progress-work half of the guard, shared by both entry points: reject
@@ -144,6 +183,40 @@ mod tests {
             normalize_remote_url("https://github.com/a/repo"),
             normalize_remote_url("https://gitlab.com/a/repo")
         );
+    }
+
+    /// The identity variant must hand back GitHub's own casing. Folding it is
+    /// what minted a second `christowles/...` repo identity alongside the
+    /// `gh`-reported `ChrisTowles/...` one and split the Board into two
+    /// identically-labelled swimlanes.
+    #[test]
+    fn preserving_case_slug_keeps_the_remotes_own_casing() {
+        let forms = [
+            "git@github.com:ChrisTowles/towles-tool-rs.git",
+            "https://github.com/ChrisTowles/towles-tool-rs.git",
+            "https://github.com/ChrisTowles/towles-tool-rs/",
+            "ssh://git@github.com/ChrisTowles/towles-tool-rs",
+            "  git@github.com:ChrisTowles/towles-tool-rs.git\n",
+        ];
+        for form in forms {
+            assert_eq!(
+                repo_slug_from_remote_preserving_case(form).as_deref(),
+                Some("ChrisTowles/towles-tool-rs"),
+                "failed for {form}"
+            );
+            // The comparison variant still folds, so remote equality is unchanged.
+            assert_eq!(
+                repo_slug_from_remote(form).as_deref(),
+                Some("christowles/towles-tool-rs"),
+                "failed for {form}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserving_case_slug_rejects_non_repo_urls() {
+        assert_eq!(repo_slug_from_remote_preserving_case("github.com"), None);
+        assert_eq!(repo_slug_from_remote_preserving_case(""), None);
     }
 
     #[test]
