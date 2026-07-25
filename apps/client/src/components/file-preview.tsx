@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Element, ElementContent } from "hast";
 import {
+  FileQuestion,
   Info,
   Lightbulb,
   MessageSquareWarning,
@@ -19,6 +20,7 @@ import { monacoLanguageFor } from "@/lib/markdown-code";
 import { allowAssetDir, assetUrl, resolveMarkdownSrc } from "@/lib/markdown-assets";
 import { classifyMarkdownLink, headingSlug } from "@/lib/markdown-links";
 import { previewSanitizeSchema } from "@/lib/markdown-sanitize";
+import { opensInEditor, type PreviewKind } from "@/lib/preview-kind";
 import { ALERT_ATTRIBUTE, type AlertKind } from "@/lib/remark-alerts";
 import { remarkAlerts } from "@/lib/remark-alerts";
 import { loadedMonaco } from "@/lib/monaco";
@@ -316,14 +318,71 @@ const MarkdownBlockquote: Components["blockquote"] = ({ children, ...props }) =>
   );
 };
 
-/** Extensions the file viewer knows how to render a live preview for. */
-export type PreviewKind = "markdown" | "html";
-
-export function previewKindFor(path: string): PreviewKind | null {
-  const ext = path.split(".").pop()?.toLowerCase();
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (ext === "html" || ext === "htm") return "html";
-  return null;
+/**
+ * A file the pane renders directly instead of opening in the editor — an
+ * image, a video, or a format it can only name.
+ *
+ * The bytes come from the same `ttasset` protocol the Markdown preview's
+ * inline images use, so this needed no new transport: an image file *is* a
+ * repo-relative path in a registered checkout, which is exactly what the
+ * protocol serves.
+ */
+function MediaFile({
+  dir,
+  path,
+  kind,
+  onZoom,
+}: {
+  dir: string;
+  path: string;
+  kind: "image" | "video" | "binary";
+  onZoom: (image: LightboxImage) => void;
+}) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const url = kind === "binary" ? null : assetUrl(dir, path);
+  if (url === null) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
+        <FileQuestion className="size-8 text-muted-foreground/60" />
+        <p className="text-sm text-foreground">{name}</p>
+        <p className="text-xs text-muted-foreground">
+          {kind === "binary"
+            ? "This file can't be displayed here."
+            : "Not available in browser dev."}
+        </p>
+      </div>
+    );
+  }
+  if (kind === "video") {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-3">
+        {/* No captions track to offer — this is whatever file the repo holds. */}
+        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        <video src={url} controls className="max-h-full max-w-full rounded border border-border" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full items-center justify-center overflow-auto p-3">
+      <img
+        src={url}
+        alt={name}
+        // A checkerboard, so a transparent PNG reads as transparent rather
+        // than as whatever the theme's background happens to be — the
+        // difference matters when the file is an icon or a UI asset.
+        style={{
+          backgroundImage:
+            "repeating-conic-gradient(oklch(0.5 0 0 / 0.18) 0% 25%, transparent 0% 50%)",
+          backgroundSize: "16px 16px",
+        }}
+        className="max-h-full max-w-full cursor-zoom-in rounded border border-border object-contain"
+        onClick={() => {
+          onZoom({ id: url, name, previewUrl: url });
+          uiAction("preview.zoom_image", "agentboard", "file");
+        }}
+      />
+    </div>
+  );
 }
 
 /**
@@ -426,6 +485,9 @@ export function FilePreview({
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState<LightboxImage | null>(null);
+  // Whether this checkout is registered with the asset protocol yet. Only
+  // media uses it; see the effect below for why it gates the first render.
+  const [mediaReady, setMediaReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // One effect: initial read, plus re-reads when the file changes on disk
@@ -439,6 +501,7 @@ export function FilePreview({
     setContent(null);
     setError(null);
     setZoomed(null);
+    setMediaReady(false);
     const read = (initial: boolean) => {
       void ideReadFile(dir, path).then((r) => {
         if (disposed) return;
@@ -450,6 +513,22 @@ export function FilePreview({
         });
       });
     };
+    // A media file has no text to read and `ide_read_file` would refuse it
+    // anyway — it renders straight from the asset protocol, so registering the
+    // checkout is the whole of its setup.
+    //
+    // Rendering has to *wait* on that, though, exactly as the Markdown branch
+    // does: the protocol serves nothing from an unregistered folder, and an
+    // `<img>` that fires first takes a 403 it will never retry — a broken
+    // image for as long as the file is open.
+    if (!opensInEditor(kind)) {
+      void allowAssetDir(dir).then(() => {
+        if (!disposed) setMediaReady(true);
+      });
+      return () => {
+        disposed = true;
+      };
+    }
     if (kind === "markdown") {
       // Ordered, not raced: the asset protocol refuses a folder it hasn't been
       // told about, and the `<img>` tags this document renders start fetching
@@ -479,6 +558,23 @@ export function FilePreview({
     [dir, path, onOpenPath],
   );
 
+  // Before the loading/error gates below, which are about text this file
+  // doesn't have.
+  if (kind === "image" || kind === "video" || kind === "binary") {
+    if (!mediaReady) return <p className="p-3 text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <>
+        <MediaFile dir={dir} path={path} kind={kind} onZoom={setZoomed} />
+        <ImageLightbox
+          images={zoomed ? [zoomed] : []}
+          openId={zoomed?.id ?? null}
+          onOpenChange={(id) => {
+            if (id === null) setZoomed(null);
+          }}
+        />
+      </>
+    );
+  }
   if (error) {
     return <p className="p-3 text-sm text-muted-foreground">{error}</p>;
   }

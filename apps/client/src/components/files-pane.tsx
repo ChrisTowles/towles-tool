@@ -17,7 +17,7 @@ import { CodeViewer, type ViewerAnchor } from "@/components/code-viewer";
 import { EditableToggle } from "@/components/editable-toggle";
 import { ClaudeBadge, IconBtn, LspBadge, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { FilePreview, previewKindFor } from "@/components/file-preview";
+import { FilePreview } from "@/components/file-preview";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ideMention, useIdeConnected } from "@/lib/ide";
 import { useLspStatus } from "@/lib/lsp-status";
@@ -31,6 +31,7 @@ import {
   type SidebarView,
 } from "@/lib/monaco";
 import { modeForPanels, panelsFor, type EditorViewMode } from "@/lib/editor-view-mode";
+import { opensInEditor, previewKindFor } from "@/lib/preview-kind";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
@@ -54,6 +55,14 @@ import { folderStatsKey, type FolderData } from "@/lib/agentboard";
  * viewer toolbar); Markdown/HTML files pick between code, a resizable split,
  * and the rendered page alone, and any file can lift the whole pane out of
  * the Agentboard tiling to fill the viewport (Escape returns it).
+ *
+ * Not everything is text. `lib/preview-kind.ts` sorts a path into three
+ * shapes, and the difference drives this component's layout: a file with a
+ * code side splits against the editor, while an image, a video, or a format
+ * that can only be named replaces the editor entirely — no split, and none of
+ * the toolbar controls that only mean something for text. Mounting an editor
+ * beside an image would leave a permanently empty half, since Monaco cannot
+ * open one at all.
  */
 
 /** Claude called openFile — focus this file (new nonce per request). */
@@ -173,6 +182,12 @@ export function FilesPane({
   }, [fullscreen]);
 
   const previewKind = open ? previewKindFor(open) : null;
+  // Two different shapes hide behind "this file isn't plain source": one has a
+  // code side and splits against the editor, the other replaces it outright.
+  // Splitting an image against an editor that cannot open it would show a
+  // permanently empty half.
+  const splitKind = previewKind !== null && opensInEditor(previewKind) ? previewKind : null;
+  const mediaKind = previewKind !== null && !opensInEditor(previewKind) ? previewKind : null;
 
   // Drive the panels from the mode. Split sizes explicitly rather than
   // leaning on `expand()`, which restores a panel to its *most recent* size —
@@ -180,7 +195,7 @@ export function FilesPane({
   // so expanding alone lands on a useless sliver. The single-panel modes just
   // collapse the other half and let it take the whole group.
   useEffect(() => {
-    if (!previewKind) return;
+    if (!splitKind) return;
     const editor = editorPanelRef.current;
     const preview = previewPanelRef.current;
     if (!editor || !preview) return;
@@ -202,7 +217,7 @@ export function FilesPane({
       drivingPanelsRef.current = false;
     }, 0);
     return () => clearTimeout(settled);
-  }, [viewMode, previewKind]);
+  }, [viewMode, splitKind]);
 
   // …and read the mode back off the panels when the *user* moves the handle,
   // so dragging one shut lights the matching toolbar button.
@@ -324,29 +339,33 @@ export function FilesPane({
                   />
                 )}
               </span>
-              <EditableToggle
-                editable={editable}
-                subject="this file"
-                onChange={(next) => {
-                  setEditable(next);
-                  uiAction("files.editable", "agentboard", next ? "on" : "off");
-                }}
-              />
+              {mediaKind === null && (
+                <EditableToggle
+                  editable={editable}
+                  subject="this file"
+                  onChange={(next) => {
+                    setEditable(next);
+                    uiAction("files.editable", "agentboard", next ? "on" : "off");
+                  }}
+                />
+              )}
               {/* `min-w-max` so the toolbar's buttons can't spill leftward
                * over the centered toggle — see `PaneChrome`'s grid. */}
               <span className="flex min-w-max items-center justify-end gap-2">
-                <IconBtn
-                  title={
-                    wordWrap
-                      ? "Wrapping long lines — click to scroll instead"
-                      : "Scrolling long lines — click to wrap instead"
-                  }
-                  onClick={() => setWordWrap((w) => !w)}
-                  className={wordWrap ? "text-violet-500" : undefined}
-                >
-                  <WrapText className="size-3.5" />
-                </IconBtn>
-                {previewKind && (
+                {mediaKind === null && (
+                  <IconBtn
+                    title={
+                      wordWrap
+                        ? "Wrapping long lines — click to scroll instead"
+                        : "Scrolling long lines — click to wrap instead"
+                    }
+                    onClick={() => setWordWrap((w) => !w)}
+                    className={wordWrap ? "text-violet-500" : undefined}
+                  >
+                    <WrapText className="size-3.5" />
+                  </IconBtn>
+                )}
+                {splitKind && (
                   <span className="flex shrink-0 items-center gap-0.5">
                     {(
                       [
@@ -354,9 +373,9 @@ export function FilesPane({
                         {
                           mode: "split",
                           icon: Columns2,
-                          title: `Code and ${previewKind} side by side`,
+                          title: `Code and ${splitKind} side by side`,
                         },
-                        { mode: "preview", icon: Eye, title: `Rendered ${previewKind} only` },
+                        { mode: "preview", icon: Eye, title: `Rendered ${splitKind} only` },
                       ] as const
                     ).map(({ mode, icon: Icon, title }) => (
                       <IconBtn
@@ -405,7 +424,11 @@ export function FilesPane({
               </span>
             </div>
             <div className="min-h-0 flex-1">
-              {previewKind ? (
+              {mediaKind ? (
+                // No editor at all: nothing here is text, so the pane is the
+                // file itself.
+                <FilePreview dir={dir} path={open} kind={mediaKind} />
+              ) : splitKind ? (
                 // Both panels stay mounted in all three modes — see
                 // `lib/editor-view-mode.ts` for why collapsing beats
                 // unmounting.
@@ -441,7 +464,7 @@ export function FilesPane({
                     collapsedSize="0%"
                     onResize={syncModeFromPanels}
                   >
-                    <FilePreview dir={dir} path={open} kind={previewKind} onOpenPath={setOpen} />
+                    <FilePreview dir={dir} path={open} kind={splitKind} onOpenPath={setOpen} />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : (

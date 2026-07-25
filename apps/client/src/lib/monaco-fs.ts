@@ -40,6 +40,7 @@ import { Disposable } from "@codingame/monaco-vscode-api/vscode/vs/base/common/l
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
 import { ideStat, type FsStat } from "@/lib/ide";
+import { opensInEditor, previewKindFor } from "@/lib/preview-kind";
 
 type FsDirEntry = { name: string; isDir: boolean };
 
@@ -120,10 +121,29 @@ class TauriFileSystemProvider
     return entries.value.map((e) => [e.name, e.isDir ? FileType.Directory : FileType.File]);
   }
 
+  /**
+   * A file's bytes, as text — except for the files the pane renders itself.
+   *
+   * Opening anything from the Explorer resolves a *text model* first
+   * (`lib/monaco.ts`'s views fallback), and only once that resolves does the
+   * fallback hand the path to the pane. `ide_read_file` refuses a file
+   * containing a NUL, so for an image the resolution rejected, the fallback
+   * never ran, and clicking a PNG in the Explorer did nothing at all — no
+   * error, no change, the previously-open file still on screen.
+   *
+   * Those files therefore resolve as an empty model. It exists only to carry
+   * a URI to the fallback: it is disposed on the next line there, no editor is
+   * ever mounted on it (`FilesPane` branches on the same `opensInEditor`), and
+   * the pane renders the real bytes over the asset protocol. Reading the file
+   * to build it would mean decoding megabytes of PNG as lossy UTF-8 to service
+   * a click.
+   */
   async readFile(resource: URI): Promise<Uint8Array> {
+    const filePath = resource.path.slice(1);
+    if (!opensInEditor(previewKindFor(filePath))) return new Uint8Array();
     const read = await invoke<{ content: string }>("ide_read_file", {
       dir: "/",
-      filePath: resource.path.slice(1),
+      filePath,
     });
     if (read.isErr()) throw notFound();
     return new TextEncoder().encode(read.value.content);
@@ -142,8 +162,25 @@ class TauriFileSystemProvider
   async writeFile(resource: URI, content: Uint8Array, opts: IFileWriteOptions): Promise<void> {
     const filePath = resource.path.slice(1);
     const text = decodeText(content, filePath);
-    if (!opts.create || !opts.overwrite) {
+    // The counterpart to `readFile`'s empty model: a file the pane renders
+    // itself is zero bytes *here*, so a save reaching this provider would
+    // truncate the real image. Nothing should get that far — the model is
+    // disposed as soon as the open fallback has its URI, and no editor is
+    // mounted on it — but the failure mode is destroying a file, so it is
+    // refused rather than reasoned about.
+    //
+    // Scoped to a file that already exists: the danger is truncation, not
+    // creation, and an Explorer "New File" named `icon.png` is a legitimate
+    // empty touch that has nothing to overwrite.
+    const writingBinary = !opensInEditor(previewKindFor(filePath));
+    if (writingBinary || !opts.create || !opts.overwrite) {
       const existing = await this.statOrNull(filePath);
+      if (existing != null && writingBinary) {
+        throw FileSystemProviderError.create(
+          `${filePath} is not an editable text file`,
+          FileSystemProviderErrorCode.NoPermissions,
+        );
+      }
       if (existing != null && !opts.overwrite) {
         throw FileSystemProviderError.create(
           `${filePath} already exists`,

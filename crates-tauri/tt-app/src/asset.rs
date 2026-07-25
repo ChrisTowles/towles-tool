@@ -1,11 +1,16 @@
-//! Repo files served to the webview as bytes, for the Markdown preview's
-//! images and GIFs (`components/file-preview.tsx`).
+//! Repo files served to the webview as bytes, for the Files pane
+//! (`components/file-preview.tsx`) — both the images and GIFs *inside* a
+//! Markdown preview and an image or video opened as a file in its own right.
 //!
 //! The preview renders a checkout's Markdown, so `![](docs/images/x.gif)` has
 //! to resolve to a file on disk. Nothing else in the app could do that:
 //! [`crate::ide::ide_read_file`] is text-only by design (it refuses anything
 //! containing a NUL) and the webview's own origin is the bundled frontend, so
 //! a relative `src` 404s against Vite/`tauri://localhost` instead of the repo.
+//!
+//! The two callers are the same request: an image file open in the pane is a
+//! repo-relative path in a registered checkout, exactly like one referenced
+//! from a document. That is why viewing images cost no new transport.
 //!
 //! **Why a URI scheme rather than base64 over IPC.** The established way to
 //! show local bytes here is a `data:` URL built from a command's base64
