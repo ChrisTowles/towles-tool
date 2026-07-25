@@ -88,8 +88,14 @@ describe("repo slug casing", () => {
   // twice on the Board.
   it("groups casing variants of one slug into a single lane", () => {
     const groups = groupTasksByRepo([
-      task({ id: 1, worktree: { repoRoot: "/r", repo: "ChrisTowles/towles-tool-rs", branch: "a" } }),
-      task({ id: 2, worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" } }),
+      task({
+        id: 1,
+        worktree: { repoRoot: "/r", repo: "ChrisTowles/towles-tool-rs", branch: "a" },
+      }),
+      task({
+        id: 2,
+        worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" },
+      }),
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0].tasks.map((t) => t.id)).toEqual([1, 2]);
@@ -113,7 +119,9 @@ describe("repo slug casing", () => {
         folders: [],
       },
     ];
-    const t = task({ worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" } });
+    const t = task({
+      worktree: { repoRoot: "/r", repo: "christowles/towles-tool-rs", branch: "b" },
+    });
     expect(railRepoKeyForTask(repos, t)).toBe("repo-1");
   });
 
