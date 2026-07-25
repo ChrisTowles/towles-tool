@@ -260,14 +260,13 @@ fn probe_fingerprint(repo: &tt_git::repo::Repo, branch: &str, compared_base: &st
 /// `worktree_dirs`/`origin_url`: the mtimes of `common_dir`'s `worktrees`
 /// subdirectory (touched whenever a `git worktree add`/`remove` changes the
 /// sibling set) and its `config` file (touched by `remote set-url`). Those
-/// four facts are otherwise re-derived by four more git spawns
-/// (`rev-parse --git-dir`/`--git-common-dir`, `worktree list --porcelain`,
-/// `remote get-url origin`) every single poll, even though — unlike
+/// four facts are otherwise re-derived on every single poll (a `worktrees`
+/// directory walk plus a config read), even though — unlike
 /// `dirty`/`commits_ahead`/etc. — they almost never change poll to poll: a
 /// repo's worktree set and remote are structural, not working-tree state.
 ///
-/// Reads no git subprocess, only two `fs::metadata` calls, so checking this
-/// first is unconditionally cheaper than the four spawns it guards.
+/// Reads only two `fs::metadata` calls — no ref or config parsing at all — so
+/// checking this first is unconditionally cheaper than the work it guards.
 ///
 /// Returns empty only when `common_dir` itself is empty or unreadable — an
 /// empty fingerprint must never compare equal to a real one, so an
@@ -395,11 +394,11 @@ pub fn control_files_for(info: &GitInfo) -> Vec<std::path::PathBuf> {
 /// The staged/unstaged state `index` reflects is re-read every poll by those two
 /// commands anyway, so nothing is lost.
 ///
-/// Reads no git subprocess — only `fs::metadata`. When this equals a cached
-/// [`GitInfo`]'s `revision_key`, the poll skips `rev-parse --abbrev-ref`, the
-/// base resolve, `merge-base`, `rev-list --left-right`, and the landing probe —
-/// the bulk of a sweep's git spawns — running only the working-tree
-/// `status`/`diff` that no `.git` mtime can stand in for.
+/// Reads no refs or objects — only `fs::metadata`. When this equals a cached
+/// [`GitInfo`]'s `revision_key`, the poll skips the HEAD read, the base
+/// resolve, the merge-base and ahead/behind graph walks, and the landing probe
+/// — the bulk of a sweep's git work — running only the working-tree
+/// status/diff that no `.git` mtime can stand in for.
 ///
 /// Returns empty when the git dir or branch is unknown, or a required stat hard-
 /// errors — a partial fingerprint must never compare equal to a real one.
@@ -655,8 +654,9 @@ fn working_tree_info(
 
 /// Fetch `origin` for each distinct repo among `dirs`, deduped by common git
 /// dir so N worktrees of the same repo (the common task pattern) trigger one
-/// network call, not N. Network I/O, so a longer timeout than [`git_out`]'s
-/// 5s; failures (offline, no origin, auth prompt) are swallowed the same
+/// network call, not N. Network I/O, so a 20s timeout rather than the 10s the
+/// module's other subprocess ([`prune_stale_worktree`]) gets; failures
+/// (offline, no origin, auth prompt) are swallowed the same
 /// way — this only refreshes the `origin/main` ref that [`compute_git_info`]
 /// reads, it never surfaces errors to the user.
 pub fn fetch_all(dirs: &[String]) {
@@ -1862,8 +1862,9 @@ mod tests {
 
     /// The big win for #329: when no ref has moved since the last compute, the
     /// ref-derived half (branch/ahead/behind/landing) is reused wholesale and
-    /// only the working-tree half (`status`/`diff`) is recomputed — so a
-    /// backup-poll tick over an idle repo pays two spawns, not ~nine. Proven by
+    /// only the working-tree half (status/diff) is recomputed — so a
+    /// backup-poll tick over an idle repo pays for two of the nine reads, not
+    /// all nine. Proven by
     /// poisoning ref-derived fields that the real repo could never produce and
     /// watching them survive, while a working-tree change made after the first
     /// compute is still picked up.

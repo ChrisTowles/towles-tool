@@ -37,9 +37,9 @@ const STALE_MS: i64 = 12 * 60 * 60 * 1000;
 const IDLE_MS: i64 = 30 * 1000;
 
 /// How long a [`Engine::git_pending`] claim blocks a second `stale_git_targets`
-/// caller before it self-expires. Comfortably longer than any real `git`
-/// chain (`compute_git_info`'s full path is at most ~9 sequential spawns,
-/// each 5s-timeout-capped but normally sub-second), so it never masks a
+/// caller before it self-expires. Comfortably longer than any real
+/// `compute_git_info` (its full path is at most ~9 sequential in-process
+/// gitoxide reads, normally well under a second), so it never masks a
 /// legitimate re-poll — it only exists so a caller that never calls
 /// `store_git_info` (a panic, a dropped `spawn_blocking` result) can't strand
 /// a dir out of rotation forever.
@@ -286,16 +286,17 @@ impl Engine {
     /// job, decided from each entry's [`crate::git_info::GitInfo::common_dir`],
     /// not from how a dir got onto this list.
     ///
-    /// Cache-only: never shells to git — this only reads each tracked repo's
+    /// Cache-only: never touches git — this only reads each tracked repo's
     /// already-cached `worktree_dirs` (from its last `compute_git_info`), so
     /// a freshly discovered worktree shows up the instant its parent's cache
     /// lists it, with no dependency on the *child's* own git info being
     /// warmed yet. This method runs under the engine lock (every `ab_*`
     /// command and the watcher-scan loop share it), and every other command
-    /// is dispatched inline on the UI thread, so shelling out to git here (as
-    /// this used to do via `get_or_refresh`) could hold the lock through
-    /// git's full subprocess chain (`compute_git_info` is ~9 sequential
-    /// spawns) and freeze the whole app, not just the caller. The host warms
+    /// is dispatched inline on the UI thread, so reading git here (as this
+    /// used to do via `get_or_refresh`) could hold the lock through
+    /// `compute_git_info`'s full ~9-read chain — object-database and
+    /// working-tree I/O — and freeze the whole app, not just the caller. In-
+    /// process gitoxide made that chain far cheaper, not free. The host warms
     /// the cache out of band instead (see the watcher-scan block and
     /// `ab_add_repo` in `crates-tauri/tt-app/src/lib.rs` / `agentboard.rs`).
     fn expand_with_worktrees(&mut self) -> Vec<String> {
