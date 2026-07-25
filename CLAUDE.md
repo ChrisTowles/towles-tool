@@ -284,15 +284,27 @@ Cargo workspace + npm workspace (`apps/client` only):
     `crates-tauri/tt-app/src/mcp_http.rs` — read that module's doc before
     touching either half. Tools: `task_list`, `task_status`, `task_create`
     (a #339 board task in a tracked repo's swimlane, same store path as the
-    app's `store_add_task`), `task_delete`, plus the calendar family
-    `calendar_today`, `calendar_next` and the push-model write `calendar_set`.
-    `task_delete` is the one tool that cannot work from the dispatcher alone —
-    it kills the task's panes and removes its worktree (the row itself is
+    app's `store_add_task`), `task_start`, `task_delete`, plus the calendar
+    family `calendar_today`, `calendar_next` and the push-model write
+    `calendar_set`.
+    **`task_start` and `task_delete` are the two tools that cannot work from the
+    dispatcher alone**, and both enter through the injected `TaskHost`; a
+    dispatcher without one refuses rather than half-doing the job. `task_delete`
+    kills the task's panes and removes its worktree (the row itself is
     *closed* with an optional `outcome` arg, not deleted — see the
-    task-removal bullet in Worktree tasks), neither visible from a Tauri-free
-    crate — so the transport injects a `TaskHost` (`tt-app`'s
-    `task::delete_task_blocking`) and a dispatcher without one refuses rather
-    than touching the row on its own. The broader
+    task-removal bullet in Worktree tasks) via `tt-app`'s
+    `task::delete_task_blocking`. `task_start` is the inverse — it mints a
+    worktree for an existing card and launches an agent on the task's goal *plus
+    its notes* — and it is **asynchronous where `task_delete` blocks**: a pane
+    has no PTY until the frontend renders it and the goal is typed into that
+    PTY, so the host can only emit `task://start` for the frontend to run down
+    its normal `createTask` path (`apps/client/src/lib/task-start.ts` →
+    `screens/agentboard/use-task-creation.ts`). Hence `status: "starting"`, not
+    `"started"` — the tool genuinely cannot know. Don't "fix" this by minting the
+    worktree in Rust and leaving the launch to the frontend: that forks the
+    start path in two, and the frontend's half already encodes the
+    no-PTY-until-rendered and serial-drain rules the second copy would have to
+    restate. The broader
     dashboard-read tools (`day_brief`, `needs_you`, `snapshot`,
     PR/issue/DM/collector reads) were pruned in the 2026-07 tool-surface
     review and have not returned.
@@ -485,7 +497,7 @@ plugins ship today:
 - `towles-tool-app` (`packages/app`) — bridges Claude Code to the desktop
   app itself: registers the app's MCP server with a static checked-in
   `.mcp.json` (`{"type":"http","url":"http://127.0.0.1:8787/mcp"}` — board
-  tasks `task_list`/`task_status`/`task_create`/`task_delete` plus the calendar family
+  tasks `task_list`/`task_status`/`task_create`/`task_start`/`task_delete` plus the calendar family
   `calendar_today`/`calendar_next`/`calendar_set`; the app must be running),
   ships the `towles-tool` skill (the `tt` command reference — journaling
   plus the `tt task` subcommands) and the `task-onboarding` skill (guides

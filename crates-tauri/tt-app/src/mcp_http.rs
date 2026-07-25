@@ -46,7 +46,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tt_mcp::Dispatcher;
 use tt_store::Store;
 
@@ -387,6 +387,57 @@ impl tt_mcp::TaskHost for AppTaskHost {
             }
         }
     }
+
+    /// Hand the start off to the frontend by emitting [`TASK_START_EVENT`].
+    ///
+    /// This does *not* create the worktree here, even though that half is
+    /// ordinary blocking work the host could do. Creating it in Rust and then
+    /// asking the frontend to launch the agent would fork the start path in two:
+    /// the app's own `+` flow already runs create → pending card → `task_create`
+    /// → pane → setup → agent, in that order, with the serial-drain and
+    /// no-PTY-until-rendered rules baked in (see `apps/client/CLAUDE.md`). A
+    /// second half-in-Rust path would have to restate those, and would drift.
+    /// So the frontend runs the whole thing, and this only says "start task N".
+    ///
+    /// The trade-off is deliberate and is why the tool answers `"starting"`:
+    /// emitting can't report whether the worktree appeared.
+    fn start_task(&self, req: tt_mcp::TaskStartRequest) -> Result<(), String> {
+        let payload = TaskStartPayload {
+            task_id: req.id,
+            repo_root: req.repo_root,
+            branch: req.branch,
+            base: req.base,
+            prompt: req.prompt,
+            dynamic: req.dynamic,
+        };
+        tracing::info!(
+            task_id = req.id,
+            text = %req.text,
+            branch = %payload.branch,
+            dynamic = payload.dynamic,
+            "task.start_requested"
+        );
+        self.app
+            .emit(TASK_START_EVENT, &payload)
+            .map_err(|e| format!("couldn't ask the app to start task {}: {e}", req.id))
+    }
+}
+
+/// Asks the frontend to start a board task — mint its worktree and launch an
+/// agent on `prompt`. Consumed by `apps/client/src/lib/task-start.ts`.
+pub const TASK_START_EVENT: &str = "task://start";
+
+/// The [`TASK_START_EVENT`] payload. `camelCase` to match the frontend's Zod
+/// schema for it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskStartPayload {
+    task_id: i64,
+    repo_root: String,
+    branch: String,
+    base: Option<String>,
+    prompt: String,
+    dynamic: bool,
 }
 
 /// Accept connections until the task is aborted. One failed connection recycles

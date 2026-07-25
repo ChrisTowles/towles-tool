@@ -770,6 +770,29 @@ export function AgentboardScreen() {
           req.taskId,
           req.goal,
         );
+      } else if (req.kind === "start-task") {
+        // The MCP `task_start` tool. Unlike `reopen-task` this opens no form and
+        // waits for no submit — the caller already chose every field, so it goes
+        // straight down the same `createTask` path a submit would, binding the
+        // existing `taskId` instead of minting a new board row.
+        setActiveFolderDir(req.repoDir);
+        ackFolder(req.repoDir);
+        void taskCreation.createTask(
+          { name: req.repoName, dir: req.repoDir, key: req.repoKey, originUrl: req.originUrl },
+          {
+            goal: req.goal,
+            title: req.goal,
+            branch: req.branch,
+            base: req.base ?? "",
+            options: {},
+            imagePaths: [],
+            issues: [],
+            worktree: true,
+            dynamic: req.dynamic,
+            launchClaude: true,
+            taskId: req.taskId,
+          },
+        );
       } else {
         setActiveFolderDir(req.folderDir);
         ackFolder(req.folderDir);

@@ -6785,6 +6785,7 @@ dependencies = [
  "tracing",
  "tt-agentboard",
  "tt-config",
+ "tt-git",
  "tt-store",
 ]
 

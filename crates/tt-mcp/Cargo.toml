@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 tt-agentboard = { workspace = true }
 tt-config = { workspace = true }
+tt-git = { workspace = true }
 tt-store = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

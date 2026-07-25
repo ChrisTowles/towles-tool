@@ -1772,6 +1772,24 @@ export type AgentboardNav =
       originUrl?: string;
       taskId: number;
       goal: string;
+    }
+  /** Start a task with no human at the form: mint its worktree on `branch` and
+   * launch an agent on `goal`, immediately. The MCP `task_start` tool's
+   * delivery (see `lib/task-start.ts`) — the difference from `reopen-task` is
+   * that nothing waits for a submit, because the caller already decided every
+   * field. Same one-shot mailbox, for the same reason: Agentboard may not be
+   * mounted when the tool fires. */
+  | {
+      kind: "start-task";
+      repoDir: string;
+      repoName: string;
+      repoKey: string;
+      originUrl?: string;
+      taskId: number;
+      goal: string;
+      branch: string;
+      base?: string;
+      dynamic: boolean;
     };
 
 let pendingNav: AgentboardNav | null = null;
