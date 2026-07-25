@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::{Arc, Mutex};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,63 @@ const INPUT_QUEUE_CAP: usize = 1024;
 /// replacement (a webview reload restarts every terminal this way).
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
+/// What this terminal has observed about the program running in it, kept as
+/// epoch-ms stamps the agentboard bridge folds into agent status (see
+/// `tt_agentboard::pty_status` for why these three signals are enough).
+///
+/// Atomics rather than a mutex because the writer is the vt engine thread on
+/// its render path — up to ~90 times a second per visible pane — and the
+/// reader is the agentboard emit path. Neither should ever wait on the other,
+/// and there is nothing here to keep consistent *between* fields.
+///
+/// `0` means "never", matching `PtySignal`'s `None`.
+#[derive(Debug, Default)]
+pub struct PtyActivity {
+    /// Last screen-changing output. Stamped on every rendered frame, which
+    /// the vt session only produces when PTY bytes actually changed the
+    /// screen — so this tracks the program, not a timer.
+    last_output_ms: AtomicI64,
+    /// Last attention notification (OSC 9/777 or a bell).
+    attention_at_ms: AtomicI64,
+    /// Last user input written into this PTY. This is what answers a pending
+    /// attention notification, so **every path that writes to a PTY on the
+    /// user's behalf must stamp it** (`term_write`, `term_key`, both paste
+    /// commands, `send_key_to_focused`) — a write that skips it leaves the
+    /// session badged as needing you after the user has already answered.
+    input_at_ms: AtomicI64,
+}
+
+impl PtyActivity {
+    fn stamp(field: &AtomicI64, now: i64) {
+        field.store(now, Ordering::Relaxed);
+    }
+
+    fn read(field: &AtomicI64) -> Option<i64> {
+        match field.load(Ordering::Relaxed) {
+            0 => None,
+            ms => Some(ms),
+        }
+    }
+
+    fn signal(&self) -> tt_agentboard::pty_status::PtySignal {
+        tt_agentboard::pty_status::PtySignal {
+            last_output_ms: Self::read(&self.last_output_ms),
+            attention_at_ms: Self::read(&self.attention_at_ms),
+            input_at_ms: Self::read(&self.input_at_ms),
+        }
+    }
+
+    /// Record output, reporting whether this began a fresh burst — i.e. the
+    /// pane was quiet long enough to read as not-working and has now started
+    /// again. Only that edge is worth waking the agentboard emitter for;
+    /// waking it per frame would rebuild the whole payload ~90 times a second
+    /// to no effect.
+    fn note_output(&self, now: i64) -> bool {
+        let previous = self.last_output_ms.swap(now, Ordering::Relaxed);
+        previous == 0 || now.saturating_sub(previous) >= tt_agentboard::pty_status::OUTPUT_ACTIVE_MS
+    }
+}
+
 /// One live PTY session (one shell shown in one terminal view).
 struct Session {
     master: Box<dyn MasterPty + Send>,
@@ -90,6 +147,10 @@ struct Session {
     /// against the file's current claims. Empty when `dir` is `None` or the
     /// file didn't exist yet at spawn.
     env_ports_at_spawn: BTreeMap<String, u16>,
+    /// Shared with this session's vt sink, which stamps output/attention as
+    /// they happen. Dies with the session, so a replaced terminal starts from
+    /// a clean slate rather than inheriting its predecessor's timings.
+    activity: Arc<PtyActivity>,
 }
 
 /// All live terminals, keyed by the frontend's `term_id`, plus which one
@@ -138,6 +199,7 @@ impl TermState {
         let Some(session) = guard.get(&term_id) else {
             return false;
         };
+        PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
         let _ = session.vt.send(VtInput::Key(event));
         true
     }
@@ -146,6 +208,18 @@ impl TermState {
     /// stamps these onto the emitted snapshot as `SessionData.live`.
     pub fn live_ids(&self) -> std::collections::HashSet<String> {
         self.sessions.lock().unwrap().keys().cloned().collect()
+    }
+
+    /// What each live PTY has been observed doing — the direct evidence the
+    /// agentboard bridge folds into agent status via
+    /// `tt_agentboard::pty_status::resolve_status`.
+    pub fn pty_signals(&self) -> HashMap<String, tt_agentboard::pty_status::PtySignal> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, s)| (id.clone(), s.activity.signal()))
+            .collect()
     }
 
     /// Each live session's shell kind. The agentboard bridge stamps these onto
@@ -468,12 +542,22 @@ fn term_start_blocking(
 
     // Terminal state engine: consumes PTY bytes, produces render frames for
     // the frontend and reply bytes (DA1 etc.) for the shell.
+    let activity = Arc::new(PtyActivity::default());
     let vt = tt_vt::Session::spawn(EngineOptions { cols, rows, max_scrollback: MAX_SCROLLBACK }, {
         let app = app.clone();
         let term_id = term_id.clone();
         let pty_input = input_tx.clone();
+        let activity = Arc::clone(&activity);
         move |event| match event {
             VtEvent::Frame(frame) => {
+                // A frame means the program actually changed the screen — the
+                // vt render loop is data-driven, so this is the app's direct
+                // evidence that the agent is working. Cheap enough to do on
+                // every frame (one relaxed atomic); the emitter is only woken
+                // when a quiet pane starts up again.
+                if activity.note_output(crate::agentboard::now_ms()) {
+                    notify_agentboard(&app);
+                }
                 let _ = app.emit_to(
                     MAIN_WINDOW_LABEL,
                     FRAME_EVENT,
@@ -491,7 +575,13 @@ fn term_start_blocking(
             // silently overwrite the clipboard. Read-side OSC 52 is not handled.
             // Attention signals (BEL / OSC 9 notifications) go to the
             // agentboard, which badges the session and feeds needs-you.
+            // Claude Code raises OSC 777 the moment it wants the user, so
+            // this is also the fastest evidence of a blocked agent there is —
+            // stamped for `pty_status` and woken through immediately, rather
+            // than waiting on the 60s-cached `claude agents` poll.
             VtEvent::Bell => {
+                PtyActivity::stamp(&activity.attention_at_ms, crate::agentboard::now_ms());
+                notify_agentboard(&app);
                 let _ = app.emit_to(
                     MAIN_WINDOW_LABEL,
                     NOTIFY_EVENT,
@@ -499,6 +589,8 @@ fn term_start_blocking(
                 );
             }
             VtEvent::Notify(body) => {
+                PtyActivity::stamp(&activity.attention_at_ms, crate::agentboard::now_ms());
+                notify_agentboard(&app);
                 let _ = app.emit_to(
                     MAIN_WINDOW_LABEL,
                     NOTIFY_EVENT,
@@ -547,6 +639,7 @@ fn term_start_blocking(
             ide,
             dir,
             env_ports_at_spawn,
+            activity,
         },
     );
 
@@ -620,6 +713,7 @@ fn notify_agentboard(app: &AppHandle) {
 pub fn term_write(state: State<TermState>, term_id: String, data: String) -> Result<(), String> {
     let guard = state.sessions.lock().unwrap();
     let session = guard.get(&term_id).ok_or("no shell running")?;
+    PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
     match session.input.try_send(data.into_bytes()) {
         Ok(()) => Ok(()),
         Err(TrySendError::Full(_)) => Err("terminal input backed up (shell not reading)".into()),
@@ -962,6 +1056,7 @@ impl From<TermKey> for KeyEvent {
 pub fn term_key(state: State<TermState>, term_id: String, event: TermKey) -> Result<(), String> {
     let guard = state.sessions.lock().unwrap();
     let session = guard.get(&term_id).ok_or("no shell running")?;
+    PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
     let _ = session.vt.send(VtInput::Key(event.into()));
     Ok(())
 }
@@ -995,6 +1090,7 @@ pub async fn term_paste(
             let state = app.state::<TermState>();
             let guard = state.sessions.lock().unwrap();
             let session = guard.get(&term_id).ok_or("no shell running")?;
+            PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
             if !session.vt.send(VtInput::Paste {
                 text,
                 force: force.unwrap_or(false),
@@ -1047,6 +1143,7 @@ pub async fn term_paste_clipboard(
             let state = app.state::<TermState>();
             let guard = state.sessions.lock().unwrap();
             let session = guard.get(&term_id).ok_or("no shell running")?;
+            PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
             if !session.vt.send(VtInput::Paste {
                 text: text.clone(),
                 force: false,

@@ -88,7 +88,26 @@ follows is a cross-cutting rule that spans multiple files.
 - **Every `StatePayload` leaving the app must pass through
   `stamp_pty_state`** (`agentboard.rs`). The Tauri-free engine can't see
   PTYs, so a new command that builds/returns a `StatePayload` without this
-  stamp silently reports stale `live`/`shellKind`/needs-you counts.
+  stamp silently reports stale `live`/`shellKind`/needs-you counts — and,
+  since the PTY-status cutover, a stale agent *status* too.
+- **Agent status is PTY-first; `claude agents` is only a fallback.**
+  `stamp_pty_state` folds `tt_agentboard::pty_status::resolve_status` over
+  the engine's verdict, because that verdict comes from a `claude agents
+  --all --json` snapshot cached for 60s and nothing else could contradict
+  it. The terminal can: output in the last 1.5s proves the agent is working,
+  and 20s of silence proves it isn't (Claude Code repaints a live elapsed
+  counter throughout a turn — measured max gap 0.27s). Both directions are
+  load-bearing and were fixing observed bugs — a stale `waiting` badge on a
+  visibly running pane, and a finished agent flapping `busy`/`complete` as
+  attribution came and went, which reset its `needs_since_ms` every few
+  seconds so the waiting-age never counted up.
+  The signals come from `PtyActivity` in `terminal.rs`, stamped on the vt
+  sink's `Frame` (output) and `Notify`/`Bell` (Claude Code's `OSC 777`
+  attention notification, which is *the* fastest evidence of a blocked
+  agent and used to be spent on a toast). **Every path that writes to a PTY
+  on the user's behalf must stamp `input_at_ms`** — that is what marks an
+  attention notification answered; miss it and the session stays badged
+  after the user has replied.
 - **PTY replacement is generation-checked** (`terminal.rs`), so a stale EOF
   from a killed/replaced session can never close its successor. Treat
   `TermState`'s lock as map-surgery-only — don't hold it across anything

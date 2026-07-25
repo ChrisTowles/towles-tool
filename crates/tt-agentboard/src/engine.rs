@@ -183,9 +183,18 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
     // TT_SESSION_ID and enriched with task name + status from the
     // transcript the process has open. Keyed by session id; consumed only
     // for sessions the tracker left idle. First live process per id wins.
+    //
+    // Skipped entirely for a session the CLI already accounted for: the
+    // supplement is consumed only where `pick_state` came back empty
+    // (`bridge::build_folder`), and a CLI-reported agent whose pid resolved
+    // to this session is exactly the case where it won't be. Enriching it
+    // anyway meant a 128 KiB head + 128 KiB tail read and two JSON parses
+    // per agent per payload rebuild — every ~2s, plus every fs-notify wake —
+    // for a value thrown away on the next line.
+    let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
     let mut session_agents: HashMap<String, AgentEvent> = HashMap::new();
     for proc in crate::procenv::scan_session_agents(scope) {
-        if session_agents.contains_key(&proc.session_id) {
+        if session_agents.contains_key(&proc.session_id) || cli_covered.contains(&proc.session_id) {
             continue;
         }
         let (thread_name, status) = match &proc.transcript {
