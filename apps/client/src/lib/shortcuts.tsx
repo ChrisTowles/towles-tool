@@ -154,17 +154,23 @@ export const SHORTCUTS = defineShortcuts([
   {
     id: "ab-remove-task",
     scope: "agentboard",
-    keys: "mod+shift+backspace",
+    keys: "mod+shift+delete",
     description: "Delete the focused worktree (confirms first)",
     when: "a worktree is focused",
     allowInEditable: true,
   },
   {
+    // One id, both dialogs in the delete flow: the confirm, and — when the
+    // guards refuse — the blocked dialog's force. The registry dispatches the
+    // first matching handler and stops, so a second binding on the same chord
+    // would simply never fire; the agentboard handler picks which dialog is
+    // open instead. Deliberately the same mod+shift the delete itself uses:
+    // one chord held down, Delete then Enter (then Enter again).
     id: "ab-confirm-close-worktree",
     scope: "agentboard",
-    keys: "mod+enter",
-    description: "Confirm the close-task/delete-worktree dialog",
-    when: "the close-worktree dialog is open",
+    keys: "mod+shift+enter",
+    description: "Confirm the delete-worktree dialog — again to delete anyway if it's blocked",
+    when: "a delete-worktree dialog is open",
     hideInHelp: true,
   },
   {
@@ -307,9 +313,15 @@ export const SHORTCUTS = defineShortcuts([
 /** True on macOS — chooses ⌘ vs Ctrl for the modifier key across the app. */
 export const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
 
-/** Keycap symbols for multi-char `KeyboardEvent.key` names that would
- * otherwise render as raw lowercase words in the help overlay. */
-const KEYCAP_LABELS: Record<string, string> = { backspace: "⌫" };
+/** Keycaps for multi-char `KeyboardEvent.key` names that would otherwise render
+ * as raw lowercase words in the help overlay. Symbols only where the glyph is
+ * reliably in the UI font: ⌦ (U+2326) is not, and rendered as tofu in the
+ * shortcut-coach toast, so Delete/Enter spell themselves out. */
+const KEYCAP_LABELS: Record<string, string> = {
+  backspace: "⌫",
+  delete: "Del",
+  enter: "Enter",
+};
 
 /** Per-platform keycap tokens for a shortcut id: ["⌘","⇧","W"] on mac,
  * ["Ctrl","Shift","W"] elsewhere. Feed to <Kbd> or join for a title. */
