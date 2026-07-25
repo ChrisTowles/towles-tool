@@ -794,7 +794,6 @@ export function AgentboardScreen() {
             imagePaths: [],
             issues: [],
             worktree: true,
-            dynamic: req.dynamic,
             launchClaude: true,
             taskId: req.taskId,
           },

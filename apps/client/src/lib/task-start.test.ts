@@ -20,7 +20,6 @@ function payload(over: Partial<TaskStartPayload> = {}): TaskStartPayload {
     branch: "fix/thing",
     base: null,
     prompt: "Do the thing.",
-    dynamic: false,
     ...over,
   };
 }
@@ -67,7 +66,7 @@ describe("startTaskNav", () => {
   ];
 
   it("carries the task id, branch and prompt through to the request", () => {
-    const nav = startTaskNav(payload({ dynamic: true, base: "develop" }), repos);
+    const nav = startTaskNav(payload({ base: "develop" }), repos);
     expect(nav).toMatchObject({
       kind: "start-task",
       repoDir: "/code/p/tt-rs",
@@ -76,7 +75,6 @@ describe("startTaskNav", () => {
       goal: "Do the thing.",
       branch: "fix/thing",
       base: "develop",
-      dynamic: true,
     });
   });
 
