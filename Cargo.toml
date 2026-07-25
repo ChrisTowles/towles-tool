@@ -128,3 +128,30 @@ debug = false
 # not in the facade crate.
 [profile.dev.package."*"]
 opt-level = 3
+
+# CI-only profile: `dev` without the all-dependencies `opt-level = 3` above.
+#
+# That override exists so `npm run dev` renders the Bevy pane at a usable
+# framerate. CI never runs the renderer — it lints and unit-tests — so there it
+# is pure compile cost, and it lands entirely on the two *codegen* steps rather
+# than the metadata-only clippy ones. Measured on the one `rust-app` run that
+# completed (49m total): `test (tt-app)` 19m53s and `test (native pane)` 14m58s,
+# against `clippy (tt-app)` 9m19s and `clippy (native pane)` 5m04s.
+#
+# The libghostty overrides are restated rather than left to `inherits`, so this
+# profile does not depend on whether Cargo propagates package overrides into a
+# derived profile: a Debug-mode zig parser is ~1000x slower and would quietly
+# make tt-vt's tests crawl (see crates/tt-vt/CLAUDE.md).
+[profile.ci]
+inherits = "dev"
+
+[profile.ci.package."*"]
+opt-level = 0
+
+[profile.ci.package.libghostty-vt-sys]
+opt-level = 3
+debug = false
+
+[profile.ci.package.libghostty-vt]
+opt-level = 3
+debug = false
