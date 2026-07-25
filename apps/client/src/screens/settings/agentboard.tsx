@@ -4,6 +4,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -40,13 +47,19 @@ import { uiAction } from "@/lib/ui-action";
 import { invoke } from "@/lib/tauri";
 import { matchesFilter } from "@/lib/settings-filter";
 import { NotInTauri } from "@/lib/errors";
-import type { UserSettings } from "@/lib/settings";
+import {
+  DEFAULT_NOTIFY_THRESHOLD,
+  NOTIFY_LEVELS,
+  type NotifyLevel,
+  type UserSettings,
+} from "@/lib/settings";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { cn } from "@/lib/utils";
 import { PromptImproversEditor } from "./collectors";
 import {
   CadenceRow,
   DEFAULT_COMPACT_RECOMMEND_PERCENT,
+  SettingRow,
   ToggleRow,
   type FilterRow,
   type FilterSection,
@@ -108,85 +121,53 @@ export function agentboardSections(
         ),
       },
       {
-        label: "Needs-you notifications",
-        keywords: ["notification", "desktop", "needs you", "alert"],
+        label: "Desktop notifications",
+        keywords: [
+          "notification",
+          "desktop",
+          "alert",
+          "needs you",
+          "meeting",
+          "pr",
+          "review",
+          "ci",
+          "checks",
+          "collector",
+        ],
         node: (
           <ToggleRow
-            label="Needs-you notifications"
-            description="Desktop notification when an agent session flips to needs-you while the app is unfocused. Status only — act in the session's terminal."
-            checked={settings.agentboard?.notifyNeedsYou ?? true}
+            label="Desktop notifications"
+            description="Fire desktop notifications for meetings, agents needing you, PR/CI activity, and collector health. Status only — act in the session's terminal."
+            checked={settings.agentboard?.notify ?? true}
             onCheckedChange={(v) =>
               update((s) => ({
                 ...s,
-                agentboard: { ...s.agentboard, notifyNeedsYou: v },
+                agentboard: { ...s.agentboard, notify: v },
               }))
             }
           />
         ),
       },
       {
-        label: "Meeting-start notifications",
-        keywords: ["notification", "desktop", "meeting", "countdown", "alert"],
+        label: "Notification threshold",
+        keywords: [
+          "notification",
+          "threshold",
+          "urgency",
+          "level",
+          "important",
+          "urgent",
+          "routine",
+          "alert",
+        ],
         node: (
-          <ToggleRow
-            label="Meeting-start notifications"
-            description="Desktop notification when the next meeting's countdown reaches zero, while the app is unfocused."
-            checked={settings.agentboard?.notifyMeetingStart ?? true}
-            onCheckedChange={(v) =>
+          <NotifyThresholdRow
+            disabled={!(settings.agentboard?.notify ?? true)}
+            value={settings.agentboard?.notifyThreshold ?? DEFAULT_NOTIFY_THRESHOLD}
+            onValue={(v) =>
               update((s) => ({
                 ...s,
-                agentboard: { ...s.agentboard, notifyMeetingStart: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
-        label: "Review-requested notifications",
-        keywords: ["notification", "desktop", "pr", "review", "alert"],
-        node: (
-          <ToggleRow
-            label="Review-requested notifications"
-            description="Desktop notification when a PR newly needs your review, while the app is unfocused."
-            checked={settings.agentboard?.notifyReviewRequested ?? true}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, notifyReviewRequested: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
-        label: "CI-failing notifications",
-        keywords: ["notification", "desktop", "pr", "ci", "checks", "failing", "alert"],
-        node: (
-          <ToggleRow
-            label="CI-failing notifications"
-            description="Desktop notification when one of your PRs' checks flip to failing, while the app is unfocused."
-            checked={settings.agentboard?.notifyChecksFailed ?? true}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, notifyChecksFailed: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
-        label: "Stale-collector notifications",
-        keywords: ["notification", "desktop", "collector", "stale", "health", "alert"],
-        node: (
-          <ToggleRow
-            label="Stale-collector notifications"
-            description="Desktop notification when a collector stops refreshing or keeps failing (expired gh auth, revoked Slack token)."
-            checked={settings.agentboard?.notifyStaleCollector ?? true}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, notifyStaleCollector: v },
+                agentboard: { ...s.agentboard, notifyThreshold: v },
               }))
             }
           />
@@ -278,6 +259,40 @@ export function agentboardSections(
     );
   }
   return [{ rows }];
+}
+
+/**
+ * Urgency threshold for desktop notifications: the least urgent level still
+ * allowed through. Disabled (but still shown, so the choice stays discoverable)
+ * while the master switch is off. Each option names the kinds it lets through —
+ * the kind→level mapping itself lives in Rust (`tt_config::NotifyKind::level`).
+ */
+function NotifyThresholdRow({
+  value,
+  disabled,
+  onValue,
+}: {
+  value: NotifyLevel;
+  disabled: boolean;
+  onValue: (v: NotifyLevel) => void;
+}) {
+  const current = NOTIFY_LEVELS.find((l) => l.value === value) ?? NOTIFY_LEVELS[0];
+  return (
+    <SettingRow label="Notification threshold" description={current.description}>
+      <Select value={value} disabled={disabled} onValueChange={(v) => onValue(v as NotifyLevel)}>
+        <SelectTrigger className="w-44" aria-label="Notification threshold">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {NOTIFY_LEVELS.map((level) => (
+            <SelectItem key={level.value} value={level.value}>
+              {level.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </SettingRow>
+  );
 }
 
 /**

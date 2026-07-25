@@ -92,16 +92,19 @@ const CollectorsSettingsSchema = z
   })
   .passthrough();
 
+/** Urgency levels, least → most urgent — mirrors Rust's `tt_config::NotifyLevel`. */
+export const NotifyLevelSchema = z.enum(["routine", "important", "urgent"]);
+
 /** `UserSettings["agentboard"]` is a TS-owned, partly-typed block that already
  * carries a `Record<string, unknown>` passthrough in its TS type — `.catchall`
  * keeps every key not listed here rather than requiring an exhaustive list. */
 const AgentboardBlockSchema = z
   .object({
-    notifyNeedsYou: z.boolean().optional(),
-    notifyMeetingStart: z.boolean().optional(),
-    notifyReviewRequested: z.boolean().optional(),
-    notifyChecksFailed: z.boolean().optional(),
-    notifyStaleCollector: z.boolean().optional(),
+    notify: z.boolean().optional(),
+    // `.catch` mirrors the Rust reader's tolerance: an unrecognized level (a
+    // newer build's, a hand-edit) reads as unset — the default — instead of
+    // failing the whole settings parse.
+    notifyThreshold: NotifyLevelSchema.optional().catch(undefined),
     compactRecommendPercent: z.number().optional(),
     copyOnSelect: z.boolean().optional(),
     terminalFontSize: z.number().optional(),

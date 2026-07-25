@@ -129,25 +129,25 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_recommend_percent: Option<u8>,
 
-    /// Fire a desktop notification when an agent session flips into
-    /// "needs you" (waiting/errored/finished-unseen). `None` = the built-in
-    /// default (on). Only written once the user changes it, so the shared
-    /// settings file stays clean for the TS CLI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify_needs_you: Option<bool>,
-
-    /// Fire a desktop notification when the next meeting's countdown reaches
-    /// zero (it starts). `None` = the built-in default (on). Only written once
+    /// Desktop notifications master switch — off silences every
+    /// [`NotifyKind`]. `None` = the built-in default (on). Only written once
     /// the user changes it, so the shared settings file stays clean for the TS
     /// CLI.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify_meeting_start: Option<bool>,
+    pub notify: Option<bool>,
 
-    /// Fire a desktop notification when a PR newly enters the review-requested
-    /// set. `None` = the built-in default (on). Only written once the user
-    /// changes it, so the shared settings file stays clean for the TS CLI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify_review_requested: Option<bool>,
+    /// Least-urgent [`NotifyLevel`] still allowed through while [`notify`] is
+    /// on: a kind notifies when its own level is at or above this. `None` = the
+    /// built-in default ([`DEFAULT_NOTIFY_THRESHOLD`], i.e. everything). An
+    /// unrecognized value (a newer build's level, a hand-edit) reads as `None`
+    /// rather than failing the whole settings file — same tolerance rule as
+    /// every other key in this shared file.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient_notify_level",
+        default
+    )]
+    pub notify_threshold: Option<NotifyLevel>,
 
     /// Copy the terminal's active selection to the clipboard as soon as a
     /// selection gesture ends (copy-on-select). `None` = the built-in default
@@ -162,20 +162,6 @@ pub struct AgentboardSettings {
     /// then.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_font_size: Option<u8>,
-
-    /// Fire a desktop notification when a collector silently stops succeeding
-    /// (its last healthy run ages out, or it fails repeatedly — expired `gh`
-    /// auth, a revoked Slack token). `None` = the built-in default (on). Only
-    /// written once the user changes it, so the shared settings file stays clean
-    /// for the TS CLI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify_stale_collector: Option<bool>,
-
-    /// Fire a desktop notification when one of your authored PRs has its CI flip
-    /// into failing. `None` = the built-in default (on). Only written once the
-    /// user changes it, so the shared settings file stays clean for the TS CLI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notify_checks_failed: Option<bool>,
 
     /// Let board-wide action shortcuts (jump to next/prev session needing you,
     /// close/split session, toggle diff/rail) fire even while a terminal has
@@ -203,20 +189,89 @@ pub struct AgentboardSettings {
 /// Built-in default for [`AgentboardSettings::compact_recommend_percent`].
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 
-/// Built-in default for [`AgentboardSettings::notify_needs_you`]: notifications on.
-pub const DEFAULT_NOTIFY_NEEDS_YOU: bool = true;
+/// Built-in default for [`AgentboardSettings::notify`]: notifications on.
+pub const DEFAULT_NOTIFY: bool = true;
 
-/// Built-in default for [`AgentboardSettings::notify_meeting_start`]: on.
-pub const DEFAULT_NOTIFY_MEETING_START: bool = true;
+/// Built-in default for [`AgentboardSettings::notify_threshold`]: the least
+/// urgent level, so an untouched install still gets every notification — what
+/// the five per-kind switches this replaced defaulted to.
+pub const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = NotifyLevel::Routine;
 
-/// Built-in default for [`AgentboardSettings::notify_review_requested`]: on.
-pub const DEFAULT_NOTIFY_REVIEW_REQUESTED: bool = true;
+/// How much a notification is worth interrupting for. Ordered: `Routine <
+/// Important < Urgent`, which is the whole point — [`AgentboardSettings::
+/// notify_threshold`] compares against it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum NotifyLevel {
+    /// Worth knowing, not worth interrupting for: it'll still be true later.
+    Routine,
+    /// Your own work broke and you'd want to hear now.
+    Important,
+    /// Time-boxed or actively blocking: late is the same as never.
+    Urgent,
+}
 
-/// Built-in default for [`AgentboardSettings::notify_stale_collector`]: on.
-pub const DEFAULT_NOTIFY_STALE_COLLECTOR: bool = true;
+impl NotifyLevel {
+    /// Every level, least → most urgent — the order a threshold picker lists.
+    pub const ALL: [NotifyLevel; 3] = [
+        NotifyLevel::Routine,
+        NotifyLevel::Important,
+        NotifyLevel::Urgent,
+    ];
+}
 
-/// Built-in default for [`AgentboardSettings::notify_checks_failed`]: on.
-pub const DEFAULT_NOTIFY_CHECKS_FAILED: bool = true;
+/// The kinds of desktop notification the app fires. Each carries a fixed
+/// [`NotifyLevel`]; the user picks a threshold, not a per-kind switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotifyKind {
+    /// An agent session flipped to needs-you (waiting/errored/finished-unseen).
+    NeedsYou,
+    /// The next meeting's countdown reached zero.
+    MeetingStart,
+    /// One of your authored PRs had its CI flip into failing.
+    ChecksFailed,
+    /// A PR newly entered the review-requested set.
+    ReviewRequested,
+    /// A collector stopped succeeding (expired `gh` auth, revoked Slack token).
+    StaleCollector,
+}
+
+impl NotifyKind {
+    /// This kind's fixed urgency. Meetings and blocked agents are urgent
+    /// because acting late is worthless; your own broken CI is important;
+    /// someone else's review request and a sick collector keep until you look.
+    pub fn level(self) -> NotifyLevel {
+        match self {
+            NotifyKind::NeedsYou | NotifyKind::MeetingStart => NotifyLevel::Urgent,
+            NotifyKind::ChecksFailed => NotifyLevel::Important,
+            NotifyKind::ReviewRequested | NotifyKind::StaleCollector => NotifyLevel::Routine,
+        }
+    }
+}
+
+impl AgentboardSettings {
+    /// Whether `kind` may fire a desktop notification: the master switch is on
+    /// and the kind is at least as urgent as the threshold. The one place that
+    /// decision is made — callers gate on this, never on the raw fields.
+    pub fn notifies(&self, kind: NotifyKind) -> bool {
+        self.notify.unwrap_or(DEFAULT_NOTIFY)
+            && kind.level() >= self.notify_threshold.unwrap_or(DEFAULT_NOTIFY_THRESHOLD)
+    }
+}
+
+/// Read [`AgentboardSettings::notify_threshold`], mapping anything unrecognized
+/// to `None` (the default) instead of failing the whole settings file — this
+/// file is shared with the TS CLI and hand-edited.
+fn lenient_notify_level<'de, D>(de: D) -> std::result::Result<Option<NotifyLevel>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<serde_json::Value>::deserialize(de)
+        .ok()
+        .flatten()
+        .and_then(|v| serde_json::from_value(v).ok()))
+}
 
 /// A **prompt improver**: one button in the Agentboard new-task form that
 /// rewrites the goal you typed before the task starts (Direct / Plan /
@@ -1389,14 +1444,68 @@ mod tests {
     }
 
     #[test]
-    fn notify_needs_you_defaults_unset_and_on() {
+    fn notify_defaults_unset_and_everything_on() {
         let s = UserSettings::default();
         // Unset until the user changes it, so the shared file stays clean…
-        assert!(s.agentboard.notify_needs_you.is_none());
+        assert!(s.agentboard.notify.is_none());
+        assert!(s.agentboard.notify_threshold.is_none());
         let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("notifyNeedsYou"));
-        // …and unset means ON.
-        assert!(s.agentboard.notify_needs_you.unwrap_or(DEFAULT_NOTIFY_NEEDS_YOU));
+        assert!(!json.contains("notify"));
+        // …and unset means every kind fires.
+        assert!(
+            [
+                NotifyKind::NeedsYou,
+                NotifyKind::MeetingStart,
+                NotifyKind::ChecksFailed,
+                NotifyKind::ReviewRequested,
+                NotifyKind::StaleCollector,
+            ]
+            .into_iter()
+            .all(|k| s.agentboard.notifies(k))
+        );
+    }
+
+    #[test]
+    fn notify_threshold_filters_by_level() {
+        let mut ab = AgentboardSettings {
+            notify_threshold: Some(NotifyLevel::Important),
+            ..Default::default()
+        };
+        assert!(ab.notifies(NotifyKind::MeetingStart), "urgent clears an important threshold");
+        assert!(ab.notifies(NotifyKind::ChecksFailed), "at the threshold still fires");
+        assert!(!ab.notifies(NotifyKind::ReviewRequested), "routine is below it");
+        assert!(!ab.notifies(NotifyKind::StaleCollector));
+
+        ab.notify_threshold = Some(NotifyLevel::Urgent);
+        assert!(ab.notifies(NotifyKind::NeedsYou));
+        assert!(!ab.notifies(NotifyKind::ChecksFailed));
+    }
+
+    #[test]
+    fn notify_off_silences_even_the_most_urgent_kind() {
+        let ab = AgentboardSettings {
+            notify: Some(false),
+            notify_threshold: Some(NotifyLevel::Routine),
+            ..Default::default()
+        };
+        assert!(!ab.notifies(NotifyKind::MeetingStart));
+        assert!(!ab.notifies(NotifyKind::NeedsYou));
+    }
+
+    #[test]
+    fn notify_threshold_round_trips_camel_case_and_tolerates_junk() {
+        let json = r#"{"agentboard":{"notify":false,"notifyThreshold":"important"}}"#;
+        let s: UserSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(s.agentboard.notify, Some(false));
+        assert_eq!(s.agentboard.notify_threshold, Some(NotifyLevel::Important));
+        assert!(serde_json::to_string(&s).unwrap().contains("\"notifyThreshold\":\"important\""));
+
+        // A newer build's level (or a hand-edit typo) falls back to the default
+        // rather than failing the whole shared settings file.
+        let odd = r#"{"agentboard":{"notifyThreshold":"apocalyptic"}}"#;
+        let s: UserSettings = serde_json::from_str(odd).unwrap();
+        assert!(s.agentboard.notify_threshold.is_none());
+        assert!(s.agentboard.notifies(NotifyKind::StaleCollector));
     }
 
     #[test]
