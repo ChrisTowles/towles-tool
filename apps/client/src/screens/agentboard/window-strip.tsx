@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The main area's window strip: one chip per window of the active folder,
- * plus "+ window" / "+ session" and the selected session's Close.
+ * plus "+ window" / "+ session" / "✦ chat" and the selected session's Close.
  *
  * A window may only ever hold panes from the one folder it belongs to, so
  * switching folders switches the whole strip, not just which panes show.
@@ -20,6 +20,8 @@ export function WindowStrip(props: {
   onFocusWindow: (windowId: string) => void;
   onNewWindow: () => void;
   onNewSession: () => void;
+  /** Opens the folder's rendered-agent (`chat`) pane in the active window. */
+  onNewChat: () => void;
   onCloseSession: () => void;
 }) {
   const {
@@ -30,6 +32,7 @@ export function WindowStrip(props: {
     onFocusWindow,
     onNewWindow,
     onNewSession,
+    onNewChat,
     onCloseSession,
   } = props;
   const [renamingWin, setRenamingWin] = useState<string | null>(null);
@@ -135,6 +138,21 @@ export function WindowStrip(props: {
         title={`New session in the focused folder (${shortcutHint("ab-new-session")} or ${shortcutHint("ab-new-terminal-right")})`}
       >
         <Plus className="size-3" /> session
+      </button>
+      {/* Sits beside "+ session" because both answer "add something to this
+          window" — the rail's folder-header chip is the same action, but
+          hover-gated and easy to miss. `✦` rather than `+` since this opens
+          the one pane kind that is an agent, matching the lens chip. */}
+      <button
+        type="button"
+        onClick={onNewChat}
+        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-violet-500 hover:bg-accent/50"
+        title="New Claude chat in the focused folder — a session rendered as structured turns"
+      >
+        <span aria-hidden="true" className="font-mono">
+          ✦
+        </span>{" "}
+        chat
       </button>
       {hasSelection && (
         <button

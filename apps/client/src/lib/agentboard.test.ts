@@ -32,6 +32,10 @@ import {
   folderHoldsNoWork,
   folderSafeToDelete,
   hydrateWins,
+  isAgentPane,
+  previewPaneId,
+  agentPaneDir,
+  agentPaneId,
   isDiffPane,
   isExitPane,
   isFilesPane,
@@ -682,6 +686,27 @@ describe("folder pane ids", () => {
     expect(folderPaneDir(diff)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir(files)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir("s00deadbeef00cafe")).toBeNull();
+  });
+
+  it("gives an agent pane its own folder-scoped id, first-class in persistence", () => {
+    const dir = "/home/me/code/p/proj";
+    const agentPane = agentPaneId(dir);
+    expect(isAgentPane(agentPane)).toBe(true);
+    expect(agentPaneDir(agentPane)).toBe(dir);
+    // One rendered agent per folder: the id IS the backend session key, so two
+    // panes on one folder would share a single `claude` process.
+    expect(agentPaneId(dir)).toBe(agentPane);
+    // Distinct from every other kind, in both directions.
+    for (const other of [diffPaneId(dir), filesPaneId(dir), previewPaneId(dir)]) {
+      expect(other).not.toBe(agentPane);
+      expect(isAgentPane(other)).toBe(false);
+    }
+    expect(isDiffPane(agentPane)).toBe(false);
+    expect(isFilesPane(agentPane)).toBe(false);
+    // Being in `folderPaneDir` is what makes it survive layout restore.
+    expect(folderPaneDir(agentPane)).toBe(dir);
+    expect(isAgentPane("s00deadbeef00cafe")).toBe(false);
+    expect(agentPaneDir("s00deadbeef00cafe")).toBeNull();
   });
 });
 

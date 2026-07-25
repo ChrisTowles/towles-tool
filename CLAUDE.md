@@ -488,6 +488,44 @@ Cargo workspace + npm workspace (`apps/client` only):
     terminals. Needs zig 0.15.x on PATH to build; see
     [`crates/tt-vt/CLAUDE.md`](crates/tt-vt/CLAUDE.md) for the Debug-mode
     parser perf trap and other gotchas.
+  - `tt-agent` — drives a local Claude Code session over its **`stream-json`**
+    protocol and turns it into a structured event feed the app renders as UI —
+    an **Agentboard pane** (`~agent:<dir>`, one per folder, beside that
+    folder's terminals) rather than PTY scrollback. This is the same
+    mechanism Anthropic's own GUIs use — the VS Code extension and the desktop
+    app both spawn the CLI with `--input-format stream-json --output-format
+    stream-json --verbose` via `@anthropic-ai/claude-agent-sdk` and render the
+    message stream — so it is a supported interface, not a reverse-engineered
+    one. **We don't use the Node SDK**: the wire format is JSONL over pipes,
+    and the SDK's value is its TypeScript types, which `protocol.rs` replaces
+    with the handful of shapes we actually render. Embedding the extension's own
+    webview bundle was evaluated and rejected — it is licensed all-rights-
+    reserved, and its host protocol is private and re-minified every release.
+    The parser **deliberately models only what it renders**: everything else
+    becomes `AgentEvent::Other` carrying its discriminant, so a CLI release
+    that adds message types can't break the feed. `AgentEvent::Exited` is the
+    one variant synthesized by the host rather than read off the wire, so the
+    UI has a single ordered feed instead of a second channel to interleave.
+    Transport lives in `crates-tauri/tt-app/src/agent.rs` (`agent://event`),
+    which inherits the terminal host's lock discipline for the same reason.
+    **The pane id is the backend session key**, and it is folder-scoped, so a
+    folder has exactly one rendered agent — two panes on one folder would share
+    a single `claude` process and interleave their turns.
+    The transcript renders assistant text through the shared `Markdown`
+    component (`apps/client/src/components/markdown.tsx` — GFM + Monaco-
+    tokenized fences, also the files pane's preview), and **echoes the user's
+    own turn locally**: the CLI does not replay user messages without
+    `--replay-user-messages`, and the only `user` messages on the wire are tool
+    results, so without the echo a sent prompt vanishes.
+    **Slash commands need no special transport** — `/context`, `/tt:plan` and
+    the rest are ordinary message content, and the CLI resolves them. What the
+    pane adds is *discovery*: `system/init` lists ~90 command names (names
+    only), `system/commands_changed` re-sends them with descriptions and
+    argument hints, and both fold into one `SlashCommand` list behind the
+    composer's `/` menu. The menu's logic is pure and unit-tested
+    (`slashQuery`/`matchCommands`/`slashMenuKey` in `lib/agent.ts`) rather than
+    living in the component, because a synthetic-keydown test of a composer
+    proves nothing about the real platform.
   - `tt-agentboard` — agentboard watchers/engine: repo list, session tracking,
     needs-you synthesis (consumed by the app shell). **Agent status is
     PTY-first**: `pty_status` folds what the app's terminal directly observes
