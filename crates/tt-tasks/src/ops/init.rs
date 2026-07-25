@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::render::{RenderSummary, init_template_sidecar, render_task_env, template_sidecar_path};
-use super::{OpsError, Result, TaskRoot, git_checkout};
+use super::{OpsError, Result, TaskRoot};
 use crate::layout;
 
 /// The two Claude Code worktree hooks `tt task init` wires so `claude
@@ -52,13 +52,12 @@ pub fn init_repo(sr: &TaskRoot, now_ms: i64) -> Result<InitReport> {
         (init_template_sidecar(sr)?, !existed)
     };
 
-    // Gitignore `.env` only when git says it is definitely not ignored
-    // (check-ignore exits 1); an errored probe (128 — odd repo state) must
-    // not append blindly.
+    // Gitignore `.env` only when the repo's ignore rules definitely do not
+    // already cover it. An unreadable repository answers `false` (see
+    // `Repo::is_ignored`), which appends an entry that was possibly redundant
+    // — the harmless direction, unlike silently leaving `.env` committable.
     let mut gitignore_added = false;
-    if let Ok(out) = git_checkout(&sr.checkout, &["check-ignore", "-q", ".env"])
-        && out.exit_code == 1
-    {
+    if crate::ops::repo_at(&sr.checkout).is_ok_and(|repo| !repo.is_ignored(".env")) {
         let gitignore = sr.checkout.join(".gitignore");
         let mut current = fs::read_to_string(&gitignore).unwrap_or_default();
         if !current.is_empty() && !current.ends_with('\n') {

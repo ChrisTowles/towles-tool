@@ -22,6 +22,7 @@ tt-config = { workspace = true }
 tt-exec = { workspace = true }
 # For the one shared branch-name slug rule (`branch_name::slug`), so the
 # suggestion fallback can't drift from the issue-branch convention.
+gix = { workspace = true }
 tt-git = { workspace = true }
 
 [dev-dependencies]

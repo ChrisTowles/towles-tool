@@ -11,6 +11,8 @@
 //   - crates/tt-telemetry/build.rs (build-time git probe, pre-telemetry)
 //   - any `tests/` integration-test directory
 //   - any `#[cfg(test)]`-gated code (unit tests)
+//   - a whole module declared `#[cfg(test)] mod foo;` — the gate is on the
+//     declaration, so the module's own file has nothing in it to detect
 //   - the three audited detached-spawn prod sites, which each call
 //     `record_detached_spawn` before the raw spawn.
 //
@@ -79,6 +81,26 @@ function testGatedLines(lines) {
   return gated;
 }
 
+// Files that exist only for tests because their *declaration* is gated:
+// `#[cfg(test)] mod testrepo;` compiles `testrepo.rs` into test builds alone.
+// The gate lives in the declaring file, so scanning the module's own file for
+// `#[cfg(test)]` finds nothing — it has to be resolved from the declaration.
+/** @param {string[]} paths */
+function testOnlyModuleFiles(paths) {
+  const gatedModules = new Set();
+  const declRe = /#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/g;
+  for (const path of paths) {
+    const text = readFileSync(path, "utf8");
+    const dir = path.slice(0, path.lastIndexOf("/"));
+    for (const m of text.matchAll(declRe)) {
+      // A `mod foo;` resolves to `foo.rs` or `foo/mod.rs` beside the declarer.
+      gatedModules.add(`${dir}/${m[1]}.rs`);
+      gatedModules.add(`${dir}/${m[1]}/mod.rs`);
+    }
+  }
+  return gatedModules;
+}
+
 function rsFiles() {
   const out = execFileSync(
     "git",
@@ -89,8 +111,10 @@ function rsFiles() {
 }
 
 const violations = [];
-for (const path of rsFiles()) {
-  if (isAllowedPath(path)) continue;
+const paths = rsFiles();
+const testOnlyFiles = testOnlyModuleFiles(paths);
+for (const path of paths) {
+  if (isAllowedPath(path) || testOnlyFiles.has(path)) continue;
   const lines = readFileSync(path, "utf8").split("\n");
   const gated = testGatedLines(lines);
   for (let i = 0; i < lines.length; i++) {

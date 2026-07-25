@@ -3,9 +3,9 @@
 //! issue must never land in a task that is holding someone's in-progress
 //! work, so the checks hard-fail with no `--force` escape hatch.
 //!
-//! Pure functions only (this crate's rule): the caller gathers the git
-//! output (`remote get-url`, `status --porcelain`, `stash list`) in the target
-//! task's directory and hands the raw text here for the decision.
+//! Pure functions only: the caller reads the target task's repository (its
+//! origin URL, changed-path count, stash count — see `tt_git::repo`) and hands
+//! the facts here for the decision.
 
 use thiserror::Error;
 
@@ -78,17 +78,6 @@ fn slug_from_normalized(normalized: &str) -> Option<String> {
     Some(format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1]))
 }
 
-/// Count entries in `git status --porcelain` output — each non-blank line is
-/// one changed tracked path or untracked path.
-fn dirty_entry_count(porcelain: &str) -> usize {
-    porcelain.lines().filter(|l| !l.trim().is_empty()).count()
-}
-
-/// Count entries in `git stash list` output.
-fn stash_count(stash_list: &str) -> usize {
-    stash_list.lines().filter(|l| !l.trim().is_empty()).count()
-}
-
 /// Extract the GitHub `owner/name` slug from a git remote URL. Reuses
 /// [`normalize_remote_url`] to fold the ssh/https/scp forms, then keeps the last
 /// two path segments (`github.com/owner/name` → `owner/name`), lowercased.
@@ -119,14 +108,12 @@ pub fn repo_slug_from_remote_preserving_case(url: &str) -> Option<String> {
 /// The in-progress-work half of the guard, shared by both entry points: reject
 /// a dirty working tree first, then a non-empty stash. Order matters — the
 /// failures surface most-to-least obvious.
-fn check_clean(status_porcelain: &str, stash_list: &str) -> Result<(), TaskBlocked> {
-    let entries = dirty_entry_count(status_porcelain);
-    if entries > 0 {
-        return Err(TaskBlocked::DirtyTree { entries });
+fn check_clean(dirty_entries: usize, stashes: usize) -> Result<(), TaskBlocked> {
+    if dirty_entries > 0 {
+        return Err(TaskBlocked::DirtyTree { entries: dirty_entries });
     }
-    let count = stash_count(stash_list);
-    if count > 0 {
-        return Err(TaskBlocked::StashNotEmpty { count });
+    if stashes > 0 {
+        return Err(TaskBlocked::StashNotEmpty { count: stashes });
     }
     Ok(())
 }
@@ -139,15 +126,15 @@ fn check_clean(status_porcelain: &str, stash_list: &str) -> Result<(), TaskBlock
 pub fn validate_task_for_repo(
     expected_repo: &str,
     task_remote: &str,
-    status_porcelain: &str,
-    stash_list: &str,
+    dirty_entries: usize,
+    stashes: usize,
 ) -> Result<(), TaskBlocked> {
     let expected = expected_repo.trim().to_lowercase();
     let found = repo_slug_from_remote(task_remote).unwrap_or_default();
     if expected != found {
         return Err(TaskBlocked::RemoteMismatch { expected, found });
     }
-    check_clean(status_porcelain, stash_list)
+    check_clean(dirty_entries, stashes)
 }
 
 #[cfg(test)]
@@ -220,15 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn counts_dirty_entries_and_stashes() {
-        assert_eq!(dirty_entry_count(""), 0);
-        assert_eq!(dirty_entry_count("\n\n"), 0);
-        assert_eq!(dirty_entry_count(" M src/main.rs\n?? new.txt\n"), 2);
-        assert_eq!(stash_count(""), 0);
-        assert_eq!(stash_count("stash@{0}: WIP on main: abc123 msg\n"), 1);
-    }
-
-    #[test]
     fn repo_slug_extracts_owner_name_from_every_form() {
         let forms = [
             "git@github.com:ChrisTowles/towles-tool-rs.git",
@@ -257,8 +235,8 @@ mod tests {
             validate_task_for_repo(
                 "ChrisTowles/towles-tool-rs",
                 "git@github.com:christowles/towles-tool-rs.git",
-                "",
-                "",
+                0,
+                0,
             ),
             Ok(())
         );
@@ -269,8 +247,8 @@ mod tests {
         let err = validate_task_for_repo(
             "ChrisTowles/towles-tool-rs",
             "git@github.com:someone/other-repo.git",
-            "",
-            "",
+            0,
+            0,
         )
         .unwrap_err();
         assert!(matches!(err, TaskBlocked::RemoteMismatch { .. }));
@@ -280,34 +258,19 @@ mod tests {
     fn validate_for_repo_rejects_wrong_repo_before_dirty_checks() {
         // Repo mismatch wins over a dirty tree — the assignment is
         // nonsensical, not merely unsafe.
-        let err = validate_task_for_repo(
-            "u/repo",
-            "git@github.com:other/elsewhere.git",
-            "?? junk.txt\n",
-            "",
-        )
-        .unwrap_err();
+        let err = validate_task_for_repo("u/repo", "git@github.com:other/elsewhere.git", 1, 0)
+            .unwrap_err();
         assert!(matches!(err, TaskBlocked::RemoteMismatch { .. }));
     }
 
     #[test]
     fn validate_for_repo_rejects_dirty_and_stashed_matching_tasks() {
-        let dirty = validate_task_for_repo(
-            "u/repo",
-            "https://github.com/u/repo.git",
-            " M a.rs\n?? b.txt\n",
-            "",
-        )
-        .unwrap_err();
+        let dirty =
+            validate_task_for_repo("u/repo", "https://github.com/u/repo.git", 2, 0).unwrap_err();
         assert_eq!(dirty, TaskBlocked::DirtyTree { entries: 2 });
 
-        let stashed = validate_task_for_repo(
-            "u/repo",
-            "https://github.com/u/repo.git",
-            "",
-            "stash@{0}: WIP on main: abc123 wip\n",
-        )
-        .unwrap_err();
+        let stashed =
+            validate_task_for_repo("u/repo", "https://github.com/u/repo.git", 0, 1).unwrap_err();
         assert_eq!(stashed, TaskBlocked::StashNotEmpty { count: 1 });
         // Error text is user-facing; keep the singular/plural readable.
         assert!(stashed.to_string().contains("1 stash entry"));
