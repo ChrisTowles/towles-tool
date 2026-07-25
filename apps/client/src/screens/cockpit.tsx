@@ -46,7 +46,12 @@ import {
   storeItemDismiss,
   useStoreSnapshot,
 } from "@/lib/data";
-import { cockpitRepos, filterByRepo } from "@/lib/cockpit-filter";
+import {
+  COCKPIT_REPO_FILTER_KEY,
+  cockpitRepos,
+  filterByRepo,
+  loadRepoFilter,
+} from "@/lib/cockpit-filter";
 import { dataRefreshedAt } from "@/lib/collector-health";
 import { useAgentboardState } from "@/lib/agentboard";
 import { useNow, useNowInterval } from "@/lib/now";
@@ -149,7 +154,21 @@ export function CockpitScreen() {
   // gauges stay whole-snapshot totals (the overview); the chips + panels + their
   // note counts move together. A selection that no longer exists (its repo got
   // collected away) falls back to "all" without a stale-state effect.
-  const [repoFilter, setRepoFilter] = useState<string | null>(null);
+  //
+  // The selection survives a relaunch: zoning in on one repo is a stance you
+  // hold for days, not a per-session gesture, so restoring it beats re-picking
+  // the chip on every launch. Persisted in localStorage like the tab state
+  // (frontend-owned UI state), written through on click rather than from an
+  // effect so a rendered fallback never overwrites a real choice.
+  const [repoFilter, setRepoFilter] = useState<string | null>(() =>
+    loadRepoFilter(localStorage.getItem(COCKPIT_REPO_FILTER_KEY)),
+  );
+  function selectRepo(repo: string | null) {
+    uiAction("cockpit.repo_filter", "cockpit", repo ?? "all");
+    setRepoFilter(repo);
+    if (repo === null) localStorage.removeItem(COCKPIT_REPO_FILTER_KEY);
+    else localStorage.setItem(COCKPIT_REPO_FILTER_KEY, repo);
+  }
   // Merged PRs live in the snapshot too (briefly, so a folder's rail chip can
   // turn purple), but Cockpit's PR queue is open work — exclude them. A
   // dismissed item stays hidden until it changes again.
@@ -318,14 +337,14 @@ export function CockpitScreen() {
           <RepoChip
             label="All repos"
             active={activeRepo === null}
-            onClick={() => setRepoFilter(null)}
+            onClick={() => selectRepo(null)}
           />
           {repoList.map((repo) => (
             <RepoChip
               key={repo}
               label={repo}
               active={activeRepo === repo}
-              onClick={() => setRepoFilter((cur) => (cur === repo ? null : repo))}
+              onClick={() => selectRepo(activeRepo === repo ? null : repo)}
             />
           ))}
         </div>

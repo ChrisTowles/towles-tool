@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cockpitRepos, filterByRepo } from "./cockpit-filter";
+import { cockpitRepos, filterByRepo, loadRepoFilter } from "./cockpit-filter";
 
 describe("cockpitRepos", () => {
   it("collects the distinct repos across PRs and issues, sorted", () => {
@@ -10,6 +10,28 @@ describe("cockpitRepos", () => {
 
   it("is empty when nothing is collected", () => {
     expect(cockpitRepos([], [])).toEqual([]);
+  });
+});
+
+describe("loadRepoFilter", () => {
+  it("is 'all repos' on a cold start with nothing stored", () => {
+    expect(loadRepoFilter(null)).toBeNull();
+  });
+
+  it("restores the stored repo", () => {
+    expect(loadRepoFilter("octo/widgets")).toBe("octo/widgets");
+  });
+
+  it("treats a blank value as 'all repos'", () => {
+    expect(loadRepoFilter("")).toBeNull();
+    expect(loadRepoFilter("   ")).toBeNull();
+  });
+
+  it("restores a repo that isn't collected yet — the screen falls back, not the loader", () => {
+    // On a cold start the snapshot hasn't arrived, so validating against the
+    // repo list here would drop every selection.
+    expect(loadRepoFilter("acme/api")).toBe("acme/api");
+    expect(filterByRepo([{ repo: "octo/widgets" }], loadRepoFilter("acme/api"))).toEqual([]);
   });
 });
 
