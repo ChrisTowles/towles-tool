@@ -291,9 +291,18 @@ Cargo workspace + npm workspace (`apps/client` only):
     `crates-tauri/tt-app/src/mcp_http.rs` — read that module's doc before
     touching either half. Tools: `task_list`, `task_status`, `task_create`
     (a #339 board task in a tracked repo's swimlane, same store path as the
-    app's `store_add_task`), `task_start`, `task_delete`, plus the calendar
-    family `calendar_today`, `calendar_next` and the push-model write
-    `calendar_set`.
+    app's `store_add_task`), `task_summary`, `task_start`, `task_delete`, plus
+    the calendar family `calendar_today`, `calendar_next` and the push-model
+    write `calendar_set`.
+    `task_summary` is how a finished agent leaves a record: it writes the
+    wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
+    into a PTY scrollback that dies with the worktree. It is a *separate column
+    from `notes` on purpose* — `notes` is the user's own context and
+    `task_prompt` feeds it into a `task_start` prompt, so a summary folded in
+    there would come back as instructions to the next session. It records only:
+    it never closes the task or touches the worktree, because confirming a task
+    is done is the user's job (the dynamic flow's prompt says the same — see
+    `dynamicFlowPrompt` in `apps/client/src/lib/agentboard.ts`).
     **`task_start` and `task_delete` are the two tools that cannot work from the
     dispatcher alone**, and both enter through the injected `TaskHost`; a
     dispatcher without one refuses rather than half-doing the job. `task_delete`
@@ -532,7 +541,7 @@ plugins ship today:
 - `towles-tool-app` (`packages/app`) — bridges Claude Code to the desktop
   app itself: registers the app's MCP server with a static checked-in
   `.mcp.json` (`{"type":"http","url":"http://127.0.0.1:8787/mcp"}` — board
-  tasks `task_list`/`task_status`/`task_create`/`task_start`/`task_delete` plus the calendar family
+  tasks `task_list`/`task_status`/`task_create`/`task_summary`/`task_start`/`task_delete` plus the calendar family
   `calendar_today`/`calendar_next`/`calendar_set`; the app must be running),
   ships the `towles-tool` skill (the `tt` command reference — journaling
   plus the `tt task` subcommands) and the `task-onboarding` skill (guides

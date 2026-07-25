@@ -1643,6 +1643,29 @@ describe("dynamicFlowPrompt", () => {
   it("never emits a newline — typed into a PTY inside a quoted arg", () => {
     expect(dynamicFlowPrompt("goal", "main")).not.toContain("\n");
   });
+
+  it("pre-announces gh's post-merge worktree error so no session diagnoses it", () => {
+    const prompt = dynamicFlowPrompt("fix", "origin/main");
+    expect(prompt).toContain("Expected and not a failure");
+    expect(prompt).toContain("already being checked out by another worktree");
+  });
+
+  it("forbids self-teardown — the user confirms a task is done", () => {
+    const prompt = dynamicFlowPrompt("fix", "origin/main");
+    expect(prompt).toContain("tt task rm");
+    expect(prompt).toContain("Do not clean up");
+    expect(prompt).toContain("not kill background processes");
+  });
+
+  it("routes the wrap-up to the board card when the task has one", () => {
+    const prompt = dynamicFlowPrompt("fix", "origin/main", 42);
+    expect(prompt).toContain("task_summary with id 42");
+  });
+
+  it("omits the summary step for a task with no board card", () => {
+    const prompt = dynamicFlowPrompt("fix", "origin/main");
+    expect(prompt).not.toContain("task_summary");
+  });
 });
 
 describe("isPasteableImage", () => {

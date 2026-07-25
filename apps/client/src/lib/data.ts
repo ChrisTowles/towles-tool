@@ -161,6 +161,13 @@ export type TaskItem = {
   notes?: string;
   /** The objective the task was created to accomplish, shown on the card under the title. */
   goal?: string;
+  /** What the agent that worked the task reported when it finished, written
+   * through the MCP `task_summary` tool. The card's copy of a wrap-up that
+   * would otherwise die with the worktree's terminal scrollback — it's what
+   * the user reads to confirm the work before tearing the task down. */
+  summary?: string;
+  /** When `summary` was last written. */
+  summaryAt?: number;
   worktree?: TaskWorktree;
   issues: TaskIssueLink[];
   prs: TaskPrLink[];

@@ -198,7 +198,7 @@ impl Handled {
 /// hint (and rebuild the whole tool contract per request to do it); a tool added
 /// to [`Dispatcher::call_tool`] but missed here is one edit away from a stale
 /// board either way, but here the fix is a single obvious list.
-const WRITING_TOOLS: &[&str] = &["task_create", "task_delete", "calendar_set"];
+const WRITING_TOOLS: &[&str] = &["task_create", "task_summary", "task_delete", "calendar_set"];
 
 /// Whether a tool writes to the store — see [`WRITING_TOOLS`].
 pub fn tool_writes(name: &str) -> bool {
@@ -422,6 +422,7 @@ impl Dispatcher {
             "task_list" => self.task_list(),
             "task_status" => self.task_status(args),
             "task_create" => self.task_create(args, now_ms),
+            "task_summary" => self.task_summary(args, now_ms),
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
             "calendar_today" => self.calendar_today(now_ms),
@@ -610,6 +611,37 @@ impl Dispatcher {
             tt_store::Error::TaskNotFound(id) => format!("no task with id {id}"),
             other => format!("could not read task {id}: {other}"),
         })?;
+        Ok(json!({ "task": task }))
+    }
+
+    /// Record what an agent working a task reported when it finished, on the
+    /// task's own row.
+    ///
+    /// This is the durable half of a session's ending: the worktree and its
+    /// terminal scrollback are torn down when the user confirms the task is
+    /// done, so a wrap-up written only into the PTY is gone by the time they
+    /// look. Writing it here puts it on the card, which outlives both.
+    ///
+    /// Deliberately *not* folded into `notes`: notes are the user's own
+    /// context and [`task_prompt`] feeds them into a `task_start` prompt, so a
+    /// summary landing there would come back as instructions to the next
+    /// session.
+    fn task_summary(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
+        let id = args
+            .get("id")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "missing required argument: id".to_string())?;
+        let summary = args
+            .get("summary")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "missing required argument: summary".to_string())?;
+        // Same reasoning as `task_status`: only a genuinely absent row is "no
+        // such task" — a busy db must not read as a vanished one.
+        let task =
+            self.store.set_task_summary(id, summary, now_ms).map_err(|error| match error {
+                tt_store::Error::TaskNotFound(id) => format!("no task with id {id}"),
+                other => format!("could not record the summary for task {id}: {other}"),
+            })?;
         Ok(json!({ "task": task }))
     }
 
@@ -996,6 +1028,18 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "task_summary",
+            "description": "Record what you did on a task, on the task's own card — the last thing to do when the work is finished. Write the wrap-up you would otherwise print into the terminal: what landed (PR number and merge commit), what CI said, decisions worth knowing, and anything still open. The worktree and its terminal scrollback are deleted once the user confirms the task is done; the card is what survives, so this is the record they read afterwards. Replaces any previous summary for the task. Does not close the task or touch its worktree — the user confirms it is done themselves.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
+                    "summary": { "type": "string", "description": "The wrap-up, as plain text or markdown. A few short lines, not a transcript. Empty clears it." },
+                },
+                "required": ["id", "summary"],
+            },
+        },
+        {
             "name": "task_delete",
             "description": "Close a board task and delete everything bound to it — its terminal panes and its git worktree on disk. The board row itself survives, closed with an outcome (done/abandoned) as the record of the work. Guarded: if the worktree has uncommitted changes, commits that reached no branch or remote, or a foreign process on its claimed ports, nothing is deleted and the reasons come back as `status: \"refused\"`. Report those to the user and let them decide; only pass force after they have said so explicitly, since it destroys that work permanently.",
             "inputSchema": {
@@ -1194,6 +1238,7 @@ mod tests {
                 "task_list",
                 "task_status",
                 "task_create",
+                "task_summary",
                 "task_delete",
                 "task_start",
                 "calendar_today",
@@ -1521,6 +1566,48 @@ mod tests {
         let message = call_tool_err(&mut dispatcher, "task_status", json!({}));
         assert!(message.contains("id"), "error should name the missing arg: {message}");
         let message = call_tool_err(&mut dispatcher, "task_status", json!({ "id": 9999 }));
+        assert!(message.contains("9999"), "error should name the unknown id: {message}");
+    }
+
+    #[test]
+    fn task_summary_records_the_report_on_the_card() {
+        let store = seeded_store();
+        let task =
+            store.add_task("switch the files pane", "doing", Some("mine"), None, NOW).unwrap();
+        let mut dispatcher = Dispatcher::new(store);
+        let result = call_tool(
+            &mut dispatcher,
+            "task_summary",
+            json!({ "id": task.id, "summary": "PR #510 merged as 9a550d9. CI green." }),
+        );
+        assert_eq!(result["task"]["summary"], "PR #510 merged as 9a550d9. CI green.");
+        assert_eq!(result["task"]["summaryAt"], NOW);
+        // It records, it does not close: status and worktree binding are the
+        // user's to change once they have confirmed the work.
+        assert_eq!(result["task"]["status"], "doing");
+        assert_eq!(result["task"]["closed"], false);
+        // The user's own notes stay theirs — a summary must not come back as
+        // instructions to the next session that starts this task.
+        assert_eq!(result["task"]["notes"], "mine");
+        // And it is readable afterwards through the normal task read.
+        let read = call_tool(&mut dispatcher, "task_status", json!({ "id": task.id }));
+        assert_eq!(read["task"]["summary"], "PR #510 merged as 9a550d9. CI green.");
+    }
+
+    #[test]
+    fn task_summary_requires_both_args_and_a_known_id() {
+        let store = seeded_store();
+        let task = store.add_task("x", "doing", None, None, NOW).unwrap();
+        let mut dispatcher = Dispatcher::new(store);
+        let message = call_tool_err(&mut dispatcher, "task_summary", json!({ "summary": "done" }));
+        assert!(message.contains("id"), "error should name the missing arg: {message}");
+        let message = call_tool_err(&mut dispatcher, "task_summary", json!({ "id": task.id }));
+        assert!(message.contains("summary"), "error should name the missing arg: {message}");
+        let message = call_tool_err(
+            &mut dispatcher,
+            "task_summary",
+            json!({ "id": 9999, "summary": "done" }),
+        );
         assert!(message.contains("9999"), "error should name the unknown id: {message}");
     }
 
