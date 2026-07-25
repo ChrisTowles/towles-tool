@@ -10,6 +10,32 @@ import { slugify } from "./slug";
  * carried through untouched so a save never drops it.
  */
 
+/** Urgency of a desktop notification — mirrors Rust's `tt_config::NotifyLevel`.
+ * Ordered `routine < important < urgent`; a kind fires when its own level is at
+ * or above `agentboard.notifyThreshold`. */
+export type NotifyLevel = "routine" | "important" | "urgent";
+
+/** The threshold picker's options, least → most urgent, each naming the kinds
+ * it lets through (the kind→level mapping is Rust's `NotifyKind::level`; keep
+ * these descriptions in step with it). */
+export const NOTIFY_LEVELS: { value: NotifyLevel; label: string; description: string }[] = [
+  {
+    value: "routine",
+    label: "Everything",
+    description: "Also review requests and collectors that stopped refreshing.",
+  },
+  {
+    value: "important",
+    label: "Important and up",
+    description: "Meetings, agents needing you, and your own PRs' CI failing.",
+  },
+  { value: "urgent", label: "Urgent only", description: "Meetings and agents needing you." },
+];
+
+/** Built-in default for `agentboard.notifyThreshold` (mirrors Rust's
+ * `tt_config::DEFAULT_NOTIFY_THRESHOLD`): everything gets through. */
+export const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = "routine";
+
 export type JournalSettings = {
   baseFolder: string;
   dailyPathTemplate: string;
@@ -145,13 +171,10 @@ export type UserSettings = {
   collectors: CollectorsSettings;
   /**
    * Mostly TS-owned UI block, carried through opaquely so a save never drops
-   * it. The app edits these keys: `notifyNeedsYou` (desktop notification when a
-   * session flips into needs-you; unset = on), `notifyMeetingStart` (fired when
-   * the next meeting's countdown reaches zero; unset = on),
-   * `notifyReviewRequested` (fired when a PR newly needs your review; unset =
-   * on), `notifyChecksFailed` (fired when one of your PRs' CI flips to failing;
-   * unset = on), `notifyStaleCollector` (fired when a collector stops
-   * refreshing; unset = on), `compactRecommendPercent` (context-usage % at which
+   * it. The app edits these keys: `notify` (desktop notifications master
+   * switch; unset = on), `notifyThreshold` (the least-urgent {@link
+   * NotifyLevel} still allowed through; unset = `"routine"`, i.e. everything —
+   * see {@link NOTIFY_LEVELS}), `compactRecommendPercent` (context-usage % at which
    * a session is flagged for compaction; unset = 30), `copyOnSelect` (terminal
    * copies the selection to the clipboard on selection end; unset = off),
    * `terminalFontSize` (canvas terminal font px; unset = 13), and
@@ -162,11 +185,8 @@ export type UserSettings = {
    * rail's eye-icon "hide inactive repos" filter; unset = off).
    */
   agentboard?: {
-    notifyNeedsYou?: boolean;
-    notifyMeetingStart?: boolean;
-    notifyReviewRequested?: boolean;
-    notifyChecksFailed?: boolean;
-    notifyStaleCollector?: boolean;
+    notify?: boolean;
+    notifyThreshold?: NotifyLevel;
     compactRecommendPercent?: number;
     copyOnSelect?: boolean;
     terminalFontSize?: number;

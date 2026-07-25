@@ -450,19 +450,14 @@ async fn run_notify_check(
 
 /// Fire a "meeting starting now" desktop notification. Suppressed when the main
 /// window is focused (the header countdown already shows it) or when the
-/// `agentboard.notifyMeetingStart` setting is off (default on).
+/// notification threshold rules it out (it is an urgent-level kind).
 fn notify_meeting_start(app: &AppHandle, edge: &tt_store::MeetingStartEdge) {
     use tauri_plugin_notification::NotificationExt;
 
     if window_focused(app) {
         return;
     }
-    let enabled = tt_config::load()
-        .map(|s| {
-            s.agentboard.notify_meeting_start.unwrap_or(tt_config::DEFAULT_NOTIFY_MEETING_START)
-        })
-        .unwrap_or(tt_config::DEFAULT_NOTIFY_MEETING_START);
-    if !enabled {
+    if !crate::settings::notify_allowed(tt_config::NotifyKind::MeetingStart) {
         return;
     }
     let _ = app.notification().builder().title("Meeting starting now").body(&edge.title).show();
@@ -470,21 +465,14 @@ fn notify_meeting_start(app: &AppHandle, edge: &tt_store::MeetingStartEdge) {
 
 /// Fire a "PR review requested" desktop notification. Suppressed when the main
 /// window is focused (the day bar already shows review-requested PRs) or when
-/// the `agentboard.notifyReviewRequested` setting is off (default on).
+/// the notification threshold rules it out (it is a routine-level kind).
 fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge) {
     use tauri_plugin_notification::NotificationExt;
 
     if window_focused(app) {
         return;
     }
-    let enabled = tt_config::load()
-        .map(|s| {
-            s.agentboard
-                .notify_review_requested
-                .unwrap_or(tt_config::DEFAULT_NOTIFY_REVIEW_REQUESTED)
-        })
-        .unwrap_or(tt_config::DEFAULT_NOTIFY_REVIEW_REQUESTED);
-    if !enabled {
+    if !crate::settings::notify_allowed(tt_config::NotifyKind::ReviewRequested) {
         return;
     }
     let _ = app
@@ -497,20 +485,15 @@ fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge
 
 /// Fire a "CI failing" desktop notification when one of your PRs' checks flip
 /// into failing. Suppressed when the main window is focused (the day bar already
-/// surfaces PR check state) or when the `agentboard.notifyChecksFailed` setting
-/// is off (default on).
+/// surfaces PR check state) or when the notification threshold rules it out (it
+/// is an important-level kind).
 fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {
     use tauri_plugin_notification::NotificationExt;
 
     if window_focused(app) {
         return;
     }
-    let enabled = tt_config::load()
-        .map(|s| {
-            s.agentboard.notify_checks_failed.unwrap_or(tt_config::DEFAULT_NOTIFY_CHECKS_FAILED)
-        })
-        .unwrap_or(tt_config::DEFAULT_NOTIFY_CHECKS_FAILED);
-    if !enabled {
+    if !crate::settings::notify_allowed(tt_config::NotifyKind::ChecksFailed) {
         return;
     }
     let _ = app
@@ -526,16 +509,11 @@ fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {
 /// Unlike the meeting/review notifications this is *not* suppressed while the
 /// window is focused: there's no always-on in-app surface for collector health,
 /// so a focused user would otherwise never learn a collector died. Gated only by
-/// the `agentboard.notifyStaleCollector` setting (default on).
+/// the notification switch/threshold (it is a routine-level kind).
 fn notify_stale_collector(app: &AppHandle, edge: &tt_store::StaleCollectorEdge) {
     use tauri_plugin_notification::NotificationExt;
 
-    let enabled = tt_config::load()
-        .map(|s| {
-            s.agentboard.notify_stale_collector.unwrap_or(tt_config::DEFAULT_NOTIFY_STALE_COLLECTOR)
-        })
-        .unwrap_or(tt_config::DEFAULT_NOTIFY_STALE_COLLECTOR);
-    if !enabled {
+    if !crate::settings::notify_allowed(tt_config::NotifyKind::StaleCollector) {
         return;
     }
 

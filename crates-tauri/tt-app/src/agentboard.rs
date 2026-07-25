@@ -139,8 +139,8 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
 /// needs-you (edge-detected by `tt_agentboard::NeedsYouWatch` in the emitter
 /// loop). Status-report only — there are no approve/reply actions; acting on
 /// the agent happens in the real PTY. Skipped entirely when the app window is
-/// focused (the rail/day-bar already show it) or when the user turned the
-/// `agentboard.notifyNeedsYou` setting off (default on).
+/// focused (the rail/day-bar already show it) or when the user's notification
+/// switch/threshold rules it out (it is an urgent-level kind).
 pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -152,11 +152,8 @@ pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) 
         tracing::debug!(edges = edges.len(), "notify_needs_you: skipped, window focused");
         return;
     }
-    let enabled = tt_config::load()
-        .map(|s| s.agentboard.notify_needs_you.unwrap_or(tt_config::DEFAULT_NOTIFY_NEEDS_YOU))
-        .unwrap_or(tt_config::DEFAULT_NOTIFY_NEEDS_YOU);
-    if !enabled {
-        tracing::debug!(edges = edges.len(), "notify_needs_you: skipped, setting disabled");
+    if !crate::settings::notify_allowed(tt_config::NotifyKind::NeedsYou) {
+        tracing::debug!(edges = edges.len(), "notify_needs_you: skipped, notifications off");
         return;
     }
     for edge in edges {

@@ -24,6 +24,17 @@ pub struct SettingsSignal {
     pub slack_socket: Arc<Notify>,
 }
 
+/// Whether a desktop notification of this kind may fire right now: the master
+/// switch is on and the kind clears the user's urgency threshold
+/// (`tt_config::AgentboardSettings::notifies`). The single gate every notify
+/// site calls — settings live in a file, so this reads fresh, and an unreadable
+/// file falls back to the built-in defaults rather than going silent.
+pub fn notify_allowed(kind: tt_config::NotifyKind) -> bool {
+    tt_config::load()
+        .map(|s| s.agentboard.notifies(kind))
+        .unwrap_or_else(|_| tt_config::AgentboardSettings::default().notifies(kind))
+}
+
 /// Load the current settings (defaults written to disk if the file is missing).
 #[tauri::command]
 pub fn settings_get() -> Result<UserSettings, String> {
