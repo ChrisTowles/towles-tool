@@ -54,6 +54,7 @@ import { NotInTauri, errorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { openExternalUrl } from "@/lib/open-url";
 import { useWorkspace } from "@/lib/workspace";
+import { useFocusTarget } from "@/lib/focus-target";
 import { uiAction } from "@/lib/ui-action";
 import { Empty, IssueRow, Panel, PrRow, prNeedsYou, prRank } from "@/components/store-bits";
 
@@ -86,6 +87,8 @@ export function CockpitScreen() {
   const agentState = useAgentboardState();
   const { openSettingsTab } = useWorkspace();
   const now = useNow();
+  // Deep-link focus: a "needs you" popover row scrolls its PR into view here.
+  const focusRef = useFocusTarget<HTMLDivElement>("cockpit");
 
   // How stale the PR/issue panels are, and a way to force a refresh. The button
   // disables while a run is in flight; it clears once a newer refresh-collector
@@ -340,7 +343,7 @@ export function CockpitScreen() {
       )}
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+        <div ref={focusRef} className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
           {/* Pull requests */}
           <Panel
             title="Pull requests"

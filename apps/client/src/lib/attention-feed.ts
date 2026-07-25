@@ -59,7 +59,7 @@ export function buildAttentionFeed(
   // out of the feed until it changes again.
   for (const pr of snapshot.prs.filter((p) => p.state === "open" && !isItemDismissed(p))) {
     const prId = `${pr.repo}#${pr.number}`;
-    const target: FocusTarget = { screen: "gh-prs", kind: "pr", id: prId };
+    const target: FocusTarget = { screen: "cockpit", kind: "pr", id: prId };
     // Failing CI outranks review-requested; a PR that is both surfaces once, in
     // the more-urgent bucket (mirrors `prRank`).
     if (pr.checks === "failing") {
