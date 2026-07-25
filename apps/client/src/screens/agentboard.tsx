@@ -1,143 +1,84 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  CalendarClock,
-  CircleSlash,
-  Eye,
-  EyeOff,
-  FolderGit2,
-  FolderPlus,
-  FolderX,
-  GitPullRequest,
-  PanelLeftClose,
-  Plus,
-  TerminalSquare,
-} from "lucide-react";
-import { fmtMins, PanePlaceholder } from "@/components/agentboard-bits";
-import { DismissButton } from "@/components/store-bits";
-import { ColdCacheOverlay, PaneHeader, WorkingContext } from "@/components/agentboard-pane";
+import { FolderGit2, FolderPlus } from "lucide-react";
+import { fmtMins } from "@/components/agentboard-bits";
+import { WorkingContext } from "@/components/agentboard-pane";
 import { RailIconStrip, RepoGroup, RollupChip } from "@/components/agentboard-rail";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
-import { DiffPane } from "@/components/diff-pane";
-import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
-import { PreviewPane } from "@/components/preview-pane";
-import {
-  type NewTaskRepo,
-  type NewTaskSubmit,
-  type PendingTask,
-  type TaskCreated,
-} from "@/components/inline-new-task";
-import { TerminalView } from "@/components/terminal-view";
+import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  cleanupMissing,
-  closeOnFalse,
-  createTaskForSubmit,
-  dismissAttentionPr,
-  paneStyle,
-} from "./agentboard/helpers";
+import { cleanupMissing, closeOnFalse } from "./agentboard/helpers";
 import { useCollapseState } from "./agentboard/use-collapse-state";
 import { useColumnDrag } from "./agentboard/use-column-drag";
+import { useAttention } from "./agentboard/use-attention";
+import { useRailIndex } from "./agentboard/use-rail-index";
+import { useTaskCreation } from "./agentboard/use-task-creation";
+import { useTauriEvent } from "./agentboard/use-tauri-event";
+import { useWindowLayout } from "./agentboard/use-window-layout";
+import { useWorktreeDelete } from "./agentboard/use-worktree-delete";
+import { PaneGrid } from "./agentboard/pane-grid";
+import { RailHeader } from "./agentboard/rail-header";
+import { WindowStrip } from "./agentboard/window-strip";
 import {
   DeleteWorktreeDialog,
   RemoveRepoDialog,
   SplitSessionDialog,
   StartClaudeDialog,
 } from "./agentboard/dialogs";
-import { TaskCreatedSchema } from "@/lib/schemas/task";
-import { cn } from "@/lib/utils";
 import {
-  changedFolderDirs,
-  ClaudeLaunchOptions,
   claudeCommand,
-  dynamicFlowPrompt,
   claudeResumeCommand,
   claudeTitleName,
+  collapseTargetKeys,
   consumePendingAgentboardNav,
   consumePendingOpenSessions,
   cycleNeedsYou,
   cycleSession,
-  diffPaneDir,
   diffPaneId,
-  filesPaneDir,
-  filesPaneId,
-  dropPane,
   exitPaneId,
-  exitPaneSession,
-  hydrateWins,
-  isAgent,
-  isExitPane,
-  isCacheExpiring,
-  isDiffPane,
-  isFilesPane,
-  isPreviewPane,
-  previewPaneDir,
-  previewPaneId,
-  collapseTargetKeys,
-  folderRemovableTask,
-  isFolderQuiet,
-  liveSessions,
-  normalizeWins,
-  onAgentboardNavRequest,
-  onOpenSessionRequest,
-  paneRects,
-  abSetSessionPurpose,
+  filesPaneId,
   filesPanePathFor,
+  folderRemovableTask,
+  isAgent,
+  isCacheExpiring,
+  liveSessions,
   nextOpenFileNonce,
   nextWindowId,
-  placePane,
-  replacePane,
+  onAgentboardNavRequest,
+  onOpenSessionRequest,
+  abSetSessionPurpose,
   prForFolder,
-  taskForFolder,
-  ownerRepoFromOrigin,
-  promptWithImages,
-  pruneWins,
+  previewPaneId,
   sessionLabel,
   sleep,
+  taskForFolder,
   termWriteRetry,
   useAgentboardState,
   useNow,
   waitForFirstFrame,
   type AgentboardNav,
   type AgentStatus,
-  type BlockedDelete,
-  type FolderData,
+  type ClaudeLaunchOptions,
   type Overlay,
   type PendingOpenSession,
   type RemoveTarget,
-  type RepoData,
   type Selected,
   type SessionActions,
   type SessionData,
   type StartClaudeTarget,
-  type StatePayload,
-  type WindowsPayload,
-  windowColor,
 } from "@/lib/agentboard";
-import { errorMessage, NotInTauri } from "@/lib/errors";
+import { errorMessage } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
-import { invoke, isTauri } from "@/lib/tauri";
+import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
-import {
-  fmtCountdown,
-  isItemDismissed,
-  taskDelete,
-  storeDismissalsClear,
-  storeSetTaskStatus,
-  storeTaskSetWorktree,
-  useStoreSnapshot,
-  type TaskItem,
-  type TaskOutcome,
-} from "@/lib/data";
+import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
-import { openExternalUrl } from "@/lib/open-url";
 import { useHideInactiveRepos } from "@/lib/rail-prefs";
-import { PR_TONE } from "@/lib/pr-tone";
 import { useWorkspace } from "@/lib/workspace";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -166,6 +107,14 @@ import { toast } from "sonner";
  * as a pane in the active window, skipping straight to it when there's only
  * one candidate and opening a picker otherwise), active only while this tab
  * is shown.
+ *
+ * This file is the screen's wiring: local session/selection state, the
+ * lifecycle actions that write to PTYs, and the layout. The self-contained
+ * pieces live beside it in `screens/agentboard/` — the window layout
+ * (`use-window-layout`), the worktree-delete flow (`use-worktree-delete`),
+ * task creation (`use-task-creation`), the rail's derived lookups
+ * (`use-rail-index`), the attention strip (`use-attention`), and the three
+ * render surfaces (`rail-header`, `window-strip`, `pane-grid`).
  */
 export function AgentboardScreen() {
   const state = useAgentboardState();
@@ -174,6 +123,117 @@ export function AgentboardScreen() {
   // Deep-link focus: a "needs you" popover row scrolls its repo into view here.
   const focusRef = useFocusTarget<HTMLDivElement>("agentboard");
   const now = useNow(30_000);
+  const repos = state.repos;
+
+  const [selected, setSelected] = useState<Selected>(null);
+  // Which pane tile (session, diff, files, or tombstone) last claimed the
+  // click — the sole driver of the violet focus ring below. Deliberately
+  // separate from `selected`: `selected` targets the session the toolbar's
+  // Close/⌘D/⌘W and cache-badge actions act on, while this is purely "which
+  // tile is visually active" and every pane kind can claim it, not just
+  // sessions.
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
+  // ab-focus-terminal (Enter): which session's terminal to imperatively give
+  // DOM focus, and a nonce so re-requesting the *same* session (e.g. Enter
+  // pressed twice) still re-fires the effect that focuses it. Read by the
+  // `<TerminalView>` instance whose id matches, via its `focusRequest` prop.
+  const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
+    id: string;
+    nonce: number;
+  } | null>(null);
+  // The folder whose windows the main area shows — set by clicking a folder
+  // header or a session row. Null until the user picks a folder.
+  const [activeFolderDir, setActiveFolderDir] = useState<string | null>(null);
+  // ab-split-session picker: only shown when the active folder has more than
+  // one session not already in the active window (a single candidate is
+  // added directly — see `splitIntoWindow`).
+  const [splitOpen, setSplitOpen] = useState(false);
+  // Pending remove awaiting confirmation because it would kill live sessions.
+  const [confirmRemove, setConfirmRemove] = useState<RemoveTarget | null>(null);
+  // Session awaiting the "what are you working toward?" prompt before Claude
+  // actually launches — see `commitStartClaude`.
+  const [startClaudeTarget, setStartClaudeTarget] = useState<StartClaudeTarget | null>(null);
+  const [startClaudePrompt, setStartClaudePrompt] = useState("");
+  // Session ids whose PTY is mounted (kept alive for scrollback), + their cwd.
+  const [open, setOpen] = useState<string[]>([]);
+  const cwds = useRef<Record<string, string>>({});
+  // How a *crashed* session's shell died ("exited · Killed"), by session id.
+  // Only crashes land here — a clean logout takes its pane with it (see
+  // `handleExit`). Entries are never invalidated: what's on screen is decided
+  // by the render filter (a tombstone needs a pane that still exists and no
+  // live terminal over the top), so a stale entry for a dismissed or reopened
+  // session is inert, and there's no invalidation scheme to keep correct.
+  const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
+  // Sessions whose shell we're killing on purpose. `task_delete` kills a
+  // folder's PTYs in Rust *before* the frontend unmounts their panes, so those
+  // deaths arrive as signal exits at a still-listening TerminalView — which is
+  // a crash by every test `handleExit` can apply, except that we asked for it.
+  // Ids land here just before the kill and are consumed by the exit they
+  // predict. (The `term_kill` on TerminalView unmount needs no entry: cleanup
+  // unlistens first, so that exit is never delivered.)
+  const expectedKills = useRef<Set<string>>(new Set());
+  // Folder-rail collapse/expand state (issue #52) — hydrated once and then
+  // this local copy is the live truth; see useCollapseState.
+  const { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail } =
+    useCollapseState(state);
+  // "Hide inactive" rail filter: demote quiet folders behind a per-repo "N
+  // quiet" stub row, so a big rail shrinks to what's actually going on without
+  // anything silently disappearing. A view filter, not a rail-structure change.
+  // Persisted via `agentboard.hideInactiveRepos` in the shared settings file —
+  // a whole-app preference, not rail-row UI state, so it doesn't belong in the
+  // `collapsed` map the way `railCollapsed` does.
+  const [hideInactive, setHideInactive] = useHideInactiveRepos();
+  // Per-repo "show me the quiet ones anyway" toggle (the stub row).
+  const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
+  const [renaming, setRenaming] = useState<string | null>(null);
+  // Live PTY window titles keyed by session id (Claude emits `✳ <title>`);
+  // preferred over the backend label for sessions whose terminal is open.
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const onTitle = (id: string, title: string) =>
+    setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
+  // Sessions whose program raised attention (BEL / OSC 9 notification —
+  // Claude Code asking for input) since the user last looked at them.
+  // Set by the terminal://notify listener below, cleared on select.
+  const [termAttention, setTermAttention] = useState<Record<string, true>>({});
+  // Optimistic lifecycle overlays (sessionId → forced status until ts). The
+  // 2s watcher scan re-renders with ground truth; overlays just cover the gap.
+  const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
+  const setOverlay = (id: string, status: AgentStatus) =>
+    setOverlays((m) => ({ ...m, [id]: { status, until: Date.now() + 2_500 } }));
+
+  const {
+    quietDirs,
+    visibleRepos,
+    missingRepoCount,
+    folderOf,
+    folderNameByDir,
+    sessionById,
+    folderByDir,
+    activeFolder,
+    activeRepo,
+  } = useRailIndex({ repos, hideInactive, quietRevealed, activeFolderDir, now });
+
+  const { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane } =
+    useWindowLayout({
+      state,
+      repos,
+      open,
+      cwds,
+    });
+
+  // Read live by the terminal://notify listener without re-subscribing on
+  // selection changes.
+  const selectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected?.sessionId ?? null;
+  });
+  // Live copy of the active folder, read the same way — lets an async
+  // task-create decide, when it finally resolves, whether the user is still
+  // where they were when they submitted.
+  const activeFolderDirRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeFolderDirRef.current = activeFolderDir;
+  });
 
   // One-shot "prompt cache about to expire" toast per session per cache
   // generation. `cacheExpiresAt` moves forward on every request Claude makes,
@@ -198,120 +258,26 @@ export function AgentboardScreen() {
         }
   }, [state.repos, now]);
 
-  const [selected, setSelected] = useState<Selected>(null);
-  // Which pane tile (session, diff, files, or tombstone) last claimed the
-  // click — the sole driver of the violet focus ring below. Deliberately
-  // separate from `selected`: `selected` targets the session the toolbar's
-  // Close/⌘D/⌘W and cache-badge actions act on, while this is purely "which
-  // tile is visually active" and every pane kind can claim it, not just
-  // sessions.
-  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
-  // ab-focus-terminal (Enter): which session's terminal to imperatively give
-  // DOM focus, and a nonce so re-requesting the *same* session (e.g. Enter
-  // pressed twice) still re-fires the effect that focuses it. Read by the
-  // `<TerminalView>` instance whose id matches, via its `focusRequest` prop.
-  const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
-    id: string;
-    nonce: number;
-  } | null>(null);
-  // The folder whose windows the main area shows — set by clicking a folder
-  // header or a session row. Null until the user picks a folder.
-  const [activeFolderDir, setActiveFolderDir] = useState<string | null>(null);
-  // Track-repo dialog: strictly-manual path entry (no discovery, no scanning —
-  // a standing product rule). Just an absolute path typed in, added via the
-  // same `ab_add_repo` command every other add path uses.
-  // ab-split-session picker: only shown when the active folder has more than
-  // one session not already in the active window (a single candidate is
-  // added directly — see `splitIntoWindow`).
-  const [splitOpen, setSplitOpen] = useState(false);
-  // Pending remove awaiting confirmation because it would kill live sessions.
-  const [confirmRemove, setConfirmRemove] = useState<RemoveTarget | null>(null);
-  // Pending worktree deletion — always confirmed (it deletes from disk).
-  const [confirmDeleteWt, setConfirmDeleteWt] = useState<RemoveTarget | null>(null);
-  // The board task bound to the worktree being deleted (null = none on the
-  // board) and the outcome the close will record. Pre-answered from the
-  // task's own evidence (merged PR ⇒ done) so the common case is one click;
-  // the dialog's swap link flips it.
-  const [deleteWtTask, setDeleteWtTask] = useState<TaskItem | null>(null);
-  const [deleteWtOutcome, setDeleteWtOutcome] = useState<TaskOutcome>("done");
-  // A delete the guards refused, with the reasons — see `performDeleteWorktree`
-  // and the blocked-delete dialog. Holds the original target so each remedy
-  // can retry the same removal without the user re-finding the row.
-  const [blockedDelete, setBlockedDelete] = useState<BlockedDelete | null>(null);
-  // The port whose "Stop it" is in flight — held until the follow-up removal
-  // finishes too, so the whole dialog is inert for the duration. A single
-  // value, not a set: `deleteBusy` disables every stop button the moment one
-  // is running, so a second stop can never start alongside it.
-  const [stoppingPort, setStoppingPort] = useState<number | null>(null);
-  // Generation counter per worktree dir for the delete flow. Bumped when a
-  // dir's flow starts and whenever one ends (cancel, force, success), so an
-  // attempt that resolves after the user moved on can tell it's stale — a
-  // `task_stop_port` plus retry runs for seconds, and without this a removal
-  // returning "blocked" would pop the dialog back open after it was
-  // dismissed. Scoped per dir rather than one global counter so starting a
-  // delete on a second worktree can't silently swallow the first one's
-  // still-in-flight outcome.
-  const deleteFlows = useRef(new Map<string, number>());
-  const deleteFlowOf = (dir: string) => deleteFlows.current.get(dir) ?? 0;
-  const bumpDeleteFlow = (dir: string) => deleteFlows.current.set(dir, deleteFlowOf(dir) + 1);
-  // Folder dirs whose worktree is mid-delete (`task_delete` in flight) — the
-  // rail dims/disables that row for the duration, see `performDeleteWorktree`.
-  const [deletingDirs, setDeletingDirs] = useState<Set<string>>(new Set());
-  // Live phase text for a dir mid-delete ("running teardown command",
-  // "deleting git worktree", …) — fed by `task://delete_progress` events the
-  // Rust side emits from inside `ops::remove_task` (see the listener effect
-  // below). Purely additive: absent (browser dev, or before the first event
-  // for this delete lands) just falls back to `DeletingBadge`'s static
-  // "deleting…". Kept separate from `deletingDirs` rather than folded into it
-  // (e.g. as a `Map<string, string | true>`) so a delete that starts before
-  // any phase event arrives still dims immediately via `deletingDirs`.
-  const [deletingPhase, setDeletingPhase] = useState<Map<string, string>>(new Map());
   // Repo management lives on one surface (Settings → Agentboard → Repos); the
   // rail just links to it.
   const openRepoManager = () => {
     uiAction("repo.manage_opened", "agentboard");
     openSettingsTab({ tab: "agentboard" });
   };
-  // Session awaiting the "what are you working toward?" prompt before Claude
-  // actually launches — see `commitStartClaude`.
-  const [startClaudeTarget, setStartClaudeTarget] = useState<StartClaudeTarget | null>(null);
-  // Repo keys whose inline new-task form is open — see InlineNewTask. A form
-  // stays embedded in the rail rather than a modal, so several repos can have
-  // one open (or a create in flight) at once without blocking each other.
-  const [openTaskForms, setOpenTaskForms] = useState<Set<string>>(new Set());
-  // Repo keys whose open form is reopening a closed task rather than
-  // starting a new one — the pre-filled goal and the existing task id to
-  // bind instead of minting a new board row (see `openReopenForm`).
-  const [reopenTasks, setReopenTasks] = useState<Map<string, { taskId: number; goal: string }>>(
-    new Map(),
-  );
-  // `task_create` calls fired from an inline form and still running (or
-  // failed) — rendered as a PendingTaskRow until they resolve. See
-  // `createTask`.
-  const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
-  const [startClaudePrompt, setStartClaudePrompt] = useState("");
-  // Session ids whose PTY is mounted (kept alive for scrollback), + their cwd.
-  const [open, setOpen] = useState<string[]>([]);
-  const cwds = useRef<Record<string, string>>({});
-  // How a *crashed* session's shell died ("exited · Killed"), by session id.
-  // Only crashes land here — a clean logout takes its pane with it (see
-  // `handleExit`). Entries are never invalidated: what's on screen is decided
-  // by the render filter (a tombstone needs a pane that still exists and no
-  // live terminal over the top), so a stale entry for a dismissed or reopened
-  // session is inert, and there's no invalidation scheme to keep correct.
-  const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
-  // Sessions whose shell we're killing on purpose. `task_delete` kills a
-  // folder's PTYs in Rust *before* the frontend unmounts their panes, so those
-  // deaths arrive as signal exits at a still-listening TerminalView — which is
-  // a crash by every test `handleExit` can apply, except that we asked for it.
-  // Ids land here just before the kill and are consumed by the exit they
-  // predict. (The `term_kill` on TerminalView unmount needs no entry: cleanup
-  // unlistens first, so that exit is never delivered.)
-  const expectedKills = useRef<Set<string>>(new Set());
-  // Folder-rail collapse/expand state (issue #52) — hydrated once and then
-  // this local copy is the live truth; see useCollapseState.
-  const { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail } =
-    useCollapseState(state);
+
+  const attention = useAttention({ snapshot, now, openTab });
+
+  const worktreeDelete = useWorktreeDelete({
+    repos,
+    tasks: snapshot.tasks,
+    expectedKills,
+    onSessionRemoved: (id) => {
+      setOpen((prev) => prev.filter((x) => x !== id));
+      setSelected((cur) => (cur?.sessionId === id ? null : cur));
+      removeSessionPane(id);
+    },
+  });
+  const { deletingDirs, requestDeleteWorktree } = worktreeDelete;
 
   // Ctrl+Shift+Left/Right collapse/expand (complements ab-focus-up/down's
   // Ctrl+Shift+Up/Down session nav — same modifier family, so it's also safe
@@ -339,46 +305,6 @@ export function AgentboardScreen() {
     }
   }
 
-  // "Hide inactive" rail filter: demote quiet folders (see `isFolderQuiet` —
-  // no live session, no dirty tree/unpushed commits, no session that catches
-  // the eye, no agent activity within the grace window) behind a per-repo
-  // "N quiet" stub row, so a big rail shrinks to what's actually going on
-  // without anything silently disappearing. A view filter, not a
-  // rail-structure change. Persisted via `agentboard.hideInactiveRepos` in the
-  // shared settings file (`useHideInactiveRepos`) — a whole-app preference,
-  // not rail-row UI state, so it doesn't belong in the `collapsed` map the way
-  // `railCollapsed` does. Lookups used for panes/sessions (folderOf,
-  // sessionById, etc. below) stay on the full `repos` list; only the two
-  // render surfaces (RepoGroup list, RailIconStrip) apply the filter, since a
-  // pane already open for a now-quiet folder must keep working.
-  const [hideInactive, setHideInactive] = useHideInactiveRepos();
-  // Per-repo "show me the quiet ones anyway" toggle (the stub row).
-  const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
-  const [clearingDismissals, setClearingDismissals] = useState(false);
-
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renamingWin, setRenamingWin] = useState<string | null>(null);
-  // Live PTY window titles keyed by session id (Claude emits `✳ <title>`);
-  // preferred over the backend label for sessions whose terminal is open.
-  const [titles, setTitles] = useState<Record<string, string>>({});
-  const onTitle = (id: string, title: string) =>
-    setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
-  // Sessions whose program raised attention (BEL / OSC 9 notification —
-  // Claude Code asking for input) since the user last looked at them.
-  // Set by the terminal://notify listener below, cleared on select.
-  const [termAttention, setTermAttention] = useState<Record<string, true>>({});
-  // Read live by the listener without re-subscribing on selection changes.
-  const selectedRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedRef.current = selected?.sessionId ?? null;
-  });
-  // Live copy of the active folder, read the same way — lets an async
-  // task-create decide, when it finally resolves, whether the user is still
-  // where they were when they submitted (see `createTask`/`taskCreated`).
-  const activeFolderDirRef = useRef<string | null>(null);
-  useEffect(() => {
-    activeFolderDirRef.current = activeFolderDir;
-  });
   // The label to lead a session row/tab with: the live Claude terminal title
   // when the shell is actually running, else the backend-derived task/shell
   // name. Gating on `s.live` keeps a stopped shell from showing the `✳ <goal>`
@@ -386,86 +312,6 @@ export function AgentboardScreen() {
   // otherwise reads as a running Claude while the status says "not started".
   const labelFor = (s: SessionData) =>
     (s.live ? claudeTitleName(titles[s.id]) : null) ?? sessionLabel(s);
-
-  const repos = state.repos;
-
-  // Quiet checkout dirs per repo key, when the "hide inactive" filter is on.
-  // The active folder never counts as quiet, so switching away from what
-  // you're looking at never happens as a side effect of the filter. `now`
-  // ticks every 30s, which is plenty for the 45-minute quiet grace window.
-  const quietDirs = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    if (!hideInactive) return m;
-    for (const r of repos) {
-      const q = new Set(
-        r.folders
-          .filter((f) => isFolderQuiet(f, now) && f.dir !== activeFolderDir)
-          .map((f) => f.dir),
-      );
-      if (q.size > 0) m.set(r.key, q);
-    }
-    return m;
-  }, [repos, hideInactive, activeFolderDir, now]);
-
-  // The collapsed icon strip has no room for stub rows, so there the filter
-  // still just drops quiet (un-revealed) folders and any repo left empty.
-  const visibleRepos = useMemo(() => {
-    if (!hideInactive) return repos;
-    return repos
-      .map((r) => {
-        const q = quietDirs.get(r.key);
-        if (!q || quietRevealed[r.key]) return r;
-        return { ...r, folders: r.folders.filter((f) => !q.has(f.dir)) };
-      })
-      .filter((r) => r.folders.length > 0);
-  }, [repos, hideInactive, quietDirs, quietRevealed]);
-
-  // Ghost checkouts (dir gone from disk) drive the one-click cleanup button.
-  const missingRepoCount = useMemo(
-    () => repos.flatMap((r) => r.folders).filter((f) => f.dirMissing).length,
-    [repos],
-  );
-
-  // Index every session by id → its folder / its data, for cwd + pane chrome.
-  const folderOf = useMemo(() => {
-    const m = new Map<string, FolderData>();
-    for (const r of repos) for (const f of r.folders) for (const s of f.sessions) m.set(s.id, f);
-    return m;
-  }, [repos]);
-  // Folder dir → the backend's tracker name for it, so selecting into a
-  // folder can ack its `unseen` agents (`ab_mark_seen`).
-  const folderNameByDir = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of repos) for (const f of r.folders) m.set(f.dir, f.name);
-    return m;
-  }, [repos]);
-  const sessionById = useMemo(() => {
-    const m = new Map<string, SessionData>();
-    for (const r of repos) for (const f of r.folders) for (const s of f.sessions) m.set(s.id, s);
-    return m;
-  }, [repos]);
-  // Folder dir → its owning repo, so a pane header can lead with "repo /
-  // folder" (a folder's own name is just the checkout/task/worktree).
-  const repoOf = useMemo(() => {
-    const m = new Map<string, RepoData>();
-    for (const r of repos) for (const f of r.folders) m.set(f.dir, r);
-    return m;
-  }, [repos]);
-
-  // The active folder resolved to its data + repo — drives the
-  // working-context band ("where am I working, and why").
-  const activeFolder = useMemo(
-    () => repos.flatMap((r) => r.folders).find((f) => f.dir === activeFolderDir),
-    [repos, activeFolderDir],
-  );
-  const activeRepo = activeFolder ? repoOf.get(activeFolder.dir) : undefined;
-
-  // Folder dir → its data, for the diff panes (their pane id carries the dir).
-  const folderByDir = useMemo(() => {
-    const m = new Map<string, FolderData>();
-    for (const r of repos) for (const f of r.folders) m.set(f.dir, f);
-    return m;
-  }, [repos]);
 
   // Open a folder's diff as a pane in its focused window (beside the live
   // terminals — never a modal). Re-opening focuses the window it's already in.
@@ -489,11 +335,9 @@ export function AgentboardScreen() {
 
   // Claude called the openFile tool → open (or focus) that folder's files
   // pane and focus the file. Routed here rather than inside the pane so the
-  // request can *create* the pane when none is open yet. Latest-callback ref:
-  // the listener registers once, the handler sees fresh state.
+  // request can *create* the pane when none is open yet.
   const [filesOpenRequests, setFilesOpenRequests] = useState<Record<string, FilesOpenRequest>>({});
-  const onOpenFileRequest = useRef<(p: OpenFileRequest) => void>(() => {});
-  onOpenFileRequest.current = (p) => {
+  useTauriEvent<OpenFileRequest>("ide://open-file", (p) => {
     const dir = p.dir;
     if (!folderByDir.has(dir)) return;
     const path = p.filePath.startsWith(`${dir}/`) ? p.filePath.slice(dir.length + 1) : p.filePath;
@@ -510,7 +354,8 @@ export function AgentboardScreen() {
       },
     }));
     openFiles(dir);
-  };
+  });
+
   // A file link clicked in a folder's terminal → the same files-pane route as
   // Claude's openFile, landing on the `:line` when the link carried one. Links
   // pointing outside the checkout keep the old behavior (external editor via
@@ -529,150 +374,26 @@ export function AgentboardScreen() {
     openFiles(dir);
   }
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const sub = await listen<OpenFileRequest>("ide://open-file", (e) =>
-        onOpenFileRequest.current(e.payload),
-      );
-      if (disposed) sub();
-      else unlisten = sub;
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // Live status for a worktree deletion in progress — see `deletingPhase`'s
-  // doc. `dir` keys the payload the same way `deletingDirs` already does.
-  useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const sub = await listen<{ dir: string; label: string }>("task://delete_progress", (e) => {
-        const { dir, label } = e.payload;
-        setDeletingPhase((prev) => {
-          const next = new Map(prev);
-          next.set(dir, label);
-          return next;
-        });
-      });
-      if (disposed) sub();
-      else unlisten = sub;
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  // Live status for a worktree deletion in progress — the Rust side emits
+  // these from inside `ops::remove_task`, keyed by dir the same way
+  // `deletingDirs` is.
+  useTauriEvent<{ dir: string; label: string }>("task://delete_progress", (p) =>
+    worktreeDelete.setDeletePhase(p.dir, p.label),
+  );
 
   // Attention signals from terminals: a BEL or a desktop notification
   // (OSC 9/777 — Claude Code's "needs your input"). The session badges
   // amber until selected; a notification body also toasts, since the pane
   // raising it is usually not the one on screen.
-  useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const sub = await listen<{ termId: string; kind: string; body?: string }>(
-        "terminal://notify",
-        (e) => {
-          const { termId, kind, body } = e.payload;
-          // The session the user is looking at doesn't need a badge.
-          if (termId === selectedRef.current && document.hasFocus()) return;
-          setTermAttention((m) => (m[termId] ? m : { ...m, [termId]: true }));
-          if (kind === "notify" && body) toast(body);
-        },
-      );
-      if (disposed) sub();
-      else unlisten = sub;
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // --- Window layout (Tier 5): frontend-owned, hydrated once, saved debounced.
-  const [wins, setWins] = useState<WindowsPayload | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Folder dirs actually mutated since the last flush — the backend merges
-  // by folder dir on save, so it needs to know which ones we touched (a
-  // never-hydrated-vs-explicitly-emptied folder look identical in the blob
-  // alone; see `WindowsStore::save`'s doc comment).
-  const dirtyWinFolders = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    // Hydrate from the first real payload (mock or ab_get_state); after that
-    // the local copy is the live truth and only flows outward. `hydrateWins`
-    // is the parse boundary: paneless windows restored from old blobs are
-    // residue (the empty-pane state is unrepresentable now) — swept there,
-    // and the sweep is persisted if it changed anything.
-    if (wins !== null || state.ts === 0) return;
-    const hydrated = hydrateWins(state.windows);
-    setWins(hydrated);
-    const touched = changedFolderDirs(state.windows, hydrated);
-    if (touched.length > 0) scheduleSave(hydrated, touched);
-  }, [wins, state.ts, state.windows]);
-
-  function scheduleSave(next: WindowsPayload, folderDirs: string[]) {
-    for (const dir of folderDirs) dirtyWinFolders.current.add(dir);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const touchedFolders = [...dirtyWinFolders.current];
-      dirtyWinFolders.current = new Set();
-      void invoke("ab_save_windows", { payload: next, touchedFolders });
-    }, 400);
-  }
-
-  function updateWins(folderDirs: string[], fn: (w: WindowsPayload) => WindowsPayload) {
-    setWins((prev) => {
-      const next = normalizeWins(fn(prev ?? { windows: [], activeWindows: {} }));
-      scheduleSave(next, folderDirs);
-      return next;
-    });
-  }
-
-  // Reconcile the layout against reality whenever either changes: sessions
-  // and folders vanish out from under the persisted blob (closed by another
-  // task's app instance, a repo removed with non-live session records, a
-  // crash before the debounced save), leaving ghost pane ids that hold a tile
-  // task with nothing to render in it. Locally-mounted terminals (`open`)
-  // count as valid even before the backend's state event catches up, so a
-  // just-created session's pane never loses the race to this prune — and so
-  // do their folders (via the cwd recorded at mount): a just-created task's
-  // window is keyed on a folder dir the backend hasn't broadcast yet, and
-  // without that carve-out this prune ate the whole window (and persisted the
-  // loss), leaving the new task's main area empty until re-clicked.
-  useEffect(() => {
-    if (!wins) return;
-    const validSessions = new Set(open);
-    const validFolders = new Set<string>();
-    for (const id of open) {
-      const dir = cwds.current[id];
-      if (dir) validFolders.add(dir);
-    }
-    for (const r of repos)
-      for (const f of r.folders) {
-        validFolders.add(f.dir);
-        for (const s of f.sessions) validSessions.add(s.id);
-      }
-    const next = pruneWins(wins, validSessions, validFolders);
-    if (next !== wins) {
-      updateWins(changedFolderDirs(wins, next), (cur) =>
-        pruneWins(cur, validSessions, validFolders),
-      );
-    }
-    // updateWins is stable within a render pass; wins/repos/open are the inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- updateWins is stable within a render; the reactive inputs are all listed
-  }, [wins, repos, open]);
+  useTauriEvent<{ termId: string; kind: string; body?: string }>(
+    "terminal://notify",
+    ({ termId, kind, body }) => {
+      // The session the user is looking at doesn't need a badge.
+      if (termId === selectedRef.current && document.hasFocus()) return;
+      setTermAttention((m) => (m[termId] ? m : { ...m, [termId]: true }));
+      if (kind === "notify" && body) toast(body);
+    },
+  );
 
   // Windows belonging to the active folder, and whichever of those is focused.
   const windowsForFolder = useMemo(
@@ -717,36 +438,6 @@ export function AgentboardScreen() {
     setSplitOpen(true);
   }
 
-  // Add a pane (session or diff) to its own folder's focused window — the
-  // placement rules live in the pure `placePane` reducer (lib/agentboard.ts).
-  // A session reclaims its own tombstone first: the crashed pane is that
-  // session's task, so reopening fills it in place instead of `placePane`
-  // appending a second pane beside the corpse.
-  function addPaneToActive(folderDir: string, paneId: string) {
-    updateWins([folderDir], (w) =>
-      placePane(replacePane(w, exitPaneId(paneId), paneId), folderDir, paneId, nextWindowId),
-    );
-  }
-
-  function removePane(paneId: string) {
-    // A pane lives in exactly one folder's window; find it before mutating
-    // so we know which single folder to mark touched.
-    const folderDir = wins?.windows.find((win) => win.panes.includes(paneId))?.folderDir;
-    updateWins(folderDir ? [folderDir] : [], (w) => dropPane(w, paneId));
-  }
-
-  /** Remove whichever pane a session currently occupies — its terminal, or the
-   * tombstone that replaced it when the shell crashed. Every session-keyed
-   * removal (close, worktree delete) goes through here, so none of them has
-   * to know which of the two it's looking at. */
-  function removeSessionPane(sessionId: string) {
-    const ids = [sessionId, exitPaneId(sessionId)];
-    const folderDir = wins?.windows.find((win) =>
-      ids.some((id) => win.panes.includes(id)),
-    )?.folderDir;
-    updateWins(folderDir ? [folderDir] : [], (w) => ids.reduce((acc, id) => dropPane(acc, id), w));
-  }
-
   // "+ window": a window can't exist without panes, so minting one means
   // giving it content — spawn a fresh session and open the new window around
   // it in one move.
@@ -771,7 +462,7 @@ export function AgentboardScreen() {
 
   // Column resize (drag the divider between side-by-side panes) — see
   // useColumnDrag; the release commits to the window's `cols` via updateWins.
-  const { paneAreaRef, colDrag, startColDrag, resetCols } = useColumnDrag(updateWins);
+  const columns = useColumnDrag(updateWins);
 
   /** A shell exited on its own. Either way its terminal unmounts (the PTY is
    * gone); how it died decides whether the pane goes with it.
@@ -794,10 +485,7 @@ export function AgentboardScreen() {
     toast.error(`${s ? labelFor(s) : "shell"} ${label}`);
     setExitLabels((m) => ({ ...m, [sessionId]: label }));
     // The task keeps its place in the tiling; only its occupant changes.
-    const folderDir = wins?.windows.find((win) => win.panes.includes(sessionId))?.folderDir;
-    updateWins(folderDir ? [folderDir] : [], (w) =>
-      replacePane(w, sessionId, exitPaneId(sessionId)),
-    );
+    replacePaneInPlace(sessionId, exitPaneId(sessionId));
   }
 
   // Switch the main area to a folder without selecting one of its sessions
@@ -920,17 +608,15 @@ export function AgentboardScreen() {
     return true;
   }
 
-  // Toggle the inline new-task form open/closed for a repo — the "+"/"New
-  // task…" affordances all funnel through this, same as clicking it again
-  // closes the form rather than only ever opening one.
-  function toggleTaskForm(repo: NewTaskRepo) {
-    setOpenTaskForms((prev) => {
-      const next = new Set(prev);
-      if (next.has(repo.key)) next.delete(repo.key);
-      else next.add(repo.key);
-      return next;
-    });
-  }
+  const taskCreation = useTaskCreation({
+    mountSession,
+    selectSession,
+    launchClaudeIn,
+    selectedRef,
+    activeFolderDirRef,
+    railCollapsed,
+    toggleRail,
+  });
 
   // ab-new-task + the working-context band's "New task" button both open the
   // form for the focused folder's repo — expand a collapsed rail first since
@@ -938,288 +624,11 @@ export function AgentboardScreen() {
   function newTaskForActiveRepo() {
     if (!activeRepo) return;
     if (railCollapsed) toggleRail();
-    toggleTaskForm({ name: activeRepo.name, dir: activeRepo.folders[0].dir, key: activeRepo.key });
-  }
-
-  function closeTaskForm(key: string) {
-    setOpenTaskForms((prev) => {
-      if (!prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
+    taskCreation.toggleTaskForm({
+      name: activeRepo.name,
+      dir: activeRepo.folders[0].dir,
+      key: activeRepo.key,
     });
-    setReopenTasks((prev) => {
-      if (!prev.has(key)) return prev;
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  }
-
-  // Board's "Reopen" action (via `requestAgentboardNav`'s `reopen-task` kind):
-  // open the task's repo's inline form pre-filled with its text, bound to its
-  // existing id — submitting mints a fresh worktree for this same task
-  // instead of a new card.
-  function openReopenForm(repo: NewTaskRepo, taskId: number, goal: string) {
-    if (railCollapsed) toggleRail();
-    setReopenTasks((prev) => new Map(prev).set(repo.key, { taskId, goal }));
-    setOpenTaskForms((prev) => new Set(prev).add(repo.key));
-  }
-
-  // The setup step (npm install/etc.) can fail without invalidating the task
-  // itself — `task_create`'s warning already says so. Give it a one-click
-  // retry rather than making the user remember to re-run it from a terminal.
-  async function retrySetup(dir: string) {
-    (await invoke<string | null>("task_run_setup", { dir })).match({
-      ok: (warning) => {
-        if (warning) toast(warning, { action: retryAction(dir) });
-        else toast("setup succeeded");
-      },
-      err: (e) => toast(e.message),
-    });
-  }
-
-  function retryAction(dir: string) {
-    return { label: "Retry", onClick: () => void retrySetup(dir) };
-  }
-
-  // `task_create` no longer runs the install step itself (see the Rust doc
-  // comment on `task_create`) — the pane opens as soon as the worktree
-  // exists, and this fires the setup afterward, in the background, into a
-  // worktree the user may already be typing in. A failure surfaces through
-  // the same retry-able toast `retrySetup` uses; success is silent, matching
-  // what an inline `task_create` warning used to look like — nothing, unless
-  // something actually went wrong.
-  function runSetupInBackground(dir: string) {
-    void invoke<string | null>("task_run_setup", { dir }).then((result) => {
-      result.match({
-        ok: (warning) => {
-          if (warning) toast(warning, { action: retryAction(dir) });
-        },
-        err: (e) => toast(e.message),
-      });
-    });
-  }
-
-  // Fires `task_create` in the background and tracks it as a PendingTaskRow
-  // in the rail instead of a blocking modal — the caller can keep working
-  // anywhere else in the app while the worktree resolves (fetch + worktree
-  // add only now — the install runs later, see `runSetupInBackground`, so
-  // this pending window is normally seconds, not minutes). Keyed by branch
-  // (unique per repo, since a collision is already rejected before submit),
-  // so a retry just re-runs this under the same id. The board task is
-  // created first (`createTaskForSubmit`) — the task is an attribute of the
-  // task, not the unit itself — and bound to the worktree once `task_create`
-  // resolves; a "task only" submit stops after the card.
-  async function createTask(
-    repo: NewTaskRepo,
-    input: NewTaskSubmit & { taskId?: number; reopen?: boolean },
-  ) {
-    // Where the user's attention sits at submit time. `task_create` is async
-    // (fetch + worktree add, up to 60s), so by the time the pane exists the
-    // user may have moved on — this is the yardstick `taskCreated` uses to
-    // decide whether auto-focusing the new task would steal their view.
-    const focusAtSubmit = {
-      sessionId: selectedRef.current,
-      folderDir: activeFolderDirRef.current,
-    };
-    const taskId = input.taskId ?? (await createTaskForSubmit(input));
-    // A reopened task is closed (`outcome`/`archivedAt` set, frozen status):
-    // clear that first, the same way any status move out of `done` does
-    // (`Store::set_task_status`). The Agentboard's own live-agent sync then
-    // settles it into backlog/doing once the fresh worktree exists.
-    if (input.reopen && taskId !== undefined) {
-      const reopened = await storeSetTaskStatus(taskId, "backlog");
-      if (reopened.isErr()) toast.error(`Couldn't reopen that task — ${reopened.error.message}`);
-    }
-    // Bind the repo before any worktree exists. The Board groups tasks into
-    // repo swimlanes, and the repo is known here — at the `+` the user clicked
-    // — so binding it now is what keeps every task out of the "No repo" lane,
-    // including a "task only" submit that never gets a branch or dir.
-    if (taskId !== undefined) {
-      void storeTaskSetWorktree(taskId, repo.dir, undefined, {
-        repo: ownerRepoFromOrigin(repo.originUrl),
-      });
-    }
-    if (!input.worktree) {
-      toast("task added to the board");
-      return;
-    }
-    const id = `${repo.key}::${input.branch}`;
-    setPendingTasks((prev) => [
-      ...prev.filter((p) => p.id !== id),
-      {
-        id,
-        repoKey: repo.key,
-        repoDir: repo.dir,
-        repoName: repo.name,
-        goal: input.goal,
-        branch: input.branch,
-        base: input.base,
-        options: input.options,
-        imagePaths: input.imagePaths,
-        taskId,
-        dynamic: input.dynamic,
-        launchClaude: input.launchClaude,
-        repoOriginUrl: repo.originUrl,
-        startedAt: Date.now(),
-        status: "creating",
-      },
-    ]);
-    const imagePaths = input.imagePaths;
-    // 60s, not the 12-minute budget this used to need — `task_create` no
-    // longer waits on the install (which owned nearly all of that time), so
-    // what's left is just a fetch (10s server-side cap) and a worktree add.
-    const result = await invoke<TaskCreated>(
-      "task_create",
-      { root: repo.dir, branch: input.branch, base: input.base },
-      { schema: TaskCreatedSchema, timeoutMs: 60_000 },
-    );
-    if (result.isErr()) {
-      const error = result.error.message;
-      setPendingTasks((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "error" as const, error } : p)),
-      );
-      return;
-    }
-    const created = result.value;
-    // Bind the task to its worktree (branch + dir + repo identity for PR
-    // auto-attach). Fire-and-forget: the snapshot re-emit repaints the card.
-    if (taskId !== undefined) {
-      void storeTaskSetWorktree(taskId, repo.dir, created.branch, {
-        repo: ownerRepoFromOrigin(repo.originUrl),
-        dir: created.dir,
-      });
-    }
-    // Only fetch/worktree-add/secret-inherit warnings land here now — the
-    // install step runs separately below, after the pane opens, and reports
-    // through its own toast.
-    for (const warning of created.warnings) {
-      toast(warning);
-    }
-    setPendingTasks((prev) => prev.filter((p) => p.id !== id));
-    runSetupInBackground(created.dir);
-
-    // An image with no typed goal is still a valid ask — give the rail
-    // something to show rather than an unlabeled session.
-    const label =
-      input.goal ||
-      (imagePaths.length ? `attached ${imagePaths.length === 1 ? "image" : "images"}` : "");
-    // A dynamic task wraps the goal with the post-plan-approval delivery
-    // pipeline and launches in plan mode — the base comes from the resolved
-    // create (what the branch actually forked from), not the form field, and
-    // uses `baseLabel` (`origin/main`, not `main`) because inside the task's
-    // worktree a fetch never advances the *local* base ref: telling the
-    // session to rebase onto plain `main` would rebase onto stale history.
-    // A dynamic task wraps the goal with its own delivery pipeline; otherwise
-    // the goal is launched exactly as it reads in the form. Prompt improvers
-    // rewrite that field *before* submit (see `inline-new-task.tsx`), so there
-    // is deliberately nothing to apply here — what you saw is what launches.
-    const goalPrompt = input.dynamic
-      ? dynamicFlowPrompt(input.goal, created.baseLabel)
-      : input.goal;
-    const launchOptions: ClaudeLaunchOptions = input.dynamic
-      ? { ...input.options, permissionMode: "plan" }
-      : input.options;
-    // "Start Claude on the goal" unchecked → no prompt, which is already how
-    // `taskCreated` says "don't type anything into the PTY".
-    const prompt = input.launchClaude ? promptWithImages(goalPrompt, imagePaths) : "";
-    await taskCreated(created, prompt, launchOptions, label, focusAtSubmit);
-  }
-
-  function retryPendingTask(id: string) {
-    const p = pendingTasks.find((x) => x.id === id);
-    if (!p) return;
-    void createTask(
-      { name: p.repoName, dir: p.repoDir, key: p.repoKey, originUrl: p.repoOriginUrl },
-      {
-        goal: p.goal,
-        // Unused by this call — `taskId` below is set, so `createTask` skips
-        // `createTaskForSubmit` entirely and never reads `title` on a retry.
-        title: p.goal || p.branch,
-        branch: p.branch,
-        base: p.base,
-        options: p.options,
-        imagePaths: p.imagePaths,
-        // The task already exists — a retry must rebind it, not mint a
-        // duplicate card. (Issues are already attached to it, too.)
-        issues: [],
-        worktree: true,
-        dynamic: p.dynamic,
-        launchClaude: p.launchClaude,
-        taskId: p.taskId,
-      },
-    );
-  }
-
-  function dismissPendingTask(id: string) {
-    setPendingTasks((prev) => prev.filter((p) => p.id !== id));
-  }
-
-  // A task the inline form just created: track it in the rail, mount its
-  // first session in the background, and start Claude on the goal in that
-  // session's PTY — without switching the user's current view over to it.
-  // They can jump to it via the rail whenever they're ready.
-  async function taskCreated(
-    created: TaskCreated,
-    prompt: string,
-    options: ClaudeLaunchOptions,
-    /** The goal as the user typed it — what the rail and the toast show, so
-     * the image paths `promptWithImages` appended stay out of both. */
-    label?: string,
-    /** The user's selection/active folder when they submitted the form. Used
-     * to auto-focus the new task's pane only if they haven't navigated away
-     * during the async create. */
-    focusAtSubmit?: { sessionId: string | null; folderDir: string | null },
-  ) {
-    toast(`created ${created.name}${created.branch ? ` on ${created.branch}` : ""}`);
-    await invoke("ab_add_repo", { path: created.dir });
-    // A freshly tracked folder already gets a default not-started session —
-    // reuse it rather than adding a second one, which would open as a
-    // surprise split pane beside the empty default.
-    const fresh = await invoke<StatePayload>("ab_get_state", {});
-    const folder = fresh.isOk()
-      ? fresh.value.repos.flatMap((r) => r.folders).find((f) => f.dir === created.dir)
-      : undefined;
-    let rec = folder?.sessions[0] ?? null;
-    if (!rec) {
-      const added = await invoke<SessionData>("ab_add_session", { dir: created.dir, name: null });
-      if (added.isErr()) return;
-      rec = added.value;
-    }
-    mountSession(created.dir, rec.id);
-    // Label the session before deciding whether to launch: the goal is why
-    // this session exists either way, and a task created with "Start Claude"
-    // unchecked would otherwise sit in the rail as an unnamed shell.
-    if (label) void abSetSessionPurpose(rec.id, label);
-    // An empty prompt is the one signal for "leave the PTY at a bare shell" —
-    // both a goal-less submit and an unchecked "Start Claude on the goal"
-    // arrive here the same way.
-    if (prompt) {
-      // `launchClaudeIn` waits for the PTY's first frame itself — a proxy for
-      // "the shell is actually reading input", since a successful term_write
-      // only proves the Rust-side conduit exists, not that zsh finished
-      // sourcing its rc files. This path also focuses the pane on its own
-      // (`withLiveSession` must render it to type into it), so the auto-focus
-      // below is only for the bare-shell case.
-      await launchClaudeIn(
-        { folderDir: created.dir, sessionId: rec.id, sessionName: rec.name, restart: false },
-        prompt,
-        options,
-        label,
-      );
-      return;
-    }
-    // Bare-shell task: `mountSession` placed the pane in the background so as
-    // not to yank the user's view mid-create. Now that it exists, focus it —
-    // but only if the user is still where they were at submit. If they moved
-    // to another session/folder while the (async) create ran, landing them on
-    // the new task would be exactly the focus-theft `mountSession` avoids, so
-    // leave the pane parked and let the toast (`created …`) be the signal.
-    const stayedPut =
-      selectedRef.current === (focusAtSubmit?.sessionId ?? null) &&
-      activeFolderDirRef.current === (focusAtSubmit?.folderDir ?? null);
-    if (stayedPut) selectSession(created.dir, rec.id);
   }
 
   async function newSession(folderDir: string, launchClaude = false) {
@@ -1356,7 +765,7 @@ export function AgentboardScreen() {
       } else if (req.kind === "reopen-task") {
         setActiveFolderDir(req.repoDir);
         ackFolder(req.repoDir);
-        openReopenForm(
+        taskCreation.openReopenForm(
           { name: req.repoName, dir: req.repoDir, key: req.repoKey, originUrl: req.originUrl },
           req.taskId,
           req.goal,
@@ -1372,10 +781,6 @@ export function AgentboardScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only subscription; handle closes over current values and must not re-subscribe
   }, []);
 
-  // Sweep every "missing" ghost in one click. The Rust side re-probes the
-  // disk at call time, so a directory restored since the last poll survives;
-  // no sessions to kill — a missing dir has no live PTY.
-
   // Actually remove: kill any live sessions first (killing a PTY is
   // client-mediated — see `closeSession`/`TerminalView`'s unmount effect),
   // then drop the checkout(s) from the watched list. Removes by `dir`, never
@@ -1390,184 +795,6 @@ export function AgentboardScreen() {
     for (const id of target.sessionIds) await closeSession(id);
     for (const dir of target.dirs) await untrackRepo(dir, target.label, [], "agentboard");
   }
-
-  // Delete a worktree from disk. Always confirms (unlike untracking,
-  // this touches the filesystem); the Rust side's guards still protect real
-  // work — a dirty tree, commits unreachable from any branch/remote, or a
-  // foreign listener on a claimed port come back as reasons instead of a
-  // deletion (see the blocked-delete dialog, which offers each one's remedy).
-  function requestDeleteWorktree(dir: string, label: string) {
-    const folder = repos.flatMap((r) => r.folders).find((f) => f.dir === dir);
-    const sessionIds = folder ? liveSessions(folder).map((s) => s.id) : [];
-    // The bound board task, if the board knows this worktree: deleting the
-    // worktree closes it, so the dialog asks how it ended. Defaults to
-    // `done` — the common case — rather than inferring from the linked PR's
-    // cached state, which can lag a just-merged PR by a full poll tick and
-    // silently default to "abandoned". The user flips it via the dialog's
-    // swap link on the (rarer) actually-abandoned case.
-    const bound = snapshot.tasks.find((t) => t.worktree?.dir === dir) ?? null;
-    setDeleteWtTask(bound);
-    setDeleteWtOutcome("done");
-    bumpDeleteFlow(dir); // a fresh flow — see `endDeleteFlow`
-    setConfirmDeleteWt({ label, dirs: [dir], sessionIds });
-  }
-
-  // Confirms the close-task/delete-worktree dialog — shared by the "Close as
-  // <outcome>" button click and the mod+Enter shortcut so the two paths can't
-  // drift (telemetry included).
-  function confirmDeleteWorktree() {
-    if (!confirmDeleteWt) return;
-    uiAction(
-      "agentboard.delete_worktree",
-      "agentboard",
-      deleteWtTask ? deleteWtOutcome : "no-task",
-    );
-    void performDeleteWorktree(confirmDeleteWt, {
-      outcome: deleteWtTask ? deleteWtOutcome : undefined,
-    });
-    setConfirmDeleteWt(null);
-  }
-
-  // Abandon the delete flow for `dir`: closes the blocked dialog and
-  // invalidates any still-in-flight attempt, so a removal that resolves after
-  // the user walked away can't reopen the dialog behind them. Every exit from
-  // the blocked dialog goes through here.
-  function endDeleteFlow(dir: string | undefined) {
-    if (dir !== undefined) bumpDeleteFlow(dir);
-    setBlockedDelete(null);
-  }
-
-  // `force` skips every guard — only ever passed from the blocked dialog's
-  // force button, which names what's being discarded. `outcome` is what the
-  // bound board row records as it closes; omitted (no bound task, or a
-  // pre-outcome caller) the backend infers it.
-  async function performDeleteWorktree(
-    target: RemoveTarget,
-    { force = false, outcome }: { force?: boolean; outcome?: TaskOutcome } = {},
-  ) {
-    // `task_delete` kills the folder's live PTYs itself — only once the
-    // guards have passed and the removal is really happening, so a refusal
-    // costs nothing — and only tears down the session records once removal
-    // actually succeeds; closing sessions here first would untrack them even
-    // when removal is blocked (dirty tree, unpushed commits, a foreign
-    // port), leaving the rail looking clean while the worktree stays on
-    // disk. `deletingDirs` dims/disables the rail's row for this dir while
-    // the (possibly slow — git checks, docker cleanup) call is in flight, so
-    // it can't be clicked into or deleted twice; cleared at the end so a
-    // blocked/failed removal leaves the row interactive again.
-    const dir = target.dirs[0];
-    const flow = deleteFlowOf(dir);
-    setDeletingDirs((prev) => new Set(prev).add(dir));
-    // Claim these deaths before asking for them — when removal proceeds, the
-    // kill happens in Rust while the panes are still mounted, so the exits
-    // come back as crashes. A blocked/failed attempt kills nothing, so the
-    // unconsumed claims are handed back below — otherwise they'd linger and
-    // silently swallow a later genuine crash of the same session.
-    for (const id of target.sessionIds) expectedKills.current.add(id);
-    const removed = await taskDelete({ dir }, { force, outcome });
-    // The user may have cancelled, or forced past this, while the call ran.
-    // A stale result must not resurrect the dialog or re-report an outcome
-    // for a flow that's over — but the `deletingDirs` release below still has
-    // to run, or the rail row stays dimmed forever.
-    const current = deleteFlowOf(dir) === flow;
-    if (removed.isErr() || removed.value.status === "blocked") {
-      // Nothing was removed, so no PTY was killed — return the claims.
-      for (const id of target.sessionIds) expectedKills.current.delete(id);
-    }
-    removed.match({
-      ok: (verdict) => {
-        // Refused, not failed: hand the reasons to the dialog that can act on
-        // them rather than a toast that can only be dismissed.
-        if (verdict.status === "blocked") {
-          if (current)
-            setBlockedDelete({
-              target,
-              name: verdict.name,
-              outcome,
-              blockers: verdict.blockers,
-              messages: verdict.messages,
-            });
-          return;
-        }
-        endDeleteFlow(dir);
-        for (const id of target.sessionIds) {
-          setOpen((prev) => prev.filter((x) => x !== id));
-          setSelected((cur) => (cur?.sessionId === id ? null : cur));
-          removeSessionPane(id);
-        }
-        for (const message of verdict.messages) toast(message);
-        toast.success(`Deleted worktree ${verdict.name || target.label}`);
-      },
-      // A genuine failure (bad path, broken worktree, git fell over) — there
-      // is no remedy to offer, so this stays a toast.
-      err: (e) => {
-        if (current) toast.error(e.message);
-      },
-    });
-    setDeletingDirs((prev) => {
-      const next = new Set(prev);
-      next.delete(dir);
-      return next;
-    });
-    // Blocked/failed leaves the row interactive again — its last phase text
-    // must go with it, or a later delete attempt on the same dir would
-    // briefly show a stale label from this attempt before its own first
-    // event lands.
-    setDeletingPhase((prev) => {
-      if (!prev.has(dir)) return prev;
-      const next = new Map(prev);
-      next.delete(dir);
-      return next;
-    });
-  }
-
-  // Clear a stale dev server off one of the task's claimed ports, then retry
-  // the delete — the remedy for a `foreignPort` blocker, so the whole flow
-  // finishes where it started instead of sending the user to a terminal.
-  // `task_stop_port` refuses any port the task doesn't claim in its `.env`,
-  // and only returns once the port is actually free, so the retry can't race
-  // the socket's release.
-  async function stopPortAndRetry(blocked: BlockedDelete, port: number) {
-    const dir = blocked.target.dirs[0];
-    // Captured before the stop runs (it takes seconds — SIGTERM, wait,
-    // maybe SIGKILL): "Keep the worktree" stays clickable during it, and a
-    // cancel bumps the flow, so this is what lets the check below actually
-    // see the cancel. Capturing after the await would always read the
-    // post-cancel value and retry anyway — deleting a worktree the user
-    // just chose to keep.
-    const flow = deleteFlowOf(dir);
-    setStoppingPort(port);
-    const stopped = await invoke<string>("task_stop_port", { dir, port });
-    if (stopped.isErr()) {
-      toast.error(stopped.error.message);
-    } else {
-      // The stop really happened, so it's reported even if the user has
-      // moved on — but the retry is theirs to want, not ours to assume.
-      toast.success(stopped.value);
-      // Re-run the guarded removal: the port is free now, but a dirty tree or
-      // unreachable commits may still (correctly) block, in which case the
-      // dialog just re-renders with one fewer reason. A port that was already
-      // free comes back `Ok` too (the user may have quit the dev server
-      // themselves after reading the blocker), so that also lands here rather
-      // than dead-ending on an error toast.
-      if (deleteFlowOf(dir) === flow)
-        await performDeleteWorktree(blocked.target, { outcome: blocked.outcome });
-    }
-    // Released only now, after the retry: clearing it before would re-enable
-    // this row's button while the removal is still running, letting a second
-    // row's "Stop it" start an overlapping removal of the same worktree.
-    setStoppingPort(null);
-  }
-
-  // Any blocked-dialog action in flight — a port stop, or the removal that
-  // follows it. Every button in that dialog ends in a removal of the same
-  // worktree, so they share one gate rather than each disabling only itself.
-  const blockedDeleteDir = blockedDelete?.target.dirs[0];
-  // The removal itself (as opposed to the port stop before it) — once this
-  // is true, "Keep the worktree" can no longer be honored, so the dialog's
-  // cancel affordances lock too rather than promising an undo they can't do.
-  const blockedRemovalInFlight = blockedDeleteDir != null && deletingDirs.has(blockedDeleteDir);
-  const deleteBusy = stoppingPort !== null || blockedRemovalInFlight;
 
   // Remove a repo (or, for a multi-checkout repo, all its checkouts) from
   // the rail. Immediate when nothing's running; confirms first (see the
@@ -1596,12 +823,6 @@ export function AgentboardScreen() {
     const trimmed = name.trim();
     if (trimmed) await invoke("ab_rename_session", { id: sessionId, name: trimmed });
   }
-
-  // Optimistic lifecycle overlays (sessionId → forced status until ts). The
-  // 2s watcher scan re-renders with ground truth; overlays just cover the gap.
-  const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
-  const setOverlay = (id: string, status: AgentStatus) =>
-    setOverlays((m) => ({ ...m, [id]: { status, until: Date.now() + 2_500 } }));
 
   const actions: SessionActions = {
     start: (folderDir, s) => {
@@ -1664,7 +885,7 @@ export function AgentboardScreen() {
           if (deletingDirs.has(activeFolder.dir)) return;
           requestDeleteWorktree(activeFolder.dir, activeFolder.name);
         },
-        "ab-confirm-close-worktree": confirmDeleteWorktree,
+        "ab-confirm-close-worktree": worktreeDelete.confirmDeleteWorktree,
         "ab-close-session": () => {
           if (selected) void closeSession(selected.sessionId);
         },
@@ -1706,77 +927,14 @@ export function AgentboardScreen() {
         sessionById,
         collapsed,
         railCollapsed,
-        confirmDeleteWt,
-        deleteWtTask,
-        deleteWtOutcome,
+        worktreeDelete.confirmDeleteWt,
+        worktreeDelete.deleteWtTask,
+        worktreeDelete.deleteWtOutcome,
       ],
     ),
     "agentboard",
     activeTab === "agentboard",
   );
-
-  // Compact attention strip: failing/review PRs + the next imminent meeting.
-  // A dismissed PR stays hidden until it changes again (see isItemDismissed).
-  const attention = useMemo(() => {
-    const items: {
-      key: string;
-      kind: "pr" | "event";
-      title: string;
-      sub: string;
-      border: string;
-      onClick: () => void;
-      onDismiss?: () => void;
-    }[] = [];
-    for (const p of snapshot.prs) {
-      if (isItemDismissed(p)) continue;
-      const checksFailing = p.state !== "merged" && p.checks === "failing";
-      if (checksFailing || p.reviewState === "review_requested") {
-        items.push({
-          key: `pr:${p.repo}#${p.number}`,
-          kind: "pr",
-          title: `${p.repo.split("/").pop()} #${p.number}`,
-          sub: checksFailing ? "Checks failing" : "Review requested",
-          border: checksFailing ? PR_TONE.failed.border : PR_TONE.review.border,
-          onClick: () => {
-            uiAction("agentboard.attention_open", "agentboard", "pr");
-            void openExternalUrl(p.url);
-          },
-          onDismiss: () => void dismissAttentionPr(p.repo, p.number, p.updatedTs),
-        });
-      }
-    }
-    const soon = snapshot.events
-      .filter((e) => e.startTs > now && e.startTs - now <= 30 * 60_000)
-      .toSorted((a, b) => a.startTs - b.startTs)[0];
-    if (soon) {
-      items.push({
-        key: `event:${soon.id}`,
-        kind: "event",
-        title: soon.title,
-        sub: `Starts in ${fmtCountdown(soon.startTs - now)}`,
-        border: "border-l-blue-500",
-        onClick: () => {
-          uiAction("agentboard.attention_open", "agentboard", "event");
-          openTab("cockpit");
-        },
-      });
-    }
-    return items;
-  }, [snapshot.prs, snapshot.events, now, openTab]);
-
-  const dismissedPrCount = snapshot.prs.filter(isItemDismissed).length;
-  async function clearDismissals() {
-    uiAction("agentboard.dismissals_clear", "agentboard");
-    setClearingDismissals(true);
-    const cleared = await storeDismissalsClear();
-    if (cleared.isOk()) {
-      const n = cleared.value;
-      toast.success(n === 1 ? "1 item restored" : `${n} items restored`);
-    } else if (!NotInTauri.is(cleared.error)) {
-      toast.error(cleared.error.message);
-    }
-    setClearingDismissals(false);
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1789,7 +947,7 @@ export function AgentboardScreen() {
           <RailIconStrip
             repos={visibleRepos}
             activeFolderDir={activeFolderDir}
-            attentionCount={attention.length}
+            attentionCount={attention.items.length}
             onSelectFolder={selectFolder}
             onExpand={toggleRail}
             expandHint={shortcutHint("ab-toggle-rail")}
@@ -1802,116 +960,18 @@ export function AgentboardScreen() {
               <ResizablePanel defaultSize="520px" minSize="220px" maxSize="760px">
                 <div className="flex h-full flex-col border-r">
                   <RollupChip state={state} now={now} />
-                  <div className="flex items-center justify-between border-b px-3 py-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Repos
-                    </span>
-                    <span className="flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={openRepoManager}
-                        className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-accent/50"
-                        title="Manage tracked repos in Settings — track, reorder, icon and color"
-                      >
-                        <FolderPlus className="size-3.5" /> Manage repos
-                      </button>
-                      {missingRepoCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => void cleanupMissing()}
-                          aria-label={`Untrack ${missingRepoCount} missing repos`}
-                          className="rounded-md p-1 text-amber-500 hover:bg-accent/50 hover:text-amber-400"
-                          title={`Untrack ${missingRepoCount} repo${missingRepoCount === 1 ? "" : "s"} whose director${missingRepoCount === 1 ? "y is" : "ies are"} gone from disk`}
-                        >
-                          <FolderX className="size-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          uiAction(
-                            "agentboard.hide_inactive",
-                            "agentboard",
-                            hideInactive ? "off" : "on",
-                          );
-                          setHideInactive(!hideInactive);
-                        }}
-                        aria-label={hideInactive ? "Show all repos" : "Hide inactive repos"}
-                        aria-pressed={hideInactive}
-                        className={cn(
-                          "rounded-md p-1 hover:bg-accent/50",
-                          hideInactive
-                            ? "text-violet-500 hover:text-violet-400"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                        title={
-                          hideInactive
-                            ? "Showing only repos with something going on — click to show all"
-                            : "Hide repos with nothing going on (no live session, no dirty tree, no unpushed commits)"
-                        }
-                      >
-                        {hideInactive ? (
-                          <EyeOff className="size-3.5" />
-                        ) : (
-                          <Eye className="size-3.5" />
-                        )}
-                      </button>
-                      {dismissedPrCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => void clearDismissals()}
-                          disabled={clearingDismissals}
-                          aria-label="Clear all dismissed PRs"
-                          className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-                          title={`Bring back ${dismissedPrCount} dismissed PR${dismissedPrCount === 1 ? "" : "s"}`}
-                        >
-                          <CircleSlash className="size-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={toggleRail}
-                        aria-label="Collapse the rail to icons"
-                        className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                        title={`Collapse the rail to icons (${shortcutHint("ab-toggle-rail")})`}
-                      >
-                        <PanelLeftClose className="size-3.5" />
-                      </button>
-                    </span>
-                  </div>
-
-                  {attention.length > 0 && (
-                    <div className="flex flex-col gap-1 border-b p-2">
-                      {attention.map((a) => (
-                        <div
-                          key={a.key}
-                          className={cn(
-                            "group flex items-center gap-1 rounded-md border border-l-2 pr-1 hover:bg-accent/50",
-                            a.border,
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={a.onClick}
-                            className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
-                          >
-                            {a.kind === "pr" ? (
-                              <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
-                            ) : (
-                              <CalendarClock className="size-3.5 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-medium">{a.title}</span>
-                              <span className="block truncate text-[11px] text-muted-foreground">
-                                {a.sub}
-                              </span>
-                            </span>
-                          </button>
-                          {a.onDismiss && <DismissButton label="Dismiss" onDismiss={a.onDismiss} />}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <RailHeader
+                    attention={attention.items}
+                    missingRepoCount={missingRepoCount}
+                    dismissedPrCount={attention.dismissedPrCount}
+                    clearingDismissals={attention.clearingDismissals}
+                    hideInactive={hideInactive}
+                    onSetHideInactive={setHideInactive}
+                    onOpenRepoManager={openRepoManager}
+                    onCleanupMissing={() => void cleanupMissing()}
+                    onClearDismissals={() => void attention.clearDismissals()}
+                    onCollapseRail={toggleRail}
+                  />
 
                   {/* min-h-0 is load-bearing: without it this flex child grows past the
                       rail's height and folders below the fold become unreachable. */}
@@ -1957,22 +1017,22 @@ export function AgentboardScreen() {
                               onSelectFolder={selectFolder}
                               onSelect={selectSession}
                               onNewSession={newSession}
-                              onNewTask={toggleTaskForm}
+                              onNewTask={taskCreation.toggleTaskForm}
                               onRemoveRepo={requestRemoveRepo}
                               onDeleteWorktree={requestDeleteWorktree}
                               deletingDirs={deletingDirs}
-                              deletingPhase={deletingPhase}
+                              deletingPhase={worktreeDelete.deletingPhase}
                               onRenameCommit={commitRename}
                               onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
-                              taskFormOpen={openTaskForms.has(repo.key)}
-                              taskFormInitialGoal={reopenTasks.get(repo.key)?.goal}
-                              onCancelTaskForm={() => closeTaskForm(repo.key)}
+                              taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
+                              taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
+                              onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
                               onSubmitTaskForm={(input) => {
-                                const reopening = reopenTasks.get(repo.key);
-                                closeTaskForm(repo.key);
-                                void createTask(
+                                const reopening = taskCreation.reopenTasks.get(repo.key);
+                                taskCreation.closeTaskForm(repo.key);
+                                void taskCreation.createTask(
                                   {
                                     name: repo.name,
                                     dir: repo.folders[0].dir,
@@ -1986,9 +1046,11 @@ export function AgentboardScreen() {
                                   },
                                 );
                               }}
-                              pendingTasks={pendingTasks.filter((p) => p.repoKey === repo.key)}
-                              onRetryPendingTask={retryPendingTask}
-                              onDismissPendingTask={dismissPendingTask}
+                              pendingTasks={taskCreation.pendingTasks.filter(
+                                (p) => p.repoKey === repo.key,
+                              )}
+                              onRetryPendingTask={taskCreation.retryPendingTask}
+                              onDismissPendingTask={taskCreation.dismissPendingTask}
                             />
                           </motion.div>
                         ))}
@@ -2026,335 +1088,44 @@ export function AgentboardScreen() {
                 />
               )}
               {wins && activeFolderDir && (
-                <div className="flex items-center gap-1 border-b bg-card px-2 py-1">
-                  {windowsForFolder.map((w) =>
-                    // Swap the chip for the input rather than nesting one
-                    // inside it: buttons may not contain interactive
-                    // descendants. See apps/client/CLAUDE.md.
-                    renamingWin === w.id ? (
-                      <input
-                        key={w.id}
-                        autoFocus
-                        defaultValue={w.name}
-                        aria-label={`rename window ${w.name}`}
-                        onBlur={(e) => {
-                          const name = e.target.value.trim() || w.name;
-                          setRenamingWin(null);
-                          updateWins([w.folderDir], (cur) => ({
-                            ...cur,
-                            windows: cur.windows.map((x) => (x.id === w.id ? { ...x, name } : x)),
-                          }));
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          if (e.key === "Escape") setRenamingWin(null);
-                        }}
-                        className="w-24 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-[11px] outline-none"
-                      />
-                    ) : (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => actions.focusWindow(w.id)}
-                        onDoubleClick={() => setRenamingWin(w.id)}
-                        title="double-click to rename"
-                        aria-pressed={w.id === activeWin?.id}
-                        className={cn(
-                          // border-b-2 mirrors the rail's border-l-2 active edge,
-                          // rotated to match this strip's horizontal layout — kept
-                          // transparent at rest so the violet edge never shifts
-                          // the tab's size when it becomes active.
-                          "flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-[11px]",
-                          w.id === activeWin?.id
-                            ? "border-b-violet-500 bg-accent text-foreground"
-                            : "text-muted-foreground hover:bg-accent/50",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "size-2 rounded-[3px]",
-                            windowColor(windowsForFolder, w.id),
-                          )}
-                        />
-                        {w.name}
-                        <span className="font-mono text-[10px] text-muted-foreground/60">
-                          {w.panes.length}⊞
-                        </span>
-                        {windowsForFolder.length > 1 && (
-                          // span-with-role, not <button>: it nests inside the
-                          // window chip's real <button>, and interactive elements
-                          // may not nest. Keyboard support added by hand instead.
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            title="close window (panes ungroup; sessions stay in the rail)"
-                            aria-label={`close window ${w.name}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateWins([w.folderDir], (cur) => ({
-                                ...cur,
-                                windows: cur.windows.filter((x) => x.id !== w.id),
-                              }));
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key !== "Enter" && e.key !== " ") return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              updateWins([w.folderDir], (cur) => ({
-                                ...cur,
-                                windows: cur.windows.filter((x) => x.id !== w.id),
-                              }));
-                            }}
-                            className="text-muted-foreground/50 hover:text-red-500"
-                          >
-                            ✕
-                          </span>
-                        )}
-                      </button>
-                    ),
-                  )}
-                  {activeFolderDir && (
-                    <button
-                      type="button"
-                      onClick={() => void newWindow(activeFolderDir)}
-                      title="New window around a fresh session"
-                      className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-violet-500 hover:bg-accent/50"
-                    >
-                      <Plus className="size-3" /> window
-                    </button>
-                  )}
-                  {activeFolderDir && (
-                    <button
-                      type="button"
-                      onClick={() => void newSession(activeFolderDir)}
-                      className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-violet-500 hover:bg-accent/50"
-                      title={`New session in the focused folder (${shortcutHint("ab-new-session")} or ${shortcutHint("ab-new-terminal-right")})`}
-                    >
-                      <Plus className="size-3" /> session
-                    </button>
-                  )}
-                  {selected && (
-                    <button
-                      type="button"
-                      onClick={() => void closeSession(selected.sessionId)}
-                      className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent/50"
-                      title={`Close session (${shortcutHint("ab-close-session")})`}
-                      aria-label="Close the selected session"
-                    >
-                      Close {shortcutHint("ab-close-session")}
-                    </button>
-                  )}
-                </div>
+                <WindowStrip
+                  windows={windowsForFolder}
+                  activeWinId={activeWin?.id}
+                  hasSelection={selected !== null}
+                  updateWins={updateWins}
+                  onFocusWindow={actions.focusWindow}
+                  onNewWindow={() => void newWindow(activeFolderDir)}
+                  onNewSession={() => void newSession(activeFolderDir)}
+                  onCloseSession={() => {
+                    if (selected) void closeSession(selected.sessionId);
+                  }}
+                />
               )}
 
-              {/* One flat pool of mounted terminals (never remounted — a remount
-                  would respawn the shell). The active window's pane order assigns
-                  each a percent-rect; panes in other windows stay hidden. */}
-              <div ref={paneAreaRef} className="relative min-h-0 flex-1 overflow-hidden p-2">
-                {(() => {
-                  const panes: string[] = activeWin?.panes ?? [];
-                  const liveCols =
-                    colDrag && activeWin && colDrag.winId === activeWin.id
-                      ? colDrag.cols
-                      : activeWin?.cols;
-                  const rects = paneRects(panes.length, liveCols);
-                  const rectFor = (id: string) => {
-                    const i = panes.indexOf(id);
-                    return i < 0 ? undefined : rects[i];
-                  };
-                  return (
-                    <>
-                      {open.map((id) => {
-                        const r = rectFor(id);
-                        const s = sessionById.get(id);
-                        const termDir = folderOf.get(id)?.dir;
-                        return (
-                          <div
-                            key={id}
-                            hidden={!r}
-                            style={r ? paneStyle(r) : undefined}
-                            className="absolute p-1.5"
-                          >
-                            <div
-                              onClick={() =>
-                                selectSession(folderOf.get(id)?.dir ?? cwds.current[id] ?? "", id)
-                              }
-                              className={cn(
-                                "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
-                                // Amber (needs-you) wins the border over violet
-                                // (focus) when both apply — see the folder-rail-ui
-                                // skill's "Two accent hues" rule; class order here
-                                // matters because `cn` (tailwind-merge) keeps only
-                                // the last conflicting border-color utility.
-                                focusedPaneId === id && "border-violet-500/60",
-                                termAttention[id] && "border-amber-500/70",
-                              )}
-                            >
-                              {s && (
-                                <PaneHeader
-                                  session={s}
-                                  label={labelFor(s)}
-                                  now={now}
-                                  actions={actions}
-                                />
-                              )}
-                              {/* data-term-host marks terminal territory for the
-                                  shortcut guard — keys typed here belong to the
-                                  shell (Ctrl+D is EOF, not "new session"). */}
-                              <div className="relative min-h-0 flex-1" data-term-host>
-                                <TerminalView
-                                  termId={id}
-                                  cwd={termDir ?? cwds.current[id]}
-                                  onExit={(exit) => handleExit(id, exit)}
-                                  onTitle={onTitle}
-                                  // Only folder-owned terminals can route links
-                                  // into a files pane; others keep the
-                                  // external-editor default.
-                                  onOpenPath={
-                                    termDir
-                                      ? (path, line) => openTerminalPath(termDir, path, line)
-                                      : undefined
-                                  }
-                                  focusRequest={
-                                    focusTerminalRequest?.id === id
-                                      ? focusTerminalRequest.nonce
-                                      : undefined
-                                  }
-                                />
-                                {s && (
-                                  <ColdCacheOverlay
-                                    session={s}
-                                    now={now}
-                                    onCompact={() => actions.compactClaude(s)}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {/* Diff panes: a folder's patch tiled beside its terminals. */}
-                      {panes.filter(isDiffPane).map((id) => {
-                        const r = rectFor(id);
-                        const dir = diffPaneDir(id) ?? "";
-                        return (
-                          <div
-                            key={id}
-                            style={r ? paneStyle(r) : undefined}
-                            className="absolute p-1.5"
-                            onClick={() => setFocusedPaneId(id)}
-                          >
-                            <DiffPane
-                              folder={folderByDir.get(dir)}
-                              focused={focusedPaneId === id}
-                              onClose={() => removePane(id)}
-                            />
-                          </div>
-                        );
-                      })}
-                      {/* Files panes: a folder's full tree tiled beside its terminals. */}
-                      {panes.filter(isFilesPane).map((id) => {
-                        const r = rectFor(id);
-                        const dir = filesPaneDir(id) ?? "";
-                        return (
-                          <div
-                            key={id}
-                            style={r ? paneStyle(r) : undefined}
-                            className="absolute p-1.5"
-                            onClick={() => setFocusedPaneId(id)}
-                          >
-                            <FolderFilesPane
-                              folder={folderByDir.get(dir)}
-                              focused={focusedPaneId === id}
-                              openRequest={filesOpenRequests[dir]}
-                              onClose={() => removePane(id)}
-                            />
-                          </div>
-                        );
-                      })}
-                      {/* Preview panes: a folder's live dev server tiled beside
-                          its terminals, with draw-on-page feedback. */}
-                      {panes.filter(isPreviewPane).map((id) => {
-                        const r = rectFor(id);
-                        const dir = previewPaneDir(id) ?? "";
-                        return (
-                          <div
-                            key={id}
-                            style={r ? paneStyle(r) : undefined}
-                            className="absolute p-1.5"
-                            onClick={() => setFocusedPaneId(id)}
-                          >
-                            <PreviewPane
-                              folder={folderByDir.get(dir)}
-                              focused={focusedPaneId === id}
-                              onClose={() => removePane(id)}
-                            />
-                          </div>
-                        );
-                      })}
-                      {/* Tombstones: a shell that died on its own, holding the
-                          task it died in. The pane id says which kind this is,
-                          so this pass can't overlap the terminal pass above —
-                          a session is either its own id or its `~exit:` one,
-                          never both. Dismissal is the only affordance;
-                          reopening from the rail reclaims the task. */}
-                      {panes.filter(isExitPane).map((id) => {
-                        const r = rectFor(id);
-                        const sessionId = exitPaneSession(id) ?? "";
-                        const s = sessionById.get(sessionId);
-                        return (
-                          <div
-                            key={id}
-                            style={r ? paneStyle(r) : undefined}
-                            className="absolute p-1.5"
-                            onClick={() => setFocusedPaneId(id)}
-                          >
-                            <PanePlaceholder
-                              label={s ? labelFor(s) : "shell"}
-                              detail={exitLabels[sessionId]}
-                              tone="alert"
-                              focused={focusedPaneId === id}
-                              onRemove={() => removePane(id)}
-                            />
-                          </div>
-                        );
-                      })}
-                      {/* Column dividers: drag to resize (snaps to thirds and
-                          fifths), double-click for equal columns. Row layout
-                          (≤3) has one per boundary; the ≥4 grid shares one
-                          column boundary across rows. */}
-                      {activeWin &&
-                        panes.length >= 2 &&
-                        (panes.length <= 3
-                          ? rects.slice(1).map((r) => r.left)
-                          : [rects[1].left]
-                        ).map((x, i) => (
-                          <div
-                            key={`divider-${i}`}
-                            role="separator"
-                            aria-orientation="vertical"
-                            aria-label="resize panes"
-                            title="Drag to resize (snaps to thirds and fifths) — double-click for equal columns"
-                            onPointerDown={(e) => startColDrag(e, activeWin, i)}
-                            onDoubleClick={() => resetCols(activeWin)}
-                            className="absolute top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-violet-500/40 active:bg-violet-500/60"
-                            style={{ left: `${x}%` }}
-                          />
-                        ))}
-                      {panes.length === 0 && (
-                        <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                          <TerminalSquare className="size-10" />
-                          <p className="text-sm">
-                            {activeFolderDir
-                              ? "No open panes — click a session in the rail to open it here."
-                              : "Select a folder in the rail to see its sessions."}
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
+              <PaneGrid
+                open={open}
+                cwds={cwds}
+                activeWin={activeWin}
+                activeFolderDir={activeFolderDir}
+                sessionById={sessionById}
+                folderOf={folderOf}
+                folderByDir={folderByDir}
+                now={now}
+                actions={actions}
+                focusedPaneId={focusedPaneId}
+                onFocusPane={setFocusedPaneId}
+                termAttention={termAttention}
+                exitLabels={exitLabels}
+                filesOpenRequests={filesOpenRequests}
+                labelFor={labelFor}
+                focusTerminalRequest={focusTerminalRequest}
+                onSelectSession={selectSession}
+                onExit={handleExit}
+                onTitle={onTitle}
+                onOpenTerminalPath={openTerminalPath}
+                onRemovePane={removePane}
+                columns={columns}
+              />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -2381,39 +1152,42 @@ export function AgentboardScreen() {
       />
 
       <DeleteWorktreeDialog
-        target={confirmDeleteWt}
-        task={deleteWtTask}
-        outcome={deleteWtOutcome}
-        onOpenChange={closeOnFalse(() => setConfirmDeleteWt(null))}
-        onSwapOutcome={() => setDeleteWtOutcome((cur) => (cur === "done" ? "abandoned" : "done"))}
-        onConfirm={confirmDeleteWorktree}
+        target={worktreeDelete.confirmDeleteWt}
+        task={worktreeDelete.deleteWtTask}
+        outcome={worktreeDelete.deleteWtOutcome}
+        onOpenChange={closeOnFalse(worktreeDelete.clearConfirm)}
+        onSwapOutcome={worktreeDelete.swapOutcome}
+        onConfirm={worktreeDelete.confirmDeleteWorktree}
       />
 
       {/* The guards refused — shared shell, see `BlockedDeleteDialog`. */}
       <BlockedDeleteDialog
-        open={blockedDelete != null}
+        open={worktreeDelete.blockedDelete != null}
         // Escape/cancel abandons the flow — except once the removal itself is
         // running, when "keep" can no longer be honored: the dialog stays up
         // (buttons locked) until the removal resolves and closes it honestly.
         onOpenChange={closeOnFalse(() => {
-          if (!blockedRemovalInFlight) endDeleteFlow(blockedDeleteDir);
+          if (!worktreeDelete.blockedRemovalInFlight)
+            worktreeDelete.endDeleteFlow(worktreeDelete.blockedDeleteDir);
         })}
-        name={blockedDelete?.name}
+        name={worktreeDelete.blockedDelete?.name}
         description="The worktree is still on disk. Clear what’s below and it’ll delete cleanly, or delete anyway."
         cancelLabel="Keep the worktree"
-        blockers={blockedDelete?.blockers ?? []}
-        messages={blockedDelete?.messages ?? []}
-        busy={deleteBusy}
-        cancelDisabled={blockedRemovalInFlight}
-        stoppingPort={stoppingPort}
+        blockers={worktreeDelete.blockedDelete?.blockers ?? []}
+        messages={worktreeDelete.blockedDelete?.messages ?? []}
+        busy={worktreeDelete.deleteBusy}
+        cancelDisabled={worktreeDelete.blockedRemovalInFlight}
+        stoppingPort={worktreeDelete.stoppingPort}
         onStopPort={(port) => {
-          if (blockedDelete) void stopPortAndRetry(blockedDelete, port);
+          const blocked = worktreeDelete.blockedDelete;
+          if (blocked) void worktreeDelete.stopPortAndRetry(blocked, port);
         }}
         onForce={() => {
-          if (blockedDelete) {
-            const { target, outcome } = blockedDelete;
-            endDeleteFlow(blockedDeleteDir);
-            void performDeleteWorktree(target, { force: true, outcome });
+          const blocked = worktreeDelete.blockedDelete;
+          if (blocked) {
+            const { target, outcome } = blocked;
+            worktreeDelete.endDeleteFlow(worktreeDelete.blockedDeleteDir);
+            void worktreeDelete.performDeleteWorktree(target, { force: true, outcome });
           }
         }}
       />
