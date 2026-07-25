@@ -77,7 +77,8 @@ const MATCH_FILL = "rgba(250, 204, 21, 0.3)";
 const CURRENT_MATCH_FILL = "rgba(249, 115, 22, 0.5)";
 const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
 
-const FONT_FAMILY = "ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
+const FONT_FAMILY =
+  "'FiraCode Nerd Font Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
 const LINE_HEIGHT = 1.25;
 
 /**
