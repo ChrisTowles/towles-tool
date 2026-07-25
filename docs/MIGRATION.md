@@ -1,12 +1,20 @@
-# Migration Backlog
+# Migration Backlog (historical)
+
+> **Historical.** The port from the TypeScript `towles-tool` CLI is finished —
+> every item below is done or deliberately superseded, and nothing here is
+> outstanding work. It's kept as the record of what was ported, what was
+> dropped, and which behaviors deviate from the TS CLI on purpose. For the
+> current architecture and commands see [CLAUDE.md](../CLAUDE.md); paths,
+> command names, and crate names named below are as they were at the time, not
+> a live reference.
 
 Porting the TypeScript `towles-tool` CLI to Rust, one feature at a time. Source
-of truth for the old behavior is the TS CLI at
+of truth for the old behavior was the TS CLI at
 `~/code/p/towles-tool-repos/towles-tool-slot-1` (paths below are relative to that
-repo). Structural patterns come from Yaak (see [ATTRIBUTION.md](../ATTRIBUTION.md)).
+repo; it now lives at `~/code/p/towles-tool-cli-repos/towles-tool-primary`).
+Structural patterns come from Yaak (see [ATTRIBUTION.md](../ATTRIBUTION.md)).
 
-Work the items roughly in order; each builds on the last. When deriving code,
-cite the yaak or slot-1 source path in the commit.
+The items were worked roughly in order; each built on the last.
 
 **2026-07-11 — CLI parity dropped as a requirement.** The app is the primary
 product; remaining TS features are ported selectively (only if still wanted)

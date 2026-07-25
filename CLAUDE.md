@@ -508,13 +508,15 @@ marketplace + both manifests before the commit lands.
 
 ## Migration
 
-Features are ported from the TypeScript CLI at
-`~/code/p/towles-tool-cli-repos/towles-tool-primary` per
-[docs/MIGRATION.md](docs/MIGRATION.md). Porting is selective: a TS feature is
-ported only if still wanted, and it lands on its natural surface (app screen
-or CLI command — see the no-CLI-parity convention below). When deriving code,
-the commit message should cite the upstream source path (yaak `path/to/file`
-or slot-1 `src/commands/...`).
+The port from the TypeScript CLI at
+`~/code/p/towles-tool-cli-repos/towles-tool-primary` is **finished** —
+[docs/MIGRATION.md](docs/MIGRATION.md) is a historical record of what came
+across, not a backlog to work from. Porting was selective: a TS feature landed
+only if still wanted, and on its natural surface (app screen or CLI command —
+see the no-CLI-parity convention below), so don't treat something described
+there as owed. When deriving code from an upstream repo, the commit message
+should still cite the source path (yaak `path/to/file` or slot-1
+`src/commands/...`).
 
 ## Conventions
 
