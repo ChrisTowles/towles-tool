@@ -71,7 +71,7 @@ follows is a cross-cutting rule that spans multiple files.
   loop's own TTL-gated warming, which is why raising the TTL alone wouldn't
   have been enough; both loops must respect the same staleness signal or one
   silently defeats the other's savings.
-  **What this deliberately does not cover**: `dirty`/`files_changed`/the diff
+  **What this deliberately does not cover**: `dirty` and the `uncommitted_*`
   stats measure the *working tree*, and an edited-but-unstaged file never
   touches any of the five watched files — `index` only moves on `git add`/
   `commit`/`reset`. There is no cheap fs-watch fix for this (it would mean

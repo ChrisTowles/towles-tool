@@ -17,6 +17,7 @@ import {
   fmtContext,
   fmtTokens,
   fmtWaitingAge,
+  gitCheckedLabel,
   folderActionableItems,
   folderLanded,
   folderLandedButHasWork,
@@ -279,6 +280,26 @@ describe("pathScope", () => {
   it("returns null outside the ~/code layout", () => {
     expect(pathScope("/tmp/somewhere")).toBeNull();
     expect(pathScope("/home/me/code/deep/nested")).toBeNull();
+  });
+});
+
+describe("gitCheckedLabel", () => {
+  const now = 1_700_000_000_000;
+
+  it("counts in seconds below a minute, so a live refresh is visibly moving", () => {
+    expect(gitCheckedLabel(now, now)).toBe("checked 0s ago");
+    expect(gitCheckedLabel(now - 4_000, now)).toBe("checked 4s ago");
+    expect(gitCheckedLabel(now - 59_000, now)).toBe("checked 59s ago");
+  });
+
+  it("coarsens above a minute", () => {
+    expect(gitCheckedLabel(now - 5 * 60_000, now)).toBe("checked 5m ago");
+    expect(gitCheckedLabel(now - 3 * 3_600_000, now)).toBe("checked 3h ago");
+  });
+
+  it("is null before the first compute, rather than a 1970 age", () => {
+    expect(gitCheckedLabel(0, now)).toBeNull();
+    expect(gitCheckedLabel(undefined, now)).toBeNull();
   });
 });
 
@@ -1080,9 +1101,12 @@ function folder(overrides: Partial<FolderData>): FolderData {
     dirMissing: false,
     branch: "main",
     isWorktree: false,
-    filesChanged: 0,
-    linesAdded: 0,
-    linesRemoved: 0,
+    committedFiles: 0,
+    committedAdded: 0,
+    committedRemoved: 0,
+    uncommittedFiles: 0,
+    uncommittedAdded: 0,
+    uncommittedRemoved: 0,
     commitsAhead: 0,
     commitsBehind: 0,
     dirty: false,
@@ -1121,7 +1145,7 @@ describe("isFolderQuiet", () => {
   });
 
   it("is not quiet with a dirty working tree", () => {
-    expect(isFolderQuiet(folder({ filesChanged: 3 }), NOW)).toBe(false);
+    expect(isFolderQuiet(folder({ uncommittedFiles: 3 }), NOW)).toBe(false);
   });
 
   it("is not quiet with unpushed local commits", () => {

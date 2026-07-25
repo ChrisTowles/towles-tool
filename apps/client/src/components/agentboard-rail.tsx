@@ -12,12 +12,13 @@ import {
 } from "lucide-react";
 import {
   AgentStatusLine,
-  AheadBehind,
+  BaseMovedChip,
   CacheBadge,
   ModelBadge,
   Chevron,
   DeletingBadge,
-  DiffButton,
+  CommittedChip,
+  UncommittedChip,
   FilesButton,
   PreviewButton,
   Dot,
@@ -1093,9 +1094,10 @@ function FolderHeader({
             <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} onClick={onToggle} />
           )}
           {deleting && <DeletingBadge label={deletingLabel} />}
-          <AheadBehind stats={folder} />
+          <BaseMovedChip stats={folder} />
           {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
-          <DiffButton stats={folder} onOpen={onOpenDiff} />
+          <UncommittedChip stats={folder} onOpen={onOpenDiff} />
+          <CommittedChip stats={folder} onOpen={onOpenDiff} />
           {/* files/preview are pure actions carrying no state (unlike the diff
               chip's dirty counts), so they don't earn resting-rail pixels on
               every folder — they fade in on header hover or keyboard focus.

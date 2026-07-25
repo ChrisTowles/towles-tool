@@ -37,6 +37,20 @@ pub struct FileChange {
     pub binary: bool,
 }
 
+/// Cumulative totals of one diff: how many files it touches and its ±.
+///
+/// Deliberately a distinct type from a `Vec<FileChange>` sum, because the two
+/// diffs the Folder Rail reports are computed by different means — the
+/// committed half is a tree-to-tree walk that never touches the working tree
+/// (see [`Repo::committed_totals_vs`]), the uncommitted half is
+/// [`Repo::changes_vs`] against `HEAD`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiffTotals {
+    pub files_changed: i64,
+    pub lines_added: i64,
+    pub lines_removed: i64,
+}
+
 /// One commit's own line-count diff against its first parent.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommitStat {
@@ -145,6 +159,31 @@ impl Repo {
         Ok(out)
     }
 
+    /// What `base..HEAD` **committed** — the tree-to-tree half of
+    /// [`Repo::changes_vs`] with the working tree left out entirely, i.e.
+    /// `git diff --numstat <base> HEAD`.
+    ///
+    /// This exists so the rail can report committed and uncommitted work as
+    /// two separate quantities. Blending them (which `changes_vs` does, by
+    /// design, for the diff pane) produces a ± that belongs to neither the
+    /// commit count beside it nor the dirty working tree — and only the
+    /// uncommitted half is destroyed by deleting the checkout, so the two
+    /// carry different consequences and must not share a number.
+    ///
+    /// Zero totals when `HEAD` is unborn or `base` is `HEAD` itself.
+    pub fn committed_totals_vs(&self, base: &str) -> Result<DiffTotals> {
+        let base_id = self.resolve(base).ok_or_else(|| GitError::NoSuchRev(base.to_string()))?;
+        let Some(head) = self.head_id() else {
+            return Ok(DiffTotals::default());
+        };
+        if head == base_id {
+            return Ok(DiffTotals::default());
+        }
+        let base_tree = self.tree_of(base_id)?;
+        let head_tree = self.tree_of(head)?;
+        self.tree_totals(Some(&base_tree), &head_tree)
+    }
+
     /// A file's content at `rev`, or `None` when it does not exist there —
     /// `git show <rev>:<path>` for the original side of the diff editor.
     pub fn file_at(&self, rev: &str, path: &str) -> Option<Vec<u8>> {
@@ -192,31 +231,27 @@ impl Repo {
             let tree = commit.tree().map_err(|e| GitError::Read(e.to_string()))?;
             let parent_tree =
                 commit.parent_ids().next().and_then(|parent| self.tree_of(parent.detach()).ok());
-            let (added, removed) = self.tree_line_counts(parent_tree.as_ref(), &tree)?;
+            let totals = self.tree_totals(parent_tree.as_ref(), &tree)?;
             out.push(CommitStat {
                 sha: id.to_string(),
                 subject,
-                lines_added: added,
-                lines_removed: removed,
+                lines_added: totals.lines_added,
+                lines_removed: totals.lines_removed,
             });
         }
         Ok(out)
     }
 
-    /// Total ± between two trees. `None` for `old` means the empty tree — a
-    /// root commit, whose whole content is an addition.
-    fn tree_line_counts(
-        &self,
-        old: Option<&gix::Tree<'_>>,
-        new: &gix::Tree<'_>,
-    ) -> Result<(i64, i64)> {
+    /// Files touched and total ± between two trees. `None` for `old` means the
+    /// empty tree — a root commit, whose whole content is an addition.
+    fn tree_totals(&self, old: Option<&gix::Tree<'_>>, new: &gix::Tree<'_>) -> Result<DiffTotals> {
         let changes = self
             .inner()
             .diff_tree_to_tree(old, Some(new), None)
             .map_err(|e| GitError::Read(e.to_string()))?;
         let empty = self.inner().empty_tree();
         let old = old.unwrap_or(&empty);
-        let (mut added, mut removed) = (0, 0);
+        let mut totals = DiffTotals::default();
         for change in changes {
             use gix::object::tree::diff::ChangeDetached as C;
             let path = match &change {
@@ -232,10 +267,11 @@ impl Repo {
             let before = blob_at(old, &source);
             let after = blob_at(new, &path);
             let (a, r, _) = count_lines(before.as_deref(), after.as_deref());
-            added += a;
-            removed += r;
+            totals.files_changed += 1;
+            totals.lines_added += a;
+            totals.lines_removed += r;
         }
-        Ok((added, removed))
+        Ok(totals)
     }
 
     /// The two sides of one path: its content in `base_tree` (at `source`, the

@@ -16,6 +16,7 @@ import {
   Link2Off,
   Loader2,
   MoreVertical,
+  Pencil,
   RefreshCw,
   Search,
   Trash2,
@@ -41,6 +42,7 @@ import {
   comparedBaseLabel,
   ctxPct,
   folderLandedButHasWork,
+  gitCheckedLabel,
   isCacheExpiring,
   isCold,
   modelContextLabel,
@@ -407,30 +409,38 @@ export function ComparedBaseBadge({
   );
 }
 
-/** Commits ahead/behind `comparedBase`, next to the branch name — `↑3 ↓2`.
- * Ahead (unmerged local commits) reads emerald like a diff `+`; behind (just
- * staleness, not an attention signal) stays a muted amber. Renders nothing
- * when even with the compared branch. */
-export function AheadBehind({
+/** How far `comparedBase` has moved ahead of this branch — the old `↓2`, but
+ * stated as the thing you'd actually do about it.
+ *
+ * Behind-ness is not a statistic about your work, it's a fact about someone
+ * else's that has one response (rebase or merge the base in), which is why it
+ * left the ahead/behind pair and became its own chip. Ahead-ness went the
+ * other way, into `DiffButton`'s commit count, where it sits next to the ±
+ * that belongs to it. Renders nothing when the base hasn't moved.
+ *
+ * The loudest of the three git chips, and the only *filled* one — it is the
+ * one that asks for an action rather than reporting a quantity, so it should
+ * be the thing the eye catches in the row. Weight and fill do that instead of
+ * a hue: amber is spoken for (needs-you) and a base that has moved is far too
+ * common to spend it on — nearly every row shows this chip most of the day,
+ * which is exactly the kind of standing glow that teaches you to stop seeing
+ * a color. See the `folder-rail-ui` skill's "two accent hues, one rule each".
+ */
+export function BaseMovedChip({
   stats,
 }: {
-  stats: Pick<FolderData, "commitsAhead" | "commitsBehind" | "comparedBase">;
+  stats: Pick<FolderData, "commitsBehind" | "comparedBase" | "baseBranch" | "taskBaseBranch">;
 }) {
-  const { commitsAhead, commitsBehind } = stats;
-  if (commitsAhead === 0 && commitsBehind === 0) return null;
+  const { commitsBehind } = stats;
+  if (commitsBehind === 0) return null;
   const base = comparedBaseLabel(stats);
   return (
     <span
-      className="shrink-0 font-mono text-[10.5px]"
-      title={`${commitsAhead} commit${commitsAhead === 1 ? "" : "s"} ahead of ${base}, ${commitsBehind} behind`}
+      className={`${CHIP_CLASS} border-border bg-muted font-medium text-foreground`}
+      title={`${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
     >
-      {commitsAhead > 0 && (
-        <span className="text-emerald-600 dark:text-emerald-400">↑{commitsAhead}</span>
-      )}
-      {commitsAhead > 0 && commitsBehind > 0 && " "}
-      {commitsBehind > 0 && (
-        <span className="text-amber-600 dark:text-amber-400">↓{commitsBehind}</span>
-      )}
+      <RefreshCw className="size-3" />
+      base moved {commitsBehind}
     </span>
   );
 }
@@ -448,22 +458,31 @@ function CommitStatRow({ commit }: { commit: CommitStat }) {
   );
 }
 
-/** The per-commit breakdown inside `DiffButton`'s hover card: every commit
- * `comparedBase` doesn't have, oldest first, with its own ± tally, and a
- * total row at the bottom — a many-commit branch's ± tally isn't one
- * anonymous blob. The total is the folder's own `linesAdded`/`linesRemoved`
- * (not a sum of the rows above) since those also cover uncommitted work,
- * which never gets its own commit row. Fetched lazily (only once the card
- * actually opens) and cached for the folder's lifetime in the parent's
- * state. */
+/** The per-commit breakdown inside `CommittedChip`'s hover card: every commit
+ * `comparedBase` doesn't have, oldest first, with its own ± tally, then the
+ * committed total, then the uncommitted work on its own row below a divider —
+ * a many-commit branch's ± tally isn't one anonymous blob.
+ *
+ * The two totals are never added together. This card is where the whole
+ * distinction is spelled out in words, because the chips themselves only have
+ * room for numbers. Commits are fetched lazily (only once the card actually
+ * opens) and cached for the folder's lifetime in the parent's state. */
 function CommitBreakdownPreview({
   commits,
-  linesAdded,
-  linesRemoved,
+  stats,
+  base,
 }: {
   commits: CommitStat[] | null;
-  linesAdded: number;
-  linesRemoved: number;
+  stats: Pick<
+    FolderData,
+    | "committedFiles"
+    | "committedAdded"
+    | "committedRemoved"
+    | "uncommittedFiles"
+    | "uncommittedAdded"
+    | "uncommittedRemoved"
+  >;
+  base: string;
 }) {
   if (commits == null) {
     return <p className="p-1 text-xs text-muted-foreground">loading commits…</p>;
@@ -472,68 +491,210 @@ function CommitBreakdownPreview({
     <div className="max-h-80 overflow-auto">
       <div className="flex flex-col gap-1">
         {commits.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            no commits ahead — uncommitted changes only
-          </p>
+          <p className="text-xs text-muted-foreground">no commits ahead of {base}</p>
         ) : (
           commits.map((c) => <CommitStatRow key={c.sha} commit={c} />)
         )}
       </div>
       <div className="mt-1.5 flex items-center gap-2 border-t border-border/70 pt-1.5 font-mono text-[10.5px] font-semibold">
         <span className="min-w-0 flex-1 text-foreground">
-          Total
+          Committed
           {commits.length > 0 && ` — ${commits.length} commit${commits.length === 1 ? "" : "s"}`}
+          {stats.committedFiles > 0 &&
+            `, ${stats.committedFiles} file${stats.committedFiles === 1 ? "" : "s"}`}
         </span>
-        <span className="shrink-0 text-emerald-600 dark:text-emerald-400">+{linesAdded}</span>
-        <span className="shrink-0 text-red-600 dark:text-red-400">−{linesRemoved}</span>
+        <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
+          +{stats.committedAdded}
+        </span>
+        <span className="shrink-0 text-red-600 dark:text-red-400">−{stats.committedRemoved}</span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 border-t border-dashed border-border/70 pt-1.5 font-mono text-[10.5px]">
+        <span className="min-w-0 flex-1 text-muted-foreground">
+          {stats.uncommittedFiles === 0
+            ? "Uncommitted — nothing"
+            : `Uncommitted — ${stats.uncommittedFiles} file${stats.uncommittedFiles === 1 ? "" : "s"}, lost if this checkout is deleted`}
+        </span>
+        {stats.uncommittedFiles > 0 && (
+          <>
+            <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
+              +{stats.uncommittedAdded}
+            </span>
+            <span className="shrink-0 text-red-600 dark:text-red-400">
+              −{stats.uncommittedRemoved}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-/** The diff entry point — a real, always-visible button (never hidden behind
- * a hover or dropped when the tree is clean, so the feature stays findable).
- * Clean folders read a quiet `diff`; dirty ones carry the commit count next
- * to the ± tally. Hovering previews the per-commit breakdown (each commit's
- * own ± tally, plus a total) so a branch with many commits doesn't force a
- * click just to see roughly what changed.
- *
- * The count is `commitsAhead` — SHA reachability, which never falls back to 0
- * after a squash merge rewrites the commits. The tooltip therefore also says
- * how many are genuinely still outstanding, so "12c" on a finished task can't
- * read as twelve commits of pending work. */
-function outstandingNote(
-  stats: Pick<FolderData, "commitsAhead" | "commitsUnlanded" | "landed">,
-  base: string,
-): string {
-  if (stats.landed && stats.commitsUnlanded === 0) return ` (${stats.landed}, nothing outstanding)`;
-  return stats.commitsUnlanded > 0 && stats.commitsUnlanded !== stats.commitsAhead
-    ? ` (${stats.commitsUnlanded} not on ${base} yet)`
-    : "";
+/** Fields both diff chips read, plus what they need to open the pane. */
+type DiffChipStats = Pick<
+  FolderData,
+  | "dir"
+  | "committedFiles"
+  | "committedAdded"
+  | "committedRemoved"
+  | "uncommittedFiles"
+  | "uncommittedAdded"
+  | "uncommittedRemoved"
+  | "commitsAhead"
+  | "commitsUnlanded"
+  | "landed"
+  | "comparedBase"
+  | "baseBranch"
+  | "computedAtMs"
+>;
+
+type DiffChipProps = {
+  stats: DiffChipStats;
+  onOpen: () => void;
+  /** Spell out what the chip counts (`uncommitted` / `committed`) instead of
+   * leaning on the icon alone.
+   *
+   * On for the pane header, off for the rail — not a preference but a width
+   * budget: the rail row already carries a branch, a PR chip, issue chips and
+   * status badges, and two extra words there push the numbers off the end.
+   * The icons stay meaningful in both places; the header is where there's
+   * room to say which is which without hovering. */
+  labeled?: boolean;
+};
+
+/** Shared chip chrome for the git-stat chips, so they can't drift apart. */
+const CHIP_CLASS =
+  "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors";
+
+/** The word naming what a chip counts, shown on wide surfaces only (see
+ * [`DiffChipProps.labeled`]). Muted so the *number* stays the thing the eye
+ * lands on — the label is there to be read once, not competed with. */
+function ChipLabel({ text, labeled }: { text: string; labeled: boolean }) {
+  if (!labeled) return null;
+  return <span className="opacity-60">{text}</span>;
 }
 
-export function DiffButton({
-  stats,
-  onOpen,
-}: {
-  stats: Pick<
-    FolderData,
-    | "dir"
-    | "filesChanged"
-    | "linesAdded"
-    | "linesRemoved"
-    | "commitsAhead"
-    | "commitsUnlanded"
-    | "landed"
-    | "comparedBase"
-    | "baseBranch"
-  >;
-  onOpen: () => void;
-}) {
-  const { dir, filesChanged, linesAdded, linesRemoved, commitsAhead, baseBranch } = stats;
-  const clean = linesAdded === 0 && linesRemoved === 0;
+/** Ticking "checked 4s ago", re-rendered on its own 1s interval.
+ *
+ * A caller-passed `now` won't do: the rail only re-renders when the backend
+ * snapshot changes, which is exactly the case where the age is *not* moving,
+ * so the label would freeze precisely when the user is asking whether
+ * anything is alive. Mounted only inside hover cards/tooltips, so the timer
+ * exists for the one chip being inspected, not for every row on the rail. */
+function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <>{gitCheckedLabel(computedAtMs, now) ?? "not checked yet"}</>;
+}
+
+/** Uncommitted work: what the working tree holds that `HEAD` doesn't.
+ *
+ * First of the two chips because it is the only one whose contents **die with
+ * the checkout** — that consequence, not size, is what orders them. Amber for
+ * the same reason: it's the number to look at before deleting a worktree.
+ *
+ * **Always rendered, including at zero**, where it reads a muted `clean`. It
+ * used to disappear on a clean tree, on the reasoning that its presence was
+ * itself the `dirty` signal. That was wrong in the way that matters here: an
+ * absent chip and a chip you didn't notice look identical, so "how much is
+ * uncommitted?" — the exact question this pair exists to answer — had no
+ * answer on screen for the clean case. A visible zero is an answer; nothing is
+ * not. It also keeps the two chips side by side at a fixed position, so the
+ * eye learns "left is uncommitted, right is committed" instead of re-reading
+ * a row whose contents move.
+ *
+ * **Neutral chrome, not amber**, though a dirty tree is the more consequential
+ * of the two counts. Amber means *needs you* in this app — a waiting or errored
+ * agent, a failing PR — and uncommitted work is the normal state of any task
+ * being worked on, so painting it amber put a standing false alarm on nearly
+ * every active row and diluted the hue where it does mean something. The ±
+ * keeps its green/red, which is the diff-stat convention rather than a status
+ * color. See the `folder-rail-ui` skill's "two accent hues, one rule each". */
+export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
+  const { uncommittedFiles, uncommittedAdded, uncommittedRemoved } = stats;
+  const clean = uncommittedFiles === 0;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            mouseAction("ab-toggle-diff", "agentboard");
+            onOpen();
+          }}
+          className={`${CHIP_CLASS} hover:border-border hover:bg-accent ${
+            clean
+              ? // Nothing at stake: stay out of the way, and let the gap in
+                // weight against the dirty state below carry the difference.
+                "border-border/70 text-muted-foreground/70"
+              : // Filled and full-weight, like `BaseMovedChip` — this is work
+                // that exists nowhere but this checkout, so it earns the
+                // loudest treatment available short of the needs-you hue.
+                "border-border bg-muted font-medium text-foreground"
+          }`}
+        >
+          <Pencil className="size-3" />
+          <ChipLabel text="uncommitted" labeled={labeled} />
+          {clean ? (
+            <span>clean</span>
+          ) : (
+            <>
+              <span>{uncommittedFiles}f</span>
+              <span className="text-emerald-600 dark:text-emerald-400">+{uncommittedAdded}</span>
+              <span className="text-red-600 dark:text-red-400">−{uncommittedRemoved}</span>
+            </>
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start">
+        {/* `TooltipContent` is an `inline-flex` row — multi-paragraph content
+            needs its own column wrapper or the lines lay out side by side. */}
+        <div className="flex flex-col gap-0.5">
+          <span>
+            {clean
+              ? "Nothing uncommitted — every change here is in a commit."
+              : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
+          </span>
+          <span className="opacity-70">
+            {clean
+              ? "Deleting this checkout would lose nothing that isn't on the branch."
+              : "Deleting this checkout destroys these. Untracked files count here but add no ± (they have no diff yet)."}
+          </span>
+          <span className="opacity-70">
+            <CheckedAgo computedAtMs={stats.computedAtMs} />
+          </span>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Committed work: what this branch's commits hold that `comparedBase`
+ * doesn't. Always visible (even at zero, so the diff pane stays findable
+ * from every row) and hovering previews the per-commit breakdown.
+ *
+ * **The count shown is `commitsUnlanded`, not `commitsAhead`, whenever they
+ * disagree** — and that is the whole point of the chip. `commitsAhead` is SHA
+ * reachability, so a rebase or squash merge that rewrote the commits leaves it
+ * pinned at 15 forever; `commitsUnlanded` is content-based and correctly drops
+ * to 0. The old chip led with the reachability number and mentioned the truth
+ * only in a tooltip, so a finished task read as fifteen commits of pending
+ * work. Now a fully-landed branch says so in a word, and a partly-landed one
+ * shows `4/15c` rather than picking one number and hiding the other. */
+export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
+  const { dir, committedAdded, committedRemoved, commitsAhead, commitsUnlanded, baseBranch } =
+    stats;
   const base = comparedBaseLabel(stats);
   const [commits, setCommits] = useState<CommitStat[] | null>(null);
+
+  const landedClean = commitsAhead > 0 && stats.landed != null && commitsUnlanded === 0;
+  const partly = commitsUnlanded > 0 && commitsUnlanded !== commitsAhead;
+  const tone = landedClean
+    ? "border-border/70 text-muted-foreground/70 hover:bg-accent"
+    : "border-border/70 text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground";
 
   return (
     <HoverCard
@@ -555,39 +716,58 @@ export function DiffButton({
             mouseAction("ab-toggle-diff", "agentboard");
             onOpen();
           }}
-          className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-          title={
-            clean
-              ? `No changes vs ${base} — view diff`
-              : `${filesChanged} file${filesChanged === 1 ? "" : "s"} changed, ${commitsAhead} commit${commitsAhead === 1 ? "" : "s"} ahead of ${base}${outstandingNote(stats, base)} — view diff`
-          }
+          className={`${CHIP_CLASS} ${tone}`}
         >
           <GitCompare className="size-3" />
-          {clean ? (
-            <span>diff</span>
+          <ChipLabel text="committed" labeled={labeled} />
+          {commitsAhead === 0 ? (
+            /* Unlabeled, the word has to double as the affordance ("this
+               opens the diff"), since there's no number to show. Labeled,
+               `committed` already names the chip, so the value slot can say
+               plainly that there is nothing — matching `clean` next to it. */
+            <span>{labeled ? "none" : "diff"}</span>
+          ) : landedClean ? (
+            <span>
+              {commitsAhead}c {stats.landed}
+            </span>
           ) : (
             <>
-              <span className="text-muted-foreground">{commitsAhead}c</span>
-              <span className="text-emerald-600 dark:text-emerald-400">+{linesAdded}</span>
-              <span className="text-red-600 dark:text-red-400">−{linesRemoved}</span>
+              <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
+              <span className="text-emerald-600 dark:text-emerald-400">+{committedAdded}</span>
+              <span className="text-red-600 dark:text-red-400">−{committedRemoved}</span>
             </>
           )}
         </button>
       </HoverCardTrigger>
-      {!clean && (
-        <HoverCardContent
-          side="bottom"
-          align="start"
-          className="w-[28rem] max-w-[calc(100vw-2rem)]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <CommitBreakdownPreview
-            commits={commits}
-            linesAdded={linesAdded}
-            linesRemoved={linesRemoved}
-          />
-        </HoverCardContent>
-      )}
+      <HoverCardContent
+        side="bottom"
+        align="start"
+        className="w-[28rem] max-w-[calc(100vw-2rem)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
+          {commitsAhead === 0 ? (
+            <>Nothing committed beyond {base}.</>
+          ) : landedClean ? (
+            <>
+              All {commitsAhead} commit{commitsAhead === 1 ? "" : "s"} are already on {base} (
+              {stats.landed}) — the commit count stays put because the rewrite gave them new SHAs,
+              but nothing here is outstanding.
+            </>
+          ) : partly ? (
+            <>
+              {commitsUnlanded} of {commitsAhead} commits are not on {base} yet; the rest already
+              landed under different SHAs.
+            </>
+          ) : (
+            <>
+              {commitsAhead} commit{commitsAhead === 1 ? "" : "s"} not on {base} yet.
+            </>
+          )}{" "}
+          <CheckedAgo computedAtMs={stats.computedAtMs} />.
+        </p>
+        <CommitBreakdownPreview commits={commits} stats={stats} base={base} />
+      </HoverCardContent>
     </HoverCard>
   );
 }

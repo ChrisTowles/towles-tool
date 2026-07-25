@@ -398,6 +398,7 @@ pub fn run() {
                                             &dir,
                                             base_branch.as_deref(),
                                             Some(&previous),
+                                            now_ms(),
                                         );
                                         (dir, info)
                                     })
@@ -486,6 +487,7 @@ pub fn run() {
                                     &dir,
                                     base_branch.as_deref(),
                                     Some(&previous),
+                                    now_ms(),
                                 );
                                 let stored = poll_engine.lock().unwrap().store_git_info(
                                     &dir,

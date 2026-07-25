@@ -136,18 +136,29 @@ export type FolderData = {
   dirMissing: boolean;
   branch: string;
   isWorktree: boolean;
-  filesChanged: number;
-  linesAdded: number;
-  linesRemoved: number;
+  /** What this branch has **committed** vs `comparedBase` (merge-base..HEAD),
+   * the working tree excluded. */
+  committedFiles: number;
+  committedAdded: number;
+  committedRemoved: number;
+  /** What the working tree holds that `HEAD` doesn't — staged, unstaged and
+   * untracked. Untracked files count as files but carry no line counts.
+   *
+   * Never add this to `committed*`. They are different risks, not two parts
+   * of one number: deleting this checkout destroys the uncommitted half and
+   * nothing else. That's also why the rail renders them as two chips. */
+  uncommittedFiles: number;
+  uncommittedAdded: number;
+  uncommittedRemoved: number;
   /** Commits on this branch that `comparedBase` doesn't have. */
   commitsAhead: number;
   /** Commits on `comparedBase` that this branch doesn't have. */
   commitsBehind: number;
   /** True when the working tree has uncommitted changes (staged, unstaged,
-   * or untracked). Unlike `filesChanged` — the branch's whole *committed*
-   * diff vs `comparedBase`, which stays nonzero for any real feature branch
-   * even once it's merged — this is the actual "no uncommitted changes"
-   * fact a safe-to-delete check needs. */
+   * or untracked) — exactly `uncommittedFiles > 0`. Unlike `committedFiles`,
+   * which stays nonzero for any real feature branch even once it's merged,
+   * this is the actual "no uncommitted changes" fact a safe-to-delete check
+   * needs. */
   dirty: boolean;
   /** Of `commitsAhead`, how many haven't landed on `comparedBase` yet
    * (patch-equivalence via `git cherry`, not SHA reachability). 0 once every
@@ -182,12 +193,20 @@ export type FolderData = {
    * `.tt-task` marker). What the diff pane auto-compares against when
    * `baseBranch` has no manual override — `null` for a non-task checkout. */
   taskBaseBranch?: string | null;
-  /** The ref `filesChanged`/`linesAdded`/`linesRemoved`/`commitsAhead`/
-   * `commitsBehind` were actually measured against, e.g. `"origin/main"` or
+  /** The ref `committed*`/`commitsAhead`/`commitsBehind` were actually
+   * measured against, e.g. `"origin/main"` or
    * `"origin/docs/readme-task-clean"` — always matches what the diff pane's
    * "vs main" mode shows. Empty until the folder's git stats are computed
    * at least once. */
   comparedBase?: string;
+  /** Epoch ms when these git stats were last verified against the repo.
+   *
+   * Refresh is event-driven off a few `.git` files with a 60s backup poll, and
+   * the committed diff's baseline is a merge-base that only moves on fetch —
+   * so a number sitting still for minutes is usually correct, and used to be
+   * indistinguishable from a wedged poll. This is what lets the rail say
+   * *when* instead. 0 before the first compute. */
+  computedAtMs?: number;
   metadata?: FolderMetadata | null;
   /** True when a live session in this folder has drifted ports — bubbles
    * `SessionData.portDrift` up for the rail badge. */
@@ -209,7 +228,32 @@ export type FolderData = {
  * the diff pane refetches on it. Extend it here, not inline in a component,
  * so every consumer moves together. */
 export function folderStatsKey(folder: FolderData): string {
-  return `${folder.filesChanged}:${folder.linesAdded}:${folder.linesRemoved}:${folder.commitsAhead}`;
+  return [
+    folder.committedFiles,
+    folder.committedAdded,
+    folder.committedRemoved,
+    folder.uncommittedFiles,
+    folder.uncommittedAdded,
+    folder.uncommittedRemoved,
+    folder.commitsAhead,
+  ].join(":");
+}
+
+/** "checked 4s ago" for a folder's git stats — the answer to "is this number
+ * stale or is nothing happening?".
+ *
+ * Seconds resolution below a minute, unlike `fmtAge`'s "just now": the whole
+ * question is whether the refresh loop is alive, and a value that re-verifies
+ * every couple of seconds must be visibly *counting*, not sitting on a fixed
+ * word. `null` before the first compute, so the caller can say "not checked
+ * yet" rather than render a bogus 1970 age. */
+export function gitCheckedLabel(computedAtMs: number | undefined, now: number): string | null {
+  if (!computedAtMs) return null;
+  const secs = Math.max(0, Math.round((now - computedAtMs) / 1000));
+  if (secs < 60) return `checked ${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `checked ${mins}m ago`;
+  return `checked ${Math.round(mins / 60)}h ago`;
 }
 
 /** One commit ahead of `comparedBase`, with its own line-count diff — not the
@@ -907,7 +951,7 @@ export function isFolderQuiet(f: FolderData, now: number): boolean {
   return (
     f.quiet ||
     (liveSessions(f).length === 0 &&
-      f.filesChanged === 0 &&
+      f.uncommittedFiles === 0 &&
       f.commitsAhead === 0 &&
       f.sessions.every((s) => !sessionCatchesEye(s)) &&
       now - folderLastActivityAt(f) >= QUIET_GRACE_MS)
