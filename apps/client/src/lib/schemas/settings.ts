@@ -113,6 +113,7 @@ const AgentboardBlockSchema = z
     boardGroupByRepo: z.boolean().optional(),
     hideInactiveRepos: z.boolean().optional(),
     showUnmanagedWorktrees: z.boolean().optional(),
+    jarvisPane: z.boolean().optional(),
   })
   .catchall(z.unknown());
 

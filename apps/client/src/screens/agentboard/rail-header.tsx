@@ -1,4 +1,5 @@
 import {
+  Box,
   CalendarClock,
   CircleSlash,
   Eye,
@@ -30,6 +31,8 @@ export function RailHeader(props: {
   onSetHideInactive: (next: boolean) => void;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
+  jarvisPane: boolean;
+  onSetJarvisPane: (next: boolean) => void;
   onOpenRepoManager: () => void;
   onCleanupMissing: () => void;
   onClearDismissals: () => void;
@@ -44,6 +47,8 @@ export function RailHeader(props: {
     onSetHideInactive,
     showUnmanagedWorktrees,
     onSetShowUnmanagedWorktrees,
+    jarvisPane,
+    onSetJarvisPane,
     onOpenRepoManager,
     onCleanupMissing,
     onClearDismissals,
@@ -126,6 +131,32 @@ export function RailHeader(props: {
             }
           >
             <FolderGit2 className="size-3.5" />
+          </button>
+          {/* Jarvis, the native Bevy pane at the bottom of the rail. Off means
+              not rendered at all, which detaches the surface and stops its
+              render thread — it's a proof-of-concept, so it shouldn't cost a
+              vsync-paced GPU loop unless it's wanted. */}
+          <button
+            type="button"
+            onClick={() => {
+              uiAction("agentboard.jarvis_pane", "agentboard", jarvisPane ? "off" : "on");
+              onSetJarvisPane(!jarvisPane);
+            }}
+            aria-label={jarvisPane ? "Hide the Jarvis pane" : "Show the Jarvis pane"}
+            aria-pressed={jarvisPane}
+            className={cn(
+              "rounded-md p-1 hover:bg-accent/50",
+              jarvisPane
+                ? "text-violet-500 hover:text-violet-400"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            title={
+              jarvisPane
+                ? "Jarvis (native Bevy pane) is rendering at the bottom of the rail — click to turn it off"
+                : "Render Jarvis, the native Bevy pane, at the bottom of the rail (proof-of-concept; Linux/Wayland only)"
+            }
+          >
+            <Box className="size-3.5" />
           </button>
           {dismissedPrCount > 0 && (
             <button

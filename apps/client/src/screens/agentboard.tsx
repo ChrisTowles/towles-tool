@@ -82,7 +82,7 @@ import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
-import { useHideInactiveRepos, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
+import { useHideInactiveRepos, useJarvisPane, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -197,6 +197,10 @@ export function AgentboardScreen() {
   // which checkouts to discover, so the toggle round-trips through Rust and
   // the rail repopulates from the next `agentboard://state`.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
+  // Whether the native Bevy pane renders at the bottom of the rail at all. Off
+  // (the default) unmounts `NativePane` rather than hiding it, so the surface
+  // is detached and its render thread joined — see the render site below.
+  const [jarvisPane, setJarvisPane] = useJarvisPane();
   // Per-repo "show me the quiet ones anyway" toggle (the stub row).
   const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -1091,6 +1095,8 @@ export function AgentboardScreen() {
                     onSetHideInactive={setHideInactive}
                     showUnmanagedWorktrees={showUnmanagedWorktrees}
                     onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
+                    jarvisPane={jarvisPane}
+                    onSetJarvisPane={setJarvisPane}
                     onOpenRepoManager={openRepoManager}
                     onCleanupMissing={() => void cleanupMissing()}
                     onClearDismissals={() => void attention.clearDismissals()}
@@ -1194,13 +1200,23 @@ export function AgentboardScreen() {
                       Hidden whenever this screen is not the active tab: the
                       surface sits *above* the webview, so it would otherwise
                       cover whatever screen the user switched to — screens stay
-                      mounted here rather than unmounting. */}
-                  <NativePane
-                    paneId="jarvis"
-                    visible={activeTab === "agentboard"}
-                    className="shrink-0 basis-1/4 border-t"
-                    fallback="Jarvis needs Linux/Wayland"
-                  />
+                      mounted here rather than unmounting.
+
+                      Off (the default) means *not rendered*, not `visible=
+                      {false}`: unmounting runs `pane_detach`, which drops the
+                      subsurface and joins the render thread, and hands the
+                      quarter back to the ScrollArea. A hidden-but-attached pane
+                      would keep a vsync-paced Bevy loop running for the app's
+                      whole life, which is too much for a proof-of-concept to
+                      cost by default. Toggle: the rail header's cube button. */}
+                  {jarvisPane && (
+                    <NativePane
+                      paneId="jarvis"
+                      visible={activeTab === "agentboard"}
+                      className="shrink-0 basis-1/4 border-t"
+                      fallback="Jarvis needs Linux/Wayland"
+                    />
+                  )}
                 </div>
               </ResizablePanel>
               <ResizableHandle />

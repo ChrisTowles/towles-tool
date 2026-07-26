@@ -89,3 +89,47 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
 
   return [show, persist];
 }
+
+/** Built-in default for `agentboard.jarvisPane` — off, so the proof-of-concept
+ * native Bevy pane costs nothing until it's asked for. Mirrors
+ * `tt_config::DEFAULT_JARVIS_PANE`. */
+export const DEFAULT_JARVIS_PANE = false;
+
+/**
+ * Track whether the Agentboard rail renders the native Bevy pane
+ * (`agentboard.jarvisPane`), plus a setter that persists back to the shared
+ * settings file.
+ *
+ * Frontend-only like {@link useHideInactiveRepos} — Rust never reads the key.
+ * Off means the `NativePane` isn't rendered at all rather than merely hidden,
+ * so `pane_detach` runs, the Wayland subsurface goes away and the vsync-paced
+ * render thread is joined; a hidden-but-attached pane would keep both alive.
+ */
+export function useJarvisPane(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(DEFAULT_JARVIS_PANE);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      void loadUserSettings().then((s) => {
+        if (alive && s) setOn(s.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE);
+      });
+    load();
+    window.addEventListener("focus", load);
+    window.addEventListener(SETTINGS_SAVED_EVENT, load);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", load);
+      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
+    };
+  }, []);
+
+  const persist = useCallback((next: boolean) => {
+    setOn(next);
+    void loadUserSettings().then((s) => {
+      if (!s) return;
+      void saveUserSettings({ ...s, agentboard: { ...s.agentboard, jarvisPane: next } });
+    });
+  }, []);
+
+  return [on, persist];
+}
