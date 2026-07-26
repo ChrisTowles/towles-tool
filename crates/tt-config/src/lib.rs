@@ -1070,6 +1070,26 @@ pub fn agentboard_shared_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("agentboard"))
 }
 
+/// Where the collectors leave their GitHub results for other checkouts to
+/// read.
+///
+/// Shared rather than per-checkout, like `repos.json` above: what GitHub says
+/// about a PR depends on the machine's token, not on which folder asked.
+/// `tt.db` is per-checkout, so every open worktree runs its own collectors and
+/// used to ask GitHub the same questions — four windows spent about 1,920
+/// points an hour out of a 5,000/hour limit. Now the first one to ask about a
+/// repo writes the answer here and the rest read it, so the machine pays for one
+/// round of questions per interval no matter how many windows are open. One file
+/// per collector per repo (`<kind>/<owner>/<repo>.json`) — `tt_collect`'s
+/// `sweep_cache` has the reasoning for that shape.
+///
+/// Not a single-instance lock like `slack-socket`. Each window reads its rows
+/// back out of its own `tt.db`, so picking one window to do the collecting
+/// would leave every other Cockpit and Board empty.
+pub fn gh_cache_dir() -> Result<PathBuf> {
+    Ok(config_dir()?.join("gh-cache"))
+}
+
 /// Directory for `tt-tasks`' per-checkout port registries (the claimed-port
 /// ledgers, one checkout-keyed file each). A *shared* store: every worktree
 /// of a repo must read the same ledger, so it lives beside the settings

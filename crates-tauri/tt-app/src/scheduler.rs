@@ -94,17 +94,32 @@ fn watched_collectors(collectors: &tt_config::CollectorsSettings) -> Vec<Watched
 #[derive(Clone)]
 enum Batch {
     /// Fast cadence: authored + review-requested open PRs.
-    PrsOpen,
+    PrsOpen {
+        reuse_ms: i64,
+    },
     /// Slow cadence: recently-merged authored PRs (just enough to catch a
     /// just-merged branch before its worktree is removed).
-    PrsMerged,
-    Issues,
+    PrsMerged {
+        reuse_ms: i64,
+    },
+    Issues {
+        reuse_ms: i64,
+    },
     /// Carries the calendar sources to pull, snapshotted from settings when the
     /// tick fired — the same way [`Batch::SlackDm`] carries its config — so the
     /// batch is self-contained and a settings reload mid-run can't change what
     /// it's pulling.
     Calendar(Arc<Vec<CalendarSource>>),
     SlackDm(tt_collect::SlackDmConfig),
+}
+
+/// How old another window's GitHub results may be before this batch goes and
+/// fetches its own. A tick is happy with anything newer than its own cadence —
+/// that's what stops four open windows making four sets of identical calls (see
+/// `tt_collect`'s `sweep_cache`). A nudge is not: it fired because a `gh pr`
+/// mutation just happened, and the answer we want is younger than any file.
+fn reuse_window_ms(seconds: u64) -> i64 {
+    seconds as i64 * 1_000
 }
 
 /// One in-flight flag per collector. A batch is fire-and-forget spawned so the
@@ -171,13 +186,13 @@ fn changed_nudge_batches(
         // A `gh pr`/`gh issue` mutation just happened: refresh both halves of
         // the PR collector so a just-merged PR shows up immediately, not only
         // on the next slow merged-cadence tick.
-        changed.push(Batch::PrsOpen);
-        changed.push(Batch::PrsMerged);
+        changed.push(Batch::PrsOpen { reuse_ms: tt_collect::FETCH_NOW });
+        changed.push(Batch::PrsMerged { reuse_ms: tt_collect::FETCH_NOW });
     }
     seen.prs = prs_mtime;
     let issues_mtime = mtime(dir, tt_collect::NudgeTarget::Issues);
     if issues_mtime.is_some() && issues_mtime != seen.issues {
-        changed.push(Batch::Issues);
+        changed.push(Batch::Issues { reuse_ms: tt_collect::FETCH_NOW });
     }
     seen.issues = issues_mtime;
     let slack_mtime = mtime(dir, tt_collect::NudgeTarget::SlackDm);
@@ -230,16 +245,20 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
             let calendar_sources = Arc::new(collectors.calendar.sources.clone());
             let calendar_period_ms = collectors.calendar.refresh_minutes.max(1) as i64 * 60_000;
 
-            let mut pr_tick =
-                tokio::time::interval(Duration::from_secs(collectors.prs.refresh_seconds.max(30)));
+            // Each tick's cadence doubles as how long it'll settle for another
+            // window's results — see `reuse_window_ms`.
+            let pr_seconds = collectors.prs.refresh_seconds.max(30);
+            let pr_merged_seconds = collectors.prs.merged_refresh_minutes.max(1) * 60;
+            let issue_seconds = collectors.issues.refresh_minutes.max(1) * 60;
+            let pr_reuse_ms = reuse_window_ms(pr_seconds);
+            let pr_merged_reuse_ms = reuse_window_ms(pr_merged_seconds);
+            let issue_reuse_ms = reuse_window_ms(issue_seconds);
+
+            let mut pr_tick = tokio::time::interval(Duration::from_secs(pr_seconds));
             pr_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            let mut pr_merged_tick = tokio::time::interval(Duration::from_secs(
-                collectors.prs.merged_refresh_minutes.max(1) * 60,
-            ));
+            let mut pr_merged_tick = tokio::time::interval(Duration::from_secs(pr_merged_seconds));
             pr_merged_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            let mut issue_tick = tokio::time::interval(Duration::from_secs(
-                collectors.issues.refresh_minutes.max(1) * 60,
-            ));
+            let mut issue_tick = tokio::time::interval(Duration::from_secs(issue_seconds));
             issue_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
             let mut calendar_tick =
                 tokio::time::interval(Duration::from_millis(calendar_period_ms as u64));
@@ -267,13 +286,16 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                 tokio::select! {
                     _ = reload.notified() => break,
                     _ = pr_tick.tick(), if collectors.prs.enabled => {
-                        spawn_batch(&app, Batch::PrsOpen, calendar_period_ms, &guards.prs_open);
+                        let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms };
+                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_open);
                     }
                     _ = pr_merged_tick.tick(), if collectors.prs.enabled => {
-                        spawn_batch(&app, Batch::PrsMerged, calendar_period_ms, &guards.prs_merged);
+                        let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms };
+                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_merged);
                     }
                     _ = issue_tick.tick(), if collectors.issues.enabled => {
-                        spawn_batch(&app, Batch::Issues, calendar_period_ms, &guards.issues);
+                        let batch = Batch::Issues { reuse_ms: issue_reuse_ms };
+                        spawn_batch(&app, batch, calendar_period_ms, &guards.issues);
                     }
                     _ = calendar_tick.tick(), if collectors.calendar.enabled => {
                         // Quiet-hours gate: outside the configured working-hours
@@ -304,9 +326,9 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                         if let Some(dir) = &nudge_dir {
                             for batch in changed_nudge_batches(dir, &mut nudge_seen, &slack_config) {
                                 let guard = match batch {
-                                    Batch::PrsOpen if collectors.prs.enabled => &guards.prs_open,
-                                    Batch::PrsMerged if collectors.prs.enabled => &guards.prs_merged,
-                                    Batch::Issues if collectors.issues.enabled => &guards.issues,
+                                    Batch::PrsOpen { .. } if collectors.prs.enabled => &guards.prs_open,
+                                    Batch::PrsMerged { .. } if collectors.prs.enabled => &guards.prs_merged,
+                                    Batch::Issues { .. } if collectors.issues.enabled => &guards.issues,
                                     Batch::SlackDm(_) if slack_on => &guards.slack,
                                     _ => continue,
                                 };
@@ -373,17 +395,17 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
     let now = now_ms();
 
     match batch {
-        Batch::PrsOpen => {
+        Batch::PrsOpen { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
-            log_failure(tt_collect::collect_prs_open(&store, &repos, now));
+            log_failure(tt_collect::collect_prs_open(&store, &repos, reuse_ms, now));
         }
-        Batch::PrsMerged => {
+        Batch::PrsMerged { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
-            log_failure(tt_collect::collect_prs_merged(&store, &repos, now));
+            log_failure(tt_collect::collect_prs_merged(&store, &repos, reuse_ms, now));
         }
-        Batch::Issues => {
+        Batch::Issues { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
-            log_failure(tt_collect::collect_issues(&store, &repos, now));
+            log_failure(tt_collect::collect_issues(&store, &repos, reuse_ms, now));
         }
         Batch::Calendar(sources) => {
             // Token-cost guard: an interval's first tick fires at startup, so a
@@ -618,9 +640,9 @@ mod tests {
         batches
             .iter()
             .map(|b| match b {
-                Batch::PrsOpen => "prs_open",
-                Batch::PrsMerged => "prs_merged",
-                Batch::Issues => "issues",
+                Batch::PrsOpen { .. } => "prs_open",
+                Batch::PrsMerged { .. } => "prs_merged",
+                Batch::Issues { .. } => "issues",
                 Batch::Calendar(_) => "calendar",
                 Batch::SlackDm(_) => "slack",
             })

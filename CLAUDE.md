@@ -263,8 +263,9 @@ Cargo workspace + npm workspace (`apps/client` only):
     with the TypeScript CLI**, so serde types must tolerate unknown fields
     (`#[serde(default)]` / no `deny_unknown_fields`) to avoid breaking the other
     tool. Also the **single resolver for every mutable state path**, split in
-    two: **shared stores** (settings, agentboard `repos.json` — facts about
-    the user/machine) are one machine-wide copy from every checkout, while
+    two: **shared stores** (settings, agentboard `repos.json`, the collectors'
+    `gh-cache` — facts about the user/machine, or about GitHub as the machine's
+    token sees it) are one machine-wide copy from every checkout, while
     **instance state** (`tt.db`, agentboard sessions/windows/collapse — one
     running checkout's world) nests under `…/towles-tool/tasks/<scope>/…` when
     `state_scope()` detects the process runs from a checkout of this repo (cwd
