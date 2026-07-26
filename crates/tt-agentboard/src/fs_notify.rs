@@ -137,31 +137,21 @@ impl ScopedDirNotifier {
 /// registered paths touched within a debounce window flush as one
 /// deduplicated batch.
 ///
-/// **A registered file's parent directory need not exist yet.** This is not a
-/// hypothetical: git deletes and recreates the directories its own control
-/// files live in. `git pack-refs --prune` (which `git gc --auto` runs on its
-/// own) removes both the loose `refs/heads/feat/x` *and* the `refs/heads/feat`
-/// directory it emptied, so a checkout on any branch with a `/` in its name —
-/// the convention this repo's tasks use — has no parent to watch until the ref
-/// goes loose again. Failing the registration there silently drops that branch
-/// from the git-info accelerant's watch set and leaves it on the 60s backup
-/// poll, which is exactly the "fix the watch, don't shorten the TTL" case
-/// `tt-app`'s CLAUDE.md calls out.
+/// **A registered file's parent directory need not exist yet.** `git
+/// pack-refs --prune` (which `git gc --auto` runs on its own) removes the
+/// loose `refs/heads/feat/x` *and* the `refs/heads/feat` directory it
+/// emptied, so any branch with a `/` in its name has no parent to watch until
+/// the ref goes loose again — and `packed-refs` does not change on the commit
+/// that recreates it. Failing the registration drops that branch to the
+/// backup poll. Such a file registers *pending* against its nearest existing
+/// ancestor (within [`MAX_MISSING_ANCESTORS`] levels), and an event on any
+/// ancestor of it counts as a hit; [`rewatch_pending`](Self::rewatch_pending)
+/// settles the registration onto the real parent once it exists.
 ///
-/// Such a file registers *pending*: the nearest existing ancestor within
-/// [`MAX_MISSING_ANCESTORS`] levels is watched instead, and an event on any
-/// path that is itself an ancestor of the registered file counts as a hit for
-/// it — the appearance of `refs/heads/feat` is the ref being written, which is
-/// precisely what the consumer wanted to hear about. [`rewatch_pending`](Self::
-/// rewatch_pending) then moves the registration down onto the real parent once
-/// it exists, so the *following* update fires exactly like any other file; the
-/// owner calls it on its normal rebuild tick.
-///
-/// A recursive watch on the ancestor was tried first and does not work: notify
-/// installs the new subdirectory's watch in response to its creation event, by
-/// which time git has already written the ref inside it, and the write is
-/// never delivered. Ancestor matching has no such race because the event it
-/// keys on is the one that *is* delivered.
+/// Watching that ancestor *recursively* instead does not work: notify
+/// installs the new subdirectory's watch in response to its creation event,
+/// by which time git has already written the ref inside, and that write is
+/// never delivered.
 ///
 /// Known degradation: if a watched *parent directory* itself is deleted,
 /// the OS drops its watch and a later recreation of the directory is not
