@@ -184,34 +184,18 @@ pub fn build_insights(details: &[SessionDetail]) -> Vec<Insight> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tt_claude_code::UsageTotals;
 
     fn detail(input: i64, output: i64) -> SessionDetail {
         SessionDetail {
-            session_id: "s".into(),
-            path: PathBuf::from("/x.jsonl"),
-            project: "demo".into(),
-            date: "2026-07-17".into(),
-            mtime: 0,
-            title: None,
-            cwd: None,
             usage: UsageTotals {
                 input_tokens: input,
                 output_tokens: output,
                 cache_read_tokens: 0,
                 cache_creation_tokens: 0,
             },
-            opus_tokens: 0,
-            sonnet_tokens: 0,
-            haiku_tokens: 0,
             fable_tokens: input + output,
-            repeated_reads: 0,
-            cost_usd: 0.0,
-            cost_by_model: [0.0; 4],
-            user_turns: 0,
-            prompt_blob: String::new(),
-            prompt_times_ms: Vec::new(),
+            ..crate::test_support::session_detail()
         }
     }
 

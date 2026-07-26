@@ -37,6 +37,8 @@ pub mod insights;
 pub mod ledger;
 pub mod parser;
 pub mod pricing;
+#[cfg(test)]
+mod test_support;
 pub mod tools;
 pub mod types;
 pub mod usage_limits;

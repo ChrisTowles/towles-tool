@@ -15,13 +15,11 @@ tt-config = { workspace = true }
 tt-git = { workspace = true }
 tt-exec = { workspace = true }
 tt-journal = { workspace = true }
-tt-mcp = { workspace = true }
 tt-tasks = { workspace = true }
 tt-store = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 console = { workspace = true }
-dirs = { workspace = true }
 tt-telemetry = { workspace = true }
 inquire = { workspace = true }
 serde = { workspace = true }

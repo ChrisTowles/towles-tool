@@ -6,6 +6,30 @@ use rusqlite::params;
 use crate::model::*;
 use crate::{Error, Result, Store};
 
+/// Insert every PR row. The insert half is identical across all four
+/// `replace_*_prs*` paths; only the preceding delete differs.
+fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
+    let mut stmt = tx.prepare(
+        "INSERT INTO pr_status
+           (repo, number, title, branch, state, checks, review_state, url, updated_ts)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
+    for p in prs {
+        stmt.execute(params![
+            p.repo,
+            p.number,
+            p.title,
+            p.branch,
+            p.state,
+            p.checks,
+            p.review_state,
+            p.url,
+            p.updated_ts,
+        ])?;
+    }
+    Ok(())
+}
+
 impl Store {
     /// Replace only the named repos' issue rows, leaving other repos' rows
     /// intact. Collectors use this when a sweep partially failed: repos that
@@ -150,61 +174,12 @@ impl Store {
     /// See [`Store::replace_issues_for_repos`] for the failure-containment
     /// rationale.
     pub fn replace_prs_for_repos(&self, repos: &[String], prs: &[PrInput]) -> Result<usize> {
-        let tx = self.conn.unchecked_transaction()?;
-        {
-            let mut del = tx.prepare("DELETE FROM pr_status WHERE repo = ?1")?;
-            for repo in repos {
-                del.execute(params![repo])?;
-            }
-            let mut stmt = tx.prepare(
-                "INSERT INTO pr_status
-                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for p in prs {
-                stmt.execute(params![
-                    p.repo,
-                    p.number,
-                    p.title,
-                    p.branch,
-                    p.state,
-                    p.checks,
-                    p.review_state,
-                    p.url,
-                    p.updated_ts,
-                ])?;
-            }
-        }
-        tx.commit()?;
-        Ok(prs.len())
+        self.replace_prs_for_repos_where(repos, prs, None)
     }
 
     /// Full-snapshot replace of PR status rows.
     pub fn replace_prs(&self, prs: &[PrInput]) -> Result<usize> {
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM pr_status", [])?;
-        {
-            let mut stmt = tx.prepare(
-                "INSERT INTO pr_status
-                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for p in prs {
-                stmt.execute(params![
-                    p.repo,
-                    p.number,
-                    p.title,
-                    p.branch,
-                    p.state,
-                    p.checks,
-                    p.review_state,
-                    p.url,
-                    p.updated_ts,
-                ])?;
-            }
-        }
-        tx.commit()?;
-        Ok(prs.len())
+        self.replace_prs_where(prs, None)
     }
 
     /// Replace only the non-merged PR rows for `repos`, leaving each repo's
@@ -213,84 +188,52 @@ impl Store {
     /// clobbers) the separately-cadenced merged-PR rows — see
     /// [`Store::replace_merged_prs_for_repos`].
     pub fn replace_open_prs_for_repos(&self, repos: &[String], prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_for_repos_where(repos, prs, "state != 'merged'")
+        self.replace_prs_for_repos_where(repos, prs, Some("state != 'merged'"))
     }
 
     /// Full-snapshot replace of the non-merged PR rows, preserving merged rows.
     pub fn replace_open_prs(&self, prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_where(prs, "state != 'merged'")
+        self.replace_prs_where(prs, Some("state != 'merged'"))
     }
 
     /// Replace only the merged PR rows for `repos`, leaving each repo's open
     /// rows intact. See [`Store::replace_open_prs_for_repos`].
     pub fn replace_merged_prs_for_repos(&self, repos: &[String], prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_for_repos_where(repos, prs, "state = 'merged'")
+        self.replace_prs_for_repos_where(repos, prs, Some("state = 'merged'"))
     }
 
     /// Full-snapshot replace of the merged PR rows, preserving open rows.
     pub fn replace_merged_prs(&self, prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_where(prs, "state = 'merged'")
+        self.replace_prs_where(prs, Some("state = 'merged'"))
     }
 
+    /// Delete-then-insert for the named repos. `state_predicate` narrows the
+    /// delete to a subset of each repo's rows; `None` replaces all of them.
     fn replace_prs_for_repos_where(
         &self,
         repos: &[String],
         prs: &[PrInput],
-        state_predicate: &str,
+        state_predicate: Option<&str>,
     ) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
         {
-            let mut del = tx
-                .prepare(&format!("DELETE FROM pr_status WHERE repo = ?1 AND {state_predicate}"))?;
+            let and = state_predicate.map(|p| format!(" AND {p}")).unwrap_or_default();
+            let mut del = tx.prepare(&format!("DELETE FROM pr_status WHERE repo = ?1{and}"))?;
             for repo in repos {
                 del.execute(params![repo])?;
             }
-            let mut stmt = tx.prepare(
-                "INSERT INTO pr_status
-                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for p in prs {
-                stmt.execute(params![
-                    p.repo,
-                    p.number,
-                    p.title,
-                    p.branch,
-                    p.state,
-                    p.checks,
-                    p.review_state,
-                    p.url,
-                    p.updated_ts,
-                ])?;
-            }
+            insert_prs(&tx, prs)?;
         }
         tx.commit()?;
         Ok(prs.len())
     }
 
-    fn replace_prs_where(&self, prs: &[PrInput], state_predicate: &str) -> Result<usize> {
+    /// Full-snapshot variant of [`Store::replace_prs_for_repos_where`].
+    fn replace_prs_where(&self, prs: &[PrInput], state_predicate: Option<&str>) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute(&format!("DELETE FROM pr_status WHERE {state_predicate}"), [])?;
-        {
-            let mut stmt = tx.prepare(
-                "INSERT INTO pr_status
-                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for p in prs {
-                stmt.execute(params![
-                    p.repo,
-                    p.number,
-                    p.title,
-                    p.branch,
-                    p.state,
-                    p.checks,
-                    p.review_state,
-                    p.url,
-                    p.updated_ts,
-                ])?;
-            }
-        }
+        let where_ = state_predicate.map(|p| format!(" WHERE {p}")).unwrap_or_default();
+        tx.execute(&format!("DELETE FROM pr_status{where_}"), [])?;
+        insert_prs(&tx, prs)?;
         tx.commit()?;
         Ok(prs.len())
     }

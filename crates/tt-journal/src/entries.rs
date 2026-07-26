@@ -5,7 +5,7 @@
 //! external template file in `template_dir` (written on first run) takes precedence over
 //! the built-in fallback string.
 
-use crate::tokens::{generate_journal_file_info, monday_of_week};
+use crate::tokens::generate_journal_file_info;
 use crate::{Error, JournalType, Result};
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
 use serde::Serialize;
@@ -581,11 +581,6 @@ pub fn format_size(bytes: u64) -> String {
     }
     let mb = kb / 1024.0;
     format!("{mb:.1}MB")
-}
-
-/// The Monday used for a daily-notes entry's content, exposed for callers that need it.
-pub fn monday_for(date: NaiveDate) -> NaiveDate {
-    monday_of_week(date)
 }
 
 #[cfg(test)]
