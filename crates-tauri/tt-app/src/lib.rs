@@ -634,6 +634,9 @@ pub fn run() {
             scan.notify_one();
             Ok(())
         })
+        // The native Bevy pane registry (see `tt-pane`). Shared, because a pane
+        // outlives the command that created it and the render thread it owns.
+        .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
         .manage(agent::AgentState::default())
@@ -675,6 +678,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_task,
             ui_action,
+            tt_pane::commands::pane_attach,
+            tt_pane::commands::pane_set_rect,
+            tt_pane::commands::pane_set_visible,
+            tt_pane::commands::pane_detach,
             update::check_for_update,
             task_explorer::task_explorer_snapshot,
             agentboard::ab_get_state,

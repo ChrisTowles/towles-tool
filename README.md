@@ -150,23 +150,25 @@ and you never see the code, and an **IDE**, where you see every line. One agent
 fits in an IDE; a fleet doesn't fit in your head. That's the mental load every
 feature here is trying to reduce.
 
-## Core goal: your focus is the last piece of personal data, and it's yours
+## Critical goal: Solari, running natively inside the app
 
-Every other piece of your data has already been packaged up and sold —
-purchases, location, browsing, attention on every feed. Focus is what's left:
-where your mind actually went, minute to minute, across a day of steering
-agents. This app's job is to help *you* manage that, not to let it become a
-product sold to whoever bids for it.
+The app renders a live **Bevy** scene in a real region of its own window. A
+native compositor surface (`wl_subsurface` on Wayland, `NSView`/`CAMetalLayer`
+on macOS) sits in a rectangle of the Tauri window and Bevy draws into it on the
+GPU — no WebAssembly, no frames streamed over IPC.
 
-That only works if the record is honest and stays on your machine. So every
-user-initiated action in this app — not just the subprocesses it spawns — is
-instrumented via `tracing` into the local event log (see `tt-telemetry` in
-[CLAUDE.md](CLAUDE.md#architecture)). The point isn't surveillance; it's the
-opposite: so *you* can later mine your own behavior — "where did my attention
-actually go, and did this app respect it or steal it?" — instead of taking
-either on faith. It never leaves your machine, and it's the reason a bug like
-"this stole my focus while I wasn't looking" is answerable from a log instead
-of a guess.
+Bevy comes from [slyedoc/bevy](https://github.com/slyedoc/bevy), branch
+`solari-rt-pipeline`, rather than crates.io. That fork is where **Solari**,
+Bevy's real-time raytraced lighting, is being built, and the goal is to run it
+live in a tool used all day — on a real desktop with real windows, not only in
+engine demos. Only a native surface can host a hardware ray-tracing pipeline,
+which is what settles the embedding approach.
+
+`Cargo.lock` pins the revision, so builds stay reproducible and
+`cargo update -p bevy` moves onto newer work deliberately. Upstream API churn
+is the price of being close to the work.
+
+The embedding lives in `crates/tt-jarvis` and `crates-tauri/tt-pane`.
 
 ## The two surfaces
 
@@ -361,6 +363,7 @@ Cargo workspace with Tauri-free shared crates plus the CLI and Tauri shells:
 - `crates/tt-agentboard` — watched-repo and agent-session tracking behind the Agentboard screen.
 - `crates/tt-ide` — Claude Code IDE-protocol core: the MCP/JSON-RPC dispatcher and lockfile schema the app uses to pose as an IDE that Claude Code sessions connect to.
 - `crates/tt-vt` — libghostty-vt terminal-state engine driving the app's canvas terminals (needs zig 0.15.x).
+- `crates/tt-jarvis` — the Bevy scene behind the native pane, rendered into a surface it did not create (Bevy from [slyedoc/bevy](https://github.com/slyedoc/bevy)).
 - `crates/tt-mcp` — the transport-free JSON-RPC MCP server over the store: board tasks (`task_list`, `task_status`, `task_create`, `task_summary`, `task_start`, `task_delete`), `preview_show` (put an HTML page the agent wrote on screen in the app's Preview pane) and the calendar family (`calendar_today`, `calendar_next`, `calendar_set`). The app serves it over loopback HTTP at `http://127.0.0.1:8787/mcp` (`mcp.port`), one instance per machine — app closed means no MCP. See the crate's trust-boundary doc.
 - `crates/tt-telemetry` — telemetry: the `tracing` subscriber/writer for the
   local JSONL event log every subprocess and user action lands in, plus the
@@ -368,6 +371,7 @@ Cargo workspace with Tauri-free shared crates plus the CLI and Tauri shells:
 - `crates/tt-update` — GitHub Releases update check for the running app.
 - `crates-cli/tt-cli` — the `clap` CLI (binary `tt`).
 - `crates-tauri/tt-app` — the Tauri 2 desktop shell; `apps/client` is its React + Vite frontend.
+- `crates-tauri/tt-pane` — puts `tt-jarvis`'s output on screen: a native compositor surface pinned to a rectangle of the app window.
 
 ## Lineage
 

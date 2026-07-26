@@ -38,6 +38,13 @@ not per-directory) from getting hammered:
   N-task repo issues N sets of byte-identical queries per tick. Only a dir
   that *fails* to resolve is kept unconditionally (can't prove it's a
   duplicate) — don't "fix" that into dropping it, or a real error goes silent.
+- `gh::LIST_LIMIT` is capped at **60**, not an arbitrarily generous number.
+  GitHub prices a GraphQL connection on the page size *requested*, not the rows
+  returned, so every `--limit` applies to every tracked repo on every tick even
+  when a repo has two open PRs. The cost steps at 60→80 (measured on
+  `gh pr list --json …statusCheckRollup…`: ≤60 costs 1 point, ≥80 costs 2), so
+  the old 200 was paying double for headroom nobody used. Re-measure before
+  raising it — the constant's doc comment carries the table.
 - `gh::run` arms a process-wide backoff the moment a call's stderr looks like
   a GitHub rate-limit response (primary or secondary/abuse-detection), and
   every `gh` call short-circuits without spawning a subprocess while that

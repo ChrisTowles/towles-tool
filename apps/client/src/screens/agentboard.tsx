@@ -3,6 +3,7 @@ import { FolderGit2, FolderPlus } from "lucide-react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-pane";
 import { RailIconStrip, RepoGroup, RollupChip } from "@/components/agentboard-rail";
+import { NativePane } from "@/components/native-pane";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@/components/ui/button";
@@ -1163,6 +1164,23 @@ export function AgentboardScreen() {
                       </AnimatePresence>
                     </div>
                   </ScrollArea>
+
+                  {/* Jarvis: the lower quarter of the rail is a native Bevy
+                      surface, not DOM (see `components/native-pane.tsx`).
+                      `shrink-0` + `basis-1/4` rather than `h-1/4` so the
+                      ScrollArea above yields the space instead of both fighting
+                      over `flex-1`.
+
+                      Hidden whenever this screen is not the active tab: the
+                      surface sits *above* the webview, so it would otherwise
+                      cover whatever screen the user switched to — screens stay
+                      mounted here rather than unmounting. */}
+                  <NativePane
+                    paneId="jarvis"
+                    visible={activeTab === "agentboard"}
+                    className="shrink-0 basis-1/4 border-t"
+                    fallback="Jarvis needs Linux/Wayland"
+                  />
                 </div>
               </ResizablePanel>
               <ResizableHandle />

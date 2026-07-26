@@ -12,6 +12,7 @@ members = [
   "crates/tt-git",
   "crates/tt-claude-sessions",
   "crates/tt-ide",
+  "crates/tt-jarvis",
   "crates/tt-journal",
   "crates/tt-mcp",
   "crates/tt-tasks",
@@ -23,6 +24,7 @@ members = [
   "crates-cli/tt-cli",
   # Tauri-specific crates
   "crates-tauri/tt-app",
+  "crates-tauri/tt-pane",
 ]
 
 [workspace.dependencies]
@@ -80,6 +82,8 @@ wait-timeout = "0.2.1"
 # Internal crates - shared
 tt-agent = { path = "crates/tt-agent" }
 tt-agentboard = { path = "crates/tt-agentboard" }
+tt-jarvis = { path = "crates/tt-jarvis" }
+tt-pane = { path = "crates-tauri/tt-pane" }
 tt-claude-code = { path = "crates/tt-claude-code" }
 tt-collect = { path = "crates/tt-collect" }
 tt-config = { path = "crates/tt-config" }
@@ -112,5 +116,42 @@ debug = false
 # The Rust wrapper sits on the same hot path (per-chunk feed, cell/style
 # access); keep it optimized alongside the Zig core it wraps.
 [profile.dev.package.libghostty-vt]
+opt-level = 3
+debug = false
+
+# Bevy and its dependency tree must be optimized even in dev builds — the same
+# reasoning as libghostty-vt above, and Bevy's own documented recommendation. An
+# unoptimized Bevy renders at a small fraction of its release framerate, which
+# would make the native pane look broken in `npm run dev`/`dev:drive` for
+# reasons that have nothing to do with the pane. Applied to all transitive
+# dependencies rather than `bevy` alone, because the cost is in wgpu/naga/glam,
+# not in the facade crate.
+[profile.dev.package."*"]
+opt-level = 3
+
+# CI-only profile: `dev` without the all-dependencies `opt-level = 3` above.
+#
+# That override exists so `npm run dev` renders the Bevy pane at a usable
+# framerate. CI never runs the renderer — it lints and unit-tests — so there it
+# is pure compile cost, and it lands entirely on the two *codegen* steps rather
+# than the metadata-only clippy ones. Measured on the one `rust-app` run that
+# completed (49m total): `test (tt-app)` 19m53s and `test (native pane)` 14m58s,
+# against `clippy (tt-app)` 9m19s and `clippy (native pane)` 5m04s.
+#
+# The libghostty overrides are restated rather than left to `inherits`, so this
+# profile does not depend on whether Cargo propagates package overrides into a
+# derived profile: a Debug-mode zig parser is ~1000x slower and would quietly
+# make tt-vt's tests crawl (see crates/tt-vt/CLAUDE.md).
+[profile.ci]
+inherits = "dev"
+
+[profile.ci.package."*"]
+opt-level = 0
+
+[profile.ci.package.libghostty-vt-sys]
+opt-level = 3
+debug = false
+
+[profile.ci.package.libghostty-vt]
 opt-level = 3
 debug = false

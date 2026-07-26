@@ -1,0 +1,71 @@
+[package]
+name = "tt-jarvis"
+version = "0.1.0"
+edition = "2021"
+description = "Bevy scene rendered into a surface it did not create — the native embedded pane"
+
+# Excluded from the default CI workspace build (like tt-vt/tt-app): bevy is a
+# very large dependency and a cold build dominates CI wall-clock. See the
+# `--exclude tt-jarvis` note in CLAUDE.md's Commands section.
+
+[dependencies]
+# NOTE: no direct `wgpu` dependency on purpose. We never name a wgpu type — the
+# handles cross via `raw-window-handle` alone — and declaring a wgpu version
+# here could put a second major in the tree, which would make two incompatible
+# `RawWindowHandle` graphs and break the foreign-surface handoff. Let bevy own
+# wgpu entirely.
+raw-window-handle = "0.6.2"
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+# Bevy comes from **slyedoc's Solari fork**, not crates.io — see the Solari
+# section in README.md. `solari-rt-pipeline` is the active branch (0.20.0-dev);
+# Cargo.lock pins the exact revision, and `cargo update -p bevy` moves us onto
+# newer work deliberately rather than silently.
+[dependencies.bevy]
+git = "https://github.com/slyedoc/bevy"
+branch = "solari-rt-pipeline"
+default-features = false
+features = [
+  "bevy_render",
+  "bevy_core_pipeline",
+  "bevy_pbr",
+  "bevy_asset",
+  "bevy_log",
+  "bevy_window",
+  # Present for the *baseline* host only. `embedded_app` disables `WinitPlugin`
+  # — the whole experiment is that the renderer does not need it.
+  "bevy_winit",
+  "multi_threaded",
+  # Without this the tonemapping shader samples a missing LUT and the whole
+  # scene renders magenta — Bevy's missing-texture fallback. `zstd_rust` is its
+  # transitive requirement (the LUTs ship compressed) and keeping it on the pure
+  # Rust backend avoids putting a C toolchain in the build, matching the
+  # workspace's existing no-C-toolchain stance for gix.
+  "tonemapping_luts",
+  "zstd_rust",
+  # Bloom, which lives in `bevy_post_process` as of 0.19+. The Jarvis scene is
+  # emissive geometry on near-black — without bloom the rings are flat lines
+  # rather than glowing ones, so this is load-bearing for the look, not polish.
+  "bevy_post_process",
+  # PNG encoding for `jarvis::capture_frame_after`. Without it the screenshot
+  # observer runs and then fails at the encode step with "format Png is not
+  # supported" — the capture path itself is fine.
+  "png",
+  "std",
+  "x11",
+  "wayland",
+]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+# Step 0 benchmark harness only — the production embedding lives in `tt-pane`
+# and reaches Wayland through GDK, not through its own connection.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+# GTK **3**, not 4, despite crates.io marking gtk3-rs unmaintained: Tauri 2 on
+# Linux is GTK3 + WebKitGTK, so the cadence harness has to reproduce the real
+# host's toolkit. Used only by `bench_gtk_cadence`.
+gtk = "0.18"

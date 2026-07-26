@@ -33,6 +33,7 @@ tt-store = { workspace = true }
 tt-telemetry = { workspace = true }
 tt-update = { workspace = true }
 tt-vt = { workspace = true }
+tt-pane = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
