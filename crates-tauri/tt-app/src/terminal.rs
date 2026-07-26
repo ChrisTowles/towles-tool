@@ -76,6 +76,12 @@ pub struct PtyActivity {
     /// the vt session only produces when PTY bytes actually changed the
     /// screen — so this tracks the program, not a timer.
     last_output_ms: AtomicI64,
+    /// Start of the unbroken run of output `last_output_ms` belongs to —
+    /// restamped whenever a frame lands after a gap long enough to have read as
+    /// "stopped". The pair is what lets `pty_status` tell a working agent's
+    /// continuous repainting from a finished one's occasional lone repaint; see
+    /// `tt_agentboard::pty_status::SUSTAINED_OUTPUT_MS`.
+    output_since_ms: AtomicI64,
     /// Last attention notification (OSC 9/777 or a bell).
     attention_at_ms: AtomicI64,
     /// Last user input written into this PTY. This is what answers a pending
@@ -101,6 +107,7 @@ impl PtyActivity {
     fn signal(&self) -> tt_agentboard::pty_status::PtySignal {
         tt_agentboard::pty_status::PtySignal {
             last_output_ms: Self::read(&self.last_output_ms),
+            output_since_ms: Self::read(&self.output_since_ms),
             attention_at_ms: Self::read(&self.attention_at_ms),
             input_at_ms: Self::read(&self.input_at_ms),
         }
@@ -111,9 +118,18 @@ impl PtyActivity {
     /// again. Only that edge is worth waking the agentboard emitter for;
     /// waking it per frame would rebuild the whole payload ~90 times a second
     /// to no effect.
+    ///
+    /// That same edge is where the run of output restarts, so `output_since_ms`
+    /// is stamped here too: everything after it belongs to one continuous run,
+    /// which is what tells work apart from an idle pane's lone repaint.
     fn note_output(&self, now: i64) -> bool {
         let previous = self.last_output_ms.swap(now, Ordering::Relaxed);
-        previous == 0 || now.saturating_sub(previous) >= tt_agentboard::pty_status::OUTPUT_ACTIVE_MS
+        let fresh_burst = previous == 0
+            || now.saturating_sub(previous) >= tt_agentboard::pty_status::OUTPUT_ACTIVE_MS;
+        if fresh_burst {
+            Self::stamp(&self.output_since_ms, now);
+        }
+        fresh_burst
     }
 }
 

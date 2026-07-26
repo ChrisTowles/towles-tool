@@ -84,6 +84,19 @@ pub struct Message {
     pub usage: Option<Usage>,
     #[serde(default)]
     pub content: Option<Content>,
+    /// Why the model stopped generating this response: `end_turn` (it is done
+    /// and handing back to the user), `tool_use` (it wants a tool run and will
+    /// continue), `max_tokens`, `stop_sequence`, `refusal`.
+    ///
+    /// Load-bearing for "did the turn end?", because **one response is written
+    /// as several transcript entries — one per content block — all carrying
+    /// that response's `stop_reason`.** So an assistant entry holding only text
+    /// is *not* evidence the turn ended: a mid-turn narration block sits in the
+    /// same response as the tool call that follows it, and both entries say
+    /// `tool_use`. Measured on one real session: 67 text-only entries with
+    /// `stop_reason: "tool_use"` against a single `end_turn`.
+    #[serde(rename = "stop_reason", default)]
+    pub stop_reason: Option<String>,
 }
 
 /// Token-usage accounting attached to an assistant message. A superset of what

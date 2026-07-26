@@ -469,6 +469,7 @@ mod tests {
                     ..Default::default()
                 }),
                 content: Some(Content::Blocks(vec![text_block("hi")])),
+                ..Default::default()
             }),
             ..Default::default()
         }

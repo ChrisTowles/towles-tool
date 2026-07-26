@@ -101,9 +101,16 @@ follows is a cross-cutting rule that spans multiple files.
   `stamp_pty_state` folds `tt_agentboard::pty_status::resolve_status` over
   the engine's verdict, because that verdict comes from a `claude agents
   --all --json` snapshot cached for 60s and nothing else could contradict
-  it. The terminal can: output in the last 1.5s proves the agent is working,
-  and 20s of silence proves it isn't (Claude Code repaints a live elapsed
-  counter throughout a turn — measured max gap 0.27s). Both directions are
+  it. The terminal can: output that is recent (1.5s) **and has been running
+  for a second** proves the agent is working, and 20s of silence proves it
+  isn't (Claude Code repaints a live elapsed counter throughout a turn —
+  measured max gap 0.27s). Both halves of the first test are load-bearing: a
+  pane whose turn has *finished* still repaints on its own every second or
+  two, so recency alone reads those twitches as work, which flipped
+  correctly-finished sessions in and out of needs-you continuously (the
+  needs-you banner flicker) and — because the same "is it working" test
+  decides whether an `OSC 777` has been superseded — threw away the turn-end
+  notification, leaving needs-you to wait on the 60s-cached CLI instead. Both directions are
   load-bearing and were fixing observed bugs — a stale `waiting` badge on a
   visibly running pane, and a finished agent flapping `busy`/`complete` as
   attribution came and went, which reset its `needs_since_ms` every few
