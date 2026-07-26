@@ -42,6 +42,7 @@ import {
   filesPanePathFor,
   folderRemovableTask,
   isAgent,
+  isAgentPane,
   isCacheExpiring,
   liveSessions,
   nextOpenFileNonce,
@@ -98,9 +99,10 @@ import { toast } from "sonner";
  * colored square on a row is its window's group tag. A session IS a PTY;
  * "agent" (✦) is a badge on a session where Claude is detected running —
  * status is reported, never re-rendered (the real TUI is the PTY). All
- * opened terminals live in one flat mounted pool (hidden unless in the
- * active folder's active window) so scrollback survives switching and
- * regrouping. A folder's diff, its file tree, its live preview, and a
+ * opened terminals — and chat panes — live in one flat mounted pool (hidden
+ * unless in the active folder's active window) so scrollback and a live
+ * conversation both survive switching and regrouping; the diff/files/preview
+ * panes are rebuilt on mount instead, owning no process. A folder's diff, its file tree, its live preview, and a
  * rendered Claude session (`AgentPane` — structured turns instead of PTY
  * scrollback, `chat` in the lens chip) each open as their own pane in the same
  * tiling (never a modal), so you review while the agents keep working. Layout persists via
@@ -390,7 +392,15 @@ export function AgentboardScreen() {
   function openAgent(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, agentPaneId(dir));
+    setFocusedPaneId(agentPaneId(dir));
   }
+
+  // Every chat pane open in any window — the pane pool keeps these mounted so
+  // switching folders can't kill a conversation (see `PaneGrid`).
+  const chatPanes = useMemo(
+    () => (wins?.windows ?? []).flatMap((w) => w.panes.filter(isAgentPane)),
+    [wins],
+  );
 
   // Claude called the openFile tool → open (or focus) that folder's files
   // pane and focus the file. Routed here rather than inside the pane so the
@@ -1230,6 +1240,7 @@ export function AgentboardScreen() {
 
               <PaneGrid
                 open={open}
+                chatPanes={chatPanes}
                 cwds={cwds}
                 activeWin={activeWin}
                 activeFolderDir={activeFolderDir}

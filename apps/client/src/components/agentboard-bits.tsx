@@ -22,6 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { ChatStatus } from "@/lib/agent-sessions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -171,6 +172,33 @@ export function Dot({ session }: { session: SessionData }) {
         "size-2 shrink-0 rounded-full",
         st ? statusColor(st) : "bg-muted-foreground/40",
         st === "busy" && "animate-pulse",
+      )}
+    />
+  );
+}
+
+/** The status dot for a *chat* (rendered-agent) pane, shared by the pane's own
+ * header and its rail row so the two can never describe one session
+ * differently. Same hues as `Dot` — cyan busy, red error, muted otherwise — a
+ * chat simply has fewer states to be in than a PTY session (there is no
+ * "waiting on you": the composer is right there). */
+export function ChatDot({ status }: { status: ChatStatus }) {
+  return (
+    <span
+      title={
+        status === "off"
+          ? "no session started here yet"
+          : status === "error"
+            ? "agent exited with an error"
+            : `chat ${status}`
+      }
+      className={cn(
+        "size-2 shrink-0 rounded-full",
+        status === "working"
+          ? "animate-pulse bg-cyan-500"
+          : status === "error"
+            ? "bg-red-500"
+            : "bg-muted-foreground/40",
       )}
     />
   );

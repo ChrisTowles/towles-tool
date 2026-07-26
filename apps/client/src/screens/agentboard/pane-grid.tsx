@@ -13,7 +13,6 @@ import {
   filesPaneDir,
   isDiffPane,
   isExitPane,
-  isAgentPane,
   isFilesPane,
   isPreviewPane,
   paneRects,
@@ -30,17 +29,25 @@ import { paneStyle } from "./helpers";
 import type { ColumnDrag } from "./use-column-drag";
 
 /**
- * The pane area: one flat pool of mounted terminals (never remounted — a
- * remount would respawn the shell) plus the diff/files/preview/tombstone
- * panes, all absolutely positioned into the active window's tiling.
+ * The pane area: one flat pool of mounted terminals *and chat panes* (never
+ * remounted — a remount would respawn the shell, or in a chat's case kill the
+ * `claude` process and throw the transcript away) plus the
+ * diff/files/preview/tombstone panes, all absolutely positioned into the
+ * active window's tiling.
  *
  * The active window's pane order assigns each a percent-rect; panes in other
  * windows stay hidden rather than unmounting, so scrollback survives switching
- * and regrouping.
+ * and regrouping. Diff/files/preview panes are *not* pooled deliberately —
+ * they refetch from disk on mount and hold nothing that can't be rebuilt,
+ * whereas a terminal and a chat each own a live process.
  */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
   open: string[];
+  /** Every chat pane open in *any* window, not just the active one — they stay
+   * mounted (and hidden) for the same reason terminals do: the session is a
+   * live process plus a transcript, and both used to die on a folder switch. */
+  chatPanes: string[];
   /** Fallback cwd per session, for terminals whose folder isn't resolvable. */
   cwds: React.RefObject<Record<string, string>>;
   activeWin: AgWindow | undefined;
@@ -75,6 +82,7 @@ export function PaneGrid(props: {
 }) {
   const {
     open,
+    chatPanes,
     cwds,
     activeWin,
     activeFolderDir,
@@ -216,22 +224,26 @@ export function PaneGrid(props: {
           />,
         );
       })}
-      {/* Agent panes: a Claude Code session in this folder rendered as
+      {/* Chat panes: a Claude Code session in this folder rendered as
           structured turns rather than PTY scrollback. Sits beside the folder's
           terminals — comprehension coming back, where they are precision going
-          in. */}
-      {panes
-        .filter(isAgentPane)
-        .map((id) =>
-          paneBox(
-            id,
-            <AgentPane
-              folder={folderByDir.get(agentPaneDir(id) ?? "")}
-              focused={focusedPaneId === id}
-              onClose={() => onRemovePane(id)}
-            />,
-          ),
-        )}
+          in. Pooled like the terminals above (hidden, not unmounted, when it
+          isn't in the active window) because the session behind it is a live
+          process and a conversation. */}
+      {chatPanes.map((id) => {
+        const r = rectFor(id);
+        return (
+          <div key={id} hidden={!r} style={r ? paneStyle(r) : undefined} className="absolute p-1.5">
+            <div className="h-full" onClick={() => onFocusPane(id)}>
+              <AgentPane
+                folder={folderByDir.get(agentPaneDir(id) ?? "")}
+                focused={focusedPaneId === id}
+                onClose={() => onRemovePane(id)}
+              />
+            </div>
+          </div>
+        );
+      })}
       {/* Tombstones: a shell that died on its own, holding the task it died in.
           The pane id says which kind this is, so this pass can't overlap the
           terminal pass above — a session is either its own id or its `~exit:`

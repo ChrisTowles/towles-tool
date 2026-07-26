@@ -1,30 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, CornerDownLeft, Play, Square, X } from "lucide-react";
 import { toast } from "sonner";
-import { IconBtn } from "@/components/agentboard-bits";
+import { ChatDot, IconBtn } from "@/components/agentboard-bits";
 import { Markdown } from "@/components/markdown";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  AGENT_EVENT,
-  agentSend,
-  agentStart,
-  agentStop,
-  appendUserTurn,
   applyCommand,
-  emptyView,
-  foldEvent,
   matchCommands,
   slashMenuKey,
   slashQuery,
   summarizeToolInput,
-  type AgentEventPayload,
-  type AgentView,
   type SlashCommand,
   type Turn,
 } from "@/lib/agent";
+import {
+  chatStatus,
+  closeChat,
+  sendChat,
+  startChat,
+  stopChat,
+  useChatSession,
+  type ChatSession,
+} from "@/lib/agent-sessions";
 import { agentPaneId, type FolderData } from "@/lib/agentboard";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
@@ -43,8 +43,11 @@ import { cn } from "@/lib/utils";
  *
  * **The pane id is the backend session key**, and it is folder-scoped
  * (`agentPaneId`), so there is exactly one rendered agent per folder. All
- * transcript logic lives in `lib/agent.ts` (`foldEvent`) — this file is the
- * shell around it.
+ * transcript logic lives in `lib/agent.ts` (`foldEvent`) and the session state
+ * itself in `lib/agent-sessions.ts` — deliberately *outside* this component,
+ * because the pane unmounts whenever its folder isn't the active one and
+ * neither the conversation nor the `claude` process may die with it. This file
+ * is the shell around both.
  */
 export function AgentPane({
   folder,
@@ -57,9 +60,9 @@ export function AgentPane({
 }) {
   const dir = folder?.dir ?? "";
   const agentId = agentPaneId(dir);
-  const [view, setView] = useState<AgentView>(emptyView);
+  const session = useChatSession(agentId);
+  const { view, started } = session;
   const [draft, setDraft] = useState("");
-  const [started, setStarted] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -90,31 +93,15 @@ export function AgentPane({
     taRef.current?.focus();
   }
 
-  // Subscribe before any start so the `init` handshake can't race the
-  // listener — the backend emits it within milliseconds of spawn.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const handle = await listen<AgentEventPayload>(AGENT_EVENT, (e) => {
-        if (e.payload.agentId !== agentId) return;
-        setView((prev) => foldEvent(prev, e.payload));
-      });
-      if (disposed) handle();
-      else unlisten = handle;
-    })();
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [agentId]);
-
   // Closing the pane is what ends the session — the agent is owned by the
   // pane, the same way a terminal's shell is owned by its `TerminalView`.
-  useEffect(() => () => void agentStop(agentId), [agentId]);
+  // Unmount is the catch-all because a pane leaves the layout by several
+  // routes (its own ✕, the rail row's ✕, closing its window, the layout
+  // prune), and only one of them runs through `onClose`. This is *not* the
+  // folder-switch path any more: `PaneGrid` keeps every open chat pane mounted
+  // and merely hides the ones outside the active window, exactly as it already
+  // did for terminals — so this fires only when the pane is genuinely gone.
+  useEffect(() => () => closeChat(agentId), [agentId]);
 
   // Follow the tail as turns land. `end` rather than `start` so a long tool
   // result doesn't scroll its own top out of view.
@@ -125,17 +112,9 @@ export function AgentPane({
   const start = useCallback(
     async (prompt: string) => {
       uiAction("agent.start", "agentboard");
-      setView(appendUserTurn({ ...emptyView(), running: true }, prompt));
-      const res = await agentStart({ agentId, cwd: dir, prompt });
-      res.match({
-        ok: () => setStarted(true),
-        err: (e) => {
-          // Drop the echoed turn too — it describes a session that never
-          // started, and leaving it implies the prompt is queued somewhere.
-          setView(emptyView());
-          if (!NotInTauri.is(e)) toast.error(`Could not start agent: ${errorMessage(e)}`);
-        },
-      });
+      const res = await startChat(agentId, dir, prompt);
+      if (res.isErr() && !NotInTauri.is(res.error))
+        toast.error(`Could not start agent: ${errorMessage(res.error)}`);
     },
     [agentId, dir],
   );
@@ -147,18 +126,13 @@ export function AgentPane({
     if (!started) return start(text);
 
     uiAction("agent.send", "agentboard");
-    setView((prev) => appendUserTurn({ ...prev, running: true }, text));
-    if ((await agentSend(agentId, text)).isErr()) {
-      setView((prev) => ({ ...prev, running: false }));
+    if ((await sendChat(agentId, text)).isErr())
       toast.error("Agent is not running — start it again.");
-    }
   }, [agentId, draft, start, started]);
 
   const stop = useCallback(async () => {
     uiAction("agent.stop", "agentboard");
-    await agentStop(agentId);
-    setStarted(false);
-    setView((prev) => ({ ...prev, running: false }));
+    await stopChat(agentId);
   }, [agentId]);
 
   const dead = view.exitCode !== undefined;
@@ -177,7 +151,7 @@ export function AgentPane({
             <span className="font-mono text-[11px] text-muted-foreground">{view.model}</span>
           ) : undefined
         }
-        controls={<AgentStatus view={view} />}
+        controls={<AgentStatus session={session} />}
         actions={
           <>
             {view.costUsd > 0 && (
@@ -321,21 +295,14 @@ function SlashMenu({
   );
 }
 
-function AgentStatus({ view }: { view: AgentView }) {
-  const { running, exitCode } = view;
-  // Mirrors statusColor() in lib/agentboard.ts: cyan busy, red error, muted
-  // idle. A new hue here would imply a status the rail doesn't have.
-  const [dot, label] =
-    exitCode !== undefined
-      ? [exitCode ? "bg-red-500" : "bg-muted-foreground/40", exitCode ? "error" : "exited"]
-      : running
-        ? ["bg-cyan-500 animate-pulse", "working"]
-        : ["bg-muted-foreground/40", "idle"];
-
+function AgentStatus({ session }: { session: ChatSession }) {
+  const status = chatStatus(session);
   return (
     <span className="flex shrink-0 items-center gap-1.5">
-      <span className={cn("size-2 rounded-full", dot)} />
-      <span className="font-mono text-[10.5px] text-muted-foreground">{label}</span>
+      <ChatDot status={status} />
+      <span className="font-mono text-[10.5px] text-muted-foreground">
+        {status === "off" ? "idle" : status}
+      </span>
     </span>
   );
 }

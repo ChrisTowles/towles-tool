@@ -158,6 +158,27 @@ only one folder is active at a time. See the open-session drain effect in
 `screens/agentboard.tsx`; firing the requests concurrently leaves every folder
 but the last with a placed-but-never-started pane.
 
+## A pane that owns a process is pooled; one that owns a view is not
+
+`PaneGrid` renders only the **active folder's active window**, so any pane it
+renders conditionally is unmounted the moment you click another folder in the
+rail. That is fine for the diff, files and preview panes — they refetch on
+mount and own nothing that can't be rebuilt — and unacceptable for the two
+kinds that own a process: a terminal (its shell) and a **chat** (`AgentPane`'s
+`claude` plus the conversation). Both are therefore rendered from a flat pool
+of *every* such pane open in *any* window, merely `hidden` when they aren't in
+the active one, so unmount means "really closed" and the unmount effect can
+keep killing the process.
+
+The chat's *state* is pooled too, in `lib/agent-sessions.ts` (module store +
+one `agent://event` listener, keyed by pane id) rather than in `AgentPane`'s
+`useState` — a component that can unmount cannot be the home of a live
+conversation. It also makes a chat's status readable from outside the pane at
+all. **A new pane kind that owns a process or accumulates state must join the
+pool and keep its state outside the component**; adding it to the
+conditionally-rendered list is the bug this rule exists to prevent (chats used
+to die, silently, on every folder switch).
+
 ## Clickable rows can't be `<button>`s
 
 Radix's `Checkbox`, `Switch`, `RadioGroupItem` and `*Trigger` primitives render
