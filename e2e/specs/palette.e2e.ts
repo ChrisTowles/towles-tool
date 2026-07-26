@@ -45,32 +45,37 @@ async function openPalette(): Promise<void> {
 }
 
 /**
- * Type a query, click the result whose label is exactly `title`, and wait for
- * the palette to close.
+ * Type a query, press Enter on whatever the palette selected, and wait for the
+ * palette to close.
  *
- * Deliberately a click, not Enter-on-selected: cmdk's initial selection is the
- * first item of the first *group*, and a persisted "Recent" entry (e.g.
- * Agentboard, whose title contains "board") can sit above the exact title
- * match, so what Enter commits depends on prior-session state. Clicking the
- * exact-labelled item is what a user does when the top hit isn't theirs, and
- * is deterministic.
+ * Deliberately Enter-on-selected rather than clicking the exact-labelled row:
+ * typing a screen's full title and hitting Enter is the palette's whole point,
+ * and it is the assertion that catches a selection regression. It used to be
+ * unsafe — a persisted "Recent" entry (Agentboard, whose title contains
+ * "board") sat above the exact `Go to > Board` match, so what Enter committed
+ * depended on prior-session state (#480). Recent is now suppressed while a
+ * query is typed and an exact title match scores 1, so the top hit is the
+ * exact match regardless of history; the assertion below is what keeps that
+ * true.
  */
 async function navigateTo(query: string, title: string = query): Promise<void> {
   const input = await browser.$('[data-slot="command-input"]');
   await input.setValue(query);
+  // Wait for the filtered list to settle on the exact match being selected,
+  // then commit it with the keyboard.
   await browser.waitUntil(
     async () => {
-      const items = await browser.$$('[data-slot="command-item"]');
-      for (const item of items) {
-        if ((await item.getText()).trim() === title) {
-          await item.click();
-          return true;
-        }
-      }
-      return false;
+      const selected = await browser.$$('[data-slot="command-item"][data-selected="true"]');
+      const labels: string[] = [];
+      for (const item of selected) labels.push((await item.getText()).trim());
+      return labels.length === 1 && labels[0] === title;
     },
-    { timeout: 10000, timeoutMsg: `palette never offered an item titled "${title}"` },
+    {
+      timeout: 10000,
+      timeoutMsg: `palette never auto-selected the item titled "${title}"`,
+    },
   );
+  await browser.keys([Key.Enter]);
   await browser
     .$('[data-slot="command-input"]')
     .waitForExist({ reverse: true, timeout: 10000 });

@@ -1,5 +1,7 @@
+import { defaultFilter } from "cmdk";
 import { sessionLabel, sessionNeeds, type RepoData } from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
+import { SCREENS, type ScreenId } from "./screens";
 
 /**
  * Pure builders for the command palette's dynamic sections (repos, sessions,
@@ -154,6 +156,54 @@ export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null
   const title = query.trim();
   if (!title) return null;
   return { key: "quick-add", title };
+}
+
+/** How many MRU screens the Recent group shows — a shortcut, not a second full
+ * screen list. */
+const RECENT_LIMIT = 4;
+
+/**
+ * The screens the "Recent" group renders: MRU minus the screen you're already
+ * looking at, capped, and **empty whenever the query is non-empty**.
+ *
+ * The emptying is the fix for the exact-title-match bug, not a cosmetic choice.
+ * cmdk ranks *items* within a group by score correctly, but its cross-group
+ * ordering is broken for any heading containing a character `encodeURIComponent`
+ * escapes: it looks the group element up with
+ * `[cmdk-group][data-value="${encodeURIComponent(heading)}"]` while the element
+ * carries the heading verbatim, so `Go to` never matches and that group is never
+ * hoisted. The first group in DOM order therefore keeps the initial selection —
+ * with Agentboard in Recent, typing `Board` auto-selected `Recent > Agentboard`
+ * and Enter navigated to the wrong screen. Recent is a zero-query convenience
+ * (every screen is already in "Go to"), so dropping it while searching both
+ * removes the duplicate rows and leaves "Go to" as the first group, where the
+ * within-group score sort puts the exact match on top.
+ */
+export function paletteRecentScreens(
+  recent: readonly string[],
+  activeTab: string,
+  query: string,
+): ScreenId[] {
+  if (query.trim()) return [];
+  return recent
+    .filter((id): id is ScreenId => id !== activeTab && id in SCREENS)
+    .slice(0, RECENT_LIMIT);
+}
+
+/**
+ * Palette scoring: an exact match of an item's own value wins outright, else
+ * cmdk's default fuzzy score.
+ *
+ * cmdk's default filter appends an item's keywords to its value before scoring,
+ * so typing a screen's exact title (`Board`) scores 0.99 rather than 1 and can
+ * be tied or beaten by a longer entry that happens to contain it. Typing
+ * something's full name is an unambiguous statement of intent, so it ranks first
+ * regardless of what else matched.
+ */
+export function paletteFilter(value: string, search: string, keywords?: string[]): number {
+  const q = search.trim().toLowerCase();
+  if (q && value.trim().toLowerCase() === q) return 1;
+  return defaultFilter(value, search, keywords);
 }
 
 /** Stable partition: entries flagged by `needs` keep their relative order but
