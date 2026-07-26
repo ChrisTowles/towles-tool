@@ -4,9 +4,9 @@
 //! `~/.config/towles-tool/agentboard/sessions.json`, so a folder's sessions
 //! survive restarts even though the PTYs themselves are respawned lazily.
 //!
-//! Sits beside `repos.json` / `session-order.json` (same per-file, not-in-shared-
-//! settings pattern; see [`crate::repos`]). Path-parameterized so tests use a
-//! tempdir; `now_ms` is injected rather than read from the clock.
+//! Sits beside `repos.json` (same per-file, not-in-shared-settings pattern; see
+//! [`crate::repos`]). Path-parameterized so tests use a tempdir; `now_ms` is
+//! injected rather than read from the clock.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -51,7 +51,7 @@ struct SessionsConfig {
 }
 
 /// Owns the folder→sessions map plus its file path. Loaded once; saved on each
-/// mutation by the caller (engine), mirroring `SessionOrder`. `save()` only
+/// mutation by the caller (engine). `save()` only
 /// ever rewrites the folders touched since the last save (see `dirty`) — this
 /// file is shared by every Agentboard window (`tt task` runs one per
 /// checkout), so a save must never clobber another window's folders that this

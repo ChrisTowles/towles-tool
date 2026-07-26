@@ -1,12 +1,11 @@
-//! Usage-token extraction for the claude-code watcher. Ports slot-1
-//! `runtime/agents/watchers/claude-usage.ts`.
+//! Usage-token extraction for the claude-code watcher.
 
 use tt_claude_code::{CONTEXT_1M, TranscriptEntry, Usage, context_window};
 
 const FIVE_MIN_MS: i64 = 5 * 60 * 1000;
 const ONE_HOUR_MS: i64 = 60 * 60 * 1000;
 
-/// Token/model/cache summary for one session. Ports `ClaudeUsageSummary`.
+/// Token/model/cache summary for one session.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClaudeUsageSummary {
     pub model: String,
@@ -29,8 +28,6 @@ pub struct ClaudeUsageSummary {
 ///    tier than the table knew (e.g. a 1M session the table mapped to 200K, or a
 ///    model too new to be in the table). Output tokens are excluded (generated,
 ///    not context).
-///
-/// Ports `contextMax`, extended with table lookup + usage-based detection.
 pub fn context_max(model: &str, usage: &Usage) -> i64 {
     let base = context_window(model);
     let prompt_tokens = usage.input_tokens.unwrap_or(0)
@@ -39,7 +36,7 @@ pub fn context_max(model: &str, usage: &Usage) -> i64 {
     if prompt_tokens > base { base.max(CONTEXT_1M) } else { base }
 }
 
-/// Total context tokens = input + output + cache_read + cache_creation. Ports `contextUsed`.
+/// Total context tokens = input + output + cache_read + cache_creation.
 pub fn context_used(u: &Usage) -> i64 {
     u.input_tokens.unwrap_or(0)
         + u.output_tokens.unwrap_or(0)
@@ -48,7 +45,7 @@ pub fn context_used(u: &Usage) -> i64 {
 }
 
 /// Cache TTL: 1h when any 1h ephemeral tokens, else 5m when 5m ephemeral or any
-/// cache reads, else none. Ports `cacheTtlMs`.
+/// cache reads, else none.
 pub fn cache_ttl_ms(u: &Usage) -> Option<i64> {
     let h = u.cache_creation.as_ref().and_then(|c| c.ephemeral_1h_input_tokens).unwrap_or(0);
     let m = u.cache_creation.as_ref().and_then(|c| c.ephemeral_5m_input_tokens).unwrap_or(0);
@@ -63,7 +60,7 @@ pub fn cache_ttl_ms(u: &Usage) -> Option<i64> {
 }
 
 /// The usage summary from the newest assistant entry that has a `usage` block and
-/// a parseable timestamp. Ports `extractUsageSummary`.
+/// a parseable timestamp.
 pub fn extract_usage_summary(entries: &[TranscriptEntry]) -> Option<ClaudeUsageSummary> {
     for entry in entries.iter().rev() {
         let Some(msg) = &entry.message else {

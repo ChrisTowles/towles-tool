@@ -103,11 +103,7 @@ mod tests {
         SessionData {
             id: id.to_string(),
             name: name.to_string(),
-            created_at: 0,
             live,
-            shell_kind: None,
-            unseen: false,
-            needs_since_ms: None,
             agent_state: status.map(|s| AgentEvent {
                 agent: "claude".into(),
                 session: name.to_string(),
@@ -116,12 +112,9 @@ mod tests {
                 thread_id: None,
                 thread_name: None,
                 unseen: None,
-                pane_id: None,
                 details: None,
             }),
-            agents: vec![],
-            purpose: None,
-            port_drift: vec![],
+            ..Default::default()
         }
     }
 
@@ -136,30 +129,9 @@ mod tests {
                 folders: vec![FolderData {
                     name: format!("{repo}-task-0"),
                     dir: format!("/{repo}"),
-                    dir_missing: false,
                     branch: "main".into(),
-                    is_worktree: false,
-                    landed: None,
-                    committed_files: 0,
-                    committed_added: 0,
-                    committed_removed: 0,
-                    uncommitted_files: 0,
-                    uncommitted_added: 0,
-                    uncommitted_removed: 0,
-                    computed_at_ms: 0,
-                    commits_ahead: 0,
-                    commits_behind: 0,
-                    dirty: false,
-                    commits_unlanded: 0,
                     sessions,
-                    needs: 0,
-                    base_branch: None,
-                    task_base_branch: None,
-                    compared_base: String::new(),
-                    metadata: None,
-                    has_port_drift: false,
-                    has_launch_config: false,
-                    quiet: false,
+                    ..Default::default()
                 }],
                 needs: 0,
             }],

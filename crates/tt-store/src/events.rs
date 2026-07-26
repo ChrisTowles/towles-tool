@@ -34,7 +34,7 @@ fn local_midnight(date: chrono::NaiveDate) -> Option<i64> {
 }
 
 impl Store {
-    // --- Writes -----------------------------------------------------------
+    // Writes
 
     /// The `[start, end)` epoch-ms bounds of the local calendar day containing
     /// `reference_ms` — the window callers pass to
@@ -187,7 +187,7 @@ impl Store {
         Ok(deduped.len())
     }
 
-    // --- Queries ----------------------------------------------------------
+    // Queries
 
     /// Events starting within `[start_ms, end_ms)`, ordered by start time.
     pub fn events_between(&self, start_ms: i64, end_ms: i64) -> Result<Vec<CalEvent>> {

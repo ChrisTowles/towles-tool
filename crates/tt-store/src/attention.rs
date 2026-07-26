@@ -387,7 +387,7 @@ mod tests {
         }
     }
 
-    // --- MeetingStartWatch ------------------------------------------------
+    // MeetingStartWatch
 
     #[test]
     fn meeting_fires_once_when_start_arrives() {
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(w.observe(1100, Some(&refreshed)), None);
     }
 
-    // --- ReviewRequestedWatch --------------------------------------------
+    // ReviewRequestedWatch
 
     #[test]
     fn review_first_observation_primes_without_firing() {
@@ -518,7 +518,7 @@ mod tests {
         assert!(w.observe(&[refreshed]).is_empty());
     }
 
-    // --- ChecksFailedWatch -----------------------------------------------
+    // ChecksFailedWatch
 
     /// An authored PR (empty `review_state`) with the given checks state.
     fn pr_checks(repo: &str, number: i64, checks: &str) -> PrItem {
@@ -601,7 +601,7 @@ mod tests {
         assert!(w.observe(&[refreshed]).is_empty());
     }
 
-    // --- StaleCollectorWatch ---------------------------------------------
+    // StaleCollectorWatch
 
     fn run(collector: &str, ok: bool, ran_at: i64, message: Option<&str>) -> CollectRun {
         CollectRun {
@@ -762,7 +762,7 @@ mod tests {
         assert!(w.observe(500 * MIN, &cfg, &[]).is_empty());
     }
 
-    // --- Boundary conditions ---------------------------------------------
+    // Boundary conditions
 
     #[test]
     fn meeting_seen_exactly_at_start_never_fires() {
@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(edges[0].key, "issues");
     }
 
-    // --- Multi-edge / key formatting -------------------------------------
+    // Multi-edge / key formatting
 
     #[test]
     fn review_reports_every_newly_requested_pr_in_one_snapshot() {

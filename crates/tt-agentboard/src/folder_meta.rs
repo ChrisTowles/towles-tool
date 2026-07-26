@@ -175,6 +175,7 @@ fn load(path: &Path) -> HashMap<String, FolderMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn set_and_read_base_branch() {
@@ -252,22 +253,20 @@ mod tests {
 
     #[test]
     fn save_then_load_round_trips() {
-        let dir = std::env::temp_dir().join(format!("tt-folder-meta-{}", std::process::id()));
-        let path = dir.join("folder_meta.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("folder_meta.json");
         let mut store = FolderMetaStore::new(Some(path.clone()));
         store.set_base_branch("/r/a", Some("develop"));
         store.save().unwrap();
 
         let reloaded = FolderMetaStore::new(Some(path));
         assert_eq!(reloaded.base_branch_for("/r/a"), Some("develop"));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn concurrent_instances_dont_clobber_each_others_folders() {
-        let dir =
-            std::env::temp_dir().join(format!("tt-folder-meta-concurrent-{}", std::process::id()));
-        let path = dir.join("folder_meta.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("folder_meta.json");
 
         let mut a = FolderMetaStore::new(Some(path.clone()));
         let mut b = FolderMetaStore::new(Some(path.clone()));
@@ -281,6 +280,5 @@ mod tests {
         let reloaded = FolderMetaStore::new(Some(path));
         assert_eq!(reloaded.base_branch_for("/r/a"), Some("develop"));
         assert_eq!(reloaded.base_branch_for("/r/b"), Some("release/2.0"));
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

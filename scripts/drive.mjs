@@ -153,7 +153,7 @@ async function request(action, method, pathname, body) {
   return Result.ok(json);
 }
 
-// --- session-less eval (reads + IPC) ---------------------------------------
+// session-less eval (reads + IPC)
 // The Linux executor runs `(function(){ <script> }).apply(null, [...args, __done])`,
 // so the script uses the last argument as the W3C async done-callback and reports
 // back the {ok, value, undef} shape the /wdio/eval handler expects.
@@ -188,7 +188,7 @@ async function evalExpr(expr) {
   return Result.ok(json.undef === true ? undefined : json.value);
 }
 
-// --- W3C session (screenshots, clicks, nav) ---------------------------------
+// W3C session (screenshots, clicks, nav)
 // By default each call opens a fresh session and tears it down immediately
 // (`create`); pass `session: <id>` (from `session-open`) to run against an
 // already-open, caller-managed session instead — see the `--session` flag.
@@ -298,7 +298,7 @@ function fmt(v) {
   return JSON.stringify(v, null, 2);
 }
 
-// --- console errors ---------------------------------------------------------
+// console errors
 // The app buffers console.error/warn + uncaught exceptions on `window` under
 // VITE_WDIO (apps/client/src/lib/wdio-console.ts — keep this key in sync; it's
 // a cross-process contract and a rename just makes the check go quiet).
@@ -489,7 +489,7 @@ function usage(exitCode) {
   process.exit(exitCode);
 }
 
-// --- verbs -----------------------------------------------------------------
+// verbs
 const [verb, ...rest] = process.argv.slice(2);
 
 switch (verb) {

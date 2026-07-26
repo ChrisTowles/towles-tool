@@ -24,7 +24,7 @@ export type WorktreeDelete = {
   /** Record a `task://delete_progress` event for a dir. */
   setDeletePhase: (dir: string, label: string) => void;
 
-  // --- Confirm dialog
+  // Confirm dialog
   confirmDeleteWt: RemoveTarget | null;
   clearConfirm: () => void;
   /** The board task bound to the worktree being deleted (null = none on the
@@ -33,7 +33,7 @@ export type WorktreeDelete = {
   deleteWtOutcome: TaskOutcome;
   swapOutcome: () => void;
 
-  // --- Blocked dialog
+  // Blocked dialog
   blockedDelete: BlockedDelete | null;
   blockedDeleteDir: string | undefined;
   /** The removal itself (as opposed to the port stop before it) is running —

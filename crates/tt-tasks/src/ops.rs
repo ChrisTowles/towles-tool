@@ -541,7 +541,6 @@ pub fn check_branch(sr: &TaskRoot, branch: &str) -> BranchCheck {
     }
 }
 
-// ---------------------------------------------------------------------------
 // setup
 
 /// The setup command for a fresh task, as argv. `env` is the task's rendered
@@ -638,7 +637,6 @@ pub fn run_teardown(dir: &Path) -> Result<Option<String>> {
     Ok(warning)
 }
 
-// ---------------------------------------------------------------------------
 // submodules — the lifecycle phases. Public API is re-exported here so
 // callers keep using `tt_tasks::ops::*` paths; `pub(crate)` re-exports keep
 // this file's tests (and sibling modules) reaching internals without the

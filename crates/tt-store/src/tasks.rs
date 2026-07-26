@@ -493,7 +493,7 @@ impl Store {
             .next())
     }
 
-    // --- Row-mapping helpers ---------------------------------------------
+    // Row-mapping helpers
 
     /// One task by id, with its links and worktree binding (the same row shape
     /// [`Store::open_tasks`] returns).

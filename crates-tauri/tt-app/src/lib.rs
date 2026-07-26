@@ -689,7 +689,6 @@ pub fn run() {
             agentboard::ab_get_state,
             agentboard::ab_mark_seen,
             agentboard::ab_dismiss_agent,
-            agentboard::ab_reorder_session,
             agentboard::ab_set_theme,
             agentboard::ab_add_repo,
             agentboard::ab_remove_repo,

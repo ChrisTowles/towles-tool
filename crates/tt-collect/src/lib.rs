@@ -66,9 +66,7 @@ pub struct CollectSummary {
     pub message: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Public collectors
-// ---------------------------------------------------------------------------
 
 /// The stable `record_run` key for the calendar collector.
 const CALENDAR_KEY: &str = "claude:calendar";
@@ -904,9 +902,7 @@ pub fn tracked_repo_dirs() -> Vec<PathBuf> {
     tt_agentboard::repos::load_repos(&path).into_iter().map(PathBuf::from).collect()
 }
 
-// ---------------------------------------------------------------------------
 // Internals
-// ---------------------------------------------------------------------------
 
 /// Record the run and build the matching summary. A failed `record_run` write is
 /// ignored (the collector contract forbids surfacing it as an error/panic).

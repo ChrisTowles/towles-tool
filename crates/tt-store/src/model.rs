@@ -129,9 +129,7 @@ ORDER BY CASE status
     WHEN 'backlog' THEN 0 WHEN 'doing' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
   position ASC, created_at ASC";
 
-// ---------------------------------------------------------------------------
 // Output structs (camelCase, matching the TypeScript contract).
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -441,9 +439,7 @@ pub struct Snapshot {
     pub mcp_calls: Vec<McpCall>,
 }
 
-// ---------------------------------------------------------------------------
 // Input structs (what collectors hand to the store).
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

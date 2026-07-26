@@ -261,6 +261,7 @@ fn load(path: &Path) -> WindowsPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn layout() -> WindowsPayload {
         WindowsPayload {
@@ -285,22 +286,20 @@ mod tests {
 
     #[test]
     fn save_then_load_round_trips() {
-        let dir = std::env::temp_dir().join(format!("tt-windows-{}", std::process::id()));
-        let path = dir.join("windows.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("windows.json");
         let mut store = WindowsStore::new(Some(path.clone()));
         store.set(layout());
         store.save(&["/repo/checkout".to_string()]).unwrap();
 
         let reloaded = WindowsStore::new(Some(path));
         assert_eq!(reloaded.payload(), &layout());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn concurrent_instances_dont_clobber_each_others_folders() {
-        let dir =
-            std::env::temp_dir().join(format!("tt-windows-concurrent-{}", std::process::id()));
-        let path = dir.join("windows.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("windows.json");
 
         // Two long-lived "app instances" both loaded before either has saved.
         let mut a = WindowsStore::new(Some(path.clone()));
@@ -339,13 +338,12 @@ mod tests {
         assert!(dirs.contains("/repo/b"));
         assert_eq!(reloaded.payload().active_windows.get("/repo/a"), Some(&"wa".to_string()));
         assert_eq!(reloaded.payload().active_windows.get("/repo/b"), Some(&"wb".to_string()));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn save_untouched_folder_is_a_noop_even_if_stale_locally() {
-        let dir = std::env::temp_dir().join(format!("tt-windows-untouched-{}", std::process::id()));
-        let path = dir.join("windows.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("windows.json");
 
         let mut a = WindowsStore::new(Some(path.clone()));
         a.set(layout());
@@ -359,7 +357,6 @@ mod tests {
 
         let reloaded = WindowsStore::new(Some(path));
         assert_eq!(reloaded.payload(), &layout());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn win(id: &str, folder: &str, panes: &[&str]) -> AgWindow {
@@ -460,8 +457,8 @@ mod tests {
 
     #[test]
     fn prune_drops_gone_folders_and_persists_the_removal() {
-        let dir = std::env::temp_dir().join(format!("tt-windows-prune-{}", std::process::id()));
-        let path = dir.join("windows.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("windows.json");
         let mut store = WindowsStore::new(Some(path.clone()));
         let mut payload = layout();
         payload.windows.push(AgWindow {
@@ -485,7 +482,6 @@ mod tests {
         // second prune is a no-op — nothing left to drop
         let mut reloaded = reloaded;
         assert!(reloaded.prune(&kept).is_empty());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -507,12 +503,10 @@ mod tests {
 
     #[test]
     fn corrupt_file_loads_default() {
-        let dir = std::env::temp_dir().join(format!("tt-windows-bad-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("windows.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("windows.json");
         std::fs::write(&path, "not json").unwrap();
         let store = WindowsStore::new(Some(path));
         assert_eq!(store.payload(), &WindowsPayload::default());
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

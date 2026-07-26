@@ -59,7 +59,7 @@ export type FeedbackImage = { mime: string; dataBase64: string };
 export const previewWriteFeedback = (repo: string, images: FeedbackImage[]) =>
   invoke<string[]>("preview_write_feedback", { repo, images });
 
-// --- Annotation model ---
+// Annotation model
 
 export type Point = { x: number; y: number };
 
@@ -148,7 +148,7 @@ export function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, sca
   ctx.restore();
 }
 
-// --- Feedback composition + delivery ---
+// Feedback composition + delivery
 
 /** The prompt for an annotated-screenshot send: the user's comment (or a
  * stock ask), where the preview was pointed, and the image paths via

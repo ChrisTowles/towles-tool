@@ -62,9 +62,7 @@ const DEFAULT_NOTE_TEMPLATE: &str = "# {title}
 ## References
 ";
 
-// ---------------------------------------------------------------------------
 // Date/time formatting helpers (match `date-utils.ts` and `templates.ts`).
-// ---------------------------------------------------------------------------
 
 /// Format a date as `YYYY-MM-DD` (matches `formatDate`, i.e. `toLocaleDateString("en-CA")`).
 pub fn format_date(date: NaiveDate) -> String {
@@ -76,9 +74,7 @@ fn format_time(dt: NaiveDateTime) -> String {
     format!("{:02}:{:02}", dt.hour(), dt.minute())
 }
 
-// ---------------------------------------------------------------------------
 // Templates
-// ---------------------------------------------------------------------------
 
 /// Replace `{key}` occurrences using `vars`; unknown keys are left verbatim.
 /// Ports the `renderTemplate` helper in templates.ts (a plain map lookup — no Luxon).
@@ -302,9 +298,7 @@ pub fn create_note_content(title: &str, dt: NaiveDateTime, template_dir: Option<
     )
 }
 
-// ---------------------------------------------------------------------------
 // Listing and classification
-// ---------------------------------------------------------------------------
 
 /// Recursively collect all `.md` files under `dir`. Ports `collectMarkdownFiles`.
 /// Directory entries are sorted for deterministic output (the TS relies on OS order).
@@ -443,9 +437,7 @@ pub fn filter_and_sort_entries(
     entries
 }
 
-// ---------------------------------------------------------------------------
 // Search
-// ---------------------------------------------------------------------------
 
 /// A single search hit with surrounding context lines. Mirrors `SearchMatch`.
 #[derive(Debug, Clone)]
@@ -772,7 +764,7 @@ mod tests {
         assert_eq!(format_size(3 * 1024 * 1024), "3.0MB");
     }
 
-    // --- append_to_daily --------------------------------------------------
+    // append_to_daily
 
     fn daily_settings(base: &Path) -> JournalSettings {
         JournalSettings {

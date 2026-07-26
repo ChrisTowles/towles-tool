@@ -4,8 +4,8 @@
 //!
 //! Kept out of the shared `towles-tool.settings.json` on purpose: this is
 //! app-runtime state owned entirely by the Rust/Tauri app — the TypeScript CLI
-//! never reads it — and it sits beside `session-order.json` which established
-//! the per-file pattern. Path-parameterized so tests use a tempdir.
+//! never reads it — and it sits beside `sessions.json` which established the
+//! per-file pattern. Path-parameterized so tests use a tempdir.
 
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,7 @@ pub fn try_load_repos(path: &Path) -> Option<Vec<String>> {
     serde_json::from_str::<ReposConfig>(&text).ok().map(|c| c.repo_paths)
 }
 
-/// Load the repo-path list. Empty on missing/corrupt file. Ports the loader half.
+/// Load the repo-path list. Empty on missing/corrupt file.
 pub fn load_repos(path: &Path) -> Vec<String> {
     load_config(path).repo_paths
 }
@@ -422,10 +422,10 @@ fn resolve_repo_entry<'a>(dir: &str, entries: &'a [RepoEntry]) -> Option<&'a Rep
 /// Resolve a watcher's project dir to a session name (longest prefix match).
 ///
 /// Handles both forms the watcher produces: the transcript scan passes Claude's
-/// *encoded* folder name (`/`→`-`, adopted fix #3 — matched encoded↔encoded to
-/// sidestep the lossy decode), while the pid→cwd fallback passes a real absolute
-/// path (matched directly against repo dirs). An input starting with `/` is
-/// treated as a real path.
+/// *encoded* folder name (`/`→`-`, matched encoded↔encoded to sidestep the lossy
+/// decode), while the pid→cwd fallback passes a real absolute path (matched
+/// directly against repo dirs). An input starting with `/` is treated as a real
+/// path.
 pub fn resolve_session_name(dir: &str, entries: &[RepoEntry]) -> Option<String> {
     resolve_repo_entry(dir, entries).map(|e| e.name.clone())
 }

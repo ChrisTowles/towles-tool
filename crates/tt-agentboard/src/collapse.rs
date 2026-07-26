@@ -117,6 +117,7 @@ fn load(path: &Path) -> CollapsePayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn set_reports_change_and_defaults_to_expanded() {
@@ -137,34 +138,31 @@ mod tests {
 
     #[test]
     fn save_then_load_round_trips() {
-        let dir = std::env::temp_dir().join(format!("tt-collapse-{}", std::process::id()));
-        let path = dir.join("collapse.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("collapse.json");
         let mut store = CollapseStore::new(Some(path.clone()));
         store.set("repo:a::/repo/a", true);
         store.save().unwrap();
 
         let reloaded = CollapseStore::new(Some(path));
         assert_eq!(reloaded.payload().collapsed.get("repo:a::/repo/a"), Some(&true));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn save_with_no_pending_change_is_a_noop() {
-        let dir = std::env::temp_dir().join(format!("tt-collapse-noop-{}", std::process::id()));
-        let path = dir.join("collapse.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("collapse.json");
         let store = CollapseStore::new(Some(path.clone()));
         // No `set` call, so no dirty key — save() must not create the file.
         let mut store = store;
         store.save().unwrap();
         assert!(!path.exists());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn concurrent_instances_dont_clobber_each_others_keys() {
-        let dir =
-            std::env::temp_dir().join(format!("tt-collapse-concurrent-{}", std::process::id()));
-        let path = dir.join("collapse.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("collapse.json");
 
         // Two long-lived "app instances" both loaded before either has saved.
         let mut a = CollapseStore::new(Some(path.clone()));
@@ -181,17 +179,14 @@ mod tests {
         let reloaded = CollapseStore::new(Some(path));
         assert_eq!(reloaded.payload().collapsed.get("repo:a"), Some(&true));
         assert_eq!(reloaded.payload().collapsed.get("repo:b"), Some(&true));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn corrupt_file_loads_default() {
-        let dir = std::env::temp_dir().join(format!("tt-collapse-bad-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("collapse.json");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("collapse.json");
         std::fs::write(&path, "not json").unwrap();
         let store = CollapseStore::new(Some(path));
         assert_eq!(store.payload(), &CollapsePayload::default());
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

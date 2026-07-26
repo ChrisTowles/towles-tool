@@ -70,30 +70,9 @@ mod tests {
         FolderData {
             name: dir.to_string(),
             dir: dir.to_string(),
-            dir_missing: false,
             branch: "main".to_string(),
-            is_worktree: false,
-            committed_files: 0,
-            committed_added: 0,
-            committed_removed: 0,
-            uncommitted_files: 0,
-            uncommitted_added: 0,
-            uncommitted_removed: 0,
-            computed_at_ms: 0,
-            commits_ahead: 0,
-            commits_behind: 0,
-            dirty: false,
-            commits_unlanded: 0,
-            landed: None,
             sessions,
-            needs: 0,
-            base_branch: None,
-            task_base_branch: None,
-            compared_base: String::new(),
-            metadata: None,
-            has_port_drift: false,
-            has_launch_config: false,
-            quiet: false,
+            ..Default::default()
         }
     }
 
@@ -101,11 +80,7 @@ mod tests {
         SessionData {
             id: "s1".to_string(),
             name: "shell 1".to_string(),
-            created_at: 0,
             live,
-            shell_kind: None,
-            unseen: false,
-            needs_since_ms: None,
             agent_state: status.map(|status| AgentEvent {
                 agent: "claude".to_string(),
                 session: "s1".to_string(),
@@ -114,12 +89,9 @@ mod tests {
                 thread_id: None,
                 thread_name: None,
                 unseen: None,
-                pane_id: None,
                 details: None,
             }),
-            agents: vec![],
-            purpose: None,
-            port_drift: vec![],
+            ..Default::default()
         }
     }
 

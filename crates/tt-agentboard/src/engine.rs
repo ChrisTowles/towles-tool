@@ -1,7 +1,5 @@
-//! The agentboard engine: tracker + metadata + session-order + git cache +
-//! watchers behind one struct, host-agnostic. Extracted from
-//! `crates-tauri/tt-app/src/agentboard.rs` (phase T3 of the agentboard port)
-//! so every host shares it.
+//! The agentboard engine: tracker + metadata + git cache + watchers behind one
+//! struct, host-agnostic, so every host shares it.
 //!
 //! The engine is synchronous; hosts own scheduling (tokio tasks, debounces)
 //! and transport (Tauri events, MCP responses). Hosts guard it with a `Mutex`,
@@ -24,14 +22,13 @@ use crate::repos::{
     remove_repo_persisted, repo_entries, resolve_session_name, save_scan_roots,
     untrack_missing_persisted,
 };
-use crate::session_order::{ReorderDelta, SessionOrder};
 use crate::sessions::{SessionRecord, SessionStore, default_sessions_path};
 use crate::tracker::{AgentTracker, instance_key};
 use crate::types::{AgentEvent, AgentStatus, MetadataTone};
 use crate::watcher::{AgentWatcher, WatcherContext};
 use crate::watchers::claude_code::ClaudeCodeAgentWatcher;
 
-// Prune schedule constants (BRIDGE-SPEC §4).
+// Prune schedule constants.
 const STUCK_MS: i64 = 3 * 60 * 1000;
 const STALE_MS: i64 = 12 * 60 * 60 * 1000;
 const IDLE_MS: i64 = 30 * 1000;
@@ -44,6 +41,15 @@ const IDLE_MS: i64 = 30 * 1000;
 /// `store_git_info` (a panic, a dropped `spawn_blocking` result) can't strand
 /// a dir out of rotation forever.
 const GIT_PENDING_GUARD_MS: i64 = 30_000;
+
+/// Best-effort persistence: a store write that fails is not worth aborting the
+/// caller over, but it is worth a record — a rename that silently didn't reach
+/// disk otherwise leaves the user nothing to look at. `what` names the store.
+fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &str) {
+    if let Err(e) = result {
+        log::warn!("failed to persist {what}: {e}");
+    }
+}
 
 /// Wall-clock epoch milliseconds (the hosts' `now`).
 pub fn now_ms() -> i64 {
@@ -88,7 +94,6 @@ pub struct Engine {
     repo_paths: Vec<String>,
     tracker: AgentTracker,
     metadata: SessionMetadataStore,
-    order: SessionOrder,
     folder_meta: crate::folder_meta::FolderMetaStore,
     repo_meta: crate::repo_meta::RepoMetaStore,
     windows: crate::windows::WindowsStore,
@@ -158,9 +163,8 @@ pub struct AgentSnapshot {
 /// match the engine's (see [`Engine::new`]) so snapshot attribution and the
 /// watcher's admission agree on which agents are ours.
 pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot {
-    // CLI-derived liveness drives the pruning pins (§4; T7 replaced the
-    // ~/.claude/sessions pid files; the waiting synthesis is gone — the
-    // claude watcher emits CLI-authoritative statuses directly).
+    // CLI-derived liveness drives the pruning pins; the claude watcher emits
+    // CLI-authoritative statuses directly.
     let cli_agents = crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
         crate::watchers::claude_code::CLI_CACHE_TTL_MS,
     ));
@@ -211,7 +215,6 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
                 thread_id: None,
                 thread_name,
                 unseen: None,
-                pane_id: None,
                 details: None,
             },
         );
@@ -229,7 +232,6 @@ impl Engine {
         let projects_dir =
             dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude").join("projects");
         let repos_path = default_repos_path();
-        let order_path = crate::session_order::default_session_order_path();
 
         let settings = tt_config::load().unwrap_or_default();
         let theme = settings.agentboard.theme.and_then(|v| v.as_str().map(str::to_string));
@@ -249,7 +251,6 @@ impl Engine {
             repos_path,
             tracker: AgentTracker::new(),
             metadata: SessionMetadataStore::new(),
-            order: SessionOrder::new(Some(order_path)),
             sessions: SessionStore::new(Some(default_sessions_path())),
             folder_meta: crate::folder_meta::FolderMetaStore::new(Some(
                 crate::folder_meta::default_folder_meta_path(),
@@ -286,7 +287,7 @@ impl Engine {
     /// Re-read `repos.json` so changes made by the `tt agentboard` CLI (which
     /// writes the same file) are picked up without restarting the host. A
     /// torn/corrupt read (the file exists but won't parse — most likely racing
-    /// another instance's write, #75) keeps the last known-good list rather
+    /// another instance's write) keeps the last known-good list rather
     /// than degrading to empty, which would prune every folder's sessions.
     fn reload_repos(&mut self) {
         if let Some(paths) = crate::repos::try_load_repos(&self.repos_path) {
@@ -430,19 +431,33 @@ impl Engine {
                 .get(d)
                 .is_some_and(|claimed_at| now - claimed_at < GIT_PENDING_GUARD_MS)
         };
-        let out: Vec<_> = all_paths
+        let stale: Vec<String> = all_paths
             .into_iter()
             .filter(|d| !self.git_cache.is_fresh(d, now) && !pending_guard(d))
+            .collect();
+        let out = self.targets_for(stale);
+        for (d, _, _) in &out {
+            self.git_pending.insert(d.clone(), now);
+        }
+        out
+    }
+
+    /// Pair each dir with the two things a recompute needs alongside it: that
+    /// folder's base-branch override, and its previously cached value (so an
+    /// unmoved repo revalidates cheaply instead of re-running the landing
+    /// probe). Shared by [`Self::git_targets`] and [`Self::stale_git_targets`],
+    /// which differ only in which dirs they feed it.
+    fn targets_for(
+        &self,
+        dirs: Vec<String>,
+    ) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
+        dirs.into_iter()
             .map(|d| {
                 let base = self.folder_meta.base_branch_for(&d).map(str::to_string);
                 let previous = self.git_cache.get(&d);
                 (d, base, previous)
             })
-            .collect();
-        for (d, _, _) in &out {
-            self.git_pending.insert(d.clone(), now);
-        }
-        out
+            .collect()
     }
 
     /// Store freshly computed git info for dirs the host warmed outside the
@@ -515,14 +530,8 @@ impl Engine {
     /// instead of re-running the landing probe.
     pub fn git_targets(&mut self) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
         self.reload_repos();
-        repo_entries(&self.repo_paths)
-            .into_iter()
-            .map(|e| {
-                let base = self.folder_meta.base_branch_for(&e.dir).map(str::to_string);
-                let previous = self.git_cache.get(&e.dir);
-                (e.dir, base, previous)
-            })
-            .collect()
+        let dirs = repo_entries(&self.repo_paths).into_iter().map(|e| e.dir).collect();
+        self.targets_for(dirs)
     }
 
     /// Store one repo's freshly computed git info. Returns whether it differs
@@ -597,14 +606,14 @@ impl Engine {
             }
         }
         if seeded {
-            let _ = self.sessions.save();
+            persisted(self.sessions.save(), "sessions");
         }
         let payload = self.compute_payload_for_entries(&entries, snapshot, now);
         // Drop metadata + session records for repos no longer configured.
         // Skipped when the resolved entry set is empty: every configured repo
         // vanishing in one poll is far more likely a transient glitch (torn
         // repos.json read, worktree-list hiccup) than a real config wipe, and
-        // pruning on it deletes every folder's session records (#75). Stale
+        // pruning on it deletes every folder's session records. Stale
         // records left by a genuine remove-all are pruned on the next
         // non-empty poll.
         if !entries.is_empty() {
@@ -617,14 +626,14 @@ impl Engine {
             // this block is derived state that's cheap to lose and regenerates
             // on the next poll; a hand-picked icon and color is user-authored,
             // has no undo, and this `dirs` set is known to churn spuriously
-            // (the `!entries.is_empty()` guard above exists because of #75).
+            // (the `!entries.is_empty()` guard above exists for that reason).
             // Sweeping identity on a transient stat failure or an
             // untrack/retrack would silently destroy a choice the user made.
             // The map is bounded by "repos the user has ever styled" — a few
             // kilobytes — so it's reaped on explicit removal, not on a timer.
             let gone = self.windows.prune(&dirs);
             if !gone.is_empty() {
-                let _ = self.windows.save(&gone);
+                persisted(self.windows.save(&gone), "windows");
             }
         }
         payload
@@ -635,7 +644,7 @@ impl Engine {
     pub fn set_repo_meta(&mut self, dir: &str, meta: crate::repo_meta::RepoMeta) -> bool {
         let changed = self.repo_meta.set_meta(dir, meta);
         if changed {
-            let _ = self.repo_meta.save();
+            persisted(self.repo_meta.save(), "repo identity");
         }
         changed
     }
@@ -644,7 +653,7 @@ impl Engine {
     pub fn set_folder_base_branch(&mut self, dir: &str, base_branch: Option<&str>) -> bool {
         let changed = self.folder_meta.set_base_branch(dir, base_branch);
         if changed {
-            let _ = self.folder_meta.save();
+            persisted(self.folder_meta.save(), "folder metadata");
             // The cached stats were computed against the old baseline —
             // invalidate so the next watcher-scan tick (2s, not the 10s stat
             // poll) recomputes them against the new override right away.
@@ -657,7 +666,7 @@ impl Engine {
     pub fn set_folder_quiet(&mut self, dir: &str, quiet: bool) -> bool {
         let changed = self.folder_meta.set_quiet(dir, quiet);
         if changed {
-            let _ = self.folder_meta.save();
+            persisted(self.folder_meta.save(), "folder metadata");
         }
         changed
     }
@@ -675,7 +684,7 @@ impl Engine {
     ) -> bool {
         let changed = self.windows.set(payload);
         if changed {
-            let _ = self.windows.save(touched);
+            persisted(self.windows.save(touched), "windows");
         }
         changed
     }
@@ -684,7 +693,7 @@ impl Engine {
     pub fn set_collapsed(&mut self, key: &str, collapsed: bool) -> bool {
         let changed = self.collapse.set(key, collapsed);
         if changed {
-            let _ = self.collapse.save();
+            persisted(self.collapse.save(), "rail collapse state");
         }
         changed
     }
@@ -700,7 +709,7 @@ impl Engine {
         self.compact_recommend_percent = percent;
         if let Ok(mut settings) = tt_config::load() {
             settings.agentboard.compact_recommend_percent = Some(percent);
-            let _ = tt_config::save_merge(&settings);
+            persisted(tt_config::save_merge(&settings), "settings");
         }
         true
     }
@@ -717,7 +726,7 @@ impl Engine {
         self.show_unmanaged_worktrees = show;
         if let Ok(mut settings) = tt_config::load() {
             settings.agentboard.show_unmanaged_worktrees = Some(show);
-            let _ = tt_config::save_merge(&settings);
+            persisted(tt_config::save_merge(&settings), "settings");
         }
         true
     }
@@ -774,12 +783,11 @@ impl Engine {
         self.thread_sessions
             .retain(|tid, _| snapshot.live_threads.contains(tid) || tracked_threads.contains(tid));
 
-        // Prune schedule — every broadcast (§4).
+        // Prune schedule — every broadcast.
         self.tracker.prune_stuck(STUCK_MS, now);
         self.tracker.prune_terminal(now);
         self.tracker.prune_stale(STALE_MS, now);
         self.tracker.prune_idle(IDLE_MS, now);
-        self.tracker.prune_superseded_by_pane();
 
         let mut git_infos = HashMap::new();
         for entry in entries {
@@ -837,10 +845,6 @@ impl Engine {
         self.tracker.dismiss(session, agent, thread_id)
     }
 
-    pub fn reorder(&mut self, name: &str, delta: ReorderDelta) {
-        self.order.reorder(name, delta);
-    }
-
     /// Set the theme and persist it to the shared settings' `agentboard.theme`
     /// (interop-safe — that key exists in the TS schema). Persists via
     /// `save_merge` so keys the TypeScript CLI owns survive, and skips the
@@ -851,7 +855,7 @@ impl Engine {
         match tt_config::load() {
             Ok(mut settings) => {
                 settings.agentboard.theme = Some(serde_json::Value::String(theme));
-                let _ = tt_config::save_merge(&settings);
+                persisted(tt_config::save_merge(&settings), "settings");
             }
             Err(e) => log::warn!("theme not persisted: settings unreadable: {e}"),
         }
@@ -872,7 +876,7 @@ impl Engine {
 
     /// Persist the add-repo picker's scan roots, preserving the repo list.
     pub fn set_scan_roots(&mut self, roots: Vec<String>) {
-        let _ = save_scan_roots(&self.repos_path, &roots);
+        persisted(save_scan_roots(&self.repos_path, &roots), "scan roots");
     }
 
     /// Adds straight against `repos.json` (reread-fresh-then-write; see
@@ -896,7 +900,7 @@ impl Engine {
                 // Explicit removal is the one place identity is reaped — see
                 // `RepoMetaStore::forget`.
                 if removed && self.repo_meta.forget(dir) {
-                    let _ = self.repo_meta.save();
+                    persisted(self.repo_meta.save(), "repo identity");
                 }
                 removed
             }
@@ -927,7 +931,7 @@ impl Engine {
     /// Add a PTY session to a folder and persist. Returns the created record.
     pub fn add_session(&mut self, dir: &str, name: Option<&str>, now: i64) -> SessionRecord {
         let record = self.sessions.add(dir, name, now);
-        let _ = self.sessions.save();
+        persisted(self.sessions.save(), "sessions");
         record
     }
 
@@ -935,7 +939,7 @@ impl Engine {
     pub fn rename_session(&mut self, id: &str, name: &str) -> bool {
         let changed = self.sessions.rename(id, name);
         if changed {
-            let _ = self.sessions.save();
+            persisted(self.sessions.save(), "sessions");
         }
         changed
     }
@@ -944,7 +948,7 @@ impl Engine {
     pub fn set_session_purpose(&mut self, id: &str, purpose: Option<&str>) -> bool {
         let changed = self.sessions.set_purpose(id, purpose);
         if changed {
-            let _ = self.sessions.save();
+            persisted(self.sessions.save(), "sessions");
         }
         changed
     }
@@ -954,7 +958,7 @@ impl Engine {
     pub fn close_session(&mut self, id: &str) -> bool {
         let removed = self.sessions.remove(id);
         if removed {
-            let _ = self.sessions.save();
+            persisted(self.sessions.save(), "sessions");
         }
         removed
     }
@@ -996,10 +1000,10 @@ impl Engine {
             for id in &ids {
                 self.sessions.remove(id);
             }
-            let _ = self.sessions.save();
+            persisted(self.sessions.save(), "sessions");
         }
         if self.windows.remove_folder(dir) {
-            let _ = self.windows.save(&[dir.to_string()]);
+            persisted(self.windows.save(&[dir.to_string()]), "windows");
         }
         ids
     }
@@ -1083,7 +1087,7 @@ fn merge_worktree_dirs(
         all.push(dir.clone());
         // Kept in `git worktree list --porcelain`'s own order (main first,
         // then linked worktrees in the order `git worktree add` registered
-        // them — see `list_other_worktrees`), i.e. creation order, oldest
+        // them — see `other_worktrees`), i.e. creation order, oldest
         // first. Not re-sorted: only the *group's* position is the user's to
         // choose (see the comment above), but within it, creation order is
         // the one consistent, non-arbitrary ordering every entry has.
@@ -1200,7 +1204,6 @@ impl Engine {
             repos_path,
             tracker: AgentTracker::new(),
             metadata: SessionMetadataStore::new(),
-            order: SessionOrder::new(None),
             sessions: SessionStore::new(None),
             folder_meta: crate::folder_meta::FolderMetaStore::new(None),
             repo_meta: crate::repo_meta::RepoMetaStore::new(None),
@@ -1235,7 +1238,7 @@ mod engine_tests {
         crate::git_info::GitInfo { branch: branch.to_string(), ..Default::default() }
     }
 
-    // --- session lifecycle ---------------------------------------------------
+    // session lifecycle
 
     #[test]
     fn add_session_then_close_session_round_trips_by_folder() {
@@ -1284,7 +1287,7 @@ mod engine_tests {
         assert!(e.set_session_purpose(&rec.id, None));
     }
 
-    // --- repo tracking (persisted to the temp repos.json) --------------------
+    // repo tracking (persisted to the temp repos.json)
 
     #[test]
     fn add_repo_is_idempotent_and_remove_reports_removal() {
@@ -1451,7 +1454,7 @@ mod engine_tests {
         assert!(e.watch_targets().contains(&wt_s));
     }
 
-    // --- git-cache change detection -----------------------------------------
+    // git-cache change detection
 
     #[test]
     fn store_git_info_reports_change_only_on_a_real_difference() {
@@ -1481,7 +1484,7 @@ mod engine_tests {
         assert!(changed);
     }
 
-    // --- stale_git_targets in-flight dedup ------------------------------------
+    // stale_git_targets in-flight dedup
 
     /// The scan loop and the git-stat poll both call `stale_git_targets`
     /// against the same repo set. Without the in-flight claim, both would
@@ -1526,7 +1529,7 @@ mod engine_tests {
         assert_eq!(recovered.len(), 1, "the claim expired, so the dir is eligible again");
     }
 
-    // --- folder-meta setters -------------------------------------------------
+    // folder-meta setters
 
     #[test]
     fn set_folder_base_branch_change_detects_and_invalidates_git_cache() {
