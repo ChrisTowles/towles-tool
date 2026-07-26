@@ -5,22 +5,34 @@
 //! the HTTP framing, and the request-admission rules. Same split as
 //! [`crate::ide`] over [`tt_ide`].
 //!
-//! ## One server per machine
+//! ## One server per app instance
 //!
-//! The listener is taken **bind-or-skip**: whichever app instance binds the
-//! port serves MCP, and every other instance silently serves none. The OS bind
-//! *is* the mutex — there is no lockfile, no PID check, and nothing to clean up
-//! after a crash. Chris runs several worktrees of this app at once, and a
-//! machine-wide singleton is the point: a session anywhere on the machine
-//! reaches one server holding one store, not whichever copy happened to start
-//! last. A task that loses the race is unreachable by design; to debug one,
-//! point a client at it by hand.
+//! Every instance serves its own MCP on its own port, claimed per checkout from
+//! `.env.example`'s `${tt:port 8787-8986}` like every other port in this repo
+//! ([`port_for_this_instance`]). A session started in an app's terminal reaches
+//! *that* app, because the app stamps [`MCP_PORT_ENV`] into the shell and the
+//! plugin's `.mcp.json` expands it (`${TT_MCP_PORT:-8787}`).
 //!
-//! This is also why the port is a fixed default from settings rather than a
-//! `${tt:port}` pool claim. The no-hardcoded-ports rule exists because parallel
-//! tasks collide over shared resources; here exactly one process ever holds the
-//! port, so there is nothing to collide with — and a stable port is what lets
-//! the `towles-tool-app` plugin ship a static, checked-in `.mcp.json`.
+//! **This replaced a machine-wide singleton, and the singleton was wrong on
+//! correctness, not just ergonomics.** It was bind-or-skip on a fixed 8787:
+//! whichever instance won served every session on the machine and the rest
+//! served none, for their whole lives, with no retry. Two consequences:
+//!
+//! - `tt.db` is *instance* state, scoped per checkout by [`tt_config`]. So the
+//!   winning instance answered every session out of **its own** board — a
+//!   `task_create` from a worktree session landed on a different checkout's
+//!   board, silently.
+//! - A running `tt-app` was no evidence MCP was up, which made "the MCP tools
+//!   aren't there" a recurring and thoroughly counter-intuitive debug session.
+//!
+//! The bind is still fail-soft: a port already held (a stale instance, a
+//! hand-set duplicate `mcp.port`) logs and serves nothing rather than taking the
+//! app down with it. With per-checkout claims that is now a real anomaly rather
+//! than the expected path for all-but-one instance, so [`spawn`] warns.
+//!
+//! A session with no `TT_MCP_PORT` — one started outside an app terminal — falls
+//! back to 8787 and reaches whichever instance claimed it, which is the old
+//! behaviour and the reason the range starts there.
 //!
 //! ## Admission control is the only guard on writes
 //!
@@ -50,7 +62,7 @@ use tauri::{AppHandle, Emitter};
 use tt_mcp::Dispatcher;
 use tt_store::Store;
 
-/// Whether *this* instance won the bind race and is serving MCP.
+/// Whether *this* instance bound its port and is serving MCP.
 ///
 /// Process-global rather than managed Tauri state because it is written from
 /// [`spawn`] during setup and read by a command; there is exactly one server
@@ -65,7 +77,7 @@ static PORT: AtomicU16 = AtomicU16::new(0);
 /// Reported to the app's MCP screen so the status it shows is the real bind
 /// outcome rather than an inference from call recency — those differ exactly
 /// when it matters: a healthy server nobody has called yet, and an instance
-/// that lost the bind race and is serving nothing at all.
+/// whose port was already taken and is serving nothing at all.
 #[tauri::command]
 pub fn mcp_status() -> serde_json::Value {
     serde_json::json!({
@@ -74,8 +86,69 @@ pub fn mcp_status() -> serde_json::Value {
     })
 }
 
+/// The port this instance is actually serving on, or `None` if it never bound.
+///
+/// The distinction matters at exactly one call site — stamping [`MCP_PORT_ENV`]
+/// into a spawned terminal, where advertising a port we don't serve would point
+/// a session at nothing.
+pub fn serving_port() -> Option<u16> {
+    SERVING.load(Ordering::Relaxed).then(|| PORT.load(Ordering::Relaxed))
+}
+
 /// The MCP endpoint path. A single route: this is not a REST API.
 const MCP_PATH: &str = "/mcp";
+
+/// Names the MCP port an app instance serves on, in that instance's own
+/// environment and in every terminal it spawns.
+///
+/// Rendered per checkout from the `${tt:port 8787-8986}` claim in
+/// `.env.example`, like every other port here. The plugin's `.mcp.json` expands
+/// it as `${TT_MCP_PORT:-8787}`, so a session started in an app terminal reaches
+/// the app that spawned it.
+pub const MCP_PORT_ENV: &str = "TT_MCP_PORT";
+
+/// The port this instance should serve on, most specific source first:
+///
+/// 1. `TT_MCP_PORT` in the process's own environment — an explicit override, and
+///    what a nested app inherits nothing of (the PTY scrub drops `TT_*`).
+/// 2. The checkout's `TT_MCP_PORT` claim from its rendered `.env` — the normal
+///    case, and the per-checkout claim that makes instances stop colliding.
+/// 3. The settings `mcp.port` — a machine-wide default for a packaged app
+///    running outside any checkout.
+///
+/// Pure so the precedence is tested directly: it is the kind of ordering that
+/// looks obviously right and silently isn't, and getting it wrong points every
+/// session at one instance again — the exact failure this replaced.
+///
+/// A `0` is rejected along with unparseable junk: binding port 0 takes an
+/// ephemeral port no `.mcp.json` could ever name.
+fn resolve_port(process_env: Option<&str>, dotenv_claim: Option<u16>, settings_port: u16) -> u16 {
+    process_env
+        .map(str::trim)
+        .and_then(|v| v.parse::<u16>().ok())
+        .filter(|&port| port > 0)
+        .or(dotenv_claim)
+        .unwrap_or(settings_port)
+}
+
+/// [`resolve_port`] against the real environment: this process's env, then the
+/// `.env` of the checkout it is running in (`None` outside one).
+///
+/// The `.env` value is read as a **port claim**
+/// ([`tt_tasks::envfile::port_claims_by_key`]) rather than parsed here, so the
+/// app binds exactly the port its siblings see as taken. Reading it any other
+/// way lets the two disagree — a value the claim scanner skips is one no
+/// sibling avoids, yet this app would happily bind it.
+pub fn port_for_this_instance() -> u16 {
+    let settings_port =
+        tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
+    let dotenv_claim = std::env::current_dir()
+        .ok()
+        .and_then(|dir| tt_config::checkout_root_from_dir(&dir))
+        .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
+        .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
+    resolve_port(std::env::var(MCP_PORT_ENV).ok().as_deref(), dotenv_claim, settings_port)
+}
 
 /// Largest request body accepted. Enforced incrementally by `Limited` in
 /// [`read_body`] — the body is never buffered past this, so a stray upload
@@ -271,22 +344,23 @@ pub async fn mcp_test_call(
     }))
 }
 
-/// Bind the MCP port and serve until the app exits, or do nothing if another
-/// instance already holds it.
+/// Bind this instance's MCP port and serve until the app exits, or do nothing
+/// if something already holds it.
 ///
 /// Never returns an error to the caller: failing to serve MCP must not stop the
-/// app from starting, and losing the bind race is the *expected* outcome for
-/// every instance but one.
+/// app from starting.
 pub fn spawn(app: AppHandle, port: u16) {
     PORT.store(port, Ordering::Relaxed);
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = match StdTcpListener::bind(addr) {
         Ok(listener) => listener,
         Err(error) => {
-            // Not a warning: with several tasks open this is the normal path
-            // for all but the first, and logging it as a problem would train
-            // the reader to ignore a message that sometimes matters.
-            tracing::info!(
+            // Each checkout claims its own port, so reaching here is a genuine
+            // collision — a stale instance, two checkouts claiming the same
+            // port, or a hand-set `mcp.port` — and this instance's sessions
+            // will silently talk to whoever holds it instead. Hence a warning;
+            // the module doc covers why it used to be routine.
+            tracing::warn!(
                 %addr,
                 %error,
                 "mcp.http: port already held; this instance serves no MCP"
@@ -432,8 +506,17 @@ struct AppPreviewHost {
 
 impl tt_mcp::PreviewHost for AppPreviewHost {
     fn show(&self, artifact: tt_mcp::PreviewArtifact) -> Result<(), String> {
-        let payload = PreviewShowPayload { path: artifact.path, title: artifact.title };
-        tracing::info!(path = %payload.path, title = %payload.title, "preview.show_requested");
+        let payload = PreviewShowPayload {
+            path: artifact.path,
+            title: artifact.title,
+            session: artifact.session,
+        };
+        tracing::info!(
+            path = %payload.path,
+            title = %payload.title,
+            session = payload.session.as_deref().unwrap_or("-"),
+            "preview.show_requested"
+        );
         self.app
             .emit(PREVIEW_SHOW_EVENT, &payload)
             .map_err(|e| format!("couldn't ask the app to show {}: {e}", payload.path))
@@ -444,6 +527,42 @@ impl tt_mcp::PreviewHost for AppPreviewHost {
 /// Consumed by `apps/client/src/lib/preview-artifact.ts`.
 pub const PREVIEW_SHOW_EVENT: &str = "preview://show";
 
+/// Names the app PTY session a request came from — `TT_SESSION_ID`, which
+/// `terminal.rs` stamps on every shell the app spawns.
+///
+/// The `towles-tool-app` plugin's `.mcp.json` sets it with Claude Code's
+/// `${TT_SESSION_ID:-}` expansion, so it is filled in by the MCP client from
+/// the agent's own environment rather than by the agent. That distinction is
+/// the point: a value the model has to remember to look up and pass is one it
+/// can omit or get wrong, and `preview_show`'s failure mode is a page appearing
+/// in a different task's window — which looks like it worked.
+///
+/// An `X-`-prefixed name because it is ours and non-standard. It is not
+/// authentication and grants nothing: [`check_admission`] is still the entire
+/// security boundary, and a request with a forged or absent session gets a
+/// pane, not access. (It does add one incidental defence — a custom header
+/// isn't CORS-simple, so a web page can't send it without a preflight the
+/// server never answers.)
+pub const SESSION_HEADER: &str = "x-tt-session";
+
+/// What this transport knows about the caller: the app PTY session it is
+/// running in, read off [`SESSION_HEADER`].
+///
+/// Pure and header-only for the same reason [`check_admission`] is: it is
+/// exercised directly rather than through a live socket. Unlike admission this
+/// grants nothing, so an **undecodable** header is treated as absent — the
+/// opposite of `Origin`'s presence-only rule, because a garbled value here
+/// should cost the caller its preferred pane, not its call.
+///
+/// Blank values collapse to "didn't say" inside
+/// [`tt_mcp::RequestContext::for_session`], which owns that rule for every
+/// transport rather than each restating it — and it is the common case, not a
+/// defensive flourish: `${TT_SESSION_ID:-}` expands to an empty header for
+/// every Claude Code session started outside an app terminal.
+fn caller_context(headers: &hyper::HeaderMap) -> tt_mcp::RequestContext {
+    tt_mcp::RequestContext::for_session(headers.get(SESSION_HEADER).and_then(|v| v.to_str().ok()))
+}
+
 /// The [`PREVIEW_SHOW_EVENT`] payload — the path only, never the file's
 /// contents; `preview.rs` documents why.
 #[derive(serde::Serialize)]
@@ -451,6 +570,10 @@ pub const PREVIEW_SHOW_EVENT: &str = "preview://show";
 struct PreviewShowPayload {
     path: String,
     title: String,
+    /// The requesting agent's PTY session, when it identified itself. The
+    /// frontend routes on this and falls back to the path when it's `None` —
+    /// see `preview-artifact.ts`.
+    session: Option<String>,
 }
 
 /// Asks the frontend to start a board task — mint its worktree and launch an
@@ -544,6 +667,7 @@ async fn serve_connection(
                 .get(hyper::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string);
+            let ctx = caller_context(req.headers());
 
             if let Err(refusal) =
                 check_admission(&method, &path, origin_present, content_type.as_deref())
@@ -577,7 +701,7 @@ async fn serve_connection(
                     // down for the rest of the session is the worse failure.
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                dispatcher.dispatch(&body)
+                dispatcher.dispatch(&body, &ctx)
             })
             .await;
 
@@ -825,5 +949,99 @@ mod tests {
         assert_eq!(Refusal::MethodNotAllowed.status(), 405);
         assert_eq!(Refusal::TooLarge.status(), 413);
         assert_eq!(Refusal::Unreadable.status(), 400);
+    }
+
+    // --- port resolution ---
+
+    #[test]
+    fn the_checkouts_dotenv_claim_beats_the_shared_settings_default() {
+        assert_eq!(resolve_port(None, Some(8801), 8787), 8801);
+    }
+
+    /// An explicit env var is a deliberate override (a script, a hand-run
+    /// binary), so it outranks the file.
+    #[test]
+    fn the_process_environment_wins_over_the_dotenv() {
+        assert_eq!(resolve_port(Some("9000"), Some(8801), 8787), 9000);
+    }
+
+    /// A packaged app launched from the desktop is in no checkout and has no
+    /// `.env` to read.
+    #[test]
+    fn settings_answer_outside_a_checkout() {
+        assert_eq!(resolve_port(None, None, 9191), 9191);
+    }
+
+    /// An override can be a blank, junk, or out of range. Falling *through* to
+    /// the next source keeps the app serving on a sane port. `0` is the one
+    /// that parses and still has to be rejected — binding it takes an ephemeral
+    /// port no `.mcp.json` could name.
+    ///
+    /// The `.env` side needs no equivalent: it arrives as an already-validated
+    /// claim from `envfile::port_claims_by_key`, which is tested in `tt-tasks`
+    /// and is what rejects an unsubstituted `${tt:port 8787-8986}` token there.
+    #[test]
+    fn an_unusable_override_falls_through_instead_of_binding_nonsense() {
+        for bad in [
+            "",
+            "   ",
+            "${tt:port 8787-8986}",
+            "eight thousand",
+            "70000",
+            "-1",
+            "0",
+        ] {
+            assert_eq!(resolve_port(Some(bad), None, 8787), 8787, "should reject {bad:?}");
+            assert_eq!(resolve_port(Some(bad), Some(8801), 8787), 8801, "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_tolerated() {
+        assert_eq!(resolve_port(Some(" 9000 "), None, 8787), 9000);
+    }
+
+    // --- caller identity (`preview_show` routing) ---
+
+    fn headers(session: Option<&str>) -> hyper::HeaderMap {
+        let mut headers = hyper::HeaderMap::new();
+        if let Some(session) = session {
+            headers.insert(SESSION_HEADER, session.parse().unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn the_session_header_names_the_callers_terminal() {
+        assert_eq!(
+            caller_context(&headers(Some("s64abebd44298447d"))).session.as_deref(),
+            Some("s64abebd44298447d")
+        );
+    }
+
+    /// What every Claude Code session outside an app terminal sends, since
+    /// `${TT_SESSION_ID:-}` expands to nothing. It has to read as "no session",
+    /// or the artifact routes to a pane that cannot exist instead of falling
+    /// back to its path. The rule itself lives in `RequestContext::for_session`;
+    /// this pins that the transport actually goes through it.
+    #[test]
+    fn an_empty_session_header_means_no_session() {
+        assert_eq!(caller_context(&headers(Some(""))).session, None);
+        assert_eq!(caller_context(&headers(Some("   "))).session, None);
+    }
+
+    #[test]
+    fn a_request_without_the_header_has_no_session() {
+        assert_eq!(caller_context(&headers(None)).session, None);
+    }
+
+    /// The inverse of `Origin`'s presence-only rule, deliberately: this header
+    /// grants nothing, so an undecodable value costs the caller its preferred
+    /// pane rather than its request.
+    #[test]
+    fn an_undecodable_session_header_is_treated_as_absent() {
+        let mut raw = hyper::HeaderMap::new();
+        raw.insert(SESSION_HEADER, hyper::header::HeaderValue::from_bytes(b"\xff\xfe").unwrap());
+        assert_eq!(caller_context(&raw).session, None);
     }
 }

@@ -257,11 +257,11 @@ export function dmsNeedingAttention(snapshot: StoreSnapshot): DmItem[] {
 
 /**
  * One handled request against the towles-tool MCP server, logged by the
- * dispatcher. The server runs inside the desktop app over loopback HTTP
- * (`http://127.0.0.1:8787/mcp`) — there is no CLI to start it, so an empty log
- * means no app instance is holding the port. `method` is the JSON-RPC method
- * (`initialize`,
- * `tools/call`, …); `tool` and `args` are set only for `tools/call` (args are a
+ * dispatcher. The server runs inside the desktop app over loopback HTTP, on the
+ * port this checkout claimed (`TT_MCP_PORT`) — there is no CLI to start it, so
+ * an empty log means nothing has called *this* instance. `method` is the
+ * JSON-RPC method (`initialize`, `tools/call`, …); `tool` and `args` are set
+ * only for `tools/call` (args are a
  * compacted one-line rendering). `ok` is false for a JSON-RPC error or an
  * `isError` tool result, with the message in `error`. `client` is the caller's
  * `clientInfo` from the session's `initialize` (e.g. `claude-code 2.1`).

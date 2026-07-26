@@ -108,15 +108,26 @@ pub trait TaskHost: Send {
 /// and asks for it to be put on screen, instead of printing 400 lines into a
 /// PTY scrollback the user reads linearly and which dies with the worktree.
 ///
-/// A **hand-off** like [`TaskHost::start_task`]: routing the artifact means
-/// resolving which folder owns it and opening a pane there, neither of them
-/// visible from this Tauri-free crate, so the tool answers `"showing"` rather
-/// than claiming the user saw it. A dispatcher with no host refuses outright —
-/// silently accepting a show that reaches no window would tell an agent it had
-/// communicated when it hadn't.
+/// A **hand-off** like [`TaskHost::start_task`]: opening the pane means
+/// resolving a session to the folder that owns it and rendering there, neither
+/// of them visible from this Tauri-free crate, so the tool answers `"showing"`
+/// rather than claiming the user saw it. A dispatcher with no host refuses
+/// outright — silently accepting a show that reaches no window would tell an
+/// agent it had communicated when it hadn't.
+///
+/// **Routing is by caller, not by path** ([`PreviewArtifact::session`]). It used
+/// to be by path — longest tracked-folder prefix of the file — which is wrong
+/// in the ordinary case rather than an edge case: an agent's natural place to
+/// write a throwaway page is a scratch directory outside every checkout, and
+/// such a path matches no folder at all, so the artifact surfaced in whichever
+/// task the user happened to be looking at. Since the file's location was load
+/// bearing, an agent also had to *know* that and write somewhere unnatural to
+/// be routed correctly. The caller's own terminal is the fact that actually
+/// answers "whose pane is this?", and it is already stamped on every PTY the
+/// app spawns.
 pub trait PreviewHost: Send {
-    /// Put `artifact` on screen in the Preview pane of whichever checkout it
-    /// lives under.
+    /// Put `artifact` on screen in the Preview pane of the folder owning the
+    /// requesting agent's session.
     fn show(&self, artifact: PreviewArtifact) -> Result<(), String>;
 }
 
@@ -126,6 +137,17 @@ pub struct PreviewArtifact {
     pub path: String,
     /// What to label the pane with; the file name when the caller gave none.
     pub title: String,
+    /// The PTY session the requesting agent runs in
+    /// ([`RequestContext::session`]) — **the routing key**. The app resolves it
+    /// to the folder owning that session and opens the pane there.
+    ///
+    /// `None` when the caller isn't in an app terminal, which is the only case
+    /// that still falls back to matching the path against the rail's folders.
+    /// That fallback is a guess and reliably picks the wrong task for a file
+    /// under no tracked folder (a `/tmp` scratch page lands in whichever folder
+    /// happens to be on screen) — which is exactly why the session travels with
+    /// the request.
+    pub session: Option<String>,
 }
 
 /// Largest artifact `preview_show` will accept, checked from the same `stat`
@@ -142,11 +164,11 @@ const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 /// on the machine and has no idea what any of them consider "here"), a file
 /// that isn't there, a directory, a non-HTML file, or one too big to inline.
 ///
-/// The accepted path comes back **canonical**, because the frontend routes the
-/// artifact to a pane by matching it against the rail's folder paths: a path
-/// carrying `..`, a `./`, or a symlinked prefix (`/tmp` → `/private/tmp` on
-/// macOS) names the right file but matches no folder, so the artifact lands in
-/// a fallback pane instead of the one whose agent wrote it.
+/// The accepted path comes back **canonical**. Chiefly so the pane and the
+/// agent agree on one spelling of the file (a second `preview_show` of the same
+/// page via a `./` or a symlinked prefix is the same artifact, and shows as
+/// one), and secondarily because the path is still what routes a request that
+/// carried no session — see [`PreviewArtifact::session`].
 fn validate_artifact_path(raw: &str) -> Result<String, String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
@@ -262,6 +284,56 @@ pub struct Dispatcher {
     /// Injected calendar-source ids (test hook), keeping `calendar_set`'s lane
     /// validation off the real settings file. `None` re-reads settings per call.
     calendar_sources: Option<Vec<String>>,
+}
+
+/// What the transport knows about a caller that the JSON-RPC body cannot say.
+///
+/// Today that is one thing: which of the app's terminals the agent is sitting
+/// in. The MCP server is a single machine-wide endpoint shared by every Claude
+/// Code session on the machine, so a request arrives with no inherent identity
+/// — and `preview_show` has to put a page on screen in *the caller's own* task,
+/// not a guess.
+///
+/// The app stamps every PTY it spawns with `TT_SESSION_ID`
+/// (`tt_agentboard::procenv`), and the `towles-tool-app` plugin's `.mcp.json`
+/// forwards it as the `X-TT-Session` request header via Claude Code's
+/// `${VAR:-default}` expansion. So the identity rides the transport, set once in
+/// config — the model is never asked to read its own environment and pass a
+/// value it could get wrong or forget.
+///
+/// `None` is normal, not an error: a Claude Code session started from a plain
+/// terminal outside the app has no `TT_SESSION_ID`, and callers that predate
+/// the header send nothing. Routing falls back to the artifact's path in that
+/// case (see `preview-artifact.ts`).
+///
+/// Passed *through* the dispatch call rather than stashed on the [`Dispatcher`]:
+/// one long-lived dispatcher behind a mutex serves every session on the machine,
+/// so caller identity held as state would have to be cleared on every exit path
+/// to stop one agent's page opening in another's pane. As a parameter it cannot
+/// outlive the request that carried it.
+#[derive(Debug, Clone, Default)]
+pub struct RequestContext {
+    /// The app PTY session id the caller runs in — `TT_SESSION_ID`, which is
+    /// also the rail's session id and the `term_id` of its pane.
+    pub session: Option<String>,
+}
+
+impl RequestContext {
+    /// A context with no caller identity — the Tauri-free drivers and every
+    /// test that isn't specifically about session routing.
+    pub fn none() -> RequestContext {
+        RequestContext::default()
+    }
+
+    /// A context naming the PTY session the caller runs in. Blank and
+    /// whitespace-only values collapse to `None`: `${TT_SESSION_ID:-}` expands
+    /// to an empty header outside an app terminal, and an empty string that
+    /// matches no session must read as "didn't say", not as a bad id.
+    pub fn for_session(session: Option<&str>) -> RequestContext {
+        RequestContext {
+            session: session.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        }
+    }
 }
 
 /// What one dispatched request produced: the reply to send back, and whether
@@ -416,7 +488,7 @@ impl Dispatcher {
     /// becoming a second, lossy entry point someone reaches for by accident.
     #[cfg(test)]
     fn handle_at(&mut self, request_json: &str, now_ms: i64) -> Option<String> {
-        self.dispatch_at(request_json, now_ms).response
+        self.dispatch_at(request_json, now_ms, &RequestContext::none()).response
     }
 
     /// Handle one request line and report what it did, not just what to send
@@ -429,12 +501,17 @@ impl Dispatcher {
     /// treating every `ping` and `task_list` as a possible write means a full
     /// snapshot per read, taken against the very lock the transport opened a
     /// second SQLite connection to avoid contending with.
-    pub fn dispatch(&mut self, request_json: &str) -> Handled {
-        self.dispatch_at(request_json, now_ms())
+    pub fn dispatch(&mut self, request_json: &str, ctx: &RequestContext) -> Handled {
+        self.dispatch_at(request_json, now_ms(), ctx)
     }
 
     /// [`Dispatcher::dispatch`] with an injected `now_ms` (deterministic tests).
-    pub fn dispatch_at(&mut self, request_json: &str, now_ms: i64) -> Handled {
+    pub fn dispatch_at(
+        &mut self,
+        request_json: &str,
+        now_ms: i64,
+        ctx: &RequestContext,
+    ) -> Handled {
         let value: Value = match serde_json::from_str(request_json) {
             Ok(value) => value,
             Err(_) => {
@@ -476,7 +553,7 @@ impl Dispatcher {
             "tools/list" => {
                 Outcome::ok(success_response(id, json!({ "tools": tool_definitions() })))
             }
-            "tools/call" => self.tools_call(id, &value, now_ms),
+            "tools/call" => self.tools_call(id, &value, now_ms, ctx),
             _ => Outcome::err(
                 error_response(id, -32601, "Method not found"),
                 "Method not found".to_string(),
@@ -510,7 +587,13 @@ impl Dispatcher {
     /// Dispatch a `tools/call`: tool errors become an `isError` result (not a
     /// JSON-RPC error), per the MCP contract. The returned [`Outcome`] also
     /// carries the tool name and compacted args for the call log.
-    fn tools_call(&mut self, id: Value, request: &Value, now_ms: i64) -> Outcome {
+    fn tools_call(
+        &mut self,
+        id: Value,
+        request: &Value,
+        now_ms: i64,
+        ctx: &RequestContext,
+    ) -> Outcome {
         let params = request.get("params");
         let name = match params.and_then(|p| p.get("name")).and_then(Value::as_str) {
             Some(name) => name.to_string(),
@@ -523,14 +606,20 @@ impl Dispatcher {
         };
         let args = params.and_then(|p| p.get("arguments")).cloned().unwrap_or_else(|| json!({}));
         let logged_args = compact_args(&args);
-        match self.call_tool(&name, &args, now_ms) {
+        match self.call_tool(&name, &args, now_ms, ctx) {
             Ok(value) => Outcome::ok(tool_result_response(id, &value)).with_tool(name, logged_args),
             Err(message) => Outcome::err(tool_error_response(id, &message), message)
                 .with_tool(name, logged_args),
         }
     }
 
-    fn call_tool(&mut self, name: &str, args: &Value, now_ms: i64) -> Result<Value, String> {
+    fn call_tool(
+        &mut self,
+        name: &str,
+        args: &Value,
+        now_ms: i64,
+        ctx: &RequestContext,
+    ) -> Result<Value, String> {
         match name {
             "task_list" => self.task_list(),
             "task_status" => self.task_status(args),
@@ -538,7 +627,7 @@ impl Dispatcher {
             "task_summary" => self.task_summary(args, now_ms),
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
-            "preview_show" => self.preview_show(args),
+            "preview_show" => self.preview_show(args, ctx),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -923,7 +1012,7 @@ impl Dispatcher {
     /// the user an empty pane and tells the agent nothing. So the path is
     /// validated down to "an HTML file of a sane size that exists right now",
     /// and only then handed off.
-    fn preview_show(&mut self, args: &Value) -> Result<Value, String> {
+    fn preview_show(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
         let raw = args
             .get("path")
             .and_then(Value::as_str)
@@ -937,11 +1026,22 @@ impl Dispatcher {
         let path = validate_artifact_path(raw)?;
         let title = artifact_title(&path, args.get("title").and_then(Value::as_str));
 
+        // Report how it was routed. An agent that sees `"routed": "path"` is
+        // being told its request carried no session — the pane may open
+        // somewhere else — rather than left to discover that from a screenshot.
+        //
+        // The session comes off the transport ([`RequestContext`]), never the
+        // arguments, so there is nothing here for the model to get wrong.
+        let routed = if ctx.session.is_some() { "session" } else { "path" };
         let host =
             self.preview_host.as_ref().expect("checked above, before the path was validated");
-        host.show(PreviewArtifact { path: path.clone(), title: title.clone() })?;
+        host.show(PreviewArtifact {
+            path: path.clone(),
+            title: title.clone(),
+            session: ctx.session.clone(),
+        })?;
 
-        Ok(json!({ "status": "showing", "path": path, "title": title }))
+        Ok(json!({ "status": "showing", "path": path, "title": title, "routed": routed }))
     }
 
     fn task_delete(&mut self, args: &Value) -> Result<Value, String> {
@@ -1207,11 +1307,11 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "preview_show",
-            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first — anywhere, though the task's checkout is the natural home — then call this with its absolute path. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
+            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first — anywhere you like, including a scratch directory outside the repo — then call this with its absolute path. The pane opens in *your* terminal's task: the app knows which session you are calling from, so where the file lives has no bearing on where it appears. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute path to the .html file to show. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own." },
+                    "path": { "type": "string", "description": "Absolute path to the .html file to show. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own. This names the file to render, not the task to render it in." },
                     "title": { "type": "string", "description": "Short label for the pane header, e.g. \"Migration plan\". Defaults to the file name." },
                 },
                 "required": ["path"],
@@ -1313,16 +1413,38 @@ mod tests {
         response["result"]["content"][0]["text"].as_str().unwrap().to_string()
     }
 
+    /// [`call_tool`] from a caller the transport identified — the shape every
+    /// real `preview_show` arrives in.
+    fn call_tool_as(
+        dispatcher: &mut Dispatcher,
+        name: &str,
+        args: Value,
+        ctx: &RequestContext,
+    ) -> Value {
+        let request = tool_call_request(name, args);
+        let response = dispatcher
+            .dispatch_at(&request, NOW, ctx)
+            .response
+            .expect("tool call returns a response");
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["result"]["isError"], Value::Null, "unexpected tool error");
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
     fn call_tool_raw(dispatcher: &mut Dispatcher, name: &str, args: Value) -> Value {
-        let request = json!({
+        let request = tool_call_request(name, args);
+        let response = dispatcher.handle_at(&request, NOW).expect("tool call returns a response");
+        serde_json::from_str(&response).unwrap()
+    }
+
+    fn tool_call_request(name: &str, args: Value) -> String {
+        json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
             "params": { "name": name, "arguments": args },
         })
-        .to_string();
-        let response = dispatcher.handle_at(&request, NOW).expect("tool call returns a response");
-        serde_json::from_str(&response).unwrap()
+        .to_string()
     }
 
     #[test]
@@ -1402,8 +1524,8 @@ mod tests {
 
     // --- preview_show ---
 
-    /// Every `(path, title)` a fake preview host was handed.
-    type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+    /// Every `(path, title, session)` a fake preview host was handed.
+    type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String, Option<String>)>>>;
 
     /// A dispatcher whose preview host records what it was asked to show.
     fn with_preview_host() -> (Dispatcher, Shown) {
@@ -1412,7 +1534,7 @@ mod tests {
         }
         impl PreviewHost for FakePreviewHost {
             fn show(&self, artifact: PreviewArtifact) -> Result<(), String> {
-                self.shown.lock().unwrap().push((artifact.path, artifact.title));
+                self.shown.lock().unwrap().push((artifact.path, artifact.title, artifact.session));
                 Ok(())
             }
         }
@@ -1444,7 +1566,69 @@ mod tests {
 
         assert_eq!(result["status"], "showing");
         assert_eq!(result["title"], "The plan");
-        assert_eq!(&*shown.lock().unwrap(), &[(path, "The plan".to_string())]);
+        assert_eq!(&*shown.lock().unwrap(), &[(path, "The plan".to_string(), None)]);
+    }
+
+    /// The routing key comes off the transport, never the arguments — an agent
+    /// that never mentions its session still gets its own pane.
+    #[test]
+    fn preview_show_routes_by_the_callers_session() {
+        let (mut dispatcher, shown) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
+
+        let result = call_tool_as(
+            &mut dispatcher,
+            "preview_show",
+            json!({ "path": path }),
+            &RequestContext::for_session(Some("s64abebd44298447d")),
+        );
+
+        assert_eq!(result["routed"], "session");
+        assert_eq!(shown.lock().unwrap()[0].2.as_deref(), Some("s64abebd44298447d"));
+    }
+
+    /// A caller outside an app terminal sends `${TT_SESSION_ID:-}` as an empty
+    /// header. That is "didn't say", not a session id that matches nothing —
+    /// the difference between falling back to the path and routing to no pane
+    /// at all.
+    #[test]
+    fn preview_show_treats_a_blank_session_as_absent() {
+        let (mut dispatcher, shown) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
+
+        let result = call_tool_as(
+            &mut dispatcher,
+            "preview_show",
+            json!({ "path": path }),
+            &RequestContext::for_session(Some("   ")),
+        );
+
+        assert_eq!(result["routed"], "path");
+        assert_eq!(shown.lock().unwrap()[0].2, None);
+    }
+
+    /// The dispatcher is one long-lived instance shared by every session on the
+    /// machine, so a request that carries no identity must not inherit the
+    /// previous caller's — that would put one agent's page in another's pane.
+    #[test]
+    fn a_session_never_leaks_into_the_next_request() {
+        let (mut dispatcher, shown) = with_preview_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
+
+        call_tool_as(
+            &mut dispatcher,
+            "preview_show",
+            json!({ "path": path }),
+            &RequestContext::for_session(Some("s-first")),
+        );
+        call_tool(&mut dispatcher, "preview_show", json!({ "path": path }));
+
+        let shown = shown.lock().unwrap();
+        assert_eq!(shown[0].2.as_deref(), Some("s-first"));
+        assert_eq!(shown[1].2, None, "the second caller named no session");
     }
 
     /// A pane with no header reads as broken, so an untitled artifact is

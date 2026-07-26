@@ -29,7 +29,11 @@ tools without manual `claude mcp add` setup:
   what a sweep found, a diagram — rather than as terminal output. Write a single
   self-contained `.html` file (it renders in a sandboxed frame, so inline the
   CSS/JS and embed images as data: URIs), then call it with the absolute path.
-  The user can annotate what you showed and send it straight back to you.
+  Write it wherever you like, a scratch dir outside the repo included: the pane
+  opens in *your* terminal's task, because the request carries the
+  `TT_SESSION_ID` of the shell you're running in (see `.mcp.json` below), not
+  because of where the file sits. The user can annotate what you showed and send
+  it straight back to you.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
@@ -37,17 +41,39 @@ tools without manual `claude mcp add` setup:
 The broader dashboard-read tools were pruned in the 2026-07 tool-surface review.
 
 **Requires the app to be running.** There is no headless fallback: the server
-lives in `tt-app`, so app closed means MCP down. Exactly one instance serves —
-whichever binds the port first — so with several worktree tasks open, only one
-is reachable, by design.
+lives in `tt-app`, so app closed means MCP down. Every instance serves its own,
+on its own port, and a session started in an app terminal reaches the app that
+spawned it — so with several worktree tasks open, each one's tools act on that
+task's app and its board.
 
 No token: the endpoint is loopback-only and refuses any request carrying an
 `Origin` header or a non-JSON `Content-Type`, which is what keeps a web page you
 visit from POSTing to it. That is the *whole* guard on writes — there is no
 capability gate any more. See the trust-boundary doc in `crates/tt-mcp`.
 
-Port defaults to `8787`; override with `"mcp": {"port": N}` in the shared
-settings file, and update this plugin's `.mcp.json` to match.
+The checked-in `.mcp.json` never needs editing per checkout, because both the
+port and the caller's identity ride the environment:
+
+```json
+"url": "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp",
+"headers": { "X-TT-Session": "${TT_SESSION_ID:-}" }
+```
+
+`TT_MCP_PORT` is the app instance's own port — a `${tt:port 8787-8986}` claim in
+its rendered `.env`, stamped onto every terminal it spawns. So a session in a
+worktree task's terminal reaches *that* task's app and board, not whichever
+instance started first. Outside an app terminal it's unset and the `:-8787`
+default applies. A packaged app in no checkout falls back to `"mcp": {"port": N}`
+in the shared settings file.
+
+`TT_SESSION_ID` is stamped by the app on every terminal it spawns, and Claude
+Code expands `${VAR:-default}` in `.mcp.json` headers — so each session
+identifies its own terminal without the model having to know or pass anything.
+`preview_show` routes on it. Outside an app terminal the variable is unset, the
+header arrives empty, and the tool falls back to matching the artifact's path
+against tracked folders. It is not a credential and grants nothing: request
+admission (loopback + no `Origin` + JSON `Content-Type`) is still the whole
+guard.
 
 ## Skills
 

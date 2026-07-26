@@ -859,6 +859,30 @@ pub fn state_scope() -> Option<String> {
     }
 }
 
+/// The checkout of *this* repo that `dir` sits in: its nearest ancestor holding
+/// a `crates/tt-config` directory, or `None` when `dir` is outside one.
+///
+/// **The one definition of "a checkout of this repo"** — [`task_scope_from_dir`]
+/// and [`main_checkout_scope_from_dir`] name that directory, this one hands it
+/// back so a caller can read a file out of it (the app resolving its own
+/// rendered `.env` for its port claim). A packaged app launched from the desktop
+/// is outside any checkout and gets `None`, which is the signal to fall back to
+/// settings rather than a bug.
+pub fn checkout_root_from_dir(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors().find(|a| a.join("crates").join("tt-config").is_dir()).map(Path::to_path_buf)
+}
+
+/// The main checkout owning `root`, when `root` is a
+/// `<repo>/.claude/worktrees/<name>` task checkout — the shared shape behind
+/// both scope rules below.
+fn main_checkout_of(root: &Path) -> Option<&Path> {
+    root.parent()
+        .filter(|p| p.file_name().is_some_and(|n| n == "worktrees"))
+        .and_then(Path::parent)
+        .filter(|p| p.file_name().is_some_and(|n| n == ".claude"))
+        .and_then(Path::parent)
+}
+
 /// Derive a task scope from `dir`: the nearest ancestor that is a checkout of
 /// this repo (contains a `crates/tt-config` directory), or `None`. Split out
 /// from [`state_scope`] so it can be unit-tested against temp dirs without
@@ -870,26 +894,14 @@ pub fn state_scope() -> Option<String> {
 /// qualified with the main checkout's dir name (`<repo>-<name>`). The main
 /// checkout itself scopes by its own dir name.
 pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
-    for ancestor in dir.ancestors() {
-        if !ancestor.join("crates").join("tt-config").is_dir() {
-            continue;
-        }
-        let name = ancestor.file_name().and_then(|n| n.to_str())?;
-        // `<repo>/.claude/worktrees/<name>` → qualify with the repo dir name.
-        let main = ancestor
-            .parent()
-            .filter(|p| p.file_name().is_some_and(|n| n == "worktrees"))
-            .and_then(Path::parent)
-            .filter(|p| p.file_name().is_some_and(|n| n == ".claude"))
-            .and_then(Path::parent);
-        return Some(sanitize_scope(
-            &match main.and_then(|m| m.file_name()).and_then(|n| n.to_str()) {
-                Some(repo) => format!("{repo}-{name}"),
-                None => name.to_string(),
-            },
-        ));
-    }
-    None
+    let root = checkout_root_from_dir(dir)?;
+    let name = root.file_name().and_then(|n| n.to_str())?;
+    // `<repo>/.claude/worktrees/<name>` → qualify with the repo dir name.
+    let main = main_checkout_of(&root).and_then(Path::file_name).and_then(|n| n.to_str());
+    Some(sanitize_scope(&match main {
+        Some(repo) => format!("{repo}-{name}"),
+        None => name.to_string(),
+    }))
 }
 
 /// Like [`task_scope_from_dir`], but a `<repo>/.claude/worktrees/<name>` task
@@ -899,20 +911,9 @@ pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
 /// it, so a nudge needs to land in the scope the daily-driver scheduler
 /// actually watches.
 fn main_checkout_scope_from_dir(dir: &Path) -> Option<String> {
-    for ancestor in dir.ancestors() {
-        if !ancestor.join("crates").join("tt-config").is_dir() {
-            continue;
-        }
-        let main = ancestor
-            .parent()
-            .filter(|p| p.file_name().is_some_and(|n| n == "worktrees"))
-            .and_then(Path::parent)
-            .filter(|p| p.file_name().is_some_and(|n| n == ".claude"))
-            .and_then(Path::parent)
-            .unwrap_or(ancestor);
-        return Some(sanitize_scope(main.file_name().and_then(|n| n.to_str())?));
-    }
-    None
+    let root = checkout_root_from_dir(dir)?;
+    let main = main_checkout_of(&root).unwrap_or(&root);
+    Some(sanitize_scope(main.file_name().and_then(|n| n.to_str())?))
 }
 
 /// Like [`detect_scope`], but resolves to the scope a worktree task's *main*

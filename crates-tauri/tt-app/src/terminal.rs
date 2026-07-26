@@ -518,6 +518,20 @@ fn term_start_blocking(
     // only reports agents whose stamp matches its own.
     cmd.env(tt_agentboard::procenv::TT_SESSION_ENV, &term_id);
     cmd.env(tt_agentboard::procenv::TT_INSTANCE_ENV, tt_agentboard::procenv::instance_id());
+    // Point a Claude Code session started in this pane at *this* app's MCP
+    // server. The plugin's `.mcp.json` expands `${TT_MCP_PORT:-8787}`, so the
+    // stamp is what makes its tools reach the app the user is looking at — and
+    // the board they see — instead of some other checkout's instance. Same
+    // shape and reasoning as CLAUDE_CODE_SSE_PORT below: the scrub above
+    // dropped any inherited value (`TT_*`), this is our own.
+    //
+    // Only when we are actually serving. An instance that lost its bind serves
+    // nothing, and stamping its port would send every session in it to a dead
+    // address; leaving the var unset lets the `:-8787` default find whichever
+    // instance does serve, which is strictly better than nothing.
+    if let Some(port) = crate::mcp_http::serving_port() {
+        cmd.env(crate::mcp_http::MCP_PORT_ENV, port.to_string());
+    }
     // Pair a `claude` started in this pane with this pane's IDE server. The
     // scrub above already dropped any *inherited* CLAUDE_CODE_SSE_PORT (that
     // one stamps nested-session identity, issue #39); this is our own. An env

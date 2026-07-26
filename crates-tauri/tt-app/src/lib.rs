@@ -594,14 +594,12 @@ pub fn run() {
                 });
             }
 
-            // Serve MCP over loopback HTTP. Bind-or-skip: whichever instance
-            // takes the port serves every Claude Code session on the machine,
-            // and the rest serve none — the OS bind is the mutex. Deliberately
-            // after `manage(store_state)`, since a mutating call re-emits the
-            // snapshot through that state.
-            let mcp_port =
-                tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
-            mcp_http::spawn(app.handle().clone(), mcp_port);
+            // Serve MCP over loopback HTTP on *this checkout's* claimed port, so
+            // a session started in this app's terminal reaches this app and its
+            // board rather than whichever instance won a race for a shared port.
+            // Deliberately after `manage(store_state)`, since a mutating call
+            // re-emits the snapshot through that state.
+            mcp_http::spawn(app.handle().clone(), mcp_http::port_for_this_instance());
 
             // Overlap guard for the manual "refresh now" command.
             app.manage(store::CollectNowState::default());
