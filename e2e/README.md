@@ -34,6 +34,8 @@ node scripts/drive.mjs click "nav button"         # click an element (CSS select
 node scripts/drive.mjs clicktext "Board"          # click a button/link by visible text
 node scripts/drive.mjs type "input" "board"       # type into an element
 node scripts/drive.mjs url /                       # navigate the window
+node scripts/drive.mjs winshot jarvis              # whole-window shot, native panes included
+node scripts/drive.mjs unplace                     # undo winshot's fullscreen
 ```
 
 How it works: the app built with the `wdio` cargo feature runs an **in-process
@@ -45,6 +47,22 @@ client (no `@wdio/*` at runtime): session-less `POST /wdio/eval` for `status` /
 `window.__TAURI_INTERNALS__.invoke`, so it doesn't depend on the frontend plugin.
 
 Notes:
+- **`shot` cannot see a native pane; `winshot` can.** `shot` captures the
+  *webview*, and a `tt-pane` surface (Jarvis) is a Wayland subsurface composited
+  *above* it — so it is simply absent from the PNG however healthy it is, which
+  reads as "the pane renders nothing". `winshot` captures at the compositor
+  level instead, which means the whole desktop, on which several tasks'
+  near-identical windows are all visible. It solves that by fullscreening this
+  window on the **test monitor** first (`wdio_place_on_test_monitor`, the
+  monitor whose geometry starts at `x > 0` — never the primary Chris works on)
+  and cropping the desktop PNG to that monitor's rect: a Wayland client can't
+  ask where it is, but a fullscreen window's rect *is* its output's. The
+  fullscreen also forces the window unoccluded, which is load-bearing — an
+  occluded Wayland surface gets no frame callbacks, so a vsync-paced pane
+  photographs as a stale frame while nothing is actually wrong. Run `unplace`
+  when you're done to give the monitor back. COSMIC-only: it shells out to
+  `cosmic-screenshot` + ImageMagick `convert`, because cosmic-comp doesn't
+  implement wlr-screencopy and so `grim -g` (the portable path) doesn't work.
 - **Ports come from the rendered `.env`/`.env.local`** (same as `npm run dev`):
   `wdPort` is the task's `TT_E2E_WEBDRIVER_PORT` claim, falling back to
   `TT_DEV_PORT + 3000`. Per-task claims, so `drive.mjs` finds the server
