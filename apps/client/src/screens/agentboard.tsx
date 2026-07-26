@@ -1083,7 +1083,21 @@ export function AgentboardScreen() {
           {/* Rail: rollup tally + header + attention strip + Repo → Folder → Session tree. */}
           {!railCollapsed && (
             <>
-              <ResizablePanel defaultSize="520px" minSize="220px" maxSize="760px">
+              {/* The rail is a sidebar, so it keeps the width it was dragged to
+                  when the *window* resizes (`preserve-pixel-size`) — the pane
+                  area absorbs the change. The default, preserve-relative-size,
+                  scales it with the window instead, so a comfortable 520px rail
+                  ends up a few hundred pixels narrower on a smaller window —
+                  below the width a row is laid out for, which is where its
+                  right-edge content starts disappearing past the rail's
+                  clipping edge. minSize is that width: indent + chevron/icon +
+                  a readable title + the four trailing icon buttons. */}
+              <ResizablePanel
+                defaultSize="520px"
+                minSize="300px"
+                maxSize="760px"
+                groupResizeBehavior="preserve-pixel-size"
+              >
                 <div className="flex h-full flex-col border-r">
                   <RollupChip state={state} now={now} />
                   <RailHeader
@@ -1227,7 +1241,11 @@ export function AgentboardScreen() {
               Scoped to `activeFolderDir` — a window may only ever hold panes from
               the one folder it belongs to, so switching folders switches the
               whole strip, not just which panes happen to show. */}
-          <ResizablePanel key="main">
+          {/* The floor the rail's `preserve-pixel-size` yields to: a narrowing
+              window takes its pixels out of the pane area, and without a
+              minimum here it would take *all* of them and leave the panes at
+              zero width. */}
+          <ResizablePanel key="main" minSize="320px">
             <div className="flex h-full min-w-0 flex-col">
               {activeFolder && activeRepo && (
                 <WorkingContext

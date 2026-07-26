@@ -744,27 +744,33 @@ export function RepoGroup({
             {repo.needs > 0 && <NeedsBadge n={repo.needs} />}
           </span>
         </button>
-        <IconBtn
-          title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
-          onClick={() => {
-            mouseAction("ab-new-task", "agentboard");
-            onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
-          }}
-          className="hover:text-violet-500"
-        >
-          <FolderPlus className="size-3.5" />
-        </IconBtn>
-        <RepoMenu
-          onRemove={() =>
-            onRemoveRepo(
-              repo.folders.map((f) => f.dir),
-              repo.name,
-            )
-          }
-          dir={repo.folders[0].dir}
-          quiet={repo.folders[0].quiet}
-          onNewTask={() => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })}
-        />
+        {/* Same fixed-width right-edge toolbar as the folder rows — see the
+            cluster comment in `FolderHeader`. */}
+        <div className="flex shrink-0 items-center gap-1 pl-1">
+          <IconBtn
+            title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
+            onClick={() => {
+              mouseAction("ab-new-task", "agentboard");
+              onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
+            }}
+            className="hover:text-violet-500"
+          >
+            <FolderPlus className="size-3.5" />
+          </IconBtn>
+          <RepoMenu
+            onRemove={() =>
+              onRemoveRepo(
+                repo.folders.map((f) => f.dir),
+                repo.name,
+              )
+            }
+            dir={repo.folders[0].dir}
+            quiet={repo.folders[0].quiet}
+            onNewTask={() =>
+              onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })
+            }
+          />
+        </div>
       </div>
       {taskFormOpen && (
         <InlineNewTask
@@ -1026,7 +1032,10 @@ function FolderHeader({
           : undefined
       }
       className={cn(
-        "group border-b border-l-2 border-border border-l-transparent bg-card pr-2",
+        // pr-3 matches the repo-scope header above and the session rows below:
+        // the rail's trailing controls all land on one right edge instead of a
+        // ragged one that shifts by tier.
+        "group border-b border-l-2 border-border border-l-transparent bg-card pr-3",
         // A repo-scope header is sticky, so rows scroll underneath it and every
         // background it can take must be opaque — a translucent tint lets their
         // text show through the stuck header, so its active state is a ring
@@ -1110,48 +1119,75 @@ function FolderHeader({
           )}
           {missing && <GhostBadge />}
         </div>
+        {/* The GitHub links ride on line 1, beside the title, rather than at the
+            tail of line 2's git facts. Two reasons: they are what the row is
+            *about* (which PR, which issue) where the rest of that line is state,
+            and they were the chips the wrap ate first — line 1 has the slack
+            between a truncating title and the toolbar, so putting them here is
+            what keeps line 2 on one line at a normal rail width. */}
+        {pr && <PrChip pr={pr} stats={folder} />}
+        {task?.issues.map((issue) => (
+          <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
+        ))}
         {collapsed && !missing && <CollapsedLive sessions={folder.sessions} />}
         {needs > 0 && <NeedsBadge n={needs} />}
-        {/* No "New session"/"New task" on a ghost — the directory is gone. */}
-        {!missing && folder.hasLaunchConfig && (
-          <DevServersButton folder={folder} actions={actions} />
-        )}
-        {!missing && (
-          <IconBtn
-            title={`New session (${shortcutHint("ab-new-session")})`}
-            onClick={() => {
-              mouseAction("ab-new-session", "agentboard");
-              onNewSession();
-            }}
-            className="hover:text-violet-500"
-          >
-            <Plus className="size-3.5" />
-          </IconBtn>
-        )}
-        {!missing && onNewTask && (
-          <IconBtn
-            title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
-            onClick={() => {
-              mouseAction("ab-new-task", "agentboard");
-              onNewTask();
-            }}
-            className="hover:text-violet-500"
-          >
-            <FolderPlus className="size-3.5" />
-          </IconBtn>
-        )}
-        {onRemoveRepo && (
-          <RepoMenu
-            path={folder.dir}
-            onRemove={onRemoveRepo}
-            dir={folder.dir}
-            isWorktree={folder.isWorktree}
-            quiet={folder.quiet}
-            onNewTask={!missing ? onNewTask : undefined}
-            onDeleteWorktree={!missing ? onDeleteWorktree : undefined}
-            taskId={!missing ? task?.id : undefined}
-          />
-        )}
+        {/* One `shrink-0` cluster, not loose siblings of the title: as siblings
+            each button was spaced by the row's own gap-2 and only the last one
+            sat at the right edge, so the run of icons read as drifting from the
+            title by a distance that changed with the badges beside it. Grouped,
+            they are a fixed-width toolbar pinned to the right edge with its own
+            tighter gap, and — because the group can't be split or squeezed —
+            every pixel a narrowing rail needs comes out of the title
+            (min-w-0, truncating) rather than out of the toolbar. */}
+        <div className="flex shrink-0 items-center gap-1 pl-1">
+          {/* No "New session"/"New task" on a ghost — the directory is gone. */}
+          {/* The dev-servers button is the one slot a row can legitimately not
+              have (no .claude/launch.json), and dropping it shifted every other
+              icon on that row sideways — the columns went ragged down the rail.
+              An empty slot of the same size keeps them lined up. */}
+          {!missing &&
+            (folder.hasLaunchConfig ? (
+              <DevServersButton folder={folder} actions={actions} />
+            ) : (
+              <span aria-hidden className="size-6 shrink-0" />
+            ))}
+          {!missing && (
+            <IconBtn
+              title={`New session (${shortcutHint("ab-new-session")})`}
+              onClick={() => {
+                mouseAction("ab-new-session", "agentboard");
+                onNewSession();
+              }}
+              className="hover:text-violet-500"
+            >
+              <Plus className="size-3.5" />
+            </IconBtn>
+          )}
+          {!missing && onNewTask && (
+            <IconBtn
+              title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
+              onClick={() => {
+                mouseAction("ab-new-task", "agentboard");
+                onNewTask();
+              }}
+              className="hover:text-violet-500"
+            >
+              <FolderPlus className="size-3.5" />
+            </IconBtn>
+          )}
+          {onRemoveRepo && (
+            <RepoMenu
+              path={folder.dir}
+              onRemove={onRemoveRepo}
+              dir={folder.dir}
+              isWorktree={folder.isWorktree}
+              quiet={folder.quiet}
+              onNewTask={!missing ? onNewTask : undefined}
+              onDeleteWorktree={!missing ? onDeleteWorktree : undefined}
+              taskId={!missing ? task?.id : undefined}
+            />
+          )}
+        </div>
       </div>
       {/* ml-11 lines the git row up under the name (chevron + icon + gaps). */}
       {missing ? (
@@ -1174,7 +1210,13 @@ function FolderHeader({
           )}
         </div>
       ) : (
-        <div className="ml-11 flex items-center gap-1.5 pb-1.5">
+        // `flex-wrap`, because every chip on this line is `shrink-0` and the
+        // line has nowhere to put the overflow: measured against the real rail,
+        // an agent row hid ~480px of chips past the clipping edge at a 300px
+        // rail and still lost the trailing one (a PR link, "safe to delete") at
+        // 760px. Wrapping trades a taller row for a row that shows what it says
+        // it shows.
+        <div className="ml-11 flex flex-wrap items-center gap-x-1.5 gap-y-1 pr-1 pb-1.5">
           {/* A real task title and the branch are now two different pieces of
               information, so the branch stays visible whenever one exists.
               Falling back to the de-slugified folder name is still the same
@@ -1193,17 +1235,15 @@ function FolderHeader({
               chip's dirty counts), so they don't earn resting-rail pixels on
               every folder — they fade in on header hover or keyboard focus.
               Opacity, not conditional render, so the trailing chips never
-              reflow; pointer-events gates ghost clicks while invisible. */}
-          <span className="pointer-events-none flex items-center gap-1.5 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+              reflow; pointer-events gates ghost clicks while invisible.
+              `order-last` because holding space while invisible costs a whole
+              line once the row wraps — at the end of the run that reads as
+              trailing padding instead of a hole punched between two chips. */}
+          <span className="pointer-events-none order-last flex items-center gap-1.5 opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
             <FilesButton onOpen={onOpenFiles} />
             <AgentButton onOpen={onOpenAgent} />
             {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
           </span>
-          {pr && <PrChip pr={pr} stats={folder} />}
-          {task &&
-            task.issues.map((issue) => (
-              <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
-            ))}
           <FolderLandedBadge folder={folder} pr={pr} />
           {/* Merged PR, and nothing here would be lost. A PR-less task never
               shows this — git alone can't tell landed work from abandoned
