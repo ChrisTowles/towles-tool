@@ -1,6 +1,7 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import {
   AppWindow,
+  Box,
   Check,
   ChevronDown,
   CircleDot,
@@ -800,60 +801,98 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
   );
 }
 
+/** One folder-header chip that opens a pane — the shared shell behind the
+ * `files`/`chat`/`preview`/`jarvis` buttons below, which differ only in glyph,
+ * word and tooltip. `stopPropagation` because every one of these sits inside a
+ * clickable folder row that would otherwise also fire.
+ *
+ * `mouseAction` is opt-in per chip rather than automatic: it must fire only for
+ * a chip that is the exact twin of a keyboard shortcut, or the keyboard-habit
+ * score counts a keystroke the user never passed up (see `lib/shortcut-coach`). */
+function PaneOpenButton({
+  glyph,
+  label,
+  title,
+  onOpen,
+  shortcutTwin,
+}: {
+  glyph: ReactNode;
+  label: string;
+  title: string;
+  onOpen: () => void;
+  /** Shortcut id this chip duplicates, when it has one. */
+  shortcutTwin?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
+        onOpen();
+      }}
+      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+      title={title}
+    >
+      {glyph}
+      <span>{label}</span>
+    </button>
+  );
+}
+
 /** The files entry point, DiffButton's sibling: opens the folder's full file
  * tree as a pane ("tell claude about any file"), always visible for the same
  * findability reason. */
 export function FilesButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        mouseAction("ab-toggle-files", "agentboard");
-        onOpen();
-      }}
-      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+    <PaneOpenButton
+      glyph={<Files className="size-3" />}
+      label="files"
       title="Browse every file in this checkout — @ any of them to Claude"
-    >
-      <Files className="size-3" />
-      <span>files</span>
-    </button>
+      onOpen={onOpen}
+      shortcutTwin="ab-toggle-files"
+    />
+  );
+}
+
+/** Opens the folder's rendered-agent pane — a Claude session in this checkout
+ * shown as structured turns rather than PTY scrollback. */
+export function AgentButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <PaneOpenButton
+      glyph={<span aria-hidden="true">✦</span>}
+      label="chat"
+      title="Open a Claude session in this checkout, rendered as structured turns"
+      onOpen={onOpen}
+    />
+  );
+}
+
+/** Opens the folder's native pane — a rectangle of the window Bevy draws into
+ * (`components/jarvis-pane.tsx`), tiled beside the folder's terminals. Only
+ * mounted when `agentboard.jarvisPane` is on, so the proof-of-concept costs
+ * nothing (and shows nothing) until it's asked for. */
+export function JarvisButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <PaneOpenButton
+      glyph={<Box className="size-3" />}
+      label="jarvis"
+      title="Open the native Bevy pane in this checkout's window — real GPU output, not DOM"
+      onOpen={onOpen}
+    />
   );
 }
 
 /** Opens the folder's live-preview pane — the task's own dev server embedded
  * beside its terminals, with draw-on-page feedback to that task's session. */
-export function AgentButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen();
-      }}
-      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-      title="Open a Claude session in this checkout, rendered as structured turns"
-    >
-      <span aria-hidden="true">✦</span>
-      <span>chat</span>
-    </button>
-  );
-}
-
 export function PreviewButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen();
-      }}
-      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+    <PaneOpenButton
+      glyph={<AppWindow className="size-3" />}
+      label="preview"
       title="Preview this checkout's dev server — annotate the page and send it to the agent"
-    >
-      <AppWindow className="size-3" />
-      <span>preview</span>
-    </button>
+      onOpen={onOpen}
+    />
   );
 }
 

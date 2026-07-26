@@ -224,7 +224,7 @@ export function agentboardSections(
         node: (
           <ToggleRow
             label="Jarvis pane"
-            description="Render the native Bevy pane at the bottom of the Agentboard rail. A proof-of-concept, and Linux/Wayland only — off, it isn't drawn at all, so it costs no GPU."
+            description="Turn on Jarvis, the native Bevy surface: a strip at the bottom of the Agentboard rail, plus a “jarvis” button on each checkout that tiles one as a pane beside its terminals. A proof-of-concept, and Linux/Wayland only — leave it off and nothing is ever drawn. Turning it back off parks what you opened rather than reclaiming it; relaunch for that."
             checked={settings.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE}
             onCheckedChange={(v) =>
               update((s) => ({

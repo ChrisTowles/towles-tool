@@ -188,8 +188,8 @@ export type UserSettings = {
    * rail's eye-icon "hide inactive repos" filter; unset = off), and
    * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees no board
    * task is bound to — Claude Code's own agent worktrees, hand-added ones;
-   * unset = off), and `jarvisPane` (render the native Bevy pane
-   * in the rail; unset = off). `showUnmanagedWorktrees` is the one key here
+   * unset = off), and `jarvisPane` (the native Bevy surface — the rail strip
+   * *and* the per-checkout jarvis pane; unset = off). `showUnmanagedWorktrees` is the one key here
    * Rust reads back — the agentboard engine's worktree discovery honours it —
    * so it's written through the `ab_set_show_unmanaged_worktrees` command, not
    * by saving settings from the client.

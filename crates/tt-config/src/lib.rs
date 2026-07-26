@@ -205,7 +205,9 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
-    /// Render the native Bevy pane (`tt-jarvis`) in the Agentboard rail.
+    /// Enable the native Bevy surface (`tt-jarvis`) in the Agentboard: the
+    /// strip at the bottom of the rail, and the per-checkout `jarvis` pane
+    /// tiled beside that folder's terminals.
     /// `None` = the built-in default (off): it's a proof-of-concept, and an
     /// attached pane holds a Wayland subsurface plus a vsync-paced render
     /// thread for the app's whole life, so it stays opt-in. Rust never

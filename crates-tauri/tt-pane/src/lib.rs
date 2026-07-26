@@ -18,10 +18,23 @@
 //!   [`PaneRect`] updates over a channel and only ever *resizes*; it never moves
 //!   the surface and never speaks to GDK.
 //!
-//! # Teardown order
+//! # Teardown happens once, at exit
 //!
 //! [`Pane::detach`] stops the render thread and *joins it* before dropping the
-//! subsurface — the frames-in-flight rule in `tt_jarvis::surface`.
+//! subsurface — the frames-in-flight rule in `tt_jarvis::surface`. Nothing
+//! calls it while the app is running: dropping a Bevy app takes the process
+//! with it (see [`PaneHost::detach`]), so panes are retired and reused instead,
+//! and this path runs only when the registry is dropped at shutdown.
+//!
+//! # Hiding moves the pane; it does not unmap or destroy it
+//!
+//! [`PaneHost::set_visible`] parks the renderer and slides the subsurface
+//! outside every output. Both of the mechanisms you would reach for first were
+//! implemented here and rejected *against a compositor screenshot* — a null
+//! buffer never took the surface off screen, and a full detach did but exited
+//! the process on the way — so treat the indirection as load-bearing and read
+//! [`wayland::Subsurface::set_visible`] before changing it.
+//!
 
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
@@ -76,6 +89,18 @@ pub struct PaneInfo {
 /// What the main thread sends the render thread.
 enum RenderMsg {
     Resize(PaneRect),
+    /// Stop presenting and park until [`RenderMsg::Resume`]. Sent when a pane is
+    /// hidden: it is off screen by then, so every further frame is pure waste —
+    /// and under vsync each one still blocks a thread until the compositor says
+    /// so.
+    ///
+    /// Deliberately unacknowledged. Hiding is done the moment the surface moves
+    /// off screen, which the main thread has already handled itself, so waiting
+    /// for the renderer would trade a guaranteed main-thread stall (a vsync
+    /// frame at best, forever if the surface is occluded and gets no frame
+    /// callbacks) for nothing.
+    Pause,
+    Resume,
     Stop,
 }
 
@@ -88,21 +113,39 @@ pub struct Pane {
     rect: PaneRect,
 }
 
+#[cfg(target_os = "linux")]
 impl Pane {
-    /// Stop rendering, then release the surface — in that order.
-    pub fn detach(mut self) {
-        let _ = self.tx.send(RenderMsg::Stop);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+    /// Take the pane off screen and stop its renderer.
+    ///
+    /// The single home of the hide sequence — both hiding and retiring are this
+    /// — so the ordering rule below is stated once. Park the renderer first,
+    /// then move the surface: the other order lets a mid-flight frame land in
+    /// the position being vacated.
+    fn park(&mut self) -> Result<(), PaneError> {
+        let _ = self.tx.send(RenderMsg::Pause);
+        self.surface.set_visible(false)
+    }
+
+    /// Put the pane back at `rect` and start it rendering again — the inverse
+    /// of [`Pane::park`], and what makes a retired pane revivable.
+    fn unpark(&mut self, rect: PaneRect) -> Result<(), PaneError> {
+        self.surface.set_rect(rect)?;
+        self.surface.set_visible(true)?;
+        if self.rect != rect {
+            let _ = self.tx.send(RenderMsg::Resize(rect));
+            self.rect = rect;
         }
-        // `surface` drops here, after the renderer has stopped.
+        let _ = self.tx.send(RenderMsg::Resume);
+        Ok(())
     }
 }
 
 impl Drop for Pane {
     fn drop(&mut self) {
-        // Belt and braces for a `Pane` dropped without `detach` (e.g. the
-        // registry being cleared on window close).
+        // The one real teardown path, and it runs only at shutdown (the
+        // registry being cleared on window close) — see `PaneHost::detach` for
+        // why nothing tears a pane down while the app is alive. A parked
+        // renderer is blocked on `recv`, so `Stop` reaches it either way.
         let _ = self.tx.send(RenderMsg::Stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -167,9 +210,11 @@ mod unsupported {
 impl PaneHost {
     /// Create the pane's surface and start its renderer.
     ///
-    /// Idempotent per id: re-attaching an existing pane just repositions it, so
-    /// a React strict-mode double-mount or a screen remount cannot spawn two
-    /// renderers against one rectangle.
+    /// Idempotent per id: re-attaching an existing pane repositions and revives
+    /// it, so a React strict-mode double-mount or a screen remount cannot spawn
+    /// two renderers against one rectangle — and reopening a pane that was
+    /// closed earlier reuses the renderer it already has (see
+    /// [`PaneHost::detach`], which retires rather than destroys).
     pub fn attach(
         &self,
         window: &tauri::WebviewWindow,
@@ -180,10 +225,10 @@ impl PaneHost {
         let rect = PaneRect::from_css(rect.x, rect.y, rect.width, rect.height, scale);
 
         let mut panes = self.panes.lock().unwrap();
+        // Also the revival path for a retired pane (see `detach`), which is why
+        // it unparks rather than only repositioning.
         if let Some((_, pane)) = panes.iter_mut().find(|(k, _)| k == id) {
-            pane.surface.set_rect(rect)?;
-            let _ = pane.tx.send(RenderMsg::Resize(rect));
-            pane.rect = rect;
+            pane.unpark(rect)?;
             return Ok(PaneInfo {
                 id: id.to_string(),
                 backend: "wayland",
@@ -238,24 +283,45 @@ impl PaneHost {
         Ok(())
     }
 
+    /// Show or hide the pane — [`Pane::park`]/[`Pane::unpark`], which own the
+    /// ordering rule.
+    ///
+    /// See [`wayland::Subsurface::set_visible`] for why hiding is a move rather
+    /// than an unmap.
     pub fn set_visible(&self, id: &str, visible: bool) -> Result<(), PaneError> {
         let mut panes = self.panes.lock().unwrap();
         let (_, pane) = panes
             .iter_mut()
             .find(|(k, _)| k == id)
             .ok_or_else(|| PaneError::Unknown(id.to_string()))?;
-        pane.surface.set_visible(visible)
+        if visible {
+            let rect = pane.rect;
+            return pane.unpark(rect);
+        }
+        pane.park()
     }
 
+    /// Retire a pane: take it off screen and stop its renderer, but **keep it**.
+    ///
+    /// It reads like a leak and is the opposite — the destructor is what's
+    /// dangerous. Dropping the Bevy app tears down a wgpu device built on GDK's
+    /// own Wayland display, and doing that mid-session ended the *process*:
+    /// closing a pane exited the app within seconds, every time, cleanly enough
+    /// that the last log line was "pane render thread stopped". Nothing in a
+    /// teardown *order* fixes that, because the resource being torn down is
+    /// shared with the host toolkit.
+    ///
+    /// So a live pane outlives its UI. Re-attaching the same id revives it
+    /// ([`PaneHost::attach`]), which makes reopening a pane instant, and real
+    /// teardown happens once — at process exit, where `Pane::drop` can't hurt
+    /// anything that isn't already going away.
     pub fn detach(&self, id: &str) -> Result<(), PaneError> {
         let mut panes = self.panes.lock().unwrap();
-        let Some(index) = panes.iter().position(|(k, _)| k == id) else {
+        let Some((_, pane)) = panes.iter_mut().find(|(k, _)| k == id) else {
             return Ok(()); // Detaching an absent pane is success, not an error.
         };
-        let (_, pane) = panes.remove(index);
-        drop(panes); // Don't hold the registry lock across the thread join.
-        pane.detach();
-        tracing::info!(pane.id = id, "pane.detach");
+        pane.park()?;
+        tracing::info!(pane.id = id, "pane.retired");
         Ok(())
     }
 }

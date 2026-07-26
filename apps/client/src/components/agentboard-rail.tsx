@@ -2,6 +2,7 @@ import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
 import {
   AppWindow,
+  Box,
   Files,
   Folder,
   FolderGit2,
@@ -25,6 +26,7 @@ import {
   UncommittedChip,
   FilesButton,
   AgentButton,
+  JarvisButton,
   PreviewButton,
   Dot,
   DotCount,
@@ -75,6 +77,7 @@ import {
   isAgentPane,
   isDiffPane,
   isFilesPane,
+  isJarvisPane,
   isPreviewPane,
   claudeTitleName,
   branchRedundant,
@@ -397,6 +400,7 @@ export function RepoGroup({
   onOpenFiles,
   onOpenPreview,
   onOpenAgent,
+  onOpenJarvis,
   onClosePane,
   quietDirs,
   quietRevealed,
@@ -455,6 +459,10 @@ export function RepoGroup({
   onOpenPreview: (dir: string) => void;
   /** Opens the folder's rendered-agent pane in its focused window. */
   onOpenAgent: (dir: string) => void;
+  /** Opens the folder's native (Bevy) pane in its focused window — undefined
+   * while `agentboard.jarvisPane` is off, which hides the entry point rather
+   * than offering one that opens nothing. */
+  onOpenJarvis?: (dir: string) => void;
   /** Drops one pane from its window — a chat row's ✕ (which ends the session
    * behind it, see `AgentPane`) and a view row's ✕ alike. */
   onClosePane: (paneId: string) => void;
@@ -520,18 +528,24 @@ export function RepoGroup({
     </motion.div>
   );
 
+  // One opener per view-pane kind. A table rather than a ternary chain so the
+  // next kind is an entry, not another level of nesting — and so `jarvis`'s
+  // absence is expressible: its row can outlive the setting being turned back
+  // off (the layout persists), and with no opener a click is a no-op, leaving ✕
+  // as the row's only live affordance.
+  const viewPaneOpener: Record<ViewPaneKind, ((dir: string) => void) | undefined> = {
+    diff: onOpenDiff,
+    files: onOpenFiles,
+    preview: onOpenPreview,
+    jarvis: onOpenJarvis,
+  };
+
   const viewRow = (folder: FolderData, paneId: string, kind: ViewPaneKind) => (
     <motion.div key={paneId} {...railRowMotion}>
       <ViewPaneRow
         kind={kind}
         active={activePaneId === paneId}
-        onSelect={() =>
-          kind === "diff"
-            ? onOpenDiff(folder.dir)
-            : kind === "files"
-              ? onOpenFiles(folder.dir)
-              : onOpenPreview(folder.dir)
-        }
+        onSelect={() => viewPaneOpener[kind]?.(folder.dir)}
         onClose={() => onClosePane(paneId)}
       />
     </motion.div>
@@ -669,6 +683,7 @@ export function RepoGroup({
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
           onOpenAgent={() => onOpenAgent(folder.dir)}
+          onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
         />
         {taskFormOpen && (
           <InlineNewTask
@@ -830,6 +845,7 @@ export function RepoGroup({
                   onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
                   onOpenAgent={() => onOpenAgent(folder.dir)}
+                  onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
                 />
                 {!fCollapsed && <div className="pb-1">{sessionRows(folder)}</div>}
               </motion.div>
@@ -919,6 +935,7 @@ function FolderHeader({
   onOpenFiles,
   onOpenPreview,
   onOpenAgent,
+  onOpenJarvis,
 }: {
   scope: "repo" | "folder";
   /** repo.name at repo scope, folder.name at folder scope. */
@@ -967,6 +984,9 @@ function FolderHeader({
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: () => void;
   onOpenAgent: () => void;
+  /** Opens the folder's native (Bevy) pane — undefined while
+   * `agentboard.jarvisPane` is off. */
+  onOpenJarvis?: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
   const progress = folder.metadata?.progress;
@@ -1243,6 +1263,7 @@ function FolderHeader({
             <FilesButton onOpen={onOpenFiles} />
             <AgentButton onOpen={onOpenAgent} />
             {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
+            {onOpenJarvis && <JarvisButton onOpen={onOpenJarvis} />}
           </span>
           <FolderLandedBadge folder={folder} pr={pr} />
           {/* Merged PR, and nothing here would be lost. A PR-less task never
@@ -1305,12 +1326,13 @@ function WindowSpine({
 /** The pane kinds that are a *view of* the folder rather than something
  * running in it — each still gets a rail row, so what's open in a folder is
  * answerable from the rail alone. */
-type ViewPaneKind = "diff" | "files" | "preview";
+type ViewPaneKind = "diff" | "files" | "preview" | "jarvis";
 
 function viewPaneKind(paneId: string): ViewPaneKind | null {
   if (isDiffPane(paneId)) return "diff";
   if (isFilesPane(paneId)) return "files";
   if (isPreviewPane(paneId)) return "preview";
+  if (isJarvisPane(paneId)) return "jarvis";
   return null;
 }
 
@@ -1321,6 +1343,7 @@ const VIEW_PANE_META: Record<
   diff: { Icon: GitCompare, label: "diff", title: "This checkout's changed files, side by side" },
   files: { Icon: Files, label: "files", title: "This checkout's file tree and editor" },
   preview: { Icon: AppWindow, label: "preview", title: "This checkout's live dev server" },
+  jarvis: { Icon: Box, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 
 /**

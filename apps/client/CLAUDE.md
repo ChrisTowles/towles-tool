@@ -180,6 +180,18 @@ pool and keep its state outside the component**; adding it to the
 conditionally-rendered list is the bug this rule exists to prevent (chats used
 to die, silently, on every folder switch).
 
+The **jarvis** pane (`components/jarvis-pane.tsx`) is the near-miss that shows
+where the line actually falls: it owns a Bevy render thread and is still *not*
+pooled, because unmounting it doesn't destroy anything — the host retires the
+renderer and revives it if the pane comes back (dropping a Bevy app mid-session
+ends the process; see `crates-tauri/tt-pane`). A shell's scrollback and a
+conversation have no such safety net, which is what puts them in the pool.
+
+It also breaks the other assumption this file makes about hiding — its body is
+a compositor surface drawn *above* the webview, so `hidden` on an ancestor is
+invisible to it and the screen-switch case has to be pushed down as
+`visible={false}` (`PaneGrid`'s `nativeVisible`).
+
 ## Clickable rows can't be `<button>`s
 
 Radix's `Checkbox`, `Switch`, `RadioGroupItem` and `*Trigger` primitives render

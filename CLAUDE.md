@@ -575,13 +575,40 @@ Cargo workspace + npm workspace (`apps/client` only):
     native surface can host Solari's ray-tracing pipeline (see
     [README.md](README.md)).
 
+    It renders in two places, both fed by the same `NativePane` component:
+    the strip at the bottom of the Agentboard rail, and a **first-class pane
+    kind** — `~jarvis:<folderDir>` (`lib/agentboard.ts`,
+    `components/jarvis-pane.tsx`) tiled beside a checkout's terminals from the
+    `jarvis` button on its folder header, persisted and restored like the
+    diff/files/preview panes because it's in `folderPaneDir`. Folder-scoped for
+    a resource reason as much as a naming one: every attached pane is its own
+    subsurface *and* its own Bevy render thread. It is deliberately **not**
+    pooled like terminals/chats — those own a process whose state can't be
+    rebuilt, while a native pane can, so leaving the active window should
+    really detach it.
+
     **Opt-in, off by default** while it's a proof-of-concept
     (`agentboard.jarvisPane`; the cube button in the rail header, or Settings →
-    Agentboard). Off means the frontend doesn't render `NativePane` at all
-    rather than passing `visible={false}`: unmounting is what runs
-    `pane_detach`, and only that drops the subsurface and joins the render
-    thread. A hidden-but-attached pane keeps a vsync-paced Bevy loop alive for
-    the app's whole life, so hiding is not turning it off.
+    Agentboard) — one switch for both surfaces: off, the rail strip isn't
+    rendered and the folder header offers no `jarvis` button. `visible={false}`
+    is the *only* way to get a shown pane out of the way of DOM that must
+    appear over it (a screen switch): the surface composites above the webview,
+    so no ancestor's `hidden` reaches it.
+
+    **Nothing takes a pane down while the app runs, and that is deliberate.**
+    Three mechanisms were measured against compositor screenshots, and only the
+    third survives: attaching a **null buffer** (the textbook unmap) left the
+    surface on screen even with the renderer stopped; **detaching** removed it
+    and then ended the process within seconds, every time, cleanly enough that
+    the last log line was `pane render thread stopped` — dropping a Bevy app
+    tears down a wgpu device built on GDK's own Wayland display, so no teardown
+    *order* can save it; **moving the subsurface outside every output** and
+    parking the render thread works, reversibly and instantly. Hence
+    `pane_set_visible` parks, `pane_detach` *retires* (parks and keeps the
+    renderer for the same id to revive), and real teardown happens only at
+    process exit. A pane, once shown, costs a parked renderer for the app's
+    life. Verify any change here from `winshot` output — a pane that "should"
+    be gone and isn't looks exactly like a stale screenshot.
 
     Bevy comes from **`slyedoc/bevy@solari-rt-pipeline` (0.20.0-dev)**. Keep it
     there — tracking that fork is the goal, and `Cargo.lock` pins the revision

@@ -44,6 +44,7 @@ import {
   isAgent,
   isAgentPane,
   isCacheExpiring,
+  jarvisPaneId,
   liveSessions,
   nextOpenFileNonce,
   nextWindowId,
@@ -197,10 +198,15 @@ export function AgentboardScreen() {
   // which checkouts to discover, so the toggle round-trips through Rust and
   // the rail repopulates from the next `agentboard://state`.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
-  // Whether the native Bevy pane renders at the bottom of the rail at all. Off
-  // (the default) unmounts `NativePane` rather than hiding it, so the surface
-  // is detached and its render thread joined — see the render site below.
+  // Whether the native Bevy surfaces exist at all — the rail strip below, and
+  // the per-checkout `jarvis` pane's entry point. Off is the default, and left
+  // off nothing is ever created; see the render site below.
   const [jarvisPane, setJarvisPane] = useJarvisPane();
+  // Whether a native surface may be on screen right now. Every `NativePane` on
+  // this screen takes this one value: they composite *above* the webview, so a
+  // screen switch has to hide them explicitly (screens stay mounted here), and
+  // two surfaces disagreeing about it means one of them covers the next screen.
+  const nativeVisible = activeTab === "agentboard";
   // Per-repo "show me the quiet ones anyway" toggle (the stub row).
   const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -397,6 +403,18 @@ export function AgentboardScreen() {
     // named — a fallback show still puts the user in front of that folder.
     ackFolder(dir);
     openPreview(dir);
+  }
+
+  // Same, for this folder's native pane — a rectangle of the window rendered
+  // by Bevy rather than DOM (`components/jarvis-pane.tsx`). Gated on the same
+  // `agentboard.jarvisPane` setting as the rail's surface: while this is a
+  // proof-of-concept, off means no Bevy anywhere, so the affordance that opens
+  // one only exists when it's on.
+  function openJarvis(dir: string) {
+    uiAction("agentboard.open_jarvis_pane", "agentboard");
+    setActiveFolderDir(dir);
+    addPaneToActive(dir, jarvisPaneId(dir));
+    setFocusedPaneId(jarvisPaneId(dir));
   }
 
   // Same, for a rendered Claude session rooted in this folder — structured
@@ -1172,6 +1190,11 @@ export function AgentboardScreen() {
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
                               onOpenAgent={openAgent}
+                              // Undefined while `agentboard.jarvisPane` is off:
+                              // the proof-of-concept surface has no entry point
+                              // at all rather than one that opens a disabled
+                              // pane.
+                              onOpenJarvis={jarvisPane ? openJarvis : undefined}
                               onClosePane={removePane}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
                               taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
@@ -1216,17 +1239,17 @@ export function AgentboardScreen() {
                       cover whatever screen the user switched to — screens stay
                       mounted here rather than unmounting.
 
-                      Off (the default) means *not rendered*, not `visible=
-                      {false}`: unmounting runs `pane_detach`, which drops the
-                      subsurface and joins the render thread, and hands the
-                      quarter back to the ScrollArea. A hidden-but-attached pane
-                      would keep a vsync-paced Bevy loop running for the app's
-                      whole life, which is too much for a proof-of-concept to
-                      cost by default. Toggle: the rail header's cube button. */}
+                      Off (the default) means *not rendered*, which is what
+                      hands the quarter back to the ScrollArea — and, on a
+                      checkout that never turns it on, what keeps a surface from
+                      being created at all. It does not reclaim one already
+                      shown: retiring parks the renderer rather than dropping it
+                      (`crates-tauri/tt-pane`). Toggle: the rail header's cube
+                      button. */}
                   {jarvisPane && (
                     <NativePane
                       paneId="jarvis"
-                      visible={activeTab === "agentboard"}
+                      visible={nativeVisible}
                       className="shrink-0 basis-1/4 border-t"
                       fallback="Jarvis needs Linux/Wayland"
                     />
@@ -1260,6 +1283,7 @@ export function AgentboardScreen() {
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
                   onOpenAgent={openAgent}
+                  onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
                   onNewTask={newTaskForActiveRepo}
                   onRemoveRepo={requestRemoveRepo}
@@ -1299,6 +1323,7 @@ export function AgentboardScreen() {
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}
                 artifactRequests={artifactRequests}
+                nativeVisible={nativeVisible}
                 labelFor={labelFor}
                 focusTerminalRequest={focusTerminalRequest}
                 onSelectSession={selectSession}
