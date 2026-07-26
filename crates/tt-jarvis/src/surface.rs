@@ -60,14 +60,6 @@ impl ForeignSurface {
     pub unsafe fn new(window: RawWindowHandle, display: RawDisplayHandle) -> Self {
         Self { window, display }
     }
-
-    pub fn raw_window_handle(&self) -> RawWindowHandle {
-        self.window
-    }
-
-    pub fn raw_display_handle(&self) -> RawDisplayHandle {
-        self.display
-    }
 }
 
 // SAFETY: see the type-level note. The platform layer confines creation and

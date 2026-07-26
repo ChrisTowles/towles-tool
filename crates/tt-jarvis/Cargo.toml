@@ -15,7 +15,6 @@ description = "Bevy scene rendered into a surface it did not create — the nati
 # `RawWindowHandle` graphs and break the foreign-surface handoff. Let bevy own
 # wgpu entirely.
 raw-window-handle = "0.6.2"
-thiserror = { workspace = true }
 serde = { workspace = true }
 
 # Bevy comes from **slyedoc's Solari fork**, not crates.io — see the Solari

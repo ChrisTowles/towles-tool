@@ -9,9 +9,6 @@ use serde::{Deserialize, Serialize};
 
 // --- Constants (ports the `shared.ts` module constants) ---
 
-pub const STALE_AGENT_TIMEOUT_MS: i64 = 12 * 60 * 60 * 1000;
-/// An unpinned idle instance is a dead session; prune it shortly after.
-pub const IDLE_PRUNE_MS: i64 = 30_000;
 pub const JOURNAL_IDLE_TIMEOUT_MS: i64 = 120_000;
 
 // --- Agent contract (ports `contracts/agent.ts`) ---
@@ -525,29 +522,17 @@ pub enum ClientCommand {
     },
 }
 
-/// Catppuccin Mocha palette (ports the `C` constant object).
+/// The Catppuccin Mocha colors [`AgentStatus::color`] maps onto — the status
+/// palette, not the full set. The app's own theming lives in the frontend
+/// (`apps/client/src/lib/themes.ts`); a second complete copy here only ever
+/// went stale.
 pub mod palette {
     pub const BLUE: &str = "#89b4fa";
-    pub const LAVENDER: &str = "#b4befe";
-    pub const PINK: &str = "#cba6f7";
-    pub const MAUVE: &str = "#cba6f7";
     pub const YELLOW: &str = "#f9e2af";
     pub const GREEN: &str = "#a6e3a1";
     pub const RED: &str = "#f38ba8";
     pub const PEACH: &str = "#fab387";
-    pub const TEAL: &str = "#94e2d5";
-    pub const SKY: &str = "#89dceb";
-    pub const TEXT: &str = "#cdd6f4";
-    pub const SUBTEXT0: &str = "#a6adc8";
-    pub const SUBTEXT1: &str = "#bac2de";
-    pub const OVERLAY0: &str = "#6c7086";
-    pub const OVERLAY1: &str = "#7f849c";
-    pub const SURFACE0: &str = "#313244";
-    pub const SURFACE1: &str = "#45475a";
     pub const SURFACE2: &str = "#585b70";
-    pub const BASE: &str = "#1e1e2e";
-    pub const MANTLE: &str = "#181825";
-    pub const CRUST: &str = "#11111b";
 }
 
 #[cfg(test)]

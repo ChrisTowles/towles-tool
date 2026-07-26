@@ -87,29 +87,12 @@ pub fn build_cadence(details: &[SessionDetail], cutoff_ms: i64) -> CadenceSummar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use tt_claude_code::UsageTotals;
 
     fn detail(prompt_times_ms: Vec<i64>) -> SessionDetail {
         SessionDetail {
-            session_id: "s".into(),
-            path: PathBuf::from("/x.jsonl"),
-            project: "demo".into(),
-            date: "2026-07-17".into(),
-            mtime: 0,
-            title: None,
-            cwd: None,
-            usage: UsageTotals::default(),
-            opus_tokens: 0,
-            sonnet_tokens: 0,
-            haiku_tokens: 0,
-            fable_tokens: 0,
-            repeated_reads: 0,
-            cost_usd: 0.0,
-            cost_by_model: [0.0; 4],
             user_turns: prompt_times_ms.len() as i64,
-            prompt_blob: String::new(),
             prompt_times_ms,
+            ..crate::test_support::session_detail()
         }
     }
 

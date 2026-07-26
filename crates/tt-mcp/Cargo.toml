@@ -5,13 +5,11 @@ edition = "2024"
 publish = false
 
 [dependencies]
-tt-agentboard = { workspace = true }
 tt-config = { workspace = true }
 tt-git = { workspace = true }
 tt-store = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 

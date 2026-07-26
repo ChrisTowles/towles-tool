@@ -9,9 +9,6 @@
 
 use crate::types::AgentEvent;
 
-/// Constants shared by watchers (§0). `JOURNAL_IDLE_TIMEOUT_MS` comes from
-/// [`crate::types::JOURNAL_IDLE_TIMEOUT_MS`].
-pub const POLL_MS: i64 = 2000;
 /// Files untouched longer than this are skipped by a scan entirely.
 pub const STALE_MS: i64 = 5 * 60 * 1000;
 pub const JSONL_SUFFIX: &str = ".jsonl";
