@@ -1897,6 +1897,107 @@ mod tests {
         );
     }
 
+    /// The watch set itself, pinned against a *real* repository for both
+    /// shapes a tracked checkout can take. The split is the whole reason this
+    /// can't be one path prefix: a linked worktree's `HEAD`/`index` live in
+    /// its own per-worktree gitdir under `<common>/worktrees/<name>/`, while
+    /// every ref it compares against — `packed-refs`, `refs/heads/*`,
+    /// `refs/remotes/origin/*` — lives in the shared common dir. Watching
+    /// only one of the two would miss either the worktree's own branch
+    /// switches or a commit landing on its base from a sibling checkout.
+    #[test]
+    fn control_files_split_across_the_worktree_gitdir_and_the_shared_common_dir() {
+        let root = tempfile::TempDir::new().unwrap();
+        let repo = root.path().join("main");
+        let worktree = root.path().join("task");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        git(&repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "task",
+                worktree.to_str().unwrap(),
+            ],
+        );
+
+        let common = repo.join(".git");
+        let main_info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
+        assert_eq!(
+            control_files_for(&main_info),
+            vec![
+                common.join("HEAD"),
+                common.join("index"),
+                common.join("packed-refs"),
+                common.join("refs/heads/main"),
+                common.join("refs/remotes/origin/main"),
+            ],
+            "a plain checkout watches its own .git for everything"
+        );
+
+        let task_info = compute_git_info(worktree.to_str().unwrap(), None, None, NOW);
+        let task_git = common.join("worktrees/task");
+        assert_eq!(
+            control_files_for(&task_info),
+            vec![
+                task_git.join("HEAD"),
+                task_git.join("index"),
+                common.join("packed-refs"),
+                common.join("refs/heads/task"),
+                common.join("refs/remotes/origin/main"),
+            ],
+            "a linked worktree watches its own HEAD/index but the shared refs"
+        );
+    }
+
+    /// End-to-end proof that the watch set is *actionable*, not just correct:
+    /// register [`control_files_for`]'s paths the way the host's scan loop
+    /// does and a `git checkout -b` must surface within a debounce window,
+    /// not on the poll's [`GIT_CACHE_TTL_MS`] backup ceiling. This is the
+    /// latency claim the accelerant exists to make, so it is asserted rather
+    /// than assumed — and the recompute afterwards proves the fired path was
+    /// the one carrying the new branch.
+    #[test]
+    fn a_branch_switch_fires_the_control_watch_far_sooner_than_the_backup_poll() {
+        let root = tempfile::TempDir::new().unwrap();
+        let repo = root.path();
+        init_repo(repo);
+        let dir = repo.to_str().unwrap();
+        let before = compute_git_info(dir, None, None, NOW);
+        assert_eq!(before.branch, "main");
+
+        let (fired_tx, fired_rx) = std::sync::mpsc::channel::<Vec<std::path::PathBuf>>();
+        let mut notifier = crate::fs_notify::MultiFileNotifier::new(move |batch| {
+            let _ = fired_tx.send(batch);
+        })
+        .unwrap();
+        // Same tolerance as the host's registration diff: a control file whose
+        // parent doesn't exist yet (no `refs/remotes/origin` in a repo with no
+        // remote) is skipped, never fatal.
+        for file in control_files_for(&before) {
+            let _ = notifier.add(&file);
+        }
+
+        let started = std::time::Instant::now();
+        git(repo, &["checkout", "--quiet", "-b", "feature"]);
+        let batch = fired_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a branch switch must fire the control-file watch");
+        let latency = started.elapsed();
+        assert!(batch.contains(&repo.join(".git/HEAD")), "HEAD is the path that moved: {batch:?}");
+        assert!(
+            latency < std::time::Duration::from_millis(GIT_CACHE_TTL_MS as u64),
+            "the accelerant must beat the backup poll's ceiling, took {latency:?}"
+        );
+
+        let after = compute_git_info(dir, None, None, NOW);
+        assert_eq!(after.branch, "feature", "the recompute the signal triggers sees the switch");
+    }
+
     /// The other half of the same idea, applied to `is_worktree`/`common_dir`/
     /// `worktree_dirs`/`origin_url` — structural facts, not working-tree state,
     /// so they're worth revalidating from two `fs::metadata` calls instead of

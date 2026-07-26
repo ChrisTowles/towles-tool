@@ -70,7 +70,14 @@ follows is a cross-cutting rule that spans multiple files.
   every tracked repo every tick — it used to double-poll on top of the scan
   loop's own TTL-gated warming, which is why raising the TTL alone wouldn't
   have been enough; both loops must respect the same staleness signal or one
-  silently defeats the other's savings.
+  silently defeats the other's savings. One watch gap of that kind is already
+  fixed and worth knowing before adding a control file: a registered path's
+  parent directory **may not exist**, because `git pack-refs --prune` (run by
+  `git gc --auto`) deletes both the loose `refs/heads/feat/x` and its emptied
+  `refs/heads/feat` directory, so on this repo's own slashed branch names the
+  branch ref had nothing to watch. `MultiFileNotifier::add` handles that by
+  watching the nearest existing ancestor recursively — see its doc — rather
+  than the caller pre-creating directories inside someone's `.git`.
   **What this deliberately does not cover**: `dirty` and the `uncommitted_*`
   stats measure the *working tree*, and an edited-but-unstaged file never
   touches any of the five watched files — `index` only moves on `git add`/
