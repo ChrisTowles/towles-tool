@@ -210,23 +210,29 @@ Rules when working in a task:
   A bare `pkill -f "tauri dev"` or `killall` matches every task's processes,
   which is why `.claude/hooks/guard-task-pkill.sh` rejects the unscoped forms.
 
-  **"The MCP tools aren't there"** is the common case, and its cause is
-  counter-intuitive: the server is one-per-machine **bind-or-skip**, so an app
-  that started while another instance held `8787` serves nothing *for its whole
-  life* and never retries. A running `tt-app` is therefore no evidence that MCP
-  is up.
+  **"The MCP tools aren't there"** now means what it looks like — the app for
+  *your* checkout isn't running. Each instance serves its own MCP on its own
+  `${tt:port 8787-8986}` claim (`TT_MCP_PORT` in the rendered `.env`), stamps
+  that port into every terminal it spawns, and the plugin's `.mcp.json` expands
+  `${TT_MCP_PORT:-8787}` — so a session talks to the app that spawned it.
 
   ```sh
-  curl -s -m 5 -X POST http://127.0.0.1:8787/mcp \
+  curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'  # empty => nobody serving
-  ss -ltnp | grep 8787                                    # who bound it, if anyone
+  tt task ports                                           # every checkout's claims
   ```
 
-  The fix is to start an app from your own checkout — the port is free, so it
-  binds. The app shows this itself (`Not serving · another instance holds the
-  port`), but that surface is useless when the app is the thing that's down,
-  and `tt task ports` lists only `${tt:port}` claims, never the fixed `8787`.
+  A session started *outside* an app terminal has no `TT_MCP_PORT` and falls
+  back to `8787`, reaching whichever checkout claimed it — usually the main one.
+
+  Before 2026-07-26 this was a one-per-machine bind-or-skip singleton on a fixed
+  `8787`, and the failure was genuinely counter-intuitive: an app that started
+  second served nothing for its whole life and never retried, so a running
+  `tt-app` was no evidence MCP was up. Worse, `tt.db` is instance state scoped
+  per checkout, so the winning instance answered every session from *its own*
+  board — a `task_create` in a worktree session silently landed on another
+  checkout's board. Don't reintroduce a shared port.
 - Task logic lives in `crates/tt-tasks` (template grammar, removal guards,
   pure decisions) with shared orchestration in `tt_tasks::ops`; the CLI and
   the app's `task_create` command are thin shells over it. Change behavior
@@ -388,10 +394,20 @@ Cargo workspace + npm workspace (`apps/client` only):
     half of the channel whose human→agent half already existed (draw on the
     pane, send the annotated screenshot back), and the two share a surface
     deliberately, so the user can circle a line of the agent's own plan and
-    reply to it. A hand-off like `task_start` and for a related reason — only
-    the frontend knows which tracked folder a path lives under, and a path
-    under none of them falls back to the folder on screen rather than being
-    refused, since one instance serves every session on the machine. The
+    reply to it. A hand-off like `task_start`, since only the frontend can
+    open a pane. **It routes by *caller*, not by path** — the request carries
+    the agent's `TT_SESSION_ID` in an `X-TT-Session` header, filled in by the
+    MCP client from the plugin's `.mcp.json` (`"${TT_SESSION_ID:-}"`, Claude
+    Code's env expansion) rather than by the model, and the frontend resolves
+    that session to the folder owning its pane. Path-prefix matching survives
+    only as the fallback for a caller with no session (a Claude Code session
+    started outside the app). Don't restore it as the primary: an agent's
+    natural place for a throwaway page is a scratch dir under no tracked
+    folder, which matches nothing and lands the page in whatever task is on
+    screen — one instance serves every session on the machine. Making the file's
+    location load-bearing also meant an agent had to know that and write
+    somewhere unnatural to be routed right; the terminal it is sitting in is
+    the fact that actually answers "whose pane is this?". The
     delivery mechanics (path not bytes, the sandboxed `srcDoc` frame) are
     documented at `tt-mcp`'s `PreviewHost` and
     `crates-tauri/tt-app/src/preview.rs`. The broader
@@ -413,14 +429,19 @@ Cargo workspace + npm workspace (`apps/client` only):
     tool tester issues its request from Rust (`mcp_test_call`). Both crates'
     module docs carry the full threat model.
 
-    Served **one per machine, bind-or-skip**: whichever app instance takes the
-    port serves every session, the rest serve none, and the OS bind is the
-    mutex. App closed = MCP down; there is no headless fallback (the stdio
-    server and `tt mcp serve` were deleted). The port is a **fixed default**
-    (`mcp.port`, 8787) rather than a `${tt:port}` claim — the one legitimate
-    exception to the no-hardcoded-ports rule, because a machine-wide singleton
-    has nothing to collide with, and a stable port is what lets the
-    `towles-tool-app` plugin ship a static checked-in `.mcp.json`.
+    Served **one per app instance**, each on its own `${tt:port 8787-8986}`
+    claim (`TT_MCP_PORT`) like every other port here — no exception to the
+    no-hardcoded-ports rule any more. App closed = that checkout's MCP down;
+    there is no headless fallback (the stdio server and `tt mcp serve` were
+    deleted). The plugin still ships a **static checked-in `.mcp.json`**,
+    because the port rides the environment rather than the file:
+    `"http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp"`, expanded by Claude Code from
+    the stamp the app put on the terminal. Precedence for the app's own port is
+    process env → the checkout's rendered `.env` → settings `mcp.port`
+    (`mcp_http::resolve_port`, unit-tested). The pre-2026-07-26 shared-8787
+    singleton is described in the Worktree tasks section — read that before
+    proposing a shared port again; it cross-wired tool writes between
+    checkouts' boards.
   - `tt-telemetry` — telemetry: the `tracing` subscriber/writer and the reader
     behind the app's Telemetry screen, one crate so both halves can never
     disagree about the on-disk schema. `tt_telemetry::init` installs the global `tracing`

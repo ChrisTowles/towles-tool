@@ -2,7 +2,10 @@
   "mcpServers": {
     "towles-tool": {
       "type": "http",
-      "url": "http://127.0.0.1:8787/mcp"
+      "url": "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp",
+      "headers": {
+        "X-TT-Session": "${TT_SESSION_ID:-}"
+      }
     }
   }
 }

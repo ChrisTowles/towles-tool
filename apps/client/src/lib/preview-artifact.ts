@@ -6,10 +6,11 @@ import { invoke, isTauri } from "@/lib/tauri";
  * Delivery for the MCP `preview_show` tool — the agent→human direction of the
  * Preview pane.
  *
- * The backend emits `preview://show` with a path
- * (`crates-tauri/tt-app/src/mcp_http.rs`), and this routes it to the Preview
- * pane of whichever tracked folder the file lives under, as the same
- * `requestAgentboardNav` request the UI would make.
+ * The backend emits `preview://show` (`crates-tauri/tt-app/src/mcp_http.rs`),
+ * and this routes it to the Preview pane of the folder owning the *calling
+ * agent's terminal*, as the same `requestAgentboardNav` request the UI would
+ * make. The file's own location is only consulted when the caller didn't
+ * identify itself — see `folderForSession` and `folderForArtifact`.
  *
  * Structured exactly like `lib/task-start.ts`, for the reasons documented
  * there: subscribed from `App.tsx` because Agentboard's screen doesn't exist
@@ -22,6 +23,10 @@ import { invoke, isTauri } from "@/lib/tauri";
 const PreviewShowPayloadSchema = z.object({
   path: z.string(),
   title: z.string(),
+  /** The PTY session the requesting agent runs in, when it identified itself
+   * (`X-TT-Session`, from `TT_SESSION_ID`). The routing key — see
+   * `folderForSession`. */
+  session: z.string().nullish(),
 });
 
 export type PreviewShowPayload = z.infer<typeof PreviewShowPayloadSchema>;
@@ -52,19 +57,51 @@ export const previewReadArtifact = (path: string) =>
   invoke("preview_read_artifact", { path }, { schema: ArtifactDocSchema, timeoutMs: 10_000 });
 
 /**
+ * The folder that owns the session an agent is running in — the artifact's
+ * destination, resolved from the caller rather than from the file.
+ *
+ * A session id is the rail's own id for a pane (`SessionData.id`, the PTY's
+ * `term_id`, and the `TT_SESSION_ID` stamped into that shell's environment), so
+ * this is an exact lookup with no prefix matching and no ambiguity: the pane
+ * opens beside the terminal that asked for it, wherever the file happens to
+ * live.
+ *
+ * Undefined when the caller sent no session, or one no live folder claims — a
+ * session from an app instance that has since restarted, or a pane closed
+ * between the call and its delivery. Both fall back to the path.
+ */
+export function folderForSession(
+  repos: RepoData[],
+  session: string | null | undefined,
+): { dir: string; name: string } | undefined {
+  if (!session) return undefined;
+  for (const repo of repos) {
+    for (const folder of repo.folders) {
+      if (folder.sessions.some((s) => s.id === session)) {
+        return { dir: folder.dir, name: folder.name };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * The tracked folder an artifact belongs to: the folder whose directory is the
  * longest prefix of the file's path.
+ *
+ * **The fallback, not the rule** — `folderForSession` answers first. This is a
+ * guess from the file's location, and it is wrong in the most ordinary case
+ * there is: an agent writing a throwaway page into a scratch directory outside
+ * every checkout matches no folder here at all, and the artifact then surfaces
+ * in whichever folder the user is looking at. It stays for the callers that
+ * genuinely have no session to route on — a Claude Code session started from a
+ * plain terminal rather than one of the app's — where a slightly-wrong pane
+ * still beats not showing the page at all.
  *
  * Longest-prefix rather than first-match because worktree tasks nest *inside*
  * their checkout (`<repo>/.claude/worktrees/<task>/`), so a file in a task
  * matches both the task's folder and the main checkout's — and the task is the
  * one whose terminal the agent is sitting in.
- *
- * A path under no tracked folder has no *preferred* folder and comes back
- * undefined so the caller can fall back — not a refusal. The one app instance
- * holding the MCP port serves every Claude session on the machine, `/tmp`
- * scratch files and untracked checkouts included, and an artifact in a
- * slightly-wrong pane beats one that isn't shown at all.
  */
 export function folderForArtifact(
   repos: RepoData[],
@@ -82,12 +119,16 @@ export function folderForArtifact(
 }
 
 /** Build the Agentboard request for a validated payload. `folderDir` is the
- * folder that *owns* the file, or `null` when none does — only the screen can
- * resolve that fallback. Pure, so the routing is testable without Tauri. */
+ * folder to show it in — the caller's own session first, the file's location
+ * only if that can't answer, and `null` when neither does (only the screen can
+ * resolve that last fallback). Pure, so the routing is testable without Tauri. */
 export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) {
   return {
     kind: "show-artifact" as const,
-    folderDir: folderForArtifact(repos, payload.path)?.dir ?? null,
+    folderDir:
+      folderForSession(repos, payload.session)?.dir ??
+      folderForArtifact(repos, payload.path)?.dir ??
+      null,
     path: payload.path,
     title: payload.title,
     nonce: nextOpenFileNonce(),

@@ -58,10 +58,11 @@ import {
  */
 
 /**
- * Loopback port the server listens on when settings don't override it. The
- * towles-tool-app plugin ships a static `.mcp.json` pointing here, so this
- * default has to stay stable — it is only the fallback for browser dev and for
- * the moment before {@link useMcpStatus} resolves.
+ * Bottom of the `${tt:port 8787-8986}` range each checkout claims its MCP port
+ * from, and what a session outside an app terminal falls back to
+ * (`${TT_MCP_PORT:-8787}` in the plugin's `.mcp.json`). Only a placeholder here
+ * — for browser dev, and for the moment before {@link useMcpStatus} reports the
+ * port this instance actually bound.
  */
 const DEFAULT_MCP_PORT = 8787;
 
@@ -71,9 +72,9 @@ const endpointFor = (port: number) => `http://127.0.0.1:${port}/mcp`;
  * The real bind outcome, not an inference from call recency.
  *
  * These differ exactly where it matters: a healthy server nobody has called yet
- * reads as idle from the call log alone, and an instance that *lost* the bind
- * race (another task got the port first) is serving nothing at all while still
- * showing that task's calls. Only the backend knows which.
+ * reads as idle from the call log alone, and an instance whose port was already
+ * taken is serving nothing at all while still showing its own past calls. Only
+ * the backend knows which.
  */
 function useMcpStatus() {
   const [status, setStatus] = useState<McpStatus | null>(null);
@@ -167,8 +168,12 @@ export function McpScreen() {
         <StatTile
           label="Server"
           value={serverLabel(status, active)}
+          // Each checkout claims its own port, so not-serving is a real
+          // collision worth naming as one rather than a routine state.
           detail={
-            status && !status.serving ? "another instance holds the port" : `127.0.0.1:${port}`
+            status && !status.serving
+              ? `port ${port} taken — this app serves no MCP`
+              : `127.0.0.1:${port}`
           }
         />
         <StatTile
