@@ -638,7 +638,6 @@ pub fn sweep_stale_lockfiles() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Commands (invoked from the diff pane)
 
 /// Resolve `file_path` (repo-relative) against `dir`, read the selected span

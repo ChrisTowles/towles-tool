@@ -162,26 +162,28 @@ impl RepoMetaStore {
             return Ok(());
         }
         let dirty: Vec<String> = self.dirty.drain().collect();
-        let mut on_disk = load(&path);
-        for dir in &dirty {
-            match self.repos.get(dir) {
-                Some(meta) => {
-                    on_disk.insert(dir.clone(), meta.clone());
+        let merged = crate::persist::merge_on_save(
+            &path,
+            |p| RepoMetaConfig { repos: load(p) },
+            |config| {
+                for dir in &dirty {
+                    match self.repos.get(dir) {
+                        Some(meta) => {
+                            config.repos.insert(dir.clone(), meta.clone());
+                        }
+                        None => {
+                            config.repos.remove(dir);
+                        }
+                    }
                 }
-                None => {
-                    on_disk.remove(dir);
-                }
-            }
-        }
-        let config = RepoMetaConfig { repos: on_disk };
-        let json = serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
-        crate::persist::write_atomic(&path, &format!("{json}\n"))?;
-        // Adopt the merged result, same as `FolderMetaStore::save`: another
-        // window's edits to repos we didn't touch are now part of our view, so
-        // `meta_for` stops serving an icon this instance never saw change.
-        // Only on a successful write — a failed one must not make us believe
-        // we're in sync with a file we didn't manage to update.
-        self.repos = config.repos;
+            },
+        )?;
+        // Adopt the merged result: another window's edits to repos we didn't
+        // touch are now part of our view, so `meta_for` stops serving an icon
+        // this instance never saw change. Only on a successful write — a failed
+        // one must not make us believe we're in sync with a file we didn't
+        // manage to update.
+        self.repos = merged.repos;
         Ok(())
     }
 }

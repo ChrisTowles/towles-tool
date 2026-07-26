@@ -105,13 +105,13 @@ export function PreviewPane({
 }) {
   const dir = folder?.dir;
 
-  // --- URL / navigation ---
+  // URL / navigation
   const [url, setUrl] = useState("");
   const [input, setInput] = useState("");
   const [frameKey, setFrameKey] = useState(0);
   const [servers, setServers] = useState<DevServer[]>([]);
 
-  // --- artifact (agent → user) ---
+  // artifact (agent → user)
   // `doc` holds the loaded HTML; `showing` is which of the two surfaces is on
   // screen. Separate flags rather than a discriminated union because the dev
   // server's URL must survive a look at an artifact — going back is one click,
@@ -120,13 +120,13 @@ export function PreviewPane({
   const [docError, setDocError] = useState<string | null>(null);
   const [showing, setShowing] = useState<"server" | "artifact">("server");
 
-  // --- annotation ---
+  // annotation
   const [tool, setTool] = useState<AnnotationTool | null>(null);
   const [color, setColor] = useState<string>(ANNOTATION_COLORS[0]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [textDraft, setTextDraft] = useState<{ x: number; y: number; value: string } | null>(null);
 
-  // --- send dialog ---
+  // send dialog
   const [capture, setCapture] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -231,7 +231,7 @@ export function PreviewPane({
     uiAction("preview.navigate", "agentboard", source);
   }
 
-  // --- canvas draw model ---
+  // canvas draw model
   // The in-progress stroke lives only in `draftRef`, never React state: it's
   // the authoritative value the pointer handlers mutate and paint imperatively
   // (a `setDraft` per pointermove would re-render the whole pane every move for

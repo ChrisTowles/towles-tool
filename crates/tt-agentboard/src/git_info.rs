@@ -1,22 +1,19 @@
-//! Branch / worktree / diff-stat computation with a short cache. Ports slot-1
-//! `runtime/server/git-info.ts`.
+//! Branch / worktree / diff-stat computation with a short cache.
 //!
-//! What ports here: the git shell-outs, the porcelain/numstat/ahead-behind
-//! parsing, and the 5s-TTL cache with stale-serve + explicit invalidation. What
-//! does **not** port (transport/watcher concerns, left to the Tauri layer): the
-//! `setInterval` git poll (`startGitPoll`/`poll.ts`), the `fs.watch` on
-//! `.git/HEAD` (`syncGitWatchers`), and the WS broadcast.
+//! What lives here: the git reads, the porcelain/numstat/ahead-behind parsing,
+//! and the TTL cache with stale-serve + explicit invalidation. Transport and
+//! watcher concerns — the git poll, the `.git/HEAD` watch, the event broadcast
+//! — belong to the Tauri layer.
 //!
-//! Time is injected via `now_ms` instead of a background clock. Cache misses
-//! compute synchronously here rather than TS's async background refresh +
-//! in-flight de-dup (deviation noted in the port report).
+//! Time is injected via `now_ms` instead of a background clock, and cache
+//! misses compute synchronously.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// Working-tree/commit stats for a session directory. Ports `GitInfo`.
+/// Working-tree/commit stats for a session directory.
 ///
 /// Every stat here measures against the *same* baseline: `compared_base` (see
 /// [`resolve_base_ref`]) — a per-folder override, else a worktree's own
@@ -198,8 +195,8 @@ pub struct GitInfo {
 const GIT_CACHE_TTL_MS: i64 = 60_000;
 
 /// Cache of git info per directory, with a TTL-as-backup-ceiling and
-/// stale-serve. Ports the module-global `gitInfoCache` as an owned struct.
-/// The poll loop that drives `refresh` lives in the Tauri layer, not here.
+/// stale-serve. The poll loop that recomputes entries lives in the Tauri
+/// layer, not here.
 #[derive(Debug, Default)]
 pub struct GitInfoCache {
     entries: HashMap<String, (GitInfo, i64)>,
@@ -210,7 +207,7 @@ impl GitInfoCache {
         Self::default()
     }
 
-    /// Insert/replace an entry stamped at `now_ms` (used by tests and `refresh`).
+    /// Insert/replace an entry stamped at `now_ms`.
     pub fn insert(&mut self, dir: &str, info: GitInfo, now_ms: i64) {
         self.entries.insert(dir.to_string(), (info, now_ms));
     }
@@ -221,8 +218,8 @@ impl GitInfoCache {
     }
 
     /// Synchronous cache-only read: returns the cached info (fresh or stale), or
-    /// empty when nothing is cached. Ports `getGitInfo`'s serve-stale behavior
-    /// (without the background refresh — that's the poll's job via [`Self::refresh`]).
+    /// empty when nothing is cached. Serving stale is deliberate — recomputing
+    /// is the poll's job, never a read's.
     pub fn get(&self, dir: &str) -> GitInfo {
         if dir.is_empty() {
             return GitInfo::default();
@@ -231,7 +228,7 @@ impl GitInfoCache {
     }
 
     /// Mark entries stale (ts=0) so the next read still serves them but they're no
-    /// longer fresh. Ports `invalidateGitCache`.
+    /// longer fresh.
     pub fn invalidate(&mut self, dir: Option<&str>) {
         match dir {
             Some(dir) => {
@@ -254,24 +251,6 @@ impl GitInfoCache {
     /// inherit the dead one's branch and stats. Returns whether an entry went.
     pub fn forget(&mut self, dir: &str) -> bool {
         self.entries.remove(dir).is_some()
-    }
-
-    /// Recompute git info for `dir` (shells out), cache it at `now_ms`, and return
-    /// it. Ports `refreshGitInfo` (synchronous, no in-flight de-dup). No
-    /// per-folder base-branch override — callers that have one (the app's
-    /// git-stat poll) call [`compute_git_info`] directly instead.
-    pub fn refresh(&mut self, dir: &str, now_ms: i64) -> GitInfo {
-        let info = compute_git_info(dir, None, None, now_ms);
-        self.insert(dir, info.clone(), now_ms);
-        info
-    }
-
-    /// Return fresh cached info if available, else recompute. Convenience wrapper.
-    pub fn get_or_refresh(&mut self, dir: &str, now_ms: i64) -> GitInfo {
-        if self.is_fresh(dir, now_ms) {
-            return self.get(dir);
-        }
-        self.refresh(dir, now_ms)
     }
 }
 
@@ -937,7 +916,7 @@ pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
     removed
 }
 
-/// origin/main, or origin/master if that's what the remote uses. Ports `resolveOriginMain`.
+/// origin/main, or origin/master if that's what the remote uses.
 fn resolve_origin_main(repo: &tt_git::repo::Repo) -> String {
     if repo.has_rev("origin/main") {
         "origin/main".to_string()
@@ -1150,16 +1129,35 @@ mod tests {
         open_repo(dir).map(|repo| other_worktrees(&repo, dir)).unwrap_or_default()
     }
 
+    /// A repo on `main` with one commit of `f.txt` holding `contents`. The
+    /// content is a parameter because the diff-counting tests care what the
+    /// baseline commit's last line looks like.
+    fn init_repo_with(repo: &std::path::Path, contents: &str) {
+        git(repo, &["init", "--quiet", "-b", "main"]);
+        git(repo, &["config", "user.email", "test@example.com"]);
+        git(repo, &["config", "user.name", "Test"]);
+        std::fs::write(repo.join("f.txt"), contents).unwrap();
+        git(repo, &["add", "f.txt"]);
+        git(repo, &["commit", "--quiet", "-m", "init"]);
+    }
+
+    /// The common case: one commit, `f.txt` = `"1"`.
+    fn init_repo(repo: &std::path::Path) {
+        init_repo_with(repo, "1");
+    }
+
+    /// [`init_repo`] plus a local `origin/main` remote-tracking ref, for the
+    /// tests whose stats are measured against the default base.
+    fn init_repo_with_origin(repo: &std::path::Path) {
+        init_repo(repo);
+        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+    }
+
     #[test]
     fn commit_stats_lists_ahead_commits_oldest_first_with_own_line_counts() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1\n").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo_with(repo, "1\n");
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
 
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
@@ -1214,25 +1212,11 @@ mod tests {
     }
 
     #[test]
-    fn get_or_refresh_returns_fresh_without_recompute() {
-        let mut cache = GitInfoCache::new();
-        let info = GitInfo { branch: "cached".into(), ..Default::default() };
-        cache.insert("/repo", info.clone(), 1000);
-        // Fresh → returns cached value without shelling out to git.
-        assert_eq!(cache.get_or_refresh("/repo", 2000), info);
-    }
-
-    #[test]
     fn git_common_dir_matches_across_worktrees_of_one_repo() {
         let root = tempfile::TempDir::new().unwrap();
         let main = root.path().join("main");
         std::fs::create_dir(&main).unwrap();
-        git(&main, &["init", "--quiet", "-b", "main"]);
-        git(&main, &["config", "user.email", "test@example.com"]);
-        git(&main, &["config", "user.name", "Test"]);
-        std::fs::write(main.join("f.txt"), "1").unwrap();
-        git(&main, &["add", "f.txt"]);
-        git(&main, &["commit", "--quiet", "-m", "init"]);
+        init_repo(&main);
         let linked = root.path().join("linked");
         git(
             &main,
@@ -1257,12 +1241,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         let main = root.path().join("main");
         std::fs::create_dir(&main).unwrap();
-        git(&main, &["init", "--quiet", "-b", "main"]);
-        git(&main, &["config", "user.email", "test@example.com"]);
-        git(&main, &["config", "user.name", "Test"]);
-        std::fs::write(main.join("f.txt"), "1").unwrap();
-        git(&main, &["add", "f.txt"]);
-        git(&main, &["commit", "--quiet", "-m", "init"]);
+        init_repo(&main);
 
         // A managed task: at `.claude/worktrees/<name>` with a `.tt-task` marker.
         let managed = main.join(".claude").join("worktrees").join("thing");
@@ -1324,12 +1303,7 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         let main = root.path().join("main");
         std::fs::create_dir(&main).unwrap();
-        git(&main, &["init", "--quiet", "-b", "main"]);
-        git(&main, &["config", "user.email", "test@example.com"]);
-        git(&main, &["config", "user.name", "Test"]);
-        std::fs::write(main.join("f.txt"), "1").unwrap();
-        git(&main, &["add", "f.txt"]);
-        git(&main, &["commit", "--quiet", "-m", "init"]);
+        init_repo(&main);
 
         let managed = main.join(".claude").join("worktrees").join("thing");
         std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
@@ -1387,12 +1361,7 @@ mod tests {
     fn resolve_base_ref_prefers_a_verified_override_over_the_main_default() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
         git(repo, &["branch", "develop"]);
 
         let dir = repo.to_str().unwrap();
@@ -1425,12 +1394,7 @@ mod tests {
     fn resolve_base_ref_uses_the_tasks_own_creation_base_over_main() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
         // A local "origin/develop" remote-tracking ref so resolve_base_ref
         // has something to prefer over the local "develop" branch.
         git(repo, &["branch", "develop"]);
@@ -1527,14 +1491,12 @@ mod tests {
     #[test]
     fn committed_and_uncommitted_diffs_are_disjoint() {
         let root = tempfile::TempDir::new().unwrap();
-        init_repo(root.path());
         let repo = root.path();
         let dir = repo.to_str().unwrap();
 
-        // `init_repo`'s file has no trailing newline and no origin ref; give
-        // the base both, so the numbers below are the ones `git diff` prints.
-        std::fs::write(repo.join("f.txt"), "1\n").unwrap();
-        git(repo, &["commit", "--quiet", "-am", "normalize"]);
+        // A trailing newline on the base file, so the numbers below are the
+        // ones `git diff` prints.
+        init_repo_with(repo, "1\n");
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
 
         // One commit ahead of the base: +2 committed.
@@ -1569,12 +1531,7 @@ mod tests {
     fn compute_reads_task_base_branch_from_marker() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         // A non-task checkout has no marker: no task base surfaced.
         let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
@@ -1600,12 +1557,7 @@ mod tests {
     fn compute_measures_stats_against_the_resolved_base_not_always_main() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         git(repo, &["checkout", "--quiet", "-b", "develop"]);
         std::fs::write(repo.join("f.txt"), "2").unwrap();
@@ -1643,12 +1595,7 @@ mod tests {
     fn commits_unlanded_reaches_zero_after_a_rebase_style_landing_even_though_ahead_does_not() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("f.txt"), "2").unwrap();
@@ -1688,13 +1635,7 @@ mod tests {
     fn commits_unlanded_counts_a_commit_whose_content_never_landed() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
-        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        init_repo_with_origin(repo);
 
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("f.txt"), "2").unwrap();
@@ -1742,13 +1683,7 @@ mod tests {
     fn unchanged_revision_reuses_the_landing_answer_and_a_moved_head_invalidates_it() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
-        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        init_repo_with_origin(repo);
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("f.txt"), "2").unwrap();
         git(repo, &["commit", "--quiet", "-am", "unlanded work"]);
@@ -1799,12 +1734,7 @@ mod tests {
         let repo = root.path().join("main");
         let worktree = root.path().join("task");
         std::fs::create_dir_all(&repo).unwrap();
-        git(&repo, &["init", "--quiet", "-b", "main"]);
-        git(&repo, &["config", "user.email", "test@example.com"]);
-        git(&repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(&repo, &["add", "f.txt"]);
-        git(&repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(&repo);
         git(&repo, &["worktree", "add", "-b", "task", worktree.to_str().unwrap()]);
 
         let resolved = resolve_git_dir_fs(&worktree).expect("real worktree must resolve");
@@ -1876,12 +1806,7 @@ mod tests {
         let repo = root.path().join("main");
         let worktree = root.path().join("task");
         std::fs::create_dir_all(&repo).unwrap();
-        git(&repo, &["init", "--quiet", "-b", "main"]);
-        git(&repo, &["config", "user.email", "test@example.com"]);
-        git(&repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(&repo, &["add", "f.txt"]);
-        git(&repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(&repo);
         git(&repo, &["worktree", "add", "-b", "task", worktree.to_str().unwrap()]);
 
         let main_info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
@@ -1905,12 +1830,7 @@ mod tests {
     fn unmoved_worktrees_and_config_reuse_structural_facts_and_a_new_worktree_invalidates_it() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         let dir = repo.to_str().unwrap();
         let first = compute_git_info(dir, None, None, NOW);
@@ -1952,21 +1872,14 @@ mod tests {
             reprobed.structural_key, first.structural_key,
             "a new worktree must invalidate the structural memo"
         );
-        // Proves a real re-derive ran rather than returning the poisoned
-        // value — `worktree_dirs` itself stays empty because this sibling is
-        // unmanaged and `list_other_worktrees` filters those out by design.
+        // Proves a real re-derive ran rather than returning the poisoned value.
         assert_ne!(reprobed.origin_url.as_deref(), Some("sentinel"));
-    }
-
-    /// Sets up a committed repo and returns its dir helper. Shared by the
-    /// revision-fast-path tests below.
-    fn init_repo(repo: &std::path::Path) {
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        // And the re-derive classified rather than filtered: `other_worktrees`
+        // lists the sibling in `worktree_dirs` *and* calls it unmanaged, so the
+        // `showUnmanagedWorktrees` toggle never has to invalidate this entry.
+        let sibling_dir = path_s(&std::fs::canonicalize(&sibling).unwrap());
+        assert!(reprobed.worktree_dirs.contains(&sibling_dir));
+        assert!(reprobed.unmanaged_worktree_dirs.contains(&sibling_dir));
     }
 
     /// The big win for #329: when no ref has moved since the last compute, the
@@ -2061,12 +1974,7 @@ mod tests {
     fn commits_unlanded_reaches_zero_after_a_squash_merge() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         // Two commits, so the squash genuinely collapses several into one.
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
@@ -2102,13 +2010,7 @@ mod tests {
     fn computing_git_info_leaves_no_objects_behind_in_the_repo() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
-        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        init_repo_with_origin(repo);
         // An unlanded branch: the path that probes every commit, so the one
         // that would litter the most.
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
@@ -2157,12 +2059,7 @@ mod tests {
     fn work_committed_after_a_squash_merge_counts_only_the_new_commit() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
-        git(repo, &["init", "--quiet", "-b", "main"]);
-        git(repo, &["config", "user.email", "test@example.com"]);
-        git(repo, &["config", "user.name", "Test"]);
-        std::fs::write(repo.join("f.txt"), "1").unwrap();
-        git(repo, &["add", "f.txt"]);
-        git(repo, &["commit", "--quiet", "-m", "init"]);
+        init_repo(repo);
 
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("a.txt"), "a").unwrap();

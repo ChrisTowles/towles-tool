@@ -981,9 +981,7 @@ impl Dispatcher {
     }
 }
 
-// ---------------------------------------------------------------------------
 // JSON-RPC / MCP response builders
-// ---------------------------------------------------------------------------
 
 fn now_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1400,7 +1398,7 @@ mod tests {
         );
     }
 
-    // --- preview_show ---
+    // preview_show
 
     /// Every `(path, title)` a fake preview host was handed.
     type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
@@ -1997,7 +1995,7 @@ mod tests {
         Ok(TaskDeletion::Deleted { name: name.to_string(), messages })
     }
 
-    // -- task_start ---------------------------------------------------------
+    // task_start
 
     /// Same contract as `task_delete`: without a host the tool must refuse
     /// rather than half-do the job. There is nothing useful it could do alone —

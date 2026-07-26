@@ -1,10 +1,7 @@
-//! Small text helpers. Ports slot-1 `runtime/text-utils.ts`.
+//! Small text helpers.
 
 /// Truncate a string to `max` characters, appending an ellipsis if clipped.
-///
-/// Ports the TS `truncate(s, max)`. The TS uses UTF-16 units (`String.length` /
-/// `slice`); this counts Unicode scalar values instead, which matches for BMP
-/// text and never splits a UTF-8 boundary. (Deviation noted in the port report.)
+/// Counts Unicode scalar values, so it never splits a UTF-8 boundary.
 pub fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() > max {
         let kept: String = s.chars().take(max.saturating_sub(1)).collect();

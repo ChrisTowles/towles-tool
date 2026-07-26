@@ -1,5 +1,4 @@
-//! Per-session agent-pushed metadata store. Ports slot-1
-//! `runtime/server/metadata-store.ts`.
+//! Per-session agent-pushed metadata store.
 //!
 //! Timestamps are injected (`now_ms`) rather than read from the clock, matching
 //! the `tt-claude-sessions` pattern.
@@ -39,7 +38,6 @@ pub struct LogInput {
 }
 
 /// In-memory per-session metadata (status / progress / capped log ring).
-/// Ports `SessionMetadataStore`.
 #[derive(Debug, Default)]
 pub struct SessionMetadataStore {
     store: HashMap<String, SessionMetadata>,
@@ -55,7 +53,6 @@ impl SessionMetadataStore {
     }
 
     /// Return the metadata for a session, or `None` when everything is empty.
-    /// Ports `get`.
     pub fn get(&self, session: &str) -> Option<&SessionMetadata> {
         let meta = self.store.get(session)?;
         if meta.status.is_none() && meta.progress.is_none() && meta.logs.is_empty() {
@@ -64,7 +61,7 @@ impl SessionMetadataStore {
         Some(meta)
     }
 
-    /// Set (or clear, with `None`) the status line. Ports `setStatus`.
+    /// Set (or clear, with `None`) the status line.
     pub fn set_status(&mut self, session: &str, status: Option<StatusInput>, now_ms: i64) {
         let Some(status) = status else {
             if let Some(meta) = self.store.get_mut(session) {
@@ -80,7 +77,7 @@ impl SessionMetadataStore {
         });
     }
 
-    /// Set (or clear, with `None`) the progress indicator. Ports `setProgress`.
+    /// Set (or clear, with `None`) the progress indicator.
     pub fn set_progress(&mut self, session: &str, progress: Option<ProgressInput>, now_ms: i64) {
         let Some(progress) = progress else {
             if let Some(meta) = self.store.get_mut(session) {
@@ -98,7 +95,7 @@ impl SessionMetadataStore {
         });
     }
 
-    /// Append a log line, trimming to the last [`MAX_LOGS`]. Ports `appendLog`.
+    /// Append a log line, trimming to the last [`MAX_LOGS`].
     pub fn append_log(&mut self, session: &str, entry: LogInput, now_ms: i64) {
         let meta = self.get_or_create(session);
         meta.logs.push(MetadataLogEntry {
@@ -113,14 +110,14 @@ impl SessionMetadataStore {
         }
     }
 
-    /// Clear a session's logs (status/progress untouched). Ports `clearLogs`.
+    /// Clear a session's logs (status/progress untouched).
     pub fn clear_logs(&mut self, session: &str) {
         if let Some(meta) = self.store.get_mut(session) {
             meta.logs.clear();
         }
     }
 
-    /// Drop metadata for sessions no longer present. Ports `pruneSessions`.
+    /// Drop metadata for sessions no longer present.
     pub fn prune_sessions(&mut self, valid_names: &HashSet<String>) {
         self.store.retain(|name, _| valid_names.contains(name));
     }

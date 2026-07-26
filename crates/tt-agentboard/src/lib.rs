@@ -1,25 +1,20 @@
-//! Tauri-free core engine for agentboard. Ports the *data engine* under slot-1
-//! `packages/agentboard/src` — the in-memory agent state machine, per-session
-//! metadata, custom session ordering, git-info, and port attribution.
+//! Tauri-free core engine for agentboard: the in-memory agent state machine,
+//! per-session metadata, git-info, and port attribution.
 //!
-//! This crate is deliberately transport-free (phase 1 of the agentboard port):
-//! **no tmux, no
-//! WebSocket/HTTP broadcast, no fs watchers, no poll loops, no UI**. Where the TS
-//! entangles state with transport (WS broadcasts, tmux calls, `setInterval`
-//! polls, `fs.watch`), only the pure logic is ported and the transport is left to
-//! the future Tauri layer.
+//! This crate is deliberately transport-free: **no tmux, no WebSocket/HTTP
+//! broadcast, no fs watchers, no poll loops, no UI**. Only the pure logic lives
+//! here; transport belongs to the Tauri layer.
 //!
-//! Time is injected: functions that read the clock in TS take an explicit
-//! `now_ms` parameter here (the same pattern as `tt-claude-sessions`), so tests stay
+//! Time is injected: functions that read the clock take an explicit `now_ms`
+//! parameter (the same pattern as `tt-claude-sessions`), so tests stay
 //! deterministic and never touch a real clock.
 //!
-//! Module map (mirrors the TS split):
-//! - [`types`] — shared serde types (SessionData, AgentEvent, ServerMessage,
-//!   ClientCommand, metadata, constants, palette). camelCase so snapshots match
-//!   the shapes the React client consumes.
+//! Module map:
+//! - [`types`] — shared serde types (SessionData, AgentEvent, metadata,
+//!   constants). camelCase so snapshots match the shapes the React client
+//!   consumes.
 //! - [`tracker`] — [`tracker::AgentTracker`], the agent-instance state machine.
 //! - [`metadata`] — [`metadata::SessionMetadataStore`], agent-pushed status/progress/log.
-//! - [`session_order`] — [`session_order::SessionOrder`], persisted custom ordering.
 //! - [`git_info`] — branch/worktree/diff-stat computation with a 5s cache.
 
 use thiserror::Error;
@@ -42,7 +37,6 @@ pub mod pty_status;
 pub mod repo_meta;
 pub mod repos;
 pub mod resume;
-pub mod session_order;
 pub mod sessions;
 pub mod task_removal;
 pub mod task_status;
@@ -53,9 +47,9 @@ pub mod watcher;
 pub mod watchers;
 pub mod windows;
 
-/// Errors surfaced by the agentboard core. Filesystem access (session-order
-/// persistence) is the only fallible surface; parse/subprocess failures are
-/// intentionally swallowed to empty/false, matching the TS behavior.
+/// Errors surfaced by the agentboard core. Filesystem access is the only
+/// fallible surface; parse/subprocess failures are intentionally swallowed to
+/// empty/false.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("IO error: {0}")]
@@ -81,11 +75,10 @@ pub use launch::{LaunchConfig, port_listening, read_launch_file};
 pub use notify::{NeedsYouEdge, NeedsYouWatch};
 pub use repo_meta::{HexColor, RepoAccentStyle, RepoMeta};
 pub use repos::{RepoEntry, default_repos_path, load_repos, remove_repo_persisted, repo_entries};
-pub use session_order::ReorderDelta;
 pub use sessions::SessionRecord;
 pub use types::{
-    AgentEvent, AgentEventDetails, AgentStatus, ClientCommand, FolderData, LoopInfo,
-    MetadataLogEntry, MetadataProgress, MetadataStatus, MetadataTone, NeedsYouReason, RepoData,
-    ServerMessage, SessionData, SessionMetadata, SubagentInfo, TmuxSessionData,
+    AgentEvent, AgentEventDetails, AgentStatus, FolderData, LoopInfo, MetadataProgress,
+    MetadataStatus, MetadataTone, NeedsYouReason, RepoData, SessionData, SessionMetadata,
+    SubagentInfo,
 };
 pub use windows::WindowsPayload;

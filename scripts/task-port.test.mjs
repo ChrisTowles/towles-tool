@@ -210,7 +210,7 @@ test("resolveWebdriverPort: TT_E2E_WEBDRIVER_PORT overrides the offset", () => {
   });
 });
 
-// --- .env layering (rendered by `tt task`) ---
+// .env layering (rendered by `tt task`)
 
 test("resolveDevPort: rendered .env pins the port when .env.local is absent", () => {
   withCleanEnv(["TT_DEV_PORT"], () => {
@@ -250,7 +250,7 @@ test("loadEnvFiles: keys merge across both files, first seen wins per key", () =
   });
 });
 
-// --- killPort ---
+// killPort
 
 async function findEphemeralFreePort() {
   const { createServer } = await import("node:net");

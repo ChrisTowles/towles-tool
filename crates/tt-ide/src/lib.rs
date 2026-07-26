@@ -407,7 +407,6 @@ fn tool_definitions() -> Value {
     ])
 }
 
-// ---------------------------------------------------------------------------
 // JSON-RPC response builders (same shapes as tt-mcp's).
 
 fn success_response(id: Value, result: Value) -> String {

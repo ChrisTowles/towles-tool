@@ -231,7 +231,7 @@ pub fn close_task_row(
     Ok(())
 }
 
-// --- Tauri commands ---
+// Tauri commands
 
 /// Pull the current snapshot (initial mount).
 #[tauri::command]
@@ -429,12 +429,10 @@ fn spawn_gh_status_sync(old_status: &str, new_status: &str, issues: &[tt_store::
     });
 }
 
-/// Run `gh issue close --repo <repo> <number>`.
 fn close_gh_issue(repo: &str, number: i64) -> Result<(), String> {
     run_gh_issue_state_change(repo, number, "close")
 }
 
-/// Run `gh issue reopen --repo <repo> <number>`.
 fn reopen_gh_issue(repo: &str, number: i64) -> Result<(), String> {
     run_gh_issue_state_change(repo, number, "reopen")
 }

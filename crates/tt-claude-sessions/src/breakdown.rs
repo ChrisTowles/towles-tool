@@ -16,7 +16,6 @@ use crate::tools::extract_tool_data;
 use crate::types::ToolData;
 use tt_claude_code::TranscriptEntry;
 
-/// Find the transcript path for a session ID under the projects dir.
 pub fn find_session_path(projects_dir: &Path, session_id: &str) -> Result<Option<PathBuf>> {
     for project_entry in std::fs::read_dir(projects_dir)? {
         let project_path = project_entry?.path();
@@ -54,7 +53,6 @@ pub struct SessionBreakdown {
     pub turns: Vec<TurnBreakdown>,
 }
 
-/// Build the breakdown from parsed transcript entries.
 pub fn build_session_breakdown(entries: &[TranscriptEntry]) -> SessionBreakdown {
     let mut turns = Vec::new();
     let mut turn_number = 0;

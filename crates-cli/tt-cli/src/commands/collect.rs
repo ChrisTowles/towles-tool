@@ -212,9 +212,7 @@ fn print_summaries(summaries: &[CollectSummary]) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // `collect status`
-// ---------------------------------------------------------------------------
 
 /// One collector's health line for `collect status`. `ran_at`/`age_ms`/`ok`/
 /// `message` are all `None` when the collector has never run.

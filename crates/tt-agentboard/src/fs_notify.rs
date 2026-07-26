@@ -1,8 +1,7 @@
 //! Optional filesystem-change accelerant. Isolated from the deterministic scan
 //! core: polling (the bridge calling [`crate::watcher::AgentWatcher::scan`]) is
 //! the reliable path; this just lets the bridge trigger an *eager* rescan when a
-//! journal file changes, cutting latency. Ports the low-latency-supplement role
-//! of the TS `setupWatchers`/`watchDir` fs-watches (§1).
+//! journal file changes, cutting latency.
 //!
 //! Events are debounced: a streaming agent appends its JSONL several times a
 //! second (plus subagent/meta writes), and firing `on_change` per inotify event

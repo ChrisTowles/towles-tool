@@ -1,6 +1,4 @@
-//! Claude Code agent watcher — hybrid edition (phase T7 of the agentboard
-//! port; rewrites the journal-first port of slot-1
-//! `runtime/agents/watchers/claude-code.ts`).
+//! Claude Code agent watcher — hybrid edition.
 //!
 //! **Discovery, liveness, and status come from `claude agents --all --json`**
 //! ([`crate::claude_cli`]) — the supported CLI surface — instead of scanning
@@ -20,16 +18,14 @@
 //!    that the agent is still working (`refine_busy`); `idle` takes the
 //!    journal's view when it is complete/waiting (preserving the unseen-✓
 //!    flow), else stays idle (`refine_idle`);
-//! 4. enrich from the journal tail (offset at the last newline boundary —
-//!    adopted fix #1 — with shrink-reset);
+//! 4. enrich from the journal tail (offset at the last newline boundary, with
+//!    shrink-reset);
 //! 5. sessions that disappeared from the CLI get one final journal read and a
 //!    terminal emit: done if the journal completed, interrupted if it still
 //!    looked mid-run.
 //!
-//! What this drops vs. the journal-first watcher (deliberate): sessions that
-//! exited before the server started never appear (the CLI only lists live
-//! processes), and the `~/.claude/sessions/<pid>.json` liveness files are no
-//! longer read at all.
+//! Deliberate limit of the CLI-first design: sessions that exited before the
+//! server started never appear, because the CLI only lists live processes.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -62,12 +58,12 @@ pub fn parse_timestamp_ms(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())
 }
 
-// --- Pure journal derivation (§3 status table, kept for enrichment) ---
+// Pure journal derivation, kept for enrichment.
 
-/// Derive a status from one entry, or `None` (ignored) — the §3 decision table.
-/// With CLI-driven liveness this only informs the `idle` refinement and the
-/// exit-time terminal emit.
-pub fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
+/// Derive a status from one entry, or `None` (ignored). With CLI-driven
+/// liveness this only informs the `idle` refinement and the exit-time
+/// terminal emit.
+fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
     let msg = entry.message.as_ref()?;
     let role = msg.role.as_deref().filter(|r| !r.is_empty())?;
 
@@ -87,8 +83,8 @@ pub fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
 }
 
 /// The thread name from the first qualifying user message (skips system-like
-/// `<…>`/`{…}` first lines). Ports `extractThreadName`.
-pub fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
+/// `<…>`/`{…}` first lines).
+fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
     let msg = entry.message.as_ref()?;
     if msg.role.as_deref() != Some("user") {
         return None;
@@ -108,7 +104,7 @@ pub fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
 /// literal `-`, a `.`, and a `_` at the same position are indistinguishable
 /// once encoded), which is exactly why [`find_journal`] still falls back to
 /// probing every project dir rather than trusting this guess blindly.
-pub fn encode_project_dir_name(cwd: &str) -> String {
+pub(crate) fn encode_project_dir_name(cwd: &str) -> String {
     cwd.chars().map(|c| if matches!(c, '/' | '.' | '_') { '-' } else { c }).collect()
 }
 
@@ -207,8 +203,8 @@ fn read_window(path: &Path, start: u64, max: u64) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-/// The most recent non-AskUserQuestion tool name. Ports `extractLastTool`.
-pub fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
+/// The most recent non-AskUserQuestion tool name.
+fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
     for entry in entries.iter().rev() {
         let Some(msg) = &entry.message else { continue };
         if msg.role.as_deref() != Some("assistant") {
@@ -228,8 +224,8 @@ pub fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
     None
 }
 
-/// `/loop` state from the most recent `ScheduleWakeup` tool call. Ports `extractLoopState`.
-pub fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
+/// `/loop` state from the most recent `ScheduleWakeup` tool call.
+fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
     for entry in entries.iter().rev() {
         let Some(msg) = &entry.message else { continue };
         if msg.role.as_deref() != Some("assistant") {
@@ -256,8 +252,8 @@ pub fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
     None
 }
 
-/// Order-independent change signature for a set of sub-agents. Ports `subagentSignature`.
-pub fn subagent_signature(subagents: &[SubagentInfo]) -> String {
+/// Order-independent change signature for a set of sub-agents.
+fn subagent_signature(subagents: &[SubagentInfo]) -> String {
     let mut sigs: Vec<String> = subagents
         .iter()
         .map(|s| {
@@ -281,8 +277,8 @@ struct SubagentMeta {
 }
 
 /// Active sub-agents in `<session>/subagents/` — those modified within the 2-min
-/// window, most-recent first. Ports `readActiveSubagents`.
-pub fn read_active_subagents(subagents_dir: &Path, now_ms: i64) -> Vec<SubagentInfo> {
+/// window, most-recent first.
+fn read_active_subagents(subagents_dir: &Path, now_ms: i64) -> Vec<SubagentInfo> {
     let Ok(entries) = std::fs::read_dir(subagents_dir) else {
         return Vec::new();
     };
@@ -318,7 +314,7 @@ fn meta_path(jsonl_path: &Path) -> Option<PathBuf> {
 }
 
 /// Byte length up to and including the last newline (0 if none) — the offset the
-/// next read resumes from (adopted fix #1: never consume a partial trailing line).
+/// next read resumes from, so a partial trailing line is never consumed.
 fn consumed_len(bytes: &[u8]) -> usize {
     match bytes.iter().rposition(|&b| b == b'\n') {
         Some(i) => i + 1,
@@ -334,7 +330,7 @@ fn mtime_ms(path: &Path) -> Option<i64> {
         .map(|d| d.as_millis() as i64)
 }
 
-// --- Details assembly (§6, unchanged) ---
+// Details assembly.
 
 /// Claude Code labels entries it generated itself — an interrupt notice, for
 /// one — with a bracketed placeholder model id (`<synthetic>`) and a fully
@@ -390,7 +386,7 @@ fn build_details(
 /// Refine a CLI `idle` into the journal's view when that view is one the UI
 /// treats specially: a completed turn stays `complete` (unseen-✓ flow) and
 /// an open question stays `waiting`; anything else is plain `idle`.
-pub fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
+fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
     match journal_status {
         AgentStatus::Complete => AgentStatus::Complete,
         AgentStatus::Waiting => AgentStatus::Waiting,
@@ -415,7 +411,7 @@ const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
 /// forever. A session whose journal still shows an in-flight tool call or an
 /// open question is untouched here — only a journal that already recorded a
 /// plain, no-tool-call final response, with nothing appended since, counts.
-pub fn refine_busy(
+fn refine_busy(
     cli_status: AgentStatus,
     journal_status: AgentStatus,
     journal_silence_ms: i64,
@@ -429,14 +425,14 @@ pub fn refine_busy(
 
 /// Terminal status when a session disappears from the CLI list: `complete` if
 /// its journal finished, `interrupted` if it still looked mid-run.
-pub fn exit_status(journal_status: AgentStatus) -> AgentStatus {
+fn exit_status(journal_status: AgentStatus) -> AgentStatus {
     match journal_status {
         AgentStatus::Complete | AgentStatus::Waiting => AgentStatus::Complete,
         _ => AgentStatus::Interrupted,
     }
 }
 
-// --- Per-session journal enrichment state ---
+// Per-session journal enrichment state.
 
 #[derive(Debug, Clone)]
 struct SessionState {
@@ -448,7 +444,7 @@ struct SessionState {
     /// (feeds `refine_busy`'s staleness check). `0` until the journal is
     /// first read.
     journal_updated_at: i64,
-    /// Next read offset = last-newline byte boundary (adopted fix #1).
+    /// Next read offset = last-newline byte boundary.
     file_offset: u64,
     /// `(dev, ino)` of the journal the offset belongs to. A same-path
     /// replacement that GREW the file passes the shrink check but invalidates
@@ -479,9 +475,8 @@ struct SessionState {
     subagents: Vec<SubagentInfo>,
     subagent_sig: String,
     loop_state: Option<LoopInfo>,
-    /// Signature of the last emitted details (usage/subagents/loop) —
-    /// part of the emit gate (adopted fix #2: usage deltas broadcast
-    /// without a status change).
+    /// Signature of the last emitted details (usage/subagents/loop) — part of
+    /// the emit gate, so usage deltas broadcast without a status change.
     last_emit_sig: Option<String>,
     /// CLI fields carried for emits.
     session: Option<String>,
@@ -554,7 +549,7 @@ impl SessionState {
     }
 }
 
-// --- Watcher ---
+// Watcher.
 
 /// The hybrid claude-code watcher: CLI discovery, journal enrichment.
 pub struct ClaudeCodeAgentWatcher {
@@ -626,12 +621,12 @@ impl ClaudeCodeAgentWatcher {
         };
         let size = meta.len();
         let file_id = metadata_file_id(&meta);
-        // Adopted fix #1: shrunk file → reset to 0 and re-derive from scratch
-        // (all journal-derived state is stale, not just the offset). A
-        // same-path replacement that grew past the old offset is the same
-        // situation with a different symptom, caught by the inode change —
-        // except when the recreated file reuses the freed inode (ext4 does),
-        // which the head comparison catches (see `SessionState::head`).
+        // Shrunk file → reset to 0 and re-derive from scratch (all journal-
+        // derived state is stale, not just the offset). A same-path replacement
+        // that grew past the old offset is the same situation with a different
+        // symptom, caught by the inode change — except when the recreated file
+        // reuses the freed inode (ext4 does), which the head comparison catches
+        // (see `SessionState::head`).
         let head_changed = !state.head.is_empty()
             && state.file_offset > 0
             && read_head(&path, state.head.len()).is_some_and(|h| h != state.head);
@@ -715,17 +710,12 @@ impl ClaudeCodeAgentWatcher {
             // (`proj-44`); background agents get descriptive CLI names.
             thread_name: state.thread_name.clone().or_else(|| state.cli_name.clone()),
             unseen: None,
-            pane_id: None,
             details: state.details(),
         });
     }
 }
 
 impl AgentWatcher for ClaudeCodeAgentWatcher {
-    fn name(&self) -> &str {
-        NAME
-    }
-
     fn scan(&mut self, ctx: &mut dyn WatcherContext, now_ms: i64) {
         let agents = (self.agents_source)();
         let live_ids: HashSet<String> = agents.iter().map(|a| a.session_id.clone()).collect();
@@ -763,7 +753,7 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             };
 
             // Emit gate: status change, or a details change (sub-agent set,
-            // loop wake, usage — adopted fix #2) captured as a signature.
+            // loop wake, usage) captured as a signature.
             let status_changed = state.emitted_status != Some(status);
             let sig = format!(
                 "{}|{:?}|{:?}|{:?}|{:?}",
@@ -1107,7 +1097,7 @@ mod tests {
         f.watcher.scan(&mut ctx, 3_000);
         assert_eq!(ctx.events.len(), 1, "steady state must not re-emit");
 
-        // Usage growth without a status change re-emits (adopted fix #2).
+        // Usage growth without a status change re-emits.
         let more = r#"{"timestamp":"2026-07-03T10:00:20.000Z","message":{"role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","name":"Read"}],"usage":{"input_tokens":900,"output_tokens":50}}}"#;
         let mut text = std::fs::read_to_string(&path).unwrap();
         text.push_str(more);

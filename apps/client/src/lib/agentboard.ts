@@ -373,7 +373,7 @@ export function windowColor(wins: AgWindow[], windowId: string): string {
   return i < 0 ? "bg-muted-foreground/40" : WINDOW_COLORS[i % WINDOW_COLORS.length];
 }
 
-// --- Folder panes (diff, files) ---
+// Folder panes (diff, files)
 // A window's `panes` normally hold session ids (`s<16 hex>` from the backend's
 // `gen_id`). A folder's diff and files views ride the same tiling as sentinel
 // pane ids (`~diff:<folderDir>` / `~files:<folderDir>` — `~` can never open a
@@ -502,8 +502,8 @@ export function paneSession(paneId: string): string | null {
   return exitPaneSession(paneId) ?? paneId;
 }
 
-// --- Pure window-layout reducers (unit-tested; the screen wraps them in
-// `updateWins` for persistence) ---
+// Pure window-layout reducers (unit-tested; the screen wraps them in
+// `updateWins` for persistence)
 
 /** Last id handed out, so a same-millisecond mint can't repeat one. */
 let lastWindowSeq = 0;
@@ -1270,7 +1270,7 @@ export function fmtElapsed(ms: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-// --- Cache & context health (Tier 3) ---
+// Cache & context health (Tier 3)
 
 /** Percent of the context window used (0 when unknown). */
 export function ctxPct(d: AgentEventDetails | null | undefined): number {
@@ -1498,7 +1498,7 @@ export function statusColor(status: AgentStatus): string {
   }
 }
 
-// --- Session PTY writes ---
+// Session PTY writes
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1855,7 +1855,7 @@ export function onAgentboardNavRequest(cb: (req: AgentboardNav) => void): () => 
   return () => navListeners.delete(cb);
 }
 
-// --- Session lifecycle + layout shared types ---
+// Session lifecycle + layout shared types
 
 /** The lifecycle actions a session row can trigger. All are PTY writes — the
  * agent is whatever runs in the real shell, never a re-rendered proxy. */

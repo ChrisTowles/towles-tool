@@ -420,7 +420,6 @@ mod tests {
             thread_id: Some(thread.into()),
             thread_name: None,
             unseen: None,
-            pane_id: None,
             details: None,
         }
     }
@@ -434,6 +433,44 @@ mod tests {
 
     fn no_attr(_: &AgentEvent) -> Option<String> {
         None
+    }
+
+    /// [`assemble_state`] with the arguments no test below varies: an empty
+    /// metadata and folder-meta store, and the fixed theme/editor/compact/ts
+    /// tail. Only the stores a test actually exercises stay in the call.
+    fn assemble_with(
+        entries: &[RepoEntry],
+        git: &HashMap<String, GitInfo>,
+        tracker: &AgentTracker,
+        sessions: &SessionStore,
+        attribute: &dyn Fn(&AgentEvent) -> Option<String>,
+        session_agents: &HashMap<String, AgentEvent>,
+    ) -> StatePayload {
+        assemble_state(
+            entries,
+            git,
+            tracker,
+            &SessionMetadataStore::new(),
+            sessions,
+            &FolderMetaStore::default(),
+            attribute,
+            session_agents,
+            None,
+            "code",
+            30,
+            0,
+        )
+    }
+
+    /// [`assemble_with`] with no supplemental per-session agents.
+    fn assemble(
+        entries: &[RepoEntry],
+        git: &HashMap<String, GitInfo>,
+        tracker: &AgentTracker,
+        sessions: &SessionStore,
+        attribute: &dyn Fn(&AgentEvent) -> Option<String>,
+    ) -> StatePayload {
+        assemble_with(entries, git, tracker, sessions, attribute, &HashMap::new())
     }
 
     #[test]
@@ -494,7 +531,6 @@ mod tests {
     #[test]
     fn missing_dir_flag_propagates_from_git_info_to_folder() {
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         store.ensure_default("/r/beta", 1);
@@ -502,20 +538,7 @@ mod tests {
         let mut git = HashMap::new();
         git.insert("/r/alpha".to_string(), GitInfo { dir_missing: true, ..Default::default() });
         git.insert("/r/beta".to_string(), GitInfo { branch: "main".into(), ..Default::default() });
-        let payload = assemble_state(
-            &entries(),
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries(), &git, &tracker, &store, &no_attr);
         let alpha = payload.repos.iter().flat_map(|r| &r.folders).find(|f| f.dir == "/r/alpha");
         let beta = payload.repos.iter().flat_map(|r| &r.folders).find(|f| f.dir == "/r/beta");
         assert!(alpha.unwrap().dir_missing);
@@ -525,7 +548,6 @@ mod tests {
     #[test]
     fn worktree_siblings_nest_by_common_dir_with_primary_leading() {
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/demo", 1);
         store.ensure_default("/r/demo/.claude/worktrees/apple", 1);
@@ -545,20 +567,7 @@ mod tests {
             RepoEntry { name: "apple".into(), dir: "/r/demo/.claude/worktrees/apple".into() },
             RepoEntry { name: "demo".into(), dir: "/r/demo".into() },
         ];
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         assert_eq!(payload.repos.len(), 1, "worktree siblings nest into one row by common_dir");
         let dirs: Vec<&str> = payload.repos[0].folders.iter().map(|f| f.dir.as_str()).collect();
         assert_eq!(dirs, vec!["/r/demo", "/r/demo/.claude/worktrees/apple"]);
@@ -575,7 +584,6 @@ mod tests {
         // here, so `name` also has to come from the primary's own entry, not
         // whichever task seeded the row.
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/towles-tool", 1);
         store.ensure_default("/r/towles-tool/.claude/worktrees/aardvark-task", 1);
@@ -605,20 +613,7 @@ mod tests {
             },
             RepoEntry { name: "towles-tool".into(), dir: "/r/towles-tool".into() },
         ];
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         assert_eq!(payload.repos.len(), 1);
         assert_eq!(payload.repos[0].key, "path:/r/towles-tool", "key anchors to the primary");
         assert_eq!(payload.repos[0].name, "towles-tool", "name anchors to the primary");
@@ -631,7 +626,6 @@ mod tests {
         // structural git fact (`common_dir`), not a function of how each
         // checkout got onto the rail, so they must still merge into one row.
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/task-0", 1);
         store.ensure_default("/r/task-1", 1);
@@ -656,20 +650,7 @@ mod tests {
             RepoEntry { name: "task-0".into(), dir: "/r/task-0".into() },
             RepoEntry { name: "task-1".into(), dir: "/r/task-1".into() },
         ];
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         assert_eq!(payload.repos.len(), 1);
         assert_eq!(payload.repos[0].folders.len(), 2);
     }
@@ -681,7 +662,6 @@ mod tests {
         // `common_dir`) does. Regression test for the bug `common_dir`
         // grouping replaced origin-URL grouping to fix.
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/clone-a", 1);
         store.ensure_default("/r/clone-b", 1);
@@ -706,20 +686,7 @@ mod tests {
             RepoEntry { name: "clone-a".into(), dir: "/r/clone-a".into() },
             RepoEntry { name: "clone-b".into(), dir: "/r/clone-b".into() },
         ];
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         assert_eq!(payload.repos.len(), 2);
     }
 
@@ -729,11 +696,8 @@ mod tests {
         SessionData {
             id: "s".into(),
             name: "shell 1".into(),
-            created_at: 0,
             live,
-            shell_kind: None,
             unseen,
-            needs_since_ms: None,
             agent_state: status.map(|status| AgentEvent {
                 agent: "claude-code".into(),
                 session: "s".into(),
@@ -742,12 +706,9 @@ mod tests {
                 thread_id: None,
                 thread_name: None,
                 unseen: Some(unseen),
-                pane_id: None,
                 details: None,
             }),
-            agents: Vec::new(),
-            purpose: None,
-            port_drift: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -775,25 +736,11 @@ mod tests {
         // needs=0 until the app stamps shell liveness and recomputes.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         assert_eq!(payload.repos[0].folders[0].needs, 0);
         assert_eq!(payload.repos[0].needs, 0);
     }
@@ -802,25 +749,11 @@ mod tests {
     fn recompute_needs_bubbles_folder_to_repo() {
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
-        let mut payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let mut payload = assemble(&entries, &git, &tracker, &store, &no_attr);
         // Simulate the app stamping the session's shell as live, then recompute.
         let mut since = NeedsSince::new();
         payload.repos[0].folders[0].sessions[0].live = true;
@@ -841,27 +774,11 @@ mod tests {
     fn needs_since_stamps_on_entry_holds_and_restamps_on_reentry() {
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
-        let build = |tracker: &AgentTracker| {
-            assemble_state(
-                &entries,
-                &git,
-                tracker,
-                &metadata,
-                &store,
-                &FolderMetaStore::default(),
-                &no_attr,
-                &HashMap::new(),
-                None,
-                "code",
-                30,
-                0,
-            )
-        };
+        let build = |tracker: &AgentTracker| assemble(&entries, &git, tracker, &store, &no_attr);
         let mut since = NeedsSince::new();
 
         // Enters needs-you at t=100: stamped 100.
@@ -895,7 +812,6 @@ mod tests {
     fn attribute_routes_agents_to_matching_session() {
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         let s1 = store.add("/r/alpha", Some("one"), 1);
         let s2 = store.add("/r/alpha", Some("two"), 2);
@@ -904,20 +820,7 @@ mod tests {
         // Attribute the (only) busy agent to session two.
         let target = s2.id.clone();
         let attribute = move |_: &AgentEvent| Some(target.clone());
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &attribute,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &attribute);
         let folder = &payload.repos[0].folders[0];
         let one = folder.sessions.iter().find(|s| s.id == s1.id).unwrap();
         let two = folder.sessions.iter().find(|s| s.id == s2.id).unwrap();
@@ -934,26 +837,12 @@ mod tests {
         // leaked folder-level state here).
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.add("/r/alpha", Some("one"), 1);
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
         let attribute = |_: &AgentEvent| Some("someone-elses-session".to_string());
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &attribute,
-            &HashMap::new(),
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble(&entries, &git, &tracker, &store, &attribute);
         let folder = &payload.repos[0].folders[0];
         assert!(folder.sessions[0].agent_state.is_none());
         assert!(folder.sessions[0].agents.is_empty());
@@ -963,7 +852,6 @@ mod tests {
     fn session_agents_supplement_idle_sessions_only() {
         // No tracker agent: the /proc-detected session agent fills the row.
         let tracker = AgentTracker::new();
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         let rec = store.add("/r/alpha", Some("shell 1"), 1);
         let git = HashMap::new();
@@ -980,24 +868,10 @@ mod tests {
                 thread_id: None,
                 thread_name: Some("uninstall gitbutler".into()),
                 unseen: None,
-                pane_id: None,
                 details: None,
             },
         );
-        let payload = assemble_state(
-            &entries,
-            &git,
-            &tracker,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &supplemental,
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload = assemble_with(&entries, &git, &tracker, &store, &no_attr, &supplemental);
         let s = &payload.repos[0].folders[0].sessions[0];
         assert_eq!(s.agent_state.as_ref().unwrap().status, AgentStatus::Busy);
         assert_eq!(
@@ -1008,20 +882,7 @@ mod tests {
         // With a real tracker agent, the CLI/tracker state wins over the supplement.
         let mut tracker2 = AgentTracker::new();
         tracker2.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
-        let payload2 = assemble_state(
-            &entries,
-            &git,
-            &tracker2,
-            &metadata,
-            &store,
-            &FolderMetaStore::default(),
-            &no_attr,
-            &supplemental,
-            None,
-            "code",
-            30,
-            0,
-        );
+        let payload2 = assemble_with(&entries, &git, &tracker2, &store, &no_attr, &supplemental);
         let s2 = &payload2.repos[0].folders[0].sessions[0];
         assert_eq!(s2.agent_state.as_ref().unwrap().status, AgentStatus::Waiting);
     }

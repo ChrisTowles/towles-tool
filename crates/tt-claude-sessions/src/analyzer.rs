@@ -234,7 +234,6 @@ pub fn get_primary_model(
     }
 }
 
-/// Get a short model name from a full model string.
 pub fn get_model_name(model: Option<&str>) -> String {
     let model = match model {
         Some(m) if !m.is_empty() => m,

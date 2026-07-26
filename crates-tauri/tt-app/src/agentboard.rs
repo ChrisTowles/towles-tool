@@ -12,7 +12,6 @@ use tokio::sync::Notify;
 use tt_agentboard::StatePayload;
 use tt_agentboard::engine::parse_tone;
 use tt_agentboard::metadata::{LogInput, ProgressInput, StatusInput};
-use tt_agentboard::session_order::ReorderDelta;
 
 pub use tt_agentboard::engine::{Engine, now_ms};
 
@@ -206,7 +205,7 @@ fn needs_you_body(edge: &tt_agentboard::NeedsYouEdge) -> String {
     format!("{} {}", edge.session, what)
 }
 
-// --- Tauri commands ---
+// Tauri commands.
 
 /// Pull the current snapshot (initial mount).
 #[tauri::command]
@@ -248,13 +247,6 @@ pub fn ab_dismiss_agent(
     if changed {
         state.emit.notify_one();
     }
-}
-
-#[tauri::command]
-pub fn ab_reorder_session(state: State<Ab>, name: String, delta: ReorderDelta) {
-    state.engine.lock().unwrap().reorder(&name, delta);
-    tracing::info!(%name, delta = ?delta, "session.reordered");
-    state.emit.notify_one();
 }
 
 #[tauri::command]
@@ -782,9 +774,8 @@ pub async fn ab_get_commit_stats(
     .unwrap_or_default()
 }
 
-/// Open a session's repo directory in the preferred editor. Ports the TS
-/// open-in-editor (spawns `<preferredEditor> <dir>`; the TS TMUX-env stripping is
-/// desktop-irrelevant and skipped).
+/// Open a session's repo directory in the preferred editor — spawns
+/// `<preferredEditor> <dir>`.
 #[tauri::command]
 pub fn ab_open_in_editor(state: State<Ab>, name: String) -> Result<(), String> {
     let (editor, dir) = {
