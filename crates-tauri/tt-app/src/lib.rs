@@ -32,6 +32,7 @@ mod task_explorer;
 mod telemetry;
 mod terminal;
 mod update;
+mod wdio_window;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -682,6 +683,7 @@ pub fn run() {
             tt_pane::commands::pane_set_rect,
             tt_pane::commands::pane_set_visible,
             tt_pane::commands::pane_detach,
+            wdio_window::wdio_place_on_test_monitor,
             update::check_for_update,
             task_explorer::task_explorer_snapshot,
             agentboard::ab_get_state,

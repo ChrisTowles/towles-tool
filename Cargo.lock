@@ -8868,6 +8868,7 @@ dependencies = [
  "chrono",
  "dirs",
  "futures-util",
+ "gtk",
  "http-body-util",
  "hyper",
  "hyper-util",

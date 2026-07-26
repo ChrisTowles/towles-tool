@@ -204,6 +204,17 @@ pub struct AgentboardSettings {
     /// stays clean for the TS CLI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
+
+    /// Render the native Bevy pane (`tt-jarvis`) in the Agentboard rail.
+    /// `None` = the built-in default (off): it's a proof-of-concept, and an
+    /// attached pane holds a Wayland subsurface plus a vsync-paced render
+    /// thread for the app's whole life, so it stays opt-in. Rust never
+    /// interprets this value — the frontend mounts or unmounts `NativePane`,
+    /// which is what actually starts and stops that thread. Only written once
+    /// the user toggles it, so the shared settings file stays clean for the TS
+    /// CLI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jarvis_pane: Option<bool>,
 }
 
 /// Built-in default for [`AgentboardSettings::compact_recommend_percent`].
@@ -212,6 +223,10 @@ pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 /// Built-in default for [`AgentboardSettings::show_unmanaged_worktrees`]: off,
 /// so only the main checkout and `tt task` worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
+
+/// Built-in default for [`AgentboardSettings::jarvis_pane`]: off, so the
+/// proof-of-concept native pane costs nothing until it's asked for.
+pub const DEFAULT_JARVIS_PANE: bool = false;
 
 /// Built-in default for [`AgentboardSettings::notify`]: notifications on.
 pub const DEFAULT_NOTIFY: bool = true;

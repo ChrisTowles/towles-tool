@@ -83,6 +83,12 @@ trash = "5.2.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.1", features = ["v2_40"] }
 cairo-rs = "0.18"
+# Choosing which monitor the automated window fullscreens onto (src/
+# wdio_window.rs) — a Wayland client cannot position its own toplevel, and
+# `fullscreen_on_monitor` is GTK-only. Same 0.18 pin as tt-pane, for the same
+# reason: it must be the gtk that `tauri` links, since `gtk_window()` hands us
+# its types.
+gtk = "0.18"
 
 # Native NSEvent interception (src/macos_keys.rs): macOS's Cocoa text-editing
 # key bindings intercept some Ctrl chords (Control+C -> insertNewline:) before

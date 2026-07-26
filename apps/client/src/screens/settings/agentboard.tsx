@@ -53,6 +53,7 @@ import {
   type NotifyLevel,
   type UserSettings,
 } from "@/lib/settings";
+import { DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { cn } from "@/lib/utils";
 import { PromptImproversEditor } from "./collectors";
@@ -212,6 +213,23 @@ export function agentboardSections(
               update((s) => ({
                 ...s,
                 agentboard: { ...s.agentboard, copyOnSelect: v },
+              }))
+            }
+          />
+        ),
+      },
+      {
+        label: "Jarvis pane",
+        keywords: ["jarvis", "bevy", "native", "pane", "3d", "render", "gpu", "rail"],
+        node: (
+          <ToggleRow
+            label="Jarvis pane"
+            description="Render the native Bevy pane at the bottom of the Agentboard rail. A proof-of-concept, and Linux/Wayland only — off, it isn't drawn at all, so it costs no GPU."
+            checked={settings.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE}
+            onCheckedChange={(v) =>
+              update((s) => ({
+                ...s,
+                agentboard: { ...s.agentboard, jarvisPane: v },
               }))
             }
           />

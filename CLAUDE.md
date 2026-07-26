@@ -65,7 +65,13 @@ the mock dev server:
   `status`, `invoke <cmd> [json]` (real IPC), `eval "<js>"`, `shot <name>` (→
   `e2e/screenshots/<name>.png`, which you can `Read`), `click "<css>"`,
   `type "<css>" <text>`, `url <path>`, `console [--clear]`. This is the way to
-  visually/behaviorally debug a change and see the result. **A screenshot that
+  visually/behaviorally debug a change and see the result. **`shot` is blind to
+  the native pane**: a `tt-pane` surface composites *above* the webview, so it's
+  absent from a WebDriver capture however healthy it is. `winshot <name>`
+  captures at the compositor level instead — it fullscreens the window on the
+  test monitor first, which both identifies it among several tasks' identical
+  windows and forces it unoccluded (no frame callbacks otherwise) — and
+  `unplace` gives the monitor back. **A screenshot that
   looks right is not proof the render was clean** — React reports invalid
   markup as a runtime console error that nothing else here can see (no linter,
   no component tests), so every verb prints a `⚠ N console error(s)` summary
@@ -552,6 +558,14 @@ Cargo workspace + npm workspace (`apps/client` only):
     than DOM. Native rather than WebAssembly or streamed frames because only a
     native surface can host Solari's ray-tracing pipeline (see
     [README.md](README.md)).
+
+    **Opt-in, off by default** while it's a proof-of-concept
+    (`agentboard.jarvisPane`; the cube button in the rail header, or Settings →
+    Agentboard). Off means the frontend doesn't render `NativePane` at all
+    rather than passing `visible={false}`: unmounting is what runs
+    `pane_detach`, and only that drops the subsurface and joins the render
+    thread. A hidden-but-attached pane keeps a vsync-paced Bevy loop alive for
+    the app's whole life, so hiding is not turning it off.
 
     Bevy comes from **`slyedoc/bevy@solari-rt-pipeline` (0.20.0-dev)**. Keep it
     there — tracking that fork is the goal, and `Cargo.lock` pins the revision
