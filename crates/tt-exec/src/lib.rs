@@ -3,6 +3,12 @@
 //! Ports `src/lib/git/exec.ts` and the `gh` JSON helper from the TypeScript CLI:
 //! [`run`] captures stdout/stderr/exit-code without failing, [`run_ok`] fails on a
 //! non-zero exit, and [`gh_json`] shells out to `gh` and deserializes its JSON stdout.
+//!
+//! [`claude`] is the third tool-shaped helper: the one way this workspace asks
+//! `claude -p` for a machine-readable answer, via the CLI's own structured-output
+//! guarantee.
+
+pub mod claude;
 
 use serde::de::DeserializeOwned;
 use std::process::Command;

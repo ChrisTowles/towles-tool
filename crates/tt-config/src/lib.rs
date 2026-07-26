@@ -459,10 +459,12 @@ impl Default for CalendarCollector {
 /// escape hatch, and the reason the prompt lives in settings rather than in a
 /// compiled-in constant.
 ///
-/// The JSON contract the prompt must produce is identical across sources so
-/// `tt_collect`'s lenient extraction and [`tt_store::EventInput`] stay the same:
-/// an array of `{externalId, title, startTs, endTs, attendees, location,
-/// joinUrl}`, or `[]`.
+/// The *shape* of the answer is not the prompt's job: `tt_collect` asks
+/// `claude -p` with `--json-schema`, so the CLI routes the model through a
+/// structured-output tool and validates the events before they reach
+/// `tt_store::EventInput`. A prompt is therefore free to be a question about a
+/// calendar — which is also why a user can point a source at whatever MCP works
+/// on their machine without having to restate the element shape correctly.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -510,39 +512,32 @@ impl CalendarSource {
 
 /// Default prompt for the personal Google calendar.
 ///
-/// The JSON contract in the second half is what `tt_store::EventInput` parses —
-/// keep it in sync with [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`] when editing.
+/// It asks *which events*, and nothing about JSON: the schema
+/// (`tt_collect`'s `CALENDAR_SCHEMA`) is the contract for the shape, so the
+/// prompt only has to carry what a schema can't — which calendar, which day,
+/// and which events to leave out. Keep it in sync with
+/// [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`] when editing.
 ///
-/// **Times are asked for as RFC 3339, never epoch milliseconds.** That is a
-/// correctness choice before it is a readability one: computing a 13-digit
+/// **Times stay as the calendar reported them, never converted or computed.**
+/// That is a correctness choice before it is a readability one: a 13-digit
 /// epoch value is arithmetic a model cannot check, and a wrong one is
-/// indistinguishable from a right one until the countdown is hours off. An
-/// offset-bearing timestamp is something a calendar reports verbatim, and a
-/// malformed one is rejected at parse time instead of silently stored.
+/// indistinguishable from a right one until the countdown is hours off. The
+/// schema types those fields as RFC 3339 date-times; this sentence is what
+/// keeps the model from helpfully normalizing them to UTC first.
 pub const DEFAULT_CALENDAR_PROMPT_GOOGLE: &str = "\
 Using the Google Calendar MCP, list the events on my primary calendar for today \
-only, in my local timezone. Respond with ONLY a JSON array, no prose, no code \
-fences. Each element: {\"externalId\": string (stable event id), \"title\": \
-string, \"start\": string (RFC 3339 with UTC offset, e.g. \
-\"2026-07-20T15:00:00-05:00\"), \"end\": string (same format), \"attendees\": \
-array of attendee display-name strings, \"location\": string, \"joinUrl\": \
-string}. Report each time exactly as the calendar gives it, keeping its UTC \
-offset — do not convert to UTC and do not compute epoch numbers. Skip all-day \
-events and events I have declined. Omit any field whose value is null or \
-unknown. If there are no events, respond with [].";
+only, in my local timezone. Report each time exactly as the calendar gives it, \
+keeping its UTC offset — do not convert to UTC and do not compute epoch \
+numbers. Skip all-day events and events I have declined. Omit any field whose \
+value is null or unknown.";
 
 /// Default prompt for the work Outlook / Microsoft 365 calendar.
 pub const DEFAULT_CALENDAR_PROMPT_OUTLOOK: &str = "\
 Using the Outlook (Microsoft 365) MCP, list the events on my default calendar \
-for today only, in my local timezone. Respond with ONLY a JSON array, no prose, \
-no code fences. Each element: {\"externalId\": string (stable event id), \
-\"title\": string, \"start\": string (RFC 3339 with UTC offset, e.g. \
-\"2026-07-20T15:00:00-05:00\"), \"end\": string (same format), \"attendees\": \
-array of attendee display-name strings, \"location\": string, \"joinUrl\": \
-string}. Report each time exactly as the calendar gives it, keeping its UTC \
-offset — do not convert to UTC and do not compute epoch numbers. Skip all-day \
-events and events I have declined. Omit any field whose value is null or \
-unknown. If there are no events, respond with [].";
+for today only, in my local timezone. Report each time exactly as the calendar \
+gives it, keeping its UTC offset — do not convert to UTC and do not compute \
+epoch numbers. Skip all-day events and events I have declined. Omit any field \
+whose value is null or unknown.";
 
 /// Working-hours gate for the calendar collector: a daily time window plus a
 /// weekday mask, evaluated in local time. When `enabled`, the collector runs

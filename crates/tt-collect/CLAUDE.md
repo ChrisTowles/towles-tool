@@ -92,6 +92,23 @@ Note the ceiling is **per source** and sources run serially, so N enabled
 calendars is an N×180s worst case — keep that in mind before adding
 concurrency-free work to this path.
 
+## Calendar: the schema is the contract, not the prompt
+
+The run goes through [`tt_exec::claude`](../tt-exec/src/claude.rs) —
+`claude -p … --output-format json --json-schema <schema>` — so the CLI routes
+the model through a structured-output tool and validates the events before they
+reach `EventInput`. `CALENDAR_SCHEMA` in `lib.rs` is that contract; a prompt in
+settings only has to say *which* calendar, *which* day and what to leave out,
+which is what lets a user point a source at whatever MCP works on their machine.
+Nothing here reads JSON out of prose, and adding a second `claude -p` caller
+means extending that seam rather than growing a new envelope reader.
+
+The envelope's `is_error` is why the seam exists at all: a credit-balance
+failure, an expired MCP auth and a rate limit are claude-side failures with a
+message the user can act on, and they must not read like the model answered in
+the wrong shape. `Error::brief()` renders either as the single line a run
+message has room for — keep that distinction visible in whatever you add.
+
 ## Calendar sources are independent lanes
 
 One `claude -p` run per **enabled** `tt_config::CalendarSource`, each writing

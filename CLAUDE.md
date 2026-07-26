@@ -333,7 +333,8 @@ Cargo workspace + npm workspace (`apps/client` only):
     range on the authored column, whose lexical order is not chronological
     across offsets.
   - `tt-collect` — collectors that fill tt.db: calendar via `claude -p`
-    (strict-JSON prompt + lenient extraction; one run per enabled
+    (`--json-schema` structured output, via the one `tt_exec::claude` seam
+    shared with the new-task dialog's suggester; one run per enabled
     `CalendarSource`, each with its own user-editable prompt and its own store
     lane) — **off by default** since it burns tokens
     per tick; issues + PRs via `gh`; a watched Slack DM via the Slack Web API
