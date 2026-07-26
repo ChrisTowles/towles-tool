@@ -259,54 +259,6 @@ mod tests {
         cols.collect::<rusqlite::Result<Vec<_>>>().unwrap()
     }
 
-    #[test]
-    fn migrate_repairs_half_migrated_tasks_table() {
-        // A db the old ALTER-based migration already touched: v2 columns exist,
-        // but the legacy NOT-NULL `source` column is still present, so inserts
-        // that omit it fail. The rebuild must keep the v2 values it finds.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT NOT NULL,
-                    source_ref TEXT,
-                    text TEXT NOT NULL,
-                    due_ts INTEGER,
-                    done INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    repo TEXT,
-                    issue_number INTEGER,
-                    issue_url TEXT
-                );
-                INSERT INTO tasks (source, text, done, created_at, status, position, repo,
-                                   issue_number, issue_url)
-                    VALUES ('manual', 'linked todo', 0, 1, 'doing', 2, 'o/r', 7,
-                            'https://github.com/o/r/issues/7');",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let t = s.snapshot().unwrap().tasks.into_iter().find(|t| t.text == "linked todo").unwrap();
-        assert_eq!(t.status, "doing");
-        assert_eq!(t.position, 2);
-        // The old single link came through the v2 rebuild AND the v7 port
-        // into the task_issues link table.
-        assert_eq!(t.issues.len(), 1);
-        assert_eq!(t.issues[0].repo, "o/r");
-        assert_eq!(t.issues[0].number, 7);
-        assert_eq!(t.issues[0].state, "open");
-        s.add_task("post-repair todo", "backlog", None, None, 9).unwrap();
-        assert!(!task_columns(&s).contains(&"source".to_string()));
-        assert!(!task_columns(&s).contains(&"repo".to_string()));
-    }
-
     /// `local_day_bounds` exists in one place because it scopes a DELETE, and
     /// two implementations had already drifted apart on DST handling — one
     /// widening to a ±1-day window, the other collapsing to an empty one, both

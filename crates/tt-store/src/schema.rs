@@ -242,36 +242,23 @@ impl Store {
     /// a table to the v2 shape. A rebuild — not `ALTER TABLE ADD COLUMN` — is
     /// required because the legacy `source` column is `NOT NULL` without a
     /// default: left in place it fails every future `INSERT INTO tasks`
-    /// (SQLite can't drop a column's NOT NULL in place). The rebuild also
-    /// repairs dbs that were half-migrated by the old ALTER-based migration
-    /// (new columns added, `source` still present). Drops the `emails` table,
-    /// dead since the same pivot.
+    /// (SQLite can't drop a column's NOT NULL in place). Drops the `emails`
+    /// table, dead since the same pivot.
     fn migrate_tasks_v2(&self) -> Result<()> {
-        let mut has_status = false;
         let mut has_source = false;
         {
             let mut stmt = self.conn.prepare("PRAGMA table_info(tasks)")?;
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let name: String = row.get(1)?;
-                if name == "status" {
-                    has_status = true;
-                }
                 if name == "source" {
                     has_source = true;
                 }
             }
         }
         if has_source {
-            // Legacy rows carry their kanban fields either in the old `done`
-            // flag (never migrated) or in already-added v2 columns
-            // (half-migrated by the old ALTER-based migration).
-            let (status_expr, position_expr, link_exprs) = if has_status {
-                ("status", "position", "repo, issue_number, issue_url")
-            } else {
-                ("CASE WHEN done = 1 THEN 'done' ELSE 'backlog' END", "0", "NULL, NULL, NULL")
-            };
-            self.conn.execute_batch(&format!(
+            // Legacy rows carry their kanban state in the old `done` flag.
+            self.conn.execute_batch(
                 "BEGIN;
                  CREATE TABLE tasks_v2 (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,13 +274,13 @@ impl Store {
                  );
                  INSERT INTO tasks_v2 (id, text, status, position, due_ts, repo, issue_number,
                                        issue_url, created_at, completed_at)
-                   SELECT id, text, {status_expr}, {position_expr}, due_ts, {link_exprs},
-                          created_at, completed_at
+                   SELECT id, text, CASE WHEN done = 1 THEN 'done' ELSE 'backlog' END, 0,
+                          due_ts, NULL, NULL, NULL, created_at, completed_at
                    FROM tasks;
                  DROP TABLE tasks;
                  ALTER TABLE tasks_v2 RENAME TO tasks;
-                 COMMIT;"
-            ))?;
+                 COMMIT;",
+            )?;
         }
         self.conn.execute_batch("DROP TABLE IF EXISTS emails;")?;
         Ok(())
