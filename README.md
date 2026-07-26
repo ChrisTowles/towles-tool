@@ -254,9 +254,8 @@ flowchart TB
     subgraph gesture["⚡ One gesture in"]
         direction LR
         CLI["<b>tt task new</b> &quot;goal&quot;"]
-        CC["<b>claude --worktree</b><br/>(WorktreeCreate hook)"]
         APP["Agentboard <b>+</b> button"]
-        CLI ~~~ CC ~~~ APP
+        CLI ~~~ APP
     end
 
     gesture --> OPS(["one shared machinery<br/>(the tt-tasks crate)"])
@@ -281,7 +280,7 @@ flowchart TB
     end
 
     fleet --> MERGE(["PR merges"])
-    MERGE --> RMCMD["<b>tt task rm</b> / <b>tt task clean</b><br/>or the WorktreeRemove hook"]
+    MERGE --> RMCMD["<b>tt task rm</b> / <b>tt task clean</b>"]
     RMCMD --> teardown
 
     subgraph teardown["🛡️ Teardown — guarded"]
@@ -316,10 +315,9 @@ module in `tt-tasks` is where that lives.
 
 Manage tasks with `tt task` (`init`, `new`, `ls`, `env`, `rm`, `clean`) —
 never raw `git worktree`. Claude Code's own worktree surfaces
-(`claude --worktree`, the app's parallel sessions) route through the same
-machinery via the `WorktreeCreate`/`WorktreeRemove` hooks. The Agentboard rail
-shows the whole fleet and can create a task from its `+` button. Full
-convention and rules: [CLAUDE.md](CLAUDE.md).
+(`claude --worktree`, the app's parallel sessions) make their own worktrees
+and are not tasks. The Agentboard rail shows the whole fleet and can create a
+task from its `+` button. Full convention and rules: [CLAUDE.md](CLAUDE.md).
 
 ## Claude Code plugin
 
@@ -354,7 +352,7 @@ Already installed? Pull the latest version with
 The CLI binary is `tt`. Run any command with `--help` for its flags.
 
 - `journal daily-notes|note|meeting|jot|open|list|search` — filesystem notes with date-token path templates (`today` is an alias for `daily-notes`; `jot` appends a timestamped bullet without opening an editor).
-- `task init|new|ls|rm|env|ports|clean` — manage worktrees (see [Worktree tasks](#worktree-tasks) above). `ports` reports the repo's port picture (every checkout's claims merged with the registry, each probed for a listener; `--probe <port>` checks a single port instead). `hook-create`/`hook-remove` are the Claude Code `WorktreeCreate`/`WorktreeRemove` hook shells, not meant to be run by hand.
+- `task init|new|ls|rm|env|ports|clean` — manage worktrees (see [Worktree tasks](#worktree-tasks) above). `ports` reports the repo's port picture (every checkout's claims merged with the registry, each probed for a listener; `--probe <port>` checks a single port instead).
 - `collect calendar|issues|prs|slack|all|status|nudge <prs|issues>` — fill the local store: today's calendar via `claude -p`, assigned issues and open/review-requested PRs via `gh`, and a watched Slack DM; `status` reports each collector's health; `nudge <prs|issues>` makes a running app instance refresh that data immediately instead of waiting for its normal poll interval (used by the `towles-tool-app` plugin's `gh pr`/`gh issue` mutation hook).
 
 ## Crates

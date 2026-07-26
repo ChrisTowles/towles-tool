@@ -478,6 +478,28 @@ impl Store {
         )?)
     }
 
+    /// Every worktree dir a live board row is bound to.
+    ///
+    /// This is the record of which worktrees the *user* asked for: a task row
+    /// is created by `tt task new` and the app's `+` flow only, so a worktree
+    /// Claude Code made for one of its own agents has no row here. The
+    /// Agentboard rail's worktree filter is the consumer (see
+    /// `Engine::expand_with_worktrees`).
+    ///
+    /// Archived rows are excluded — their `worktree_dir` is already cleared on
+    /// close, and a re-created worktree at the same path is a new task.
+    pub fn bound_worktree_dirs(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT worktree_dir FROM tasks
+             WHERE worktree_dir IS NOT NULL AND worktree_dir != '' AND archived_at IS NULL",
+        )?;
+        let mut dirs = Vec::new();
+        for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
+            dirs.push(row?);
+        }
+        Ok(dirs)
+    }
+
     /// The task bound to the worktree at `dir`, if any (a worktree belongs to at
     /// most one task; if data ever disagrees, the oldest task wins).
     pub fn task_for_worktree_dir(&self, dir: &str) -> Result<Option<TaskItem>> {

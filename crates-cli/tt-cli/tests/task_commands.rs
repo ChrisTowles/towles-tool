@@ -1053,179 +1053,6 @@ fn lockfile_detection_installs_without_declared_setup() {
     assert!(task_dir(&checkout, "feat-plain").join(".env").is_file());
 }
 
-/// The Claude Code WorktreeCreate hook shell: stdin is the hook JSON, stdout
-/// is exactly the task path, the requested name IS the branch verbatim, and
-/// a re-request for the same name returns the same path instead of failing.
-#[test]
-fn hook_create_creates_a_task_and_is_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
-    let expected = task_dir(&checkout, "auth-flow");
-
-    let hook_input = serde_json::json!({
-        "session_id": "abc",
-        "hook_event_name": "WorktreeCreate",
-        "cwd": checkout.to_string_lossy(),
-        "name": "auth-flow",
-    })
-    .to_string();
-
-    let out = tt().args(["task", "hook-create"]).write_stdin(hook_input.clone()).output().unwrap();
-    assert!(out.status.success(), "hook-create failed: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        expected.to_string_lossy(),
-        "stdout must be exactly the worktree path"
-    );
-    let branch = Command::new("git")
-        .args(["-C", expected.to_str().unwrap(), "branch", "--show-current"])
-        .output()
-        .unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&branch.stdout).trim(),
-        "auth-flow",
-        "the requested worktree name is the branch, verbatim"
-    );
-    assert!(expected.join(".env").is_file(), "hook-created tasks render .env like tt task new");
-
-    // Same name again → same path, exit 0 (Claude Code re-enters worktrees).
-    let again = tt().args(["task", "hook-create"]).write_stdin(hook_input).output().unwrap();
-    assert!(again.status.success());
-    assert_eq!(String::from_utf8_lossy(&again.stdout).trim(), expected.to_string_lossy());
-}
-
-/// Distinct branches can slug to the same task folder (`feat/thing` and a
-/// literal `feat-thing` both slug to `feat-thing`). A second WorktreeCreate
-/// hitting that same folder on a different requested branch must fail loudly
-/// instead of silently resuming into someone else's worktree.
-#[test]
-fn hook_create_refuses_to_resume_a_slug_collision_on_a_different_branch() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
-
-    let hook_input = |name: &str| {
-        serde_json::json!({
-            "hook_event_name": "WorktreeCreate",
-            "cwd": checkout.to_string_lossy(),
-            "name": name,
-        })
-        .to_string()
-    };
-
-    let first =
-        tt().args(["task", "hook-create"]).write_stdin(hook_input("feat/thing")).output().unwrap();
-    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
-
-    let collided =
-        tt().args(["task", "hook-create"]).write_stdin(hook_input("feat-thing")).output().unwrap();
-    assert!(!collided.status.success(), "must not silently resume a different branch's task");
-    let stderr = String::from_utf8_lossy(&collided.stderr);
-    assert!(stderr.contains("feat/thing"), "stderr: {stderr}");
-    assert!(stderr.contains("feat-thing"), "stderr: {stderr}");
-
-    // The original task is untouched — still on its own branch.
-    let branch = Command::new("git")
-        .args([
-            "-C",
-            task_dir(&checkout, "feat-thing").to_str().unwrap(),
-            "branch",
-            "--show-current",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "feat/thing");
-}
-
-/// The WorktreeRemove hook shell runs the same guards as `tt task rm`: a
-/// clean task goes away, a dirty one is refused (non-zero, message on
-/// stderr) and stays on disk.
-#[test]
-fn hook_remove_is_guarded_like_rm() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
-    let root_s = checkout.to_string_lossy().to_string();
-
-    new_task(&root_s, "feat/done").assert().success();
-    let task = task_dir(&checkout, "feat-done");
-    let hook_input = serde_json::json!({
-        "hook_event_name": "WorktreeRemove",
-        "cwd": checkout.to_string_lossy(),
-        "worktree_path": task.to_string_lossy(),
-    })
-    .to_string();
-
-    // dirty → refused, task stays
-    std::fs::write(task.join("wip.txt"), "unsaved").unwrap();
-    tt().args(["task", "hook-remove"])
-        .write_stdin(hook_input.clone())
-        .assert()
-        .failure()
-        .stderr(contains("not clean"));
-    assert!(task.exists());
-
-    // clean → removed
-    std::fs::remove_file(task.join("wip.txt")).unwrap();
-    tt().args(["task", "hook-remove"]).write_stdin(hook_input.clone()).assert().success();
-    assert!(!task.exists());
-
-    // already gone → a no-op success, not an error (Claude Code may fire the
-    // hook for a worktree the user already cleaned up)
-    tt().args(["task", "hook-remove"]).write_stdin(hook_input).assert().success();
-}
-
-/// Claude Code sometimes removes the worktree from disk itself before firing
-/// WorktreeRemove — the hook must still untrack it from the agentboard rail
-/// rather than no-op, or the rail strands a "directory missing" ghost that
-/// only a manual Untrack can clear (the bug this test guards against).
-#[test]
-fn hook_remove_untracks_a_worktree_already_gone_from_disk() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
-    let root_s = checkout.to_string_lossy().to_string();
-    let home = tmp.path().join("home");
-
-    new_task(&root_s, "feat/ghost").assert().success();
-    let task = task_dir(&checkout, "feat-ghost");
-    let task_s = task.to_string_lossy().to_string();
-
-    let shared = home.join(".config").join("towles-tool").join("tasks").join("ghost-test");
-    let repos_json = shared.join("agentboard").join("repos.json");
-    std::fs::create_dir_all(repos_json.parent().unwrap()).unwrap();
-    std::fs::write(
-        &repos_json,
-        serde_json::to_string_pretty(&serde_json::json!({
-            "repoPaths": [task_s, "/kept/elsewhere"],
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    // The worktree is gone from disk already — e.g. Claude Code's own
-    // teardown ran before the hook fired.
-    std::fs::remove_dir_all(&task).unwrap();
-    assert!(!task.exists());
-
-    let hook_input = serde_json::json!({
-        "hook_event_name": "WorktreeRemove",
-        "cwd": checkout.to_string_lossy(),
-        "worktree_path": task_s,
-    })
-    .to_string();
-    tt_scoped(&home, "ghost-test")
-        .args(["task", "hook-remove"])
-        .write_stdin(hook_input)
-        .assert()
-        .success();
-
-    let repos: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&repos_json).unwrap()).unwrap();
-    assert_eq!(
-        repos["repoPaths"],
-        serde_json::json!(["/kept/elsewhere"]),
-        "the gone worktree's entry is dropped, the other repo survives"
-    );
-}
-
 #[test]
 fn init_onboards_a_bare_repo_idempotently() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1242,23 +1069,18 @@ fn init_onboards_a_bare_repo_idempotently() {
         .assert()
         .success()
         .stdout(contains("task-env.template"))
-        .stdout(contains("gitignore: added .env"))
-        .stdout(contains("hooks: wired"));
+        .stdout(contains("gitignore: added .env"));
 
     assert!(checkout.join(".claude").join("task-env.template").is_file());
     assert!(checkout.join(".env").is_file());
     let gitignore = std::fs::read_to_string(checkout.join(".gitignore")).unwrap();
     assert!(gitignore.contains(".env"));
-    let settings = std::fs::read_to_string(checkout.join(".claude").join("settings.json")).unwrap();
-    assert!(settings.contains("tt task hook-create"));
-    assert!(settings.contains("tt task hook-remove"));
+    // Onboarding writes no Claude Code settings at all — a worktree hook is
+    // never how a task gets created.
+    assert!(!checkout.join(".claude").join("settings.json").exists());
 
     // Re-run: nothing to do, nothing clobbered.
-    tt().args(["task", "init", "--root", &root_s])
-        .assert()
-        .success()
-        .stdout(contains("hooks: already wired"));
-    let settings_again =
-        std::fs::read_to_string(checkout.join(".claude").join("settings.json")).unwrap();
-    assert_eq!(settings, settings_again);
+    let env_before = std::fs::read_to_string(checkout.join(".env")).unwrap();
+    tt().args(["task", "init", "--root", &root_s]).assert().success();
+    assert_eq!(std::fs::read_to_string(checkout.join(".env")).unwrap(), env_before);
 }

@@ -114,8 +114,8 @@ export function RailHeader(props: {
             }}
             aria-label={
               showUnmanagedWorktrees
-                ? "Show only task worktrees"
-                : "Show every git worktree, task or not"
+                ? "Show only worktrees you asked for"
+                : "Show every git worktree, including ones you didn't ask for"
             }
             aria-pressed={showUnmanagedWorktrees}
             className={cn(
@@ -126,8 +126,8 @@ export function RailHeader(props: {
             )}
             title={
               showUnmanagedWorktrees
-                ? "Showing every git worktree, including ones towles-tool didn't create — click to show only task worktrees"
-                : "Showing only task worktrees — click to also show worktrees created outside towles-tool (e.g. by Claude Code)"
+                ? "Showing every git worktree, including ones Claude Code made for its own agents — click to show only the tasks you asked for"
+                : "Showing only the tasks you asked for — click to also show worktrees Claude Code made for its own agents, or ones added by hand"
             }
           >
             <FolderGit2 className="size-3.5" />

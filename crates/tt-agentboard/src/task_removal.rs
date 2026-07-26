@@ -442,8 +442,8 @@ mod tests {
         assert!(crate::repos::load_repos(&path).is_empty());
     }
 
-    /// The reported bug, end to end: `hook-remove` (and the app's
-    /// `task_delete` on a stale record) reach this function with the leaf
+    /// The reported bug, end to end: removal (`tt task rm`, the app's
+    /// `task_delete` on a stale record) reaches this function with the leaf
     /// worktree dir already gone, through a checkout that was tracked via a
     /// symlink — so `repos.json` holds git's realpath-resolved form, not the
     /// literal symlinked path the caller has. Before the `aliases_for`

@@ -186,8 +186,9 @@ export type UserSettings = {
    * Board kanban groups tasks into
    * per-repo swimlanes; unset = on), `hideInactiveRepos` (the Agentboard
    * rail's eye-icon "hide inactive repos" filter; unset = off), and
-   * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees `tt task`
-   * didn't create; unset = off), and `jarvisPane` (render the native Bevy pane
+   * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees no board
+   * task is bound to — Claude Code's own agent worktrees, hand-added ones;
+   * unset = off), and `jarvisPane` (render the native Bevy pane
    * in the rail; unset = off). `showUnmanagedWorktrees` is the one key here
    * Rust reads back — the agentboard engine's worktree discovery honours it —
    * so it's written through the `ab_set_show_unmanaged_worktrees` command, not

@@ -1,9 +1,9 @@
 //! Task naming and layout rules: worktree tasks live *inside* the checkout at
 //! `<checkout>/.claude/worktrees/<name>/` — Claude Code's native worktree
 //! location — so any plain git checkout is task-capable with no restructuring
-//! and no sibling directories, and worktrees created by Claude Code's own
-//! surfaces (`claude --worktree`, background sessions) land in the same place
-//! `tt task` manages (via the repo's WorktreeCreate/WorktreeRemove hooks).
+//! and no sibling directories. A worktree Claude Code makes for itself
+//! (`claude --worktree`, a background agent) lands here too, but is not a
+//! task: nothing renders, tracks or removes it.
 //!
 //! The main checkout is a normal clone (it is where the user runs the app
 //! themselves); tasks are branch-named, ephemeral worktrees created from it
@@ -84,8 +84,7 @@ impl AsRef<str> for TaskName {
 /// derive a branch back from a folder name — a dash-from-slash and a literal
 /// dash are indistinguishable, so any reverse parse would be a guess. The
 /// branch is always taken from ground truth instead: read from git in the
-/// task (`branch --show-current`), or supplied verbatim by the caller (the
-/// WorktreeCreate hook uses the requested worktree name AS the branch).
+/// task (`branch --show-current`), or supplied verbatim by the caller.
 /// Distinct branches can collide on one slug (`feat/thing` vs a literal
 /// `feat-thing`); creation then fails loudly with `TaskExists`.
 pub fn task_name_from_branch(branch: &str) -> Option<String> {
@@ -132,19 +131,6 @@ pub fn parse_marker(contents: &str) -> std::collections::HashMap<String, String>
 pub fn read_task_base(task_dir: &Path) -> Option<String> {
     let contents = std::fs::read_to_string(task_dir.join(MARKER_FILE)).ok()?;
     parse_marker(&contents).remove("base").filter(|s| !s.is_empty())
-}
-
-/// Whether `dir` is a worktree task `tt task` (or a repo's wired
-/// WorktreeCreate hook) actually created: it sits at
-/// `<checkout>/.claude/worktrees/<name>` ([`main_checkout_for`]) AND carries
-/// the `.tt-task` marker written at creation time. A worktree satisfying
-/// only one of the two is NOT a managed task — e.g. `claude --worktree` ran
-/// in a repo whose hooks aren't wired, so the marker was never written, or a
-/// worktree added by hand somewhere else on disk entirely — even though
-/// `git worktree list` still discovers it. The canonical check callers use
-/// to tell a `tt task` worktree apart from any other.
-pub fn is_managed_task(dir: &Path) -> bool {
-    main_checkout_for(dir).is_some() && dir.join(MARKER_FILE).is_file()
 }
 
 #[cfg(test)]
@@ -239,28 +225,5 @@ mod tests {
     fn read_task_base_none_without_marker() {
         let dir = tempfile::TempDir::new().unwrap();
         assert_eq!(read_task_base(dir.path()), None);
-    }
-
-    #[test]
-    fn is_managed_task_requires_both_location_and_marker() {
-        let root = tempfile::TempDir::new().unwrap();
-        let checkout = root.path().join("checkout");
-        let task_dir = checkout.join(CLAUDE_DIR).join(WORKTREES_DIR).join("thing");
-        std::fs::create_dir_all(&task_dir).unwrap();
-
-        // Right location, no marker: an unwired-hook Claude Code worktree.
-        assert!(!is_managed_task(&task_dir));
-
-        // Right location, marker present: a real `tt task`.
-        std::fs::write(task_dir.join(MARKER_FILE), marker_contents("thing", "main", "main"))
-            .unwrap();
-        assert!(is_managed_task(&task_dir));
-
-        // Wrong location, even with a stray marker file: not a task shape.
-        let elsewhere = root.path().join("elsewhere");
-        std::fs::create_dir_all(&elsewhere).unwrap();
-        std::fs::write(elsewhere.join(MARKER_FILE), marker_contents("thing", "main", "main"))
-            .unwrap();
-        assert!(!is_managed_task(&elsewhere));
     }
 }

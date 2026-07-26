@@ -48,12 +48,12 @@ export function useHideInactiveRepos(): [boolean, (on: boolean) => void] {
 }
 
 /** Built-in default for `agentboard.showUnmanagedWorktrees` — off, so only the
- * main checkout and `tt task` worktrees appear as rail folders. Mirrors
+ * main checkout and worktrees the user asked for appear as rail folders. Mirrors
  * `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
 export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
 
 /**
- * Track the Agentboard rail's "show worktrees `tt task` didn't create" filter
+ * Track the Agentboard rail's "show worktrees no board task is bound to" filter
  * (`agentboard.showUnmanagedWorktrees`) as state, plus a setter.
  *
  * Unlike {@link useHideInactiveRepos} this is not a view filter the client can

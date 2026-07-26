@@ -53,6 +53,19 @@ impl StoreState {
         StoreState { store: Arc::new(Mutex::new(store)) }
     }
 
+    /// Worktree dirs a live board row is bound to — the Agentboard rail's
+    /// record of which worktrees the user actually asked for (see
+    /// `tt_store::Store::bound_worktree_dirs`).
+    ///
+    /// `None` means the store could not answer (never opened, query failed),
+    /// which is *not* the same as "nothing is bound": the caller keeps the
+    /// previous set rather than hiding every discovered worktree at once.
+    pub fn bound_worktree_dirs(&self) -> Option<std::collections::HashSet<String>> {
+        let guard = self.store.lock().unwrap();
+        let dirs = guard.as_ref()?.bound_worktree_dirs().ok()?;
+        Some(dirs.into_iter().collect())
+    }
+
     /// Reconcile the tracked-repo identity cache to exactly `repos` — see
     /// `tt_store::Store::reconcile_repos`. Best-effort: a no-op if the store
     /// never opened.

@@ -3,17 +3,14 @@
 //! Thin CLI shell: creation/rendering/removal all live in `tt_tasks::ops`
 //! (shared with the app's `task_create`/`task_delete` commands). See the
 //! tt-tasks crate docs for the convention and the `${tt:...}` template
-//! grammar. `hook-create`/`hook-remove` are the Claude Code
-//! WorktreeCreate/WorktreeRemove hook shells — stdin is the hook JSON and
-//! (for create) stdout is *only* the worktree path, per the hook contract.
+//! grammar.
 
 use std::fs;
-use std::io::{IsTerminal, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tt_agentboard::task_removal;
 use tt_tasks::envfile;
-use tt_tasks::ops::{self, CleanOpts, CreateOpts, OpsError, RemoveOpts, TaskRoot};
+use tt_tasks::ops::{self, CleanOpts, CreateOpts, RemoveOpts, TaskRoot};
 
 use crate::cli::TaskCommands;
 use crate::ui;
@@ -38,133 +35,12 @@ pub fn run(command: TaskCommands) -> i32 {
         TaskCommands::Env { name, root } => cmd_env(&name, root.as_deref()),
         TaskCommands::Ports { probe, json, root } => cmd_ports(probe, json, root.as_deref()),
         TaskCommands::Clean { dry_run, json, root } => cmd_clean(dry_run, json, root.as_deref()),
-        TaskCommands::HookCreate => cmd_hook_create(),
-        TaskCommands::HookRemove => cmd_hook_remove(),
     };
     match result {
         Ok(()) => 0,
         Err(message) => {
             ui::error(&message);
             1
-        }
-    }
-}
-
-/// The hook JSON Claude Code writes to the hook's stdin. TTY-guarded so a
-/// hand-run `tt task hook-create` fails fast instead of hanging on a read.
-fn read_hook_input() -> Result<serde_json::Value, String> {
-    let mut stdin = std::io::stdin();
-    if stdin.is_terminal() {
-        return Err("hook-create/hook-remove read Claude Code's hook JSON on stdin — \
-                    they are not meant to be run by hand"
-            .to_string());
-    }
-    let mut raw = String::new();
-    stdin.read_to_string(&mut raw).map_err(|e| format!("cannot read hook stdin: {e}"))?;
-    serde_json::from_str(&raw).map_err(|e| format!("hook stdin is not valid JSON: {e}"))
-}
-
-fn hook_str<'a>(input: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter().find_map(|k| input.get(k).and_then(|v| v.as_str())).filter(|s| !s.is_empty())
-}
-
-/// WorktreeCreate hook: create (or reuse) the task for the requested name and
-/// print its path — the one line of stdout Claude Code parses. The requested
-/// name IS the branch, verbatim (`claude -w feat/thing` → branch
-/// `feat/thing`, task folder `feat-thing` — the folder is a one-way slug of
-/// the branch, never parsed back) — and never the native `worktree-<name>`
-/// scheme or a guessed prefix. Claude Code observed (2.1.210) sends
-/// `{session_id, transcript_path, cwd, hook_event_name, name}` with `cwd`
-/// already the main checkout root; `worktree_name`/`source_ref` are accepted
-/// too for the documented shape.
-fn cmd_hook_create() -> Result<(), String> {
-    let input = read_hook_input()?;
-    let name = hook_str(&input, &["name", "worktree_name"])
-        .ok_or("hook input has no worktree name (`name`/`worktree_name`)")?;
-    let root = hook_str(&input, &["cwd"]).map(PathBuf::from);
-    let branch = name.to_string();
-
-    let opts = CreateOpts {
-        root: root.clone(),
-        branch: branch.clone(),
-        base: hook_str(&input, &["source_ref"]).map(str::to_string),
-        run_setup: true,
-    };
-    let dir = match ops::create_task(&opts, now_ms()) {
-        Ok(created) => {
-            for warning in &created.warnings {
-                eprintln!("tt task: {warning}");
-            }
-            created.dir
-        }
-        // A task whose folder already exists is a resume ONLY if it's still
-        // on the requested branch — Claude Code re-enters worktrees by name.
-        // Distinct branches can slug to the same folder (`feat/thing` and a
-        // literal `feat-thing` both land on `feat-thing`), so this must be
-        // checked, not assumed: silently handing back an unrelated branch's
-        // worktree would be worse than failing loudly.
-        Err(OpsError::TaskExists { dir, .. }) => {
-            let existing_branch = ops::git_task(Path::new(&dir), &["branch", "--show-current"])
-                .ok()
-                .filter(|out| out.ok())
-                .map(|out| out.stdout.trim().to_string());
-            if existing_branch.as_deref() != Some(branch.as_str()) {
-                return Err(format!(
-                    "task folder {dir} already exists on branch {:?}, not the requested {branch:?} \
-                     — its name collides with a different branch's slug",
-                    existing_branch.unwrap_or_else(|| "<unreadable>".to_string())
-                ));
-            }
-            PathBuf::from(dir)
-        }
-        Err(e) => return Err(e.to_string()),
-    };
-    println!("{}", dir.display());
-    Ok(())
-}
-
-/// WorktreeRemove hook: the same guarded removal as `tt task rm` (never
-/// forced — a task with unpushed work stays on disk and the refusal lands in
-/// Claude Code's hook log on stderr), plus the agentboard untracking every
-/// removal path owes.
-fn cmd_hook_remove() -> Result<(), String> {
-    let input = read_hook_input()?;
-    let path = hook_str(&input, &["worktree_path", "path"])
-        .map(PathBuf::from)
-        .ok_or("hook input has no worktree path (`worktree_path`/`path`)")?;
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("bad worktree path {}", path.display()))?
-        .to_string();
-    // `discover_root` walks `path`'s ancestors, so it resolves the checkout
-    // even when `path` itself is already gone — Claude Code sometimes removes
-    // the worktree from disk before firing this hook. A `!path.exists()`
-    // early return used to stop right there and report "nothing to remove",
-    // which skipped the bindings teardown entirely: the repos.json entry and
-    // board row survived, stranding the rail with a "directory missing" ghost
-    // that only a manual Untrack could clear. `MissingDir::TearDownBindings`
-    // (unlike `cmd_rm`'s `Fail`) is the right call here — this path came from
-    // Claude Code itself, never a typed name, so a missing dir is exactly the
-    // record that still needs cleaning up, not a typo to report.
-    let checkout = ops::discover_root(Some(&path)).map_err(|e| e.to_string())?.checkout;
-    let opts = RemoveOpts { root: Some(path.clone()), name, force: false };
-    // Hooks are headless: the outcome comes from the row's own evidence.
-    match remove_task_fully(
-        &opts,
-        &path,
-        &checkout,
-        None,
-        task_removal::MissingDir::TearDownBindings,
-    )? {
-        task_removal::Outcome::Removed { messages, .. } => {
-            for message in messages {
-                eprintln!("tt task: {message}");
-            }
-            Ok(())
-        }
-        task_removal::Outcome::Blocked { name, blocked, messages } => {
-            Err(refusal(&name, &blocked, &messages))
         }
     }
 }
@@ -470,15 +346,6 @@ fn cmd_init(root: Option<&Path>) -> Result<(), String> {
     }
     if report.gitignore_added {
         println!("gitignore: added .env");
-    }
-    if report.hooks_wired {
-        println!(
-            "hooks: wired WorktreeCreate/WorktreeRemove into {}",
-            report.settings_path.display()
-        );
-        println!("  commit it — hooks run from the committed copy, new worktrees only");
-    } else {
-        println!("hooks: already wired in {}", report.settings_path.display());
     }
     for warning in &report.render.warnings {
         ui::warning(warning);

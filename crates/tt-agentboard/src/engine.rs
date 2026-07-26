@@ -124,16 +124,21 @@ pub struct Engine {
     theme: Option<String>,
     preferred_editor: String,
     compact_recommend_percent: u8,
-    /// Show auto-discovered worktrees that aren't `tt task` worktrees (see
-    /// [`crate::git_info::GitInfo::unmanaged_worktree_dirs`]) in the rail —
-    /// the `agentboard.showUnmanagedWorktrees` setting. Off by default: a
-    /// worktree someone else's tool made (`claude --worktree` in a repo whose
-    /// `WorktreeCreate` hook isn't wired, a hand-added one) shouldn't populate
-    /// the rail unprompted. Read from settings at construction and updated
-    /// through [`Self::set_show_unmanaged_worktrees`]; applied at discovery
-    /// time in [`Self::expand_with_worktrees`], never baked into the git
-    /// cache, so flipping it takes effect on the next poll with no recompute.
+    /// Show auto-discovered worktrees no board task is bound to — the
+    /// `agentboard.showUnmanagedWorktrees` setting. Off by default: a worktree
+    /// the user never asked for (Claude Code minting one for a background
+    /// agent, a hand-added one) shouldn't populate the rail unprompted. Read
+    /// from settings at construction and updated through
+    /// [`Self::set_show_unmanaged_worktrees`]; applied at discovery time in
+    /// [`Self::expand_with_worktrees`], never baked into the git cache, so
+    /// flipping it takes effect on the next poll with no recompute.
     show_unmanaged_worktrees: bool,
+    /// Worktree dirs a live board row is bound to — the record of which
+    /// worktrees the user asked for, refreshed from the store by the host
+    /// (`Store::bound_worktree_dirs`). The engine is store-free, so this is
+    /// pushed in rather than queried; an empty set means "nothing bound",
+    /// which correctly hides every discovered worktree.
+    bound_worktree_dirs: HashSet<String>,
     seeded_once: bool,
     /// Sticky agent→PTY attribution: thread id (CLI sessionId) → the
     /// `TT_SESSION_ID` read from that agent's process env. Refreshed from live
@@ -274,6 +279,7 @@ impl Engine {
             preferred_editor,
             compact_recommend_percent,
             show_unmanaged_worktrees,
+            bound_worktree_dirs: HashSet::new(),
             seeded_once: false,
             thread_sessions: HashMap::new(),
             scope,
@@ -310,11 +316,15 @@ impl Engine {
     /// user adding it to repos.json. Derived live on every call, nothing
     /// persisted, so a `git worktree remove` just stops appearing next poll.
     ///
-    /// Unless [`Self::show_unmanaged_worktrees`] is on, discovery is limited
-    /// to the main checkout and `tt task` worktrees — a worktree created
-    /// outside the task convention (`claude --worktree` against unwired hooks,
-    /// a hand-added one) stays out of the rail. This is the one place that
-    /// setting is applied; both lists come straight off the cached
+    /// Unless [`Self::show_unmanaged_worktrees`] is on, a discovered *linked*
+    /// worktree reaches the rail only when a board task is bound to it
+    /// ([`Self::bound_worktree_dirs`]) — the board row is the record that the
+    /// user asked for this worktree, written by `tt task new` and the app's
+    /// `+` and by nothing else. Deliberately not a filesystem check: this used
+    /// to ask whether the dir looked like a `tt task` worktree, and every
+    /// worktree created through the retired Claude Code worktree hooks looked
+    /// exactly like one, marker and all. This is the one place the setting is
+    /// applied; the candidate lists come straight off the cached
     /// [`crate::git_info::GitInfo`], so toggling it costs no git work.
     /// Distinct from the "multiple clones" pattern (separate `repoPaths`
     /// entries, unrelated repos to git): those are unaffected here.
@@ -349,6 +359,7 @@ impl Engine {
         let cache = &self.git_cache;
         let removed = &self.removed_checkouts;
         let show_unmanaged = self.show_unmanaged_worktrees;
+        let bound = &self.bound_worktree_dirs;
         merge_worktree_dirs(
             &base,
             |dir| {
@@ -356,8 +367,11 @@ impl Engine {
                 if show_unmanaged {
                     return info.worktree_dirs;
                 }
-                let hidden = info.unmanaged_worktree_dirs;
-                info.worktree_dirs.into_iter().filter(|wt| !hidden.contains(wt)).collect()
+                let linked = info.linked_worktree_dirs;
+                info.worktree_dirs
+                    .into_iter()
+                    .filter(|wt| !linked.contains(wt) || bound.contains(wt))
+                    .collect()
             },
             |wt| !removed.contains(wt),
         )
@@ -728,6 +742,19 @@ impl Engine {
             settings.agentboard.show_unmanaged_worktrees = Some(show);
             persisted(tt_config::save_merge(&settings), "settings");
         }
+        true
+    }
+
+    /// Replace the set of worktree dirs a board task is bound to (the host
+    /// reads it from the store each scan tick — see
+    /// [`Self::bound_worktree_dirs`]). Returns whether the set changed, so the
+    /// host can re-emit when a task creation or deletion has just moved a
+    /// folder in or out of the rail.
+    pub fn set_bound_worktree_dirs(&mut self, dirs: HashSet<String>) -> bool {
+        if dirs == self.bound_worktree_dirs {
+            return false;
+        }
+        self.bound_worktree_dirs = dirs;
         true
     }
 
@@ -1217,6 +1244,7 @@ impl Engine {
             preferred_editor: "code".to_string(),
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
+            bound_worktree_dirs: HashSet::new(),
             seeded_once: false,
             thread_sessions: HashMap::new(),
             scope: InstanceScope::Any,
@@ -1398,28 +1426,34 @@ mod engine_tests {
         assert_eq!(e.find_worktree_owner(wt), Some("/repo/main".to_string()));
     }
 
-    /// Discovery hides worktrees `tt task` didn't create until the setting
-    /// says otherwise — and flipping it needs no new git info, since both
-    /// lists were already cached (the field is set directly here rather than
-    /// through `set_show_unmanaged_worktrees`, which would write the real
-    /// settings file).
+    /// A discovered worktree reaches the rail only if a board row is bound to
+    /// it, or the setting says show everything. Both `agent` and `task` here
+    /// are ordinary `tt task` worktrees on disk — marker, ports and all — so
+    /// the board binding is the only thing that separates them (the fields are
+    /// set directly rather than through their setters, which would write the
+    /// real settings file).
     #[test]
-    fn unmanaged_worktrees_are_discovered_only_when_the_setting_is_on() {
+    fn only_worktrees_a_board_task_is_bound_to_are_discovered() {
         let (_tmp, mut e) = engine();
         let task = "/repo/main/.claude/worktrees/feat-thing";
-        let stray = "/elsewhere/claude-worktree";
+        let agent = "/repo/main/.claude/worktrees/agent-a12d791a14a404064";
         assert!(e.add_repo("/repo/main"));
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![task.to_string(), stray.to_string()],
-                unmanaged_worktree_dirs: vec![stray.to_string()],
+                worktree_dirs: vec![task.to_string(), agent.to_string()],
+                linked_worktree_dirs: vec![task.to_string(), agent.to_string()],
                 ..Default::default()
             },
             1000,
         );
 
+        // Nothing bound yet: neither is the user's.
+        assert_eq!(e.watch_targets(), vec!["/repo/main".to_string()]);
+
+        assert!(e.set_bound_worktree_dirs(HashSet::from([task.to_string()])));
         assert_eq!(e.watch_targets(), vec!["/repo/main".to_string(), task.to_string()]);
+        assert!(!e.set_bound_worktree_dirs(HashSet::from([task.to_string()])));
 
         e.show_unmanaged_worktrees = true;
         assert_eq!(
@@ -1427,7 +1461,7 @@ mod engine_tests {
             vec![
                 "/repo/main".to_string(),
                 task.to_string(),
-                stray.to_string()
+                agent.to_string()
             ]
         );
     }

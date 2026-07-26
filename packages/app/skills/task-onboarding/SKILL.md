@@ -1,19 +1,22 @@
 ---
 name: task-onboarding
-description: Onboard a git repo onto tt worktree tasks — unique per-task ports, env templating, and Claude Code worktree hooks. Use when the user asks to "onboard this repo for tasks", "set up tt tasks", "make worktrees get unique ports", "wire the worktree hooks", or when a repo's tasks render an empty `.env` and it needs per-task ports. Requires the `tt` CLI on PATH.
+description: Onboard a git repo onto tt worktree tasks — unique per-task ports and env templating. Use when the user asks to "onboard this repo for tasks", "set up tt tasks", "make worktrees get unique ports", or when a repo's tasks render an empty `.env` and it needs per-task ports. Requires the `tt` CLI on PATH.
 ---
 
 # Onboard a repo onto tt worktree tasks
 
-Goal: after this, `tt task new "Thing" --repo <name|dir> -b feat/thing` (or `claude --worktree`) gives
-every worktree of this repo its own rendered `.env` with unique ports, and
+Goal: after this, `tt task new "Thing" --repo <name|dir> -b feat/thing` gives
+every task of this repo its own rendered `.env` with unique ports, and
 merged tasks clean up with `tt task rm` / `tt task clean`.
 
 `tt task init` does the mechanical half (template sidecar, gitignoring
-`.env`, wiring the WorktreeCreate/WorktreeRemove hooks into
-`.claude/settings.json`, rendering the primary checkout's `.env`). Your job
-is the judgment half: figure out what this repo's tasks actually need
-templated, then run init and verify.
+`.env`, rendering the primary checkout's `.env`). Your job is the judgment
+half: figure out what this repo's tasks actually need templated, then run
+init and verify.
+
+Only `tt task new` and the app's `+` button create tasks. A worktree Claude
+Code makes for itself (`claude --worktree`, a background agent) is its own
+thing — no rendered `.env`, no ports, not in the rail.
 
 ## 1. Discover what the repo needs per-task
 
@@ -69,10 +72,8 @@ runs.
 tt task init          # idempotent; renders primary/.env and prints claims
 ```
 
-Commit what it changed plus your template: `.env.example` (or the sidecar),
-`.gitignore`, and `.claude/settings.json` — hooks execute from the
-*committed* copy, so they only take effect in new worktrees after the
-commit lands.
+Commit what it changed plus your template: `.env.example` (or the sidecar)
+and `.gitignore`.
 
 ## 5. Verify
 

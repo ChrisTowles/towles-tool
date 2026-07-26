@@ -131,9 +131,8 @@ pub enum TaskCommands {
     },
 
     /// Onboard this repo onto the task convention (idempotent): pick/create
-    /// the env template, gitignore .env, wire the Claude Code
-    /// WorktreeCreate/WorktreeRemove hooks into .claude/settings.json, and
-    /// render the primary checkout's .env so it claims its ports
+    /// the env template, gitignore .env, and render the primary checkout's
+    /// .env so it claims its ports
     Init {
         /// Repo checkout (default: walk up from cwd to the nearest git checkout)
         #[arg(long, value_name = "DIR")]
@@ -169,18 +168,6 @@ pub enum TaskCommands {
         #[arg(long, value_name = "DIR")]
         root: Option<PathBuf>,
     },
-
-    /// Claude Code WorktreeCreate hook shell: reads the hook JSON on stdin,
-    /// creates (or reuses) the task, prints its path on stdout — wire it as
-    /// the repo's WorktreeCreate hook so `claude --worktree` and background
-    /// sessions land in tt-managed tasks
-    #[command(hide = true)]
-    HookCreate,
-
-    /// Claude Code WorktreeRemove hook shell: reads the hook JSON on stdin
-    /// and runs the same guarded removal as `tt task rm`
-    #[command(hide = true)]
-    HookRemove,
 
     /// Remove every task whose branch's work has landed (merged into the
     /// main checkout's branch, or upstream deleted after a squash/rebase

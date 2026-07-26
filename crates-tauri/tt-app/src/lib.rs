@@ -376,6 +376,7 @@ pub fn run() {
                 let projects_dir = projects_dir.clone();
                 let git_watcher = git_watcher.clone();
                 let git_watch_index = git_watch_index.clone();
+                let store_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(Duration::from_millis(2000));
                     let mut git_watched: HashSet<PathBuf> = HashSet::new();
@@ -417,8 +418,19 @@ pub fn run() {
                             let warmed_at = now_ms();
                             engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
                         }
+                        // Which worktrees the user asked for — the board rows'
+                        // answer, refreshed before the scan so a task created
+                        // or deleted since last tick lands in this payload.
+                        // `try_state` because this loop can tick before setup
+                        // has managed the store.
+                        let bound = store_handle
+                            .try_state::<store::StoreState>()
+                            .and_then(|s| s.bound_worktree_dirs());
                         {
                             let mut e = engine.lock().unwrap();
+                            if let Some(bound) = bound {
+                                e.set_bound_worktree_dirs(bound);
+                            }
                             e.scan_once(now);
                         }
                         // Narrow the fs-notify accelerant to the repos/worktrees

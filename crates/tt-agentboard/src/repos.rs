@@ -137,7 +137,7 @@ pub fn remove_repo_persisted(path: &Path, dir: &str) -> std::io::Result<(Vec<Str
 ///
 /// `canonicalize` needs a directory that exists, so this is best called
 /// before anything removes `dir` — but `dir`'s own leaf being gone by the
-/// time this runs is a real, routine case (`hook-remove` fires after Claude
+/// time this runs is a real, routine case (removal fires after Claude
 /// Code has already removed the worktree — see the doc on
 /// `task_removal::MissingDir::TearDownBindings`), not a corner case to punt
 /// on: `realpath_of_missing` recovers the same realpath by canonicalizing the
@@ -734,8 +734,8 @@ mod tests {
         assert!(aliases_for(&path, &dir).is_empty());
     }
 
-    /// The bug this guards against: `hook-remove` (and the app's `task_delete`
-    /// for a stale record) routinely runs *after* the worktree leaf directory
+    /// The bug this guards against: task removal (`tt task rm`, the app's
+    /// `task_delete`) routinely runs *after* the worktree leaf directory
     /// is already gone — see `task_removal::MissingDir::TearDownBindings`'s
     /// doc. If the checkout was reached through a symlink, `repos.json` still
     /// holds the realpath-resolved form `git worktree add` persisted, and a
