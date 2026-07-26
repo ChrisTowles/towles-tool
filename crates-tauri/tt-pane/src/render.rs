@@ -25,6 +25,11 @@ pub fn spawn(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) -
 fn run(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) {
     // SAFETY: the `Pane` holding this surface joins this thread before dropping
     // it, so the surface outlives every frame in flight.
+    // Paced by the display deliberately: both faster present modes were measured
+    // and both flood the compositor, losing the Wayland connection within seconds
+    // (`tt-jarvis/examples/jarvis_demo.rs` holds the per-mode numbers). This paces
+    // presentation only — per-frame work stays uncapped, which is where a fast
+    // renderer's headroom belongs.
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, PresentMode::AutoVsync) };
     app.add_plugins(JarvisScenePlugin);
 

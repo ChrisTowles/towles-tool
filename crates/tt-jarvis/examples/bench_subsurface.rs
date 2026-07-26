@@ -6,7 +6,7 @@
 //! question the Step 0 gate asks.
 //!
 //! ```sh
-//! cargo run -p tt-jarvis --example bench_subsurface -- --width 800 --height 600 --no-vsync
+//! cargo run -p tt-jarvis --features linux-harness --example bench_subsurface -- --width 800 --height 600 --no-vsync
 //! ```
 //!
 //! # Scope

@@ -26,9 +26,35 @@
 //! actually observe it.
 //!
 //! ```sh
-//! cargo run -p tt-jarvis --example bench_gtk_cadence --release -- --sync
-//! cargo run -p tt-jarvis --example bench_gtk_cadence --release
+//! cargo run -p tt-jarvis --features linux-harness --example bench_gtk_cadence --release -- --sync
+//! cargo run -p tt-jarvis --features linux-harness --example bench_gtk_cadence --release
 //! ```
+//!
+//! # Result (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60 secondary output)
+//!
+//! | arm              | parent observed | child            | outcome                  |
+//! |------------------|-----------------|------------------|--------------------------|
+//! | `--sync`         | 5 Hz            | —                | blocked, 0 frames in 90s |
+//! | desync (default) | 7.3 Hz          | 60.06 fps median | 270 frames in 5.0s       |
+//!
+//! **The cadence risk is closed: `set_desync()` fully decouples the pane.** The
+//! child held the output's entire 60 Hz refresh while the parent painted at about
+//! 7 Hz — an 8x ratio, so the pane's framerate is plainly not a function of the
+//! parent's.
+//!
+//! Two details the control arm taught that a desync-only run could not:
+//!
+//! - In sync mode the pane does not merely slow to the parent's rate, it **blocks
+//!   outright** — `app.update()` never returns, because the swapchain present
+//!   waits on a commit that only lands when the parent commits. The wall-clock
+//!   deadline in the loop below cannot fire, since it is checked *after*
+//!   `app.update()`. So a missing `set_desync()` presents as a hang, not as a low
+//!   frame rate, and the control arm has to be killed rather than reporting a
+//!   number.
+//! - The desync arm's steady 60 Hz is itself proof the window was visible and
+//!   receiving frame callbacks, which is what rules out the occluded-surface
+//!   explanation for the sync arm's block. Without both arms, "clamped by the
+//!   parent" and "not on screen" are indistinguishable.
 
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};

@@ -565,6 +565,21 @@ Cargo workspace + npm workspace (`apps/client` only):
     **(2)** a `wl_subsurface` is *synchronized* by default; `set_desync()` is
     what keeps the pane's framerate off the parent's. Measured at 0.65 fps
     synced against 60 desynced, so it is a ceiling rather than a tax.
+    **(3)** an occluded Wayland surface receives **no frame callbacks**, so a
+    vsync'd pane stalls when its window is hidden or on another workspace. Right
+    behaviour for a pane, reads as a hang, and makes any vsync benchmark arm
+    unmeasurable on a desktop in use.
+
+    The pane's framerate is **paced by the display** because both faster present
+    modes flood the compositor and lose the Wayland connection —
+    `tt-pane/src/render.rs` carries that decision and
+    `tt-jarvis/examples/jarvis_demo.rs` the per-mode measurements.
+
+    **`bevy_solari` does not build, and not for local reasons:** cargo `[patch]`
+    applies only from the top-level workspace, so a git dependency does not
+    inherit its own repo's patches. `.cargo/solari-patch.toml` is the single home
+    for the restated patch set, the five failure modes and the upstream blocker —
+    read it before retrying Solari.
   - `tt-agentboard` — agentboard watchers/engine: repo list, session tracking,
     needs-you synthesis (consumed by the app shell). **Agent status is
     PTY-first**: `pty_status` folds what the app's terminal directly observes

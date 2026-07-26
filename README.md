@@ -150,6 +150,17 @@ and you never see the code, and an **IDE**, where you see every line. One agent
 fits in an IDE; a fleet doesn't fit in your head. That's the mental load every
 feature here is trying to reduce.
 
+## Four media
+
+Four ways of showing things here, because none of them covers everything:
+
+- **HTML/GUI** — dashboards, queues, lists.
+- **Terminal** — a real PTY, where the agents actually work.
+- **Git repos** — storage, and how you hand work to someone else.
+- **Bevy** — 3D, realistic environments.
+
+Bevy is the newest and least built out.
+
 ## Critical goal: Solari, running natively inside the app
 
 The app renders a live **Bevy** scene in a real region of its own window. A

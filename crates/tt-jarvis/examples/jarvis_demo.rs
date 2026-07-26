@@ -8,8 +8,8 @@
 //! GPU, everything outside is a different surface entirely.
 //!
 //! ```sh
-//! cargo run -p tt-jarvis --example jarvis_demo --release
-//! cargo run -p tt-jarvis --example jarvis_demo --release -- --width 1280 --height 800
+//! cargo run -p tt-jarvis --features linux-harness --example jarvis_demo --release
+//! cargo run -p tt-jarvis --features linux-harness --example jarvis_demo --release -- --width 1280 --height 800
 //! ```
 //!
 //! Runs until the window is closed or the process is killed.
@@ -42,8 +42,29 @@ fn main() {
     // render loop correctly stalls when the window is on another workspace. That
     // is right for a real pane and useless for `--capture`, which needs frames
     // to keep coming whether or not anyone is looking.
-    let present =
-        if has_flag("--no-vsync") { PresentMode::AutoNoVsync } else { PresentMode::AutoVsync };
+    // Present mode — the source of truth for how each behaves here. All three
+    // measured on COSMIC/Wayland, because the answer is counter-intuitive: a
+    // surface committing faster than the compositor accepts gets its Wayland
+    // connection hung up. Call that **flooding**.
+    //
+    // - `AutoVsync` (FIFO): blocks on vblank, so commits arrive at refresh. The
+    //   only mode that survives; runs indefinitely.
+    // - `AutoNoVsync`: selects Immediate here, so commits arrive at the render
+    //   rate — 1300+ fps for the bench scene. Floods, dies in seconds.
+    // - `Mailbox`: triple-buffered and never blocks the renderer, which looked
+    //   like fast-without-flooding. Vulkan mailbox still presents once per
+    //   rendered frame, so the commit rate is again the render rate. Floods, dies
+    //   the same way.
+    //
+    // So presentation is paced by the display, and a renderer with headroom spends
+    // it per frame — more samples and rays, which is what Solari scales.
+    let present = if has_flag("--no-vsync") {
+        PresentMode::AutoNoVsync
+    } else if has_flag("--mailbox") {
+        PresentMode::Mailbox
+    } else {
+        PresentMode::AutoVsync
+    };
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, present) };
     app.add_plugins(JarvisScenePlugin);
 
