@@ -173,8 +173,9 @@ keep killing the process.
 The chat's *state* is pooled too, in `lib/agent-sessions.ts` (module store +
 one `agent://event` listener, keyed by pane id) rather than in `AgentPane`'s
 `useState` — a component that can unmount cannot be the home of a live
-conversation. It also makes a chat's status readable from outside the pane at
-all. **A new pane kind that owns a process or accumulates state must join the
+conversation. That store is also what lets the folder rail show a chat row at
+all: status outside the pane is only knowable because it doesn't live inside
+it. **A new pane kind that owns a process or accumulates state must join the
 pool and keep its state outside the component**; adding it to the
 conditionally-rendered list is the bug this rule exists to prevent (chats used
 to die, silently, on every folder switch).

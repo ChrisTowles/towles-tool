@@ -90,7 +90,9 @@ import { toast } from "sonner";
 
 /**
  * Agentboard — the Folder Rail. Left: rollup tally + needs-you strip + the
- * repos → folders (checkouts) → PTY sessions tree. Right: in-app *windows*,
+ * repos → folders (checkouts) → *panes* tree — every PTY session plus whatever
+ * else the folder has open (its chat, diff, files, preview), so what is open in
+ * a checkout is answerable from the rail and not just from the pane area. Right: in-app *windows*,
  * scoped to whichever folder is active (clicking a folder header or a
  * session row focuses it) — each a named tiling of that folder's session
  * panes (side-by-side up to 3, then a 2-col grid), switched via the window
@@ -335,15 +337,20 @@ export function AgentboardScreen() {
 
   // Open a folder's diff as a pane in its focused window (beside the live
   // terminals — never a modal). Re-opening focuses the window it's already in.
+  // Every `open*` here claims the focus ring as well, so the rail row for the
+  // pane it opened (or re-focused) reads as the active one — the rail lists
+  // panes now, and a row you just clicked has to look like it.
   function openDiff(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, diffPaneId(dir));
+    setFocusedPaneId(diffPaneId(dir));
   }
 
   // Same, for the folder's full file tree.
   function openFiles(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, filesPaneId(dir));
+    setFocusedPaneId(filesPaneId(dir));
   }
 
   // Same, for the folder's live dev-server preview (embedded browser + draw-on-
@@ -351,6 +358,7 @@ export function AgentboardScreen() {
   function openPreview(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, previewPaneId(dir));
+    setFocusedPaneId(previewPaneId(dir));
   }
 
   // Claude called the preview_show tool → open (or focus) that folder's
@@ -1122,6 +1130,7 @@ export function AgentboardScreen() {
                               prs={snapshot.prs}
                               tasks={snapshot.tasks}
                               selectedSessionId={selected?.sessionId ?? null}
+                              activePaneId={focusedPaneId}
                               activeFolderDir={activeFolderDir}
                               collapsed={collapsed}
                               renaming={renaming}
@@ -1143,6 +1152,7 @@ export function AgentboardScreen() {
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
                               onOpenAgent={openAgent}
+                              onClosePane={removePane}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
                               taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
                               onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
