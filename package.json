@@ -25,11 +25,16 @@
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "comment:overrides": "@wdio/tauri-service@1.2.0 exact-pins @wdio/native-utils@2.4.0 but imports installMockSyncOverride, only added in 2.5.0 — a broken pin. Force 2.5.0 until upstream fixes it. monaco-languageclient pins @codingame/monaco-vscode-* to ^35.0.1, which npm was satisfying with a second nested install alongside our own ~35.0.3 pins — two copies of the same VS Code services meant two CommandsRegistry instances, both registering editor.action.measureExtHostLatency and crashing with 'Cannot register two commands with the same id'. Force every @codingame/monaco-vscode-* package to one shared version so the whole tree dedupes to a single copy.",
+  "comment:overrides-audit": "The rest hold `npm audit` at 0, forcing advisory fixes past a parent's stale pin; drop each when upstream catches up. dompurify: monaco-vscode-api exact-pins 3.4.11. serialize-javascript: mocha pins ^6.0.2 and 6.x got no backport. @hono/node-server: patched only in 2.x, and the SDK's one getRequestListener import survives the major. minimatch: brace-expansion is patched only in 5.0.8, which only minimatch >=10.2 depends on, so one pin clears ~20 nodes across glob/jake/mocha/wdio. Its cost is `mocha --ignore`, which calls minimatch as a function — CLI-only, and wdio drives mocha programmatically. Unavoidable anyway: mocha 12 takes minimatch 10 but renames the lib/cli/run-helpers.js that @wdio/mocha-framework deep-imports.",
   "overrides": {
     "@wdio/native-utils": "2.5.0",
     "@codingame/monaco-vscode-api": "35.0.3",
     "@codingame/monaco-vscode-editor-api": "35.0.3",
-    "@codingame/monaco-vscode-extension-api": "35.0.3"
+    "@codingame/monaco-vscode-extension-api": "35.0.3",
+    "@hono/node-server": "^2.0.12",
+    "dompurify": "^3.4.12",
+    "serialize-javascript": "^7.0.7",
+    "minimatch": "^10.2.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.1",
