@@ -3,10 +3,10 @@
 //! The layout convention: any plain git checkout, with branch-named,
 //! ephemeral worktree tasks nested inside it at
 //! `<checkout>/.claude/worktrees/<name>/` — Claude Code's native worktree
-//! location, so `claude --worktree` and background sessions (routed through
-//! the repo's WorktreeCreate/WorktreeRemove hooks calling
-//! `tt task hook-create`/`hook-remove`) land in the same tasks `tt task`
-//! manages. One task per parallel line of work, removed when its branch
+//! location. A worktree Claude Code makes for itself (`claude --worktree`, a
+//! background agent) lands there too but is not a task — only `tt task new`
+//! and the app's `+` create those.
+//! One task per parallel line of work, removed when its branch
 //! merges. A checkout's identity is its directory basename (the same rule
 //! `scripts/task-port.mjs` and `tt_config::state_scope()` use), its per-task
 //! config is a rendered `.env`, and its `.tt-task` marker records name/base
@@ -34,8 +34,8 @@ pub mod template;
 pub use guards::{RmBlocked, check_removal, docker_resource_matches};
 pub use landed::{LandedVia, WorkState, classify, probe_work_state};
 pub use layout::{
-    CLAUDE_DIR, MARKER_FILE, WORKTREES_DIR, is_managed_task, main_checkout_for, marker_contents,
-    parse_marker, read_task_base, task_name_from_branch, task_name_from_dir, worktrees_dir,
+    CLAUDE_DIR, MARKER_FILE, WORKTREES_DIR, main_checkout_for, marker_contents, parse_marker,
+    read_task_base, task_name_from_branch, task_name_from_dir, worktrees_dir,
 };
 pub use ops::{
     CleanOpts, CleanReport, CreateOpts, CreatedTask, FinishedTask, KeptTask, OpsError, RemoveOpts,

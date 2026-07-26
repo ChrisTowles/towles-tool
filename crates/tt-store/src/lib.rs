@@ -629,6 +629,25 @@ mod tests {
         ));
     }
 
+    /// What the Agentboard rail asks to tell a worktree the user opened from
+    /// one Claude Code minted for itself: only the first has a row.
+    #[test]
+    fn bound_worktree_dirs_lists_live_bindings_only() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.bound_worktree_dirs().unwrap().is_empty());
+
+        let dir = "/repos/x/.claude/worktrees/feat-y";
+        let t = s.add_task("worktree-backed", "doing", None, None, 1).unwrap();
+        s.add_task("no worktree", "doing", None, None, 2).unwrap();
+        s.set_task_worktree(t.id, "/repos/x", None, Some("feat/y"), Some(dir)).unwrap();
+        assert_eq!(s.bound_worktree_dirs().unwrap(), vec![dir.to_string()]);
+
+        // Closing clears the binding: the worktree is off disk, and a new one
+        // at the same path belongs to whatever created it next.
+        s.close_task(t.id, TaskOutcome::Done, 10).unwrap();
+        assert!(s.bound_worktree_dirs().unwrap().is_empty());
+    }
+
     #[test]
     fn refresh_link_states_from_cache_and_missing_refs() {
         let s = Store::open_in_memory().unwrap();

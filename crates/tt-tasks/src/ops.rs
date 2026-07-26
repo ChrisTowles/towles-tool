@@ -650,7 +650,7 @@ mod render;
 
 pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};
 pub use create::{CreateOpts, CreatedTask, create_task};
-pub use init::{InitReport, init_repo, wire_worktree_hooks};
+pub use init::{InitReport, init_repo};
 pub use remove::{
     CleanOpts, CleanReport, FinishedTask, KeptTask, RemoveOpts, RemoveOutcome, RemovePhase,
     RemovedTask, clean_tasks, remove_task, stop_task_port,
@@ -679,7 +679,6 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 mod tests {
     use std::net::TcpListener;
 
-    use super::init::WORKTREE_HOOKS;
     use super::*;
 
     fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1095,53 +1094,6 @@ mod tests {
         init_template_sidecar(&sr).unwrap();
         let contents = fs::read_to_string(template_sidecar_path(&sr)).unwrap();
         assert!(contents.contains("${tt:task-name}"));
-    }
-
-    #[test]
-    fn wire_worktree_hooks_starts_from_empty() {
-        let (text, changed) = wire_worktree_hooks("").unwrap();
-        assert!(changed);
-        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-        for (event, command) in WORKTREE_HOOKS {
-            let entries = doc["hooks"][event].as_array().unwrap();
-            assert_eq!(entries[0]["hooks"][0]["command"], command);
-        }
-    }
-
-    #[test]
-    fn wire_worktree_hooks_preserves_existing_settings_and_hooks() {
-        let existing = r#"{
-            "permissions": {"allow": ["Bash(ls:*)"]},
-            "hooks": {
-                "PostToolUse": [{"hooks": [{"type": "command", "command": "echo hi"}]}],
-                "WorktreeCreate": [{"hooks": [{"type": "command", "command": "other"}]}]
-            }
-        }"#;
-        let (text, changed) = wire_worktree_hooks(existing).unwrap();
-        assert!(changed);
-        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(doc["permissions"]["allow"][0], "Bash(ls:*)");
-        assert_eq!(doc["hooks"]["PostToolUse"][0]["hooks"][0]["command"], "echo hi");
-        // the unrelated WorktreeCreate entry stays, ours is appended
-        let create = doc["hooks"]["WorktreeCreate"].as_array().unwrap();
-        assert_eq!(create.len(), 2);
-        assert_eq!(create[0]["hooks"][0]["command"], "other");
-        assert_eq!(create[1]["hooks"][0]["command"], "tt task hook-create");
-    }
-
-    #[test]
-    fn wire_worktree_hooks_is_idempotent() {
-        let (once, changed_once) = wire_worktree_hooks("").unwrap();
-        assert!(changed_once);
-        let (twice, changed_twice) = wire_worktree_hooks(&once).unwrap();
-        assert!(!changed_twice);
-        assert_eq!(once, twice);
-    }
-
-    #[test]
-    fn wire_worktree_hooks_refuses_malformed_json() {
-        assert!(wire_worktree_hooks("{not json").is_err());
-        assert!(wire_worktree_hooks("[]").is_err());
     }
 
     #[test]

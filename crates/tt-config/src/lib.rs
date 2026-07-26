@@ -194,10 +194,10 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_inactive_repos: Option<bool>,
 
-    /// Show git worktrees the Agentboard discovered but `tt task` didn't
-    /// create (no `.tt-task` marker — e.g. `claude --worktree` in a repo whose
-    /// `WorktreeCreate` hook isn't wired) as rail folders. `None` = the
-    /// built-in default (off: only the main checkout and `tt task` worktrees).
+    /// Show git worktrees the Agentboard discovered but no board task is
+    /// bound to — Claude Code's own agent worktrees, hand-added ones — as rail
+    /// folders. `None` = the built-in default (off: only the main checkout and
+    /// worktrees the user asked for).
     /// Unlike `hide_inactive_repos` this one *is* interpreted in Rust — the
     /// agentboard engine reads it when deciding which checkouts to discover.
     /// Only written once the user toggles it, so the shared settings file
@@ -221,7 +221,7 @@ pub struct AgentboardSettings {
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 
 /// Built-in default for [`AgentboardSettings::show_unmanaged_worktrees`]: off,
-/// so only the main checkout and `tt task` worktrees reach the rail.
+/// so only the main checkout and board-bound worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
 
 /// Built-in default for [`AgentboardSettings::jarvis_pane`]: off, so the

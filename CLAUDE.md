@@ -115,7 +115,7 @@ created for a branch, removed when the branch merges. Manage them with
 checkout root is safe — git skips nested repositories without a second `-f`.)
 
 ```sh
-tt task init                              # onboard a repo: template, .gitignore, worktree hooks, primary .env
+tt task init                              # onboard a repo: template, .gitignore, primary .env
 tt task new "<title>" --repo <name|dir> [-b feat/thing] [--base <ref>] [--status doing] [--notes ...]
                                           # board task + .claude/worktrees/<branch-slug> in one shot
                                           # (branch defaults to a slug of the title)
@@ -127,37 +127,30 @@ tt task rm <name> [--force]               # guarded removal + docker cleanup
 tt task clean [--dry-run]                 # rm every merged/gone task + sweep stale state
 ```
 
-Claude Code's own worktree surfaces (`claude --worktree`, background
-sessions, the desktop app's parallel sessions) route through the same
-machinery when the repo's `.claude/settings.json` wires the hooks:
-
-```json
-"hooks": {
-  "WorktreeCreate": [{ "hooks": [{ "type": "command", "command": "tt task hook-create" }] }],
-  "WorktreeRemove":  [{ "hooks": [{ "type": "command", "command": "tt task hook-remove" }] }]
-}
-```
-
-`hook-create` reads the hook JSON on stdin and prints the task path (its one
-line of stdout — the hook contract); the requested worktree name IS the
-branch, verbatim (`claude -w feat/thing` → branch `feat/thing`, folder
-`feat-thing`), never Claude Code's `worktree-<name>` scheme. `hook-remove` runs the same
-guarded removal as `tt task rm`. Hooks execute from the *session checkout's
-committed copy* of `.claude/`, so hook config edits only take effect in new
-worktrees once committed. The blog repo (`~/code/p/blog`) is wired this way
-and is the reference example.
+**Claude Code's own worktree surfaces are not tasks.** `claude --worktree`,
+background agents and the desktop app's parallel sessions make their own
+worktrees, and nothing here renders, tracks or removes them. There is no
+`WorktreeCreate`/`WorktreeRemove` wiring any more — routing them through
+`tt task` gave every background agent a marker, ports, an `.env` and a rail
+folder nobody asked for, which is the whole reason it's gone. A task is
+created deliberately: `tt task new`, or the app's `+`.
 
 The Agentboard rail shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
 header opens the same creation flow as a modal: goal → branch → base, then
 Claude starts on the goal in the new task's terminal. Discovery covers the
-main checkout and `tt task` worktrees only; a worktree created outside the
-convention (`claude --worktree` against unwired hooks, a hand-added one — no
-`.tt-task` marker, so `tt_tasks::is_managed_task` says no) reaches the rail
-only when the rail header's worktree toggle
-(`agentboard.showUnmanagedWorktrees`) is on. The engine applies that setting
-at discovery time (`Engine::expand_with_worktrees`), so it never invalidates
-the git cache.
+main checkout plus the worktrees **a board task is bound to** — the row
+`tt task new` and the app's `+` write — and anything else (a Claude Code
+agent's worktree, a hand-added one) reaches the rail only when the rail
+header's worktree toggle (`agentboard.showUnmanagedWorktrees`) is on.
+**Don't reintroduce a filesystem check here.** That's what it used to be, and
+it failed whenever a worktree was created through the retired worktree hooks:
+those worktrees carried `.tt-task` markers, so `is_managed_task` was true and
+the toggle hid nothing (six `agent-<hex>` folders, nothing to be done about
+them). The board row records intent; the filesystem can't. The engine is
+store-free, so the host pushes the bound set in each scan tick
+(`Engine::set_bound_worktree_dirs`) and discovery applies it
+(`Engine::expand_with_worktrees`) without touching the git cache.
 
 Rules when working in a task:
 
@@ -259,8 +252,7 @@ Rules when working in a task:
   forever, with the scheduler's `prs`/`issues` collectors retrying `gh`/`git`
   against a directory with no `.git` on every tick; skip the row-close and
   the board keeps a card claiming a worktree that no longer exists. `tt task
-  rm`/`clean`/`hook-remove` and the app's `task_delete` are all shells over
-  it.
+  rm`/`clean` and the app's `task_delete` are all shells over it.
 
 ## Architecture
 

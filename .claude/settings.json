@@ -37,12 +37,6 @@
           }
         ]
       }
-    ],
-    "WorktreeCreate": [
-      { "hooks": [{ "type": "command", "command": "tt task hook-create" }] }
-    ],
-    "WorktreeRemove": [
-      { "hooks": [{ "type": "command", "command": "tt task hook-remove" }] }
     ]
   }
 }
