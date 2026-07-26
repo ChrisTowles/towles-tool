@@ -15,15 +15,16 @@
 //! The shape of the answer is the CLI's problem, not ours: `--json-schema`
 //! makes `claude` route the model through a structured-output tool and hand
 //! back a validated object in its `--output-format json` envelope, so there's
-//! no JSON-out-of-prose extraction here. Anything that still goes wrong lands
-//! on [`local_fallback`] instead of an error — a "Suggest" button that can
-//! only ever fill the fields in.
+//! no JSON-out-of-prose extraction here. The call and the envelope handling
+//! live in [`tt_exec::claude`], shared with the calendar collector — this file
+//! supplies only the schema, the prompt and what counts as a usable answer.
+//! Anything that still goes wrong lands on [`local_fallback`] instead of an
+//! error — a "Suggest" button that can only ever fill the fields in.
 
 use std::path::Path;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 /// Generous — a cold `claude` CLI (auth check, MCP startup) can take a while,
 /// but this is a manual, one-shot user action, not a background poll.
@@ -73,15 +74,11 @@ pub struct Suggested {
     pub fallback: Option<String>,
 }
 
-#[derive(Debug, Error)]
-pub enum SuggestError {
-    #[error("claude: {0}")]
-    Exec(String),
-    #[error("claude -p failed:\n{0}")]
-    Failed(String),
-    #[error("couldn't parse a suggestion out of claude's response")]
-    Unparseable,
-}
+/// The shared structured-`claude -p` error: "never ran", "ran and errored,
+/// here's the CLI's reason", "answered in the wrong shape" — kept apart so a
+/// credit-balance or rate-limit failure reads as itself in the dialog's
+/// fallback note.
+pub type SuggestError = tt_exec::claude::Error;
 
 pub type Result<T> = std::result::Result<T, SuggestError>;
 
@@ -108,92 +105,37 @@ pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> 
     match ask_claude(cwd, goal, images, instruction) {
         Ok(suggestion) => Ok(Suggested { suggestion, fallback: None }),
         Err(e) => local_fallback(goal)
-            .map(|suggestion| Suggested { suggestion, fallback: Some(one_line(&e)) })
+            .map(|suggestion| Suggested { suggestion, fallback: Some(e.brief()) })
             .ok_or(e),
     }
 }
 
-/// The `fallback` note renders as one short line in the dialog, but
-/// [`SuggestError::Failed`] carries raw multi-line stderr — enough to blow out
-/// the form. Keep its first non-empty line; the full text is still in the log.
-/// `Exec` and `Unparseable` are already one line, so they pass through.
-fn one_line(e: &SuggestError) -> String {
-    let SuggestError::Failed(stderr) = e else {
-        return e.to_string();
-    };
-    match stderr.lines().map(str::trim).find(|l| !l.is_empty()) {
-        Some(first) => format!("claude -p failed: {first}"),
-        // A non-zero exit with silent stderr — Display would give a bare
-        // "claude -p failed:" with nothing after the colon.
-        None => "claude -p exited non-zero with no output".to_string(),
-    }
-}
-
-fn ask_claude(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggestion> {
-    let prompt = prompt_for(goal, images, instruction);
-    let out =
-        tt_exec::run_in_dir_with_timeout("claude", &claude_args(&prompt), cwd, CLAUDE_TIMEOUT)
-            .map_err(|e| SuggestError::Exec(e.to_string()))?;
-    if !out.ok() {
-        return Err(SuggestError::Failed(out.stderr.trim().to_string()));
-    }
-    parse_response(&out.stdout)
-}
-
-/// Split out so a test can assert the flags that make the answer's shape the
-/// CLI's problem — asserting against [`SUGGESTION_SCHEMA`] alone would pass
-/// even if `--json-schema` were dropped from the command.
-///
-/// `--model sonnet` is pinned rather than left to the user's `claude` config:
-/// this is a cheap, one-shot structured-output call (restate/plan/brainstorm
+/// Ask, then hold the answer to one more rule the schema can't state: a
+/// required string may still be blank, and blank fields would fill the dialog
+/// with nothing. `--model sonnet` is pinned rather than left to the user's
+/// `claude` config — this is a cheap one-shot call (restate/plan/brainstorm
 /// the goal), not a task the user is directing, so it shouldn't silently ride
 /// whatever heavier default model their CLI happens to be set to.
-fn claude_args(prompt: &str) -> [&str; 8] {
-    [
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--json-schema",
-        SUGGESTION_SCHEMA,
-        "--model",
-        "sonnet",
-    ]
+fn ask_claude(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggestion> {
+    let prompt = prompt_for(goal, images, instruction);
+    let answer: Suggestion = tt_exec::claude::Ask::new(&prompt, SUGGESTION_SCHEMA, CLAUDE_TIMEOUT)
+        .model("sonnet")
+        .cwd(cwd)
+        .run()?;
+    usable(answer)
 }
 
-/// The `--output-format json` envelope. Only the three fields that decide the
-/// outcome are named; everything else (usage, cost, session id) is ignored.
-#[derive(Deserialize)]
-struct Envelope {
-    #[serde(default)]
-    is_error: bool,
-    /// The schema-validated object `--json-schema` guarantees.
-    #[serde(default)]
-    structured_output: Option<Suggestion>,
-    /// Only read for its error message, when `is_error`.
-    #[serde(default)]
-    result: Option<String>,
-}
-
-/// Read the envelope, and nothing else. A `claude` too old for these flags
-/// exits non-zero on the unknown argument and never reaches here, so there is
-/// no older-CLI text shape worth carrying — and a schema regression should
-/// surface as a fallback the user can see, not be silently rescued by a
-/// lenient re-read.
-fn parse_response(stdout: &str) -> Result<Suggestion> {
-    let env: Envelope =
-        serde_json::from_str(stdout.trim()).map_err(|_| SuggestError::Unparseable)?;
-    if env.is_error {
-        return Err(SuggestError::Failed(env.result.unwrap_or_default().trim().to_string()));
+/// Trim the answer's fields and reject a blank one.
+fn usable(answer: Suggestion) -> Result<Suggestion> {
+    let trimmed = Suggestion {
+        branch: answer.branch.trim().to_string(),
+        title: answer.title.trim().to_string(),
+        goal: answer.goal.trim().to_string(),
+    };
+    if trimmed.branch.is_empty() || trimmed.title.is_empty() || trimmed.goal.is_empty() {
+        return Err(SuggestError::Unparseable("a required field came back blank".into()));
     }
-    env.structured_output
-        .map(|s| Suggestion {
-            branch: s.branch.trim().to_string(),
-            title: s.title.trim().to_string(),
-            goal: s.goal.trim().to_string(),
-        })
-        .filter(|s| !s.branch.is_empty() && !s.title.is_empty() && !s.goal.is_empty())
-        .ok_or(SuggestError::Unparseable)
+    Ok(trimmed)
 }
 
 /// Derive a suggestion without `claude` at all: the goal as typed, the same
@@ -345,16 +287,12 @@ mod tests {
     }
 
     #[test]
-    fn the_call_makes_the_cli_enforce_the_schema() {
-        // Asserting against SUGGESTION_SCHEMA alone would still pass with the
-        // flags dropped, so check the command that actually gets run.
-        let args = claude_args("the prompt");
-        assert_eq!(args[2..4], ["--output-format", "json"]);
-        assert_eq!(args[4], "--json-schema");
-        let schema: serde_json::Value = serde_json::from_str(args[5]).unwrap();
+    fn the_schema_is_the_contract_for_the_three_fields() {
+        // The flags that make the CLI enforce it are asserted in
+        // `tt_exec::claude`; here it's the schema's own shape that matters.
+        let schema: serde_json::Value = serde_json::from_str(SUGGESTION_SCHEMA).unwrap();
         assert_eq!(schema["required"], serde_json::json!(["branch", "title", "goal"]));
         assert_eq!(schema["additionalProperties"], serde_json::json!(false));
-        assert_eq!(args[6..8], ["--model", "sonnet"]);
     }
 
     #[test]
@@ -377,47 +315,30 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_envelopes_validated_structured_output() {
-        let raw = r#"{"type":"result","is_error":false,
-            "result":"{\"branch\":\"ignored\",\"title\":\"ignored\",\"goal\":\"ignored\"}",
-            "structured_output":{"branch":"feat/a","title":"Do a","goal":"do a"},
-            "total_cost_usd":0.28}"#;
-        let s = parse_response(raw).unwrap();
+    fn a_structured_answer_is_trimmed_field_by_field() {
+        let answer = usable(Suggestion {
+            branch: " feat/a ".into(),
+            title: " Do a ".into(),
+            goal: " do a ".into(),
+        })
+        .unwrap();
         assert_eq!(
-            s,
+            answer,
             Suggestion { branch: "feat/a".into(), title: "Do a".into(), goal: "do a".into() }
         );
     }
 
     #[test]
-    fn an_envelope_without_structured_output_is_unparseable() {
-        // Deliberately not re-read out of `result`: that hedge would silently
-        // paper over a schema regression. It falls through to the local
-        // fallback, which the user can see.
-        let raw = r#"{"type":"result","is_error":false,
-            "result":"Sure! {\"branch\":\"fix/b\",\"title\":\"Fix b\",\"goal\":\"fix b\"}"}"#;
-        assert!(matches!(parse_response(raw), Err(SuggestError::Unparseable)));
-    }
-
-    #[test]
-    fn an_error_envelope_reports_its_message() {
-        let raw = r#"{"type":"result","is_error":true,"result":"credit balance too low"}"#;
-        let e = parse_response(raw).unwrap_err();
-        assert!(e.to_string().contains("credit balance too low"), "{e}");
-    }
-
-    #[test]
     fn blank_fields_count_as_unparseable() {
-        let raw =
-            r#"{"is_error":false,"structured_output":{"branch":"  ","title":"x","goal":"x"}}"#;
-        assert!(matches!(parse_response(raw), Err(SuggestError::Unparseable)));
-    }
-
-    #[test]
-    fn a_blank_title_also_counts_as_unparseable() {
-        let raw =
-            r#"{"is_error":false,"structured_output":{"branch":"feat/x","title":"  ","goal":"x"}}"#;
-        assert!(matches!(parse_response(raw), Err(SuggestError::Unparseable)));
+        // A schema can require a string but not require it to say anything, so
+        // the blank check stays here rather than in the shared seam.
+        for answer in [
+            Suggestion { branch: "  ".into(), title: "x".into(), goal: "x".into() },
+            Suggestion { branch: "feat/x".into(), title: "  ".into(), goal: "x".into() },
+            Suggestion { branch: "feat/x".into(), title: "x".into(), goal: "  ".into() },
+        ] {
+            assert!(matches!(usable(answer), Err(SuggestError::Unparseable(_))));
+        }
     }
 
     #[test]
@@ -459,14 +380,10 @@ mod tests {
     #[test]
     fn a_fallback_note_stays_one_line() {
         // The note is a single 11px line in the dialog; raw stderr is not.
+        // `brief` lives in the shared seam, but the dialog is what depends on
+        // it, so the guarantee is asserted from here too.
         let e = SuggestError::Failed("error: boom\n  at frame one\n  at frame two".into());
-        assert_eq!(one_line(&e), "claude -p failed: error: boom");
-        // Display would render a bare "claude -p failed:" with nothing after it.
-        assert_eq!(
-            one_line(&SuggestError::Failed(String::new())),
-            "claude -p exited non-zero with no output"
-        );
-        assert_eq!(one_line(&SuggestError::Unparseable), SuggestError::Unparseable.to_string());
+        assert_eq!(e.brief(), "claude -p failed: error: boom");
     }
 
     #[test]

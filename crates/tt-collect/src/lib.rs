@@ -73,6 +73,55 @@ pub struct CollectSummary {
 /// The stable `record_run` key for the calendar collector.
 const CALENDAR_KEY: &str = "claude:calendar";
 
+/// JSON Schema handed to `claude -p --json-schema`, which makes the CLI itself
+/// enforce the answer's shape: the model routes through a structured-output
+/// tool and the envelope carries a validated object. This — not a sentence in
+/// the prompt asking for "ONLY a JSON array, no prose, no code fences" — is the
+/// contract, which is why the prompt is free to be a question about the user's
+/// calendar and nothing else.
+///
+/// Structured output is an object at the root, so the array of events is asked
+/// for as the single `events` field of one.
+///
+/// Times are `date-time` strings and never epoch numbers, for the reason
+/// [`tt_config::DEFAULT_CALENDAR_PROMPT_GOOGLE`] documents: a 13-digit epoch is
+/// arithmetic a model cannot check, while an offset-bearing timestamp is
+/// something the calendar reports verbatim. Optional fields are deliberately
+/// *omitted* rather than sent as null — [`EventInput`]'s `attendees` is a
+/// `Vec` with a serde default, which covers a missing key but not an explicit
+/// `null`.
+const CALENDAR_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "events": {
+      "type": "array",
+      "description": "today's events, or [] if there are none",
+      "items": {
+        "type": "object",
+        "properties": {
+          "externalId": { "type": "string", "description": "stable event id from the calendar" },
+          "title": { "type": "string" },
+          "start": { "type": "string", "format": "date-time", "description": "RFC 3339 with the UTC offset the calendar reported, e.g. 2026-07-20T15:00:00-05:00; never converted to UTC" },
+          "end": { "type": "string", "format": "date-time", "description": "same format as start; omit if unknown" },
+          "attendees": { "type": "array", "items": { "type": "string" }, "description": "attendee display names; omit if unknown" },
+          "location": { "type": "string", "description": "omit if unknown" },
+          "joinUrl": { "type": "string", "description": "omit if unknown" }
+        },
+        "required": ["externalId", "title", "start"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["events"],
+  "additionalProperties": false
+}"#;
+
+/// The schema-validated answer: one calendar's events for today.
+#[derive(Debug, serde::Deserialize)]
+struct CalendarAnswer {
+    events: Vec<EventInput>,
+}
+
 /// Collect today's calendar events, running one `claude -p` per **enabled**
 /// [`CalendarSource`] and writing each into its own store lane. Records
 /// `claude:calendar`.
@@ -162,9 +211,7 @@ fn collect_calendar_source(
     if source.prompt.trim().is_empty() {
         return Err("source has no prompt".to_string());
     }
-    let value = run_claude(&source.prompt)?;
-    let events = serde_json::from_value::<Vec<EventInput>>(value)
-        .map_err(|e| format!("invalid calendar JSON: {e}"))?;
+    let events = run_claude_calendar(&source.prompt)?;
     store_calendar_events(store, id, day_start_ms, day_end_ms, &events, now_ms)
 }
 
@@ -922,79 +969,21 @@ fn finish(
     CollectSummary { collector: collector.to_string(), ok, count, message }
 }
 
-/// Run `claude -p <prompt>` (capped at [`CLAUDE_TIMEOUT`]) and extract a JSON
-/// value from its stdout. Returns a human-readable error string on spawn
-/// failure, timeout, non-zero exit, or no parseable JSON.
-fn run_claude(prompt: &str) -> Result<serde_json::Value, String> {
-    log::debug!("claude -p ({} byte prompt)", prompt.len());
-    let output = tt_exec::run_with_timeout("claude", &["-p", prompt], CLAUDE_TIMEOUT)
-        .map_err(|e| e.to_string())?;
-    if !output.ok() {
-        let stderr = output.stderr.trim();
-        return Err(if stderr.is_empty() {
-            format!("claude exited with code {}", output.exit_code)
-        } else {
-            format!("claude failed: {stderr}")
-        });
-    }
-    extract_json(&output.stdout).ok_or_else(|| "no parseable JSON in claude output".to_string())
-}
-
-/// Leniently extract the first parseable balanced JSON array or object from
-/// `raw`.
+/// Ask `claude -p` for one calendar's events (capped at [`CLAUDE_TIMEOUT`])
+/// through the CLI's structured-output guarantee, and return them.
 ///
-/// Bracket-scans (respecting strings and escapes) from each `[`/`{` in turn; a
-/// candidate that is unbalanced or fails to parse — prose like `[3 total]`
-/// ahead of the real payload — moves the scan to the next opener instead of
-/// giving up. The raw text is never rewritten (a fence marker inside a JSON
-/// string must survive), and fences don't need stripping: the scan simply
-/// starts at the first opener. Returns `None` when nothing in `raw` parses.
-pub fn extract_json(raw: &str) -> Option<serde_json::Value> {
-    let mut from = 0;
-    while let Some(offset) = raw[from..].find(['[', '{']) {
-        let start = from + offset;
-        if let Some(value) = parse_balanced_at(raw, start) {
-            return Some(value);
-        }
-        // This opener didn't yield JSON; resume after it.
-        from = start + 1;
-    }
-    None
-}
-
-/// Parse the balanced bracket run starting at byte `start` (which must be `[`
-/// or `{`), or `None` if it never closes or isn't valid JSON.
-fn parse_balanced_at(raw: &str, start: usize) -> Option<serde_json::Value> {
-    let (open, close) = if raw.as_bytes()[start] == b'[' { ('[', ']') } else { ('{', '}') };
-
-    let mut depth: i32 = 0;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (offset, ch) in raw[start..].char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            c if c == open => depth += 1,
-            c if c == close => {
-                depth -= 1;
-                if depth == 0 {
-                    let end = start + offset + ch.len_utf8();
-                    return serde_json::from_str(&raw[start..end]).ok();
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+/// The error is a single line fit for the run message, and it says *which kind*
+/// of failure this was: `claude -p failed: <the CLI's own reason>` for a
+/// credit-balance, auth or rate-limit failure, versus a shape complaint when
+/// the model answered but the schema-validated payload didn't fit
+/// [`EventInput`]. Collapsing those together is what used to make an expired
+/// MCP auth read as "no parseable JSON in claude output".
+fn run_claude_calendar(prompt: &str) -> Result<Vec<EventInput>, String> {
+    log::debug!("claude -p ({} byte prompt)", prompt.len());
+    let answer: CalendarAnswer = tt_exec::claude::Ask::new(prompt, CALENDAR_SCHEMA, CLAUDE_TIMEOUT)
+        .run()
+        .map_err(|e| e.brief())?;
+    Ok(answer.events)
 }
 
 #[cfg(test)]
@@ -1008,75 +997,60 @@ mod tests {
     }
 
     #[test]
-    fn extract_clean_array() {
-        let v = extract_json(r#"[{"a":1},{"a":2}]"#).unwrap();
-        assert_eq!(v.as_array().unwrap().len(), 2);
+    fn the_calendar_schema_asks_for_events_as_dated_strings() {
+        let schema: serde_json::Value = serde_json::from_str(CALENDAR_SCHEMA).unwrap();
+        assert_eq!(schema["required"], serde_json::json!(["events"]));
+        let item = &schema["properties"]["events"]["items"];
+        assert_eq!(item["required"], serde_json::json!(["externalId", "title", "start"]));
+        assert_eq!(item["additionalProperties"], serde_json::json!(false));
+        // Epoch numbers are arithmetic a model can't check; the offset-bearing
+        // string is what the calendar reports verbatim.
+        for field in ["start", "end"] {
+            assert_eq!(item["properties"][field]["type"], "string");
+            assert_eq!(item["properties"][field]["format"], "date-time");
+        }
     }
 
     #[test]
-    fn extract_fenced_array() {
-        let raw = "```json\n[1, 2, 3]\n```";
-        assert_eq!(extract_json(raw).unwrap().as_array().unwrap().len(), 3);
+    fn a_schema_validated_envelope_becomes_event_inputs() {
+        let raw = r#"{"type":"result","is_error":false,"structured_output":{"events":[
+            {"externalId":"e1","title":"standup","start":"2026-07-20T15:00:00-05:00",
+             "end":"2026-07-20T15:15:00-05:00","attendees":["Chris"],"location":"zoom"}]}}"#;
+        let answer: CalendarAnswer = tt_exec::claude::parse_response(raw).unwrap();
+        assert_eq!(answer.events.len(), 1);
+        assert_eq!(answer.events[0].external_id, "e1");
+        // The reported offset survives — normalizing to UTC on the way in would
+        // discard the one thing the column exists to carry.
+        assert_eq!(answer.events[0].start.to_rfc3339(), "2026-07-20T15:00:00-05:00");
+        assert_eq!(answer.events[0].join_url, None);
     }
 
     #[test]
-    fn extract_prose_wrapped_object() {
-        let raw = "Sure! Here is the data you asked for:\n{\"events\": []}\nHope that helps.";
-        let v = extract_json(raw).unwrap();
-        assert!(v.get("events").is_some());
+    fn an_empty_day_is_a_valid_answer_not_a_failure() {
+        let answer: CalendarAnswer = tt_exec::claude::parse_response(
+            r#"{"is_error":false,"structured_output":{"events":[]}}"#,
+        )
+        .unwrap();
+        assert!(answer.events.is_empty());
     }
 
     #[test]
-    fn extract_object_with_nested_arrays_and_braces_in_strings() {
-        let raw = r#"{"title": "a } weird ] title", "attendees": ["x", "y"]}"#;
-        let v = extract_json(raw).unwrap();
-        assert_eq!(v.get("title").unwrap(), "a } weird ] title");
-        assert_eq!(v.get("attendees").unwrap().as_array().unwrap().len(), 2);
+    fn a_claude_side_failure_reads_as_itself() {
+        // The bug this migration fixes: a credit-balance error used to come
+        // back as "no parseable JSON in claude output".
+        let raw = r#"{"type":"result","is_error":true,
+            "result":"Credit balance is too low to run this request."}"#;
+        let e = tt_exec::claude::parse_response::<CalendarAnswer>(raw).unwrap_err();
+        assert_eq!(e.brief(), "claude -p failed: Credit balance is too low to run this request.");
     }
 
     #[test]
-    fn extract_unbalanced_array_salvages_inner_object() {
-        // The array never closes, but the scan moves to the next opener and
-        // rescues the complete object inside it.
-        let v = extract_json(r#"[{"a": 1}"#).unwrap();
-        assert_eq!(v["a"], 1);
-    }
-
-    #[test]
-    fn extract_fully_unbalanced_is_none() {
-        assert!(extract_json(r#"[{"a": 1"#).is_none());
-    }
-
-    #[test]
-    fn extract_skips_prose_brackets_before_the_payload() {
-        // claude routinely narrates before the JSON; a bracketed fragment in
-        // that prose must not abort extraction.
-        let raw = r#"Here are today's events [3 total]:
-[{"externalId":"e1","title":"standup","startTs":1}]"#;
-        let v = extract_json(raw).unwrap();
-        assert_eq!(v.as_array().unwrap().len(), 1);
-        assert_eq!(v[0]["title"], "standup");
-    }
-
-    #[test]
-    fn extract_skips_unparseable_brace_fragment() {
-        let raw = r#"I'll check {your} calendar: [{"title":"standup"}]"#;
-        let v = extract_json(raw).unwrap();
-        assert_eq!(v[0]["title"], "standup");
-    }
-
-    #[test]
-    fn extract_preserves_fence_marker_inside_string_values() {
-        // The old implementation rewrote the raw text to strip fences, which
-        // corrupted fence markers inside JSON strings.
-        let raw = "```json\n{\"title\": \"use ```json blocks\"}\n```";
-        let v = extract_json(raw).unwrap();
-        assert_eq!(v["title"], "use ```json blocks");
-    }
-
-    #[test]
-    fn extract_error_sentence_is_none() {
-        assert!(extract_json("I could not access your calendar tools.").is_none());
+    fn an_answer_of_the_wrong_shape_reads_as_a_shape_complaint() {
+        // Distinct from the case above, and that distinction is the point.
+        let raw = r#"{"is_error":false,"structured_output":{"events":[{"title":"no id"}]}}"#;
+        let e = tt_exec::claude::parse_response::<CalendarAnswer>(raw).unwrap_err();
+        assert!(e.brief().contains("not in the expected shape"), "{e}");
+        assert!(matches!(e, tt_exec::claude::Error::Unparseable(_)), "{e:?}");
     }
 
     #[test]
