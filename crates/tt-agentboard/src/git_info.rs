@@ -1957,11 +1957,12 @@ mod tests {
         // Proves a real re-derive ran rather than returning the poisoned value.
         assert_ne!(reprobed.origin_url.as_deref(), Some("sentinel"));
         // And the re-derive classified rather than filtered: `other_worktrees`
-        // lists the sibling in `worktree_dirs` *and* calls it unmanaged, so the
-        // `showUnmanagedWorktrees` toggle never has to invalidate this entry.
+        // lists the sibling in `worktree_dirs` *and* as a linked worktree, so
+        // the `showUnmanagedWorktrees` toggle never has to invalidate this
+        // entry.
         let sibling_dir = path_s(&std::fs::canonicalize(&sibling).unwrap());
         assert!(reprobed.worktree_dirs.contains(&sibling_dir));
-        assert!(reprobed.unmanaged_worktree_dirs.contains(&sibling_dir));
+        assert!(reprobed.linked_worktree_dirs.contains(&sibling_dir));
     }
 
     /// The big win for #329: when no ref has moved since the last compute, the
