@@ -33,6 +33,13 @@
 //!   [`WatchedCollector`]s are considered, so disabled collectors never fire.
 //!
 //! All time is injected as `now_ms` (epoch ms); nothing here reads a clock.
+//!
+//! The host is `crates-tauri/tt-app/src/scheduler.rs`'s `run_notify_check`,
+//! which drives all four on a 15s tick and turns each edge into one desktop
+//! notification with its own `tt_config::NotifyKind` and focus-suppression
+//! rule. That cadence is why every watcher is edge- rather than
+//! level-triggered: a level check would re-notify four times a minute for as
+//! long as the condition held.
 
 use std::collections::{HashMap, HashSet};
 

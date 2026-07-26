@@ -331,7 +331,9 @@ Cargo workspace + npm workspace (`apps/client` only):
     are RFC 3339 text keeping the offset the calendar reported, with a
     STORED generated `starts_at_utc` as the sort/range key — never sort or
     range on the authored column, whose lexical order is not chronological
-    across offsets.
+    across offsets. See [`crates/tt-store/CLAUDE.md`](crates/tt-store/CLAUDE.md)
+    for the migration ordering rule, why dismissals live in their own table, and
+    the `attention.rs` notification watchers.
   - `tt-collect` — collectors that fill tt.db: calendar via `claude -p`
     (strict-JSON prompt + lenient extraction; one run per enabled
     `CalendarSource`, each with its own user-editable prompt and its own store
