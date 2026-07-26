@@ -1,3 +1,4 @@
+import { defaultFilter } from "cmdk";
 import { describe, expect, it } from "vitest";
 import type { AgentStatus, FolderData, RepoData, SessionData } from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
@@ -7,7 +8,10 @@ import {
   palettePrEntries,
   paletteIssueEntries,
   paletteQuickAddEntry,
+  paletteFilter,
+  paletteRecentScreens,
 } from "./palette";
+import { SCREENS } from "./screens";
 
 const agent = (status: AgentStatus) => ({ agent: "claude-code", session: "", status, ts: 1 });
 
@@ -199,5 +203,66 @@ describe("paletteQuickAddEntry", () => {
     const long =
       "follow up with the platform team about the flaky   deploy and reschedule the postmortem for next week";
     expect(paletteQuickAddEntry(long)?.title).toBe(long);
+  });
+});
+
+describe("paletteRecentScreens", () => {
+  it("drops the active screen and caps the list at four", () => {
+    expect(
+      paletteRecentScreens(
+        ["board", "cockpit", "agentboard", "telemetry", "mcp", "doctor"],
+        "board",
+        "",
+      ),
+    ).toEqual(["cockpit", "agentboard", "telemetry", "mcp"]);
+  });
+
+  it("ignores ids that are no longer screens", () => {
+    expect(paletteRecentScreens(["board", "retired-screen"], "settings", "")).toEqual(["board"]);
+  });
+
+  it("renders nothing once a query is typed, so Go to is the first group", () => {
+    expect(paletteRecentScreens(["agentboard", "cockpit"], "board", "Board")).toEqual([]);
+    expect(paletteRecentScreens(["agentboard", "cockpit"], "board", "b")).toEqual([]);
+  });
+
+  it("still renders for a whitespace-only query — nothing has been searched yet", () => {
+    expect(paletteRecentScreens(["agentboard"], "board", "   ")).toEqual(["agentboard"]);
+  });
+});
+
+const screenKeywords = (title: string) =>
+  Object.values(SCREENS).find((s) => s.title === title)?.keywords ?? [];
+
+describe("paletteFilter", () => {
+  it("scores an exact title match 1, above cmdk's keyword-diluted default", () => {
+    const exact = paletteFilter("Board", "Board", screenKeywords("Board"));
+    expect(exact).toBe(1);
+    expect(exact).toBeGreaterThan(paletteFilter("Board", "Boa", screenKeywords("Board")));
+  });
+
+  it("ranks the exact screen above a longer entry that merely contains the query", () => {
+    const board = paletteFilter("Board", "Board", screenKeywords("Board"));
+    const agentboard = paletteFilter("Agentboard", "Board", screenKeywords("Agentboard"));
+    const recent = paletteFilter("recent Agentboard", "Board", screenKeywords("Agentboard"));
+    expect(board).toBeGreaterThan(agentboard);
+    expect(board).toBeGreaterThan(recent);
+  });
+
+  it("matches an exact title case- and whitespace-insensitively", () => {
+    expect(paletteFilter("Board", "  bOaRd ", [])).toBe(1);
+  });
+
+  it("falls back to the fuzzy default for partial matches and misses", () => {
+    expect(paletteFilter("Telemetry", "tele", [])).toBeGreaterThan(0);
+    expect(paletteFilter("Telemetry", "zzzz", [])).toBe(0);
+  });
+
+  it("does not fire the exact-match boost on an empty query", () => {
+    // An empty search means "show everything" — cmdk's default already scores
+    // every item alike, and the boost must not fake an exact hit on an
+    // empty-valued item.
+    expect(paletteFilter("Board", "", [])).toBe(defaultFilter("Board", "", []));
+    expect(paletteFilter("Board", "   ", [])).toBe(defaultFilter("Board", "   ", []));
   });
 });

@@ -33,8 +33,10 @@ import {
   palettePrEntries,
   paletteIssueEntries,
   paletteQuickAddEntry,
+  paletteFilter,
+  paletteRecentScreens,
 } from "@/lib/palette";
-import { SCREENS, type ScreenId } from "@/lib/screens";
+import { SCREENS } from "@/lib/screens";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -84,11 +86,9 @@ export function CommandPalette() {
       requestAgentboardNav({ kind: "session", folderDir, sessionId });
     });
 
-  // MRU minus the screen you're already looking at — capped so the section
-  // stays a shortcut, not a second full screen list.
-  const recentScreens = recent
-    .filter((id): id is ScreenId => id !== activeTab && id in SCREENS)
-    .slice(0, 4);
+  // MRU shortcut — empty while a query is typed, so the exact-title match in
+  // "Go to" keeps the initial selection (see `paletteRecentScreens`).
+  const recentScreens = paletteRecentScreens(recent, activeTab, query);
 
   const repoEntries = paletteRepoEntries(repos);
   const sessionEntries = paletteSessionEntries(repos);
@@ -110,7 +110,7 @@ export function CommandPalette() {
         if (!open) setQuery("");
       }}
     >
-      <Command>
+      <Command filter={paletteFilter}>
         <CommandInput
           value={query}
           onValueChange={setQuery}
