@@ -1,0 +1,80 @@
+# Solari's dependency patch set — opt-in, NOT applied by default.
+#
+# Usage:
+#
+#   cargo --config .cargo/solari-patch.toml build -p tt-jarvis --features solari
+#
+# ## Why this is a separate file rather than the workspace `Cargo.toml`
+#
+# Two facts collide:
+#
+# 1. **Cargo `[patch]` only applies from the top-level workspace.** A git
+#    dependency does *not* inherit its own repo's patches, so depending on
+#    `slyedoc/bevy` silently resolves wgpu/naga/naga_oil/ash/gpu-allocator from
+#    crates.io, and `bevy_solari` fails against a stack with no Shader Execution
+#    Reordering. The patch set therefore has to be restated by the consumer.
+# 2. **`[patch]` cannot be made feature-conditional**, and bevy compiles
+#    `naga_oil` on *every* path — not just under `bevy_solari`. So putting these
+#    entries in `Cargo.toml` breaks the ordinary non-Solari build as well:
+#    naga_oil stops compiling against the forked naga.
+#
+# A `--config` file is the only way to get both: the normal build stays on
+# crates.io, and Solari builds opt in explicitly.
+#
+# ## Branches, not commit hashes
+#
+# These track branch names, matching how `tt-jarvis` depends on bevy itself.
+# `Cargo.lock` still records the exact resolved commit, so builds stay
+# reproducible; the difference is only that `cargo update` deliberately moves
+# onto newer work instead of requiring a manifest edit.
+#
+# The one caveat: these are five independently-moving repositories and their tips
+# do not always agree. A mismatch surfaces as a non-exhaustive-match error deep
+# inside `naga_oil` — which matches naga's IR enums exhaustively and so is always
+# the first crate to break on naga skew — rather than as anything naming the real
+# cause. When that happens, pin temporarily to diagnose, then go back to
+# branches once the set agrees again.
+#
+# ## Current status: does not build, and the blocker is upstream
+#
+# `bevy_solari` at bevy `763b174a` needs `COOPERATIVE_VECTOR`,
+# `EXPERIMENTAL_COOPERATIVE_VECTOR` and `RenderQueue::as_hal_locked`, which exist
+# only in `slyedoc/wgpu` at the `solari-rt-naga` tip (`44754cf8`) — his own
+# committed `Cargo.lock` pins an older wgpu (`3dbc7858`) lacking them, so that
+# lockfile does not build that bevy. Pin wgpu forward and `naga_oil` fails
+# instead: the pushed `solari-ser` tip (`b9480dd`) has no arm for
+# `naga::Expression::CooperativeVectorOp`, which that naga added.
+#
+# **No public combination of these repos builds his current bevy tip.** The
+# naga_oil cooperative-vector commit appears to exist only in his local
+# `/mnt/code/f/naga_oil`, which his `[patch]` points at and which is unpushed.
+# Resolution is to ask him for that revision, or to move bevy back to a commit
+# predating cooperative vectors.
+#
+# Separately, `bevy/force_disable_dlss` does not work: `bevy_solari`'s
+# `render/mod.rs` declares `pub mod dlss;` ungated while the module it uses
+# (`bevy_anti_alias::dlss`) is gated behind `not(feature = "force_disable_dlss")`.
+# Without the feature, `dlss_wgpu`'s build script panics unless `DLSS_SDK` is set.
+# That one is a small upstream fix and is the first candidate for the
+# `towles/jarvis-foreign-surface` branch in the bevy checkout.
+
+[patch.crates-io]
+# slyedoc/wgpu#solari-rt-naga — SER-aware naga plus the RT-pipeline wgpu.
+# Supplies naga as well as the wgpu crates; they are one repository.
+wgpu = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+wgpu-core = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+wgpu-hal = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+wgpu-types = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+wgpu-naga-bridge = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+naga = { git = "https://github.com/slyedoc/wgpu.git", branch = "solari-rt-naga" }
+
+# The current blocker — see "Current status" above.
+naga_oil = { git = "https://github.com/slyedoc/naga_oil.git", branch = "solari-ser" }
+
+# `bevy_solari` wants ash's `provisional` feature (provisional Vulkan
+# extensions). Released 0.38 on crates.io has no such feature; only git does.
+ash = { git = "https://github.com/ash-rs/ash.git", branch = "master" }
+
+# Fallout from the ash bump: released `gpu-allocator` 0.28 calls
+# `MemoryAllocateInfo::push_next`, which ash renamed. This fork is that rename.
+gpu-allocator = { git = "https://github.com/slyedoc/gpu-allocator.git", branch = "ash-push-rename" }

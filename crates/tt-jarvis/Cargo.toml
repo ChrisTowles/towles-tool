@@ -69,3 +69,30 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 # Linux is GTK3 + WebKitGTK, so the cadence harness has to reproduce the real
 # host's toolkit. Used only by `bench_gtk_cadence`.
 gtk = "0.18"
+
+[features]
+# Opt-in gate for the harnesses that need Wayland/GTK.
+#
+# Their dependencies are already `cfg(target_os = "linux")`-scoped, but the
+# *examples* were not, and cargo cannot make an `[[example]]`
+# target-conditional. It will, however, skip one whose `required-features` are
+# absent — so these three stay unbuilt everywhere unless asked for, instead of
+# failing to compile on macOS:
+#
+#   cargo run -p tt-jarvis --features linux-harness --example jarvis_demo --release
+#
+# Without this, `cargo test -p tt-jarvis --all-targets` on a Mac breaks on a
+# crate whose library half is perfectly portable.
+linux-harness = []
+
+[[example]]
+name = "bench_subsurface"
+required-features = ["linux-harness"]
+
+[[example]]
+name = "bench_gtk_cadence"
+required-features = ["linux-harness"]
+
+[[example]]
+name = "jarvis_demo"
+required-features = ["linux-harness"]
