@@ -418,24 +418,22 @@ export function CodeViewer({
         // is debounced.
         const next = mentionRangeFrom(e.selection);
         setSelection((prev) => (sameMentionRange(prev, next) ? prev : next));
+        // Read the highlighted text off the model *now*, not inside the
+        // debounce: this buffer is editable, so the text is the only thing
+        // the backend can't recover from disk, and 300ms later the model may
+        // already be disposed by a file switch.
+        const sel = e.selection;
+        const text =
+          sel.isEmpty() || !model || model.isDisposed() ? "" : model.getValueInRange(sel);
         clearTimeout(debounce);
         debounce = setTimeout(() => {
-          const sel = e.selection;
           if (sel.isEmpty()) {
             ideClearSelection(dir, path);
             streamed = false;
             return;
           }
-          const range = streamRangeFrom(sel);
           streamed = true;
-          ideSetSelection(
-            dir,
-            path,
-            range.startLine,
-            range.endLine,
-            range.startChar,
-            range.endChar,
-          );
+          ideSetSelection(dir, path, streamRangeFrom(sel), text);
         }, 300);
       });
     })();

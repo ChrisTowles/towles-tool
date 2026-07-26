@@ -147,12 +147,18 @@ crates/tt-ide                       Tauri-free protocol core: lockfile schema,
   `components/code-viewer.tsx` (the Files viewer) and
   `components/diff-monaco.tsx` (the modified side of each diff) — calls
   `ide_set_selection` (debounced client-side, mirroring VS Code's 300 ms) with
-  the folder dir, file path, **1-based** line range and **0-based** character
-  columns; the command resolves absolute paths, converts lines to 0-based at
+  the folder dir, file path, **1-based** line range, **0-based** character
+  columns and **the selected text read off the Monaco model**; the command
+  resolves absolute paths, converts lines to 0-based at
   the boundary, caches the selection per server (serving
   `getCurrentSelection`/`getLatestSelection`), and pushes `selection_changed`
   to every connected session rooted in that folder. Closing a file clears the
-  cached selection, so a stale range can't ride the next prompt.
+  cached selection, so a stale range can't ride the next prompt. **The text
+  comes from the editor buffer, never from disk** — both surfaces are editable,
+  and re-reading the file at those line numbers served whatever an unsaved
+  insertion above the highlight had shifted into place (issue #309). The read
+  happens synchronously with the selection event rather than inside the
+  debounce, so a file switch can't dispose the model out from under it.
 - **Explicit @-mention.** Two gestures fire `ide_at_mention`: the selection
   chip's `@ send` button (or `⌘⇧A`) sends the highlighted range as
   `@file#L12-40`, and the Files pane header's `@` button sends the whole file

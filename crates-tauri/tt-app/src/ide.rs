@@ -640,64 +640,52 @@ pub fn sweep_stale_lockfiles() {
 
 // Commands (invoked from the diff pane)
 
-/// Resolve `file_path` (repo-relative) against `dir`, read the selected span
-/// from disk, and build the wire selection (0-based). Lines are 1-based
-/// inclusive; `start_char`/`end_char` are optional 0-based character columns
-/// (the Monaco viewer sends them; the diff pane's gutter selects whole
-/// lines). The text comes from the real file — the diff pane may only show
-/// hunk excerpts.
-fn build_selection(
-    dir: &Path,
-    file_path: &str,
-    start_line: u32,
-    end_line: u32,
-    start_char: Option<u32>,
-    end_char: Option<u32>,
-) -> tt_ide::Selection {
-    let abs = dir.join(file_path);
-    let (start, end) = (start_line.min(end_line).max(1), start_line.max(end_line));
-    let content = std::fs::read_to_string(&abs).unwrap_or_default();
-    let lines: Vec<&str> = content.lines().collect();
-    let from = (start as usize - 1).min(lines.len());
-    let to = (end as usize).min(lines.len());
+/// A highlight as Monaco reports it: 1-based inclusive lines, 0-based
+/// character columns. Mirrors `StreamRange` in
+/// `apps/client/src/lib/ide-selection.ts`, which is the only thing that
+/// produces it.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamRange {
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_char: u32,
+    pub end_char: u32,
+}
 
-    let clip = |line: Option<&&str>, character: u32| -> usize {
-        line.map(|l| (character as usize).min(l.chars().count())).unwrap_or(0)
-    };
-    let first_char = start_char.map(|c| clip(lines.get(from), c)).unwrap_or(0);
-    let last_line_len = lines.get(to.saturating_sub(1)).map(|l| l.chars().count()).unwrap_or(0);
-    let last_char =
-        end_char.map(|c| clip(lines.get(to.saturating_sub(1)), c)).unwrap_or(last_line_len);
-
-    let mut selected: Vec<String> = lines[from..to].iter().map(|l| l.to_string()).collect();
-    if let Some(last) = selected.last_mut() {
-        *last = last.chars().take(last_char).collect();
-    }
-    if let Some(first) = selected.first_mut() {
-        *first = first.chars().skip(first_char).collect();
-    }
-    let text = selected.join("\n");
-
-    let mut selection = tt_ide::Selection::range(&abs, start - 1, end - 1, last_char as u32, text);
-    selection.selection.start.character = first_char as u32;
+/// Build the wire selection (0-based) for `abs` out of what the editor
+/// reported.
+///
+/// **`text` is the editor's buffer, never the file on disk** (issue #309). The
+/// Files viewer is editable, so with unsaved edits the bytes at those line
+/// numbers on disk can be entirely different text than the user highlighted —
+/// after an insertion above the selection, wildly so. Both callers of
+/// `ide_set_selection` own a Monaco model, so the buffer is always available
+/// and there is no disk path left to fall back to.
+fn build_selection(abs: &Path, range: StreamRange, text: String) -> tt_ide::Selection {
+    // Clamped to 1 at both ends: lines are 1-based here, and a 0 from a
+    // miscounting caller would underflow the conversion below.
+    let start = range.start_line.min(range.end_line).max(1);
+    let end = range.start_line.max(range.end_line).max(start);
+    let mut selection = tt_ide::Selection::range(abs, start - 1, end - 1, range.end_char, text);
+    selection.selection.start.character = range.start_char;
     selection
 }
 
-/// A highlight was made in the diff pane for `dir`: cache + push it to every
-/// terminal IDE server rooted there. Returns whether any connected CLI got it
+/// A highlight was made in a Monaco editor for `dir`: cache + push it to every
+/// terminal IDE server rooted there. `text` is the selected text as the *buffer*
+/// has it — see [`build_selection`]. Returns whether any connected CLI got it
 /// live (false = cached only, or no terminal in that folder).
 #[tauri::command]
 pub fn ide_set_selection(
     state: State<TermState>,
     dir: String,
     file_path: String,
-    start_line: u32,
-    end_line: u32,
-    start_char: Option<u32>,
-    end_char: Option<u32>,
+    range: StreamRange,
+    text: String,
 ) -> Result<bool, String> {
     let dir = PathBuf::from(dir);
-    let selection = build_selection(&dir, &file_path, start_line, end_line, start_char, end_char);
+    let selection = build_selection(&dir.join(&file_path), range, text);
     let mut delivered = false;
     state.for_ide_servers(&dir, |server| {
         let frame_selection = selection.clone();
@@ -1135,6 +1123,71 @@ pub async fn ide_list_files(dir: String) -> Vec<String> {
     })
     .await
     .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    fn range(start_line: u32, end_line: u32, start_char: u32, end_char: u32) -> StreamRange {
+        StreamRange { start_line, end_line, start_char, end_char }
+    }
+
+    /// Issue #309: the viewer is editable, so the buffer — not the file on
+    /// disk — is what the user highlighted. This is the regression: a file
+    /// whose on-disk line 2 says something else entirely must not leak into
+    /// `Selection.text`.
+    #[test]
+    fn selection_text_is_the_buffer_not_the_file_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let abs = tmp.path().join("src/main.rs");
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, "stale one\nstale two\nstale three\n").unwrap();
+
+        let sel = build_selection(&abs, range(2, 2, 0, 9), "fresh two".to_string());
+
+        assert_eq!(sel.text, "fresh two");
+        assert!(!sel.text.contains("stale"), "{}", sel.text);
+    }
+
+    /// A selection nowhere near the file's contents (the shape an insertion
+    /// above the highlight produces) still travels verbatim — nothing clips
+    /// it against disk lines that no longer correspond to those numbers.
+    #[test]
+    fn selection_survives_a_buffer_longer_than_the_saved_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let abs = tmp.path().join("notes.md");
+        std::fs::write(&abs, "one\n").unwrap();
+
+        let sel = build_selection(&abs, range(40, 42, 2, 4), "typed\nbut\nunsaved".to_string());
+
+        assert_eq!(sel.text, "typed\nbut\nunsaved");
+    }
+
+    /// Lines arrive 1-based inclusive and leave 0-based; the columns pass
+    /// through untouched (Monaco's are already valid for its own buffer).
+    #[test]
+    fn range_converts_to_zero_based_lines_and_keeps_columns() {
+        let sel = build_selection(Path::new("/w/a.rs"), range(3, 7, 4, 11), "x".to_string());
+
+        assert_eq!(sel.selection.start.line, 2);
+        assert_eq!(sel.selection.end.line, 6);
+        assert_eq!(sel.selection.start.character, 4);
+        assert_eq!(sel.selection.end.character, 11);
+        assert!(!sel.selection.is_empty);
+    }
+
+    /// A backwards drag (caret above the anchor) and a line 0 from a caller
+    /// that miscounted both have to land on a sane range rather than
+    /// underflowing the 1→0-based subtraction.
+    #[test]
+    fn range_normalizes_backwards_and_zero_lines() {
+        let sel = build_selection(Path::new("/w/a.rs"), range(9, 4, 0, 2), "x".to_string());
+        assert_eq!((sel.selection.start.line, sel.selection.end.line), (3, 8));
+
+        let zero = build_selection(Path::new("/w/a.rs"), range(0, 0, 0, 0), String::new());
+        assert_eq!((zero.selection.start.line, zero.selection.end.line), (0, 0));
+    }
 }
 
 #[cfg(test)]
