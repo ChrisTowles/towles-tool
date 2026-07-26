@@ -452,6 +452,11 @@ pub fn run() {
                                 let _ = w.add(&fresh);
                             }
                             git_watched = desired_keys;
+                            // Settle any registration whose `.git` directory
+                            // didn't exist when it was made (a packed branch
+                            // ref — see `MultiFileNotifier`'s doc) onto its
+                            // real parent now that it does.
+                            w.rewatch_pending();
                         }
                         *git_watch_index.lock().unwrap() = desired;
                         emit.notify_one();

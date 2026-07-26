@@ -136,6 +136,22 @@ impl ScopedDirNotifier {
 /// registered paths touched within a debounce window flush as one
 /// deduplicated batch.
 ///
+/// **A registered file's parent directory need not exist yet.** `git
+/// pack-refs --prune` (which `git gc --auto` runs on its own) removes the
+/// loose `refs/heads/feat/x` *and* the `refs/heads/feat` directory it
+/// emptied, so any branch with a `/` in its name has no parent to watch until
+/// the ref goes loose again — and `packed-refs` does not change on the commit
+/// that recreates it. Failing the registration drops that branch to the
+/// backup poll. Such a file registers *pending* against its nearest existing
+/// ancestor (within [`MAX_MISSING_ANCESTORS`] levels), and an event on any
+/// ancestor of it counts as a hit; [`rewatch_pending`](Self::rewatch_pending)
+/// settles the registration onto the real parent once it exists.
+///
+/// Watching that ancestor *recursively* instead does not work: notify
+/// installs the new subdirectory's watch in response to its creation event,
+/// by which time git has already written the ref inside, and that write is
+/// never delivered.
+///
 /// Known degradation: if a watched *parent directory* itself is deleted,
 /// the OS drops its watch and a later recreation of the directory is not
 /// re-watched until every registration inside it drains and re-adds. Files
@@ -143,11 +159,44 @@ impl ScopedDirNotifier {
 /// (git-stats keyed) remains the safety net, and pane rebuilds re-register.
 pub struct MultiFileNotifier {
     watcher: RecommendedWatcher,
-    /// Refcount per registered file — shared with the watcher callback,
-    /// which filters events against its key set.
-    targets: Arc<Mutex<HashMap<PathBuf, u32>>>,
-    /// Watched parent directory → number of distinct registered files in it.
+    /// What the watcher callback matches events against — shared with it.
+    targets: Arc<Mutex<Targets>>,
+    /// Watched directory → number of registrations held on it. Usually a
+    /// file's own parent; the nearest existing ancestor for a pending one.
     parents: HashMap<PathBuf, u32>,
+    /// Registered file → the directory actually watched on its behalf. Kept
+    /// because [`MultiFileNotifier::remove`] can't re-derive it: a pending
+    /// file's real parent may exist by then, which would release the wrong
+    /// watch.
+    watched_for: HashMap<PathBuf, PathBuf>,
+}
+
+/// How many missing levels [`MultiFileNotifier::add`] walks up before giving
+/// up. One covers every real control file (`refs/heads/<prefix>` is the only
+/// directory git prunes under a checkout's `.git`); four leaves room for a
+/// `feat/a/b/c` branch name without ever reaching a directory broad enough
+/// that watching it would be a problem.
+const MAX_MISSING_ANCESTORS: usize = 4;
+
+/// The callback's view of what's registered: exact paths with refcounts, plus
+/// the pending ones matched by ancestry (see [`MultiFileNotifier`]'s doc).
+#[derive(Default)]
+struct Targets {
+    files: HashMap<PathBuf, u32>,
+    /// Files whose parent didn't exist at registration.
+    pending: HashSet<PathBuf>,
+}
+
+impl Targets {
+    /// The registered files an event on `path` should report. Exactly `path`
+    /// when it's registered; otherwise every pending file `path` is an
+    /// ancestor of — the directory appearing on the way to that file.
+    fn hits(&self, path: &Path) -> Vec<PathBuf> {
+        if self.files.contains_key(path) {
+            return vec![path.to_path_buf()];
+        }
+        self.pending.iter().filter(|f| f.starts_with(path)).cloned().collect()
+    }
 }
 
 impl MultiFileNotifier {
@@ -159,7 +208,7 @@ impl MultiFileNotifier {
     where
         F: Fn(Vec<PathBuf>) + Send + 'static,
     {
-        let targets: Arc<Mutex<HashMap<PathBuf, u32>>> = Arc::default();
+        let targets: Arc<Mutex<Targets>> = Arc::default();
         let (tx, rx) = mpsc::channel::<PathBuf>();
         std::thread::spawn(move || debounce_loop(&rx, on_change));
 
@@ -169,66 +218,138 @@ impl MultiFileNotifier {
                 // A rename lists both halves (tmp name and final name) in
                 // `paths`, so a tmp+rename replace still matches its target.
                 let hits: Vec<PathBuf> = {
-                    let map = cb_targets.lock().unwrap();
-                    event.paths.iter().filter(|p| map.contains_key(*p)).cloned().collect()
+                    let targets = cb_targets.lock().unwrap();
+                    event.paths.iter().flat_map(|p| targets.hits(p)).collect()
                 };
                 for path in hits {
                     let _ = tx.send(path);
                 }
             }
         })?;
-        Ok(Self { watcher, targets, parents: HashMap::new() })
+        Ok(Self { watcher, targets, parents: HashMap::new(), watched_for: HashMap::new() })
     }
 
-    /// Register `file` (absolute path, parent must exist). Refcounted — a
-    /// second registration of the same path is free and requires a matching
-    /// [`remove`](Self::remove).
+    /// Register `file` (absolute path). Refcounted — a second registration of
+    /// the same path is free and requires a matching [`remove`](Self::remove).
+    /// The parent directory need not exist yet; see the type's doc for what is
+    /// watched in its place.
     pub fn add(&mut self, file: &Path) -> notify::Result<()> {
-        if let Some(count) = self.targets.lock().unwrap().get_mut(file) {
+        if let Some(count) = self.targets.lock().unwrap().files.get_mut(file) {
             *count += 1;
             return Ok(());
         }
-        let parent = file.parent().unwrap_or(Path::new("/")).to_path_buf();
-        match self.parents.get_mut(&parent) {
-            Some(n) => *n += 1,
-            None => {
-                self.watcher.watch(&parent, RecursiveMode::NonRecursive)?;
-                self.parents.insert(parent, 1);
-            }
+        let parent = file.parent().unwrap_or(Path::new("/"));
+        let dir = watch_point(parent)
+            .ok_or_else(|| notify::Error::path_not_found().add_path(parent.to_path_buf()))?;
+        self.hold(&dir)?;
+        self.watched_for.insert(file.to_path_buf(), dir.clone());
+        let mut targets = self.targets.lock().unwrap();
+        targets.files.insert(file.to_path_buf(), 1);
+        if dir != parent {
+            targets.pending.insert(file.to_path_buf());
         }
-        self.targets.lock().unwrap().insert(file.to_path_buf(), 1);
         Ok(())
     }
 
+    /// Move every pending registration whose real parent directory now exists
+    /// onto that parent, so its next change fires as an exact match rather
+    /// than as the one-shot ancestor hit. Cheap — an `is_dir` per pending file
+    /// and nothing at all when none are — so the owner calls it on the same
+    /// tick it diffs the registered set.
+    pub fn rewatch_pending(&mut self) {
+        let ready: Vec<PathBuf> = {
+            let targets = self.targets.lock().unwrap();
+            targets
+                .pending
+                .iter()
+                .filter(|f| f.parent().is_some_and(Path::is_dir))
+                .cloned()
+                .collect()
+        };
+        for file in ready {
+            let parent = match file.parent() {
+                Some(p) => p.to_path_buf(),
+                None => continue,
+            };
+            if self.hold(&parent).is_err() {
+                continue;
+            }
+            if let Some(old) = self.watched_for.insert(file.clone(), parent) {
+                self.release(&old);
+            }
+            self.targets.lock().unwrap().pending.remove(&file);
+        }
+    }
+
+    /// Take a reference on a directory watch, starting it if this is the first.
+    fn hold(&mut self, dir: &Path) -> notify::Result<()> {
+        match self.parents.get_mut(dir) {
+            Some(n) => *n += 1,
+            None => {
+                self.watcher.watch(dir, RecursiveMode::NonRecursive)?;
+                self.parents.insert(dir.to_path_buf(), 1);
+            }
+        }
+        Ok(())
+    }
+
+    /// Drop a reference on a directory watch, stopping it at zero.
+    fn release(&mut self, dir: &Path) {
+        if let Some(n) = self.parents.get_mut(dir) {
+            *n -= 1;
+            if *n == 0 {
+                self.parents.remove(dir);
+                let _ = self.watcher.unwatch(dir);
+            }
+        }
+    }
+
     /// Drop one reference to `file`; the last drop stops delivering it and
-    /// releases its parent-directory watch when no sibling needs it.
-    /// Unmatched calls are a no-op.
+    /// releases the directory watch held on its behalf when no sibling needs
+    /// it. Unmatched calls are a no-op.
     pub fn remove(&mut self, file: &Path) {
         {
             let mut targets = self.targets.lock().unwrap();
-            let Some(count) = targets.get_mut(file) else {
+            let Some(count) = targets.files.get_mut(file) else {
                 return;
             };
             *count -= 1;
             if *count > 0 {
                 return;
             }
-            targets.remove(file);
+            targets.files.remove(file);
+            targets.pending.remove(file);
         }
-        let parent = file.parent().unwrap_or(Path::new("/")).to_path_buf();
-        if let Some(n) = self.parents.get_mut(&parent) {
-            *n -= 1;
-            if *n == 0 {
-                self.parents.remove(&parent);
-                let _ = self.watcher.unwatch(&parent);
-            }
+        if let Some(dir) = self.watched_for.remove(file) {
+            self.release(&dir);
         }
     }
 
     /// No files registered — the owner can drop the whole notifier.
     pub fn is_empty(&self) -> bool {
-        self.targets.lock().unwrap().is_empty()
+        self.targets.lock().unwrap().files.is_empty()
     }
+}
+
+/// Which directory to actually watch for a file whose parent is `parent`:
+/// `parent` itself when it exists (the ordinary case), otherwise its nearest
+/// existing ancestor within [`MAX_MISSING_ANCESTORS`] levels — where the
+/// registration is *pending* and matched by ancestry until
+/// [`MultiFileNotifier::rewatch_pending`] moves it down. `None` when no
+/// ancestor exists that close, which keeps a nonsense path from escalating
+/// into a watch on `/` or a home directory.
+fn watch_point(parent: &Path) -> Option<PathBuf> {
+    if parent.is_dir() {
+        return Some(parent.to_path_buf());
+    }
+    let mut current = parent;
+    for _ in 0..MAX_MISSING_ANCESTORS {
+        current = current.parent()?;
+        if current.is_dir() {
+            return Some(current.to_path_buf());
+        }
+    }
+    None
 }
 
 /// Block for a first message, drain everything else arriving within the
@@ -443,6 +564,89 @@ mod tests {
             "a removed registration must go silent"
         );
         assert!(!notifier.is_empty(), "the other file is still registered");
+    }
+
+    /// The git-info accelerant's real failure mode before this: a checkout on
+    /// a branch with a `/` in its name, in a repo `git gc` has packed, has no
+    /// `refs/heads/<prefix>` directory at all — so registering its branch ref
+    /// used to fail outright and that ref quietly left the watch set. The
+    /// registration must survive the gap and fire when git writes the ref
+    /// loose again.
+    #[test]
+    fn multi_file_notifier_registers_a_file_whose_parent_does_not_exist_yet() {
+        let root = tempfile::tempdir().unwrap();
+        let heads = root.path().join("refs/heads");
+        std::fs::create_dir_all(&heads).unwrap();
+        // `refs/heads/feat` is absent, exactly as `pack-refs --prune` leaves it.
+        let branch_ref = heads.join("feat/x");
+
+        let (fired_tx, fired_rx) = mpsc::channel::<Vec<PathBuf>>();
+        let mut notifier = MultiFileNotifier::new(move |batch| {
+            let _ = fired_tx.send(batch);
+        })
+        .unwrap();
+        notifier.add(&branch_ref).expect("a missing parent must not fail the registration");
+
+        std::fs::create_dir_all(branch_ref.parent().unwrap()).unwrap();
+        std::fs::write(&branch_ref, "cafebabe\n").unwrap();
+        let batch = fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(batch.contains(&branch_ref), "the ref going loose must fire: {batch:?}");
+
+        // And the wider watch it took to see that must still be released.
+        notifier.remove(&branch_ref);
+        assert!(notifier.is_empty());
+    }
+
+    /// The second half of that: once the directory exists, the registration
+    /// must stop depending on the one-shot ancestor hit and behave like any
+    /// other watched file, so the *next* write to the ref fires too. That's
+    /// what `rewatch_pending` is for — the owner calls it on its rebuild tick.
+    #[test]
+    fn multi_file_notifier_promotes_a_pending_file_once_its_parent_appears() {
+        let root = tempfile::tempdir().unwrap();
+        let heads = root.path().join("refs/heads");
+        std::fs::create_dir_all(&heads).unwrap();
+        let branch_ref = heads.join("feat/x");
+
+        let (fired_tx, fired_rx) = mpsc::channel::<Vec<PathBuf>>();
+        let mut notifier = MultiFileNotifier::new(move |batch| {
+            let _ = fired_tx.send(batch);
+        })
+        .unwrap();
+        notifier.add(&branch_ref).unwrap();
+
+        std::fs::create_dir_all(branch_ref.parent().unwrap()).unwrap();
+        std::fs::write(&branch_ref, "one\n").unwrap();
+        fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        notifier.rewatch_pending();
+        assert!(
+            notifier.targets.lock().unwrap().pending.is_empty(),
+            "an existing parent means nothing is pending any more"
+        );
+
+        // A second update, with no directory being created this time — only an
+        // exact-path watch on the real parent can see this one.
+        std::fs::write(&branch_ref, "two\n").unwrap();
+        let batch = fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(batch, vec![branch_ref]);
+    }
+
+    /// The bound on that walk: a path with no plausible ancestor must fail the
+    /// registration rather than fall back onto some far-away directory.
+    #[test]
+    fn watch_point_gives_up_rather_than_watching_a_far_away_ancestor() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(watch_point(root.path()), Some(root.path().to_path_buf()));
+        assert_eq!(
+            watch_point(&root.path().join("a")),
+            Some(root.path().to_path_buf()),
+            "one missing level falls back to the existing parent"
+        );
+        assert_eq!(
+            watch_point(&root.path().join("a/b/c/d/e/f")),
+            None,
+            "beyond the bound, no watch at all"
+        );
     }
 
     #[test]
