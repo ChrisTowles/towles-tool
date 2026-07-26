@@ -11,7 +11,7 @@ import type { Result } from "better-result";
 import { toast } from "sonner";
 import { invoke, isTauri } from "@/lib/tauri";
 import { errorMessage, type IpcError } from "@/lib/errors";
-import { formatMentionRef, type MentionRange } from "@/lib/ide-selection";
+import { formatMentionRef, type MentionRange, type StreamRange } from "@/lib/ide-selection";
 
 /** One terminal's IDE pairing state (mirrors `IdeStatus` in ide.rs). */
 export type IdeStatus = {
@@ -57,26 +57,26 @@ export function useIdeConnected(dir: string | undefined): boolean {
   );
 }
 
-/** Push a highlight (1-based inclusive lines; optional 0-based character
- * columns from the code viewer) as the ambient selection of every Claude
- * session rooted at `dir`. Safe to ignore the result — this is ambient context,
- * not an action the user is waiting on. */
+/**
+ * Push a highlight (1-based inclusive lines, 0-based character columns) as the
+ * ambient selection of every Claude session rooted at `dir`. Safe to ignore the
+ * result — this is ambient context, not an action the user is waiting on.
+ *
+ * `text` must come from the **model** (`getValueInRange`), not the file: these
+ * buffers are editable, and the backend has no other way to know what the user
+ * actually highlighted while a save is still pending (issue #309). Read it
+ * synchronously with the selection, not inside the debounce — by then the model
+ * may be disposed.
+ */
 export function ideSetSelection(
   dir: string,
   filePath: string,
-  startLine: number,
-  endLine: number,
-  startChar?: number,
-  endChar?: number,
+  range: StreamRange,
+  text: string,
 ): Promise<Result<void, IpcError>> {
-  return invoke<void>("ide_set_selection", {
-    dir,
-    filePath,
-    startLine,
-    endLine,
-    startChar: startChar ?? null,
-    endChar: endChar ?? null,
-  });
+  // `range` crosses as one object (`StreamRange` in ide.rs mirrors it) rather
+  // than four flat args — the command's other three are already its budget.
+  return invoke<void>("ide_set_selection", { dir, filePath, range, text });
 }
 
 /** Tell the folder's sessions which file the code viewer has open

@@ -689,24 +689,22 @@ export function MonacoMultiDiff({
                   if (prev?.path === path && sameMentionRange(prev.range, next)) return prev;
                   return { path, range: next };
                 });
+                // Same rule as the Files viewer: the modified side is
+                // editable, so the highlighted text has to be read off the
+                // model synchronously — the backend can't recover it from
+                // disk, and the model may be gone by the time the debounce
+                // fires.
+                const sel = e.selection;
+                const text = sel.isEmpty() ? "" : (modified.getModel()?.getValueInRange(sel) ?? "");
                 clearTimeout(debounce);
                 debounce = setTimeout(() => {
-                  const sel = e.selection;
                   if (sel.isEmpty()) {
                     ideClearSelection(dir, path);
                     if (streamedPath === path) streamedPath = null;
                     return;
                   }
                   streamedPath = path;
-                  const range = streamRangeFrom(sel);
-                  ideSetSelection(
-                    dir,
-                    path,
-                    range.startLine,
-                    range.endLine,
-                    range.startChar,
-                    range.endChar,
-                  );
+                  ideSetSelection(dir, path, streamRangeFrom(sel), text);
                 }, 300);
               },
             ),
