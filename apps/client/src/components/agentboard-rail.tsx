@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
 import {
+  AppWindow,
+  Files,
   Folder,
   FolderGit2,
+  GitCompare,
   FolderPlus,
   FolderX,
   MoreVertical,
@@ -14,6 +17,7 @@ import {
   AgentStatusLine,
   BaseMovedChip,
   CacheBadge,
+  ChatDot,
   ModelBadge,
   Chevron,
   DeletingBadge,
@@ -59,7 +63,19 @@ import { hasRepoColor, repoAccentStyles, repoIcon, type RepoMeta } from "@/lib/r
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import {
+  chatStatus,
+  chatTally,
+  useChatSession,
+  useChatSessions,
+  type ChatStatus,
+} from "@/lib/agent-sessions";
+import {
+  agentPaneId,
   agentRollup,
+  isAgentPane,
+  isDiffPane,
+  isFilesPane,
+  isPreviewPane,
   claudeTitleName,
   branchRedundant,
   comparedBaseLabel,
@@ -269,7 +285,18 @@ export function RailIconStrip({
  * threshold) behind the trailing ⚙. Quiet when the board is at rest. */
 export function RollupChip({ state, now }: { state: StatePayload; now: number }) {
   const threshold = state.compactRecommendPercent;
-  const r = agentRollup(state.repos, now, threshold);
+  const pty = agentRollup(state.repos, now, threshold);
+  // Chats are agents too. The engine only knows about PTY sessions, so a tally
+  // built from its payload alone read "no agents running" with a chat working
+  // in plain sight — the same blind spot that kept chats out of the rail.
+  const chatRecords = useChatSessions();
+  const chats = chatTally(chatRecords.values());
+  const r = {
+    ...pty,
+    total: pty.total + chats.total,
+    busy: pty.busy + chats.busy,
+    error: pty.error + chats.error,
+  };
   // Track the slider locally while dragging; commit on release.
   const [draft, setDraft] = useState<number | null>(null);
   const pct = draft ?? threshold;
@@ -348,6 +375,7 @@ export function RepoGroup({
   prs,
   tasks,
   selectedSessionId,
+  activePaneId,
   activeFolderDir,
   collapsed,
   renaming,
@@ -369,6 +397,7 @@ export function RepoGroup({
   onOpenFiles,
   onOpenPreview,
   onOpenAgent,
+  onClosePane,
   quietDirs,
   quietRevealed,
   onToggleQuiet,
@@ -388,6 +417,9 @@ export function RepoGroup({
    * linked issues (the rail IssueChips). Threaded the same way `prs` is. */
   tasks: TaskItem[];
   selectedSessionId: string | null;
+  /** The focused pane tile (`focusedPaneId`) — what marks a *chat* row active,
+   * since a chat has no session record for `selectedSessionId` to name. */
+  activePaneId: string | null;
   activeFolderDir: string | null;
   collapsed: Record<string, boolean>;
   renaming: string | null;
@@ -423,6 +455,9 @@ export function RepoGroup({
   onOpenPreview: (dir: string) => void;
   /** Opens the folder's rendered-agent pane in its focused window. */
   onOpenAgent: (dir: string) => void;
+  /** Drops one pane from its window — a chat row's ✕ (which ends the session
+   * behind it, see `AgentPane`) and a view row's ✕ alike. */
+  onClosePane: (paneId: string) => void;
   /** Dirs the hide-inactive filter tucks behind a "N quiet" stub (empty/
    * undefined when the filter is off). Quiet folders demote to the stub
    * instead of vanishing — nothing ever silently disappears from the rail. */
@@ -474,6 +509,51 @@ export function RepoGroup({
     </motion.div>
   );
 
+  const chatRow = (folder: FolderData, paneId: string) => (
+    <motion.div key={paneId} {...railRowMotion}>
+      <ChatRow
+        folderDir={folder.dir}
+        active={activePaneId === paneId}
+        onSelect={() => onOpenAgent(folder.dir)}
+        onClose={() => onClosePane(paneId)}
+      />
+    </motion.div>
+  );
+
+  const viewRow = (folder: FolderData, paneId: string, kind: ViewPaneKind) => (
+    <motion.div key={paneId} {...railRowMotion}>
+      <ViewPaneRow
+        kind={kind}
+        active={activePaneId === paneId}
+        onSelect={() =>
+          kind === "diff"
+            ? onOpenDiff(folder.dir)
+            : kind === "files"
+              ? onOpenFiles(folder.dir)
+              : onOpenPreview(folder.dir)
+        }
+        onClose={() => onClosePane(paneId)}
+      />
+    </motion.div>
+  );
+
+  /**
+   * One rail row per pane of a folder's window, whichever kind it is: a PTY
+   * session, the folder's chat, or one of its views (diff, files, preview).
+   *
+   * The rail used to list PTY sessions and nothing else, so a folder read "no
+   * sessions" with a live conversation on screen beside it — and a diff or file
+   * tree you had opened was reachable only by finding it in the pane area. What
+   * is open in a folder is now the rail's answer, not the pane area's alone.
+   */
+  const paneRow = (folder: FolderData, paneId: string, byId: Map<string, SessionData>) => {
+    const session = byId.get(paneId);
+    if (session) return sessionRow(folder, session);
+    if (isAgentPane(paneId)) return chatRow(folder, paneId);
+    const kind = viewPaneKind(paneId);
+    return kind ? viewRow(folder, paneId, kind) : null;
+  };
+
   // Sessions render grouped by the window (pane group) they belong to: a
   // window holding multiple panes gets a vertical color spine running beside
   // its rows (no text label — window names carry no signal in the rail);
@@ -487,55 +567,58 @@ export function RepoGroup({
   // that row does not animate — a spine with nothing left to attach to is not
   // worth keeping on screen for an extra frame.
   const sessionRows = (folder: FolderData) => {
-    if (folder.sessions.length === 0) {
-      return (
-        <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-[11px] italic text-muted-foreground/60">
-          no sessions
-          <button
-            type="button"
-            onClick={() => onNewSession(folder.dir, true)}
-            className="not-italic text-violet-500 hover:underline"
-          >
-            ✦ start Claude
-          </button>
-          <span className="text-muted-foreground/40">·</span>
-          <button
-            type="button"
-            onClick={() => onNewSession(folder.dir, false)}
-            className="not-italic text-violet-500 hover:underline"
-          >
-            + shell
-          </button>
-        </div>
-      );
-    }
     const folderWins = (wins?.windows ?? []).filter((w) => w.folderDir === folder.dir);
+    // A chat is something running in this folder even though it is not a PTY
+    // session, so the "nothing running here" hint has to account for it — the
+    // whole complaint this row work came from was a folder reading "no
+    // sessions" with a live conversation on screen beside it. A diff/files/
+    // preview pane, by contrast, is not something running, so it doesn't
+    // suppress the hint — it just gets its row below it.
+    const chatOpen = folderWins.some((w) => w.panes.some(isAgentPane));
     const byId = new Map(folder.sessions.map((s) => [s.id, s] as const));
     const grouped = new Set(folderWins.flatMap((w) => w.panes));
     const loose = folder.sessions.filter((s) => !grouped.has(s.id));
     const groups = folderWins
       .map((w) => ({
         win: w,
-        sessions: w.panes
-          .map((id) => byId.get(id))
-          .filter((s): s is SessionData => s !== undefined),
+        rows: w.panes
+          .map((id) => paneRow(folder, id, byId))
+          .filter((row): row is ReactElement => row !== null),
       }))
-      .filter((g) => g.sessions.length > 0);
+      .filter((g) => g.rows.length > 0);
     return (
       <>
-        {groups.map(({ win, sessions }) => (
+        {folder.sessions.length === 0 && !chatOpen && (
+          <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-[11px] italic text-muted-foreground/60">
+            no sessions
+            <button
+              type="button"
+              onClick={() => onNewSession(folder.dir, true)}
+              className="not-italic text-violet-500 hover:underline"
+            >
+              ✦ start Claude
+            </button>
+            <span className="text-muted-foreground/40">·</span>
+            <button
+              type="button"
+              onClick={() => onNewSession(folder.dir, false)}
+              className="not-italic text-violet-500 hover:underline"
+            >
+              + shell
+            </button>
+          </div>
+        )}
+        {groups.map(({ win, rows }) => (
           <div key={win.id} className="relative">
-            {sessions.length > 1 && (
+            {rows.length > 1 && (
               <WindowSpine
                 win={win}
                 folderWins={folderWins}
-                count={sessions.length}
+                count={rows.length}
                 onFocus={() => actions.focusWindow(win.id)}
               />
             )}
-            <AnimatePresence initial={false}>
-              {sessions.map((s) => sessionRow(folder, s))}
-            </AnimatePresence>
+            <AnimatePresence initial={false}>{rows}</AnimatePresence>
           </div>
         ))}
         <AnimatePresence initial={false}>{loose.map((s) => sessionRow(folder, s))}</AnimatePresence>
@@ -1176,6 +1259,180 @@ function WindowSpine({
     >
       <span className={cn("h-full w-[3px] rounded-full", windowColor(folderWins, win.id))} />
     </button>
+  );
+}
+
+/** The pane kinds that are a *view of* the folder rather than something
+ * running in it — each still gets a rail row, so what's open in a folder is
+ * answerable from the rail alone. */
+type ViewPaneKind = "diff" | "files" | "preview";
+
+function viewPaneKind(paneId: string): ViewPaneKind | null {
+  if (isDiffPane(paneId)) return "diff";
+  if (isFilesPane(paneId)) return "files";
+  if (isPreviewPane(paneId)) return "preview";
+  return null;
+}
+
+const VIEW_PANE_META: Record<
+  ViewPaneKind,
+  { Icon: typeof GitCompare; label: string; title: string }
+> = {
+  diff: { Icon: GitCompare, label: "diff", title: "This checkout's changed files, side by side" },
+  files: { Icon: Files, label: "files", title: "This checkout's file tree and editor" },
+  preview: { Icon: AppWindow, label: "preview", title: "This checkout's live dev server" },
+};
+
+/**
+ * A folder's diff / files / preview pane as a rail row.
+ *
+ * Quieter than a session or chat row — no status dot, since there is nothing
+ * running to have a status — but present, because "what is open in this folder"
+ * is a question the rail should answer. Clicking focuses the pane (the same
+ * call the folder header's chip makes, which is a no-op placement when the pane
+ * already exists); ✕ closes it.
+ */
+function ViewPaneRow({
+  kind,
+  active,
+  onSelect,
+  onClose,
+}: {
+  kind: ViewPaneKind;
+  active: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const { Icon, label, title } = VIEW_PANE_META[kind];
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      title={title}
+      onClick={onSelect}
+      onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        "relative ml-1.5 flex cursor-pointer items-center gap-2.5 border-l-2 border-transparent py-1 pr-3 pl-9",
+        hovered && "bg-accent",
+        active && "border-l-violet-500 bg-accent",
+      )}
+    >
+      <Icon className="w-4 shrink-0 text-muted-foreground/60" />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+        {label}
+      </span>
+      {hovered && (
+        <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
+          <IconBtn title={`close ${label} pane`} onClick={onClose} className="hover:text-red-500">
+            ✕
+          </IconBtn>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Row text per chat status — the same short, uniform-width words
+ * `sessionStatusText` uses for PTY sessions. */
+const CHAT_STATUS_TEXT: Record<ChatStatus, string> = {
+  /** Pane open, nothing started yet — the composer is waiting on you. */
+  off: "Ready",
+  working: "Working",
+  idle: "Idle",
+  exited: "Exited",
+  error: "Error",
+};
+
+/**
+ * A folder's chat pane as a rail row, beside its shells.
+ *
+ * Not a `SessionRow`: a chat is not a PTY, so it has none of what that row
+ * reports (no shell kind, no elapsed PTY time, no prompt-cache badge, no
+ * rename — its identity is the folder). What it does share is the shape — glyph,
+ * status dot, label, right-aligned meta, hover ✕ — so scanning the rail reads
+ * as one list rather than two. The status comes from `lib/agent-sessions`,
+ * which is why it can be shown here at all: while the transcript lived inside
+ * the pane, nothing outside it could know a session was running.
+ */
+function ChatRow({
+  folderDir,
+  active,
+  onSelect,
+  onClose,
+}: {
+  folderDir: string;
+  /** This chat's pane is the focused tile in the pane area. */
+  active: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const session = useChatSession(agentPaneId(folderDir));
+  const status = chatStatus(session);
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      title="Claude chat in this checkout — structured turns, not a terminal"
+      onClick={onSelect}
+      onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        "relative ml-1.5 flex cursor-pointer items-center gap-2.5 border-l-2 border-transparent py-1.5 pr-3 pl-9",
+        hovered && "bg-accent",
+        active && "border-l-violet-500 bg-accent",
+      )}
+    >
+      {/* ✦ is the app-wide "a Claude session lives here" glyph — the same one
+          `Glyph` puts on an agent session row and the ✦ chat buttons use. */}
+      <span className="w-4 shrink-0 text-center font-mono text-xs text-violet-500">✦</span>
+      <ChatDot status={status} />
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          status === "off" ? "text-muted-foreground" : "text-foreground",
+        )}
+      >
+        chat
+      </span>
+      <span className="ml-auto flex min-w-0 shrink items-center gap-2">
+        {session.view.model && (
+          <span className="shrink-0 truncate font-mono text-[10.5px] text-muted-foreground/70">
+            {session.view.model}
+          </span>
+        )}
+        {session.view.costUsd > 0 && (
+          <span
+            className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70"
+            title="what this conversation has cost so far"
+          >
+            ${session.view.costUsd.toFixed(2)}
+          </span>
+        )}
+        {/* Same fixed 7ch slot the session rows use, so the status column
+            lines up down the whole folder rather than per row kind. */}
+        <span className="inline-block w-[7ch] shrink-0 truncate text-[11px] text-muted-foreground">
+          {CHAT_STATUS_TEXT[status]}
+        </span>
+      </span>
+      {hovered && (
+        <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
+          <IconBtn
+            title="close chat (ends the session)"
+            onClick={onClose}
+            className="hover:text-red-500"
+          >
+            ✕
+          </IconBtn>
+        </span>
+      )}
+    </div>
   );
 }
 
