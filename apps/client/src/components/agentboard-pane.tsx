@@ -10,6 +10,7 @@ import {
   UncommittedChip,
   Dot,
   FilesButton,
+  JarvisButton,
   FolderLandedBadge,
   fmtMins,
   GhostBadge,
@@ -72,6 +73,7 @@ export function WorkingContext({
   onOpenFiles,
   onOpenPreview,
   onOpenAgent,
+  onOpenJarvis,
   onNewSession,
   onNewTask,
   onRemoveRepo,
@@ -101,6 +103,10 @@ export function WorkingContext({
   onOpenPreview: (dir: string) => void;
   /** Opens the folder's rendered-agent pane. */
   onOpenAgent: (dir: string) => void;
+  /** Opens the folder's native (Bevy) pane — undefined while
+   * `agentboard.jarvisPane` is off, which is what hides the entry point
+   * entirely rather than offering one that does nothing. */
+  onOpenJarvis?: (dir: string) => void;
   /** Starts a new session (shell) in this checkout. */
   onNewSession: (dir: string) => void;
   /** Toggles the inline new-task form open/closed for this repo (worktree
@@ -205,6 +211,7 @@ export function WorkingContext({
           <FilesButton onOpen={() => onOpenFiles(folder.dir)} />
           <AgentButton onOpen={() => onOpenAgent(folder.dir)} />
           {folder.hasLaunchConfig && <PreviewButton onOpen={() => onOpenPreview(folder.dir)} />}
+          {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} />}
           {pr && <PrChip pr={pr} stats={folder} />}
           {task &&
             task.issues.map((issue) => (

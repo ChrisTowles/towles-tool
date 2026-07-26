@@ -6,7 +6,8 @@
  *
  * 1. **CSS does not reach it.** It sits above the webview, so anything the DOM
  *    draws inside its rect is invisible — hide the pane to show something
- *    there.
+ *    there. Hiding parks the surface off screen rather than unmapping it, for
+ *    reasons worth knowing before you touch it (`crates-tauri/tt-pane`).
  * 2. **Its position is pushed, not declared.** Measure the placeholder, send
  *    the rect; the two stay aligned only for as long as something keeps
  *    pushing.

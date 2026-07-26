@@ -48,11 +48,23 @@ pub struct Subsurface {
     child: WlSurface,
     subsurface: WlSubsurface,
     display_ptr: *mut c_void,
-    visible: bool,
     /// The host window, kept so the webview offset can be re-read on every move
     /// — see [`Subsurface::webview_offset`].
     gtk_window: gtk::ApplicationWindow,
+    /// Where the pane belongs when shown. Kept because hiding *moves* it (see
+    /// [`Subsurface::set_visible`]), so the real rect has to survive being
+    /// off screen.
+    rect: PaneRect,
+    visible: bool,
 }
+
+/// Where a hidden pane is parked, in surface-local coordinates.
+///
+/// Far enough outside the toplevel that no output can intersect it, so the
+/// compositor simply has nothing to draw. Deliberately not `i32::MAX` — the
+/// position is added to the webview offset, and an overflow would wrap the pane
+/// back onto the screen.
+const OFFSCREEN: i32 = 1 << 20;
 
 /// Offset from the toplevel surface's origin to the webview's.
 ///
@@ -184,8 +196,9 @@ impl Subsurface {
             child,
             subsurface,
             display_ptr,
-            visible: true,
             gtk_window: gtk_window.clone(),
+            rect,
+            visible: true,
         })
     }
 
@@ -213,30 +226,48 @@ impl Subsurface {
 
     /// Move the pane. Size changes are the renderer's business, not ours.
     pub fn set_rect(&mut self, rect: PaneRect) -> Result<(), PaneError> {
-        let scale = self.gtk_window.window().map(|w| w.scale_factor()).unwrap_or(1);
-        let (ox, oy) = webview_offset(&self.gtk_window, scale);
-        self.subsurface.set_position(rect.x + ox, rect.y + oy);
-        self.parent.commit();
-        self.connection.flush().map_err(|e| PaneError::Host(format!("wayland flush failed: {e}")))
+        self.rect = rect;
+        self.reposition()
     }
 
-    /// Show or hide without tearing down the GPU surface.
+    /// Show or hide the pane by *moving* it, not by unmapping it.
     ///
-    /// Hiding attaches a null buffer rather than destroying anything, so the
-    /// swapchain and the Bevy app survive and a re-show is instant. Needed
-    /// because the pane is opaque and on top: a modal or context menu drawn by
-    /// the DOM would otherwise be covered by it.
+    /// Two more obvious mechanisms were tried against a compositor screenshot
+    /// and both failed, which is why this one looks indirect:
+    ///
+    /// - **Attach a null buffer** (`wl_surface.attach(None)` + commit, the
+    ///   textbook unmap) left the surface on screen unchanged — even with the
+    ///   render thread stopped first, so nothing could have re-attached one.
+    /// - **Detach the pane entirely** does remove it, but tearing down the Bevy
+    ///   app and its wgpu device took the whole process with it (the app exited
+    ///   moments after "pane render thread stopped"), which is not a risk a
+    ///   screen switch may take.
+    ///
+    /// Parking it outside every output has neither problem: the compositor has
+    /// nothing to intersect, the swapchain and the Bevy app stay intact, and
+    /// coming back is one more `set_position`. Pair it with pausing the
+    /// renderer ([`crate::PaneHost::set_visible`]) so a hidden pane costs no
+    /// GPU either.
     pub fn set_visible(&mut self, visible: bool) -> Result<(), PaneError> {
         if visible == self.visible {
             return Ok(());
         }
         self.visible = visible;
-        if !visible {
-            self.child.attach(None, 0, 0);
-            self.child.commit();
-        }
-        // Becoming visible needs no action here: the render thread's next
-        // present attaches a real buffer again.
+        self.reposition()
+    }
+
+    /// Push the current position — the real rect when shown, [`OFFSCREEN`] when
+    /// hidden. Both callers go through here so a move while hidden can't drag
+    /// the pane back into view.
+    fn reposition(&mut self) -> Result<(), PaneError> {
+        let (x, y) = if self.visible {
+            let scale = self.gtk_window.window().map(|w| w.scale_factor()).unwrap_or(1);
+            let (ox, oy) = webview_offset(&self.gtk_window, scale);
+            (self.rect.x + ox, self.rect.y + oy)
+        } else {
+            (OFFSCREEN, OFFSCREEN)
+        };
+        self.subsurface.set_position(x, y);
         self.parent.commit();
         self.connection.flush().map_err(|e| PaneError::Host(format!("wayland flush failed: {e}")))
     }

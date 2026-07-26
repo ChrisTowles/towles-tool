@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NotInTauri } from "@/lib/errors";
 import {
   measure,
@@ -25,6 +25,14 @@ import { cn } from "@/lib/utils";
  *   container it overhangs rather than scrolling away.
  * - Pass `visible={false}` whenever something should appear over it (a modal,
  *   the command palette, a context menu) or its screen leaves the foreground.
+ *
+ * ## Nothing here destroys a pane
+ *
+ * `visible={false}` parks the surface off screen with its renderer stopped, and
+ * unmounting *retires* it — the host keeps the renderer and revives it if the
+ * same pane id comes back, because dropping a Bevy app mid-session takes the
+ * process with it. Both are cheap and reversible; see `crates-tauri/tt-pane`'s
+ * module docs before assuming either one frees anything.
  */
 export function NativePane({
   paneId,
@@ -41,7 +49,30 @@ export function NativePane({
   const ref = useRef<HTMLDivElement>(null);
   const lastRect = useRef<CssRect | null>(null);
   const attached = useRef(false);
+  // Whether the pane is currently wanted on screen. A pane can lay out while
+  // hidden — screens stay mounted here, so one can be measured on a tab nobody
+  // is looking at — and attaching there would spin up a whole Bevy app for
+  // something invisible. So this gates the attach rather than undoing it.
+  const wanted = useRef(visible);
   const [unavailable, setUnavailable] = useState<string | null>(null);
+
+  const attach = useCallback(
+    (rect: CssRect) => {
+      attached.current = true;
+      void paneAttach(paneId, rect).then((r) =>
+        r.match({
+          ok: () => setUnavailable(null),
+          err: (e) => {
+            // Browser dev has no Tauri host; that is not a failure worth
+            // reporting, just an absent pane.
+            attached.current = false;
+            if (!NotInTauri.is(e)) setUnavailable(e.message);
+          },
+        }),
+      );
+    },
+    [paneId],
+  );
 
   useEffect(() => {
     const el = ref.current;
@@ -65,22 +96,13 @@ export function NativePane({
         if (sameRect(lastRect.current, rect)) return;
         lastRect.current = rect;
 
-        if (!attached.current) {
-          attached.current = true;
-          void paneAttach(paneId, rect).then((r) =>
-            r.match({
-              ok: () => setUnavailable(null),
-              err: (e) => {
-                // Browser dev has no Tauri host; that is not a failure worth
-                // reporting, just an absent pane.
-                attached.current = false;
-                if (!NotInTauri.is(e)) setUnavailable(e.message);
-              },
-            }),
-          );
-        } else {
-          void paneSetRect(paneId, rect);
-        }
+        // A hidden pane is parked off screen, so pushing its rect is a wasted
+        // IPC round trip and Wayland commit — remember it instead. Nothing is
+        // lost: the visibility effect below attaches (or repositions) from
+        // `lastRect` the moment the pane is wanted again.
+        if (!wanted.current) return;
+        if (!attached.current) attach(rect);
+        else void paneSetRect(paneId, rect);
       });
     };
 
@@ -105,14 +127,20 @@ export function NativePane({
         void paneDetach(paneId);
       }
     };
-  }, [paneId]);
+  }, [paneId, attach]);
 
   // Visibility is a separate effect: it changes far more often than the pane
   // attaches, and rebuilding the observer for a toggle would drop the rect.
   useEffect(() => {
-    if (!attached.current) return;
+    wanted.current = visible;
+    // First show is also the first attach: a pane that laid out while hidden
+    // deliberately skipped it (see `wanted`), so there is nothing to reveal yet.
+    if (!attached.current) {
+      if (visible && lastRect.current) attach(lastRect.current);
+      return;
+    }
     void paneSetVisible(paneId, visible);
-  }, [paneId, visible]);
+  }, [paneId, visible, attach]);
 
   return (
     <div ref={ref} className={cn("relative overflow-hidden bg-black/40", className)}>

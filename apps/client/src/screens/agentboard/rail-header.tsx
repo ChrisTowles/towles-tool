@@ -132,10 +132,13 @@ export function RailHeader(props: {
           >
             <FolderGit2 className="size-3.5" />
           </button>
-          {/* Jarvis, the native Bevy pane at the bottom of the rail. Off means
-              not rendered at all, which detaches the surface and stops its
-              render thread — it's a proof-of-concept, so it shouldn't cost a
-              vsync-paced GPU loop unless it's wanted. */}
+          {/* Jarvis, the native Bevy surface: this toggles both the strip at
+              the bottom of the rail and whether a checkout can tile one as a
+              *pane* (`components/jarvis-pane.tsx`) — one switch for the whole
+              proof-of-concept. Left off, no surface is ever created and no
+              renderer runs; turned off after the fact, the surfaces are parked
+              rather than freed, because a Bevy app can't be dropped in-process
+              (`crates-tauri/tt-pane`). */}
           <button
             type="button"
             onClick={() => {
@@ -152,8 +155,8 @@ export function RailHeader(props: {
             )}
             title={
               jarvisPane
-                ? "Jarvis (native Bevy pane) is rendering at the bottom of the rail — click to turn it off"
-                : "Render Jarvis, the native Bevy pane, at the bottom of the rail (proof-of-concept; Linux/Wayland only)"
+                ? "Jarvis (native Bevy surface) is on — rail strip plus a “jarvis” button on each checkout that tiles one as a pane. Click to turn it off"
+                : "Turn on Jarvis, the native Bevy surface: a rail strip, and a “jarvis” pane you can tile beside a checkout's terminals (proof-of-concept; Linux/Wayland only)"
             }
           >
             <Box className="size-3.5" />

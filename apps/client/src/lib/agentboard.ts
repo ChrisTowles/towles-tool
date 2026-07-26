@@ -384,6 +384,7 @@ const DIFF_PANE_PREFIX = "~diff:";
 const FILES_PANE_PREFIX = "~files:";
 const PREVIEW_PANE_PREFIX = "~preview:";
 const AGENT_PANE_PREFIX = "~agent:";
+const JARVIS_PANE_PREFIX = "~jarvis:";
 const EXIT_PANE_PREFIX = "~exit:";
 
 /** The (per-folder) pane id of the folder's diff pane. */
@@ -466,13 +467,40 @@ export function agentPaneDir(paneId: string): string | null {
   return isAgentPane(paneId) ? paneId.slice(AGENT_PANE_PREFIX.length) : null;
 }
 
-/** The folder dir any sentinel pane id (diff, files, preview, or agent) points
- * at — null for session and exit panes. This is the single gate `hydrateWins`/
- * `pruneWins` use to keep a folder-derivable pane across restore, so adding a
- * kind here makes it first-class in persistence automatically. */
+/** The (per-folder) pane id of the folder's native pane — a rectangle of the
+ * window handed to `tt-jarvis`'s Bevy renderer as a real compositor surface
+ * (`components/native-pane.tsx`), tiled beside the folder's terminals rather
+ * than pinned under the rail.
+ *
+ * Folder-scoped like the other sentinels, which here is a resource rule as
+ * much as a naming one: each attached pane owns a Wayland subsurface and its
+ * own vsync-paced render thread (`crates-tauri/tt-pane`), so N open panes is N
+ * Bevy apps. Keying by folder caps that at one per checkout and makes the pane
+ * survive layout restore through `folderPaneDir` like the rest. */
+export function jarvisPaneId(folderDir: string): string {
+  return `${JARVIS_PANE_PREFIX}${folderDir}`;
+}
+
+export function isJarvisPane(paneId: string): boolean {
+  return paneId.startsWith(JARVIS_PANE_PREFIX);
+}
+
+/** The folder dir a native pane id points at (null otherwise). */
+export function jarvisPaneDir(paneId: string): string | null {
+  return isJarvisPane(paneId) ? paneId.slice(JARVIS_PANE_PREFIX.length) : null;
+}
+
+/** The folder dir any sentinel pane id (diff, files, preview, agent, or
+ * jarvis) points at — null for session and exit panes. This is the single gate
+ * `hydrateWins`/`pruneWins` use to keep a folder-derivable pane across restore,
+ * so adding a kind here makes it first-class in persistence automatically. */
 export function folderPaneDir(paneId: string): string | null {
   return (
-    diffPaneDir(paneId) ?? filesPaneDir(paneId) ?? previewPaneDir(paneId) ?? agentPaneDir(paneId)
+    diffPaneDir(paneId) ??
+    filesPaneDir(paneId) ??
+    previewPaneDir(paneId) ??
+    agentPaneDir(paneId) ??
+    jarvisPaneDir(paneId)
   );
 }
 

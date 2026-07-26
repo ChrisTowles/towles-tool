@@ -4,6 +4,7 @@ import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { AgentPane } from "@/components/agent-pane";
 import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
+import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import {
@@ -14,7 +15,9 @@ import {
   isDiffPane,
   isExitPane,
   isFilesPane,
+  isJarvisPane,
   isPreviewPane,
+  jarvisPaneDir,
   paneRects,
   previewPaneDir,
   type AgWindow,
@@ -32,14 +35,20 @@ import type { ColumnDrag } from "./use-column-drag";
  * The pane area: one flat pool of mounted terminals *and chat panes* (never
  * remounted — a remount would respawn the shell, or in a chat's case kill the
  * `claude` process and throw the transcript away) plus the
- * diff/files/preview/tombstone panes, all absolutely positioned into the
- * active window's tiling.
+ * diff/files/preview/jarvis/tombstone panes, all absolutely positioned into
+ * the active window's tiling.
  *
  * The active window's pane order assigns each a percent-rect; panes in other
  * windows stay hidden rather than unmounting, so scrollback survives switching
- * and regrouping. Diff/files/preview panes are *not* pooled deliberately —
- * they refetch from disk on mount and hold nothing that can't be rebuilt,
- * whereas a terminal and a chat each own a live process.
+ * and regrouping. Diff/files/preview/jarvis panes are *not* pooled deliberately
+ * — they rebuild from what's on disk (or, for jarvis, from a fresh surface) and
+ * hold nothing that can't be recreated, whereas a terminal and a chat each own
+ * a live process.
+ *
+ * One pane kind is not DOM at all: a **jarvis** pane hands its body to a
+ * compositor surface that draws *above* the webview, so it takes `visible`
+ * from `nativeVisible` rather than obeying the `hidden` this file uses
+ * everywhere else. See `components/jarvis-pane.tsx`.
  */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
@@ -68,6 +77,10 @@ export function PaneGrid(props: {
   /** Artifacts an agent asked to show, by folder dir — see the MCP
    * `preview_show` tool (`lib/preview-artifact.ts`). */
   artifactRequests: Record<string, ArtifactRequest>;
+  /** False when something must appear over the pane area — this screen isn't
+   * the active tab. Only the native (jarvis) panes care: their surface sits
+   * *above* the webview, so `hidden` on a DOM ancestor doesn't reach them. */
+  nativeVisible: boolean;
   /** The label to lead a session's pane with — live Claude title or backend name. */
   labelFor: (s: SessionData) => string;
   /** Terminal focus request: the session to focus, and a nonce so re-requesting
@@ -97,6 +110,7 @@ export function PaneGrid(props: {
     exitLabels,
     filesOpenRequests,
     artifactRequests,
+    nativeVisible,
     labelFor,
     focusTerminalRequest,
     onSelectSession,
@@ -224,6 +238,26 @@ export function PaneGrid(props: {
           />,
         );
       })}
+      {/* Jarvis panes: a rectangle of the window handed to Bevy as a real
+          compositor surface. Rendered conditionally like the other view panes,
+          which is affordable because unmounting one *retires* it rather than
+          destroying it — the host parks the renderer and revives it if the
+          pane comes back (`crates-tauri/tt-pane`). `visible` is threaded down
+          because the surface composites *above* the webview: no DOM ancestor
+          can hide it. */}
+      {panes
+        .filter(isJarvisPane)
+        .map((id) =>
+          paneBox(
+            id,
+            <JarvisPane
+              folder={folderByDir.get(jarvisPaneDir(id) ?? "")}
+              focused={focusedPaneId === id}
+              visible={nativeVisible}
+              onClose={() => onRemovePane(id)}
+            />,
+          ),
+        )}
       {/* Chat panes: a Claude Code session in this folder rendered as
           structured turns rather than PTY scrollback. Sits beside the folder's
           terminals — comprehension coming back, where they are precision going

@@ -96,14 +96,17 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
 export const DEFAULT_JARVIS_PANE = false;
 
 /**
- * Track whether the Agentboard rail renders the native Bevy pane
+ * Track whether the native Bevy surface is enabled at all
  * (`agentboard.jarvisPane`), plus a setter that persists back to the shared
- * settings file.
+ * settings file. One switch covers both surfaces: the strip at the bottom of
+ * the rail, and whether a checkout offers the `jarvis` pane that tiles one
+ * beside its terminals (`components/jarvis-pane.tsx`).
  *
  * Frontend-only like {@link useHideInactiveRepos} — Rust never reads the key.
- * Off means the `NativePane` isn't rendered at all rather than merely hidden,
- * so `pane_detach` runs, the Wayland subsurface goes away and the vsync-paced
- * render thread is joined; a hidden-but-attached pane would keep both alive.
+ * Off, no `NativePane` is rendered, so a checkout that never turns this on
+ * never creates a surface or a renderer. It is not a way to reclaim one after
+ * the fact: a shown pane's renderer is parked, never dropped, for the app's
+ * life (`crates-tauri/tt-pane`).
  */
 export function useJarvisPane(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useState(DEFAULT_JARVIS_PANE);
