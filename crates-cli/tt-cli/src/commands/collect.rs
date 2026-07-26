@@ -56,6 +56,7 @@ pub fn run(command: CollectCommands, config_dir: Option<&Path>) -> i32 {
             vec![tt_collect::collect_issues(
                 &store,
                 &tt_collect::tracked_repo_dirs(),
+                tt_collect::FETCH_NOW,
                 now,
             )]
         }
@@ -81,7 +82,7 @@ pub fn run(command: CollectCommands, config_dir: Option<&Path>) -> i32 {
                 note_disabled();
             }
             let repos = tt_collect::tracked_repo_dirs();
-            summaries.push(tt_collect::collect_issues(&store, &repos, now));
+            summaries.push(tt_collect::collect_issues(&store, &repos, tt_collect::FETCH_NOW, now));
             summaries.push(tt_collect::collect_prs(&store, &repos, now));
             if let Some(config) = &slack {
                 summaries.push(tt_collect::collect_slack_dm(&store, config, now));

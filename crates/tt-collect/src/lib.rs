@@ -26,6 +26,7 @@ mod prs;
 mod quiet_hours;
 mod slack;
 mod slack_socket;
+mod sweep_cache;
 
 pub use issues::{fetch_importable_issues, search_repo_issues};
 pub use nudge::NudgeTarget;
@@ -226,16 +227,26 @@ fn has_future_events_today(
 /// and the run is recorded `ok = false` so staleness is visible. Only a fully
 /// clean sweep does a full-table replace (which also purges rows of repos no
 /// longer tracked).
-pub fn collect_issues(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
-    let repo_dirs = dedupe_repo_dirs(repo_dirs);
-    let outcome = sweep_repos(&repo_dirs, issues::collect_repo_issues);
+///
+/// `reuse_ms` is how old another window's answers may be before this one goes
+/// and asks GitHub itself — normally this collector's own refresh interval,
+/// or [`FETCH_NOW`] when the user asked for fresh data.
+pub fn collect_issues(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let outcome =
+        sweep_repos_shared(&repos, "issues", reuse_ms, now_ms, issues::collect_repo_issues);
     let write = |all: &[tt_store::IssueInput], repos: Option<&[String]>| match repos {
         None => store.replace_issues(all),
         Some(repos) => store.replace_issues_for_repos(repos, all),
     };
     let summary =
         finish_sweep(store, "issues", outcome, write, |i| (i.repo.clone(), i.number), now_ms);
-    sync_task_links(store, &repo_dirs, now_ms);
+    sync_task_links(store, &dirs_of(&repos), now_ms);
     summary
 }
 
@@ -372,16 +383,22 @@ pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usiz
 /// scheduler tick instead splits this into [`collect_prs_open`] (fast cadence)
 /// and [`collect_prs_merged`] (slow cadence) so it isn't re-fetching the
 /// rarely-needed merged list on every fast tick.
+///
+/// Takes no part in the cross-window sharing the cadence collectors use, in
+/// either direction. Every caller of this full sweep is a "refresh now" — a
+/// `tt collect` run or the app's refresh button — so it would never accept
+/// another window's answers; and no other collector asks this question, so
+/// there is nobody to leave its own answers for.
 pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
-    let repo_dirs = dedupe_repo_dirs(repo_dirs);
-    let outcome = sweep_repos(&repo_dirs, prs::collect_repo_prs);
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let outcome = sweep_repos(&dirs_of(&repos), prs::collect_repo_prs);
     let write = |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos {
         None => store.replace_prs(all),
         Some(repos) => store.replace_prs_for_repos(repos, all),
     };
     let summary =
         finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
-    sync_task_links(store, &repo_dirs, now_ms);
+    sync_task_links(store, &dirs_of(&repos), now_ms);
     summary
 }
 
@@ -391,16 +408,26 @@ pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> Collect
 /// they're cadence splits of one logical collector, not separate ones).
 /// Also runs [`sync_task_links`], so task-linked PR merge detection stays on
 /// this fast cadence rather than the slower merged-list one.
-pub fn collect_prs_open(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
-    let repo_dirs = dedupe_repo_dirs(repo_dirs);
-    let outcome = sweep_repos(&repo_dirs, prs::collect_repo_prs_open);
+///
+/// `reuse_ms` works as it does for [`collect_issues`]. Its own file, separate
+/// from [`collect_prs`]'s: this asks a narrower question and gets a shorter
+/// answer, and the store write that follows is narrower to match.
+pub fn collect_prs_open(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let outcome =
+        sweep_repos_shared(&repos, "prs-open", reuse_ms, now_ms, prs::collect_repo_prs_open);
     let write = |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos {
         None => store.replace_open_prs(all),
         Some(repos) => store.replace_open_prs_for_repos(repos, all),
     };
     let summary =
         finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
-    sync_task_links(store, &repo_dirs, now_ms);
+    sync_task_links(store, &dirs_of(&repos), now_ms);
     summary
 }
 
@@ -409,9 +436,17 @@ pub fn collect_prs_open(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> Co
 /// just-merged branch before its worktree is removed; it isn't the mechanism
 /// that detects a task-linked PR merging (that's [`sync_task_links`], run
 /// from [`collect_prs_open`]'s faster cadence), so this doesn't call it.
-pub fn collect_prs_merged(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
-    let repo_dirs = dedupe_repo_dirs(repo_dirs);
-    let outcome = sweep_repos(&repo_dirs, prs::collect_repo_merged_prs);
+///
+/// `reuse_ms` works as it does for [`collect_issues`].
+pub fn collect_prs_merged(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let outcome =
+        sweep_repos_shared(&repos, "prs-merged", reuse_ms, now_ms, prs::collect_repo_merged_prs);
     let write = |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos {
         None => store.replace_merged_prs(all),
         Some(repos) => store.replace_merged_prs_for_repos(repos, all),
@@ -463,6 +498,107 @@ enum RepoOutcome<T> {
     Err(String),
 }
 
+/// Pass as a collector's `reuse_ms` to ignore what other windows have already
+/// fetched and ask GitHub directly. What a manual refresh wants, and what the
+/// nudge after a `gh pr merge` wants — the whole point of both is to see the
+/// change now.
+pub const FETCH_NOW: i64 = 0;
+
+/// A tracked repo dir and the GitHub repo it turned out to be.
+struct TrackedRepo {
+    dir: PathBuf,
+    /// `owner/repo`, when `gh` could name it. `None` keeps the dir in the sweep
+    /// — its error still has to surface — but out of the shared cache, which has
+    /// no key to file its answers under.
+    name: Option<String>,
+}
+
+/// The deduped dirs on their own, for the callers that work per *checkout*
+/// rather than per repo. Must stay the deduped list: every worktree of a repo
+/// resolves to one `owner/repo`, so handing the raw tracked list to per-repo
+/// work does it once per worktree.
+fn dirs_of(repos: &[TrackedRepo]) -> Vec<PathBuf> {
+    repos.iter().map(|r| r.dir.clone()).collect()
+}
+
+/// Run `collect_repo` over every repo — except the ones another window asked
+/// GitHub about less than `reuse_ms` ago, whose answers this one reuses. See
+/// [`sweep_cache`] for why windows share at all, and why the unit is one repo
+/// rather than one sweep.
+///
+/// `kind` names the question, so two collectors asking different things don't
+/// read each other's answers.
+///
+/// Reuse is per repo, so a window with three fresh repos and one stale one makes
+/// exactly one call. Every repo this window did fetch is published for the
+/// others; a repo that failed simply isn't, which needs no rule of its own —
+/// having no file and never having been asked about are the same thing to a
+/// reader.
+///
+/// Logged as `gh.sweep` with how many repos went each way. Every `gh` call
+/// already shows up in telemetry as a `process.spawn`, so the drop in calls is
+/// visible on its own — but an absence of calls looks the same whether a window
+/// reused someone's answers, sat minimized, or had the collector switched off.
+/// This says which.
+fn sweep_repos_shared<T>(
+    repos: &[TrackedRepo],
+    kind: &str,
+    reuse_ms: i64,
+    now_ms: i64,
+    collect_repo: impl Fn(&Path) -> Result<(String, Vec<T>), String> + Sync,
+) -> Sweep<T>
+where
+    T: Send + serde::Serialize + serde::de::DeserializeOwned,
+{
+    let cache_dir = tt_config::gh_cache_dir().ok();
+    // [`FETCH_NOW`] can't match anything, so don't look: a nudge shouldn't pay a
+    // file read per repo to be told what it already asked for. It still
+    // *publishes* below — answers it just fetched are worth leaving for the
+    // windows running on a normal cadence.
+    let may_reuse = reuse_ms > FETCH_NOW;
+    let mut reused: Vec<(String, Vec<T>)> = Vec::new();
+    let mut to_fetch: Vec<PathBuf> = Vec::new();
+    let mut oldest_reused_ms = 0;
+    for repo in repos {
+        // A repo `gh` couldn't name has no key to look up, and a tracked dir
+        // that's gone has to reach `sweep_repos` so the run message reports the
+        // stale path instead of it being papered over with cached rows. Both ask.
+        let cached = match (&cache_dir, &repo.name) {
+            (Some(dir), Some(name)) if may_reuse && repo.dir.is_dir() => {
+                sweep_cache::read_fresh::<T>(dir, kind, name, now_ms, reuse_ms)
+                    .map(|entry| (name.clone(), entry))
+            }
+            _ => None,
+        };
+        match cached {
+            Some((name, entry)) => {
+                oldest_reused_ms = oldest_reused_ms.max(now_ms.saturating_sub(entry.fetched_at_ms));
+                reused.push((name, entry.rows));
+            }
+            None => to_fetch.push(repo.dir.clone()),
+        }
+    }
+
+    let mut sweep = sweep_repos(&to_fetch, collect_repo);
+    if let Some(dir) = &cache_dir {
+        for (name, rows) in &sweep.successes {
+            sweep_cache::write(dir, kind, name, now_ms, rows);
+        }
+    }
+    tracing::debug!(
+        collector = kind,
+        reused = reused.len(),
+        fetched = sweep.successes.len(),
+        oldest_reused_ms,
+        "gh.sweep"
+    );
+
+    // Order doesn't matter downstream — `finish_sweep` folds every row into a
+    // map keyed by identity — so reused answers just join the fetched ones.
+    sweep.successes.extend(reused);
+    sweep
+}
+
 /// Run `collect_repo` over every existing repo dir, partitioning outcomes.
 ///
 /// The per-repo `gh` calls are fanned across a bounded pool of scoped threads
@@ -509,7 +645,7 @@ fn sweep_repos<T: Send>(
 /// process-lifetime cache, so after a dir's first tick this costs nothing —
 /// the win is in the sweep this feeds skipping the expensive per-repo `gh`
 /// calls (PR/issue lists) for every duplicate dir, on every subsequent tick.
-fn dedupe_repo_dirs(repo_dirs: &[PathBuf]) -> Vec<PathBuf> {
+fn dedupe_repo_dirs(repo_dirs: &[PathBuf]) -> Vec<TrackedRepo> {
     let resolved = parallel_map(repo_dirs, SWEEP_CONCURRENCY, |dir| {
         (dir.clone(), gh::repo_name_with_owner(dir))
     });
@@ -521,13 +657,17 @@ fn dedupe_repo_dirs(repo_dirs: &[PathBuf]) -> Vec<PathBuf> {
 /// can't prove two dirs are the same repo, so it's kept as-is — its error
 /// still surfaces from `collect_repo_{issues,prs}` exactly as it would have
 /// without this dedup pass, rather than being silently dropped.
-fn dedupe_resolved(resolved: Vec<(PathBuf, Result<String, String>)>) -> Vec<PathBuf> {
+///
+/// The resolved name travels with the dir rather than being dropped here: it is
+/// the key the shared cache files a repo's answers under, and re-deriving it
+/// downstream would be a second copy of this pass's work.
+fn dedupe_resolved(resolved: Vec<(PathBuf, Result<String, String>)>) -> Vec<TrackedRepo> {
     let mut seen = std::collections::HashSet::new();
     resolved
         .into_iter()
         .filter_map(|(dir, name)| match name {
-            Ok(name) => seen.insert(name).then_some(dir),
-            Err(_) => Some(dir),
+            Ok(name) => seen.insert(name.clone()).then_some(TrackedRepo { dir, name: Some(name) }),
+            Err(_) => Some(TrackedRepo { dir, name: None }),
         })
         .collect()
 }
@@ -634,7 +774,9 @@ fn finish_sweep<T>(
     finish(store, key, errors.is_empty(), count, message, now_ms)
 }
 
-/// Run every collector: calendar, issues, then PRs.
+/// Run every collector: calendar, issues, then PRs. Someone typed
+/// `tt collect all`, so this asks GitHub itself rather than reusing whatever a
+/// running window last fetched.
 pub fn collect_all(
     store: &Store,
     calendar_sources: &[CalendarSource],
@@ -643,7 +785,7 @@ pub fn collect_all(
 ) -> Vec<CollectSummary> {
     vec![
         collect_calendar(store, calendar_sources, now_ms),
-        collect_issues(store, repo_dirs, now_ms),
+        collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
     ]
 }
@@ -655,6 +797,10 @@ pub fn collect_all(
 /// `slack` is `Some` only when the collector is enabled and configured (the
 /// caller decides), so passing `None` cleanly skips it rather than recording a
 /// misconfiguration failure on every manual refresh.
+///
+/// Asks GitHub itself rather than reusing another window's answers: the user
+/// pressed a button, and handing them data a sibling window fetched a minute
+/// ago reads as the button doing nothing.
 pub fn collect_manual(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -662,7 +808,7 @@ pub fn collect_manual(
     now_ms: i64,
 ) -> Vec<CollectSummary> {
     let mut summaries = vec![
-        collect_issues(store, repo_dirs, now_ms),
+        collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
     ];
     if let Some(config) = slack {
@@ -856,6 +1002,11 @@ mod tests {
     use super::*;
     use tt_store::TaskOutcome;
 
+    /// `(dir, resolved name)` per tracked repo, for comparing against a literal.
+    fn tracked(repos: &[TrackedRepo]) -> Vec<(&Path, Option<&str>)> {
+        repos.iter().map(|r| (r.dir.as_path(), r.name.as_deref())).collect()
+    }
+
     #[test]
     fn extract_clean_array() {
         let v = extract_json(r#"[{"a":1},{"a":2}]"#).unwrap();
@@ -945,10 +1096,10 @@ mod tests {
     #[test]
     fn collect_prs_open_and_collect_prs_merged_are_clean_noops_and_share_the_prs_key() {
         let store = Store::open_in_memory().unwrap();
-        let open = collect_prs_open(&store, &[], 1);
+        let open = collect_prs_open(&store, &[], FETCH_NOW, 1);
         assert!(open.ok);
         assert_eq!(open.count, 0);
-        let merged = collect_prs_merged(&store, &[], 2);
+        let merged = collect_prs_merged(&store, &[], FETCH_NOW, 2);
         assert!(merged.ok);
         assert_eq!(merged.count, 0);
         // Both cadences are splits of the same logical collector, so they
@@ -988,7 +1139,7 @@ mod tests {
     #[test]
     fn collect_issues_no_repos_is_clean_noop() {
         let store = Store::open_in_memory().unwrap();
-        let summary = collect_issues(&store, &[], 1);
+        let summary = collect_issues(&store, &[], FETCH_NOW, 1);
         assert!(summary.ok);
         assert_eq!(summary.count, 0);
         assert_eq!(summary.message.as_deref(), Some("no repos configured"));
@@ -1435,11 +1586,12 @@ mod tests {
             (PathBuf::from("/worktrees/other"), Ok("o/other".to_string())),
         ]);
         assert_eq!(
-            deduped,
-            vec![
-                PathBuf::from("/worktrees/repo-a"),
-                PathBuf::from("/worktrees/other")
-            ]
+            tracked(&deduped),
+            [
+                (Path::new("/worktrees/repo-a"), Some("o/repo")),
+                (Path::new("/worktrees/other"), Some("o/other")),
+            ],
+            "the resolved name travels with the dir — it's the shared cache's key"
         );
     }
 
@@ -1447,12 +1599,19 @@ mod tests {
     fn dedupe_resolved_keeps_every_dir_that_fails_to_resolve() {
         // A dir whose resolution errors (offline, no gh auth, moved) can't be
         // proven a duplicate of anything, so it must survive the dedup pass —
-        // its error still needs to surface from the real collect call.
+        // its error still needs to surface from the real collect call. Unnamed,
+        // so it takes no part in the shared cache either.
         let deduped = dedupe_resolved(vec![
             (PathBuf::from("/worktrees/a"), Err("gh: not a git repo".to_string())),
             (PathBuf::from("/worktrees/b"), Err("gh: not a git repo".to_string())),
         ]);
-        assert_eq!(deduped, vec![PathBuf::from("/worktrees/a"), PathBuf::from("/worktrees/b")]);
+        assert_eq!(
+            tracked(&deduped),
+            [
+                (Path::new("/worktrees/a"), None),
+                (Path::new("/worktrees/b"), None)
+            ]
+        );
     }
 
     #[test]

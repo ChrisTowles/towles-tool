@@ -45,6 +45,35 @@ not per-directory) from getting hammered:
   `gh pr list --json …statusCheckRollup…`: ≤60 costs 1 point, ≥80 costs 2), so
   the old 200 was paying double for headroom nobody used. Re-measure before
   raising it — the constant's doc comment carries the table.
+- `sweep_cache` shares collector results between open windows. `dedupe_repo_dirs`
+  handles one window asking about the same repo twice; this handles four windows
+  each asking the same question, which cost ~1,920 points/hour of a 5,000/hour
+  budget. **The unit is one `(collector, repo)` pair, not one sweep** — a file per
+  repo per question under `tt_config::gh_cache_dir()`
+  (`<kind>/<owner>/<repo>.json`) — because that's the unit the answer is true of.
+  Read that module's docs before changing the keying: per-sweep keying needs two
+  guards that per-repo keying doesn't need at all (a partial sweep can't be
+  published, since a missing repo reads back as "that repo has nothing" and the
+  full-table replace would clear its rows; and a reader has to prove the cached
+  set matches its own tracked set, or a just-added repo gets cleared the same
+  way). Per repo, reuse is also partial: three fresh repos and one stale one is
+  one `gh` call, not four. Concurrent publishers touch different files, so
+  neither can lose the other's work.
+  The `reuse_ms` argument on `collect_issues`/`collect_prs_open`/
+  `collect_prs_merged` is how old an answer may be; `FETCH_NOW` (0) reuses
+  nothing, which is what the post-`gh` nudge passes to show a change immediately.
+  **`collect_prs` (the full sweep) takes no part in this in either direction** —
+  every caller is a `tt collect` run or the app's refresh button, so it would
+  never accept a shared answer, and no other collector asks its question, so
+  there'd be no reader for what it published.
+  Two things stay out of the cache deliberately, both in `sweep_repos_shared`: a
+  repo `gh` can't name (no key to file it under) and a tracked dir that's gone
+  (the sweep has to reach it so the run message reports the stale path, instead
+  of cached rows papering over it).
+  Every sweep logs `gh.sweep` with how many repos went each way, because the
+  `process.spawn` records that count `gh` calls can show the volume drop but not
+  the reason: a window that reused another's answers, one that sat minimized, and
+  one with the collector switched off all make no calls at all.
 - `gh::run` arms a process-wide backoff the moment a call's stderr looks like
   a GitHub rate-limit response (primary or secondary/abuse-detection), and
   every `gh` call short-circuits without spawning a subprocess while that
