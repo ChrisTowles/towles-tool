@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Result } from "better-result";
 import type { z } from "zod";
 import type { PrItem, TaskIssueLink, TaskItem, TaskOutcome } from "./data";
@@ -2021,17 +2020,6 @@ export function normalizeWins(w: WindowsPayload): WindowsPayload {
     }
   }
   return { windows: w.windows, activeWindows };
-}
-
-/** Wall clock ticking every `intervalMs` — drives cache-warmth countdowns.
- * 30s granularity keeps the rail calm (badges show minutes, not seconds). */
-export function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(t);
-  }, [intervalMs]);
-  return now;
 }
 
 /** A repo row in Settings → Agentboard → Repos (from `ab_discover_repos`): every

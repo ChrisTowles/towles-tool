@@ -30,6 +30,39 @@ pub fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     })
 }
 
+/// A cheap "is this the same file contents I last read?" key, from one `stat`.
+///
+/// Exact for every file [`write_atomic`] produces, and that is the whole point
+/// of pairing the two: an atomic write renames a *fresh* temp file over the
+/// target, so every write mints a new inode. A change that leaves `(mtime, len)`
+/// untouched — a same-length rewrite landing inside one mtime granule, which is
+/// exactly what a `repos.json` drag-to-reorder is — still moves the inode. A
+/// memo keyed on mtime and length alone could miss it; this can't.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileVersion {
+    id: (u64, u64),
+    modified: std::time::SystemTime,
+    len: u64,
+}
+
+/// [`FileVersion`] for `path`, or `None` when it is absent, unreadable, or on a
+/// platform with no mtime — all of which mean "no memo", never "unchanged".
+pub fn file_version(path: &Path) -> Option<FileVersion> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some(FileVersion { id: file_id(&meta), modified: meta.modified().ok()?, len: meta.len() })
+}
+
+#[cfg(unix)]
+fn file_id(meta: &std::fs::Metadata) -> (u64, u64) {
+    use std::os::unix::fs::MetadataExt;
+    (meta.dev(), meta.ino())
+}
+
+#[cfg(not(unix))]
+fn file_id(_meta: &std::fs::Metadata) -> (u64, u64) {
+    (0, 0)
+}
+
 /// Read the current on-disk value, let `merge` fold this instance's locally
 /// touched keys into it, then atomically write the merged value back and hand
 /// it to the caller to adopt as its new in-memory state.
@@ -125,6 +158,24 @@ mod tests {
         .unwrap();
         assert!(merged.is_empty());
         assert!(load(&path).is_empty());
+    }
+
+    #[test]
+    fn file_version_changes_even_when_content_length_and_mtime_do_not() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("repos.json");
+        assert_eq!(file_version(&path), None, "absent file has no version");
+
+        write_atomic(&path, "{\"repoPaths\":[\"/a\",\"/b\"]}\n").unwrap();
+        let before = file_version(&path).expect("version");
+
+        // A reorder: same byte length, and back-to-back enough that the two
+        // writes can share an mtime granule. The rename behind `write_atomic`
+        // gives the second one a new inode regardless.
+        write_atomic(&path, "{\"repoPaths\":[\"/b\",\"/a\"]}\n").unwrap();
+        let after = file_version(&path).expect("version");
+        assert_eq!(before.len, after.len, "the reorder is length-preserving");
+        assert_ne!(before, after, "the memo key must still see the change");
     }
 
     #[test]

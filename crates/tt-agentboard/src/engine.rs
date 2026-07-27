@@ -11,7 +11,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::bridge::{StatePayload, assemble_state};
 use crate::git_info::GitInfoCache;
@@ -52,9 +51,7 @@ fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &st
 }
 
 /// Wall-clock epoch milliseconds (the hosts' `now`).
-pub fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
-}
+pub use tt_config::now_ms;
 
 pub fn parse_tone(tone: Option<String>) -> Option<MetadataTone> {
     match tone.as_deref() {
@@ -71,16 +68,12 @@ pub fn parse_tone(tone: Option<String>) -> Option<MetadataTone> {
 /// tmux mode, agent pids) to session names through injected resolvers.
 struct CollectCtx<'a> {
     resolve: &'a dyn Fn(&str) -> Option<String>,
-    resolve_pid: &'a dyn Fn(i32) -> Option<String>,
     events: Vec<AgentEvent>,
 }
 
 impl WatcherContext for CollectCtx<'_> {
     fn resolve_session(&self, project_dir: &str) -> Option<String> {
         (self.resolve)(project_dir)
-    }
-    fn resolve_session_by_pid(&self, pid: i32) -> Option<String> {
-        (self.resolve_pid)(pid)
     }
     fn emit(&mut self, event: AgentEvent) {
         self.events.push(event);
@@ -92,6 +85,15 @@ pub struct Engine {
     projects_dir: PathBuf,
     repos_path: PathBuf,
     repo_paths: Vec<String>,
+    /// [`crate::persist::FileVersion`] of `repos.json` as of the last successful
+    /// parse, so [`Self::reload_repos`] can skip re-reading an unchanged file.
+    /// There are ~11 `reload_repos` call sites and four of them fire per scan
+    /// tick (`scan_once`, `watch_targets`, `control_watch_files`, and the
+    /// emitter's `compute_payload_with`), so an untracked file was being read
+    /// and JSON-parsed four times every 2s to answer a question that only
+    /// changes when the user adds, removes or reorders a repo. Same memoization
+    /// idiom as `git_info`'s `structural_key`.
+    repos_stat: Option<crate::persist::FileVersion>,
     tracker: AgentTracker,
     metadata: SessionMetadataStore,
     folder_meta: crate::folder_meta::FolderMetaStore,
@@ -253,6 +255,10 @@ impl Engine {
         Self {
             projects_dir: projects_dir.clone(),
             repo_paths: load_repos(&repos_path),
+            // Left unset so the first `reload_repos` always reads: the
+            // `load_repos` above swallows a corrupt file as empty, and this
+            // field may only be stamped from a *good* parse.
+            repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
             metadata: SessionMetadataStore::new(),
@@ -296,8 +302,20 @@ impl Engine {
     /// another instance's write) keeps the last known-good list rather
     /// than degrading to empty, which would prune every folder's sessions.
     fn reload_repos(&mut self) {
+        // Skip the read+parse entirely when the file is byte-for-byte the one
+        // we last parsed (see `repos_stat`). A missing file has no version and
+        // falls through to `try_load_repos`, which treats absent as an empty
+        // list — cheap, and keeps "the file was deleted" working.
+        let stat = crate::persist::file_version(&self.repos_path);
+        if stat.is_some() && stat == self.repos_stat {
+            return;
+        }
         if let Some(paths) = crate::repos::try_load_repos(&self.repos_path) {
             self.repo_paths = paths;
+            // Only stamp on a good parse: a torn read keeps the last known-good
+            // list, and must stay re-readable next tick rather than caching the
+            // corrupt file's stat.
+            self.repos_stat = stat;
         }
     }
 
@@ -307,7 +325,7 @@ impl Engine {
         self.reload_repos();
         let all_paths = self.expand_with_worktrees();
         let entries = repo_entries(&all_paths);
-        self.scan_once_with_resolvers(&|dir| resolve_session_name(dir, &entries), &|_| None, now);
+        self.scan_once_with_resolver(&|dir| resolve_session_name(dir, &entries), now);
     }
 
     /// `self.repo_paths` plus any `git worktree` checkouts of those repos that
@@ -491,13 +509,8 @@ impl Engine {
 
     /// One scan of every watcher: collect emits through the resolvers and feed
     /// them to the tracker (first scan's emits are seeded → marked unseen).
-    pub fn scan_once_with_resolvers(
-        &mut self,
-        resolve: &dyn Fn(&str) -> Option<String>,
-        resolve_pid: &dyn Fn(i32) -> Option<String>,
-        now: i64,
-    ) {
-        let mut ctx = CollectCtx { resolve, resolve_pid, events: Vec::new() };
+    pub fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
+        let mut ctx = CollectCtx { resolve, events: Vec::new() };
         for watcher in &mut self.watchers {
             watcher.scan(&mut ctx, now);
         }
@@ -1228,6 +1241,7 @@ impl Engine {
         Self {
             projects_dir: PathBuf::from("/nonexistent/projects"),
             repo_paths: load_repos(&repos_path),
+            repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
             metadata: SessionMetadataStore::new(),

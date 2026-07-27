@@ -1,6 +1,7 @@
 import { dmsNeedingAttention, isItemDismissed, type StoreSnapshot } from "./data";
 import type { StatePayload } from "./agentboard";
 import type { FocusTarget } from "./focus-target";
+import { prChecksFailing } from "./pr-tone";
 
 /**
  * The day bar's "needs you" feed: every item currently demanding the owner's
@@ -54,15 +55,16 @@ export function buildAttentionFeed(
     });
   }
 
-  // Merged PRs live in the snapshot too (briefly, so a folder's rail chip can
-  // turn purple), but a merged PR never needs attention. A dismissed PR stays
-  // out of the feed until it changes again.
+  // Merged and closed PRs live in the snapshot too (briefly, so a folder's rail
+  // chip can turn purple), but neither needs attention — the same `open` scope
+  // `prNeedsYou` applies. A dismissed PR stays out of the feed until it changes
+  // again.
   for (const pr of snapshot.prs.filter((p) => p.state === "open" && !isItemDismissed(p))) {
     const prId = `${pr.repo}#${pr.number}`;
     const target: FocusTarget = { screen: "cockpit", kind: "pr", id: prId };
     // Failing CI outranks review-requested; a PR that is both surfaces once, in
     // the more-urgent bucket (mirrors `prRank`).
-    if (pr.checks === "failing") {
+    if (prChecksFailing(pr)) {
       items.push({
         id: `pr-ci:${prId}`,
         kind: "pr-ci",

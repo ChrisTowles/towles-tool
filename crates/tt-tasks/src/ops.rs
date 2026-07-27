@@ -241,7 +241,7 @@ pub fn resolve_task_dir(dir: &Path) -> Result<(PathBuf, String)> {
     Ok((sr.checkout, name))
 }
 
-/// Bounded like [`git_task`] — a stalled network op (stuck proxy/VPN, an SSH
+/// Bounded like [`git_checkout`] — a stalled network op (stuck proxy/VPN, an SSH
 /// prompt with nothing to answer it) must fail after `GIT_TIMEOUT`, not hang
 /// the caller (`create_task`/`remove_task`/`clean_tasks`) forever.
 pub fn git_checkout(checkout: &Path, args: &[&str]) -> Result<tt_exec::Output> {
@@ -380,17 +380,6 @@ pub fn repo_at(dir: &Path) -> Result<tt_git::repo::Repo> {
 /// axis judged by [`work_state`], not by this age.
 pub fn last_own_commit_unix(dir: &Path, base: &str) -> Option<i64> {
     repo_at(dir).ok()?.last_own_commit_unix(base)
-}
-
-pub fn git_task(dir: &Path, args: &[&str]) -> Result<tt_exec::Output> {
-    tt_exec::run_in_dir_with_timeout_env(
-        "git",
-        args,
-        dir,
-        tt_exec::GIT_NON_INTERACTIVE_ENV,
-        GIT_TIMEOUT,
-    )
-    .map_err(|e| OpsError::Git(e.to_string()))
 }
 
 /// The checkout's checked-out branch (the repo default), falling back to `main`.

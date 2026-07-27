@@ -361,11 +361,6 @@ impl Store {
         self.query_tasks(&format!("SELECT {TASK_COLS} FROM tasks {TASK_ORDER}"), [])
     }
 
-    /// Distinct `(repo, number)` PR refs linked to any task.
-    pub fn linked_pr_refs(&self) -> Result<Vec<(String, i64)>> {
-        self.query_refs("SELECT DISTINCT repo, number FROM task_prs ORDER BY repo, number")
-    }
-
     /// Issue refs whose cached link state is still `open` but which are
     /// missing from the collector's `issues` snapshot — the ambiguous set
     /// (closed? reassigned away?) that needs a targeted `gh issue view`.
@@ -530,52 +525,78 @@ impl Store {
             .ok_or(Error::TaskNotFound(id))
     }
 
+    /// Map one `TASK_COLS` row to a `TaskItem`, links left empty (the caller
+    /// fills them via [`Store::load_task_links`], or deliberately doesn't).
+    fn map_task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskItem> {
+        let worktree_repo_root: Option<String> = r.get(7)?;
+        let worktree_repo: Option<String> = r.get(8)?;
+        let worktree_branch: Option<String> = r.get(9)?;
+        let worktree_dir: Option<String> = r.get(10)?;
+        let outcome: Option<String> = r.get(11)?;
+        let archived_at: Option<i64> = r.get(12)?;
+        let goal: Option<String> = r.get(13)?;
+        let summary: Option<String> = r.get(14)?;
+        let summary_at: Option<i64> = r.get(15)?;
+        // Keyed on `repo_root` alone: a repo-bound task with no worktree
+        // yet still has a worktree binding, and dropping it here would hide
+        // the task's repo from the Board's swimlanes.
+        let worktree = worktree_repo_root.map(|repo_root| TaskWorktree {
+            repo_root,
+            repo: worktree_repo,
+            branch: worktree_branch,
+            dir: worktree_dir,
+        });
+        Ok(TaskItem {
+            id: r.get(0)?,
+            text: r.get(1)?,
+            status: r.get(2)?,
+            position: r.get(3)?,
+            created_at: r.get(4)?,
+            completed_at: r.get(5)?,
+            notes: r.get(6)?,
+            outcome,
+            archived_at,
+            goal,
+            summary,
+            summary_at,
+            worktree,
+            issues: Vec::new(),
+            prs: Vec::new(),
+            closed: false,
+            display_outcome: None,
+            has_worktree: false,
+        }
+        .with_derived_fields())
+    }
+
     fn query_tasks(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<TaskItem>> {
         let mut stmt = self.conn.prepare(sql)?;
-        let rows = stmt.query_map(params, |r| {
-            let worktree_repo_root: Option<String> = r.get(7)?;
-            let worktree_repo: Option<String> = r.get(8)?;
-            let worktree_branch: Option<String> = r.get(9)?;
-            let worktree_dir: Option<String> = r.get(10)?;
-            let outcome: Option<String> = r.get(11)?;
-            let archived_at: Option<i64> = r.get(12)?;
-            let goal: Option<String> = r.get(13)?;
-            let summary: Option<String> = r.get(14)?;
-            let summary_at: Option<i64> = r.get(15)?;
-            // Keyed on `repo_root` alone: a repo-bound task with no worktree
-            // yet still has a worktree binding, and dropping it here would hide
-            // the task's repo from the Board's swimlanes.
-            let worktree = worktree_repo_root.map(|repo_root| TaskWorktree {
-                repo_root,
-                repo: worktree_repo,
-                branch: worktree_branch,
-                dir: worktree_dir,
-            });
-            Ok(TaskItem {
-                id: r.get(0)?,
-                text: r.get(1)?,
-                status: r.get(2)?,
-                position: r.get(3)?,
-                created_at: r.get(4)?,
-                completed_at: r.get(5)?,
-                notes: r.get(6)?,
-                outcome,
-                archived_at,
-                goal,
-                summary,
-                summary_at,
-                worktree,
-                issues: Vec::new(),
-                prs: Vec::new(),
-                closed: false,
-                display_outcome: None,
-                has_worktree: false,
-            }
-            .with_derived_fields())
-        })?;
+        let rows = stmt.query_map(params, Self::map_task_row)?;
         let mut tasks = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         self.load_task_links(&mut tasks)?;
         Ok(tasks)
+    }
+
+    /// Open, worktree-bound tasks whose status the agentboard may auto-drive —
+    /// `backlog`/`doing`, not closed, not archived, with a worktree dir.
+    ///
+    /// A narrow twin of [`Store::all_tasks`] for `tt_agentboard::task_status::
+    /// sync_worktree_task_statuses`, which runs on the emit path (~every 2s)
+    /// while the app's `store` mutex is held. `all_tasks` selects *every* row
+    /// including closed and archived ones and then hydrates both link tables
+    /// onto all of them — and that caller discards most rows in its first
+    /// three lines and reads neither `issues` nor `prs`. The `WHERE` clause
+    /// mirrors those discards exactly, and links are deliberately left empty.
+    pub fn worktree_bound_open_tasks(&self) -> Result<Vec<TaskItem>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {TASK_COLS} FROM tasks
+             WHERE outcome IS NULL AND archived_at IS NULL
+               AND status IN ('backlog', 'doing')
+               AND worktree_dir IS NOT NULL
+             {TASK_ORDER}"
+        ))?;
+        let rows = stmt.query_map([], Self::map_task_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Fill `issues`/`prs` on already-mapped tasks. Loads both link tables

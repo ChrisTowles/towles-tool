@@ -209,6 +209,11 @@ impl Subsurface {
     /// The result borrows surfaces owned by `self`, so `self` must outlive it
     /// and the Bevy app built from it — frames-in-flight rule, see
     /// `tt_jarvis::surface`.
+    ///
+    /// # Panics
+    ///
+    /// If the `wl_surface` or `wl_display` pointer is null, which would mean
+    /// GTK handed us a surface it never finished realizing.
     pub unsafe fn foreign_surface(&self) -> ForeignSurface {
         use tt_jarvis::surface::{RawDisplayHandle, RawWindowHandle};
         use tt_jarvis::surface::{WaylandDisplayHandle, WaylandWindowHandle};

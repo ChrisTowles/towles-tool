@@ -152,10 +152,8 @@ fn with_store<T>(
     f(store)
 }
 
-/// Epoch milliseconds from the local wall clock (write-boundary clock).
-pub fn now_ms() -> i64 {
-    chrono::Local::now().timestamp_millis()
-}
+/// Epoch milliseconds (write-boundary clock).
+pub use tt_config::now_ms;
 
 /// Compute a snapshot, or an error string when the store is unavailable.
 fn snapshot_of(state: &StoreState) -> Result<Snapshot, String> {

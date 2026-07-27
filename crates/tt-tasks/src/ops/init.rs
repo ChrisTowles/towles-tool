@@ -44,11 +44,12 @@ pub fn init_repo(sr: &TaskRoot, now_ms: i64) -> Result<InitReport> {
     };
 
     // Gitignore `.env` only when the repo's ignore rules definitely do not
-    // already cover it. An unreadable repository answers `false` (see
-    // `Repo::is_ignored`), which appends an entry that was possibly redundant
+    // already cover it. Rules that won't load count as "not ignored"
+    // (`unwrap_or(false)`), which appends an entry that was possibly redundant
     // — the harmless direction, unlike silently leaving `.env` committable.
     let mut gitignore_added = false;
-    if crate::ops::repo_at(&sr.checkout).is_ok_and(|repo| !repo.is_ignored(".env")) {
+    if crate::ops::repo_at(&sr.checkout).is_ok_and(|repo| !repo.is_ignored(".env").unwrap_or(false))
+    {
         let gitignore = sr.checkout.join(".gitignore");
         let mut current = fs::read_to_string(&gitignore).unwrap_or_default();
         if !current.is_empty() && !current.ends_with('\n') {

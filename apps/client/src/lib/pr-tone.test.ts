@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { prTone } from "./pr-tone";
+import { prChecksFailing, prNeedsYou, prTone } from "./pr-tone";
+
+describe("prNeedsYou", () => {
+  it("open PRs need you for failing checks or a review request", () => {
+    expect(prNeedsYou({ state: "open", checks: "failing", reviewState: "none" })).toBe(true);
+    expect(prNeedsYou({ state: "open", checks: "passing", reviewState: "review_requested" })).toBe(
+      true,
+    );
+    expect(prNeedsYou({ state: "open", checks: "passing", reviewState: "none" })).toBe(false);
+  });
+
+  it("a PR that is no longer open needs nothing — merged or closed", () => {
+    // The rail's attention strip used to keep closed-unmerged PRs on the
+    // `state !== "merged"` test while the day bar and Cockpit scoped to open.
+    for (const state of ["merged", "closed"]) {
+      expect(prNeedsYou({ state, checks: "failing", reviewState: "review_requested" })).toBe(false);
+      expect(prChecksFailing({ state, checks: "failing" })).toBe(false);
+    }
+  });
+});
 
 describe("prTone", () => {
   it("merged wins over everything", () => {

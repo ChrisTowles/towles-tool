@@ -243,11 +243,6 @@ impl Repo {
         std::fs::canonicalize(raw).unwrap_or_else(|_| raw.to_path_buf())
     }
 
-    /// Whether this checkout is a linked worktree rather than the main one.
-    pub fn is_linked_worktree(&self) -> bool {
-        self.repo.worktree().is_some_and(|wt| wt.id().is_some())
-    }
-
     /// The checked-out branch's short name, or `None` on a detached HEAD.
     pub fn head_branch(&self) -> Option<String> {
         self.repo.head_name().ok().flatten().map(|name| name.shorten().to_string())
@@ -340,26 +335,28 @@ impl Repo {
     /// Is `relative_path` excluded by the repository's ignore rules — the
     /// `git check-ignore -q` this replaces.
     ///
-    /// `false` when the rules cannot be loaded, which keeps the one caller
-    /// (`tt task init`, asking whether `.env` is already ignored) on the side
-    /// of *offering* to add the entry rather than silently assuming it is
-    /// covered.
-    pub fn is_ignored(&self, relative_path: &str) -> bool {
-        let Ok(index) = self.repo.index_or_empty() else {
-            return false;
-        };
-        let Ok(mut excludes) = self.repo.excludes(
-            &index,
-            None,
-            gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
-        ) else {
-            return false;
-        };
-        excludes
+    /// # Errors
+    ///
+    /// [`GitError::Read`] when the index or the exclude stack won't load, so
+    /// "the rules say no" and "there are no readable rules" stay distinct:
+    /// `tt task init` treats the failure as *not ignored* (appending a
+    /// possibly-redundant `.gitignore` entry is the harmless direction), while
+    /// `render_task_env` treats it as ignored rather than warning a user about
+    /// a rule set it never managed to read.
+    pub fn is_ignored(&self, relative_path: &str) -> Result<bool> {
+        let index = self.repo.index_or_empty().map_err(|e| GitError::Read(e.to_string()))?;
+        let mut excludes = self
+            .repo
+            .excludes(
+                &index,
+                None,
+                gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
+            )
+            .map_err(|e| GitError::Read(e.to_string()))?;
+        let platform = excludes
             .at_path(relative_path, Some(gix::index::entry::Mode::FILE))
-            .ok()
-            .and_then(|platform| platform.excluded_kind())
-            .is_some()
+            .map_err(|e| GitError::Read(e.to_string()))?;
+        Ok(platform.excluded_kind().is_some())
     }
 
     /// Number of stash entries — `git stash list`'s line count.
@@ -556,7 +553,6 @@ mod tests {
         let repo = TestRepo::new();
         let linked = repo.add_worktree("task-b", "feature-b");
         let git = Repo::open(&linked).expect("open linked");
-        assert!(git.is_linked_worktree());
         assert!(
             git.worktrees().iter().any(|w| w.is_main && w.dir == canonical(repo.path())),
             "a task must be able to discover its primary"
@@ -593,9 +589,9 @@ mod tests {
         repo.git(&["commit", "--quiet", "-m", "ignore rules"]);
 
         let git = Repo::open(repo.path()).expect("open");
-        assert!(git.is_ignored(".env"));
-        assert!(!git.is_ignored("README.md"));
-        assert!(!git.is_ignored("src/main.rs"));
+        assert!(git.is_ignored(".env").expect("rules load"));
+        assert!(!git.is_ignored("README.md").expect("rules load"));
+        assert!(!git.is_ignored("src/main.rs").expect("rules load"));
     }
 
     #[test]

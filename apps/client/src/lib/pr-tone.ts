@@ -18,6 +18,37 @@ import type { PrItem } from "./data";
  */
 export type PrTone = "merged" | "failed" | "running" | "passing" | "review" | "plain";
 
+/**
+ * Whether a PR demands the owner's attention — **the** definition, shared by
+ * every needs-you surface (Cockpit's counts, the Agentboard attention strip,
+ * the day bar's attention feed).
+ *
+ * It lives beside the tone map rather than in `components/store-bits` because
+ * `lib/attention-feed.ts` needs it and a `lib/` module must not import from
+ * `components/`. That layering is why the rule used to be restated inline in
+ * three places — and they had drifted: the rail strip tested
+ * `state !== "merged"` while the day bar and Cockpit scoped to
+ * `state === "open"`, so a closed-but-unmerged PR with failing CI demanded
+ * attention in the rail and nowhere else. `=== "open"` is the kept behavior:
+ * you closed it, so its red checks are history, not a task.
+ */
+export function prNeedsYou(pr: Pick<PrItem, "state" | "checks" | "reviewState">): boolean {
+  return prChecksFailing(pr) || (pr.state === "open" && pr.reviewState === "review_requested");
+}
+
+/** The CI half of [`prNeedsYou`] — also the "Checks failing" vs "Review
+ * requested" discriminant every caller needs after the predicate passes. */
+export function prChecksFailing(pr: Pick<PrItem, "state" | "checks">): boolean {
+  return pr.state === "open" && pr.checks === "failing";
+}
+
+/** PR ordering weight: failing checks outrank review-requested outrank the rest. */
+export function prRank(pr: Pick<PrItem, "state" | "checks" | "reviewState">): number {
+  if (prChecksFailing(pr)) return 2;
+  if (pr.reviewState === "review_requested") return 1;
+  return 0;
+}
+
 /** The subset of tones a checks rollup alone can produce. */
 export type ChecksTone = Extract<PrTone, "failed" | "passing" | "plain" | "running">;
 

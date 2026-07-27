@@ -9,8 +9,7 @@
 //!
 //! Per scan:
 //! 1. list live agents from the CLI;
-//! 2. resolve each to a session — `resolve_session_by_pid` first (the tmux
-//!    server walks the pid's ancestry to a pane), then the cwd;
+//! 2. resolve each to a session by its cwd;
 //! 3. status: `busy`/`waiting` pass through the CLI's own report *unless* the
 //!    journal already recorded the turn's real end (a final assistant
 //!    message with no tool calls) and nothing new has landed for a while —
@@ -764,10 +763,7 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             if !(self.app_launched)(agent.pid) {
                 continue;
             }
-            // pid → owning tmux pane's session first; cwd match as fallback.
-            let session =
-                ctx.resolve_session_by_pid(agent.pid).or_else(|| ctx.resolve_session(&agent.cwd));
-            let Some(session) = session else {
+            let Some(session) = ctx.resolve_session(&agent.cwd) else {
                 continue;
             };
 
@@ -836,22 +832,18 @@ mod tests {
 
     struct Ctx {
         by_dir: Vec<(String, String)>,
-        by_pid: Vec<(i32, String)>,
         events: Vec<AgentEvent>,
     }
 
     impl Ctx {
         fn new() -> Self {
-            Self { by_dir: Vec::new(), by_pid: Vec::new(), events: Vec::new() }
+            Self { by_dir: Vec::new(), events: Vec::new() }
         }
     }
 
     impl WatcherContext for Ctx {
         fn resolve_session(&self, project_dir: &str) -> Option<String> {
             self.by_dir.iter().find(|(d, _)| d == project_dir).map(|(_, s)| s.clone())
-        }
-        fn resolve_session_by_pid(&self, pid: i32) -> Option<String> {
-            self.by_pid.iter().find(|(p, _)| *p == pid).map(|(_, s)| s.clone())
         }
         fn emit(&mut self, event: AgentEvent) {
             self.events.push(event);
@@ -1146,19 +1138,6 @@ mod tests {
         f.watcher.scan(&mut ctx, 1_000);
         f.watcher.scan(&mut ctx, 1_000 + STALE_BUSY_JOURNAL_MS * 10);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
-    }
-
-    #[test]
-    fn pid_resolution_beats_cwd() {
-        let mut f = fixture();
-        write_journal(&f.projects, "/home/u/proj", "sid-1", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-1", "busy")];
-        let mut ctx = Ctx::new();
-        ctx.by_dir.push(("/home/u/proj".into(), "by-cwd".into()));
-        ctx.by_pid.push((100, "by-pane".into()));
-
-        f.watcher.scan(&mut ctx, 1_000);
-        assert_eq!(ctx.events[0].session, "by-pane");
     }
 
     #[test]

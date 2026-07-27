@@ -83,12 +83,8 @@ function Shortcuts() {
     activeTab,
   );
 
-  const activeScopes: ShortcutScope[] =
-    activeTab === "agentboard"
-      ? ["global", "agentboard"]
-      : activeTab === "board"
-        ? ["global", "board"]
-        : ["global"];
+  // No per-screen branching: a scope nothing registers against is inert.
+  const activeScopes: ShortcutScope[] = ["global", activeTab];
   return <ShortcutHelpHost activeScopes={activeScopes} screen={activeTab} />;
 }
 

@@ -95,3 +95,6 @@ required-features = ["linux-harness"]
 [[example]]
 name = "jarvis_demo"
 required-features = ["linux-harness"]
+
+[lints]
+workspace = true

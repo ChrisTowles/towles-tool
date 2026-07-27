@@ -25,13 +25,11 @@ pub fn sync_worktree_task_statuses(
     now_ms: i64,
 ) -> tt_store::Result<usize> {
     let mut changed = 0;
-    for task in store.all_tasks()? {
-        if task.outcome.is_some() || task.archived_at.is_some() {
-            continue;
-        }
-        if task.status != "backlog" && task.status != "doing" {
-            continue;
-        }
+    // The store-side filter is the same set of discards this loop used to make
+    // by hand over `all_tasks()` — which meant reading every closed and
+    // archived row, plus hydrating both link tables onto all of them, on every
+    // emit tick, to then throw nearly all of it away.
+    for task in store.worktree_bound_open_tasks()? {
         let Some(dir) = task.worktree.as_ref().and_then(|w| w.dir.as_deref()) else {
             continue;
         };

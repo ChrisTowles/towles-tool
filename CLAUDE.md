@@ -813,9 +813,10 @@ branded/newtype domain types, deep modules, testing through real seams,
 etc.). The points below are repo-specific specializations of that doc.
 
 - **Rust conventions** (errors, tests, formatting, TTY guards, shared-file
-  serde, etc.): see [`.claude/rules/rust.md`](.claude/rules/rust.md) — it
-  auto-loads for any `.rs` file under `crates/`, `crates-cli/`, or
-  `crates-tauri/`, so don't restate it here.
+  serde, etc.): see [`.claude/rules/rust.md`](.claude/rules/rust.md), plus
+  [`.claude/rules/rust-comments.md`](.claude/rules/rust-comments.md) for comment
+  discipline — both auto-load for any `.rs` file under `crates/`, `crates-cli/`,
+  or `crates-tauri/`, so don't restate them here.
 - **TypeScript errors are values**, the same as Rust's `Result` — via
   [better-result](https://better-result.dev). Expected failures belong in the
   return type, not in a `throw`, a rejected promise, or a `null` sentinel that

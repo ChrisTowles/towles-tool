@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { SETTINGS_SAVED_EVENT, loadUserSettings, saveUserSettings } from "./settings";
+import { useCallback } from "react";
+import { persistAgentboardSetting, useLiveSetting } from "./settings";
 import { invoke } from "./tauri";
 
 /** Built-in default for `agentboard.hideInactiveRepos` — off, showing everything. */
@@ -8,42 +8,21 @@ export const DEFAULT_HIDE_INACTIVE_REPOS = false;
 /**
  * Track the Agentboard rail's "hide inactive repos" eye-icon filter
  * (`agentboard.hideInactiveRepos`) as state, plus a setter that updates state
- * and persists back to the shared settings file. Like `useBoardGroupByRepo`
- * (`lib/board-prefs.ts`), re-reads on `SETTINGS_SAVED_EVENT` and on window
- * focus so a change made elsewhere flows back into this hook.
+ * and persists back to the shared settings file. `useLiveSetting` carries the
+ * re-read-on-save/focus policy every preference hook shares.
  */
 export function useHideInactiveRepos(): [boolean, (on: boolean) => void] {
-  const [hideInactive, setHideInactive] = useState(DEFAULT_HIDE_INACTIVE_REPOS);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s)
-          setHideInactive(s.agentboard?.hideInactiveRepos ?? DEFAULT_HIDE_INACTIVE_REPOS);
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-
-  // Read-modify-write the whole settings object so unknown keys survive the
-  // save. Best-effort: a failed persist leaves this session's view correct.
-  const persist = useCallback((on: boolean) => {
-    setHideInactive(on);
-    void loadUserSettings().then((s) => {
-      if (!s) return;
-      void saveUserSettings({
-        ...s,
-        agentboard: { ...s.agentboard, hideInactiveRepos: on },
-      });
-    });
-  }, []);
-
+  const [hideInactive, setHideInactive] = useLiveSetting(
+    (s) => s.agentboard?.hideInactiveRepos,
+    DEFAULT_HIDE_INACTIVE_REPOS,
+  );
+  const persist = useCallback(
+    (on: boolean) => {
+      setHideInactive(on);
+      void persistAgentboardSetting("hideInactiveRepos", on);
+    },
+    [setHideInactive],
+  );
   return [hideInactive, persist];
 }
 
@@ -64,29 +43,18 @@ export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
  * another window flows back on focus / `SETTINGS_SAVED_EVENT`.
  */
 export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
-  const [show, setShow] = useState(DEFAULT_SHOW_UNMANAGED_WORKTREES);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s)
-          setShow(s.agentboard?.showUnmanagedWorktrees ?? DEFAULT_SHOW_UNMANAGED_WORKTREES);
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-
-  const persist = useCallback((on: boolean) => {
-    setShow(on);
-    void invoke("ab_set_show_unmanaged_worktrees", { show: on });
-  }, []);
-
+  const [show, setShow] = useLiveSetting(
+    (s) => s.agentboard?.showUnmanagedWorktrees,
+    DEFAULT_SHOW_UNMANAGED_WORKTREES,
+  );
+  // Rust owns this write (see above) — not `persistAgentboardSetting`.
+  const persist = useCallback(
+    (on: boolean) => {
+      setShow(on);
+      void invoke("ab_set_show_unmanaged_worktrees", { show: on });
+    },
+    [setShow],
+  );
   return [show, persist];
 }
 
@@ -109,30 +77,13 @@ export const DEFAULT_JARVIS_PANE = false;
  * life (`crates-tauri/tt-pane`).
  */
 export function useJarvisPane(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useState(DEFAULT_JARVIS_PANE);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s) setOn(s.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE);
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-
-  const persist = useCallback((next: boolean) => {
-    setOn(next);
-    void loadUserSettings().then((s) => {
-      if (!s) return;
-      void saveUserSettings({ ...s, agentboard: { ...s.agentboard, jarvisPane: next } });
-    });
-  }, []);
-
+  const [on, setOn] = useLiveSetting((s) => s.agentboard?.jarvisPane, DEFAULT_JARVIS_PANE);
+  const persist = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      void persistAgentboardSetting("jarvisPane", next);
+    },
+    [setOn],
+  );
   return [on, persist];
 }

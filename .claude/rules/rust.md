@@ -28,7 +28,12 @@ paths:
   fixture a removal-scope test's row at the *removed* task's own scope:
   `ops::remove_task`'s `state_cleanup` wipes that scope wholesale regardless
   of the bug under test, giving a false-positive pass.
-- **Style:** rustfmt at 100 columns (`cargo fmt --check`);
-  `cargo clippy --all -- -D warnings` must pass — warnings are errors.
+- **Style:** rustfmt at 100 columns (`cargo fmt --check`); clippy must pass with
+  `-D warnings`. `--all` needs zig + GTK for `tt-vt`/`tt-app`/`tt-jarvis`/
+  `tt-pane`; without those, run CI's variant (the `--exclude` list in the root
+  CLAUDE.md), which is what gates the four separately.
+- **Comments:** [`rust-comments.md`](rust-comments.md) — and note it argues
+  *against* adding doc lints beyond the `unsafe` pair. Read it before proposing
+  one.
 - **Porting:** when deriving code from the TS CLI, cite the slot-1 source path
   (e.g. `src/commands/...`) in the commit message.

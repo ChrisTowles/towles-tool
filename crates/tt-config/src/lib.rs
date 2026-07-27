@@ -24,12 +24,26 @@
 //! untouched.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Tool name used for the config directory and file name.
 pub const TOOL_NAME: &str = "towles-tool";
+
+/// Wall-clock epoch milliseconds — **the** clock read for this workspace.
+///
+/// Logic crates take instants as injected `now_ms` parameters so they stay
+/// deterministic under test (see `tt-store`, `tt-mcp`, `tt-collect`); this is
+/// the boundary those callers read the real clock at. Keeping it in one place
+/// means `now_ms` greps to exactly the set of sites that touch wall time, and
+/// the `unwrap_or(0)` fallback on a pre-epoch clock is decided once rather
+/// than restated at every boundary.
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -47,15 +61,6 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Position of the AgentBoard sidebar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(rename_all = "lowercase")]
-pub enum SidebarPosition {
-    Left,
-    Right,
-}
 
 /// Journal path templates and base folders.
 ///
@@ -95,32 +100,23 @@ impl Default for JournalSettings {
     }
 }
 
-/// AgentBoard UI preferences. Every field is optional; the TS CLI owns most of them.
+/// AgentBoard UI preferences the *Rust* side reads or writes. Every field is
+/// optional.
+///
+/// This is deliberately **not** a model of the whole `agentboard` block: the
+/// settings file is co-owned with the TypeScript CLI and [`save_merge_to`]
+/// deep-merges over whatever is on disk, so keys absent from this struct
+/// survive a Rust write untouched. Modeling a key nothing here reads buys
+/// nothing and makes the struct read as if the feature exists — which is how
+/// six tmux-era fields (`mux`, `port`, sidebar geometry, `keybinding`,
+/// `detailPanelHeights`) outlived the agentboard they configured.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentboardSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mux: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub port: Option<u16>,
-
     /// Theme name or an inline theme object.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme: Option<serde_json::Value>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sidebar_width: Option<f64>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sidebar_position: Option<SidebarPosition>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub keybinding: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail_panel_heights: Option<HashMap<String, f64>>,
 
     /// Context-% at/above which a cold (cache-expired) Claude session gets the
     /// "compact" nudge in the app. `None` = the built-in default (30). Only
@@ -1306,7 +1302,7 @@ mod tests {
         let settings = UserSettings::default();
         assert_eq!(settings.preferred_editor, "code");
         assert!(settings.journal_settings.daily_path_template.contains("daily-notes"));
-        assert!(settings.agentboard.mux.is_none());
+        assert!(settings.agentboard.theme.is_none());
     }
 
     #[test]
@@ -1418,7 +1414,6 @@ mod tests {
         // Known fields survive at every level.
         assert_eq!(loaded.preferred_editor, "hx");
         assert_eq!(loaded.journal_settings.base_folder, "/j");
-        assert_eq!(loaded.agentboard.mux.as_deref(), Some("tmux"));
         assert_eq!(loaded.mcp.port, 9191);
         assert!(!loaded.collectors.prs.enabled);
         assert!(loaded.collectors.calendar.enabled);
@@ -1876,11 +1871,13 @@ mod tests {
         assert_eq!(shared_under(base.clone()), base.join("tasks").join("my-scope"));
 
         // Empty → forced unscoped, regardless of cwd.
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "") };
         assert_eq!(state_scope(), None);
         assert_eq!(instance_under(base.clone()), base);
         assert_eq!(shared_under(base.clone()), base);
 
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
@@ -1906,6 +1903,7 @@ mod tests {
         assert!(config_path().unwrap().ends_with("task-9/towles-tool.settings.json"));
         assert!(store_db_path().unwrap().ends_with("towles-tool/tasks/task-9/tt.db"));
         assert!(agentboard_dir().unwrap().ends_with("tasks/task-9/agentboard"));
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
@@ -1937,6 +1935,7 @@ mod tests {
         assert!(bases.data.ends_with("towles-tool/tasks/sandbox"));
         assert!(bases.config.ends_with(".config/towles-tool/tasks/sandbox"));
 
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
@@ -1954,6 +1953,7 @@ mod tests {
 
         // A FORCED scope nests the targets too — a test world's task state
         // lives under the forced nest, never at the real machine paths.
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "test-world") };
         for dir in instance_state_dirs_for_scope("towles-tool-thing") {
             assert!(
@@ -1962,6 +1962,7 @@ mod tests {
                 dir.display()
             );
         }
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
@@ -1974,6 +1975,7 @@ mod tests {
         assert!(config_path().unwrap().ends_with("towles-tool/towles-tool.settings.json"));
         assert!(store_db_path().unwrap().ends_with("towles-tool/tt.db"));
         assert!(agentboard_dir().unwrap().ends_with("towles-tool/agentboard"));
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 }

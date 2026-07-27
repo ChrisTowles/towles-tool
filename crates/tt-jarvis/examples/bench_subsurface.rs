@@ -52,6 +52,8 @@ fn main() {
     // The renderer keeps frames in flight, so that order is load-bearing.
     let surface = unsafe { host.foreign_surface() };
 
+    // SAFETY: `surface` borrows `host`, which is dropped at the end of `main` —
+    // strictly after `app`, as the frames-in-flight rule requires.
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, args.present) };
     app.insert_resource(BenchConfig {
         label: format!("subsurface/{}x{}/{}", args.width, args.height, args.present_label),

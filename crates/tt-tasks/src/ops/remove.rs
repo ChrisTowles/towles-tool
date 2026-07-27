@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use super::claims::{port_occupied, port_registry_path, release_task_ports};
 use super::{
-    OpsError, Result, base_refs, dir_names, discover_root, git_checkout, git_task, orphaned_count,
+    OpsError, Result, base_refs, dir_names, discover_root, git_checkout, orphaned_count,
     run_teardown, uncommitted_count, work_state,
 };
 use crate::envfile;
@@ -467,9 +467,11 @@ pub fn clean_tasks(
             live_scopes.extend(scope.clone());
         };
 
-        let branch = match git_task(&dir, &["branch", "--show-current"]) {
-            Ok(out) if out.ok() => out.stdout.trim().to_string(),
-            _ => {
+        // A repo that won't open is the "broken worktree" case the old
+        // `git branch --show-current` non-zero exit stood for.
+        let branch = match super::repo_at(&dir) {
+            Ok(repo) => repo.head_branch().unwrap_or_default(),
+            Err(_) => {
                 keep(
                     name,
                     "BROKEN".to_string(),

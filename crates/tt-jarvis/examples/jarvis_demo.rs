@@ -65,6 +65,9 @@ fn main() {
     } else {
         PresentMode::AutoVsync
     };
+    // SAFETY: `surface` borrows the host that owns the toplevel, the child
+    // surface and the connection, and that host outlives `app` — the
+    // frames-in-flight rule in `tt_jarvis::surface`.
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, present) };
     app.add_plugins(JarvisScenePlugin);
 

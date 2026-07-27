@@ -149,6 +149,19 @@ mod tests {
             .unwrap()
     }
 
+    /// Raw `task_prs` rows — the PR-side twin of [`issue_link_rows`], for the
+    /// same reason: no production API exposes this table's contents.
+    fn pr_link_rows(s: &Store) -> Vec<(i64, String, i64)> {
+        let mut stmt = s
+            .conn
+            .prepare("SELECT task_id, repo, number FROM task_prs ORDER BY repo, number")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    }
+
     /// Epoch ms -> the `DateTime<FixedOffset>` the event types now hold. UTC,
     /// since these tests assert on instants, not on presentation.
     fn at(ms: i64) -> DateTime<FixedOffset> {
@@ -2147,7 +2160,7 @@ mod tests {
 
         s.delete_task(a.id).unwrap();
         assert_eq!(issue_link_rows(&s), vec![(b.id, "o/r".to_string(), 3)]);
-        assert!(s.linked_pr_refs().unwrap().is_empty());
+        assert!(pr_link_rows(&s).is_empty());
 
         // The archive sweep keeps the row, so its links survive too.
         s.set_task_status(b.id, "done", 10).unwrap();

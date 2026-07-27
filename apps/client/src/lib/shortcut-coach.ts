@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { latestKeyboardScore } from "@/lib/keyboard-score";
 import type { ScreenId } from "@/lib/screens";
-import { SETTINGS_SAVED_EVENT, loadUserSettings } from "@/lib/settings";
+import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
 import { SHORTCUTS, shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 
@@ -97,23 +97,24 @@ export const DEFAULT_SHORTCUT_COACH = true;
 /**
  * Track the `agentboard.shortcutCoach` preference for {@link mouseAction},
  * which runs from click handlers and can't read it through a hook. Mounted
- * once in `App.tsx`; refreshes on the same two signals as
- * `useShortcutsWorkInTerminal` — a successful Settings save and window focus.
+ * once in `App.tsx`; refreshes on the same two signals as every other live
+ * setting, via the shared `onSettingsChanged` subscription.
+ *
+ * Writes a module global rather than state (its reader is a plain click
+ * handler, not a component), so it uses the raw primitive instead of
+ * `useLiveSetting`.
  */
 export function useShortcutCoachSetting(): void {
   useEffect(() => {
     let alive = true;
-    const load = () =>
+    const unsubscribe = onSettingsChanged(() => {
       void loadUserSettings().then((s) => {
         if (alive && s) enabled = s.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH;
       });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
+    });
     return () => {
       alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
+      unsubscribe();
     };
   }, []);
 }

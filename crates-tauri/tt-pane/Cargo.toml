@@ -20,3 +20,6 @@ thiserror = { workspace = true }
 # types, so a second gtk major in the tree would not typecheck.
 gtk = "0.18"
 wayland-client = "0.31"
+
+[lints]
+workspace = true

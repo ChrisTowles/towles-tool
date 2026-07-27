@@ -30,3 +30,6 @@ tt-git = { workspace = true }
 # port claim and inherited secret passes through.
 proptest = "1.6.0"
 tempfile = "3.14.0"
+
+[lints]
+workspace = true

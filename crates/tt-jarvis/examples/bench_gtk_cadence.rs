@@ -230,6 +230,8 @@ fn main() {
         )
     };
 
+    // SAFETY: `surface` holds raw handles into `child` and `connection`, both
+    // owned by `main` and dropped after `app` — the frames-in-flight rule.
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, args.present) };
     app.add_plugins(JarvisScenePlugin);
 
