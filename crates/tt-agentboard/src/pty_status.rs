@@ -37,9 +37,12 @@
 //! directions, because Claude Code's continuous repainting makes both
 //! answers decisive:
 //!
-//! * Bytes on the wire in the last [`OUTPUT_ACTIVE_MS`] prove it **is**
-//!   working. That beats any cached verdict — it is the fix for a stale
-//!   `waiting` on a visibly running pane.
+//! * Output that is both recent ([`OUTPUT_ACTIVE_MS`]) and has been *running*
+//!   for a moment ([`SUSTAINED_OUTPUT_MS`]) proves it **is** working. That
+//!   beats any cached verdict — it is the fix for a stale `waiting` on a
+//!   visibly running pane. Both halves are needed: a finished pane still
+//!   repaints on its own every second or two, so recency alone cannot tell a
+//!   turn from an idle twitch.
 //! * Silence for [`BUSY_SILENCE_MS`] proves it is **not**. That is the mirror
 //!   fix, for a stale `busy` that would otherwise flap a finished agent in and
 //!   out of needs-you and keep resetting its waiting-age.
@@ -66,6 +69,25 @@ use crate::types::AgentStatus;
 /// to spare while staying far below the multi-second silence that follows a
 /// real turn ending.
 pub const OUTPUT_ACTIVE_MS: i64 = 1_500;
+
+/// How long output must have been *continuing* before it counts as work.
+///
+/// [`OUTPUT_ACTIVE_MS`] alone answers "did a frame land recently", which is not
+/// the same question. A pane that has finished its turn still repaints on its
+/// own every so often, and measured against a real session those lone repaints
+/// arrive roughly every 1.5–2s — right at the activity window. Treating each one
+/// as proof of work made a *correctly* finished session flip out of needs-you
+/// and back on almost every payload rebuild: the "⚑ Needs you" callout, the rail
+/// badge and the day-bar count all blinked, and each flip back re-fired the
+/// desktop notification (462 of them in one day, measured from the event log).
+///
+/// A working agent is not ambiguous here — Claude Code repaints a live elapsed
+/// counter for the whole of a turn, max gap 0.27s measured, and a hidden pane
+/// still renders at 2fps — so requiring output to have *persisted* for a second
+/// separates the two cleanly. The cost is that the stale-`waiting` override
+/// (rule 1 of [`resolve_status`]) arrives a second into a turn rather than
+/// instantly, which no one can see.
+pub const SUSTAINED_OUTPUT_MS: i64 = 1_000;
 
 /// How long a PTY must be silent before a backend `busy` is disbelieved.
 ///
@@ -106,6 +128,12 @@ pub const ATTENTION_GRACE_MS: i64 = 2_000;
 pub struct PtySignal {
     /// Most recent screen-changing output from the program in this PTY.
     pub last_output_ms: Option<i64>,
+    /// When the *current* unbroken run of output began — the app restamps this
+    /// whenever a frame lands after a gap of [`OUTPUT_ACTIVE_MS`] or more. With
+    /// `last_output_ms` it gives the run's length, which is what
+    /// [`SUSTAINED_OUTPUT_MS`] tests. `None` means no run has been recorded, and
+    /// is read as "no proof of work" rather than as an old one.
+    pub output_since_ms: Option<i64>,
     /// Most recent attention notification (`OSC 9`/`OSC 777`, or a bell).
     pub attention_at_ms: Option<i64>,
     /// Most recent user input written into this PTY — a keystroke, pasted
@@ -114,18 +142,30 @@ pub struct PtySignal {
 }
 
 impl PtySignal {
-    /// Whether the program wrote to the screen recently enough to count as
-    /// working. The one claim strong enough to override a cached status.
+    /// Whether the program is writing to the screen *and has been* for long
+    /// enough to count as working. The one claim strong enough to override a
+    /// cached status — which is why it takes both halves: recent output alone
+    /// is equally consistent with an idle pane's occasional repaint (see
+    /// [`SUSTAINED_OUTPUT_MS`]).
     pub fn output_active(&self, now_ms: i64) -> bool {
-        self.last_output_ms.is_some_and(|at| now_ms.saturating_sub(at) < OUTPUT_ACTIVE_MS)
+        self.last_output_ms.is_some_and(|last| now_ms.saturating_sub(last) < OUTPUT_ACTIVE_MS)
+            && self.sustained_run()
     }
 
     /// Whether this session has asked for the user and not yet been answered.
     ///
-    /// Cleared by user input (the direct answer) and by output that starts
-    /// more than [`ATTENTION_GRACE_MS`] after the notification (the agent
-    /// carried on by itself) — but never by the notification's own trailing
-    /// repaint, which is why output inside the grace window doesn't count.
+    /// Cleared by user input (the direct answer) and by *work* that starts more
+    /// than [`ATTENTION_GRACE_MS`] after the notification (the agent carried on
+    /// by itself) — but never by the notification's own trailing repaint, which
+    /// is why output inside the grace window doesn't count.
+    ///
+    /// "Work" is the whole subtlety, and it is why resumption means a *run* of
+    /// output (see [`SUSTAINED_OUTPUT_MS`]) beginning after the grace window
+    /// rather than any frame at all. Read the looser way, a finished pane's own
+    /// lone repaint cleared the flag a couple of seconds after every turn,
+    /// discarding the fastest evidence that an agent wants you — Claude Code's
+    /// `OSC 777`, raised the instant the turn ends — and leaving needs-you to
+    /// wait on the 60s-cached CLI (measured: 62s late).
     pub fn attention_pending(&self, now_ms: i64) -> bool {
         let Some(at) = self.attention_at_ms else {
             return false;
@@ -133,9 +173,20 @@ impl PtySignal {
         if self.input_at_ms.is_some_and(|input| input >= at) {
             return false;
         }
-        let resumed =
-            self.last_output_ms.is_some_and(|out| out > at.saturating_add(ATTENTION_GRACE_MS));
+        let began_after_grace =
+            self.output_since_ms.is_some_and(|since| since > at.saturating_add(ATTENTION_GRACE_MS));
+        let resumed = began_after_grace && self.sustained_run();
         !resumed && !self.output_active(now_ms)
+    }
+
+    /// Whether the current run of output has lasted long enough to be work
+    /// rather than a lone repaint. Says nothing about *when* — pair it with a
+    /// recency or ordering check.
+    fn sustained_run(&self) -> bool {
+        match (self.last_output_ms, self.output_since_ms) {
+            (Some(last), Some(since)) => last.saturating_sub(since) >= SUSTAINED_OUTPUT_MS,
+            _ => false,
+        }
     }
 
     /// Whether this PTY has been silent long enough to disprove a claim that
@@ -192,7 +243,32 @@ mod tests {
     const NOW: i64 = 1_000_000;
 
     fn quiet() -> PtySignal {
-        PtySignal { last_output_ms: Some(NOW - 30_000), ..Default::default() }
+        PtySignal {
+            last_output_ms: Some(NOW - 30_000),
+            output_since_ms: Some(NOW - 40_000),
+            ..Default::default()
+        }
+    }
+
+    /// A run of output that has been going for `age`..now — what a working
+    /// agent's continuous repainting looks like.
+    fn working(age: i64) -> PtySignal {
+        PtySignal {
+            last_output_ms: Some(NOW - age),
+            output_since_ms: Some(NOW - age - 5_000),
+            ..Default::default()
+        }
+    }
+
+    /// One frame landed `age` ago with nothing before it — a finished pane's own
+    /// repaint. The run is 0ms long, because a frame arriving after a gap wider
+    /// than `OUTPUT_ACTIVE_MS` restamps the run start onto itself.
+    fn lone_repaint(age: i64) -> PtySignal {
+        PtySignal {
+            last_output_ms: Some(NOW - age),
+            output_since_ms: Some(NOW - age),
+            ..Default::default()
+        }
     }
 
     // --- The reported bug: a stale `waiting` against a visibly working pane ---
@@ -201,13 +277,13 @@ mod tests {
     fn live_output_overrides_a_stale_waiting() {
         // The screenshot case: CLI said `waiting` 12 minutes ago and never
         // re-derived, while the terminal was mid-turn the whole time.
-        let pty = PtySignal { last_output_ms: Some(NOW - 200), ..Default::default() };
+        let pty = working(200);
         assert_eq!(resolve_status(Some(AgentStatus::Waiting), &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
     fn live_output_overrides_every_backend_verdict() {
-        let pty = PtySignal { last_output_ms: Some(NOW - 100), ..Default::default() };
+        let pty = working(100);
         for backend in [
             AgentStatus::Idle,
             AgentStatus::Waiting,
@@ -223,13 +299,13 @@ mod tests {
     fn a_hidden_pane_at_two_fps_still_counts_as_working() {
         // HIDDEN_FRAME_INTERVAL is 500ms; a backgrounded working agent must
         // not decay to idle between frames.
-        let pty = PtySignal { last_output_ms: Some(NOW - 500), ..Default::default() };
+        let pty = working(500);
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
     fn output_older_than_the_threshold_is_not_activity() {
-        let pty = PtySignal { last_output_ms: Some(NOW - OUTPUT_ACTIVE_MS), ..Default::default() };
+        let pty = working(OUTPUT_ACTIVE_MS);
         assert!(!pty.output_active(NOW));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
     }
@@ -253,7 +329,7 @@ mod tests {
 
     #[test]
     fn long_silence_disproves_a_stale_busy() {
-        let pty = PtySignal { last_output_ms: Some(NOW - BUSY_SILENCE_MS), ..Default::default() };
+        let pty = working(BUSY_SILENCE_MS);
         assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Idle);
     }
 
@@ -261,7 +337,7 @@ mod tests {
     fn ordinary_between_paint_silence_does_not_disprove_busy() {
         // Well past OUTPUT_ACTIVE_MS but nowhere near BUSY_SILENCE_MS: the
         // backend still gets the benefit of the doubt.
-        let pty = PtySignal { last_output_ms: Some(NOW - 5_000), ..Default::default() };
+        let pty = working(5_000);
         assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Busy);
     }
 
@@ -274,7 +350,7 @@ mod tests {
             AgentStatus::Waiting,
             AgentStatus::Error,
         ] {
-            let pty = PtySignal { last_output_ms: Some(NOW - 600_000), ..Default::default() };
+            let pty = working(600_000);
             assert_eq!(resolve_status(Some(backend), &pty, NOW), backend, "{backend:?}");
         }
     }
@@ -298,8 +374,8 @@ mod tests {
         // drops the row out of needs-you and resets the age.
         let pty = PtySignal {
             attention_at_ms: Some(NOW - 300_000),
-            last_output_ms: Some(NOW - 299_000),
             input_at_ms: Some(NOW - 360_000),
+            ..working(299_000)
         };
         assert!(pty.attention_pending(NOW));
         assert_eq!(resolve_status(Some(AgentStatus::Complete), &pty, NOW), AgentStatus::Complete);
@@ -337,11 +413,7 @@ mod tests {
     fn the_notifications_own_trailing_repaint_does_not_clear_it() {
         // Measured against a real turn: notify fires ~0.5s before the final
         // frame. If that paint cleared the flag, needs-you would never latch.
-        let pty = PtySignal {
-            attention_at_ms: Some(NOW - 10_000),
-            last_output_ms: Some(NOW - 9_600),
-            ..Default::default()
-        };
+        let pty = PtySignal { attention_at_ms: Some(NOW - 10_000), ..working(9_600) };
         assert!(pty.attention_pending(NOW));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Waiting);
     }
@@ -351,7 +423,7 @@ mod tests {
         let pty = PtySignal {
             attention_at_ms: Some(NOW - 10_000),
             input_at_ms: Some(NOW - 9_000),
-            last_output_ms: Some(NOW - 8_000),
+            ..working(8_000)
         };
         assert!(!pty.attention_pending(NOW));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
@@ -373,22 +445,14 @@ mod tests {
     fn an_agent_that_resumes_on_its_own_clears_it() {
         // Output well past the grace window is new work, not the tail of the
         // notification — so the badge drops without the user touching it.
-        let pty = PtySignal {
-            attention_at_ms: Some(NOW - 60_000),
-            last_output_ms: Some(NOW - 30_000),
-            ..Default::default()
-        };
+        let pty = PtySignal { attention_at_ms: Some(NOW - 60_000), ..working(30_000) };
         assert!(!pty.attention_pending(NOW));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
     }
 
     #[test]
     fn working_again_outranks_a_pending_notification() {
-        let pty = PtySignal {
-            attention_at_ms: Some(NOW - 3_000),
-            last_output_ms: Some(NOW - 100),
-            ..Default::default()
-        };
+        let pty = PtySignal { attention_at_ms: Some(NOW - 3_000), ..working(100) };
         assert_eq!(resolve_status(Some(AgentStatus::Waiting), &pty, NOW), AgentStatus::Busy);
     }
 
@@ -405,8 +469,10 @@ mod tests {
         // Sitting at the prompt before anything is typed.
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(8.0)), AgentStatus::Idle);
 
-        // Mid-turn: the spinner never pauses more than ~0.27s.
+        // Mid-turn: the spinner never pauses more than ~0.27s, so the run of
+        // output that began when the turn did is still unbroken.
         pty.input_at_ms = Some(at(9.0));
+        pty.output_since_ms = Some(at(9.1));
         pty.last_output_ms = Some(at(12.35));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(12.6)), AgentStatus::Busy);
 
@@ -420,5 +486,67 @@ mod tests {
         // The user comes back and types the next prompt.
         pty.input_at_ms = Some(at(31.0));
         assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(31.1)), AgentStatus::Idle);
+    }
+
+    // --- The flicker: a finished pane's lone repaints are not work ---
+
+    /// Reproduced live against the real app: with the CLI reporting the session
+    /// `idle` and its transcript ended on `end_turn` — i.e. a settled, correct
+    /// `Complete` — the reported status still alternated `busy`/`complete`
+    /// sub-second, taking the "⚑ Needs you" callout with it. A finished Claude
+    /// Code pane keeps repainting on its own every second or two, and each lone
+    /// frame satisfied "output in the last 1.5s" on its own.
+    ///
+    /// However recently the frame landed, a run of zero length is not work —
+    /// which is what keeps an idling pane from ever accumulating into `Busy`,
+    /// since every frame spaced past `OUTPUT_ACTIVE_MS` restarts the run.
+    #[test]
+    fn a_lone_repaint_does_not_retract_a_finished_turn() {
+        for age in [10, 100, OUTPUT_ACTIVE_MS - 1] {
+            let blip = lone_repaint(age);
+            assert!(!blip.output_active(NOW), "{age}");
+            assert_eq!(
+                resolve_status(Some(AgentStatus::Complete), &blip, NOW),
+                AgentStatus::Complete,
+                "{age}"
+            );
+            assert_eq!(
+                resolve_status(Some(AgentStatus::Waiting), &blip, NOW),
+                AgentStatus::Waiting,
+                "{age}"
+            );
+        }
+    }
+
+    /// The turn-end notification must survive the pane's own idle repaints, or
+    /// the board falls back to the 60s-cached CLI and the agent sits there
+    /// wanting you, unbadged, for up to a minute (measured: 62s).
+    #[test]
+    fn a_lone_repaint_does_not_count_as_the_agent_resuming() {
+        // A single frame, well past the grace window — under the old rule this
+        // read as "carried on by itself" and cleared the flag.
+        let pty = PtySignal { attention_at_ms: Some(NOW - 30_000), ..lone_repaint(3_000) };
+        assert!(pty.attention_pending(NOW));
+        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Waiting);
+    }
+
+    /// The rule must not swallow real work: output that has been going for
+    /// `SUSTAINED_OUTPUT_MS` is a turn, and still overrides a stale verdict.
+    #[test]
+    fn sustained_output_still_overrides_a_stale_verdict() {
+        let just_under = PtySignal {
+            last_output_ms: Some(NOW),
+            output_since_ms: Some(NOW - SUSTAINED_OUTPUT_MS + 1),
+            ..Default::default()
+        };
+        assert!(!just_under.output_active(NOW));
+
+        let sustained = PtySignal {
+            last_output_ms: Some(NOW),
+            output_since_ms: Some(NOW - SUSTAINED_OUTPUT_MS),
+            ..Default::default()
+        };
+        assert!(sustained.output_active(NOW));
+        assert_eq!(resolve_status(Some(AgentStatus::Waiting), &sustained, NOW), AgentStatus::Busy);
     }
 }

@@ -72,13 +72,39 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
             let tool_uses: Vec<_> =
                 msg.content.as_ref().map(|c| c.tool_uses().collect()).unwrap_or_default();
             if tool_uses.is_empty() {
-                return Some(AgentStatus::Complete);
+                // Text with nothing else in the response is a finished turn —
+                // but only `stop_reason` can tell that from mid-turn narration,
+                // because Claude Code writes each content block of one response
+                // as its own entry, so the text preceding a tool call lands here
+                // looking identical. See `Message::stop_reason`; treating every
+                // text entry as `Complete` made a working agent flash "needs
+                // you" on every narration block (67 per real turn end, measured).
+                return Some(turn_end_status(msg.stop_reason.as_deref()));
             }
             let all_asking = tool_uses.iter().all(|t| t.name() == Some("AskUserQuestion"));
             Some(if all_asking { AgentStatus::Waiting } else { AgentStatus::Busy })
         }
         "user" => Some(AgentStatus::Busy),
         _ => None,
+    }
+}
+
+/// Whether a text-only assistant entry ends the turn, from its `stop_reason`.
+///
+/// `end_turn` (and the other genuinely-final reasons) hands control back to the
+/// user, so the session is `Complete` — the status that, while `unseen`, is what
+/// puts a row in needs-you. `tool_use` means the same response also asked for a
+/// tool, so the agent is still `Busy` and this text is narration on the way
+/// there.
+///
+/// A missing `stop_reason` keeps the old reading (`Complete`): transcripts that
+/// predate the field, and partial streaming re-logs, still have to resolve to
+/// something, and a finished turn is the safer guess for a signal whose whole
+/// job is to stop you missing an agent that wants you.
+fn turn_end_status(stop_reason: Option<&str>) -> AgentStatus {
+    match stop_reason {
+        Some("tool_use") => AgentStatus::Busy,
+        _ => AgentStatus::Complete,
     }
 }
 
@@ -874,6 +900,77 @@ mod tests {
     const USER_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:00.000Z","message":{"role":"user","content":"fix the flaky test"}}"#;
     const RUNNING_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:05.000Z","message":{"role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","name":"Bash"}],"usage":{"input_tokens":10,"output_tokens":5}}}"#;
     const DONE_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:10.000Z","message":{"role":"assistant","content":[{"type":"text","text":"all done"}]}}"#;
+    /// Mid-turn narration: text-only, but the response it belongs to also asked
+    /// for a tool, so `stop_reason` is `tool_use`. Shape copied from a real
+    /// journal — this is the overwhelmingly common assistant entry (67 of them
+    /// against one `end_turn` in the session that motivated this).
+    const NARRATION_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:07.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Let me check the tests."}],"stop_reason":"tool_use"}}"#;
+    /// A genuinely finished turn: text, handed back to the user.
+    const END_TURN_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:12.000Z","message":{"role":"assistant","content":[{"type":"text","text":"all done"}],"stop_reason":"end_turn"}}"#;
+
+    /// The needs-you flicker, at its source. Claude Code writes each content
+    /// block of one response as its own transcript entry, so a working agent
+    /// leaves text-only entries behind every few seconds; reading those as a
+    /// finished turn marked the session `Complete` + unseen, which is what put
+    /// the "⚑ Needs you" callout (and a desktop notification) on screen and
+    /// took it away again on the next tool call.
+    #[test]
+    fn mid_turn_narration_is_not_a_finished_turn() {
+        let narration: TranscriptEntry = serde_json::from_str(NARRATION_LINE).unwrap();
+        assert_eq!(determine_status(&narration), Some(AgentStatus::Busy));
+
+        let ended: TranscriptEntry = serde_json::from_str(END_TURN_LINE).unwrap();
+        assert_eq!(determine_status(&ended), Some(AgentStatus::Complete));
+
+        // No `stop_reason` at all (older transcripts, partial re-logs) keeps the
+        // original reading rather than silently dropping a real turn end.
+        let bare: TranscriptEntry = serde_json::from_str(DONE_LINE).unwrap();
+        assert_eq!(determine_status(&bare), Some(AgentStatus::Complete));
+    }
+
+    /// The same thing end-to-end: a session mid-tool-run whose journal grows a
+    /// narration entry must not change status. Before the `stop_reason` check
+    /// this emitted a second event flipping `busy` → `complete`, and every such
+    /// flip is one visible flash of the banner.
+    #[test]
+    fn a_narration_entry_does_not_flip_a_working_agent_to_complete() {
+        let mut f = fixture();
+        write_journal(&f.projects, "/home/u/proj", "sid-n", &[USER_LINE, RUNNING_LINE]);
+        *f.agents.lock().unwrap() = vec![CliAgent {
+            // No CLI status — the case that falls through to `refine_idle` and
+            // trusts the journal outright.
+            status: None,
+            ..cli_agent(100, "/home/u/proj", "sid-n", "busy")
+        }];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
+
+        f.watcher.scan(&mut ctx, 1_000);
+        let before = ctx.events.len();
+
+        write_journal(
+            &f.projects,
+            "/home/u/proj",
+            "sid-n",
+            &[USER_LINE, RUNNING_LINE, NARRATION_LINE],
+        );
+        f.watcher.scan(&mut ctx, 2_000);
+        assert!(
+            ctx.events[before..].iter().all(|e| e.status != AgentStatus::Complete),
+            "narration must not report the turn as finished: {:?}",
+            ctx.events[before..].iter().map(|e| e.status).collect::<Vec<_>>()
+        );
+
+        // The real turn end still lands.
+        write_journal(
+            &f.projects,
+            "/home/u/proj",
+            "sid-n",
+            &[USER_LINE, RUNNING_LINE, NARRATION_LINE, END_TURN_LINE],
+        );
+        f.watcher.scan(&mut ctx, 3_000);
+        assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
+    }
 
     #[test]
     fn busy_agent_emits_running_with_journal_enrichment() {
