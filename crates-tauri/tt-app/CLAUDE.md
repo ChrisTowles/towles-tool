@@ -104,17 +104,15 @@ follows is a cross-cutting rule that spans multiple files.
   it. The terminal can: output that is recent (1.5s) **and has been running
   for a second** proves the agent is working, and 20s of silence proves it
   isn't (Claude Code repaints a live elapsed counter throughout a turn —
-  measured max gap 0.27s). Both halves of the first test are load-bearing: a
-  pane whose turn has *finished* still repaints on its own every second or
-  two, so recency alone reads those twitches as work, which flipped
-  correctly-finished sessions in and out of needs-you continuously (the
-  needs-you banner flicker) and — because the same "is it working" test
-  decides whether an `OSC 777` has been superseded — threw away the turn-end
-  notification, leaving needs-you to wait on the 60s-cached CLI instead. Both directions are
-  load-bearing and were fixing observed bugs — a stale `waiting` badge on a
-  visibly running pane, and a finished agent flapping `busy`/`complete` as
-  attribution came and went, which reset its `needs_since_ms` every few
-  seconds so the waiting-age never counted up.
+  measured max gap 0.27s). Both halves of the working test are load-bearing:
+  a pane whose turn has *finished* still repaints on its own every second or
+  two, so recency alone reads those twitches as work — which both flickers
+  the needs-you banner and, because the same test decides whether an
+  `OSC 777` has been superseded, discards the turn-end notification. Both
+  directions are load-bearing and were fixing observed bugs — a stale
+  `waiting` badge on a visibly running pane, and a finished agent flapping
+  `busy`/`complete` as attribution came and went, which reset its
+  `needs_since_ms` every few seconds so the waiting-age never counted up.
   The signals come from `PtyActivity` in `terminal.rs`, stamped on the vt
   sink's `Frame` (output) and `Notify`/`Bell` (Claude Code's `OSC 777`
   attention notification, which is *the* fastest evidence of a blocked

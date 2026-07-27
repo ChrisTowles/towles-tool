@@ -95,7 +95,7 @@ pub struct Message {
     /// same response as the tool call that follows it, and both entries say
     /// `tool_use`. Measured on one real session: 67 text-only entries with
     /// `stop_reason: "tool_use"` against a single `end_turn`.
-    #[serde(rename = "stop_reason", default)]
+    #[serde(default)]
     pub stop_reason: Option<String>,
 }
 
