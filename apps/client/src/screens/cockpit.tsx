@@ -61,7 +61,8 @@ import { openExternalUrl } from "@/lib/open-url";
 import { useWorkspace } from "@/lib/workspace";
 import { useFocusTarget } from "@/lib/focus-target";
 import { uiAction } from "@/lib/ui-action";
-import { Empty, IssueRow, Panel, PrRow, prNeedsYou, prRank } from "@/components/store-bits";
+import { Empty, IssueRow, Panel, PrRow } from "@/components/store-bits";
+import { prNeedsYou, prRank } from "@/lib/pr-tone";
 
 /** A checkout the app already tracks (agentboard folder) that a Cockpit issue
  * can be dispatched into — its repo `origin` matches the issue's repo. */

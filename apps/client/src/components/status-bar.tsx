@@ -3,7 +3,12 @@ import { Flame, Keyboard, Stethoscope } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isTauri } from "@/lib/tauri";
 import { claudeUsageLimits, type UsageLimitBar, type UsageLimits } from "@/lib/claude-sessions";
-import { collectorHealth, type CollectorHealth, type CollectorState } from "@/lib/collector-health";
+import {
+  collectorHealth,
+  COLLECTOR_STATE_DOT,
+  COLLECTOR_STATE_LABEL,
+  type CollectorHealth,
+} from "@/lib/collector-health";
 import {
   TIER_LABELS,
   actionsToGoal,
@@ -64,7 +69,7 @@ function useClaudeUsageLimits(): UsageLimits | null {
 }
 
 /** Fill color by how close a limit is to capping out — same severity ramp as
- * {@link STATE_DOT} below. */
+ * {@link COLLECTOR_STATE_DOT}. */
 function limitFillColor(percent: number): string {
   if (percent >= 90) return "bg-red-500 dark:bg-red-400";
   if (percent >= 70) return "bg-amber-500/80 dark:bg-amber-400/80";
@@ -128,21 +133,6 @@ function useResourceUsage(): ResourceUsage | null {
   return usage;
 }
 
-/** Dot color per health state — subtle fills paired with dark: variants. */
-const STATE_DOT: Record<CollectorState, string> = {
-  fresh: "bg-green-500/70 dark:bg-green-400/70",
-  stale: "bg-amber-500/80 dark:bg-amber-400/80",
-  failing: "bg-red-500 dark:bg-red-400",
-  "never-ran": "bg-muted-foreground/30 dark:bg-muted-foreground/30",
-};
-
-const STATE_WORD: Record<CollectorState, string> = {
-  fresh: "up to date",
-  stale: "stale",
-  failing: "failing",
-  "never-ran": "never ran",
-};
-
 /** One muted dot per collector with a health tooltip (name, age, ok/fail). */
 function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: number }) {
   const { label, state, run } = health;
@@ -150,13 +140,13 @@ function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: num
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className={cn("size-1.5 rounded-full", STATE_DOT[state])}
-          aria-label={`${label}: ${STATE_WORD[state]}`}
+          className={cn("size-1.5 rounded-full", COLLECTOR_STATE_DOT[state])}
+          aria-label={`${label}: ${COLLECTOR_STATE_LABEL[state]}`}
         />
       </TooltipTrigger>
       <TooltipContent className="flex flex-col gap-0.5">
         <span className="font-medium">
-          {label} · {STATE_WORD[state]}
+          {label} · {COLLECTOR_STATE_LABEL[state]}
         </span>
         {run ? (
           <span className="text-muted-foreground">

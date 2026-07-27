@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import { uiAction } from "@/lib/ui-action";
-import type { ScreenId } from "@/lib/screens";
-import { SETTINGS_SAVED_EVENT, loadUserSettings } from "./settings";
+import { SCREENS, type ScreenId } from "@/lib/screens";
+import { useLiveSettingRef } from "./settings";
 
 /**
  * Data-driven keyboard shortcuts (modeled on plannotator's validated registry,
@@ -27,7 +27,15 @@ import { SETTINGS_SAVED_EVENT, loadUserSettings } from "./settings";
  * terminal-owns-everything behavior.
  */
 
-export type ShortcutScope = "global" | "agentboard" | "board";
+/**
+ * A shortcut's scope: app-wide, or confined to one screen. The non-global arm
+ * is a {@link ScreenId} rather than a hand-listed union, so a scoped shortcut
+ * on a new screen needs no edit here (and a scope naming a screen that does not
+ * exist is a type error). A scope with no registered shortcuts is already a
+ * no-op in the grouping below, so callers can pass the active screen
+ * unconditionally.
+ */
+export type ShortcutScope = "global" | ScreenId;
 
 /** A parsed key spec: modifiers + one main key. `mod` = ⌘ on mac, Ctrl elsewhere. */
 type KeySpec = {
@@ -374,28 +382,14 @@ export const DEFAULT_SHORTCUTS_WORK_IN_TERMINAL = true;
  * it live without re-subscribing. Re-reads on `SETTINGS_SAVED_EVENT` (fired
  * right after a successful save, wherever Settings is edited — see
  * `useUserSettings` in `settings.ts`) and on window focus (covers the JSON
- * file being edited externally then alt-tabbing back), matching
- * {@link useCopyOnSelect} in `terminal-prefs.ts`.
+ * file being edited externally then alt-tabbing back) — the shared policy in
+ * `useLiveSettingRef`.
  */
 export function useShortcutsWorkInTerminal(): RefObject<boolean> {
-  const ref = useRef(DEFAULT_SHORTCUTS_WORK_IN_TERMINAL);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s)
-          ref.current = s.agentboard?.shortcutsWorkInTerminal ?? DEFAULT_SHORTCUTS_WORK_IN_TERMINAL;
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-  return ref;
+  return useLiveSettingRef(
+    (s) => s.agentboard?.shortcutsWorkInTerminal,
+    DEFAULT_SHORTCUTS_WORK_IN_TERMINAL,
+  );
 }
 
 function matches(spec: KeySpec, e: KeyboardEvent): boolean {
@@ -463,11 +457,11 @@ export function useShortcuts(
   }, [handlers, screen, enabled, workInTerminalRef]);
 }
 
-const SCOPE_TITLES: Record<ShortcutScope, string> = {
-  global: "Everywhere",
-  agentboard: "Agentboard",
-  board: "Board",
-};
+/** Human title for a scope. A screen scope reuses that screen's own registered
+ * title rather than a second hand-maintained copy of it. */
+export function scopeTitle(scope: ShortcutScope): string {
+  return scope === "global" ? "Everywhere" : SCREENS[scope].title;
+}
 
 /**
  * Per-binding usage over the scored window, for the help overlay's annotation
@@ -535,7 +529,7 @@ export function ShortcutHelp({
             return (
               <div key={scope} className={active ? undefined : "opacity-50"}>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {SCOPE_TITLES[scope]}
+                  {scopeTitle(scope)}
                   {!active && " — inactive here"}
                 </div>
                 <div className="flex flex-col gap-1">

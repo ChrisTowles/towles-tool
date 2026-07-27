@@ -9,6 +9,9 @@ use std::fs;
 use std::path::Path;
 
 use tt_agentboard::task_removal;
+// The clock read at the command boundary — the store, the removal sequence and
+// the staleness math all take injected instants.
+use tt_config::now_ms;
 use tt_tasks::envfile;
 use tt_tasks::ops::{self, CleanOpts, CreateOpts, RemoveOpts, TaskRoot};
 
@@ -59,7 +62,7 @@ fn remove_task_fully(
     on_missing: task_removal::MissingDir,
 ) -> Result<task_removal::Outcome, String> {
     let store = board_store_for_removal(checkout, dir);
-    let now_ms = epoch_now_ms();
+    let now_ms = now_ms();
     let outcome = outcome.unwrap_or_else(|| {
         store
             .as_ref()
@@ -78,15 +81,6 @@ fn remove_task_fully(
     };
     task_removal::remove_task_and_bindings(removal, &mut task_removal::NoHooks)
         .map_err(|e| e.to_string())
-}
-
-/// The one clock read for a removal, at the command boundary (the store and
-/// the removal sequence take injected instants).
-fn epoch_now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 /// Open the board store scoped to `dir` (see `tt_config::task_scope_from_dir`
@@ -166,7 +160,7 @@ fn after_removal(checkout: &Path, dir: &Path) -> Vec<String> {
         // `clean` only sweeps *finished* tasks — landed by evidence — so the
         // close is always a done, never an abandonment.
         tt_store::TaskOutcome::Done,
-        epoch_now_ms(),
+        now_ms(),
     )
 }
 
@@ -308,10 +302,7 @@ fn record_board_task(
     branch: &str,
     dir: &str,
 ) -> Result<i64, String> {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
+    let now_ms = now_ms();
     let store = tt_store::Store::open_default().map_err(|e| e.to_string())?;
     let task = store.add_task(title, status, notes, goal, now_ms).map_err(|e| e.to_string())?;
     store
@@ -384,7 +375,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
     let refs = ops::base_refs(&sr.checkout);
     // One clock read at the command boundary; the staleness math takes it as an
     // injected instant (tt_tasks::staleness::assess reads no clock of its own).
-    let now_unix = epoch_now_ms() / 1000;
+    let now_unix = now_ms() / 1000;
 
     struct Row {
         name: String,
@@ -404,15 +395,16 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
 
     let mut rows = Vec::new();
     for (name, dir, is_primary) in checkouts {
-        let broken = !ops::git_task(&dir, &["rev-parse", "--is-inside-work-tree"])
-            .map(|o| o.ok())
-            .unwrap_or(false);
+        // One cached `tt_git::repo` handle per row instead of three `git`
+        // spawns: a repo that won't open *is* the broken case, and the branch
+        // and short sha come off the same handle.
+        let repo = ops::repo_at(&dir).ok();
+        let broken = repo.is_none();
         let (branch, detached, work, state) = if broken {
             ("BROKEN".to_string(), false, Default::default(), "broken".to_string())
         } else {
-            let current = ops::git_task(&dir, &["branch", "--show-current"])
-                .map(|o| o.stdout.trim().to_string())
-                .unwrap_or_default();
+            let repo = repo.expect("checked above");
+            let current = repo.head_branch().unwrap_or_default();
             let uncommitted = ops::uncommitted_count(&dir);
             if current.is_empty() {
                 // A detached HEAD has no branch to compare against a base, so
@@ -421,9 +413,10 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                 // so it is measured rather than left at a default 0 that would
                 // report `holdsWork: false` for a task holding unreachable
                 // commits.
-                let sha = ops::git_task(&dir, &["rev-parse", "--short", "HEAD"])
-                    .map(|o| o.stdout.trim().to_string())
-                    .unwrap_or_else(|_| "?".to_string());
+                let sha = repo
+                    .head_id()
+                    .map(|id| id.to_hex_with_len(7).to_string())
+                    .unwrap_or_else(|| "?".to_string());
                 let work = tt_tasks::landed::WorkState {
                     uncommitted,
                     orphaned: ops::orphaned_count(&dir),
@@ -461,11 +454,14 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
             tt_tasks::assess_staleness(last, now_unix, threshold, work.landed.is_some())
         });
         let env_text = fs::read_to_string(dir.join(".env")).unwrap_or_default();
-        let ports: Vec<(String, String)> = envfile::parse(&env_text)
+        // The same claim filter the removal guard, the sibling scan and the
+        // app's MCP bind all use — `tt task ls` is the human-readable view of
+        // that set, so it must not count things they skip (a hand-rolled
+        // filter here counted `FOO_PORT=0` and `FOO_PORT=999999` as claims).
+        // `_in_order`, not `_by_key`: the column stays in `.env` order.
+        let ports: Vec<(String, String)> = envfile::port_claims_in_order(&env_text)
             .into_iter()
-            .filter(|(k, v)| {
-                k.ends_with("PORT") && v.bytes().all(|b| b.is_ascii_digit()) && !v.is_empty()
-            })
+            .map(|(k, p)| (k, p.to_string()))
             .collect();
         rows.push(Row {
             name,
@@ -748,15 +744,6 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         println!("nothing to clean");
     }
     Ok(())
-}
-
-/// Epoch ms for the port registry's `claimed_at_ms` stamps — the clock is
-/// read here at the CLI boundary, per the now_ms discipline.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 /// `tt task ports [--probe N] [--json]` — the repo's port picture, or a

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::claims::{
     ClaimLock, port_occupied, port_registry_path, record_task_ports, registry_claims,
 };
-use super::{OpsError, Result, TEMPLATE_SIDECAR, TaskRoot, base_branch, git_task, write_atomic};
+use super::{OpsError, Result, TEMPLATE_SIDECAR, TaskRoot, base_branch, write_atomic};
 use crate::{envfile, layout};
 
 /// The template sidecar's path: `<checkout>/.claude/task-env.template`,
@@ -185,8 +185,15 @@ pub fn render_task_env(
             }
         }
     }
-    if let Ok(out) = git_task(dir, &["check-ignore", "-q", ".env"])
-        && !out.ok()
+    // `tt_git::repo`, not `git check-ignore` — the workspace's one git reader.
+    // A repo whose ignore rules won't load answers `Err`, and that stays quiet
+    // (`unwrap_or(true)`): this is an advisory warning about the tree the task
+    // is about to dirty, and "we couldn't read the rules" is not evidence
+    // `.env` is uncovered — telling the user to fix a gitignore that may
+    // already be correct is the worse direction here. `tt task init` takes the
+    // opposite default, because appending a redundant entry is harmless.
+    if let Ok(repo) = super::repo_at(dir)
+        && !repo.is_ignored(".env").unwrap_or(true)
     {
         warnings.push(".env is NOT gitignored in this repo — it will dirty the task's tree".into());
     }

@@ -27,6 +27,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
+// Epoch milliseconds (scheduler boundary clock).
+use tt_config::now_ms;
 
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
@@ -146,11 +148,6 @@ fn claim_in_flight(guard: &AtomicBool) -> bool {
     guard.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
 }
 
-/// Epoch milliseconds from the local wall clock (scheduler boundary clock).
-fn now_ms() -> i64 {
-    chrono::Local::now().timestamp_millis()
-}
-
 /// Last-observed mtime of each nudge-dir file, so [`changed_nudge_batches`]
 /// can tell *which* target actually changed instead of eagerly refreshing
 /// `prs` on any touch to the directory (the dir is watched non-recursively
@@ -215,6 +212,10 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
         let mut review_watch = ReviewRequestedWatch::new();
         let mut checks_watch = ChecksFailedWatch::new();
         let mut stale_watch = StaleCollectorWatch::new();
+        // The notify tick's connection, kept across ticks. See
+        // [`run_notify_check`] — it fires every 15s and `Store::open` runs the
+        // full migration pass every time.
+        let mut notify_store: Option<tt_store::Store> = None;
         // In-flight guards also persist across reloads: a batch spawned under the
         // old cadence must still block a duplicate under the new one.
         let guards = BatchGuards::default();
@@ -339,6 +340,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                     _ = notify_tick.tick() => {
                         run_notify_check(
                             &app,
+                            &mut notify_store,
                             &mut meeting_watch,
                             &mut review_watch,
                             &mut checks_watch,
@@ -434,27 +436,40 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
 /// lives on the async side so it survives across ticks. Unlike the collector
 /// batches this runs even while the window is minimized — an unattended window
 /// is exactly when a desktop notification matters.
+/// `store_slot` carries the connection between ticks. This fires every
+/// [`NOTIFY_TICK_SECS`], and `Store::open` runs the whole idempotent migration
+/// pass on every call — reopening per tick meant ~4 full migration passes a
+/// minute, forever, to read three tables. The connection is moved *into* the
+/// blocking closure and handed back out rather than shared, because
+/// `rusqlite::Connection` is `Send` but not `Sync`; a tick that fails to open
+/// simply leaves the slot empty and retries next time.
 async fn run_notify_check(
     app: &AppHandle,
+    store_slot: &mut Option<tt_store::Store>,
     meeting_watch: &mut MeetingStartWatch,
     review_watch: &mut ReviewRequestedWatch,
     checks_watch: &mut ChecksFailedWatch,
     stale_watch: &mut StaleCollectorWatch,
     watched: &[WatchedCollector],
 ) {
-    let read = tauri::async_runtime::spawn_blocking(|| {
-        let store = tt_store::Store::open_default().ok()?;
+    let carried = store_slot.take();
+    let read = tauri::async_runtime::spawn_blocking(move || {
+        let store = match carried {
+            Some(store) => store,
+            None => tt_store::Store::open_default().ok()?,
+        };
         let now = now_ms();
         let next = store.current_or_next_event(now).ok().flatten();
         let prs = store.prs().unwrap_or_default();
         let runs = store.runs().unwrap_or_default();
-        Some((now, next, prs, runs))
+        Some((store, now, next, prs, runs))
     })
     .await;
 
-    let Ok(Some((now, next, prs, runs))) = read else {
+    let Ok(Some((store, now, next, prs, runs))) = read else {
         return;
     };
+    *store_slot = Some(store);
 
     if let Some(edge) = meeting_watch.observe(now, next.as_ref()) {
         notify_meeting_start(app, &edge);

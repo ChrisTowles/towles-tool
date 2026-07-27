@@ -4,6 +4,7 @@ import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-pane";
 import { RailIconStrip, RepoGroup, RollupChip } from "@/components/agentboard-rail";
 import { NativePane } from "@/components/native-pane";
+import { useNow } from "@/lib/now";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,6 @@ import {
   taskForFolder,
   termWriteRetry,
   useAgentboardState,
-  useNow,
   waitForFirstFrame,
   type AgentboardNav,
   type AgentStatus,
@@ -131,7 +131,13 @@ export function AgentboardScreen() {
   const { openTab, activeTab, openSettingsTab } = useWorkspace();
   // Deep-link focus: a "needs you" popover row scrolls its repo into view here.
   const focusRef = useFocusTarget<HTMLDivElement>("agentboard");
-  const now = useNow(30_000);
+  // The shared 15s clock, where this screen used to own a 30s ticker. It is the
+  // app's largest tree and it stays mounted across screen switches, so that is
+  // a real doubling of its idle re-render rate — accepted deliberately: the
+  // values it feeds are minute-resolution session ages and the cache-expiry
+  // check below, and one app-wide interval beats a second timer firing
+  // out of phase with every other countdown on screen.
+  const now = useNow();
   const repos = state.repos;
 
   const [selected, setSelected] = useState<Selected>(null);
@@ -270,8 +276,8 @@ export function AgentboardScreen() {
   // One-shot "prompt cache about to expire" toast per session per cache
   // generation. `cacheExpiresAt` moves forward on every request Claude makes,
   // so keying on `sessionId:cacheExpiresAt` naturally re-arms the toast after
-  // the session is nudged — while the 30s `useNow` tick can't re-fire the same
-  // warning. The set is tiny (one entry per warning ever shown this mount),
+  // the session is nudged — while the shared `useNow` tick can't re-fire the
+  // same warning. The set is tiny (one entry per warning ever shown this mount),
   // so it's never pruned.
   const cacheWarned = useRef(new Set<string>());
   useEffect(() => {

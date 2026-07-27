@@ -54,10 +54,8 @@ pub fn stamp_pty_state(
     since: &mut tt_agentboard::bridge::NeedsSince,
     now: i64,
 ) {
-    let live = terms.live_ids();
-    let shell_kinds = terms.shell_kinds();
-    let port_drift = terms.port_drift();
-    let pty_signals = terms.pty_signals();
+    let crate::terminal::PtyEmitState { live, shell_kinds, signals: pty_signals, port_drift } =
+        terms.emit_state();
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
             let mut has_port_drift = false;

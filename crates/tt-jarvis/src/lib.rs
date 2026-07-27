@@ -64,6 +64,11 @@ pub fn standalone_app(width: u32, height: u32, present: PresentMode) -> App {
 ///
 /// `surface` must outlive the returned [`App`]: drop the `App` first. See
 /// [`surface`]'s module docs for the frames-in-flight rule behind that.
+///
+/// # Panics
+///
+/// If `surface` fails to yield its window and display handles, which its
+/// infallible accessors make unreachable.
 pub unsafe fn embedded_app(surface: ForeignSurface, rect: PaneRect, present: PresentMode) -> App {
     let mut app = App::new();
     app.add_plugins(

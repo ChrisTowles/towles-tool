@@ -25,6 +25,38 @@ export const KNOWN_COLLECTORS: readonly CollectorKey[] = [
   "slack:dm",
 ];
 
+/**
+ * Dot tint per collector state — **the** mapping, shared by the status bar and
+ * the day bar. Green when fresh, red when failing, amber for stale data, and a
+ * muted grey for "nothing collected yet". Carries the `dark:` pairs the styling
+ * convention requires.
+ *
+ * The two surfaces used to keep private copies that disagreed: `never-ran` was
+ * a muted grey in the status bar and amber in the day bar, so the same collector
+ * read as "nothing yet" in one and "something's wrong" in the other, in the same
+ * window at the same time. **Grey is the kept behavior**, because the status bar
+ * paints a dot for every {@link KNOWN_COLLECTORS} entry — including
+ * `claude:calendar` and `slack:dm`, both off unless the user turns them on — so
+ * amber there is a permanent false alarm about collectors nobody asked to run.
+ * The day bar only ever shows {@link ALWAYS_ON_COLLECTORS}, where `never-ran`
+ * lasts only until the first tick lands, and its own docstring already says a
+ * deliberately-disabled collector must not read as a problem.
+ */
+export const COLLECTOR_STATE_DOT: Record<CollectorState, string> = {
+  fresh: "bg-green-500/70 dark:bg-green-400/70",
+  stale: "bg-amber-500/80 dark:bg-amber-400/80",
+  failing: "bg-red-500 dark:bg-red-400",
+  "never-ran": "bg-muted-foreground/30 dark:bg-muted-foreground/30",
+};
+
+/** Short human label per collector state, for freshness tooltips. */
+export const COLLECTOR_STATE_LABEL: Record<CollectorState, string> = {
+  fresh: "up to date",
+  stale: "stale",
+  failing: "failing",
+  "never-ran": "never ran",
+};
+
 /** Human labels for tooltips (the raw keys are terse). */
 export const COLLECTOR_LABELS: Record<CollectorKey, string> = {
   prs: "Pull requests",
@@ -105,8 +137,9 @@ export const ALWAYS_ON_COLLECTORS: readonly CollectorKey[] = ["prs", "issues"];
 /**
  * Severity order for {@link worstCollectorState}: a `failing` collector is the
  * loudest, then a `never-ran` one (no data at all), then `stale` (old data);
- * `fresh` is the quiet baseline. Both `stale` and `never-ran` read amber on the
- * dot, so their relative rank only matters for which one the helper surfaces.
+ * `fresh` is the quiet baseline. Ranking `never-ran` above `stale` is about
+ * which one {@link worstCollectorState} surfaces, not about tint — see
+ * {@link COLLECTOR_STATE_DOT}, where `never-ran` is grey and `stale` amber.
  */
 const STATE_SEVERITY: Record<CollectorState, number> = {
   fresh: 0,

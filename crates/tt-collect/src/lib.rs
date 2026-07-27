@@ -423,7 +423,7 @@ pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usiz
 /// matches [`collect_issues`]: failed repos keep their last-known-good rows.
 ///
 /// This is the "full" sweep — used for on-demand refreshes (a manual
-/// `tt collect prs`, `collect_all`, and the post-mutation nudge) where paying
+/// `tt collect prs`, `tt collect all`, and the post-mutation nudge) where paying
 /// for all three `gh` calls once is worth it for full freshness. The periodic
 /// scheduler tick instead splits this into [`collect_prs_open`] (fast cadence)
 /// and [`collect_prs_merged`] (slow cadence) so it isn't re-fetching the
@@ -817,22 +817,6 @@ fn finish_sweep<T>(
     let notes: Vec<String> = errors.iter().cloned().chain(skipped).collect();
     let message = if notes.is_empty() { None } else { Some(notes.join("; ")) };
     finish(store, key, errors.is_empty(), count, message, now_ms)
-}
-
-/// Run every collector: calendar, issues, then PRs. Someone typed
-/// `tt collect all`, so this asks GitHub itself rather than reusing whatever a
-/// running window last fetched.
-pub fn collect_all(
-    store: &Store,
-    calendar_sources: &[CalendarSource],
-    repo_dirs: &[PathBuf],
-    now_ms: i64,
-) -> Vec<CollectSummary> {
-    vec![
-        collect_calendar(store, calendar_sources, now_ms),
-        collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
-        collect_prs(store, repo_dirs, now_ms),
-    ]
 }
 
 /// Run the collectors a manual "refresh now" fires: issues, then PRs, then —

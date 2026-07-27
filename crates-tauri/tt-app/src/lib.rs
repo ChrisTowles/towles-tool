@@ -126,6 +126,13 @@ fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
     format!("{base}.task-{suffix}")
 }
 
+/// The binary's entry point: build the Tauri app and run its event loop until
+/// the last window closes.
+///
+/// # Panics
+///
+/// If the app fails to build or the event loop dies — there is no window left
+/// to report the failure in, so startup faults abort rather than return.
 pub fn run() {
     // Errors always print to stderr, more with RUST_LOG. Independently, every
     // span/event streams to this task's on-disk event log at debug — the app

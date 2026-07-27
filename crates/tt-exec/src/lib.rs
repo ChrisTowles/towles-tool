@@ -1,8 +1,8 @@
 //! Thin process-execution wrapper for the towles-tool CLI.
 //!
-//! Ports `src/lib/git/exec.ts` and the `gh` JSON helper from the TypeScript CLI:
+//! Ports `src/lib/git/exec.ts` from the TypeScript CLI:
 //! [`run`] captures stdout/stderr/exit-code without failing, [`run_ok`] fails on a
-//! non-zero exit, and [`gh_json`] shells out to `gh` and deserializes its JSON stdout.
+//! non-zero exit.
 //!
 //! [`claude`] is the third tool-shaped helper: the one way this workspace asks
 //! `claude -p` for a machine-readable answer, via the CLI's own structured-output
@@ -10,7 +10,6 @@
 
 pub mod claude;
 
-use serde::de::DeserializeOwned;
 use std::process::Command;
 use std::time::Duration;
 use thiserror::Error;
@@ -353,12 +352,6 @@ pub fn run_ok(cmd: &str, args: &[&str]) -> Result<Output> {
     Ok(output)
 }
 
-/// Shell out to `gh` and deserialize its JSON stdout into `T`.
-pub fn gh_json<T: DeserializeOwned>(args: &[&str]) -> Result<T> {
-    let output = run_ok("gh", args)?;
-    Ok(serde_json::from_str(&output.stdout)?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,14 +517,6 @@ mod tests {
         ];
         let scrubbed = scrub_app_instance_env(env);
         assert_eq!(scrubbed, vec![("PATH".to_string(), "/usr/bin".to_string())]);
-    }
-
-    #[test]
-    fn gh_json_parses_echoed_json() {
-        // Exercise the JSON path via `echo` rather than depending on `gh` being installed.
-        let output = run_ok("echo", &[r#"{"count":3}"#]).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
-        assert_eq!(value["count"], 3);
     }
 
     /// Run `body` with an event-log-backed subscriber installed, returning the

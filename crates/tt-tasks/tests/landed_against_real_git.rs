@@ -46,6 +46,7 @@ fn without_identity<T>(body: impl FnOnce() -> T) -> T {
         }
     }
     let out = body();
+    // SAFETY: single-threaded test body; this is the restore half of the pair above.
     unsafe {
         for (key, value) in saved {
             match value {

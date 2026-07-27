@@ -12,7 +12,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { useAgentboardState } from "@/lib/agentboard";
 import { buildAttentionFeed, type AttentionItem, type AttentionKind } from "@/lib/attention-feed";
-import { alwaysOnHealth, worstCollectorState, type CollectorState } from "@/lib/collector-health";
+import {
+  alwaysOnHealth,
+  COLLECTOR_STATE_DOT,
+  COLLECTOR_STATE_LABEL,
+  worstCollectorState,
+} from "@/lib/collector-health";
 import { fmtAge, useStoreSnapshot } from "@/lib/data";
 import { pickTopTask } from "@/lib/day-top-task";
 import { useNow } from "@/lib/now";
@@ -99,13 +104,13 @@ export function DayBar() {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={cn("size-2 rounded-full", DOT_COLOR[dotState])} />
+          <span className={cn("size-2 rounded-full", COLLECTOR_STATE_DOT[dotState])} />
         </TooltipTrigger>
         <TooltipContent>
           <div className="flex flex-col gap-0.5">
             {collectorHealth.map((h) => (
               <span key={h.key}>
-                {h.label} · {STATE_LABEL[h.state]}
+                {h.label} · {COLLECTOR_STATE_LABEL[h.state]}
                 {h.run ? ` (${fmtAge(h.run.ranAt, now)})` : ""}
               </span>
             ))}
@@ -115,23 +120,6 @@ export function DayBar() {
     </div>
   );
 }
-
-/** Dot tint per collector state — green only when fresh, red when a collector is
- * failing, amber for the in-between (stale data, or nothing collected yet). */
-const DOT_COLOR: Record<CollectorState, string> = {
-  fresh: "bg-green-500",
-  stale: "bg-amber-500",
-  "never-ran": "bg-amber-500",
-  failing: "bg-red-500",
-};
-
-/** Short human label per collector state for the freshness tooltip. */
-const STATE_LABEL: Record<CollectorState, string> = {
-  fresh: "fresh",
-  stale: "stale",
-  "never-ran": "no runs yet",
-  failing: "failing",
-};
 
 /** Icon + accent (paired dark variant) per attention kind. */
 const KIND_META: Record<AttentionKind, { icon: LucideIcon; tone: string }> = {

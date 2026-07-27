@@ -65,6 +65,8 @@ impl ForeignSurface {
 // SAFETY: see the type-level note. The platform layer confines creation and
 // destruction to the main thread; the handles are only read after that.
 unsafe impl Send for ForeignSurface {}
+// SAFETY: as above — shared access is read-only, so `&ForeignSurface` carries
+// no way to race the handles it holds.
 unsafe impl Sync for ForeignSurface {}
 
 impl HasWindowHandle for ForeignSurface {

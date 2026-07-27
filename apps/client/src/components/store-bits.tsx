@@ -189,19 +189,6 @@ export function ChecksBadge({ checks }: { checks: string }) {
   );
 }
 
-/** PR ordering weight: failing checks outrank review-requested outrank the rest. */
-export function prRank(pr: PrItem): number {
-  if (pr.state !== "merged" && pr.checks === "failing") return 2;
-  if (pr.reviewState === "review_requested") return 1;
-  return 0;
-}
-
-/** Whether a PR demands the owner's attention (mirrors the day-bar math). */
-export function prNeedsYou(pr: PrItem): boolean {
-  const checksFailing = pr.state !== "merged" && pr.checks === "failing";
-  return checksFailing || pr.reviewState === "review_requested";
-}
-
 /**
  * Small ghost icon-button for dismissing a PR/issue row inline — for screens
  * that don't already have a per-row dropdown menu to hang a "Dismiss" item off

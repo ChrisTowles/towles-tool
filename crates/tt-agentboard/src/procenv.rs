@@ -89,16 +89,29 @@ pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
         // The shared `claude daemon` also reports `comm == "claude"` and can
         // inherit a PTY's TT_SESSION_ID when first spawned from an app shell;
         // without this it would be surfaced as an agent occupying that session.
-        // (`session_id_in_scope` re-checks this itself, since it has other
-        // callers that don't scan `/proc` first.)
         if is_claude_daemon(pid) {
             continue;
         }
-        if let Some(sid) = session_id_in_scope(pid, scope) {
+        // Deliberately *not* `session_id_in_scope`: that re-verifies liveness
+        // (another `comm` read plus another `cmdline` read) for callers who
+        // take a pid from the stale CLI snapshot. This loop just established
+        // both facts from `/proc` itself, so re-reading them is pure waste on
+        // a path that runs on every payload rebuild.
+        if let Some(sid) = scoped_session_id_of(pid, scope) {
             out.push(SessionAgentProc { session_id: sid, pid, transcript: open_transcript(pid) });
         }
     }
     out
+}
+
+/// Read `pid`'s environ and resolve its scoped `TT_SESSION_ID`, with **no**
+/// liveness re-check. Only safe when the caller has just proven `pid` is a
+/// live, non-daemon `claude` process; [`session_id_in_scope`] is the checked
+/// entry point for everyone else.
+#[cfg(target_os = "linux")]
+fn scoped_session_id_of(pid: i32, scope: &InstanceScope) -> Option<String> {
+    let bytes = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+    scoped_session_id(&bytes, scope)
 }
 
 /// Whether `pid` is still a live, interactive `claude` process — i.e. reading
@@ -165,8 +178,7 @@ pub fn session_id_in_scope(pid: i32, scope: &InstanceScope) -> Option<String> {
     if !is_live_claude_process(pid) {
         return None;
     }
-    let bytes = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
-    scoped_session_id(&bytes, scope)
+    scoped_session_id_of(pid, scope)
 }
 
 #[cfg(not(target_os = "linux"))]

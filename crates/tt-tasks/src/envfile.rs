@@ -45,6 +45,15 @@ pub fn parse(text: &str) -> Vec<(String, String)> {
 /// *which* var's port changed (e.g. `UI_PORT 3001 -> 3007`), not just that the
 /// claimed set differs.
 pub fn port_claims_by_key(text: &str) -> BTreeMap<String, u16> {
+    port_claims_in_order(text).into_iter().collect()
+}
+
+/// [`port_claims_by_key`] in the order the file declares them, for the one
+/// caller that displays them (`tt task ls`'s port column): the template's
+/// grouping is meaningful to a reader, and a `BTreeMap` would scramble it into
+/// alphabetical order. Same filter, different view — the filter itself lives
+/// here so the display and the claim set can never disagree about what counts.
+pub fn port_claims_in_order(text: &str) -> Vec<(String, u16)> {
     parse(text)
         .into_iter()
         .filter(|(k, v)| {
@@ -144,6 +153,17 @@ mod tests {
         assert_eq!(claims.len(), 2, "TASK and URL are not port claims");
         // Consistent with the flat set view.
         assert_eq!(port_claims(text), claims.into_values().collect());
+    }
+
+    #[test]
+    fn port_claims_in_order_keeps_the_files_own_order() {
+        // `UI` after `DB` in the file, but before it alphabetically — the
+        // ordered view must not sort (`tt task ls`'s port column).
+        let text = "DB_PORT=5439\nUI_PORT=3000\n";
+        assert_eq!(
+            port_claims_in_order(text),
+            vec![("DB_PORT".to_string(), 5439), ("UI_PORT".to_string(), 3000)]
+        );
     }
 
     #[test]

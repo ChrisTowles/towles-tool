@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { SETTINGS_SAVED_EVENT, loadUserSettings, saveUserSettings } from "./settings";
+import { useCallback, type RefObject } from "react";
+import { persistAgentboardSetting, useLiveSetting, useLiveSettingRef } from "./settings";
 
 /** Built-in default for `agentboard.copyOnSelect` — on, matching tt-config. */
 export const DEFAULT_COPY_ON_SELECT = true;
@@ -25,23 +25,7 @@ export function clampTerminalFontSize(px: number): number {
  * alt-tabbing back).
  */
 export function useCopyOnSelect(): RefObject<boolean> {
-  const ref = useRef(DEFAULT_COPY_ON_SELECT);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s) ref.current = s.agentboard?.copyOnSelect ?? DEFAULT_COPY_ON_SELECT;
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-  return ref;
+  return useLiveSettingRef((s) => s.agentboard?.copyOnSelect, DEFAULT_COPY_ON_SELECT);
 }
 
 /**
@@ -52,41 +36,22 @@ export function useCopyOnSelect(): RefObject<boolean> {
  * and on window focus so a change made elsewhere flows back into this hook.
  */
 export function useTerminalFontSize(): [number, (px: number) => void] {
-  const [fontSize, setFontSize] = useState(DEFAULT_TERMINAL_FONT_SIZE);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void loadUserSettings().then((s) => {
-        if (alive && s)
-          setFontSize(
-            clampTerminalFontSize(s.agentboard?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE),
-          );
-      });
-    load();
-    window.addEventListener("focus", load);
-    window.addEventListener(SETTINGS_SAVED_EVENT, load);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", load);
-      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-    };
-  }, []);
-
-  // Persist a zoom change back to the shared settings file. Read-modify-write
-  // the whole settings object so the TS CLI's unknown keys survive the save.
-  const persist = useCallback((px: number) => {
-    const clamped = clampTerminalFontSize(px);
-    setFontSize(clamped);
-    void loadUserSettings().then((s) => {
-      if (!s) return;
-      // Best-effort: a failed zoom persist leaves the on-screen size correct
-      // for this session, so there's nothing actionable to tell the user.
-      void saveUserSettings({
-        ...s,
-        agentboard: { ...s.agentboard, terminalFontSize: clamped },
-      });
-    });
-  }, []);
-
+  // Clamped in the selector too, not just on write: the file is hand-editable
+  // and co-owned, so an out-of-range value can arrive from outside this app.
+  const [fontSize, setFontSize] = useLiveSetting(
+    (s) =>
+      s.agentboard?.terminalFontSize === undefined
+        ? undefined
+        : clampTerminalFontSize(s.agentboard.terminalFontSize),
+    DEFAULT_TERMINAL_FONT_SIZE,
+  );
+  const persist = useCallback(
+    (px: number) => {
+      const clamped = clampTerminalFontSize(px);
+      setFontSize(clamped);
+      void persistAgentboardSetting("terminalFontSize", clamped);
+    },
+    [setFontSize],
+  );
   return [fontSize, persist];
 }

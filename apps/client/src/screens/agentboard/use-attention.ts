@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { NotInTauri } from "@/lib/errors";
 import { openExternalUrl } from "@/lib/open-url";
-import { PR_TONE } from "@/lib/pr-tone";
+import { PR_TONE, prChecksFailing, prNeedsYou } from "@/lib/pr-tone";
 import { uiAction } from "@/lib/ui-action";
 import {
   fmtCountdown,
@@ -47,8 +47,8 @@ export function useAttention(args: {
     const out: AttentionItem[] = [];
     for (const p of snapshot.prs) {
       if (isItemDismissed(p)) continue;
-      const checksFailing = p.state !== "merged" && p.checks === "failing";
-      if (checksFailing || p.reviewState === "review_requested") {
+      const checksFailing = prChecksFailing(p);
+      if (prNeedsYou(p)) {
         out.push({
           key: `pr:${p.repo}#${p.number}`,
           kind: "pr",

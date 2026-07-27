@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { UserSettingsSchema } from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
@@ -243,6 +243,115 @@ export async function saveUserSettings(settings: UserSettings): Promise<boolean>
   const saved = await invoke("settings_set", { settings });
   if (saved.isOk()) window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT));
   return saved.isOk();
+}
+
+/** The TS-owned `agentboard` block, as carried on {@link UserSettings}. */
+export type AgentboardBlock = NonNullable<UserSettings["agentboard"]>;
+
+/**
+ * Subscribe to "the settings file may have changed": a successful in-app save
+ * ({@link SETTINGS_SAVED_EVENT}) or the window regaining focus (which covers the
+ * JSON being edited externally, then alt-tabbing back). Fires `load` once
+ * immediately. Returns an unsubscribe.
+ *
+ * **The refresh policy lives here and only here.** Eight modules used to inline
+ * this same subscribe/refresh/teardown block, so changing *which* signals
+ * re-read a setting (adding `visibilitychange`, debouncing, moving off `window`
+ * events) meant eight edits with one silently-missed copy as the failure mode.
+ */
+export function onSettingsChanged(load: () => void): () => void {
+  load();
+  window.addEventListener("focus", load);
+  window.addEventListener(SETTINGS_SAVED_EVENT, load);
+  return () => {
+    window.removeEventListener("focus", load);
+    window.removeEventListener(SETTINGS_SAVED_EVENT, load);
+  };
+}
+
+/**
+ * One settings value, kept live. `select` pulls it out of the loaded settings
+ * (`undefined` when absent, so `fallback` applies); the value re-reads on every
+ * {@link onSettingsChanged} signal, and a read resolving after unmount is
+ * discarded.
+ *
+ * Returns the value plus a **local** setter — write-through is the caller's
+ * job, via {@link persistAgentboardSetting}. That split is what every consumer
+ * wants: set locally so the control responds immediately, then persist, and the
+ * save's own `SETTINGS_SAVED_EVENT` re-reads and confirms.
+ *
+ * `select` is read from a ref, so an inline arrow at the call site is fine — it
+ * needs no memoizing and does not re-subscribe.
+ */
+export function useLiveSetting<T>(
+  select: (s: UserSettings) => T | undefined,
+  fallback: T,
+): [T, (value: T) => void] {
+  const [value, setValue] = useState(fallback);
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  useEffect(() => {
+    let alive = true;
+    const unsubscribe = onSettingsChanged(() => {
+      void loadUserSettings().then((s) => {
+        // `alive` discards a read that resolved after unmount — the async gap
+        // between `loadUserSettings()` and its `.then` is exactly where a
+        // hand-copied version of this drops the guard.
+        if (alive && s) setValue(selectRef.current(s) ?? fallback);
+      });
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [fallback]);
+  return [value, setValue];
+}
+
+/**
+ * {@link useLiveSetting} into a ref instead of state — for consumers read from
+ * inside an imperative effect that must not re-subscribe when the value
+ * changes (the terminal's render loop reading `copyOnSelect`).
+ */
+export function useLiveSettingRef<T>(
+  select: (s: UserSettings) => T | undefined,
+  fallback: T,
+): RefObject<T> {
+  const ref = useRef(fallback);
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  useEffect(() => {
+    let alive = true;
+    const unsubscribe = onSettingsChanged(() => {
+      void loadUserSettings().then((s) => {
+        if (alive && s) ref.current = selectRef.current(s) ?? fallback;
+      });
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [fallback]);
+  return ref;
+}
+
+/**
+ * Read-modify-write one `agentboard.*` key.
+ *
+ * The read-modify-write is the point: the settings file is **co-owned by the
+ * TypeScript CLI**, so a save must carry the whole object forward or it drops
+ * keys this app doesn't model. That invariant used to be restated in a comment
+ * beside five separate copies of this code — and a sixth copy written without
+ * the comment would corrupt the file. Best-effort: a failed persist leaves the
+ * caller's in-session view correct, which is all there is to do about it.
+ */
+export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
+  key: K,
+  value: AgentboardBlock[K],
+): Promise<void> {
+  const s = await loadUserSettings();
+  if (!s) return;
+  await saveUserSettings({ ...s, agentboard: { ...s.agentboard, [key]: value } });
 }
 
 export type SettingsUpdater = (prev: UserSettings) => UserSettings;

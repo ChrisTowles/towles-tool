@@ -1,15 +1,15 @@
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
 import { DEFAULT_SHORTCUT_COACH } from "@/lib/shortcut-coach";
-import { SHORTCUTS, shortcutKeys, type ShortcutScope } from "@/lib/shortcuts";
+import { SHORTCUTS, scopeTitle, shortcutKeys, type ShortcutScope } from "@/lib/shortcuts";
 import type { UserSettings } from "@/lib/settings";
 import { NoMatches, ToggleRow, type Update } from "./common";
 
-export const SCOPE_LABELS: Record<ShortcutScope, string> = {
-  global: "",
-  agentboard: "Agentboard",
-  board: "Board",
-};
+/** Scope label for this tab: blank for `global` (an unscoped binding needs no
+ * qualifier here), otherwise the shared {@link scopeTitle}. */
+function scopeLabel(scope: ShortcutScope): string {
+  return scope === "global" ? "" : scopeTitle(scope);
+}
 
 /**
  * The one setting on this tab: whether a click that had a shortcut earns a
@@ -53,7 +53,7 @@ export function ShortcutsList({ query }: { query: string }) {
       ? true
       : matchesFilter(query, s.description, [
           s.when ?? "",
-          SCOPE_LABELS[s.scope],
+          scopeLabel(s.scope),
           ...shortcutKeys(s.id),
         ]),
   );
@@ -71,9 +71,7 @@ export function ShortcutsList({ query }: { query: string }) {
             {s.description}
             {s.when && <span className="text-muted-foreground/70"> — {s.when}</span>}
             {s.scope !== "global" && (
-              <span className="ml-2 text-xs text-muted-foreground/70">
-                ({SCOPE_LABELS[s.scope]})
-              </span>
+              <span className="ml-2 text-xs text-muted-foreground/70">({scopeLabel(s.scope)})</span>
             )}
           </span>
           <KbdGroup>

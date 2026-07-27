@@ -10,3 +10,6 @@ gix = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.14.0"
+
+[lints]
+workspace = true

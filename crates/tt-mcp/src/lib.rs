@@ -1083,10 +1083,7 @@ impl Dispatcher {
 
 // JSON-RPC / MCP response builders
 
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
-}
+use tt_config::now_ms;
 
 /// Build the `initialize` result, echoing the client's `protocolVersion` if any.
 fn initialize_result(request: &Value) -> Value {

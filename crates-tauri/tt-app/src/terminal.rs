@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -169,6 +169,15 @@ struct Session {
     activity: Arc<PtyActivity>,
 }
 
+/// The PTY-registry facts [`crate::agentboard::stamp_pty_state`] folds onto a
+/// `StatePayload`, gathered by [`TermState::emit_state`] in one pass.
+pub struct PtyEmitState {
+    pub live: std::collections::HashSet<String>,
+    pub shell_kinds: HashMap<String, String>,
+    pub signals: HashMap<String, tt_agentboard::pty_status::PtySignal>,
+    pub port_drift: HashMap<String, Vec<tt_agentboard::env_drift::PortDrift>>,
+}
+
 /// All live terminals, keyed by the frontend's `term_id`, plus which one
 /// currently holds keyboard focus.
 #[derive(Default)]
@@ -226,46 +235,60 @@ impl TermState {
         self.sessions.lock().unwrap().keys().cloned().collect()
     }
 
-    /// What each live PTY has been observed doing — the direct evidence the
-    /// agentboard bridge folds into agent status via
-    /// `tt_agentboard::pty_status::resolve_status`.
-    pub fn pty_signals(&self) -> HashMap<String, tt_agentboard::pty_status::PtySignal> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(id, s)| (id.clone(), s.activity.signal()))
-            .collect()
-    }
-
-    /// Each live session's shell kind. The agentboard bridge stamps these onto
-    /// the emitted snapshot as `SessionData.shellKind`.
-    pub fn shell_kinds(&self) -> HashMap<String, String> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(id, s)| (id.clone(), s.shell_kind.clone()))
-            .collect()
+    /// Everything [`crate::agentboard::stamp_pty_state`] needs off the PTY
+    /// registry, collected in **one** pass under **one** lock.
+    ///
+    /// The stamp used to call four separate accessors in sequence, taking (and
+    /// cloning the whole map under) the keystroke-path lock four times per
+    /// emit. Three of those had no other caller and are gone; `live_ids`
+    /// survives for `launch.rs`.
+    pub fn emit_state(&self) -> PtyEmitState {
+        let (live, shell_kinds, signals) = {
+            let guard = self.sessions.lock().unwrap();
+            let live = guard.keys().cloned().collect();
+            let shell_kinds =
+                guard.iter().map(|(id, s)| (id.clone(), s.shell_kind.clone())).collect();
+            let signals = guard.iter().map(|(id, s)| (id.clone(), s.activity.signal())).collect();
+            (live, shell_kinds, signals)
+        };
+        // Outside the lock — it reads `.env` files (see `port_drift`).
+        PtyEmitState { live, shell_kinds, signals, port_drift: self.port_drift() }
     }
 
     /// Each live session's port-claim drift: what its folder's `.env` claimed
     /// at spawn time vs what it claims right now. The agentboard bridge
     /// stamps these onto `SessionData.portDrift` before every emit (same
-    /// pattern as `live`/`shell_kinds`). Re-reads each session's `.env`
-    /// fresh — a small file, and only run on the poll/emit path, never per
-    /// keystroke. Sessions with nothing to compare (`dir` unresolved) or no
-    /// drift are simply absent from the map.
-    pub fn port_drift(&self) -> HashMap<String, Vec<tt_agentboard::env_drift::PortDrift>> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|(id, s)| {
-                let dir = s.dir.as_deref()?;
-                let current = tt_agentboard::env_drift::read_current_ports(dir);
-                let drift = tt_agentboard::env_drift::diff(&s.env_ports_at_spawn, &current);
-                (!drift.is_empty()).then(|| (id.clone(), drift))
+    /// pattern as `live`/`shell_kinds`). Sessions with nothing to compare
+    /// (`dir` unresolved) or no drift are simply absent from the map.
+    ///
+    /// **The `.env` reads happen after the lock is dropped, deliberately.**
+    /// This runs on the emit path (~every 2s, once per live session), but the
+    /// `sessions` lock it needs is the same one `term_write`/`term_key` take on
+    /// the keystroke path — so holding it across filesystem I/O puts a file
+    /// read between the user's keypress and their terminal. That is exactly
+    /// what this crate's "map-surgery-only" rule about `TermState`'s lock
+    /// forbids. The reads are also deduped by folder: panes routinely share
+    /// one checkout's `.env`, and re-reading it per pane bought nothing.
+    fn port_drift(&self) -> HashMap<String, Vec<tt_agentboard::env_drift::PortDrift>> {
+        let sessions: Vec<(String, PathBuf, BTreeMap<String, u16>)> = {
+            let guard = self.sessions.lock().unwrap();
+            guard
+                .iter()
+                .filter_map(|(id, s)| {
+                    let dir = s.dir.as_ref()?;
+                    Some((id.clone(), dir.clone(), s.env_ports_at_spawn.clone()))
+                })
+                .collect()
+        };
+        let mut current_by_dir: HashMap<PathBuf, BTreeMap<String, u16>> = HashMap::new();
+        sessions
+            .into_iter()
+            .filter_map(|(id, dir, at_spawn)| {
+                let current = current_by_dir
+                    .entry(dir.clone())
+                    .or_insert_with(|| tt_agentboard::env_drift::read_current_ports(&dir));
+                let drift = tt_agentboard::env_drift::diff(&at_spawn, current);
+                (!drift.is_empty()).then_some((id, drift))
             })
             .collect()
     }
@@ -1436,6 +1459,8 @@ mod tests {
     /// existence/permission probe).
     #[cfg(unix)]
     fn pid_alive(pid: i32) -> bool {
+        // SAFETY: `kill` is async-signal-safe and takes plain scalars; signal 0
+        // sends nothing, so no process state can be observed or corrupted.
         unsafe { libc::kill(pid, 0) == 0 }
     }
 
@@ -1461,6 +1486,9 @@ mod tests {
         // Stand in for the shell portable-pty spawns: made a session leader
         // via setsid in pre_exec, exactly like unix.rs does for every PTY
         // child.
+        // SAFETY: `pre_exec` runs between fork and exec, where only
+        // async-signal-safe calls are legal. It calls just `setsid` and
+        // `Error::last_os_error`, allocating nothing and locking nothing.
         let mut leader = unsafe {
             Command::new("sh")
                 .arg("-c")

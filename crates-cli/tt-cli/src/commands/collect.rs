@@ -10,10 +10,12 @@
 
 use std::io::IsTerminal;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tt_collect::CollectSummary;
+// Read at the CLI boundary so the library collectors stay clock-injected and
+// deterministic.
+use tt_config::now_ms;
 use tt_store::{CollectRun, Store};
 
 use crate::cli::{CollectCommands, CollectStatusArgs, NudgeTarget};
@@ -95,12 +97,6 @@ pub fn run(command: CollectCommands, config_dir: Option<&Path>) -> i32 {
 
     print_summaries(&summaries);
     if summaries.iter().all(|s| s.ok) { 0 } else { 1 }
-}
-
-/// Current wall-clock time in epoch milliseconds. Read at the CLI boundary so
-/// the library collectors stay clock-injected and deterministic.
-fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// Touch one collector's nudge file (creating the nudge dir if needed). The

@@ -17,3 +17,6 @@ wait-timeout = { workspace = true }
 tt-telemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = "3.14.0"
+
+[lints]
+workspace = true
