@@ -1,24 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, CornerDownLeft, Play, Square, X } from "lucide-react";
+import { Check, ChevronRight, CornerDownLeft, History, Play, Square, X } from "lucide-react";
 import { toast } from "sonner";
 import { ChatDot, IconBtn } from "@/components/agentboard-bits";
+import { PermissionCard } from "@/components/agent-prompt-card";
 import { Markdown } from "@/components/markdown";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  agentResumableSessions,
   applyCommand,
   matchCommands,
   slashMenuKey,
   slashQuery,
   summarizeToolInput,
+  type ResumableSession,
   type SlashCommand,
   type Turn,
+  type Verdict,
 } from "@/lib/agent";
 import {
   chatStatus,
   closeChat,
+  resumeChat,
   sendChat,
   startChat,
   stopChat,
@@ -26,6 +39,8 @@ import {
   type ChatSession,
 } from "@/lib/agent-sessions";
 import { agentPaneId, type FolderData } from "@/lib/agentboard";
+import { fmtAge } from "@/lib/data";
+import { useClipboardCopy } from "@/lib/use-clipboard-copy";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -109,12 +124,25 @@ export function AgentPane({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [view.turns]);
 
+  const [resuming, setResuming] = useState(false);
+
   const start = useCallback(
     async (prompt: string) => {
       uiAction("agent.start", "agentboard");
       const res = await startChat(agentId, dir, prompt);
       if (res.isErr() && !NotInTauri.is(res.error))
         toast.error(`Could not start agent: ${errorMessage(res.error)}`);
+    },
+    [agentId, dir],
+  );
+
+  const resume = useCallback(
+    async (sessionId: string) => {
+      uiAction("agent.resume", "agentboard");
+      const res = await resumeChat(agentId, dir, sessionId);
+      if (res.isErr() && !NotInTauri.is(res.error))
+        toast.error(`Could not resume session: ${errorMessage(res.error)}`);
+      else taRef.current?.focus();
     },
     [agentId, dir],
   );
@@ -154,6 +182,7 @@ export function AgentPane({
         controls={<AgentStatus session={session} />}
         actions={
           <>
+            {view.sessionId && <SessionIdChip sessionId={view.sessionId} dir={dir} />}
             {view.costUsd > 0 && (
               <span className="font-mono text-[10.5px] text-muted-foreground">
                 ${view.costUsd.toFixed(4)}
@@ -174,12 +203,27 @@ export function AgentPane({
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-2 p-3">
           {view.turns.length === 0 && (
-            <p className="py-10 text-center text-xs text-muted-foreground">
-              {started ? "Waiting for the agent…" : "Type a prompt below to start a session here."}
-            </p>
+            <div className="flex flex-col items-center gap-2 py-10">
+              <p className="text-center text-xs text-muted-foreground">
+                {started
+                  ? "Waiting for the agent…"
+                  : "Type a prompt below to start a session here."}
+              </p>
+              {!started && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setResuming(true)}
+                >
+                  <History className="size-3" />
+                  Resume a session…
+                </Button>
+              )}
+            </div>
           )}
           {view.turns.map((turn) => (
-            <TurnRow key={turn.id} turn={turn} />
+            <TurnRow key={turn.id} turn={turn} agentId={agentId} />
           ))}
           {dead && (
             <p className="py-3 text-center font-mono text-[10.5px] text-muted-foreground">
@@ -187,6 +231,15 @@ export function AgentPane({
             </p>
           )}
           <div ref={bottomRef} />
+          <ResumeDialog
+            dir={dir}
+            open={resuming}
+            onOpenChange={setResuming}
+            onPick={(sessionId) => {
+              setResuming(false);
+              void resume(sessionId);
+            }}
+          />
         </div>
       </ScrollArea>
 
@@ -307,7 +360,7 @@ function AgentStatus({ session }: { session: ChatSession }) {
   );
 }
 
-function TurnRow({ turn }: { turn: Turn }) {
+function TurnRow({ turn, agentId }: { turn: Turn; agentId: string }) {
   switch (turn.type) {
     case "user":
       // Right-inset and violet-edged so a glance down the transcript separates
@@ -343,21 +396,42 @@ function TurnRow({ turn }: { turn: Turn }) {
         </div>
       );
     case "tool":
-      return <ToolRow turn={turn} />;
+      return <ToolRow turn={turn} agentId={agentId} />;
   }
 }
 
-function ToolRow({ turn }: { turn: Extract<Turn, { type: "tool" }> }) {
-  const [open, setOpen] = useState(false);
+/** How an answered prompt reads afterwards. Kept terse — it is a footnote on a
+ * row you already decided, not a result. */
+const VERDICT_TEXT: Record<Verdict, string> = {
+  allow: "allowed",
+  answered: "answered",
+  deny: "denied",
+  cancelled: "cancelled",
+};
+
+/** Border + dot per row state, derived once from the same precedence so the two
+ * can't disagree about what a row is doing. Blocked outranks everything: it is
+ * the only state that needs the user. */
+const TOOL_ROW_TONE = {
+  blocked: { row: "border-amber-500/60 bg-amber-500/5", dot: "animate-pulse bg-amber-500" },
+  pending: { row: "border-border", dot: "animate-pulse bg-cyan-500" },
+  error: { row: "border-red-500/40 bg-red-500/5", dot: "bg-red-500" },
+  done: { row: "border-border", dot: "bg-green-500" },
+} as const;
+
+function toolRowTone(turn: Extract<Turn, { type: "tool" }>): keyof typeof TOOL_ROW_TONE {
+  if (turn.permission) return "blocked";
+  if (turn.pending) return "pending";
+  return turn.isError ? "error" : "done";
+}
+
+function ToolRow({ turn, agentId }: { turn: Extract<Turn, { type: "tool" }>; agentId: string }) {
   const summary = summarizeToolInput(turn.input);
+  const [open, setOpen] = useState(false);
+  const tone = TOOL_ROW_TONE[toolRowTone(turn)];
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border",
-        turn.isError && "border-red-500/40 bg-red-500/5",
-      )}
-    >
+    <div className={cn("rounded-lg border", tone.row)}>
       {/* Not a <button>: the expanded body holds selectable content and its own
           scrollers, which React rejects inside a button — at runtime only. */}
       <div
@@ -373,21 +447,20 @@ function ToolRow({ turn }: { turn: Extract<Turn, { type: "tool" }> }) {
             open && "rotate-90",
           )}
         />
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full",
-            turn.pending
-              ? "animate-pulse bg-cyan-500"
-              : turn.isError
-                ? "bg-red-500"
-                : "bg-green-500",
-          )}
-        />
+        <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} />
         <span className="shrink-0 font-mono text-[11px] text-violet-500">{turn.name}</span>
         <span className="truncate font-mono text-[10.5px] text-muted-foreground" title={summary}>
-          {summary}
+          {turn.permission?.description ?? summary}
         </span>
+        {turn.verdict && (
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground/70">
+            {VERDICT_TEXT[turn.verdict]}
+          </span>
+        )}
       </div>
+      {/* Outside the collapsible body: a decision the agent is blocked on must
+          never be behind a disclosure triangle. */}
+      {turn.permission && <PermissionCard agentId={agentId} request={turn.permission} />}
       {open && (
         <div className="space-y-1.5 border-t border-border px-2.5 py-1.5">
           <pre className="overflow-x-auto font-mono text-[10.5px] text-muted-foreground">
@@ -406,5 +479,136 @@ function ToolRow({ turn }: { turn: Extract<Turn, { type: "tool" }> }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The session id, and the bridge out of this pane into a terminal.
+ *
+ * A chat pane runs a real `claude` in the folder, so its transcript is an
+ * ordinary Claude Code session — `claude --resume <id>` from that folder picks
+ * it up with full context, verified against a live session. That makes the id
+ * the one piece of state worth exposing: without it the conversation is
+ * reachable only through this pane, and closing the pane looks like losing it.
+ */
+function SessionIdChip({ sessionId, dir }: { sessionId: string; dir: string }) {
+  const { copiedKey, copy } = useClipboardCopy();
+  const command = `claude --resume ${sessionId}`;
+  const copied = copiedKey === sessionId;
+
+  return (
+    // Radix, not a native `title`: the webview swallows those unreliably (see
+    // `IconBtn`), and a multi-line hint is exactly what a `title` can't render.
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => {
+            uiAction("agent.copy_resume", "agentboard");
+            copy(sessionId, command);
+          }}
+          className="flex shrink-0 items-center gap-1 rounded px-1 font-mono text-[10px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        >
+          {copied ? (
+            <Check className="size-2.5 text-green-500" />
+          ) : (
+            <History className="size-2.5" />
+          )}
+          {copied ? "copied" : sessionId.slice(0, 8)}
+        </button>
+      </TooltipTrigger>
+      {/* The full command, not the bare id: what you do with this is paste it
+          into a shell, and reconstructing the flag from memory is the step
+          people get wrong. */}
+      <TooltipContent className="font-mono text-[10px]">
+        <div>{dir}</div>
+        <div>$ {command}</div>
+        <div className="font-sans text-muted-foreground">Click to copy the resume command.</div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Pick a prior session in this folder to continue.
+ *
+ * The list is every Claude Code session launched here — this pane's own and
+ * any from a terminal or a bare `claude` in the same directory, because they
+ * are the same kind of transcript. That symmetry is the point: work started at
+ * the CLI can be picked up in the pane and vice versa, and neither surface
+ * owns the conversation.
+ *
+ * Scanned on open rather than kept fresh: it is read once, by a deliberate
+ * click, and a session started after the dialog opened is not one the user is
+ * looking for.
+ */
+function ResumeDialog({
+  dir,
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  dir: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPick: (sessionId: string) => void;
+}) {
+  const [sessions, setSessions] = useState<ResumableSession[] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSessions(null);
+    void (async () => {
+      const found = await agentResumableSessions(dir);
+      // An empty list and a failed scan read the same to the user here — there
+      // is nothing to resume either way — so this degrades rather than
+      // reporting, except outside Tauri where it is expected.
+      setSessions(found.unwrapOr([]));
+    })();
+  }, [open, dir]);
+
+  const now = Date.now();
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Resume a session</DialogTitle>
+          <DialogDescription>
+            Claude Code sessions started in this folder — from this pane or from a terminal.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-80">
+          <div className="flex flex-col gap-1 pr-2">
+            {sessions === null && (
+              <p className="py-6 text-center text-xs text-muted-foreground">Looking…</p>
+            )}
+            {sessions?.length === 0 && (
+              <p className="py-6 text-center text-xs text-muted-foreground">
+                No previous sessions in this folder.
+              </p>
+            )}
+            {sessions?.map((s) => (
+              <button
+                key={s.sessionId}
+                type="button"
+                onClick={() => onPick(s.sessionId)}
+                className="flex flex-col items-start gap-0.5 rounded-md border border-border px-2.5 py-1.5 text-left hover:bg-accent/50"
+              >
+                <span className="line-clamp-2 text-xs text-foreground">
+                  {s.title ?? (
+                    <span className="font-mono text-muted-foreground">{s.sessionId}</span>
+                  )}
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {fmtAge(s.mtime, now)} · {s.userTurns} turn{s.userTurns === 1 ? "" : "s"}
+                  {s.costUsd > 0 && ` · $${s.costUsd.toFixed(2)}`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }

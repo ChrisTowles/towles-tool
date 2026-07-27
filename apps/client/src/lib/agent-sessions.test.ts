@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { emptyView, type AgentView } from "@/lib/agent";
-import { chatStatus, chatTally, type ChatSession } from "@/lib/agent-sessions";
+import { emptyView, type AgentView, type PermissionRequest } from "@/lib/agent";
+import { chatSession, chatStatus, chatTally, type ChatSession } from "@/lib/agent-sessions";
 
-const session = (view: Partial<AgentView>, started = true): ChatSession => ({
-  view: { ...emptyView(), ...view },
-  started,
-});
+// Through the real factory, so `asking` is derived here the same way the store
+// derives it — a helper that set it by hand would prove nothing about the store.
+const session = (view: Partial<AgentView>, started = true): ChatSession =>
+  chatSession({ view: { ...emptyView(), ...view }, started });
 
 describe("chatStatus", () => {
   it("is off for a pane with nothing started", () => {
@@ -35,6 +35,22 @@ describe("chatStatus", () => {
 
   it("treats a signal death (null code) as an exit, not an error", () => {
     expect(chatStatus(session({ exitCode: null }))).toBe("exited");
+  });
+
+  it("is asking while a prompt blocks the agent, outranking working", () => {
+    // A blocked agent is still `running`; reporting it as working would hide
+    // the one state that needs the user from the rail.
+    const request = { requestId: "r1", toolName: "Write" } as PermissionRequest;
+    const blocked = session({
+      running: true,
+      turns: [
+        { id: "t1", type: "tool", name: "Write", input: {}, pending: true, permission: request },
+      ],
+    });
+    expect(blocked.asking).toBe(true);
+    expect(chatStatus(blocked)).toBe("asking");
+    // An exit still outranks it — the process is gone, nothing can be answered.
+    expect(chatStatus(session({ ...blocked.view, exitCode: 1 }))).toBe("error");
   });
 });
 

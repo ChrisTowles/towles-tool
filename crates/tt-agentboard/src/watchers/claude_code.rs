@@ -130,7 +130,14 @@ fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
 /// literal `-`, a `.`, and a `_` at the same position are indistinguishable
 /// once encoded), which is exactly why [`find_journal`] still falls back to
 /// probing every project dir rather than trusting this guess blindly.
-pub(crate) fn encode_project_dir_name(cwd: &str) -> String {
+///
+/// `pub` because it is the workspace's one home for this rule and `tt-app`
+/// calls it: the chat pane's resume picker maps a folder to its `<projects>`
+/// entry to find the sessions started there. Don't narrow it back to
+/// `pub(crate)` on a dead-code sweep — the in-crate callers ([`find_journal`],
+/// `fs_notify`) are not the only ones — and don't re-derive the substitution ad
+/// hoc at a call site.
+pub fn encode_project_dir_name(cwd: &str) -> String {
     cwd.chars().map(|c| if matches!(c, '/' | '.' | '_') { '-' } else { c }).collect()
 }
 

@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
-use tt_agent::{AgentEvent, AgentOptions, AgentSession};
+use tt_agent::{AgentEvent, AgentOptions, AgentSession, PermissionDecision, Verdict};
 
 pub const AGENT_EVENT: &str = "agent://event";
 
@@ -115,6 +115,41 @@ pub fn agent_send(
         .cloned()
         .ok_or_else(|| format!("no agent session {agent_id}"))?;
     session.send(&text).map_err(|e| e.to_string())
+}
+
+/// Answer a permission prompt (or a question tool) the agent is blocked on.
+///
+/// Instrumented like any other user gesture, and named for what changed rather
+/// than reusing `ui.action` — the click already emitted that. The tool name and
+/// the verdict are recorded; the tool's *input* deliberately is not, since it
+/// carries file contents, commands and typed answers.
+///
+/// `verdict` is passed in rather than inferred from `decision`'s shape. The
+/// caller already decided which of allow/answer/deny/cancel it meant, and the
+/// wire shape doesn't recover it — a question answered by allowing the call
+/// with no picks is indistinguishable from a plain allow, so re-deriving here
+/// silently logged "Skip" as "allow" and fed the Telemetry screen a verdict the
+/// user never chose. It arrives as a [`Verdict`] rather than a string so a
+/// frontend typo fails the call instead of poisoning the log it feeds.
+#[tauri::command]
+pub fn agent_respond(
+    state: State<'_, AgentState>,
+    agent_id: String,
+    request_id: String,
+    tool_name: String,
+    verdict: Verdict,
+    decision: PermissionDecision,
+) -> Result<(), String> {
+    let session = state
+        .sessions
+        .lock()
+        .map_err(lock_err)?
+        .get(&agent_id)
+        .cloned()
+        .ok_or_else(|| format!("no agent session {agent_id}"))?;
+    session.respond(&request_id, &decision).map_err(|e| e.to_string())?;
+    tracing::info!(agent_id = %agent_id, tool = %tool_name, %verdict, "agent.permission_answered");
+    Ok(())
 }
 
 /// Stop an agent and forget it. Idempotent: stopping an already-exited

@@ -16,12 +16,20 @@
 //! **`--print` is required.** Without it the CLI starts its interactive TUI
 //! and ignores the stream-json flags entirely; the failure mode is a process
 //! that appears healthy and emits nothing.
+//!
+//! **`--permission-prompt-tool stdio` is what opens the control channel.**
+//! With it, every gated tool call — and every `AskUserQuestion` — arrives as a
+//! `can_use_tool` control request the client must answer (see
+//! [`crate::control`]). Without it the CLI decides alone against settings, and
+//! a request needing a human simply fails. Verified live: the flag alone is
+//! sufficient, with no `initialize` handshake first.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+use crate::control::{PermissionDecision, encode_decision, encode_error};
 use crate::protocol::{AgentEvent, encode_user_message, parse_line};
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +66,10 @@ pub fn build_args(opts: &AgentOptions) -> Vec<String> {
         "--output-format",
         "stream-json",
         "--verbose",
+        // Route permission prompts and question tools to us over the control
+        // channel instead of letting the CLI resolve them alone.
+        "--permission-prompt-tool",
+        "stdio",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -115,16 +127,33 @@ impl AgentSession {
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        let stdin = child.stdin.take();
+        let stdin = Arc::new(Mutex::new(child.stdin.take()));
         let child = Arc::new(Mutex::new(child));
 
         let on_event = Arc::new(on_event);
 
         if let Some(stdout) = stdout {
             let on_event = Arc::clone(&on_event);
+            let stdin = Arc::clone(&stdin);
             std::thread::spawn(move || {
                 for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                     for event in parse_line(&line) {
+                        // Refuse what we can't serve *before* emitting it. The
+                        // CLI is blocked on this line, and a caller that only
+                        // renders events would leave it blocked forever — so
+                        // the answer can't be the UI's responsibility.
+                        if let AgentEvent::UnsupportedControlRequest { request_id, subtype } =
+                            &event
+                        {
+                            tracing::debug!(%request_id, %subtype, "refusing control request");
+                            let _ = write_line(
+                                &stdin,
+                                &encode_error(
+                                    request_id,
+                                    &format!("unsupported control request: {subtype}"),
+                                ),
+                            );
+                        }
                         on_event(event);
                     }
                 }
@@ -161,19 +190,28 @@ impl AgentSession {
             });
         }
 
-        Ok(Self { child, stdin: Arc::new(Mutex::new(stdin)) })
+        Ok(Self { child, stdin })
     }
 
     /// Send a user turn. Returns [`AgentError::Exited`] once stdin is gone,
     /// so a write to a dead agent is a value the caller must handle rather
     /// than a silent no-op.
     pub fn send(&self, text: &str) -> Result<(), AgentError> {
-        let mut guard = self.stdin.lock().map_err(|_| AgentError::Exited)?;
-        let stdin = guard.as_mut().ok_or(AgentError::Exited)?;
-        stdin
-            .write_all(format!("{}\n", encode_user_message(text)).as_bytes())
-            .and_then(|()| stdin.flush())
-            .map_err(AgentError::Write)
+        write_line(&self.stdin, &encode_user_message(text))
+    }
+
+    /// Answer a pending [`AgentEvent::PermissionRequest`].
+    ///
+    /// The agent is stopped until this lands, so the error case matters: a
+    /// failed write means the session died while the prompt was on screen, and
+    /// the caller should clear the card rather than leave it waiting on a
+    /// process that is gone.
+    pub fn respond(
+        &self,
+        request_id: &str,
+        decision: &PermissionDecision,
+    ) -> Result<(), AgentError> {
+        write_line(&self.stdin, &encode_decision(request_id, decision))
     }
 
     /// Kill the agent. Idempotent — killing an already-dead process is fine,
@@ -190,6 +228,20 @@ impl AgentSession {
             let _ = child.wait();
         }
     }
+}
+
+/// Write one framed line to the agent's stdin.
+///
+/// Shared by every writer — user turns and control responses alike — because
+/// the newline framing and the "stdin gone means exited" rule are the same for
+/// both, and a second copy is how one of them ends up unflushed.
+fn write_line(stdin: &Arc<Mutex<Option<ChildStdin>>>, line: &str) -> Result<(), AgentError> {
+    let mut guard = stdin.lock().map_err(|_| AgentError::Exited)?;
+    let stdin = guard.as_mut().ok_or(AgentError::Exited)?;
+    stdin
+        .write_all(format!("{line}\n").as_bytes())
+        .and_then(|()| stdin.flush())
+        .map_err(AgentError::Write)
 }
 
 /// An empty or missing cwd would make `claude` inherit the app's own working
@@ -217,6 +269,9 @@ mod tests {
         // --verbose is what makes stream-json emit per-message events rather
         // than only a final result.
         assert!(args.contains(&"--verbose".to_string()));
+        // Without this the CLI answers permission prompts itself and
+        // AskUserQuestion can never reach a human.
+        assert!(joined.contains("--permission-prompt-tool stdio"));
     }
 
     #[test]

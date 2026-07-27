@@ -549,6 +549,29 @@ Cargo workspace + npm workspace (`apps/client` only):
     that adds message types can't break the feed. `AgentEvent::Exited` is the
     one variant synthesized by the host rather than read off the wire, so the
     UI has a single ordered feed instead of a second channel to interleave.
+    **That pipe carries two protocols, and `Other` is the right answer for
+    only one of them.** Alongside the message stream runs a JSON-RPC-shaped
+    control channel (`control_request`/`control_response`, `control.rs`) on
+    which the CLI *blocks until the client answers* — so a control request
+    filed as unrendered noise is not a dropped message, it is a session that
+    appears to hang forever. Everything unservable is therefore refused
+    explicitly (`AgentEvent::UnsupportedControlRequest`, answered with an error
+    from the reader thread before the event is even emitted), and the one
+    subtype we serve, `can_use_tool`, becomes a first-class
+    `AgentEvent::PermissionRequest`. The channel exists only because the
+    session spawns with **`--permission-prompt-tool stdio`** — verified live,
+    that flag alone is sufficient and no `initialize` handshake is needed.
+    `can_use_tool` is **three features wearing one wire shape**, which is why
+    they share a code path in Rust and a renderer seam in `agent-pane.tsx`: a
+    *gate* (allow/deny — and `deny`'s `message` reaches the model as the tool
+    result, so it steers rather than merely refuses), a *plan*
+    (`ExitPlanMode`), and a *question* (`AskUserQuestion`), where the answer is
+    **data written back into the tool's own `input`** and returned by allowing
+    the call. Hence answering a question is an `allow`, never a `deny`, and an
+    allow carrying no `answers` is exactly how the CLI spells "the user
+    declined to answer". Closing or stopping a pane answers every prompt it
+    was blocking on as `cancelled` — distinct from `deny`, which would tell the
+    model the user objected.
     Transport lives in `crates-tauri/tt-app/src/agent.rs` (`agent://event`),
     which inherits the terminal host's lock discipline for the same reason.
     **The pane id is the backend session key**, and it is folder-scoped, so a

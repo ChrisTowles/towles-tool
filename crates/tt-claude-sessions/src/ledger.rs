@@ -98,72 +98,168 @@ pub fn scan_sessions_detailed(
     let cutoff_ms = calculate_cutoff_ms(days, now_ms);
 
     // Cheap pass: paths + mtimes only, so the limit applies before any parse.
-    let mut candidates: Vec<(i64, String, String, PathBuf)> = Vec::new();
+    let mut candidates: Vec<Candidate> = Vec::new();
     for project_entry in std::fs::read_dir(projects_dir)? {
         let project_entry = project_entry?;
-        let project_path = project_entry.path();
-        if !project_path.is_dir() {
+        if !project_entry.path().is_dir() {
             continue;
         }
-        let encoded = project_entry.file_name().to_string_lossy().to_string();
-        for file_entry in std::fs::read_dir(&project_path)? {
-            let file_entry = file_entry?;
-            let name = file_entry.file_name().to_string_lossy().to_string();
-            let Some(session_id) = name.strip_suffix(".jsonl") else {
-                continue;
-            };
-            let meta = file_entry.metadata()?;
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            if cutoff_ms > 0 && mtime < cutoff_ms {
-                continue;
-            }
-            candidates.push((mtime, session_id.to_string(), encoded.clone(), file_entry.path()));
-        }
+        collect_candidates(&project_entry.path(), cutoff_ms, &mut candidates)?;
     }
-    candidates.sort_by_key(|(mtime, ..)| std::cmp::Reverse(*mtime));
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.mtime));
     candidates.truncate(limit);
+    Ok(candidates.into_iter().map(detail_from_candidate).collect())
+}
 
-    let mut details = Vec::with_capacity(candidates.len());
-    for (mtime, session_id, encoded, path) in candidates {
-        let entries = parse_transcript_file(&path);
-        let analysis = analyze_session(&entries);
-        // Human prompts only — the transcript's `user` lines are mostly
-        // machine noise (tool results, envelopes), which must not count.
-        let prompts = user_prompts_with_timestamps(&entries);
-        let user_turns = prompts.len() as i64;
-        let prompt_times_ms = prompts
-            .iter()
-            .filter_map(|p| p.timestamp.as_deref())
-            .filter_map(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
-            .map(|dt| dt.timestamp_millis())
-            .collect();
-        details.push(SessionDetail {
-            session_id,
-            project: normalize_repo_name(&encoded),
-            date: local_date(mtime),
+/// Everything knowable about a transcript without opening it.
+struct Candidate {
+    mtime: i64,
+    session_id: String,
+    /// The project directory's own encoded name, for [`normalize_repo_name`].
+    encoded: String,
+    path: PathBuf,
+}
+
+/// One prior session in a folder, offered as something to resume.
+///
+/// Deliberately narrower than [`SessionDetail`]: a resume picker shows when you
+/// last touched a conversation and how big it got, and every other field of a
+/// full detail costs a parse pass to fill.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumableSession {
+    /// What `--resume` takes.
+    pub session_id: String,
+    pub title: Option<String>,
+    /// File mtime, epoch ms — "when you last touched it".
+    pub mtime: i64,
+    pub user_turns: i64,
+    pub cost_usd: f64,
+}
+
+/// Prior sessions launched in `cwd`, newest first.
+///
+/// **The project directory narrows the search; the transcript's own recorded
+/// `cwd` decides.** Those are two different jobs, and conflating them either way
+/// is a bug. The encoded directory name is useless as *proof* — it folds `/`,
+/// `.` and `_` all to `-`, so distinct paths can share one directory — which is
+/// why the exact `cwd` comparison here is what actually filters. But as a
+/// *candidate set* it is exact in the direction that matters: Claude Code
+/// derives the directory from the cwd, so every transcript for `cwd` is
+/// guaranteed to be in there, and a collision can only add extras that the
+/// comparison then drops.
+///
+/// A transcript predating the `cwd` field can't prove it belongs here, so it is
+/// left out rather than guessed at: resuming the wrong conversation into a
+/// worktree is worse than not offering it.
+///
+/// The narrow counterpart to [`scan_sessions_detailed`], and worth its own entry
+/// point rather than filtering that one's output for two reasons. The wide scan
+/// parses the newest N transcripts *globally* — hundreds of megabytes — to
+/// answer a question about a directory that typically holds two or three files.
+/// And its `limit` is a budget shared with every other folder, so a busy machine
+/// can push a quiet folder's sessions out of the result entirely; here the
+/// directory is the bound.
+///
+/// Each survivor is parsed once, and `cwd` is checked before any analysis, so a
+/// transcript belonging to another folder costs a parse and nothing more.
+pub fn resumable_sessions(
+    project_dir: &Path,
+    cwd: &str,
+    days: f64,
+    now_ms: i64,
+) -> Result<Vec<ResumableSession>> {
+    if !project_dir.is_dir() {
+        // A folder Claude Code has never run in has no directory at all — an
+        // empty list, not an error.
+        return Ok(Vec::new());
+    }
+    let mut candidates: Vec<Candidate> = Vec::new();
+    collect_candidates(project_dir, calculate_cutoff_ms(days, now_ms), &mut candidates)?;
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.mtime));
+    Ok(candidates
+        .into_iter()
+        .filter_map(|c| {
+            let entries = parse_transcript_file(&c.path);
+            if session_cwd(&entries).as_deref() != Some(cwd) {
+                return None;
+            }
+            Some(ResumableSession {
+                session_id: c.session_id,
+                title: session_title(&entries),
+                mtime: c.mtime,
+                // Human prompts only, for the same reason as `SessionDetail`'s
+                // count: the transcript's `user` lines are mostly tool results.
+                user_turns: user_prompts_with_timestamps(&entries).len() as i64,
+                cost_usd: analyze_session(&entries).cost_usd,
+            })
+        })
+        .collect())
+}
+
+fn collect_candidates(project_path: &Path, cutoff_ms: i64, out: &mut Vec<Candidate>) -> Result<()> {
+    let encoded = project_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    for file_entry in std::fs::read_dir(project_path)? {
+        let file_entry = file_entry?;
+        let name = file_entry.file_name().to_string_lossy().to_string();
+        let Some(session_id) = name.strip_suffix(".jsonl") else {
+            continue;
+        };
+        let mtime = file_entry
+            .metadata()?
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        if cutoff_ms > 0 && mtime < cutoff_ms {
+            continue;
+        }
+        out.push(Candidate {
             mtime,
-            title: session_title(&entries),
-            cwd: session_cwd(&entries),
-            usage: usage_totals(&entries),
-            opus_tokens: analysis.opus_tokens,
-            sonnet_tokens: analysis.sonnet_tokens,
-            haiku_tokens: analysis.haiku_tokens,
-            fable_tokens: analysis.fable_tokens,
-            repeated_reads: analysis.repeated_reads,
-            cost_usd: analysis.cost_usd,
-            cost_by_model: analysis.cost_by_model,
-            user_turns,
-            prompt_blob: user_prompt_blob(&entries, PROMPT_BLOB_MAX_BYTES),
-            prompt_times_ms,
-            path,
+            session_id: session_id.to_string(),
+            encoded: encoded.clone(),
+            path: file_entry.path(),
         });
     }
-    Ok(details)
+    Ok(())
+}
+
+fn detail_from_candidate(
+    Candidate { mtime, session_id, encoded, path }: Candidate,
+) -> SessionDetail {
+    let entries = parse_transcript_file(&path);
+    let analysis = analyze_session(&entries);
+    // Human prompts only — the transcript's `user` lines are mostly
+    // machine noise (tool results, envelopes), which must not count.
+    let prompts = user_prompts_with_timestamps(&entries);
+    let user_turns = prompts.len() as i64;
+    let prompt_times_ms = prompts
+        .iter()
+        .filter_map(|p| p.timestamp.as_deref())
+        .filter_map(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+        .map(|dt| dt.timestamp_millis())
+        .collect();
+    SessionDetail {
+        session_id,
+        project: normalize_repo_name(&encoded),
+        date: local_date(mtime),
+        mtime,
+        title: session_title(&entries),
+        cwd: session_cwd(&entries),
+        usage: usage_totals(&entries),
+        opus_tokens: analysis.opus_tokens,
+        sonnet_tokens: analysis.sonnet_tokens,
+        haiku_tokens: analysis.haiku_tokens,
+        fable_tokens: analysis.fable_tokens,
+        repeated_reads: analysis.repeated_reads,
+        cost_usd: analysis.cost_usd,
+        cost_by_model: analysis.cost_by_model,
+        user_turns,
+        prompt_blob: user_prompt_blob(&entries, PROMPT_BLOB_MAX_BYTES),
+        prompt_times_ms,
+        path,
+    }
 }
 
 fn local_date(mtime_ms: i64) -> String {
@@ -532,5 +628,50 @@ mod tests {
         let details = scan_sessions_detailed(tmp.path(), 10, 0.0, 1_700_000_000_000).unwrap();
         assert_eq!(details[0].user_turns, 2);
         assert_eq!(details[0].prompt_times_ms, vec![1_783_797_232_831]);
+    }
+
+    /// The encoded directory name is a candidate set, not proof: `_` and `.`
+    /// both fold to `-`, so two real folders can land in one directory. Only the
+    /// recorded `cwd` may decide, or a resume reopens another folder's work.
+    #[test]
+    fn resumable_keeps_only_transcripts_whose_cwd_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("-home-u-code-demo");
+        std::fs::create_dir(&proj).unwrap();
+        let turn = |cwd: &str| {
+            format!(
+                concat!(
+                    "{{\"type\":\"assistant\",\"cwd\":\"{cwd}\",\"message\":{{\"role\":\"assistant\",",
+                    "\"model\":\"claude-fable-5\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":5}}}}}}\n",
+                    "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"hi\"}}}}\n",
+                ),
+                cwd = cwd
+            )
+        };
+        std::fs::write(proj.join("mine.jsonl"), turn("/home/u/code/demo")).unwrap();
+        // Same encoded directory, different folder.
+        std::fs::write(proj.join("theirs.jsonl"), turn("/home/u/code_demo")).unwrap();
+        // No `cwd` at all — can't prove it belongs, so it is not offered.
+        std::fs::write(
+            proj.join("ancient.jsonl"),
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n",
+        )
+        .unwrap();
+
+        let found = resumable_sessions(&proj, "/home/u/code/demo", 0.0, 1_700_000_000_000).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].session_id, "mine");
+        assert_eq!(found[0].user_turns, 1);
+        assert!(found[0].cost_usd > 0.0, "cost is still filled for a survivor");
+    }
+
+    #[test]
+    fn resumable_is_empty_for_a_folder_claude_never_ran_in() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("-never-used");
+        assert_eq!(
+            resumable_sessions(&missing, "/never/used", 0.0, 1_700_000_000_000).unwrap(),
+            []
+        );
     }
 }
