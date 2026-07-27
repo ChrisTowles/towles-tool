@@ -18,9 +18,17 @@
 //! One line can yield several events: an `assistant` message carries a list of
 //! content blocks (thinking, tool_use, text), each of which renders
 //! separately. Hence `Vec<AgentEvent>`.
+//!
+//! **`Other` is not the right home for everything unmodeled.** Lines of
+//! `type: "control_request"` are the CLI *blocking on an answer* (see
+//! [`crate::control`]), so they get real variants and, one way or another, a
+//! reply — filing them as inert noise is what makes a session appear to hang.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+use crate::control::{ControlRequest, PermissionRequest};
+use crate::json::{opt_str_field, str_field};
 
 /// A slash command the session will accept.
 ///
@@ -111,6 +119,18 @@ pub enum AgentEvent {
         num_turns: u64,
         total_cost_usd: f64,
     },
+    /// The CLI is blocked asking whether a tool may run — or, when
+    /// `requiresUserInteraction` is set, asking the human a question outright.
+    /// **Must be answered** ([`crate::AgentSession::respond`]); until it is,
+    /// the agent makes no further progress.
+    PermissionRequest(PermissionRequest),
+    /// A control request whose subtype we don't serve (`hook_callback`,
+    /// `mcp_message`, an elicitation, something added next release).
+    /// [`crate::session`] answers it with an error the moment it is parsed —
+    /// this variant exists so the feed records that it happened, not so a
+    /// caller can handle it.
+    #[serde(rename_all = "camelCase")]
+    UnsupportedControlRequest { request_id: String, subtype: String },
     /// A protocol message we do not render. Kept so the UI can show a raw
     /// feed and so an unknown message is never a parse error.
     #[serde(rename_all = "camelCase")]
@@ -157,16 +177,6 @@ fn tool_result_text(content: Option<&Value>) -> String {
     }
 }
 
-fn str_field(v: &Value, key: &str) -> String {
-    v.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
-}
-
-fn opt_str_field(v: &Value, key: &str) -> Option<String> {
-    // An empty string is how the CLI spells "no hint" for `argumentHint`;
-    // collapsing it to `None` keeps that out of the UI as a stray label.
-    v.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
-}
-
 fn string_list(v: &Value, key: &str) -> Vec<String> {
     v.get(key)
         .and_then(Value::as_array)
@@ -197,9 +207,22 @@ pub fn parse_line(line: &str) -> Vec<AgentEvent> {
     if trimmed.is_empty() {
         return Vec::new();
     }
-    let Ok(v) = serde_json::from_str::<Value>(trimmed) else {
+    let Ok(mut v) = serde_json::from_str::<Value>(trimmed) else {
         return vec![AgentEvent::Malformed { line: trimmed.to_string() }];
     };
+
+    // Before the message-stream match: a control request is the one kind of
+    // line where doing nothing has a consequence.
+    if let Some(req) = ControlRequest::from_value(&mut v) {
+        return vec![if req.subtype == "can_use_tool" {
+            AgentEvent::PermissionRequest(PermissionRequest::from_control(req))
+        } else {
+            AgentEvent::UnsupportedControlRequest {
+                request_id: req.request_id,
+                subtype: req.subtype,
+            }
+        }];
+    }
 
     match v.get("type").and_then(Value::as_str) {
         Some("system") if v.get("subtype").and_then(Value::as_str) == Some("init") => {
@@ -455,6 +478,48 @@ mod tests {
         assert_eq!(v["type"], "user");
         assert_eq!(v["message"]["role"], "user");
         assert_eq!(v["message"]["content"], "hello\nworld");
+    }
+
+    #[test]
+    fn a_permission_request_is_a_first_class_event_not_other() {
+        let events = parse_line(
+            r#"{"type":"control_request","request_id":"r1","request":{
+                 "subtype":"can_use_tool","tool_name":"Bash",
+                 "input":{"command":"ls"},"tool_use_id":"toolu_1"}}"#,
+        );
+        let AgentEvent::PermissionRequest(req) = &events[0] else {
+            panic!("expected PermissionRequest, got {:?}", events[0])
+        };
+        assert_eq!(req.request_id, "r1");
+        assert_eq!(req.tool_name, "Bash");
+        assert_eq!(req.tool_use_id.as_deref(), Some("toolu_1"));
+    }
+
+    #[test]
+    fn an_unservable_control_request_keeps_the_id_needed_to_refuse_it() {
+        // It must not become `Other`: the session has to answer this one, and
+        // it can only do that if the request_id survives parsing.
+        let events = parse_line(
+            r#"{"type":"control_request","request_id":"r7","request":{"subtype":"hook_callback"}}"#,
+        );
+        assert_eq!(
+            events,
+            vec![AgentEvent::UnsupportedControlRequest {
+                request_id: "r7".to_string(),
+                subtype: "hook_callback".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn the_clis_reply_to_our_own_requests_is_ordinary_noise() {
+        // control_response flows the other way — nothing is blocked on it.
+        // Its `subtype` sits inside `response`, not at the top level, so the
+        // discriminant is the bare type.
+        let events = parse_line(r#"{"type":"control_response","response":{"subtype":"success"}}"#);
+        assert!(
+            matches!(&events[0], AgentEvent::Other { discriminant, .. } if discriminant == "control_response")
+        );
     }
 
     #[test]

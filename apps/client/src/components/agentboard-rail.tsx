@@ -1405,6 +1405,7 @@ const CHAT_STATUS_TEXT: Record<ChatStatus, string> = {
   /** Pane open, nothing started yet — the composer is waiting on you. */
   off: "Ready",
   working: "Working",
+  asking: "Asking",
   idle: "Idle",
   exited: "Exited",
   error: "Error",

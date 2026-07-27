@@ -58,6 +58,7 @@ import {
 } from "@/lib/claude-sessions";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
+import { useClipboardCopy } from "@/lib/use-clipboard-copy";
 import { cn } from "@/lib/utils";
 
 /** Surface a failed sessions read. Silent outside the Tauri shell, where every
@@ -745,22 +746,6 @@ function SortableTh({
       </span>
     </th>
   );
-}
-
-/** Copies `text` to the clipboard, briefly swapping the icon to a checkmark
- * as the only feedback — no toast, so copying several rows in a row doesn't
- * spam notifications. */
-function useClipboardCopy() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  function copy(key: string, text: string) {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1200);
-    });
-  }
-
-  return { copiedKey, copy };
 }
 
 /** Icon buttons to copy a session's ID and transcript file path — the two

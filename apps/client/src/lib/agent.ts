@@ -13,6 +13,42 @@ import { invoke } from "@/lib/tauri";
 /** A tool call's arguments — shape varies per tool, so it stays unknown. */
 export type ToolInput = Record<string, unknown>;
 
+/**
+ * The CLI asking permission — and, when `requiresUserInteraction` is set,
+ * asking the user a question outright. Mirrors Rust's `control::
+ * PermissionRequest`.
+ *
+ * **The agent is stopped until this is answered.** Unlike every other event
+ * here, ignoring one is not a rendering choice; it is a hang.
+ */
+export type PermissionRequest = {
+  requestId: string;
+  toolName: string;
+  displayName: string | null;
+  description: string | null;
+  toolUseId: string | null;
+  input: ToolInput;
+  /** "Always allow" offers, in the CLI's own vocabulary. Echoed back verbatim
+   * when accepted — never constructed here. */
+  suggestions: unknown[];
+  requiresUserInteraction: boolean;
+};
+
+/** The answer. `updatedInput` is how a question tool is *answered* rather than
+ * merely permitted; `message` on a deny reaches the model as the tool result. */
+export type PermissionDecision =
+  | { kind: "allow"; updatedInput?: ToolInput; updatedPermissions?: unknown[] }
+  | { kind: "deny"; message?: string }
+  | { kind: "cancelled" };
+
+/** One question inside an `AskUserQuestion` call. */
+export type AskQuestion = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[];
+};
+
 /** A command the session accepts. `description`/`argumentHint` are null when
  * the list came from `system/init`, which sends names only — see the Rust
  * `SlashCommand` doc for why both sources share one type. */
@@ -52,6 +88,8 @@ export type AgentEvent =
       numTurns: number;
       totalCostUsd: number;
     }
+  | ({ kind: "permissionRequest" } & PermissionRequest)
+  | { kind: "unsupportedControlRequest"; requestId: string; subtype: string }
   | { kind: "other"; discriminant: string; raw: unknown }
   | { kind: "malformed"; line: string }
   | { kind: "exited"; code: number | null };
@@ -78,6 +116,37 @@ export const agentSend = (agentId: string, text: string) =>
 export const agentStop = (agentId: string) => invoke<void>("agent_stop", { agentId });
 
 /**
+ * A prior `claude` session in this folder, offered for resuming.
+ *
+ * These are ordinary Claude Code transcripts — the chat pane spawns a real
+ * `claude` in the folder, so its sessions land in `~/.claude/projects/` exactly
+ * like a terminal one's and the two are mutually resumable. Nothing here is
+ * specific to the pane.
+ */
+export type ResumableSession = {
+  sessionId: string;
+  title: string | null;
+  mtime: number;
+  userTurns: number;
+  costUsd: number;
+};
+
+export const agentResumableSessions = (dir: string) =>
+  invoke<ResumableSession[]>("agent_resumable_sessions", { dir });
+
+export const agentRespond = (
+  agentId: string,
+  requestId: string,
+  toolName: string,
+  verdict: Verdict,
+  decision: PermissionDecision,
+) => invoke<void>("agent_respond", { agentId, requestId, toolName, verdict, decision });
+
+/** How a permission prompt ended, once it has. Kept on the turn so an answered
+ * card collapses to a record of what you decided instead of vanishing. */
+export type Verdict = "allow" | "answered" | "deny" | "cancelled";
+
+/**
  * One rendered row of the transcript.
  *
  * Tool calls and their results arrive as separate events, on different
@@ -98,6 +167,10 @@ export type Turn =
       isError?: boolean;
       /** No result yet — the call is still running. */
       pending: boolean;
+      /** The CLI is blocked on this call and waiting for a decision. */
+      permission?: PermissionRequest;
+      /** What was decided, once it was. */
+      verdict?: Verdict;
     }
   | { id: string; type: "notice"; text: string; isError: boolean };
 
@@ -134,12 +207,16 @@ export const emptyView = (): AgentView => ({
 export function foldEvent(view: AgentView, event: AgentEvent): AgentView {
   switch (event.kind) {
     case "init":
+      // Records the session; deliberately does *not* set `running`. A session
+      // starting is not a turn in flight — the caller that sent something owns
+      // that flag (`startChat`/`sendChat` set it optimistically). Forcing it
+      // true here would leave a resumed session, which reattaches without
+      // sending anything, spinning on a turn that was never asked for.
       return {
         ...view,
         sessionId: event.sessionId,
         model: event.model,
         commands: event.slashCommands,
-        running: true,
       };
     case "commandsChanged":
       // Wholesale replacement, not a merge: the CLI rebuilt its command set,
@@ -177,7 +254,16 @@ export function foldEvent(view: AgentView, event: AgentEvent): AgentView {
         ...view,
         turns: view.turns.map((t) =>
           t.type === "tool" && t.id === event.toolUseId
-            ? { ...t, result: event.content, isError: event.isError, pending: false }
+            ? {
+                ...t,
+                result: event.content,
+                isError: event.isError,
+                pending: false,
+                // A result settles the gate whatever happened to the card —
+                // the CLI ran (or refused) the call, so a prompt still on
+                // screen for it is stale and would answer into the void.
+                permission: undefined,
+              }
             : t,
         ),
       };
@@ -200,11 +286,275 @@ export function foldEvent(view: AgentView, event: AgentEvent): AgentView {
           },
         ],
       };
+    case "permissionRequest": {
+      const { kind: _kind, ...request } = event;
+      // Attach to the call it is about rather than appending a second row: the
+      // `toolUse` message arrives first, so the row is already on screen and
+      // turning it into the decision card keeps one call to one row.
+      const target = view.turns.find(
+        (t) => t.type === "tool" && t.id === request.toolUseId && !t.verdict,
+      );
+      if (target)
+        return {
+          ...view,
+          turns: view.turns.map((t) => (t === target ? { ...t, permission: request } : t)),
+        };
+      // No matching call — the prompt still has to be answerable, so it gets a
+      // row of its own rather than being dropped on the floor.
+      return {
+        ...view,
+        turns: [
+          ...view.turns,
+          {
+            id: `perm-${request.requestId}`,
+            type: "tool",
+            name: request.toolName,
+            input: request.input,
+            pending: true,
+            permission: request,
+          },
+        ],
+      };
+    }
+    case "unsupportedControlRequest":
+      // Already refused in Rust — recorded, not actionable. It means the CLI
+      // asked for something this client doesn't implement, which is worth
+      // seeing when a feature mysteriously doesn't work.
+      return {
+        ...view,
+        turns: [
+          ...view.turns,
+          {
+            id: `unsupported-${event.requestId}`,
+            type: "notice",
+            text: `Declined an unsupported request from Claude Code: ${event.subtype}`,
+            isError: false,
+          },
+        ],
+      };
     case "other":
       // Protocol noise (status ticks, token counters, stream deltas). Kept
       // out of the transcript by design — see the Raw toggle on the screen.
       return view;
   }
+}
+
+/**
+ * Record a decision on the turn holding `requestId`.
+ *
+ * Applied optimistically by the caller the moment the user clicks: the CLI
+ * sends nothing back to acknowledge a `control_response`, so there is no event
+ * that would clear the card later. Dropping `permission` is what makes the
+ * decision final — a card still holding a request is a card still awaiting one.
+ */
+export function resolvePermission(view: AgentView, requestId: string, verdict: Verdict): AgentView {
+  return {
+    ...view,
+    turns: view.turns.map((t) =>
+      t.type === "tool" && t.permission?.requestId === requestId
+        ? { ...t, permission: undefined, verdict }
+        : t,
+    ),
+  };
+}
+
+/**
+ * Cancel every prompt still open on this view, in one pass.
+ *
+ * The teardown counterpart to {@link resolvePermission}: closing or stopping a
+ * pane cancels all of its prompts at once, and they all get the same verdict,
+ * so resolving them one at a time would rebuild the turn list once per card.
+ */
+export const cancelPermissions = (view: AgentView): AgentView => ({
+  ...view,
+  turns: view.turns.map((t) =>
+    t.type === "tool" && t.permission
+      ? { ...t, permission: undefined, verdict: "cancelled" as Verdict }
+      : t,
+  ),
+});
+
+/** Every prompt still waiting on this view — for the teardown path, which has
+ * to answer each one. Prefer {@link isAsking} to test *whether* any are
+ * pending; this allocates. */
+export const pendingPermissions = (view: AgentView): PermissionRequest[] =>
+  view.turns.flatMap((t) => (t.type === "tool" && t.permission ? [t.permission] : []));
+
+/**
+ * Is this session blocked on a prompt?
+ *
+ * Separate from {@link pendingPermissions} because the answer is needed far
+ * more often than the list, and `some` exits on the first hit and allocates
+ * nothing where building the array walks every turn.
+ *
+ * Still O(turns), so callers must not put it on a render path: `agent-sessions`
+ * calls it once per store write and caches the result on the record (see its
+ * `chatSession`), because `chatStatus` runs per rail row and across every open
+ * chat on every event.
+ */
+export const isAsking = (view: AgentView): boolean =>
+  view.turns.some((t) => t.type === "tool" && t.permission !== undefined);
+
+/**
+ * Which card a blocked request should render as.
+ *
+ * Pure and here rather than in the component for the reason the `/` menu's
+ * matching is: this is the branching worth testing, and a component is where
+ * it would stop being tested.
+ *
+ * **Payload shape decides, not `requiresUserInteraction`.** The CLI's flag says
+ * a request needs a human, which every card here already does — it does not say
+ * *which* card, and a request flagged for a human whose questions we cannot
+ * parse still has to render as something answerable. So a parseable question
+ * list makes it a question, and the tool name is the last resort, for
+ * `ExitPlanMode` alone, which announces itself no other way.
+ */
+export function promptKind(
+  request: PermissionRequest,
+  /** Pre-parsed by a caller that also needs the list, so the payload is walked
+   * once per render rather than once per consumer. */
+  questions: AskQuestion[] = askQuestions(request.input),
+): "question" | "plan" | "gate" {
+  if (questions.length > 0) return "question";
+  if (request.toolName === "ExitPlanMode") return "plan";
+  // A request the CLI flagged as needing a human, whose payload we can't
+  // render as a question, still must not be answered by guessing — a gate at
+  // least puts the decision in front of someone.
+  return "gate";
+}
+
+/** Toggle one option, honoring the question's own single/multi-select rule. */
+export function togglePick(
+  picks: Map<string, QuestionPicks>,
+  question: AskQuestion,
+  label: string,
+): Map<string, QuestionPicks> {
+  const next = new Map(picks);
+  const cur = picks.get(question.question) ?? { labels: new Set<string>(), other: "" };
+  const labels = new Set(cur.labels);
+  if (labels.has(label)) labels.delete(label);
+  else if (question.multiSelect) labels.add(label);
+  else {
+    // Single-select replaces rather than accumulates — the radio semantics
+    // `multiSelect: false` is asking for.
+    labels.clear();
+    labels.add(label);
+  }
+  next.set(question.question, { ...cur, labels });
+  return next;
+}
+
+/** Record the free text behind "Other". Beside {@link togglePick} because the
+ * two share one rule — an absent entry defaults to no labels and no text, and
+ * both fields of an entry always travel together. */
+export function setOther(
+  picks: Map<string, QuestionPicks>,
+  question: AskQuestion,
+  text: string,
+): Map<string, QuestionPicks> {
+  const next = new Map(picks);
+  const cur = picks.get(question.question) ?? { labels: new Set<string>(), other: "" };
+  next.set(question.question, { ...cur, other: text });
+  return next;
+}
+
+/** How many of `questions` have an answer that would actually be sent. Counts
+ * the *resolved* picks, so an "Other" selected with nothing typed reads as
+ * unanswered here exactly as {@link resolvePicks} drops it — a Send button that
+ * enabled on it would quietly behave as Skip. */
+export function answeredCount(questions: AskQuestion[], picks: Map<string, QuestionPicks>): number {
+  const resolved = resolvePicks(picks);
+  return questions.filter((q) => (resolved.get(q.question)?.size ?? 0) > 0).length;
+}
+
+/** Substitute the typed text for the "Other" placeholder at submit time — the
+ * model wants the answer, not the word "Other". */
+export function resolvePicks(picks: Map<string, QuestionPicks>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [question, { labels, other }] of picks) {
+    const typed = other.trim();
+    out.set(
+      question,
+      new Set([...labels].flatMap((l) => (l === OTHER_LABEL ? (typed ? [typed] : []) : [l]))),
+    );
+  }
+  return out;
+}
+
+/** What one question's answer looks like mid-edit: the chosen labels plus the
+ * free text behind "Other". One entry per question rather than parallel maps —
+ * they are keyed identically and always change together. */
+export type QuestionPicks = { labels: Set<string>; other: string };
+
+/** The CLI's own label for the free-text choice, matched so a user who knows
+ * Claude Code sees the same word. */
+export const OTHER_LABEL = "Other";
+
+/**
+ * A button label for an "always allow" offer.
+ *
+ * The suggestions are the CLI's vocabulary and we echo them back untouched, so
+ * this only has to recognize enough to write a label — an unrecognized kind
+ * still renders, by its type, rather than disappearing.
+ */
+export function suggestionLabel(suggestion: unknown): string {
+  if (typeof suggestion !== "object" || suggestion === null) return "Always allow";
+  const { type, mode, destination } = suggestion as Record<string, unknown>;
+  if (type === "setMode" && typeof mode === "string")
+    return `Switch to ${mode}${destination === "session" ? " for this session" : ""}`;
+  if (type === "addRules") return "Always allow this";
+  return typeof type === "string" ? `Apply "${type}"` : "Always allow";
+}
+
+/**
+ * The questions inside an `AskUserQuestion` call, or `[]` for anything else.
+ *
+ * Defensive about the shape because it comes off the wire as `unknown`: a
+ * malformed question list must degrade to a plain allow/deny card rather than
+ * throw inside the renderer and take the whole transcript with it.
+ */
+export function askQuestions(input: ToolInput): AskQuestion[] {
+  const raw = input.questions;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((q) => {
+    if (typeof q !== "object" || q === null) return [];
+    const { question, header, multiSelect, options } = q as Record<string, unknown>;
+    if (typeof question !== "string" || !Array.isArray(options)) return [];
+    const parsed = options.flatMap((o) => {
+      if (typeof o !== "object" || o === null) return [];
+      const { label, description } = o as Record<string, unknown>;
+      return typeof label === "string"
+        ? [{ label, description: typeof description === "string" ? description : undefined }]
+        : [];
+    });
+    return parsed.length === 0
+      ? []
+      : [
+          {
+            question,
+            header: typeof header === "string" ? header : undefined,
+            multiSelect: multiSelect === true,
+            options: parsed,
+          },
+        ];
+  });
+}
+
+/**
+ * Write picks into an `AskUserQuestion` input: keyed by question text, `", "`-
+ * joined for a multi-select, and an unanswered question omitted rather than
+ * sent blank.
+ *
+ * This is the only home of that format. The decision is assembled here because
+ * this is where the picks are, and Rust carries it through as an opaque
+ * `updatedInput` — so the tests in `agent.test.ts` are what pin it.
+ */
+export function answerQuestions(input: ToolInput, picks: Map<string, Set<string>>): ToolInput {
+  const answers: Record<string, string> = {};
+  for (const [question, set] of picks) {
+    if (set.size > 0) answers[question] = [...set].join(", ");
+  }
+  return { ...input, answers };
 }
 
 export const foldEvents = (events: AgentEvent[], from: AgentView = emptyView()): AgentView =>
