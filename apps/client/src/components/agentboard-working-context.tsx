@@ -11,7 +11,6 @@
  */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
 import {
-  AgentStatusLine,
   BaseMovedChip,
   ComparedBaseBadge,
   DeletingBadge,
@@ -70,7 +69,6 @@ export function WorkingContext({
   folder,
   pr,
   task,
-  now,
   deleting,
   actions,
   onOpenDiff,
@@ -90,8 +88,6 @@ export function WorkingContext({
    * worktree) the human-authored title shown on line 1 — see the rail's
    * `FolderHeader` for the same derivation. */
   task?: TaskItem;
-  /** Clock tick for `AgentStatusLine`'s relative "Nm ago" age. */
-  now: number;
   /** This worktree's `task_delete` is in flight — mirrors the rail's
    * `DeletingBadge` gating. */
   deleting?: boolean;
@@ -142,7 +138,6 @@ export function WorkingContext({
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
   const displayTitle =
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
-  const progress = folder.metadata?.progress;
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
     <div className="flex items-start gap-3 border-b bg-card px-4 py-2">
@@ -235,21 +230,12 @@ export function WorkingContext({
               <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
             ))}
             <FolderLandedBadge folder={folder} pr={pr} />
-            {typeof progress?.percent === "number" && (
-              <span
-                title={progress.label ?? "agent-reported progress"}
-                className="shrink-0 rounded-md border border-violet-500/40 bg-violet-500/10 px-1.5 font-mono text-[10.5px] text-violet-500"
-              >
-                {Math.round(progress.percent)}%{progress.label ? ` ${progress.label}` : ""}
-              </span>
-            )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <UncommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
             <CommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
           </div>
         </div>
-        <AgentStatusLine metadata={folder.metadata} now={now} />
         {!missing && (
           <ActionableCallouts
             items={folderActionableItems(folder, pr)}

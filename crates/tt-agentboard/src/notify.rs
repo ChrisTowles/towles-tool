@@ -135,8 +135,6 @@ mod tests {
                 }],
                 needs: 0,
             }],
-            theme: None,
-            preferred_editor: String::new(),
             compact_recommend_percent: 30,
             windows: crate::windows::WindowsPayload::default(),
             collapsed: Default::default(),

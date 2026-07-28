@@ -455,33 +455,6 @@ fn run_gh_issue_state_change(repo: &str, number: i64, verb: &str) -> Result<(), 
     Ok(())
 }
 
-/// Move a todo to `status` at an explicit task (`index`) within that column,
-/// renumbering the column's positions — powers drag-to-reorder and
-/// position-aware cross-column drops. Then re-emit the snapshot and sync
-/// GitHub if this crosses the `done` boundary (see [`spawn_gh_status_sync`]).
-#[tauri::command]
-pub fn store_set_task_position(
-    app: AppHandle,
-    state: State<StoreState>,
-    id: i64,
-    status: String,
-    index: i64,
-) -> Result<(), String> {
-    let before = with_store(&state, |store| {
-        let before = store.get_task(id).map_err(|e| format!("get_task failed: {e}"))?;
-        store
-            .set_task_position(id, &status, index, now_ms())
-            .map_err(|e| format!("set_task_position failed: {e}"))?;
-        Ok(before)
-    })?;
-    tracing::info!(task_id = id, %status, index, "task.position_set");
-    emit_snapshot(&app, &state);
-    if let Some(before) = before {
-        spawn_gh_status_sync(&before.status, &status, &before.issues);
-    }
-    Ok(())
-}
-
 /// Edit a todo's text and notes (a full replace of both fields — `null`
 /// clears notes), then re-emit the snapshot.
 #[tauri::command]

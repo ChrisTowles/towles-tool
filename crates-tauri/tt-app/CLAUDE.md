@@ -246,9 +246,7 @@ follows is a cross-cutting rule that spans multiple files.
     input commands emit nothing (the PTY *spawn* is recorded in `term_start`
     via `tt_exec::record_detached_spawn`, the *kill* in `term_kill`).
   - **Don't instrument pure reads/pollers** (`*_get`/`*_snapshot`/`ab_get_*`/
-    `app_resource_usage`) or agent-driven status reporters
-    (`ab_set_status`/`ab_set_progress`/`ab_log` come from the PTY agent, not
-    the user) — over-logging buries the signal. A command that already shells
+    `app_resource_usage`) — over-logging buries the signal. A command that already shells
     out through `tt_exec` (every `gh`/`git`) is covered by that `process.spawn`
     span, but still add a semantic event when the *user gesture* itself is
     what you want to be able to query for.

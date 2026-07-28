@@ -1,5 +1,5 @@
 //! Tauri-free core engine for agentboard: the in-memory agent state machine,
-//! per-session metadata, git-info, and port attribution.
+//! git-info, and port attribution.
 //!
 //! Deliberately transport-free: **no tmux, no broadcast, no fs watchers, no poll
 //! loops, no UI** — that all belongs to the Tauri layer. Time is injected as an
@@ -8,7 +8,6 @@
 //! - [`types`] — shared serde types, camelCase so snapshots match what the React
 //!   client consumes.
 //! - [`tracker`] — [`tracker::AgentTracker`], the agent-instance state machine.
-//! - [`metadata`] — [`metadata::SessionMetadataStore`], agent-pushed status.
 //! - [`git_info`] — branch/worktree/diff-stat computation with a short cache.
 
 use thiserror::Error;
@@ -23,7 +22,6 @@ pub mod folder_meta;
 pub mod fs_notify;
 pub mod git_info;
 pub mod launch;
-pub mod metadata;
 pub mod notify;
 pub mod persist;
 pub mod procenv;
@@ -71,8 +69,7 @@ pub use repo_meta::{HexColor, RepoAccentStyle, RepoMeta};
 pub use repos::{RepoEntry, default_repos_path, load_repos, remove_repo_persisted, repo_entries};
 pub use sessions::SessionRecord;
 pub use types::{
-    AgentEvent, AgentEventDetails, AgentStatus, FolderData, LoopInfo, MetadataProgress,
-    MetadataStatus, MetadataTone, NeedsYouReason, RepoData, SessionData, SessionMetadata,
-    SubagentInfo,
+    AgentEvent, AgentEventDetails, AgentStatus, FolderData, LoopInfo, NeedsYouReason, RepoData,
+    SessionData, SubagentInfo,
 };
 pub use windows::WindowsPayload;

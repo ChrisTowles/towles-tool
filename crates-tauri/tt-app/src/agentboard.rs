@@ -10,8 +10,6 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Notify;
 
 use tt_agentboard::StatePayload;
-use tt_agentboard::engine::parse_tone;
-use tt_agentboard::metadata::{LogInput, ProgressInput, StatusInput};
 
 pub use tt_agentboard::engine::{Engine, now_ms};
 
@@ -228,30 +226,6 @@ pub fn ab_mark_seen(state: State<Ab>, app: AppHandle, name: String) {
         prune_dead_shells(&mut payload, &state.engine, &state.ever_live);
         let _ = app.emit(STATE_EVENT, payload);
     }
-}
-
-#[tauri::command]
-pub fn ab_dismiss_agent(
-    state: State<Ab>,
-    session: String,
-    agent: String,
-    thread_id: Option<String>,
-) {
-    let changed = {
-        let mut engine = state.engine.lock().unwrap();
-        engine.dismiss(&session, &agent, thread_id.as_deref())
-    };
-    tracing::info!(%session, %agent, changed, "agent.dismissed");
-    if changed {
-        state.emit.notify_one();
-    }
-}
-
-#[tauri::command]
-pub fn ab_set_theme(state: State<Ab>, theme: String) {
-    tracing::info!(%theme, "agentboard.theme_set");
-    state.engine.lock().unwrap().set_theme(theme);
-    state.emit.notify_one();
 }
 
 #[tauri::command]
@@ -497,11 +471,6 @@ pub fn ab_close_session(state: State<Ab>, id: String) {
     state.emit.notify_one();
 }
 
-#[tauri::command]
-pub fn ab_refresh(state: State<Ab>) {
-    state.emit.notify_one();
-}
-
 /// Set the rail's repo order to `dirs` (the user dragging a row in Settings →
 /// Agentboard → Repos). Tolerant of a stale list — see `reorder_repos`.
 #[tauri::command]
@@ -635,77 +604,6 @@ pub fn ab_save_collapsed(state: State<Ab>, key: String, collapsed: bool) {
     state.engine.lock().unwrap().set_collapsed(&key, collapsed);
 }
 
-#[tauri::command]
-pub fn ab_set_status(
-    state: State<Ab>,
-    session: String,
-    text: Option<String>,
-    tone: Option<String>,
-) -> Result<(), String> {
-    if session.trim().is_empty() {
-        return Err("session is required".into());
-    }
-    let input = text.map(|t| StatusInput { text: t, tone: parse_tone(tone) });
-    state.engine.lock().unwrap().set_status(&session, input, now_ms());
-    state.emit.notify_one();
-    Ok(())
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub fn ab_set_progress(
-    state: State<Ab>,
-    session: String,
-    current: Option<i64>,
-    total: Option<i64>,
-    percent: Option<f64>,
-    label: Option<String>,
-    clear: Option<bool>,
-) -> Result<(), String> {
-    if session.trim().is_empty() {
-        return Err("session is required".into());
-    }
-    let input = if clear == Some(true) {
-        None
-    } else {
-        Some(ProgressInput { current, total, percent, label })
-    };
-    state.engine.lock().unwrap().set_progress(&session, input, now_ms());
-    state.emit.notify_one();
-    Ok(())
-}
-
-#[tauri::command]
-pub fn ab_log(
-    state: State<Ab>,
-    session: String,
-    message: String,
-    tone: Option<String>,
-    source: Option<String>,
-) -> Result<(), String> {
-    if session.trim().is_empty() {
-        return Err("session is required".into());
-    }
-    if message.is_empty() {
-        return Err("message is required".into());
-    }
-    let input = LogInput { message, tone: parse_tone(tone), source };
-    state.engine.lock().unwrap().append_log(&session, input, now_ms());
-    state.emit.notify_one();
-    Ok(())
-}
-
-#[tauri::command]
-pub fn ab_clear_log(state: State<Ab>, session: String) -> Result<(), String> {
-    if session.trim().is_empty() {
-        return Err("session is required".into());
-    }
-    state.engine.lock().unwrap().clear_logs(&session);
-    tracing::info!(%session, "session.log_cleared");
-    state.emit.notify_one();
-    Ok(())
-}
-
 fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
     if mode == "uncommitted" {
         tt_agentboard::DiffMode::Uncommitted
@@ -765,26 +663,4 @@ pub async fn ab_get_commit_stats(
     })
     .await
     .unwrap_or_default()
-}
-
-/// Open a session's repo directory in the preferred editor — spawns
-/// `<preferredEditor> <dir>`.
-#[tauri::command]
-pub fn ab_open_in_editor(state: State<Ab>, name: String) -> Result<(), String> {
-    let (editor, dir) = {
-        let mut engine = state.engine.lock().unwrap();
-        (engine.preferred_editor(), engine.repo_dir_for(&name))
-    };
-    let Some(dir) = dir else {
-        return Err(format!("No repo named {name}"));
-    };
-    if editor.trim().is_empty() {
-        return Err("No preferred editor configured".into());
-    }
-    tt_exec::record_detached_spawn(&editor, &[&dir], "editor");
-    std::process::Command::new(&editor)
-        .arg(&dir)
-        .spawn()
-        .map_err(|e| format!("Failed to launch {editor}: {e}"))?;
-    Ok(())
 }

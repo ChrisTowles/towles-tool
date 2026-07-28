@@ -1247,17 +1247,9 @@ describe("isFolderQuiet", () => {
     expect(isFolderQuiet(details, NOW)).toBe(false);
   });
 
-  it("counts agent-pushed folder metadata toward recency", () => {
-    const status = folder({ metadata: { status: { text: "wrapping up", ts: NOW - 60_000 } } });
-    expect(isFolderQuiet(status, NOW)).toBe(false);
-    const logs = folder({ metadata: { logs: [{ message: "done", ts: NOW - 60_000 }] } });
-    expect(isFolderQuiet(logs, NOW)).toBe(false);
-  });
-
   it("goes quiet once all activity is older than the grace window", () => {
     const old = folder({
       sessions: [session({ agentState: { ...agent("complete"), ts: NOW - QUIET_GRACE_MS } })],
-      metadata: { status: { text: "old news", ts: NOW - QUIET_GRACE_MS - 1 } },
     });
     expect(isFolderQuiet(old, NOW)).toBe(true);
   });

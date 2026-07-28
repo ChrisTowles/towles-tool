@@ -576,11 +576,6 @@ export function currentOrNextEvent(events: CalEvent[], now: number): CalEvent | 
     .toSorted((a, b) => a.startTs - b.startTs)[0];
 }
 
-/** Whole minutes from `now` until `ts` (negative when `ts` is in the past). */
-export function minutesUntil(ts: number, now: number): number {
-  return Math.round((ts - now) / MINUTE);
-}
-
 /** `just now` / `12m ago` / `3h ago` / `2d ago` — coarse relative age. */
 export function fmtAge(ms: number, now: number): string {
   const diff = now - ms;
@@ -620,10 +615,6 @@ export const storeAddTask = (text: string, opts?: { status?: TaskStatus; goal?: 
 /** Move a task to another board column (appended at the end of it). */
 export const storeSetTaskStatus = (id: number, status: TaskStatus) =>
   invoke<void>("store_set_task_status", { id, status });
-
-/** Move a task to `status` at task `index` within that column (drag-to-reorder). */
-export const storeSetTaskPosition = (id: number, status: TaskStatus, index: number) =>
-  invoke<void>("store_set_task_position", { id, status, index });
 
 /** Overwrite a task's editable fields. */
 export const storeUpdateTask = (id: number, text: string, notes?: string) =>

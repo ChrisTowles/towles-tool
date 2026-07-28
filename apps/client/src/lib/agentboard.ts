@@ -106,21 +106,6 @@ export type SessionData = {
   portDrift?: PortDrift[];
 };
 
-/** Tone hint on agent-pushed status/log lines (Rust `MetadataTone`). */
-export type MetadataTone = "neutral" | "info" | "success" | "warn" | "error";
-
-/** Agent-pushed metadata for a folder (`ab_set_status`/`ab_set_progress`/
- * `ab_log`, also reachable over MCP) — the agent's own words about what it's
- * doing, rendered read-only under the folder header. */
-export type FolderMetadata = {
-  status?: { text: string; tone?: MetadataTone | null; ts: number } | null;
-  progress?: {
-    percent?: number | null;
-    label?: string | null;
-  } | null;
-  logs?: { message: string; tone?: MetadataTone | null; source?: string | null; ts: number }[];
-};
-
 /** How git decided a branch's work reached its base. The wire mirror of
  * `LandedVia::label()` (`crates/tt-tasks/src/landed.rs`) — every value the
  * backend can put in {@link FolderData.landed}. */
@@ -206,7 +191,6 @@ export type FolderData = {
    * indistinguishable from a wedged poll. This is what lets the rail say
    * *when* instead. 0 before the first compute. */
   computedAtMs?: number;
-  metadata?: FolderMetadata | null;
   /** True when a live session in this folder has drifted ports — bubbles
    * `SessionData.portDrift` up for the rail badge. */
   hasPortDrift: boolean;
@@ -342,8 +326,6 @@ export type WireWindowsPayload = { windows: WireWindow[]; activeWindows: Record<
 
 export type StatePayload = {
   repos: RepoData[];
-  theme?: string | null;
-  preferredEditor: string;
   /** Context-% at/above which a cold session shows the compact nudge. */
   compactRecommendPercent: number;
   /** Persisted window layout (hydration source only — parse with
@@ -862,12 +844,6 @@ export function folderPortDrift(folder: Pick<FolderData, "sessions">): PortDrift
   return [...seen.values()];
 }
 
-/** Display names of every live session across a repo's checkouts, for the
- * remove-repo confirmation copy. */
-export function repoLiveSessionNames(repo: RepoData): string[] {
-  return repo.folders.flatMap((f) => liveSessions(f).map((s) => sessionLabel(s)));
-}
-
 /** The label a session row leads with: when an agent is running, its task/thread
  * name (so the row reads as *the agent*, not a bare "shell 1"); otherwise the
  * shell's own name. The shell name stays available as a secondary tag. */
@@ -938,10 +914,9 @@ export function collapseTargetKeys(
 export const QUIET_GRACE_MS = 45 * 60_000;
 
 /** The newest agent-activity timestamp a folder carries: agent events on its
- * sessions (current state + history) and agent-pushed folder metadata
- * (status/logs). 0 when the folder has never seen agent activity — a
- * never-started session record carries no timestamps, so a stale worktree
- * can't pin itself visible forever. */
+ * sessions (current state + history). 0 when the folder has never seen agent
+ * activity — a never-started session record carries no timestamps, so a stale
+ * worktree can't pin itself visible forever. */
 export function folderLastActivityAt(f: FolderData): number {
   let last = 0;
   for (const s of f.sessions) {
@@ -950,8 +925,6 @@ export function folderLastActivityAt(f: FolderData): number {
       last = Math.max(last, ev.ts, ev.details?.lastActivityAt ?? 0);
     }
   }
-  if (f.metadata?.status) last = Math.max(last, f.metadata.status.ts);
-  for (const l of f.metadata?.logs ?? []) last = Math.max(last, l.ts);
   return last;
 }
 

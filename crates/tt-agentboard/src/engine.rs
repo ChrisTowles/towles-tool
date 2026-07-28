@@ -1,4 +1,4 @@
-//! The agentboard engine: tracker + metadata + git cache + watchers behind one
+//! The agentboard engine: tracker + git cache + watchers behind one
 //! struct, host-agnostic, so every host shares it.
 //!
 //! The engine is synchronous; hosts own scheduling (tokio tasks, debounces)
@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 
 use crate::bridge::{StatePayload, assemble_state};
 use crate::git_info::GitInfoCache;
-use crate::metadata::{LogInput, ProgressInput, SessionMetadataStore, StatusInput};
 use crate::procenv::InstanceScope;
 use crate::repos::{
     RepoEntry, add_repo_persisted, default_repos_path, load_repos, load_scan_roots,
@@ -23,7 +22,7 @@ use crate::repos::{
 };
 use crate::sessions::{SessionRecord, SessionStore, default_sessions_path};
 use crate::tracker::{AgentTracker, instance_key};
-use crate::types::{AgentEvent, AgentStatus, MetadataTone};
+use crate::types::{AgentEvent, AgentStatus};
 use crate::watcher::{AgentWatcher, WatcherContext};
 use crate::watchers::claude_code::ClaudeCodeAgentWatcher;
 
@@ -52,17 +51,6 @@ fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &st
 
 /// Wall-clock epoch milliseconds (the hosts' `now`).
 pub use tt_config::now_ms;
-
-pub fn parse_tone(tone: Option<String>) -> Option<MetadataTone> {
-    match tone.as_deref() {
-        Some("neutral") => Some(MetadataTone::Neutral),
-        Some("info") => Some(MetadataTone::Info),
-        Some("success") => Some(MetadataTone::Success),
-        Some("warn") => Some(MetadataTone::Warn),
-        Some("error") => Some(MetadataTone::Error),
-        _ => None,
-    }
-}
 
 /// Collects watcher emits during a scan, resolving project dirs (and, in
 /// tmux mode, agent pids) to session names through injected resolvers.
@@ -95,7 +83,6 @@ pub struct Engine {
     /// idiom as `git_info`'s `structural_key`.
     repos_stat: Option<crate::persist::FileVersion>,
     tracker: AgentTracker,
-    metadata: SessionMetadataStore,
     folder_meta: crate::folder_meta::FolderMetaStore,
     repo_meta: crate::repo_meta::RepoMetaStore,
     windows: crate::windows::WindowsStore,
@@ -123,8 +110,6 @@ pub struct Engine {
     /// themselves coming back, and a restart re-derives everything from git.
     removed_checkouts: HashSet<String>,
     watchers: Vec<Box<dyn AgentWatcher + Send>>,
-    theme: Option<String>,
-    preferred_editor: String,
     compact_recommend_percent: u8,
     /// Show auto-discovered worktrees no board task is bound to — the
     /// `agentboard.showUnmanagedWorktrees` setting. Off by default: a worktree
@@ -241,8 +226,6 @@ impl Engine {
         let repos_path = default_repos_path();
 
         let settings = tt_config::load().unwrap_or_default();
-        let theme = settings.agentboard.theme.and_then(|v| v.as_str().map(str::to_string));
-        let preferred_editor = settings.preferred_editor;
         let compact_recommend_percent = settings
             .agentboard
             .compact_recommend_percent
@@ -261,7 +244,6 @@ impl Engine {
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
-            metadata: SessionMetadataStore::new(),
             sessions: SessionStore::new(Some(default_sessions_path())),
             folder_meta: crate::folder_meta::FolderMetaStore::new(Some(
                 crate::folder_meta::default_folder_meta_path(),
@@ -281,8 +263,6 @@ impl Engine {
             watchers: vec![Box::new(ClaudeCodeAgentWatcher::with_defaults(
                 scope.clone(),
             ))],
-            theme,
-            preferred_editor,
             compact_recommend_percent,
             show_unmanaged_worktrees,
             bound_worktree_dirs: HashSet::new(),
@@ -495,12 +475,6 @@ impl Engine {
         self.seeded_once = true;
     }
 
-    /// The absolute dir for a session name, if configured (for open-in-editor).
-    pub fn repo_dir_for(&mut self, name: &str) -> Option<String> {
-        self.reload_repos();
-        repo_entries(&self.repo_paths).into_iter().find(|e| e.name == name).map(|e| e.dir)
-    }
-
     /// The tracked checkout that owns `dir` as a discovered `git worktree`,
     /// if any — the repo whose cached `worktree_dirs` (from its last
     /// `compute_git_info`) lists `dir`. A rail row for such a `dir` is never
@@ -514,11 +488,6 @@ impl Engine {
             .into_iter()
             .find(|e| self.git_cache.get(&e.dir).worktree_dirs.iter().any(|w| w == dir))
             .map(|e| e.dir)
-    }
-
-    /// The configured preferred editor command.
-    pub fn preferred_editor(&self) -> String {
-        self.preferred_editor.clone()
     }
 
     /// The dirs whose git info the host should recompute (all watched repos,
@@ -610,7 +579,7 @@ impl Engine {
             persisted(self.sessions.save(), "sessions");
         }
         let payload = self.compute_payload_for_entries(&entries, snapshot, now);
-        // Drop metadata + session records for repos no longer configured.
+        // Drop session records for repos no longer configured.
         // Skipped when the resolved entry set is empty: every configured repo
         // vanishing in one poll is far more likely a transient glitch (torn
         // repos.json read, worktree-list hiccup) than a real config wipe, and
@@ -618,9 +587,7 @@ impl Engine {
         // records left by a genuine remove-all are pruned on the next
         // non-empty poll.
         if !entries.is_empty() {
-            let names: HashSet<String> = entries.iter().map(|e| e.name.clone()).collect();
             let dirs: HashSet<String> = entries.iter().map(|e| e.dir.clone()).collect();
-            self.metadata.prune_sessions(&names);
             self.sessions.prune(&dirs);
             self.folder_meta.prune(&dirs);
             // Repo identity is deliberately NOT pruned here. Everything else in
@@ -808,8 +775,6 @@ impl Engine {
             git_infos.insert(entry.dir.clone(), self.git_cache.get(&entry.dir));
         }
 
-        let theme = self.theme.clone();
-        let editor = self.preferred_editor.clone();
         // Attribute each agent event to the PTY session it ran in, joining the
         // event's thread id (== the CLI sessionId) to the `TT_SESSION_ID` read
         // from that agent's process (sticky across process exit, see above).
@@ -822,13 +787,10 @@ impl Engine {
             entries,
             &git_infos,
             &self.tracker,
-            &self.metadata,
             &self.sessions,
             &self.folder_meta,
             &attribute,
             &snapshot.session_agents,
-            theme,
-            &editor,
             self.compact_recommend_percent,
             now,
         );
@@ -853,26 +815,6 @@ impl Engine {
             return None;
         }
         Some(self.compute_payload(now_ms()))
-    }
-
-    pub fn dismiss(&mut self, session: &str, agent: &str, thread_id: Option<&str>) -> bool {
-        self.tracker.dismiss(session, agent, thread_id)
-    }
-
-    /// Set the theme and persist it to the shared settings' `agentboard.theme`
-    /// (interop-safe — that key exists in the TS schema). Persists via
-    /// `save_merge` so keys the TypeScript CLI owns survive, and skips the
-    /// write entirely when the settings file is unreadable — writing defaults
-    /// over a momentarily unreadable file would wipe the user's config.
-    pub fn set_theme(&mut self, theme: String) {
-        self.theme = Some(theme.clone());
-        match tt_config::load() {
-            Ok(mut settings) => {
-                settings.agentboard.theme = Some(serde_json::Value::String(theme));
-                persisted(tt_config::save_merge(&settings), "settings");
-            }
-            Err(e) => log::warn!("theme not persisted: settings unreadable: {e}"),
-        }
     }
 
     /// Absolute dirs currently on the rail (freshly reloaded), so the add-repo
@@ -1041,19 +983,6 @@ impl Engine {
         self.git_pending.remove(dir);
         self.git_cache.forget(dir)
     }
-
-    pub fn set_status(&mut self, session: &str, input: Option<StatusInput>, now: i64) {
-        self.metadata.set_status(session, input, now);
-    }
-    pub fn set_progress(&mut self, session: &str, input: Option<ProgressInput>, now: i64) {
-        self.metadata.set_progress(session, input, now);
-    }
-    pub fn append_log(&mut self, session: &str, input: LogInput, now: i64) {
-        self.metadata.append_log(session, input, now);
-    }
-    pub fn clear_logs(&mut self, session: &str) {
-        self.metadata.clear_logs(session);
-    }
 }
 
 /// Pure merge behind [`Engine::expand_with_worktrees`]: `repo_paths` plus each
@@ -1197,7 +1126,6 @@ impl Engine {
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
-            metadata: SessionMetadataStore::new(),
             sessions: SessionStore::new(None),
             folder_meta: crate::folder_meta::FolderMetaStore::new(None),
             repo_meta: crate::repo_meta::RepoMetaStore::new(None),
@@ -1207,8 +1135,6 @@ impl Engine {
             git_pending: HashMap::new(),
             removed_checkouts: HashSet::new(),
             watchers: vec![],
-            theme: None,
-            preferred_editor: "code".to_string(),
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             bound_worktree_dirs: HashSet::new(),

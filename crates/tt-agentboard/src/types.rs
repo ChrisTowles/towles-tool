@@ -242,8 +242,6 @@ pub struct FolderData {
     /// indistinguishable. 0 before the first compute.
     #[serde(default)]
     pub computed_at_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<SessionMetadata>,
     /// True when any live session in this folder has `port_drift` — bubbles
     /// the per-session detail up to a rail badge. Computed app-side after PTY
     /// liveness stamping (mirrors `needs`).
@@ -290,61 +288,6 @@ pub struct RepoData {
     /// See [`crate::repo_meta`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<crate::repo_meta::RepoMeta>,
-}
-
-/// Tone hint for status/log lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MetadataTone {
-    Neutral,
-    Info,
-    Success,
-    Warn,
-    Error,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataStatus {
-    pub text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tone: Option<MetadataTone>,
-    pub ts: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataProgress {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub total: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub percent: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    pub ts: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataLogEntry {
-    pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tone: Option<MetadataTone>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    pub ts: i64,
-}
-
-/// Per-session agent-pushed metadata. `status`/`progress` are always present
-/// (serialized as `null` when empty).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SessionMetadata {
-    pub status: Option<MetadataStatus>,
-    pub progress: Option<MetadataProgress>,
-    #[serde(default)]
-    pub logs: Vec<MetadataLogEntry>,
 }
 
 #[cfg(test)]
@@ -407,14 +350,5 @@ mod tests {
         assert_eq!(v["loop"]["nextWakeAt"], json!(5));
         assert_eq!(v["lastTool"], json!("Bash"));
         assert!(v.get("model").is_none());
-    }
-
-    #[test]
-    fn session_metadata_keeps_null_status_and_progress() {
-        let meta = SessionMetadata::default();
-        let v = serde_json::to_value(&meta).unwrap();
-        assert!(v["status"].is_null());
-        assert!(v["progress"].is_null());
-        assert_eq!(v["logs"], json!([]));
     }
 }

@@ -56,9 +56,7 @@ import {
   type AgentStatus,
   type CommitStat,
   type FolderData,
-  type FolderMetadata,
   type LandedVia,
-  type MetadataTone,
   type PortDrift,
   type SessionData,
 } from "@/lib/agentboard";
@@ -1392,60 +1390,6 @@ export function CacheBadge({
 /** Millis → whole minutes for the cache countdown, floored at 1 ("<1m" ≈ 1m). */
 export function fmtMins(ms: number): string {
   return `${Math.max(1, Math.round(ms / 60_000))}m`;
-}
-
-/** Text colors for agent-pushed status/log tones. Every hue carries a `dark:`
- * pair — never a bare palette color. */
-const TONE_TEXT: Record<MetadataTone, string> = {
-  neutral: "text-muted-foreground",
-  info: "text-sky-600 dark:text-sky-400",
-  success: "text-emerald-600 dark:text-emerald-400",
-  warn: "text-amber-600 dark:text-amber-400",
-  error: "text-red-600 dark:text-red-400",
-};
-
-/** The agent's own status line (`ab_set_status`, also pushed over MCP) under a
- * folder header — what the agent *says* it's doing, next to what we *observe*
- * (the session dots). Read-only by design; recent `ab_log` lines ride along in
- * the tooltip. Renders nothing when no agent has pushed a status. */
-export function AgentStatusLine({
-  metadata,
-  now,
-}: {
-  metadata: FolderMetadata | null | undefined;
-  now: number;
-}) {
-  const status = metadata?.status;
-  if (!status?.text) return null;
-  const tone = status.tone ?? "neutral";
-  const logs = (metadata?.logs ?? []).slice(-5);
-  const age = Math.max(0, now - status.ts);
-  const line = (
-    <span className={cn("flex min-w-0 items-center gap-1.5 text-[11px]", TONE_TEXT[tone])}>
-      <span className="shrink-0 opacity-60">▸</span>
-      <span className="min-w-0 truncate">{status.text}</span>
-      {age >= 60_000 && (
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
-          {fmtMins(age)} ago
-        </span>
-      )}
-    </span>
-  );
-  if (logs.length === 0) return line;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{line}</TooltipTrigger>
-      <TooltipContent side="bottom" align="start" className="max-w-96">
-        <div className="flex flex-col gap-0.5 font-mono text-[11px]">
-          {logs.map((l, i) => (
-            <span key={i} className="truncate">
-              {l.message}
-            </span>
-          ))}
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 /** "···" overflow menu for a checkout — the one place every secondary action

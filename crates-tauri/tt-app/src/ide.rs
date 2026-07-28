@@ -1108,19 +1108,6 @@ pub async fn ide_rename(
     .map_err(|e| format!("rename task failed: {e}"))?
 }
 
-/// Every file in the folder's checkout (tracked + untracked-but-not-ignored),
-/// for the diff pane's Files tab — so any file, changed or not, can be
-/// @-mentioned to the folder's Claude session. Async: git subprocesses.
-#[tauri::command]
-pub async fn ide_list_files(dir: String) -> Vec<String> {
-    const FILE_LIST_CAP: usize = 20_000;
-    tauri::async_runtime::spawn_blocking(move || {
-        tt_agentboard::git_info::list_files(&dir, FILE_LIST_CAP)
-    })
-    .await
-    .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod selection_tests {
     use super::*;

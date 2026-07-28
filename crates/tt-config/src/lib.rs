@@ -100,10 +100,6 @@ impl Default for JournalSettings {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentboardSettings {
-    /// Theme name or an inline theme object.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub theme: Option<serde_json::Value>,
-
     /// Context-% at/above which a cold (cache-expired) Claude session gets the
     /// "compact" nudge in the app. `None` = the built-in default (30). Only
     /// written once the user changes it, so the shared settings file stays
@@ -1195,7 +1191,6 @@ mod tests {
         let settings = UserSettings::default();
         assert_eq!(settings.preferred_editor, "code");
         assert!(settings.journal_settings.daily_path_template.contains("daily-notes"));
-        assert!(settings.agentboard.theme.is_none());
     }
 
     #[test]
