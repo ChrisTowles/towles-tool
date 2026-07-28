@@ -15,6 +15,7 @@ import {
   exitPaneId,
   exitPaneSession,
   fmtContext,
+  fmtDiffLines,
   fmtTokens,
   fmtWaitingAge,
   gitCheckedLabel,
@@ -184,6 +185,31 @@ describe("fmtTokens", () => {
     expect(fmtTokens(1_020_000)).toBe("1M");
     expect(fmtTokens(1_049_999)).toBe("1M");
     expect(fmtTokens(1_550_000)).toBe("1.6M");
+  });
+});
+
+describe("fmtDiffLines", () => {
+  it("keeps every digit of a reviewable change", () => {
+    expect(fmtDiffLines(0)).toBe("0");
+    expect(fmtDiffLines(57)).toBe("57");
+    expect(fmtDiffLines(2_347)).toBe("2347");
+    expect(fmtDiffLines(9_999)).toBe("9999");
+  });
+
+  it("abbreviates past 10,000, where the digits stop meaning anything", () => {
+    expect(fmtDiffLines(10_000)).toBe("10K");
+    expect(fmtDiffLines(62_512)).toBe("62.5K");
+    expect(fmtDiffLines(99_949)).toBe("99.9K");
+  });
+
+  it("drops the fraction once a tenth of a K is under a pixel of meaning", () => {
+    expect(fmtDiffLines(123_456)).toBe("123K");
+    expect(fmtDiffLines(999_499)).toBe("999K");
+  });
+
+  it("promotes to M on the rounded value, never reading '1000K'", () => {
+    expect(fmtDiffLines(999_500)).toBe("1M");
+    expect(fmtDiffLines(1_234_567)).toBe("1.2M");
   });
 });
 

@@ -206,7 +206,7 @@ The established patterns here:
   (the window tab strip in `screens/agentboard.tsx`).
 - **Row with trailing actions** → keep the action buttons as *siblings* in a
   flex row, with only the identity cluster inside the button
-  (`components/agentboard-rail.tsx`'s folder header).
+  (`components/agentboard-folder-header.tsx`).
 - A `stopPropagation` on a child of a clickable parent is a smell that the
   nesting is wrong.
 
@@ -214,6 +214,36 @@ React reports these only at **runtime**, and nothing else in this repo can see
 them: there is no linter, `tsc` doesn't model the DOM, and vitest runs in a
 node environment with no renderer. `node scripts/drive.mjs console` is the
 check — see below.
+
+## The rail is five files, split by what a row *is*
+
+`components/agentboard-rail.tsx` is the rail's own chrome (collapsed icon
+strip, rollup tally) — not the tree. The tree is
+`agentboard-repo-group` (a repo's subtree: which checkouts show, where the
+inline new-task form goes) → `agentboard-folder-header` (a checkout's row) →
+`agentboard-session-row` (a PTY) / `agentboard-pane-rows` (a chat, the view
+panes, the window spine). Anything two of them share is an atom in
+`agentboard-bits`, and anything pure is in `lib/agentboard.ts`. It was one
+1,800-line file; if a new row kind needs a home, add a sixth file rather
+than growing one of these back.
+
+**In a rail row, a box means a control or an alert — never a fact.** Diff
+counts, branch, base-moved and the pane buttons are bare mono type
+(`CHIP_CLASS`), with the box arriving on hover, where "is this clickable?" is
+the question actually being asked; per-row icon buttons pass `ghost`
+(`IconBtn`, `RepoMenu`, `DevServersButton`) for the same reason. Only
+needs-you, port drift, safe-to-delete and deleting keep a resting box, because
+they are rare and meant to catch the eye. A pane *header* is the opposite case
+— one toolbar on screen, room to spare — so it keeps the bordered form and the
+labeled chips (`labeled` on the diff and pane-open chips). This is what the
+`folder-rail-ui` skill's bare-`font-mono` diff-stat recipe has always said; a
+rail that boxes everything ranks nothing.
+
+A folder row is **one line when the rail is wide enough and two when it
+isn't** — `@container/row` at 34rem, with an `order` swap that keeps the
+toolbar on the name's line while the git counts drop below. Container, not
+viewport: the question is whether *this row* has room, and the rail is
+independently resizable (300–760px).
 
 ## Two animation idioms — the choice is mechanical, not stylistic
 

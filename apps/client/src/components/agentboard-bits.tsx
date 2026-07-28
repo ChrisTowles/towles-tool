@@ -41,8 +41,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { toast } from "sonner";
 import {
   abSyncRepo,
+  collapsedLiveColor,
   comparedBaseLabel,
   ctxPct,
+  fmtDiffLines,
   fmtElapsed,
   folderLandedButHasWork,
   gitCheckedLabel,
@@ -87,24 +89,33 @@ import { cn } from "@/lib/utils";
  * `title` renders as a real (Radix) tooltip: instant, styled, and — unlike a
  * native `title` attribute or CSS `:hover` reveal — reliable in the Tauri
  * WebKitGTK webview. It doubles as the `aria-label`, since the glyph alone
- * says nothing. Clicks never bubble into the row/header the button sits on. */
+ * says nothing. Clicks never bubble into the row/header the button sits on.
+ *
+ * `ghost` drops the resting border, and is what every *rail row* uses. A pane
+ * header carries one toolbar on screen; the rail repeats one per repo and per
+ * folder, so the bordered form put a dozen boxes down a column whose whole job
+ * is to be scanned — the same "a box is a control or an alert, not a fact"
+ * rule the git chips follow, applied to a control that is simply repeated too
+ * often to shout. The hover fill still arrives when you point at it. */
 export function IconBtn({
   title,
   onClick,
   className,
+  ghost = false,
   children,
   ...props
 }: {
   title: string;
   onClick: () => void;
   className?: string;
+  ghost?: boolean;
   children: ReactNode;
 } & Omit<ComponentProps<"button">, "onClick" | "title" | "children">) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="outline"
+          variant={ghost ? "ghost" : "outline"}
           size="icon-xs"
           aria-label={title}
           onClick={(e) => {
@@ -241,6 +252,24 @@ export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
   );
 }
 
+/** Shown on a collapsed folder/repo header: a colored dot + count telling you
+ * running sessions are hidden inside (so a collapsed folder doesn't look
+ * asleep when agents are working in it). Nothing when nothing is live. */
+export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
+  const color = collapsedLiveColor(sessions);
+  if (!color) return null;
+  const n = sessions.filter((s) => s.live).length;
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1"
+      title={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}
+    >
+      <span className={cn("size-2 rounded-full", color)} />
+      <span className="font-mono text-[10px] text-muted-foreground/70">{n}</span>
+    </span>
+  );
+}
+
 export function Chevron({ collapsed }: { collapsed: boolean }) {
   return (
     <ChevronDown
@@ -358,10 +387,13 @@ export function BranchLabel({
         "min-w-0 truncate font-mono text-[11px]",
         isWorktree ? "text-muted-foreground" : "text-sky-500",
       )}
+      // Always the full branch, because this is the element every surface
+      // truncates first: the rail row and the band both spend their slack on
+      // it, so without the tooltip a long branch is simply unreadable.
       title={
         isWorktree
-          ? undefined
-          : "Primary checkout — the main clone; its .git is load-bearing for every worktree"
+          ? branch
+          : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
       }
       onClick={onClick}
     >
@@ -458,7 +490,7 @@ export function ComparedBaseBadge({
   const manual = Boolean(folder.baseBranch?.trim());
   return (
     <span
-      className="shrink-0 rounded-md border border-border/70 px-1 font-mono text-[10px] text-muted-foreground"
+      className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/70"
       title={
         manual
           ? `Diffs against "${label}" — your override for this folder`
@@ -488,6 +520,13 @@ export function ComparedBaseBadge({
  * common to spend it on — nearly every row shows this chip most of the day,
  * which is exactly the kind of standing glow that teaches you to stop seeing
  * a color. See the `folder-rail-ui` skill's "two accent hues, one rule each".
+ *
+ * Glyph + count, not the words "base moved N": on the rail this chip shares
+ * one line with the branch and both diff chips, and at ~95px the sentence was
+ * the single widest thing that wasn't a number — enough to push the line into
+ * a second and third row. The refresh glyph already says "bring this up to
+ * date", the count says how far, and the tooltip carries the sentence for
+ * whoever hasn't met the chip yet.
  */
 export function BaseMovedChip({
   stats,
@@ -499,11 +538,11 @@ export function BaseMovedChip({
   const base = comparedBaseLabel(stats);
   return (
     <span
-      className={`${CHIP_CLASS} border-border bg-muted font-medium text-foreground`}
-      title={`${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
+      className={`${CHIP_CLASS} bg-muted font-medium text-foreground`}
+      title={`Base moved: ${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
     >
       <RefreshCw className="size-3" />
-      base moved {commitsBehind}
+      {commitsBehind}
     </span>
   );
 }
@@ -624,9 +663,20 @@ type DiffChipProps = {
   labeled?: boolean;
 };
 
-/** Shared chip chrome for the git-stat chips, so they can't drift apart. */
+/** Shared chip chrome for the git-stat chips, so they can't drift apart.
+ *
+ * **No resting border.** A rail row carried ~20 identical bordered pills —
+ * every button, every count, every badge — so nothing in it was loud and
+ * nothing was quiet, and the eye had no entry point. The rule that replaced
+ * that: a *box* means a control or an alert, plain type means a fact. Diff
+ * stats are facts, and mono digits with a glyph in front of them are already
+ * legible at 10.5px; the `folder-rail-ui` skill's own recipe for a diff stat
+ * has always been a bare `font-mono` span, so the pills were the drift.
+ *
+ * The box comes back on hover, where it says "this is clickable" at the moment
+ * that's the question being asked. */
 const CHIP_CLASS =
-  "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors";
+  "flex h-5 shrink-0 items-center gap-1 rounded-md px-1 font-mono text-[10.5px] transition-colors";
 
 /** The word naming what a chip counts, shown on wide surfaces only (see
  * [`DiffChipProps.labeled`]). Muted so the *number* stays the thing the eye
@@ -688,15 +738,15 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             mouseAction("ab-toggle-diff", "agentboard");
             onOpen();
           }}
-          className={`${CHIP_CLASS} hover:border-border hover:bg-accent ${
+          className={`${CHIP_CLASS} hover:bg-accent ${
             clean
               ? // Nothing at stake: stay out of the way, and let the gap in
                 // weight against the dirty state below carry the difference.
-                "border-border/70 text-muted-foreground/70"
-              : // Filled and full-weight, like `BaseMovedChip` — this is work
-                // that exists nowhere but this checkout, so it earns the
-                // loudest treatment available short of the needs-you hue.
-                "border-border bg-muted font-medium text-foreground"
+                "text-muted-foreground/60"
+              : // Full-weight — this is work that exists nowhere but this
+                // checkout, so it earns the loudest treatment available short
+                // of the needs-you hue.
+                "font-medium text-foreground"
           }`}
         >
           <Pencil className="size-3" />
@@ -706,8 +756,12 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           ) : (
             <>
               <span>{uncommittedFiles}f</span>
-              <span className="text-emerald-600 dark:text-emerald-400">+{uncommittedAdded}</span>
-              <span className="text-red-600 dark:text-red-400">−{uncommittedRemoved}</span>
+              <span className="text-emerald-600 dark:text-emerald-400">
+                +{fmtDiffLines(uncommittedAdded)}
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                −{fmtDiffLines(uncommittedRemoved)}
+              </span>
             </>
           )}
         </button>
@@ -756,8 +810,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
   const landedClean = commitsAhead > 0 && stats.landed != null && commitsUnlanded === 0;
   const partly = commitsUnlanded > 0 && commitsUnlanded !== commitsAhead;
   const tone = landedClean
-    ? "border-border/70 text-muted-foreground/70 hover:bg-accent"
-    : "border-border/70 text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground";
+    ? "text-muted-foreground/60 hover:bg-accent"
+    : "text-muted-foreground hover:bg-accent hover:text-foreground";
 
   return (
     <HoverCard
@@ -796,8 +850,12 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           ) : (
             <>
               <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
-              <span className="text-emerald-600 dark:text-emerald-400">+{committedAdded}</span>
-              <span className="text-red-600 dark:text-red-400">−{committedRemoved}</span>
+              <span className="text-emerald-600 dark:text-emerald-400">
+                +{fmtDiffLines(committedAdded)}
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                −{fmtDiffLines(committedRemoved)}
+              </span>
             </>
           )}
         </button>
@@ -849,11 +907,11 @@ function PaneOpenButton({
   title,
   onOpen,
   shortcutTwin,
-}: {
+  labeled = false,
+}: PaneOpenButtonProps & {
   glyph: ReactNode;
   label: string;
   title: string;
-  onOpen: () => void;
   /** Shortcut id this chip duplicates, when it has one. */
   shortcutTwin?: string;
 }) {
@@ -865,25 +923,38 @@ function PaneOpenButton({
         if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
         onOpen();
       }}
-      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+      className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
       title={title}
+      aria-label={labeled ? undefined : label}
     >
       {glyph}
-      <span>{label}</span>
+      {labeled && <span>{label}</span>}
     </button>
   );
 }
 
+/** What the four pane-open buttons take from their caller.
+ *
+ * `labeled` is the same width budget as [`DiffChipProps.labeled`], and set the
+ * same way round: on for the pane header, off for the rail. These four sit at
+ * the tail of the rail's git line, holding their width even while faded out,
+ * so their words cost ~170px of a line that also has to fit a branch and two
+ * ± chips — the cost that used to buy a third row of height. The glyph plus
+ * the tooltip is the whole button on the rail; the header, which has room, is
+ * where they say which is which without hovering. */
+type PaneOpenButtonProps = { onOpen: () => void; labeled?: boolean };
+
 /** The files entry point, DiffButton's sibling: opens the folder's full file
  * tree as a pane ("tell claude about any file"), always visible for the same
  * findability reason. */
-export function FilesButton({ onOpen }: { onOpen: () => void }) {
+export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
       glyph={<Files className="size-3" />}
       label="files"
       title="Browse every file in this checkout — @ any of them to Claude"
       onOpen={onOpen}
+      labeled={labeled}
       shortcutTwin="ab-toggle-files"
     />
   );
@@ -891,13 +962,14 @@ export function FilesButton({ onOpen }: { onOpen: () => void }) {
 
 /** Opens the folder's rendered-agent pane — a Claude session in this checkout
  * shown as structured turns rather than PTY scrollback. */
-export function AgentButton({ onOpen }: { onOpen: () => void }) {
+export function AgentButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
       glyph={<span aria-hidden="true">✦</span>}
       label="chat"
       title="Open a Claude session in this checkout, rendered as structured turns"
       onOpen={onOpen}
+      labeled={labeled}
     />
   );
 }
@@ -906,26 +978,28 @@ export function AgentButton({ onOpen }: { onOpen: () => void }) {
  * (`components/jarvis-pane.tsx`), tiled beside the folder's terminals. Only
  * mounted when `agentboard.jarvisPane` is on, so the proof-of-concept costs
  * nothing (and shows nothing) until it's asked for. */
-export function JarvisButton({ onOpen }: { onOpen: () => void }) {
+export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
       glyph={<Box className="size-3" />}
       label="jarvis"
       title="Open the native Bevy pane in this checkout's window — real GPU output, not DOM"
       onOpen={onOpen}
+      labeled={labeled}
     />
   );
 }
 
 /** Opens the folder's live-preview pane — the task's own dev server embedded
  * beside its terminals, with draw-on-page feedback to that task's session. */
-export function PreviewButton({ onOpen }: { onOpen: () => void }) {
+export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
       glyph={<AppWindow className="size-3" />}
       label="preview"
       title="Preview this checkout's dev server — annotate the page and send it to the agent"
       onOpen={onOpen}
+      labeled={labeled}
     />
   );
 }
@@ -1448,6 +1522,7 @@ export function RepoMenu({
   onNewTask,
   onDeleteWorktree,
   taskId,
+  ghost = false,
 }: {
   path?: string;
   onRemove: () => void;
@@ -1468,6 +1543,8 @@ export function RepoMenu({
    * enables "Attach issue…" — you can only link an issue to a task, so a
    * folder with no bound task doesn't offer it. */
   taskId?: number;
+  /** Ghost trigger (no resting border) — see [`IconBtn`]'s `ghost`. */
+  ghost?: boolean;
 }) {
   const [attachOpen, setAttachOpen] = useState(false);
 
@@ -1497,7 +1574,7 @@ export function RepoMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
+            variant={ghost ? "ghost" : "outline"}
             size="icon-xs"
             title="More actions"
             className="text-muted-foreground"

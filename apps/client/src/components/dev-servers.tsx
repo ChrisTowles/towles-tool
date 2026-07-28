@@ -35,9 +35,12 @@ const LAUNCH_JSON_DOCS_URL = "https://code.claude.com/docs/en/desktop#configure-
 export function DevServersButton({
   folder,
   actions,
+  ghost = false,
 }: {
   folder: FolderData;
   actions: SessionActions;
+  /** Ghost trigger (no resting border) — see `IconBtn`'s `ghost`. */
+  ghost?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<LaunchConfigStatus[] | null>(null);
@@ -79,7 +82,7 @@ export function DevServersButton({
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant={ghost ? "ghost" : "outline"}
           size="icon-xs"
           aria-label="Dev servers"
           title="Dev servers (.claude/launch.json)"
