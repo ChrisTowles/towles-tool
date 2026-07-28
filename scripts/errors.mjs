@@ -1,7 +1,7 @@
 // Typed failures for the dev-tooling scripts, as tagged errors rather than
 // thrown `unknown` or a `null` that conflates several causes. See
-// docs/CODING-STANDARDS.md ("Expected failures are values"); this is the
-// scripts-side twin of apps/client/src/lib/errors.ts.
+// .claude/rules/typescript.md ("errors are values"); this is the scripts-side
+// twin of apps/client/src/lib/errors.ts.
 //
 // `TaggedError("Tag")<Props>()` is TypeScript syntax and these are plain
 // `.mjs` files, so each class casts the factory's return to

@@ -403,7 +403,7 @@ across and what was dropped.
 - [packages/app/README.md](packages/app/README.md) — the `towles-tool-app` Claude Code plugin in detail
 - [ATTRIBUTION.md](ATTRIBUTION.md) — derivation from Yaak and its MIT license
 - [docs/MIGRATION.md](docs/MIGRATION.md) — historical: the completed feature port off the TS CLI
-- [docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) — Rust/TypeScript coding standards
+- [.claude/rules/](.claude/rules) — Rust/TypeScript conventions, auto-loaded for the files they cover
 - [e2e/README.md](e2e/README.md) — driving the real app shell (live-drive + regression suite)
 - [CLAUDE.md](CLAUDE.md) — project instructions, architecture, and the worktree-task workflow
 
