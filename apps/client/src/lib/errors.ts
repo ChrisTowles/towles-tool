@@ -1,7 +1,7 @@
 // Typed errors for the frontend's failure modes, as tagged unions rather than
-// thrown `unknown`. See docs/CODING-STANDARDS.md ("Expected failures are
-// values") — this is the TypeScript half of the convention the Rust crates
-// already follow with `thiserror`.
+// thrown `unknown`. See .claude/rules/typescript.md ("errors are values") —
+// this is the TypeScript half of the convention the Rust crates already follow
+// with `thiserror`.
 import { TaggedError, isTaggedError } from "better-result";
 import type { ZodError } from "zod";
 
