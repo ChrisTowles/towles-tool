@@ -11,18 +11,18 @@
 //!
 //! That splits ownership, and the split is load-bearing:
 //!
-//! - **Main thread** owns the Wayland proxies ([`wayland::Subsurface`]):
+//! - **Main thread** owns the Wayland proxies (`wayland::Subsurface`):
 //!   creation, position, visibility, teardown. GTK's own surface is only ever
 //!   touched here.
 //! - **Render thread** owns the Bevy `App` and the swapchain. It receives
-//!   [`PaneRect`] updates over a channel and only ever *resizes*; it never moves
-//!   the surface and never speaks to GDK.
+//!   [`PaneRect`](tt_jarvis::surface::PaneRect) updates over a channel and only
+//!   ever *resizes*; it never moves the surface and never speaks to GDK.
 //!
 //! # Teardown happens once, at exit
 //!
-//! [`Pane::detach`] stops the render thread and *joins it* before dropping the
-//! subsurface — the frames-in-flight rule in `tt_jarvis::surface`. Nothing
-//! calls it while the app is running: dropping a Bevy app takes the process
+//! Dropping a `Pane` stops the render thread and *joins it* before releasing
+//! the subsurface — the frames-in-flight rule in `tt_jarvis::surface`. Nothing
+//! drops one while the app is running: dropping a Bevy app takes the process
 //! with it (see [`PaneHost::detach`]), so panes are retired and reused instead,
 //! and this path runs only when the registry is dropped at shutdown.
 //!
@@ -33,14 +33,30 @@
 //! implemented here and rejected *against a compositor screenshot* — a null
 //! buffer never took the surface off screen, and a full detach did but exited
 //! the process on the way — so treat the indirection as load-bearing and read
-//! [`wayland::Subsurface::set_visible`] before changing it.
+//! `wayland::Subsurface::set_visible` before changing it.
 //!
+//! # Everything above is Linux-only
+//!
+//! The surface, the renderer and the registry that holds them are gated on
+//! Linux; elsewhere [`PaneHost`] is an empty stub that reports the pane as
+//! unsupported. The machinery is cut rather than left compiled-but-unused,
+//! because there is no shape here a second platform would inherit — an
+//! `NSView`/`CAMetalLayer` host has its own message type and its own teardown
+//! rule, so keeping this one alive on macOS buys nothing and costs four
+//! dead-code warnings.
 
-use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(target_os = "linux")]
+use std::sync::mpsc::{self, Sender};
+#[cfg(target_os = "linux")]
+use std::sync::Mutex;
+#[cfg(target_os = "linux")]
+use std::thread::JoinHandle;
+
+#[cfg(target_os = "linux")]
 use tt_jarvis::surface::PaneRect;
 
 #[cfg(target_os = "linux")]
@@ -69,7 +85,8 @@ impl From<PaneError> for String {
 /// client area.
 ///
 /// Converted to physical pixels here rather than in the frontend, so the
-/// rounding decision lives on one side of the wire. See [`PaneRect::from_css`].
+/// rounding decision lives on one side of the wire. See
+/// [`PaneRect::from_css`](tt_jarvis::surface::PaneRect::from_css).
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct CssRect {
     pub x: f64,
@@ -87,6 +104,7 @@ pub struct PaneInfo {
 }
 
 /// What the main thread sends the render thread.
+#[cfg(target_os = "linux")]
 enum RenderMsg {
     Resize(PaneRect),
     /// Stop presenting and park until [`RenderMsg::Resume`]. Sent when a pane is
@@ -105,8 +123,8 @@ enum RenderMsg {
 }
 
 /// One embedded pane.
+#[cfg(target_os = "linux")]
 pub struct Pane {
-    #[cfg(target_os = "linux")]
     surface: wayland::Subsurface,
     tx: Sender<RenderMsg>,
     thread: Option<JoinHandle<()>>,
@@ -140,6 +158,7 @@ impl Pane {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for Pane {
     fn drop(&mut self) {
         // The one real teardown path, and it runs only at shutdown (the
@@ -154,8 +173,12 @@ impl Drop for Pane {
 }
 
 /// Process-wide pane registry, keyed by the frontend's pane id.
+///
+/// Fieldless off Linux: there is nothing to register when [`PaneHost::attach`]
+/// can only fail.
 #[derive(Default)]
 pub struct PaneHost {
+    #[cfg(target_os = "linux")]
     panes: Mutex<Vec<(String, Pane)>>,
 }
 
