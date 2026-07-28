@@ -4,17 +4,12 @@
 //! Reused for two differently-scoped resources under different lock names —
 //! the name is what determines the scope, not the type:
 //!
-//! - `"slack-socket"` (`slack_socket.rs`): Slack credentials live in the
-//!   *shared* config dir (tt-config's shared-store paths only re-scope under
-//!   a forced `TT_STATE_SCOPE`), so every open worktree's process reads the
-//!   same token. Without this guard, N open tasks would each open their own
-//!   Slack Socket Mode connection and poll on the same token — see #227.
-//! - `"app-<identifier>"` (`lib.rs`'s `run`): stops the *same* checkout
-//!   (primary, or one specific task) from being launched twice at once,
-//!   which would otherwise silently run two independent windows/PTY sets/
-//!   schedulers against the same checkout. Different tasks already get
-//!   different identifiers (see `app_identifier`), so this only ever fires
-//!   within one checkout.
+//! - `"slack-socket"` (`slack_socket.rs`): Slack credentials live in the *shared* config
+//!   dir, so every open worktree's process reads the same token. Without this guard, N
+//!   open tasks would each open their own Socket Mode connection on it — see #227.
+//! - `"app-<identifier>"` (`lib.rs`'s `run`): stops the *same* checkout being launched
+//!   twice at once, which would silently run two independent windows/PTY sets/schedulers
+//!   against it. Different tasks already get different identifiers.
 
 use std::fs;
 use std::io::ErrorKind;

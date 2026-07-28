@@ -1,27 +1,16 @@
-//! Who holds a claimed port, and how to stop them.
+//! Who holds a claimed port, and how to stop them. The removal guard learns only
+//! "something is listening" from the bind probe, which refuses a removal without being
+//! actionable: "port 4424 is in use" leaves the user hunting by hand.
 //!
-//! The removal guard ([`crate::guards::RmBlocked::ForeignPortListener`]) can
-//! only learn "something is listening" from [`crate::ops::port_occupied`]'s
-//! bind probe, which is enough to refuse a removal and not enough to act on
-//! one: "port 4424 is in use" leaves the user hunting for the process by
-//! hand. Asking the OS who holds it turns that into a name to recognize and a
-//! process to stop.
+//! Mirrors `scripts/task-port.mjs`'s `killPort`, for the same reasons:
+//! - `lsof` for the listeners — its absence is indistinguishable from "nothing
+//!   listening" here, both meaning no pid to offer.
+//! - Signal the listener's POSIX **process group**, not its pid: a `npm run dev` tree
+//!   leaves vite/esbuild orphaned and still bound when you signal only `lsof`'s pid.
+//! - SIGTERM, wait, then SIGKILL — a dev server gets a clean shutdown first.
 //!
-//! Mirrors `scripts/task-port.mjs`'s `killPort`, which solves the identical
-//! problem for the dev-server launcher, and for the same reasons:
-//! - `lsof` for the listeners — it's what the launcher already relies on, and
-//!   its absence is indistinguishable from "nothing listening" for our
-//!   purposes (both mean we have no pid to offer).
-//! - Signal the listener's POSIX **process group**, not its pid: a
-//!   `npm run dev` tree leaves vite/esbuild orphaned and still bound to the
-//!   port when you signal only the pid `lsof` reports.
-//! - SIGTERM, wait, then SIGKILL — a dev server gets its chance to shut down
-//!   cleanly first.
-//!
-//! Every probe here is best-effort by construction: a missing `lsof`/`ps`, a
-//! process that exits between the listing and the signal, and a platform with
-//! no POSIX process groups all degrade to "no holder known", never an error
-//! that blocks the caller.
+//! Every probe is best-effort: a missing `lsof`/`ps`, a process exiting between listing
+//! and signal, or a platform with no process groups degrades to "no holder known".
 
 use std::thread::sleep;
 use std::time::{Duration, Instant};

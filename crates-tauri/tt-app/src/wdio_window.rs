@@ -1,38 +1,17 @@
-//! Put the automated window somewhere a compositor screenshot can find it.
+//! Put the automated window somewhere a compositor screenshot can find it. The webview
+//! screenshot every other drive verb takes is blind to native panes: a
+//! `tt-pane` surface composites *above* the webview, so it is absent from a WebDriver
+//! capture. A compositor-level capture lands you with two problems: several task
+//! checkouts run `tt-app` at once, so a whole-desktop shot shows near-identical windows
+//! that nothing can crop by title (Wayland refuses a client its own position).
 //!
-//! The webview screenshot every other drive verb takes (`drive.mjs shot`) is
-//! blind to native panes: a `tt-pane` surface is a Wayland subsurface composited
-//! *above* the webview, so it is simply absent from a WebDriver capture. Proving
-//! the Jarvis pane actually paints therefore needs a compositor-level capture —
-//! and that lands you with two problems this module exists to solve.
-//!
-//! **Which window is mine?** Several task checkouts run `tt-app` at once, so a
-//! whole-desktop screenshot shows three or four near-identical windows. The
-//! title bar disambiguates them for a human (`Towles Tool — <task>`), but
-//! nothing crops an image by window title, and Wayland refuses a client its own
-//! position, so the app cannot report a rect to crop to either
-//! (`gtk_window_get_position` returns 0,0 there).
-//!
-//! **Fullscreen on a chosen output answers both at once.** The window then owns
-//! an entire monitor, so the monitor's geometry *is* the window's rect — known,
-//! stable, and expressible as a `convert -crop` against the desktop-wide PNG. It
-//! also forces the window unoccluded, which matters more than it sounds: an
-//! occluded Wayland surface receives no frame callbacks, so a vsync-paced pane
-//! stalls rather than slowing, and a screenshot of it would show a stale frame
-//! (or nothing) while the code under test is perfectly healthy.
-//!
-//! The output picked is the *test* monitor — the one whose geometry starts at
-//! `x > 0`, i.e. not the primary Chris is working on. A run that took over the
-//! primary would interrupt him once per screenshot. On a single-monitor machine
-//! there is nothing to move to, so this fullscreens in place and says so via
-//! [`MonitorRect::is_test_monitor`] rather than failing.
-//!
-//! Gated with the rest of the automation surface. The command stays in the
-//! handler list unconditionally — `tauri::generate_handler!` parses a plain
-//! path list and has nowhere to put a `#[cfg]` — so the *body* refuses without
-//! the `wdio` feature, the same shape `preview_capture` uses to stub itself off
-//! Linux. A release build therefore ships an inert name, not the behaviour.
-
+//! **Fullscreen on a chosen output answers both.** The window owns a whole monitor, so its
+//! geometry *is* its rect — known, stable, croppable — and it forces the window
+//! unoccluded, which matters: an occluded Wayland surface gets no frame callbacks, so a
+//! vsync-paced pane stalls rather than slowing and shows a stale frame while the code is
+//! healthy. The output picked is the *test* monitor (`x > 0`), never the primary. The
+//! command stays in the handler list unconditionally, so the *body* refuses without the
+//! `wdio` feature.
 use serde::Serialize;
 
 /// Where the window ended up, in the compositor's global coordinate space —

@@ -1,18 +1,15 @@
 //! Minimal OSC 9 / OSC 777 *desktop notification* scanner run alongside the
 //! terminal state machine on the raw PTY byte feed.
 //!
-//! Programs raise attention with `ESC ] 9 ; <body> ST` (the iTerm2/ConEmu
-//! convention — what Claude Code emits when it needs input) or
-//! `ESC ] 777 ; notify ; <title> ; <body> ST` (the urxvt extension).
-//! libghostty-vt identifies `ShowDesktopNotification` in its standalone OSC
-//! parser but exposes no payload accessor and no terminal callback, so —
-//! like [`crate::osc52`] and [`crate::osc_color`] — a byte-at-a-time scanner
-//! fills the gap.
+//! Programs raise attention with `ESC ] 9 ; <body> ST` (the iTerm2/ConEmu convention,
+//! what Claude Code emits when it needs input) or with
+//! `ESC ] 777 ; notify ; <title> ; <body> ST` (the urxvt extension). libghostty-vt
+//! identifies `ShowDesktopNotification` but exposes no payload accessor and no
+//! callback, so — as in [`crate::osc52`] — a byte-at-a-time scanner fills the gap.
 //!
-//! ConEmu overloads OSC 9 with numeric sub-commands (`9;4;st;pr` progress,
-//! `9;1;…` message box, …); a body starting `<digits> ;`—or a bare number—is
-//! treated as one of those and skipped rather than surfaced as a phantom
-//! notification. Fragment-tolerant and bounded like the sibling scanners.
+//! ConEmu overloads OSC 9 with numeric sub-commands, so a body starting `<digits> ;`
+//! (or a bare number) is skipped rather than surfaced as a phantom notification.
+//! Fragment-tolerant and bounded like the sibling scanners.
 
 /// Hard cap on a collected notification body; a hostile unterminated
 /// sequence can't grow the buffer without bound.

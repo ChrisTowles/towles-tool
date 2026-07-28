@@ -25,6 +25,8 @@ members = [
   # Tauri-specific crates
   "crates-tauri/tt-app",
   "crates-tauri/tt-pane",
+  # Dev tooling (cargo xtask), not part of the product
+  "xtask",
 ]
 
 # Inherited by every member via `[lints] workspace = true`. Scoped to `unsafe`

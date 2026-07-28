@@ -1,23 +1,16 @@
-//! Data-hub collectors for the towles-tool personal dashboard.
-//!
-//! Each collector gathers one slice of state — calendar events, cross-repo
-//! issues, and pull-request status — and writes it into the shared
-//! [`tt_store::Store`]. The calendar collector shells out to `claude -p` (via
-//! [`tt_exec`]) once per configured [`tt_config::CalendarSource`], each source
-//! writing into its own store lane; the issue and PR collectors shell out to
-//! `gh`.
-//!
-//! Tauri-free (the shared-crate rule): both the CLI (`tt collect`) and the
-//! desktop app's scheduler drive this crate against the same [`CollectSummary`]
-//! contract.
+//! Data-hub collectors for the towles-tool personal dashboard. Each gathers one
+//! slice of state — calendar events, cross-repo issues, pull-request status — and
+//! writes it into the shared [`tt_store::Store`]. The calendar collector shells out
+//! to `claude -p` once per configured [`tt_config::CalendarSource`], each writing
+//! its own store lane; issues and PRs shell out to `gh`. Tauri-free, so both the CLI
+//! and the app's scheduler drive it against the same [`CollectSummary`] contract.
 //!
 //! ## Robustness contract
 //!
-//! The public `collect_*` functions **never panic and never return `Err`**.
-//! Every failure mode — a missing `claude`/`gh` binary, a non-zero exit,
-//! unparseable output — is captured as a [`CollectSummary`] with `ok = false`
-//! and a `message`, and is also recorded via [`tt_store::Store::record_run`]
-//! under a stable collector key: `claude:calendar`, `issues`, or `prs`.
+//! The public `collect_*` functions **never panic and never return `Err`**. Every
+//! failure — a missing binary, a non-zero exit, unparseable output — becomes a
+//! [`CollectSummary`] with `ok = false`, recorded via `record_run` under a stable
+//! key: `claude:calendar`, `issues`, or `prs`.
 
 mod gh;
 pub mod issues;
@@ -72,22 +65,18 @@ pub struct CollectSummary {
 const CALENDAR_KEY: &str = "claude:calendar";
 
 /// JSON Schema handed to `claude -p --json-schema`, which makes the CLI itself
-/// enforce the answer's shape: the model routes through a structured-output
-/// tool and the envelope carries a validated object. This — not a sentence in
-/// the prompt asking for "ONLY a JSON array, no prose, no code fences" — is the
-/// contract, which is why the prompt is free to be a question about the user's
-/// calendar and nothing else.
+/// enforce the answer's shape: the model routes through a structured-output tool
+/// and the envelope carries a validated object. This — not a sentence in the prompt
+/// asking for "ONLY a JSON array, no prose" — is the contract, which is why the
+/// prompt is free to be a question about the user's calendar and nothing else.
 ///
-/// Structured output is an object at the root, so the array of events is asked
-/// for as the single `events` field of one.
+/// Structured output is an object at the root, so the events array is asked for as
+/// the single `events` field of one.
 ///
-/// Times are `date-time` strings and never epoch numbers, for the reason
-/// [`tt_config::DEFAULT_CALENDAR_PROMPT_GOOGLE`] documents: a 13-digit epoch is
-/// arithmetic a model cannot check, while an offset-bearing timestamp is
-/// something the calendar reports verbatim. Optional fields are deliberately
-/// *omitted* rather than sent as null — [`EventInput`]'s `attendees` is a
-/// `Vec` with a serde default, which covers a missing key but not an explicit
-/// `null`.
+/// Times are `date-time` strings, never epoch numbers: a 13-digit epoch is
+/// arithmetic a model cannot check, while an offset-bearing timestamp is something
+/// the calendar reports verbatim. Optional fields are *omitted* rather than sent as
+/// null — a serde default covers a missing key but not an explicit `null`.
 const CALENDAR_SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
@@ -216,18 +205,15 @@ fn collect_calendar_source(
 /// Apply one source's parsed calendar result to the store, guarding against a
 /// suspicious empty sweep.
 ///
-/// A source normally replaces its whole `(source, today)` lane, but a
-/// `claude -p` run can return a syntactically-valid empty `[]` when the model
-/// hedges or the calendar MCP is momentarily down. Replacing on that would wipe
-/// today's events and blank the Cockpit next-meeting countdown until the next
-/// tick. So when the result is empty *and* **this source** still holds events
-/// later today, treat the run as suspect: keep the existing rows and report an
-/// error. A genuinely empty day (no future rows for this source either) still
-/// clears normally and succeeds.
+/// A source normally replaces its whole `(source, today)` lane, but a `claude -p`
+/// run can return a valid empty `[]` when the model hedges or the calendar MCP is
+/// down, which would wipe today's events and blank the Cockpit countdown. So when
+/// the result is empty *and* **this source** still holds events later today, keep
+/// the existing rows and report an error; a genuinely empty day still clears.
 ///
-/// The guard is scoped to `source` on both sides: one calendar returning empty
-/// neither consults nor protects another calendar's rows, so a flaky work
-/// calendar can't be masked by a healthy personal one (or vice versa).
+/// The guard is scoped to `source` on both sides, so one calendar returning empty
+/// neither consults nor protects another's rows — a flaky work calendar can't be
+/// masked by a healthy personal one.
 fn store_calendar_events(
     store: &Store,
     source: &str,
@@ -295,23 +281,19 @@ pub fn collect_issues(
     summary
 }
 
-/// The Board↔GitHub read half for tasks (#339), run after every issues/PRs
-/// collect pass:
+/// The Board↔GitHub read half for tasks (#339), run after every issues/PRs pass:
 ///
-/// 1. copy snapshot state onto every issue/PR link row whose ref the sweep
-///    just refreshed;
+/// 1. copy snapshot state onto every link row whose ref the sweep just refreshed;
 /// 2. targeted `gh <issue|pr> view` for still-`open` links *missing* from the
-///    snapshot — absence is ambiguous (closed? merged? merely reassigned away
-///    or aged out of the merged list?), so state is only ever learned from an
-///    actual fetch, never inferred. A failed fetch keeps the last state;
+///    snapshot — absence is ambiguous (closed? merged? reassigned? aged out?), so
+///    state is only learned from an actual fetch, never inferred;
 /// 3. auto-attach collected PRs whose head branch matches a task's worktree;
 /// 4. roll task statuses up ([`rollup_task_statuses`]);
 /// 5. archive finished tasks older than [`tt_store::ARCHIVE_AFTER_MS`].
 ///
-/// Never panics and never fails the collect pass — each stage logs and moves
-/// on (the never-panic contract). The write half (closing/reopening linked
-/// issues when a task crosses the done boundary on the Board) lives in the
-/// Tauri app's `store_set_task_status` command.
+/// Never panics and never fails the pass — each stage logs and moves on. The write
+/// half (closing linked issues when a task crosses done) lives in the app's
+/// `store_set_task_status`.
 fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
     if let Err(e) = store.refresh_link_states_from_cache(now_ms) {
         log::warn!("refresh_link_states_from_cache failed: {e}");
@@ -422,18 +404,14 @@ pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usiz
 /// via `gh` and update the stored PR set. Records `prs`. Failure containment
 /// matches [`collect_issues`]: failed repos keep their last-known-good rows.
 ///
-/// This is the "full" sweep — used for on-demand refreshes (a manual
-/// `tt collect prs`, `tt collect all`, and the post-mutation nudge) where paying
-/// for all three `gh` calls once is worth it for full freshness. The periodic
-/// scheduler tick instead splits this into [`collect_prs_open`] (fast cadence)
-/// and [`collect_prs_merged`] (slow cadence) so it isn't re-fetching the
-/// rarely-needed merged list on every fast tick.
+/// The "full" sweep — for on-demand refreshes (`tt collect prs`, the post-mutation
+/// nudge) where paying for all three `gh` calls is worth full freshness. The
+/// periodic tick splits it into [`collect_prs_open`] (fast cadence) and
+/// [`collect_prs_merged`] (slow) instead.
 ///
-/// Takes no part in the cross-window sharing the cadence collectors use, in
-/// either direction. Every caller of this full sweep is a "refresh now" — a
-/// `tt collect` run or the app's refresh button — so it would never accept
-/// another window's answers; and no other collector asks this question, so
-/// there is nobody to leave its own answers for.
+/// Takes no part in the cross-window sharing the cadence collectors use, either
+/// way: every caller here is a "refresh now" that would never accept another
+/// window's answers, and no other collector asks this question.
 pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
     let repos = dedupe_repo_dirs(repo_dirs);
     let outcome = sweep_repos(&dirs_of(&repos), prs::collect_repo_prs);
@@ -566,25 +544,18 @@ fn dirs_of(repos: &[TrackedRepo]) -> Vec<PathBuf> {
     repos.iter().map(|r| r.dir.clone()).collect()
 }
 
-/// Run `collect_repo` over every repo — except the ones another window asked
-/// GitHub about less than `reuse_ms` ago, whose answers this one reuses. See
-/// [`sweep_cache`] for why windows share at all, and why the unit is one repo
-/// rather than one sweep.
+/// Run `collect_repo` over every repo — except the ones another window asked GitHub
+/// about less than `reuse_ms` ago, whose answers this one reuses. See
+/// [`sweep_cache`] for why windows share, and why the unit is one repo.
 ///
-/// `kind` names the question, so two collectors asking different things don't
-/// read each other's answers.
+/// `kind` names the question, so two collectors asking different things don't read
+/// each other's answers. Reuse is per repo, so a window with three fresh repos and
+/// one stale makes exactly one call. Every repo this window did fetch is published;
+/// one that failed simply isn't — no file and never asked are the same to a reader.
 ///
-/// Reuse is per repo, so a window with three fresh repos and one stale one makes
-/// exactly one call. Every repo this window did fetch is published for the
-/// others; a repo that failed simply isn't, which needs no rule of its own —
-/// having no file and never having been asked about are the same thing to a
-/// reader.
-///
-/// Logged as `gh.sweep` with how many repos went each way. Every `gh` call
-/// already shows up in telemetry as a `process.spawn`, so the drop in calls is
-/// visible on its own — but an absence of calls looks the same whether a window
-/// reused someone's answers, sat minimized, or had the collector switched off.
-/// This says which.
+/// Logged as `gh.sweep` with how many went each way: every `gh` call already shows
+/// as a `process.spawn`, but an *absence* of calls looks the same whether a window
+/// reused answers, sat minimized, or had the collector off. This says which.
 fn sweep_repos_shared<T>(
     repos: &[TrackedRepo],
     kind: &str,

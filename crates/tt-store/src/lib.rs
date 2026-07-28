@@ -1,19 +1,15 @@
 //! SQLite-backed store for the towles-tool "personal dashboard" data: calendar
 //! events, kanban todos, issues, PR status, and collector run bookkeeping.
 //!
-//! This crate is deliberately Tauri-free (the shared-crate rule): both the CLI and
-//! the Tauri app depend on it. Clocks are injected as `now_ms` parameters (epoch
-//! milliseconds) so logic stays deterministic under test.
+//! Tauri-free, since both the CLI and the app depend on it. Clocks are injected as
+//! `now_ms` so logic stays deterministic under test, and the public output structs
+//! serialize `camelCase` to match the frontend contract.
 //!
 //! **Calendar events are the one exception to epoch-ms storage.** Their
-//! `starts_at`/`ends_at` are RFC 3339 strings that keep the offset the calendar
-//! reported (`2026-07-20T15:00:00+01:00`), because an epoch integer throws that
-//! away — it can say *when* a meeting is but never that it was booked as 3pm
-//! London. Everything else here (`updated_at`, run timestamps, task times) is
-//! still epoch ms; see [`Store::replace_events_for_source`] for how the two meet.
-//!
-//! The public output structs serialize with `camelCase` keys to match the TypeScript
-//! contract consumed by the frontend / Tauri commands.
+//! `starts_at`/`ends_at` are RFC 3339 strings keeping the offset the calendar reported
+//! (`2026-07-20T15:00:00+01:00`), because an epoch integer says *when* a meeting is
+//! but never that it was booked as 3pm London. Everything else is still epoch ms; see
+//! [`Store::replace_events_for_source`] for how the two meet.
 
 use rusqlite::Connection;
 use thiserror::Error;

@@ -1,27 +1,17 @@
-//! Step 0 comparison: the benchmark scene rendering into a `wl_subsurface`.
-//!
-//! Same scene, same size, same present mode as `bench_standalone` — the only
-//! difference is that Bevy is drawing into a subsurface of a parent toplevel
-//! instead of into a toplevel of its own. That difference is the entire
-//! question the Step 0 gate asks.
+//! Step 0 comparison: the benchmark scene rendering into a `wl_subsurface`. Same
+//! scene, size and present mode as `bench_standalone` — the only difference is that
+//! Bevy draws into a subsurface of a parent toplevel instead of its own, which is the
+//! entire question the gate asks: does output the compositor must blend into a
+//! parent, rather than potentially scan out directly, cost frames?
 //!
 //! ```sh
 //! cargo run -p tt-jarvis --features linux-harness --example bench_subsurface -- --width 800 --height 600 --no-vsync
 //! ```
 //!
-//! # Scope
-//!
-//! This isolates the *compositing* cost of a subsurface: does putting Bevy's
-//! output in a child surface, which the compositor must blend into a parent
-//! rather than potentially scan out directly, cost frames?
-//!
-//! The parent is a bare `xdg_toplevel` this file creates — no GTK, no WebKit —
-//! so a regression here can only be the subsurface, with nothing else in the
-//! process to blame. The parent's *commit cadence* is a separate question, and
-//! `bench_gtk_cadence` answers it against a real GTK window.
-//!
-//! Result on an RTX 3060: within noise of the standalone baseline
-//! (median −1.1%, −1.7% at two sizes).
+//! The parent is a bare `xdg_toplevel` this file creates — no GTK, no WebKit — so a
+//! regression can only be the subsurface. Commit *cadence* is a separate question,
+//! answered by `bench_gtk_cadence`. Result on an RTX 3060: within noise of the
+//! standalone baseline (median −1.1%, −1.7% at two sizes).
 
 // Shares the baseline's argument parsing verbatim so the two hosts can never
 // drift on what `--frames`/`--grid` mean. Pulling the file in as a module also

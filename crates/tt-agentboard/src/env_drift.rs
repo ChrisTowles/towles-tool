@@ -1,20 +1,13 @@
 //! Detects when a live session's ports have drifted from what its folder's
-//! `.env` currently claims. A PTY never reads `.env` itself (see
-//! `crates-tauri/tt-app/src/terminal.rs::term_start_blocking`) — it only
-//! inherits the app's environment and is rooted at the checkout's directory —
-//! so a shell (or anything the user ran inside it, e.g. `npm run dev`) that
-//! bound to a port from `.env` at spawn time has no way to notice a later
-//! re-render silently reassigning that port to something else. That happens
-//! whenever `tt task env` runs again: a sibling task claiming the same pool,
-//! or a manual re-render, can rotate a port (see `tt_tasks::template::render`'s
-//! reuse-vs-rotate logic) out from under a pane that's already running.
+//! `.env` currently claims. A PTY never reads `.env` itself — it inherits the
+//! app's environment at spawn — so anything the user ran inside it (`npm run
+//! dev`) cannot notice a later `tt task env` rotating that port out from under
+//! it (see `tt_tasks::template::render`'s reuse-vs-rotate logic).
 //!
-//! Scoped to ports deliberately: they're the one `${tt:...}`-rendered value
-//! with a well-defined "current" signal readable straight off `.env` (see
-//! [`tt_tasks::envfile::port_claims_by_key`]) — a rotation is a genuine
-//! conflict-driven change. Diffing the *entire* `.env` would also flag
-//! unrelated edits (a secret filled in later, a hand-added key), which isn't
-//! drift, just enrichment.
+//! Scoped to ports deliberately: they're the one `${tt:...}`-rendered value with
+//! a "current" signal readable straight off `.env`, where a change is a genuine
+//! conflict-driven rotation. Diffing the whole `.env` would flag unrelated edits
+//! (a secret filled in later), which isn't drift, just enrichment.
 
 use std::collections::BTreeMap;
 use std::path::Path;

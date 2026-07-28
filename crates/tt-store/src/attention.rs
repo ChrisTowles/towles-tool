@@ -1,45 +1,17 @@
-//! Edge detection for day-model attention notifications.
+//! Edge detection for day-model attention notifications: four watchers turn successive
+//! store reads into *edges* — the moment something newly deserves attention — so the
+//! host notifies once per event, not every tick. Pure state diffing, Tauri-free, with
+//! the fire/suppress policy left to the host (`run_notify_check`, a 15s tick — which is
+//! why these are edge- rather than level-triggered).
 //!
-//! Three watchers turn successive store reads into *edges* — the moment
-//! something newly deserves your attention — so the host fires a desktop
-//! notification exactly once per event instead of on every tick. This mirrors
-//! `tt_agentboard::NeedsYouWatch`: pure state diffing, Tauri-free and
-//! unit-testable, with the "fire a notification / suppress while focused" policy
-//! left to the host.
-//!
-//! - [`MeetingStartWatch`] fires when the next meeting's countdown reaches zero
-//!   (its start time arrives). It only ever fires for a meeting it first saw
-//!   *before* it started, so a meeting already in progress at launch — or one
-//!   that arrives from the calendar collector already underway — never fires a
-//!   bogus "starting now". This is strictly the next-meeting countdown reaching
-//!   zero; it does not widen the calendar surface.
-//! - [`ReviewRequestedWatch`] fires when a PR newly enters the review-requested
-//!   set (`review_state == "review_requested"`). Edge-triggered, so a PR that
-//!   stays in the set never repeats; the first observation only primes the
-//!   baseline so PRs already awaiting your review at launch don't spam.
-//! - [`ChecksFailedWatch`] fires when one of *your* authored PRs has its CI flip
-//!   into the failing state (`checks == "failing"`). Edge-triggered per
-//!   `repo#number`, so a PR that stays red never repeats; recovery clears the
-//!   state so a later fix→break re-fires. The first observation primes the
-//!   baseline, so a PR already red at launch doesn't spam. Review-requested PRs
-//!   (someone else's, awaiting your review) are excluded — this is the
-//!   get-back-in-the-loop signal for work you own.
-//! - [`StaleCollectorWatch`] fires when a collector silently stops succeeding —
-//!   its last healthy run ages past a per-collector threshold, or it fails for
-//!   [`FAIL_STREAK`] consecutive runs (expired `gh` auth, a revoked Slack
-//!   token). Edge-triggered per collector and cleared on recovery, so a
-//!   long-broken collector alerts once, not every tick, and re-alerts if it
-//!   recovers and breaks again. Only collectors the host passes as
-//!   [`WatchedCollector`]s are considered, so disabled collectors never fire.
-//!
-//! All time is injected as `now_ms` (epoch ms); nothing here reads a clock.
-//!
-//! The host is `crates-tauri/tt-app/src/scheduler.rs`'s `run_notify_check`,
-//! which drives all four on a 15s tick and turns each edge into one desktop
-//! notification with its own `tt_config::NotifyKind` and focus-suppression
-//! rule. That cadence is why every watcher is edge- rather than
-//! level-triggered: a level check would re-notify four times a minute for as
-//! long as the condition held.
+//! - [`MeetingStartWatch`] — the countdown reaching zero, only for a meeting it saw
+//!   *before* it started, so one underway at launch never fires "starting now".
+//! - [`ReviewRequestedWatch`] — a PR newly entering the set; the first observation
+//!   only primes the baseline, so PRs already awaiting review don't spam.
+//! - [`ChecksFailedWatch`] — one of *your* PRs flipping to failing CI, per
+//!   `repo#number`; recovery clears it so a later fix→break re-fires.
+//! - [`StaleCollectorWatch`] — a collector silently stopping: its last healthy run
+//!   ageing past a threshold, or [`FAIL_STREAK`] failures running.
 
 use std::collections::{HashMap, HashSet};
 

@@ -1,32 +1,17 @@
-//! Token-accounting library backing the desktop app's Claude Sessions screen.
+//! Token-accounting library backing the desktop app's Claude Sessions screen. It
+//! parses session JSONL once per scan ([`ledger`]) and derives all the screen
+//! shows from that cached pass. [`breakdown`] is the only per-session re-parse, done
+//! when a row is opened. Tauri-free, and every filesystem-touching function takes
+//! explicit paths so tests never read the real `~/.claude`.
 //!
-//! Parses Claude Code session JSONL files
-//! (`~/.claude/projects/**/<sessionId>.jsonl`) once per scan ([`ledger`]) and
-//! derives everything the screen shows from that cached pass: stat totals,
-//! day/repo/model aggregates, session search, and ranked waste findings
-//! ([`insights`] — the answer-first replacement for the old treemap
-//! explorer). A single session's turn/tool drill-down ([`breakdown`]) is the
-//! only per-session re-parse, done on demand when a row is opened.
-//!
-//! This crate is deliberately Tauri-free. All filesystem-touching functions
-//! take explicit paths (e.g. `projects_dir: &Path`), so tests never read the
-//! real `~/.claude`. The JSONL schema is modelled tolerantly: a malformed line
-//! is skipped, not fatal.
-//!
-//! Module map:
-//! - [`types`] — shared output data types.
-//! - [`parser`] — day-cutoff computation.
-//! - [`tools`] — tool-call extraction from content blocks.
+//! - [`types`], [`parser`] (day cutoffs), [`tools`] (content-block extraction).
 //! - [`analyzer`] — per-session token analysis, model/project name helpers.
-//! - [`pricing`] — per-model token→dollar rates for cost estimation.
-//! - [`ledger`] — single-parse session scan + summary aggregates + search.
-//! - [`insights`] — ranked waste/habit findings over a scanned window.
-//! - [`breakdown`] — one session's turn/tool drill-down.
-//! - [`cadence`] — human-prompt cadence (time-of-day / per-day counts), not
-//!   token/cost accounting.
-//! - [`usage_limits`] — the CLI's own cached 5h/weekly rate-limit percentages
-//!   from `~/.claude.json`, a different data source from the rest of this
-//!   crate (account-level cache, not session transcripts).
+//! - [`pricing`] — per-model token→dollar rates.
+//! - [`ledger`] — single-parse scan + summary aggregates + search.
+//! - [`insights`] — ranked waste/habit findings; [`cadence`] — human-prompt
+//!   cadence, not token/cost accounting.
+//! - [`usage_limits`] — the CLI's own cached rate-limit percentages from
+//!   `~/.claude.json`: an account-level cache, not session transcripts.
 
 use thiserror::Error;
 

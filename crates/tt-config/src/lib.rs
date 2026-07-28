@@ -1,27 +1,17 @@
-//! Configuration model for the towles-tool CLI, plus the resolver for every
-//! mutable state path the CLI and app touch.
-//!
-//! This mirrors the zod settings schema used by the TypeScript CLI and reads/writes
-//! the *same* file (`~/.config/towles-tool/towles-tool.settings.json`). Because the
-//! file is shared, the model deliberately tolerates unknown fields and fills missing
-//! ones from defaults via `#[serde(default)]` — never `deny_unknown_fields`.
-//!
-//! Two invariants keep the shared file safe and are enforced by tests: every
-//! property name is `camelCase` (matching what the TypeScript CLI
-//! reads/writes; guarded by a test-only `schemars` schema derived from these
-//! structs), and writes to the shared file go through [`save_merge`] so
-//! TS-owned keys survive.
+//! Configuration model for the towles-tool CLI, plus the resolver for every mutable
+//! state path the CLI and app touch. It mirrors the zod settings schema used by the
+//! TypeScript CLI and reads/writes the *same* file
+//! (`~/.config/towles-tool/towles-tool.settings.json`), so the model tolerates
+//! unknown fields and defaults missing ones — never `deny_unknown_fields`. Two
+//! test-enforced invariants keep that file safe: every property name is `camelCase`,
+//! and writes go through [`save_merge`] so TS-owned keys survive.
 //!
 //! ## Task-scoped state
 //!
-//! Chris runs many worktree clones of this repo concurrently
-//! (`…/towles-tool-task-N`). To stop concurrent dev instances from clobbering
-//! one shared settings file / tt.db / agentboard dir, this module derives a
-//! *scope* from the running instance and, when scoped, nests all mutable state
-//! under `…/towles-tool/tasks/<scope>/…`. See [`state_scope`] for the rule.
-//! When unscoped (the installed daily driver) the paths are exactly the historic
-//! defaults, so the shared settings file the TypeScript CLI also reads is
-//! untouched.
+//! Many worktree checkouts run concurrently, so this module derives a *scope* from
+//! the running instance and, when scoped, nests all mutable state under
+//! `…/towles-tool/tasks/<scope>/…` (see [`state_scope`]). Unscoped — the installed
+//! daily driver — the paths are the historic defaults.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -32,12 +22,10 @@ pub const TOOL_NAME: &str = "towles-tool";
 
 /// Wall-clock epoch milliseconds — **the** clock read for this workspace.
 ///
-/// Logic crates take instants as injected `now_ms` parameters so they stay
-/// deterministic under test (see `tt-store`, `tt-mcp`, `tt-collect`); this is
-/// the boundary those callers read the real clock at. Keeping it in one place
-/// means `now_ms` greps to exactly the set of sites that touch wall time, and
-/// the `unwrap_or(0)` fallback on a pre-epoch clock is decided once rather
-/// than restated at every boundary.
+/// Logic crates take instants as injected `now_ms` parameters so they stay deterministic
+/// under test; this is the boundary those callers read the real clock at. One place means
+/// `now_ms` greps to exactly the sites touching wall time, and the `unwrap_or(0)`
+/// pre-epoch fallback is decided once.
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -103,13 +91,11 @@ impl Default for JournalSettings {
 /// AgentBoard UI preferences the *Rust* side reads or writes. Every field is
 /// optional.
 ///
-/// This is deliberately **not** a model of the whole `agentboard` block: the
-/// settings file is co-owned with the TypeScript CLI and [`save_merge_to`]
-/// deep-merges over whatever is on disk, so keys absent from this struct
-/// survive a Rust write untouched. Modeling a key nothing here reads buys
-/// nothing and makes the struct read as if the feature exists — which is how
-/// six tmux-era fields (`mux`, `port`, sidebar geometry, `keybinding`,
-/// `detailPanelHeights`) outlived the agentboard they configured.
+/// Deliberately **not** a model of the whole `agentboard` block: the file is co-owned
+/// with the TypeScript CLI and [`save_merge_to`] deep-merges over what is on disk, so
+/// absent keys survive a Rust write. Modeling a key nothing here reads makes the struct
+/// read as if the feature exists — which is how six tmux-era fields outlived the
+/// agentboard they configured.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -190,27 +176,18 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_inactive_repos: Option<bool>,
 
-    /// Show git worktrees the Agentboard discovered but no board task is
-    /// bound to — Claude Code's own agent worktrees, hand-added ones — as rail
-    /// folders. `None` = the built-in default (off: only the main checkout and
-    /// worktrees the user asked for).
-    /// Unlike `hide_inactive_repos` this one *is* interpreted in Rust — the
-    /// agentboard engine reads it when deciding which checkouts to discover.
-    /// Only written once the user toggles it, so the shared settings file
-    /// stays clean for the TS CLI.
+    /// Show git worktrees the Agentboard discovered but no board task is bound to — as
+    /// rail folders. `None` = off, only the main checkout and worktrees the user asked
+    /// for. Unlike `hide_inactive_repos` this one *is* interpreted in Rust, by the
+    /// engine's discovery, and is only written once the user toggles it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
-    /// Enable the native Bevy surface (`tt-jarvis`) in the Agentboard: the
-    /// strip at the bottom of the rail, and the per-checkout `jarvis` pane
-    /// tiled beside that folder's terminals.
-    /// `None` = the built-in default (off): it's a proof-of-concept, and an
-    /// attached pane holds a Wayland subsurface plus a vsync-paced render
-    /// thread for the app's whole life, so it stays opt-in. Rust never
-    /// interprets this value — the frontend mounts or unmounts `NativePane`,
-    /// which is what actually starts and stops that thread. Only written once
-    /// the user toggles it, so the shared settings file stays clean for the TS
-    /// CLI.
+    /// Enable the native Bevy surface (`tt-jarvis`): the strip at the bottom of the rail
+    /// and the per-checkout `jarvis` pane. `None` = off — it is a proof-of-concept, and an
+    /// attached pane holds a Wayland subsurface plus a vsync-paced render thread for the
+    /// app's whole life. Rust never interprets this; the frontend mounting or unmounting
+    /// `NativePane` is what starts and stops that thread.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_pane: Option<bool>,
 }
@@ -314,22 +291,12 @@ where
 /// rewrites the goal you typed before the task starts (Direct / Plan /
 /// Brainstorm by default).
 ///
-/// Clicking one runs `claude -p` through [`tt_tasks::suggest`] with this
-/// improver's [`prompt`](Self::prompt) as the *instruction*, and fills the
-/// form's goal + branch fields with the rewritten result. The fields stay
-/// editable and Undo restores them, so the rewrite is always reviewable — and
-/// because the improved text lands **in the field**, what you see is exactly
-/// what the session is launched with. Nothing is wrapped at launch time, and
-/// the `claude` CLI flags (model/effort/permission-mode) are never touched.
-///
-/// The prompt is therefore an instruction *about* the goal ("turn this into a
-/// request for a plan"), not a template containing it — the task text is passed
-/// separately so the model can tell what to rewrite from how to rewrite it.
-///
-/// User-editable on purpose, and managed with the same list editor the calendar
-/// sources use — the built-ins are just a starting point, so a machine can add
-/// its own improvers (`review`, `spike`) or rewrite the wording without a
-/// rebuild.
+/// Clicking one runs `claude -p` through [`tt_tasks::suggest`] with this improver's
+/// [`prompt`](Self::prompt) as the *instruction*, filling the form's goal + branch fields
+/// with the result. Because the improved text lands **in the field**, what you see is
+/// exactly what launches — nothing is wrapped at launch time. The prompt is therefore an
+/// instruction *about* the goal, not a template containing it: the task text is passed
+/// separately so the model can tell what to rewrite from how.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -450,19 +417,10 @@ impl Default for CalendarCollector {
 
 /// One calendar the collector pulls, and the prompt it uses to do so.
 ///
-/// The prompt is user-editable on purpose. The built-in defaults ask for a
-/// Google/Outlook MCP, but those MCP servers aren't necessarily configured on a
-/// given machine — pointing a source at whatever actually works there (a CLI
-/// like `gws calendar events list`, a different MCP, a script) is the intended
-/// escape hatch, and the reason the prompt lives in settings rather than in a
-/// compiled-in constant.
-///
-/// The *shape* of the answer is not the prompt's job: `tt_collect` asks
-/// `claude -p` with `--json-schema`, so the CLI routes the model through a
-/// structured-output tool and validates the events before they reach
-/// `tt_store::EventInput`. A prompt is therefore free to be a question about a
-/// calendar — which is also why a user can point a source at whatever MCP works
-/// on their machine without having to restate the element shape correctly.
+/// The prompt is user-editable on purpose: the built-in defaults ask for a Google/Outlook
+/// MCP, which isn't necessarily configured, so pointing a source at whatever works there
+/// is the intended escape hatch. The *shape* of the answer is not the prompt's job —
+/// `tt_collect` asks with `--json-schema`, so the CLI validates events first.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -482,14 +440,10 @@ impl CalendarSource {
     /// The built-in sources: personal Google (on) and work Outlook (off), each
     /// carrying the prompt that used to be a compiled-in constant.
     ///
-    /// **These are defaults, not a migration.** The retired `provider` key is
-    /// an unknown field now, so a settings file that still carries
-    /// `"provider": "outlook"` and no `sources` gets this list — Google on,
-    /// Outlook off — and starts pulling the *other* calendar. That is the
-    /// hard-cutover cost, and it is a one-line fix in Settings → Collectors →
-    /// Calendar (or in the file), but it is silent: the collector succeeds
-    /// against a calendar the user didn't ask for. A machine configured for
-    /// Google is unaffected.
+    /// **These are defaults, not a migration.** The retired `provider` key is an unknown
+    /// field now, so a file carrying `"provider": "outlook"` and no `sources` gets this
+    /// list — Google on, Outlook off — and starts pulling the *other* calendar. A silent
+    /// hard-cutover cost, fixed in one line in Settings → Collectors → Calendar.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -510,18 +464,13 @@ impl CalendarSource {
 
 /// Default prompt for the personal Google calendar.
 ///
-/// It asks *which events*, and nothing about JSON: the schema
-/// (`tt_collect`'s `CALENDAR_SCHEMA`) is the contract for the shape, so the
-/// prompt only has to carry what a schema can't — which calendar, which day,
-/// and which events to leave out. Keep it in sync with
-/// [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`] when editing.
+/// It asks *which events* and nothing about JSON: the schema is the contract for the
+/// shape, so the prompt carries only what a schema can't — which calendar, which day,
+/// which events to leave out. Keep it in sync with [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`].
 ///
-/// **Times stay as the calendar reported them, never converted or computed.**
-/// That is a correctness choice before it is a readability one: a 13-digit
-/// epoch value is arithmetic a model cannot check, and a wrong one is
-/// indistinguishable from a right one until the countdown is hours off. The
-/// schema types those fields as RFC 3339 date-times; this sentence is what
-/// keeps the model from helpfully normalizing them to UTC first.
+/// **Times stay as the calendar reported them, never converted or computed.** A
+/// correctness choice first: a 13-digit epoch is arithmetic a model cannot check, and a
+/// wrong one is indistinguishable from a right one until the countdown is hours off.
 pub const DEFAULT_CALENDAR_PROMPT_GOOGLE: &str = "\
 Using the Google Calendar MCP, list the events on my primary calendar for today \
 only, in my local timezone. Report each time exactly as the calendar gives it, \
@@ -641,34 +590,23 @@ impl Default for IssueCollector {
     }
 }
 
-/// `tt-mcp`'s HTTP transport — Rust-only. (Beware: the legacy TS CLI does not
-/// merely ignore this block — its `loadSettings` strips keys its zod schema
-/// doesn't model and rewrites the file, so any legacy-CLI run reverts this to
-/// its default port.)
+/// `tt-mcp`'s HTTP transport — Rust-only. (Beware: the legacy TS CLI strips keys its zod
+/// schema doesn't model and rewrites the file, so a legacy run reverts this to default.)
 ///
-/// The MCP server is served over loopback HTTP by the desktop app, not by a
-/// per-session stdio subprocess. There is **no bearer token**: a token only
-/// ever defended against browser-originated requests (any process running as
-/// this user can read the token straight out of this file, so it bought
-/// nothing against local malware), and it is replaced by the two mitigations
-/// the MCP spec recommends for local HTTP servers — rejecting any request
-/// carrying an `Origin` header, and requiring `Content-Type: application/json`
-/// so a page cannot dodge a CORS preflight. Those live in
-/// `crates-tauri/tt-app`; see `crates/tt-mcp/src/lib.rs`'s module doc-comment
-/// for the trust boundary they enforce.
+/// Served over loopback HTTP by the desktop app, not a per-session stdio subprocess.
+/// There is **no bearer token**: one only ever defended against browser-originated
+/// requests, and is replaced by refusing any request carrying an `Origin` and requiring
+/// `Content-Type: application/json`. See `crates/tt-mcp/src/lib.rs`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct McpSettings {
     /// Loopback TCP port the app serves MCP on.
     ///
-    /// A **fixed default** rather than a `${tt:port}` pool claim, and that is
-    /// deliberate: the repo's no-hardcoded-ports rule exists because parallel
-    /// worktrees collide over shared resources, but this server is a
-    /// machine-wide singleton acquired bind-or-skip — exactly one process ever
-    /// holds it, so there is nothing to collide with. A fixed port is also what
-    /// lets the `towles-tool-app` plugin ship a static, checked-in `.mcp.json`.
-    /// Override here only if something else on the machine wants this port.
+    /// Only the *fallback*, for an app running outside any checkout: an instance in a
+    /// checkout serves the `${tt:port 8787-8986}` claim from its rendered `.env` instead
+    /// (see `mcp_http::resolve_port`). The plugin's `.mcp.json` expands
+    /// `${TT_MCP_PORT:-8787}`, which is why the pool starts at this value.
     pub port: u16,
 }
 
@@ -841,10 +779,8 @@ fn detect_scope() -> Scope {
 ///    repo and use its root directory name (e.g. `towles-tool-primary`), repo-
 ///    qualified for `tasks/<name>` checkouts (e.g. `towles-tool-task-migrate`).
 ///
-/// A checkout is recognised by a `crates/tt-config` directory at its root — a
-/// marker unique to this workspace — so an installed `tt` run from an arbitrary
-/// project directory stays unscoped and keeps sharing the daily-driver config.
-/// The dir-name rule mirrors `scripts/task-port.mjs` and the app's `task_label`.
+/// A checkout is recognised by a `crates/tt-config` directory at its root, so an installed
+/// `tt` run from an arbitrary project stays unscoped and shares the daily-driver config.
 pub fn state_scope() -> Option<String> {
     match detect_scope() {
         Scope::None => None,
@@ -855,12 +791,10 @@ pub fn state_scope() -> Option<String> {
 /// The checkout of *this* repo that `dir` sits in: its nearest ancestor holding
 /// a `crates/tt-config` directory, or `None` when `dir` is outside one.
 ///
-/// **The one definition of "a checkout of this repo"** — [`task_scope_from_dir`]
-/// and [`main_checkout_scope_from_dir`] name that directory, this one hands it
-/// back so a caller can read a file out of it (the app resolving its own
-/// rendered `.env` for its port claim). A packaged app launched from the desktop
-/// is outside any checkout and gets `None`, which is the signal to fall back to
-/// settings rather than a bug.
+/// **The one definition of "a checkout of this repo"** — the scope fns name that directory,
+/// this one hands it back so a caller can read a file out of it (the app resolving its own
+/// `.env` for its port claim). A packaged app is outside any checkout and gets `None`,
+/// which is the signal to fall back to settings, not a bug.
 pub fn checkout_root_from_dir(dir: &Path) -> Option<PathBuf> {
     dir.ancestors().find(|a| a.join("crates").join("tt-config").is_dir()).map(Path::to_path_buf)
 }
@@ -881,11 +815,9 @@ fn main_checkout_of(root: &Path) -> Option<&Path> {
 /// from [`state_scope`] so it can be unit-tested against temp dirs without
 /// touching the real cwd/env.
 ///
-/// Branch-named tasks nest inside their main checkout at
-/// `<repo>/.claude/worktrees/<name>` (see the tt-tasks crate), so a bare dir
-/// name like `task-migrate` is not unique across repos — those scopes are
-/// qualified with the main checkout's dir name (`<repo>-<name>`). The main
-/// checkout itself scopes by its own dir name.
+/// Branch-named tasks nest at `<repo>/.claude/worktrees/<name>`, so a bare dir name is not
+/// unique across repos — those scopes are qualified as `<repo>-<name>`, while the main
+/// checkout scopes by its own dir name.
 pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
     let root = checkout_root_from_dir(dir)?;
     let name = root.file_name().and_then(|n| n.to_str())?;
@@ -987,15 +919,11 @@ pub fn store_db_path() -> Result<PathBuf> {
 
 /// The tt.db owned by a *named* scope, ignoring the ambient one.
 ///
-/// The ambient scope is derived from the process's cwd, which answers "whose
-/// database am I?" — but a removal path needs "whose database holds the row for
-/// the checkout I just deleted?", and those differ whenever the command runs
-/// from somewhere other than the checkout that owns the board. `tt task rm`
-/// run from inside a worktree would otherwise open that worktree's own empty
-/// tt.db, find no row, and silently leave the real one orphaned.
-///
-/// `None` means the unscoped store. A forced [`STATE_SCOPE_ENV`] still wins, so
-/// tests stay isolated — same rule as [`instance_state_dirs_for_scope`].
+/// The ambient scope answers "whose database am I?", but a removal path needs "whose
+/// database holds the row for the checkout I just deleted?" — different whenever the
+/// command runs from outside the checkout that owns the board. `tt task rm` from inside a
+/// worktree would otherwise open that worktree's empty tt.db and leave the real row
+/// orphaned. `None` means unscoped; a forced [`STATE_SCOPE_ENV`] still wins.
 pub fn store_db_path_for_scope(scope: Option<&str>) -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
     let base = match detect_scope() {
@@ -1008,20 +936,13 @@ pub fn store_db_path_for_scope(scope: Option<&str>) -> Result<PathBuf> {
     Ok(base.join("tt.db"))
 }
 
-/// Directory watched by the app's scheduler for an eager collector nudge: a
-/// `prs` or `issues` file touched inside it triggers an immediate collect of
-/// that target instead of waiting for the normal poll cadence. Scoped to the
-/// *main checkout* ([`detect_main_scope`]), not the ambient cwd like
-/// `data_dir()` — no app instance runs scoped to an individual worktree task,
-/// only the main checkout runs the daily-driver scheduler, and board tasks
-/// (what a PR/issue mutation needs to update) live in the main checkout's own
-/// store. Nudging the task's own auto-detected scope would touch a directory
-/// nobody watches: a `gh pr merge` run by a session inside
-/// `<repo>/.claude/worktrees/<name>` needs its nudge to land in `<repo>`'s
-/// scope, same as [`store_db_path_for_scope`] exists so `tt task rm` updates
-/// the right store rather than the worktree's own empty one. Kept as its own
-/// subdirectory rather than nested directly under `data_dir()` so a
-/// directory-watch on it isn't spammed by tt.db's own WAL/SHM churn.
+/// Directory watched by the app's scheduler for an eager collector nudge: a `prs` or
+/// `issues` file touched inside it collects that target immediately rather than waiting
+/// for the poll. Scoped to the *main checkout* ([`detect_main_scope`]), not the ambient
+/// cwd — only the main checkout runs the scheduler, and board tasks live in its store, so
+/// nudging a task's own scope would touch a directory nobody watches. Its own
+/// subdirectory rather than under `data_dir()`, so the watch isn't spammed by tt.db's
+/// WAL/SHM churn.
 pub fn nudge_dir_path() -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
     Ok(nest(base, &detect_main_scope(), true).join("nudge"))
@@ -1036,33 +957,24 @@ pub fn telemetry_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("telemetry"))
 }
 
-/// Staging directory for images pasted into the app (today: the new-task
-/// form). The bytes have to become a file somewhere before a path to them can
-/// go into a Claude prompt, and that somewhere is deliberately *not* the
-/// repo — Claude Code reads an absolute path outside its workspace without
-/// prompting, so there's nothing to gain by putting user content inside a
-/// checkout and a `.gitignore` to maintain if we do.
+/// Staging directory for images pasted into the app. The bytes must become a file before
+/// a path to them can go into a Claude prompt, and that somewhere is deliberately *not*
+/// the repo — Claude Code reads an absolute path outside its workspace without prompting,
+/// so putting user content in a checkout only costs a `.gitignore`.
 ///
-/// Deliberately the OS temp dir (`/tmp` on Linux), not `data_dir()`: a pasted
-/// screenshot is throwaway staging, not state worth keeping across a reboot,
-/// and `data_dir()`'s per-checkout `tasks/<scope>` nesting exists to isolate
-/// state a checkout *owns* (tt.db, sessions) — a paste doesn't need that,
-/// and every extra layer is a directory the caller's age-based prune has to
-/// walk. The OS already reclaims `/tmp` on its own schedule; that prune is a
-/// backstop, not the primary cleanup.
+/// The OS temp dir, not `data_dir()`: a pasted screenshot is throwaway staging, not state
+/// worth keeping across a reboot, and `data_dir()`'s `tasks/<scope>` nesting exists to
+/// isolate state a checkout *owns*. The OS reclaims `/tmp` anyway; the caller's prune is
+/// a backstop.
 pub fn pasted_images_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("pasted-images")
 }
 
-/// Directory for single-instance PID lock files (see `InstanceLock` in
-/// `tt-app`). Deliberately the OS temp dir, not `config_dir()`: a lock file
-/// only means anything while the process that created it is still running —
-/// it carries no durable state worth keeping across a reboot, and doesn't
-/// belong next to settings a user might back up or sync. Unscoped like
-/// `config_dir()` (not nested under `tasks/<scope>`) since some holders
-/// (e.g. `"slack-socket"`) are intentionally shared across every worktree
-/// task on the machine; per-checkout holders instead vary the lock *name*
-/// (e.g. `"app-<identifier>"`).
+/// Directory for single-instance PID lock files. Deliberately the OS temp dir, not
+/// `config_dir()`: a lock file means anything only while its creator runs, so it carries no
+/// durable state and doesn't belong beside settings a user might sync. Unscoped, since some
+/// holders (`"slack-socket"`) are shared across every worktree; per-checkout holders vary
+/// the lock *name* instead.
 pub fn locks_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("locks")
 }
@@ -1079,22 +991,15 @@ pub fn agentboard_shared_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("agentboard"))
 }
 
-/// Where the collectors leave their GitHub results for other checkouts to
-/// read.
+/// Where the collectors leave their GitHub results for other checkouts to read.
 ///
-/// Shared rather than per-checkout, like `repos.json` above: what GitHub says
-/// about a PR depends on the machine's token, not on which folder asked.
-/// `tt.db` is per-checkout, so every open worktree runs its own collectors and
-/// used to ask GitHub the same questions — four windows spent about 1,920
-/// points an hour out of a 5,000/hour limit. Now the first one to ask about a
-/// repo writes the answer here and the rest read it, so the machine pays for one
-/// round of questions per interval no matter how many windows are open. One file
-/// per collector per repo (`<kind>/<owner>/<repo>.json`) — `tt_collect`'s
-/// `sweep_cache` has the reasoning for that shape.
-///
-/// Not a single-instance lock like `slack-socket`. Each window reads its rows
-/// back out of its own `tt.db`, so picking one window to do the collecting
-/// would leave every other Cockpit and Board empty.
+/// Shared rather than per-checkout, like `repos.json`: what GitHub says about a PR depends
+/// on the machine's token, not which folder asked. `tt.db` *is* per-checkout, so every
+/// worktree ran its own collectors asking the same questions — four windows spent ~1,920
+/// points an hour out of 5,000. One file per collector per repo; `tt_collect`'s
+/// `sweep_cache` has the reasoning. Not a single-instance lock like `slack-socket`: each
+/// window reads its rows back out of its own `tt.db`, so electing one would leave the
+/// rest empty.
 pub fn gh_cache_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("gh-cache"))
 }
@@ -1111,14 +1016,11 @@ pub fn task_ports_dir() -> Result<PathBuf> {
 }
 
 /// The base directories under which per-checkout *instance* state nests as
-/// `tasks/<scope>/…` (see [`state_scope`]): the data base (tt.db) and the
-/// instance-config base (agentboard sessions/windows/collapse). Cleanup tools
-/// use this to reach state belonging to scopes *other than* the running
-/// process's — [`data_dir`]/[`agentboard_dir`] only ever resolve the current
-/// scope. Deliberately ignores an auto-detected scope (the machine's state is
-/// the target even when cleanup runs from a task checkout), but a *forced*
-/// [`STATE_SCOPE_ENV`] nests both bases like every other path, so tests and
-/// quarantined tasks never see or touch the real state tree.
+/// `tasks/<scope>/…`: the data base (tt.db) and the instance-config base. Cleanup tools use
+/// this to reach scopes *other than* the running process's, since
+/// [`data_dir`]/[`agentboard_dir`] only resolve the current one. Deliberately ignores an
+/// auto-detected scope, but a *forced* [`STATE_SCOPE_ENV`] nests both bases like every
+/// other path, so tests never touch the real state tree.
 pub struct InstanceStateBases {
     /// e.g. `~/.local/share/towles-tool` — holds `tt.db` and `tasks/<scope>/tt.db`.
     pub data: PathBuf,
@@ -1224,18 +1126,13 @@ fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
 
 /// Write `contents` to `path` and restrict it to the owner (0600 on unix).
 ///
-/// The settings file holds live credentials — the Slack user token
-/// (`xoxp-…`, scoped `im:history`/`im:read`/`chat:write`/`files:read`) and the
-/// app token (`xapp-…`) — so it must not inherit the umask. A plain
-/// `fs::write` under the common 002/022 umask leaves it group- and
-/// world-readable, which is how it shipped: any other account on the machine
-/// could read the tokens straight out of `~/.config/towles-tool/`.
+/// The settings file holds live credentials — the Slack user and app tokens — so it must
+/// not inherit the umask. A plain `fs::write` under the common 002/022 umask leaves it
+/// group- and world-readable, which is how it shipped.
 ///
-/// The chmod is applied after the write rather than via `OpenOptions::mode`
-/// because this path also rewrites an *existing* file, whose mode `open`
-/// wouldn't touch — tightening the permissions of a file already on disk is
-/// the case that matters for anyone upgrading. Same pattern as
-/// `tt_ide::lockfile::write` and `tt_tasks::pasted`.
+/// The chmod is applied after the write rather than via `OpenOptions::mode` because this
+/// path also rewrites an *existing* file, whose mode `open` wouldn't touch — the case that
+/// matters for anyone upgrading. Same pattern as `tt_ide::lockfile::write`.
 fn write_private(path: &Path, contents: &str) -> Result<()> {
     std::fs::write(path, contents)?;
     #[cfg(unix)]

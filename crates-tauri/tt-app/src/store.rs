@@ -406,22 +406,16 @@ pub fn store_set_task_status(
     Ok(())
 }
 
-/// Best-effort close/reopen the GitHub issues linked to a task whose status
-/// just crossed the `done` boundary (see [`tt_store::gh_close_reopen_targets`]),
-/// on a
-/// background thread — fire-and-forget so the caller's snapshot emit doesn't
-/// wait on the network round-trips. A failed gh call self-heals on the next
+/// Best-effort close/reopen the GitHub issues linked to a task whose status just crossed
+/// the `done` boundary, on a background thread — fire-and-forget, so the caller's snapshot
+/// emit doesn't wait on network round-trips. A failed gh call self-heals on the next
 /// collector poll via [`tt_collect::rollup_task_statuses`].
 ///
-/// The single call site for this decision: every command that can change a
-/// task's status (`store_set_task_status`, `store_set_task_position`) routes
-/// through here rather than each re-deriving/spawning its own sync, so the
-/// close/reopen behavior can't drift between them (#246 shipped only in
-/// `store_set_task_status`, so dragging a card — which goes through
-/// `store_set_task_position` — silently skipped the sync). Only the
-/// board-originated commands sync: the collectors' rollup writes through
-/// `tt_store` directly, so a GitHub-driven status change never echoes back
-/// out as a gh mutation.
+/// The single call site for this decision: every command that can change a task's status
+/// routes through here rather than re-deriving its own sync, so the behavior can't drift
+/// (#246 shipped only in `store_set_task_status`, so dragging a card silently skipped it).
+/// Only board-originated commands sync — the collectors' rollup writes through `tt_store`
+/// directly, so a GitHub-driven change never echoes back out as a gh mutation.
 fn spawn_gh_status_sync(old_status: &str, new_status: &str, issues: &[tt_store::TaskIssueLink]) {
     let targets = tt_store::gh_close_reopen_targets(old_status, new_status, issues);
     if targets.is_empty() {

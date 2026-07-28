@@ -1,25 +1,16 @@
-//! `claude -p`-backed branch-name/goal suggestion for the new-task dialog.
+//! `claude -p`-backed branch-name/goal suggestion for the new-task dialog. Manual and
+//! user-triggered only — the dialog fills editable fields the user can still edit or
+//! undo, so this never writes anything itself. Read-only by construction: the prompt
+//! tells `claude -p` not to read or write repo files, just answer from the goal text and
+//! its knowledge of the repo it is pointed at (cwd = that checkout, so it has real
+//! CLAUDE.md context). The one carve-out is attached screenshots, named by path and
+//! explicitly readable, since a pasted image is frequently the entire brief.
 //!
-//! Manual, user-triggered only (never runs on a timer or keystroke) — the
-//! dialog fills its editable fields with the result and the user can still
-//! edit or undo before creating the task, so this never writes anything
-//! itself. Read-only by construction: the prompt tells `claude -p` not to
-//! read or write repo files, just answer from the goal text and its own
-//! knowledge of the repo it's pointed at (cwd = the repo checkout the dialog
-//! is open for, so it has real CLAUDE.md/branch-convention context).
-//!
-//! The one carve-out is attached screenshots, which are named by path and
-//! explicitly readable — a pasted image is frequently the entire brief, and
-//! without it an image-only request yields a generic suggestion.
-//!
-//! The shape of the answer is the CLI's problem, not ours: `--json-schema`
-//! makes `claude` route the model through a structured-output tool and hand
-//! back a validated object in its `--output-format json` envelope, so there's
-//! no JSON-out-of-prose extraction here. The call and the envelope handling
-//! live in [`tt_exec::claude`], shared with the calendar collector — this file
-//! supplies only the schema, the prompt and what counts as a usable answer.
-//! Anything that still goes wrong lands on [`local_fallback`] instead of an
-//! error — a "Suggest" button that can only ever fill the fields in.
+//! The shape of the answer is the CLI's problem: `--json-schema` routes the model
+//! through a structured-output tool and returns a validated object, so there is no
+//! JSON-out-of-prose extraction here. The call lives in [`tt_exec::claude`], shared with
+//! the calendar collector; this file supplies the schema, the prompt and what counts as
+//! usable. Anything that still goes wrong lands on [`local_fallback`], never an error.
 
 use std::path::Path;
 use std::time::Duration;
@@ -85,22 +76,16 @@ pub type Result<T> = std::result::Result<T, SuggestError>;
 /// Ask `claude -p` (run with cwd = `cwd`) to propose a cleaned-up goal and a
 /// legal, kebab-case branch name for it.
 ///
-/// `images` are absolute paths to screenshots the user attached (already
-/// staged by [`crate::pasted`]). A screenshot is often the *whole* brief —
-/// "make it look like this" with no typed goal at all — so they're named in
-/// the prompt and reading them is explicitly allowed, unlike every other
-/// file.
+/// `images` are absolute paths to attached screenshots (staged by [`crate::pasted`]). A
+/// screenshot is often the *whole* brief, so they are named in the prompt and reading
+/// them is explicitly allowed, unlike every other file.
 ///
-/// `instruction` is the **prompt improver** the user clicked (its
-/// `PromptImprover::prompt` from settings): it tells the model *how* to rewrite
-/// the goal — restate it plainly, turn it into a plan ask, turn it into a
-/// brainstorm ask. Empty means [`DEFAULT_SUGGEST_INSTRUCTION`], the historic
-/// "tidy it into one sentence" behavior. Only the `goal` is shaped by it; the
-/// branch is always named for the underlying task.
+/// `instruction` is the **prompt improver** the user clicked: it tells the model *how*
+/// to rewrite the goal — restate it plainly, turn it into a plan ask. Empty means
+/// [`DEFAULT_SUGGEST_INSTRUCTION`]. Only the `goal` is shaped by it; the branch is always
+/// named for the underlying task.
 ///
 /// Never fails while the user gave us anything to slug (see [`Suggested`]).
-/// Only an image-only brief can still error, and even then the dialog's typed
-/// fields are left untouched.
 pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggested> {
     match ask_claude(cwd, goal, images, instruction) {
         Ok(suggestion) => Ok(Suggested { suggestion, fallback: None }),

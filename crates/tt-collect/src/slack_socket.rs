@@ -2,21 +2,16 @@
 //!
 //! Socket Mode replaces the 60s poll with an event stream. An app-level token
 //! (`xapp-…`) opens a connection via `apps.connections.open`, which returns a
-//! short-lived `wss://` URL; the app connects that WebSocket and receives
-//! *envelopes*:
+//! short-lived `wss://` URL; the app connects and receives *envelopes*:
 //!
 //! - `hello` — the connection is live (resets reconnect backoff).
-//! - `events_api` — carries an Events API payload (we care about `message.im`);
-//!   **must be acked** within a few seconds by echoing its `envelope_id`.
-//! - `disconnect` — Slack is closing this socket (it does so every few minutes
-//!   by design, or to shed load); reconnect with a *fresh*
-//!   `apps.connections.open`.
+//! - `events_api` — an Events API payload (we care about `message.im`); **must be
+//!   acked** within a few seconds by echoing its `envelope_id`.
+//! - `disconnect` — Slack is closing this socket (every few minutes, by design);
+//!   reconnect with a *fresh* `apps.connections.open`.
 //!
-//! Everything here is pure and unit-tested: envelope parsing, ack construction,
-//! the watched-message predicate, reconnect backoff, and the connection-URL
-//! extraction. The actual WebSocket I/O and collector refresh live in the app
-//! shell (`crates-tauri/tt-app/src/slack_socket.rs`), which drives these
-//! functions — keeping this crate Tauri-free.
+//! Everything here is pure and unit-tested; the WebSocket I/O lives in the app
+//! shell (`crates-tauri/tt-app/src/slack_socket.rs`), keeping this crate Tauri-free.
 
 use std::time::Duration;
 

@@ -14,23 +14,20 @@ use std::time::{Duration, Instant};
 /// collector cadence.
 const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// `gh list` page cap. `gh` defaults to 30 and silently truncates beyond it,
-/// so this has to be generous — but not free: GitHub prices a GraphQL
-/// connection on the page size *requested*, not the rows returned, so a repo
-/// with two open PRs is billed for whatever cap we ask for.
+/// `gh list` page cap. `gh` defaults to 30 and silently truncates beyond it, so
+/// this has to be generous — but not free: GitHub prices a GraphQL connection on
+/// the page size *requested*, not the rows returned.
 ///
-/// Measured against `gh pr list --json …statusCheckRollup…` (#322 follow-up):
-/// the cost steps at 60→80, and 200 sat on the wrong side of it.
+/// Measured against `gh pr list --json …statusCheckRollup…` (#322 follow-up): the
+/// cost steps at 60→80, and 200 sat on the wrong side of it.
 ///
 /// | `--limit`   | GraphQL points |
 /// |-------------|----------------|
 /// | 20 – 60     | 1              |
 /// | 80 – 200    | 2              |
 ///
-/// 60 is the top of the cheap band: half the cost of the old 200, still twice
-/// `gh`'s own default, and far above any realistic assigned-issues / open-PRs
-/// count. Raising it past 60 doubles the bill for every tracked repo on every
-/// tick, which is the whole sweep — so re-measure before moving it.
+/// 60 is the top of the cheap band. Raising it doubles the bill for every tracked
+/// repo on every tick — re-measure before moving it.
 pub(crate) const LIST_LIMIT: &str = "60";
 
 /// How long to pause every `gh` call once one reports a GitHub rate limit

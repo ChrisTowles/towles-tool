@@ -1,34 +1,17 @@
-//! Pure state-snapshot assembly for the Tauri bridge (Folder Rail). Builds the
-//! three-level **Repo → Folder → Session** snapshot the React client renders.
-//!
-//! Everything here is pure (no tmux, no tauri, no I/O): the host gathers the
-//! inputs (repos, git infos, tracker, metadata, persisted sessions, and the
-//! agent→session attribution closure) and wires its runtime around
-//! [`assemble_state`].
+//! Pure state-snapshot assembly for the Tauri bridge (Folder Rail): the
+//! three-level **Repo → Folder → Session** snapshot the React client renders. No
+//! tmux, no tauri, no I/O — the host gathers the inputs and wires its runtime
+//! around [`assemble_state`].
 //!
 //! - A [`FolderData`] is one checkout on disk (a `RepoEntry`), carrying its git
 //!   stats and its 1..N PTY [`SessionData`]s.
-//! - Folders group into one [`RepoData`] row by [`GitInfo::common_dir`] — the
-//!   shared `.git` common dir every linked `git worktree` of one repo (main +
-//!   tasks) reports identically. This holds regardless of whether each
-//!   checkout is separately tracked in `repos.json` or only discovered via
-//!   `git worktree list` (see `Engine::expand_with_worktrees`): "is this a
-//!   worktree of that other checkout" is a structural git fact, not a
-//!   function of how the user happened to add it to the rail. A folder whose
-//!   `common_dir` is empty (git info not yet computed, or not a repo) always
-//!   gets its own row. The row's non-worktree checkout (`is_worktree ==
-//!   false`) always leads its group's folder list, whatever order the
-//!   group's entries otherwise arrive in — and also owns the row's `key`
-//!   (and `name`/`origin_url` when nothing else has named it yet), so a
-//!   worktree that merely sorted alphabetically ahead of the primary
-//!   never leaves the row keyed to a folder a later poll can rename or
-//!   remove.
-//! - Each folder's agent events (from the tracker, keyed by folder name) are
-//!   distributed across its sessions by the `attribute` closure — which maps an
-//!   event to the PTY `TT_SESSION_ID` it ran in. An attributed event renders
-//!   only on that exact session (an id foreign to this folder's records is
-//!   dropped, never guessed); only events with no attribution at all fall back
-//!   to the folder's default (first) session.
+//! - Folders group into one [`RepoData`] row by [`GitInfo::common_dir`], which
+//!   every linked worktree reports identically — a structural git fact, not a
+//!   function of whether the checkout was tracked or discovered. Empty gets its
+//!   own row. The row's non-worktree checkout leads its folder list and owns the
+//!   `key`, so a worktree that merely sorted first never keys the row.
+//! - An attributed agent event renders only on that exact session (a foreign id
+//!   is dropped, never guessed); only an unattributed one falls back to default.
 
 use std::collections::HashMap;
 
@@ -61,22 +44,10 @@ pub struct StatePayload {
     pub ts: i64,
 }
 
-/// Assemble the [`StatePayload`] from the current inputs. Pure. Maps each repo
-/// entry to a [`FolderData`] (git stats + persisted sessions + attributed
-/// agents + `needs`), then groups [`RepoData`] rows by [`GitInfo::common_dir`]
-/// in one pass over `entries`:
-///
-/// - The first entry seen for a given non-empty `common_dir` starts that
-///   group's row; every later entry sharing it nests into that row's
-///   `folders` instead of getting one of its own.
-/// - An entry whose `common_dir` is empty (git info not yet computed for it,
-///   or it isn't a repo at all) always starts its own row — never joins a
-///   group, and never has later entries join it.
-/// - Within a group, the actual checkout (`is_worktree == false`) always
-///   leads the folder list — inserted at the front whenever it's seen, since
-///   `entries` is name-sorted and may put a worktree ahead of its
-///   primary checkout alphabetically. Everything else appends in arrival
-///   order.
+/// Assemble the [`StatePayload`] from the current inputs. Pure. Maps each repo entry to
+/// a [`FolderData`] (git stats, persisted sessions, attributed agents, `needs`), then
+/// groups [`RepoData`] rows by [`GitInfo::common_dir`] in one pass over `entries` — see
+/// the module docs for the grouping rule.
 ///
 /// `attribute` maps an agent event to the PTY session id it was detected in
 /// (via `TT_SESSION_ID`); an id that matches none of the folder's records drops

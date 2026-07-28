@@ -59,16 +59,12 @@ pub struct RenderSummary {
 /// where the user runs the app, so it claims ports like any task. Task dirs
 /// also get the `.tt-task` marker.
 ///
-/// `new_task_base` seeds the marker's `base=` field the *first* time a task
-/// is rendered (at creation, when `dir` has no marker yet) — it should be the
-/// actual ref the worktree was created from ([`create_task`]'s resolved
-/// `base`), not the checkout's current branch. A re-render of an *existing*
-/// task (`tt task env <name>`) ignores this and keeps the marker's already
-/// recorded base: it's fixed at creation and must never drift just because
-/// the checkout's branch or default has since changed.
+/// `new_task_base` seeds the marker's `base=` field the *first* time a task is rendered
+/// — the actual ref the worktree was created from, not the checkout's current branch. A
+/// re-render of an *existing* task keeps the marker's recorded base: it is fixed at
+/// creation and must never drift because the checkout's branch has since changed.
 ///
-/// `now_ms` (epoch ms) stamps the registry's `claimed_at_ms` — passed in at
-/// the CLI/app boundary, never read from the clock here.
+/// `now_ms` stamps the registry's `claimed_at_ms`, passed in at the CLI/app boundary.
 pub fn render_task_env(
     sr: &TaskRoot,
     dir: &Path,

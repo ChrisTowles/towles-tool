@@ -1,23 +1,17 @@
-//! Images pasted into the new-task form, staged as files a Claude prompt can
-//! point at.
+//! Images pasted into the new-task form, staged as files a Claude prompt can point at.
+//! The goal reaches Claude as a shell-quoted argv entry typed into the task's PTY — a
+//! string, with nowhere to put bytes — so a pasted image becomes a *file* and the goal
+//! grows a reference to its path; Claude's Read tool handles images, so the path is the
+//! attachment.
 //!
-//! The goal typed in that form reaches Claude as a shell-quoted argv entry
-//! (`claude '<goal>'`, typed into the task's PTY) — a string, with nowhere to
-//! put bytes. So a pasted image becomes a *file*, and the goal grows a
-//! reference to its path; Claude's Read tool handles images, so a path in the
-//! opening prompt is the attachment.
+//! **These files live outside the repo**, under a `tt_config`-resolved staging dir in
+//! the OS temp dir. Inside the new task was tried first, assuming Claude Code would
+//! prompt for an out-of-workspace read — it doesn't (verified: a `claude -p` run read an
+//! image under `/tmp` in default permission mode), so that bought nothing and cost a
+//! `.gitignore` to keep `git status` clean.
 //!
-//! **These files live outside the repo**, under a `tt_config`-resolved
-//! staging dir in the OS temp dir. Putting them *inside* the new task was
-//! tried first, on the assumption that Claude Code would prompt for an
-//! out-of-workspace read — it doesn't (verified: a `claude -p` run in one
-//! repo read an image under `/tmp` in default permission mode without
-//! prompting). So the in-repo version bought nothing and cost a `.gitignore`
-//! to keep the task's `git status` clean.
-//!
-//! Staging is keyed by repo+branch rather than accumulating unique names, so
-//! retrying a failed create overwrites its own directory instead of leaving a
-//! copy behind, and [`prune`] ages out anything older than [`MAX_AGE_MS`].
+//! Staging is keyed by repo+branch rather than unique names, so retrying a failed create
+//! overwrites its own directory, and [`prune`] ages out anything past [`MAX_AGE_MS`].
 
 use std::path::{Path, PathBuf};
 

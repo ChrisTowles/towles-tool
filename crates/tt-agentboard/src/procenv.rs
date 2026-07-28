@@ -1,23 +1,17 @@
 //! Read a live process's environment to link a detected agent back to the PTY
-//! session it runs in. Every agentboard PTY is spawned with `TT_SESSION_ID` set
-//! to its session id and `TT_APP_INSTANCE` set to the spawning app's pid (see
-//! the app's `terminal.rs`); a Claude process launched inside that shell
-//! inherits both, so reading them back from the agent's process environment
-//! tells us exactly which session the agent occupies — and which app instance
-//! owns the PTY it runs in.
+//! session it runs in. Every agentboard PTY carries `TT_SESSION_ID` and
+//! `TT_APP_INSTANCE` (the spawning app's pid); a Claude process launched inside
+//! that shell inherits both.
 //!
 //! The instance stamp exists because `sessions.json` is shared across app
-//! instances: two concurrently running apps materialize the same session
-//! records and stamp the same `TT_SESSION_ID` on their own PTYs. Without the
-//! instance check, an agent waiting in one app's PTY would be attributed to
-//! the same-id session in every other app and flag "needs you" on a pane
-//! that is visibly doing something else. [`InstanceScope`] picks the policy:
-//! each app window scopes to its own instance; the MCP server (no PTYs of its
-//! own) scopes to any.
+//! instances: two running apps materialize the same session records and stamp the
+//! same `TT_SESSION_ID` on their own PTYs. Without the instance check, an agent
+//! waiting in one app's PTY would flag "needs you" in every other app, on a pane
+//! visibly doing something else. [`InstanceScope`] picks the policy: an app
+//! window scopes to its own instance, the MCP server (no PTYs) to any.
 //!
-//! Linux reads `/proc/<pid>/environ` (readable for our own uid). Other platforms
-//! return `None` for now — a `ps eww` / libproc path is a documented follow-up;
-//! the platform-specific surface is confined to [`session_id_in_scope`].
+//! Linux reads `/proc/<pid>/environ`. Other platforms return `None` for now; the
+//! platform-specific surface is confined to [`session_id_in_scope`].
 
 use std::path::PathBuf;
 
@@ -209,19 +203,14 @@ pub fn in_scope(_pid: i32, _scope: &InstanceScope) -> bool {
 /// Pure and unit-tested (the platform-specific part is only the file read).
 ///
 /// Under [`InstanceScope::Instance`] a shell is ours unless it carries a
-/// *different* app's instance stamp. A **missing** stamp is admitted, not
-/// dropped: a concurrent app always stamps its own pid on its PTYs, so the only
-/// way to see a `TT_SESSION_ID` with no `TT_APP_INSTANCE` is a shell we spawned
-/// before instance-stamping existed (or one from a build that predates it).
-/// The old exact-match rule dropped those, so an app upgraded past the stamp
-/// showed no agent name/status on any pre-existing shell — the whole board went
-/// blank until every shell was respawned. Excluding only a present-and-foreign
-/// stamp keeps the shared-`sessions.json` collision guard (two live apps hosting
-/// the same session id) while staying tolerant of unstamped shells.
+/// *different* app's instance stamp. A **missing** stamp is admitted, not dropped:
+/// a concurrent app always stamps its own pid, so an unstamped `TT_SESSION_ID` is
+/// a shell we spawned before stamping existed — and dropping those blanked the
+/// whole board on upgrade until every shell was respawned. Excluding only a
+/// present-and-foreign stamp keeps the collision guard.
 ///
-/// Reached only through the Linux `session_id_in_scope` (and the tests); gated
-/// to match so a macOS build — which has no `/proc` caller — doesn't see it as
-/// dead code.
+/// Reached only through the Linux `session_id_in_scope` (and tests); gated to
+/// match so a macOS build doesn't see it as dead code.
 #[cfg(any(target_os = "linux", test))]
 fn scoped_session_id(bytes: &[u8], scope: &InstanceScope) -> Option<String> {
     let sid = read_var_from_environ(bytes, TT_SESSION_ENV).filter(|s| !s.is_empty())?;

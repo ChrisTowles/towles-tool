@@ -1,25 +1,17 @@
-//! Slack Socket Mode driver: the WebSocket loop that turns the 60s DM poll into
-//! real-time delivery when an app-level token (`xapp-…`) is configured.
+//! Slack Socket Mode driver: the WebSocket loop that turns the 60s DM poll into real-time
+//! delivery when an app-level token (`xapp-…`) is configured. All protocol decisions live
+//! in the Tauri-free `tt_collect::slack_socket` and are
+//! unit-tested there. This is the I/O shell: open a connection with
+//! `apps.connections.open`, connect the returned `wss://` URL, ack each envelope, and on
+//! a message in the watched DM re-run the `slack:dm` collector and re-emit the snapshot.
+//! The poll stays on as fallback; the socket just makes it instant. Absence of an app
+//! token is a clean no-op — the task parks on the reload signal.
 //!
-//! All protocol decisions — envelope parsing, ack construction, the
-//! watched-message predicate, reconnect backoff, connection-URL extraction —
-//! live in the Tauri-free `tt_collect::slack_socket` module and are unit-tested
-//! there. This module is just the I/O shell: open a connection with
-//! `apps.connections.open`, connect the returned `wss://` URL, ack each events
-//! envelope, and on a message in the watched DM re-run the `slack:dm` collector
-//! and re-emit the snapshot (the same refresh `slack_dm_send` does). The poll
-//! stays on as the fallback/backfill; the socket just makes it instant.
-//!
-//! Absence of an app token is a clean no-op: the task parks on the reload signal
-//! and costs nothing until Slack is (re)configured.
-//!
-//! Settings (and so the Slack token) are shared across every open worktree
-//! task, so unconditionally spawning this loop makes each open task's app
-//! process independently connect and poll on the same token — duplicate
-//! `wss://` connections and duplicate notifications for one Slack message
-//! (#227). The loop only proceeds past the [`instance_lock::InstanceLock`]
-//! gate in one process at a time; the rest park and retry periodically so a
-//! closed "primary" instance's task is picked up without a relaunch.
+//! Settings (and so the token) are shared across every open worktree, so spawning this
+//! unconditionally would have each task's process connect on the same token — duplicate
+//! `wss://` connections and duplicate notifications for one message (#227). Only one
+//! process proceeds past the [`instance_lock::InstanceLock`] gate; the rest park and
+//! retry, so a closed instance's task is picked up without a relaunch.
 
 use std::sync::Arc;
 use std::time::Duration;

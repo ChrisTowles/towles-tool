@@ -424,23 +424,18 @@ impl Store {
         Ok(())
     }
 
-    /// v9: calendar events gained a `source` column so a personal and a work
-    /// calendar can be merged into one timeline without clobbering each other
-    /// (the old write path was a `DELETE FROM events` full-table swap, so
-    /// whichever calendar pushed second wiped the first).
+    /// v9: calendar events gained a `source` column so a personal and a work calendar
+    /// merge into one timeline without clobbering each other (the old write path was a
+    /// full-table swap, so whichever pushed second wiped the first).
     ///
-    /// A rebuild — not `ALTER TABLE ADD COLUMN` — because the uniqueness rule
-    /// changes too: `external_id` was `UNIQUE` on its own, and two providers can
-    /// legitimately issue the same event id. SQLite cannot alter a constraint in
-    /// place.
+    /// A rebuild rather than `ALTER TABLE ADD COLUMN`, because the uniqueness rule
+    /// changes too — `external_id` was `UNIQUE` alone, and two providers can issue the
+    /// same id — which SQLite cannot alter in place.
     ///
     /// **Pre-v9 rows are dropped, not migrated.** There is no honest source to
-    /// attribute them to (the old schema didn't record one), and a wrong guess
-    /// is worse than no row: a row labelled with a source that never pushes
-    /// again is never replaced by anything, so it would linger in the countdown
-    /// forever. Events are a pure collector-owned cache, fully rebuilt on the
-    /// next pull, so the cost is at most one refresh interval of staleness.
-    /// Detected by column presence, so it's idempotent and a no-op on fresh dbs.
+    /// attribute them to, and a row labelled with a source that never pushes again is
+    /// never replaced, so it lingers in the countdown forever. Events are a
+    /// collector-owned cache, so the cost is one refresh interval of staleness.
     fn migrate_events_v9(&self) -> Result<()> {
         let mut has_source = false;
         {
@@ -477,22 +472,17 @@ impl Store {
     /// v10: event times became RFC 3339 text that keeps its offset, replacing
     /// the `start_ts`/`end_ts` epoch-ms integers.
     ///
-    /// An epoch integer answers "when" and nothing else. The calendar knows a
-    /// meeting was booked as 3pm London; storing `1784732400000` discards that,
-    /// and every read then renders it in whatever zone the machine happens to be
-    /// in — so the same row reads differently after a flight.
+    /// An epoch integer answers "when" and nothing else: the calendar knows a meeting
+    /// was booked as 3pm London, and storing `1784732400000` discards that, so the
+    /// same row reads differently after a flight.
     ///
-    /// A rebuild, because SQLite cannot `ALTER TABLE ADD COLUMN` a **STORED**
-    /// generated column, and the sort key has to be stored to be indexable.
+    /// A rebuild, because SQLite cannot `ALTER TABLE ADD COLUMN` a **STORED** generated
+    /// column, and the sort key has to be stored to be indexable.
     ///
-    /// **Rows are converted, not dropped** — unlike v9, which had no honest
-    /// source to attribute old rows to. Here the instant is known exactly; only
-    /// the authored offset is unknown, and `Z` states that truthfully rather
-    /// than inventing a zone. Dropping would blank the next-meeting countdown
-    /// until something writes, and with the pull collector off by default that
-    /// may not be until the user notices it is wrong.
-    ///
-    /// Detected by column presence, so it is idempotent and a no-op on fresh dbs.
+    /// **Rows are converted, not dropped** — unlike v9, the instant is known exactly
+    /// and only the authored offset is unknown, which `Z` states truthfully rather than
+    /// inventing a zone. Dropping would blank the countdown until something writes,
+    /// and with the pull collector off by default that may be a while.
     fn migrate_events_v10_iso(&self) -> Result<()> {
         let mut has_starts_at = false;
         let mut has_source = false;

@@ -327,25 +327,19 @@ fn zig_version_satisfies(version: &str) -> bool {
     )
 }
 
-/// Whether `claude mcp list` output lists the `towles-tool` MCP server.
-///
-/// The list is plain text, one server per line: `<name>: <url-or-command> -
-/// <status>`. Matching the *name* (never the command or URL) is the point — a
-/// server whose command merely mentions "towles-tool" must not count.
-///
-/// The name is everything left of the last colon that precedes the ` - `
-/// status, because both halves of the line carry colons of their own:
+/// Whether `claude mcp list` output lists the `towles-tool` MCP server. The list is
+/// plain text, one server per line: `<name>: <url-or-command> - <status>`. Matching
+/// the *name* (never the command or URL) is the point, and the name is everything
+/// left of the last colon preceding the ` - `, because both halves carry colons:
 ///
 /// ```text
 /// towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
 /// plugin:towles-tool-app:towles-tool: tt mcp serve - ✔ Connected
 /// ```
 ///
-/// The second form is what this repo's own plugin actually registers, and
-/// splitting on the *first* colon yields `plugin` — so the check could never
-/// pass for the very registration its fix hint tells the user to install.
-/// Plugin-registered names are `plugin:<plugin>:<server>`, so the server name
-/// is the last colon-delimited segment of the name field.
+/// The second form is what this repo's plugin registers, so splitting on the *first*
+/// colon yields `plugin` and the check could never pass for the very registration
+/// its fix hint tells the user to install.
 fn tt_mcp_registered(list_output: &str) -> bool {
     list_output.lines().any(|line| {
         // `": "` (with the space), not a bare colon: the name prefix and the

@@ -1,18 +1,12 @@
-//! Task Explorer: a live process view of what this app itself is running —
-//! the `tt-app` process plus each embedded terminal's shell and everything
-//! that shell has spawned. Passive readout only, polled by the frontend on
-//! an interval; this module never signals a process (kill/stop lives on
-//! `terminal.rs`'s `term_kill`).
+//! Task Explorer: a live process view of what this app is running — the `tt-app` process
+//! plus each embedded terminal's shell and everything it spawned. Passive readout only;
+//! this module never signals a process (kill lives on `terminal.rs`'s `term_kill`).
 //!
-//! A terminal's process set is resolved the same way `terminal::
-//! kill_session_stragglers` resolves what a kill would reach: on Unix,
-//! every process sharing the shell's POSIX session id, which also catches a
-//! backgrounded subshell (`(cmd &)`) reparented to init after its immediate
-//! parent exits. Windows has no session-id equivalent for this (see that
-//! function's doc), so there we fall back to a parent-child tree walk from
-//! the shell pid — less exact (misses a `setsid`-style detach, which barely
-//! exists on Windows anyway) but never pulls in unrelated processes the way
-//! Windows' login-session id would.
+//! A terminal's process set resolves the same way `terminal::kill_session_stragglers`
+//! resolves what a kill reaches: on Unix, every process sharing the shell's POSIX session
+//! id, which also catches a backgrounded subshell reparented to init. Windows has no
+//! equivalent, so there it falls back to a parent-child tree walk from the shell pid —
+//! less exact, but never pulling in unrelated processes the way a login-session id would.
 
 #[cfg(not(unix))]
 use std::collections::HashMap;

@@ -37,28 +37,19 @@ impl Store {
     // Writes
 
     /// The `[start, end)` epoch-ms bounds of the local calendar day containing
-    /// `reference_ms` — the window callers pass to
-    /// [`Store::replace_events_for_source`].
-    ///
-    /// This lives here, beside the delete it scopes, because **every writer
-    /// must agree on it**. It previously existed twice — once in the collector,
-    /// once in the MCP tool — with different DST fallbacks: one widened to a
-    /// ±1-day window, the other collapsed to an empty one. Both fed the same
-    /// scoped `DELETE`, so on a DST-transition day the same calendar day would
-    /// sweep two days of rows when written by the collector and none when
-    /// written over MCP. One destructive window, one implementation.
+    /// `reference_ms` — the window callers pass to [`Store::replace_events_for_source`].
+    /// It lives beside the delete it scopes because **every writer must agree on it**:
+    /// it existed twice once, with different DST fallbacks — one widening to a ±1-day
+    /// window, the other collapsing to empty — so on a transition day the same civil
+    /// day swept two days of rows from the collector and none over MCP.
     ///
     /// DST is handled rather than punted on:
-    /// - An **ambiguous** local midnight (a fall-back fold, real in zones like
-    ///   Brazil, Chile and Cuba that transition at midnight) resolves to the
-    ///   *earlier* instant, so the window still covers the whole civil day. The
-    ///   old code used `.single()` here, which returned `None` for this case and
-    ///   silently skipped the delete twice a year.
-    /// - A **nonexistent** local midnight (spring-forward at 00:00) walks
-    ///   forward to the first valid instant of that day.
-    /// - Only if both boundaries are unresolvable does it fall back — to the
-    ///   empty window, never a wider one. Deleting nothing leaves stale rows a
-    ///   later pull fixes; deleting too much destroys data no pull restores.
+    /// - An **ambiguous** local midnight (a fall-back fold, real in zones that
+    ///   transition at midnight) resolves to the *earlier* instant, covering the whole
+    ///   civil day. `.single()` returned `None` here, skipping the delete twice a year.
+    /// - A **nonexistent** local midnight walks forward to the first valid instant.
+    /// - Only if both boundaries are unresolvable does it fall back — to the *empty*
+    ///   window, never a wider one: stale rows a later pull fixes beat destroyed data.
     pub fn local_day_bounds(reference_ms: i64) -> (i64, i64) {
         use chrono::{Duration, Local, TimeZone};
 
@@ -97,22 +88,17 @@ impl Store {
     /// Replace one calendar's events within one day window, leaving every other
     /// calendar — and every other day — untouched.
     ///
-    /// This is deliberately *not* a full-table swap. Several calendars (personal
-    /// Google, work Outlook) are pulled independently and merged into a single
-    /// timeline; a global `DELETE FROM events` meant whichever pulled second
-    /// erased the first. Scoping the delete to `(source, day)` makes each pull
-    /// idempotent within its own lane.
+    /// Deliberately *not* a full-table swap: several calendars are pulled
+    /// independently into one timeline, so a global `DELETE FROM events` meant
+    /// whichever pulled second erased the first. Scoping to `(source, day)` makes each
+    /// pull idempotent within its own lane.
     ///
-    /// `source` is assigned by the *caller*, never by the data: it identifies
-    /// which configured calendar this pull represents, and [`EventInput`]
-    /// therefore has no `source` field — a model-authored payload must not be
-    /// able to name the lane it writes into.
+    /// `source` is assigned by the *caller*, never the data, and [`EventInput`] has no
+    /// `source` field — a model-authored payload must not name the lane it writes to.
     ///
-    /// The window is `[day_start_ms, day_end_ms)` against `start_ts`, passed in
-    /// rather than derived here so the local-day boundary (and DST) stays the
-    /// caller's decision and tests stay deterministic. Events outside it are
-    /// inserted but will not be swept by this call — pass a window that actually
-    /// contains them.
+    /// The window is `[day_start_ms, day_end_ms)` against `start_ts`, passed in rather
+    /// than derived so the local-day boundary stays the caller's decision. Events
+    /// outside it are inserted but not swept by this call.
     pub fn replace_events_for_source(
         &self,
         source: &str,

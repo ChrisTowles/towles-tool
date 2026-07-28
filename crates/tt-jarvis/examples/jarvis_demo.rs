@@ -1,11 +1,10 @@
-//! The looping demo: Jarvis rendering natively, forever, inside a
-//! `wl_subsurface` of another window.
+//! The looping demo: Jarvis rendering natively, forever, inside a `wl_subsurface`
+//! of another window.
 //!
-//! This is the benchmark's embedding path with the measurement removed and no
-//! exit condition — the same `ForeignSurface`, the same `WinitPlugin`-less app,
-//! the same `set_desync()`ed subsurface. The inset border of parent surface
-//! around the pane is visible on purpose: everything inside it is Bevy on the
-//! GPU, everything outside is a different surface entirely.
+//! The benchmark's embedding path with the measurement removed and no exit condition
+//! — same `ForeignSurface`, same `WinitPlugin`-less app, same `set_desync()`ed
+//! subsurface. The inset border of parent surface around the pane is visible on
+//! purpose: inside it is Bevy on the GPU, outside is a different surface entirely.
 //!
 //! ```sh
 //! cargo run -p tt-jarvis --features linux-harness --example jarvis_demo --release
@@ -34,30 +33,19 @@ fn main() {
     // is load-bearing.
     let surface = unsafe { host.foreign_surface() };
 
-    // Vsync by default: this is a demo, not a throughput test, and it keeps the
+    // Vsync by default: a demo, not a throughput test, and it keeps the
     // unthrottled-commit flood (which the compositor hangs up on) off the table.
+    // `--no-vsync` exists because a vsync'd surface is paced by frame callbacks and
+    // an occluded window receives none, so the loop stalls on another workspace —
+    // right for a real pane, useless for `--capture`.
     //
-    // `--no-vsync` exists for one specific reason: a vsync'd surface is paced by
-    // compositor frame callbacks, and an occluded window receives none — so the
-    // render loop correctly stalls when the window is on another workspace. That
-    // is right for a real pane and useless for `--capture`, which needs frames
-    // to keep coming whether or not anyone is looking.
-    // Present mode — the source of truth for how each behaves here. All three
-    // measured on COSMIC/Wayland, because the answer is counter-intuitive: a
-    // surface committing faster than the compositor accepts gets its Wayland
-    // connection hung up. Call that **flooding**.
-    //
-    // - `AutoVsync` (FIFO): blocks on vblank, so commits arrive at refresh. The
-    //   only mode that survives; runs indefinitely.
-    // - `AutoNoVsync`: selects Immediate here, so commits arrive at the render
-    //   rate — 1300+ fps for the bench scene. Floods, dies in seconds.
-    // - `Mailbox`: triple-buffered and never blocks the renderer, which looked
-    //   like fast-without-flooding. Vulkan mailbox still presents once per
-    //   rendered frame, so the commit rate is again the render rate. Floods, dies
-    //   the same way.
-    //
-    // So presentation is paced by the display, and a renderer with headroom spends
-    // it per frame — more samples and rays, which is what Solari scales.
+    // Present modes, measured on COSMIC/Wayland. Committing faster than the
+    // compositor accepts gets the Wayland connection hung up — **flooding**:
+    // `AutoVsync` (FIFO) blocks on vblank and survives; `AutoNoVsync` (Immediate)
+    // commits at the render rate, 1300+ fps, and dies in seconds; `Mailbox` never
+    // blocks the renderer but still presents once per rendered frame, so it floods
+    // the same way. Presentation is therefore paced by the display, and a renderer
+    // with headroom spends it per frame — more samples and rays, which Solari scales.
     let present = if has_flag("--no-vsync") {
         PresentMode::AutoNoVsync
     } else if has_flag("--mailbox") {

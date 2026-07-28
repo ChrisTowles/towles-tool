@@ -1,27 +1,17 @@
-//! Collector scheduler: fills tt.db while the app is open.
+//! Collector scheduler: fills tt.db while the app is open. Cadence comes from
+//! `settings.collectors`. PRs split into two independent ticks: the
+//! open-PR sweep (`Batch::PrsOpen`) every `prs.refresh_seconds`, since that is what
+//! Board/Cockpit render from, and the recently-merged sweep (`Batch::PrsMerged`) on the
+//! much looser `prs.merged_refresh_minutes` — it only catches a just-merged branch before
+//! its worktree goes, so it needs neither the freshness nor the `gh` calls every tick.
+//! Calendar is gated by `calendar.enabled` because those runs cost tokens. Each batch
+//! runs in a blocking task on its **own** store connection, so a slow `claude -p` never
+//! holds the UI's store mutex.
 //!
-//! Cadence comes from `settings.collectors`. PRs split into two independent
-//! ticks: the authored + review-requested open-PR sweep (`Batch::PrsOpen`)
-//! runs every `prs.refresh_seconds` since that's what Board/Cockpit render
-//! from, while the recently-merged-PRs sweep (`Batch::PrsMerged`) runs on the
-//! much looser `prs.merged_refresh_minutes` — it only exists to catch a
-//! just-merged branch before its worktree is removed, so it doesn't need the
-//! open sweep's freshness or `gh` call count on every tick. Issues via `gh`
-//! run every `issues.refresh_minutes`; calendar via `claude -p` every
-//! `calendar.refresh_minutes`, gated by `calendar.enabled` because those runs
-//! cost tokens. Each batch runs in a blocking task on its **own** store
-//! connection (tt-store opens WAL + busy-timeout), so a slow `claude -p` never
-//! holds the UI's store mutex. After every batch the fresh snapshot is emitted
-//! as `store://snapshot`.
-//!
-//! A `prs`, `issues`, or `slack:dm` batch can also fire early, outside its
-//! normal cadence: see the nudge-dir watch in [`spawn`], which reacts to `tt
-//! collect nudge prs`/`issues`/`slack:dm` by diffing each target's file mtime
-//! (see [`changed_nudge_batches`]) — a `prs` touch fires both `PrsOpen` and
-//! `PrsMerged` together, since a mutation like `gh pr merge` needs the merged
-//! sweep refreshed immediately rather than waiting for its own slow tick. A
-//! `slack:dm` touch fires the Slack DM sweep, gated on Slack being
-//! enabled+configured just like its normal tick.
+//! A `prs`, `issues` or `slack:dm` batch can also fire early: the nudge-dir watch in
+//! [`spawn`] reacts to `tt collect nudge …` by diffing each target's file mtime. A `prs`
+//! touch fires both `PrsOpen` and `PrsMerged`, since `gh pr merge` needs the merged sweep
+//! immediately rather than on its own slow tick.
 
 use std::path::Path;
 use std::sync::Arc;

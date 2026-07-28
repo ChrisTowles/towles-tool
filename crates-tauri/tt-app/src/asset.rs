@@ -1,45 +1,17 @@
-//! Repo files served to the webview as bytes, for the Files pane
-//! (`components/file-preview.tsx`) — both the images and GIFs *inside* a
-//! Markdown preview and an image or video opened as a file in its own right.
+//! Repo files served to the webview as bytes, for the Files pane — both the images and
+//! GIFs *inside* a Markdown preview and an image or video opened in its own right. They
+//! are one request: an image open in the pane is a repo-relative path in a registered
+//! checkout, exactly like one referenced from a document. Nothing else in the app could
+//! do it: [`crate::ide::ide_read_file`] is text-only by design, and the webview's own
+//! origin is the bundled frontend, so a relative `src` 404s against `tauri://localhost`.
 //!
-//! The preview renders a checkout's Markdown, so `![](docs/images/x.gif)` has
-//! to resolve to a file on disk. Nothing else in the app could do that:
-//! [`crate::ide::ide_read_file`] is text-only by design (it refuses anything
-//! containing a NUL) and the webview's own origin is the bundled frontend, so
-//! a relative `src` 404s against Vite/`tauri://localhost` instead of the repo.
-//!
-//! The two callers are the same request: an image file open in the pane is a
-//! repo-relative path in a registered checkout, exactly like one referenced
-//! from a document. That is why viewing images cost no new transport.
-//!
-//! **Why a URI scheme rather than base64 over IPC.** The established way to
-//! show local bytes here is a `data:` URL built from a command's base64
-//! (`slack::slack_file_data`, `task::clipboard_image`), and for a clipboard
-//! PNG that is the right shape. A README's demo GIF is not: it is measured in
-//! megabytes, base64 inflates it by a third, the whole thing crosses the IPC
-//! channel as one JSON string, and the preview remounts on every file switch
-//! and preview toggle — so the cost is paid again and again. Served as a real
-//! HTTP response instead, WebKit streams and decodes it incrementally, caches
-//! it, and animates it with no help from us.
-//!
-//! **What stops a Markdown file reading `~/.ssh/id_rsa`.** The URL carries the
-//! checkout dir, and a URL is exactly the part of this a hostile README
-//! controls. Two independent guards, both required:
-//!
-//! 1. `dir` must have been registered by [`asset_allow_dir`], which only the
-//!    preview component calls, with the folder it was already opened on. A dir
-//!    the user never opened is not readable no matter what a document asks
-//!    for.
-//! 2. the path is resolved *within* that dir by [`resolve_within`], which
-//!    normalizes `.`/`..` away and then refuses anything that still escapes —
-//!    the same confinement [`crate::ide`] applies to viewer paths, but
-//!    normalizing first, because `docs/FOO.md` referring to
-//!    `../images/x.png` is both legal and safe once collapsed.
-//!
-//! Neither guard is load-bearing on its own and neither is expensive; the
-//! reason both exist is that the first is a policy about *which trees* and the
-//! second is a fact about *one path*, and a bug in either is invisible from
-//! the other's tests.
+//! **What stops a Markdown file reading `~/.ssh/id_rsa`.** The URL carries the checkout
+//! dir, and the URL is exactly the part a hostile README controls. Two independent
+//! guards: `dir` must have been registered by [`asset_allow_dir`], which only the
+//! preview component calls; and the path is resolved *within* that dir by
+//! [`resolve_within`], which normalizes `.`/`..` away then refuses anything still
+//! escaping. The first is a policy about *which trees*, the second a fact about *one
+//! path*, so a bug in either is invisible from the other's tests.
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};

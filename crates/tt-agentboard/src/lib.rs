@@ -1,21 +1,15 @@
 //! Tauri-free core engine for agentboard: the in-memory agent state machine,
 //! per-session metadata, git-info, and port attribution.
 //!
-//! This crate is deliberately transport-free: **no tmux, no WebSocket/HTTP
-//! broadcast, no fs watchers, no poll loops, no UI**. Only the pure logic lives
-//! here; transport belongs to the Tauri layer.
+//! Deliberately transport-free: **no tmux, no broadcast, no fs watchers, no poll
+//! loops, no UI** — that all belongs to the Tauri layer. Time is injected as an
+//! explicit `now_ms`, so tests never touch a real clock.
 //!
-//! Time is injected: functions that read the clock take an explicit `now_ms`
-//! parameter (the same pattern as `tt-claude-sessions`), so tests stay
-//! deterministic and never touch a real clock.
-//!
-//! Module map:
-//! - [`types`] — shared serde types (SessionData, AgentEvent, metadata,
-//!   constants). camelCase so snapshots match the shapes the React client
-//!   consumes.
+//! - [`types`] — shared serde types, camelCase so snapshots match what the React
+//!   client consumes.
 //! - [`tracker`] — [`tracker::AgentTracker`], the agent-instance state machine.
-//! - [`metadata`] — [`metadata::SessionMetadataStore`], agent-pushed status/progress/log.
-//! - [`git_info`] — branch/worktree/diff-stat computation with a 5s cache.
+//! - [`metadata`] — [`metadata::SessionMetadataStore`], agent-pushed status.
+//! - [`git_info`] — branch/worktree/diff-stat computation with a short cache.
 
 use thiserror::Error;
 

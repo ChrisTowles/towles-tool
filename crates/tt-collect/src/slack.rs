@@ -1,21 +1,16 @@
 //! Slack DM watcher + chat bridge: one DM conversation via the Slack Web API.
 //!
-//! The *watcher* ([`fetch_dm`]) makes three calls per tick with a user OAuth
-//! token (`xoxp-…`, scopes `im:history` and `im:read`): `auth.test` validates
-//! the token and yields the team id for the `slack://` deep link;
-//! `conversations.open` resolves the watched user's DM channel (idempotent,
-//! returns the existing channel); and `conversations.history` fetches the
-//! latest messages. The newest real message decides everything: if it was sent
-//! by the watched user the DM is *unanswered*; if it was sent by anyone else
-//! (i.e. me) it is answered.
+//! The *watcher* ([`fetch_dm`]) makes three calls per tick with a user OAuth token
+//! (`xoxp-…`, scopes `im:history`/`im:read`): `auth.test` validates it and yields
+//! the team id for the `slack://` deep link, `conversations.open` resolves the
+//! watched user's DM channel, `conversations.history` fetches the latest messages.
+//! The newest real message decides everything: sent by the watched user ⇒
+//! *unanswered*, sent by anyone else ⇒ answered.
 //!
 //! The *chat bridge* serves the app's DM panel on demand: [`fetch_dm_history`]
-//! returns the conversation itself (oldest first), and [`send_dm`] posts a
-//! reply as the user via `chat.postMessage` (additional scope: `chat:write`).
-//!
-//! HTTP plumbing is isolated in [`SlackHttp`]; all response interpretation is
-//! pure functions over `serde_json::Value` so it unit-tests with inline
-//! fixtures (same pattern as the `gh` collectors).
+//! returns the conversation oldest-first, [`send_dm`] posts a reply as the user.
+//! HTTP plumbing is isolated in [`SlackHttp`]; response interpretation is pure
+//! functions over `serde_json::Value`, so it unit-tests with inline fixtures.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;

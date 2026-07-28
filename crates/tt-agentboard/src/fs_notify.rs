@@ -48,25 +48,18 @@ impl DirNotifier {
     }
 }
 
-/// Like [`DirNotifier`], but watches a *changing set* of directories under
-/// one root instead of the whole tree — built for `~/.claude/projects`,
-/// which every Claude Code session on the machine writes into. A plain
-/// `DirNotifier` on that root fires the agentboard's eager rescan for *any*
-/// session's transcript activity, not just the tracked repos it's actually
-/// polling; on a machine with several concurrent sessions (this one
-/// included, mid-conversation) that reduces the accelerant to "rescan
-/// constantly," which is not faster than the poll it's meant to shortcut.
+/// Like [`DirNotifier`], but watches a *changing set* of directories under one
+/// root instead of the whole tree — built for `~/.claude/projects`, which every
+/// Claude Code session on the machine writes into. A plain `DirNotifier` there
+/// fires the eager rescan for *any* session's activity, which on a machine
+/// running several reduces the accelerant to "rescan constantly".
 ///
-/// [`set_targets`](Self::set_targets) recomputes the watched set from a list
-/// of checkout dirs (tracked repos plus discovered worktrees — the same set
-/// [`crate::engine::Engine::watch_targets`] hands the host), diffing against
-/// what's currently watched so an unchanged set touches no watcher calls.
-/// Each target maps to its Claude Code transcript directory via
-/// [`crate::watchers::claude_code::encode_project_dir_name`]; a checkout
-/// with no Claude sessions yet (the encoded dir doesn't exist) is simply not
-/// watched — there's nothing to eagerly refresh for it yet, and the poll
-/// loop remains the correctness baseline regardless, so under-watching here
-/// is a latency tradeoff, never a staleness bug.
+/// [`set_targets`](Self::set_targets) recomputes the watched set from a list of
+/// checkout dirs, diffing against what's watched so an unchanged set touches no
+/// watcher calls. Each maps to its transcript dir via
+/// [`crate::watchers::claude_code::encode_project_dir_name`]; a checkout with no
+/// sessions yet isn't watched — under-watching here is a latency tradeoff, never
+/// a staleness bug, since the poll loop stays the correctness baseline.
 pub struct ScopedDirNotifier {
     watcher: RecommendedWatcher,
     watched: HashSet<PathBuf>,
@@ -116,47 +109,20 @@ impl ScopedDirNotifier {
     }
 }
 
-/// Watches a *set of files* for on-disk changes with **one** OS watcher
-/// instance, debounced like [`DirNotifier`]. Backs the app's code-viewer and
-/// diff-pane refresh: an agent editing an open file must show up in the
-/// editor, not sit stale until the next manual reopen.
+/// Watches a *set of files* for on-disk changes with **one** OS watcher instance,
+/// debounced like [`DirNotifier`]. Backs the code-viewer/diff-pane refresh.
 ///
-/// One instance per checkout, not per file, deliberately: inotify *instances*
-/// are a scarce per-user resource (`max_user_instances` defaults to 128), and
-/// a 50-file diff pane watching per-file would burn 50 of them. Individual
+/// One instance per checkout, not per file: inotify *instances* are a scarce
+/// per-user resource (`max_user_instances` defaults to 128), while individual
 /// directory *watches* on one instance are the cheap plural resource.
 ///
-/// Files register via [`add`](Self::add)/[`remove`](Self::remove) with
-/// refcounts (two panes viewing the same file share one registration). Each
-/// file's *parent directory* is watched (non-recursively) rather than the
-/// file itself: every well-behaved writer here — the viewer's own atomic
-/// save, an agent's tmp+rename replace, a `git checkout` — retires the
-/// file's inode, and a watch on the inode goes permanently silent after the
-/// first such replace. Events for unregistered siblings are filtered out;
-/// registered paths touched within a debounce window flush as one
-/// deduplicated batch.
+/// Each file's *parent directory* is watched, not the file: every well-behaved
+/// writer here — atomic save, tmp+rename, `git checkout` — retires the file's
+/// inode, and an inode watch goes permanently silent after the first replace. A
+/// file whose parent is absent watches an ancestor — [`rewatch_pending`](Self::rewatch_pending).
 ///
-/// **A registered file's parent directory need not exist yet.** `git
-/// pack-refs --prune` (which `git gc --auto` runs on its own) removes the
-/// loose `refs/heads/feat/x` *and* the `refs/heads/feat` directory it
-/// emptied, so any branch with a `/` in its name has no parent to watch until
-/// the ref goes loose again — and `packed-refs` does not change on the commit
-/// that recreates it. Failing the registration drops that branch to the
-/// backup poll. Such a file registers *pending* against its nearest existing
-/// ancestor (within [`MAX_MISSING_ANCESTORS`] levels), and an event on any
-/// ancestor of it counts as a hit; [`rewatch_pending`](Self::rewatch_pending)
-/// settles the registration onto the real parent once it exists.
-///
-/// Watching that ancestor *recursively* instead does not work: notify
-/// installs the new subdirectory's watch in response to its creation event,
-/// by which time git has already written the ref inside, and that write is
-/// never delivered.
-///
-/// Known degradation: if a watched *parent directory* itself is deleted,
-/// the OS drops its watch and a later recreation of the directory is not
-/// re-watched until every registration inside it drains and re-adds. Files
-/// there go silent rather than wrong — the consumers' poll-driven refresh
-/// (git-stats keyed) remains the safety net, and pane rebuilds re-register.
+/// Known degradation: a deleted watched *parent* isn't re-watched until every
+/// registration drains and re-adds. Files go silent, not wrong — the poll catches it.
 pub struct MultiFileNotifier {
     watcher: RecommendedWatcher,
     /// What the watcher callback matches events against — shared with it.
@@ -231,8 +197,8 @@ impl MultiFileNotifier {
 
     /// Register `file` (absolute path). Refcounted — a second registration of
     /// the same path is free and requires a matching [`remove`](Self::remove).
-    /// The parent directory need not exist yet; see the type's doc for what is
-    /// watched in its place.
+    /// The parent directory need not exist yet; see
+    /// [`rewatch_pending`](Self::rewatch_pending) for what is watched instead.
     pub fn add(&mut self, file: &Path) -> notify::Result<()> {
         if let Some(count) = self.targets.lock().unwrap().files.get_mut(file) {
             *count += 1;
@@ -253,9 +219,18 @@ impl MultiFileNotifier {
 
     /// Move every pending registration whose real parent directory now exists
     /// onto that parent, so its next change fires as an exact match rather
-    /// than as the one-shot ancestor hit. Cheap — an `is_dir` per pending file
-    /// and nothing at all when none are — so the owner calls it on the same
-    /// tick it diffs the registered set.
+    /// than the one-shot ancestor hit. Cheap (an `is_dir` per pending file),
+    /// so the owner calls it on the tick it diffs the registered set.
+    ///
+    /// Registrations go pending because a parent directory need not exist:
+    /// `git pack-refs --prune` removes the loose `refs/heads/feat/x` *and* the
+    /// `refs/heads/feat` directory it emptied, so a branch with a `/` in its
+    /// name has no parent to watch until the ref goes loose again.
+    /// [`add`](Self::add) falls back to the nearest existing ancestor (within
+    /// [`MAX_MISSING_ANCESTORS`] levels), where an event on any ancestor counts
+    /// as a hit. Watching it *recursively* instead does not work: notify
+    /// installs the new subdirectory's watch in response to its creation event,
+    /// by which time git has already written the ref inside.
     pub fn rewatch_pending(&mut self) {
         let ready: Vec<PathBuf> = {
             let targets = self.targets.lock().unwrap();

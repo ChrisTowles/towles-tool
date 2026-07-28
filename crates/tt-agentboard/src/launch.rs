@@ -1,27 +1,17 @@
 //! Claude Desktop `.claude/launch.json` dev-server configs.
 //!
-//! Claude Desktop's "Set up dev server" flow saves the dev servers it detects
-//! in a checkout to `<dir>/.claude/launch.json`: a `version` plus
-//! `configurations[]`, each carrying `name`, `runtimeExecutable` (the command
-//! — `pnpm`, `npm`, `node`, `python`…), `runtimeArgs`, and the `port` the
-//! server listens on. This module reads that same file so a config that works
-//! there works here: the app lists a folder's configs, launches one by typing
-//! `runtimeExecutable runtimeArgs…` into a PTY (the same way it launches
-//! `claude`), and [`port_listening`] tells "already running" apart from
-//! "stopped" so a second launch is never offered while something holds the
-//! port.
+//! Its "Set up dev server" flow saves what it detects to `<dir>/.claude/
+//! launch.json`. We read that same file so a config that works there works here:
+//! the app lists a folder's configs, launches one by typing `runtimeExecutable
+//! runtimeArgs…` into a PTY, and [`port_listening`] tells "already running" from
+//! "stopped" so a second launch is never offered while something holds the port.
 //!
-//! The file is owned by Claude Desktop — we read it, never write it — so
-//! parsing is deliberately tolerant: every field is defaulted, unknown fields
-//! are ignored, and a config we can't launch (empty executable) is kept by the
-//! parser and filtered by callers via [`LaunchConfig::launchable`].
-//!
-//! Tolerant of the *dialect*, too: like VS Code's `launch.json` (the file this
-//! one is modeled on), it may carry `//` and `/* */` comments and trailing
-//! commas — annotating a launch config is the normal thing to do to one.
-//! `serde_json` rejects all three, so [`read_launch_file`] parses through
-//! `jsonc-parser` instead and a hand-edited file no longer reads as
-//! "malformed".
+//! The file is owned by Claude Desktop — we read it, never write it — so parsing
+//! is deliberately tolerant: every field defaults, unknown fields are ignored,
+//! and an unlaunchable config is kept by the parser and filtered by callers via
+//! [`LaunchConfig::launchable`]. Tolerant of the *dialect* too: like VS Code's
+//! `launch.json` it may carry comments and trailing commas, which `serde_json`
+//! rejects, so [`read_launch_file`] goes through `jsonc-parser`.
 
 use std::path::{Path, PathBuf};
 

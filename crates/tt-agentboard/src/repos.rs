@@ -125,29 +125,16 @@ pub fn remove_repo_persisted(path: &Path, dir: &str) -> std::io::Result<(Vec<Str
 /// Every path currently tracked in `repos.json` that names the same physical
 /// directory as `dir`, by realpath, other than `dir`'s own literal string.
 ///
-/// `git worktree add` persists a symlink-resolved (realpath) form of the path
-/// it was given, which can diverge byte-for-byte from the literal path a
-/// caller built for that same directory (`tt-tasks::ops::create_task` never
-/// canonicalizes) — so a worktree discovered via `git worktree list`, and
-/// deleted by clicking its row on the rail, can carry a `dir` that
-/// exact-matches neither `repos.json` nor a bound board row's `worktree_dir`,
-/// even though both name the same directory. A plain string-equality untrack
-/// then silently does nothing, leaving the entry to strand as a "directory
-/// missing" ghost once the worktree is actually gone.
+/// `git worktree add` persists a realpath-resolved form of the path it was given,
+/// which can diverge byte-for-byte from the literal path a caller built for the same
+/// directory (`tt_tasks::ops::create_task` never canonicalizes), so a
+/// string-equality untrack silently strands the entry as a "missing" ghost.
 ///
-/// `canonicalize` needs a directory that exists, so this is best called
-/// before anything removes `dir` — but `dir`'s own leaf being gone by the
-/// time this runs is a real, routine case (removal fires after Claude
-/// Code has already removed the worktree — see the doc on
-/// `task_removal::MissingDir::TearDownBindings`), not a corner case to punt
-/// on: `realpath_of_missing` recovers the same realpath by canonicalizing the
-/// nearest ancestor that still exists (the checkout, almost always) and
-/// rejoining the gone tail, so a symlink earlier in the path still resolves
-/// correctly even though the leaf worktree dir itself is gone. Only a
-/// tracked path that can't be resolved *at all* (its every ancestor gone too
-/// — a deleted checkout, not just a deleted worktree) degrades to no
-/// aliases: a false negative just leaves an already-orphaned string for the
-/// rail's ordinary "missing" handling to catch, a false positive would
+/// `canonicalize` needs the directory to exist, and `dir`'s leaf being gone here is
+/// routine (removal fires after the worktree left disk), so `realpath_of_missing`
+/// canonicalizes the nearest surviving ancestor and rejoins the tail. Only a path
+/// with *every* ancestor gone degrades to no aliases: that false negative leaves an
+/// orphaned string for the rail's "missing" handling, a false positive would
 /// untrack the wrong repo.
 pub fn aliases_for(repos_path: &Path, dir: &Path) -> Vec<String> {
     let Some(dir_real) = std::fs::canonicalize(dir).ok().or_else(|| realpath_of_missing(dir))

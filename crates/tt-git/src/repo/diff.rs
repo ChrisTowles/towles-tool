@@ -1,21 +1,16 @@
 //! Diffs: what changed against a base, with per-file line counts.
 //!
-//! This replaces `git diff --numstat`, `git diff --name-status -M`, `git show
+//! Replaces `git diff --numstat`, `git diff --name-status -M`, `git show
 //! <rev>:<path>`, `git log --numstat` and `git ls-files`.
 //!
-//! ## What "changed against a base" means here
+//! "Changed against a base" means what `git diff <base>` means: the **working tree**
+//! against a commit — committed work and uncommitted edits alike, which is why the
+//! Folder Rail's numbers move the moment a file is saved. gitoxide's tree-to-tree
+//! diff covers only the committed half, so both are assembled here.
 //!
-//! The same thing `git diff <base>` means: the **working tree** against a
-//! commit — committed work and uncommitted edits alike, which is why the
-//! Folder Rail's numbers move the moment a file is saved. gitoxide's
-//! tree-to-tree diff only covers the committed half, so the two halves are
-//! assembled here: tree-to-tree for what HEAD holds, and the working tree's
-//! own bytes for everything the status walk reports as changed.
-//!
-//! Line counts come from the worktree bytes as they are on disk, without a
-//! smudge/clean round-trip. For a repository that configures content filters
-//! on a text file, a count could differ from `git diff` by whatever the filter
-//! changes; nothing in this workspace configures any.
+//! Line counts come from the worktree bytes on disk, with no smudge/clean round-trip.
+//! A repository configuring content filters on a text file could see a count differ
+//! from `git diff`; nothing in this workspace configures any.
 
 use std::collections::BTreeMap;
 
