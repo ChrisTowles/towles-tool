@@ -512,9 +512,7 @@ reasons to change or callers must understand unrelated concepts.
 ## Comments and docs
 
 Comments should explain invariants, trade-offs, non-obvious domain rules,
-and safety justifications. Avoid comments that narrate obvious code — this
-repo's CLAUDE.md already says "default to no comments; only add one when
-the WHY is non-obvious."
+and safety justifications. Avoid comments that narrate obvious code.
 
 Every exported/public function, type, and constant should have a doc
 comment: `///` doc comments in Rust (so `cargo doc` and hover-docs pick them
