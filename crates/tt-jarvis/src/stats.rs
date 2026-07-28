@@ -1,21 +1,15 @@
-//! Frame-time accounting for the embedded-vs-standalone benchmark.
+//! Frame-time accounting for the embedded-vs-standalone benchmark. Pure — no Bevy,
+//! no GPU, no clock — so the percentile maths is testable without rendering.
 //!
-//! Pure module — no Bevy, no GPU, no clock. Durations are handed in, the same
-//! way `tt-store` takes `now_ms` rather than reading the clock in logic, so the
-//! percentile maths is testable without rendering anything.
+//! The acceptance gate is stated in *median* and *p99* frame time rather than mean
+//! FPS on purpose: a mean hides exactly the failure this looks for, a pane that
+//! matches the baseline on average but stalls whenever the compositor and the render
+//! loop disagree about who owns the frame. That reads as stutter.
 //!
-//! The benchmark's acceptance gate is stated in terms of *median* and *p99*
-//! frame time rather than mean FPS on purpose. A mean hides exactly the failure
-//! this experiment is looking for: a pane that matches the baseline on average
-//! but stalls whenever the compositor and the render loop disagree about who
-//! owns the frame. That reads as stutter, and averaging it away would let a
-//! visibly worse pane pass.
-//!
-//! Note what p99 does and does not catch. It is a *sustained* stutter detector:
-//! over a 3600-frame run it describes the worst 36 frames, so a pane that hitches
-//! every other second shows up plainly, while a single isolated stall does not
-//! move it at all. That single stall is what `max_us` is for. Both are reported;
-//! only median and p99 gate, because a lone spike is as likely to be the OS
+//! p99 is a *sustained* stutter detector — over a 3600-frame run it describes the
+//! worst 36 frames, so a pane hitching every other second shows up plainly while one
+//! isolated stall doesn't move it at all. That's what `max_us` is for. Both are
+//! reported; only median and p99 gate, since a lone spike is as likely the OS
 //! scheduler as the compositor.
 
 use serde::{Deserialize, Serialize};

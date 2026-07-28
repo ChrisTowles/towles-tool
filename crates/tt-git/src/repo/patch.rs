@@ -1,28 +1,17 @@
-//! Patch identity — "does the base branch already contain this change?"
+//! Patch identity — "does the base branch already contain this change?" The
+//! in-process replacement for `git cherry`, and the ugliest shell-out in the
+//! workspace with it: asking `git cherry` whether a *squashed* branch had landed
+//! meant `commit-tree` writing a real object for its cumulative tree, then deleting
+//! the loose object so the poll didn't litter thousands of dead objects a day. In
+//! process a patch id is computed from trees that already exist, and thrown away.
 //!
-//! This is the in-process replacement for `git cherry`, and it removes the
-//! ugliest shell-out in the workspace along with it. Asking `git cherry`
-//! whether a *squashed* branch had landed meant synthesising a commit for its
-//! cumulative tree — which meant `commit-tree` writing a real object into the
-//! repository, then deleting the loose object again so the Agentboard poll did
-//! not litter thousands of dead objects a day. In process there is no object to
-//! write: a patch id is computed from trees that already exist and thrown away.
-//!
-//! ## These ids are not git's
-//!
-//! `git patch-id` has a specific, stable-across-versions hash. This does not
-//! reproduce it, and does not try to. A patch id here is only ever compared
-//! against another id produced by this same code, in the same process, over the
-//! same repository — nothing is persisted, exchanged, or shown to a user. What
-//! the comparison requires is that identical changes hash identically and
-//! different ones (almost certainly) do not, which is a far weaker contract
-//! than byte-compatibility with git, and one this can meet without
-//! reimplementing git's diff formatting.
-//!
-//! What *is* preserved from git's definition is what a patch id ignores:
-//! commit metadata, parentage, and the line numbers a hunk lands on. Two
-//! commits with the same content change are the same patch whether they were
-//! rebased, cherry-picked, or committed a year apart.
+//! **These ids are not git's.** `git patch-id` has a specific stable hash; this does
+//! not reproduce it and does not try to. An id here is only ever compared against
+//! another from this same code, in the same process — nothing is persisted or shown.
+//! The comparison needs only that identical changes hash identically and different
+//! ones do not. What *is* preserved is what a patch id ignores: commit metadata,
+//! parentage and the lines a hunk lands on, so the same content change is one patch
+//! whether rebased, cherry-picked or a year apart.
 
 use std::collections::HashSet;
 

@@ -1,28 +1,17 @@
-//! The `stream-json` wire protocol, as a pure parser.
-//!
-//! Claude Code's headless mode (`--input-format stream-json --output-format
-//! stream-json`) speaks JSONL in both directions. This module is the whole
-//! translation layer between that wire format and the small set of things the
-//! app actually renders — no process, no clock, no IO, so it is testable
-//! against a recorded transcript (`tests/fixtures/`).
+//! The `stream-json` wire protocol, as a pure parser — no process, no clock, no
+//! IO, so it is testable against a recorded transcript.
 //!
 //! **We deliberately do not model the full protocol.** The SDK's `SDKMessage`
-//! union has ~38 variants and grows every release; typing all of them would be
-//! a permanent maintenance tax for a renderer that cares about five. Instead
-//! [`parse_line`] normalizes the handful we render and files everything else
-//! under [`AgentEvent::Other`] with its discriminant intact, so an unknown
-//! message is inert rather than a parse failure. A new release adding a
-//! message type must not break this parser — that property is the reason for
-//! the shape, and `Other` is load-bearing, not a TODO.
+//! union has ~38 variants and grows every release. [`parse_line`] normalizes the
+//! handful we render and files everything else under [`AgentEvent::Other`] with
+//! its discriminant intact, so a release adding a message type leaves it inert
+//! rather than breaking the parser — `Other` is load-bearing, not a TODO. One line
+//! can yield several events (an `assistant` message carries thinking/tool_use/text
+//! blocks, each rendering separately), hence `Vec<AgentEvent>`.
 //!
-//! One line can yield several events: an `assistant` message carries a list of
-//! content blocks (thinking, tool_use, text), each of which renders
-//! separately. Hence `Vec<AgentEvent>`.
-//!
-//! **`Other` is not the right home for everything unmodeled.** Lines of
-//! `type: "control_request"` are the CLI *blocking on an answer* (see
-//! [`crate::control`]), so they get real variants and, one way or another, a
-//! reply — filing them as inert noise is what makes a session appear to hang.
+//! **`Other` is the wrong home for `control_request`** — those are the CLI
+//! blocking on an answer (see [`crate::control`]); filing them as inert noise is
+//! what makes a session appear to hang.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

@@ -1,28 +1,17 @@
-//! Preview screen backend: the capture half of the annotate-and-send flow.
+//! Preview screen backend: the capture half of the annotate-and-send flow. The screen
+//! embeds a running dev server in an `<iframe>` and lets the user draw
+//! annotations over it on a DOM canvas. "Send to agent" needs a pixel-accurate PNG of
+//! what the user sees, and the DOM can't produce one — a cross-origin iframe taints any
+//! canvas it is drawn into. `webkit_web_view_get_snapshot` rasterizes the app webview's
+//! composited viewport instead, embedded iframe included, being a privileged native API
+//! with no CORS-taint concept. `preview_capture` crops that to the surface's rect;
+//! `preview_write_feedback` stages the annotated PNG outside any repo (same reasoning as
+//! `tt_tasks::pasted`) so the frontend can name its path in a prompt.
 //!
-//! The Preview screen embeds a running dev server in an `<iframe>` and lets
-//! the user draw annotations over it on a DOM canvas. "Send to agent" needs a
-//! pixel-accurate PNG of what the user sees — iframe plus annotations — and
-//! the DOM can't produce one (a cross-origin iframe taints any canvas it's
-//! drawn into). This is the same problem Claude Desktop's page-preview pane
-//! solves with Electron's `webContents.capturePage()`; the WebKitGTK
-//! equivalent is `webkit_web_view_get_snapshot`, which rasterizes the app
-//! webview's composited viewport — embedded iframe included, since the
-//! snapshot is a privileged native API with no CORS-taint concept.
-//!
-//! `preview_capture` snapshots the visible viewport and crops to the preview
-//! surface's rect; `preview_write_feedback` stages the annotated PNG under
-//! `tt_config::pasted_images_dir()` (outside any repo — same reasoning as
-//! `tt_tasks::pasted`) so the frontend can name its path in a prompt typed
-//! into an agent session's PTY.
-//!
-//! `preview_read_artifact` serves the *other* direction — the agent→human one
-//! the `preview_show` MCP tool opens (see [`tt_mcp::PreviewHost`]). It reads an
-//! HTML file the agent wrote so the pane can render it in an iframe `srcdoc`.
-//! Reading it here rather than shipping the bytes in the `preview://show` event
-//! is what makes reload work: the pane re-invokes this and picks up whatever
-//! the agent has written since, and an event bus never carries a multi-megabyte
-//! string.
+//! `preview_read_artifact` serves the *other* direction, the agent→human one the
+//! `preview_show` MCP tool opens. Reading the file here rather than shipping bytes in the
+//! `preview://show` event is what makes reload work — the pane re-invokes this and picks
+//! up whatever the agent wrote since, and an event bus never carries megabytes.
 
 use serde::{Deserialize, Serialize};
 use tt_tasks::pasted::{self, PastedImage};

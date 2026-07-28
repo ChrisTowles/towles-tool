@@ -6,13 +6,12 @@
 //! - [`embedded_app`] — a [`surface::ForeignSurface`] handed in by the platform
 //!   layer, with `WinitPlugin` disabled entirely.
 //!
-//! The difference between them is deliberately tiny — one plugin and one
-//! entity — because the whole question this crate answers is what that
-//! difference costs. See [`surface`] for why Bevy tolerates it without a fork.
+//! The difference is deliberately tiny — one plugin and one entity — because the
+//! whole question this crate answers is what that difference costs. See [`surface`]
+//! for why Bevy tolerates it without a fork.
 //!
-//! This crate is Tauri-free by the workspace rule and knows nothing about
-//! windows, GTK, AppKit or IPC. Acquiring the surface and keeping it glued to a
-//! DOM rect is `tt-pane`'s job.
+//! Tauri-free, and knows nothing about windows, GTK, AppKit or IPC: acquiring the
+//! surface and keeping it glued to a DOM rect is `tt-pane`'s job.
 
 pub mod jarvis;
 pub mod scene;

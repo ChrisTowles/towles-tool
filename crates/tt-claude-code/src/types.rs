@@ -1,18 +1,14 @@
 //! The Claude Code session-transcript line schema — the ONE canonical model of
 //! `~/.claude/projects/**/<sessionId>.jsonl` lines.
 //!
-//! **This schema is internal to Claude Code and version-volatile** — Anthropic
-//! documents the entry format as internal. It is modelled tolerantly here (every
-//! field optional, unknown fields ignored, content blocks kept as raw
-//! [`serde_json::Value`]) and this crate is the single place the shape is
-//! assumed, so a re-validation on a Claude Code upgrade touches one crate. Both
-//! consumers ([`tt-claude-sessions`] batch analysis and `tt-agentboard`'s live engine)
-//! read through these types.
+//! **This schema is internal to Claude Code and version-volatile.** It is modelled
+//! tolerantly (every field optional, unknown fields ignored, content blocks kept as
+//! raw [`serde_json::Value`]) and this crate is the single place the shape is
+//! assumed, so re-validating after an upgrade touches one crate.
 //!
-//! We evaluated the Agent SDK's `listSessions`/`getSessionMessages` as an
-//! alternative and rejected it: Node-only (no Rust binding), it strips
-//! `requestId` (half the dedup key), and it conflates custom/ai titles. Direct
-//! JSONL parsing stays the source of truth.
+//! The Agent SDK's `listSessions`/`getSessionMessages` was rejected as an
+//! alternative: Node-only, it strips `requestId` (half the dedup key), and it
+//! conflates custom/ai titles.
 
 use serde::Deserialize;
 use serde_json::Value;

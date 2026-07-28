@@ -1,21 +1,16 @@
-//! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint`.
+//! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint` — a linter for
+//! comment volume with fixed thresholds like clippy, no baseline file and no ratchet.
+//! Two signals per file, each with a warning and an error tier:
 //!
-//! A linter for comment volume, with fixed thresholds like clippy — no
-//! baseline file, no ratchet. Two signals per file, each with a warning and
-//! an error tier:
+//! - **shape** — a contiguous run of full-line comments that is too long. tree-sitter
+//!   finds the comment nodes, so a `//` inside a string never miscounts.
+//! - **too many** — a file whose comment mass *and* comment-to-code ratio are both
+//!   high. Both at once on purpose: mass alone flags big well-commented files, ratio
+//!   alone flags tiny `lib.rs` stubs whose few doc lines are 400% of nothing.
 //!
-//! - **shape** — a contiguous run of full-line comments that is too long
-//!   (tree-sitter finds the comment nodes, so a `//` inside a string never
-//!   miscounts; rustfmt wraps at 100 cols, which is why volume is many short
-//!   lines and never one long one);
-//! - **too many** — a file whose comment mass *and* comment-to-code ratio are
-//!   both high. Both at once on purpose: mass alone flags big well-commented
-//!   files, ratio alone flags tiny `lib.rs` re-export stubs whose few doc
-//!   lines are 400% of nothing.
-//!
-//! Warnings are the standing hit list of essays worth trimming; errors fail
-//! CI. Suppress a deliberate essay with a `verbose-ok: <why>` line inside the
-//! block. Thresholds are the consts below — tighten them as cleanups land.
+//! Warnings are the standing hit list of essays worth trimming; errors fail CI. Suppress
+//! a deliberate essay with a `verbose-ok: <why>` line inside the block. Thresholds are
+//! the consts below — tighten them as cleanups land.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -26,13 +21,13 @@ const TREES: &[&str] = &["crates", "crates-cli", "crates-tauri"];
 const MARKER: &str = "verbose-ok:";
 
 /// A contiguous comment block trips a tier when it reaches this many lines.
-const BLOCK_LINES: Tiers<usize> = Tiers { warn: 15, error: 30 };
+const BLOCK_LINES: Tiers<usize> = Tiers { warn: 12, error: 15 };
 
 /// A file trips a tier when it meets BOTH bounds at once — mass alone would
 /// flag big well-commented files, ratio alone flags tiny doc-headed stubs.
 const HEAVY_FILE: Tiers<HeavyFile> = Tiers {
-    warn: HeavyFile { min_comment_lines: 150, min_ratio: 0.5 },
-    error: HeavyFile { min_comment_lines: 300, min_ratio: 1.0 },
+    warn: HeavyFile { min_comment_lines: 120, min_ratio: 0.45 },
+    error: HeavyFile { min_comment_lines: 250, min_ratio: 0.55 },
 };
 
 /// Warn/error cutoffs for one rule.

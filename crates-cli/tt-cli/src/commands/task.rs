@@ -95,33 +95,20 @@ fn board_store_for(dir: &Path) -> Option<tt_store::Store> {
     tt_store::Store::open(&path).ok()
 }
 
-/// Resolve whichever board store actually holds the row bound to `dir` — the
-/// worktree being removed.
+/// Resolve whichever board store actually holds the row bound to `dir`, the worktree
+/// being removed. Board rows are per-checkout **instance state**, so a row lives where
+/// the app instance that *created* it was scoped — normally `checkout`, the primary this
+/// task anchors to. But an instance running *from inside another task's worktree* (this
+/// repo's dev loop does exactly that) scopes itself there, so its tasks land in that
+/// worktree's store. The scope to try next is the **ambient cwd's**, since
+/// `--root`/discovery always resolve `checkout` to the primary regardless of cwd, while
+/// a person removing a task usually sits in the checkout that created it.
 ///
-/// Board rows are per-checkout **instance state** (see the root CLAUDE.md's
-/// `tt-config` bullet), so a row lives wherever the app instance that
-/// *created* it happened to be scoped — normally that's `checkout` (the
-/// primary this task anchors to: `ops::discover_root` always resolves up to
-/// it, and most tasks are created by an app instance running from there). But
-/// an app instance running *from inside another task's own worktree* (this
-/// repo's own dev loop does exactly this) scopes itself to that worktree
-/// instead, so a task it creates lands in that worktree's own scoped store,
-/// not `checkout`'s. The scope to try next is therefore the **ambient
-/// cwd's** — wherever this `tt task rm` invocation itself is running from —
-/// since `--root`/discovery always resolve `checkout` to the primary
-/// regardless of cwd, but a person (or script) removing a task is almost
-/// always sitting in the same checkout whose app instance created it. It is
-/// deliberately *not* `task_scope_from_dir(dir)` (the removed task's own
-/// directory): that scope is exactly what `ops::remove_task`'s
-/// `state_cleanup` step already wipes wholesale by task name, so trying it
-/// here would only ever "find" a row a heartbeat before its own database
-/// file is deleted out from under it — never the actual mismatch this
-/// exists to fix. Trying only `checkout` silently no-ops against an empty
-/// database — the row is never closed, the removed worktree's stale "doing"
-/// card is left on the Board forever, and nothing about the successful `tt
-/// task rm` run says so. Try the primary-anchored store first (the common
-/// case, cheapest to get right); fall back to the ambient-cwd scope only if
-/// that didn't have the row.
+/// Deliberately *not* `task_scope_from_dir(dir)` — that scope is what
+/// `ops::remove_task`'s `state_cleanup` wipes wholesale, so trying it would only "find"
+/// a row a heartbeat before its own database is deleted. Trying only `checkout` silently
+/// no-ops against an empty database, leaving the removed worktree's stale "doing" card
+/// on the Board forever with nothing in the successful run saying so.
 fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Store> {
     let dir_s = dir.to_string_lossy();
     let has_row = |s: &tt_store::Store| matches!(s.task_for_worktree_dir(&dir_s), Ok(Some(_)));

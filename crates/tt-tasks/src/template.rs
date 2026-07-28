@@ -1,20 +1,17 @@
-//! Renderer for the `${tt:...}` env-template grammar.
-//!
-//! Tokens (anywhere in a non-comment line):
-//! - `${tt:port A-B}`  — port-pool claim: reuse the task's existing in-range
-//!   claim when no sibling holds it, else the first port in `A..=B` that no
-//!   sibling claims and that passes the caller's `port_free` probe.
+//! Renderer for the `${tt:...}` env-template grammar. Tokens, anywhere in a
+//! non-comment line:
+//! - `${tt:port A-B}`  — port-pool claim: reuse the task's existing in-range claim when
+//!   no sibling holds it, else the first port in `A..=B` no sibling claims that passes
+//!   the caller's `port_free` probe.
 //! - `${tt:task-name}` — the checkout directory basename, e.g. `task-migrate`
 //! - `${tt:base}`      — the base branch this task's work PRs into
 //! - `${tt:var NAME}`  — the rendered value of `NAME` from an earlier line
 //!
-//! Unknown or malformed tokens are hard errors (typos must not render as
-//! literal text into a config file). Comment lines pass through untouched so
-//! templates can show example tokens without claiming ports.
-//!
-//! Rendering is idempotent by construction: the caller passes the task's
-//! current `.env` assignments as `existing`, and in-range claims are reused
-//! instead of re-picked — re-rendering a task never rotates its ports.
+//! Unknown or malformed tokens are hard errors (a typo must not render as literal text
+//! into a config file); comment lines pass through untouched, so a template can show
+//! example tokens without claiming ports. Rendering is idempotent by construction — the
+//! caller passes the task's current `.env` as `existing` and in-range claims are reused
+//! rather than re-picked, so a re-render never rotates a task's ports.
 
 use std::collections::{BTreeMap, BTreeSet};
 

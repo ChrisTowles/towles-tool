@@ -1,32 +1,17 @@
 //! Removing a worktree task and everything bound to it — the sequence, in one
-//! place.
-//!
-//! A task is three things (#339): a board row, a git worktree, and whatever the
-//! host has attached to that directory (terminal panes, a rail entry). Deleting
-//! only some of them leaves garbage nothing in the UI can reach, so the *order*
-//! is policy, not detail:
+//! place. A task is three things (#339): a board row, a git worktree, and whatever
+//! the host attached to that directory, so the *order* is policy, not detail:
 //!
 //! 1. guards run with everything still alive, so a refusal costs nothing;
-//! 2. the host tears down what it owns (PTYs, in-memory rail state) only once
-//!    removal is really happening;
+//! 2. the host tears down what it owns (PTYs, rail state);
 //! 3. the worktree leaves disk;
 //! 4. the dir is untracked from `repos.json` — skip it and the `prs`/`issues`
 //!    collectors retry `gh`/`git` against a dead path forever;
-//! 5. the board row is **closed last**, when it can no longer strand anything:
-//!    it records the caller's [`tt_store::TaskOutcome`] and detaches from the
-//!    now-gone dir, but survives as the record of the work.
+//! 5. the board row is **closed last**, recording a [`tt_store::TaskOutcome`].
 //!
-//! It lives in this crate because it wants three things at once: the guarded
-//! removal ([`tt_tasks::ops`]), the tracked-repo list ([`crate::repos`]) and
-//! the board store ([`tt_store`]). `tt-tasks` cannot host it — this crate
-//! already depends on it, so the edge would be a cycle — and it must stay out
-//! of `tt-app`, because the `tt` CLI has no Tauri and would otherwise have to
-//! restate the sequence (it did, and the two copies had drifted in ordering
-//! and failure mode).
-//!
-//! Host-specific work enters through [`RemovalHooks`] rather than being
-//! reimplemented per shell: the app kills PTYs and closes rail folders, the CLI
-//! does neither, and neither one owns the order.
+//! It lives here because it wants the guarded removal ([`tt_tasks::ops`]), the
+//! tracked-repo list and the board store at once: `tt-tasks` can't host it (cycle)
+//! and `tt-app` can't (the CLI has no Tauri, and its copy drifted).
 
 use std::path::Path;
 
@@ -39,27 +24,22 @@ use tt_tasks::ops::{self, RemoveOpts, RemoveOutcome, RemovePhase};
 /// All default to nothing, so a shell with no panes and no in-memory rail
 /// (the CLI) implements none of them.
 pub trait RemovalHooks {
-    /// A step of the sequence is starting — see [`RemovePhase`] for the
-    /// steps inside [`ops::remove_task`] and this module's own addition,
-    /// [`RemovePhase::Untracking`], for the bindings step below it. Reported
-    /// so a host with a UI (the app's Agentboard rail) can show what's
-    /// actually happening rather than a row hanging on one static label.
+    /// A step of the sequence is starting, so a host with a UI can show what is
+    /// actually happening rather than one static label.
     ///
-    /// [`RemovePhase::StoppingSessions`] is more than a label to the app: it
-    /// fires once the guards have passed (or been forced) and the removal is
-    /// really happening — after the last point that leaves the task
-    /// untouched, before the first destructive step — which is where it
-    /// kills the folder's PTYs, so a *refused* removal never costs a live
+    /// [`RemovePhase::StoppingSessions`] is more than a label to the app: it fires
+    /// once the guards have passed (or been forced) — after the last point that
+    /// leaves the task untouched, before the first destructive step — which is
+    /// where it kills the folder's PTYs, so a *refused* removal never costs a live
     /// Claude session.
     fn on_phase(&mut self, _phase: RemovePhase) {}
 
-    /// The worktree is gone from disk. The app drops the folder's session,
-    /// window and pane records here — deliberately not earlier, or a blocked
-    /// removal would leave the rail looking clean while the checkout stayed
-    /// put, with nothing left to retry from.
+    /// The worktree is gone from disk. The app drops the folder's session, window
+    /// and pane records here — not earlier, or a blocked removal would leave the
+    /// rail looking clean while the checkout stayed put.
     ///
-    /// Returns its own progress notes, which land in the outcome *in the order
-    /// this step ran* rather than being appended after the later ones.
+    /// Returns its own progress notes, which land in the outcome *in the order this
+    /// step ran* rather than after the later ones.
     fn after_removal(&mut self, _dir: &Path) -> Vec<String> {
         Vec::new()
     }
@@ -70,16 +50,14 @@ pub trait RemovalHooks {
 /// The two callers mean genuinely different things by it, and collapsing them
 /// makes one of them lie:
 pub enum MissingDir {
-    /// **Fail.** The caller named a task — `tt task rm feat-tpyo` — and a name
-    /// that resolves to nothing is a mistake to report, not a no-op to
-    /// celebrate. Keeps every guard in [`ops::remove_task`], including its
-    /// refusal to remove the main checkout.
+    /// **Fail.** The caller named a task — `tt task rm feat-tpyo` — and a name that
+    /// resolves to nothing is a mistake to report, not a no-op to celebrate. Keeps
+    /// every guard in [`ops::remove_task`].
     Fail,
-    /// **Tear the bindings down anyway.** The caller holds a *record* pointing
-    /// at the directory (a board row with a `worktree_dir`), and that record is
-    /// precisely what still needs cleaning up after someone removed the
-    /// worktree outside the app. Only reachable with a dir the caller read out
-    /// of its own store, never a user-typed name.
+    /// **Tear the bindings down anyway.** The caller holds a *record* pointing at
+    /// the directory (a board row with a `worktree_dir`), which is precisely what
+    /// needs cleaning up after someone removed the worktree outside the app. Only
+    /// reachable with a dir read out of the caller's own store.
     TearDownBindings,
 }
 
@@ -90,16 +68,13 @@ impl RemovalHooks for NoHooks {}
 /// How the sequence reaches the board row bound to a worktree.
 ///
 /// A trait rather than a plain `&Store` because the two hosts hold their store
-/// differently: the CLI opens one for the duration of a command, while the
-/// app's lives behind a mutex that also serves UI snapshots — and holding that
-/// across a minute-long `git worktree remove` would freeze the board it exists
-/// to publish. This way each host locks for exactly the row delete and no
-/// longer.
+/// differently: the CLI opens one per command, while the app's lives behind a mutex
+/// that also serves UI snapshots — and holding that across a minute-long
+/// `git worktree remove` would freeze the board it exists to publish.
 pub trait BoardRows {
-    /// Close the task bound to `dir`, recording `outcome`. Returns a note
-    /// when a row was closed, `None` when the worktree had no task — a real
-    /// answer, since a worktree can be discovered on disk without the board
-    /// knowing about it.
+    /// Close the task bound to `dir`, recording `outcome`. Returns a note when a row
+    /// was closed, `None` when the worktree had no task — a real answer, since a
+    /// worktree can be discovered on disk without the board knowing about it.
     fn close_task_for_worktree(
         &self,
         dir: &str,
@@ -133,25 +108,20 @@ impl BoardRows for Store {
 pub struct TaskRemoval<'a> {
     /// Which worktree, and whether to skip the guards.
     pub opts: &'a RemoveOpts,
-    /// The worktree directory. Passed rather than re-derived because it is also
-    /// the key every binding is stored under, and it must be readable after the
-    /// directory itself is gone.
+    /// The worktree directory. Passed rather than re-derived because it is also the
+    /// key every binding is stored under, and must outlive the directory.
     pub dir: &'a Path,
     /// The tracked-repo list to untrack `dir` from.
     pub repos_path: &'a Path,
-    /// The board rows bound to `dir`. `None` skips step 5 — for a caller that
-    /// cannot resolve which store owns the row, which is a real state
-    /// (instance stores are per-checkout) and not an error.
+    /// The board rows bound to `dir`. `None` skips step 5 — for a caller that can't
+    /// resolve which store owns the row, a real state (stores are per-checkout).
     pub rows: Option<&'a dyn BoardRows>,
-    /// How the task ended — recorded on the board row at step 5. Callers with
-    /// a user answer pass it through; headless callers infer it (merged PR /
-    /// landed work ⇒ done, else abandoned).
+    /// How the task ended — recorded on the board row at step 5. Headless callers
+    /// infer it (merged PR / landed work ⇒ done, else abandoned).
     pub outcome: TaskOutcome,
-    /// When "now" is, for the close stamp. Injected — the clock read happens
-    /// at the call boundary, not here.
+    /// When "now" is, for the close stamp.
     pub now_ms: i64,
-    /// What a directory that is already gone means to this caller — see
-    /// [`MissingDir`].
+    /// What an already-gone directory means to this caller — see [`MissingDir`].
     pub on_missing: MissingDir,
 }
 
@@ -163,8 +133,7 @@ pub enum Outcome {
         messages: Vec<String>,
     },
     /// The guards refused. **Nothing was removed** — not the worktree, not the
-    /// bindings, not the row — so the caller can surface the reasons and retry
-    /// from exactly where the user was.
+    /// bindings, not the row — so the caller can surface the reasons and retry.
     Blocked {
         name: String,
         blocked: Vec<RmBlocked>,

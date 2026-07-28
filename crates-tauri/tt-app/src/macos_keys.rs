@@ -1,24 +1,17 @@
 //! macOS-only: a native `NSEvent` local monitor that catches bare Control+C
 //! before WKWebView's own Cocoa text-editing layer can eat it.
 //!
-//! macOS's default text-editing key bindings (the same table that gives
-//! Safari/WKWebView text fields their Emacs-style Ctrl+A/Ctrl+E navigation)
-//! bind Control+C to `insertNewline:` — Cocoa treats it like pressing Return,
-//! not as an ordinary keystroke. WKWebView applies that native
-//! `NSTextInputClient`/`interpretKeyEvents:` machinery to editable DOM
-//! elements (the terminal's hidden `<textarea>` keystroke sink,
-//! `apps/client/src/components/terminal-view.tsx`), and that native
-//! resolution isn't reliably gated by the DOM keydown handler's
-//! `preventDefault()` the way an ordinary default action would be — so
-//! Ctrl+C never reaches the frontend's `term_key` IPC call at all on macOS.
-//! WebKitGTK on Linux has no such table, which is why the bug is Mac-only.
+//! macOS's default text-editing key bindings (the table giving WKWebView text fields
+//! their Emacs-style Ctrl+A/Ctrl+E) bind Control+C to `insertNewline:` — Cocoa treats it
+//! like Return, not an ordinary keystroke. WKWebView applies that native
+//! `interpretKeyEvents:` machinery to editable DOM elements (the terminal's hidden
+//! `<textarea>` sink), and it isn't reliably gated by the DOM handler's
+//! `preventDefault()`, so Ctrl+C never reaches `term_key` at all. WebKitGTK has no such
+//! table, which is why the bug is Mac-only.
 //!
-//! The fix intercepts at the AppKit level, before WKWebView's text-input
-//! layer ever sees the event, and forwards it straight into the focused
-//! terminal's PTY via [`crate::terminal::TermState::send_key_to_focused`].
-//! Scoped narrowly to bare Ctrl+C (no Shift/Option/Command) — the one chord
-//! reported broken — rather than every Cocoa-bound Ctrl combo, to keep the
-//! blast radius on everything else small.
+//! The fix intercepts at the AppKit level, before WKWebView's text-input layer sees the
+//! event, and forwards it into the focused terminal's PTY. Scoped narrowly to bare Ctrl+C
+//! — the one chord reported broken — to keep the blast radius small.
 
 #[cfg(target_os = "macos")]
 mod imp {

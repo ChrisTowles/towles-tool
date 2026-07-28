@@ -1,31 +1,17 @@
-//! Port claims: the bind probe, the per-checkout claim lock and the persistent
-//! port registry — one home for "which ports may this checkout hand out".
-//! Precedence when picking: the live sibling `.env` scan first (ground truth
-//! for a healthy fleet), the registry as its backstop (surviving a deleted or
-//! corrupt sibling `.env`), then the OS bind probe ([`port_occupied`]).
+//! Port claims: the bind probe, the per-checkout claim lock and the persistent port
+//! registry — one home for "which ports may this checkout hand out". Precedence: the
+//! live sibling `.env` scan (ground truth for a healthy fleet), the registry as its
+//! backstop (surviving a deleted `.env`), then the OS bind probe ([`port_occupied`]).
 //!
-//! `render_task_env`'s reuse-vs-rotate logic already treats every *other* live
-//! task's current `.env` as "taken", but only while that `.env` still exists
-//! and is readable. The registry is the explicit record: every port a task is
-//! given lands here at render time (claimed or reused) and normally comes off
-//! via [`release_task_ports`] at `tt task rm`.
+//! Self-healing rather than authoritative: every load prunes entries whose owning task
+//! directory is gone. Load-bearing, not tidiness — `remove_task` requires the directory
+//! to still be there, so a task wiped by a stray `rm -rf` would leak its ports forever.
+//! A vanished *checkout* pruning can't reach; `clean_tasks`' sweep handles that.
 //!
-//! It is self-healing rather than authoritative: every load prunes entries
-//! whose owning task directory is gone ([`load_live_registry`]) and persists
-//! that immediately. Load-bearing, not tidiness — `remove_task` requires the
-//! directory to still be there, so a task wiped out some other way (a stray
-//! `rm -rf`) would leak its ports forever. A vanished *checkout* is the case
-//! pruning can't reach, since nothing renders a gone repo again;
-//! `clean_tasks`' sweep handles that from each file's `checkout` field.
-//!
-//! Keyed by the checkout like the claim lock ([`checkout_keyed_filename`]) but
-//! stored under `tt_config::task_ports_dir()`, not `locks_dir()` or the repo:
-//! the ledger must survive reboots (the locks dir is the OS temp dir), and it
-//! is this machine's state, not something a collaborator's clone should see.
-//! Every writer serializes on the checkout's [`ClaimLock`], so
-//! read-modify-write cycles never interleave and lose entries. Its path is
-//! threaded through every function rather than re-resolved internally, so unit
-//! tests can pass a temp path and never touch the real config dir.
+//! Keyed by the checkout but stored under `tt_config::task_ports_dir()`, not
+//! `locks_dir()`: the ledger must survive reboots, and it is this machine's state. Every
+//! writer serializes on the checkout's [`ClaimLock`], and the path is threaded through
+//! rather than re-resolved so tests never touch the real config dir.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;

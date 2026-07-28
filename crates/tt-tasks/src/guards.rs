@@ -1,20 +1,14 @@
-//! Removal guards for `tt task rm` — a task must never take work with it.
+//! Removal guards for `tt task rm` — a task must never take work with it. Pure
+//! functions: the CLI gathers git output, bind-test results and docker listings in the
+//! task's directory and hands the raw data here for the decision.
 //!
-//! Pure functions (this crate's rule): the CLI gathers git output, bind-test
-//! results, and docker listings in the task's directory and hands the raw
-//! data here for the decision, mirroring `tt_git::task_assign`.
-//!
-//! Notes from the blog-repos probe that shaped these guards:
-//! - Stashes are repo-global in a worktree hub (they live in the shared
-//!   `.git`), so a per-task stash guard is meaningless here — unlike the
-//!   clone-era `task_assign` guard.
-//! - The commit guard means *reachable from no branch and no remote*
-//!   (`git rev-list --count HEAD --not --branches --remotes`): removing a
-//!   worktree never deletes branches (they live in the hub), so only
-//!   detached/orphan commits are real data loss. Upstream-based checks
-//!   silently pass on never-pushed branches and detached HEADs (both occurred
-//!   in the real migration), and remote-only checks block everything in hubs
-//!   created by `git clone --bare`, which have no `refs/remotes` at all.
+//! - Stashes are repo-global in a worktree hub (they live in the shared `.git`), so a
+//!   per-task stash guard is meaningless here.
+//! - The commit guard means *reachable from no branch and no remote*: removing a
+//!   worktree never deletes branches, so only detached/orphan commits are real data
+//!   loss. Upstream-based checks silently pass on never-pushed branches and detached
+//!   HEADs (both occurred in the real migration), and remote-only checks block
+//!   everything in a `git clone --bare` hub, which has no `refs/remotes` at all.
 
 use thiserror::Error;
 

@@ -1,27 +1,16 @@
 //! Owns one `claude` subprocess speaking `stream-json` over stdin/stdout.
 //!
-//! This is the same mechanism Anthropic's own GUIs use: the VS Code extension
-//! and the desktop app both drive the CLI with
-//! `--input-format stream-json --output-format stream-json --verbose` through
-//! `@anthropic-ai/claude-agent-sdk`, then render the resulting message stream.
-//! We skip the Node SDK because the wire format is JSONL over pipes and Rust
-//! reads pipes perfectly well — the SDK's value is its TypeScript types, which
-//! [`crate::protocol`] replaces with the five shapes we render.
-//!
 //! Threading mirrors `tt-app`'s terminal host: one reader thread per pipe, and
-//! the session handle itself holds no lock across a subprocess call. Events
-//! reach the caller through a callback rather than a channel so the app can
-//! emit straight to the webview without a second drain loop.
+//! the handle holds no lock across a subprocess call. Events reach the caller
+//! through a callback, not a channel, so the app emits straight to the webview.
 //!
-//! **`--print` is required.** Without it the CLI starts its interactive TUI
-//! and ignores the stream-json flags entirely; the failure mode is a process
-//! that appears healthy and emits nothing.
+//! **`--print` is required.** Without it the CLI starts its interactive TUI and
+//! ignores the stream-json flags entirely; the failure mode is a process that
+//! appears healthy and emits nothing.
 //!
-//! **`--permission-prompt-tool stdio` is what opens the control channel.**
-//! With it, every gated tool call — and every `AskUserQuestion` — arrives as a
-//! `can_use_tool` control request the client must answer (see
-//! [`crate::control`]). Without it the CLI decides alone against settings, and
-//! a request needing a human simply fails. Verified live: the flag alone is
+//! **`--permission-prompt-tool stdio` opens the control channel** — every gated
+//! tool call and every `AskUserQuestion` arrives as a `can_use_tool` request the
+//! client must answer (see [`crate::control`]). Verified live: the flag alone is
 //! sufficient, with no `initialize` handshake first.
 
 use std::io::{BufRead, BufReader, Write};

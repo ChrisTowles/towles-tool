@@ -1,32 +1,17 @@
-//! Telemetry for the `tt` CLI and the desktop app: `tracing` instrumentation
-//! plus an event-log sink that streams every span and event to disk as JSONL,
-//! and the reader the Telemetry screen uses to read it back. One crate for both
-//! halves so writer and reader can never disagree about the on-disk schema.
+//! Telemetry for the `tt` CLI and the desktop app: `tracing` instrumentation, an
+//! event-log sink streaming every span and event to disk as JSONL, and the reader the
+//! Telemetry screen uses — one crate, so writer and reader can't disagree about the
+//! on-disk schema. Always on and local, so questions are answerable *later*.
 //!
-//! The point is answering questions *later*: "which task spawned that `gh`
-//! call, how long did it take, what did it exit with?" should be a `jq` away,
-//! not a repro under a debugger. So the sink is always on, flushed, and local.
-//!
-//! - [`init`] installs the global subscriber — once, early, from a binary,
-//!   never a library. Its `fmt` layer keeps the stderr output `-v`/`RUST_LOG`
-//!   drive, and its `tracing-log` bridge captures the `log::` macros still in
-//!   the tree; [`layer::EventLogLayer`] writes the structured record to
-//!   `<data_dir>/telemetry/events-<date>.jsonl`, instance-scoped so each
-//!   worktree gets its own log.
-//! - **The unscoped path is a trap.** For a process run from a `towles-tool`
-//!   checkout, `tt_config::state_scope()` always resolves `<data_dir>` to a
-//!   *scoped* directory, never the bare `~/.local/share/towles-tool/telemetry/`
-//!   — which exists but stays permanently empty, so checking it by eye reads as
-//!   "telemetry is broken". Resolve with `tt_config::telemetry_dir()`.
-//! - [`list_days`]/[`read_day`] read those files back for the viewer screen's
-//!   Tauri bridge. No cache, and an actively-used checkout has been seen
-//!   producing 75,000+ records in a day: the frontend caps *rendered* rows, but
-//!   `read_day` still returns the whole file on every focus/refresh. Bounded
-//!   reads would be the deeper fix if that cost bites.
-//! - [`summarize`] and [`summarize_keyboard`]/[`keyboard_score`] reduce a day
-//!   to the Attention and Keyboard tabs' aggregates. They run here rather than
-//!   in the frontend precisely because of that size: a few hundred bytes
-//!   instead of a day's records crossing IPC on every render.
+//! - [`init`] installs the global subscriber, once, early, from a binary; its `fmt`
+//!   layer keeps stderr `-v`/`RUST_LOG`-driven and [`layer::EventLogLayer`] writes to
+//!   `<data_dir>/telemetry/events-<date>.jsonl`, instance-scoped per worktree.
+//! - **The unscoped path is a trap.** From a checkout, `tt_config::state_scope()`
+//!   always resolves `<data_dir>` to a *scoped* directory, never the bare
+//!   `~/.local/share/towles-tool/telemetry/` — which exists but stays empty, so
+//!   checking it by eye reads as "telemetry is broken". Use `telemetry_dir()`.
+//! - [`list_days`]/[`read_day`] read them back uncached; [`summarize`] and
+//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
 
 mod attention;
 mod event_log;
@@ -40,18 +25,15 @@ mod types;
 /// records — `layer::tests::capture`, `disk_filter_tests::records_written`,
 /// and `reader`'s span test.
 ///
-/// `tracing::subscriber::with_default` is thread-local, but `tracing`'s
-/// **callsite-interest cache is global**: the first thread to reach a callsite
-/// decides, for every thread, whether it is worth recording. Two of these
-/// tests running concurrently can therefore have one evaluate a callsite while
-/// the other sits between `with_default` calls with no subscriber installed,
-/// caching "never interested" and silently dropping the first one's span. The
-/// same race was measured in `tt-exec` (see `spawn_records`): ~1 failure per
-/// 60 runs, and zero under `--test-threads=1`.
+/// `with_default` is thread-local, but `tracing`'s **callsite-interest cache is
+/// global**: the first thread to reach a callsite decides for every thread. Two of
+/// these tests concurrently can have one evaluate a callsite while the other sits
+/// between `with_default` calls with no subscriber, caching "never interested" and
+/// dropping the first's span — measured in `tt-exec` at ~1 failure per 60 runs, zero
+/// under `--test-threads=1`.
 ///
-/// One lock per test *binary* is what's needed, so it lives here at the crate
-/// root rather than being duplicated per module. Poison-tolerant: one
-/// panicking test must fail alone, not cascade.
+/// One lock per test *binary* is what's needed, so it lives at the crate root.
+/// Poison-tolerant: one panicking test must fail alone, not cascade.
 #[cfg(test)]
 pub(crate) fn serialize_subscriber_tests() -> std::sync::MutexGuard<'static, ()> {
     static SUBSCRIBER: std::sync::Mutex<()> = std::sync::Mutex::new(());

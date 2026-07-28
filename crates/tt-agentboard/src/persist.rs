@@ -67,16 +67,12 @@ fn file_id(_meta: &std::fs::Metadata) -> (u64, u64) {
 /// touched keys into it, then atomically write the merged value back and hand
 /// it to the caller to adopt as its new in-memory state.
 ///
-/// This is the one home of the merge-on-save clobber-safety property that every
-/// shared agentboard JSON file depends on (#75, #315). Each file
-/// (`sessions.json`, `windows.json`, `collapse.json`, `folder-meta.json`) is
-/// written by every open Agentboard instance (`tt task` runs one per checkout).
-/// A save must therefore never write this instance's *whole* view — it would
-/// clobber folders/keys another window touched that this copy simply hasn't
-/// heard about yet (the #75 bug: one poll saw zero repos and pruned every
-/// folder's records). The safe shape is always: re-read what's on disk now,
-/// merge in only the keys this instance changed, write that back. Callers own
-/// the path/dirty guards and the merge itself; this owns the read → write →
+/// The one home of the merge-on-save clobber-safety property every shared
+/// agentboard JSON file depends on (#75, #315): each is written by every open
+/// instance, so a save must never write this instance's *whole* view — it would
+/// clobber keys another window touched that this copy hasn't heard about yet (the
+/// #75 bug: one poll saw zero repos and pruned every folder's records). Callers
+/// own the path/dirty guards and the merge; this owns the read → write →
 /// return-merged sequence so the four `save()` sites can't drift apart.
 pub fn merge_on_save<T: serde::Serialize>(
     path: &Path,

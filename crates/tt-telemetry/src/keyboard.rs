@@ -1,28 +1,17 @@
-//! Keyboard-vs-mouse habit scoring: the same event log [`crate::summarize`]
-//! reads, folded into the one question a keyboard-shortcut habit needs
-//! answered — *am I actually using them, and am I getting better?*
+//! Keyboard-vs-mouse habit scoring over the same event log [`crate::summarize`] reads
+//! — *am I actually using them, and am I getting better?* Two `ui.action` records make
+//! it measurable, both through the one `uiAction` seam: `shortcut.<id>` when a registry
+//! binding fired, `mouse.<id>` when the pointer did that same binding's job. Only click
+//! targets with a genuine twin emit the latter (`lib/shortcut-coach.ts`), so every
+//! `mouse.` record is a keystroke that was available and not taken.
 //!
-//! Two `ui.action` records make this measurable, both emitted through the one
-//! `uiAction` seam: `shortcut.<id>` when a registry binding fired
-//! (`apps/client/src/lib/shortcuts.tsx`), and `mouse.<id>` when the pointer did
-//! the same thing binding `<id>` does. Only click targets with a genuine
-//! shortcut twin emit the latter (`apps/client/src/lib/shortcut-coach.ts`), so
-//! every `mouse.` record is a keystroke that was available and not taken.
+//! The share is `shortcut / (shortcut + mouse)` over *all* ids, not only ids seen on
+//! both sides: a shortcut with no clickable equivalent is still keyboard-first, and a
+//! click with no binding is not a miss. It does mean a frequently-fired binding
+//! carries real weight, so a specific habit is read from the per-id [`ShortcutSplit`].
 //!
-//! The share is `shortcut / (shortcut + mouse)` over *all* ids, not only ids
-//! seen on both sides: a shortcut for something with no clickable equivalent is
-//! still keyboard-first and belongs in the numerator, and a click with no
-//! binding is not a miss and belongs nowhere. It does mean a frequently-fired
-//! binding (`ab-focus-terminal` is bare Enter) carries real weight in the day's
-//! share — the per-id [`ShortcutSplit`] breakdown, not the headline number, is
-//! where a specific habit is read.
-//!
-//! Streaks skip idle days rather than breaking on them. A day with fewer than
-//! [`GOAL_MIN_ACTIONS`] duel records is *neutral* — the app was barely used, so
-//! it is neither win nor loss and the streak passes through; a weekend must not
-//! cost a habit its streak. Today is the other special case: still in progress,
-//! so failing the goal *so far* also passes through instead of zeroing a streak
-//! the afternoon could still earn.
+//! Streaks skip idle days: under [`GOAL_MIN_ACTIONS`] duel records is *neutral*, so a
+//! weekend costs no streak, and today passes through since the afternoon could earn it.
 
 use serde::Serialize;
 

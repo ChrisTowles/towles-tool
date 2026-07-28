@@ -1,20 +1,16 @@
-//! Session resume: after the app comes back up, work out which Claude
-//! sessions were running in which panes on the *previous* run — however that
-//! run ended, crash or ordinary quit — so the user can pick which to
-//! relaunch with `claude --resume`.
+//! Session resume: after the app comes back up, work out which Claude sessions
+//! were running in which panes on the *previous* run — crash or ordinary quit —
+//! so the user can pick which to relaunch with `claude --resume`.
 //!
 //! A candidate needs two independent facts to line up:
 //!
 //! 1. **tt had a pane running it** — [`crate::sessions::SessionRecord`]'s
 //!    `last_claude_session_id`, persisted while the agent was live because live
 //!    attribution reads `TT_SESSION_ID` from `/proc` and dies with the process.
-//! 2. **The transcript is still on disk** — it supplies the authoritative
-//!    recency (file mtime) and the title, and `claude --resume` needs it anyway.
+//! 2. **The transcript is still on disk** — it supplies the authoritative recency
+//!    (file mtime) and the title, and `claude --resume` needs it anyway.
 //!
-//! A Claude session run outside tt fails (1) and is never offered; a pane whose
-//! transcript was deleted fails (2) and could not be resumed regardless.
-//!
-//! Clock, paths and pid-liveness are all parameters so the decisions are
+//! Clock, paths and pid-liveness are all parameters, so the decisions are
 //! unit-testable without a real prior run.
 
 use std::path::{Path, PathBuf};

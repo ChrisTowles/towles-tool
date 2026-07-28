@@ -1,31 +1,17 @@
-//! Lets one trip to GitHub serve every open copy of the app.
+//! Lets one trip to GitHub serve every open copy of the app. Each worktree runs its
+//! own app with its own collectors, so four windows asked GitHub the same questions
+//! four times — and the rate limit counts against the token, not the window: ~1,920
+//! points an hour out of 5,000. Whoever asks first writes the answer down; anyone
+//! starting while it is still recent reads that instead. Hence a cache, not a lock:
+//! we share the answers, not the job, and an answer is good until it is older than
+//! the caller's own refresh interval.
 //!
-//! Each worktree runs its own app, with its own `tt.db` and its own PR and
-//! issue collectors, so four windows asked GitHub the same questions four times
-//! — and the rate limit counts against the token, not the window: ~1,920 points
-//! an hour out of 5,000. [`dedupe_repo_dirs`](crate::dedupe_repo_dirs) stops one
-//! collector visiting a repo twice; this stops the second collector asking.
-//!
-//! Whoever asks first writes the answer down; anyone starting while it is still
-//! recent reads it instead of calling GitHub, and copies the rows into its own
-//! `tt.db` as usual. Hence a cache, not a lock: we share the answers, not the
-//! job.
-//!
-//! **The unit is `(collector, repo)`, not one sweep**, because that's the unit
-//! the answer is true of. Keying by the sweep needs two rules this doesn't: a
-//! sweep where one repo failed can't be published, since the reader replaces
-//! whole tables from it and a missing repo reads back as "that repo has
-//! nothing"; and a reader has to prove the sweep covered exactly the repos it
-//! tracks, or a just-added repo gets cleared the same way. Per repo, reuse is
-//! also partial — three of four already answered is one call — and concurrent
-//! publishers write different files, so neither can lose the other's work.
-//!
-//! An answer is good until it is older than the caller's own refresh interval,
-//! so the machine makes one round of calls per interval however many windows
-//! are open. Nobody is in charge, so two windows can both ask in the gap before
-//! the first new answer lands — an occasional extra call against the permanent
-//! 4× it replaces, and better than a lock that could stop collection outright
-//! if its holder died. Writes are temp-then-rename.
+//! **The unit is `(collector, repo)`, not one sweep**, because that's the unit the
+//! answer is true of. Keying by the sweep needs two rules this doesn't: a sweep
+//! where one repo failed can't be published (a reader replaces whole tables from
+//! it, so a missing repo reads back as "nothing"), and a reader would have to prove
+//! the sweep covered exactly the repos it tracks. Per repo, reuse is also partial,
+//! and concurrent publishers write different files. Writes are temp-then-rename.
 
 use std::fs;
 use std::path::{Path, PathBuf};

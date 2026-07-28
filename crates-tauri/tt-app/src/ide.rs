@@ -1,18 +1,14 @@
-//! Per-terminal Claude Code IDE servers (see `docs/CLAUDE-CODE-IDE.md`).
+//! Per-terminal Claude Code IDE servers (see `docs/CLAUDE-CODE-IDE.md`). Every embedded
+//! terminal gets its own localhost WebSocket MCP server, a `~/.claude/ide/<port>.lock`
+//! advertisement and a `CLAUDE_CODE_SSE_PORT` stamp in its PTY env, so a `claude` started
+//! in a pane pairs with exactly that pane — highlights in the app's diff view become the
+//! session's selection context. Protocol logic lives in the Tauri-free `tt_ide` crate;
+//! this module owns sockets, tokens and lifecycle.
 //!
-//! Every embedded terminal gets its own localhost WebSocket MCP server, a
-//! `~/.claude/ide/<port>.lock` advertisement, and a `CLAUDE_CODE_SSE_PORT`
-//! stamp in its PTY env, so a `claude` started in a pane pairs with exactly
-//! that pane — highlights made in the app's diff view for that folder become
-//! the session's selection context. Protocol logic lives in the Tauri-free
-//! `tt_ide` crate; this module owns sockets, tokens and lifecycle.
-//!
-//! Connections are served concurrently: Claude Code (>= 2.1.x) is
-//! multi-process — the interactive TUI and its session daemon each hold their
-//! own IDE connection, and both need the selection stream. The [`IdeServer`]
-//! handle lives inside the terminal's `Session`; dropping it (kill,
-//! replacement, window teardown) aborts the server task and removes the
-//! lockfile.
+//! Connections are served concurrently: Claude Code >= 2.1 is multi-process — the TUI and
+//! its session daemon each hold an IDE connection, and both need the selection stream.
+//! The [`IdeServer`] handle lives in the terminal's `Session`; dropping it aborts the
+//! server task and removes the lockfile.
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener as StdTcpListener;

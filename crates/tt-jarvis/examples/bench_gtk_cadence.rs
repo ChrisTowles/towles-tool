@@ -1,32 +1,17 @@
-//! Closes the last open risk from the Step 0 gate: does the **parent's** commit
-//! cadence clamp the embedded pane's framerate?
-//!
-//! A `wl_subsurface` is **synchronized by default** — the child's commits don't
-//! take effect until the *parent* commits — which would cap Bevy at whatever
-//! rate GTK/WebKit repaints. Not a tax, a hard ceiling; `set_desync()` is
-//! supposed to break that link. The earlier `bench_subsurface` built its own
-//! bare Wayland parent and so said nothing about this; here the parent is a
-//! real **GTK 3** window (the toolkit Tauri uses on Linux) pinned at a slow
-//! repaint rate (default 5 Hz), standing in for a webview that paints only when
-//! something changes. Both arms matter — a fast desync run proves nothing alone,
-//! since the parent might have been committing quickly anyway — so run with
-//! `--features linux-harness --release`, once with `--sync` and once without.
-//!
-//! Result (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60 secondary output):
+//! Closes the last Step 0 risk: does the **parent's** commit cadence clamp the
+//! embedded pane's framerate? A `wl_subsurface` is **synchronized by default** (the
+//! child's commits wait on the *parent's*), which would cap Bevy at GTK/WebKit's
+//! repaint rate. Run both arms (`--features linux-harness --release`, with and
+//! without `--sync`); the parent is a real GTK 3 window pinned slow.
 //!
 //! | arm              | parent observed | child            | outcome                  |
 //! |------------------|-----------------|------------------|--------------------------|
 //! | `--sync`         | 5 Hz            | —                | blocked, 0 frames in 90s |
 //! | desync (default) | 7.3 Hz          | 60.06 fps median | 270 frames in 5.0s       |
 //!
-//! **The cadence risk is closed: `set_desync()` fully decouples the pane** — an
-//! 8x ratio, so the pane's framerate is plainly not a function of the parent's.
-//! Two things only the control arm could teach: in sync mode the pane doesn't
-//! slow to the parent's rate, it **blocks outright** (`app.update()` never
-//! returns, waiting on a commit only the parent can make, and the loop's
-//! deadline is checked *after* it), so a missing `set_desync()` presents as a
-//! hang; and the desync arm's steady 60 Hz is itself proof the window was
-//! visible and getting frame callbacks, ruling out occlusion as the cause.
+//! (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60.) **Closed: `set_desync()` fully
+//! decouples the pane.** In sync mode it doesn't slow, it **blocks outright**, so a
+//! missing `set_desync()` presents as a hang, not as a slow pane.
 
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};

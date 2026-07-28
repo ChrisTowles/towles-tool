@@ -1,23 +1,16 @@
-//! Wayland embedding: a `wl_subsurface` of the Tauri window's own toplevel.
+//! Wayland embedding: a `wl_subsurface` of the Tauri window's own toplevel. Ported from
+//! `tt-jarvis`'s `bench_gtk_cadence` harness, which measured this exact arrangement —
+//! see that file for why [`Subsurface::set_desync`] is non-negotiable below.
 //!
-//! Ported from `tt-jarvis`'s `bench_gtk_cadence` harness, which measured this
-//! exact arrangement — see that file for the experiment that justifies
-//! [`Subsurface::set_desync`] being non-negotiable below.
+//! **Why we adopt GDK's connection rather than opening our own:** subsurface parentage
+//! is **per-client**, so a surface can only be made a child of another on the same
+//! Wayland connection. GTK owns the toplevel, so we reach Wayland through GDK's existing
+//! `wl_display`; `Connection::connect_to_env()` would give a second client that cannot
+//! see GTK's surface at all.
 //!
-//! # Why we adopt GDK's connection instead of opening our own
-//!
-//! Subsurface parentage is **per-client**: a surface can only be made a child of
-//! another surface on the same Wayland connection. GTK owns the toplevel, so we
-//! must reach Wayland through GDK's existing `wl_display` rather than calling
-//! `Connection::connect_to_env()`, which would give us a second client that
-//! cannot see GTK's surface at all.
-//!
-//! # Threading
-//!
-//! Everything in this module is **main-thread only**. The surface is created,
-//! moved and destroyed on the GTK main thread; the render thread receives only
-//! the resulting handles (which is what `ForeignSurface`'s `Send` claim rests
-//! on) and never touches these proxies.
+//! **Threading:** everything here is **main-thread only**. The surface is created, moved
+//! and destroyed on the GTK main thread; the render thread receives only the resulting
+//! handles (what `ForeignSurface`'s `Send` claim rests on) and never touches the proxies.
 
 use std::ffi::c_void;
 
@@ -68,20 +61,16 @@ const OFFSCREEN: i32 = 1 << 20;
 
 /// Offset from the toplevel surface's origin to the webview's.
 ///
-/// The frontend measures with `getBoundingClientRect()`, relative to the
-/// **webview**; `wl_subsurface.set_position` is relative to the **parent
-/// surface**, which is the whole GTK toplevel — client-side decoration shadow,
-/// title bar and all. Positioning by the raw DOM rect therefore lands the pane
-/// up and to the left of its slot by exactly the decoration's extent.
+/// The frontend measures with `getBoundingClientRect()`, relative to the **webview**;
+/// `wl_subsurface.set_position` is relative to the **parent surface**, the whole GTK
+/// toplevel — CSD shadow, title bar and all — so positioning by the raw DOM rect lands
+/// the pane up and left of its slot by the decoration's extent. Read fresh rather than
+/// cached: the offset changes when the window is maximized or tiled, and a move is cheap.
 ///
-/// Read fresh rather than cached: the offset changes when the window is
-/// maximized or tiled (CSD shadows collapse), and a move is cheap.
-///
-/// **Known limit — correct only at scale 1.** This returns physical pixels to
-/// match `PaneRect`, but `set_position` takes *surface-local* (logical) units,
-/// and `wl_surface.set_buffer_scale` is never called either. Both are identity
-/// on a scale-1 display and wrong on HiDPI. Fixing them is one job: separate
-/// the renderer's physical rect from the compositor's logical one.
+/// **Known limit — correct only at scale 1.** This returns physical pixels to match
+/// `PaneRect`, but `set_position` takes *surface-local* (logical) units, and
+/// `wl_surface.set_buffer_scale` is never called either. Both are identity at scale 1
+/// and wrong on HiDPI; fixing them is one job.
 fn webview_offset(gtk_window: &gtk::ApplicationWindow, scale: i32) -> (i32, i32) {
     // Tauri nests the webview inside the window's single child container, so
     // that child's position in toplevel coordinates *is* the webview origin.
@@ -235,24 +224,19 @@ impl Subsurface {
         self.reposition()
     }
 
-    /// Show or hide the pane by *moving* it, not by unmapping it.
+    /// Show or hide the pane by *moving* it, not by unmapping it. Two more obvious
+    /// mechanisms were tried against a compositor screenshot and both failed:
     ///
-    /// Two more obvious mechanisms were tried against a compositor screenshot
-    /// and both failed, which is why this one looks indirect:
+    /// - **Attach a null buffer** (the textbook unmap) left the surface on screen
+    ///   unchanged — even with the render thread stopped first.
+    /// - **Detach the pane entirely** does remove it, but tearing down the Bevy app and
+    ///   its wgpu device took the whole process with it, moments after "pane render
+    ///   thread stopped".
     ///
-    /// - **Attach a null buffer** (`wl_surface.attach(None)` + commit, the
-    ///   textbook unmap) left the surface on screen unchanged — even with the
-    ///   render thread stopped first, so nothing could have re-attached one.
-    /// - **Detach the pane entirely** does remove it, but tearing down the Bevy
-    ///   app and its wgpu device took the whole process with it (the app exited
-    ///   moments after "pane render thread stopped"), which is not a risk a
-    ///   screen switch may take.
-    ///
-    /// Parking it outside every output has neither problem: the compositor has
-    /// nothing to intersect, the swapchain and the Bevy app stay intact, and
-    /// coming back is one more `set_position`. Pair it with pausing the
-    /// renderer ([`crate::PaneHost::set_visible`]) so a hidden pane costs no
-    /// GPU either.
+    /// Parking it outside every output has neither problem: nothing to intersect, the
+    /// swapchain and Bevy app intact, and coming back is one more `set_position`. Pair
+    /// with pausing the renderer ([`crate::PaneHost::set_visible`]) so a hidden pane
+    /// costs no GPU either.
     pub fn set_visible(&mut self, visible: bool) -> Result<(), PaneError> {
         if visible == self.visible {
             return Ok(());

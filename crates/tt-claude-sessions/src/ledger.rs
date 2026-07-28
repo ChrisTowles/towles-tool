@@ -139,30 +139,17 @@ pub struct ResumableSession {
 
 /// Prior sessions launched in `cwd`, newest first.
 ///
-/// **The project directory narrows the search; the transcript's own recorded
-/// `cwd` decides.** Those are two different jobs, and conflating them either way
-/// is a bug. The encoded directory name is useless as *proof* — it folds `/`,
-/// `.` and `_` all to `-`, so distinct paths can share one directory — which is
-/// why the exact `cwd` comparison here is what actually filters. But as a
-/// *candidate set* it is exact in the direction that matters: Claude Code
-/// derives the directory from the cwd, so every transcript for `cwd` is
-/// guaranteed to be in there, and a collision can only add extras that the
-/// comparison then drops.
+/// **The project directory narrows the search; the transcript's own recorded `cwd`
+/// decides.** The encoded name is useless as *proof* — it folds `/`, `.` and `_` all
+/// to `-` — but exact as a *candidate set*, since Claude Code derives it from the
+/// cwd, so a collision only adds extras the comparison drops. A transcript
+/// predating the `cwd` field is left out rather than guessed at: resuming the wrong
+/// conversation into a worktree is worse than not offering it.
 ///
-/// A transcript predating the `cwd` field can't prove it belongs here, so it is
-/// left out rather than guessed at: resuming the wrong conversation into a
-/// worktree is worse than not offering it.
-///
-/// The narrow counterpart to [`scan_sessions_detailed`], and worth its own entry
-/// point rather than filtering that one's output for two reasons. The wide scan
-/// parses the newest N transcripts *globally* — hundreds of megabytes — to
-/// answer a question about a directory that typically holds two or three files.
-/// And its `limit` is a budget shared with every other folder, so a busy machine
-/// can push a quiet folder's sessions out of the result entirely; here the
-/// directory is the bound.
-///
-/// Each survivor is parsed once, and `cwd` is checked before any analysis, so a
-/// transcript belonging to another folder costs a parse and nothing more.
+/// Worth its own entry point rather than filtering [`scan_sessions_detailed`]: that
+/// parses the newest N transcripts *globally* — hundreds of megabytes — to answer a
+/// question about two or three files, and its `limit` is a budget shared with every
+/// folder, so a busy machine can push a quiet folder's sessions out entirely.
 pub fn resumable_sessions(
     project_dir: &Path,
     cwd: &str,

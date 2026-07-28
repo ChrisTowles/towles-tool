@@ -1,27 +1,17 @@
 //! A surface Bevy did not create, dressed up as something Bevy will accept.
 //!
-//! # Why this works without forking Bevy
-//!
-//! `bevy_render`'s `extract_windows` system queries
-//! `(Entity, &Window, &RawHandleWrapper, Option<&PrimaryWindow>)`. It never
-//! mentions winit. `WindowSurfaces`/`create_surfaces` then builds the
-//! `wgpu::Surface` from whatever raw handle that component carries.
-//!
-//! So an entity carrying `Window` + [`RawHandleWrapper`] + `PrimaryWindow`, in
-//! an app with **no `WinitPlugin`**, is a complete window as far as the renderer
-//! is concerned. `RawHandleWrapper::new` accepts any
-//! `HasWindowHandle + HasDisplayHandle + 'static` via `WindowWrapper`, and both
-//! are public API — which is what [`ForeignSurface`] exists to satisfy.
+//! **Why this works unforked:** `bevy_render`'s `extract_windows` queries `(Entity,
+//! &Window, &RawHandleWrapper, Option<&PrimaryWindow>)` and never mentions winit;
+//! `create_surfaces` then builds the `wgpu::Surface` from whatever raw handle it
+//! carries. So an entity with `Window` + [`RawHandleWrapper`] + `PrimaryWindow`, in an
+//! app with **no `WinitPlugin`**, is a complete window to the renderer.
 //!
 //! # Safety
 //!
-//! [`ForeignSurface`] is a pair of borrowed raw handles. It does not own the
-//! surface and cannot keep it alive. **The platform code that created the
-//! underlying surface must outlive every `ForeignSurface` derived from it**, and
-//! outlive the Bevy app holding it — the renderer keeps frames in flight, so a
-//! surface torn down mid-frame is a use-after-free, not a blank pane. The
-//! embedding layer (`tt-pane`) owns that ordering: it must drop the Bevy app
-//! before releasing the subsurface/`NSView`.
+//! [`ForeignSurface`] is a pair of borrowed raw handles; it does not own the surface.
+//! **The platform code that created it must outlive every `ForeignSurface` derived
+//! from it**, and the Bevy app holding it — the renderer keeps frames in flight, so a
+//! surface torn down mid-frame is a use-after-free, not a blank pane.
 
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,

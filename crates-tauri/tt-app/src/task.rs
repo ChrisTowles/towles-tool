@@ -386,35 +386,20 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
     }
 }
 
-/// Delete a task's *presence*: its live panes and its worktree on disk go,
-/// while its board row survives **closed** — stamped with how it ended
-/// (`outcome`) and detached from the now-gone dir. Refuses if the worktree still
-/// holds work that exists nowhere else. The only true row delete left is
-/// `purge`, row-only and refused while a worktree is bound.
+/// Delete a task's *presence*: its live panes and its worktree on disk go, while its board
+/// row survives **closed** — stamped with how it ended and detached from the gone dir.
+/// Refuses if the worktree holds work that exists nowhere else. The only true row delete
+/// left is `purge`, row-only and refused while a worktree is bound. The single delete path
+/// — Board, rail and the `task_delete` MCP tool all land here — because a partial delete
+/// left the rest as garbage whichever half it kept.
 ///
-/// This is the single delete path — Board screen, Agentboard rail and the
-/// `task_delete` MCP tool all land here — because a partial delete left the rest
-/// as garbage: the row alone orphaned a worktree with nothing in the UI to
-/// remove it from, the worktree alone left a row pointing at a dead directory.
-///
-/// **The board row is closed last, and only if the worktree really went.** A
-/// guarded refusal returns [`TaskDeleteOutcome::Blocked`] with row and worktree
-/// untouched: a dirty tree, commits unreachable from any branch/remote, or a
-/// foreign listener on the task's claimed ports each come back as a typed
-/// blocker the app renders with its remedy ([`task_stop_port`]) plus a force.
-/// `force: true` skips every guard, discarding that work for good.
-///
-/// Past the guards — via `ops::remove_task`'s `before_removal` hook, so a
-/// *refused* removal never costs a live session — it kills the folder's PTYs
-/// (SIGHUP to a Claude Code session, then SIGKILL for stragglers sharing the
-/// shell's session), which is also why a dev server in the task's own pane
-/// surfaces as a `foreignPort` blocker instead of dying silently. Session and
-/// window records drop only once `ops::remove_task` succeeds — dropping them up
-/// front made a blocked removal look clean, panes gone, with the worktree still
-/// on disk and nothing left to retry from.
-///
-/// Blocking, not `async`: every step is a subprocess or a lock, and both
-/// callers already have a blocking thread to spend.
+/// **The board row is closed last, and only if the worktree really went.** A guarded
+/// refusal returns [`TaskDeleteOutcome::Blocked`] with both untouched: a dirty tree,
+/// unreachable commits, or a foreign listener on the claimed ports each come back as a
+/// typed blocker rendered with its remedy plus a force. Past the guards — via
+/// `before_removal`, so a *refused* removal never costs a live session — it kills the
+/// folder's PTYs, and session/window records drop only once removal succeeds; dropping
+/// them up front made a blocked removal look clean with the worktree still on disk.
 pub fn delete_task_blocking(
     app: &tauri::AppHandle,
     target: DeleteTarget,

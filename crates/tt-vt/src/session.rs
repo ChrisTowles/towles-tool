@@ -1,32 +1,17 @@
-//! Per-terminal thread wrapper around [`Engine`].
+//! Per-terminal thread wrapper around [`Engine`]. libghostty-vt state is `!Send`, so
+//! each terminal gets a dedicated thread owning its engine; callers talk to it through
+//! channels and receive [`Event`]s on a sink callback run on that thread.
 //!
-//! libghostty-vt state is `!Send`, so each terminal gets a dedicated thread
-//! that owns its engine. Callers talk to it through channels and receive
-//! [`Event`]s on a sink callback (invoked on the session thread).
-//!
-//! Batching falls out of the loop shape: one blocking wait, drain everything
-//! queued, then a single render pass — under PTY floods the drain coalesces
-//! many chunks into one frame. Renders are additionally throttled to
-//! [`MIN_FRAME_INTERVAL`], so input on an idle terminal renders immediately but
-//! a steady trickle is absorbed until the interval elapses. Without it, every
-//! chunk gets its own frame event and the UI queue backs up faster than the
-//! webview can paint, so input latency grows with sustained output.
-//!
-//! Two problems the throttle alone doesn't solve, both handled by splitting
-//! byte and control input onto separate channels:
-//!
-//! * **Bounded memory.** The frame *emitter* is throttled, but a firehose
-//!   (`cat huge.log`) into a slow webview would queue raw PTY bytes without
-//!   bound. Bytes ride a *bounded* channel ([`MAX_QUEUED_BYTE_CHUNKS`]); once
-//!   full, the PTY reader thread blocks in [`Sender::send`], so the kernel's
-//!   PTY buffer fills and applies real flow control to the shell.
-//! * **Responsive UI.** Resize/scroll/copy/selection must never wait behind a
-//!   backlog of bytes. Control rides its own *unbounded* channel that the
-//!   engine drains *first* on every pass.
-//!
-//! The engine thread blocks on a third, dumb `wake` channel every send pings
-//! after enqueuing; on wake it drains control then bytes. That channel carries
-//! no ordering, so control priority holds however the sends interleaved.
+//! Batching falls out of the loop shape: one blocking wait, drain everything queued,
+//! then a single render pass, so a PTY flood coalesces into one frame. Renders are also
+//! throttled to [`MIN_FRAME_INTERVAL`] — without it every chunk gets its own frame
+//! event, the UI queue backs up faster than the webview paints, and input latency grows
+//! with sustained output. Two problems the throttle alone doesn't solve, both handled
+//! by splitting byte and control input onto separate channels. **Bounded memory**: a
+//! firehose into a slow webview would queue raw bytes unbounded, so bytes ride a
+//! *bounded* channel ([`MAX_QUEUED_BYTE_CHUNKS`]) and once full the reader blocks, the
+//! kernel's PTY buffer fills and the shell gets real flow control. **Responsive UI**:
+//! control rides an *unbounded* channel the engine drains first, never behind bytes.
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;

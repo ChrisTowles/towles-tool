@@ -81,23 +81,18 @@ const POOL_WIDTH: u16 = 20;
 /// 4420-4619) are below the range for the same reason.
 const POOL_FLOOR: u16 = 24410;
 
-/// A port pool no other test in this binary will touch, as a
-/// `${tt:port LO-HI}` token.
+/// A port pool no other test in this binary will touch, as a `${tt:port LO-HI}` token.
 ///
-/// Every test used to share one pool, and every test's tasks therefore claimed
-/// the *same* first free port. That collides with itself, not with the
-/// machine: `port_occupied` answers "is this port free?" by **binding** it, so
-/// while one test's probe holds that bind, a concurrent test's probe of the
-/// same port gets `AddrInUse` and concludes a dev server is running — making
-/// `tt task rm` refuse with `ForeignPortListener` and failing an assertion
-/// that had nothing to do with ports. Cargo runs these tests concurrently in
-/// one binary, so with ~20 tests on one port it landed roughly once every ten
-/// full-suite runs. Moving the shared pool (the previous fix) only changed
-/// which port they all collided on.
+/// Every test used to share one pool, so every test's tasks claimed the *same* first
+/// free port — which collides with itself, not the machine: `port_occupied` answers "is
+/// this free?" by **binding**, so while one test's probe holds the bind a concurrent
+/// probe of the same port gets `AddrInUse` and concludes a dev server is running, making
+/// `tt task rm` refuse with `ForeignPortListener`. Cargo runs these concurrently in one
+/// binary, so with ~20 tests on one port it landed about once every ten full-suite runs;
+/// moving the shared pool only changed which port they all collided on.
 ///
 /// Disjoint per-test windows remove the interference outright. The counter is
-/// process-wide, and each pool is claimed by exactly one test's tempdir
-/// registry.
+/// process-wide, and each pool is claimed by exactly one test's tempdir registry.
 fn next_pool() -> String {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(POOL_FLOOR);
     let lo = NEXT.fetch_add(POOL_WIDTH, std::sync::atomic::Ordering::Relaxed);
@@ -859,24 +854,17 @@ fn rm_untracks_the_task_and_removes_its_instance_state() {
     );
 }
 
-/// Board rows are per-checkout instance state (root CLAUDE.md's `tt-config`
-/// bullet): a row lives wherever the app instance that created it was
-/// scoped, which need not be the primary checkout `tt task rm` anchors to.
-/// Concretely: an app instance running *from inside another task's own
-/// worktree* (this repo's own dev loop does exactly this) scopes itself to
-/// that worktree, not the primary — so a task it creates, and a `tt task rm`
-/// run from that same shell later, both see that worktree's own scope via
-/// the ambient cwd, never the primary `--root`/discovery resolves to. `dir`
-/// (the *removed* task's own directory) is deliberately NOT where the
-/// fixture puts the row — that scope is exactly what `ops::remove_task`'s
-/// `state_cleanup` step wipes wholesale by task name regardless of this fix,
-/// which would make the test pass even against the bug (confirmed by hand:
-/// an earlier draft of this test put the row there and stayed green with the
-/// fix reverted). Reproduced directly against the real store (no forced
-/// `TT_STATE_SCOPE`, so scope resolution is the real `task_scope_from_dir`
-/// auto-detection) with both the creating and removing `tt` invocations run
-/// with `current_dir` set to the "container" task, rather than through a
-/// second real `tt-app` instance.
+/// Board rows are per-checkout instance state: a row lives wherever the app instance
+/// that created it was scoped, which need not be the primary `tt task rm` anchors to. An
+/// instance running *from inside another task's worktree* scopes itself there, so a task
+/// it creates and a later `tt task rm` from that same shell both see that worktree's
+/// scope via the ambient cwd.
+///
+/// `dir` (the *removed* task's own directory) is deliberately NOT where the fixture puts
+/// the row — that scope is what `state_cleanup` wipes wholesale regardless of this fix,
+/// so the test would pass even against the bug (confirmed by hand: an earlier draft put
+/// the row there and stayed green with the fix reverted). Run against the real store
+/// with no forced `TT_STATE_SCOPE`, so scope resolution is the real auto-detection.
 #[test]
 fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     let tmp = tempfile::tempdir().unwrap();

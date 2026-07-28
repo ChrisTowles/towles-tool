@@ -1,23 +1,16 @@
-//! Embedded terminals: shells in PTYs (portable-pty), terminal state in
-//! tt-vt (libghostty-vt), rendered by the app's canvas terminal view. Many
-//! terminals live at once, keyed by a frontend-supplied `term_id` (the
-//! agentboard screen spawns one or more per session, each rooted in the
-//! session's folder). PTY bytes feed a per-terminal tt-vt engine thread;
-//! the frontend receives `terminal://frame` events (dirty-row style runs,
-//! cursor, title, mode hints) tagged with `termId`; input/resize/scroll come
-//! back as commands.
+//! Embedded terminals: shells in PTYs (portable-pty), terminal state in tt-vt, rendered
+//! by the app's canvas terminal view. Many live at once, keyed by a frontend-supplied
+//! `term_id`. PTY bytes feed a per-terminal tt-vt engine thread; the frontend receives
+//! `terminal://frame` events tagged with `termId`, and input/resize/scroll come back as
+//! commands. Shells are owned by the app process — closing it kills them, nothing
+//! persists across a restart.
 //!
-//! Shells are owned directly by the app process — closing the app kills them,
-//! nothing persists across a restart.
-//!
-//! Concurrency contract: the [`TermState`] map lock is only ever held for map
-//! surgery — never across a PTY write, a subprocess, or a kill/wait. Input
-//! goes through a per-terminal channel + writer thread so a shell that stops
-//! reading (Ctrl+S, stopped job) can only back up its own terminal, and every
-//! reader/exit path is generation-checked so a replaced PTY's exit event can
-//! never close its successor. The tt-vt engine thread is owned by the PTY
-//! reader thread (dropped — and joined — at EOF, after the map entry is
-//! resolved); the map only holds a cloneable input sender for resize/scroll.
+//! Concurrency contract: the [`TermState`] map lock is only ever held for map surgery,
+//! never across a PTY write, a subprocess, or a kill/wait. Input goes through a
+//! per-terminal channel + writer thread, so a shell that stops reading can only back up
+//! its own terminal, and every reader/exit path is generation-checked so a replaced PTY's
+//! exit can never close its successor. The tt-vt engine thread is owned by the PTY reader
+//! thread; the map holds only a cloneable input sender.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -383,22 +376,15 @@ impl TermState {
     }
 }
 
-/// SIGKILL every live process that shares `shell_pid`'s POSIX session,
-/// except the shell itself (the caller already handles that one). A
-/// backgrounded subshell (`(cmd &)`) never calls `setsid`, so it keeps the
-/// shell's original session id for its whole life even after its immediate
-/// parent (the subshell) exits and it gets reparented to init — invisible to
-/// any parent-child process-tree walk, but still found here. This
-/// deliberately does NOT reach a process that called `setsid` itself (a
-/// genuinely daemonized `nohup`/`setsid` command): that's a real, deliberate
-/// detach from the controlling terminal, the same boundary every terminal
-/// emulator respects.
+/// SIGKILL every live process sharing `shell_pid`'s POSIX session, except the shell
+/// itself. A backgrounded subshell never calls `setsid`, so it keeps the shell's original
+/// session id for life even after being reparented to init — invisible to a parent-child
+/// tree walk, but found here. Deliberately does NOT reach a process that called `setsid`
+/// itself: that is a real detach from the controlling terminal, the boundary every
+/// terminal emulator respects.
 ///
-/// Unix-only: on Windows, sysinfo's `session_id` means the login/RDP
-/// session, not a POSIX job/session group, so applying this logic there
-/// would kill unrelated processes sharing the user's desktop session.
-/// Windows has no equivalent fix here yet — it relies solely on
-/// `ProcessSignaller`'s direct-child `TerminateProcess`.
+/// Unix-only: on Windows sysinfo's `session_id` means the login/RDP session, not a POSIX
+/// job group, so this logic there would kill unrelated processes sharing the desktop.
 #[cfg(unix)]
 fn kill_session_stragglers(shell_pid: u32) {
     let mut sys = System::new();

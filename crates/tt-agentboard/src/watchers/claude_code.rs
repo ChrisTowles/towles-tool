@@ -1,30 +1,16 @@
 //! Claude Code agent watcher — hybrid edition.
+//! **Discovery, liveness and status come from `claude agents --all --json`**
+//! ([`crate::claude_cli`]), the supported surface, rather than from scanning
+//! `~/.claude/projects/**/*.jsonl`. **Journals are enrichment only**, supplying
+//! what the CLI doesn't expose (model, last tool, token usage, sub-agents,
+//! `/loop` wakeups, the first-prompt thread name).
 //!
-//! **Discovery, liveness, and status come from `claude agents --all --json`**
-//! ([`crate::claude_cli`]) — the supported CLI surface — instead of scanning
-//! `~/.claude/projects/**/*.jsonl` and inferring status from message roles.
-//! **Journals are enrichment only**: incremental tail reads supply what the
-//! CLI doesn't expose (model, last tool, token usage → cache countdown,
-//! sub-agents, `/loop` wakeups, and the first-prompt thread name).
-//!
-//! Per scan:
-//! 1. list live agents from the CLI;
-//! 2. resolve each to a session by its cwd;
-//! 3. status: `busy`/`waiting` pass through the CLI's own report *unless* the
-//!    journal already recorded the turn's real end (a final assistant
-//!    message with no tool calls) and nothing new has landed for a while —
-//!    that combination means the CLI's own status bookkeeping is stale, not
-//!    that the agent is still working (`refine_busy`); `idle` takes the
-//!    journal's view when it is complete/waiting (preserving the unseen-✓
-//!    flow), else stays idle (`refine_idle`);
-//! 4. enrich from the journal tail (offset at the last newline boundary, with
-//!    shrink-reset);
-//! 5. sessions that disappeared from the CLI get one final journal read and a
-//!    terminal emit: done if the journal completed, interrupted if it still
-//!    looked mid-run.
-//!
-//! Deliberate limit of the CLI-first design: sessions that exited before the
-//! server started never appear, because the CLI only lists live processes.
+//! Per scan: list live agents, resolve each to a session by cwd, then refine status
+//! — `busy`/`waiting` pass through unless the journal already recorded the turn's
+//! real end and nothing new has landed (`refine_busy`), `idle` takes the journal's
+//! view when that is complete/waiting (`refine_idle`). A session that vanished from
+//! the CLI gets one final journal read and a terminal emit. Deliberate limit: one
+//! that exited before the server started never appears at all.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -130,12 +116,10 @@ fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
 /// once encoded), which is exactly why [`find_journal`] still falls back to
 /// probing every project dir rather than trusting this guess blindly.
 ///
-/// `pub` because it is the workspace's one home for this rule and `tt-app`
-/// calls it: the chat pane's resume picker maps a folder to its `<projects>`
-/// entry to find the sessions started there. Don't narrow it back to
-/// `pub(crate)` on a dead-code sweep — the in-crate callers ([`find_journal`],
-/// `fs_notify`) are not the only ones — and don't re-derive the substitution ad
-/// hoc at a call site.
+/// `pub` because it is the workspace's one home for this rule and `tt-app` calls
+/// it: the chat pane's resume picker maps a folder to its `<projects>` entry. Don't
+/// narrow it back to `pub(crate)` on a dead-code sweep, and don't re-derive the
+/// substitution ad hoc at a call site.
 pub fn encode_project_dir_name(cwd: &str) -> String {
     cwd.chars().map(|c| if matches!(c, '/' | '.' | '_') { '-' } else { c }).collect()
 }

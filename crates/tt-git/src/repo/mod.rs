@@ -1,28 +1,17 @@
-//! In-process git, via [gitoxide](https://github.com/GitoxideLabs/gitoxide).
+//! In-process git, via [gitoxide](https://github.com/GitoxideLabs/gitoxide). Every
+//! *read* of a repository here goes through it instead of spawning `git`: the
+//! Agentboard poll alone ran ~100k subprocesses a day, each a fork, exec, config
+//! parse and ref-store load thrown away microseconds later. The same answers come
+//! back 10–100× faster from a cached [`Repo`] (`rev-parse HEAD`: 0.75ms vs 0.01ms).
+//! Ref reads, graph walks, status, diffs, ignore checks and patch identity are here.
 //!
-//! Every *read* of a repository in this workspace goes through here instead of
-//! spawning `git`: the Agentboard poll alone ran ~100k `git` subprocesses a
-//! day, each a fork, an exec, a config parse and a ref-store load thrown away
-//! microseconds later. The same answers come back 10–100× faster from a cached
-//! [`Repo`] (`rev-parse HEAD`: 0.75ms spawned vs 0.01ms here).
+//! Three operations still shell out, and none is an oversight:
 //!
-//! Three operations still shell out to `git`, and none is an oversight:
-//!
-//! - **Worktree add/remove/prune.** gitoxide's worktree API is read-only
-//!   ([`gix::worktree::Proxy`] and friends); there is no linked-worktree
-//!   creation or removal. `tt task new`/`rm` keep using `tt_exec`.
-//! - **`merge --ff-only`.** Fast-forwarding the base branch updates the working
-//!   tree, and gitoxide has no working-tree checkout to do it with. (The one
-//!   branch switch that *is* here, [`Repo::create_branch_at_head`], is a pure
-//!   ref write precisely because its caller has proven the tree is clean.)
-//! - **`fetch`.** gitoxide can fetch, but it is network-bound work where an
-//!   in-process implementation buys nothing measurable, and moving it would put
-//!   credential helpers, SSH, and a TLS stack (which must trust the OS root
-//!   store — see the repo's CLAUDE.md) on the line for no gain.
-//!
-//! Everything else — every ref read, graph walk, status, diff, ignore check,
-//! branch create/delete, and the patch-identity probing behind
-//! `tt_tasks::landed` — is in-process, behind [`RepoCache`].
+//! - **Worktree add/remove/prune** — gitoxide's worktree API is read-only.
+//! - **`merge --ff-only`** — it updates the working tree, and gitoxide has no
+//!   checkout to do it with. ([`Repo::create_branch_at_head`] is a pure ref write.)
+//! - **`fetch`** — network-bound, where in-process buys nothing measurable and would
+//!   put credential helpers, SSH and a TLS stack on the line for no gain.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

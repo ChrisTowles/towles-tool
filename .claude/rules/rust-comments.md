@@ -40,14 +40,18 @@ Two things are machine-checked:
 - **Comment volume.** `cargo xtask comment-lint` (a step in the normal `rust`
   CI job; the tool is `xtask/src/main.rs`, tree-sitter over `crates*/`) flags
   two things per file, each with a warning and an error tier: an oversized
-  contiguous comment *block* (15+ lines warns, 30+ errors), and a
+  contiguous comment *block* (12+ lines warns, 15+ errors), and a
   *comment-heavy file* — high comment mass **and** high comment-to-code ratio
-  together (150+ lines at 50%+ warns, 300+ at 100%+ errors; both at once so
+  together (120+ lines at 45%+ warns, 250+ at 55%+ errors; both at once so
   big well-commented files and tiny doc-headed `lib.rs` stubs don't misfire).
   Warnings are the standing hit list of essays worth trimming; errors fail
   CI. Thresholds are consts in the tool — tighten them as cleanups land.
   Suppressing a deliberate essay is review-visible: a `verbose-ok: <why>`
   line inside the block.
+
+  A module header that needs more than ~14 lines is usually carrying either
+  history git already holds or a narrative that belongs in the nearest
+  `CLAUDE.md`. Move it or cut it rather than reflowing to fit.
 
 **Don't reach for a doc lint to enforce the rest.** `missing_docs`,
 `missing_errors_doc` and `missing_panics_doc` were each tried and dropped: a

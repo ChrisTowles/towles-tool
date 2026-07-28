@@ -335,26 +335,13 @@ impl Engine {
     ///
     /// Unless [`Self::show_unmanaged_worktrees`] is on, a discovered *linked*
     /// worktree reaches the rail only when a board task is bound to it
-    /// ([`Self::bound_worktree_dirs`]) — the board row is the record that the
-    /// user asked for this worktree. Deliberately not a filesystem check: this
-    /// used to ask whether the dir looked like a `tt task` worktree, and every
-    /// worktree created through the retired Claude Code worktree hooks looked
-    /// exactly like one, marker and all.
+    /// ([`Self::bound_worktree_dirs`]). Deliberately not a filesystem check —
+    /// worktrees from the retired Claude Code hooks carried the marker too.
     ///
-    /// This only decides which dirs are entries at all; nesting them into
-    /// [`crate::types::RepoData`] rows is [`crate::bridge::assemble_state`]'s
-    /// job, decided from each entry's [`crate::git_info::GitInfo::common_dir`].
-    ///
-    /// Cache-only: it reads each tracked repo's already-cached `worktree_dirs`
-    /// and never touches git, so a new worktree appears the instant its
-    /// parent's cache lists it, without the child's own git info being warm.
-    /// This runs under the engine lock, which every `ab_*` command shares and
-    /// which is dispatched inline on the UI thread — reading git here (as it
-    /// used to, via `get_or_refresh`) could hold the lock through
-    /// `compute_git_info`'s full object-database and working-tree read chain
-    /// and freeze the whole app, not just the caller. The host warms the cache
-    /// out of band instead. Being cache-only is also why discovery is filtered
-    /// through [`Self::removed_checkouts`] — see [`Self::forget_checkout`].
+    /// Cache-only — it reads each repo's already-cached `worktree_dirs` and never
+    /// touches git, because this runs under the engine lock every `ab_*` command
+    /// shares on the UI thread; a `compute_git_info` chain here would freeze the
+    /// app. Hence also the [`Self::removed_checkouts`] filter.
     fn expand_with_worktrees(&mut self) -> Vec<String> {
         // A path that exists again (a new task created where an old one was)
         // is a live checkout, not a suppressed one — and dropping it here is
@@ -1035,34 +1022,20 @@ impl Engine {
         ids
     }
 
-    /// Forget a checkout this process just removed (a deleted worktree task),
-    /// so the rail stops showing it *now* rather than a poll cycle or three
-    /// later. Called from the removal sequence's `after_removal` hook,
-    /// alongside [`Self::close_folder`] and [`Self::remove_repo`].
+    /// Forget a checkout this process just removed (a deleted worktree task), so
+    /// the rail stops showing it *now* rather than a poll cycle or three later.
+    /// Called from the removal sequence's `after_removal` hook.
     ///
-    /// Untracking alone doesn't clear the row, because a task worktree is
-    /// usually not a `repos.json` entry at all — it reaches the rail through
-    /// [`Self::expand_with_worktrees`]' discovery, which reads its *parent's*
-    /// cached `worktree_dirs`. Removing a worktree moves no ref, so nothing
-    /// invalidates that entry: the parent keeps rediscovering the dead
-    /// directory until its own recompute re-derives the sibling set, and each
-    /// poll in between re-renders the task as a "directory missing" ghost. So
-    /// the dir goes into [`Self::removed_checkouts`], which discovery filters
-    /// against — a suppression, not a probe, because the identical-looking
-    /// ghost left by a bare `rm -rf` (git's `.git/worktrees/<name>`
-    /// registration still standing) *must* keep its row: that row's Untrack is
-    /// what prunes the registration (`ab_remove_repo` →
-    /// [`crate::git_info::prune_stale_worktree`]), and there is no other way to
-    /// clear it from the app. Only a removal we performed — where
-    /// `git worktree remove` already ran — is safe to hide, and the
-    /// suppression survives a recompute that was already in flight with the
-    /// pre-removal sibling list.
+    /// Untracking alone doesn't clear the row: a task worktree usually isn't a
+    /// `repos.json` entry, reaching the rail via [`Self::expand_with_worktrees`]'
+    /// discovery of its *parent's* cached `worktree_dirs`, which removing a worktree
+    /// moves no ref to invalidate. So the dir goes into [`Self::removed_checkouts`]
+    /// — a suppression, not a probe, because the identical ghost left by a bare
+    /// `rm -rf` *must* keep its row: its Untrack alone prunes git's registration.
     ///
-    /// Also drops the dir's cached git info and any outstanding compute claim,
-    /// so nothing keyed by the dead directory outlives it: a stale claim would
-    /// hold the path out of the poll rotation for [`GIT_PENDING_GUARD_MS`], and
-    /// the cached info would be served to a *new* task created at the same path
-    /// (see [`crate::git_info::GitInfoCache::forget`]).
+    /// Also drops the dir's cached git info and compute claim, so a stale claim
+    /// can't hold the path out of the rotation and a *new* task at the same path
+    /// can't be served the dead one's info.
     pub fn forget_checkout(&mut self, dir: &str) -> bool {
         self.removed_checkouts.insert(dir.to_string());
         self.git_pending.remove(dir);
@@ -1086,19 +1059,12 @@ impl Engine {
 /// Pure merge behind [`Engine::expand_with_worktrees`]: `repo_paths` plus each
 /// dir's worktrees (via `worktrees_of`), deduped, configured entries first.
 /// Split out so the merge/dedup logic is unit-testable without a real
-/// `GitInfoCache`/git subprocess.
-///
-/// Only decides which dirs appear as entries at all — a dir already in
-/// `repo_paths` is never duplicated even when `worktrees_of` also reports it
-/// for another entry. Whether two dirs in the result end up nesting into one
-/// [`crate::types::RepoData`] row is decided later, structurally, by
-/// [`crate::bridge::assemble_state`] matching each entry's
-/// [`crate::git_info::GitInfo::common_dir`] — not by anything recorded here.
+/// `GitInfoCache`.
 ///
 /// `keep` filters *discovered* worktrees only — a `repo_paths` entry is the
 /// user's own tracking decision and always keeps its row, ghost or not. See
-/// [`Engine::forget_checkout`] for what the filter is for and why it can't
-/// simply be "the directory still exists".
+/// [`Engine::forget_checkout`] for why the filter can't simply be "the
+/// directory still exists".
 fn merge_worktree_dirs(
     repo_paths: &[String],
     mut worktrees_of: impl FnMut(&str) -> Vec<String>,

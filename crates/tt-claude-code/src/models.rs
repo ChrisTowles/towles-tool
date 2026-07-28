@@ -1,30 +1,17 @@
-//! Model → context-window lookup.
-//!
-//! The table itself lives in [`context_windows.json`](./context_windows.json),
-//! embedded at build time and parsed once on first use. **Updating a window is a
-//! data edit in that file, not a code change.** Context windows are a property of
-//! the model *and the platform it runs on*, and both move over time, so there's
-//! no way to derive this offline; the transcript only gives us the model id
-//! string.
-//!
-//! [`resolve_window`] returns both the token count and *how* it was determined
-//! ([`WindowSource`]). A model that matches no rule resolves to
-//! [`WindowSource::Unknown`] — an **explicit** "unrecognized model, this is a
-//! guess" outcome, not a silent default — so callers (reports, the live engine)
-//! can flag it rather than trusting the fallback. The caller's observed-usage
-//! floor (see `tt-agentboard`'s `context_max`) still corrects an under-estimate
-//! the moment a session's prompt exceeds the guessed window.
+//! Model → context-window lookup. The table lives in
+//! [`context_windows.json`](./context_windows.json), embedded at build time.
+//! **Updating a window is a data edit in that file, not a code change** — a window is
+//! a property of the model *and* its platform, so there is no deriving it offline.
+//! [`resolve_window`] returns the count *and* how it was determined
+//! ([`WindowSource`]); no match resolves to [`WindowSource::Unknown`], an explicit
+//! "this is a guess" rather than a silent default, so callers can flag it.
 //!
 //! Precedence (first match wins):
-//! 1. An explicit `[1m]` marker on the model string (the older Sonnet 4/4.5 1M
-//!    opt-in) → the marker window.
-//! 2. A **Bedrock** id — a bare `anthropic.<id>` or a region-prefixed inference
-//!    profile such as `us.anthropic.<id>` (`eu.`, `apac.`, `global.`) — → the
-//!    Bedrock window (200K for now, regardless of model), so region-prefixed
-//!    profiles don't fall through to a 1M family match.
-//! 3. A known **family** substring (case-insensitive `contains`) → that family's
-//!    window.
-//! 4. Otherwise → [`WindowSource::Unknown`] at the default window.
+//! 1. An explicit `[1m]` marker on the model string → the marker window.
+//! 2. A **Bedrock** id (`anthropic.<id>`, or `us.`/`eu.`/`apac.`/`global.`-prefixed)
+//!    → the Bedrock window, so those don't fall through to a 1M family match.
+//! 3. A known **family** substring (case-insensitive), else
+//!    [`WindowSource::Unknown`] at the default window.
 
 use serde::Deserialize;
 use std::sync::LazyLock;

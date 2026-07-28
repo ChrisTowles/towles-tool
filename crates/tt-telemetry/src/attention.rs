@@ -1,32 +1,17 @@
-//! Attention analytics: one day of raw event-log records reduced to the
-//! question the log exists to answer — *where did the day go?*
+//! Attention analytics: one day of raw event-log records reduced to the question the
+//! log exists to answer — *where did the day go?* It already records the two things an
+//! attention picture needs and nothing else on the machine records at all: the window's
+//! OS-level focus history (`window.focus_changed`) and every discrete gesture
+//! (`ui.action`, with its screen), plus interruptions (`notify_needs_you`) and
+//! subprocess wait (`process.spawn`). [`summarize`] folds a day into
+//! [`AttentionSummary`] — hundreds of bytes against 75,000+ records — in Rust.
 //!
-//! The event log already records the two things an attention picture needs
-//! and nothing else on the machine records at all: the app window's OS-level
-//! focus history (`window.focus_changed`) and every discrete user gesture
-//! (`ui.action`, with the screen it happened on). Around those sit the
-//! interruptions that pull focus (`notify_needs_you`) and the machine time
-//! spent waiting on subprocesses (`process.spawn`). [`summarize`] folds a
-//! day's records into [`AttentionSummary`] — a few hundred bytes instead of
-//! the 75,000+ records the day may hold — so the aggregation happens once, in
-//! Rust, rather than shipping the whole file over IPC for the frontend to
-//! re-derive on every render.
-//!
-//! # Two things that look like bugs and aren't
-//!
-//! **Event names are read from `message`, not `name`.** A `tracing` *event*
-//! has no name of its own: its `name` metadata is the auto-generated
-//! `event <file>:<line>`, which moves whenever the emitting line moves. The
-//! stable identity of `tracing::info!(…, "ui.action")` is its message, which
-//! rides in `fields` (see [`event_name`]). Matching on `name` would silently
-//! stop matching after an unrelated edit above the call site.
-//!
-//! **Hour buckets are local time; the day file is UTC.** Rotation names a
-//! file by the UTC date, so one file covers a 24-hour window that is offset
-//! from the local day. Bucketing in UTC would keep the file's own boundary
-//! but produce hours no human recognises as "when I was working", so the
-//! buckets convert to local. The window is still 24 continuous hours either
-//! way — it just doesn't start at local midnight.
+//! **Two things that look like bugs and aren't.** Event names are read from `message`,
+//! not `name`: a `tracing` *event*'s `name` is the auto-generated `event <file>:<line>`
+//! which moves with the emitting line, while its stable identity rides in `fields`
+//! (see [`event_name`]). And hour buckets are local while the day file is UTC —
+//! bucketing in UTC would keep the file's boundary but produce hours no human
+//! recognises as "when I was working".
 
 use chrono::{DateTime, FixedOffset, Local, Timelike};
 use serde::Serialize;

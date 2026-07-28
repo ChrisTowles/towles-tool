@@ -1,30 +1,14 @@
-//! A Model Context Protocol (MCP) server for towles-tool.
+//! A Model Context Protocol (MCP) server for towles-tool — **the transport-free
+//! half**. [`Dispatcher::dispatch_at`] takes one JSON-RPC request string and returns
+//! one response string, knowing nothing about sockets, HTTP, ports or the wall clock.
+//! Same split as [`tt_ide`]: the transport lives in `crates-tauri/tt-app`, so the
+//! whole tool surface is unit-testable with no server to stand up.
 //!
-//! **This crate is the transport-free half.** [`Dispatcher::dispatch_at`]
-//! takes one JSON-RPC request string and returns one response string (`None`
-//! for a notification), knowing nothing about sockets, HTTP, ports or the wall
-//! clock — all passed in per call. Same split as [`tt_ide`]: the transport
-//! lives in the app shell (`crates-tauri/tt-app`), which serves this over
-//! loopback HTTP. So the whole tool surface is unit-testable by driving
-//! `dispatch_at` directly, with no server to stand up.
-//!
-//! Exposed tools surface the board ([`tt_store`]'s tasks — the #339 unit of
-//! work), the app's Preview pane, and the calendar: `task_list`, `task_status`,
-//! `task_create`, `task_summary`, `task_start`, `task_delete`, `preview_show`,
-//! `calendar_today`, `calendar_next`, `calendar_set`. The broader
-//! dashboard-read tools were pruned in the 2026-07 tool-surface review.
-//!
-//! Registered with Claude Code at **user scope**, so every session on the
-//! machine can reach it, in any project, with no awareness of which one. A
-//! hijacked session — one that read hostile content and was told to call a
-//! tool — is deliberately **not** gated any more (the capability gate went
-//! 2026-07-20): it was off by default, so the one mutating tool had effectively
-//! never worked, and it defended little, since the writes here are local,
-//! low-stakes and reversible and any session with shell access could run
-//! `sqlite3` against tt.db regardless. The `mcp_calls` log is the audit trail
-//! instead. The threat that *is* guarded — a web page POSTing to `127.0.0.1` —
-//! belongs to the transport, whose admission checks (`Origin`,
-//! `Content-Type`) are the only guard on writes; see `tt-app`'s `mcp_http`.
+//! A hijacked session is deliberately **not** gated (the capability gate went
+//! 2026-07-20): it was off by default, so the one mutating tool had effectively never
+//! worked, and the writes here are local and reversible where any session with shell
+//! access could `sqlite3` tt.db regardless. The threat that *is* guarded — a web page
+//! POSTing to `127.0.0.1` — belongs to the transport's admission checks.
 
 use std::time::Instant;
 
@@ -75,34 +59,19 @@ pub trait TaskHost: Send {
     fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
 }
 
-/// The app-side half of `preview_show` — the agent→human direction of the
-/// Preview pane.
+/// The app-side half of `preview_show` — the agent→human direction of the Preview
+/// pane, whose human→agent half (dev server, annotated screenshot) already existed.
+/// An agent that finished something explainable writes one self-contained HTML file
+/// and asks for it on screen, instead of PTY scrollback that dies with the worktree.
 ///
-/// The pane (`apps/client/src/components/preview-pane.tsx`) already carries
-/// human→agent traffic: it embeds a checkout's dev server and sends an
-/// annotated screenshot into that task's session. This is the return path. An
-/// agent that has *finished* something explainable — a plan, a diff
-/// walkthrough, a table of what it found — writes one self-contained HTML file
-/// and asks for it to be put on screen, instead of printing 400 lines into a
-/// PTY scrollback the user reads linearly and which dies with the worktree.
+/// A **hand-off** like [`TaskHost::start_task`]: opening the pane means resolving a
+/// session to its folder, invisible from this Tauri-free crate, so the tool answers
+/// `"showing"` rather than claiming the user saw it.
 ///
-/// A **hand-off** like [`TaskHost::start_task`]: opening the pane means
-/// resolving a session to the folder that owns it and rendering there, neither
-/// of them visible from this Tauri-free crate, so the tool answers `"showing"`
-/// rather than claiming the user saw it. A dispatcher with no host refuses
-/// outright — silently accepting a show that reaches no window would tell an
-/// agent it had communicated when it hadn't.
-///
-/// **Routing is by caller, not by path** ([`PreviewArtifact::session`]). It used
-/// to be by path — longest tracked-folder prefix of the file — which is wrong
-/// in the ordinary case rather than an edge case: an agent's natural place to
-/// write a throwaway page is a scratch directory outside every checkout, and
-/// such a path matches no folder at all, so the artifact surfaced in whichever
-/// task the user happened to be looking at. Since the file's location was load
-/// bearing, an agent also had to *know* that and write somewhere unnatural to
-/// be routed correctly. The caller's own terminal is the fact that actually
-/// answers "whose pane is this?", and it is already stamped on every PTY the
-/// app spawns.
+/// **Routing is by caller, not by path** ([`PreviewArtifact::session`]). By path — the
+/// longest tracked-folder prefix — is wrong in the *ordinary* case: an agent's natural
+/// place for a throwaway page is a scratch dir matching no folder, so the artifact
+/// surfaced in whichever task was on screen.
 pub trait PreviewHost: Send {
     /// Put `artifact` on screen in the Preview pane of the folder owning the
     /// requesting agent's session.
@@ -264,31 +233,19 @@ pub struct Dispatcher {
     calendar_sources: Option<Vec<String>>,
 }
 
-/// What the transport knows about a caller that the JSON-RPC body cannot say.
+/// What the transport knows about a caller that the JSON-RPC body cannot say — today,
+/// which of the app's terminals the agent sits in, since `preview_show` has to put a
+/// page on screen in *the caller's own* task.
 ///
-/// Today that is one thing: which of the app's terminals the agent is sitting
-/// in. The MCP server is a single machine-wide endpoint shared by every Claude
-/// Code session on the machine, so a request arrives with no inherent identity
-/// — and `preview_show` has to put a page on screen in *the caller's own* task,
-/// not a guess.
+/// The app stamps every PTY with `TT_SESSION_ID` (`tt_agentboard::procenv`), and the
+/// plugin's `.mcp.json` forwards it as the `X-TT-Session` header via Claude Code's
+/// `${VAR:-default}` expansion — identity rides the transport, set once in config, so
+/// the model is never asked to read its own environment. `None` is normal: a session
+/// started outside the app has none, and routing falls back to the artifact's path.
 ///
-/// The app stamps every PTY it spawns with `TT_SESSION_ID`
-/// (`tt_agentboard::procenv`), and the `towles-tool-app` plugin's `.mcp.json`
-/// forwards it as the `X-TT-Session` request header via Claude Code's
-/// `${VAR:-default}` expansion. So the identity rides the transport, set once in
-/// config — the model is never asked to read its own environment and pass a
-/// value it could get wrong or forget.
-///
-/// `None` is normal, not an error: a Claude Code session started from a plain
-/// terminal outside the app has no `TT_SESSION_ID`, and callers that predate
-/// the header send nothing. Routing falls back to the artifact's path in that
-/// case (see `preview-artifact.ts`).
-///
-/// Passed *through* the dispatch call rather than stashed on the [`Dispatcher`]:
-/// one long-lived dispatcher behind a mutex serves every session on the machine,
-/// so caller identity held as state would have to be cleared on every exit path
-/// to stop one agent's page opening in another's pane. As a parameter it cannot
-/// outlive the request that carried it.
+/// Passed *through* the dispatch call rather than stashed on the [`Dispatcher`]: one
+/// long-lived dispatcher serves every session, so identity held as state would have to
+/// be cleared on every exit path to stop one agent's page opening in another's.
 #[derive(Debug, Clone, Default)]
 pub struct RequestContext {
     /// The app PTY session id the caller runs in — `TT_SESSION_ID`, which is
@@ -646,35 +603,20 @@ impl Dispatcher {
         }
     }
 
-    /// The push-model write path: replace one calendar's events for one local
-    /// day, leaving every other calendar and every other day untouched (see
-    /// [`Store::replace_events_for_source`]).
+    /// The push-model write path: replace one calendar's events for one local day,
+    /// leaving every other calendar and day untouched.
     ///
-    /// **The day window is derived here, never taken from the payload.** The
-    /// caller may name a day (`day`, `YYYY-MM-DD`, local); with no `day` it is
-    /// the local calendar day containing `now_ms`. Either way the actual
-    /// `[start, end)` bounds come from [`Store::local_day_bounds`], so a client cannot
-    /// widen the delete beyond one day — a mis-stated window is the one way
-    /// this tool could destroy calendar rows it was not asked to touch, and the
-    /// events themselves are the least trustworthy part of the request.
+    /// **The day window is derived here, never taken from the payload.** The caller
+    /// may name a `day` (local `YYYY-MM-DD`), else it is the day containing `now_ms`;
+    /// either way the bounds come from [`Store::local_day_bounds`], so a client cannot
+    /// widen the delete beyond one day.
     ///
-    /// **`source` must name a calendar the user actually configured**, and is
-    /// checked against `collectors.calendar.sources` in the settings file the
-    /// same way `task_create` checks `repo` against tracked repos. Two distinct
-    /// things go wrong without that check, and neither is hypothetical:
-    ///
-    /// - A typo or hallucinated id (`"gcal"`, `"Google"`, `"personal"`) mints a
-    ///   lane nothing will ever write again. Its rows still feed
-    ///   `calendar_next`, and no sweep will ever remove them — precisely the
-    ///   orphan-lane failure the v9 migration destroyed data to avoid. Enforcing
-    ///   it only at migration time would leave the runtime free to recreate it.
-    /// - It bounds the blast radius of a hijacked session. This tool replaces a
-    ///   day of a lane, so `{source, events: []}` *clears* that day; restricting
-    ///   `source` to configured calendars at least means it can only affect
-    ///   calendars the user opted into, and the refusal names what exists.
-    ///
-    /// [`EventInput`] additionally has no `source` field, so a model-authored
-    /// event array cannot smuggle a different lane in per-event.
+    /// **`source` must name a calendar the user actually configured**, checked against
+    /// `collectors.calendar.sources`. Two things go wrong without it: a hallucinated id
+    /// mints a lane nothing will write again, whose rows still feed `calendar_next` and
+    /// no sweep removes — the orphan-lane failure v9's migration destroyed data to
+    /// avoid; and it bounds a hijacked session, since `{source, events: []}` *clears* a
+    /// day. [`EventInput`] has no `source` field either.
     fn calendar_set(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let source = args
             .get("source")
@@ -873,26 +815,20 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Delete a board task and everything bound to it — its live panes and its
-    /// worktree on disk as well as its row — through the injected
-    /// [`TaskHost`].
+    /// Delete a board task and everything bound to it — live panes and worktree as
+    /// well as its row — through the injected [`TaskHost`].
     ///
-    /// The refusal path is the point of this tool. A worktree holding
-    /// uncommitted changes, commits that reached no branch or remote, or a
-    /// foreign process on its claimed ports comes back as `status: "refused"`
-    /// with the reasons, having deleted **nothing** — so an agent that calls
-    /// this on a task the user still has work in cannot destroy it by
-    /// accident. `force: true` is the deliberate override and is reported in
-    /// the app's event log as such.
-    /// Start an existing board task — mint its worktree and launch an agent on
-    /// its goal.
+    /// The refusal path is the point of this tool. A worktree holding uncommitted
+    /// changes, commits that reached no branch or remote, or a foreign process on its
+    /// claimed ports comes back as `status: "refused"` with the reasons, having
+    /// deleted **nothing**. `force: true` is the deliberate override.
+    /// Start an existing board task — mint its worktree and launch an agent on its
+    /// goal.
     ///
-    /// Every guard here is a store read the dispatcher can do on its own, and
-    /// each exists because the failure is otherwise silent or destructive:
-    /// starting a task that already holds a worktree would abandon the running
-    /// one, and starting a closed task would resurrect finished work. The
-    /// branch is derived from the title when the caller doesn't name one,
-    /// because tasks are named after their branch.
+    /// Every guard here is a store read the dispatcher can do alone, and each exists
+    /// because the failure is otherwise silent or destructive: starting a task that
+    /// already holds a worktree would abandon the running one, and starting a closed
+    /// task would resurrect finished work.
     fn task_start(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")

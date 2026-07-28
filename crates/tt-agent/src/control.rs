@@ -1,30 +1,17 @@
 //! The *other* protocol on the same pipe: control requests.
 //!
 //! `stream-json` interleaves two conversations. [`crate::protocol`] models the
-//! message stream the transcript renders; this module models the JSON-RPC-
-//! shaped channel the CLI uses to **ask the client a question and block until
-//! it answers** — so **an unanswered request is a hang, not a dropped
-//! message**. A subtype we can't serve still gets an answer ([`encode_error`],
-//! [`crate::AgentEvent::UnsupportedControlRequest`]) rather than being filed
-//! under protocol noise we don't render. The channel exists only because we
-//! spawn with `--permission-prompt-tool stdio` (see
-//! [`crate::session::build_args`]); without it the CLI resolves permissions
-//! internally and never asks.
+//! message stream the transcript renders; this is the JSON-RPC-shaped channel the
+//! CLI uses to ask the client a question and **block until it answers** — so an
+//! unanswered request is a hang, not a dropped message, and a subtype we can't
+//! serve still gets an answer ([`encode_error`]). Opened by spawning with
+//! `--permission-prompt-tool stdio` (see [`crate::session::build_args`]).
 //!
-//! `can_use_tool` is three features wearing one request shape — hence one code
-//! path here and one renderer seam in the frontend:
-//!
-//! - **A gate** (`Write`, `Bash`, …) — "may I?", answered allow/deny.
-//! - **A question** (`AskUserQuestion`, flagged `requires_user_interaction`) —
-//!   the answer is *data*, returned by allowing the call with an edited
-//!   `input`; refusing is not "deny", it is allowing having answered nothing.
-//! - **A plan** (`ExitPlanMode`) — allow to approve, deny-with-message to send
-//!   the model revision notes.
-//!
-//! `permission_suggestions` and the `updated_permissions` that echoes it back
-//! stay [`Value`] — we render their labels and hand the choice straight back,
-//! so modeling the CLI's own "always allow" vocabulary would buy nothing and
-//! cost a parse failure each time it grows a suggestion kind.
+//! `can_use_tool` is three features wearing one request shape: a **gate**
+//! (allow/deny), a **question** (`AskUserQuestion` — the answer is *data*,
+//! returned by allowing the call with an edited `input`, so refusing is an
+//! allow that answers nothing), and a **plan** (`ExitPlanMode` — deny-with-
+//! message sends the model revision notes).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

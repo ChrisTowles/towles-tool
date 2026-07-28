@@ -5,12 +5,9 @@
 //! stable across restarts and across Agentboard windows (derived from the git
 //! remote origin URL, or the folder's own path when there's no remote).
 //!
-//! Absence of a key means "expanded" (the default), so unlike a window layout
-//! a collapse entry is never ambiguous between "never touched" and
-//! "explicitly cleared" — collapsing sets `true`, expanding removes the key.
-//! That means every mutation is an exact single-key op, so — unlike
-//! `windows.rs` — the frontend doesn't need to track "touched" keys itself;
-//! `CollapseStore::set` always knows precisely which key changed.
+//! Absence of a key means "expanded" (the default) — collapsing sets `true`,
+//! expanding removes the key. Every mutation is therefore an exact single-key
+//! op, so unlike `windows.rs` the frontend needn't track "touched" keys itself.
 //!
 //! Stored at `~/.config/towles-tool/agentboard/collapse.json`. Path-
 //! parameterized so tests use a tempdir.

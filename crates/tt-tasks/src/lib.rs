@@ -1,23 +1,15 @@
-//! Worktree-task convention logic (`tt task`).
+//! Worktree-task convention logic (`tt task`): any plain git checkout, with
+//! branch-named ephemeral tasks nested at `<checkout>/.claude/worktrees/<name>/` —
+//! Claude Code's native worktree location. A worktree Claude Code makes for itself
+//! lands there too but is *not* a task; only `tt task new` and the app's `+` create
+//! those. A checkout's identity is its directory basename (the same rule
+//! `tt_config::state_scope()` uses), its per-task config a rendered `.env`, and its
+//! `.tt-task` marker records name/base for other tooling.
 //!
-//! The layout convention: any plain git checkout, with branch-named,
-//! ephemeral worktree tasks nested inside it at
-//! `<checkout>/.claude/worktrees/<name>/` — Claude Code's native worktree
-//! location. A worktree Claude Code makes for itself (`claude --worktree`, a
-//! background agent) lands there too but is not a task — only `tt task new`
-//! and the app's `+` create those.
-//! One task per parallel line of work, removed when its branch
-//! merges. A checkout's identity is its directory basename (the same rule
-//! `scripts/task-port.mjs` and `tt_config::state_scope()` use), its per-task
-//! config is a rendered `.env`, and its `.tt-task` marker records name/base
-//! for other tooling.
-//!
-//! This crate holds the pure logic: the `${tt:...}` template renderer with
-//! port-pool claims ([`template`]), env-file parsing/merging ([`envfile`]),
-//! task naming ([`layout`]), setup-command selection ([`ops::setup_command`]),
-//! and removal guards ([`guards`]). The CLI layer
-//! (`tt-cli/src/commands/task.rs`) gathers real-world state — git output,
-//! bind-tests, docker listings — and hands it here for decisions.
+//! The pure logic lives here: the `${tt:...}` renderer with port-pool claims
+//! ([`template`]), env parsing/merging ([`envfile`]), task naming ([`layout`]), setup
+//! selection ([`ops::setup_command`]) and removal guards ([`guards`]). The CLI gathers
+//! real-world state — git output, bind-tests, docker listings — and hands it here.
 
 pub mod clean;
 pub mod envfile;

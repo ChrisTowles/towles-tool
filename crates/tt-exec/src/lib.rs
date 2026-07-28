@@ -118,19 +118,15 @@ fn display_cmd(cmd: &str, args: &[&str]) -> String {
 
 /// Open the telemetry span covering one subprocess.
 ///
-/// Every process this crate spawns goes through here, which makes the event
-/// log a complete record of what the tool shelled out to — the question
-/// "what ran, from where, how often, and how long did it take?" is answerable
-/// without adding instrumentation at each call site. `outcome` and `exit_code`
-/// start empty and are filled in before the span closes, so a single record
-/// carries both the command and its result.
+/// Every process this crate spawns goes through here, which makes the event log a
+/// complete record of what the tool shelled out to, with no instrumentation at each
+/// call site. `outcome` and `exit_code` fill in before the span closes, so one record
+/// carries the command and its result. Field names follow OpenTelemetry's
+/// `process.*` conventions.
 ///
-/// Field names follow OpenTelemetry's `process.*` semantic conventions.
-///
-/// Only argv is recorded, never stdin or captured output: stdin carries things
-/// like PR bodies, and stdout is unbounded. Argv for the tools this crate
-/// spawns (`gh`, `git`, `claude`) holds no credentials — tokens travel via
-/// settings and env, not flags.
+/// Only argv is recorded, never stdin or captured output: stdin carries things like
+/// PR bodies, stdout is unbounded, and argv for `gh`/`git`/`claude` holds no
+/// credentials — tokens travel via settings and env, not flags.
 fn spawn_span(
     cmd: &str,
     args: &[&str],
@@ -523,24 +519,16 @@ mod tests {
     /// `process.spawn` records it produced. A local subscriber, so these tests
     /// don't fight over the global one.
     ///
-    /// **Serialized across the whole binary**, and that is load-bearing rather
-    /// than tidiness. `with_default` installs a *thread-local* subscriber, but
-    /// `tracing`'s callsite-interest cache is **global**: the first time a
-    /// callsite is hit, its interest is computed and cached for every thread.
-    /// With these tests running concurrently, one thread could evaluate
-    /// `spawn_span`'s callsite while another was between `with_default` calls
-    /// (no subscriber on that thread), caching "never interested" — after
-    /// which the other thread's span was silently dropped and its assertions
-    /// read an empty log. It reproduced as
-    /// `a_failed_spawn_is_recorded_rather_than_going_dark` failing with
-    /// `index out of bounds: the len is 0` about once per 60 runs of this
-    /// binary, and never once the suite ran with `--test-threads=1`. Holding
-    /// the lock for the body means only one subscriber is ever installed at a
-    /// time, so the cache can't be built against a subscriber-less thread.
+    /// **Serialized across the whole binary**, which is load-bearing, not tidiness.
+    /// `with_default` installs a *thread-local* subscriber, but `tracing`'s
+    /// callsite-interest cache is **global**: one thread could evaluate `spawn_span`'s
+    /// callsite while another sat between `with_default` calls, caching "never
+    /// interested" and silently dropping the other's span — reproducing as `index out
+    /// of bounds: the len is 0` once per ~60 runs, never under `--test-threads=1`.
+    /// Holding the lock means only one subscriber is ever installed.
     ///
-    /// The lock is deliberately poison-tolerant: a body that panics
-    /// (an assertion failing inside `spawn_records`) must fail that one test,
-    /// not cascade into every other test in this module.
+    /// Deliberately poison-tolerant: a panicking body must fail that one test, not
+    /// cascade into the rest of the module.
     fn spawn_records(body: impl FnOnce()) -> Vec<serde_json::Value> {
         use tracing_subscriber::prelude::*;
 

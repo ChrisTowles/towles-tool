@@ -91,15 +91,11 @@ fn ui_action(action: String, screen: String, detail: Option<String>) {
 /// keeps the base identifier unscoped, matching how it's the one instance
 /// meant to daily-drive.
 ///
-/// This used to also be load-bearing for `enableGTKAppId` (tauri.conf.json),
-/// which made every same-identifier binary register as the *same*
-/// D-Bus-activatable GTK application — any activation of it (a second
-/// launch, but *also* a dock/taskbar icon click, `gio launch`, systemd, with
-/// no new process involved at all) re-entered Tauri's internal `setup()` and
-/// panicked rebuilding the config's `"main"` webview a second time.
-/// `enableGTKAppId` is off now (that whole class of activation can't be
-/// scoped away, only eliminated — see `linux_desktop`'s module doc), so this
-/// identifier no longer affects GTK/D-Bus at all.
+/// This used to also be load-bearing for `enableGTKAppId`, which made every
+/// same-identifier binary register as the *same* D-Bus-activatable GTK application, so
+/// any activation — a second launch, but also a dock click, `gio launch`, systemd, with
+/// no new process at all — re-entered Tauri's `setup()` and panicked rebuilding the
+/// `"main"` webview. It is off now, so this identifier no longer touches GTK/D-Bus.
 fn app_identifier(base: &str) -> String {
     app_identifier_from(Path::new(env!("CARGO_MANIFEST_DIR")), base)
 }

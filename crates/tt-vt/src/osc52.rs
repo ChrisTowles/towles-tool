@@ -1,25 +1,17 @@
-//! Minimal OSC 52 *set-clipboard* scanner run alongside the terminal state
-//! machine on the raw PTY byte feed.
+//! Minimal OSC 52 *set-clipboard* scanner run alongside the terminal state machine on
+//! the raw PTY byte feed. libghostty-vt parses OSC 52 but exposes neither the decoded
+//! payload nor a callback for it, so there is no hook to read the copied text from the
+//! engine. This scanner watches the same bytes fed to `Terminal::vt_write`, recognizes
+//! `ESC ] 52 ; <targets> ; <base64> ST`, decodes it, and queues the text.
 //!
-//! libghostty-vt parses OSC 52 (its `CommandType::ClipboardContents`) but
-//! exposes neither the decoded payload nor a callback for it — `on_title_changed`
-//! has no clipboard sibling — so there is no clean hook to read the copied text
-//! from the engine. This standalone scanner fills that gap: it watches the same
-//! bytes fed to `Terminal::vt_write`, recognizes the set-clipboard form
-//! (`ESC ] 52 ; <targets> ; <base64> ST`), base64-decodes the payload, and
-//! queues the resulting text for the session thread to surface as an event.
+//! Tradeoffs of scanning rather than hooking the library: bytes the library already
+//! parses are re-scanned (cheap — a byte-at-a-time state machine, no allocation until
+//! a real sequence appears); only the *write* form is handled, a read/query being
+//! deliberately unimplemented; and targets (clipboard vs. primary selection) are not
+//! distinguished, every set writing the one system clipboard.
 //!
-//! Tradeoffs of scanning rather than hooking the library:
-//! * We re-scan bytes the library already parses (cheap: a tiny byte-at-a-time
-//!   state machine, no allocation until an actual OSC 52 sequence appears).
-//! * Only the *write* form is handled. A read/query (`Pd == "?"`) is ignored;
-//!   read-side OSC 52 is deliberately unimplemented.
-//! * Targets (`Pc` — clipboard vs. primary selection) are not distinguished;
-//!   every set writes the one system clipboard.
-//!
-//! The scanner is fragment-tolerant: a sequence split across feed calls is
-//! reassembled across calls. Malformed base64, non-UTF-8, and oversized
-//! payloads are dropped silently (no event, no panic).
+//! Fragment-tolerant — a sequence split across feed calls is reassembled — and
+//! malformed base64, non-UTF-8 and oversized payloads drop silently.
 
 use base64::Engine as _;
 

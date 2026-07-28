@@ -1,10 +1,5 @@
-//! Has a task branch's work actually reached the base branch?
-//!
-//! The single answer to "is it safe to remove this task", shared by `tt task
-//! ls`/`rm`/`clean` and the Agentboard rail — which used to carry three
-//! disagreeing models, so a task read "safe to delete" in one surface and
-//! "2 commits unlanded" in another. One signal is never enough, because each
-//! landing shape is invisible to the checks that catch the other two.
+//! Has a task branch's work reached the base branch? The one answer for `tt task
+//! ls`/`rm`/`clean` and the rail; each landing shape hides from the other two's checks:
 //!
 //! | landing        | reachability | per-commit patch id | cumulative patch id |
 //! |----------------|--------------|---------------------|---------------------|
@@ -12,20 +7,11 @@
 //! | rebase / cherry-pick | no     | all match           | misses              |
 //! | squash         | no           | **none match**      | matches             |
 //!
-//! Squash matters most, because it is how this repo's PRs land: GitHub replaces
-//! the branch's N commits with one whose SHA *and* patch id differ from all of
-//! them, so reachability and per-commit identity both report the whole branch
-//! as unlanded — the false alarm that made a merged task look unsafe to remove.
-//! The cumulative probe closes it: take the branch's *whole* diff since the
-//! merge-base as one patch and ask whether the base contains it, which is
-//! precisely what a squash commit holds ([`tt_git::repo::patch`]).
-//!
-//! Counting what is left is the subtle case — a branch squash-merged and then
-//! added to, where `git cherry` over-reports (3 commits when 1 is outstanding).
-//! Per-commit probes find the watermark instead: the newest commit whose tree
-//! already landed, everything after it being the remainder. Landedness is *not*
-//! monotonic (an intermediate commit can reproduce a tree the base never had),
-//! so this scans newest-first and stops at the first landed commit.
+//! Squash matters most, since it is how this repo's PRs land: GitHub replaces the N
+//! commits with one whose SHA *and* patch id differ from all, so the first two columns
+//! report the branch unlanded. The cumulative probe closes it — the whole diff since the
+//! merge-base as one patch, which is what a squash commit holds. Counting the remainder
+//! scans newest-first, landedness not being monotonic.
 
 /// How a branch's work reached the base branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,24 +121,18 @@ impl WorkState {
 
 /// Decide how a branch landed, given each independently-gathered signal.
 ///
-/// Ordering is by strength of evidence: reachability and patch-identity are
-/// facts about content in the base, the tree probe is a synthesised
-/// equivalent, and a gone upstream is only circumstantial — it says the
-/// remote branch was deleted, which is *usually* a merged PR but is also what
-/// a branch deleted unmerged looks like. It therefore answers last, and only
-/// when nothing about the content did.
+/// Ordering is by strength of evidence: reachability and patch identity are facts about
+/// content in the base, the tree probe is a synthesised equivalent, and a gone upstream
+/// is only circumstantial — *usually* a merged PR, but also what a branch deleted
+/// unmerged looks like. It answers last, and only when nothing about content did.
 ///
-/// `tip_equals_base` suppresses the ancestor answer for a freshly created
-/// task: a branch still sitting on the base tip is trivially reachable from
-/// it, and reporting that as "merged" would invite cleaning a task someone is
-/// about to work in.
+/// `tip_equals_base` suppresses the ancestor answer for a freshly created task: a branch
+/// still on the base tip is trivially reachable from it, and calling that "merged" would
+/// invite cleaning a task someone is about to work in.
 ///
-/// One label is fuzzy by nature: squashing a *single* commit produces a
-/// patch-identical commit, so it answers [`LandedVia::Patches`] before the
-/// tree probe is consulted and reads as "rebase-merged". There is no
-/// information in the repository that could tell the two apart — and both mean
-/// the same thing for every decision made here — so this is left alone rather
-/// than guessed at from commit messages.
+/// One label is fuzzy by nature: squashing a *single* commit is patch-identical, so it
+/// answers [`LandedVia::Patches`] and reads as "rebase-merged". Nothing in the
+/// repository could tell the two apart, and both mean the same for every decision here.
 pub fn classify(
     ancestor: bool,
     tip_equals_base: bool,
@@ -190,20 +170,15 @@ const MAX_PROBES: usize = 64;
 
 /// Run every probe against a real repository and assemble the state.
 ///
-/// Best-effort by design: this feeds a status display and a removal guard, so
-/// an unreadable repository degrades to the conservative answer — work is
-/// present, the branch has not landed — rather than erroring. Reporting
-/// "nothing to lose" because git did not answer is the one outcome that could
-/// destroy work.
+/// Best-effort by design: this feeds a status display and a removal guard, so an
+/// unreadable repository degrades to the conservative answer — work is present, the
+/// branch has not landed — rather than erroring. Reporting "nothing to lose" because
+/// git did not answer is the one outcome that could destroy work.
 ///
-/// The whole probe now runs in-process against `repo`. What that removes is
-/// worth naming, because it was the ugliest thing in this module: the squash
-/// check used to need a *real commit object* for `git cherry` to compute a
-/// patch id from, so it ran `commit-tree` to write one — with an explicit
-/// `user.name`/`user.email` because git refuses without an identity and CI
-/// runners have none — and then deleted the resulting loose object by hand so
-/// the poll would not accumulate thousands of dead objects a day. A patch id
-/// computed in memory needs no object, no identity, and no cleanup.
+/// The whole probe runs in-process against `repo`. The squash check used to need a
+/// *real commit object* for `git cherry`, so it ran `commit-tree` to write one (with an
+/// explicit identity, since CI runners have none) and deleted the loose object by hand
+/// so the poll wouldn't accumulate thousands of dead objects a day.
 pub fn probe_work_state(
     repo: &tt_git::repo::Repo,
     base: &str,

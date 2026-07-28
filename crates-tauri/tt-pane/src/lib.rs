@@ -1,32 +1,17 @@
-//! Embeds `tt-jarvis`'s Bevy renderer in a native surface inside the Tauri
-//! window, glued to a rectangle the frontend measures.
+//! Embeds `tt-jarvis`'s Bevy renderer in a native surface inside the Tauri window,
+//! glued to a rectangle the frontend measures. **Bevy runs on its own thread, never the
+//! GTK main thread.** Under vsync,
+//! `App::update()` blocks until the compositor's next frame callback (~16ms), so driving
+//! it from a GTK tick would starve the webview. That splits ownership, load-bearingly:
+//! the **main thread** owns the Wayland proxies — creation, position, visibility,
+//! teardown — while the **render thread** owns the Bevy `App` and swapchain, taking
+//! [`PaneRect`](tt_jarvis::surface::PaneRect) over a channel and only ever *resizing*.
 //!
-//! **Bevy runs on its own thread, never the GTK main thread.** Under vsync,
-//! `App::update()` blocks until the compositor's next frame callback (~16ms),
-//! so driving it from a GTK tick would starve the webview. That splits
-//! ownership, load-bearingly:
-//!
-//! - **Main thread** owns the Wayland proxies (`wayland::Subsurface`) —
-//!   creation, position, visibility, teardown — and nothing else touches GTK's
-//!   own surface.
-//! - **Render thread** owns the Bevy `App` and the swapchain, taking
-//!   [`PaneRect`](tt_jarvis::surface::PaneRect) updates over a channel; it only
-//!   ever *resizes*, never moving the surface or speaking to GDK.
-//!
-//! Teardown happens once, at exit: dropping a `Pane` stops the render thread and
-//! *joins it* before releasing the subsurface (frames-in-flight, see
-//! `tt_jarvis::surface`). Nothing drops one while the app runs — dropping a Bevy
-//! app takes the process with it — so panes are retired ([`PaneHost::detach`]).
-//!
-//! Hiding moves the pane rather than unmapping or destroying it:
-//! [`PaneHost::set_visible`] parks the renderer and slides the subsurface off
-//! every output. Both alternatives were implemented and rejected *against a
-//! compositor screenshot* — a null buffer never took the surface off screen, a
-//! full detach did but exited the process; read `wayland::Subsurface::set_visible`.
-//!
-//! All of it is Linux-only; elsewhere [`PaneHost`] is an empty stub reporting the
-//! pane unsupported — cut rather than left compiled-but-unused, since an
-//! `NSView`/`CAMetalLayer` host would have its own message type and teardown rule.
+//! Teardown happens once, at exit: dropping a `Pane` stops the render thread and *joins
+//! it* before releasing the subsurface (frames-in-flight). Nothing drops one while the
+//! app runs — dropping a Bevy app takes the process with it — so panes are retired
+//! ([`PaneHost::detach`]) and hiding *moves* the pane instead of unmapping it (see
+//! `wayland::Subsurface::set_visible`). Linux-only; elsewhere [`PaneHost`] is a stub.
 
 use std::sync::Arc;
 

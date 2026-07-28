@@ -121,17 +121,13 @@ pub enum RemoveOutcome {
 /// down -v, anchored container/volume sweep, `git worktree remove`. Shared by
 /// `tt task rm` and the app's `task_delete` command.
 ///
-/// `on_phase` fires at each [`RemovePhase`] in order, so a host with a UI
-/// (the app's Agentboard rail) can show what's actually happening instead of
-/// a row just hanging on one static label for however long a teardown
-/// command or `git worktree remove` takes. [`RemovePhase::StoppingSessions`]
-/// is more than a label: it fires once the guards have passed (or been
-/// forced) and the removal is really about to happen — after the last return
-/// that leaves the task untouched, before the first destructive step — which
-/// is where the app hangs its kill-the-task's-PTYs step, so a *refused*
-/// removal never costs a live session. The CLI passes `|_| {}`. Deliberately
-/// not part of `RemoveOpts`: it's a phase marker in this function's control
-/// flow, not a removal setting.
+/// `on_phase` fires at each [`RemovePhase`] in order, so a host with a UI can show
+/// what's happening instead of one static label for however long a teardown takes.
+/// [`RemovePhase::StoppingSessions`] is more than a label: it fires once the guards
+/// have passed (or been forced) — after the last return that leaves the task untouched,
+/// before the first destructive step — which is where the app hangs its kill-the-PTYs
+/// step, so a *refused* removal never costs a live session. Deliberately not part of
+/// `RemoveOpts`: a phase marker in this function's control flow, not a setting.
 pub fn remove_task(
     opts: &RemoveOpts,
     on_phase: &mut dyn FnMut(RemovePhase),
@@ -320,17 +316,15 @@ fn claimed_ports(dir: &Path) -> BTreeSet<u16> {
 /// — the remedy for [`RmBlocked::ForeignPortListener`], so a stale dev server
 /// can be cleared from the app instead of sending the user to a terminal.
 ///
-/// Takes the task's identity rather than [`RemoveOpts`]: this removes nothing,
-/// and threading a `force` flag through a function that ignores it invites a
-/// later caller to believe forcing means something here.
+/// Takes the task's identity rather than [`RemoveOpts`]: this removes nothing, and
+/// threading a `force` flag through a function that ignores it invites a later caller
+/// to believe forcing means something here.
 ///
-/// The claim check is the whole safety story and is not optional: `port` must
-/// appear in *this task's* rendered `.env`. Ports are claimed per-checkout, so
-/// a claimed port that's occupied is this task's own orphan by construction —
-/// while an unclaimed one is somebody else's, quite possibly a sibling task's
-/// working dev server, and this function would kill its entire process group.
-/// Same reasoning as `scripts/task-port.mjs`'s "never call `killPort` on a
-/// scanned/shared port".
+/// The claim check is the whole safety story and is not optional: `port` must appear in
+/// *this task's* rendered `.env`. Ports are claimed per-checkout, so a claimed port
+/// that's occupied is this task's own orphan by construction, while an unclaimed one is
+/// somebody else's — quite possibly a sibling's working dev server, whose entire
+/// process group this would kill.
 pub fn stop_task_port(root: Option<&Path>, name: &str, port: u16) -> Result<crate::ports::Stopped> {
     let sr = discover_root(root)?;
     let dir = sr.task_dir(name);

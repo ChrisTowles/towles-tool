@@ -1,21 +1,17 @@
 //! Minimal OSC 10/11 *color query* scanner run alongside the terminal state
 //! machine on the raw PTY byte feed.
 //!
-//! libghostty-vt answers CSI-level queries (DA1, DSR, `CSI ? 996 n`) through
-//! its pty-write effect, but an OSC color *query* (`ESC ] 11 ; ? ST`)
-//! produces no reply at all in 0.2.0 — verified empirically; only the *set*
-//! form is applied. Programs probe OSC 11 to learn the terminal background
-//! (it's how Claude Code and many TUIs pick a dark or light palette), so the
-//! engine recognizes the query itself and synthesizes the xterm-format reply
-//! from the terminal's *effective* colors — a program's own OSC 10/11
-//! set-override wins over the app theme, matching xterm.
+//! libghostty-vt answers CSI-level queries through its pty-write effect, but an OSC
+//! color *query* (`ESC ] 11 ; ? ST`) produces no reply at all in 0.2.0 — verified
+//! empirically; only the *set* form is applied. Programs probe OSC 11 to learn the
+//! background (it's how Claude Code and many TUIs pick a palette), so the engine
+//! recognizes the query and synthesizes the xterm-format reply from the terminal's
+//! *effective* colors — a program's own set-override wins over the app theme.
 //!
-//! Same tradeoffs as [`crate::osc52`]: the bytes are re-scanned by a tiny
-//! byte-at-a-time state machine (no allocation on the hot path), sequences
-//! split across feed calls are reassembled, and anything malformed is
-//! dropped silently. Only the query form (`Pt == "?"`) is recognized here —
-//! sets are libghostty's job. Indexed OSC 4 queries are deliberately not
-//! handled (rarely probed; revisit on demand).
+//! Same tradeoffs as [`crate::osc52`]: bytes re-scanned by a byte-at-a-time state
+//! machine, split sequences reassembled, malformed input dropped silently. Only the
+//! query form is recognized here; sets are libghostty's job, and indexed OSC 4
+//! queries are deliberately not handled.
 
 /// Which default color an OSC query asked about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

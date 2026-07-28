@@ -1,31 +1,17 @@
-//! One-shot structured-output calls to the `claude` CLI.
+//! One-shot structured-output calls to the `claude` CLI: every caller wanting a
+//! machine-readable answer goes through here, via
+//! `claude -p <prompt> --output-format json --json-schema <schema>`.
 //!
-//! Every caller in this workspace that wants a *machine-readable answer* from
-//! `claude` goes through here, and gets it the way the CLI itself guarantees:
+//! `--json-schema` routes the model through a structured-output tool, so the envelope
+//! carries a validated `structured_output` object — the difference between asking
+//! nicely for JSON and the CLI guaranteeing the shape. No fence stripping or brace
+//! carving exists below this line.
 //!
-//! ```text
-//! claude -p <prompt> --output-format json --json-schema <schema>
-//! ```
-//!
-//! `--json-schema` routes the model through a structured-output tool, so the
-//! `--output-format json` envelope carries a validated `structured_output`
-//! object. That is the difference between "we asked nicely for JSON in the
-//! prompt" and "the CLI guarantees the shape" — there is no fence stripping and
-//! no brace carving anywhere below this line, and the prompt no longer has to
-//! spend sentences restating the element shape in English.
-//!
-//! The envelope also carries `is_error`, which is the other reason this exists:
-//! a credit-balance failure, an expired MCP auth, or a rate limit are
-//! *claude-side* failures with a message the user can act on, and they must not
-//! read like the model merely answered in the wrong shape. [`Error`] keeps the
-//! three outcomes apart — [`Error::Exec`] (never ran), [`Error::Failed`] (ran,
-//! errored, here's why) and [`Error::Unparseable`] (ran, answered, wrong
-//! shape) — and [`Error::brief`] renders any of them as the single line a
-//! dialog note or a collector summary has room for.
-//!
-//! Tauri-free, like the rest of `crates/`. Only [`Ask::run`] spawns anything:
-//! [`claude_args`] and [`parse_response`] are pure, and directly testable
-//! without a `claude` on PATH.
+//! The envelope also carries `is_error`: a credit balance, expired MCP auth or rate
+//! limit are *claude-side* failures with a message the user can act on, and must not
+//! read like a wrong-shaped answer. [`Error`] keeps the three apart — never ran, ran
+//! and errored, ran and unparseable — and [`Error::brief`] renders any as one line.
+//! Only [`Ask::run`] spawns: [`claude_args`]/[`parse_response`] are pure.
 
 use std::path::Path;
 use std::time::Duration;
