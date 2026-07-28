@@ -916,7 +916,7 @@ export function claudeTitleName(raw: string | undefined): string | null {
 
 /** A one-word status label for a session row. Kept short and uniform-width
  * on purpose — the rail renders it in a fixed-width slot (see
- * `agentboard-rail.tsx`) so rows line up instead of drifting per the old
+ * `agentboard-session-row.tsx`) so rows line up instead of drifting per the old
  * variable-length prose ("Waiting — needs your input" vs "Done"). */
 export function sessionStatusText(s: SessionData): string {
   if (!s.live) return "Off";
@@ -945,7 +945,7 @@ export function isSoloRepo(r: RepoData): boolean {
 
 /** The collapse-map key(s) plain Left/Right arrow navigation acts on for a
  * given repo + its focused folder — the same keying the rail's
- * click-to-toggle chevrons already use (`agentboard-rail.tsx`): a
+ * click-to-toggle chevrons already use (`agentboard-repo-group.tsx`): a
  * solo-checkout repo collapses at the repo header (`repo.key`, one level,
  * no parent); a multi-checkout repo collapses per-folder
  * (`` `${repo.key}::${folder.dir}` ``) nested under the repo header
@@ -1320,6 +1320,25 @@ export function fmtTokens(n: number): string {
   return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
 }
 
+/** Diff magnitudes for a rail chip: `847`, `12.3K`, `1.2M`.
+ *
+ * Exact below 10,000, where every digit is still a fact about a change you
+ * might read; past that they are noise on the widest chip in the rail — a
+ * `+62512` tells you nothing `+62.5K` doesn't, and costs a third of the branch
+ * name to say it. The exact numbers stay one hover away in the commit
+ * breakdown, which is where you go when the magnitude isn't the answer. */
+export function fmtDiffLines(n: number): string {
+  if (n < 10_000) return `${n}`;
+  const k = n / 1_000;
+  if (k < 100) return `${Math.round(k * 10) / 10}K`;
+  // Promote on the *rounded* value, like `fmtTokens`: 999,500 rounds to
+  // 1000K, which has to read as 1M.
+  const rounded = Math.round(k);
+  if (rounded < 1_000) return `${rounded}K`;
+  const m = Math.round(n / 100_000) / 10;
+  return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+}
+
 /** `412K / 1M` — what a session is holding against what it can hold. Null when
  * the window size is unknown, since a bare used-count answers nothing.
  *
@@ -1523,6 +1542,23 @@ export function statusColor(status: AgentStatus): string {
     default:
       return "bg-muted-foreground/40";
   }
+}
+
+/** Ambient status color for a set of sessions hidden behind a collapse:
+ * red if one errored, blue if one is waiting on you, cyan while an agent is
+ * busy, else a calm emerald for "live but idle". Null when nothing is live.
+ *
+ * Deliberately *not* `statusColor` of the worst status: this answers "what is
+ * happening in there", where a collapsed row has one dot for many sessions, so
+ * the calm case is emerald ("live, nothing wanted") rather than the idle
+ * gray that a single idle session gets. */
+export function collapsedLiveColor(sessions: SessionData[]): string | null {
+  const live = sessions.filter((s) => s.live);
+  if (live.length === 0) return null;
+  if (live.some((s) => s.agentState?.status === "error")) return "bg-red-500";
+  if (live.some((s) => s.agentState?.status === "waiting")) return "bg-blue-500";
+  if (live.some((s) => s.agentState?.status === "busy")) return "bg-cyan-500";
+  return "bg-emerald-500";
 }
 
 // Session PTY writes

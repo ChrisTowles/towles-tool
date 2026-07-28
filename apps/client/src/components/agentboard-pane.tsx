@@ -208,10 +208,12 @@ export function WorkingContext({
           {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
           <UncommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
           <CommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
-          <FilesButton onOpen={() => onOpenFiles(folder.dir)} />
-          <AgentButton onOpen={() => onOpenAgent(folder.dir)} />
-          {folder.hasLaunchConfig && <PreviewButton onOpen={() => onOpenPreview(folder.dir)} />}
-          {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} />}
+          <FilesButton onOpen={() => onOpenFiles(folder.dir)} labeled />
+          <AgentButton onOpen={() => onOpenAgent(folder.dir)} labeled />
+          {folder.hasLaunchConfig && (
+            <PreviewButton onOpen={() => onOpenPreview(folder.dir)} labeled />
+          )}
+          {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} labeled />}
           {pr && <PrChip pr={pr} stats={folder} />}
           {task &&
             task.issues.map((issue) => (

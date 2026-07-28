@@ -27,6 +27,15 @@ Never flatten this.
 
 Radius: cards/panels `rounded-lg`, chips/badges/tabs `rounded-md`, dots circular.
 
+**A box is a control or an alert, never a fact.** In a rail row — repeated
+dozens of times down a column whose whole job is to be scanned — a fact (diff
+counts, branch, base-moved, a pane-open button) is bare `font-mono` type, and
+the border/fill arrives on `hover:` where "is this clickable?" is the question
+being asked; icon buttons take the ghost variant. Only needs-you, port drift,
+safe-to-delete and deleting keep a resting box. A *pane header* is the
+opposite case (one toolbar on screen, room to spare) and keeps the bordered,
+worded form. A surface that boxes everything ranks nothing.
+
 ## Status dots — mirror `statusColor()` in `apps/client/src/lib/agentboard.ts` exactly
 | `AgentStatus` | class |
 |---|---|
@@ -136,7 +145,9 @@ Every header row (repo, folder, or a solo-repo's collapsed header) gets
 
 ## Source of truth in the app
 `apps/client/src/lib/agentboard.ts` (`statusColor()`, types) ·
-`apps/client/src/components/agentboard-rail.tsx` (rail/split layout, row markup) ·
+`apps/client/src/components/agentboard-folder-header.tsx` (a checkout's row) ·
+`apps/client/src/components/agentboard-session-row.tsx` (a session's row; the
+rail's other pieces are its `agentboard-*` siblings) ·
 `apps/client/src/components/day-bar.tsx` (needs-you math) ·
 `apps/client/src/index.css` (token definitions).
 
