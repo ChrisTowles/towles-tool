@@ -27,6 +27,34 @@ pub struct CreateOpts {
     pub run_setup: bool,
 }
 
+/// A step of [`create_task`] worth showing the user live, in the order they
+/// run — the mirror of [`super::RemovePhase`]. Coarse by design: one variant
+/// per subprocess-bearing step, not every internal git call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePhase {
+    /// `worktree prune`, `fetch origin`, and the base's fast-forward.
+    Fetching,
+    /// `git worktree add -b <branch>`.
+    AddingWorktree,
+    /// Rendering `.env` and inheriting a sibling checkout's secrets.
+    PreparingEnv,
+    /// The declared `TT_TASK_SETUP` command. Only reached when
+    /// [`CreateOpts::run_setup`] is set — the app runs setup separately.
+    RunningSetup,
+}
+
+impl CreatePhase {
+    /// Present-participle label for a status line.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Fetching => "fetching origin",
+            Self::AddingWorktree => "adding the git worktree",
+            Self::PreparingEnv => "rendering .env and claiming ports",
+            Self::RunningSetup => "running setup",
+        }
+    }
+}
+
 pub struct CreatedTask {
     pub name: String,
     pub dir: PathBuf,
@@ -45,10 +73,20 @@ pub struct CreatedTask {
 /// with port claims, sibling-secrets inheritance, setup step.
 /// `now_ms` (epoch ms) stamps the port registry's `claimed_at_ms` — read at
 /// the CLI/app boundary, never here.
-pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
+///
+/// `on_phase` fires at each [`CreatePhase`] in order, as
+/// [`super::remove_task`] does. Not part of [`CreateOpts`]: it's a marker in
+/// this function's control flow, not a creation setting. Pass `&mut |_| {}`
+/// to ignore.
+pub fn create_task(
+    opts: &CreateOpts,
+    now_ms: i64,
+    on_phase: &mut dyn FnMut(CreatePhase),
+) -> Result<CreatedTask> {
     let sr = discover_root(opts.root.as_deref())?;
     validate_branch_name(&opts.branch)?;
     let mut warnings = Vec::new();
+    on_phase(CreatePhase::Fetching);
     let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
 
     let fetch_start = Instant::now();
@@ -83,6 +121,7 @@ pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
         .map_err(|e| OpsError::Io(format!("cannot create {}: {e}", sr.tasks_dir().display())))?;
     let dir_s = dir.to_string_lossy().to_string();
 
+    on_phase(CreatePhase::AddingWorktree);
     let worktree_start = Instant::now();
     let add_result =
         git_checkout(&sr.checkout, &["worktree", "add", "-b", &opts.branch, &dir_s, &base])?;
@@ -99,6 +138,7 @@ pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
     // behind: a real worktree with no rendered `.env`, invisible as "failed"
     // to `tt task ls` and blocking a retry with `TaskExists`.
     let created = (|| -> Result<CreatedTask> {
+        on_phase(CreatePhase::PreparingEnv);
         let summary = render_task_env(&sr, &dir, Some(&base), now_ms)?;
         warnings.extend(summary.warnings);
 
@@ -133,6 +173,7 @@ pub fn create_task(opts: &CreateOpts, now_ms: i64) -> Result<CreatedTask> {
         }
 
         if opts.run_setup {
+            on_phase(CreatePhase::RunningSetup);
             let setup_start = Instant::now();
             let setup_warning = run_setup(&dir)?;
             note_if_slow(&mut warnings, "setup", setup_start.elapsed());

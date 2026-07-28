@@ -22,6 +22,7 @@ import {
   ModelBadge,
   Chevron,
   DeletingBadge,
+  SettingUpBadge,
   CommittedChip,
   UncommittedChip,
   FilesButton,
@@ -395,6 +396,7 @@ export function RepoGroup({
   onDeleteWorktree,
   deletingDirs,
   deletingPhase,
+  settingUpDirs,
   onRenameCommit,
   onOpenDiff,
   onOpenFiles,
@@ -450,6 +452,9 @@ export function RepoGroup({
    * events. Absent for a dir in `deletingDirs` just means no phase event has
    * landed yet — `DeletingBadge` falls back to a static label. */
   deletingPhase?: Map<string, string>;
+  /** Checkouts whose setup step is still running → when it started (epoch
+   * ms). See `SettingUpBadge`. */
+  settingUpDirs?: Map<string, number>;
   onRenameCommit: (sessionId: string, name: string) => void;
   /** Opens the folder's diff pane in its focused window. */
   onOpenDiff: (dir: string) => void;
@@ -649,6 +654,7 @@ export function RepoGroup({
     }
     const deleting = deletingDirs?.has(folder.dir) ?? false;
     const deletingLabel = deletingPhase?.get(folder.dir);
+    const settingUpSince = settingUpDirs?.get(folder.dir);
     return (
       <div
         className={cn("border-b", deleting && "pointer-events-none opacity-50")}
@@ -668,6 +674,7 @@ export function RepoGroup({
           active={activeFolderDir === folder.dir}
           deleting={deleting}
           deletingLabel={deletingLabel}
+          settingUpSince={settingUpSince}
           actions={actions}
           onToggle={() => {
             onToggle(repo.key);
@@ -807,6 +814,7 @@ export function RepoGroup({
             const fCollapsed = collapsed[key];
             const deleting = deletingDirs?.has(folder.dir) ?? false;
             const deletingLabel = deletingPhase?.get(folder.dir);
+            const settingUpSince = settingUpDirs?.get(folder.dir);
             return (
               <motion.div
                 key={folder.dir}
@@ -829,6 +837,7 @@ export function RepoGroup({
                   active={activeFolderDir === folder.dir}
                   deleting={deleting}
                   deletingLabel={deletingLabel}
+                  settingUpSince={settingUpSince}
                   actions={actions}
                   onToggle={() => {
                     onToggle(key);
@@ -925,6 +934,7 @@ function FolderHeader({
   now,
   deleting,
   deletingLabel,
+  settingUpSince,
   actions,
   onToggle,
   onNewSession,
@@ -963,6 +973,9 @@ function FolderHeader({
    * "deleting git worktree", …) — passed to `DeletingBadge`, which falls
    * back to a static label when absent (no phase event has landed yet). */
   deletingLabel?: string;
+  /** When this checkout's setup step started (epoch ms), while it's still
+   * running. Absent means nothing is installing. */
+  settingUpSince?: number;
   /** Session lifecycle dispatch — the dev-servers popover launches/focuses
    * through it. */
   actions: SessionActions;
@@ -1247,6 +1260,9 @@ function FolderHeader({
             <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} onClick={onToggle} />
           )}
           {deleting && <DeletingBadge label={deletingLabel} />}
+          {settingUpSince !== undefined && !deleting && (
+            <SettingUpBadge since={settingUpSince} now={now} />
+          )}
           <BaseMovedChip stats={folder} />
           {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
           <UncommittedChip stats={folder} onOpen={onOpenDiff} />

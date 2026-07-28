@@ -32,6 +32,13 @@ export type TaskCreation = {
   /** `task_create` calls fired from an inline form and still running (or
    * failed) — rendered as a PendingTaskRow until they resolve. */
   pendingTasks: PendingTask[];
+  /** Record a `task://create_progress` event against its pending row. Keyed
+   * by root+branch, not dir: the task has no directory yet while these fire. */
+  setCreatePhase: (root: string, branch: string, label: string) => void;
+  /** Checkouts whose setup step is running → when it started. Separate from
+   * `pendingTasks`: by then the worktree exists and the rail renders it as a
+   * real folder, so the folder header carries this instead. */
+  settingUpDirs: Map<string, number>;
   /** Open/close a repo's form — clicking the affordance again closes it. */
   toggleTaskForm: (repo: NewTaskRepo) => void;
   closeTaskForm: (key: string) => void;
@@ -91,6 +98,13 @@ export function useTaskCreation(args: {
     new Map(),
   );
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
+  const [settingUpDirs, setSettingUpDirs] = useState<Map<string, number>>(new Map());
+
+  function setCreatePhase(root: string, branch: string, label: string) {
+    setPendingTasks((prev) =>
+      prev.map((p) => (p.repoDir === root && p.branch === branch ? { ...p, phase: label } : p)),
+    );
+  }
 
   function toggleTaskForm(repo: NewTaskRepo) {
     setOpenTaskForms((prev) => {
@@ -122,11 +136,30 @@ export function useTaskCreation(args: {
     setOpenTaskForms((prev) => new Set(prev).add(repo.key));
   }
 
+  // Both setup paths below mark the dir for the whole run, so the folder
+  // header can say the install is going. A retry is the same install, so it
+  // gets the same badge; only the toasts differ.
+  function markSetupRunning(dir: string) {
+    setSettingUpDirs((prev) => new Map(prev).set(dir, Date.now()));
+  }
+
+  function clearSetupRunning(dir: string) {
+    setSettingUpDirs((prev) => {
+      if (!prev.has(dir)) return prev;
+      const next = new Map(prev);
+      next.delete(dir);
+      return next;
+    });
+  }
+
   // The setup step (npm install/etc.) can fail without invalidating the task
   // itself — `task_create`'s warning already says so. Give it a one-click
   // retry rather than making the user remember to re-run it from a terminal.
   async function retrySetup(dir: string) {
-    (await invoke<string | null>("task_run_setup", { dir })).match({
+    markSetupRunning(dir);
+    const result = await invoke<string | null>("task_run_setup", { dir });
+    clearSetupRunning(dir);
+    result.match({
       ok: (warning) => {
         if (warning) toast(warning, { action: retryAction(dir) });
         else toast("setup succeeded");
@@ -147,7 +180,9 @@ export function useTaskCreation(args: {
   // what an inline `task_create` warning used to look like — nothing, unless
   // something actually went wrong.
   function runSetupInBackground(dir: string) {
+    markSetupRunning(dir);
     void invoke<string | null>("task_run_setup", { dir }).then((result) => {
+      clearSetupRunning(dir);
       result.match({
         ok: (warning) => {
           if (warning) toast(warning, { action: retryAction(dir) });
@@ -359,6 +394,8 @@ export function useTaskCreation(args: {
     openTaskForms,
     reopenTasks,
     pendingTasks,
+    setCreatePhase,
+    settingUpDirs,
     toggleTaskForm,
     closeTaskForm,
     openReopenForm,

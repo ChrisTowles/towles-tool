@@ -638,7 +638,7 @@ mod remove;
 mod render;
 
 pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};
-pub use create::{CreateOpts, CreatedTask, create_task};
+pub use create::{CreateOpts, CreatePhase, CreatedTask, create_task};
 pub use init::{InitReport, init_repo};
 pub use remove::{
     CleanOpts, CleanReport, FinishedTask, KeptTask, RemoveOpts, RemoveOutcome, RemovePhase,

@@ -213,7 +213,16 @@ fn cmd_new(
         base: base.map(str::to_string),
         run_setup: true,
     };
-    let created = ops::create_task(&opts, now_ms()).map_err(|e| e.to_string())?;
+    // Narrated in text mode only: `ui::info` writes to *stdout*, so an eager
+    // step line would corrupt `--json`'s document the same way a warning
+    // would (see the comment below). Worth printing at all because the setup
+    // step alone can run for minutes with nothing else on screen.
+    let created = ops::create_task(&opts, now_ms(), &mut |phase| {
+        if !json {
+            ui::info(phase.label());
+        }
+    })
+    .map_err(|e| e.to_string())?;
     // Collected rather than printed here: `ui::warning` writes to *stdout*
     // (see `cmd_clean`'s doc comment on the same hazard), so printing eagerly
     // would corrupt `--json`'s document whenever a warning fires — which is

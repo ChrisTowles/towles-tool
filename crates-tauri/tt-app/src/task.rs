@@ -26,6 +26,18 @@ struct DeleteProgressPayload<'a> {
     label: &'a str,
 }
 
+/// Emitted for every [`ops::CreatePhase`] a task creation passes through —
+/// the mirror of [`DELETE_PROGRESS_EVENT`]. Keyed by `root` + `branch`, not
+/// by dir: a create runs before there is a directory to key on.
+const CREATE_PROGRESS_EVENT: &str = "task://create_progress";
+
+#[derive(Serialize, Clone)]
+struct CreateProgressPayload<'a> {
+    root: &'a str,
+    branch: &'a str,
+    label: &'a str,
+}
+
 /// Fire-and-forget `git fetch` across every tracked repo (deduped, see
 /// [`tt_agentboard::git_info::fetch_all`]), then nudge the rail to re-emit.
 /// Task lifecycle events (create/remove) are a natural moment to check
@@ -156,6 +168,8 @@ pub async fn task_create(
     if branch.is_empty() {
         return Err("a task needs a branch — tasks are named after their branch".to_string());
     }
+    // `opts` takes both below; the progress event needs them too.
+    let (event_root, event_branch) = (root.clone(), branch.clone());
     let opts = CreateOpts {
         root: Some(PathBuf::from(root)),
         branch,
@@ -169,10 +183,34 @@ pub async fn task_create(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let created = tauri::async_runtime::spawn_blocking(move || ops::create_task(&opts, now_ms))
-        .await
-        .map_err(|e| format!("worktree task failed: {e}"))?
-        .map_err(|e| e.to_string())?;
+    let progress_app = app.clone();
+    let created = tauri::async_runtime::spawn_blocking(move || {
+        let mut phase_start = std::time::Instant::now();
+        ops::create_task(&opts, now_ms, &mut |phase| {
+            let _ = progress_app.emit(
+                CREATE_PROGRESS_EVENT,
+                CreateProgressPayload {
+                    root: &event_root,
+                    branch: &event_branch,
+                    label: phase.label(),
+                },
+            );
+            // `prev_ms` times the *previous* step — a step's duration isn't
+            // known until the next begins. So the first record measures root
+            // discovery, and the last step's duration comes from differencing
+            // against the `task.created` event below.
+            tracing::info!(
+                phase = ?phase,
+                label = phase.label(),
+                prev_ms = phase_start.elapsed().as_millis() as u64,
+                "task.create_phase"
+            );
+            phase_start = std::time::Instant::now();
+        })
+    })
+    .await
+    .map_err(|e| format!("worktree task failed: {e}"))?
+    .map_err(|e| e.to_string())?;
     tracing::info!(
         name = %created.name,
         branch = %created.branch,
@@ -266,18 +304,41 @@ pub async fn task_write_pasted_images(
     .map_err(|e| e.to_string())
 }
 
-/// Re-run a checkout's setup step (declared `TT_TASK_SETUP` or lockfile
-/// detection) — the retry affordance for a setup failure surfaced from
-/// `task_create`. `Ok(None)` = nothing to run or it succeeded this time;
-/// `Ok(Some)` carries the same warning text `task_create` would have shown.
-/// Long-running (an install can take a minute) → off the main thread.
+/// Run a checkout's setup step (declared `TT_TASK_SETUP` or lockfile
+/// detection). `Ok(None)` = nothing to run, or it succeeded; `Ok(Some)`
+/// carries the warning text to surface, which the caller offers a retry on.
+/// Long-running (an install can take minutes) → off the main thread.
+///
+/// The create flow's setup and the retry behind that warning both land here —
+/// `task_create` doesn't run it (see its doc), so this is the primary path.
+/// A span, so the log carries how long the install took.
 #[tauri::command]
 pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
-    tracing::info!(%dir, "task.setup_rerun");
-    tauri::async_runtime::spawn_blocking(move || ops::run_setup(&PathBuf::from(dir)))
-        .await
-        .map_err(|e| format!("worktree task failed: {e}"))?
-        .map_err(|e| e.to_string())
+    use tracing::Instrument as _;
+
+    let span = tracing::info_span!(
+        "task.setup",
+        dir = %dir,
+        outcome = tracing::field::Empty,
+    );
+    async move {
+        let result =
+            tauri::async_runtime::spawn_blocking(move || ops::run_setup(&PathBuf::from(dir)))
+                .await
+                .map_err(|e| format!("worktree task failed: {e}"))?
+                .map_err(|e| e.to_string());
+        // Three endings, not two: a failed setup still leaves a usable task
+        // (hence `Ok`), and logging that as success hides the retry case.
+        let outcome = match &result {
+            Ok(None) => "ok",
+            Ok(Some(_)) => "warned",
+            Err(_) => "err",
+        };
+        tracing::Span::current().record("outcome", outcome);
+        result
+    }
+    .instrument(span)
+    .await
 }
 
 /// The wire form of [`ops::RemoveOutcome`] — see its doc for why a guard
