@@ -121,42 +121,25 @@ impl ScopedDirNotifier {
 /// diff-pane refresh: an agent editing an open file must show up in the
 /// editor, not sit stale until the next manual reopen.
 ///
-/// One instance per checkout, not per file, deliberately: inotify *instances*
-/// are a scarce per-user resource (`max_user_instances` defaults to 128), and
-/// a 50-file diff pane watching per-file would burn 50 of them. Individual
+/// One instance per checkout, not per file: inotify *instances* are a scarce
+/// per-user resource (`max_user_instances` defaults to 128), while individual
 /// directory *watches* on one instance are the cheap plural resource.
 ///
 /// Files register via [`add`](Self::add)/[`remove`](Self::remove) with
-/// refcounts (two panes viewing the same file share one registration). Each
-/// file's *parent directory* is watched (non-recursively) rather than the
-/// file itself: every well-behaved writer here — the viewer's own atomic
-/// save, an agent's tmp+rename replace, a `git checkout` — retires the
-/// file's inode, and a watch on the inode goes permanently silent after the
-/// first such replace. Events for unregistered siblings are filtered out;
+/// refcounts, and each file's *parent directory* is watched (non-recursively)
+/// rather than the file itself: every well-behaved writer here — the viewer's
+/// atomic save, an agent's tmp+rename, a `git checkout` — retires the file's
+/// inode, and a watch on an inode goes permanently silent after the first
+/// such replace. Events for unregistered siblings are filtered out;
 /// registered paths touched within a debounce window flush as one
-/// deduplicated batch.
+/// deduplicated batch. A file whose parent directory doesn't exist yet
+/// watches an ancestor instead — see
+/// [`rewatch_pending`](Self::rewatch_pending).
 ///
-/// **A registered file's parent directory need not exist yet.** `git
-/// pack-refs --prune` (which `git gc --auto` runs on its own) removes the
-/// loose `refs/heads/feat/x` *and* the `refs/heads/feat` directory it
-/// emptied, so any branch with a `/` in its name has no parent to watch until
-/// the ref goes loose again — and `packed-refs` does not change on the commit
-/// that recreates it. Failing the registration drops that branch to the
-/// backup poll. Such a file registers *pending* against its nearest existing
-/// ancestor (within [`MAX_MISSING_ANCESTORS`] levels), and an event on any
-/// ancestor of it counts as a hit; [`rewatch_pending`](Self::rewatch_pending)
-/// settles the registration onto the real parent once it exists.
-///
-/// Watching that ancestor *recursively* instead does not work: notify
-/// installs the new subdirectory's watch in response to its creation event,
-/// by which time git has already written the ref inside, and that write is
-/// never delivered.
-///
-/// Known degradation: if a watched *parent directory* itself is deleted,
-/// the OS drops its watch and a later recreation of the directory is not
-/// re-watched until every registration inside it drains and re-adds. Files
-/// there go silent rather than wrong — the consumers' poll-driven refresh
-/// (git-stats keyed) remains the safety net, and pane rebuilds re-register.
+/// Known degradation: if a watched *parent directory* is itself deleted, the
+/// OS drops its watch and a later recreation isn't re-watched until every
+/// registration inside it drains and re-adds. Files there go silent rather
+/// than wrong — the consumers' poll-driven refresh remains the safety net.
 pub struct MultiFileNotifier {
     watcher: RecommendedWatcher,
     /// What the watcher callback matches events against — shared with it.
@@ -231,8 +214,8 @@ impl MultiFileNotifier {
 
     /// Register `file` (absolute path). Refcounted — a second registration of
     /// the same path is free and requires a matching [`remove`](Self::remove).
-    /// The parent directory need not exist yet; see the type's doc for what is
-    /// watched in its place.
+    /// The parent directory need not exist yet; see
+    /// [`rewatch_pending`](Self::rewatch_pending) for what is watched instead.
     pub fn add(&mut self, file: &Path) -> notify::Result<()> {
         if let Some(count) = self.targets.lock().unwrap().files.get_mut(file) {
             *count += 1;
@@ -253,9 +236,18 @@ impl MultiFileNotifier {
 
     /// Move every pending registration whose real parent directory now exists
     /// onto that parent, so its next change fires as an exact match rather
-    /// than as the one-shot ancestor hit. Cheap — an `is_dir` per pending file
-    /// and nothing at all when none are — so the owner calls it on the same
-    /// tick it diffs the registered set.
+    /// than the one-shot ancestor hit. Cheap (an `is_dir` per pending file),
+    /// so the owner calls it on the tick it diffs the registered set.
+    ///
+    /// Registrations go pending because a parent directory need not exist:
+    /// `git pack-refs --prune` removes the loose `refs/heads/feat/x` *and* the
+    /// `refs/heads/feat` directory it emptied, so a branch with a `/` in its
+    /// name has no parent to watch until the ref goes loose again.
+    /// [`add`](Self::add) falls back to the nearest existing ancestor (within
+    /// [`MAX_MISSING_ANCESTORS`] levels), where an event on any ancestor counts
+    /// as a hit. Watching it *recursively* instead does not work: notify
+    /// installs the new subdirectory's watch in response to its creation event,
+    /// by which time git has already written the ref inside.
     pub fn rewatch_pending(&mut self) {
         let ready: Vec<PathBuf> = {
             let targets = self.targets.lock().unwrap();

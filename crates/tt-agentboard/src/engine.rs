@@ -329,45 +329,32 @@ impl Engine {
     }
 
     /// `self.repo_paths` plus any `git worktree` checkouts of those repos that
-    /// aren't already tracked (via `git worktree list`, e.g. a checkout under
-    /// `.claude/worktrees/`) — so a worktree shows up in the rail without the
-    /// user adding it to repos.json. Derived live on every call, nothing
-    /// persisted, so a `git worktree remove` just stops appearing next poll.
+    /// aren't already tracked (e.g. one under `.claude/worktrees/`), so a
+    /// worktree shows up in the rail without being added to repos.json.
+    /// Derived live on every call, nothing persisted.
     ///
     /// Unless [`Self::show_unmanaged_worktrees`] is on, a discovered *linked*
     /// worktree reaches the rail only when a board task is bound to it
     /// ([`Self::bound_worktree_dirs`]) — the board row is the record that the
-    /// user asked for this worktree, written by `tt task new` and the app's
-    /// `+` and by nothing else. Deliberately not a filesystem check: this used
-    /// to ask whether the dir looked like a `tt task` worktree, and every
+    /// user asked for this worktree. Deliberately not a filesystem check: this
+    /// used to ask whether the dir looked like a `tt task` worktree, and every
     /// worktree created through the retired Claude Code worktree hooks looked
-    /// exactly like one, marker and all. This is the one place the setting is
-    /// applied; the candidate lists come straight off the cached
-    /// [`crate::git_info::GitInfo`], so toggling it costs no git work.
-    /// Distinct from the "multiple clones" pattern (separate `repoPaths`
-    /// entries, unrelated repos to git): those are unaffected here.
+    /// exactly like one, marker and all.
     ///
-    /// This only decides which dirs show up as entries at all — nesting them
-    /// into [`crate::types::RepoData`] rows is [`crate::bridge::assemble_state`]'s
-    /// job, decided from each entry's [`crate::git_info::GitInfo::common_dir`],
-    /// not from how a dir got onto this list.
+    /// This only decides which dirs are entries at all; nesting them into
+    /// [`crate::types::RepoData`] rows is [`crate::bridge::assemble_state`]'s
+    /// job, decided from each entry's [`crate::git_info::GitInfo::common_dir`].
     ///
-    /// Cache-only: never touches git — this only reads each tracked repo's
-    /// already-cached `worktree_dirs` (from its last `compute_git_info`), so
-    /// a freshly discovered worktree shows up the instant its parent's cache
-    /// lists it, with no dependency on the *child's* own git info being
-    /// warmed yet. This method runs under the engine lock (every `ab_*`
-    /// command and the watcher-scan loop share it), and every other command
-    /// is dispatched inline on the UI thread, so reading git here (as this
-    /// used to do via `get_or_refresh`) could hold the lock through
-    /// `compute_git_info`'s full ~9-read chain — object-database and
-    /// working-tree I/O — and freeze the whole app, not just the caller. In-
-    /// process gitoxide made that chain far cheaper, not free. The host warms
-    /// the cache out of band instead (see the watcher-scan block and
-    /// `ab_add_repo` in `crates-tauri/tt-app/src/lib.rs` / `agentboard.rs`).
-    ///
-    /// Being cache-only is also why discovery is filtered through
-    /// [`Self::removed_checkouts`] — see [`Self::forget_checkout`].
+    /// Cache-only: it reads each tracked repo's already-cached `worktree_dirs`
+    /// and never touches git, so a new worktree appears the instant its
+    /// parent's cache lists it, without the child's own git info being warm.
+    /// This runs under the engine lock, which every `ab_*` command shares and
+    /// which is dispatched inline on the UI thread — reading git here (as it
+    /// used to, via `get_or_refresh`) could hold the lock through
+    /// `compute_git_info`'s full object-database and working-tree read chain
+    /// and freeze the whole app, not just the caller. The host warms the cache
+    /// out of band instead. Being cache-only is also why discovery is filtered
+    /// through [`Self::removed_checkouts`] — see [`Self::forget_checkout`].
     fn expand_with_worktrees(&mut self) -> Vec<String> {
         // A path that exists again (a new task created where an old one was)
         // is a live checkout, not a suppressed one — and dropping it here is

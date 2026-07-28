@@ -1,15 +1,12 @@
 //! In-process git, via [gitoxide](https://github.com/GitoxideLabs/gitoxide).
 //!
 //! Every *read* of a repository in this workspace goes through here instead of
-//! spawning `git`. The Agentboard poll alone ran ~100k `git` subprocesses a day
-//! — `rev-parse`, `merge-base`, `status`, `diff`, `rev-list` — each one a fork,
-//! an exec, a config parse, and a ref-store load thrown away microseconds
-//! later. Measured against this repo, the same answers come back 10–100× faster
-//! from a cached [`Repo`] (`rev-parse HEAD`: 0.75ms spawned vs 0.01ms here).
+//! spawning `git`: the Agentboard poll alone ran ~100k `git` subprocesses a
+//! day, each a fork, an exec, a config parse and a ref-store load thrown away
+//! microseconds later. The same answers come back 10–100× faster from a cached
+//! [`Repo`] (`rev-parse HEAD`: 0.75ms spawned vs 0.01ms here).
 //!
-//! ## What is *not* here, and why
-//!
-//! Three operations still shell out to `git`, and none of them is an oversight:
+//! Three operations still shell out to `git`, and none is an oversight:
 //!
 //! - **Worktree add/remove/prune.** gitoxide's worktree API is read-only
 //!   ([`gix::worktree::Proxy`] and friends); there is no linked-worktree
@@ -25,19 +22,7 @@
 //!
 //! Everything else — every ref read, graph walk, status, diff, ignore check,
 //! branch create/delete, and the patch-identity probing behind
-//! `tt_tasks::landed` — is in-process.
-//!
-//! ## The cache
-//!
-//! Opening a repository is the expensive part of gitoxide (~0.3ms: config
-//! discovery, ref store, ODB setup); the queries afterwards are microseconds.
-//! [`RepoCache`] therefore holds one open repository **per folder**, keyed by
-//! canonical path, and hands out cheap thread-local clones. A cached handle
-//! stays correct on its own for refs and objects — gitoxide reads refs from
-//! disk per query and refreshes the object database when a lookup misses — but
-//! *not* for config, which is parsed once at open. So each [`RepoCache::open`]
-//! stats the repo's `config` file and reopens on change: one `stat` against a
-//! whole process spawn is not a trade worth agonizing over.
+//! `tt_tasks::landed` — is in-process, behind [`RepoCache`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -91,9 +76,12 @@ pub type Result<T> = std::result::Result<T, GitError>;
 
 /// One open repository per folder, shared across polls.
 ///
-/// Cheap to clone handles out of, safe to share across threads, and self-
-/// healing: a folder whose checkout is removed or whose config changes is
-/// reopened on next use rather than serving a stale handle forever.
+/// Opening is the expensive part of gitoxide (~0.3ms: config discovery, ref
+/// store, ODB setup); the queries afterwards are microseconds. Handles are
+/// cheap to clone out, safe to share across threads, and self-healing: refs
+/// and objects stay correct in a held handle, but config is parsed once at
+/// open, so [`RepoCache::open`] stats `config` and reopens on change (as it
+/// does for a checkout that went away).
 #[derive(Debug, Default)]
 pub struct RepoCache {
     entries: Mutex<HashMap<PathBuf, Entry>>,

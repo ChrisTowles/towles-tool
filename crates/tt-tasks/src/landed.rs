@@ -1,16 +1,10 @@
 //! Has a task branch's work actually reached the base branch?
 //!
-//! This is the single answer to "is it safe to remove this task", shared by
-//! `tt task ls`/`rm`/`clean` and the Agentboard rail. Before it existed the
-//! repo carried three disagreeing models — `guards::check_removal` (orphaned
-//! commits), `clean`'s old ancestor-merge-or-`[gone]` rule (since deleted),
-//! and the rail's raw `git cherry` count — so the same task could read
-//! "safe to delete" in one surface and "2 commits unlanded" in another.
-//!
-//! ## Why one signal is never enough
-//!
-//! A branch's work reaches the base under three different shapes, and each
-//! shape is invisible to the checks that catch the other two:
+//! The single answer to "is it safe to remove this task", shared by `tt task
+//! ls`/`rm`/`clean` and the Agentboard rail — which used to carry three
+//! disagreeing models, so a task read "safe to delete" in one surface and
+//! "2 commits unlanded" in another. One signal is never enough, because each
+//! landing shape is invisible to the checks that catch the other two.
 //!
 //! | landing        | reachability | per-commit patch id | cumulative patch id |
 //! |----------------|--------------|---------------------|---------------------|
@@ -18,29 +12,20 @@
 //! | rebase / cherry-pick | no     | all match           | misses              |
 //! | squash         | no           | **none match**      | matches             |
 //!
-//! Squash is the case that matters most here, because it is how this repo's
-//! PRs land: GitHub replaces the branch's N commits with one new commit whose
-//! SHA *and* patch id differ from all of them, so both reachability and
-//! per-commit patch identity report the whole branch as unlanded work. That
-//! false alarm is exactly what made a merged task look unsafe to remove.
+//! Squash matters most, because it is how this repo's PRs land: GitHub replaces
+//! the branch's N commits with one whose SHA *and* patch id differ from all of
+//! them, so reachability and per-commit identity both report the whole branch
+//! as unlanded — the false alarm that made a merged task look unsafe to remove.
+//! The cumulative probe closes it: take the branch's *whole* diff since the
+//! merge-base as one patch and ask whether the base contains it, which is
+//! precisely what a squash commit holds ([`tt_git::repo::patch`]).
 //!
-//! The cumulative probe is what closes it: take the branch's *whole* diff
-//! since the merge-base as a single patch, and ask whether the base already
-//! contains it. A squashed branch answers yes — that single patch is precisely
-//! what the squash commit holds. See [`tt_git::repo::patch`] for how a patch
-//! id is computed and why it does not need to match `git patch-id`.
-//!
-//! ## Counting what is genuinely left
-//!
-//! A branch that was squash-merged and then had new commits added is the
-//! subtle case: `git cherry` counts the already-squashed commits too, so it
-//! over-reports (3 commits when only 1 is really outstanding). Per-commit
-//! probes find the watermark instead — the newest commit whose tree already
-//! landed — and everything after it is the real remainder.
-//!
-//! Landedness is *not* monotonic along the branch (an intermediate commit can
-//! reproduce a tree the base never had), so this scans newest-first and stops
-//! at the first landed commit rather than binary-searching.
+//! Counting what is left is the subtle case — a branch squash-merged and then
+//! added to, where `git cherry` over-reports (3 commits when 1 is outstanding).
+//! Per-commit probes find the watermark instead: the newest commit whose tree
+//! already landed, everything after it being the remainder. Landedness is *not*
+//! monotonic (an intermediate commit can reproduce a tree the base never had),
+//! so this scans newest-first and stops at the first landed commit.
 
 /// How a branch's work reached the base branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

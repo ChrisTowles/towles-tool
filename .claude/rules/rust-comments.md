@@ -40,7 +40,7 @@ Two things are machine-checked:
 - **Comment volume.** `cargo xtask comment-lint` (a step in the normal `rust`
   CI job; the tool is `xtask/src/main.rs`, tree-sitter over `crates*/`) flags
   two things per file, each with a warning and an error tier: an oversized
-  contiguous comment *block* (30+ lines warns, 60+ errors), and a
+  contiguous comment *block* (15+ lines warns, 30+ errors), and a
   *comment-heavy file* — high comment mass **and** high comment-to-code ratio
   together (150+ lines at 50%+ warns, 300+ at 100%+ errors; both at once so
   big well-commented files and tiny doc-headed `lib.rs` stubs don't misfire).

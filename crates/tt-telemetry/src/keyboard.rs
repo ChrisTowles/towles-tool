@@ -2,35 +2,27 @@
 //! reads, folded into the one question a keyboard-shortcut habit needs
 //! answered — *am I actually using them, and am I getting better?*
 //!
-//! # The duel
+//! Two `ui.action` records make this measurable, both emitted through the one
+//! `uiAction` seam: `shortcut.<id>` when a registry binding fired
+//! (`apps/client/src/lib/shortcuts.tsx`), and `mouse.<id>` when the pointer did
+//! the same thing binding `<id>` does. Only click targets with a genuine
+//! shortcut twin emit the latter (`apps/client/src/lib/shortcut-coach.ts`), so
+//! every `mouse.` record is a keystroke that was available and not taken.
 //!
-//! Two `ui.action` records make this measurable, and the frontend emits both
-//! through the one `uiAction` seam:
+//! The share is `shortcut / (shortcut + mouse)` over *all* ids, not only ids
+//! seen on both sides: a shortcut for something with no clickable equivalent is
+//! still keyboard-first and belongs in the numerator, and a click with no
+//! binding is not a miss and belongs nowhere. It does mean a frequently-fired
+//! binding (`ab-focus-terminal` is bare Enter) carries real weight in the day's
+//! share — the per-id [`ShortcutSplit`] breakdown, not the headline number, is
+//! where a specific habit is read.
 //!
-//! - `shortcut.<id>` — a registry binding fired (`useShortcuts` in
-//!   `apps/client/src/lib/shortcuts.tsx`).
-//! - `mouse.<id>` — the user did, with the pointer, the same thing binding
-//!   `<id>` does. Only click targets with a genuine shortcut twin emit it
-//!   (see `apps/client/src/lib/shortcut-coach.ts`), so every `mouse.` record
-//!   is a keystroke that was available and not taken.
-//!
-//! The share is `shortcut / (shortcut + mouse)` over *all* ids, not only the
-//! ids seen on both sides. That is deliberate: a shortcut used for something
-//! with no clickable equivalent is still keyboard-first behavior and belongs
-//! in the numerator, and a click with no binding is not a miss and belongs
-//! nowhere. It does mean a frequently-fired binding (`ab-focus-terminal` is
-//! bare Enter) carries real weight in the day's share — the per-id
-//! [`ShortcutSplit`] breakdown, not the headline number, is where a specific
-//! habit is read.
-//!
-//! # Streaks skip idle days rather than breaking on them
-//!
-//! A day with fewer than [`GOAL_MIN_ACTIONS`] duel records is *neutral*: the
-//! app was barely used, so it is neither a win nor a loss and the streak
-//! passes through it. A weekend must not cost a habit its streak. Today is
-//! the other special case — it is still in progress, so failing the goal *so
-//! far* also passes through instead of zeroing a streak that the afternoon
-//! could still earn.
+//! Streaks skip idle days rather than breaking on them. A day with fewer than
+//! [`GOAL_MIN_ACTIONS`] duel records is *neutral* — the app was barely used, so
+//! it is neither win nor loss and the streak passes through; a weekend must not
+//! cost a habit its streak. Today is the other special case: still in progress,
+//! so failing the goal *so far* also passes through instead of zeroing a streak
+//! the afternoon could still earn.
 
 use serde::Serialize;
 

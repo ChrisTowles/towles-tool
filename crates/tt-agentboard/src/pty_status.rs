@@ -1,62 +1,32 @@
 //! Agent status derived from the PTY the app already owns, rather than from
 //! polling `claude agents --all --json`.
 //!
-//! # Why this exists
-//!
-//! Status used to come exclusively from the Claude Code CLI
-//! ([`crate::claude_cli`]), behind a 60s process-wide cache — the cache is
-//! there because each miss costs a ~170ms Node spawn, and every consumer
-//! ticks every 2-3s. That makes the *authoritative* signal refresh at most
-//! once a minute, and nothing in the pipeline could contradict it: a session
-//! whose CLI-reported status stuck at `waiting` kept a "needs you" badge (and
-//! an ever-growing waiting-age) while its terminal was visibly mid-turn.
+//! That CLI verdict ([`crate::claude_cli`]) sits behind a 60s cache (a miss
+//! costs a ~170ms Node spawn; consumers tick every 2-3s), so it refreshed once
+//! a minute at most and nothing could contradict it: a session stuck at
+//! `waiting` kept a "needs you" badge while its terminal was visibly mid-turn.
 //!
 //! The app hosts the PTY, so it observes the agent directly and for free.
-//! Two signals come off that feed, and between them they pin down the two
-//! states the CLI is slowest at:
+//! [`tt_vt`] renders only when PTY bytes changed the screen, so a frame means
+//! the program wrote something — and Claude Code animates a live elapsed
+//! counter for the whole of a turn. Measured on a real session, output paused
+//! at most **0.27s** mid-turn then went **15.6s** silent the instant it ended,
+//! so a plain silence threshold works with no TUI text to scrape. It also
+//! raises `OSC 777` when it wants the user, which [`crate::watchers`] never
+//! sees and [`tt_vt::osc_notify`] already parses.
 //!
-//! * **Screen output.** The vt session renders only when PTY bytes actually
-//!   changed the screen ([`tt_vt`]'s render loop is data-driven; its frame
-//!   interval is a rate cap, not a timer), so "a frame was produced" means
-//!   "the program wrote something". Claude Code animates a spinner with a
-//!   live elapsed counter for the whole of a turn, so a working agent is
-//!   never quiet for long — measured against a real session, output paused at
-//!   most **0.27s** during a turn and then went **15.6s** silent the instant
-//!   it ended. There is no overlap to split, which is why a plain silence
-//!   threshold works here and no TUI text has to be scraped.
-//! * **Attention notifications.** Claude Code raises `OSC 777`
-//!   (`notify;Claude Code;<what happened>`) at the moment it wants the user —
-//!   turn finished, question asked, permission needed. [`crate::watchers`]
-//!   never sees this; the terminal does, and [`tt_vt::osc_notify`] already
-//!   parses it.
+//! The PTY **vetoes, it does not vote** — it answers only *is this agent
+//! working right now?*, and in both directions. Output both recent
+//! ([`OUTPUT_ACTIVE_MS`]) and *sustained* ([`SUSTAINED_OUTPUT_MS`]) proves it
+//! is; both halves are needed, because a finished pane still repaints every
+//! second or two and recency alone reads that twitch as work. Silence for
+//! [`BUSY_SILENCE_MS`] proves it is not, which stops a stale `busy` flapping a
+//! finished agent in and out of needs-you and resetting its waiting-age.
 //!
-//! # What this does and does not decide
-//!
-//! The PTY **vetoes**, it does not vote. It answers exactly one question —
-//! *is this agent working right now?* — and it answers it in both
-//! directions, because Claude Code's continuous repainting makes both
-//! answers decisive:
-//!
-//! * Output that is both recent ([`OUTPUT_ACTIVE_MS`]) and has been *running*
-//!   for a moment ([`SUSTAINED_OUTPUT_MS`]) proves it **is** working. That
-//!   beats any cached verdict — it is the fix for a stale `waiting` on a
-//!   visibly running pane. Both halves are needed: a finished pane still
-//!   repaints on its own every second or two, so recency alone cannot tell a
-//!   turn from an idle twitch.
-//! * Silence for [`BUSY_SILENCE_MS`] proves it is **not**. That is the mirror
-//!   fix, for a stale `busy` that would otherwise flap a finished agent in and
-//!   out of needs-you and keep resetting its waiting-age.
-//!
-//! What the PTY deliberately does *not* decide is which flavour of
-//! not-working a quiet agent is in. Silence is equally consistent with
-//! idle-at-the-prompt, blocked on a permission prompt, and finished, so —
-//! absent an attention notification saying otherwise — a quiet pane falls
-//! through to whatever the journal/CLI layer already concluded rather than
-//! guessing between them.
-//!
-//! Permission prompts are the case with no other signal at all — they are
-//! never written to the session JSONL (only `AskUserQuestion` is), so before
-//! this the 60s-cached CLI field was the sole evidence in *both* directions.
+//! Which *flavour* of not-working is left to the journal/CLI layer — silence
+//! is equally consistent with idle, blocked and finished — and permission
+//! prompts are the case with no other evidence at all, never written to the
+//! session JSONL (only `AskUserQuestion` is).
 
 use crate::types::AgentStatus;
 

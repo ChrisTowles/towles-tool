@@ -3,33 +3,26 @@
 //!
 //! A task is three things (#339): a board row, a git worktree, and whatever the
 //! host has attached to that directory (terminal panes, a rail entry). Deleting
-//! only some of them leaves garbage that nothing in the UI can reach — a row
-//! pointing at a directory that no longer exists, or a checkout on disk with no
-//! card left to delete it from. So the *order* matters and is policy, not
-//! detail:
+//! only some of them leaves garbage nothing in the UI can reach, so the *order*
+//! is policy, not detail:
 //!
 //! 1. guards run with everything still alive, so a refusal costs nothing;
 //! 2. the host tears down what it owns (PTYs, in-memory rail state) only once
 //!    removal is really happening;
 //! 3. the worktree leaves disk;
-//! 4. the dir is untracked from `repos.json` — the repo rule; skip it and the
-//!    `prs`/`issues` collectors retry `gh`/`git` against a dead path forever;
+//! 4. the dir is untracked from `repos.json` — skip it and the `prs`/`issues`
+//!    collectors retry `gh`/`git` against a dead path forever;
 //! 5. the board row is **closed last**, when it can no longer strand anything:
-//!    it records the caller's [`tt_store::TaskOutcome`] (`done`/`abandoned`)
-//!    and detaches from the now-gone dir, but the row itself survives as the
-//!    record of the work — deleting it was the old behavior, replaced
-//!    2026-07-22.
+//!    it records the caller's [`tt_store::TaskOutcome`] and detaches from the
+//!    now-gone dir, but survives as the record of the work.
 //!
-//! ## Why this crate
-//!
-//! It wants three things at once: the guarded removal ([`tt_tasks::ops`]), the
-//! tracked-repo list ([`crate::repos`]), and the board store ([`tt_store`]).
-//! `tt-tasks` cannot host it — this crate already depends on `tt-tasks`, so the
-//! edge would be a cycle — and it must stay out of `tt-app`, because the `tt`
-//! CLI has no Tauri and would otherwise have to restate the sequence (it did,
-//! and the two copies had already drifted in ordering and failure mode).
-//! `repos.json` lives here, `tt-store` adds no cycle, so here is where all
-//! three meet.
+//! It lives in this crate because it wants three things at once: the guarded
+//! removal ([`tt_tasks::ops`]), the tracked-repo list ([`crate::repos`]) and
+//! the board store ([`tt_store`]). `tt-tasks` cannot host it — this crate
+//! already depends on it, so the edge would be a cycle — and it must stay out
+//! of `tt-app`, because the `tt` CLI has no Tauri and would otherwise have to
+//! restate the sequence (it did, and the two copies had drifted in ordering
+//! and failure mode).
 //!
 //! Host-specific work enters through [`RemovalHooks`] rather than being
 //! reimplemented per shell: the app kills PTYs and closes rail folders, the CLI

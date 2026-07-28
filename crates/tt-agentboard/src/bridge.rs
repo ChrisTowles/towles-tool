@@ -9,20 +9,15 @@
 //! - A [`FolderData`] is one checkout on disk (a `RepoEntry`), carrying its git
 //!   stats and its 1..N PTY [`SessionData`]s.
 //! - Folders group into one [`RepoData`] row by [`GitInfo::common_dir`] — the
-//!   shared `.git` common dir every linked `git worktree` of one repo (main +
-//!   tasks) reports identically. This holds regardless of whether each
-//!   checkout is separately tracked in `repos.json` or only discovered via
-//!   `git worktree list` (see `Engine::expand_with_worktrees`): "is this a
-//!   worktree of that other checkout" is a structural git fact, not a
-//!   function of how the user happened to add it to the rail. A folder whose
-//!   `common_dir` is empty (git info not yet computed, or not a repo) always
-//!   gets its own row. The row's non-worktree checkout (`is_worktree ==
-//!   false`) always leads its group's folder list, whatever order the
-//!   group's entries otherwise arrive in — and also owns the row's `key`
-//!   (and `name`/`origin_url` when nothing else has named it yet), so a
-//!   worktree that merely sorted alphabetically ahead of the primary
-//!   never leaves the row keyed to a folder a later poll can rename or
-//!   remove.
+//!   shared `.git` common dir every linked worktree of one repo reports
+//!   identically, so grouping is a structural git fact rather than a function
+//!   of whether the checkout was tracked in `repos.json` or discovered via
+//!   `Engine::expand_with_worktrees`. An empty `common_dir` (git info not yet
+//!   computed, or not a repo) always gets its own row. The row's non-worktree
+//!   checkout leads its folder list and owns the row's `key` (and
+//!   `name`/`origin_url` until something else names it), so a worktree that
+//!   merely sorted first never leaves the row keyed to a folder a later poll
+//!   can rename or remove.
 //! - Each folder's agent events (from the tracker, keyed by folder name) are
 //!   distributed across its sessions by the `attribute` closure — which maps an
 //!   event to the PTY `TT_SESSION_ID` it ran in. An attributed event renders

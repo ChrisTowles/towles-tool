@@ -388,52 +388,33 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
 
 /// Delete a task's *presence*: its live panes and its worktree on disk go,
 /// while its board row survives **closed** — stamped with how it ended
-/// (`outcome`: done/abandoned) and detached from the now-gone dir. Refuses
-/// the whole operation if the worktree still holds work that exists nowhere
-/// else. The only true row delete left is `purge`, which is row-only and
-/// refused while a worktree is bound.
+/// (`outcome`) and detached from the now-gone dir. Refuses if the worktree still
+/// holds work that exists nowhere else. The only true row delete left is
+/// `purge`, row-only and refused while a worktree is bound.
 ///
-/// This is the single delete path. The Board screen, the Agentboard rail, and
-/// the `task_delete` MCP tool all land here, because a delete that took only
-/// part of the task left the rest as garbage: dropping the row alone
-/// orphaned a worktree on disk with nothing left in the UI to remove it from,
-/// and removing the worktree alone left a board row pointing at a directory
-/// that no longer existed.
+/// This is the single delete path — Board screen, Agentboard rail and the
+/// `task_delete` MCP tool all land here — because a partial delete left the rest
+/// as garbage: the row alone orphaned a worktree with nothing in the UI to
+/// remove it from, the worktree alone left a row pointing at a dead directory.
 ///
-/// **The board row is closed last, and only if the worktree really went.**
-/// A guarded refusal returns [`TaskDeleteOutcome::Blocked`] with the row and
-/// the worktree both untouched, so the user can act on the blocker and retry
-/// from exactly where they were — a dirty tree, commits
-/// unreachable from any branch/remote, or a foreign listener on the task's
-/// claimed ports come back as a typed blocker per reason, which the app
-/// renders as a dialog offering each one's remedy (stop the port's process via
-/// [`task_stop_port`]) plus a force.
-/// `force: true` is that force — it skips every guard, so it discards
-/// uncommitted changes and unreachable commits for good; only call it behind
-/// an explicit confirmation that names what's being lost.
-/// Once the guards have passed and the removal is really happening — via
-/// `ops::remove_task`'s `before_removal` hook, so a *refused* removal never
-/// costs a live session — kills the folder's live PTYs (SIGHUPing any Claude
-/// Code session running inside, then SIGKILLing anything else still sharing
-/// the shell's session — see `terminal::kill_session_stragglers`) so a
-/// backgrounded job that dodged the shell's own signal forwarding doesn't
-/// survive as an orphan on a deleted cwd. A side effect of killing only past
-/// the guards: a dev server running in the task's own pane now surfaces as a
-/// `foreignPort` blocker (one "Stop it" click) instead of dying silently
-/// mid-removal. Does NOT drop the session/window/pane records yet — those
-/// are only removed (and persisted) once `ops::remove_task` has actually
-/// succeeded: dropping them up front used to leave the rail looking like a
-/// clean removal — panes gone — while a blocked or failed removal left the
-/// worktree sitting on disk forever with nothing left on the rail to retry
-/// from. On failure the killed-but-still-tracked sessions surface as dead
-/// panes so the user can see the task is still there. Then cleans up docker
-/// resources, the worktree registration, and the task's agentboard tracking.
+/// **The board row is closed last, and only if the worktree really went.** A
+/// guarded refusal returns [`TaskDeleteOutcome::Blocked`] with row and worktree
+/// untouched: a dirty tree, commits unreachable from any branch/remote, or a
+/// foreign listener on the task's claimed ports each come back as a typed
+/// blocker the app renders with its remedy ([`task_stop_port`]) plus a force.
+/// `force: true` skips every guard, discarding that work for good.
 ///
-/// Blocking, not `async`: every step is a subprocess or a lock, and the two
-/// callers already have a blocking thread to spend — the Tauri command below
-/// wraps it in `spawn_blocking`, and the MCP host runs inside the transport's
-/// existing `spawn_blocking`. Making it `async` would only add a second way to
-/// reach the same synchronous work.
+/// Past the guards — via `ops::remove_task`'s `before_removal` hook, so a
+/// *refused* removal never costs a live session — it kills the folder's PTYs
+/// (SIGHUP to a Claude Code session, then SIGKILL for stragglers sharing the
+/// shell's session), which is also why a dev server in the task's own pane
+/// surfaces as a `foreignPort` blocker instead of dying silently. Session and
+/// window records drop only once `ops::remove_task` succeeds — dropping them up
+/// front made a blocked removal look clean, panes gone, with the worktree still
+/// on disk and nothing left to retry from.
+///
+/// Blocking, not `async`: every step is a subprocess or a lock, and both
+/// callers already have a blocking thread to spend.
 pub fn delete_task_blocking(
     app: &tauri::AppHandle,
     target: DeleteTarget,

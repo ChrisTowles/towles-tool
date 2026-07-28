@@ -1,52 +1,30 @@
 //! A Model Context Protocol (MCP) server for towles-tool.
 //!
-//! **This crate is the transport-free half.** It speaks JSON-RPC 2.0 as
-//! strings — [`Dispatcher::dispatch_at`] takes one request and returns one
-//! response (or `None` for a notification, which gets no reply) — and knows
-//! nothing about sockets, HTTP, ports, or the wall clock, all of which are
-//! passed in per call. The same split as [`tt_ide`]: the transport lives in the
-//! app shell (`crates-tauri/tt-app`), which serves this over loopback HTTP.
-//! That keeps the whole tool surface unit-testable by driving `dispatch_at`
-//! directly, with no server to stand up.
+//! **This crate is the transport-free half.** [`Dispatcher::dispatch_at`]
+//! takes one JSON-RPC request string and returns one response string (`None`
+//! for a notification), knowing nothing about sockets, HTTP, ports or the wall
+//! clock — all passed in per call. Same split as [`tt_ide`]: the transport
+//! lives in the app shell (`crates-tauri/tt-app`), which serves this over
+//! loopback HTTP. So the whole tool surface is unit-testable by driving
+//! `dispatch_at` directly, with no server to stand up.
 //!
-//! Exposed tools surface the towles-tool board ([`tt_store`]'s tasks — the #339
-//! unit of work), the app's Preview pane, and the calendar: `task_list`,
-//! `task_status`, `task_create`, `task_summary`, `task_start`, `task_delete`,
-//! `preview_show`, `calendar_today`, `calendar_next`, `calendar_set`. The broader
-//! dashboard-read tools (`day_brief`, `needs_you`, `snapshot`, `prs_status`,
-//! `issues_open`, `dm_status`, `collect_status`) were pruned in the 2026-07
-//! tool-surface review and have not come back.
+//! Exposed tools surface the board ([`tt_store`]'s tasks — the #339 unit of
+//! work), the app's Preview pane, and the calendar: `task_list`, `task_status`,
+//! `task_create`, `task_summary`, `task_start`, `task_delete`, `preview_show`,
+//! `calendar_today`, `calendar_next`, `calendar_set`. The broader
+//! dashboard-read tools were pruned in the 2026-07 tool-surface review.
 //!
-//! ## Trust boundary
-//!
-//! The server is registered with Claude Code at **user scope**, so it is
-//! reachable from *every* Claude Code session on the machine, in any project,
-//! with no awareness of which one. Two distinct threats, guarded in two
-//! different places:
-//!
-//! 1. **A hijacked session.** A legitimate local Claude Code process reads
-//!    hostile content mid-session (a GitHub issue body, a fetched page) and is
-//!    instructed to call a tool. There is deliberately **no capability gate**
-//!    against this any more (removed 2026-07-20). The gate it replaced was
-//!    off by default, which meant the one mutating tool had effectively never
-//!    worked, and it never defended much: the writes reachable here are local,
-//!    low-stakes and reversible (a board-task row, a calendar cache row), and
-//!    any session with shell access could run `sqlite3` against tt.db directly
-//!    regardless. The `mcp_calls` log is the audit trail instead.
-//!
-//! 2. **A web page in the user's browser.** This is the threat the transport
-//!    actually has to stop, and it grew teeth when the gate went away. Binding
-//!    to loopback does *not* keep pages out: any site the user visits can POST
-//!    to `127.0.0.1`, and while CORS stops it reading the response, a blind
-//!    write is the whole attack. A bearer token was considered and rejected —
-//!    it only ever addressed this one case, and any local process could read it
-//!    out of the settings file anyway. The transport in `tt-app` instead
-//!    applies the two mitigations the MCP spec recommends for local HTTP
-//!    servers: **reject any request carrying an `Origin` header** (real MCP
-//!    clients don't send one; browsers always do — this is the DNS-rebinding
-//!    mitigation) and **require `Content-Type: application/json`** (not a
-//!    CORS-simple type, so a page can't dodge a preflight). Those two checks
-//!    are now the only guard on writes and are unit-tested as such.
+//! Registered with Claude Code at **user scope**, so every session on the
+//! machine can reach it, in any project, with no awareness of which one. A
+//! hijacked session — one that read hostile content and was told to call a
+//! tool — is deliberately **not** gated any more (the capability gate went
+//! 2026-07-20): it was off by default, so the one mutating tool had effectively
+//! never worked, and it defended little, since the writes here are local,
+//! low-stakes and reversible and any session with shell access could run
+//! `sqlite3` against tt.db regardless. The `mcp_calls` log is the audit trail
+//! instead. The threat that *is* guarded — a web page POSTing to `127.0.0.1` —
+//! belongs to the transport, whose admission checks (`Origin`,
+//! `Content-Type`) are the only guard on writes; see `tt-app`'s `mcp_http`.
 
 use std::time::Instant;
 

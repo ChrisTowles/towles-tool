@@ -1,52 +1,30 @@
 //! The *other* protocol on the same pipe: control requests.
 //!
-//! `stream-json` carries two interleaved conversations. [`crate::protocol`]
-//! models the first — the message stream the transcript renders. This module
-//! models the second: a JSON-RPC-shaped request/response channel the CLI uses
-//! to **ask the client a question and block until it answers**.
+//! `stream-json` interleaves two conversations. [`crate::protocol`] models the
+//! message stream the transcript renders; this module models the JSON-RPC-
+//! shaped channel the CLI uses to **ask the client a question and block until
+//! it answers** — so **an unanswered request is a hang, not a dropped
+//! message**. A subtype we can't serve still gets an answer ([`encode_error`],
+//! [`crate::AgentEvent::UnsupportedControlRequest`]) rather than being filed
+//! under protocol noise we don't render. The channel exists only because we
+//! spawn with `--permission-prompt-tool stdio` (see
+//! [`crate::session::build_args`]); without it the CLI resolves permissions
+//! internally and never asks.
 //!
-//! ```text
-//! CLI → {"type":"control_request","request_id":"…","request":{"subtype":"can_use_tool",…}}
-//! us  → {"type":"control_response","response":{"subtype":"success","request_id":"…","response":{…}}}
-//! ```
-//!
-//! **An unanswered control request is a hang, not a dropped message.** That is
-//! the whole reason this module exists as a first-class thing rather than more
-//! `AgentEvent::Other`: the CLI is genuinely waiting, and a client that files
-//! the request under "protocol noise it doesn't render" presents as an agent
-//! that went quiet forever. Hence [`encode_error`], and hence
-//! [`crate::AgentEvent::UnsupportedControlRequest`] — a subtype we can't serve
-//! still gets an answer.
-//!
-//! The channel is opened by spawning with `--permission-prompt-tool stdio`
-//! (see [`crate::session::build_args`]). Without that flag the CLI resolves
-//! permissions against settings internally and never asks.
-//!
-//! ## `can_use_tool` is three features, not one
-//!
-//! Every gated tool call arrives here, but so do the tools whose entire purpose
-//! is to ask the human something. Claude Code marks the difference itself with
-//! `requires_user_interaction`, and the distinction is the one a UI cares
-//! about:
+//! `can_use_tool` is three features wearing one request shape — hence one code
+//! path here and one renderer seam in the frontend:
 //!
 //! - **A gate** (`Write`, `Bash`, …) — "may I?", answered allow/deny.
-//! - **A question** (`AskUserQuestion`) — the answer is *data*, returned by
-//!   allowing the call with an edited `input`. Refusing it is not "deny", it is
-//!   allowing the tool having answered nothing.
+//! - **A question** (`AskUserQuestion`, flagged `requires_user_interaction`) —
+//!   the answer is *data*, returned by allowing the call with an edited
+//!   `input`; refusing is not "deny", it is allowing having answered nothing.
 //! - **A plan** (`ExitPlanMode`) — allow to approve, deny-with-message to send
 //!   the model revision notes.
 //!
-//! All three are one request shape and one response shape, which is why they
-//! share a code path here and a renderer seam in the frontend.
-//!
-//! ## What is deliberately left opaque
-//!
-//! `permission_suggestions` (and the `updated_permissions` that echoes them
-//! back) stay [`Value`]. They are the CLI's own vocabulary for "always allow
-//! this" — `{"type":"setMode","mode":"acceptEdits","destination":"session"}`,
-//! `addRules`, and whatever it grows next. We render their labels and hand the
-//! chosen one straight back, so modeling the shape would buy nothing and cost a
-//! parse failure every time the CLI adds a suggestion kind.
+//! `permission_suggestions` and the `updated_permissions` that echoes it back
+//! stay [`Value`] — we render their labels and hand the choice straight back,
+//! so modeling the CLI's own "always allow" vocabulary would buy nothing and
+//! cost a parse failure each time it grows a suggestion kind.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

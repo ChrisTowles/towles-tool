@@ -1,43 +1,31 @@
-//! Port claims: the bind probe, the per-checkout claim lock, and the
-//! persistent port registry — one home for "which ports may this checkout
-//! hand out". Precedence when picking: the live sibling `.env` scan first
-//! (ground truth for a healthy fleet), the registry as its persistent
-//! backstop (survives a deleted/corrupt sibling `.env`), then the OS bind
-//! probe at pick time ([`port_occupied`]).
+//! Port claims: the bind probe, the per-checkout claim lock and the persistent
+//! port registry — one home for "which ports may this checkout hand out".
+//! Precedence when picking: the live sibling `.env` scan first (ground truth
+//! for a healthy fleet), the registry as its backstop (surviving a deleted or
+//! corrupt sibling `.env`), then the OS bind probe ([`port_occupied`]).
 //!
-//! # The registry
+//! `render_task_env`'s reuse-vs-rotate logic already treats every *other* live
+//! task's current `.env` as "taken", but only while that `.env` still exists
+//! and is readable. The registry is the explicit record: every port a task is
+//! given lands here at render time (claimed or reused) and normally comes off
+//! via [`release_task_ports`] at `tt task rm`.
 //!
-//! `render_task_env`'s reuse-vs-rotate logic already treats every *other*
-//! live task's current `.env` as "taken" — but that only holds while the
-//! sibling's `.env` file still exists and is readable. The registry is the
-//! explicit record: every port a task is given lands here at render time
-//! (both freshly claimed and reused), and normally comes off when the task
-//! is removed through `tt task rm` ([`release_task_ports`]).
+//! It is self-healing rather than authoritative: every load prunes entries
+//! whose owning task directory is gone ([`load_live_registry`]) and persists
+//! that immediately. Load-bearing, not tidiness — `remove_task` requires the
+//! directory to still be there, so a task wiped out some other way (a stray
+//! `rm -rf`) would leak its ports forever. A vanished *checkout* is the case
+//! pruning can't reach, since nothing renders a gone repo again;
+//! `clean_tasks`' sweep handles that from each file's `checkout` field.
 //!
-//! It's self-healing rather than solely authoritative: every load prunes any
-//! entry whose owning task directory no longer exists
-//! ([`load_live_registry`]) and persists the pruned result immediately.
-//! That's load-bearing, not just tidiness — `remove_task` requires the
-//! directory to still be there (`OpsError::NoSuchTask` otherwise), so a task
-//! wiped out some other way (a stray `rm -rf`, a worktree cleaned up by
-//! hand) would leak its ports forever without this. A whole *checkout* that
-//! vanishes is the one case pruning can't reach (nothing renders a gone repo
-//! again); `clean_tasks`' registry sweep handles that, using the `checkout`
-//! field each file records about itself.
-//!
-//! Keyed by the checkout like the claim lock ([`checkout_keyed_filename`]),
-//! but stored under `tt_config::task_ports_dir()` (the shared config area),
-//! not `locks_dir()` or the repo itself: the ledger must survive reboots
-//! (the locks dir is the OS temp dir), and it's this machine's state, not
-//! something a collaborator's clone should ever see. Every writer serializes
-//! on the checkout's [`ClaimLock`] (render holds it across the whole claim
-//! cycle; [`release_task_ports`] takes it itself), so read-modify-write
-//! cycles never interleave and lose entries.
-//!
-//! The registry *file path* is threaded into every function here rather than
-//! re-resolved internally — the public entry points resolve it once via
-//! [`port_registry_path`], and unit tests pass a temp path so they never
-//! touch the real config dir.
+//! Keyed by the checkout like the claim lock ([`checkout_keyed_filename`]) but
+//! stored under `tt_config::task_ports_dir()`, not `locks_dir()` or the repo:
+//! the ledger must survive reboots (the locks dir is the OS temp dir), and it
+//! is this machine's state, not something a collaborator's clone should see.
+//! Every writer serializes on the checkout's [`ClaimLock`], so
+//! read-modify-write cycles never interleave and lose entries. Its path is
+//! threaded through every function rather than re-resolved internally, so unit
+//! tests can pass a temp path and never touch the real config dir.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;

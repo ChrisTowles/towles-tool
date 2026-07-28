@@ -1,58 +1,32 @@
 //! Telemetry for the `tt` CLI and the desktop app: `tracing` instrumentation
 //! plus an event-log sink that streams every span and event to disk as JSONL,
-//! and the reader the Telemetry viewer screen uses to read it back. One
-//! crate for both halves so the writer and reader can never disagree about
-//! the on-disk schema.
+//! and the reader the Telemetry screen uses to read it back. One crate for both
+//! halves so writer and reader can never disagree about the on-disk schema.
 //!
-//! The point is answering questions *later*. "Which task spawned that `gh`
-//! call, how long did it take, and what did it exit with?" should be a `jq`
-//! away, without reproducing the problem under a debugger. So the sink is
-//! always on, always flushed, and always local.
+//! The point is answering questions *later*: "which task spawned that `gh`
+//! call, how long did it take, what did it exit with?" should be a `jq` away,
+//! not a repro under a debugger. So the sink is always on, flushed, and local.
 //!
-//! # Shape
-//!
-//! - [`init`] installs the global subscriber. Call it once, early, from a
-//!   binary — never from a library.
-//! - A `fmt` layer keeps the human-readable stderr output the `-v` flag and
-//!   `RUST_LOG` used to drive under `env_logger`.
-//! - An [`layer::EventLogLayer`] writes the structured record to
+//! - [`init`] installs the global subscriber — once, early, from a binary,
+//!   never a library. Its `fmt` layer keeps the stderr output `-v`/`RUST_LOG`
+//!   drive, and its `tracing-log` bridge captures the `log::` macros still in
+//!   the tree; [`layer::EventLogLayer`] writes the structured record to
 //!   `<data_dir>/telemetry/events-<date>.jsonl`, instance-scoped so each
-//!   worktree gets its own log. **The naive unscoped path is a trap**: for a
-//!   process run from a `towles-tool` checkout, `tt_config::state_scope()`
-//!   always resolves `<data_dir>` to a *scoped* directory —
-//!   `~/.local/share/towles-tool/tasks/<scope>/telemetry/…` — never the bare
-//!   `~/.local/share/towles-tool/telemetry/…`. That bare path exists on disk
-//!   but stays permanently empty, because nothing ever writes there; checking
-//!   it by eye (or with a stray `find`/`grep`) reads as "telemetry is broken"
-//!   when it's simply elsewhere. Resolve the real path with
-//!   `tt_config::telemetry_dir()` (or read it back via [`list_days`]/
-//!   [`read_day`]) rather than assuming the unscoped location.
-//! - [`list_days`]/[`read_day`] read those files back, for the Telemetry
-//!   viewer screen's Tauri bridge (`crates-tauri/tt-app/src/telemetry.rs`).
-//!   There is no cache here, unlike `tt-claude-sessions` — a day's log was
-//!   assumed to be small (bounded by subprocess spawns and discrete user
-//!   actions, never per-keystroke input), but an actively-used dev checkout
-//!   has been observed producing 75,000+ records in a single day, so that
-//!   assumption does not hold for a long-running session. The frontend caps
-//!   *rendered* rows to cope with that; `read_day` itself still returns the
-//!   whole file unconditionally, so a large day still costs a full read,
-//!   parse, and IPC payload on every screen focus/refresh. Bounded
-//!   reads/pagination here would be the deeper fix if that cost becomes a
-//!   problem in practice — not yet implemented.
-//! - [`summarize`] reduces one of those days to an [`AttentionSummary`] —
-//!   focused time, gestures per screen, interruptions, subprocess wait — for
-//!   the Telemetry screen's Attention tab. It runs here rather than in the
-//!   frontend precisely because of the size problem above: the aggregate is a
-//!   few hundred bytes, so the tab costs one read and a small payload instead
-//!   of shipping a day's records to the webview to re-derive on every render.
-//! - [`summarize_keyboard`]/[`keyboard_score`] read the same records for the
-//!   keyboard-shortcut habit: how much of the day's bound work was done with
-//!   the keys rather than the pointer, and how many days in a row that
-//!   cleared the goal. See `keyboard.rs` for what counts as a duel.
-//!
-//! `tracing-subscriber`'s `tracing-log` feature captures the `log::` macros
-//! still in the tree, so existing call sites keep reporting while individual
-//! seams are converted to spans.
+//!   worktree gets its own log.
+//! - **The unscoped path is a trap.** For a process run from a `towles-tool`
+//!   checkout, `tt_config::state_scope()` always resolves `<data_dir>` to a
+//!   *scoped* directory, never the bare `~/.local/share/towles-tool/telemetry/`
+//!   — which exists but stays permanently empty, so checking it by eye reads as
+//!   "telemetry is broken". Resolve with `tt_config::telemetry_dir()`.
+//! - [`list_days`]/[`read_day`] read those files back for the viewer screen's
+//!   Tauri bridge. No cache, and an actively-used checkout has been seen
+//!   producing 75,000+ records in a day: the frontend caps *rendered* rows, but
+//!   `read_day` still returns the whole file on every focus/refresh. Bounded
+//!   reads would be the deeper fix if that cost bites.
+//! - [`summarize`] and [`summarize_keyboard`]/[`keyboard_score`] reduce a day
+//!   to the Attention and Keyboard tabs' aggregates. They run here rather than
+//!   in the frontend precisely because of that size: a few hundred bytes
+//!   instead of a day's records crossing IPC on every render.
 
 mod attention;
 mod event_log;

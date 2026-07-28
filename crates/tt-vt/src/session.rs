@@ -4,37 +4,29 @@
 //! that owns its engine. Callers talk to it through channels and receive
 //! [`Event`]s on a sink callback (invoked on the session thread).
 //!
-//! Batching falls out of the loop shape: one blocking wait, then drain
-//! everything already queued, then a single render pass. Under PTY floods
-//! the drain naturally coalesces many chunks into one frame. On top of that,
-//! renders are throttled to [`MIN_FRAME_INTERVAL`]: an input arriving while
-//! the terminal is idle renders immediately, but a steady trickle of chunks
-//! keeps being absorbed until the interval elapses. Without this, every
-//! chunk gets its own frame event and the UI event queue backs up faster
-//! than the webview can paint — input latency then grows with sustained
-//! output and only recovers once the flood stops.
+//! Batching falls out of the loop shape: one blocking wait, drain everything
+//! queued, then a single render pass — under PTY floods the drain coalesces
+//! many chunks into one frame. Renders are additionally throttled to
+//! [`MIN_FRAME_INTERVAL`], so input on an idle terminal renders immediately but
+//! a steady trickle is absorbed until the interval elapses. Without it, every
+//! chunk gets its own frame event and the UI queue backs up faster than the
+//! webview can paint, so input latency grows with sustained output.
 //!
-//! # Backpressure and the control fast-path
-//!
-//! Two problems the throttle alone doesn't solve, both handled here by
-//! splitting the byte and control inputs onto separate channels:
+//! Two problems the throttle alone doesn't solve, both handled by splitting
+//! byte and control input onto separate channels:
 //!
 //! * **Bounded memory.** The frame *emitter* is throttled, but a firehose
-//!   (`cat huge.log`) into a slow webview would let raw PTY bytes queue
-//!   without bound. Bytes ride a *bounded* channel
-//!   ([`MAX_QUEUED_BYTE_CHUNKS`]); once it fills, the feeder — the PTY reader
-//!   thread — blocks in [`Sender::send`], so the kernel's PTY buffer fills and
-//!   applies real flow control to the shell. The engine's queue can never
-//!   grow past a few MB.
+//!   (`cat huge.log`) into a slow webview would queue raw PTY bytes without
+//!   bound. Bytes ride a *bounded* channel ([`MAX_QUEUED_BYTE_CHUNKS`]); once
+//!   full, the PTY reader thread blocks in [`Sender::send`], so the kernel's
+//!   PTY buffer fills and applies real flow control to the shell.
 //! * **Responsive UI.** Resize/scroll/copy/selection must never wait behind a
 //!   backlog of bytes. Control rides its own *unbounded* channel that the
-//!   engine drains *first* on every pass, so a saturated byte queue can neither
-//!   block a control send nor delay it behind queued output.
+//!   engine drains *first* on every pass.
 //!
-//! The engine thread blocks on a third, dumb `wake` channel that every send
-//! pings after enqueuing its payload; on wake it drains control then bytes.
-//! The wake channel carries no ordering, so control priority holds regardless
-//! of the order sends happened in.
+//! The engine thread blocks on a third, dumb `wake` channel every send pings
+//! after enqueuing; on wake it drains control then bytes. That channel carries
+//! no ordering, so control priority holds however the sends interleaved.
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;

@@ -1,60 +1,32 @@
 //! Closes the last open risk from the Step 0 gate: does the **parent's** commit
 //! cadence clamp the embedded pane's framerate?
 //!
-//! The earlier `bench_subsurface` harness builds its own bare Wayland parent,
-//! which proved subsurface compositing is free but said nothing about this. Here
-//! the parent is a real **GTK 3** window — the same toolkit Tauri uses on Linux —
-//! and it is made to repaint *deliberately slowly* to stand in for a webview
-//! that only paints when something changes.
+//! A `wl_subsurface` is **synchronized by default** — the child's commits don't
+//! take effect until the *parent* commits — which would cap Bevy at whatever
+//! rate GTK/WebKit repaints. Not a tax, a hard ceiling; `set_desync()` is
+//! supposed to break that link. The earlier `bench_subsurface` built its own
+//! bare Wayland parent and so said nothing about this; here the parent is a
+//! real **GTK 3** window (the toolkit Tauri uses on Linux) pinned at a slow
+//! repaint rate (default 5 Hz), standing in for a webview that paints only when
+//! something changes. Both arms matter — a fast desync run proves nothing alone,
+//! since the parent might have been committing quickly anyway — so run with
+//! `--features linux-harness --release`, once with `--sync` and once without.
 //!
-//! # The experiment
-//!
-//! A `wl_subsurface` is **synchronized by default**: the child's commits do not
-//! take effect until the *parent* commits. If that applied to us, Bevy's
-//! framerate would be capped at whatever rate GTK/WebKit happens to repaint —
-//! not a tax, a hard ceiling. `set_desync()` is supposed to break that link.
-//!
-//! So: pin the GTK parent at a slow repaint rate (default 5 Hz) and measure the
-//! child.
-//!
-//! - `--sync` (control): expect the child to collapse to roughly the parent's rate.
-//! - default (desync): expect the child to run at full speed, independent of it.
-//!
-//! Running both arms is the point. A desync run that looks fast proves nothing
-//! on its own — it could just mean the parent was committing quickly anyway. The
-//! sync arm is what demonstrates the mechanism is real and that the harness can
-//! actually observe it.
-//!
-//! ```sh
-//! cargo run -p tt-jarvis --features linux-harness --example bench_gtk_cadence --release -- --sync
-//! cargo run -p tt-jarvis --features linux-harness --example bench_gtk_cadence --release
-//! ```
-//!
-//! # Result (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60 secondary output)
+//! Result (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60 secondary output):
 //!
 //! | arm              | parent observed | child            | outcome                  |
 //! |------------------|-----------------|------------------|--------------------------|
 //! | `--sync`         | 5 Hz            | —                | blocked, 0 frames in 90s |
 //! | desync (default) | 7.3 Hz          | 60.06 fps median | 270 frames in 5.0s       |
 //!
-//! **The cadence risk is closed: `set_desync()` fully decouples the pane.** The
-//! child held the output's entire 60 Hz refresh while the parent painted at about
-//! 7 Hz — an 8x ratio, so the pane's framerate is plainly not a function of the
-//! parent's.
-//!
-//! Two details the control arm taught that a desync-only run could not:
-//!
-//! - In sync mode the pane does not merely slow to the parent's rate, it **blocks
-//!   outright** — `app.update()` never returns, because the swapchain present
-//!   waits on a commit that only lands when the parent commits. The wall-clock
-//!   deadline in the loop below cannot fire, since it is checked *after*
-//!   `app.update()`. So a missing `set_desync()` presents as a hang, not as a low
-//!   frame rate, and the control arm has to be killed rather than reporting a
-//!   number.
-//! - The desync arm's steady 60 Hz is itself proof the window was visible and
-//!   receiving frame callbacks, which is what rules out the occluded-surface
-//!   explanation for the sync arm's block. Without both arms, "clamped by the
-//!   parent" and "not on screen" are indistinguishable.
+//! **The cadence risk is closed: `set_desync()` fully decouples the pane** — an
+//! 8x ratio, so the pane's framerate is plainly not a function of the parent's.
+//! Two things only the control arm could teach: in sync mode the pane doesn't
+//! slow to the parent's rate, it **blocks outright** (`app.update()` never
+//! returns, waiting on a commit only the parent can make, and the loop's
+//! deadline is checked *after* it), so a missing `set_desync()` presents as a
+//! hang; and the desync arm's steady 60 Hz is itself proof the window was
+//! visible and getting frame callbacks, ruling out occlusion as the cause.
 
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};

@@ -1,58 +1,32 @@
 //! Loopback HTTP transport for the MCP server ([`tt_mcp`]).
 //!
-//! [`tt_mcp`] is transport-free — it turns a JSON-RPC request string into a
-//! response string and nothing else. This module is the other half: the socket,
-//! the HTTP framing, and the request-admission rules. Same split as
-//! [`crate::ide`] over [`tt_ide`].
-//!
-//! ## One server per app instance
+//! [`tt_mcp`] turns a JSON-RPC request string into a response string and
+//! nothing else; this module is the socket, the HTTP framing and the
+//! request-admission rules. Same split as [`crate::ide`] over [`tt_ide`].
 //!
 //! Every instance serves its own MCP on its own port, claimed per checkout from
-//! `.env.example`'s `${tt:port 8787-8986}` like every other port in this repo
-//! ([`port_for_this_instance`]). A session started in an app's terminal reaches
-//! *that* app, because the app stamps [`MCP_PORT_ENV`] into the shell and the
-//! plugin's `.mcp.json` expands it (`${TT_MCP_PORT:-8787}`).
+//! `.env.example`'s `${tt:port 8787-8986}` ([`port_for_this_instance`]). A
+//! session started in an app's terminal reaches *that* app, because the app
+//! stamps [`MCP_PORT_ENV`] into the shell and the plugin's `.mcp.json` expands
+//! it. The machine-wide singleton this replaced was wrong on correctness, not
+//! ergonomics: `tt.db` is *instance* state scoped per checkout, so the one
+//! instance that won a fixed 8787 answered every session out of **its own**
+//! board, while the rest served nothing for their whole lives. The bind is
+//! still fail-soft — a held port logs and serves nothing rather than taking the
+//! app down — but that is now a real anomaly, so [`spawn`] warns. A session
+//! with no `TT_MCP_PORT` falls back to 8787, which is why the range starts there.
 //!
-//! **This replaced a machine-wide singleton, and the singleton was wrong on
-//! correctness, not just ergonomics.** It was bind-or-skip on a fixed 8787:
-//! whichever instance won served every session on the machine and the rest
-//! served none, for their whole lives, with no retry. Two consequences:
-//!
-//! - `tt.db` is *instance* state, scoped per checkout by [`tt_config`]. So the
-//!   winning instance answered every session out of **its own** board — a
-//!   `task_create` from a worktree session landed on a different checkout's
-//!   board, silently.
-//! - A running `tt-app` was no evidence MCP was up, which made "the MCP tools
-//!   aren't there" a recurring and thoroughly counter-intuitive debug session.
-//!
-//! The bind is still fail-soft: a port already held (a stale instance, a
-//! hand-set duplicate `mcp.port`) logs and serves nothing rather than taking the
-//! app down with it. With per-checkout claims that is now a real anomaly rather
-//! than the expected path for all-but-one instance, so [`spawn`] warns.
-//!
-//! A session with no `TT_MCP_PORT` — one started outside an app terminal — falls
-//! back to 8787 and reaches whichever instance claimed it, which is the old
-//! behaviour and the reason the range starts there.
-//!
-//! ## Admission control is the only guard on writes
-//!
-//! There is no bearer token and no capability gate (both removed 2026-07-20 —
-//! see [`tt_mcp`]'s module doc for why). [`check_admission`] is therefore the
-//! entire security boundary, and it is a pure function precisely so it can be
-//! tested directly rather than through a live socket.
-//!
-//! Binding to loopback keeps *remote hosts* out. It does not keep *web pages*
-//! out: any site the user visits can POST to `127.0.0.1`, and although CORS
-//! stops the page reading the reply, a blind write is the whole attack. The two
-//! mitigations the MCP spec recommends for local HTTP servers close that:
-//!
-//! - **Reject any request carrying an `Origin` header.** Real MCP clients don't
-//!   send one; a browser always does. This is the DNS-rebinding mitigation, and
-//!   it rejects on *presence*, not on value — an allowlist would invite the
-//!   mistake of trusting an attacker-controlled string.
-//! - **Require `Content-Type: application/json`.** It is not a CORS-"simple"
-//!   content type, so a page cannot send it without a preflight the browser
-//!   will refuse. A page's only way through is `text/plain`, which this rejects.
+//! **[`check_admission`] is the entire security boundary** — no bearer token,
+//! no capability gate (both removed 2026-07-20; see [`tt_mcp`]) — and a pure
+//! function, so it is tested directly rather than through a live socket.
+//! Loopback keeps *remote hosts* out, not *web pages*: any site can POST to
+//! `127.0.0.1`, and CORS only stops it reading the reply, while a blind write
+//! is the whole attack. So: **reject any request carrying an `Origin` header**
+//! (browsers always send one, real MCP clients never — the DNS-rebinding
+//! mitigation, rejecting on *presence*, since an allowlist invites trusting an
+//! attacker-controlled string), and **require `Content-Type:
+//! application/json`** (not a CORS-simple type, so a page cannot send it
+//! without a preflight the browser refuses).
 
 use std::net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};

@@ -26,7 +26,7 @@ const TREES: &[&str] = &["crates", "crates-cli", "crates-tauri"];
 const MARKER: &str = "verbose-ok:";
 
 /// A contiguous comment block trips a tier when it reaches this many lines.
-const BLOCK_LINES: Tiers<usize> = Tiers { warn: 30, error: 60 };
+const BLOCK_LINES: Tiers<usize> = Tiers { warn: 15, error: 30 };
 
 /// A file trips a tier when it meets BOTH bounds at once — mass alone would
 /// flag big well-commented files, ratio alone flags tiny doc-headed stubs.
