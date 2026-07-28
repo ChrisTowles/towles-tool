@@ -31,13 +31,29 @@ pub enum Commands {
         no_open: bool,
     },
 
-    /// Collect dashboard data into the local store (calendar, issues, PRs)
+    /// Poke a running app instance to refresh a collector immediately
     Collect(CollectArgs),
 
     /// Worktree tasks: a main checkout (always the default branch) plus
     /// branch-named worktrees under <checkout>/.claude/worktrees/, each with
     /// rendered per-task ports/env so concurrent tasks never collide
     Task(TaskArgs),
+}
+
+impl Commands {
+    /// The `(group, subcommand)` pair naming this invocation in the event log.
+    ///
+    /// Operands stay out of it (see CLAUDE.md's `tt-cli` bullet); `today` keeps
+    /// its own name rather than folding into `daily-notes`, so the alias's own
+    /// worth stays measurable.
+    pub fn telemetry_name(&self) -> (&'static str, &'static str) {
+        match self {
+            Commands::Journal(args) => ("journal", args.command.name()),
+            Commands::Today { .. } => ("journal", "today"),
+            Commands::Collect(args) => ("collect", args.command.name()),
+            Commands::Task(args) => ("task", args.command.name()),
+        }
+    }
 }
 
 #[derive(Args)]
@@ -189,6 +205,21 @@ pub enum TaskCommands {
     },
 }
 
+impl TaskCommands {
+    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
+    fn name(&self) -> &'static str {
+        match self {
+            TaskCommands::New { .. } => "new",
+            TaskCommands::Ls { .. } => "ls",
+            TaskCommands::Rm { .. } => "rm",
+            TaskCommands::Init { .. } => "init",
+            TaskCommands::Env { .. } => "env",
+            TaskCommands::Ports { .. } => "ports",
+            TaskCommands::Clean { .. } => "clean",
+        }
+    }
+}
+
 #[derive(Args)]
 #[command(disable_help_subcommand = true)]
 pub struct CollectArgs {
@@ -196,29 +227,22 @@ pub struct CollectArgs {
     pub command: CollectCommands,
 }
 
+/// The one collector verb left in the CLI — running them and reporting their
+/// health are the app's job. See CLAUDE.md's `tt-cli` bullet.
 #[derive(Subcommand)]
 pub enum CollectCommands {
-    /// Collect today's calendar events via `claude -p` (next-meeting countdown)
-    Calendar,
-
-    /// Collect open issues assigned to me across tracked repos via `gh`
-    Issues,
-
-    /// Collect open and review-requested pull requests via `gh`
-    Prs,
-
-    /// Poll the watched Slack DM via the Slack Web API (needs a token in settings)
-    Slack,
-
-    /// Run every collector (calendar, issues, PRs, Slack)
-    All,
-
     /// Touch a collector's nudge file so a running app instance in this
     /// checkout refreshes that data immediately instead of on its next poll
     Nudge(NudgeArgs),
+}
 
-    /// Show each collector's enabled state and last-run health (no collection)
-    Status(CollectStatusArgs),
+impl CollectCommands {
+    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
+    fn name(&self) -> &'static str {
+        match self {
+            CollectCommands::Nudge(_) => "nudge",
+        }
+    }
 }
 
 #[derive(Args)]
@@ -258,13 +282,6 @@ impl NudgeTarget {
             NudgeTarget::SlackDm => tt_collect::NudgeTarget::SlackDm,
         }
     }
-}
-
-#[derive(Args)]
-pub struct CollectStatusArgs {
-    /// Emit structured JSON instead of the human table
-    #[arg(long)]
-    pub json: bool,
 }
 
 #[derive(Args)]
@@ -364,4 +381,66 @@ pub enum JournalCommands {
         #[arg(long)]
         json: bool,
     },
+}
+
+impl JournalCommands {
+    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
+    fn name(&self) -> &'static str {
+        match self {
+            JournalCommands::DailyNotes { .. } => "daily-notes",
+            JournalCommands::Note { .. } => "note",
+            JournalCommands::Meeting { .. } => "meeting",
+            JournalCommands::Jot { .. } => "jot",
+            JournalCommands::Open { .. } => "open",
+            JournalCommands::List { .. } => "list",
+            JournalCommands::Search { .. } => "search",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Every command reachable from argv, with the pair it must log.
+    const CASES: &[(&[&str], (&str, &str))] = &[
+        (&["tt", "journal", "daily-notes"], ("journal", "daily-notes")),
+        (&["tt", "journal", "note"], ("journal", "note")),
+        (&["tt", "journal", "meeting"], ("journal", "meeting")),
+        (&["tt", "journal", "jot"], ("journal", "jot")),
+        (&["tt", "journal", "open"], ("journal", "open")),
+        (&["tt", "journal", "list"], ("journal", "list")),
+        (&["tt", "journal", "search", "needle"], ("journal", "search")),
+        (&["tt", "today"], ("journal", "today")),
+        (&["tt", "collect", "nudge", "prs"], ("collect", "nudge")),
+        (&["tt", "task", "new", "Title", "--repo", "r"], ("task", "new")),
+        (&["tt", "task", "ls"], ("task", "ls")),
+        (&["tt", "task", "rm", "some-task"], ("task", "rm")),
+        (&["tt", "task", "init"], ("task", "init")),
+        (&["tt", "task", "env", "some-task"], ("task", "env")),
+        (&["tt", "task", "ports"], ("task", "ports")),
+        (&["tt", "task", "clean"], ("task", "clean")),
+    ];
+
+    #[test]
+    fn every_subcommand_names_itself() {
+        for (argv, expected) in CASES {
+            let cli = Cli::try_parse_from(*argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+            assert_eq!(cli.command.telemetry_name(), *expected, "for {argv:?}");
+        }
+    }
+
+    /// A copy-pasted arm in one of the `name()` impls would silently file two
+    /// commands under one name, and the usage counts read from the event log
+    /// would be wrong rather than obviously broken.
+    #[test]
+    fn no_two_commands_share_a_name() {
+        let mut seen = HashSet::new();
+        for (argv, _) in CASES {
+            let cli = Cli::try_parse_from(*argv).unwrap();
+            assert!(seen.insert(cli.command.telemetry_name()), "duplicate name for {argv:?}");
+        }
+        assert_eq!(seen.len(), CASES.len());
+    }
 }

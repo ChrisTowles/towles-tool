@@ -4,24 +4,48 @@ mod ui;
 
 use clap::Parser;
 use cli::{Cli, Commands, JournalCommands};
+use std::path::Path;
 
 fn main() {
     let Cli { verbose, config_dir, command } = Cli::parse();
 
     init_logging(verbose);
 
-    let exit_code = match command {
-        Commands::Journal(args) => commands::journal::run(args.command, config_dir.as_deref()),
-        Commands::Today { no_open } => {
-            commands::journal::run(JournalCommands::DailyNotes { no_open }, config_dir.as_deref())
-        }
-        Commands::Collect(args) => commands::collect::run(args.command, config_dir.as_deref()),
-        Commands::Task(args) => commands::task::run(args.command),
-    };
+    let exit_code = dispatch(command, config_dir.as_deref());
 
     if exit_code != 0 {
         std::process::exit(exit_code);
     }
+}
+
+/// Run one invocation inside the span that records it.
+///
+/// Separate from `main` so the span closes on return, before `process::exit` —
+/// that call runs no destructors, so a span still open across it is never
+/// written and every *failing* command would go unrecorded.
+fn dispatch(command: Commands, config_dir: Option<&Path>) -> i32 {
+    let (group, subcommand) = command.telemetry_name();
+    let span = tracing::info_span!(
+        "cli.command",
+        "cli.group" = group,
+        "cli.subcommand" = subcommand,
+        exit_code = tracing::field::Empty,
+        outcome = tracing::field::Empty,
+    );
+    let _entered = span.enter();
+
+    let exit_code = match command {
+        Commands::Journal(args) => commands::journal::run(args.command, config_dir),
+        Commands::Today { no_open } => {
+            commands::journal::run(JournalCommands::DailyNotes { no_open }, config_dir)
+        }
+        Commands::Collect(args) => commands::collect::run(args.command),
+        Commands::Task(args) => commands::task::run(args.command),
+    };
+
+    span.record("exit_code", exit_code);
+    span.record("outcome", if exit_code == 0 { "ok" } else { "error" });
+    exit_code
 }
 
 /// Install telemetry, mapping the `-v` count onto the stderr level. `RUST_LOG`

@@ -688,13 +688,30 @@ Cargo workspace + npm workspace (`apps/client` only):
 - `crates-cli/tt-cli` — `clap` 4 CLI, binary `tt`. Deliberately small after the
   2026-07-19 trim (usage review showed everything else was dead or app-owned):
   `journal daily-notes|note|meeting|jot|open|list|search` (+ `today` alias),
-  `task init|new|ls|rm|env|clean` (worktrees — see the Worktree tasks
-  section), and the headless entry point
-  `collect calendar|issues|prs|slack|all|nudge|status` (slated to move into
-  the app per the CLI redesign). The MCP server is not a CLI surface — it
+  `task init|new|ls|rm|env|ports|clean` (worktrees — see the Worktree tasks
+  section), and `collect nudge`. The MCP server is not a CLI surface — it
   runs inside the app over loopback HTTP. The removed groups (`gh`, `config`,
   `doctor`, `install`, `agentboard`) live in git history; don't reintroduce
-  CLI surfaces for app-owned features. `ui::warning`/`ui::success` print to
+  CLI surfaces for app-owned features.
+
+  **`collect` is a nudge and nothing else.** The headless runners
+  (`calendar|issues|prs|slack|all`) and `status` were a second implementation
+  of `scheduler.rs`, which already runs every collector on a cadence while the
+  app is open and reports their health through the status bar and Settings —
+  so they had no caller. `nudge` stays because *its* caller can't be the app:
+  `gh-pr-nudge.sh` is a shell hook, and a process boundary is the only way it
+  reaches the scope-aware nudge dir. Don't rename it — that hook discards
+  output and exits 0 when `tt` is missing, so a renamed subcommand fails
+  silently rather than loudly.
+
+  **Every invocation emits a `cli.command` span** (`main.rs`'s `dispatch`),
+  carrying `cli.group`/`cli.subcommand`/`outcome`/`exit_code`. It lives in its
+  own function so the span closes before `main` reaches `process::exit`, which
+  runs no destructors — leave it open across that call and every *failing*
+  command goes unrecorded. Operands never go in: `journal jot`'s text and
+  `task new`'s title are user content. This is what makes "which commands
+  still earn their place?" answerable from the event log the way #365 pruned
+  on it, instead of from a shell-history grep. `ui::warning`/`ui::success` print to
   **stdout** — a `--json` command must gate every call behind `if !json` (or
   fold the message into a `"warnings"` array in the JSON payload instead),
   or a warning firing mid-command corrupts the JSON document.
@@ -868,9 +885,13 @@ etc.). The points below are repo-specific specializations of that doc.
   Claude Code runs it.
 - **No CLI-parity requirement.** The app is the primary product; each feature
   picks its natural surface. App-only features don't need a `tt` subcommand,
-  and terminal-native tools (journal, gh, doctor) don't need app screens. The
-  CLI remains the home for terminal workflows and headless entry points
-  (`collect`). Either way, the logic lands in a
+  and terminal-native tools (journal, gh, doctor) don't need app screens. What
+  the CLI is *for* has narrowed to two things: terminal workflows the user
+  runs by hand, and the process boundary a non-Rust caller needs — a Node
+  script (`scripts/task-port.mjs` → `task env`/`task ports --probe`) or a
+  shell hook (`gh-pr-nudge.sh` → `collect nudge`). A headless duplicate of
+  something the app already does on a schedule is neither. Either way, the
+  logic lands in a
   Tauri-free `crates/` library with unit tests — the e2e harness is not the
   primary correctness seam.
 - **Hard cutover, no back-compat shims** — replace, don't wrap. (No compat
