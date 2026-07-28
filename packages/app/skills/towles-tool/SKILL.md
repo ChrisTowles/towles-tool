@@ -32,7 +32,13 @@ tt task env <name>         # (Re)render a checkout's .env (or `primary`) — ide
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
 tt task rm <name>          # Guarded removal
 tt task clean              # Remove every merged/gone task
+tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll
 ```
+
+`nudge` is for hooks and scripts, not for you to run by hand — the app polls
+these collectors on its own cadence anyway. It routes by `TT_SESSION_ID`, so
+it reaches the app instance that opened the terminal it runs in; from a
+session started outside the app it reaches every open instance.
 
 `rm`/`clean` run a task's declared `TT_TASK_TEARDOWN` command (from its
 rendered `.env`) against the worktree right before removing it — for

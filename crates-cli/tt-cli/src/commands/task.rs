@@ -38,6 +38,10 @@ pub fn run(command: TaskCommands) -> i32 {
         TaskCommands::Env { name, root } => cmd_env(&name, root.as_deref()),
         TaskCommands::Ports { probe, json, root } => cmd_ports(probe, json, root.as_deref()),
         TaskCommands::Clean { dry_run, json, root } => cmd_clean(dry_run, json, root.as_deref()),
+        // Nudge reports through its own `hook.nudge` event on every path — the
+        // hook that calls it discards output — so it owns its exit code rather
+        // than sharing this group's `Result<(), String>`.
+        TaskCommands::Nudge(args) => return crate::commands::nudge::run(args),
     };
     match result {
         Ok(()) => 0,

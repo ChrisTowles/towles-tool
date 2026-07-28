@@ -3,8 +3,8 @@
 # mutation (merge/create/close/reopen/ready/edit/comment/review/draft/undraft
 # for PRs; create/close/reopen/edit/comment/transfer for issues), nudge a
 # running towles-tool app instance to refresh the matching view immediately
-# instead of waiting for its normal poll interval (`tt collect nudge
-# prs`/`tt collect nudge issues` -- see crates-tauri/tt-app/src/scheduler.rs's
+# instead of waiting for its normal poll interval (`tt task nudge
+# prs`/`tt task nudge issues` -- see crates-tauri/tt-app/src/scheduler.rs's
 # nudge-dir watch).
 #
 # Fails open throughout: this plugin can be enabled globally in Claude Code,
@@ -18,7 +18,7 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null) |
 
 # Which nudge target(s) this command touches, and which verb matched -- the
 # verb (not the full command, which may carry a PR body/token) is passed
-# through to `tt collect nudge --trigger` so the resulting telemetry event
+# through to `tt task nudge --trigger` so the resulting telemetry event
 # names what fired without ever recording command content. Separator- or
 # line-start-anchored (same heuristic as the repo's own
 # .claude/hooks/guard-task-pkill.sh) so this never fires on a bare mention of
@@ -56,7 +56,7 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 # Guard-fail is intentionally not logged anywhere: it's the expected,
 # high-volume case for a globally-enabled hook running against unrelated
 # projects, and logging it would just be noise. The one audit trail this
-# hook contributes is the `hook.nudge` telemetry event emitted by `tt collect
+# hook contributes is the `hook.nudge` telemetry event emitted by `tt task
 # nudge` itself below, which only happens once both the matcher and this
 # guard have already passed.
 in_app_terminal=0
@@ -83,6 +83,6 @@ if [ "$in_app_terminal" -ne 1 ] && [ "$in_checkout" -ne 1 ]; then
 fi
 
 command -v tt >/dev/null 2>&1 || exit 0
-[ "$is_pr_command" -eq 1 ] && (cd "$cwd" && tt collect nudge prs --trigger "pr:$pr_verb" >/dev/null 2>&1)
-[ "$is_issue_command" -eq 1 ] && (cd "$cwd" && tt collect nudge issues --trigger "issue:$issue_verb" >/dev/null 2>&1)
+[ "$is_pr_command" -eq 1 ] && (cd "$cwd" && tt task nudge prs --trigger "pr:$pr_verb" >/dev/null 2>&1)
+[ "$is_issue_command" -eq 1 ] && (cd "$cwd" && tt task nudge issues --trigger "issue:$issue_verb" >/dev/null 2>&1)
 exit 0
