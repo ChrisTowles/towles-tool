@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderGit2, FolderPlus } from "lucide-react";
 import { fmtMins } from "@/components/agentboard-bits";
-import { WorkingContext } from "@/components/agentboard-pane";
+import { WorkingContext } from "@/components/agentboard-working-context";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
 import { RepoGroup } from "@/components/agentboard-repo-group";
 import { NativePane } from "@/components/native-pane";

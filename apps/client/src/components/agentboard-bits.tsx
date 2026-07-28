@@ -387,10 +387,13 @@ export function BranchLabel({
         "min-w-0 truncate font-mono text-[11px]",
         isWorktree ? "text-muted-foreground" : "text-sky-500",
       )}
+      // Always the full branch, because this is the element every surface
+      // truncates first: the rail row and the band both spend their slack on
+      // it, so without the tooltip a long branch is simply unreadable.
       title={
         isWorktree
-          ? undefined
-          : "Primary checkout — the main clone; its .git is load-bearing for every worktree"
+          ? branch
+          : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
       }
       onClick={onClick}
     >
@@ -487,7 +490,7 @@ export function ComparedBaseBadge({
   const manual = Boolean(folder.baseBranch?.trim());
   return (
     <span
-      className="shrink-0 rounded-md border border-border/70 px-1 font-mono text-[10px] text-muted-foreground"
+      className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/70"
       title={
         manual
           ? `Diffs against "${label}" — your override for this folder`
