@@ -7,33 +7,12 @@ paths:
 
 # Rust conventions
 
-- **Errors:** `thiserror` enums in library crates (`crates/`); flatten to
-  user-facing messages and exit codes only at the CLI boundary in `tt-cli`.
-  No `unwrap()`/`expect()` on IO or user input in library code.
-- **Tauri-free shared crates (hard rule):** nothing under `crates/` may depend
-  on `tauri`. Tauri types stay in `crates-tauri/tt-app`.
-- **Shared-file serde:** types serialized to files the TypeScript CLI also
-  reads (settings, doctor history) must tolerate unknown fields — use
-  `#[serde(default)]`, never `deny_unknown_fields` — and match the TS field
-  names/casing exactly (camelCase where the TS record uses it).
-- **Determinism for tests:** pass clocks (`now_ms`) and base paths in as
-  parameters instead of reading `SystemTime`/`$HOME` deep in logic.
+- **Errors:** `thiserror` enums in library crates (`crates/`)`.
 - **TTY guards:** every interactive prompt must fail with a clear error or
   no-op cleanly when stdin/stdout is not a TTY, so CI and tests never hang.
-- **Tests:** unit tests in `#[cfg(test)] mod tests` alongside the logic;
-  black-box CLI tests with `assert_cmd` under `crates-cli/tt-cli/tests/`.
 - **Testing `task_scope_from_dir`/removal scope:** don't use `tt_scoped()`'s
   forced `TT_STATE_SCOPE` (every store resolves to one path, hiding scope
   bugs) — use `current_dir()` on the spawned `tt` command instead. Never
   fixture a removal-scope test's row at the *removed* task's own scope:
   `ops::remove_task`'s `state_cleanup` wipes that scope wholesale regardless
   of the bug under test, giving a false-positive pass.
-- **Style:** rustfmt at 100 columns (`cargo fmt --check`); clippy must pass with
-  `-D warnings`. `--all` needs zig + GTK for `tt-vt`/`tt-app`/`tt-jarvis`/
-  `tt-pane`; without those, run CI's variant (the `--exclude` list in the root
-  CLAUDE.md), which is what gates the four separately.
-- **Comments:** [`rust-comments.md`](rust-comments.md) — and note it argues
-  *against* adding doc lints beyond the `unsafe` pair. Read it before proposing
-  one.
-- **Porting:** when deriving code from the TS CLI, cite the slot-1 source path
-  (e.g. `src/commands/...`) in the commit message.

@@ -766,37 +766,10 @@ The port from the TypeScript CLI at
 [docs/MIGRATION.md](docs/MIGRATION.md) is a historical record of what came
 across, not a backlog to work from. Porting was selective: a TS feature landed
 only if still wanted, and on its natural surface (app screen or CLI command —
-see the no-CLI-parity convention below), so don't treat something described
-there as owed. When deriving code from an upstream repo, the commit message
-should still cite the source path (yaak `path/to/file` or slot-1
-`src/commands/...`).
+see the no-CLI-parity convention below), so don't treat something described there as owed.
 
 ## Conventions
 
-See [docs/CODING-STANDARDS.md](docs/CODING-STANDARDS.md) for the full
-Rust/TypeScript coding standards (errors-as-values, parse-don't-validate,
-branded/newtype domain types, deep modules, testing through real seams,
-etc.). The points below are repo-specific specializations of that doc.
-
-- **Rust conventions** (errors, tests, formatting, TTY guards, shared-file
-  serde, etc.): see [`.claude/rules/rust.md`](.claude/rules/rust.md), plus
-  [`.claude/rules/rust-comments.md`](.claude/rules/rust-comments.md) for comment
-  discipline — both auto-load for any `.rs` file under `crates/`, `crates-cli/`,
-  or `crates-tauri/`, so don't restate them here.
-- **TypeScript errors are values**, the same as Rust's `Result` — via
-  [better-result](https://better-result.dev). Expected failures belong in the
-  return type, not in a `throw`, a rejected promise, or a `null` sentinel that
-  conflates "absent" with "broken". `apps/client/src/lib/tauri.ts` is the model:
-  one `invoke` returning `Result<T, IpcError>` that never throws, with tagged
-  errors in `src/lib/errors.ts` (`TaggedError`, matched via `SomeError.is(e)`).
-  See [`apps/client/CLAUDE.md`](apps/client/CLAUDE.md) for the call-site
-  patterns. Reserve `throw` for unrecoverable defects (the shortcuts registry's
-  module-eval validation) and for foreign interfaces that require it (monaco's
-  `IFileSystemProvider`, vscode-jsonrpc) — translate at those boundaries.
-  The `scripts/*.mjs` follow the same rule and are typechecked via
-  `scripts/tsconfig.json` (`checkJs`), but keep `process.exit(N)` at the
-  top-level CLI boundary — a non-zero exit code is the correct terminal
-  behavior there, and `Result` is for the seams beneath it.
 - **Frontend styling:** Tailwind + shadcn/ui only — no CSS modules, no
   hand-rolled stylesheets, no CSS-in-JS. Add components with
   `npx shadcn@latest add <name>`, don't hand-write Radix wrappers. The one

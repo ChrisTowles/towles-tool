@@ -28,17 +28,10 @@ members = [
   "xtask",
 ]
 
-# Inherited by every member via `[lints] workspace = true`. Scoped to `unsafe`
-# on purpose: an unsafe block's soundness argument lives nowhere but a comment,
-# so the machine should insist on it. Everything else about commenting is
-# judgement, and `.claude/rules/rust-comments.md` owns it.
-#
-# Three doc lints were tried and rejected, all for one reason — at this
-# codebase's scale they mandate prose that restates the code:
-# `missing_docs` (~905 sites) and `missing_errors_doc` (~195) by sheer volume;
-# `missing_panics_doc` because its actual yield here was 10-of-13 stanzas
-# reading "if the mutex is poisoned", which is unreachable except after another
-# panic and so tells a caller nothing it can act on.
+
+
+
+
 [workspace.lints.clippy]
 missing_safety_doc = "warn"
 undocumented_unsafe_blocks = "warn"
