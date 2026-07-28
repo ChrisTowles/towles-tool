@@ -43,6 +43,7 @@ import {
   abSyncRepo,
   comparedBaseLabel,
   ctxPct,
+  fmtElapsed,
   folderLandedButHasWork,
   gitCheckedLabel,
   isCacheExpiring,
@@ -389,6 +390,24 @@ export function DeletingBadge({ label }: { label?: string }) {
       }
     >
       <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
+    </span>
+  );
+}
+
+/** Shown on a checkout whose setup step (`TT_TASK_SETUP` — an install) is
+ * running, with how long it's been going. Setup runs after `task_create`
+ * returns, so the pending row is already gone and the rail shows an ordinary
+ * folder; this says the task isn't finished being built.
+ *
+ * Sky, not `DeletingBadge`'s red or `PortDriftBadge`'s amber: nothing is
+ * wrong and nothing needs doing. The row stays interactive throughout. */
+export function SettingUpBadge({ since, now }: { since: number; now: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400"
+      title="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while"
+    >
+      <Loader2 className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
     </span>
   );
 }

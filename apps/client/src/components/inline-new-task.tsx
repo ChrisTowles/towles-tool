@@ -186,6 +186,10 @@ export type PendingTask = {
   startedAt: number;
   status: "creating" | "error";
   error?: string;
+  /** Live step text from `task://create_progress` ("fetching origin", …).
+   * Absent until the first event lands, and always in browser dev — the row
+   * falls back to a static label. */
+  phase?: string;
 };
 
 /** How much of the goal `goalToBranch` slugs into the branch name — long
@@ -1097,7 +1101,9 @@ export function PendingTaskRow({
         </span>
       </div>
       {pending.status === "creating" ? (
-        <span className="pl-[22px] text-[11px] text-muted-foreground/70">creating task…</span>
+        <span className="pl-[22px] text-[11px] text-muted-foreground/70">
+          {pending.phase ? `${pending.phase}…` : "creating task…"}
+        </span>
       ) : (
         <div className="flex flex-wrap items-center gap-2 pl-[22px]">
           <span className="text-[11px] text-red-500">{pending.error}</span>

@@ -458,6 +458,38 @@ fn new_task_avoids_ports_registered_to_a_sibling_whose_env_file_is_gone() {
     );
 }
 
+/// Creating a task narrates each step as it starts, in the order they run.
+///
+/// Order is the claim, not presence: the point of narrating is to say which
+/// step is running *now*. The app's rail shares this callback and these
+/// labels, so asserting here covers both. (Narration is text-mode only —
+/// every `--json` case above parses stdout and would fail if it leaked.)
+#[test]
+fn new_task_narrates_each_step_in_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = make_checkout(tmp.path());
+    let root_s = checkout.to_string_lossy().to_string();
+
+    let out = new_task(&root_s, "feat/narrated").output().unwrap();
+    assert!(out.status.success(), "new failed: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // `make_checkout` declares a `TT_TASK_SETUP`; without one it's skipped.
+    let steps = [
+        "fetching origin",
+        "adding the git worktree",
+        "rendering .env and claiming ports",
+        "running setup",
+    ];
+    let mut searched_to = 0;
+    for step in steps {
+        let at = stdout[searched_to..].find(step).unwrap_or_else(|| {
+            panic!("step {step:?} missing (or out of order) after byte {searched_to} in:\n{stdout}")
+        });
+        searched_to += at + step.len();
+    }
+}
+
 /// `--repo` may point anywhere inside the checkout — including one of its own
 /// worktrees. The worktree always anchors at the main checkout, and the board
 /// row's `repo` must anchor there too: recorded as the nested path it would key

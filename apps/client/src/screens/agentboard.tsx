@@ -4,7 +4,7 @@ import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-pane";
 import { RailIconStrip, RepoGroup, RollupChip } from "@/components/agentboard-rail";
 import { NativePane } from "@/components/native-pane";
-import { useNow } from "@/lib/now";
+import { useNow, useNowInterval } from "@/lib/now";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@/components/ui/button";
@@ -726,6 +726,20 @@ export function AgentboardScreen() {
     toggleRail,
   });
 
+  // Live steps for a creation in flight — `task://delete_progress`'s twin,
+  // sitting here rather than beside it because each goes below the hook it
+  // feeds.
+  useTauriEvent<{ root: string; branch: string; label: string }>("task://create_progress", (p) =>
+    taskCreation.setCreatePhase(p.root, p.branch, p.label),
+  );
+
+  // The pending row's age and the setup badge are both `m:ss` against a clock
+  // that otherwise ticks every 15s — a create finishes inside two ticks, so
+  // the number would read 0:00 throughout. Bounded by the create itself.
+  useNowInterval(
+    taskCreation.pendingTasks.length > 0 || taskCreation.settingUpDirs.size > 0 ? 1000 : undefined,
+  );
+
   // ab-new-task + the working-context band's "New task" button both open the
   // form for the focused folder's repo — expand a collapsed rail first since
   // the form itself renders there, same as the rail's own new-task buttons.
@@ -1191,6 +1205,7 @@ export function AgentboardScreen() {
                               onDeleteWorktree={requestDeleteWorktree}
                               deletingDirs={deletingDirs}
                               deletingPhase={worktreeDelete.deletingPhase}
+                              settingUpDirs={taskCreation.settingUpDirs}
                               onRenameCommit={commitRename}
                               onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
