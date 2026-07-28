@@ -131,16 +131,6 @@ impl RmBlocked {
     }
 }
 
-/// Count entries in `git status --porcelain` output.
-pub fn dirty_entry_count(porcelain: &str) -> usize {
-    porcelain.lines().filter(|l| !l.trim().is_empty()).count()
-}
-
-/// Parse `git rev-list --count HEAD --not --branches --remotes` output.
-pub fn unreachable_commit_count(rev_list_output: &str) -> Option<u64> {
-    rev_list_output.trim().parse().ok()
-}
-
 /// Every reason removal is blocked, given the gathered state. Empty = safe.
 /// `foreign_ports` are claimed ports in use by something *other than* the
 /// task's own docker containers (the containers are about to be removed
@@ -181,18 +171,6 @@ pub fn docker_resource_matches(resource: &str, task_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dirty_count_ignores_blank_lines() {
-        assert_eq!(dirty_entry_count(" M a.rs\n?? b\n\n"), 2);
-        assert_eq!(dirty_entry_count(""), 0);
-    }
-
-    #[test]
-    fn unreachable_parses_count() {
-        assert_eq!(unreachable_commit_count("3\n"), Some(3));
-        assert_eq!(unreachable_commit_count("fatal: bad revision"), None);
-    }
 
     #[test]
     fn clean_task_passes() {

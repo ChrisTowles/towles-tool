@@ -211,20 +211,6 @@ impl Store {
         self.task_by_id(id)
     }
 
-    /// Archive one task off the active board now. Archiving twice keeps the
-    /// original timestamp. Returns [`Error::TaskNotFound`] when no task has
-    /// `id`.
-    pub fn archive_task(&self, id: i64, now_ms: i64) -> Result<()> {
-        let affected = self.conn.execute(
-            "UPDATE tasks SET archived_at = COALESCE(archived_at, ?2) WHERE id = ?1",
-            params![id, now_ms],
-        )?;
-        if affected == 0 {
-            return Err(Error::TaskNotFound(id));
-        }
-        Ok(())
-    }
-
     /// Bring an archived task back onto the board. Its `status` and `outcome`
     /// are left as they were — it reappears in the terminal column, and a
     /// status move out of there reopens it fully. Returns

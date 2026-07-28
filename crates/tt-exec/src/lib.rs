@@ -1,8 +1,8 @@
 //! Thin process-execution wrapper for the towles-tool CLI.
 //!
-//! Ports `src/lib/git/exec.ts` from the TypeScript CLI:
-//! [`run`] captures stdout/stderr/exit-code without failing, [`run_ok`] fails on a
-//! non-zero exit.
+//! Ports `src/lib/git/exec.ts` from the TypeScript CLI: [`run`] captures
+//! stdout/stderr/exit-code without failing, and the [`run_with_timeout`]
+//! family does the same with a cap on how long a child may hang.
 //!
 //! [`claude`] is the third tool-shaped helper: the one way this workspace asks
 //! `claude -p` for a machine-readable answer, via the CLI's own structured-output
@@ -197,41 +197,6 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
     })
 }
 
-/// Run a command with the given string piped to its stdin, capturing output.
-/// Does not fail on a non-zero exit code.
-pub fn run_with_stdin(cmd: &str, args: &[&str], stdin: &str) -> Result<Output> {
-    use std::io::Write;
-    use std::process::Stdio;
-
-    let span = spawn_span(cmd, args, None, None);
-    span.record("stdin_bytes", stdin.len() as u64);
-    let _entered = span.enter();
-
-    let mut child = Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
-
-    if let Some(mut handle) = child.stdin.take() {
-        // A closed pipe (child exited early) is not fatal; we still collect output.
-        let _ = handle.write_all(stdin.as_bytes());
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|source| spawn_error(&span, "wait_failed", cmd, source))?;
-
-    let exit_code = output.status.code().unwrap_or(-1);
-    record_exit(&span, exit_code);
-    Ok(Output {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code,
-    })
-}
-
 /// Run a command, capturing output, but give up after `timeout`. On expiry the
 /// child is killed (and reaped) and `Err(Error::Timeout)` is returned so a hung
 /// subprocess can't block the caller forever. Does not fail on a non-zero exit.
@@ -262,18 +227,6 @@ pub fn run_with_timeout_env(
     timeout: Duration,
 ) -> Result<Output> {
     run_with_timeout_in(cmd, args, None, env, timeout)
-}
-
-/// [`run_in_dir_with_timeout`], with extra env vars set on the child (e.g.
-/// [`GIT_NON_INTERACTIVE_ENV`]).
-pub fn run_in_dir_with_timeout_env(
-    cmd: &str,
-    args: &[&str],
-    dir: &std::path::Path,
-    env: &[(&str, &str)],
-    timeout: Duration,
-) -> Result<Output> {
-    run_with_timeout_in(cmd, args, Some(dir), env, timeout)
 }
 
 fn run_with_timeout_in(
@@ -335,19 +288,6 @@ fn run_with_timeout_in(
     Ok(Output { stdout, stderr, exit_code })
 }
 
-/// Run a command and fail if it exits with a non-zero status.
-pub fn run_ok(cmd: &str, args: &[&str]) -> Result<Output> {
-    let output = run(cmd, args)?;
-    if !output.ok() {
-        return Err(Error::NonZeroExit {
-            cmd: display_cmd(cmd, args),
-            exit_code: output.exit_code,
-            stderr: output.stderr,
-        });
-    }
-    Ok(output)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,29 +301,9 @@ mod tests {
     }
 
     #[test]
-    fn run_ok_fails_on_nonzero_exit() {
-        // `false` exits 1 on every unix system.
-        let err = run_ok("false", &[]).unwrap_err();
-        assert!(matches!(err, Error::NonZeroExit { exit_code: 1, .. }));
-    }
-
-    #[test]
     fn run_reports_spawn_failure_for_missing_binary() {
         let err = run("definitely-not-a-real-binary-xyz", &[]).unwrap_err();
         assert!(matches!(err, Error::Spawn { .. }));
-    }
-
-    #[test]
-    fn run_with_stdin_pipes_input() {
-        let output = run_with_stdin("cat", &[], "piped input").unwrap();
-        assert_eq!(output.stdout, "piped input");
-        assert!(output.ok());
-    }
-
-    #[test]
-    fn run_with_stdin_survives_child_ignoring_stdin() {
-        let output = run_with_stdin("echo", &["ok"], "ignored").unwrap();
-        assert_eq!(output.stdout.trim(), "ok");
     }
 
     #[test]
