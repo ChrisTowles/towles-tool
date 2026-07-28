@@ -1027,15 +1027,6 @@ pub fn commit_stats(dir: &str, base_branch: Option<&str>) -> Vec<CommitStat> {
         .collect()
 }
 
-/// Every file in the checkout worth telling a Claude session about: tracked
-/// plus untracked-but-not-ignored, repo-relative, sorted, deduped, capped at
-/// `cap` (a runaway vendored tree must not ship megabytes to the webview).
-/// Empty when `dir` isn't a git repo — same degradation as the rest of this
-/// module.
-pub fn list_files(dir: &str, cap: usize) -> Vec<String> {
-    open_repo(dir).and_then(|repo| repo.list_files(cap).ok()).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

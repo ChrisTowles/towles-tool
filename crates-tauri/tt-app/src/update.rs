@@ -12,19 +12,6 @@ const REPO: &str = "ChrisTowles/towles-tool";
 /// doesn't need to distinguish "checked, nothing newer" from "hasn't checked yet".
 pub const UPDATE_AVAILABLE_EVENT: &str = "update://available";
 
-/// Run the check on a blocking worker (it makes a network call) and return the
-/// result to the frontend. Also used by the startup check in `lib.rs`.
-#[tauri::command]
-pub async fn check_for_update(app: AppHandle) -> Result<tt_update::UpdateCheck, String> {
-    let current_version = app.package_info().version.to_string();
-    tauri::async_runtime::spawn_blocking(move || {
-        tt_update::check_for_update(REPO, &current_version)
-    })
-    .await
-    .map_err(|e| format!("update check task failed: {e}"))?
-    .map_err(|e| e.to_string())
-}
-
 /// Fire the check once on startup and, only when a newer release is
 /// available, emit [`UPDATE_AVAILABLE_EVENT`] and post an OS notification.
 /// Network failures (offline, GitHub down) are swallowed — a background

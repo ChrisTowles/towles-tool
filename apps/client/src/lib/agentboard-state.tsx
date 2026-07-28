@@ -6,7 +6,6 @@ const EMPTY_WINDOWS: WindowsPayload = { windows: [], activeWindows: {} };
 
 const EMPTY: StatePayload = {
   repos: [],
-  preferredEditor: "",
   compactRecommendPercent: 30,
   windows: EMPTY_WINDOWS,
   collapsed: {},

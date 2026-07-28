@@ -143,8 +143,3 @@ export function mouseAction(id: string, screen: ScreenId): void {
 function uses(id: string): number {
   return keyboardUsesToday(latestKeyboardScore(), id);
 }
-
-/** Test seam: reset the session's nudge budget. */
-export function resetCoachState(): void {
-  state = emptyCoachState();
-}

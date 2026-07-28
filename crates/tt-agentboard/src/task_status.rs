@@ -96,8 +96,6 @@ mod tests {
     fn payload(repos: Vec<RepoData>) -> StatePayload {
         StatePayload {
             repos,
-            theme: None,
-            preferred_editor: "vscode".to_string(),
             compact_recommend_percent: 30,
             windows: crate::windows::WindowsPayload::default(),
             collapsed: Default::default(),

@@ -1279,7 +1279,6 @@ export function AgentboardScreen() {
                   folder={activeFolder}
                   pr={prForFolder(snapshot.prs, activeRepo.originUrl, activeFolder.branch)}
                   task={taskForFolder(snapshot.tasks, activeFolder.dir)}
-                  now={now}
                   deleting={deletingDirs.has(activeFolder.dir)}
                   actions={actions}
                   onOpenDiff={openDiff}

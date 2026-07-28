@@ -214,14 +214,6 @@ fn find_tsconfig_dirs(folder: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Manually kick a folder's diagnostics refresh (debounced like every other
-/// trigger). The diff pane and future editor UI call this.
-#[tauri::command]
-pub fn ide_diagnostics_refresh(app: AppHandle, dir: String) {
-    tracing::info!(%dir, "ide.diagnostics_refresh");
-    app.state::<Arc<DiagHub>>().request(Path::new(&dir));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -49,7 +49,6 @@ function repo(over: Partial<RepoData>): RepoData {
 
 const NO_AGENTS: StatePayload = {
   repos: [],
-  preferredEditor: "",
   compactRecommendPercent: 30,
   windows: { windows: [], activeWindows: {} },
   collapsed: {},

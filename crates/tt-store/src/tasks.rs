@@ -68,59 +68,6 @@ impl Store {
         Ok(())
     }
 
-    /// Move a todo to `status` at an explicit `index` within that column,
-    /// renumbering the column's `position`s to be contiguous (`0..n`). `index`
-    /// is clamped to `[0, n]`, where `n` is the number of *other* todos already
-    /// in the column, so out-of-range values land the card at the top or
-    /// bottom rather than erroring. Sets `completed_at` when entering `done`
-    /// and clears it otherwise (matching [`Store::set_task_status`]).
-    ///
-    /// Unlike `set_task_status` (which always appends), this reaches an
-    /// arbitrary position — it powers drag-to-reorder within a column and
-    /// position-aware drops across columns. The source column is left with a
-    /// gap in its `position`s, which is harmless: ordering is by relative
-    /// `position ASC`, and the next reorder there renumbers it. Returns
-    /// [`Error::TaskNotFound`] when no todo has `id`.
-    pub fn set_task_position(&self, id: i64, status: &str, index: i64, now_ms: i64) -> Result<()> {
-        if !TASK_STATUSES.contains(&status) {
-            return Err(Error::Sqlite(rusqlite::Error::InvalidParameterName(format!(
-                "unknown task status: {status}"
-            ))));
-        }
-        let tx = self.conn.unchecked_transaction()?;
-        // The target column's todos in board order, excluding the mover.
-        let others: Vec<i64> = {
-            let mut stmt = tx.prepare(
-                "SELECT id FROM tasks WHERE status = ?1 AND id <> ?2
-                 ORDER BY position ASC, created_at ASC",
-            )?;
-            let rows = stmt.query_map(params![status, id], |r| r.get::<_, i64>(0))?;
-            rows.collect::<rusqlite::Result<Vec<i64>>>()?
-        };
-        let pos = index.clamp(0, others.len() as i64) as usize;
-        let mut order = others;
-        order.insert(pos, id);
-        {
-            let mut up = tx.prepare("UPDATE tasks SET position = ?1 WHERE id = ?2")?;
-            for (pos, tid) in order.iter().enumerate() {
-                up.execute(params![pos as i64, tid])?;
-            }
-        }
-        let completed_at: Option<i64> = if status == "done" { Some(now_ms) } else { None };
-        let affected = tx.execute(
-            "UPDATE tasks SET status = ?1, completed_at = ?2,
-                    outcome = CASE WHEN ?1 = 'done' THEN outcome ELSE NULL END,
-                    archived_at = CASE WHEN ?1 = 'done' THEN archived_at ELSE NULL END
-             WHERE id = ?3",
-            params![status, completed_at, id],
-        )?;
-        if affected == 0 {
-            return Err(Error::TaskNotFound(id));
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
     /// Edit a todo's free-form fields: its `text` and optional `notes`. This
     /// is a full replace of both fields — passing `None` for `notes` clears it
     /// (there is no "leave unchanged" sentinel). Status, position, and any

@@ -19,7 +19,6 @@ use serde::Serialize;
 
 use crate::folder_meta::FolderMetaStore;
 use crate::git_info::GitInfo;
-use crate::metadata::SessionMetadataStore;
 use crate::repos::RepoEntry;
 use crate::sessions::SessionStore;
 use crate::tracker::AgentTracker;
@@ -31,8 +30,6 @@ use crate::types::{AgentEvent, AgentStatus, FolderData, NeedsYouReason, RepoData
 #[serde(rename_all = "camelCase")]
 pub struct StatePayload {
     pub repos: Vec<RepoData>,
-    pub theme: Option<String>,
-    pub preferred_editor: String,
     /// Context-% at/above which a cold session shows the "compact" nudge
     /// (settings `agentboard.compactRecommendPercent`, default 30).
     pub compact_recommend_percent: u8,
@@ -61,13 +58,10 @@ pub fn assemble_state(
     entries: &[RepoEntry],
     git_infos: &HashMap<String, GitInfo>,
     tracker: &AgentTracker,
-    metadata: &SessionMetadataStore,
     sessions: &SessionStore,
     folder_meta: &FolderMetaStore,
     attribute: &dyn Fn(&AgentEvent) -> Option<String>,
     session_agents: &HashMap<String, AgentEvent>,
-    theme: Option<String>,
-    preferred_editor: &str,
     compact_recommend_percent: u8,
     ts: i64,
 ) -> StatePayload {
@@ -76,16 +70,8 @@ pub fn assemble_state(
 
     for entry in entries {
         let git = git_infos.get(&entry.dir).cloned().unwrap_or_default();
-        let folder = build_folder(
-            entry,
-            &git,
-            tracker,
-            metadata,
-            sessions,
-            folder_meta,
-            attribute,
-            session_agents,
-        );
+        let folder =
+            build_folder(entry, &git, tracker, sessions, folder_meta, attribute, session_agents);
         let needs = folder.needs;
 
         let group_key = (!git.common_dir.is_empty()).then(|| git.common_dir.clone());
@@ -131,8 +117,6 @@ pub fn assemble_state(
 
     StatePayload {
         repos,
-        theme,
-        preferred_editor: preferred_editor.to_string(),
         compact_recommend_percent,
         windows: crate::windows::WindowsPayload::default(), // engine attaches
         collapsed: std::collections::BTreeMap::new(),       // engine attaches
@@ -145,12 +129,10 @@ pub fn assemble_state(
 /// default session), plus a placeholder `needs` count (always 0 here — see
 /// [`session_needs`] — the app recomputes it after stamping shell liveness via
 /// [`recompute_needs`]).
-#[allow(clippy::too_many_arguments)]
 fn build_folder(
     entry: &RepoEntry,
     git: &GitInfo,
     tracker: &AgentTracker,
-    metadata: &SessionMetadataStore,
     sessions: &SessionStore,
     folder_meta: &FolderMetaStore,
     attribute: &dyn Fn(&AgentEvent) -> Option<String>,
@@ -230,7 +212,6 @@ fn build_folder(
         base_branch: folder_meta.base_branch_for(&entry.dir).map(str::to_string),
         task_base_branch: git.task_base_branch.clone(),
         compared_base: git.compared_base.clone(),
-        metadata: metadata.get(&entry.name).cloned(),
         has_port_drift: false, // stamped by the app from its terminal registry
         has_launch_config: git.has_launch_config,
         quiet: folder_meta.quiet_for(&entry.dir),
@@ -407,8 +388,8 @@ mod tests {
     }
 
     /// [`assemble_state`] with the arguments no test below varies: an empty
-    /// metadata and folder-meta store, and the fixed theme/editor/compact/ts
-    /// tail. Only the stores a test actually exercises stay in the call.
+    /// folder-meta store and the fixed compact/ts tail. Only the stores a test
+    /// actually exercises stay in the call.
     fn assemble_with(
         entries: &[RepoEntry],
         git: &HashMap<String, GitInfo>,
@@ -421,13 +402,10 @@ mod tests {
             entries,
             git,
             tracker,
-            &SessionMetadataStore::new(),
             sessions,
             &FolderMetaStore::default(),
             attribute,
             session_agents,
-            None,
-            "code",
             30,
             0,
         )
@@ -448,7 +426,6 @@ mod tests {
     fn folders_map_fields_and_seed_sessions() {
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
-        let metadata = SessionMetadataStore::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         store.ensure_default("/r/beta", 1);
@@ -469,18 +446,14 @@ mod tests {
             &entries(),
             &git,
             &tracker,
-            &metadata,
             &store,
             &FolderMetaStore::default(),
             &no_attr,
             &HashMap::new(),
-            Some("mocha".into()),
-            "code",
             30,
             999,
         );
         assert_eq!(payload.ts, 999);
-        assert_eq!(payload.theme.as_deref(), Some("mocha"));
         // Neither folder shares a `common_dir` with the other (no git info
         // on beta) → each is its own top-level row → two repos.
         assert_eq!(payload.repos.len(), 2);

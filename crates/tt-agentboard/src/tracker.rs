@@ -113,18 +113,6 @@ impl AgentTracker {
         true
     }
 
-    /// Remove a specific instance.
-    pub fn dismiss(&mut self, session: &str, agent: &str, thread_id: Option<&str>) -> bool {
-        let key = instance_key(agent, thread_id);
-        let exists = self.instances.get(session).is_some_and(|inner| inner.contains_key(&key));
-        if !exists {
-            return false;
-        }
-        self.remove_instance(session, &key);
-        self.drop_if_empty(session);
-        true
-    }
-
     /// Prune "running" instances older than `timeout_ms` (unless pinned).
     pub fn prune_stuck(&mut self, timeout_ms: i64, now_ms: i64) {
         let sessions: Vec<String> = self.instances.keys().cloned().collect();
@@ -253,6 +241,12 @@ mod tests {
         }
     }
 
+    /// Whether `session` still tracks an instance of `agent` — the
+    /// existence probe the prune tests assert with.
+    fn has(t: &AgentTracker, session: &str, agent: &str) -> bool {
+        t.get_agents(session).iter().any(|e| e.agent == agent)
+    }
+
     #[test]
     fn instance_key_with_and_without_thread() {
         assert_eq!(instance_key("claude", None), "claude");
@@ -293,23 +287,14 @@ mod tests {
     }
 
     #[test]
-    fn dismiss_removes_instance_and_empty_session() {
-        let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "a", AgentStatus::Busy, 1), false);
-        assert!(t.dismiss("s", "a", None));
-        assert!(!t.dismiss("s", "a", None));
-        assert!(t.get_agents("s").is_empty());
-    }
-
-    #[test]
     fn prune_stuck_removes_old_running_unless_pinned() {
         let mut t = AgentTracker::new();
         t.apply_event(ev("s", "a", AgentStatus::Busy, 0), false);
         t.apply_event(ev("s", "b", AgentStatus::Busy, 0), false);
         t.set_pinned_instances_multi(&HashMap::from([("s".to_string(), vec!["b".to_string()])]));
         t.prune_stuck(1000, 5000); // both are 5000ms old > 1000
-        assert!(t.dismiss("s", "b", None)); // b survived (pinned)
-        assert!(!t.dismiss("s", "a", None)); // a was pruned
+        assert!(has(&t, "s", "b")); // b survived (pinned)
+        assert!(!has(&t, "s", "a")); // a was pruned
     }
 
     #[test]
@@ -319,8 +304,8 @@ mod tests {
         t.mark_seen("s"); // clears both; the second lands unseen again below
         t.apply_event(ev("s", "unseen", AgentStatus::Complete, 0), true);
         t.prune_terminal(10 * 60 * 1000); // > TERMINAL_PRUNE_MS
-        assert!(!t.dismiss("s", "seen", None)); // seen terminal pruned
-        assert!(t.dismiss("s", "unseen", None)); // unseen kept
+        assert!(!has(&t, "s", "seen")); // seen terminal pruned
+        assert!(has(&t, "s", "unseen")); // unseen kept
     }
 
     #[test]
@@ -329,8 +314,8 @@ mod tests {
         t.apply_event(ev("s", "idle", AgentStatus::Idle, 0), false);
         t.apply_event(ev("s", "run", AgentStatus::Busy, 0), false);
         t.prune_idle(1000, 5000);
-        assert!(!t.dismiss("s", "idle", None)); // idle pruned
-        assert!(t.dismiss("s", "run", None)); // running kept
+        assert!(!has(&t, "s", "idle")); // idle pruned
+        assert!(has(&t, "s", "run")); // running kept
     }
 
     #[test]
@@ -341,6 +326,6 @@ mod tests {
         t.apply_event(e, false);
         // event ts is 0 (very old) but lastActivityAt is recent → not stale.
         t.prune_stale(1000, 5000);
-        assert!(t.dismiss("s", "a", None));
+        assert!(has(&t, "s", "a"));
     }
 }

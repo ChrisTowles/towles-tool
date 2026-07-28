@@ -13,7 +13,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
 import {
-  AgentStatusLine,
   BaseMovedChip,
   BranchLabel,
   Chevron,
@@ -132,7 +131,6 @@ export function FolderHeader({
   onOpenJarvis?: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
-  const progress = folder.metadata?.progress;
   // Repo identity, repo scope only. A repo-scope header is sticky, so its
   // tint must mix into an opaque base (see the background comment below).
   const HeaderIcon = repoIcon(meta);
@@ -363,14 +361,6 @@ export function FolderHeader({
                 onDeleteWorktree={onDeleteWorktree}
               />
             )}
-            {typeof progress?.percent === "number" && (
-              <span
-                title={progress.label ?? "agent-reported progress"}
-                className="shrink-0 rounded-md border border-violet-500/40 bg-violet-500/10 px-1.5 font-mono text-[10.5px] text-violet-500"
-              >
-                {Math.round(progress.percent)}%{progress.label ? ` ${progress.label}` : ""}
-              </span>
-            )}
             <BaseMovedChip stats={folder} />
             <UncommittedChip stats={folder} onOpen={onOpenDiff} />
             <CommittedChip stats={folder} onOpen={onOpenDiff} />
@@ -450,10 +440,6 @@ export function FolderHeader({
             />
           )}
         </div>
-      </div>
-      {/* The agent's own status line (ab_set_status), when one was pushed. */}
-      <div className="ml-11 empty:hidden [&:not(:empty)]:pb-1.5">
-        <AgentStatusLine metadata={folder.metadata} now={now} />
       </div>
     </div>
   );

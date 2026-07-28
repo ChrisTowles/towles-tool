@@ -187,22 +187,6 @@ impl Repo {
         blob_at(&tree, path)
     }
 
-    /// Every tracked file plus every untracked-but-not-ignored one, sorted and
-    /// capped — `git ls-files` merged with `ls-files --others
-    /// --exclude-standard`.
-    pub fn list_files(&self, cap: usize) -> Result<Vec<String>> {
-        let index = self.inner().index_or_empty().map_err(|e| GitError::Read(e.to_string()))?;
-        let mut files: Vec<String> =
-            index.entries().iter().map(|e| e.path(&index).to_string()).collect();
-        for entry in self.status()?.entries.iter().filter(|e| e.untracked) {
-            files.extend(self.untracked_files_under(entry));
-        }
-        files.sort();
-        files.dedup();
-        files.truncate(cap);
-        Ok(files)
-    }
-
     /// Per-commit line counts for `base..HEAD`, oldest first — the
     /// `DiffButton` hover's breakdown, `git log --reverse --numstat`.
     pub fn commit_stats(&self, base: &str) -> Result<Vec<CommitStat>> {
@@ -484,31 +468,6 @@ mod tests {
         let git = Repo::open(repo.path()).expect("open");
         assert_eq!(git.file_at("HEAD", "README.md").as_deref(), Some(&b"hello\n"[..]));
         assert!(git.file_at("HEAD", "nope.txt").is_none());
-    }
-
-    #[test]
-    fn list_files_covers_tracked_and_untracked() {
-        let repo = TestRepo::new();
-        repo.write(".gitignore", "ignored.txt\n");
-        repo.git(&["add", "-A"]);
-        repo.git(&["commit", "--quiet", "-m", "ignore"]);
-        repo.write("untracked.txt", "x\n");
-        repo.write("ignored.txt", "x\n");
-
-        let files = Repo::open(repo.path()).expect("open").list_files(100).expect("list");
-        assert!(files.contains(&"README.md".to_string()));
-        assert!(files.contains(&"untracked.txt".to_string()));
-        assert!(!files.contains(&"ignored.txt".to_string()), "ignored file listed: {files:?}");
-    }
-
-    #[test]
-    fn list_files_respects_the_cap() {
-        let repo = TestRepo::new();
-        for i in 0..10 {
-            repo.write(&format!("f{i}.txt"), "x\n");
-        }
-        let files = Repo::open(repo.path()).expect("open").list_files(4).expect("list");
-        assert_eq!(files.len(), 4);
     }
 
     #[test]
