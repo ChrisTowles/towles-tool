@@ -520,14 +520,16 @@ mod tests {
             100,
         )
         .unwrap();
-        assert_eq!(s.repo_root_for_owner_repo("o/a").unwrap().as_deref(), Some("/repo/a"));
-        assert_eq!(s.repo_root_for_owner_repo("o/b").unwrap().as_deref(), Some("/repo/b"));
+        let root_of =
+            |slug: &str| s.tracked_repo_for_owner_repo(slug).unwrap().map(|(root, _)| root);
+        assert_eq!(root_of("o/a").as_deref(), Some("/repo/a"));
+        assert_eq!(root_of("o/b").as_deref(), Some("/repo/b"));
 
         // /repo/a's origin was renamed and /repo/b fell out of tracking.
         s.reconcile_repos(&[("/repo/a".to_string(), "o/a-renamed".to_string())], 200).unwrap();
-        assert_eq!(s.repo_root_for_owner_repo("o/a").unwrap(), None);
-        assert_eq!(s.repo_root_for_owner_repo("o/a-renamed").unwrap().as_deref(), Some("/repo/a"));
-        assert_eq!(s.repo_root_for_owner_repo("o/b").unwrap(), None);
+        assert_eq!(root_of("o/a"), None);
+        assert_eq!(root_of("o/a-renamed").as_deref(), Some("/repo/a"));
+        assert_eq!(root_of("o/b"), None);
     }
 
     /// GitHub slugs are case-preserving but not case-sensitive, and this repo
@@ -956,7 +958,7 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let t = s.add_task("round two", "doing", None, None, 1).unwrap();
         s.close_task(t.id, TaskOutcome::Done, 100).unwrap();
-        s.archive_task(t.id, 200).unwrap();
+        s.archive_closed_tasks(200, 200).unwrap();
 
         // Dragging the card back to an active column clears the whole
         // terminal record: outcome, archive, completed_at.
@@ -978,10 +980,11 @@ mod tests {
         let t = s.add_task("history", "doing", None, None, 1).unwrap();
         s.close_task(t.id, TaskOutcome::Abandoned, 100).unwrap();
 
-        s.archive_task(t.id, 200).unwrap();
+        assert_eq!(s.archive_closed_tasks(200, 200).unwrap(), 1);
         assert_eq!(s.task_by_id(t.id).unwrap().archived_at, Some(200));
-        // Idempotent: the original archive instant survives a re-archive.
-        s.archive_task(t.id, 300).unwrap();
+        // Idempotent: a later sweep skips an already-archived row rather than
+        // restamping it, so the original archive instant survives.
+        assert_eq!(s.archive_closed_tasks(300, 300).unwrap(), 0);
         assert_eq!(s.task_by_id(t.id).unwrap().archived_at, Some(200));
 
         s.unarchive_task(t.id).unwrap();
@@ -996,11 +999,13 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let closed = s.add_task("closed", "doing", None, None, 1).unwrap();
         s.set_task_worktree(closed.id, "/r/a", Some("o/r"), Some("feat/a"), None).unwrap();
-        s.close_task(closed.id, TaskOutcome::Done, 10).unwrap();
         let archived = s.add_task("archived", "doing", None, None, 2).unwrap();
         s.set_task_worktree(archived.id, "/r/b", Some("o/r"), Some("feat/b"), None).unwrap();
+        // Staggered so one sweep separates them: only `archived` finished
+        // before the cutoff, so only it is swept off the board.
         s.close_task(archived.id, TaskOutcome::Done, 10).unwrap();
-        s.archive_task(archived.id, 20).unwrap();
+        s.close_task(closed.id, TaskOutcome::Done, 30).unwrap();
+        assert_eq!(s.archive_closed_tasks(20, 20).unwrap(), 1);
 
         let pr = |number: i64, branch: &str| PrInput {
             repo: "o/r".to_string(),

@@ -45,32 +45,11 @@ impl NudgeTarget {
             NudgeTarget::SlackDm => "slack",
         }
     }
-
-    /// Parse a collector key (`prs`, `issues`, `slack:dm`) into a target.
-    /// Returns `None` for any key that isn't nudgeable.
-    pub fn from_key(key: &str) -> Option<NudgeTarget> {
-        NudgeTarget::ALL.into_iter().find(|t| t.key() == key)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn from_key_round_trips_every_target() {
-        for target in NudgeTarget::ALL {
-            assert_eq!(NudgeTarget::from_key(target.key()), Some(target));
-        }
-    }
-
-    #[test]
-    fn from_key_rejects_unknown_or_non_nudgeable_keys() {
-        assert_eq!(NudgeTarget::from_key("claude:calendar"), None);
-        assert_eq!(NudgeTarget::from_key("slack"), None);
-        assert_eq!(NudgeTarget::from_key("PRS"), None);
-        assert_eq!(NudgeTarget::from_key(""), None);
-    }
 
     #[test]
     fn slack_key_matches_the_collector_key_and_filename_stays_plain() {

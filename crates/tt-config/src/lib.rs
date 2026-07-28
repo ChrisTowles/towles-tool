@@ -199,10 +199,6 @@ pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 /// so only the main checkout and board-bound worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
 
-/// Built-in default for [`AgentboardSettings::jarvis_pane`]: off, so the
-/// proof-of-concept native pane costs nothing until it's asked for.
-pub const DEFAULT_JARVIS_PANE: bool = false;
-
 /// Built-in default for [`AgentboardSettings::notify`]: notifications on.
 pub const DEFAULT_NOTIFY: bool = true;
 

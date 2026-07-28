@@ -124,17 +124,6 @@ impl Store {
         Ok(())
     }
 
-    /// The tracked repo root for a given `owner/repo` slug, if the identity
-    /// cache currently knows it. `task_create` validates its `repo` argument
-    /// against this instead of matching a dir/basename.
-    ///
-    /// Prefer [`Store::tracked_repo_for_owner_repo`], which also hands back the
-    /// stored slug so a caller can persist the canonical spelling rather than
-    /// whatever casing it was passed.
-    pub fn repo_root_for_owner_repo(&self, owner_repo: &str) -> Result<Option<String>> {
-        Ok(self.tracked_repo_for_owner_repo(owner_repo)?.map(|(root, _)| root))
-    }
-
     /// The tracked `(repo_root, owner_repo)` for a given slug, matched
     /// **case-insensitively** and returning the identity cache's own spelling.
     ///
