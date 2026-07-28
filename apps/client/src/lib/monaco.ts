@@ -17,6 +17,7 @@
  * `confirm` is a literal blocking `window.confirm()`. See `lib/monaco-prune.ts`.
  */
 
+import { FILE_NESTING_PATTERNS } from "@/lib/file-nesting";
 import { PRUNED_COMMANDS, staleCommands } from "@/lib/monaco-prune";
 
 let loading: Promise<typeof import("monaco-editor")> | null = null;
@@ -131,6 +132,15 @@ async function start(): Promise<typeof import("monaco-editor")> {
         "**/dist": true,
         "**/.git": true,
       },
+      // Tests, lockfiles and configs fold into the row of the file they
+      // belong to. The diff pane's own rail runs the same table through its
+      // own matcher (`lib/file-nesting.ts`) — the Explorer is the only one of
+      // the two that can be driven by configuration. Collapsed by default:
+      // nesting is for keeping a long list readable, and auto-expanding every
+      // parent puts the rows straight back.
+      "explorer.fileNesting.enabled": true,
+      "explorer.fileNesting.expand": false,
+      "explorer.fileNesting.patterns": FILE_NESTING_PATTERNS,
       // Keep the Explorer focused on source — build trees stay reachable
       // via a terminal, not the tree.
       "files.exclude": {
