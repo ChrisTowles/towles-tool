@@ -13,7 +13,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
 import {
-  AgentButton,
   AgentStatusLine,
   BaseMovedChip,
   BranchLabel,
@@ -77,7 +76,6 @@ export function FolderHeader({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
-  onOpenAgent,
   onOpenJarvis,
 }: {
   scope: "repo" | "folder";
@@ -129,7 +127,6 @@ export function FolderHeader({
   onOpenFiles: () => void;
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: () => void;
-  onOpenAgent: () => void;
   /** Opens the folder's native (Bevy) pane — undefined while
    * `agentboard.jarvisPane` is off. */
   onOpenJarvis?: () => void;
@@ -387,7 +384,7 @@ export function FolderHeader({
             name's line in both layouts (`order-2` while the counts wrap below),
             so the rail's controls stay in one column top to bottom. */}
         <div className="order-2 flex shrink-0 items-center gap-1 pl-1 @[34rem]/row:order-3">
-          {/* files/chat/preview/jarvis are pure actions carrying no state
+          {/* files/preview/jarvis are pure actions carrying no state
               (unlike the diff chips' dirty counts), so they don't earn
               resting-rail pixels on every folder — they fade in on header hover
               or keyboard focus. `w-0 overflow-hidden` and not opacity alone:
@@ -398,7 +395,6 @@ export function FolderHeader({
           {!missing && (
             <span className="pointer-events-none flex w-0 items-center gap-1 overflow-hidden opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:w-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:w-auto group-hover:opacity-100">
               <FilesButton onOpen={onOpenFiles} />
-              <AgentButton onOpen={onOpenAgent} />
               {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
               {onOpenJarvis && <JarvisButton onOpen={onOpenJarvis} />}
             </span>

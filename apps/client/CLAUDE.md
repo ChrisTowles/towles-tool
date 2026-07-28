@@ -163,29 +163,23 @@ but the last with a placed-but-never-started pane.
 `PaneGrid` renders only the **active folder's active window**, so any pane it
 renders conditionally is unmounted the moment you click another folder in the
 rail. That is fine for the diff, files and preview panes — they refetch on
-mount and own nothing that can't be rebuilt — and unacceptable for the two
-kinds that own a process: a terminal (its shell) and a **chat** (`AgentPane`'s
-`claude` plus the conversation). Both are therefore rendered from a flat pool
-of *every* such pane open in *any* window, merely `hidden` when they aren't in
-the active one, so unmount means "really closed" and the unmount effect can
-keep killing the process.
+mount and own nothing that can't be rebuilt — and unacceptable for the kind
+that owns a process: a terminal and its shell. Those are therefore rendered
+from a flat pool of *every* such pane open in *any* window, merely `hidden`
+when they aren't in the active one, so unmount means "really closed" and the
+unmount effect can keep killing the process.
 
-The chat's *state* is pooled too, in `lib/agent-sessions.ts` (module store +
-one `agent://event` listener, keyed by pane id) rather than in `AgentPane`'s
-`useState` — a component that can unmount cannot be the home of a live
-conversation. That store is also what lets the folder rail show a chat row at
-all: status outside the pane is only knowable because it doesn't live inside
-it. **A new pane kind that owns a process or accumulates state must join the
-pool and keep its state outside the component**; adding it to the
-conditionally-rendered list is the bug this rule exists to prevent (chats used
-to die, silently, on every folder switch).
+**A new pane kind that owns a process or accumulates state must join the pool
+and keep its state outside the component** — a component that can unmount
+cannot be the home of a live process or a conversation, and adding it to the
+conditionally-rendered list is the bug this rule exists to prevent.
 
 The **jarvis** pane (`components/jarvis-pane.tsx`) is the near-miss that shows
 where the line actually falls: it owns a Bevy render thread and is still *not*
 pooled, because unmounting it doesn't destroy anything — the host retires the
 renderer and revives it if the pane comes back (dropping a Bevy app mid-session
-ends the process; see `crates-tauri/tt-pane`). A shell's scrollback and a
-conversation have no such safety net, which is what puts them in the pool.
+ends the process; see `crates-tauri/tt-pane`). A shell's scrollback has no such
+safety net, which is what puts it in the pool.
 
 It also breaks the other assumption this file makes about hiding — its body is
 a compositor surface drawn *above* the webview, so `hidden` on an ancestor is

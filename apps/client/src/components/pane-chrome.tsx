@@ -112,14 +112,10 @@ export function PaneChrome({
  * keep the `✦`/`❯` glyphs the rail already uses for sessions rather than
  * borrowing a lucide icon, so a session pane and its rail row still name
  * themselves the same way. */
-export type LensKind = "agent" | "chat" | "shell" | "diff" | "files" | "web" | "jarvis";
+export type LensKind = "agent" | "shell" | "diff" | "files" | "web" | "jarvis";
 
 const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof GitCompare }> = {
   agent: { label: "claude", glyph: "✦" },
-  // Same agent, different channel: `agent` is Claude in a PTY, `chat` is a
-  // Claude session rendered as structured turns. A folder can hold both at
-  // once, so the word is what tells them apart at a glance.
-  chat: { label: "chat", glyph: "✦" },
   shell: { label: "shell", glyph: "❯" },
   diff: { label: "diff", icon: GitCompare },
   files: { label: "files", icon: FilesIcon },
@@ -149,7 +145,7 @@ export function PaneLens({
       title={title}
       className={cn(
         "flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-px font-mono text-[10.5px]",
-        kind === "agent" || kind === "chat" ? "text-violet-500" : "text-muted-foreground",
+        kind === "agent" ? "text-violet-500" : "text-muted-foreground",
       )}
     >
       {lens.glyph ? (

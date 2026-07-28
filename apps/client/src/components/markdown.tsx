@@ -1,24 +1,14 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown, { type Components, type Options } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { monacoLanguageFor } from "@/lib/markdown-code";
 import { loadedMonaco } from "@/lib/monaco";
-import { cn } from "@/lib/utils";
 
 /**
- * Markdown for content that is **not a file in a checkout** — today, an
- * agent's replies in a chat pane.
- *
- * Deliberately *not* the same renderer as the files pane's preview, which
- * resolves relative images and links against the file's directory, renders
- * GitHub alerts, assigns heading anchor ids, and sanitizes raw HTML off disk.
- * All of that is file-scoped by construction: it needs a `dir` and a `path`,
- * and agent output has neither. Forcing chat through it would mean inventing
- * a base path that doesn't exist.
- *
- * What the two genuinely share is the fence highlighter below — one Monaco
- * tokenizer and, importantly, **one cache**. That is why `MarkdownCode` lives
- * here and `file-preview.tsx` imports it, rather than each keeping a copy.
+ * The markdown fence highlighter: one Monaco tokenizer and, importantly, **one
+ * cache**, shared by every renderer that colors code blocks. Today that is the
+ * files pane's preview (`file-preview.tsx`), which owns its own react-markdown
+ * setup — file-scoped resolution of relative images and links, GitHub alerts,
+ * heading anchors, sanitized raw HTML — and imports `MarkdownCode` from here
+ * rather than keeping a second copy of the tokenizer and its cache.
  */
 
 /**
@@ -109,48 +99,4 @@ export function MarkdownCode({
   const source = String(children ?? "").replace(/\n$/, "");
   if (!language) return <code className={className}>{source}</code>;
   return <FencedCode language={language} source={source} className={className} />;
-}
-
-/**
- * An image the preview could not resolve — an unsupported scheme, a path
- * pointing outside the checkout, or plain browser dev where the asset protocol
- * isn't registered.
- *
- * Shown as its alt text rather than a broken-image box: the alt is what the
- * author wrote to describe the picture, so it is both the most informative
- * thing available and the accessible fallback the format already specifies.
- */
-
-/**
- * Render `content` as GFM markdown.
- *
- * `prose` (tailwind-typography) supplies block spacing, list markers and table
- * borders; without it a GFM table renders as unstyled rows and reads worse
- * than the raw pipes it replaced.
- */
-/** Module-level, not built inside `Markdown`: defining components during a
- * render remounts their whole subtree on every state change. Nothing here
- * closes over props, so unlike the files pane's `markdownComponents` factory
- * this can be a plain constant. */
-const CHAT_COMPONENTS: Components = {
-  code: MarkdownCode,
-  // A wide table otherwise widens the pane and pushes the reply off screen;
-  // scrolling belongs to the table, not the transcript.
-  table: ({ children }) => (
-    <div className="max-w-full overflow-x-auto">
-      <table>{children}</table>
-    </div>
-  ),
-};
-
-const CHAT_REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm];
-
-export function Markdown({ content, className }: { content: string; className?: string }) {
-  return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
-      <ReactMarkdown remarkPlugins={CHAT_REMARK_PLUGINS} components={CHAT_COMPONENTS}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
 }

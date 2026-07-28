@@ -11,7 +11,6 @@
  */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
 import {
-  AgentButton,
   AgentStatusLine,
   BaseMovedChip,
   ComparedBaseBadge,
@@ -77,7 +76,6 @@ export function WorkingContext({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
-  onOpenAgent,
   onOpenJarvis,
   onNewSession,
   onNewTask,
@@ -107,7 +105,6 @@ export function WorkingContext({
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
   /** Opens the folder's rendered-agent pane. */
-  onOpenAgent: (dir: string) => void;
   /** Opens the folder's native (Bevy) pane — undefined while
    * `agentboard.jarvisPane` is off, which is what hides the entry point
    * entirely rather than offering one that does nothing. */
@@ -168,7 +165,6 @@ export function WorkingContext({
           {!missing && (
             <span className="flex shrink-0 items-center gap-1.5">
               <FilesButton onOpen={() => onOpenFiles(folder.dir)} labeled />
-              <AgentButton onOpen={() => onOpenAgent(folder.dir)} labeled />
               {folder.hasLaunchConfig && (
                 <PreviewButton onOpen={() => onOpenPreview(folder.dir)} labeled />
               )}

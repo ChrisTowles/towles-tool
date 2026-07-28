@@ -382,7 +382,6 @@ export function windowColor(wins: AgWindow[], windowId: string): string {
 const DIFF_PANE_PREFIX = "~diff:";
 const FILES_PANE_PREFIX = "~files:";
 const PREVIEW_PANE_PREFIX = "~preview:";
-const AGENT_PANE_PREFIX = "~agent:";
 const JARVIS_PANE_PREFIX = "~jarvis:";
 const EXIT_PANE_PREFIX = "~exit:";
 
@@ -445,27 +444,6 @@ export function previewPaneDir(paneId: string): string | null {
   return isPreviewPane(paneId) ? paneId.slice(PREVIEW_PANE_PREFIX.length) : null;
 }
 
-/** The (per-folder) pane id of the folder's rendered-agent pane — a Claude
- * Code session shown as structured UI (tool calls, results, cost) rather than
- * as PTY scrollback.
- *
- * Folder-scoped like the other sentinels, which is also the concurrency rule:
- * one rendered agent per folder, because the id *is* the backend session key
- * (`tt-app`'s `AgentState` map). Two panes sharing a folder would share one
- * `claude` process and interleave their turns. */
-export function agentPaneId(folderDir: string): string {
-  return `${AGENT_PANE_PREFIX}${folderDir}`;
-}
-
-export function isAgentPane(paneId: string): boolean {
-  return paneId.startsWith(AGENT_PANE_PREFIX);
-}
-
-/** The folder dir an agent pane id points at (null otherwise). */
-export function agentPaneDir(paneId: string): string | null {
-  return isAgentPane(paneId) ? paneId.slice(AGENT_PANE_PREFIX.length) : null;
-}
-
 /** The (per-folder) pane id of the folder's native pane — a rectangle of the
  * window handed to `tt-jarvis`'s Bevy renderer as a real compositor surface
  * (`components/native-pane.tsx`), tiled beside the folder's terminals rather
@@ -489,17 +467,13 @@ export function jarvisPaneDir(paneId: string): string | null {
   return isJarvisPane(paneId) ? paneId.slice(JARVIS_PANE_PREFIX.length) : null;
 }
 
-/** The folder dir any sentinel pane id (diff, files, preview, agent, or
- * jarvis) points at — null for session and exit panes. This is the single gate
+/** The folder dir any sentinel pane id (diff, files, preview, or jarvis) points
+ * at — null for session and exit panes. This is the single gate
  * `hydrateWins`/`pruneWins` use to keep a folder-derivable pane across restore,
  * so adding a kind here makes it first-class in persistence automatically. */
 export function folderPaneDir(paneId: string): string | null {
   return (
-    diffPaneDir(paneId) ??
-    filesPaneDir(paneId) ??
-    previewPaneDir(paneId) ??
-    agentPaneDir(paneId) ??
-    jarvisPaneDir(paneId)
+    diffPaneDir(paneId) ?? filesPaneDir(paneId) ?? previewPaneDir(paneId) ?? jarvisPaneDir(paneId)
   );
 }
 

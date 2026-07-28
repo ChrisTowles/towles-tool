@@ -23,7 +23,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { ChatStatus } from "@/lib/agent-sessions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -189,48 +188,6 @@ export function Dot({ session }: { session: SessionData }) {
     />
   );
 }
-
-/** The status dot for a *chat* (rendered-agent) pane, shared by the pane's own
- * header and its rail row so the two can never describe one session
- * differently. Same vocabulary as `Dot`, which sits beside it in the same rail:
- * cyan busy, red error, muted otherwise, and `asking` gets `Dot`'s hollow blue
- * ring for "waiting on you" — same hue *and* the same non-color shape cue, so a
- * PTY agent and a chat blocked on the same thing can't read as two different
- * states. Amber stays reserved for the row-wide `sessionCatchesEye` wash.
- *
- * A chat *does* have a "waiting on you" state, despite the composer being right
- * there: a permission prompt or a question blocks the CLI itself, and typing
- * into the composer does not answer it. */
-export function ChatDot({ status }: { status: ChatStatus }) {
-  return (
-    <span
-      title={CHAT_DOT_TITLE[status]}
-      className={cn("size-2 shrink-0 rounded-full", CHAT_DOT_CLASS[status])}
-    />
-  );
-}
-
-/** Keyed by status rather than nested ternaries so a new `ChatStatus` is a type
- * error here instead of silently falling through to the default arm — and so
- * hue and wording can't end up in two different precedence orders. */
-const CHAT_DOT_TITLE: Record<ChatStatus, string> = {
-  off: "no session started here yet",
-  working: "chat working",
-  asking: "blocked — the agent is waiting on your answer",
-  idle: "chat idle",
-  exited: "chat exited",
-  error: "agent exited with an error",
-};
-
-const CHAT_DOT_CLASS: Record<ChatStatus, string> = {
-  off: "bg-muted-foreground/40",
-  working: "animate-pulse bg-cyan-500",
-  // `Dot`'s waiting treatment exactly: a hollow ring, not a filled pulse.
-  asking: "border-[1.5px] border-blue-500 bg-transparent",
-  idle: "bg-muted-foreground/40",
-  exited: "bg-muted-foreground/40",
-  error: "bg-red-500",
-};
 
 /** A status-colored micro-dot + count, e.g. "●3", for agent rollups (the rail
  * chip and the nav sidebar). Color always derives from `statusColor`, and
@@ -894,7 +851,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
 }
 
 /** One folder-header chip that opens a pane — the shared shell behind the
- * `files`/`chat`/`preview`/`jarvis` buttons below, which differ only in glyph,
+ * `files`/`preview`/`jarvis` buttons below, which differ only in glyph,
  * word and tooltip. `stopPropagation` because every one of these sits inside a
  * clickable folder row that would otherwise also fire.
  *
@@ -956,20 +913,6 @@ export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
       onOpen={onOpen}
       labeled={labeled}
       shortcutTwin="ab-toggle-files"
-    />
-  );
-}
-
-/** Opens the folder's rendered-agent pane — a Claude session in this checkout
- * shown as structured turns rather than PTY scrollback. */
-export function AgentButton({ onOpen, labeled }: PaneOpenButtonProps) {
-  return (
-    <PaneOpenButton
-      glyph={<span aria-hidden="true">✦</span>}
-      label="chat"
-      title="Open a Claude session in this checkout, rendered as structured turns"
-      onOpen={onOpen}
-      labeled={labeled}
     />
   );
 }

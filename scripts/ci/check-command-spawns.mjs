@@ -30,10 +30,6 @@ const ALLOWED_FILES = new Set([
   "crates-tauri/tt-app/src/terminal.rs",
   "crates-tauri/tt-app/src/agentboard.rs",
   "crates-tauri/tt-app/src/lsp.rs",
-  // The `claude` agent behind the chat pane: it streams over stdin/stdout for
-  // the life of the pane, so it has no exit code to wait on here and can't use
-  // tt-exec's run-to-completion paths.
-  "crates/tt-agent/src/session.rs",
   "crates/tt-telemetry/build.rs",
 ]);
 

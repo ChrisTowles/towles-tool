@@ -3,8 +3,8 @@
  * checkout's sessions and panes. This is the file that decides what a repo's
  * subtree *contains* — which folders show, which are demoted to a quiet stub,
  * where the inline new-task form goes, how a window's rows are bracketed —
- * and delegates how each row *looks* to `FolderHeader`, `SessionRow`,
- * `ChatRow` and `ViewPaneRow`.
+ * and delegates how each row *looks* to `FolderHeader`, `SessionRow` and
+ * `ViewPaneRow`.
  */
 import { type ReactElement } from "react";
 import { FolderGit2, FolderPlus } from "lucide-react";
@@ -17,7 +17,6 @@ import {
 } from "@/components/agentboard-bits";
 import { FolderHeader } from "@/components/agentboard-folder-header";
 import {
-  ChatRow,
   ViewPaneRow,
   WindowSpine,
   viewPaneKind,
@@ -34,7 +33,6 @@ import {
 import { hasRepoColor, repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
-  isAgentPane,
   folderRemovableTask,
   isSoloRepo,
   pathScope,
@@ -82,7 +80,6 @@ export function RepoGroup({
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
-  onOpenAgent,
   onOpenJarvis,
   onClosePane,
   quietDirs,
@@ -104,8 +101,8 @@ export function RepoGroup({
    * linked issues (the rail IssueChips). Threaded the same way `prs` is. */
   tasks: TaskItem[];
   selectedSessionId: string | null;
-  /** The focused pane tile (`focusedPaneId`) — what marks a *chat* row active,
-   * since a chat has no session record for `selectedSessionId` to name. */
+  /** The focused pane tile (`focusedPaneId`) — what marks a *view* row active,
+   * since a view pane has no session record for `selectedSessionId` to name. */
   activePaneId: string | null;
   activeFolderDir: string | null;
   collapsed: Record<string, boolean>;
@@ -144,13 +141,11 @@ export function RepoGroup({
   /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
   /** Opens the folder's rendered-agent pane in its focused window. */
-  onOpenAgent: (dir: string) => void;
   /** Opens the folder's native (Bevy) pane in its focused window — undefined
    * while `agentboard.jarvisPane` is off, which hides the entry point rather
    * than offering one that opens nothing. */
   onOpenJarvis?: (dir: string) => void;
-  /** Drops one pane from its window — a chat row's ✕ (which ends the session
-   * behind it, see `AgentPane`) and a view row's ✕ alike. */
+  /** Drops one pane from its window — a view row's ✕. */
   onClosePane: (paneId: string) => void;
   /** Dirs the hide-inactive filter tucks behind a "N quiet" stub (empty/
    * undefined when the filter is off). Quiet folders demote to the stub
@@ -203,17 +198,6 @@ export function RepoGroup({
     </motion.div>
   );
 
-  const chatRow = (folder: FolderData, paneId: string) => (
-    <motion.div key={paneId} {...railRowMotion}>
-      <ChatRow
-        folderDir={folder.dir}
-        active={activePaneId === paneId}
-        onSelect={() => onOpenAgent(folder.dir)}
-        onClose={() => onClosePane(paneId)}
-      />
-    </motion.div>
-  );
-
   // One opener per view-pane kind. A table rather than a ternary chain so the
   // next kind is an entry, not another level of nesting — and so `jarvis`'s
   // absence is expressible: its row can outlive the setting being turned back
@@ -239,17 +223,15 @@ export function RepoGroup({
 
   /**
    * One rail row per pane of a folder's window, whichever kind it is: a PTY
-   * session, the folder's chat, or one of its views (diff, files, preview).
+   * session or one of the folder's views (diff, files, preview).
    *
-   * The rail used to list PTY sessions and nothing else, so a folder read "no
-   * sessions" with a live conversation on screen beside it — and a diff or file
-   * tree you had opened was reachable only by finding it in the pane area. What
-   * is open in a folder is now the rail's answer, not the pane area's alone.
+   * The rail used to list PTY sessions and nothing else, so a diff or file tree
+   * you had opened was reachable only by finding it in the pane area. What is
+   * open in a folder is now the rail's answer, not the pane area's alone.
    */
   const paneRow = (folder: FolderData, paneId: string, byId: Map<string, SessionData>) => {
     const session = byId.get(paneId);
     if (session) return sessionRow(folder, session);
-    if (isAgentPane(paneId)) return chatRow(folder, paneId);
     const kind = viewPaneKind(paneId);
     return kind ? viewRow(folder, paneId, kind) : null;
   };
@@ -268,13 +250,6 @@ export function RepoGroup({
   // worth keeping on screen for an extra frame.
   const sessionRows = (folder: FolderData) => {
     const folderWins = (wins?.windows ?? []).filter((w) => w.folderDir === folder.dir);
-    // A chat is something running in this folder even though it is not a PTY
-    // session, so the "nothing running here" hint has to account for it — the
-    // whole complaint this row work came from was a folder reading "no
-    // sessions" with a live conversation on screen beside it. A diff/files/
-    // preview pane, by contrast, is not something running, so it doesn't
-    // suppress the hint — it just gets its row below it.
-    const chatOpen = folderWins.some((w) => w.panes.some(isAgentPane));
     const byId = new Map(folder.sessions.map((s) => [s.id, s] as const));
     const grouped = new Set(folderWins.flatMap((w) => w.panes));
     const loose = folder.sessions.filter((s) => !grouped.has(s.id));
@@ -288,7 +263,7 @@ export function RepoGroup({
       .filter((g) => g.rows.length > 0);
     return (
       <>
-        {folder.sessions.length === 0 && !chatOpen && (
+        {folder.sessions.length === 0 && (
           <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-[11px] italic text-muted-foreground/60">
             no sessions
             <button
@@ -370,7 +345,6 @@ export function RepoGroup({
           onOpenDiff={() => onOpenDiff(folder.dir)}
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
-          onOpenAgent={() => onOpenAgent(folder.dir)}
           onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
         />
         {taskFormOpen && (
@@ -536,7 +510,6 @@ export function RepoGroup({
                   onOpenDiff={() => onOpenDiff(folder.dir)}
                   onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
-                  onOpenAgent={() => onOpenAgent(folder.dir)}
                   onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
                 />
                 {!fCollapsed && <div className="pb-1">{sessionRows(folder)}</div>}
