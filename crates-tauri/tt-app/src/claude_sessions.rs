@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 
 use tt_claude_sessions::{
-    BarChartDay, CadenceSummary, LedgerTotals, ModelBar, ProjectBar, ResumableSession,
-    SessionBreakdown, SessionDetail, UsageLimits, build_cadence, build_insights, build_ledger_days,
+    BarChartDay, CadenceSummary, LedgerTotals, ModelBar, ProjectBar, SessionBreakdown,
+    SessionDetail, UsageLimits, build_cadence, build_insights, build_ledger_days,
     build_ledger_model_totals, build_ledger_project_totals, build_session_breakdown,
     find_session_path, ledger_totals, parse_transcript_file, read_cached_usage_limits,
     scan_sessions_detailed, search_sessions,
@@ -24,9 +24,6 @@ const SESSION_LIMIT: usize = 500;
 const TOP_SESSIONS: usize = 50;
 /// Max search hits returned.
 const SEARCH_LIMIT: usize = 100;
-/// How far back the chat pane's resume picker looks. Wider than a session you
-/// remember starting, narrow enough that the scan stays quick.
-const RESUME_DAYS: f64 = 30.0;
 
 /// `~/.claude`, honoring `$HOME` so tests/multiple tasks can redirect it.
 fn claude_dir() -> PathBuf {
@@ -272,31 +269,4 @@ pub async fn claude_sessions_search(
     })
     .await
     .map_err(|e| format!("claude sessions search task panicked: {e}"))?
-}
-
-/// Prior Claude Code sessions launched in `dir`, newest first, for the chat
-/// pane's resume picker.
-///
-/// The candidate-set-vs-proof rule this depends on lives with the scan itself,
-/// in [`tt_claude_sessions::ledger::resumable_sessions`] — this end only maps
-/// the folder to its transcript directory.
-///
-/// Deliberately a live scan rather than the Sessions screen's cache — that
-/// cache is keyed by a `days` window this caller doesn't share, and a chat
-/// pane asks this once when the user opens the picker.
-#[tauri::command]
-pub async fn agent_resumable_sessions(dir: String) -> Result<Vec<ResumableSession>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let project_dir = claude_dir()
-            .join("projects")
-            .join(tt_agentboard::watchers::claude_code::encode_project_dir_name(&dir));
-        let now_ms = chrono::Local::now().timestamp_millis();
-        let found =
-            tt_claude_sessions::ledger::resumable_sessions(&project_dir, &dir, RESUME_DAYS, now_ms)
-                .map_err(|e| e.to_string())?;
-        tracing::info!(count = found.len(), "agent.resumable_listed");
-        Ok(found)
-    })
-    .await
-    .map_err(|e| format!("resumable sessions task panicked: {e}"))?
 }

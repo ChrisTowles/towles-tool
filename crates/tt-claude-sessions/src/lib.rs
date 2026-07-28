@@ -48,9 +48,9 @@ pub use breakdown::{SessionBreakdown, TurnBreakdown, build_session_breakdown, fi
 pub use cadence::{CadenceSummary, DayBucket, DayHourCell, build_cadence};
 pub use insights::{Insight, InsightKind, build_insights};
 pub use ledger::{
-    LedgerTotals, ResumableSession, SearchHit, SessionDetail, build_ledger_days,
-    build_ledger_model_totals, build_ledger_project_totals, ledger_totals, normalize_repo_name,
-    resumable_sessions, scan_sessions_detailed, search_sessions,
+    LedgerTotals, SearchHit, SessionDetail, build_ledger_days, build_ledger_model_totals,
+    build_ledger_project_totals, ledger_totals, normalize_repo_name, scan_sessions_detailed,
+    search_sessions,
 };
 pub use parser::calculate_cutoff_ms;
 pub use pricing::{ModelPricing, pricing_for};

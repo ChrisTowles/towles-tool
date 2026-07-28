@@ -44,7 +44,6 @@ import {
   filesPanePathFor,
   folderRemovableTask,
   isAgent,
-  isAgentPane,
   isCacheExpiring,
   jarvisPaneId,
   liveSessions,
@@ -55,7 +54,6 @@ import {
   abSetSessionPurpose,
   prForFolder,
   previewPaneId,
-  agentPaneId,
   sessionLabel,
   sleep,
   taskForFolder,
@@ -93,7 +91,7 @@ import { toast } from "sonner";
 /**
  * Agentboard — the Folder Rail. Left: rollup tally + needs-you strip + the
  * repos → folders (checkouts) → *panes* tree — every PTY session plus whatever
- * else the folder has open (its chat, diff, files, preview), so what is open in
+ * else the folder has open (its diff, files, preview), so what is open in
  * a checkout is answerable from the rail and not just from the pane area. Right: in-app *windows*,
  * scoped to whichever folder is active (clicking a folder header or a
  * session row focuses it) — each a named tiling of that folder's session
@@ -103,13 +101,12 @@ import { toast } from "sonner";
  * colored square on a row is its window's group tag. A session IS a PTY;
  * "agent" (✦) is a badge on a session where Claude is detected running —
  * status is reported, never re-rendered (the real TUI is the PTY). All
- * opened terminals — and chat panes — live in one flat mounted pool (hidden
- * unless in the active folder's active window) so scrollback and a live
- * conversation both survive switching and regrouping; the diff/files/preview
- * panes are rebuilt on mount instead, owning no process. A folder's diff, its file tree, its live preview, and a
- * rendered Claude session (`AgentPane` — structured turns instead of PTY
- * scrollback, `chat` in the lens chip) each open as their own pane in the same
- * tiling (never a modal), so you review while the agents keep working. Layout persists via
+ * opened terminals live in one flat mounted pool (hidden unless in the active
+ * folder's active window) so scrollback survives switching and regrouping; the
+ * diff/files/preview panes are rebuilt on mount instead, owning no process. A
+ * folder's diff, its file tree and its live preview each open as their own pane
+ * in the same tiling (never a modal), so you review while the agents keep
+ * working. Layout persists via
  * debounced `ab_save_windows`. Shortcuts come from the registry in
  * lib/shortcuts.tsx (⌘D new session, ⌘⇧W close session, ⌘⇧G diff pane,
  * ⌘⇧N/⌘⇧P jump to the next/previous session that needs you — `cycleNeedsYou`
@@ -423,21 +420,6 @@ export function AgentboardScreen() {
     addPaneToActive(dir, jarvisPaneId(dir));
     setFocusedPaneId(jarvisPaneId(dir));
   }
-
-  // Same, for a rendered Claude session rooted in this folder — structured
-  // turns beside the folder's terminals.
-  function openAgent(dir: string) {
-    setActiveFolderDir(dir);
-    addPaneToActive(dir, agentPaneId(dir));
-    setFocusedPaneId(agentPaneId(dir));
-  }
-
-  // Every chat pane open in any window — the pane pool keeps these mounted so
-  // switching folders can't kill a conversation (see `PaneGrid`).
-  const chatPanes = useMemo(
-    () => (wins?.windows ?? []).flatMap((w) => w.panes.filter(isAgentPane)),
-    [wins],
-  );
 
   // Claude called the openFile tool → open (or focus) that folder's files
   // pane and focus the file. Routed here rather than inside the pane so the
@@ -1211,7 +1193,6 @@ export function AgentboardScreen() {
                               onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
-                              onOpenAgent={openAgent}
                               // Undefined while `agentboard.jarvisPane` is off:
                               // the proof-of-concept surface has no entry point
                               // at all rather than one that opens a disabled
@@ -1304,7 +1285,6 @@ export function AgentboardScreen() {
                   onOpenDiff={openDiff}
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
-                  onOpenAgent={openAgent}
                   onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
                   onNewTask={newTaskForActiveRepo}
@@ -1321,7 +1301,6 @@ export function AgentboardScreen() {
                   onFocusWindow={actions.focusWindow}
                   onNewWindow={() => void newWindow(activeFolderDir)}
                   onNewSession={() => void newSession(activeFolderDir)}
-                  onNewChat={() => openAgent(activeFolderDir)}
                   onCloseSession={() => {
                     if (selected) void closeSession(selected.sessionId);
                   }}
@@ -1330,7 +1309,6 @@ export function AgentboardScreen() {
 
               <PaneGrid
                 open={open}
-                chatPanes={chatPanes}
                 cwds={cwds}
                 activeWin={activeWin}
                 activeFolderDir={activeFolderDir}

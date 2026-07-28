@@ -17,7 +17,6 @@ tauri = { workspace = true, features = ["devtools"] }
 tauri-plugin-clipboard-manager = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
-tt-agent = { workspace = true }
 tt-agentboard = { workspace = true }
 tt-collect = { workspace = true }
 tt-config = { workspace = true }

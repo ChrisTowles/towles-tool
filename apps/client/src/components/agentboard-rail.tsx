@@ -14,7 +14,6 @@ import { Slider } from "@/components/ui/slider";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { chatTally, useChatSessions } from "@/lib/agent-sessions";
 import {
   agentRollup,
   collapsedLiveColor,
@@ -171,18 +170,7 @@ export function RailIconStrip({
  * threshold) behind the trailing ⚙. Quiet when the board is at rest. */
 export function RollupChip({ state, now }: { state: StatePayload; now: number }) {
   const threshold = state.compactRecommendPercent;
-  const pty = agentRollup(state.repos, now, threshold);
-  // Chats are agents too. The engine only knows about PTY sessions, so a tally
-  // built from its payload alone read "no agents running" with a chat working
-  // in plain sight — the same blind spot that kept chats out of the rail.
-  const chatRecords = useChatSessions();
-  const chats = chatTally(chatRecords.values());
-  const r = {
-    ...pty,
-    total: pty.total + chats.total,
-    busy: pty.busy + chats.busy,
-    error: pty.error + chats.error,
-  };
+  const r = agentRollup(state.repos, now, threshold);
   // Track the slider locally while dragging; commit on release.
   const [draft, setDraft] = useState<number | null>(null);
   const pct = draft ?? threshold;
