@@ -8981,7 +8981,6 @@ dependencies = [
  "console",
  "inquire",
  "predicates",
- "serde",
  "serde_json",
  "tempfile",
  "tracing",
