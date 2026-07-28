@@ -1,17 +1,14 @@
 //! Collector scheduler: fills tt.db while the app is open. Cadence comes from
-//! `settings.collectors`. PRs split into two independent ticks: the
-//! open-PR sweep (`Batch::PrsOpen`) every `prs.refresh_seconds`, since that is what
-//! Board/Cockpit render from, and the recently-merged sweep (`Batch::PrsMerged`) on the
-//! much looser `prs.merged_refresh_minutes` — it only catches a just-merged branch before
-//! its worktree goes, so it needs neither the freshness nor the `gh` calls every tick.
-//! Calendar is gated by `calendar.enabled` because those runs cost tokens. Each batch
+//! `settings.collectors`. PRs split into two independent ticks: the open-PR sweep
+//! (`Batch::PrsOpen`) every `prs.refresh_seconds`, which Board/Cockpit render from, and the
+//! recently-merged sweep (`Batch::PrsMerged`) on the much looser
+//! `prs.merged_refresh_minutes` — it only catches a just-merged branch before its worktree
+//! goes. Calendar is gated by `calendar.enabled` because those runs cost tokens. Each batch
 //! runs in a blocking task on its **own** store connection, so a slow `claude -p` never
 //! holds the UI's store mutex.
 //!
-//! A `prs`, `issues` or `slack:dm` batch can also fire early: the nudge-dir watch in
-//! [`spawn`] reacts to `tt collect nudge …` by diffing each target's file mtime. A `prs`
-//! touch fires both `PrsOpen` and `PrsMerged`, since `gh pr merge` needs the merged sweep
-//! immediately rather than on its own slow tick.
+//! A batch can also fire early: [`spawn`]'s nudge-dir watch diffs each target's file mtime
+//! and acts only on notes naming one of this instance's own PTY sessions ([`note_is_mine`]).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -150,18 +147,35 @@ struct NudgeSeen {
     slack: Option<SystemTime>,
 }
 
-/// Given a debounced "something in the nudge dir changed" wakeup, diff each
-/// target's file mtime against what was last seen and return the batches
-/// whose file actually advanced. File-mtime-only (no store access), so it's
-/// cheap to call on every nudge and easy to unit test with a tempdir. The
-/// filenames come from [`tt_collect::NudgeTarget::file_name`] so this side and
-/// the CLI writer can't drift. `slack_config` is the current Slack config,
-/// carried into a fired [`Batch::SlackDm`] the same way the `slack_tick` arm
-/// builds it; the caller still gates firing on Slack being enabled+configured.
+/// Whether this instance should act on `target`'s nudge note.
+///
+/// Every checkout's app watches the *same* nudge dir — [`tt_config::nudge_dir_path`]
+/// scopes to the main checkout — so a note has to say who it is for or all of
+/// them sweep `gh` for a mutation that happened in one terminal. A note naming
+/// nobody still reaches everyone: that is what a caller outside an app terminal
+/// writes, and dropping it would lose the nudge entirely rather than duplicate it.
+fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str) -> bool) -> bool {
+    match tt_collect::nudge::session_of(dir, target) {
+        Some(session) => mine(&session),
+        None => true,
+    }
+}
+
+/// Given a debounced "something in the nudge dir changed" wakeup, return the batches whose
+/// file advanced *and* was addressed here. Filenames and note format come from
+/// [`tt_collect::nudge`], so this side and the CLI writer can't drift.
+///
+/// `mine` answers "is this one of my PTY sessions?" ([`crate::terminal::TermState::live_ids`]
+/// at the call site); `slack_config` is carried into a fired [`Batch::SlackDm`] as the
+/// `slack_tick` arm does, and the caller still gates on Slack being enabled.
+///
+/// `seen` advances even for a note addressed elsewhere, so another instance's nudge is
+/// skipped once rather than re-read on every later wakeup.
 fn changed_nudge_batches(
     dir: &Path,
     seen: &mut NudgeSeen,
     slack_config: &tt_collect::SlackDmConfig,
+    mine: &dyn Fn(&str) -> bool,
 ) -> Vec<Batch> {
     fn mtime(dir: &Path, target: tt_collect::NudgeTarget) -> Option<SystemTime> {
         std::fs::metadata(dir.join(target.file_name())).and_then(|m| m.modified()).ok()
@@ -169,7 +183,10 @@ fn changed_nudge_batches(
 
     let mut changed = Vec::new();
     let prs_mtime = mtime(dir, tt_collect::NudgeTarget::Prs);
-    if prs_mtime.is_some() && prs_mtime != seen.prs {
+    if prs_mtime.is_some()
+        && prs_mtime != seen.prs
+        && note_is_mine(dir, tt_collect::NudgeTarget::Prs, mine)
+    {
         // A `gh pr`/`gh issue` mutation just happened: refresh both halves of
         // the PR collector so a just-merged PR shows up immediately, not only
         // on the next slow merged-cadence tick.
@@ -178,12 +195,18 @@ fn changed_nudge_batches(
     }
     seen.prs = prs_mtime;
     let issues_mtime = mtime(dir, tt_collect::NudgeTarget::Issues);
-    if issues_mtime.is_some() && issues_mtime != seen.issues {
+    if issues_mtime.is_some()
+        && issues_mtime != seen.issues
+        && note_is_mine(dir, tt_collect::NudgeTarget::Issues, mine)
+    {
         changed.push(Batch::Issues { reuse_ms: tt_collect::FETCH_NOW });
     }
     seen.issues = issues_mtime;
     let slack_mtime = mtime(dir, tt_collect::NudgeTarget::SlackDm);
-    if slack_mtime.is_some() && slack_mtime != seen.slack {
+    if slack_mtime.is_some()
+        && slack_mtime != seen.slack
+        && note_is_mine(dir, tt_collect::NudgeTarget::SlackDm, mine)
+    {
         changed.push(Batch::SlackDm(slack_config.clone()));
     }
     seen.slack = slack_mtime;
@@ -315,7 +338,13 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                     }
                     _ = nudge_notify.notified() => {
                         if let Some(dir) = &nudge_dir {
-                            for batch in changed_nudge_batches(dir, &mut nudge_seen, &slack_config) {
+                            // Read once per wakeup, not once per target: this
+                            // takes the same lock the keystroke path uses.
+                            let live = app.state::<crate::terminal::TermState>().live_ids();
+                            let mine = |session: &str| live.contains(session);
+                            for batch in
+                                changed_nudge_batches(dir, &mut nudge_seen, &slack_config, &mine)
+                            {
                                 let guard = match batch {
                                     Batch::PrsOpen { .. } if collectors.prs.enabled => &guards.prs_open,
                                     Batch::PrsMerged { .. } if collectors.prs.enabled => &guards.prs_merged,
@@ -662,6 +691,81 @@ mod tests {
         }
     }
 
+    /// Ownership predicate for the tests that write bare notes naming nobody,
+    /// where it is never consulted.
+    fn anyone(_: &str) -> bool {
+        true
+    }
+
+    /// Write a nudge note the way `tt task nudge` does, addressed to `session`.
+    fn note(dir: &Path, target: tt_collect::NudgeTarget, session: Option<&str>) {
+        tt_collect::nudge::write(dir, target, session, 1_700_000_000_000).unwrap();
+    }
+
+    #[test]
+    fn a_nudge_from_another_instances_terminal_is_skipped() {
+        // The bug this prevents: every checkout's app watches one nudge dir, so
+        // a `gh pr create` in one task used to make all of them sweep `gh`.
+        let dir = tempfile::tempdir().unwrap();
+        let mut seen = NudgeSeen::default();
+        let slack = test_slack_config();
+        let mine = |s: &str| s == "mine";
+
+        note(dir.path(), tt_collect::NudgeTarget::Prs, Some("theirs"));
+        assert!(
+            changed_nudge_batches(dir.path(), &mut seen, &slack, &mine).is_empty(),
+            "a note addressed to another instance must not fire this one"
+        );
+    }
+
+    #[test]
+    fn a_nudge_from_my_own_terminal_fires() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut seen = NudgeSeen::default();
+        let slack = test_slack_config();
+        let mine = |s: &str| s == "mine";
+
+        note(dir.path(), tt_collect::NudgeTarget::Prs, Some("mine"));
+        assert_eq!(
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &mine)),
+            vec!["prs_open", "prs_merged"]
+        );
+    }
+
+    #[test]
+    fn a_nudge_naming_nobody_still_reaches_every_instance() {
+        // A Claude Code session started outside an app terminal has no
+        // `TT_SESSION_ID` to pass on. Losing its nudge would be worse than
+        // running it in more than one window.
+        let dir = tempfile::tempdir().unwrap();
+        let mut seen = NudgeSeen::default();
+        let slack = test_slack_config();
+        let owns_nothing = |_: &str| false;
+
+        note(dir.path(), tt_collect::NudgeTarget::Issues, None);
+        assert_eq!(
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &owns_nothing)),
+            vec!["issues"]
+        );
+    }
+
+    #[test]
+    fn a_skipped_nudge_is_not_reconsidered_on_the_next_wakeup() {
+        // `seen` has to advance even when the note was for someone else, or
+        // every later wakeup re-reads and re-rejects the same file.
+        let dir = tempfile::tempdir().unwrap();
+        let mut seen = NudgeSeen::default();
+        let slack = test_slack_config();
+        let owns_nothing = |_: &str| false;
+
+        note(dir.path(), tt_collect::NudgeTarget::Prs, Some("theirs"));
+        assert!(changed_nudge_batches(dir.path(), &mut seen, &slack, &owns_nothing).is_empty());
+        assert!(
+            changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty(),
+            "the skipped note is already acknowledged, not pending"
+        );
+    }
+
     /// Nudge-file basenames must match what the CLI writer touches. The CLI
     /// resolves them through `tt_collect::NudgeTarget::file_name`, so pin the
     /// scheduler's filesystem paths to the same source of truth.
@@ -678,18 +782,18 @@ mod tests {
         let mut seen = NudgeSeen::default();
         let slack = test_slack_config();
         assert!(
-            changed_nudge_batches(dir.path(), &mut seen, &slack).is_empty(),
+            changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty(),
             "nothing written yet"
         );
 
         std::fs::write(dir.path().join("prs"), "1").unwrap();
         assert_eq!(
-            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack)),
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone)),
             vec!["prs_open", "prs_merged"],
             "a gh pr/issue mutation refreshes both PR cadences immediately"
         );
         // Already acknowledged: polling again with no further touch is quiet.
-        assert!(changed_nudge_batches(dir.path(), &mut seen, &slack).is_empty());
+        assert!(changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty());
     }
 
     #[test]
@@ -699,13 +803,13 @@ mod tests {
         let slack = test_slack_config();
         std::fs::write(dir.path().join("issues"), "1").unwrap();
         assert_eq!(
-            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack)),
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone)),
             vec!["issues"]
         );
 
         std::fs::write(dir.path().join("prs"), "1").unwrap();
         assert_eq!(
-            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack)),
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone)),
             vec!["prs_open", "prs_merged"],
             "issues was already acknowledged in the prior poll"
         );
@@ -719,14 +823,14 @@ mod tests {
         // The Slack nudge file is `slack` (the `:` is dropped for a plain
         // filename), distinct from the `slack:dm` collector key.
         std::fs::write(dir.path().join("slack"), "1").unwrap();
-        let batches = changed_nudge_batches(dir.path(), &mut seen, &slack);
+        let batches = changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone);
         assert_eq!(batch_names(&batches), vec!["slack"]);
         match &batches[0] {
             Batch::SlackDm(config) => assert_eq!(config.token, "xoxb-test"),
             _ => panic!("expected a SlackDm batch"),
         }
         // Acknowledged: a second poll with no further touch stays quiet.
-        assert!(changed_nudge_batches(dir.path(), &mut seen, &slack).is_empty());
+        assert!(changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty());
     }
 
     #[test]
@@ -736,7 +840,7 @@ mod tests {
         let slack = test_slack_config();
         let path = dir.path().join("prs");
         std::fs::write(&path, "1").unwrap();
-        changed_nudge_batches(dir.path(), &mut seen, &slack);
+        changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone);
 
         // A second `gh pr merge` before the app's next poll re-touches the
         // same file; only the mtime is ever read (content is just a
@@ -745,7 +849,7 @@ mod tests {
         let file = std::fs::File::open(&path).unwrap();
         file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
         assert_eq!(
-            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack)),
+            batch_names(&changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone)),
             vec!["prs_open", "prs_merged"]
         );
     }

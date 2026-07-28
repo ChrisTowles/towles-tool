@@ -188,8 +188,8 @@ follows is a cross-cutting rule that spans multiple files.
 - **An external process can force an eager `prs` or `issues` collect via the
   nudge dir** (`tt_config::nudge_dir_path()`, watched in `scheduler.rs` via
   `tt_agentboard::fs_notify::DirNotifier`, same accelerant pattern as the
-  agentboard journal watch in `lib.rs`). `tt collect nudge prs`/`tt collect
-  nudge issues` (a plain filesystem touch, no store I/O) is the write side —
+  agentboard journal watch in `lib.rs`). `tt task nudge prs`/`tt task nudge
+  issues` (a plain filesystem touch, no store I/O) is the write side —
   the `towles-tool-app` Claude Code plugin's `gh pr`/`gh issue` mutation hook
   is the only current caller. It's a directory *separate* from `data_dir()`
   itself deliberately, so the watch isn't spammed by tt.db's own WAL/SHM
@@ -201,6 +201,13 @@ follows is a cross-cutting rule that spans multiple files.
   construction is `.ok()`-swallowed like every other `DirNotifier` use — a
   failed watch (e.g. inotify limits) just falls back to the normal poll
   cadence, never breaks startup.
+  **The dir is shared by every checkout** (`nudge_dir_path` scopes to the main
+  checkout), so each note names the `TT_SESSION_ID` that wrote it and
+  `note_is_mine` drops the ones belonging to another instance's terminal —
+  otherwise one `gh pr create` makes every open window sweep `gh`. A note
+  naming nobody (a session started outside an app terminal) still fires
+  everywhere, and `NudgeSeen` advances even for a skipped note so it is
+  rejected once rather than re-read on every wakeup.
 
 ## IDE bridge
 

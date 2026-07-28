@@ -31,9 +31,6 @@ pub enum Commands {
         no_open: bool,
     },
 
-    /// Poke a running app instance to refresh a collector immediately
-    Collect(CollectArgs),
-
     /// Worktree tasks: a main checkout (always the default branch) plus
     /// branch-named worktrees under <checkout>/.claude/worktrees/, each with
     /// rendered per-task ports/env so concurrent tasks never collide
@@ -50,7 +47,6 @@ impl Commands {
         match self {
             Commands::Journal(args) => ("journal", args.command.name()),
             Commands::Today { .. } => ("journal", "today"),
-            Commands::Collect(args) => ("collect", args.command.name()),
             Commands::Task(args) => ("task", args.command.name()),
         }
     }
@@ -203,6 +199,12 @@ pub enum TaskCommands {
         #[arg(long, value_name = "DIR")]
         root: Option<PathBuf>,
     },
+
+    /// Ask the app instance that owns this terminal to refresh a collector now
+    /// rather than on its next poll. Called by the `gh-pr-nudge.sh` hook after
+    /// a `gh pr`/`gh issue` mutation; routed by `TT_SESSION_ID`, so a caller
+    /// outside an app terminal nudges every instance
+    Nudge(NudgeArgs),
 }
 
 impl TaskCommands {
@@ -216,31 +218,7 @@ impl TaskCommands {
             TaskCommands::Env { .. } => "env",
             TaskCommands::Ports { .. } => "ports",
             TaskCommands::Clean { .. } => "clean",
-        }
-    }
-}
-
-#[derive(Args)]
-#[command(disable_help_subcommand = true)]
-pub struct CollectArgs {
-    #[command(subcommand)]
-    pub command: CollectCommands,
-}
-
-/// The one collector verb left in the CLI — running them and reporting their
-/// health are the app's job. See CLAUDE.md's `tt-cli` bullet.
-#[derive(Subcommand)]
-pub enum CollectCommands {
-    /// Touch a collector's nudge file so a running app instance in this
-    /// checkout refreshes that data immediately instead of on its next poll
-    Nudge(NudgeArgs),
-}
-
-impl CollectCommands {
-    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
-    fn name(&self) -> &'static str {
-        match self {
-            CollectCommands::Nudge(_) => "nudge",
+            TaskCommands::Nudge(_) => "nudge",
         }
     }
 }
@@ -413,7 +391,7 @@ mod tests {
         (&["tt", "journal", "list"], ("journal", "list")),
         (&["tt", "journal", "search", "needle"], ("journal", "search")),
         (&["tt", "today"], ("journal", "today")),
-        (&["tt", "collect", "nudge", "prs"], ("collect", "nudge")),
+        (&["tt", "task", "nudge", "prs"], ("task", "nudge")),
         (&["tt", "task", "new", "Title", "--repo", "r"], ("task", "new")),
         (&["tt", "task", "ls"], ("task", "ls")),
         (&["tt", "task", "rm", "some-task"], ("task", "rm")),

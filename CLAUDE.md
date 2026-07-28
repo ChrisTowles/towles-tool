@@ -688,20 +688,30 @@ Cargo workspace + npm workspace (`apps/client` only):
 - `crates-cli/tt-cli` — `clap` 4 CLI, binary `tt`. Deliberately small after the
   2026-07-19 trim (usage review showed everything else was dead or app-owned):
   `journal daily-notes|note|meeting|jot|open|list|search` (+ `today` alias),
-  `task init|new|ls|rm|env|ports|clean` (worktrees — see the Worktree tasks
-  section), and `collect nudge`. The MCP server is not a CLI surface — it
-  runs inside the app over loopback HTTP. The removed groups (`gh`, `config`,
-  `doctor`, `install`, `agentboard`) live in git history; don't reintroduce
-  CLI surfaces for app-owned features.
+  `task init|new|ls|rm|env|ports|clean|nudge` (worktrees — see the Worktree
+  tasks section). There is no `collect` group. The MCP server is not a CLI
+  surface — it runs inside the app over loopback HTTP. The removed groups
+  (`gh`, `config`, `doctor`, `install`, `agentboard`, `collect`) live in git
+  history; don't reintroduce CLI surfaces for app-owned features.
 
-  **`collect` is a nudge and nothing else.** The headless runners
-  (`calendar|issues|prs|slack|all`) and `status` were a second implementation
-  of `scheduler.rs`, which already runs every collector on a cadence while the
-  app is open and reports their health through the status bar and Settings —
-  so they had no caller. `nudge` stays because *its* caller can't be the app:
-  `gh-pr-nudge.sh` is a shell hook, and a process boundary is the only way it
-  reaches the scope-aware nudge dir. Don't rename it — that hook discards
-  output and exits 0 when `tt` is missing, so a renamed subcommand fails
+  **`tt task nudge` is the only collector verb left, and it is routed by
+  caller.** The headless runners (`collect calendar|issues|prs|slack|all`) and
+  `collect status` were a second implementation of `scheduler.rs`, which
+  already runs every collector on a cadence while the app is open and reports
+  their health through the status bar and Settings — so they had no caller.
+  The nudge stays because *its* caller can't be the app: `gh-pr-nudge.sh` is a
+  shell hook, and a process boundary is the only way it reaches the nudge dir.
+
+  It writes the caller's `TT_SESSION_ID` into the note (`tt_collect::nudge`
+  owns the format, so writer and reader can't drift) and the scheduler acts
+  only on notes naming one of *its* live PTY sessions — the same routing
+  `preview_show` uses, for the same reason. Without it a `gh pr create` in one
+  task made **every** open checkout sweep `gh`: `nudge_dir_path` scopes to the
+  main checkout, so all instances watch one directory. A note naming nobody
+  still reaches everyone, which is what a session started outside an app
+  terminal writes; losing the nudge would be worse than running it twice.
+  **Renaming this subcommand again means editing the hook in the same commit**
+  — it discards output and exits 0 when `tt` is missing, so a stale name fails
   silently rather than loudly.
 
   **Every invocation emits a `cli.command` span** (`main.rs`'s `dispatch`),
@@ -782,7 +792,7 @@ plugins ship today:
   `tt task init`), and a `PostToolUse` hook
   (`hooks/scripts/gh-pr-nudge.sh`) that nudges a running app instance to
   refresh its PR or issue data immediately after a `gh pr`/`gh issue`
-  mutation via `tt collect nudge prs`/`tt collect nudge issues`, rather than
+  mutation via `tt task nudge prs`/`tt task nudge issues`, rather than
   waiting for the app's normal poll interval — see the "nudge" mechanism note in
   [`crates-tauri/tt-app/CLAUDE.md`](crates-tauri/tt-app/CLAUDE.md). Meant to
   be enabled globally (its MCP tools are useful from any project), so its
@@ -889,7 +899,7 @@ etc.). The points below are repo-specific specializations of that doc.
   the CLI is *for* has narrowed to two things: terminal workflows the user
   runs by hand, and the process boundary a non-Rust caller needs — a Node
   script (`scripts/task-port.mjs` → `task env`/`task ports --probe`) or a
-  shell hook (`gh-pr-nudge.sh` → `collect nudge`). A headless duplicate of
+  shell hook (`gh-pr-nudge.sh` → `task nudge`). A headless duplicate of
   something the app already does on a schedule is neither. Either way, the
   logic lands in a
   Tauri-free `crates/` library with unit tests — the e2e harness is not the

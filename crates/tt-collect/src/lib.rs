@@ -14,7 +14,7 @@
 
 mod gh;
 pub mod issues;
-mod nudge;
+pub mod nudge;
 mod prs;
 mod quiet_hours;
 mod slack;

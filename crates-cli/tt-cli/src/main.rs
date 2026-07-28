@@ -39,7 +39,6 @@ fn dispatch(command: Commands, config_dir: Option<&Path>) -> i32 {
         Commands::Today { no_open } => {
             commands::journal::run(JournalCommands::DailyNotes { no_open }, config_dir)
         }
-        Commands::Collect(args) => commands::collect::run(args.command),
         Commands::Task(args) => commands::task::run(args.command),
     };
 
