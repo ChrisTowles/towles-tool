@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { buildDiffTree, sortToTreeOrder } from "./diff";
+import {
+  buildDiffTree,
+  DEFAULT_DIFF_RAIL_WIDTH,
+  loadDiffRailWidth,
+  MAX_DIFF_RAIL_WIDTH,
+  MIN_DIFF_RAIL_WIDTH,
+  sortToTreeOrder,
+  type DiffTreeNode,
+} from "./diff";
+
+/** The children of the one folder a test built, as name strings. */
+function childNames(node: DiffTreeNode): string[] {
+  return node.children.map((c) => c.name);
+}
 
 describe("buildDiffTree", () => {
   it("groups files under their shared directories", () => {
@@ -33,6 +46,62 @@ describe("buildDiffTree", () => {
     if (a.kind !== "file" || b.kind !== "file") throw new Error("expected files");
     expect([a.index, b.index]).toEqual([0, 1]);
   });
+
+  it("nests a test file under the file it tests", () => {
+    const tree = buildDiffTree(["src/diff.ts", "src/diff.test.ts"]);
+    const src = tree[0];
+    if (src.kind !== "folder") throw new Error("expected folder");
+    expect(childNames(src)).toEqual(["diff.ts"]);
+    expect(childNames(src.children[0])).toEqual(["diff.test.ts"]);
+  });
+
+  it("nests .spec and _test suffixes too, and keeps unrelated files alone", () => {
+    const tree = buildDiffTree(["parser.tsx", "parser.spec.tsx", "server.go", "server_test.go"]);
+    expect(tree.map((n) => n.name)).toEqual(["parser.tsx", "server.go"]);
+    expect(childNames(tree[0])).toEqual(["parser.spec.tsx"]);
+    expect(childNames(tree[1])).toEqual(["server_test.go"]);
+  });
+
+  it("prefers the subject sharing the test's extension", () => {
+    const tree = buildDiffTree(["a.css", "a.ts", "a.test.ts"]);
+    expect(tree.map((n) => n.name)).toEqual(["a.css", "a.ts"]);
+    expect(childNames(tree[0])).toEqual([]);
+    expect(childNames(tree[1])).toEqual(["a.test.ts"]);
+  });
+
+  it("leaves an orphan test at top level when its subject didn't change", () => {
+    const tree = buildDiffTree(["src/diff.test.ts", "src/other.ts"]);
+    const src = tree[0];
+    if (src.kind !== "folder") throw new Error("expected folder");
+    expect(childNames(src)).toEqual(["diff.test.ts", "other.ts"]);
+  });
+
+  it("uses the whole VS Code pattern table, not just tests", () => {
+    const tree = buildDiffTree(["Cargo.toml", "Cargo.lock"]);
+    expect(tree.map((n) => n.name)).toEqual(["Cargo.toml"]);
+    expect(childNames(tree[0])).toEqual(["Cargo.lock"]);
+  });
+
+  it("does not nest across directories", () => {
+    const tree = buildDiffTree(["src/diff.ts", "tests/diff.test.ts"]);
+    expect(tree.map((n) => n.name)).toEqual(["src", "tests"]);
+    expect(childNames(tree[0])).toEqual(["diff.ts"]);
+    expect(childNames(tree[1])).toEqual(["diff.test.ts"]);
+  });
+});
+
+describe("loadDiffRailWidth", () => {
+  it("falls back to the default on missing or junk values", () => {
+    expect(loadDiffRailWidth(null)).toBe(DEFAULT_DIFF_RAIL_WIDTH);
+    expect(loadDiffRailWidth("")).toBe(DEFAULT_DIFF_RAIL_WIDTH);
+    expect(loadDiffRailWidth("wide")).toBe(DEFAULT_DIFF_RAIL_WIDTH);
+  });
+
+  it("clamps a stored width into the rail's bounds", () => {
+    expect(loadDiffRailWidth("10")).toBe(MIN_DIFF_RAIL_WIDTH);
+    expect(loadDiffRailWidth("99999")).toBe(MAX_DIFF_RAIL_WIDTH);
+    expect(loadDiffRailWidth("300.6")).toBe(301);
+  });
 });
 
 describe("sortToTreeOrder", () => {
@@ -60,6 +129,15 @@ describe("sortToTreeOrder", () => {
     expect(sortToTreeOrder(files)).toEqual([
       { path: "src/a.ts", status: "A" },
       { path: "b.ts", status: "M" },
+    ]);
+  });
+
+  it("puts a nested test right after the file it tests", () => {
+    const files = [{ path: "src/diff.test.ts" }, { path: "src/a.ts" }, { path: "src/diff.ts" }];
+    expect(sortToTreeOrder(files).map((f) => f.path)).toEqual([
+      "src/a.ts",
+      "src/diff.ts",
+      "src/diff.test.ts",
     ]);
   });
 

@@ -23,7 +23,16 @@ import {
 } from "@/components/ui/context-menu";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 import { openInExternalEditor } from "@/lib/external-editor";
-import { buildDiffTree, sortToTreeOrder, type DiffTreeNode } from "@/lib/diff";
+import {
+  buildDiffTree,
+  clampDiffRailWidth,
+  DEFAULT_DIFF_RAIL_WIDTH,
+  DIFF_RAIL_WIDTH_KEY,
+  loadDiffRailWidth,
+  MIN_DIFF_RAIL_WIDTH,
+  sortToTreeOrder,
+  type DiffTreeNode,
+} from "@/lib/diff";
 import { ideReadFile, useIdeConnected } from "@/lib/ide";
 import { invoke, isTauri } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -44,16 +53,20 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 /** Compact navigation tree beside the multi-diff: same compact-folders
- * grouping as the Files pane; clicking a file scrolls its diff into view.
+ * grouping as the Files pane, plus test/spec files nested under the file they
+ * test (`buildDiffTree`); clicking a file scrolls its diff into view.
  * Each row carries a "reviewed" checkbox — GitHub-review-style, not git
  * staging — that collapses that file's diff in the Monaco pane so an
  * approved file is out of the way; a folder's checkbox reflects and toggles
- * every file beneath it at once. Memoized: DiffPane re-renders on state
+ * every file beneath it at once. A file's own checkbox covers only itself,
+ * nested tests included or not being a judgement call the reviewer makes per
+ * row. Memoized: DiffPane re-renders on state
  * (refreshing, editingBase, reviews) this rail doesn't care about, and its
  * props are stable references except when `files`/`reviewed` actually change. */
 const DiffTreeRail = memo(function DiffTreeRail({
   dir,
   files,
+  width,
   reviewed,
   dirty,
   conflict,
@@ -65,6 +78,8 @@ const DiffTreeRail = memo(function DiffTreeRail({
    * resolves them against. */
   dir: string;
   files: ChangedFile[];
+  /** Rail width in px — dragged on the divider, owned by DiffPane. */
+  width: number;
   /** Paths the reviewer has checked off. */
   reviewed: ReadonlySet<string>;
   /** Paths with unsaved edits made right in the diff pane — same signal the
@@ -79,6 +94,12 @@ const DiffTreeRail = memo(function DiffTreeRail({
   /** Set (or clear) every path in the list at once — a folder's checkbox. */
   onToggleReviewedMany: (paths: string[], value: boolean) => void;
 }) {
+  // What the user has explicitly closed — folders and nested files alike, so
+  // both default open. The Files pane's Explorer nests *collapsed*
+  // (`explorer.fileNesting.expand: false`) and that's right for browsing a
+  // whole checkout, but this rail lists only what changed: a nested file here
+  // is a file under review, and hiding it behind a disclosure would drop it
+  // out of the reviewer's list.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const tree = useMemo(() => buildDiffTree(files.map((f) => f.path)), [files]);
   const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
@@ -90,8 +111,10 @@ const DiffTreeRail = memo(function DiffTreeRail({
   const leafPathsByFolder = useMemo(() => {
     const map = new Map<string, string[]>();
     const walk = (node: DiffTreeNode): string[] => {
-      if (node.kind === "file") return [node.path];
       const leaves = node.children.flatMap(walk);
+      // A file's nested tests count toward the folder above it, but the file
+      // itself isn't a folder checkbox — no entry for it.
+      if (node.kind === "file") return [node.path, ...leaves];
       map.set(node.path, leaves);
       return leaves;
     };
@@ -169,12 +192,17 @@ const DiffTreeRail = memo(function DiffTreeRail({
       // (so the menu doesn't flicker in and out along a tree), the item is just
       // dead, which reads better than an editor failing to find the path.
       const deleted = file?.status === "D";
+      // The files nested under this one, if any. The disclosure is a *sibling*
+      // button, not a chevron inside the jump button — buttons can't nest
+      // (apps/client/CLAUDE.md).
+      const nested = node.children.length > 0;
+      const expanded = !collapsed.has(node.path);
       return (
         <li key={node.path}>
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
-                style={{ paddingLeft: paddingLeft + 14 }}
+                style={{ paddingLeft }}
                 className="flex w-full items-center gap-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
               >
                 <label
@@ -189,6 +217,29 @@ const DiffTreeRail = memo(function DiffTreeRail({
                     onCheckedChange={() => onToggleReviewed(node.path)}
                   />
                 </label>
+                {nested ? (
+                  <button
+                    type="button"
+                    title={`${expanded ? "hide" : "show"} the ${node.children.length} file(s) nested under this one`}
+                    onClick={() =>
+                      setCollapsed((prev) => {
+                        const next = new Set(prev);
+                        if (expanded) next.add(node.path);
+                        else next.delete(node.path);
+                        return next;
+                      })
+                    }
+                    className="shrink-0"
+                  >
+                    <ChevronRight
+                      className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                    />
+                  </button>
+                ) : (
+                  // Keeps a childless file's name on the same column as a
+                  // folder's (whose chevron lives inside its own button).
+                  <span className="size-3 shrink-0" />
+                )}
                 <button
                   type="button"
                   onClick={() => onJump(node.path)}
@@ -199,6 +250,19 @@ const DiffTreeRail = memo(function DiffTreeRail({
                     {file?.status ?? ""}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                  {/* Only while collapsed, and only ever by the user's own
+                   * hand — but a changed file must never be silently absent
+                   * from a review's list, so say how many are folded away.
+                   * Bare count, no `+`: the added/removed line counts sit
+                   * right beside it and `+1` there means something else. */}
+                  {nested && !expanded && (
+                    <span
+                      title={`${node.children.length} more changed file(s) nested here`}
+                      className="shrink-0 rounded-full border border-border/70 px-1 text-[9px] leading-[1.4] text-muted-foreground"
+                    >
+                      {node.children.length}
+                    </span>
+                  )}
                   {conflict.has(node.path) ? (
                     <span
                       title="Changed on disk while you have unsaved edits — resolve in the banner"
@@ -232,11 +296,16 @@ const DiffTreeRail = memo(function DiffTreeRail({
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
+          {nested && expanded && <ul>{renderNodes(node.children, depth + 1)}</ul>}
         </li>
       );
     });
 
-  return <ul className="w-56 shrink-0 overflow-y-auto border-r pr-1">{renderNodes(tree, 0)}</ul>;
+  return (
+    <ul style={{ width }} className="shrink-0 overflow-y-auto border-r pr-1">
+      {renderNodes(tree, 0)}
+    </ul>
+  );
 });
 
 /** A state setter for a `Set<string>` → a `(path, on)` toggle that only
@@ -384,6 +453,44 @@ export function DiffPane({
   const [conflict, setConflict] = useState<Set<string>>(() => new Set());
   const handleDirtyChange = useMemo(() => flipPathIn(setDirty), []);
   const handleConflictChange = useMemo(() => flipPathIn(setConflict), []);
+
+  // File-rail width, dragged on the divider. One remembered width for every
+  // diff pane (not per folder): the thing being sized is how much path a
+  // reviewer wants to read, which doesn't change per checkout.
+  const [railWidth, setRailWidth] = useState(() =>
+    loadDiffRailWidth(localStorage.getItem(DIFF_RAIL_WIDTH_KEY)),
+  );
+  const splitRef = useRef<HTMLDivElement>(null);
+  const commitRailWidth = (px: number) => {
+    setRailWidth(px);
+    localStorage.setItem(DIFF_RAIL_WIDTH_KEY, String(px));
+    uiAction("diff.rail_resize", "agentboard", String(px));
+  };
+
+  function startRailDrag(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = railWidth;
+    // A pane narrower than the stored maximum still has to show a diff, so the
+    // ceiling is measured now rather than taken from the constant.
+    const available = splitRef.current?.clientWidth ?? 0;
+    const max = available > 0 ? Math.max(MIN_DIFF_RAIL_WIDTH, available - 240) : Infinity;
+    let width = startWidth;
+    const move = (ev: PointerEvent) => {
+      width = Math.min(max, clampDiffRailWidth(startWidth + ev.clientX - startX));
+      setRailWidth(width);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      commitRailWidth(width);
+    };
+    // On the window, like the pane-column divider (`use-column-drag`): the
+    // pointer leaves this 4px handle immediately, and only the window still
+    // hears it.
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
 
   const fetchDiff = useCallback(async () => {
     if (!dir) return;
@@ -563,7 +670,7 @@ export function DiffPane({
           </>
         }
       />
-      <div className="relative flex min-h-0 flex-1 p-2">
+      <div ref={splitRef} className="relative flex min-h-0 flex-1 p-2">
         {files == null ? (
           <p className="p-2 text-sm text-muted-foreground">Loading…</p>
         ) : files.length === 0 ? (
@@ -573,12 +680,22 @@ export function DiffPane({
             <DiffTreeRail
               dir={dir!}
               files={files}
+              width={railWidth}
               reviewed={reviewed}
               dirty={dirty}
               conflict={conflict}
               onJump={jumpTo}
               onToggleReviewed={toggleReviewed}
               onToggleReviewedMany={toggleReviewedMany}
+            />
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="resize the file list"
+              title="Drag to resize the file list — double-click to reset"
+              onPointerDown={startRailDrag}
+              onDoubleClick={() => commitRailWidth(DEFAULT_DIFF_RAIL_WIDTH)}
+              className="-mx-px w-1 shrink-0 cursor-col-resize rounded-full transition-colors hover:bg-violet-500/40 active:bg-violet-500/60"
             />
             <div className="min-w-0 flex-1">
               <MonacoMultiDiff
