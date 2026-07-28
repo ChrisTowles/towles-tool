@@ -1,0 +1,3 @@
+# `cargo xtask …` — dev tasks living in the workspace's xtask crate.
+[alias]
+xtask = "run --quiet --package xtask --"

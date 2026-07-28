@@ -112,6 +112,14 @@ jobs:
       - name: test
         run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
 
+      # Comment-volume linter (xtask/src/main.rs): warnings list oversized
+      # comment blocks and comment-heavy files in the log; errors fail the
+      # job. Thresholds are consts in the tool; suppress a deliberate essay
+      # with a `verbose-ok: <why>` line inside the block. See
+      # .claude/rules/rust-comments.md.
+      - name: comment lint
+        run: cargo xtask comment-lint
+
   rust-vt:
     name: Rust tt-vt (zig + ghostty)
     needs: changes

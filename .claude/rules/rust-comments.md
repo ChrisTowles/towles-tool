@@ -30,11 +30,24 @@ be understood, rename or extract it instead.
 
 Rationale: this matches the Rust API Guidelines and keeps diffs review-dense.
 
-Only `unsafe` is machine-checked. `[workspace.lints.clippy]` in the root
-`Cargo.toml` denies `missing_safety_doc` and `undocumented_unsafe_blocks`
-(inherited via `[lints] workspace = true` — a new crate needs that stanza or it
-opts itself out silently), because an unsafe block's soundness argument exists
-nowhere but a comment.
+Two things are machine-checked:
+
+- **`unsafe` docs.** `[workspace.lints.clippy]` in the root `Cargo.toml` denies
+  `missing_safety_doc` and `undocumented_unsafe_blocks` (inherited via
+  `[lints] workspace = true` — a new crate needs that stanza or it opts itself
+  out silently), because an unsafe block's soundness argument exists nowhere
+  but a comment.
+- **Comment volume.** `cargo xtask comment-lint` (a step in the normal `rust`
+  CI job; the tool is `xtask/src/main.rs`, tree-sitter over `crates*/`) flags
+  two things per file, each with a warning and an error tier: an oversized
+  contiguous comment *block* (30+ lines warns, 60+ errors), and a
+  *comment-heavy file* — high comment mass **and** high comment-to-code ratio
+  together (150+ lines at 50%+ warns, 300+ at 100%+ errors; both at once so
+  big well-commented files and tiny doc-headed `lib.rs` stubs don't misfire).
+  Warnings are the standing hit list of essays worth trimming; errors fail
+  CI. Thresholds are consts in the tool — tighten them as cleanups land.
+  Suppressing a deliberate essay is review-visible: a `verbose-ok: <why>`
+  line inside the block.
 
 **Don't reach for a doc lint to enforce the rest.** `missing_docs`,
 `missing_errors_doc` and `missing_panics_doc` were each tried and dropped: a
