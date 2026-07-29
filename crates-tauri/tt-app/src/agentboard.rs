@@ -49,6 +49,7 @@ pub struct Ab {
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
+    phases: &crate::task::TaskPhases,
     since: &mut tt_agentboard::bridge::NeedsSince,
     now: i64,
 ) {
@@ -56,6 +57,11 @@ pub fn stamp_pty_state(
         terms.emit_state();
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
+            // The one thing only this process can know (see `TaskPhases`):
+            // whether a create or removal is running on this row right now.
+            // Everything else about the row's state is derivable from `record`
+            // and `dir_missing`, which the engine already set.
+            folder.phase = phases.get(&folder.dir);
             let mut has_port_drift = false;
             for session in &mut folder.sessions {
                 session.live = live.contains(&session.id);
@@ -141,6 +147,7 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
     stamp_pty_state(
         &mut payload,
         &app.state::<crate::terminal::TermState>(),
+        &app.state::<crate::task::TaskPhases>(),
         &mut ab.needs_since.lock().unwrap(),
         now_ms(),
     );
@@ -220,6 +227,7 @@ pub fn ab_mark_seen(state: State<Ab>, app: AppHandle, name: String) {
         stamp_pty_state(
             &mut payload,
             &app.state::<crate::terminal::TermState>(),
+            &app.state::<crate::task::TaskPhases>(),
             &mut state.needs_since.lock().unwrap(),
             now_ms(),
         );

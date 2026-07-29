@@ -31,6 +31,8 @@ function folder(overrides: Partial<FolderData>): FolderData {
   return {
     name: "proj",
     dir: "/home/me/code/p/proj",
+    repoRoot: "/home/me/code/p/proj",
+    record: { origin: "checkout" },
     dirMissing: false,
     branch: "main",
     isWorktree: false,

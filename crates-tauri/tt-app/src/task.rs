@@ -6,36 +6,75 @@
 use base64::Engine as _;
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
+use tt_agentboard::types::RowPhase;
 use tt_tasks::guards::RmBlocked;
 use tt_tasks::ops::{self, CreateOpts, RemoveOpts, RemovePhase};
 use tt_tasks::pasted::{self, PastedImage};
 use tt_tasks::suggest::Suggested;
 
-/// Emitted for every [`RemovePhase`] a task deletion passes through — the
-/// Agentboard rail listens for this to show a live status line on the
-/// dimmed row instead of a static "deleting…" for however long teardown or
-/// `git worktree remove` takes. `dir` keys the row the same way the rail's
-/// own React state already does (see `agentboard-rail.tsx`'s `folder.dir`).
-const DELETE_PROGRESS_EVENT: &str = "task://delete_progress";
+/// Worktree operations this process is running right now, keyed by directory.
+///
+/// The whole of [`tt_agentboard::types::RowPhase`]. Everything else the rail
+/// shows about a row's state is a fact anyone can see — the checkout is there
+/// or it isn't — and is derived from `record`/`dir_missing` rather than stored.
+/// An in-flight create or removal is not: from outside, a task
+/// mid-`worktree add` and one whose create crashed an hour ago look identical.
+/// Only the process running the operation can tell them apart, so it says so
+/// here, and [`crate::agentboard::stamp_pty_state`] folds it onto the payload
+/// on the way out — the same seam, and the same reason, as `live` and
+/// `shellKind`.
+///
+/// Deliberately **not** persisted: an entry means "a call is on a stack in this
+/// process". A crash ends the operation and the entry with it, and the row
+/// correctly falls back to reading as detached — the honest answer, and one the
+/// frontend's old `pendingTasks` array could not give because it forgot the row
+/// existed at all.
+#[derive(Default)]
+pub struct TaskPhases(std::sync::Mutex<std::collections::HashMap<String, RowPhase>>);
 
-#[derive(Serialize, Clone)]
-struct DeleteProgressPayload<'a> {
-    dir: &'a str,
-    label: &'a str,
+impl TaskPhases {
+    /// Mark `dir` as being created, with the step now running.
+    pub fn creating(&self, dir: &str, label: &str) {
+        self.set(dir, RowPhase::Creating { label: label.to_string() });
+    }
+
+    /// Mark `dir` as being removed, with the step now running.
+    pub fn removing(&self, dir: &str, label: &str) {
+        self.set(dir, RowPhase::Removing { label: label.to_string() });
+    }
+
+    fn set(&self, dir: &str, phase: RowPhase) {
+        self.0.lock().unwrap().insert(dir.to_string(), phase);
+    }
+
+    /// The operation finished — however it finished. Must run on every exit
+    /// path, including the failures: a row stuck reporting `creating` forever
+    /// is worse than one that admits it is detached.
+    pub fn clear(&self, dir: &str) {
+        self.0.lock().unwrap().remove(dir);
+    }
+
+    /// The phase for `dir`, if an operation is running on it.
+    pub fn get(&self, dir: &str) -> Option<RowPhase> {
+        self.0.lock().unwrap().get(dir).cloned()
+    }
 }
 
-/// Emitted for every [`ops::CreatePhase`] a task creation passes through —
-/// the mirror of [`DELETE_PROGRESS_EVENT`]. Keyed by `root` + `branch`, not
-/// by dir: a create runs before there is a directory to key on.
-const CREATE_PROGRESS_EVENT: &str = "task://create_progress";
-
-#[derive(Serialize, Clone)]
-struct CreateProgressPayload<'a> {
-    root: &'a str,
-    branch: &'a str,
-    label: &'a str,
+/// Record a phase change and push a fresh snapshot out.
+///
+/// The nudge is the point: the rail repaints on the emitter's own cadence,
+/// which is far coarser than the steps of a create. Every phase write goes
+/// through here so a step is on screen when it starts, not up to a poll later
+/// — and so the row's label can't be the one thing about it that lags.
+///
+/// This replaced a pair of `task://{create,delete}_progress` events the
+/// frontend held in maps of its own. The label belongs *on* the row, and the
+/// row is already crossing this boundary every emit.
+fn set_phase(app: &tauri::AppHandle, write: impl FnOnce(&TaskPhases)) {
+    write(&app.state::<TaskPhases>());
+    app.state::<crate::agentboard::Ab>().emit.notify_one();
 }
 
 /// Fire-and-forget `git fetch` across every tracked repo (deduped, see
@@ -81,6 +120,10 @@ pub fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> 
 #[serde(rename_all = "camelCase")]
 pub struct BranchCheck {
     pub name: Option<String>,
+    /// The worktree's future path — see [`ops::BranchCheck::dir`]. The form
+    /// binds it onto the task row at submit so the rail row exists before any
+    /// git work starts.
+    pub dir: Option<String>,
     pub taken: bool,
     pub branch_exists: bool,
     pub error: Option<String>,
@@ -97,6 +140,7 @@ pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, St
     let check = ops::check_branch(&sr, branch.trim());
     Ok(BranchCheck {
         name: check.name,
+        dir: check.dir,
         taken: check.taken,
         branch_exists: check.branch_exists,
         error: check.error,
@@ -157,19 +201,24 @@ pub async fn task_suggest(
 /// aren't sequential: `frontend::createTask` in `agentboard.tsx` is the one
 /// call site. Still off the main thread — `git fetch`/`worktree add` are real
 /// subprocess work even without the install.
+///
+/// `dir` is where the worktree is *going* — `task_check_branch` derived it, and
+/// the caller has already bound it onto the task row, so a rail row for this
+/// task exists before this command is even called. All this adds is the live
+/// phase label ([`TaskPhases`]), so the row that is already on screen says what
+/// step is running rather than sitting there blank.
 #[tauri::command]
 pub async fn task_create(
     app: tauri::AppHandle,
     root: String,
     branch: String,
     base: String,
+    dir: String,
 ) -> Result<TaskCreated, String> {
     let branch = branch.trim().to_string();
     if branch.is_empty() {
         return Err("a task needs a branch — tasks are named after their branch".to_string());
     }
-    // `opts` takes both below; the progress event needs them too.
-    let (event_root, event_branch) = (root.clone(), branch.clone());
     let opts = CreateOpts {
         root: Some(PathBuf::from(root)),
         branch,
@@ -183,18 +232,15 @@ pub async fn task_create(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
+    // Claimed before the first step runs, so there is no window where the row
+    // is on the rail with nothing to say for itself.
+    set_phase(&app, |p| p.creating(&dir, "starting"));
     let progress_app = app.clone();
+    let event_dir = dir.clone();
     let created = tauri::async_runtime::spawn_blocking(move || {
         let mut phase_start = std::time::Instant::now();
         ops::create_task(&opts, now_ms, &mut |phase| {
-            let _ = progress_app.emit(
-                CREATE_PROGRESS_EVENT,
-                CreateProgressPayload {
-                    root: &event_root,
-                    branch: &event_branch,
-                    label: phase.label(),
-                },
-            );
+            set_phase(&progress_app, |p| p.creating(&event_dir, phase.label()));
             // `prev_ms` times the *previous* step — a step's duration isn't
             // known until the next begins. So the first record measures root
             // discovery, and the last step's duration comes from differencing
@@ -208,9 +254,13 @@ pub async fn task_create(
             phase_start = std::time::Instant::now();
         })
     })
-    .await
-    .map_err(|e| format!("worktree task failed: {e}"))?
-    .map_err(|e| e.to_string())?;
+    .await;
+    // Released on every path, including both failures: a row that keeps
+    // reporting `creating` after the call died would never fall back to the
+    // `Detached` state that tells the user to retry or delete it.
+    set_phase(&app, |p| p.clear(&dir));
+    let created =
+        created.map_err(|e| format!("worktree task failed: {e}"))?.map_err(|e| e.to_string())?;
     tracing::info!(
         name = %created.name,
         branch = %created.branch,
@@ -540,8 +590,12 @@ pub fn delete_task_blocking(
         on_missing: tt_agentboard::task_removal::MissingDir::TearDownBindings,
     };
 
-    let outcome = tt_agentboard::task_removal::remove_task_and_bindings(removal, &mut hooks)
-        .map_err(|e| e.to_string())?;
+    let outcome = tt_agentboard::task_removal::remove_task_and_bindings(removal, &mut hooks);
+    // Released however the removal ended. A *refusal* is the case that matters:
+    // the row is still there with its worktree intact, so it must go back to
+    // reading as an ordinary row rather than staying stuck on `removing`.
+    set_phase(app, |p| p.clear(dir));
+    let outcome = outcome.map_err(|e| e.to_string())?;
 
     match outcome {
         tt_agentboard::task_removal::Outcome::Removed { messages, .. } => {
@@ -592,10 +646,10 @@ struct AppRemovalHooks<'a> {
 
 impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
     fn on_phase(&mut self, phase: RemovePhase) {
-        let _ = self.app.emit(
-            DELETE_PROGRESS_EVENT,
-            DeleteProgressPayload { dir: self.dir, label: phase.label() },
-        );
+        // The row stays on the rail for the whole removal — its record is still
+        // there until the task is closed at the very end — so it reports each
+        // step as it runs instead of disappearing the moment the directory does.
+        set_phase(self.app, |p| p.removing(self.dir, phase.label()));
 
         // `StoppingSessions` doubles as the removal's real go/no-go moment —
         // see `RemovalHooks::on_phase`'s doc — so the PTY kill stays anchored
@@ -621,6 +675,10 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         let mut notes = Vec::new();
         let ab = self.app.state::<crate::agentboard::Ab>();
         let mut engine = ab.engine.lock().unwrap();
+        // Resolved before anything is dropped, while the owner's cached
+        // worktree list still names this dir — that staleness is exactly what
+        // makes the lookup work, and exactly what the invalidate below fixes.
+        let owner = engine.find_worktree_owner(self.dir);
         let closed_ids = engine.close_folder(self.dir);
         if !closed_ids.is_empty() {
             notes.push(format!(
@@ -634,9 +692,22 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         // that untrack a no-op, so it reports nothing and there is no double
         // note.
         engine.remove_repo(self.dir);
-        // Nothing else keyed by the dead directory may outlive it in memory —
-        // see `Engine::forget_checkout`.
-        engine.forget_checkout(self.dir);
+        // The row itself is the task record's business and outlives the
+        // directory by design — all that has to go here is the cached git info
+        // for a path that no longer answers. See `Engine::drop_git_cache`.
+        engine.drop_git_cache(self.dir);
+        // …and the *owner's* entry, whose `linked_worktree_dirs` still names
+        // the directory that just left disk. `ops::remove_task` already ran
+        // `git worktree remove` + `worktree prune` in that checkout, so the
+        // registration is gone on disk — but the cached copy survives until
+        // GIT_CACHE_TTL_MS (60s) lets a recompute revalidate the structural
+        // key. For that whole minute the rail is working from a worktree list
+        // naming a path with nothing at it, which is what
+        // `Engine::unrecorded_worktrees` has to defend against. Invalidating
+        // here closes the window on the next tick instead of a minute later.
+        if let Some(owner) = owner {
+            engine.invalidate_git(&owner);
+        }
         notes
     }
 }

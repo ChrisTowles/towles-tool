@@ -53,17 +53,51 @@ impl StoreState {
         StoreState { store: Arc::new(Mutex::new(store)) }
     }
 
-    /// Worktree dirs a live board row is bound to — the Agentboard rail's
-    /// record of which worktrees the user actually asked for (see
-    /// `tt_store::Store::bound_worktree_dirs`).
+    /// The Agentboard rail's row list — every task row with a worktree
+    /// binding, both kinds (see `tt_store::Store::rail_worktrees`).
     ///
     /// `None` means the store could not answer (never opened, query failed),
-    /// which is *not* the same as "nothing is bound": the caller keeps the
-    /// previous set rather than hiding every discovered worktree at once.
-    pub fn bound_worktree_dirs(&self) -> Option<std::collections::HashSet<String>> {
+    /// which is *not* the same as "there are no rows": the caller keeps the
+    /// previous list rather than emptying the rail on one bad read.
+    pub fn rail_worktrees(&self) -> Option<Vec<tt_store::RailWorktree>> {
         let guard = self.store.lock().unwrap();
-        let dirs = guard.as_ref()?.bound_worktree_dirs().ok()?;
-        Some(dirs.into_iter().collect())
+        guard.as_ref()?.rail_worktrees().ok()
+    }
+
+    /// Write down the git worktrees the scan found that nothing had recorded,
+    /// and forget the detected rows whose directories are gone — the rail's
+    /// reconcile step.
+    ///
+    /// Both halves are diff-driven by the engine
+    /// (`Engine::unrecorded_worktrees` / `Engine::vanished_detected_records`),
+    /// so in the steady state this is called with two empty lists and touches
+    /// the database not at all. That matters: this runs on the 2s scan tick
+    /// against a file three other processes have open.
+    pub fn reconcile_detected_worktrees(
+        &self,
+        found: &[tt_agentboard::UnrecordedWorktree],
+        vanished: &[String],
+        now_ms: i64,
+    ) {
+        if found.is_empty() && vanished.is_empty() {
+            return;
+        }
+        let guard = self.store.lock().unwrap();
+        let Some(store) = guard.as_ref() else {
+            return;
+        };
+        for wt in found {
+            if let Err(e) =
+                store.record_detected_worktree(&wt.repo_root, &wt.dir, wt.branch.as_deref(), now_ms)
+            {
+                tracing::warn!(dir = %wt.dir, error = %e, "store: failed to record detected worktree");
+            }
+        }
+        for dir in vanished {
+            if let Err(e) = store.forget_detected_worktree(dir) {
+                tracing::warn!(dir = %dir, error = %e, "store: failed to forget detected worktree");
+            }
+        }
     }
 
     /// Reconcile the tracked-repo identity cache to exactly `repos` — see
@@ -234,6 +268,26 @@ pub fn close_task_row(
 ) -> Result<(), String> {
     let state = app.state::<StoreState>();
     let now = now_ms();
+    // A `detected` row is the rail's own bookkeeping for a worktree nobody
+    // claimed — there is no work to record an outcome for, so removing that
+    // worktree removes the row rather than leaving a closed card behind. Only
+    // the user's own tasks survive as a record of how they ended.
+    let detected = with_store(&state, |store| {
+        Ok(store
+            .get_task(id)
+            .ok()
+            .flatten()
+            .is_some_and(|task| task.kind == tt_store::TaskKind::Detected))
+    })
+    .unwrap_or(false);
+    if detected {
+        with_store(&state, |store| {
+            store.delete_task(id).map_err(|e| format!("delete_task failed: {e}"))
+        })?;
+        tracing::info!(task_id = id, "task.detected_row_dropped");
+        emit_snapshot(app, &state);
+        return Ok(());
+    }
     with_store(&state, |store| {
         store.close_task(id, outcome, now).map_err(|e| format!("close_task failed: {e}"))
     })?;
@@ -243,6 +297,29 @@ pub fn close_task_row(
 }
 
 // Tauri commands
+
+/// Adopt a detected worktree — the "no task" rail row's action. Promotes that
+/// row's `tasks` entry from `detected` to `task`, so it becomes the user's own
+/// work and starts appearing on the Board.
+///
+/// A kind change on the existing row, never a new one: the id, the links and
+/// the `created_at` that fixes the row's place in the rail all survive, so
+/// adopting doesn't move anything on screen.
+#[tauri::command]
+pub fn task_adopt_worktree(app: AppHandle, id: i64) -> Result<(), String> {
+    let state = app.state::<StoreState>();
+    with_store(&state, |store| {
+        store
+            .adopt_detected_worktree(id)
+            .map_err(|e| format!("adopt_detected_worktree failed: {e}"))
+    })?;
+    tracing::info!(task_id = id, "task.adopted");
+    emit_snapshot(&app, &state);
+    // The rail row's own kind changed, so nudge the agentboard emitter too —
+    // the store snapshot alone wouldn't repaint it.
+    app.state::<crate::agentboard::Ab>().emit.notify_one();
+    Ok(())
+}
 
 /// Pull the current snapshot (initial mount).
 #[tauri::command]

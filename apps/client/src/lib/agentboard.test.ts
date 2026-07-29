@@ -518,10 +518,20 @@ describe("folderLanded", () => {
 });
 
 describe("folderRemovableTask", () => {
+  const taskRow = { origin: "task", task: { id: 1, status: "doing" } } as const;
+
   it("is true only for a worktree that still exists on disk", () => {
     expect(folderRemovableTask(folder({ isWorktree: true }))).toBe(true);
     expect(folderRemovableTask(folder({}))).toBe(false); // main checkout
     expect(folderRemovableTask(folder({ isWorktree: true, dirMissing: true }))).toBe(false); // ghost
+  });
+
+  it("offers deletion for a task row whose worktree is already gone", () => {
+    // The detached case: the record is the thing left to clean up, and
+    // `task_delete` is what clears it. Refusing here would strand the row.
+    expect(
+      folderRemovableTask(folder({ record: taskRow, dirMissing: true, isWorktree: false })),
+    ).toBe(true);
   });
 });
 
@@ -1151,6 +1161,8 @@ function folder(overrides: Partial<FolderData>): FolderData {
   return {
     name: "proj",
     dir: "/home/me/code/p/proj",
+    repoRoot: "/home/me/code/p/proj",
+    record: { origin: "checkout" },
     dirMissing: false,
     branch: "main",
     isWorktree: false,

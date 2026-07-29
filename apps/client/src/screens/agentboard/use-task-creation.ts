@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type {
+  BranchCheck,
   NewTaskRepo,
   NewTaskSubmit,
-  PendingTask,
   TaskCreated,
 } from "@/components/inline-new-task";
 import {
@@ -16,6 +16,7 @@ import {
   type StatePayload,
 } from "@/lib/agentboard";
 import { storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
+import { NotInTauri } from "@/lib/errors";
 import { TaskCreatedSchema } from "@/lib/schemas/task";
 import { invoke } from "@/lib/tauri";
 import { createTaskForSubmit } from "./helpers";
@@ -29,15 +30,9 @@ export type TaskCreation = {
    * a new one — the pre-filled goal and the existing task id to bind instead of
    * minting a new board row. */
   reopenTasks: Map<string, { taskId: number; goal: string }>;
-  /** `task_create` calls fired from an inline form and still running (or
-   * failed) — rendered as a PendingTaskRow until they resolve. */
-  pendingTasks: PendingTask[];
-  /** Record a `task://create_progress` event against its pending row. Keyed
-   * by root+branch, not dir: the task has no directory yet while these fire. */
-  setCreatePhase: (root: string, branch: string, label: string) => void;
-  /** Checkouts whose setup step is running → when it started. Separate from
-   * `pendingTasks`: by then the worktree exists and the rail renders it as a
-   * real folder, so the folder header carries this instead. */
+  /** Checkouts whose setup step is running → when it started. The install
+   * runs after the pane is already open (see `runSetupInBackground`), so this
+   * badges an ordinary folder row rather than describing a row's existence. */
   settingUpDirs: Map<string, number>;
   /** Open/close a repo's form — clicking the affordance again closes it. */
   toggleTaskForm: (repo: NewTaskRepo) => void;
@@ -50,8 +45,6 @@ export type TaskCreation = {
     repo: NewTaskRepo,
     input: NewTaskSubmit & { taskId?: number; reopen?: boolean },
   ) => Promise<void>;
-  retryPendingTask: (id: string) => void;
-  dismissPendingTask: (id: string) => void;
 };
 
 /**
@@ -60,11 +53,29 @@ export type TaskCreation = {
  *
  * The board task (#339) is the unit of work and is created *first*, before any
  * worktree exists — the worktree is an attribute of the task, not the other way
- * around, and binding the repo at submit time is what keeps every task out of
- * the Board's "No repo" lane. The `task_create` call itself runs in the
- * background, tracked as a PendingTaskRow rather than a blocking modal, so the
- * user can keep working anywhere else while the worktree resolves.
+ * around. The binding written at submit covers both jobs: the repo half keeps
+ * the task out of the Board's "No repo" lane, and the *directory* half is what
+ * puts its row on the rail, since the rail's rows are the task records with a
+ * binding rather than whatever `git worktree list` reports.
+ *
+ * So there is no in-flight bookkeeping here and no second row component. The
+ * row is real from the moment the form is submitted; `task_create` only adds
+ * the live phase label to a row already on screen, and a create that fails
+ * leaves that row reading `detached`, where its retry and delete live.
  */
+/**
+ * Where the worktree for `branch` will be. The inline form already knows (its
+ * branch preflight returns it), so this only runs for callers that don't — the
+ * MCP `task_start` tool, which picks every field itself. Called from
+ * `createTask` rather than duplicated per caller, since binding the dir
+ * *before* the create is what puts the row on the rail, and a caller that
+ * forgot would silently go back to the row appearing a poll late.
+ */
+async function resolveWorktreeDir(root: string, branch: string): Promise<string | null> {
+  const check = await invoke<BranchCheck>("task_check_branch", { root, branch });
+  return check.isOk() ? check.value.dir : null;
+}
+
 export function useTaskCreation(args: {
   /** Spawn a session's PTY and place its pane *without* stealing focus. */
   mountSession: (folderDir: string, sessionId: string) => void;
@@ -97,14 +108,7 @@ export function useTaskCreation(args: {
   const [reopenTasks, setReopenTasks] = useState<Map<string, { taskId: number; goal: string }>>(
     new Map(),
   );
-  const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
   const [settingUpDirs, setSettingUpDirs] = useState<Map<string, number>>(new Map());
-
-  function setCreatePhase(root: string, branch: string, label: string) {
-    setPendingTasks((prev) =>
-      prev.map((p) => (p.repoDir === root && p.branch === branch ? { ...p, phase: label } : p)),
-    );
-  }
 
   function toggleTaskForm(repo: NewTaskRepo) {
     setOpenTaskForms((prev) => {
@@ -192,8 +196,6 @@ export function useTaskCreation(args: {
     });
   }
 
-  // Keyed by branch (unique per repo, since a collision is already rejected
-  // before submit), so a retry just re-runs this under the same id.
   async function createTask(
     repo: NewTaskRepo,
     input: NewTaskSubmit & { taskId?: number; reopen?: boolean },
@@ -207,6 +209,9 @@ export function useTaskCreation(args: {
       folderDir: activeFolderDirRef.current,
     };
     const taskId = input.taskId ?? (await createTaskForSubmit(input));
+    const worktreeDir = input.worktree
+      ? (input.dir ?? (await resolveWorktreeDir(repo.dir, input.branch)))
+      : null;
     // A reopened task is closed (`outcome`/`archivedAt` set, frozen status):
     // clear that first, the same way any status move out of `done` does
     // (`Store::set_task_status`). The Agentboard's own live-agent sync then
@@ -215,58 +220,57 @@ export function useTaskCreation(args: {
       const reopened = await storeSetTaskStatus(taskId, "backlog");
       if (reopened.isErr()) toast.error(`Couldn't reopen that task — ${reopened.error.message}`);
     }
-    // Bind the repo before any worktree exists. The Board groups tasks into
-    // repo swimlanes, and the repo is known here — at the `+` the user clicked
-    // — so binding it now is what keeps every task out of the "No repo" lane,
-    // including a "task only" submit that never gets a branch or dir.
+    // Bind the whole worktree up front — repo, branch, and the directory the
+    // worktree is *going* to live in (`task_check_branch` derived it from the
+    // branch). This is what puts the row on the rail: the rail's row list is
+    // the set of task records with a binding, so writing the binding here
+    // means the row is on screen before `git fetch` has started, not a poll
+    // after `worktree add` finished. The repo half also keeps every task out
+    // of the Board's "No repo" lane, including a "task only" submit that never
+    // gets a branch or dir.
+    //
+    // Awaited, unlike the fire-and-forget bind this replaced: the row has to
+    // exist before the create starts, or the phase the backend stamps has no
+    // row to land on.
     if (taskId !== undefined) {
-      void storeTaskSetWorktree(taskId, repo.dir, undefined, {
-        repo: ownerRepoFromOrigin(repo.originUrl),
-      });
+      const bound = await storeTaskSetWorktree(
+        taskId,
+        repo.dir,
+        input.worktree ? input.branch : undefined,
+        {
+          repo: ownerRepoFromOrigin(repo.originUrl),
+          dir: worktreeDir ?? undefined,
+        },
+      );
+      if (bound.isErr() && !NotInTauri.is(bound.error)) {
+        toast(`couldn't bind the task to its repo: ${bound.error.message}`);
+      }
     }
     if (!input.worktree) {
       toast("task added to the board");
       return;
     }
-    const id = `${repo.key}::${input.branch}`;
-    setPendingTasks((prev) => [
-      ...prev.filter((p) => p.id !== id),
-      {
-        id,
-        repoKey: repo.key,
-        repoDir: repo.dir,
-        repoName: repo.name,
-        goal: input.goal,
-        branch: input.branch,
-        base: input.base,
-        options: input.options,
-        imagePaths: input.imagePaths,
-        taskId,
-        launchClaude: input.launchClaude,
-        repoOriginUrl: repo.originUrl,
-        startedAt: Date.now(),
-        status: "creating",
-      },
-    ]);
     const imagePaths = input.imagePaths;
     // 60s, not the 12-minute budget this used to need — `task_create` no
     // longer waits on the install (which owned nearly all of that time), so
     // what's left is just a fetch (10s server-side cap) and a worktree add.
     const result = await invoke<TaskCreated>(
       "task_create",
-      { root: repo.dir, branch: input.branch, base: input.base },
+      { root: repo.dir, branch: input.branch, base: input.base, dir: worktreeDir ?? "" },
       { schema: TaskCreatedSchema, timeoutMs: 60_000 },
     );
     if (result.isErr()) {
-      const error = result.error.message;
-      setPendingTasks((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "error" as const, error } : p)),
-      );
+      // The row stays — it is the task's record, and the task still exists.
+      // With nothing on disk and nothing running, it reads as `detached`,
+      // where its own retry and delete actions live. That's the whole reason
+      // the failure needs no bookkeeping of its own here.
+      toast.error(`couldn't create the worktree: ${result.error.message}`);
       return;
     }
     const created = result.value;
-    // Bind the task to its worktree (branch + dir + repo identity for PR
-    // auto-attach). Fire-and-forget: the snapshot re-emit repaints the card.
+    // Re-bind with what the create actually produced. Normally identical to
+    // the predicted binding above; this is what corrects the rare case where
+    // they differ (a branch normalized on the way through).
     if (taskId !== undefined) {
       void storeTaskSetWorktree(taskId, repo.dir, created.branch, {
         repo: ownerRepoFromOrigin(repo.originUrl),
@@ -279,7 +283,6 @@ export function useTaskCreation(args: {
     for (const warning of created.warnings) {
       toast(warning);
     }
-    setPendingTasks((prev) => prev.filter((p) => p.id !== id));
     runSetupInBackground(created.dir);
 
     // An image with no typed goal is still a valid ask — give the rail
@@ -362,45 +365,13 @@ export function useTaskCreation(args: {
     if (stayedPut) selectSession(created.dir, rec.id);
   }
 
-  function retryPendingTask(id: string) {
-    const p = pendingTasks.find((x) => x.id === id);
-    if (!p) return;
-    void createTask(
-      { name: p.repoName, dir: p.repoDir, key: p.repoKey, originUrl: p.repoOriginUrl },
-      {
-        goal: p.goal,
-        // Unused by this call — `taskId` below is set, so `createTask` skips
-        // `createTaskForSubmit` entirely and never reads `title` on a retry.
-        title: p.goal || p.branch,
-        branch: p.branch,
-        base: p.base,
-        options: p.options,
-        imagePaths: p.imagePaths,
-        // The task already exists — a retry must rebind it, not mint a
-        // duplicate card. (Issues are already attached to it, too.)
-        issues: [],
-        worktree: true,
-        launchClaude: p.launchClaude,
-        taskId: p.taskId,
-      },
-    );
-  }
-
-  function dismissPendingTask(id: string) {
-    setPendingTasks((prev) => prev.filter((p) => p.id !== id));
-  }
-
   return {
     openTaskForms,
     reopenTasks,
-    pendingTasks,
-    setCreatePhase,
     settingUpDirs,
     toggleTaskForm,
     closeTaskForm,
     openReopenForm,
     createTask,
-    retryPendingTask,
-    dismissPendingTask,
   };
 }

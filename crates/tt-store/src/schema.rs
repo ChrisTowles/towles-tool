@@ -10,7 +10,7 @@ use rusqlite::{Connection, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 17;
+pub(crate) const SCHEMA_VERSION: i64 = 18;
 
 /// Schema v1. Every statement is `IF NOT EXISTS` so `migrate` is idempotent.
 const SCHEMA_V1: &str = "\
@@ -216,6 +216,7 @@ impl Store {
         // dodges by living here rather than before v7.
         self.migrate_tasks_goal_v16()?;
         self.migrate_tasks_summary_v17()?;
+        self.migrate_tasks_kind_v18()?;
         self.migrate_events_v9()?;
         self.migrate_events_v10_iso()?;
         // After v10, never inside SCHEMA_V1: that batch runs before the
@@ -365,6 +366,36 @@ impl Store {
                 "ALTER TABLE tasks ADD COLUMN summary TEXT;
                  ALTER TABLE tasks ADD COLUMN summary_at INTEGER;",
             )?;
+        }
+        Ok(())
+    }
+
+    /// v18: `kind` — what the row *is*, now that every worktree on the
+    /// Agentboard rail is backed by a task row. `task` is the user's own work
+    /// (the `+` form, `tt task new`, MCP `task_create`); `detected` is a git
+    /// worktree found on disk with no task, minted by the rail's scan so a
+    /// discovered checkout has a durable record and a fixed position instead of
+    /// existing only for as long as detection sees it. Every read path that
+    /// means *the board* filters to `task`; only the rail reads both.
+    ///
+    /// Defaulted rather than nullable — every pre-v18 row is the user's work by
+    /// definition, since nothing else could create one. Same ADD-COLUMN idiom as
+    /// [`Self::migrate_tasks_notes_v4`].
+    fn migrate_tasks_kind_v18(&self) -> Result<()> {
+        let mut has_kind = false;
+        {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(tasks)")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "kind" {
+                    has_kind = true;
+                }
+            }
+        }
+        if !has_kind {
+            self.conn
+                .execute_batch("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task';")?;
         }
         Ok(())
     }

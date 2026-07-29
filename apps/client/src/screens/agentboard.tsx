@@ -42,7 +42,9 @@ import {
   exitPaneId,
   filesPaneId,
   filesPanePathFor,
+  folderBusy,
   folderRemovableTask,
+  folderRemoving,
   isAgent,
   isCacheExpiring,
   jarvisPaneId,
@@ -314,7 +316,7 @@ export function AgentboardScreen() {
       removeSessionPane(id);
     },
   });
-  const { deletingDirs, requestDeleteWorktree } = worktreeDelete;
+  const { requestDeleteWorktree } = worktreeDelete;
 
   // Ctrl+Shift+Left/Right collapse/expand (complements ab-focus-up/down's
   // Ctrl+Shift+Up/Down session nav — same modifier family, so it's also safe
@@ -462,13 +464,6 @@ export function AgentboardScreen() {
     }));
     openFiles(dir);
   }
-
-  // Live status for a worktree deletion in progress — the Rust side emits
-  // these from inside `ops::remove_task`, keyed by dir the same way
-  // `deletingDirs` is.
-  useTauriEvent<{ dir: string; label: string }>("task://delete_progress", (p) =>
-    worktreeDelete.setDeletePhase(p.dir, p.label),
-  );
 
   // Attention signals from terminals: a BEL or a desktop notification
   // (OSC 9/777 — Claude Code's "needs your input"). The session badges
@@ -710,19 +705,9 @@ export function AgentboardScreen() {
     toggleRail,
   });
 
-  // Live steps for a creation in flight — `task://delete_progress`'s twin,
-  // sitting here rather than beside it because each goes below the hook it
-  // feeds.
-  useTauriEvent<{ root: string; branch: string; label: string }>("task://create_progress", (p) =>
-    taskCreation.setCreatePhase(p.root, p.branch, p.label),
-  );
-
-  // The pending row's age and the setup badge are both `m:ss` against a clock
-  // that otherwise ticks every 15s — a create finishes inside two ticks, so
-  // the number would read 0:00 throughout. Bounded by the create itself.
-  useNowInterval(
-    taskCreation.pendingTasks.length > 0 || taskCreation.settingUpDirs.size > 0 ? 1000 : undefined,
-  );
+  // The setup badge is `m:ss` against a clock that otherwise ticks every 15s,
+  // so it would read 0:00 throughout. Bounded by the install itself.
+  useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
 
   // ab-new-task + the working-context band's "New task" button both open the
   // form for the focused folder's repo — expand a collapsed rail first since
@@ -893,6 +878,9 @@ export function AgentboardScreen() {
             options: {},
             imagePaths: [],
             issues: [],
+            // Unknown here — `createTask` derives it from the branch, the
+            // same value the inline form's preflight hands it.
+            dir: null,
             worktree: true,
             launchClaude: true,
             taskId: req.taskId,
@@ -1015,7 +1003,7 @@ export function AgentboardScreen() {
           // the in-flight check mirrors the rail row dimming itself while a
           // removal runs.
           if (!activeFolder || !folderRemovableTask(activeFolder)) return;
-          if (deletingDirs.has(activeFolder.dir)) return;
+          if (folderBusy(activeFolder)) return;
           requestDeleteWorktree(activeFolder.dir, activeFolder.name);
         },
         // One chord for the whole delete flow: it confirms the first dialog,
@@ -1061,7 +1049,6 @@ export function AgentboardScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
         activeFolderDir,
-        deletingDirs,
         selected,
         wins,
         repos,
@@ -1189,8 +1176,6 @@ export function AgentboardScreen() {
                               onNewTask={taskCreation.toggleTaskForm}
                               onRemoveRepo={requestRemoveRepo}
                               onDeleteWorktree={requestDeleteWorktree}
-                              deletingDirs={deletingDirs}
-                              deletingPhase={worktreeDelete.deletingPhase}
                               settingUpDirs={taskCreation.settingUpDirs}
                               onRenameCommit={commitRename}
                               onOpenDiff={openDiff}
@@ -1222,11 +1207,6 @@ export function AgentboardScreen() {
                                   },
                                 );
                               }}
-                              pendingTasks={taskCreation.pendingTasks.filter(
-                                (p) => p.repoKey === repo.key,
-                              )}
-                              onRetryPendingTask={taskCreation.retryPendingTask}
-                              onDismissPendingTask={taskCreation.dismissPendingTask}
                             />
                           </motion.div>
                         ))}
@@ -1282,7 +1262,7 @@ export function AgentboardScreen() {
                   folder={activeFolder}
                   pr={prForFolder(snapshot.prs, activeRepo.originUrl, activeFolder.branch)}
                   task={taskForFolder(snapshot.tasks, activeFolder.dir)}
-                  deleting={deletingDirs.has(activeFolder.dir)}
+                  deleting={folderRemoving(activeFolder)}
                   actions={actions}
                   onOpenDiff={openDiff}
                   onOpenFiles={openFiles}

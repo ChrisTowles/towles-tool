@@ -695,6 +695,11 @@ export const storeTaskSetWorktree = (
     dir: opts?.dir,
   });
 
+/** Adopt a detected worktree — promote its rail row from a `detected` record
+ * to the user's own task. A kind change on the existing row, so the row keeps
+ * its id and its place in the rail. */
+export const taskAdoptWorktree = (id: number) => invoke<void>("task_adopt_worktree", { id });
+
 /** Open issues in `dir`'s repo, for the new-task flow's issue picker. */
 export const storeGhIssuesList = (dir: string, assignedToMe: boolean) =>
   invoke<IssueItem[]>("store_gh_issues_list", { dir, assignedToMe });

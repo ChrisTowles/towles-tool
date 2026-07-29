@@ -166,6 +166,85 @@ pub struct SessionData {
     pub port_drift: Vec<crate::env_drift::PortDrift>,
 }
 
+/// Why a rail row exists — the record behind it, never a fact about the
+/// filesystem.
+///
+/// This is the rail's central rule in one type: **a row is on screen because
+/// something wrote it down.** Detection fills a row in (git stats, whether the
+/// directory is there) and may mint or retire a [`RowRecord::Detected`] one,
+/// but it can never decide that a task's row should stop existing. That is what
+/// lets a task appear the moment it is submitted, before `git worktree add` has
+/// run, and stay put through a removal that takes a minute.
+///
+/// The two sets are disjoint by construction: a task worktree is never a
+/// `repos.json` entry, so exactly one record answers for any row. Making this a
+/// sum type rather than a flag plus an `Option` is deliberate — "tracked *and*
+/// has a task" and "a task row *without* a task" are both unrepresentable.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "origin", rename_all = "camelCase")]
+pub enum RowRecord {
+    /// A `repos.json` entry — a checkout the user tracks. The main checkout of
+    /// a repo, and the one row kind with no task: tracking a repo is not a unit
+    /// of work, and `repos.json` is already its durable record.
+    #[default]
+    Checkout,
+    /// A `tasks` row of kind `task` — the user's own work
+    /// ([`tt_store::TaskKind::Task`]).
+    Task { task: RowTask },
+    /// A `tasks` row of kind `detected` — a git worktree found on disk that no
+    /// task claimed ([`tt_store::TaskKind::Detected`]). Shown as "no task",
+    /// with adopting it a kind change on this same row.
+    Detected { task: RowTask },
+}
+
+impl RowRecord {
+    /// The board row behind this rail row, if it has one.
+    pub fn task(&self) -> Option<&RowTask> {
+        match self {
+            RowRecord::Checkout => None,
+            RowRecord::Task { task } | RowRecord::Detected { task } => Some(task),
+        }
+    }
+}
+
+/// The board row behind a rail row: just enough to badge and act on it, not the
+/// whole [`tt_store::TaskItem`] (the frontend already holds those from the
+/// store snapshot, and this rides the ~2s emit path).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowTask {
+    pub id: i64,
+    /// Kanban column (`backlog`/`doing`/`done`).
+    pub status: String,
+    /// The branch the task's worktree is (or will be) on — known before the
+    /// worktree exists, which is exactly when `git` can't answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
+
+/// The worktree operation running on this row **right now**, if any.
+///
+/// Only the process doing the work can know this, so it is stamped by the app
+/// on the way out (the same seam as `live`/`shellKind` — see
+/// `stamp_pty_state`); the engine has nothing to say about it.
+///
+/// This deliberately carries *only* the in-flight pair. "Ready" and "detached"
+/// are not stored anywhere because they are not independent facts: a row is
+/// detached exactly when it has a task, its directory is missing, and nothing
+/// is working on it — all three already on the wire (`record`, `dir_missing`,
+/// this field). Giving them variants here would put a second, unenforced
+/// answer to "is the directory there?" beside `dir_missing`, so `Detached`
+/// with `dir_missing: false` would be representable and meaningless. Same
+/// reasoning as [`RowRecord`]'s: make the contradictory state unrepresentable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum RowPhase {
+    /// `git fetch` / `worktree add` / `.env` render is running right now.
+    Creating { label: String },
+    /// The removal sequence is running right now.
+    Removing { label: String },
+}
+
 /// One checkout of a repo on disk (a clone, a worktree, or a task). Holds 1..N
 /// PTY sessions.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -175,6 +254,19 @@ pub struct FolderData {
     pub name: String,
     /// Absolute path to the checkout.
     pub dir: String,
+    /// The checkout this row belongs to (its own `dir` for a
+    /// [`RowRecord::Checkout`]). How the rail groups a row whose directory
+    /// doesn't exist yet: grouping is otherwise by `GitInfo::common_dir`, which
+    /// git can only report for a directory that is actually there.
+    #[serde(default)]
+    pub repo_root: String,
+    /// Why this row exists — see [`RowRecord`].
+    pub record: RowRecord,
+    /// The worktree operation running on this row right now, if any — see
+    /// [`RowPhase`]. Always `None` from the engine; the app fills it in on the
+    /// way out, since only the process running the operation knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<RowPhase>,
     /// True when `dir` no longer exists on disk — a tracked repo whose checkout
     /// was moved or deleted. Such folders are "ghosts": they still carry stale
     /// session records but can't be worked in until re-tracked or untracked.

@@ -7,6 +7,7 @@
  * `ViewPaneRow`.
  */
 import { type ReactElement } from "react";
+import { toast } from "sonner";
 import { FolderGit2, FolderPlus } from "lucide-react";
 import {
   Chevron,
@@ -23,17 +24,15 @@ import {
   type ViewPaneKind,
 } from "@/components/agentboard-pane-rows";
 import { SessionRow } from "@/components/agentboard-session-row";
-import {
-  InlineNewTask,
-  PendingTaskRow,
-  type NewTaskRepo,
-  type NewTaskSubmit,
-  type PendingTask,
-} from "@/components/inline-new-task";
+import { InlineNewTask, type NewTaskRepo, type NewTaskSubmit } from "@/components/inline-new-task";
 import { hasRepoColor, repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
+  folderBusy,
+  folderIsUnclaimed,
+  folderPhaseLabel,
   folderRemovableTask,
+  folderTask,
   isSoloRepo,
   pathScope,
   prForFolder,
@@ -45,11 +44,28 @@ import {
   type SessionData,
   type WindowsPayload,
 } from "@/lib/agentboard";
-import { type PrItem, type TaskItem } from "@/lib/data";
+import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
+import { NotInTauri } from "@/lib/errors";
+import { uiAction } from "@/lib/ui-action";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
+
+/**
+ * Only a `detected` row can be adopted; every other row already belongs to
+ * someone. Returning undefined is what keeps the affordance off the rest.
+ */
+function adoptWorktree(folder: FolderData) {
+  const task = folderTask(folder);
+  if (!folderIsUnclaimed(folder) || !task) return undefined;
+  return () => {
+    uiAction("agentboard.adopt_worktree", "agentboard");
+    void taskAdoptWorktree(task.id).then((result) => {
+      if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
+    });
+  };
+}
 
 export function RepoGroup({
   repo,
@@ -73,8 +89,6 @@ export function RepoGroup({
   onNewTask,
   onRemoveRepo,
   onDeleteWorktree,
-  deletingDirs,
-  deletingPhase,
   settingUpDirs,
   onRenameCommit,
   onOpenDiff,
@@ -89,9 +103,6 @@ export function RepoGroup({
   taskFormInitialGoal,
   onCancelTaskForm,
   onSubmitTaskForm,
-  pendingTasks,
-  onRetryPendingTask,
-  onDismissPendingTask,
 }: {
   repo: RepoData;
   now: number;
@@ -121,15 +132,6 @@ export function RepoGroup({
   onRemoveRepo: (dirs: string[], label: string) => void;
   /** Delete a worktree from disk (guarded `task_delete`). */
   onDeleteWorktree: (dir: string, label: string) => void;
-  /** Folder dirs whose `task_delete` is currently in flight — that row dims
-   * and disables until it resolves (deleted → the row vanishes on the next
-   * poll; blocked/failed → the row goes interactive again). */
-  deletingDirs?: Set<string>;
-  /** Live phase text for a dir mid-delete (dir → "running teardown
-   * command", "deleting git worktree", …), fed by `task://delete_progress`
-   * events. Absent for a dir in `deletingDirs` just means no phase event has
-   * landed yet — `DeletingBadge` falls back to a static label. */
-  deletingPhase?: Map<string, string>;
   /** Checkouts whose setup step is still running → when it started (epoch
    * ms). See `SettingUpBadge`. */
   settingUpDirs?: Map<string, number>;
@@ -161,24 +163,10 @@ export function RepoGroup({
   taskFormInitialGoal?: string;
   onCancelTaskForm: () => void;
   onSubmitTaskForm: (input: NewTaskSubmit) => void;
-  /** This repo's in-flight `task_create` calls — see PendingTask. */
-  pendingTasks: PendingTask[];
-  onRetryPendingTask: (id: string) => void;
-  onDismissPendingTask: (id: string) => void;
 }) {
   const solo = isSoloRepo(repo);
   const quiet = quietDirs ?? new Set<string>();
   const showQuiet = quietRevealed ?? false;
-
-  const pendingRows = pendingTasks.map((p) => (
-    <PendingTaskRow
-      key={p.id}
-      pending={p}
-      now={now}
-      onRetry={onRetryPendingTask}
-      onDismiss={onDismissPendingTask}
-    />
-  ));
 
   const sessionRow = (folder: FolderData, s: SessionData) => (
     <motion.div key={s.id} {...railRowMotion}>
@@ -308,8 +296,12 @@ export function RepoGroup({
     if (quiet.has(folder.dir) && !showQuiet) {
       return <QuietRepoStub name={repo.name} count={1} onToggle={onToggleQuiet} />;
     }
-    const deleting = deletingDirs?.has(folder.dir) ?? false;
-    const deletingLabel = deletingPhase?.get(folder.dir);
+    // A row mid-create or mid-removal is inert and says which. Both come off
+    // the folder itself now (`folder.phase`) rather than from sets held
+    // alongside the rail: the row and its state arrive together, so a row can
+    // never be dimmed for an operation on a row that is no longer there.
+    const deleting = folderBusy(folder);
+    const deletingLabel = folderPhaseLabel(folder);
     const settingUpSince = settingUpDirs?.get(folder.dir);
     return (
       <div
@@ -329,6 +321,7 @@ export function RepoGroup({
           now={now}
           active={activeFolderDir === folder.dir}
           deleting={deleting}
+          onAdoptWorktree={adoptWorktree(folder)}
           deletingLabel={deletingLabel}
           settingUpSince={settingUpSince}
           actions={actions}
@@ -355,7 +348,6 @@ export function RepoGroup({
             initialGoal={taskFormInitialGoal}
           />
         )}
-        {pendingRows}
         {!isCollapsed && <div className="pb-2">{sessionRows(folder)}</div>}
         {quiet.size > 0 && showQuiet && (
           <QuietToggleRow count={quiet.size} revealed onToggle={onToggleQuiet} />
@@ -459,7 +451,6 @@ export function RepoGroup({
           initialGoal={taskFormInitialGoal}
         />
       )}
-      {pendingRows}
       {/* The collapse test stays *outside* AnimatePresence: inside it,
           collapsing a repo would read as every folder being deleted at once
           and play a full exit on each. Unmounting the boundary itself
@@ -469,8 +460,8 @@ export function RepoGroup({
           {shownFolders.map((folder) => {
             const key = `${repo.key}::${folder.dir}`;
             const fCollapsed = collapsed[key];
-            const deleting = deletingDirs?.has(folder.dir) ?? false;
-            const deletingLabel = deletingPhase?.get(folder.dir);
+            const deleting = folderBusy(folder);
+            const deletingLabel = folderPhaseLabel(folder);
             const settingUpSince = settingUpDirs?.get(folder.dir);
             return (
               <motion.div
@@ -493,6 +484,7 @@ export function RepoGroup({
                   now={now}
                   active={activeFolderDir === folder.dir}
                   deleting={deleting}
+                  onAdoptWorktree={adoptWorktree(folder)}
                   deletingLabel={deletingLabel}
                   settingUpSince={settingUpSince}
                   actions={actions}

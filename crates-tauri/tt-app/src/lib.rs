@@ -369,7 +369,7 @@ pub fn run() {
             // every `ab_*` command share this lock and (on Linux) sync
             // commands dispatch inline on the GTK main thread, so a lock-held
             // git subprocess chain would freeze the whole app, not just this
-            // loop. See `Engine::expand_with_worktrees`'s doc comment.
+            // loop. See `Engine::rail_rows`'s doc comment.
             {
                 let engine = engine.clone();
                 let emit = emit.clone();
@@ -420,18 +420,34 @@ pub fn run() {
                             let warmed_at = now_ms();
                             engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
                         }
-                        // Which worktrees the user asked for — the board rows'
-                        // answer, refreshed before the scan so a task created
-                        // or deleted since last tick lands in this payload.
+                        // The rail's rows, refreshed before the scan so a task
+                        // created or closed since the last tick lands in this
+                        // payload. Two steps, in this order:
+                        //
+                        //  1. reconcile — git worktrees nothing has written
+                        //     down become `detected` rows, and detected rows
+                        //     whose directory is gone are forgotten. Both sides
+                        //     come from the engine as diffs, so the steady
+                        //     state writes nothing;
+                        //  2. push the resulting row list into the engine.
+                        //
+                        // Reconciling first means a worktree discovered this
+                        // tick is a row on this tick, not the next one.
                         // `try_state` because this loop can tick before setup
                         // has managed the store.
-                        let bound = store_handle
-                            .try_state::<store::StoreState>()
-                            .and_then(|s| s.bound_worktree_dirs());
+                        let store_state = store_handle.try_state::<store::StoreState>();
+                        if let Some(state) = &store_state {
+                            let (found, vanished) = {
+                                let mut e = engine.lock().unwrap();
+                                (e.unrecorded_worktrees(), e.vanished_detected_records())
+                            };
+                            state.reconcile_detected_worktrees(&found, &vanished, now);
+                        }
+                        let rows = store_state.and_then(|s| s.rail_worktrees());
                         {
                             let mut e = engine.lock().unwrap();
-                            if let Some(bound) = bound {
-                                e.set_bound_worktree_dirs(bound);
+                            if let Some(rows) = rows {
+                                e.set_task_worktrees(rows);
                             }
                             e.scan_once(now);
                         }
@@ -657,6 +673,7 @@ pub fn run() {
         .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
+        .manage(task::TaskPhases::default())
         .manage(launch::LaunchState::default())
         .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
@@ -746,6 +763,7 @@ pub fn run() {
             store::store_attach_task_pr,
             store::store_detach_task_pr,
             store::store_task_set_worktree,
+            store::task_adopt_worktree,
             store::store_set_task_status,
             store::store_update_task,
             store::store_archive_done,

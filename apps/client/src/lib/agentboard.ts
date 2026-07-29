@@ -112,10 +112,103 @@ export type SessionData = {
  * backend can put in {@link FolderData.landed}. */
 export type LandedVia = "merged" | "rebase-merged" | "squash-merged" | "upstream gone";
 
+/** The board row behind a rail row (`tt_agentboard::types::RowTask`). */
+export type RowTask = {
+  id: number;
+  /** Kanban column. */
+  status: string;
+  /** The branch the worktree is (or will be) on — known from the record before
+   * the worktree exists, which is exactly when git can't answer. */
+  branch?: string;
+};
+
+/**
+ * Why a rail row exists — the record behind it, never a fact about the
+ * filesystem (`tt_agentboard::types::RowRecord`).
+ *
+ * A row is on screen because something wrote it down. Detection fills a row in
+ * and can mint or retire a `detected` one, but it can never decide a task's row
+ * should stop existing — which is what lets a task appear the instant it's
+ * submitted and stay put through a removal that takes a minute.
+ */
+export type RowRecord =
+  /** A `repos.json` entry — a checkout the user tracks. The one row kind with
+   * no task: tracking a repo isn't a unit of work. */
+  | { origin: "checkout" }
+  /** The user's own work. */
+  | { origin: "task"; task: RowTask }
+  /** A git worktree found on disk that no task claimed — Claude Code's own
+   * agent worktrees, or a hand-added one. Shown as "no task"; adopting it is a
+   * kind change on this same row, so nothing moves. */
+  | { origin: "detected"; task: RowTask };
+
+/**
+ * The worktree operation running on a row right now
+ * (`tt_agentboard::types::RowPhase`), stamped by the app — the only thing that
+ * can tell a create in progress from one that died an hour ago. Absent when
+ * nothing is running, which is the common case.
+ *
+ * There is no `ready` or `detached` here on purpose: both are derivable from
+ * `record`/`dirMissing` (see `folderDetached`), and a second copy of "is the
+ * directory there?" could only ever contradict the first.
+ */
+export type RowPhase = { state: "creating"; label: string } | { state: "removing"; label: string };
+
+/** The board row behind a folder, if it has one. */
+export function folderTask(folder: FolderData): RowTask | undefined {
+  return folder.record.origin === "checkout" ? undefined : folder.record.task;
+}
+
+/** A git worktree nothing claimed — offer to adopt it, don't treat it as work
+ * in progress. */
+export function folderIsUnclaimed(folder: FolderData): boolean {
+  return folder.record.origin === "detected";
+}
+
+/** `git worktree add` is running for this row right now. */
+export function folderCreating(folder: FolderData): boolean {
+  return folder.phase?.state === "creating";
+}
+
+/** The removal sequence is running for this row right now. */
+export function folderRemoving(folder: FolderData): boolean {
+  return folder.phase?.state === "removing";
+}
+
+/**
+ * The task's worktree isn't on disk and nothing is working on it — a failed
+ * create, a directory deleted outside the app, or a restart mid-removal.
+ *
+ * Derived rather than sent: all three parts are already on the row. A *checkout*
+ * row whose directory is missing is not detached but a ghost — `dirMissing`
+ * says so, and its remedy (untrack) is a different action entirely.
+ */
+export function folderDetached(folder: FolderData): boolean {
+  return folder.record.origin !== "checkout" && folder.dirMissing && !folderBusy(folder);
+}
+
+/** An operation is running on this row, so it can't be worked in or acted on.
+ * Covers both directions — a row being created and one being removed. */
+export function folderBusy(folder: FolderData): boolean {
+  return folder.phase !== undefined;
+}
+
+/** The live step text while an operation runs ("fetching origin", "deleting
+ * git worktree", …), or `undefined` when nothing is running. */
+export function folderPhaseLabel(folder: FolderData): string | undefined {
+  return folder.phase?.label;
+}
+
 /** One checkout of a repo on disk (a clone, worktree, or task). */
 export type FolderData = {
   name: string;
   dir: string;
+  /** The checkout this row belongs to (its own `dir` for a tracked checkout) —
+   * how a row whose directory doesn't exist yet still groups under its repo. */
+  repoRoot: string;
+  record: RowRecord;
+  /** Absent unless a create/removal is running on this row — see `RowPhase`. */
+  phase?: RowPhase;
   /** True when `dir` no longer exists on disk — a tracked repo whose checkout
    * was moved or deleted. Rendered as a dimmed "ghost" with an Untrack action. */
   dirMissing: boolean;
@@ -1110,15 +1203,22 @@ export function folderLanded(
 }
 
 /** Whether the delete-worktree affordances (rail menu, the `ab-remove-task`
- * chord) apply to a folder: a worktree that still exists on disk. The
- * main checkout has no `task_delete` path, and a ghost (`dirMissing`) has
- * nothing on disk to delete — its affordance is Untrack. Unrelated to
- * `folderSafeToDelete`: this gates whether deletion can be *offered*, not
- * whether it would succeed (the guarded removal decides that after the
- * confirm). */
+ * chord) apply to a folder.
+ *
+ * Any row backed by a task record qualifies — **including a detached one**,
+ * whose directory is already gone. That is the case the affordance matters
+ * most for: the record is precisely what is left to clean up, and
+ * `task_delete` handles a missing directory by design (`MissingDir::
+ * TearDownBindings`). A tracked checkout never has a `task_delete` path, and a
+ * ghost checkout's affordance is Untrack, not delete.
+ *
+ * Unrelated to `folderSafeToDelete`: this gates whether deletion can be
+ * *offered*, not whether it would succeed (the guarded removal decides that
+ * after the confirm). */
 export function folderRemovableTask(
-  folder: Pick<FolderData, "isWorktree" | "dirMissing">,
+  folder: Pick<FolderData, "record" | "isWorktree" | "dirMissing">,
 ): boolean {
+  if (folder.record.origin !== "checkout") return true;
   return folder.isWorktree && !folder.dirMissing;
 }
 

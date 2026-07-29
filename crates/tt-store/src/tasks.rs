@@ -1,6 +1,8 @@
 //! Kanban tasks and their GitHub links: create/move/close/archive, the
 //! issue/PR link tables, and the worktree binding (#339's unit of work).
 
+use std::path::Path;
+
 use rusqlite::params;
 
 use crate::model::*;
@@ -269,12 +271,13 @@ impl Store {
     }
 
     /// Open todos in kanban order: not in `done`, not closed with an
-    /// `outcome`, not archived.
+    /// `outcome`, not archived. Board rows only — see [`TASK_KIND_FILTER`].
     pub fn open_tasks(&self) -> Result<Vec<TaskItem>> {
         self.query_tasks(
             &format!(
                 "SELECT {TASK_COLS} FROM tasks
-                 WHERE status != 'done' AND outcome IS NULL AND archived_at IS NULL {TASK_ORDER}"
+                 WHERE {TASK_KIND_FILTER}
+                   AND status != 'done' AND outcome IS NULL AND archived_at IS NULL {TASK_ORDER}"
             ),
             [],
         )
@@ -289,9 +292,13 @@ impl Store {
     }
 
     /// All tasks in kanban order, links and worktree included. The collectors'
-    /// rollup walks this; the board gets it via [`Store::snapshot`].
+    /// rollup walks this; the board gets it via [`Store::snapshot`]. Board rows
+    /// only — see [`TASK_KIND_FILTER`].
     pub fn all_tasks(&self) -> Result<Vec<TaskItem>> {
-        self.query_tasks(&format!("SELECT {TASK_COLS} FROM tasks {TASK_ORDER}"), [])
+        self.query_tasks(
+            &format!("SELECT {TASK_COLS} FROM tasks WHERE {TASK_KIND_FILTER} {TASK_ORDER}"),
+            [],
+        )
     }
 
     /// Issue refs whose cached link state is still `open` but which are
@@ -406,26 +413,114 @@ impl Store {
         )?)
     }
 
-    /// Every worktree dir a live board row is bound to.
+    /// Every worktree the Agentboard rail should show, both kinds, oldest
+    /// first.
     ///
-    /// This is the record of which worktrees the *user* asked for: a task row
-    /// is created by `tt task new` and the app's `+` flow only, so a worktree
-    /// Claude Code made for one of its own agents has no row here. The
-    /// Agentboard rail's worktree filter is the consumer (see
-    /// `Engine::expand_with_worktrees`).
+    /// This is the rail's row list. It is a *record* query, not a filesystem
+    /// one: a row is here because something wrote it down — the user asking for
+    /// a task, or the scan noticing a worktree — so the rail can show a task
+    /// before its directory exists and keep showing it while removal runs.
+    /// `Engine::set_task_worktrees` is the consumer, pushed in each scan tick.
     ///
-    /// Archived rows are excluded — their `worktree_dir` is already cleared on
-    /// close, and a re-created worktree at the same path is a new task.
-    pub fn bound_worktree_dirs(&self) -> Result<Vec<String>> {
+    /// Sorted by `created_at` because that is the one ordering nothing can
+    /// perturb: kanban position moves when a card does, and anything derived
+    /// from git reshuffles rows as directories come and go.
+    ///
+    /// Archived rows are excluded — closing a task already cleared its
+    /// `worktree_dir`, and a worktree later re-created at the same path is a
+    /// new row, not a resurrection of that one.
+    pub fn rail_worktrees(&self) -> Result<Vec<RailWorktree>> {
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT worktree_dir FROM tasks
-             WHERE worktree_dir IS NOT NULL AND worktree_dir != '' AND archived_at IS NULL",
+            "SELECT id, kind, status, worktree_repo_root, worktree_dir, worktree_branch, created_at
+             FROM tasks
+             WHERE worktree_dir IS NOT NULL AND worktree_dir != ''
+               AND worktree_repo_root IS NOT NULL AND worktree_repo_root != ''
+               AND archived_at IS NULL
+             ORDER BY created_at ASC, id ASC",
         )?;
-        let mut dirs = Vec::new();
-        for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
-            dirs.push(row?);
+        let rows = stmt.query_map([], |r| {
+            Ok(RailWorktree {
+                task_id: r.get(0)?,
+                kind: TaskKind::parse(&r.get::<_, String>(1)?),
+                status: r.get(2)?,
+                repo_root: r.get(3)?,
+                dir: r.get(4)?,
+                branch: r.get(5)?,
+                created_at: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Record a git worktree that exists on disk but has no task, so the rail
+    /// can show it as a row like any other. Idempotent: a dir that already has
+    /// a row of *either* kind is left alone, which is what stops the scan
+    /// re-minting a detected row over an adopted one every tick.
+    ///
+    /// The `text` is the branch (or the directory's name) purely so the row
+    /// reads as something in the rare places a detected row is listed by title;
+    /// it is not a goal anyone typed.
+    pub fn record_detected_worktree(
+        &self,
+        repo_root: &str,
+        dir: &str,
+        branch: Option<&str>,
+        now_ms: i64,
+    ) -> Result<()> {
+        let text = branch
+            .map(str::to_string)
+            .or_else(|| Path::new(dir).file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| dir.to_string());
+        self.conn.execute(
+            "INSERT INTO tasks (kind, text, status, position, created_at,
+                                worktree_repo_root, worktree_branch, worktree_dir)
+             SELECT 'detected', ?1, 'backlog', 0, ?2, ?3, ?4, ?5
+             WHERE NOT EXISTS (SELECT 1 FROM tasks
+                               WHERE worktree_dir = ?5 AND archived_at IS NULL)",
+            params![text, now_ms, repo_root, branch, dir],
+        )?;
+        Ok(())
+    }
+
+    /// Drop the detected row for `dir` — its worktree is gone from disk.
+    ///
+    /// Deletes rather than closes, and refuses anything that isn't
+    /// [`TaskKind::Detected`]: a detected row is bookkeeping with no outcome
+    /// worth recording, while a *task* whose directory vanished is exactly the
+    /// row the rail must keep showing (as `detached`) until the user says what
+    /// happened to it. Returns whether a row went.
+    pub fn forget_detected_worktree(&self, dir: &str) -> Result<bool> {
+        let tx = self.conn.unchecked_transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt =
+                tx.prepare("SELECT id FROM tasks WHERE worktree_dir = ?1 AND kind = 'detected'")?;
+            let rows = stmt.query_map(params![dir], |r| r.get::<_, i64>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for id in &ids {
+            tx.execute("DELETE FROM task_issues WHERE task_id = ?1", params![id])?;
+            tx.execute("DELETE FROM task_prs WHERE task_id = ?1", params![id])?;
+            tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
         }
-        Ok(dirs)
+        tx.commit()?;
+        Ok(!ids.is_empty())
+    }
+
+    /// Promote a detected worktree's row to the user's own work — the "adopt"
+    /// action on a `no task` rail row.
+    ///
+    /// A kind change on the existing row, deliberately: minting a fresh task
+    /// and deleting this one would move the row (a new `created_at` re-sorts
+    /// it) and lose its id. Adopting an already-adopted row is a no-op, not an
+    /// error — two clicks on the same row shouldn't fail the second one.
+    /// Returns [`Error::TaskNotFound`] when no task has `id`.
+    pub fn adopt_detected_worktree(&self, id: i64) -> Result<TaskItem> {
+        self.require_task(id)?;
+        self.conn.execute(
+            "UPDATE tasks SET kind = 'task' WHERE id = ?1 AND kind = 'detected'",
+            params![id],
+        )?;
+        self.task_by_id(id)
     }
 
     /// The task bound to the worktree at `dir`, if any (a worktree belongs to at
@@ -470,6 +565,7 @@ impl Store {
         let goal: Option<String> = r.get(13)?;
         let summary: Option<String> = r.get(14)?;
         let summary_at: Option<i64> = r.get(15)?;
+        let kind = TaskKind::parse(&r.get::<_, String>(16)?);
         // Keyed on `repo_root` alone: a repo-bound task with no worktree
         // yet still has a worktree binding, and dropping it here would hide
         // the task's repo from the Board's swimlanes.
@@ -481,6 +577,7 @@ impl Store {
         });
         Ok(TaskItem {
             id: r.get(0)?,
+            kind,
             text: r.get(1)?,
             status: r.get(2)?,
             position: r.get(3)?,
@@ -523,7 +620,8 @@ impl Store {
     pub fn worktree_bound_open_tasks(&self) -> Result<Vec<TaskItem>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {TASK_COLS} FROM tasks
-             WHERE outcome IS NULL AND archived_at IS NULL
+             WHERE {TASK_KIND_FILTER}
+               AND outcome IS NULL AND archived_at IS NULL
                AND status IN ('backlog', 'doing')
                AND worktree_dir IS NOT NULL
              {TASK_ORDER}"

@@ -17,12 +17,6 @@ export type WorktreeDelete = {
    * mod+shift+Enter shortcut, so the two paths can't drift — telemetry
    * included). */
   confirmDeleteWorktree: () => void;
-  /** Folder dirs mid-delete — the rail dims/disables those rows. */
-  deletingDirs: Set<string>;
-  /** Live phase text per dir mid-delete ("deleting git worktree", …). */
-  deletingPhase: Map<string, string>;
-  /** Record a `task://delete_progress` event for a dir. */
-  setDeletePhase: (dir: string, label: string) => void;
 
   // Confirm dialog
   confirmDeleteWt: RemoveTarget | null;
@@ -92,8 +86,11 @@ export function useWorktreeDelete(args: {
   const [deleteWtOutcome, setDeleteWtOutcome] = useState<TaskOutcome>("done");
   const [blockedDelete, setBlockedDelete] = useState<BlockedDelete | null>(null);
   const [stoppingPort, setStoppingPort] = useState<number | null>(null);
+  // The dialog's own in-flight tracking — *not* what dims the rail row. The
+  // row reads its phase off the snapshot (`folder.phase`), which is the
+  // authoritative answer and arrives with the row; this is the synchronous
+  // one the blocked dialog's buttons need the instant they're clicked.
   const [deletingDirs, setDeletingDirs] = useState<Set<string>>(new Set());
-  const [deletingPhase, setDeletingPhase] = useState<Map<string, string>>(new Map());
 
   // Generation counter per worktree dir. Bumped when a dir's flow starts and
   // whenever one ends (cancel, force, success), so an attempt that resolves
@@ -105,9 +102,6 @@ export function useWorktreeDelete(args: {
   const deleteFlows = useRef(new Map<string, number>());
   const deleteFlowOf = (dir: string) => deleteFlows.current.get(dir) ?? 0;
   const bumpDeleteFlow = (dir: string) => deleteFlows.current.set(dir, deleteFlowOf(dir) + 1);
-
-  const setDeletePhase = (dir: string, label: string) =>
-    setDeletingPhase((prev) => new Map(prev).set(dir, label));
 
   function requestDeleteWorktree(dir: string, label: string) {
     const folder = repos.flatMap((r) => r.folders).find((f) => f.dir === dir);
@@ -153,10 +147,10 @@ export function useWorktreeDelete(args: {
     // actually succeeds; closing sessions here first would untrack them even
     // when removal is blocked (dirty tree, unpushed commits, a foreign
     // port), leaving the rail looking clean while the worktree stays on
-    // disk. `deletingDirs` dims/disables the rail's row for this dir while
-    // the (possibly slow — git checks, docker cleanup) call is in flight, so
-    // it can't be clicked into or deleted twice; cleared at the end so a
-    // blocked/failed removal leaves the row interactive again.
+    // disk. `deletingDirs` gates this hook's own dialog while the (possibly
+    // slow — git checks, docker cleanup) call is in flight; the rail row dims
+    // itself off the `removing` phase the backend stamps. Cleared at the end
+    // so a blocked/failed removal leaves both interactive again.
     const dir = target.dirs[0];
     const flow = deleteFlowOf(dir);
     setDeletingDirs((prev) => new Set(prev).add(dir));
@@ -170,7 +164,7 @@ export function useWorktreeDelete(args: {
     // The user may have cancelled, or forced past this, while the call ran.
     // A stale result must not resurrect the dialog or re-report an outcome
     // for a flow that's over — but the `deletingDirs` release below still has
-    // to run, or the rail row stays dimmed forever.
+    // to run, or the blocked dialog stays locked forever.
     const current = deleteFlowOf(dir) === flow;
     if (removed.isErr() || removed.value.status === "blocked") {
       // Nothing was removed, so no PTY was killed — return the claims.
@@ -204,16 +198,6 @@ export function useWorktreeDelete(args: {
     });
     setDeletingDirs((prev) => {
       const next = new Set(prev);
-      next.delete(dir);
-      return next;
-    });
-    // Blocked/failed leaves the row interactive again — its last phase text
-    // must go with it, or a later delete attempt on the same dir would
-    // briefly show a stale label from this attempt before its own first
-    // event lands.
-    setDeletingPhase((prev) => {
-      if (!prev.has(dir)) return prev;
-      const next = new Map(prev);
       next.delete(dir);
       return next;
     });
@@ -275,9 +259,6 @@ export function useWorktreeDelete(args: {
   return {
     requestDeleteWorktree,
     confirmDeleteWorktree,
-    deletingDirs,
-    deletingPhase,
-    setDeletePhase,
     confirmDeleteWt,
     clearConfirm: () => setConfirmDeleteWt(null),
     deleteWtTask,

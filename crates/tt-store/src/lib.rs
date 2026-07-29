@@ -640,23 +640,113 @@ mod tests {
         ));
     }
 
-    /// What the Agentboard rail asks to tell a worktree the user opened from
-    /// one Claude Code minted for itself: only the first has a row.
+    /// The rail's row list: a task with a worktree binding is a row, a task
+    /// without one isn't, and closing a task retires its row.
     #[test]
-    fn bound_worktree_dirs_lists_live_bindings_only() {
+    fn rail_worktrees_lists_live_bindings_only() {
         let s = Store::open_in_memory().unwrap();
-        assert!(s.bound_worktree_dirs().unwrap().is_empty());
+        assert!(s.rail_worktrees().unwrap().is_empty());
 
         let dir = "/repos/x/.claude/worktrees/feat-y";
         let t = s.add_task("worktree-backed", "doing", None, None, 1).unwrap();
         s.add_task("no worktree", "doing", None, None, 2).unwrap();
         s.set_task_worktree(t.id, "/repos/x", None, Some("feat/y"), Some(dir)).unwrap();
-        assert_eq!(s.bound_worktree_dirs().unwrap(), vec![dir.to_string()]);
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].dir, dir);
+        assert_eq!(rows[0].repo_root, "/repos/x");
+        assert_eq!(rows[0].branch.as_deref(), Some("feat/y"));
+        assert_eq!(rows[0].kind, TaskKind::Task);
 
         // Closing clears the binding: the worktree is off disk, and a new one
         // at the same path belongs to whatever created it next.
         s.close_task(t.id, TaskOutcome::Done, 10).unwrap();
-        assert!(s.bound_worktree_dirs().unwrap().is_empty());
+        assert!(s.rail_worktrees().unwrap().is_empty());
+    }
+
+    /// The rail row exists as soon as the binding is written — before anything
+    /// is on disk. This is the whole point of the record-driven rail: the `+`
+    /// form binds the predicted dir, then `git worktree add` runs.
+    #[test]
+    fn rail_worktrees_includes_a_task_whose_dir_does_not_exist_yet() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("not created yet", "backlog", None, None, 1).unwrap();
+        s.set_task_worktree(
+            t.id,
+            "/repos/x",
+            None,
+            Some("feat/new"),
+            Some("/repos/x/.claude/worktrees/feat-new"),
+        )
+        .unwrap();
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 1, "no filesystem check gates a rail row");
+        assert_eq!(rows[0].dir, "/repos/x/.claude/worktrees/feat-new");
+    }
+
+    /// Detected rows are the rail's own bookkeeping: they show up there, and
+    /// nowhere the user manages work.
+    #[test]
+    fn detected_rows_reach_the_rail_but_never_the_board() {
+        let s = Store::open_in_memory().unwrap();
+        let mine = s.add_task("my work", "doing", None, None, 1).unwrap();
+        s.set_task_worktree(mine.id, "/repos/x", None, Some("feat/y"), Some("/repos/x/wt/feat-y"))
+            .unwrap();
+        s.record_detected_worktree("/repos/x", "/repos/x/wt/agent-8f21", Some("agent/8f21"), 2)
+            .unwrap();
+
+        // The rail sees both, oldest first.
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].kind, TaskKind::Task);
+        assert_eq!(rows[1].kind, TaskKind::Detected);
+        assert_eq!(rows[1].branch.as_deref(), Some("agent/8f21"));
+
+        // The board sees only the user's own.
+        let board: Vec<i64> = s.all_tasks().unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(board, vec![mine.id]);
+        assert_eq!(s.open_tasks().unwrap().len(), 1);
+        assert_eq!(s.worktree_bound_open_tasks().unwrap().len(), 1);
+    }
+
+    /// Recording is idempotent per dir, and adopting is a kind change on the
+    /// same row — the id survives, so nothing moves in the rail.
+    #[test]
+    fn detected_rows_dedupe_and_adopt_in_place() {
+        let s = Store::open_in_memory().unwrap();
+        let dir = "/repos/x/wt/agent-8f21";
+        s.record_detected_worktree("/repos/x", dir, None, 1).unwrap();
+        s.record_detected_worktree("/repos/x", dir, None, 2).unwrap();
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 1, "a second scan must not mint a duplicate");
+        let id = rows[0].task_id;
+
+        let adopted = s.adopt_detected_worktree(id).unwrap();
+        assert_eq!(adopted.id, id, "same row, so the rail position is unchanged");
+        assert_eq!(adopted.kind, TaskKind::Task);
+        assert_eq!(s.all_tasks().unwrap().len(), 1, "now it's the user's work");
+
+        // And the scan must not re-mint a detected row over the adopted one.
+        s.record_detected_worktree("/repos/x", dir, None, 3).unwrap();
+        assert_eq!(s.rail_worktrees().unwrap().len(), 1);
+        assert_eq!(s.rail_worktrees().unwrap()[0].kind, TaskKind::Task);
+    }
+
+    /// The asymmetry that makes deletion coherent: a vanished directory retires
+    /// a *detected* row and never a task's, because only the second is someone's
+    /// work waiting on an answer.
+    #[test]
+    fn forgetting_a_vanished_worktree_spares_real_tasks() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("my work", "doing", None, None, 1).unwrap();
+        s.set_task_worktree(t.id, "/repos/x", None, None, Some("/repos/x/wt/mine")).unwrap();
+        s.record_detected_worktree("/repos/x", "/repos/x/wt/theirs", None, 2).unwrap();
+
+        assert!(s.forget_detected_worktree("/repos/x/wt/theirs").unwrap());
+        assert!(!s.forget_detected_worktree("/repos/x/wt/mine").unwrap());
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].task_id, t.id);
     }
 
     #[test]

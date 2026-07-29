@@ -18,7 +18,10 @@ import {
   Chevron,
   CollapsedLive,
   CommittedChip,
+  CreatingBadge,
   DeletingBadge,
+  DetachedBadge,
+  NoTaskBadge,
   SettingUpBadge,
   FilesButton,
   FolderLandedBadge,
@@ -41,7 +44,11 @@ import { cn } from "@/lib/utils";
 import {
   branchRedundant,
   comparedBaseLabel,
+  folderCreating,
+  folderDetached,
+  folderIsUnclaimed,
   folderPortDrift,
+  folderRemoving,
   folderSafeToDelete,
   humanizeFolderName,
   pathScope,
@@ -65,6 +72,7 @@ export function FolderHeader({
   now,
   deleting,
   deletingLabel,
+  onAdoptWorktree,
   settingUpSince,
   actions,
   onToggle,
@@ -95,14 +103,17 @@ export function FolderHeader({
   /** Whether this folder is the one currently shown in the main pane area. */
   active: boolean;
   now: number;
-  /** This worktree's `task_delete` is in flight — the caller already dims and
-   * disables the whole row (`pointer-events-none opacity-50`); this just adds
-   * the `DeletingBadge` label explaining why. */
+  /** An operation on this worktree is in flight — the caller already dims and
+   * disables the whole row (`pointer-events-none opacity-50`); the badges here
+   * say which operation. Derived from `folder.phase`, same as they are. */
   deleting?: boolean;
-  /** Live phase text for the in-flight delete ("running teardown command",
-   * "deleting git worktree", …) — passed to `DeletingBadge`, which falls
-   * back to a static label when absent (no phase event has landed yet). */
+  /** Live phase text for the in-flight operation ("fetching origin", "deleting
+   * git worktree", …) — the badges fall back to a static label when absent
+   * (nothing has been stamped yet, and browser dev never gets one). */
   deletingLabel?: string;
+  /** Adopt this row's detected worktree as the user's own task. Absent when
+   * the row isn't a detected one. */
+  onAdoptWorktree?: () => void;
   /** When this checkout's setup step started (epoch ms), while it's still
    * running. Absent means nothing is installing. */
   settingUpSince?: number;
@@ -344,7 +355,10 @@ export function FolderHeader({
                 />
               </span>
             )}
-            {deleting && <DeletingBadge label={deletingLabel} />}
+            {folderRemoving(folder) && <DeletingBadge label={deletingLabel} />}
+            {folderCreating(folder) && <CreatingBadge label={deletingLabel} />}
+            {folderDetached(folder) && <DetachedBadge />}
+            {folderIsUnclaimed(folder) && <NoTaskBadge onAdopt={onAdoptWorktree} />}
             {settingUpSince !== undefined && !deleting && (
               <SettingUpBadge since={settingUpSince} now={now} />
             )}
