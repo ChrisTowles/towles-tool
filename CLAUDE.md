@@ -25,7 +25,29 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
+cargo xtask comment-budget          # comment volume on the lines this branch adds — what CI runs
+cargo xtask comment-budget --all    # every file in the repo: the standing backlog
+cargo xtask comment-budget --all --report            # the backlog as surfaces + worst files
+cargo xtask comment-budget --all --surface client-logic   # one surface, for a session spent fixing it
 ```
+
+`comment-budget` is the one gate on comment sprawl, and the only one spanning
+Rust and frontend (oxlint implements no comment-volume rule at all). Budgets are
+per *surface* in **`comment-budget.toml`**; the mechanics and why they are what
+they are live in `xtask/src/comment_budget.rs`'s module doc. Three rules shape
+how you write:
+
+- **`//!` is exempt, `///` and `//` are counted.** Module docs are where the
+  hard-won why lives and are never capped; item docs and narration are the bloat.
+- **No baseline, no per-file exceptions** — a list of files allowed to fail is a
+  ledger of debt nobody pays. The only escape is `comment-budget: allow(<reason>)`
+  at the top of a file, and the reason is mandatory.
+- **A file no surface claims is an error**, not a quiet skip: a tree nobody
+  noticed was exempt reads exactly like passing.
+
+CI judges only the lines a branch adds. `--all` is the repo-wide backlog, at
+~500 errors — never wire it to `pull_request`, and never lower a budget to make
+it pass.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
 `tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its
