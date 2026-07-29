@@ -24,6 +24,91 @@ function vscodeDiffNodeShim(): Plugin {
   };
 }
 
+// Dev-only Babel plugin: put the owning React component's name into the DOM,
+// where the element inspector can show it — component names otherwise never
+// leave React. Two stamps per host element (lowercase tags only — a
+// capitalized <Component/> would receive them as unexpected props):
+//
+// - the component name prepended as the element's *first class*, because the
+//   inspector's hover tooltip shows only `tag.classList` — so it reads
+//   `span.SessionRow.min-w-0.flex-1…` right in the overlay;
+// - `data-component="<Name>"` on the component's *root* element, for
+//   structural queries (`document.querySelectorAll('[data-component]')`).
+//
+// The name is the nearest enclosing capitalized function (walking out of
+// inline `.map(…)` callbacks). Gated to `vite serve`, so built/release DOM
+// stays clean.
+function componentNamePlugin({ types: t }: { types: typeof import("@babel/types") }) {
+  const directName = (fnPath: any): string | null => {
+    const node = fnPath.node;
+    if (node.id?.name) return node.id.name;
+    const parent = fnPath.parentPath;
+    if (parent?.isVariableDeclarator() && t.isIdentifier(parent.node.id)) {
+      return parent.node.id.name;
+    }
+    return null;
+  };
+  const enclosingComponentName = (el: any): string | null => {
+    for (let fn = el.getFunctionParent(); fn; fn = fn.getFunctionParent()) {
+      const name = directName(fn);
+      if (name && /^[A-Z]/.test(name)) return name;
+    }
+    return null;
+  };
+  return {
+    name: "tt:component-names",
+    visitor: {
+      JSXElement(el: any) {
+        const opening = el.node.openingElement;
+        if (!t.isJSXIdentifier(opening.name) || !/^[a-z]/.test(opening.name.name)) return;
+        const name = enclosingComponentName(el);
+        if (!name) return;
+
+        // Prepend the name to className so the inspector tooltip shows it.
+        const classAttr = opening.attributes.find(
+          (a: any) => t.isJSXAttribute(a) && a.name.name === "className",
+        );
+        if (!classAttr) {
+          opening.attributes.push(
+            t.jsxAttribute(t.jsxIdentifier("className"), t.stringLiteral(name)),
+          );
+        } else if (t.isStringLiteral(classAttr.value)) {
+          if (!classAttr.value.value.startsWith(`${name} `) && classAttr.value.value !== name) {
+            classAttr.value = t.stringLiteral(`${name} ${classAttr.value.value}`);
+          }
+        } else if (
+          t.isJSXExpressionContainer(classAttr.value) &&
+          !t.isJSXEmptyExpression(classAttr.value.expression)
+        ) {
+          classAttr.value = t.jsxExpressionContainer(
+            t.binaryExpression(
+              "+",
+              t.stringLiteral(`${name} `),
+              t.logicalExpression("||", classAttr.value.expression, t.stringLiteral("")),
+            ),
+          );
+        }
+
+        // data-component marks the component's root element only.
+        const parent = el.parentPath;
+        const isRoot =
+          parent.isReturnStatement() ||
+          (parent.isArrowFunctionExpression() && parent.node.body === el.node);
+        if (
+          isRoot &&
+          !opening.attributes.some(
+            (a: any) => t.isJSXAttribute(a) && a.name.name === "data-component",
+          )
+        ) {
+          opening.attributes.push(
+            t.jsxAttribute(t.jsxIdentifier("data-component"), t.stringLiteral(name)),
+          );
+        }
+      },
+    },
+  };
+}
+
 // Every @codingame/monaco-vscode-* package must be pre-bundled together (and
 // deduped) so they share one module instance — otherwise, in dev, the
 // default-extension packages register grammars/themes into a different copy
@@ -60,7 +145,11 @@ function requireDevPort(): number {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss(), vscodeDiffNodeShim()],
+  plugins: [
+    react(command === "serve" ? { babel: { plugins: [componentNamePlugin] } } : undefined),
+    tailwindcss(),
+    vscodeDiffNodeShim(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
