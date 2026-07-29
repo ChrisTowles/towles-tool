@@ -141,6 +141,11 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_font_size: Option<u8>,
 
+    /// Font size (px) for the app's Monaco surfaces (editor and diff panes).
+    /// `None` = the built-in default (12).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_font_size: Option<u8>,
+
     /// Let board-wide action shortcuts (jump to next/prev session needing you,
     /// close/split session, toggle diff/rail) fire even while a terminal has
     /// focus, instead of being swallowed as shell input. `None` = the built-in
@@ -1545,6 +1550,25 @@ mod tests {
         assert!(!json.contains("terminalFontSize"));
         // …and unset means the 13px default (the frontend applies it).
         assert_eq!(s.agentboard.terminal_font_size.unwrap_or(13), 13);
+    }
+
+    #[test]
+    fn editor_font_size_defaults_unset_and_twelve() {
+        let s = UserSettings::default();
+        assert!(s.agentboard.editor_font_size.is_none());
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("editorFontSize"));
+        assert_eq!(s.agentboard.editor_font_size.unwrap_or(12), 12);
+    }
+
+    #[test]
+    fn editor_font_size_roundtrips_beside_the_terminal_one() {
+        let json = r#"{"agentboard":{"terminalFontSize":13,"editorFontSize":16}}"#;
+        let s: UserSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(s.agentboard.terminal_font_size, Some(13));
+        assert_eq!(s.agentboard.editor_font_size, Some(16));
+        let out = serde_json::to_string(&s).unwrap();
+        assert!(out.contains("\"editorFontSize\":16"));
     }
 
     #[test]

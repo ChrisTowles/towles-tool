@@ -177,7 +177,9 @@ export type UserSettings = {
    * see {@link NOTIFY_LEVELS}), `compactRecommendPercent` (context-usage % at which
    * a session is flagged for compaction; unset = 30), `copyOnSelect` (terminal
    * copies the selection to the clipboard on selection end; unset = off),
-   * `terminalFontSize` (canvas terminal font px; unset = 13), and
+   * `terminalFontSize` (canvas terminal font px; unset = 13),
+   * `editorFontSize` (Monaco font px — the file editor and the diff panes;
+   * unset = 12), and
    * `shortcutsWorkInTerminal` (board-wide action shortcuts, e.g. jump to
    * next/prev session needing you, fire even while a terminal has focus;
    * unset = on), `shortcutCoach` (show the "there's a shortcut for that"
@@ -200,6 +202,7 @@ export type UserSettings = {
     compactRecommendPercent?: number;
     copyOnSelect?: boolean;
     terminalFontSize?: number;
+    editorFontSize?: number;
     shortcutsWorkInTerminal?: boolean;
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;

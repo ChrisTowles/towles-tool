@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { toast } from "sonner";
+import { useEditorFontSize } from "@/lib/editor-prefs";
 import { loadMonaco } from "@/lib/monaco";
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
@@ -37,6 +38,13 @@ export function DiffReview({
   const containerRef = useRef<HTMLDivElement>(null);
   const modifiedRef = useRef<import("monaco-editor").editor.ITextModel | null>(null);
   const [ready, setReady] = useState(false);
+  const [fontSize] = useEditorFontSize();
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
+  const editorRef = useRef<import("monaco-editor").editor.IStandaloneDiffEditor | null>(null);
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize });
+  }, [fontSize]);
 
   useEffect(() => {
     let disposed = false;
@@ -55,16 +63,18 @@ export function DiffReview({
         originalEditable: false,
         renderSideBySide: true,
         minimap: { enabled: false },
-        fontSize: 12,
+        fontSize: fontSizeRef.current,
         scrollBeyondLastLine: false,
         wordWrap: "on",
       });
+      editorRef.current = editor;
       editor.setModel({ original, modified });
       setReady(true);
     })();
     return () => {
       disposed = true;
       modifiedRef.current = null;
+      editorRef.current = null;
       editor?.dispose();
       original?.dispose();
       modified?.dispose();

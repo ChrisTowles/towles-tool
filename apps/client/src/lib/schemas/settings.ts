@@ -108,6 +108,7 @@ const AgentboardBlockSchema = z
     compactRecommendPercent: z.number().optional(),
     copyOnSelect: z.boolean().optional(),
     terminalFontSize: z.number().optional(),
+    editorFontSize: z.number().optional(),
     shortcutsWorkInTerminal: z.boolean().optional(),
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),

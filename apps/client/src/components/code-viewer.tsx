@@ -16,7 +16,14 @@ import {
   type FileRead,
 } from "@/lib/ide";
 import { AUTOSAVE_DELAY_MS, diskChangeAction } from "@/lib/viewer-refresh";
+import {
+  clampEditorFontSize,
+  DEFAULT_EDITOR_FONT_SIZE,
+  useEditorFontSize,
+} from "@/lib/editor-prefs";
+import { recallViewState, rememberViewState, viewStateKey } from "@/lib/editor-view-state";
 import { NotInTauri, errorMessage } from "@/lib/errors";
+import { uiAction } from "@/lib/ui-action";
 import { IdeSelectionOverlay } from "@/components/ide-selection-chip";
 import { EditorContextMenu } from "@/components/editor-context-menu";
 import { ViewerBanner } from "@/components/viewer-banner";
@@ -157,6 +164,11 @@ export function CodeViewer({
   onDirtyRef.current = onDirtyChange;
   const wordWrapRef = useRef(wordWrap);
   wordWrapRef.current = wordWrap;
+  const [fontSize, setFontSize] = useEditorFontSize();
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
+  const setFontSizeRef = useRef(setFontSize);
+  setFontSizeRef.current = setFontSize;
   // Read at create time; later flips ride the updateOptions effect below —
   // the editor must not be rebuilt for a mode change (undo stack, scroll).
   const editableRef = useRef(editable);
@@ -228,7 +240,7 @@ export function CodeViewer({
         model,
         automaticLayout: true,
         minimap: { enabled: false },
-        fontSize: 12,
+        fontSize: fontSizeRef.current,
         lineNumbersMinChars: 4,
         scrollBeyondLastLine: false,
         renderLineHighlight: "line",
@@ -240,6 +252,10 @@ export function CodeViewer({
       editorRef.current = editor;
       savedVersionRef.current = model.getAlternativeVersionId();
       setLoading(false);
+      const remembered = recallViewState(viewStateKey(dir, path));
+      if (remembered) {
+        editor.restoreViewState(remembered as import("monaco-editor").editor.ICodeEditorViewState);
+      }
       // The request that opened this file usually lands before the editor
       // exists (the anchor effect above finds no editor and bails) — apply it
       // now that the model is live.
@@ -413,6 +429,26 @@ export function CodeViewer({
         () => void mention(),
       );
 
+      const zoomTo = (px: number) => {
+        const clamped = clampEditorFontSize(px);
+        setFontSizeRef.current(clamped);
+        uiAction("editor.font_size", "agentboard", String(clamped));
+      };
+      for (const [key, delta] of [
+        [monaco.KeyCode.Equal, 1],
+        [monaco.KeyCode.NumpadAdd, 1],
+        [monaco.KeyCode.Minus, -1],
+        [monaco.KeyCode.NumpadSubtract, -1],
+      ] as const) {
+        editor.addCommand(monaco.KeyMod.CtrlCmd | key, () => zoomTo(fontSizeRef.current + delta));
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | key, () =>
+          zoomTo(fontSizeRef.current + delta),
+        );
+      }
+      for (const key of [monaco.KeyCode.Digit0, monaco.KeyCode.Numpad0] as const) {
+        editor.addCommand(monaco.KeyMod.CtrlCmd | key, () => zoomTo(DEFAULT_EDITOR_FONT_SIZE));
+      }
+
       editor.onDidChangeCursorSelection((e) => {
         // The chip tracks the selection immediately — only the bridge traffic
         // is debounced.
@@ -449,6 +485,8 @@ export function CodeViewer({
       // means neither side has won.)
       flushSave?.();
       offDiskChange?.();
+      const leaving = editor?.saveViewState();
+      if (leaving) rememberViewState(viewStateKey(dir, path), leaving);
       // Unmatched unwatches are a no-op, so this needs no "did the watch
       // actually start" bookkeeping.
       void ideUnwatchFiles(dir, [path]);
@@ -471,6 +509,10 @@ export function CodeViewer({
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly: !editable });
   }, [editable]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize });
+  }, [fontSize]);
 
   // An open request can ask for a landing spot (startText..endText selection,
   // or a bare :line) — apply it against the live editor. The mount effect
