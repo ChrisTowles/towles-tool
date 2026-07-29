@@ -8,9 +8,48 @@
 # comment block, where the reason sits next to the essay it excuses.
 
 # Source trees measured for comments, and the paths skipped inside them.
-# `components/ui` is vendored shadcn.
-trees = ["crates", "crates-cli", "crates-tauri", "apps/client/src", "scripts", "e2e"]
+# `components/ui` is vendored shadcn. Dot-directories are always skipped.
+trees = [
+  "crates",
+  "crates-cli",
+  "crates-tauri",
+  "apps/client/src",
+  "scripts",
+  "e2e",
+  "xtask",
+]
 skip = ["node_modules", "target", "dist", "apps/client/src/components/ui"]
+
+# Which files are measured, and how each is read.
+#
+# `grammar` picks the tree-sitter grammar whose comment nodes are counted —
+# `rust`, `typescript`, `tsx` — or `prose`, which parses nothing and measures
+# total length instead (the block and mass/ratio shapes are meaningless in a
+# file that is all comment). An unknown name is a hard error, not a skipped file.
+#
+# `scan` is where the extension is looked for: `trees` (the default) confines it
+# to the list above; `repo` sweeps the whole checkout. Docs get `repo` because
+# they live everywhere — per-crate CLAUDE.md, docs/, plugin skills — and listing
+# their homes would mean a new one silently going unmeasured.
+
+[[languages]]
+grammar = "rust"
+extensions = ["rs"]
+
+# .js/.mjs read with the TypeScript grammar rather than pulling a second one in:
+# TS is a superset, and the only question asked here is where the comments are.
+[[languages]]
+grammar = "typescript"
+extensions = ["ts", "js", "mjs", "cjs"]
+
+[[languages]]
+grammar = "tsx"
+extensions = ["tsx"]
+
+[[languages]]
+grammar = "prose"
+extensions = ["md"]
+scan = "repo"
 
 # A contiguous run of full-line comments trips a tier at this many lines.
 [block]

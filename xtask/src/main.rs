@@ -1,24 +1,8 @@
-//! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint` — a linter for
-//! comment volume with one set of thresholds for the whole tree — no baseline file,
-//! no per-file exceptions, no ratchet.
-//! It covers Rust and the frontend's TS/TSX/JS alike, because comment sprawl is a
-//! prose problem and neither language's own linter counts it (oxlint has no
-//! comment-volume rule at all — it skips stylistic rules by design).
-//!
-//! Two signals per source file, each with a warning and an error tier:
-//!
-//! - **shape** — a contiguous run of full-line comments that is too long. tree-sitter
-//!   finds the comment nodes, so a `//` inside a string never miscounts.
-//! - **too many** — a file whose comment mass *and* comment-to-code ratio are both
-//!   high. Both at once on purpose: mass alone flags big well-commented files, ratio
-//!   alone flags tiny `lib.rs` stubs whose few doc lines are 400% of nothing.
-//!
-//! Markdown is all prose, so neither signal means anything there; a doc gets the one
-//! measure it has, total length.
-//!
-//! Warnings are the standing hit list of essays worth trimming; errors fail CI. Suppress
-//! a deliberate essay with a `verbose-ok: <why>` line inside the block. Thresholds and
-//! measured trees live in `comment-lint.toml` at the repo root — tighten them there.
+//! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint`, a linter for
+//! comment volume across every language here — nothing else measures it (oxlint
+//! implements no such rule at all). Warnings are the standing hit list; errors
+//! fail CI. What it measures and how hard, including what each signal is for,
+//! lives in `comment-lint.toml` at the repo root.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -37,6 +21,7 @@ struct Config {
     /// Source trees measured for comments, and paths skipped inside them.
     trees: Vec<String>,
     skip: Vec<String>,
+    languages: Vec<LanguageSpec>,
     block: Tiers<usize>,
     #[serde(rename = "heavy-file")]
     heavy_file: Tiers<HeavyFile>,
@@ -50,6 +35,56 @@ impl Config {
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
+
+    /// How a file is read, by extension — `None` for one no `[[languages]]`
+    /// entry claims, which is simply not measured.
+    fn language_for(&self, name: &str) -> Option<&LanguageSpec> {
+        let ext = name.rsplit_once('.')?.1;
+        self.languages.iter().find(|l| l.extensions.iter().any(|e| e == ext))
+    }
+}
+
+/// One `[[languages]]` entry: which extensions it claims, how they're read, and
+/// where they're looked for.
+#[derive(serde::Deserialize)]
+struct LanguageSpec {
+    grammar: Grammar,
+    extensions: Vec<String>,
+    #[serde(default)]
+    scan: Scan,
+}
+
+#[derive(serde::Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum Grammar {
+    Rust,
+    Typescript,
+    Tsx,
+    /// Parsed by nothing and measured by length — see [`Config::doc`].
+    Prose,
+}
+
+impl Grammar {
+    /// `None` for [`Grammar::Prose`], which has no grammar to parse with.
+    fn language(&self) -> Option<tree_sitter::Language> {
+        match self {
+            Grammar::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
+            Grammar::Typescript => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            Grammar::Tsx => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+            Grammar::Prose => None,
+        }
+    }
+}
+
+/// Where an extension is looked for.
+#[derive(serde::Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum Scan {
+    /// Only under `trees` (the default).
+    #[default]
+    Trees,
+    /// The whole checkout.
+    Repo,
 }
 
 /// Warn/error cutoffs for one rule.
@@ -207,25 +242,13 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask has a parent dir").to_path_buf()
 }
 
-/// The grammar a file is parsed with. `.js`/`.mjs` go through the TypeScript
-/// grammar rather than pulling a second one in — TS is a superset, and the only
-/// question asked here is where the comments are.
-fn language_for(name: &str) -> Option<tree_sitter::Language> {
-    match name.rsplit_once('.')?.1 {
-        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
-        "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
-        "ts" | "js" | "mjs" | "cjs" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-        _ => None,
-    }
-}
-
 fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
     let mut files = Vec::new();
     for tree in &cfg.trees {
         collect_files(root, &root.join(tree), cfg, &mut files);
     }
-    // Docs live all over the tree (per-crate CLAUDE.md, docs/, plugin skills), so
-    // they're swept from the root rather than listed.
+    // The second sweep is what a `scan = "repo"` language needs; a tree-scanned
+    // one is filtered back out inside `collect_files`.
     collect_files(root, root, cfg, &mut files);
     files.sort();
     files.dedup();
@@ -237,7 +260,8 @@ fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        stats.push(match language_for(&name) {
+        let spec = cfg.language_for(&name).expect("collect_files only pushes claimed extensions");
+        stats.push(match spec.grammar.language() {
             Some(lang) => {
                 parser
                     .set_language(&lang)
@@ -256,9 +280,8 @@ fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
     Ok(stats)
 }
 
-/// Recurse `dir`, collecting every file this linter knows how to measure. Markdown
-/// is collected everywhere; source only under [`TREES`], which is why the root sweep
-/// and the per-tree sweeps both run.
+/// Recurse `dir`, collecting every file some `[[languages]]` entry claims and
+/// whose `scan` mode allows it here.
 fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -273,7 +296,9 @@ fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<PathBuf>) 
         }
         if path.is_dir() {
             collect_files(root, &path, cfg, out);
-        } else if name.ends_with(".md") || (language_for(&name).is_some() && under_tree(cfg, &rel))
+        } else if cfg
+            .language_for(&name)
+            .is_some_and(|l| l.scan == Scan::Repo || under_tree(cfg, &rel))
         {
             out.push(path);
         }
@@ -311,7 +336,7 @@ fn fold_file(
 
     let mut blocks: Vec<Block> = Vec::new();
     for row in comment_line_nums.iter().copied() {
-        let overridden = lines.get(row).copied().unwrap_or("").contains(MARKER);
+        let overridden = is_override(lines.get(row).copied().unwrap_or(""));
         match blocks.last_mut() {
             // `end` is 1-based, so equality means `row` is the very next line.
             Some(cur) if cur.end == row => {
@@ -330,6 +355,16 @@ fn fold_file(
         code_lines: lines.len() - blank_lines - comment_line_nums.len(),
         blocks,
     })
+}
+
+/// Whether a comment line *is* the suppression directive, rather than prose that
+/// happens to name it. The marker has to lead the line's text once its comment
+/// syntax is stripped — a substring match let any sentence mentioning the escape
+/// hatch silently claim it, which is how this linter's own module doc went
+/// unmeasured.
+fn is_override(line: &str) -> bool {
+    let text = line.trim_start().trim_start_matches(['/', '!', '*', '#']).trim_start();
+    text.starts_with(MARKER)
 }
 
 fn collect_comment_nodes<'t>(node: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {

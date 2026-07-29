@@ -31,9 +31,10 @@ cargo xtask comment-lint            # comment volume — Rust, TS/TSX/JS and com
 `comment-lint` is the repo's one gate on comment sprawl, and it covers the
 frontend because nothing else can: oxlint implements no comment-volume rule at
 all (it skips stylistic rules by design). It flags an over-long comment *block*, a
-file whose comment mass and ratio are both high, and an over-long `.md`. Thresholds
-and measured trees live in **`comment-lint.toml`** at the repo root — one set of
-numbers for the whole tree, and the one place to tighten them. That file must never
+file whose comment mass and ratio are both high, and an over-long `.md`. Thresholds,
+measured trees, and which extensions are read with which grammar all live in
+**`comment-lint.toml`** at the repo root — teaching it a new file type is an entry
+there, not a code change, and it is the one place to tighten. That file must never
 grow per-file exceptions or a baseline; the only escape hatch is a
 `verbose-ok: <why>` line inside the block, where the reason sits next to the essay
 it excuses. It runs in its own workflow because it is the only gate spanning
