@@ -1,9 +1,9 @@
-name: Comment lint
+name: Comment budget
 
 # Its own workflow rather than a step in `rust`/`frontend`, because it is the one
 # gate that spans both: `rust` is paths-ignored for apps/client and scripts, and
 # `frontend` has no cargo toolchain. Split across the two, a TS-only PR would run
-# no comment lint at all. Unfiltered on purpose — the linter reads every tracked
+# no comment budget at all. Unfiltered on purpose — the linter reads every tracked
 # source tree plus the committed docs, so any path can change its verdict.
 on:
   push:
@@ -11,7 +11,7 @@ on:
   pull_request:
 
 concurrency:
-  group: comment-lint-${{ github.ref }}
+  group: comment-budget-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -26,4 +26,4 @@ jobs:
       - name: Provision pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo xtask comment-lint
+      - run: cargo xtask comment-budget

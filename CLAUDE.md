@@ -25,20 +25,33 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
-cargo xtask comment-lint            # comment volume — Rust, TS/TSX/JS and committed docs
+cargo xtask comment-budget          # comment volume — Rust, TS/TSX/JS and committed docs
 ```
 
-`comment-lint` is the repo's one gate on comment sprawl, and it covers the
+`comment-budget` is the repo's one gate on comment sprawl, and it covers the
 frontend because nothing else can: oxlint implements no comment-volume rule at
-all (it skips stylistic rules by design). It flags an over-long comment *block*, a
-file whose comment mass and ratio are both high, and an over-long `.md`. Thresholds,
-measured trees, and which extensions are read with which grammar all live in
-**`comment-lint.toml`** at the repo root — teaching it a new file type is an entry
-there, not a code change, and it is the one place to tighten. That file must never
-grow per-file exceptions or a baseline; the only escape hatch is a
-`verbose-ok: <why>` line inside the block, where the reason sits next to the essay
-it excuses. It runs in its own workflow because it is the only gate spanning
-Rust and frontend paths, which `ci.yml` and `frontend.yml` each filter out half of.
+all (it skips stylistic rules by design). It asks one question — how much prose
+must a reader wade through to reach the code — as `comment_lines /
+(comment_lines + code_lines)`, plus an over-long run of them and an over-long
+`.md`. Everything else lives in **`comment-budget.toml`** at the repo root, and
+three things about that file are load-bearing:
+
+- **Budgets are per *surface*, not global.** A shared library documents its
+  crossing points; a React component doesn't. Each surface carries a `goal` in
+  prose and a `target` the run reports itself against, so the number has a
+  reason attached. First match wins, and a file no surface claims is measured
+  by nothing — adding a tree means adding a surface.
+- **`//!` is exempt, `///` and `//` are counted.** Module docs are where the
+  hard-won why lives and are never capped; item docs and narration are the
+  bloat. Without that split the gate can only be too loose to catch anything or
+  tight enough to delete the decision record.
+- **No per-file exceptions and no baseline** — a list of files allowed to fail
+  is a ledger of debt nobody pays. The only escape is
+  `comment-budget: allow(<reason>)` at the top of the file, and a reason is
+  mandatory: an unexplained opt-out is itself an error.
+
+It runs in its own workflow because it is the only gate spanning Rust and
+frontend paths, which `ci.yml` and `frontend.yml` each filter out half of.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
 `tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its
