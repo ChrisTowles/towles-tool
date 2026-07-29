@@ -111,6 +111,20 @@ impl Repo {
             .unwrap_or(0)
     }
 
+    /// Epoch seconds of `HEAD`'s own commit time — "when was this checkout last
+    /// committed to", regardless of which branch it sits on or what it forked
+    /// from. `None` on an unborn branch.
+    ///
+    /// Unlike [`Self::last_own_commit_unix`] this has no base to compare
+    /// against, which is the point: a main checkout sitting exactly on
+    /// `origin/main` has no commits of its own and would answer `None` there,
+    /// while still being a checkout somebody committed in an hour ago.
+    pub fn head_commit_unix(&self) -> Option<i64> {
+        let head = self.head_id()?;
+        let commit = self.inner().find_object(head).ok()?.try_into_commit().ok()?;
+        commit.time().ok().map(|time| time.seconds)
+    }
+
     /// Epoch seconds of the newest commit in `base..HEAD` — the branch's own
     /// most recent work, `None` when it has added no commits of its own.
     pub fn last_own_commit_unix(&self, base: &str) -> Option<i64> {
@@ -228,6 +242,15 @@ mod tests {
     fn last_own_commit_is_none_on_the_base_branch() {
         let repo = TestRepo::new();
         let git = Repo::open(repo.path()).expect("open");
+        assert_eq!(git.last_own_commit_unix("origin/main"), None);
+    }
+
+    #[test]
+    fn head_commit_answers_on_the_base_branch_where_last_own_commit_does_not() {
+        let repo = TestRepo::new();
+        let git = Repo::open(repo.path()).expect("open");
+        let expected: i64 = repo.git(&["log", "-1", "--format=%ct", "HEAD"]).parse().expect("int");
+        assert_eq!(git.head_commit_unix(), Some(expected));
         assert_eq!(git.last_own_commit_unix("origin/main"), None);
     }
 }

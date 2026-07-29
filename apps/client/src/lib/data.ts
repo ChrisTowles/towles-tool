@@ -249,7 +249,7 @@ export type DmItem = {
 /**
  * Watched DMs that still need a reply: the newest message is theirs (`!fromMe`)
  * and the user hasn't marked it handled (`dismissedTs < ts`). Both the DM banner
- * and the day-bar attention count derive from this one predicate.
+ * and the header's needs-you count derive from this one predicate.
  */
 export function dmsNeedingAttention(snapshot: StoreSnapshot): DmItem[] {
   return snapshot.dms.filter((d) => !d.fromMe && d.dismissedTs < d.ts);

@@ -113,6 +113,23 @@ pub struct GitInfo {
     /// long stretches of a correct, unchanging number are normal and look
     /// identical to a wedged poll. 0 when never computed.
     pub computed_at_ms: i64,
+    /// Epoch ms of `HEAD`'s commit time — "when was this checkout last
+    /// committed to". 0 on an unborn branch or before the first compute.
+    ///
+    /// Deliberately HEAD's own time rather than
+    /// [`tt_git::repo::Repo::last_own_commit_unix`]'s `base..HEAD` tip: a main
+    /// checkout sitting on `origin/main` has no commits of its own and would
+    /// read as never-touched, which is exactly backwards for the rail's
+    /// worked-recently filter.
+    pub head_commit_ms: i64,
+    /// Epoch ms of the newest mtime among the paths the working tree reports as
+    /// changed — the edits that never became a commit. 0 for a clean tree.
+    ///
+    /// The half of "somebody is working here" no `.git` file can answer: an
+    /// unstaged edit moves neither `HEAD` nor `index` (see this crate's
+    /// [`control_files`]), so without this a checkout being actively edited but
+    /// not committed reads as untouched.
+    pub worktree_touched_ms: i64,
     /// True when `dir` doesn't exist on disk (a tracked repo whose checkout was
     /// moved or deleted). Distinguishes a genuinely-missing directory from a
     /// present-but-non-git one — both otherwise yield an empty [`GitInfo`].
@@ -419,6 +436,10 @@ fn structural_only(
     let s = structural_facts(dir, repo, previous);
     GitInfo {
         computed_at_ms: now_ms,
+        // Not ref-*derived* the way the rest of this arm's blanks are: HEAD
+        // still points at a commit mid-rebase, and the rail's worked-recently
+        // filter would otherwise drop the checkout being rebased.
+        head_commit_ms: repo.head_commit_unix().unwrap_or(0) * 1000,
         origin_url: s.origin_url,
         common_dir: s.common_dir,
         worktree_dirs: s.worktree_dirs,
@@ -617,6 +638,7 @@ pub fn compute_git_info(
             // match proves they're still exact).
             let mut info = diff_stats(&repo, &prev.branch, prev.is_worktree, diff_base);
             info.computed_at_ms = now_ms;
+            info.head_commit_ms = prev.head_commit_ms;
             info.commits_ahead = prev.commits_ahead;
             info.commits_behind = prev.commits_behind;
             info.commits_unlanded = prev.commits_unlanded;
@@ -671,6 +693,7 @@ pub fn compute_git_info(
 
     let mut info = diff_stats(&repo, &branch, is_worktree, &base);
     info.computed_at_ms = now_ms;
+    info.head_commit_ms = repo.head_commit_unix().unwrap_or(0) * 1000;
     let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
     info.commits_ahead = ahead;
     info.commits_behind = behind;
@@ -748,6 +771,9 @@ pub fn compute_git_info(
 fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: &str) -> GitInfo {
     let uncommitted = repo.changes_vs("HEAD").unwrap_or_default();
     let committed = repo.committed_totals_vs(base).unwrap_or_default();
+    // Reuses the paths the diff just produced rather than a second status walk.
+    let worktree_touched =
+        repo.newest_mtime_unix(uncommitted.iter().map(|c| c.path.as_str())).unwrap_or(0);
     GitInfo {
         branch: branch.to_string(),
         is_worktree,
@@ -758,6 +784,7 @@ fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: 
         uncommitted_added: uncommitted.iter().map(|c| c.lines_added).sum(),
         uncommitted_removed: uncommitted.iter().map(|c| c.lines_removed).sum(),
         dirty: !uncommitted.is_empty(),
+        worktree_touched_ms: worktree_touched * 1000,
         ..Default::default()
     }
 }
@@ -1394,6 +1421,36 @@ mod tests {
             (edited.uncommitted_added, edited.uncommitted_removed),
             "an untracked file contributes no line counts"
         );
+    }
+
+    /// The two signals behind the rail's worked-recently filter. `head_commit_ms`
+    /// answers even on the base branch (where `last_own_commit_unix` is `None`),
+    /// and `worktree_touched_ms` covers the unstaged edit no `.git` mtime sees.
+    #[test]
+    fn worked_recently_signals_track_commits_and_unstaged_edits() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+
+        let clean = compute_git_info(dir, None, None, NOW);
+        let head_commit: i64 = String::from_utf8(
+            std::process::Command::new("git")
+                .args(["-C", dir, "log", "-1", "--format=%ct", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+        assert_eq!(clean.head_commit_ms, head_commit * 1000, "the base branch still has a commit");
+        assert_eq!(clean.worktree_touched_ms, 0, "a clean tree was touched by nobody");
+
+        std::fs::write(root.path().join("f.txt"), "1\n2\n").unwrap();
+        let edited = compute_git_info(dir, None, None, NOW);
+        assert_eq!(edited.head_commit_ms, clean.head_commit_ms, "no new commit");
+        assert!(edited.worktree_touched_ms > 0, "an unstaged edit is a touch");
     }
 
     /// The whole point of the split: committed work and uncommitted work are

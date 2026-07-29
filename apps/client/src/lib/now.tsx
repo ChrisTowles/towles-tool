@@ -11,7 +11,7 @@ import {
 
 /**
  * A single app-wide wall clock. One `setInterval` feeds every countdown,
- * age readout, and escalation timer (day bar, header clock, DM banner,
+ * age readout, and escalation timer (header status, header clock, DM banner,
  * Cockpit, PRs, config) instead of each mounting its own ticker.
  *
  * Default 15s granularity: fine enough for the DM banner's 5/10-minute

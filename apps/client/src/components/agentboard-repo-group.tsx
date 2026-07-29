@@ -47,7 +47,7 @@ import {
 } from "@/lib/agentboard";
 import { type PrItem, type TaskItem } from "@/lib/data";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
 
@@ -426,7 +426,7 @@ export function RepoGroup({
         <div className="flex shrink-0 items-center gap-1 pl-1">
           <IconBtn
             ghost
-            title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
+            title={withHint("New task — goal, issues, branch", "ab-new-task")}
             onClick={() => {
               mouseAction("ab-new-task", "agentboard");
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });

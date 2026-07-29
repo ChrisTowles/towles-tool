@@ -6,6 +6,7 @@ import type { LaunchConfigStatus } from "./launch";
 import type { RepoMeta } from "./repo-identity";
 import { OpenedSessionSchema } from "./schemas/agentboard";
 import { TaskBlockerSchema } from "./schemas/task";
+import type { RailFilter } from "./settings";
 import { invoke } from "./tauri";
 
 /**
@@ -191,6 +192,16 @@ export type FolderData = {
    * indistinguishable from a wedged poll. This is what lets the rail say
    * *when* instead. 0 before the first compute. */
   computedAtMs?: number;
+  /** Epoch ms of `HEAD`'s commit time — "when was this checkout last committed
+   * to". 0 on an unborn branch or before the first compute. */
+  headCommitMs?: number;
+  /** Epoch ms of the newest mtime among the working tree's changed paths — the
+   * edits that never became a commit, and the only signal that sees an
+   * editor-only session. 0 for a clean tree. */
+  worktreeTouchedMs?: number;
+  /** Epoch ms of the last pane opened or closed on this checkout (persisted in
+   * `folder_meta.json`). 0 when that never happened on this machine. */
+  lastWorkedAt?: number;
   /** True when a live session in this folder has drifted ports — bubbles
    * `SessionData.portDrift` up for the rail badge. */
   hasPortDrift: boolean;
@@ -200,10 +211,10 @@ export type FolderData = {
    * themselves are fetched on demand via `launch_configs`. */
   hasLaunchConfig: boolean;
   /** Forced-quiet override (persisted per folder, `ab_set_folder_quiet`) —
-   * `isFolderQuiet` treats this folder as quiet under the "hide inactive"
-   * rail filter regardless of its actual activity signals above. One flag
-   * whether it got set by hand or some other way; nothing here distinguishes
-   * "manual" from any other source. */
+   * both `isFolderQuiet` and `isFolderStale` treat this folder as filtered
+   * out regardless of its actual activity signals above. One flag whether it
+   * got set by hand or some other way; nothing here distinguishes "manual"
+   * from any other source. */
   quiet: boolean;
 };
 
@@ -954,6 +965,54 @@ export function isFolderQuiet(f: FolderData, now: number): boolean {
       f.sessions.every((s) => !sessionCatchesEye(s)) &&
       now - folderLastActivityAt(f) >= QUIET_GRACE_MS)
   );
+}
+
+/** The newest sign that *someone worked in this checkout*, across every signal
+ * the snapshot carries: a commit, an edit that never became one, a pane opened
+ * or closed, and agent activity. 0 when none of them ever fired.
+ *
+ * Distinct from {@link folderLastActivityAt}, which is agent activity alone —
+ * that answers "is an agent doing something", this answers "was I here". A
+ * checkout edited by hand all morning with no agent running has an activity
+ * timestamp of 0 and a worked timestamp of minutes ago. */
+export function folderLastWorkedAt(f: FolderData): number {
+  return Math.max(
+    folderLastActivityAt(f),
+    f.headCommitMs ?? 0,
+    f.worktreeTouchedMs ?? 0,
+    f.lastWorkedAt ?? 0,
+  );
+}
+
+/** Whether a folder falls outside the "worked in the last `hours` hours"
+ * window. A live session is never stale — a running pane *is* working here,
+ * whatever the stamps say, and it's the one signal that can't be out of date.
+ *
+ * `f.quiet` short-circuits the same way it does in {@link isFolderQuiet}: a
+ * folder marked quiet by hand stays off the rail under either filter. */
+export function isFolderStale(f: FolderData, now: number, hours: number): boolean {
+  if (f.quiet) return true;
+  if (liveSessions(f).length > 0) return false;
+  return now - folderLastWorkedAt(f) >= hours * 3_600_000;
+}
+
+/** The rail's one filter predicate: whether `filter` demotes this folder to the
+ * per-repo "N quiet" stub row. The two modes ask genuinely different questions
+ * — see {@link RailFilter} — so this dispatches rather than composing them. */
+export function isFolderFiltered(
+  f: FolderData,
+  filter: RailFilter,
+  now: number,
+  recentHours: number,
+): boolean {
+  switch (filter) {
+    case "all":
+      return false;
+    case "active":
+      return isFolderQuiet(f, now);
+    case "recent":
+      return isFolderStale(f, now, recentHours);
+  }
 }
 
 /** The `~/code/<scope>/` prefix of a checkout dir (`w/` work, `p/` personal,

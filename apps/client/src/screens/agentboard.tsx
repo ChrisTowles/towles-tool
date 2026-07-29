@@ -82,7 +82,7 @@ import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
-import { useHideInactiveRepos, useJarvisPane, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
+import { useJarvisPane, useRailFilter, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -189,16 +189,17 @@ export function AgentboardScreen() {
   // this local copy is the live truth; see useCollapseState.
   const { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail } =
     useCollapseState(state);
-  // "Hide inactive" rail filter: demote quiet folders behind a per-repo "N
-  // quiet" stub row, so a big rail shrinks to what's actually going on without
-  // anything silently disappearing. A view filter, not a rail-structure change.
-  // Persisted via `agentboard.hideInactiveRepos` in the shared settings file —
-  // a whole-app preference, not rail-row UI state, so it doesn't belong in the
-  // `collapsed` map the way `railCollapsed` does.
-  const [hideInactive, setHideInactive] = useHideInactiveRepos();
+  // Rail filter: demote the folders it excludes behind a per-repo "N quiet"
+  // stub row, so a big rail shrinks to what's actually going on (or what you
+  // touched today) without anything silently disappearing. A view filter, not a
+  // rail-structure change. Persisted via `agentboard.railFilter` +
+  // `railRecentHours` in the shared settings file — whole-app preferences, not
+  // rail-row UI state, so they don't belong in the `collapsed` map the way
+  // `railCollapsed` does.
+  const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether auto-discovered worktrees that `tt task` didn't create (a bare
   // `claude --worktree`, a hand-added one) get rail folders at all. Unlike
-  // `hideInactive` this isn't a view filter over `repos` — the backend decides
+  // the rail filter this isn't a view filter over `repos` — the backend decides
   // which checkouts to discover, so the toggle round-trips through Rust and
   // the rail repopulates from the next `agentboard://state`.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
@@ -239,7 +240,7 @@ export function AgentboardScreen() {
     folderByDir,
     activeFolder,
     activeRepo,
-  } = useRailIndex({ repos, hideInactive, quietRevealed, activeFolderDir, now });
+  } = useRailIndex({ repos, filter, recentHours, quietRevealed, activeFolderDir, now });
 
   const { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane } =
     useWindowLayout({
@@ -1126,8 +1127,10 @@ export function AgentboardScreen() {
                     missingRepoCount={missingRepoCount}
                     dismissedPrCount={attention.dismissedPrCount}
                     clearingDismissals={attention.clearingDismissals}
-                    hideInactive={hideInactive}
-                    onSetHideInactive={setHideInactive}
+                    filter={filter}
+                    recentHours={recentHours}
+                    onSetFilter={setFilter}
+                    onSetRecentHours={setRecentHours}
                     showUnmanagedWorktrees={showUnmanagedWorktrees}
                     onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
                     jarvisPane={jarvisPane}
@@ -1308,6 +1311,7 @@ export function AgentboardScreen() {
 
               <PaneGrid
                 open={open}
+                repos={repos}
                 cwds={cwds}
                 activeWin={activeWin}
                 activeFolderDir={activeFolderDir}
@@ -1318,6 +1322,7 @@ export function AgentboardScreen() {
                 actions={actions}
                 focusedPaneId={focusedPaneId}
                 onFocusPane={setFocusedPaneId}
+                onSelectFolder={selectFolder}
                 termAttention={termAttention}
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}

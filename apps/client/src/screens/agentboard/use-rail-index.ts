@@ -1,8 +1,14 @@
 import { useMemo } from "react";
-import { isFolderQuiet, type FolderData, type RepoData, type SessionData } from "@/lib/agentboard";
+import {
+  isFolderFiltered,
+  type FolderData,
+  type RepoData,
+  type SessionData,
+} from "@/lib/agentboard";
+import type { RailFilter } from "@/lib/settings";
 
 export type RailIndex = {
-  /** Quiet checkout dirs per repo key, when the "hide inactive" filter is on. */
+  /** Filtered-out checkout dirs per repo key, when the rail filter is not "all". */
   quietDirs: Map<string, Set<string>>;
   /** Repos with quiet folders dropped — for the collapsed icon strip only. */
   visibleRepos: RepoData[];
@@ -30,42 +36,44 @@ export type RailIndex = {
  * repo tree.
  *
  * The lookups (folderOf, sessionById, …) stay on the **full** `repos` list
- * while only the two render surfaces apply the "hide inactive" filter — a pane
- * already open for a now-quiet folder must keep working. `isFolderQuiet` is
- * the filter's definition (no live session, no dirty tree/unpushed commits, no
- * session that catches the eye, no agent activity within the grace window);
- * the active folder never counts as quiet, so switching away from what you're
- * looking at never happens as a side effect of the filter.
+ * while only the two render surfaces apply the rail filter — a pane already
+ * open for a now-filtered folder must keep working. `isFolderFiltered` is the
+ * filter's definition (nothing going on right now, or nothing worked in the
+ * last `recentHours` — see `lib/agentboard.ts`); the active folder is never
+ * filtered out, so switching away from what you're looking at never happens as
+ * a side effect of the filter.
  */
 export function useRailIndex(args: {
   repos: RepoData[];
-  hideInactive: boolean;
+  filter: RailFilter;
+  /** How far back `filter: "recent"` counts as worked in. */
+  recentHours: number;
   /** Per-repo "show me the quiet ones anyway" toggle (the stub row). */
   quietRevealed: Record<string, boolean>;
   activeFolderDir: string | null;
   /** Ticks every 30s — plenty for the 45-minute quiet grace window. */
   now: number;
 }): RailIndex {
-  const { repos, hideInactive, quietRevealed, activeFolderDir, now } = args;
+  const { repos, filter, recentHours, quietRevealed, activeFolderDir, now } = args;
 
   const quietDirs = useMemo(() => {
     const m = new Map<string, Set<string>>();
-    if (!hideInactive) return m;
+    if (filter === "all") return m;
     for (const r of repos) {
       const q = new Set(
         r.folders
-          .filter((f) => isFolderQuiet(f, now) && f.dir !== activeFolderDir)
+          .filter((f) => isFolderFiltered(f, filter, now, recentHours) && f.dir !== activeFolderDir)
           .map((f) => f.dir),
       );
       if (q.size > 0) m.set(r.key, q);
     }
     return m;
-  }, [repos, hideInactive, activeFolderDir, now]);
+  }, [repos, filter, recentHours, activeFolderDir, now]);
 
   // The collapsed icon strip has no room for stub rows, so there the filter
   // still just drops quiet (un-revealed) folders and any repo left empty.
   const visibleRepos = useMemo(() => {
-    if (!hideInactive) return repos;
+    if (filter === "all") return repos;
     return repos
       .map((r) => {
         const q = quietDirs.get(r.key);
@@ -73,7 +81,7 @@ export function useRailIndex(args: {
         return { ...r, folders: r.folders.filter((f) => !q.has(f.dir)) };
       })
       .filter((r) => r.folders.length > 0);
-  }, [repos, hideInactive, quietDirs, quietRevealed]);
+  }, [repos, filter, quietDirs, quietRevealed]);
 
   const missingRepoCount = useMemo(
     () => repos.flatMap((r) => r.folders).filter((f) => f.dirMissing).length,

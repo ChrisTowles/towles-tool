@@ -80,7 +80,7 @@ because a collector that fails outright would otherwise stay quiet until its
 age threshold (4× cadence) elapsed — 40 minutes for `issues`.
 
 Agent status has its own, separate watcher (`tt_agentboard::NeedsYouWatch`);
-the day bar and Agentboard needs-you feed read snapshots, not these edges.
+the app header and Agentboard needs-you feed read snapshots, not these edges.
 
 ## Board tasks: closed, not deleted
 

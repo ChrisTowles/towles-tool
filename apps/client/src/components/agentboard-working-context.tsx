@@ -42,7 +42,7 @@ import {
 import type { PrItem, TaskItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** The working-context band atop the main pane: *where am I working*. Leads
@@ -171,7 +171,7 @@ export function WorkingContext({
           {!missing && <DevServersButton folder={folder} actions={actions} />}
           {!missing && (
             <IconBtn
-              title={`New session (${shortcutHint("ab-new-session")})`}
+              title={withHint("New session", "ab-new-session")}
               onClick={() => {
                 mouseAction("ab-new-session", "agentboard");
                 onNewSession(folder.dir);
@@ -183,7 +183,7 @@ export function WorkingContext({
           )}
           {!missing && (
             <IconBtn
-              title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
+              title={withHint("New task — goal, issues, branch", "ab-new-task")}
               onClick={() => {
                 mouseAction("ab-new-task", "agentboard");
                 newTask();

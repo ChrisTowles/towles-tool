@@ -46,7 +46,10 @@ import {
   folderPaneDir,
   isCacheExpiring,
   claudeCommand,
+  isFolderFiltered,
   isFolderQuiet,
+  isFolderStale,
+  folderLastWorkedAt,
   isPasteableImage,
   issuesForFolder,
   needingSessionsOldestFirst,
@@ -1252,6 +1255,86 @@ describe("isFolderQuiet", () => {
       sessions: [session({ agentState: { ...agent("complete"), ts: NOW - QUIET_GRACE_MS } })],
     });
     expect(isFolderQuiet(old, NOW)).toBe(true);
+  });
+});
+
+describe("isFolderStale", () => {
+  const NOW = 100 * 60 * 60_000;
+  const HOURS = 4;
+  const INSIDE = NOW - 60 * 60_000; // an hour ago
+  const OUTSIDE = NOW - 5 * 60 * 60_000; // five hours ago
+
+  it("is stale with no signal at all", () => {
+    expect(isFolderStale(folder({}), NOW, HOURS)).toBe(true);
+  });
+
+  it.each([
+    ["a commit", { headCommitMs: INSIDE }],
+    ["an uncommitted edit", { worktreeTouchedMs: INSIDE }],
+    ["a pane opened or closed", { lastWorkedAt: INSIDE }],
+  ])("is not stale after %s inside the window", (_label, fields) => {
+    expect(isFolderStale(folder(fields), NOW, HOURS)).toBe(false);
+  });
+
+  it.each([
+    ["a commit", { headCommitMs: OUTSIDE }],
+    ["an uncommitted edit", { worktreeTouchedMs: OUTSIDE }],
+    ["a pane opened or closed", { lastWorkedAt: OUTSIDE }],
+  ])("is stale when %s is the newest signal and it fell outside", (_label, fields) => {
+    expect(isFolderStale(folder(fields), NOW, HOURS)).toBe(true);
+  });
+
+  it("counts agent activity too, sharing folderLastActivityAt with the quiet filter", () => {
+    const f = folder({ sessions: [session({ agentState: { ...agent("complete"), ts: INSIDE } })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+
+  it("a live pane is never stale, whatever the stamps say", () => {
+    const f = folder({ headCommitMs: OUTSIDE, sessions: [session({ live: true })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+
+  it("the quiet override wins over a live pane, same as the quiet filter", () => {
+    const f = folder({ quiet: true, headCommitMs: NOW, sessions: [session({ live: true })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(true);
+  });
+
+  it("widening the window brings a folder back", () => {
+    const f = folder({ headCommitMs: OUTSIDE });
+    expect(isFolderStale(f, NOW, 4)).toBe(true);
+    expect(isFolderStale(f, NOW, 8)).toBe(false);
+  });
+
+  it("takes the newest of the signals, not the first one set", () => {
+    const f = folder({ headCommitMs: OUTSIDE, worktreeTouchedMs: INSIDE });
+    expect(folderLastWorkedAt(f)).toBe(INSIDE);
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+});
+
+describe("isFolderFiltered", () => {
+  const NOW = 100 * 60 * 60_000;
+
+  it('"all" hides nothing, not even a folder marked quiet by hand', () => {
+    expect(isFolderFiltered(folder({ quiet: true }), "all", NOW, 4)).toBe(false);
+  });
+
+  it("the two narrowing modes ask different questions of the same folder", () => {
+    // Committed an hour ago, then walked away: nothing is going on *now*, but
+    // it is very much a checkout worked in today.
+    const f = folder({ headCommitMs: NOW - 60 * 60_000 });
+    expect(isFolderFiltered(f, "active", NOW, 4)).toBe(true);
+    expect(isFolderFiltered(f, "recent", NOW, 4)).toBe(false);
+
+    // And the other way: dirty for a week with nobody near it.
+    const week = NOW - 200 * 60 * 60_000;
+    const abandoned = folder({
+      uncommittedFiles: 3,
+      headCommitMs: week,
+      worktreeTouchedMs: week,
+    });
+    expect(isFolderFiltered(abandoned, "active", NOW, 4)).toBe(false);
+    expect(isFolderFiltered(abandoned, "recent", NOW, 4)).toBe(true);
   });
 });
 

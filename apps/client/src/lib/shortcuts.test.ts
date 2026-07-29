@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { matchesEditableOverride, matchesShortcut, SHORTCUTS } from "./shortcuts";
+import {
+  matchesEditableOverride,
+  matchesShortcut,
+  SHORTCUTS,
+  shortcutHint,
+  tabShortcutId,
+  withHint,
+} from "./shortcuts";
 
 // `matches` only reads these fields, so a plain object stands in for a real
 // KeyboardEvent (the test environment is node, without the DOM).
@@ -117,5 +124,54 @@ describe("editable-target override", () => {
 
   it("a plain, unmatched key never triggers the override", () => {
     expect(matchesEditableOverride(key({ key: "n" }))).toBe(false);
+  });
+});
+
+describe("tabShortcutId", () => {
+  it("maps an open tab to its digit, in tab order", () => {
+    expect(tabShortcutId(["agentboard", "cockpit", "board"], "agentboard")).toBe("tab-1");
+    expect(tabShortcutId(["agentboard", "cockpit", "board"], "board")).toBe("tab-3");
+  });
+
+  it("has no key for a screen that is not open — the digits address tabs", () => {
+    expect(tabShortcutId(["agentboard"], "telemetry")).toBeNull();
+  });
+
+  it("stops at nine, because the bindings do", () => {
+    const nine = [
+      "agentboard",
+      "cockpit",
+      "board",
+      "slack",
+      "doctor",
+      "claude-sessions",
+      "mcp",
+      "telemetry",
+      "task-explorer",
+    ] as const;
+    expect(tabShortcutId([...nine], "task-explorer")).toBe("tab-9");
+    expect(tabShortcutId([...nine, "settings"], "settings")).toBeNull();
+  });
+
+  it("every id it returns is a real binding", () => {
+    const tabs = ["agentboard", "cockpit", "board"] as const;
+    for (const id of tabs) {
+      const shortcut = tabShortcutId([...tabs], id);
+      expect(shortcut && SHORTCUTS[shortcut]).toBeDefined();
+    }
+  });
+});
+
+describe("withHint", () => {
+  it("appends the binding a control duplicates", () => {
+    expect(withHint("Collapse the rail", "ab-toggle-rail")).toBe(
+      `Collapse the rail (${shortcutHint("ab-toggle-rail")})`,
+    );
+  });
+
+  it("throws on an unknown id rather than labelling a control with nothing", () => {
+    expect(() => withHint("Do a thing", "no-such-binding")).toThrow(
+      'Unknown shortcut id "no-such-binding"',
+    );
   });
 });

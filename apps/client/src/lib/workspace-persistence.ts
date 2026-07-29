@@ -6,7 +6,7 @@ export const ACTIVE_TAB_KEY = "tt-active-tab";
 export const OPEN_TABS_KEY = "tt-open-tabs";
 
 /** The screen shown on a cold start (no valid persisted state). */
-export const COLD_START_TAB: ScreenId = "cockpit";
+export const COLD_START_TAB: ScreenId = "agentboard";
 
 function isScreenId(value: unknown): value is ScreenId {
   return typeof value === "string" && value in SCREENS;

@@ -1,5 +1,5 @@
-import { TerminalSquare } from "lucide-react";
 import { PanePlaceholder } from "@/components/agentboard-bits";
+import { AgentboardStandby } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
@@ -20,6 +20,7 @@ import {
   previewPaneDir,
   type AgWindow,
   type FolderData,
+  type RepoData,
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
@@ -49,6 +50,8 @@ import type { ColumnDrag } from "./use-column-drag";
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
   open: string[];
+  /** The whole rail, for the nothing-selected standby board. */
+  repos: RepoData[];
   /** Fallback cwd per session, for terminals whose folder isn't resolvable. */
   cwds: React.RefObject<Record<string, string>>;
   activeWin: AgWindow | undefined;
@@ -83,10 +86,12 @@ export function PaneGrid(props: {
   onTitle: (id: string, title: string) => void;
   onOpenTerminalPath: (dir: string, path: string, line: number | null) => void;
   onRemovePane: (paneId: string) => void;
+  onSelectFolder: (dir: string) => void;
   columns: ColumnDrag;
 }) {
   const {
     open,
+    repos,
     cwds,
     activeWin,
     activeFolderDir,
@@ -109,6 +114,7 @@ export function PaneGrid(props: {
     onTitle,
     onOpenTerminalPath,
     onRemovePane,
+    onSelectFolder,
     columns,
   } = props;
   const { paneAreaRef, colDrag, startColDrag, resetCols } = columns;
@@ -286,16 +292,21 @@ export function PaneGrid(props: {
             style={{ left: `${x}%` }}
           />
         ))}
-      {panes.length === 0 && (
-        <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-          <TerminalSquare className="size-10" />
-          <p className="text-sm">
-            {activeFolderDir
-              ? "No open panes — click a session in the rail, or use + session above to start a shell."
-              : "Select a folder in the rail to see its sessions."}
-          </p>
-        </div>
-      )}
+      {/* Nothing tiled. With a folder chosen that is a narrow, literal state and
+          gets a sentence; with none, it is the screen you launch into, and
+          `AgentboardStandby` answers "where do I go next" instead of deferring
+          to the rail. */}
+      {panes.length === 0 &&
+        (activeFolderDir ? (
+          <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              No panes open here — click a session in the rail, or{" "}
+              <span className="font-mono">+ session</span> above.
+            </p>
+          </div>
+        ) : (
+          <AgentboardStandby repos={repos} now={now} onSelectFolder={onSelectFolder} />
+        ))}
     </div>
   );
 }

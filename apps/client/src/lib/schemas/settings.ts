@@ -95,6 +95,11 @@ const CollectorsSettingsSchema = z
 /** Urgency levels, least → most urgent — mirrors Rust's `tt_config::NotifyLevel`. */
 export const NotifyLevelSchema = z.enum(["routine", "important", "urgent"]);
 
+/** Which checkouts reach the Agentboard rail — mirrors Rust's
+ * `tt_config::RailFilter`. Not a scale: `active` asks about *now*, `recent`
+ * asks about the last N hours. */
+export const RailFilterSchema = z.enum(["all", "active", "recent"]);
+
 /** `UserSettings["agentboard"]` is a TS-owned, partly-typed block that already
  * carries a `Record<string, unknown>` passthrough in its TS type — `.catchall`
  * keeps every key not listed here rather than requiring an exhaustive list. */
@@ -112,7 +117,11 @@ const AgentboardBlockSchema = z
     shortcutsWorkInTerminal: z.boolean().optional(),
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
-    hideInactiveRepos: z.boolean().optional(),
+    // `.catch` for the same reason as `notifyThreshold`: an unrecognized mode
+    // (a newer build's, a hand-edit, the boolean this key used to be) reads as
+    // unset rather than failing the whole settings parse.
+    railFilter: RailFilterSchema.optional().catch(undefined),
+    railRecentHours: z.number().optional(),
     showUnmanagedWorktrees: z.boolean().optional(),
     jarvisPane: z.boolean().optional(),
   })

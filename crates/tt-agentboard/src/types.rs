@@ -242,6 +242,20 @@ pub struct FolderData {
     /// indistinguishable. 0 before the first compute.
     #[serde(default)]
     pub computed_at_ms: i64,
+    /// The three "when was this checkout last worked in" stamps the rail's
+    /// worked-recently filter maxes together with agent-event timestamps
+    /// (epoch ms, 0 for never): `HEAD`'s commit time, the newest mtime among
+    /// the working tree's changed paths, and the last pane opened or closed
+    /// here. Two come from [`crate::git_info::GitInfo`], one from
+    /// [`crate::folder_meta::FolderMeta`] — kept as three fields rather than
+    /// one pre-maxed number so the rail can say *why* a checkout counts as
+    /// recent.
+    #[serde(default)]
+    pub head_commit_ms: i64,
+    #[serde(default)]
+    pub worktree_touched_ms: i64,
+    #[serde(default)]
+    pub last_worked_at: i64,
     /// True when any live session in this folder has `port_drift` — bubbles
     /// the per-session detail up to a rail badge. Computed app-side after PTY
     /// liveness stamping (mirrors `needs`).

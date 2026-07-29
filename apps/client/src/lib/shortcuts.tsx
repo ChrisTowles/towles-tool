@@ -351,6 +351,33 @@ export function shortcutHint(id: string): string {
   return shortcutKeys(id).join(IS_MAC ? "" : "+");
 }
 
+/**
+ * A label with its binding appended — `"Collapse the rail (⌘⇧B)"`.
+ *
+ * The one way a control that duplicates a shortcut names its keys, so no
+ * surface hardcodes a chord (three tooltips claimed `⌘B`/`⌘K`/`⌘,` on every
+ * platform, which is simply wrong on the Linux this is developed on). Pairs
+ * with `mouseAction` in `lib/shortcut-coach.ts`: a control that scores a click
+ * as a passed-up keystroke has to *say* which keystroke, or the score is
+ * measuring something the user was never told.
+ */
+export function withHint(label: string, id: string): string {
+  return `${label} (${shortcutHint(id)})`;
+}
+
+/**
+ * The `mod+N` binding that jumps to `id`, or null when it has none — the
+ * digits map to *open tabs* in order, so a screen that isn't open yet, or sits
+ * past the ninth, genuinely has no key to show.
+ *
+ * Pure over the tab list rather than reading the workspace, so the sidebar's
+ * two variants share one answer and it stays unit-testable.
+ */
+export function tabShortcutId(openTabs: readonly ScreenId[], id: ScreenId): string | null {
+  const i = openTabs.indexOf(id);
+  return i >= 0 && i < 9 ? `tab-${i + 1}` : null;
+}
+
 /** Whether a keydown matches a registry shortcut — for components that own
  * their keystrokes (the terminal view) and match locally instead of through
  * the window-level `useShortcuts` listener. */

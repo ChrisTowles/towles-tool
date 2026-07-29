@@ -497,6 +497,9 @@ fn term_start_blocking(
     let shell = default_shell(std::env::var(SHELL_ENV_VAR).ok());
     let shell_kind = shell_kind_from_path(&shell);
     let dir = start_dir(cwd);
+    if let Some(d) = dir.as_deref().and_then(std::path::Path::to_str) {
+        touch_folder(&app, d);
+    }
     // Snapshot the folder's current port claims now — the baseline a later
     // drift check compares against `.env`'s live claims (see
     // `tt_agentboard::env_drift`). The shell itself never reads this; it's
@@ -741,6 +744,29 @@ fn term_start_blocking(
 fn notify_agentboard(app: &AppHandle) {
     if let Some(ab) = app.try_state::<crate::agentboard::Ab>() {
         ab.emit.notify_one();
+    }
+}
+
+/// Stamp a checkout as worked in, because a pane on it just opened or closed —
+/// the half of the rail's worked-recently filter that leaves no git trace (see
+/// [`tt_agentboard::folder_meta`]). `dir` may be any path inside the checkout
+/// or an unknown one; a dir no folder is keyed by simply stamps nothing the
+/// rail reads.
+fn touch_folder(app: &AppHandle, dir: &str) {
+    if let Some(ab) = app.try_state::<crate::agentboard::Ab>() {
+        ab.engine.lock().unwrap().touch_folder(dir, crate::agentboard::now_ms());
+    }
+}
+
+/// The same stamp keyed by a session id, for the close path — a pane's own dir
+/// is not part of `term_kill`'s request, and the session record it could be
+/// looked up from is the thing about to go away.
+fn touch_folder_of_session(app: &AppHandle, term_id: &str) {
+    if let Some(ab) = app.try_state::<crate::agentboard::Ab>() {
+        let mut engine = ab.engine.lock().unwrap();
+        if let Some(dir) = engine.folder_dir_of_session(term_id) {
+            engine.touch_folder(&dir, crate::agentboard::now_ms());
+        }
     }
 }
 
@@ -1256,6 +1282,7 @@ pub fn term_kill(app: AppHandle, term_id: String) {
     // query, not a repro. The PTY *spawn* is recorded in `term_start`.
     tracing::info!(%term_id, "terminal.killed");
     app.state::<TermState>().kill(&term_id);
+    touch_folder_of_session(&app, &term_id);
     notify_agentboard(&app);
 }
 

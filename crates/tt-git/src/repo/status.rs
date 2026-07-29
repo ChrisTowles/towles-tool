@@ -91,6 +91,25 @@ impl Repo {
         }
         Ok(StatusSummary { entries })
     }
+
+    /// Epoch seconds of the most recently modified of `paths` (repo-relative),
+    /// or `None` when none of them can be stat'd. Answers "when did somebody
+    /// last edit in this checkout" for the edits that never became a commit —
+    /// callers pass the paths a diff or status already told them are changed,
+    /// so this never walks the tree itself.
+    ///
+    /// A path that no longer exists (a deletion, a rename's source) is skipped
+    /// rather than failing the batch. `symlink_metadata`, so a dangling symlink
+    /// still reports the link's own mtime instead of vanishing.
+    pub fn newest_mtime_unix<'a>(&self, paths: impl Iterator<Item = &'a str>) -> Option<i64> {
+        let workdir = self.inner().workdir()?;
+        paths
+            .filter_map(|path| std::fs::symlink_metadata(workdir.join(path)).ok())
+            .filter_map(|meta| meta.modified().ok())
+            .filter_map(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|since| since.as_secs() as i64)
+            .max()
+    }
 }
 
 #[cfg(test)]
@@ -180,6 +199,41 @@ mod tests {
             summary.entries
         );
         assert!(summary.is_dirty());
+    }
+
+    #[test]
+    fn newest_mtime_is_the_freshest_of_the_paths_given() {
+        let repo = messy();
+        let git = Repo::open(repo.path()).expect("open");
+        let paths: Vec<String> =
+            git.status().expect("status").entries.iter().map(|e| e.path.clone()).collect();
+        let newest =
+            git.newest_mtime_unix(paths.iter().map(String::as_str)).expect("something is dirty");
+
+        let on_disk = |name: &str| -> i64 {
+            std::fs::symlink_metadata(repo.path().join(name))
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .expect("stat")
+        };
+        assert_eq!(
+            newest,
+            ["tracked.txt", "staged.txt", "untracked.txt", "newdir"]
+                .map(on_disk)
+                .into_iter()
+                .max()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn newest_mtime_is_none_for_no_paths_and_for_missing_ones() {
+        let repo = TestRepo::new();
+        let git = Repo::open(repo.path()).expect("open");
+        assert_eq!(git.newest_mtime_unix(std::iter::empty()), None);
+        assert_eq!(git.newest_mtime_unix(["gone.txt"].into_iter()), None);
     }
 
     #[test]

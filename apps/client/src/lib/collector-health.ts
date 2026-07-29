@@ -27,18 +27,18 @@ export const KNOWN_COLLECTORS: readonly CollectorKey[] = [
 
 /**
  * Dot tint per collector state — **the** mapping, shared by the status bar and
- * the day bar. Green when fresh, red when failing, amber for stale data, and a
+ * the app header. Green when fresh, red when failing, amber for stale data, and a
  * muted grey for "nothing collected yet". Carries the `dark:` pairs the styling
  * convention requires.
  *
  * The two surfaces used to keep private copies that disagreed: `never-ran` was
- * a muted grey in the status bar and amber in the day bar, so the same collector
+ * a muted grey in the status bar and amber in the app header, so the same collector
  * read as "nothing yet" in one and "something's wrong" in the other, in the same
  * window at the same time. **Grey is the kept behavior**, because the status bar
  * paints a dot for every {@link KNOWN_COLLECTORS} entry — including
  * `claude:calendar` and `slack:dm`, both off unless the user turns them on — so
  * amber there is a permanent false alarm about collectors nobody asked to run.
- * The day bar only ever shows {@link ALWAYS_ON_COLLECTORS}, where `never-ran`
+ * The app header only ever shows {@link ALWAYS_ON_COLLECTORS}, where `never-ran`
  * lasts only until the first tick lands, and its own docstring already says a
  * deliberately-disabled collector must not read as a problem.
  */
@@ -128,7 +128,7 @@ export const REFRESH_COLLECTORS: readonly CollectorKey[] = ["prs", "issues"];
 
 /**
  * Collectors that run unattended on every tick, so their freshness is the honest
- * signal for the day-bar dot. Calendar is excluded (off by default — it spends
+ * signal for the header's freshness dot. Calendar is excluded (off by default — it spends
  * claude tokens per tick), so its perpetual `never-ran` must not drag the dot
  * amber over a collector the user deliberately disabled.
  */
@@ -161,7 +161,7 @@ export function worstCollectorState(healths: CollectorHealth[]): CollectorState 
 
 /**
  * Health for just the {@link ALWAYS_ON_COLLECTORS}, in their declared order —
- * what the day-bar dot colours from and lists in its tooltip.
+ * what the header's freshness dot colours from and lists in its tooltip.
  */
 export function alwaysOnHealth(
   runs: CollectRun[],

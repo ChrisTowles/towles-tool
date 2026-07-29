@@ -117,7 +117,9 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
 };
 
 export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
-  { label: "Focus", screens: ["cockpit", "board", "agentboard", "slack"] },
+  // Agentboard leads: it's where the work actually happens, and it's the
+  // cold-start screen (`COLD_START_TAB`) — the sidebar order has to agree.
+  { label: "Focus", screens: ["agentboard", "cockpit", "board", "slack"] },
   {
     label: "Tools",
     screens: ["doctor", "claude-sessions", "mcp", "telemetry", "task-explorer"],

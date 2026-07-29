@@ -15,7 +15,7 @@ type WorkspaceState = {
    * rail's icon collapse) — never fully hidden, so a screen is always one
    * click away. */
   sidebarCollapsed: boolean;
-  /** Zen focus mode: the chrome (sidebar, day bar) is hidden so the active
+  /** Zen focus mode: the chrome (sidebar, header) is hidden so the active
    * screen owns the whole window — the literal get-in-the-zone gesture. Not
    * persisted: relaunch always comes back with the chrome shown. */
   zen: boolean;

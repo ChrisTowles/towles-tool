@@ -1,4 +1,5 @@
 import { PanelLeftClose, PanelLeftOpen, Search, Settings, Sparkles } from "lucide-react";
+import { CollectorDot, NeedsYouChip, TopTaskChip } from "@/components/header-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,7 @@ function TaskBadge() {
  * Dead-center of the header: the clock, plus what the time means next — the
  * upcoming meeting's countdown (amber inside 15 minutes). Absolutely centered
  * so it stays put regardless of what sits left/right. Driven by the shared app
- * clock (same `now` as the day bar).
+ * clock (same `now` as the rest of the header).
  */
 function ClockCluster() {
   const { openTab } = useWorkspace();
@@ -88,8 +89,12 @@ function ClockCluster() {
       <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
         {fmtClock(now)}
       </span>
-      <span className="text-muted-foreground/40">·</span>
-      <span className="text-xs text-muted-foreground">{fmtDate(now)}</span>
+      {/* The date is the first thing to go when the header gets tight: the
+          clock beside it already carries the only fact anyone reads here at a
+          glance, and the centre cluster is absolutely positioned, so it
+          collides with the left and right groups rather than compressing. */}
+      <span className="hidden text-muted-foreground/40 xl:inline">·</span>
+      <span className="hidden text-xs text-muted-foreground xl:inline">{fmtDate(now)}</span>
       {nextEvent && (
         <>
           <span className="text-muted-foreground/40">·</span>
@@ -132,17 +137,31 @@ export function AppHeader() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} <Kbd>⌘B</Kbd>
+          {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}{" "}
+          <Kbd>{shortcutHint("sidebar")}</Kbd>
         </TooltipContent>
       </Tooltip>
 
-      <h1 className="font-heading px-1 text-sm font-semibold">Towles Tool</h1>
+      <h1 className="font-heading shrink-0 px-1 text-sm font-semibold">Towles Tool</h1>
 
       <TaskBadge />
+      {/* Second to go, for the same reason — and it is the least urgent thing
+          in the bar: the top task is context, not a signal. */}
+      <span className="hidden min-w-0 lg:flex">
+        <TopTaskChip />
+      </span>
 
       <ClockCluster />
 
       <div className="flex-1" />
+
+      <NeedsYouChip />
+      <CollectorDot />
+
+      {/* Status left of the rule, controls right of it. Without the divider the
+          freshness dot reads as a bullet belonging to "N need you" rather than
+          as the separate fact it is. */}
+      <div className="mx-1 h-4 w-px shrink-0 bg-border" />
 
       <Button
         variant="outline"
@@ -157,7 +176,7 @@ export function AppHeader() {
           <Search className="size-3.5" />
           Search…
         </span>
-        <Kbd>⌘K</Kbd>
+        <Kbd>{shortcutHint("palette")}</Kbd>
       </Button>
 
       <ThemeToggle />
@@ -196,7 +215,7 @@ export function AppHeader() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          Settings <Kbd>⌘,</Kbd>
+          Settings <Kbd>{shortcutHint("settings")}</Kbd>
         </TooltipContent>
       </Tooltip>
     </header>

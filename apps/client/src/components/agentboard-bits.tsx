@@ -71,7 +71,7 @@ import {
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { shortcutHint, withHint } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
@@ -735,6 +735,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
               ? "Deleting this checkout would lose nothing that isn't on the branch."
               : "Deleting this checkout destroys these. Untracked files count here but add no ± (they have no diff yet)."}
           </span>
+          <span className="opacity-70">{withHint("Opens the diff pane", "ab-toggle-diff")}</span>
           <span className="opacity-70">
             <CheckedAgo computedAtMs={stats.computedAtMs} />
           </span>
@@ -840,7 +841,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
               {commitsAhead} commit{commitsAhead === 1 ? "" : "s"} not on {base} yet.
             </>
           )}{" "}
-          <CheckedAgo computedAtMs={stats.computedAtMs} />.
+          <CheckedAgo computedAtMs={stats.computedAtMs} />.{" "}
+          {withHint("Opens the diff pane", "ab-toggle-diff")}.
         </p>
         <CommitBreakdownPreview commits={commits} stats={stats} base={base} />
       </HoverCardContent>
@@ -879,7 +881,11 @@ function PaneOpenButton({
         onOpen();
       }}
       className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
-      title={title}
+      // The keys ride on `shortcutTwin` rather than being spelled into each
+      // caller's `title`: the same flag already scores this click as a
+      // passed-up keystroke, and a chip that scores one without naming it is
+      // marking the user down for a binding nothing ever showed them.
+      title={shortcutTwin ? withHint(title, shortcutTwin) : title}
       aria-label={labeled ? undefined : label}
     >
       {glyph}
@@ -1398,8 +1404,8 @@ export function fmtMins(ms: number): string {
  * full folder path (when given), "New task…" (task-convention repos),
  * "Delete worktree…" (worktree checkouts, guarded `task_delete`), "Sync now",
  * "Create issue…", "Mark quiet"/"Unmark quiet" (forces this folder into the
- * "hide inactive" filter's stub row regardless of its actual activity — see
- * `isFolderQuiet`), and "Remove from rail". */
+ * rail filter's stub row under either narrowing mode, regardless of its actual
+ * activity — see `isFolderFiltered`), and "Remove from rail". */
 export function RepoMenu({
   path,
   onRemove,
