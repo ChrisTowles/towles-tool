@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useEditorFontSize } from "@/lib/editor-prefs";
 import { loadMonaco } from "@/lib/monaco";
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
@@ -196,6 +197,9 @@ export function MonacoMultiDiff({
   // refetch every side and drop the scroll position mid-review.
   const editableRef = useRef(editable);
   editableRef.current = editable;
+  const [fontSize] = useEditorFontSize();
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
   const optionsChangedRef = useRef<{ fire(): void } | null>(null);
 
   // Collapse/expand each file's diff to match its reviewed flag and keep its
@@ -476,6 +480,7 @@ export function MonacoMultiDiff({
                 readOnly: !editableRef.current,
                 originalEditable: false,
                 wordWrap: "on" as const,
+                fontSize: fontSizeRef.current,
               };
             },
             onOptionsDidChange: optionsChanged.event,
@@ -808,7 +813,7 @@ export function MonacoMultiDiff({
   // post-construction firing: the items were just built at this mode.
   useEffect(() => {
     optionsChangedRef.current?.fire();
-  }, [editable]);
+  }, [editable, fontSize]);
 
   // The diff *baseline* moved (a commit landed, the compared ref changed) —
   // refetch the read-only base sides, concurrently, in place. Skips its

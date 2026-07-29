@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import {
+  ArrowLeft,
+  ArrowRight,
   AtSign,
   Code2,
   Columns2,
@@ -18,6 +20,7 @@ import { EditableToggle } from "@/components/editable-toggle";
 import { ClaudeBadge, IconBtn, LspBadge, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { FilePreview } from "@/components/file-preview";
+import { Kbd } from "@/components/ui/kbd";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ideMention, useIdeConnected } from "@/lib/ide";
 import { useLspStatus } from "@/lib/lsp-status";
@@ -30,7 +33,19 @@ import {
   watchSidebarView,
   type SidebarView,
 } from "@/lib/monaco";
+import { EditorFontButtons } from "@/components/editor-font-buttons";
+import {
+  back,
+  canGoBack,
+  canGoForward,
+  currentPath,
+  forward,
+  NO_HISTORY,
+  openPath as visitPath,
+  type FileHistory,
+} from "@/lib/editor-history";
 import { modeForPanels, panelsFor, type EditorViewMode } from "@/lib/editor-view-mode";
+import { IS_MAC } from "@/lib/shortcuts";
 import { opensInEditor, previewKindFor } from "@/lib/preview-kind";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -68,6 +83,38 @@ import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 /** Claude called openFile — focus this file (new nonce per request). */
 export type FilesOpenRequest = { path: string; anchor: ViewerAnchor; nonce: number };
 
+const MOD = IS_MAC ? "⌘" : "Ctrl";
+const SHIFT = IS_MAC ? "⇧" : "Shift";
+const ALT = IS_MAC ? "⌥" : "Alt";
+const LEFT = IS_MAC ? "←" : "Left";
+const RIGHT = IS_MAC ? "→" : "Right";
+
+function chord(...caps: string[]): string {
+  return caps.join(IS_MAC ? "" : "+");
+}
+
+const EDITOR_HINTS: { keys: string; what: string }[] = [
+  { keys: chord(MOD, "P"), what: "jump to a file by name" },
+  { keys: chord(MOD, "F"), what: "find in the open file" },
+  { keys: chord(MOD, SHIFT, "A"), what: "mention the selected lines" },
+  { keys: chord(ALT, LEFT), what: "back to the file you came from" },
+];
+
+function EditorHints() {
+  return (
+    <dl className="hidden grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 text-xs @[22rem]/hints:grid">
+      {EDITOR_HINTS.map(({ keys, what }) => (
+        <Fragment key={keys}>
+          <dt className="justify-self-end">
+            <Kbd className="font-mono">{keys}</Kbd>
+          </dt>
+          <dd className="text-left text-muted-foreground">{what}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
 /** Silent unless the bridge has something to say (a non-Rust checkout). */
 function LspChip({ dir }: { dir: string }) {
   const { state, detail } = useLspStatus(dir);
@@ -96,7 +143,9 @@ export function FilesPane({
    * the explorer while the column shows the search form. */
   onSidebarViewChange?: (view: SidebarView | null) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [history, setHistory] = useState<FileHistory>(NO_HISTORY);
+  const open = currentPath(history);
+  const openPath = (path: string) => setHistory((h) => visitPath(h, path));
   const [dirty, setDirty] = useState(false);
   // Mirror the open file up to the pane header. Effect rather than a call in
   // each setter: `open`/`dirty` move from several places (dir reset, an
@@ -140,13 +189,13 @@ export function FilesPane({
   useEffect(() => {
     if (prevDirRef.current === dir) return;
     prevDirRef.current = dir;
-    setOpen(null);
+    setHistory(NO_HISTORY);
     setDirty(false);
     setEditable(false);
   }, [dir]);
 
   useEffect(() => {
-    if (openRequest) setOpen(openRequest.path);
+    if (openRequest) setHistory((h) => visitPath(h, openRequest.path));
   }, [openRequest]);
 
   // A newly-opened file starts on the code — the previous file's view mode
@@ -161,6 +210,18 @@ export function FilesPane({
   useEffect(() => {
     if (!open) setFullscreen(false);
   }, [open]);
+
+  const navigate = (direction: "back" | "forward") => {
+    setHistory((h) => (direction === "back" ? back(h) : forward(h)));
+    uiAction("files.navigate", "agentboard", direction);
+  };
+  const onPaneKeyDown = (e: React.KeyboardEvent) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
+    const direction = e.key === "ArrowLeft" ? "back" : e.key === "ArrowRight" ? "forward" : null;
+    if (!direction) return;
+    e.preventDefault();
+    navigate(direction);
+  };
 
   // Escape leaves fullscreen, mirroring zen mode in `App.tsx`. Bubble phase and
   // the `defaultPrevented` check are what keep this from stealing the key from
@@ -252,7 +313,7 @@ export function FilesPane({
         });
     }
     setMonacoOpenHandler((absolutePath) => {
-      if (absolutePath.startsWith(`${dir}/`)) setOpen(absolutePath.slice(dir.length + 1));
+      if (absolutePath.startsWith(`${dir}/`)) openPath(absolutePath.slice(dir.length + 1));
     });
     return () => {
       disposed = true;
@@ -268,6 +329,7 @@ export function FilesPane({
 
   return (
     <div
+      onKeyDown={onPaneKeyDown}
       className={cn(
         "flex min-h-0 flex-1 overflow-hidden rounded-lg border",
         // Fullscreen leaves the pane in the React tree — portalling it would
@@ -316,8 +378,11 @@ export function FilesPane({
         <div ref={explorerRef} className="min-h-0 flex-1 overflow-hidden" />
         <div className="shrink-0 border-t bg-card px-2 py-1 text-[10.5px] text-muted-foreground">
           <span className="font-mono text-violet-500">@</span> mentions the open file — select lines
-          and ⌘⇧A to mention a range
+          and {chord(MOD, SHIFT, "A")} to mention a range
           {connected ? "" : " — no session connected yet"}
+          <span className="mt-0.5 block font-mono">
+            {chord(MOD, "P")} files · {chord(MOD, "F")} find
+          </span>
         </div>
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -329,12 +394,39 @@ export function FilesPane({
              * open file's path length. */}
             <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-card px-3 py-1.5">
               <span className="flex min-w-0 items-center gap-2">
+                <span className="flex shrink-0 items-center gap-0.5">
+                  {(
+                    [
+                      {
+                        direction: "back",
+                        icon: ArrowLeft,
+                        label: "Back",
+                        can: canGoBack(history),
+                      },
+                      {
+                        direction: "forward",
+                        icon: ArrowRight,
+                        label: "Forward",
+                        can: canGoForward(history),
+                      },
+                    ] as const
+                  ).map(({ direction, icon: Icon, label, can }) => (
+                    <IconBtn
+                      key={direction}
+                      title={`${label} (${chord(ALT, direction === "back" ? LEFT : RIGHT)})`}
+                      disabled={!can}
+                      onClick={() => navigate(direction)}
+                    >
+                      <Icon className="size-3.5" />
+                    </IconBtn>
+                  ))}
+                </span>
                 <span className="min-w-0 truncate font-mono text-xs text-foreground" title={open}>
                   {open}
                 </span>
                 {dirty && (
                   <span
-                    title="Unsaved changes — autosaves after a pause; ⌘S saves now"
+                    title={`Unsaved changes — autosaves after a pause; ${chord(MOD, "S")} saves now`}
                     className="size-1.5 shrink-0 rounded-full bg-amber-500"
                   />
                 )}
@@ -353,17 +445,20 @@ export function FilesPane({
                * over the centered toggle — see `PaneChrome`'s grid. */}
               <span className="flex min-w-max items-center justify-end gap-2">
                 {mediaKind === null && (
-                  <IconBtn
-                    title={
-                      wordWrap
-                        ? "Wrapping long lines — click to scroll instead"
-                        : "Scrolling long lines — click to wrap instead"
-                    }
-                    onClick={() => setWordWrap((w) => !w)}
-                    className={wordWrap ? "text-violet-500" : undefined}
-                  >
-                    <WrapText className="size-3.5" />
-                  </IconBtn>
+                  <>
+                    <EditorFontButtons />
+                    <IconBtn
+                      title={
+                        wordWrap
+                          ? "Wrapping long lines — click to scroll instead"
+                          : "Scrolling long lines — click to wrap instead"
+                      }
+                      onClick={() => setWordWrap((w) => !w)}
+                      className={wordWrap ? "text-violet-500" : undefined}
+                    >
+                      <WrapText className="size-3.5" />
+                    </IconBtn>
+                  </>
                 )}
                 {splitKind && (
                   <span className="flex shrink-0 items-center gap-0.5">
@@ -410,7 +505,7 @@ export function FilesPane({
                   type="button"
                   title={
                     connected
-                      ? "Mention this whole file to the Claude session — select lines and press ⌘⇧A to mention just those"
+                      ? `Mention this whole file to the Claude session — select lines and press ${chord(MOD, SHIFT, "A")} to mention just those`
                       : "Run `claude` in this folder's terminal first"
                   }
                   onClick={() => mention(open)}
@@ -464,7 +559,7 @@ export function FilesPane({
                     collapsedSize="0%"
                     onResize={syncModeFromPanels}
                   >
-                    <FilePreview dir={dir} path={open} kind={splitKind} onOpenPath={setOpen} />
+                    <FilePreview dir={dir} path={open} kind={splitKind} onOpenPath={openPath} />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : (
@@ -485,8 +580,11 @@ export function FilesPane({
             </div>
           </>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Select a file — selections in the viewer stream to Claude
+          <div className="@container/hints flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              Select a file — selections in the viewer stream to Claude
+            </p>
+            <EditorHints />
           </div>
         )}
       </div>

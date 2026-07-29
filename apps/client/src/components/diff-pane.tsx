@@ -12,6 +12,7 @@ import { ChevronRight, Pencil, RefreshCw, X } from "lucide-react";
 import { DiffReview, type DiffReviewRequest } from "@/components/diff-review";
 import { MonacoMultiDiff, type ChangedFile } from "@/components/diff-monaco";
 import { EditableToggle } from "@/components/editable-toggle";
+import { EditorFontButtons } from "@/components/editor-font-buttons";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -653,6 +654,7 @@ export function DiffPane({
         }
         actions={
           <>
+            <EditorFontButtons />
             <IconBtn
               title="refresh diff"
               onClick={() => void fetchDiff()}
