@@ -25,7 +25,17 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
+cargo xtask comment-lint            # comment volume — Rust, TS/TSX/JS and committed docs
 ```
+
+`comment-lint` is the repo's one gate on comment sprawl, and it covers the
+frontend because nothing else can: oxlint implements no comment-volume rule at
+all (it skips stylistic rules by design). Fixed thresholds in `xtask/src/main.rs`
+like clippy — no baseline file, no ratchet — over an over-long comment *block*, a
+file whose comment mass and ratio are both high, and an over-long `.md`. Suppress
+a deliberate essay with `verbose-ok: <why>` inside the block; tighten by editing
+the consts. It runs in its own workflow because it is the only gate spanning
+Rust and frontend paths, which `ci.yml` and `frontend.yml` each filter out half of.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
 `tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its

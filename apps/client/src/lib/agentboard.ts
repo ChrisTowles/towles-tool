@@ -146,28 +146,16 @@ export type FolderData = {
    * needs. */
   dirty: boolean;
   /** Of `commitsAhead`, how many haven't landed on `comparedBase` yet
-   * (patch-equivalence via `git cherry`, not SHA reachability). 0 once every
-   * commit on this branch has landed there — even after a rebase/squash
-   * merge gave the landed commits new SHAs, which `commitsAhead` can never
-   * see past (it stays nonzero forever in that case). See
-   * `folderHoldsNoWork`. */
+   * (patch-equivalence, not SHA reachability — `commitsAhead` stays nonzero
+   * forever after a rebase/squash merge). See `folderHoldsNoWork`. */
   commitsUnlanded: number;
-  /** How this branch's work reached `comparedBase` — `"merged"` (a merge
-   * commit), `"rebase-merged"` or `"squash-merged"` — and `null` while it
-   * hasn't fully landed. Mirrors `LandedVia::label()`
+  /** *How* this branch's work reached `comparedBase`, to `commitsUnlanded`'s
+   * *whether* — git's own proof a branch is finished, independent of GitHub.
+   * `null` while it hasn't fully landed. Mirrors `LandedVia::label()`
    * (`crates/tt-tasks/src/landed.rs`), which explains why no single git signal
-   * answers this.
-   *
-   * {@link LandedVia}'s fourth label, `"upstream gone"`, is a real value in
-   * Rust but never arrives here: it only says the remote branch vanished, which
-   * looks identical whether the branch merged or was deleted unmerged, so
+   * answers this. {@link LandedVia}'s `"upstream gone"` never arrives here:
    * `compute_git_info` suppresses it rather than let a badge claim a merge git
-   * can't prove.
-   *
-   * This is git's own proof that a branch is finished, independent of GitHub:
-   * a locally merged branch that never had a PR still reports here, and a
-   * merged PR says nothing about commits made since. `commitsUnlanded` is the
-   * *whether*; this is the *how*. */
+   * can't prove. */
   landed: LandedVia | null;
   sessions: SessionData[];
   needs: number;
@@ -184,13 +172,11 @@ export type FolderData = {
    * "vs main" mode shows. Empty until the folder's git stats are computed
    * at least once. */
   comparedBase?: string;
-  /** Epoch ms when these git stats were last verified against the repo.
-   *
-   * Refresh is event-driven off a few `.git` files with a 60s backup poll, and
-   * the committed diff's baseline is a merge-base that only moves on fetch —
-   * so a number sitting still for minutes is usually correct, and used to be
-   * indistinguishable from a wedged poll. This is what lets the rail say
-   * *when* instead. 0 before the first compute. */
+  /** Epoch ms when these git stats were last verified against the repo (0
+   * before the first compute). Refresh is event-driven with a 60s backup poll
+   * and the baseline only moves on fetch, so a number sitting still for
+   * minutes is usually correct — this is what lets the rail say *when*
+   * rather than leave that indistinguishable from a wedged poll. */
   computedAtMs?: number;
   /** Epoch ms this checkout was last worked in, as Rust can see it: the newest
    * of `HEAD`'s commit time, the newest mtime among the working tree's changed
@@ -1039,53 +1025,29 @@ export function issuesForFolder(tasks: TaskItem[], dir: string): TaskIssueLink[]
   return taskForFolder(tasks, dir)?.issues ?? [];
 }
 
-/** True when a folder is provably safe to delete: no uncommitted changes
- * (`dirty`) and every commit on this branch has landed on `comparedBase`
- * (`commitsUnlanded === 0`). Deliberately independent of any PR's state —
- * it's a pure git fact — so call sites that want to gate on "the work
- * landed" do that themselves (see `folderLandedButHasWork`). Note this checks a
- * narrower, more optimistic thing than `tt task rm`'s own removal guard
- * (`crates/tt-tasks/src/guards.rs`): that guard only blocks on a dirty tree
- * or commits unreachable from *any* branch/remote (deleting a worktree never
- * deletes its branch, so an unmerged-but-pushed branch is still "safe" by
- * its math). This is the stricter "nothing left to do here" signal — the
- * guard remains the last line of defense either way.
+/** "Would removing this lose anything": no uncommitted changes and every
+ * commit has landed on `comparedBase`. A pure git fact, independent of any
+ * PR — and only *half* the badge gate, which also requires a merged PR (see
+ * {@link folderSafeToDelete}).
  *
- * `landed` is deliberately *not* part of this. The two answer different
- * questions: this one is "would removing this lose anything", `landed` is
- * "how did the work get to the base". A branch nobody has committed to is
- * safe to delete while never having landed, and a branch whose remote was
- * deleted (`"upstream gone"`) reports landed on the weakest possible evidence
- * while its commits are still counted as outstanding — so requiring `landed`
- * here would be both too strict and too loose.
- *
- * This is *not* the badge gate — it is one half of it. The affirmative
- * "safe to delete" claim additionally requires a merged PR; see
- * {@link folderSafeToDelete}. */
+ * `landed` is deliberately not part of it: that answers "how did the work get
+ * to the base", and requiring it here would be both too strict (a branch
+ * nobody committed to is safe while never having landed) and too loose
+ * (`"upstream gone"` reports landed on the weakest possible evidence). */
 export function folderHoldsNoWork(folder: Pick<FolderData, "dirty" | "commitsUnlanded">): boolean {
   return !folder.dirty && folder.commitsUnlanded === 0;
 }
 
 /** Whether this checkout may be shown as **safe to delete**: its PR merged,
- * and nothing here would be lost.
+ * and nothing here would be lost. Both halves are required — git can prove a
+ * branch's *content* reached the base but cannot tell "landed" from
+ * "abandoned", so the affirmative claim rests on the merged PR. The cost is
+ * deliberate: a PR-less scratch task never earns the badge even when git sees
+ * it is clean, and deletion stays available through the guarded modal.
  *
- * Both halves are required, and a folder with **no merged PR is never safe to
- * delete** no matter what git says. Git can prove a branch's *content* reached
- * the base, but it cannot tell "this work landed" apart from "this work was
- * abandoned" — a branch deleted unmerged, or reset away, leaves the same trace
- * as one that shipped. A merged PR is the durable external fact that closes
- * that gap, so the affirmative claim rests on it.
- *
- * The cost is deliberate: a PR-less scratch task never earns the badge, even
- * when git can see it is clean. That is fail-safe — deletion is still offered
- * through the guarded modal — and it is the direction chosen over the looser
- * git-only gate that shipped in #371.
- *
- * Note this is *stricter* than `tt task rm`'s own guard
- * (`crates/tt-tasks/src/guards.rs`), which blocks only on a dirty tree or
- * commits reachable from no branch/remote. Absence of this badge therefore
- * says nothing about whether removal would be refused — the guard remains the
- * last line of defense either way. */
+ * Stricter than `tt task rm`'s guard (`crates/tt-tasks/src/guards.rs`), which
+ * blocks only on a dirty tree or commits reachable from no branch/remote — so
+ * no badge says nothing about whether removal would be refused. */
 export function folderSafeToDelete(
   folder: Pick<FolderData, "dirty" | "commitsUnlanded">,
   pr: Pick<PrItem, "state"> | undefined,

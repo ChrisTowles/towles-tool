@@ -1,0 +1,29 @@
+name: Comment lint
+
+# Its own workflow rather than a step in `rust`/`frontend`, because it is the one
+# gate that spans both: `rust` is paths-ignored for apps/client and scripts, and
+# `frontend` has no cargo toolchain. Split across the two, a TS-only PR would run
+# no comment lint at all. Unfiltered on purpose — the linter reads every tracked
+# source tree plus the committed docs, so any path can change its verdict.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: comment-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  comment-lint:
+    name: Comment volume
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask comment-lint

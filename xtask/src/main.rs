@@ -1,12 +1,19 @@
 //! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint` — a linter for
 //! comment volume with fixed thresholds like clippy, no baseline file and no ratchet.
-//! Two signals per file, each with a warning and an error tier:
+//! It covers Rust and the frontend's TS/TSX/JS alike, because comment sprawl is a
+//! prose problem and neither language's own linter counts it (oxlint has no
+//! comment-volume rule at all — it skips stylistic rules by design).
+//!
+//! Two signals per source file, each with a warning and an error tier:
 //!
 //! - **shape** — a contiguous run of full-line comments that is too long. tree-sitter
 //!   finds the comment nodes, so a `//` inside a string never miscounts.
 //! - **too many** — a file whose comment mass *and* comment-to-code ratio are both
 //!   high. Both at once on purpose: mass alone flags big well-commented files, ratio
 //!   alone flags tiny `lib.rs` stubs whose few doc lines are 400% of nothing.
+//!
+//! Markdown is all prose, so neither signal means anything there; a doc gets the one
+//! measure it has, total length.
 //!
 //! Warnings are the standing hit list of essays worth trimming; errors fail CI. Suppress
 //! a deliberate essay with a `verbose-ok: <why>` line inside the block. Thresholds are
@@ -17,7 +24,23 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{env, fs};
 
-const TREES: &[&str] = &["crates", "crates-cli", "crates-tauri"];
+/// Source trees to measure, and the subpaths to skip inside them. `components/ui`
+/// is vendored shadcn; nothing under a dot-dir, `node_modules`, `target` or `dist`
+/// is ours to trim.
+const TREES: &[&str] = &[
+    "crates",
+    "crates-cli",
+    "crates-tauri",
+    "apps/client/src",
+    "scripts",
+    "e2e",
+];
+const SKIP: &[&str] = &[
+    "node_modules",
+    "target",
+    "dist",
+    "apps/client/src/components/ui",
+];
 const MARKER: &str = "verbose-ok:";
 
 /// A contiguous comment block trips a tier when it reaches this many lines.
@@ -29,6 +52,10 @@ const HEAVY_FILE: Tiers<HeavyFile> = Tiers {
     warn: HeavyFile { min_comment_lines: 120, min_ratio: 0.45 },
     error: HeavyFile { min_comment_lines: 250, min_ratio: 0.55 },
 };
+
+/// A committed doc trips a tier at this many lines. Prose has no code to sit
+/// against, so length is the only signal it offers.
+const DOC_LINES: Tiers<usize> = Tiers { warn: 300, error: 500 };
 
 /// Warn/error cutoffs for one rule.
 struct Tiers<T> {
@@ -69,6 +96,8 @@ impl Block {
 
 struct FileStats {
     file: String,
+    /// `Some` for markdown, which is measured by length instead.
+    doc_lines: Option<usize>,
     comment_lines: usize,
     code_lines: usize,
     blocks: Vec<Block>,
@@ -98,6 +127,15 @@ fn main() -> ExitCode {
     let mut findings: Vec<(Severity, String)> = Vec::new();
 
     for s in &stats {
+        if let Some(lines) = s.doc_lines {
+            if let Some((sev, cap)) = DOC_LINES.hit(|&n| lines >= n) {
+                findings.push((
+                    sev,
+                    format!("[long-doc] {} — {lines}-line doc (threshold {cap})", s.file),
+                ));
+            }
+            continue;
+        }
         for b in &s.blocks {
             if b.overridden {
                 continue;
@@ -169,29 +207,59 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask has a parent dir").to_path_buf()
 }
 
-fn measure(root: &Path) -> Result<Vec<FileStats>, String> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .map_err(|e| format!("tree-sitter-rust language mismatch: {e}"))?;
+/// The grammar a file is parsed with. `.js`/`.mjs` go through the TypeScript
+/// grammar rather than pulling a second one in — TS is a superset, and the only
+/// question asked here is where the comments are.
+fn language_for(name: &str) -> Option<tree_sitter::Language> {
+    match name.rsplit_once('.')?.1 {
+        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
+        "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "ts" | "js" | "mjs" | "cjs" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        _ => None,
+    }
+}
 
+fn measure(root: &Path) -> Result<Vec<FileStats>, String> {
     let mut files = Vec::new();
     for tree in TREES {
-        collect_rs_files(&root.join(tree), &mut files);
+        collect_files(root, &root.join(tree), &mut files);
     }
+    // Docs live all over the tree (per-crate CLAUDE.md, docs/, plugin skills), so
+    // they're swept from the root rather than listed.
+    collect_files(root, root, &mut files);
     files.sort();
+    files.dedup();
 
+    let mut parser = tree_sitter::Parser::new();
     let mut stats = Vec::new();
     for path in files {
         let content = fs::read_to_string(&path)
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-        stats.push(fold_file(&mut parser, rel, &content)?);
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        stats.push(match language_for(&name) {
+            Some(lang) => {
+                parser
+                    .set_language(&lang)
+                    .map_err(|e| format!("tree-sitter language mismatch for {rel}: {e}"))?;
+                fold_file(&mut parser, rel, &content)?
+            }
+            None => FileStats {
+                file: rel,
+                doc_lines: Some(content.lines().count()),
+                comment_lines: 0,
+                code_lines: 0,
+                blocks: Vec::new(),
+            },
+        });
     }
     Ok(stats)
 }
 
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+/// Recurse `dir`, collecting every file this linter knows how to measure. Markdown
+/// is collected everywhere; source only under [`TREES`], which is why the root sweep
+/// and the per-tree sweeps both run.
+fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -199,14 +267,20 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        if SKIP.contains(&rel.as_str()) || name.starts_with('.') {
+            continue;
+        }
         if path.is_dir() {
-            if !name.starts_with('.') && name != "target" {
-                collect_rs_files(&path, out);
-            }
-        } else if name.ends_with(".rs") {
+            collect_files(root, &path, out);
+        } else if name.ends_with(".md") || (language_for(&name).is_some() && under_tree(&rel)) {
             out.push(path);
         }
     }
+}
+
+fn under_tree(rel: &str) -> bool {
+    TREES.iter().any(|t| rel.starts_with(&format!("{t}/")))
 }
 
 fn fold_file(
@@ -250,6 +324,7 @@ fn fold_file(
     let blank_lines = lines.iter().filter(|l| l.trim().is_empty()).count();
     Ok(FileStats {
         file,
+        doc_lines: None,
         comment_lines: comment_line_nums.len(),
         code_lines: lines.len() - blank_lines - comment_line_nums.len(),
         blocks,
@@ -257,7 +332,8 @@ fn fold_file(
 }
 
 fn collect_comment_nodes<'t>(node: tree_sitter::Node<'t>, out: &mut Vec<tree_sitter::Node<'t>>) {
-    if node.kind().ends_with("_comment") {
+    // Rust's grammar names them `line_comment`/`block_comment`; TS/TSX's, just `comment`.
+    if node.kind() == "comment" || node.kind().ends_with("_comment") {
         out.push(node);
         return;
     }
