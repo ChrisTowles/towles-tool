@@ -44,18 +44,18 @@ const SKIP: &[&str] = &[
 const MARKER: &str = "verbose-ok:";
 
 /// A contiguous comment block trips a tier when it reaches this many lines.
-const BLOCK_LINES: Tiers<usize> = Tiers { warn: 12, error: 15 };
+const BLOCK_LINES: Tiers<usize> = Tiers { warn: 6, error: 10 };
 
 /// A file trips a tier when it meets BOTH bounds at once — mass alone would
 /// flag big well-commented files, ratio alone flags tiny doc-headed stubs.
 const HEAVY_FILE: Tiers<HeavyFile> = Tiers {
-    warn: HeavyFile { min_comment_lines: 120, min_ratio: 0.45 },
-    error: HeavyFile { min_comment_lines: 250, min_ratio: 0.55 },
+    warn: HeavyFile { min_comment_lines: 50, min_ratio: 0.20 },
+    error: HeavyFile { min_comment_lines: 100, min_ratio: 0.30 },
 };
 
 /// A committed doc trips a tier at this many lines. Prose has no code to sit
 /// against, so length is the only signal it offers.
-const DOC_LINES: Tiers<usize> = Tiers { warn: 300, error: 500 };
+const DOC_LINES: Tiers<usize> = Tiers { warn: 150, error: 250 };
 
 /// Warn/error cutoffs for one rule.
 struct Tiers<T> {
