@@ -1,5 +1,6 @@
 import { Globe, Play, Server, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { FolderData, SessionActions } from "@/lib/agentboard";
@@ -80,35 +81,37 @@ export function DevServersButton({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant={ghost ? "ghost" : "outline"}
-          size="icon-xs"
-          aria-label="Dev servers"
-          title="Dev servers (.claude/launch.json)"
-          className={cn(
-            "hover:text-violet-500",
-            !folder.hasLaunchConfig && "text-muted-foreground/50",
-          )}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Server className="size-3.5" />
-        </Button>
-      </PopoverTrigger>
+      <Hint label="Dev servers (.claude/launch.json)">
+        <PopoverTrigger asChild>
+          <Button
+            variant={ghost ? "ghost" : "outline"}
+            size="icon-xs"
+            aria-label="Dev servers"
+            className={cn(
+              "hover:text-violet-500",
+              !folder.hasLaunchConfig && "text-muted-foreground/50",
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Server className="size-3.5" />
+          </Button>
+        </PopoverTrigger>
+      </Hint>
       <PopoverContent align="end" className="w-96 p-2">
         <div className="flex items-baseline justify-between px-1 pb-1.5">
           <span className="text-[13px] font-medium">Dev servers</span>
-          <button
-            type="button"
-            title="Open Anthropic's launch.json reference (Configure preview servers)"
-            className="font-mono text-[10.5px] text-muted-foreground/60 underline-offset-2 hover:text-violet-500 hover:underline"
-            onClick={() => {
-              uiAction("dev_servers.docs_opened", "agentboard");
-              void openExternalUrl(LAUNCH_JSON_DOCS_URL);
-            }}
-          >
-            .claude/launch.json ↗
-          </button>
+          <Hint label="Open Anthropic's launch.json reference (Configure preview servers)">
+            <button
+              type="button"
+              className="font-mono text-[10.5px] text-muted-foreground/60 underline-offset-2 hover:text-violet-500 hover:underline"
+              onClick={() => {
+                uiAction("dev_servers.docs_opened", "agentboard");
+                void openExternalUrl(LAUNCH_JSON_DOCS_URL);
+              }}
+            >
+              .claude/launch.json ↗
+            </button>
+          </Hint>
         </div>
         {error && <p className="px-1 pb-1 text-[12px] text-red-500">{error}</p>}
         {!error &&
@@ -198,23 +201,26 @@ function ConfigRow({
   const action = launchAction(cfg);
   return (
     <div className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/50">
-      <span
-        title={
+      <Hint
+        label={
           cfg.port == null
             ? "no port in launch.json — can't probe"
             : cfg.portListening
               ? `listening on :${cfg.port}`
               : "not running"
         }
-        className={cn(
-          "size-2 shrink-0 rounded-full",
-          cfg.port == null
-            ? "bg-muted-foreground/20"
-            : cfg.portListening
-              ? "bg-green-500"
-              : "bg-muted-foreground/40",
-        )}
-      />
+      >
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            cfg.port == null
+              ? "bg-muted-foreground/20"
+              : cfg.portListening
+                ? "bg-green-500"
+                : "bg-muted-foreground/40",
+          )}
+        />
+      </Hint>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
           <span className="truncate text-[13px]">{cfg.name}</span>
@@ -222,52 +228,54 @@ function ConfigRow({
             <span className="font-mono text-[11px] text-muted-foreground">:{cfg.port}</span>
           )}
         </div>
-        <div className="truncate font-mono text-[11px] text-muted-foreground/60" title={command}>
-          {command}
-        </div>
+        <Hint label={command}>
+          <div className="truncate font-mono text-[11px] text-muted-foreground/60">{command}</div>
+        </Hint>
       </div>
       {cfg.portListening && cfg.port != null && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`Open localhost:${cfg.port} in the browser`}
-          title={`Open ${devServerUrl(cfg.port)}`}
-          onClick={() => cfg.port != null && void openExternalUrl(devServerUrl(cfg.port))}
-        >
-          <Globe className="size-3.5" />
-        </Button>
+        <Hint label={`Open ${devServerUrl(cfg.port)}`}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Open localhost:${cfg.port} in the browser`}
+            onClick={() => cfg.port != null && void openExternalUrl(devServerUrl(cfg.port))}
+          >
+            <Globe className="size-3.5" />
+          </Button>
+        </Hint>
       )}
       {action === "launch" && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`Start ${cfg.name}`}
-          title={`Start in a new session: ${command}`}
-          className="hover:text-violet-500"
-          onClick={onLaunch}
-        >
-          <Play className="size-3.5" />
-        </Button>
+        <Hint label={`Start in a new session: ${command}`}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Start ${cfg.name}`}
+            className="hover:text-violet-500"
+            onClick={onLaunch}
+          >
+            <Play className="size-3.5" />
+          </Button>
+        </Hint>
       )}
       {action === "focus" && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`Focus ${cfg.name}'s terminal`}
-          title="Focus the terminal it's running in"
-          className="hover:text-violet-500"
-          onClick={() => cfg.sessionId && onFocus(cfg.sessionId)}
-        >
-          <SquareTerminal className="size-3.5" />
-        </Button>
+        <Hint label="Focus the terminal it's running in">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Focus ${cfg.name}'s terminal`}
+            className="hover:text-violet-500"
+            onClick={() => cfg.sessionId && onFocus(cfg.sessionId)}
+          >
+            <SquareTerminal className="size-3.5" />
+          </Button>
+        </Hint>
       )}
       {action === "external" && (
-        <span
-          title="Something outside the app is listening on this port — nothing to focus, and a second launch would collide"
-          className="shrink-0 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground"
-        >
-          external
-        </span>
+        <Hint label="Something outside the app is listening on this port — nothing to focus, and a second launch would collide">
+          <span className="shrink-0 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground">
+            external
+          </span>
+        </Hint>
       )}
     </div>
   );

@@ -1,6 +1,5 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import {
-  AppWindow,
   Box,
   Check,
   ChevronDown,
@@ -8,8 +7,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Files,
   FolderPlus,
+  FolderTree,
   GitCompare,
   GitMerge,
   GitPullRequest,
@@ -36,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
+import { Hint } from "@/components/hint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
@@ -160,30 +160,29 @@ export function Glyph({ agent }: { agent: boolean }) {
 export function Dot({ session }: { session: SessionData }) {
   if (!session.live) {
     return (
-      <span
-        title="not started"
-        className="size-2 shrink-0 rounded-full border-[1.5px] border-muted-foreground/50 bg-transparent"
-      />
+      <Hint label="not started">
+        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-muted-foreground/50 bg-transparent" />
+      </Hint>
     );
   }
   const st = session.agentState?.status;
   if (st === "waiting") {
     return (
-      <span
-        title="agent waiting — needs your input"
-        className="size-2 shrink-0 rounded-full border-[1.5px] border-blue-500 bg-transparent"
-      />
+      <Hint label="agent waiting — needs your input">
+        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-blue-500 bg-transparent" />
+      </Hint>
     );
   }
   return (
-    <span
-      title={st ? `agent ${st}` : "shell running, no agent"}
-      className={cn(
-        "size-2 shrink-0 rounded-full",
-        st ? statusColor(st) : "bg-muted-foreground/40",
-        st === "busy" && "animate-pulse",
-      )}
-    />
+    <Hint label={st ? `agent ${st}` : "shell running, no agent"}>
+      <span
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          st ? statusColor(st) : "bg-muted-foreground/40",
+          st === "busy" && "animate-pulse",
+        )}
+      />
+    </Hint>
   );
 }
 
@@ -215,13 +214,12 @@ export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
   if (!color) return null;
   const n = sessions.filter((s) => s.live).length;
   return (
-    <span
-      className="flex shrink-0 items-center gap-1"
-      title={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}
-    >
-      <span className={cn("size-2 rounded-full", color)} />
-      <span className="font-mono text-[10px] text-muted-foreground/70">{n}</span>
-    </span>
+    <Hint label={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}>
+      <span className="flex shrink-0 items-center gap-1">
+        <span className={cn("size-2 rounded-full", color)} />
+        <span className="font-mono text-[10px] text-muted-foreground/70">{n}</span>
+      </span>
+    </Hint>
   );
 }
 
@@ -249,15 +247,16 @@ export function ClaudeBadge({
   children?: React.ReactNode;
 }) {
   return (
-    <span
-      title={title}
-      className={cn(
-        "flex shrink-0 items-center gap-1 rounded-md border border-violet-500/50 bg-violet-500/10 px-1.5 font-mono text-[10.5px] text-violet-500",
-        className,
-      )}
-    >
-      {children}
-    </span>
+    <Hint label={title}>
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-1 rounded-md border border-violet-500/50 bg-violet-500/10 px-1.5 font-mono text-[10.5px] text-violet-500",
+          className,
+        )}
+      >
+        {children}
+      </span>
+    </Hint>
   );
 }
 
@@ -282,15 +281,16 @@ export function LspBadge({
     starting: "rust-analyzer is starting…",
   }[state];
   return (
-    <span
-      title={title}
-      className={cn(
-        "shrink-0 rounded-md border px-1.5 font-mono text-[10.5px] whitespace-nowrap",
-        look,
-      )}
-    >
-      rust-analyzer {state === "starting" ? "…" : state}
-    </span>
+    <Hint label={title}>
+      <span
+        className={cn(
+          "shrink-0 rounded-md border px-1.5 font-mono text-[10.5px] whitespace-nowrap",
+          look,
+        )}
+      >
+        rust-analyzer {state === "starting" ? "…" : state}
+      </span>
+    </Hint>
   );
 }
 
@@ -313,12 +313,11 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
  * "gone/inert" rather than "look at me". Grayscale tokens carry light + dark. */
 export function GhostBadge() {
   return (
-    <span
-      className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-muted-foreground/70"
-      title="This checkout's directory is gone (moved or deleted). Untrack it, or restore the directory to bring it back."
-    >
-      ⚠ missing
-    </span>
+    <Hint label="This checkout's directory is gone (moved or deleted). Untrack it, or restore the directory to bring it back.">
+      <span className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-muted-foreground/70">
+        ⚠ missing
+      </span>
+    </Hint>
   );
 }
 
@@ -337,23 +336,26 @@ export function BranchLabel({
   onClick?: () => void;
 }) {
   return (
-    <span
-      className={cn(
-        "min-w-0 truncate font-mono text-[11px]",
-        isWorktree ? "text-muted-foreground" : "text-sky-500",
-      )}
-      // Always the full branch, because this is the element every surface
-      // truncates first: the rail row and the band both spend their slack on
-      // it, so without the tooltip a long branch is simply unreadable.
-      title={
+    // Always the full branch, because this is the element every surface
+    // truncates first: the rail row and the band both spend their slack on
+    // it, so without the tooltip a long branch is simply unreadable.
+    <Hint
+      label={
         isWorktree
           ? branch
           : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
       }
-      onClick={onClick}
     >
-      ⎇ {branch}
-    </span>
+      <span
+        className={cn(
+          "min-w-0 truncate font-mono text-[11px]",
+          isWorktree ? "text-muted-foreground" : "text-sky-500",
+        )}
+        onClick={onClick}
+      >
+        ⎇ {branch}
+      </span>
+    </Hint>
   );
 }
 
@@ -369,14 +371,15 @@ export function BranchLabel({
  * the first one lands (browser dev never gets one at all). */
 export function DeletingBadge({ label }: { label?: string }) {
   return (
-    <span
-      className="flex shrink-0 items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 font-mono text-[10px] text-red-600 dark:text-red-400"
-      title={
+    <Hint
+      label={
         label ? `Deleting this worktree from disk — ${label}…` : "Deleting this worktree from disk…"
       }
     >
-      <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
-    </span>
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 font-mono text-[10px] text-red-600 dark:text-red-400">
+        <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
+      </span>
+    </Hint>
   );
 }
 
@@ -460,12 +463,11 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
  * wrong and nothing needs doing. The row stays interactive throughout. */
 export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   return (
-    <span
-      className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400"
-      title="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while"
-    >
-      <Loader2 className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
-    </span>
+    <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400">
+        <Loader2 className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
+      </span>
+    </Hint>
   );
 }
 
@@ -514,9 +516,8 @@ export function ComparedBaseBadge({
   const label = comparedBaseLabel(folder);
   const manual = Boolean(folder.baseBranch?.trim());
   return (
-    <span
-      className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/70"
-      title={
+    <Hint
+      label={
         manual
           ? `Diffs against "${label}" — your override for this folder`
           : folder.taskBaseBranch
@@ -524,8 +525,10 @@ export function ComparedBaseBadge({
             : `Diffs against "${label}" (origin/main-or-master auto-detect)`
       }
     >
-      vs {label}
-    </span>
+      <span className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/70">
+        vs {label}
+      </span>
+    </Hint>
   );
 }
 
@@ -562,13 +565,14 @@ export function BaseMovedChip({
   if (commitsBehind === 0) return null;
   const base = comparedBaseLabel(stats);
   return (
-    <span
-      className={`${CHIP_CLASS} bg-muted font-medium text-foreground`}
-      title={`Base moved: ${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
+    <Hint
+      label={`Base moved: ${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
     >
-      <RefreshCw className="size-3" />
-      {commitsBehind}
-    </span>
+      <span className={`${CHIP_CLASS} bg-muted font-medium text-foreground`}>
+        <RefreshCw className="size-3" />
+        {commitsBehind}
+      </span>
+    </Hint>
   );
 }
 
@@ -943,23 +947,24 @@ function PaneOpenButton({
   shortcutTwin?: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
-        onOpen();
-      }}
-      className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
-      // A chip that scores a click as a passed-up keystroke has to name the
-      // keystroke, so the hint rides on `shortcutTwin` rather than each
-      // caller's `title`.
-      title={shortcutTwin ? withHint(title, shortcutTwin) : title}
-      aria-label={labeled ? undefined : label}
-    >
-      {glyph}
-      {labeled && <span>{label}</span>}
-    </button>
+    // A chip that scores a click as a passed-up keystroke has to name the
+    // keystroke, so the hint rides on `shortcutTwin` rather than each caller's
+    // `title`.
+    <Hint label={shortcutTwin ? withHint(title, shortcutTwin) : title}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
+          onOpen();
+        }}
+        className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
+        aria-label={label}
+      >
+        {glyph}
+        {labeled && <span>{label}</span>}
+      </button>
+    </Hint>
   );
 }
 
@@ -976,11 +981,15 @@ type PaneOpenButtonProps = { onOpen: () => void; labeled?: boolean };
 
 /** The files entry point, DiffButton's sibling: opens the folder's full file
  * tree as a pane ("tell claude about any file"), always visible for the same
- * findability reason. */
+ * findability reason.
+ *
+ * `FolderTree`, not lucide's `Files` — two stacked pages is the near-universal
+ * *copy* glyph, and next to a row of other actions it read as "copy something"
+ * rather than "browse the tree". */
 export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<Files className="size-3" />}
+      glyph={<FolderTree className="size-3" />}
       label="files"
       title="Browse every file in this checkout — @ any of them to Claude"
       onOpen={onOpen}
@@ -1007,11 +1016,16 @@ export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
 }
 
 /** Opens the folder's live-preview pane — the task's own dev server embedded
- * beside its terminals, with draw-on-page feedback to that task's session. */
+ * beside its terminals, with draw-on-page feedback to that task's session.
+ *
+ * `Eye`, not `AppWindow`: the pane is for *looking at* the running app, and a
+ * window outline sat next to the file glyph as one more generic rectangle. The
+ * repo menu's quiet toggle also uses `Eye`, which is fine — that one is a
+ * labeled menu item, so neither has to carry the meaning alone. */
 export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<AppWindow className="size-3" />}
+      glyph={<Eye className="size-3" />}
       label="preview"
       title="Preview this checkout's dev server — annotate the page and send it to the agent"
       onOpen={onOpen}
@@ -1070,17 +1084,8 @@ export function PrChip({
     ? "border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
     : PR_TONE[prTone(pr)].chip;
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        void openExternalUrl(pr.url);
-      }}
-      className={cn(
-        "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
-        tone,
-      )}
-      title={
+    <Hint
+      label={
         hasLocalWork
           ? `${pr.title} — ${merged ? "merged" : stats.landed}, but this checkout still has ${unsafeToDeleteReason(stats, base)}. Commit or push before removing the task. Open on GitHub.`
           : merged
@@ -1088,9 +1093,21 @@ export function PrChip({
             : `${pr.title} — checks ${pr.checks}${pr.reviewState === "review_requested" ? ", review requested" : ""}. Open on GitHub.`
       }
     >
-      <GitPullRequest className="size-3" />#{pr.number}
-      {hasLocalWork && <span aria-hidden>⚑</span>}
-    </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          void openExternalUrl(pr.url);
+        }}
+        className={cn(
+          "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
+          tone,
+        )}
+      >
+        <GitPullRequest className="size-3" />#{pr.number}
+        {hasLocalWork && <span aria-hidden>⚑</span>}
+      </button>
+    </Hint>
   );
 }
 
@@ -1116,19 +1133,22 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          className={cn(
-            "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
-            tone,
-          )}
-          title={`${issue.repo}#${issue.number} — ${closed ? "closed" : "open"}, linked to this task`}
-        >
-          <CircleDot className="size-3" />#{issue.number}
-        </button>
-      </DropdownMenuTrigger>
+      <Hint
+        label={`${issue.repo}#${issue.number} — ${closed ? "closed" : "open"}, linked to this task`}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
+              tone,
+            )}
+          >
+            <CircleDot className="size-3" />#{issue.number}
+          </button>
+        </DropdownMenuTrigger>
+      </Hint>
       <DropdownMenuContent align="start" className="w-auto min-w-44">
         <DropdownMenuItem
           onSelect={() => void openExternalUrl(issue.url)}
@@ -1366,15 +1386,16 @@ export function ModelBadge({ session }: { session: SessionData }) {
   const letter = modelLetter(d?.model);
   if (!session.live || !letter) return null;
   return (
-    <span
-      title={modelContextLabel(d) ?? undefined}
-      className={cn(
-        "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-[10px] font-medium",
-        MODEL_TONE[letter] ?? "border-border bg-muted/30 text-muted-foreground",
-      )}
-    >
-      {letter}
-    </span>
+    <Hint label={modelContextLabel(d) ?? undefined}>
+      <span
+        className={cn(
+          "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-[10px] font-medium",
+          MODEL_TONE[letter] ?? "border-border bg-muted/30 text-muted-foreground",
+        )}
+      >
+        {letter}
+      </span>
+    </Hint>
   );
 }
 
@@ -1413,21 +1434,24 @@ export function CacheBadge({
       "shrink-0 animate-pulse rounded-md border border-sky-500/50 bg-sky-500/10 px-1.5 font-mono text-[10.5px] text-sky-500";
     const hint = `${lead}${pct}% of context used and the prompt cache expired, so resuming re-reads everything.`;
     return onCompact ? (
-      <button
-        type="button"
-        title={`${hint} Click to /compact.`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onCompact();
-        }}
-        className={cn(pill, "hover:bg-sky-500/20")}
-      >
-        ❄ {pct}%{long && " compact"}
-      </button>
+      <Hint label={`${hint} Click to /compact.`}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCompact();
+          }}
+          className={cn(pill, "hover:bg-sky-500/20")}
+        >
+          ❄ {pct}%{long && " compact"}
+        </button>
+      </Hint>
     ) : (
-      <span title={`${hint} Consider /compact or a fresh session.`} className={pill}>
-        ❄ {pct}%{long && " compact"}
-      </span>
+      <Hint label={`${hint} Consider /compact or a fresh session.`}>
+        <span className={pill}>
+          ❄ {pct}%{long && " compact"}
+        </span>
+      </Hint>
     );
   }
 
@@ -1436,29 +1460,32 @@ export function CacheBadge({
     ? "❄"
     : `${d.cacheTtlMs === 3_600_000 ? "⧗" : "◔"}${fmtMins(d.cacheExpiresAt! - now)}`;
   return (
-    <span
-      title={
+    <Hint
+      label={
         cold
           ? `${lead}prompt cache expired`
           : expiring
             ? `${lead}prompt cache expires soon; any message re-warms it, a cold resume re-reads everything at full price`
             : `${lead}prompt cache warm, time left`
       }
-      className={cn(
-        "shrink-0 font-mono text-[10.5px]",
-        expiring
-          ? "text-amber-500"
-          : cold
-            ? "font-medium text-sky-500"
-            : "text-muted-foreground/70",
-      )}
     >
-      {/* Fixed 4ch slot ("100%"), right-aligned: the percent is 1–3 digits,
-          and without a reserved width every element after it drifts per row,
-          so the rail's meta columns never line up vertically. */}
-      <span className="inline-block w-[4ch] text-right">{pct}%</span>{" "}
-      <span className="inline-block min-w-[4ch]">{warmth}</span>
-    </span>
+      <span
+        className={cn(
+          "shrink-0 font-mono text-[10.5px]",
+          expiring
+            ? "text-amber-500"
+            : cold
+              ? "font-medium text-sky-500"
+              : "text-muted-foreground/70",
+        )}
+      >
+        {/* Fixed 4ch slot ("100%"), right-aligned: the percent is 1–3 digits,
+            and without a reserved width every element after it drifts per row,
+            so the rail's meta columns never line up vertically. */}
+        <span className="inline-block w-[4ch] text-right">{pct}%</span>{" "}
+        <span className="inline-block min-w-[4ch]">{warmth}</span>
+      </span>
+    </Hint>
   );
 }
 
@@ -1534,16 +1561,18 @@ export function RepoMenu({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant={ghost ? "ghost" : "outline"}
-            size="icon-xs"
-            title="More actions"
-            className="text-muted-foreground"
-          >
-            <MoreVertical className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
+        <Hint label="More actions">
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant={ghost ? "ghost" : "outline"}
+              size="icon-xs"
+              aria-label="More actions"
+              className="text-muted-foreground"
+            >
+              <MoreVertical className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+        </Hint>
         <DropdownMenuContent align="end" className="w-auto min-w-56">
           {path && (
             <>

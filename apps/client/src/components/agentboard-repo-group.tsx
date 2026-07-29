@@ -9,6 +9,7 @@
 import { type ReactElement } from "react";
 import { toast } from "sonner";
 import { FolderGit2, FolderPlus } from "lucide-react";
+import { Hint } from "@/components/hint";
 import {
   Chevron,
   CollapsedLive,
@@ -530,19 +531,20 @@ function QuietRepoStub({
   onToggle?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      title="Nothing going on here right now — click to show"
-      className="flex w-full items-center gap-2 border-b bg-card px-3 py-1.5 text-left text-muted-foreground/60 hover:bg-accent/40 hover:text-muted-foreground"
-    >
-      <Chevron collapsed />
-      <FolderGit2 className="size-3.5 shrink-0 opacity-60" />
-      <span className="min-w-0 truncate text-sm">{name}</span>
-      <span className="ml-auto shrink-0 font-mono text-[10px]">
-        {count === 1 ? "quiet" : `${count} quiet`}
-      </span>
-    </button>
+    <Hint label="Nothing going on here right now — click to show">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 border-b bg-card px-3 py-1.5 text-left text-muted-foreground/60 hover:bg-accent/40 hover:text-muted-foreground"
+      >
+        <Chevron collapsed />
+        <FolderGit2 className="size-3.5 shrink-0 opacity-60" />
+        <span className="min-w-0 truncate text-sm">{name}</span>
+        <span className="ml-auto shrink-0 font-mono text-[10px]">
+          {count === 1 ? "quiet" : `${count} quiet`}
+        </span>
+      </button>
+    </Hint>
   );
 }
 

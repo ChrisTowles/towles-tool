@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { Dot, fmtMins, IconBtn } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import {
@@ -28,27 +29,30 @@ function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) 
   const cold = isCold(d, now);
   const expiring = isCacheExpiring(d, now);
   return (
-    <span
-      title={
+    <Hint
+      label={
         cold
           ? "prompt cache expired"
           : expiring
             ? "prompt cache expires soon — any message re-warms it; a cold resume re-reads everything at full price"
             : "prompt cache warm — time left"
       }
-      className={cn(
-        "shrink-0 font-mono text-[10.5px]",
-        expiring
-          ? "text-amber-500"
-          : cold
-            ? "font-medium text-sky-500"
-            : "text-muted-foreground/70",
-      )}
     >
-      {cold
-        ? "❄ cache cold"
-        : `${d.cacheTtlMs === 3_600_000 ? "⧗" : "◔"} ${fmtMins(d.cacheExpiresAt - now)} left`}
-    </span>
+      <span
+        className={cn(
+          "shrink-0 font-mono text-[10.5px]",
+          expiring
+            ? "text-amber-500"
+            : cold
+              ? "font-medium text-sky-500"
+              : "text-muted-foreground/70",
+        )}
+      >
+        {cold
+          ? "❄ cache cold"
+          : `${d.cacheTtlMs === 3_600_000 ? "⧗" : "◔"} ${fmtMins(d.cacheExpiresAt - now)} left`}
+      </span>
+    </Hint>
   );
 }
 
@@ -149,20 +153,18 @@ export function PaneHeader({
       actions={
         <>
           {session.live && (
-            <span
-              className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70"
-              title="running for"
-            >
-              {fmtElapsed(now - session.createdAt)}
-            </span>
+            <Hint label="running for">
+              <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
+                {fmtElapsed(now - session.createdAt)}
+              </span>
+            </Hint>
           )}
           {waitingAge && (
-            <span
-              className="shrink-0 font-mono text-[10.5px] text-amber-500/80"
-              title="how long this has been needing you"
-            >
-              {waitingAge}
-            </span>
+            <Hint label="how long this has been needing you">
+              <span className="shrink-0 font-mono text-[10.5px] text-amber-500/80">
+                {waitingAge}
+              </span>
+            </Hint>
           )}
           <PaneCacheInfo session={session} now={now} />
           {agent && (
