@@ -101,6 +101,32 @@ async function start(): Promise<typeof import("monaco-editor")> {
     import("@codingame/monaco-vscode-python-default-extension"),
     import("@codingame/monaco-vscode-log-default-extension"),
     import("@codingame/monaco-vscode-diff-default-extension"),
+    // The rest of VS Code's built-in grammars. A diff of an unclaimed file
+    // type renders as plaintext rather than not at all, so the cost of a
+    // missing grammar is only lost color — but a repo browser that can't
+    // color C, Go, SQL or a Dockerfile is a browser for one repo.
+    // `lib/language-fallback.ts` covers what upstream ships no grammar for
+    // (TOML) and the names their association lists miss.
+    import("@codingame/monaco-vscode-ini-default-extension"),
+    import("@codingame/monaco-vscode-git-base-default-extension"),
+    import("@codingame/monaco-vscode-docker-default-extension"),
+    import("@codingame/monaco-vscode-make-default-extension"),
+    import("@codingame/monaco-vscode-sql-default-extension"),
+    import("@codingame/monaco-vscode-xml-default-extension"),
+    import("@codingame/monaco-vscode-cpp-default-extension"),
+    import("@codingame/monaco-vscode-go-default-extension"),
+    import("@codingame/monaco-vscode-java-default-extension"),
+    import("@codingame/monaco-vscode-csharp-default-extension"),
+    import("@codingame/monaco-vscode-ruby-default-extension"),
+    import("@codingame/monaco-vscode-php-default-extension"),
+    import("@codingame/monaco-vscode-lua-default-extension"),
+    import("@codingame/monaco-vscode-perl-default-extension"),
+    import("@codingame/monaco-vscode-swift-default-extension"),
+    import("@codingame/monaco-vscode-r-default-extension"),
+    import("@codingame/monaco-vscode-powershell-default-extension"),
+    import("@codingame/monaco-vscode-bat-default-extension"),
+    import("@codingame/monaco-vscode-scss-default-extension"),
+    import("@codingame/monaco-vscode-less-default-extension"),
     // No standalone language features: this pane is a file *browser*, and
     // their TS worker has no tsconfig, no node_modules resolution and no
     // project graph, so every real source file lit up with bogus "cannot

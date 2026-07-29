@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useEditorFontSize } from "@/lib/editor-prefs";
 import { loadMonaco } from "@/lib/monaco";
+import { applyLanguageFallback } from "@/lib/language-fallback";
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -443,9 +444,11 @@ export function MonacoMultiDiff({
           const entry: { original?: TextModel; modified?: TextModel } = {};
           if (contents[i].original != null) {
             entry.original = monaco.editor.createModel(contents[i].original!, undefined, baseUri);
+            applyLanguageFallback(monaco, entry.original, f.oldPath ?? f.path);
           }
           if (contents[i].modified != null) {
             entry.modified = monaco.editor.createModel(contents[i].modified!, undefined, workUri);
+            applyLanguageFallback(monaco, entry.modified, f.path);
             mtimesRef.current.set(f.path, contents[i].modifiedMtimeMs);
             savedVersionsRef.current.set(f.path, entry.modified.getAlternativeVersionId());
             disposables.push(
