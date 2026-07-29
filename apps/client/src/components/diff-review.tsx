@@ -3,6 +3,7 @@ import { Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorFontSize } from "@/lib/editor-prefs";
 import { loadMonaco } from "@/lib/monaco";
+import { applyLanguageFallback } from "@/lib/language-fallback";
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -54,8 +55,17 @@ export function DiffReview({
     void (async () => {
       const monaco = await loadMonaco();
       if (disposed || !containerRef.current) return;
-      original = monaco.editor.createModel(originalContent, undefined);
-      modified = monaco.editor.createModel(review.newFileContents, undefined);
+      // Synthetic URIs purely so the models resolve a language: these two
+      // sides are a proposal, not a file the workbench may resolve or write.
+      // Without them every proposed edit reviews as uncolored plaintext.
+      const baseUri = monaco.Uri.parse(`tt-review-base:${review.oldFilePath}`);
+      const workUri = monaco.Uri.parse(`tt-review-work:${review.newFilePath}`);
+      monaco.editor.getModel(baseUri)?.dispose();
+      monaco.editor.getModel(workUri)?.dispose();
+      original = monaco.editor.createModel(originalContent, undefined, baseUri);
+      modified = monaco.editor.createModel(review.newFileContents, undefined, workUri);
+      applyLanguageFallback(monaco, original, review.oldFilePath);
+      applyLanguageFallback(monaco, modified, review.newFilePath);
       modifiedRef.current = modified;
       editor = monaco.editor.createDiffEditor(containerRef.current, {
         automaticLayout: true,
@@ -79,7 +89,13 @@ export function DiffReview({
       original?.dispose();
       modified?.dispose();
     };
-  }, [review.requestId, review.newFileContents, originalContent]);
+  }, [
+    review.requestId,
+    review.newFileContents,
+    review.oldFilePath,
+    review.newFilePath,
+    originalContent,
+  ]);
 
   const resolve = async (accepted: boolean) => {
     const resolved = await invoke<void>("ide_diff_resolve", {

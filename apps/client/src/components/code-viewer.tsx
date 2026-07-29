@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { loadMonaco } from "@/lib/monaco";
+import { applyLanguageFallback } from "@/lib/language-fallback";
 import {
   ideClearSelection,
   ideMention,
@@ -235,6 +236,7 @@ export function CodeViewer({
       const uri = monaco.Uri.file(`${dir}/${path}`);
       monaco.editor.getModel(uri)?.dispose();
       model = monaco.editor.createModel(read.content, undefined, uri);
+      applyLanguageFallback(monaco, model, path);
       mtimeRef.current = read.mtimeMs;
       editor = monaco.editor.create(containerRef.current, {
         model,
