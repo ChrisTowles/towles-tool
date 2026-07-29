@@ -97,7 +97,13 @@ gtk = "0.18"
 # macOS backend), so this adds no second copy of the objc2 stack.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent"] }
+# `block2` gates the monitor method itself; it currently resolves anyway because
+# tauri-runtime-wry asks for it, which is not a promise it owes us.
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSEvent",
+  "block2",
+] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
 block2 = "0.6"
 
