@@ -17,12 +17,15 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::engine::RailRow;
 use crate::folder_meta::FolderMetaStore;
 use crate::git_info::GitInfo;
 use crate::repos::RepoEntry;
 use crate::sessions::SessionStore;
 use crate::tracker::AgentTracker;
-use crate::types::{AgentEvent, AgentStatus, FolderData, NeedsYouReason, RepoData, SessionData};
+use crate::types::{
+    AgentEvent, AgentStatus, FolderData, NeedsYouReason, RepoData, RowRecord, SessionData,
+};
 
 /// The state snapshot emitted to the client: repos, each nesting its
 /// worktree-sibling folders, each holding its PTY sessions.
@@ -56,6 +59,7 @@ pub struct StatePayload {
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_state(
     entries: &[RepoEntry],
+    rows: &HashMap<String, RailRow>,
     git_infos: &HashMap<String, GitInfo>,
     tracker: &AgentTracker,
     sessions: &SessionStore,
@@ -67,18 +71,51 @@ pub fn assemble_state(
 ) -> StatePayload {
     let mut repos: Vec<RepoData> = Vec::new();
     let mut group_index: HashMap<String, usize> = HashMap::new(); // common_dir -> repos index
+    // Every placed folder's dir -> its repo row, so a row git can't speak for
+    // can still find its group. See the `repo_root` fallback below.
+    let mut dir_index: HashMap<String, usize> = HashMap::new();
 
     for entry in entries {
         let git = git_infos.get(&entry.dir).cloned().unwrap_or_default();
-        let folder =
-            build_folder(entry, &git, tracker, sessions, folder_meta, attribute, session_agents);
+        let row = rows.get(&entry.dir);
+        let folder = build_folder(
+            entry,
+            row,
+            &git,
+            tracker,
+            sessions,
+            folder_meta,
+            attribute,
+            session_agents,
+        );
         let needs = folder.needs;
 
         let group_key = (!git.common_dir.is_empty()).then(|| git.common_dir.clone());
-        let existing = group_key.as_ref().and_then(|k| group_index.get(k).copied());
+        // `common_dir` is the structural git fact every linked worktree of a
+        // repo reports identically — but git can only report it for a directory
+        // that is *there*, and a task's row exists before its worktree does.
+        // Falling back to the row's `repo_root` is what keeps a creating (or
+        // detached) task under its own repo instead of stranding it as its own
+        // top-level row, flicking into place a poll later when the directory
+        // appears. Safe as a lookup because `rail_rows` emits each checkout
+        // ahead of the rows bound to it, so the parent is always already placed.
+        let existing = group_key
+            .as_ref()
+            .and_then(|k| group_index.get(k).copied())
+            .or_else(|| row.and_then(|r| dir_index.get(&r.repo_root).copied()));
+        // Which folder leads its repo row is a question about the *record*, not
+        // about git: a task row whose worktree doesn't exist yet reports
+        // `is_worktree = false` from a default `GitInfo`, and letting that
+        // re-anchor the row would key the whole group to a directory that isn't
+        // there. Only a tracked checkout leads. (Falling back to the git fact
+        // covers callers that pass no rows at all.)
+        let leads = match row {
+            Some(r) => matches!(r.record, RowRecord::Checkout),
+            None => !git.is_worktree,
+        };
         match existing {
             Some(i) => {
-                if git.is_worktree {
+                if !leads {
                     repos[i].folders.push(folder);
                 } else {
                     // The primary checkout leads its group regardless of
@@ -105,11 +142,13 @@ pub fn assemble_state(
                     repos[i].folders.insert(0, folder);
                 }
                 repos[i].needs += needs;
+                dir_index.insert(entry.dir.clone(), i);
             }
             None => {
                 if let Some(key) = group_key {
                     group_index.insert(key, repos.len());
                 }
+                dir_index.insert(entry.dir.clone(), repos.len());
                 repos.push(new_repo_row(entry, &git, folder));
             }
         }
@@ -129,8 +168,10 @@ pub fn assemble_state(
 /// default session), plus a placeholder `needs` count (always 0 here — see
 /// [`session_needs`] — the app recomputes it after stamping shell liveness via
 /// [`recompute_needs`]).
+#[allow(clippy::too_many_arguments)]
 fn build_folder(
     entry: &RepoEntry,
+    row: Option<&RailRow>,
     git: &GitInfo,
     tracker: &AgentTracker,
     sessions: &SessionStore,
@@ -189,9 +230,15 @@ fn build_folder(
 
     let needs = session_data.iter().filter(|s| session_needs(s)).count() as i64;
 
+    let record = row.map(|r| r.record.clone()).unwrap_or_default();
+
     FolderData {
         name: entry.name.clone(),
         dir: entry.dir.clone(),
+        repo_root: row.map(|r| r.repo_root.clone()).unwrap_or_else(|| entry.dir.clone()),
+        record,
+        // Filled in by the app's `stamp_pty_state`; the engine can't know.
+        phase: None,
         dir_missing: git.dir_missing,
         branch: git.branch.clone(),
         is_worktree: git.is_worktree,
@@ -365,7 +412,7 @@ fn repo_name_from_origin(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AgentStatus;
+    use crate::types::{AgentStatus, RowTask};
 
     fn ev(session: &str, status: AgentStatus, thread: &str) -> AgentEvent {
         AgentEvent {
@@ -391,6 +438,25 @@ mod tests {
         None
     }
 
+    /// Every entry as its own tracked checkout — the shape these tests always
+    /// meant, now that a row carries the record that put it there. Tests about
+    /// task rows build their map explicitly.
+    fn rows_for(entries: &[RepoEntry]) -> HashMap<String, RailRow> {
+        entries
+            .iter()
+            .map(|e| {
+                (
+                    e.dir.clone(),
+                    RailRow {
+                        dir: e.dir.clone(),
+                        repo_root: e.dir.clone(),
+                        record: RowRecord::Checkout,
+                    },
+                )
+            })
+            .collect()
+    }
+
     /// [`assemble_state`] with the arguments no test below varies: an empty
     /// folder-meta store and the fixed compact/ts tail. Only the stores a test
     /// actually exercises stay in the call.
@@ -404,6 +470,7 @@ mod tests {
     ) -> StatePayload {
         assemble_state(
             entries,
+            &rows_for(entries),
             git,
             tracker,
             sessions,
@@ -448,6 +515,7 @@ mod tests {
         );
         let payload = assemble_state(
             &entries(),
+            &rows_for(&entries()),
             &git,
             &tracker,
             &store,
@@ -491,6 +559,143 @@ mod tests {
         let beta = payload.repos.iter().flat_map(|r| &r.folders).find(|f| f.dir == "/r/beta");
         assert!(alpha.unwrap().dir_missing);
         assert!(!beta.unwrap().dir_missing);
+    }
+
+    /// A task whose worktree doesn't exist yet — mid-`worktree add`, or
+    /// detached after one was deleted — has no `common_dir`, because git can
+    /// only report that for a directory that is there. It must still nest under
+    /// its own repo, on the `repo_root` its record carries: stranding it as its
+    /// own top-level row and then snapping it into place a poll later is
+    /// exactly the jumping the record model exists to stop.
+    #[test]
+    fn a_task_row_with_no_directory_yet_nests_under_its_repo_root() {
+        let tracker = AgentTracker::new();
+        let store = SessionStore::new(None);
+        let pending = "/r/demo/.claude/worktrees/feat-new";
+        let mut git = HashMap::new();
+        git.insert(
+            "/r/demo".to_string(),
+            GitInfo { common_dir: "/r/demo/.git".into(), is_worktree: false, ..Default::default() },
+        );
+        // Deliberately no git entry for `pending` — nothing is on disk to read.
+        let entries = vec![
+            RepoEntry { name: "demo".into(), dir: "/r/demo".into() },
+            RepoEntry { name: "feat-new".into(), dir: pending.into() },
+        ];
+        let rows = HashMap::from([
+            (
+                "/r/demo".to_string(),
+                RailRow {
+                    dir: "/r/demo".into(),
+                    repo_root: "/r/demo".into(),
+                    record: RowRecord::Checkout,
+                },
+            ),
+            (
+                pending.to_string(),
+                RailRow {
+                    dir: pending.into(),
+                    repo_root: "/r/demo".into(),
+                    record: RowRecord::Task {
+                        task: RowTask {
+                            id: 7,
+                            status: "doing".into(),
+                            branch: Some("feat/new".into()),
+                        },
+                    },
+                },
+            ),
+        ]);
+        let payload = assemble_state(
+            &entries,
+            &rows,
+            &git,
+            &tracker,
+            &store,
+            &FolderMetaStore::default(),
+            &no_attr,
+            &HashMap::new(),
+            30,
+            0,
+        );
+        assert_eq!(payload.repos.len(), 1, "the pending task nests, it doesn't strand");
+        let dirs: Vec<&str> = payload.repos[0].folders.iter().map(|f| f.dir.as_str()).collect();
+        assert_eq!(dirs, vec!["/r/demo", pending]);
+        assert_eq!(payload.repos[0].key, "path:/r/demo", "the checkout still anchors the row");
+        let row = &payload.repos[0].folders[1];
+        assert_eq!(row.record.task().map(|t| t.id), Some(7));
+        assert_eq!(row.repo_root, "/r/demo");
+    }
+
+    /// The branch is known from the record before git can answer, so the row
+    /// isn't nameless while it's being created — and a task whose directory is
+    /// gone still has a row rather than vanishing.
+    ///
+    /// "Detached" itself is derived on the client from the three facts asserted
+    /// here (a task record, a missing dir, no operation running), not carried
+    /// as its own state — see `RowPhase`.
+    #[test]
+    fn a_task_row_survives_its_directory_going_missing() {
+        let tracker = AgentTracker::new();
+        let store = SessionStore::new(None);
+        let dir = "/r/demo/.claude/worktrees/feat-gone";
+        let mut git = HashMap::new();
+        git.insert(dir.to_string(), GitInfo { dir_missing: true, ..Default::default() });
+        let entries = vec![RepoEntry { name: "feat-gone".into(), dir: dir.into() }];
+        let rows = HashMap::from([(
+            dir.to_string(),
+            RailRow {
+                dir: dir.into(),
+                repo_root: "/r/demo".into(),
+                record: RowRecord::Task {
+                    task: RowTask {
+                        id: 9,
+                        status: "doing".into(),
+                        branch: Some("feat/gone".into()),
+                    },
+                },
+            },
+        )]);
+        let payload = assemble_state(
+            &entries,
+            &rows,
+            &git,
+            &tracker,
+            &store,
+            &FolderMetaStore::default(),
+            &no_attr,
+            &HashMap::new(),
+            30,
+            0,
+        );
+        let folder = &payload.repos[0].folders[0];
+        // The row is still here, and carries what "detached" is read from.
+        assert!(folder.dir_missing);
+        assert!(folder.record.task().is_some());
+        assert_eq!(folder.phase, None, "the engine never claims an operation is running");
+        assert_eq!(folder.record.task().and_then(|t| t.branch.as_deref()), Some("feat/gone"));
+
+        // A tracked checkout that's missing is a ghost, not a detached task —
+        // its remedy is Untrack, which `dir_missing` already drives.
+        let rows = HashMap::from([(
+            dir.to_string(),
+            RailRow { dir: dir.into(), repo_root: dir.into(), record: RowRecord::Checkout },
+        )]);
+        let payload = assemble_state(
+            &entries,
+            &rows,
+            &git,
+            &tracker,
+            &store,
+            &FolderMetaStore::default(),
+            &no_attr,
+            &HashMap::new(),
+            30,
+            0,
+        );
+        let ghost = &payload.repos[0].folders[0];
+        assert!(ghost.dir_missing);
+        assert!(ghost.record.task().is_none(), "a checkout row has no task, so it can't detach");
     }
 
     #[test]

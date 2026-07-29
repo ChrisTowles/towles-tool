@@ -501,6 +501,11 @@ pub fn branch_exists(checkout: &Path, branch: &str) -> bool {
 /// existing task? Read-only.
 pub struct BranchCheck {
     pub name: Option<String>,
+    /// Where the worktree *will* be — derived from the branch, so it is known
+    /// before anything is created. The Agentboard binds this onto the task row
+    /// at submit time, which is what puts the row on the rail before
+    /// `git worktree add` runs. `None` when the branch name is unusable.
+    pub dir: Option<String>,
     pub taken: bool,
     pub branch_exists: bool,
     pub error: Option<String>,
@@ -510,6 +515,7 @@ pub fn check_branch(sr: &TaskRoot, branch: &str) -> BranchCheck {
     if let Err(e) = validate_branch_name(branch) {
         return BranchCheck {
             name: None,
+            dir: None,
             taken: false,
             branch_exists: false,
             error: Some(e.to_string()),
@@ -517,12 +523,20 @@ pub fn check_branch(sr: &TaskRoot, branch: &str) -> BranchCheck {
     }
     match layout::task_name_from_branch(branch) {
         Some(name) => {
-            let taken = sr.task_dir(&name).exists();
+            let dir = sr.task_dir(&name);
+            let taken = dir.exists();
             let exists = branch_exists(&sr.checkout, branch);
-            BranchCheck { name: Some(name), taken, branch_exists: exists, error: None }
+            BranchCheck {
+                name: Some(name),
+                dir: Some(dir.to_string_lossy().to_string()),
+                taken,
+                branch_exists: exists,
+                error: None,
+            }
         }
         None => BranchCheck {
             name: None,
+            dir: None,
             taken: false,
             branch_exists: false,
             error: Some(OpsError::BadBranchName(branch.to_string()).to_string()),

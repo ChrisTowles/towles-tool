@@ -2,22 +2,11 @@
 // worktree is created under the repo's .claude/worktrees/ dir
 // (`task_create` → tt-tasks ops, shared with `tt task new`). The goal slugs the branch name
 // (editable). Unlike the old modal this never blocks the rest of the rail —
-// the form hands off to the caller on submit (which fires `task_create`
-// without awaiting it here) and a `PendingTaskRow` tracks the in-flight
-// create until it resolves, so switching to other repos/sessions while a
-// task is being created just works.
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  CircleDot,
-  ImagePlus,
-  Paperclip,
-  RefreshCw,
-  Sparkles,
-  Undo2,
-  X,
-} from "lucide-react";
+// the form hands off to the caller on submit and closes. The submit binds the
+// task's worktree directory, which is what puts its row on the rail
+// immediately, so the create runs against a row that is already on screen and
+// switching to other repos/sessions meanwhile just works.
+import { Check, ChevronDown, CircleDot, ImagePlus, Sparkles, Undo2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -44,7 +33,6 @@ import {
   ClaudeModel,
   PastedImage,
   clipboardImageFromHost,
-  fmtElapsed,
   imagesFromDataTransfer,
   isPasteableImage,
   nextDraftScopeId,
@@ -121,6 +109,11 @@ export type NewTaskSubmit = {
   imagePaths: string[];
   /** GitHub issues to attach to the created task (multi-select). */
   issues: IssueItem[];
+  /** Where the worktree will be (`BranchCheck.dir`), bound onto the task row
+   * at submit so its rail row exists before `git worktree add` runs. `null`
+   * when the preflight hasn't answered — the row then appears when the create
+   * resolves, as it used to. */
+  dir: string | null;
   /** False for "Task only": create the board task but no worktree/agent. */
   worktree: boolean;
   /** False to create the worktree and its session but leave the PTY at a
@@ -141,6 +134,10 @@ export type TaskCreated = {
 /** Mirrors the Rust `BranchCheck` payload from `task_check_branch`. */
 export type BranchCheck = {
   name: string | null;
+  /** Where the worktree will be, derived from the branch. Known before
+   * anything is created, which is what lets the submit bind it onto the task
+   * row and put the rail row on screen ahead of the git work. */
+  dir: string | null;
   taken: boolean;
   branchExists: boolean;
   error: string | null;
@@ -155,41 +152,6 @@ export type TaskSuggestion = {
    * locally derived slug instead. A note, not an error — the suggestion is
    * still usable, so it renders muted rather than red. */
   fallback: string | null;
-};
-
-/** A `task_create` call that's been fired and is running in the background —
- * tracked in the rail as a `PendingTaskRow` instead of a blocking spinner, so
- * the caller (agentboard.tsx) can keep several of these in flight across
- * different repos at once. Keyed by `${repoKey}::${branch}`, which is unique
- * enough since a branch collision is already rejected before submit. */
-export type PendingTask = {
-  id: string;
-  repoKey: string;
-  repoDir: string;
-  repoName: string;
-  goal: string;
-  branch: string;
-  base: string;
-  options: ClaudeLaunchOptions;
-  /** Carried on the pending row, not just consumed at submit, so a retry
-   * after a failed create re-attaches the same images — the form is long
-   * gone by then and the user would otherwise have to re-paste. Paths, not
-   * bytes: the files were staged when pasted and outlive the form. */
-  imagePaths: string[];
-  /** The board task created at submit (#339) — carried so a retry binds the
-   * task to the same task instead of minting a duplicate card. */
-  taskId?: number;
-  /** Carried so a retry of a no-Claude create must not suddenly start one. */
-  launchClaude: boolean;
-  /** The repo's origin URL, for the task task binding's `owner/name`. */
-  repoOriginUrl?: string | null;
-  startedAt: number;
-  status: "creating" | "error";
-  error?: string;
-  /** Live step text from `task://create_progress` ("fetching origin", …).
-   * Absent until the first event lands, and always in browser dev — the row
-   * falls back to a static label. */
-  phase?: string;
 };
 
 /** How much of the goal `goalToBranch` slugs into the branch name — long
@@ -253,7 +215,7 @@ export function branchFromIssue(number: number, title: string): string {
  * repo (or, for a solo repo, the merged repo+folder) header whose "+" opened
  * it. Submitting hands the collected input to `onSubmit` and closes — it does
  * not itself wait on `task_create`, so the parent is free to run that call in
- * the background and represent it with a `PendingTaskRow` instead. */
+ * the background against the rail row the submit has already created. */
 export function InlineNewTask({
   repo,
   onCancel,
@@ -665,6 +627,7 @@ export function InlineNewTask({
       },
       imagePaths,
       issues: issuesToAttach,
+      dir: branchCheck?.dir ?? null,
       worktree,
       launchClaude,
     });
@@ -1052,79 +1015,6 @@ export function InlineNewTask({
           Start task
         </Button>
       </div>
-    </div>
-  );
-}
-
-/** A `task_create` call in flight (or failed), rendered inline in the rail at
- * the same tier as a `FolderHeader` — the new folder it'll become once the
- * worktree + setup finish. Never resizes the layout around a modal; the rest
- * of the rail stays fully interactive while this sits here. */
-export function PendingTaskRow({
-  pending,
-  now,
-  onRetry,
-  onDismiss,
-}: {
-  pending: PendingTask;
-  now: number;
-  onRetry: (id: string) => void;
-  onDismiss: (id: string) => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1 border-b border-l-2 border-border py-1.5 pr-3 pl-6",
-        pending.status === "error" ? "border-l-amber-500" : "border-l-transparent",
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        {pending.status === "creating" ? (
-          <RefreshCw className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : (
-          <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-          ⎇ {pending.branch}
-        </span>
-        {pending.imagePaths.length > 0 && (
-          <span
-            title={`${pending.imagePaths.length} pasted image${pending.imagePaths.length === 1 ? "" : "s"} — attached to this task's first prompt, and kept for a retry`}
-            className="flex shrink-0 items-center gap-0.5 font-mono text-[10.5px] text-muted-foreground/70"
-          >
-            <Paperclip className="size-2.5" />
-            {pending.imagePaths.length}
-          </span>
-        )}
-        <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
-          {fmtElapsed(now - pending.startedAt)}
-        </span>
-      </div>
-      {pending.status === "creating" ? (
-        <span className="pl-[22px] text-[11px] text-muted-foreground/70">
-          {pending.phase ? `${pending.phase}…` : "creating task…"}
-        </span>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 pl-[22px]">
-          <span className="text-[11px] text-red-500">{pending.error}</span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-5 gap-1 px-1.5 text-[10.5px]"
-            onClick={() => onRetry(pending.id)}
-          >
-            Retry
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-5 px-1.5 text-[10.5px]"
-            onClick={() => onDismiss(pending.id)}
-          >
-            Dismiss
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

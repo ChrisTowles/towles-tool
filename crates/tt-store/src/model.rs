@@ -100,6 +100,80 @@ impl TaskOutcome {
     }
 }
 
+/// What a `tasks` row *is*.
+///
+/// Every worktree the Agentboard rail shows is backed by one of these, which is
+/// what lets a row exist before its directory does and survive after it is
+/// gone — the record puts the row on screen, not `git worktree list`. The two
+/// kinds differ in who authored the row and what killing it means:
+///
+/// - [`TaskKind::Task`] is the user's work. Born from the rail's `+` form,
+///   `tt task new` or MCP `task_create`; it ends when the user closes it, and
+///   nothing about the filesystem may retire it.
+/// - [`TaskKind::Detected`] is a git worktree found on disk with no task —
+///   Claude Code's own agent worktrees, or one added by hand. Minted by the
+///   rail's scan so a discovered checkout gets a durable record and a fixed
+///   position, and retired when its directory goes away, since it holds no
+///   intent worth preserving.
+///
+/// Adopting a detected worktree is a kind change on the same row
+/// ([`Store::adopt_detected_worktree`]) — the row keeps its id, its links and
+/// its place in the rail's order, so nothing moves on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskKind {
+    Task,
+    Detected,
+}
+
+impl TaskKind {
+    /// The stored/wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskKind::Task => "task",
+            TaskKind::Detected => "detected",
+        }
+    }
+
+    /// Parse the stored spelling. Anything unrecognized reads as
+    /// [`TaskKind::Task`]: an unknown kind written by a newer build is still
+    /// somebody's work, and silently hiding it from the board would be worse
+    /// than showing it.
+    pub fn parse(s: &str) -> TaskKind {
+        match s {
+            "detected" => TaskKind::Detected,
+            _ => TaskKind::Task,
+        }
+    }
+}
+
+/// One row of the Agentboard rail's worktree list: a task row that has (or
+/// expects) a checkout on disk.
+///
+/// The rail's whole input, and deliberately not a [`TaskItem`] — the engine
+/// needs the binding and the identity, not the links, and this is read on the
+/// scan path every couple of seconds. `dir` may not exist yet (a task whose
+/// worktree is still being created) or any more (one being removed, or deleted
+/// from under the app); that is the point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RailWorktree {
+    pub task_id: i64,
+    pub kind: TaskKind,
+    /// Kanban column (`backlog`/`doing`/`done`), so the rail can badge the row
+    /// without a second lookup.
+    pub status: String,
+    /// The checkout this worktree belongs to — how the rail groups a row whose
+    /// directory doesn't exist yet, since git can't answer for it.
+    pub repo_root: String,
+    pub dir: String,
+    pub branch: Option<String>,
+    /// Ordering key. The rail sorts a repo's rows by this and never by
+    /// anything the filesystem reports, so a row's position never changes once
+    /// it has one.
+    pub created_at: i64,
+}
+
 /// How long a finished task stays visible in the terminal column before
 /// [`Store::archive_closed_tasks`] hides it. One constant for every sweeper —
 /// the app's manual "Archive done" button and the collector-side auto-sweep
@@ -110,9 +184,19 @@ pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 // Column lists, kept in sync with the row-mapping closures below.
 pub(crate) const EVENT_COLS: &str =
     "id, source, external_id, title, starts_at, ends_at, attendees, location, join_url";
+// `kind` is appended rather than slotted next to the other identity columns so
+// the positional indices `map_task_row` reads stay put.
 pub(crate) const TASK_COLS: &str = "id, text, status, position, created_at, completed_at, notes, \
      worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal, \
-     summary, summary_at";
+     summary, summary_at, kind";
+
+/// The board's own rows, excluding the rail's bookkeeping ones. Every read
+/// path that means *the user's board* — [`Store::open_tasks`],
+/// [`Store::all_tasks`], [`Store::worktree_bound_open_tasks`] — carries this,
+/// so a [`TaskKind::Detected`] row never reaches the Board, the Cockpit, the
+/// collectors' rollup or MCP `task_list`. The Agentboard rail is the one
+/// consumer that reads both kinds, via [`Store::rail_worktrees`].
+pub(crate) const TASK_KIND_FILTER: &str = "kind = 'task'";
 // Aliased to `i`/`p` and joined against `item_dismissals` in the read paths
 // below, so each column list carries its own dismissed_ts.
 pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0)";
@@ -165,6 +249,12 @@ impl CalEvent {
     }
 }
 
+/// Deserializing a [`TaskItem`] that predates the `kind` field (an older
+/// payload, a fixture) yields the user's own work — see [`TaskKind::parse`].
+fn default_task_kind() -> TaskKind {
+    TaskKind::Task
+}
+
 /// A task on the board (#339): the unit of work. Local by default; it can
 /// link any number of GitHub issues and PRs, and usually gets a worktree
 /// worktree (its [`TaskWorktree`] binding).
@@ -172,6 +262,11 @@ impl CalEvent {
 #[serde(rename_all = "camelCase")]
 pub struct TaskItem {
     pub id: i64,
+    /// What this row is — see [`TaskKind`]. Board-facing reads only ever return
+    /// [`TaskKind::Task`]; the field is on the struct for the rail's sake and
+    /// for `adopt`, which has to be able to tell them apart.
+    #[serde(default = "default_task_kind")]
+    pub kind: TaskKind,
     pub text: String,
     pub status: String,
     pub position: i64,

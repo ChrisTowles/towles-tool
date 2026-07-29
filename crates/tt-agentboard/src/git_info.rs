@@ -93,7 +93,7 @@ pub struct GitInfo {
     /// has its main checkout even when only tasks were ever tracked.
     ///
     /// Which of them reach the rail is the engine's call, not this module's —
-    /// see [`crate::engine::Engine::expand_with_worktrees`].
+    /// see [`crate::engine::Engine::rail_rows`].
     pub worktree_dirs: Vec<String>,
     /// The subset of `worktree_dirs` that is a *linked* worktree — every
     /// candidate the rail's worktree filter may hide. The main checkout is
@@ -1223,7 +1223,7 @@ mod tests {
 
         // Every sibling is discovered, and both linked ones are filter
         // candidates — nothing on disk says which the user asked for, so the
-        // engine decides that from the board (see `expand_with_worktrees`).
+        // engine decides that from the board (see `rail_rows`).
         let (mut all, linked) = worktree_dirs_of(main.to_str().unwrap());
         all.sort();
         assert_eq!(all, sorted(vec![path_s(&task), path_s(&scratch)]));

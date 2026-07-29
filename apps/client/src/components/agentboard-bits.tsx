@@ -358,16 +358,15 @@ export function BranchLabel({
 }
 
 /** Shown on a worktree checkout mid-delete (`task_delete` in flight). The rail
- * row itself dims and goes `pointer-events-none` around this badge (see
- * `RepoGroup`'s `deletingDirs`/`FolderHeader`'s `deleting` prop) — this is
- * just the label explaining *why* the row went inert, same job `GhostBadge`
- * does for a missing directory. Red (not the neutral gray of `GhostBadge`):
- * unlike a ghost, which is passively gone, this is an active, irreversible
- * deletion in progress.
+ * row itself dims and goes `pointer-events-none` around this badge (off
+ * `folder.phase`) — this is just the label explaining *why* the row went
+ * inert, same job `GhostBadge` does for a missing directory. Red (not the
+ * neutral gray of `GhostBadge`): unlike a ghost, which is passively gone, this
+ * is an active, irreversible deletion in progress.
  *
- * `label` is the live phase text from `task://delete_progress` ("running
- * teardown command", "deleting git worktree", …); a static "deleting…" until
- * the first event for this dir lands (browser dev never gets one at all). */
+ * `label` is the live phase text the backend stamps on the row ("running
+ * teardown command", "deleting git worktree", …); a static "deleting…" before
+ * the first one lands (browser dev never gets one at all). */
 export function DeletingBadge({ label }: { label?: string }) {
   return (
     <span
@@ -377,6 +376,77 @@ export function DeletingBadge({ label }: { label?: string }) {
       }
     >
       <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
+    </span>
+  );
+}
+
+/** Shown on a task row whose worktree is still being built (`task_create` in
+ * flight). The sibling of `DeletingBadge` at the other end of a task's life,
+ * and the reason a task's row can exist before its directory does: the row is
+ * on the rail from the moment the task is written down, and this says what
+ * step is running in it.
+ *
+ * Sky like `SettingUpBadge`, not `DeletingBadge`'s red — nothing is wrong and
+ * nothing is being destroyed. */
+export function CreatingBadge({ label }: { label?: string }) {
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400"
+      title={label ? `Creating this worktree — ${label}…` : "Creating this worktree…"}
+    >
+      <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "creating…"}
+    </span>
+  );
+}
+
+/** Shown on an open task whose worktree isn't on disk and isn't being worked
+ * on — a create that failed, a directory deleted outside the app, or a restart
+ * mid-removal.
+ *
+ * This state is the point of the whole record-driven rail: the task is still
+ * the user's, so its row stays and says what happened, rather than the row
+ * quietly disappearing with the directory and leaving a card stranded on the
+ * Board. Amber like `PortDriftBadge` — something to act on (recreate the
+ * worktree, or close the task), not a dead row. */
+export function DetachedBadge() {
+  return (
+    <span
+      className="shrink-0 rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500"
+      title="This task's worktree isn't on disk — start it again to recreate one, or delete the task to close it"
+    >
+      no worktree
+    </span>
+  );
+}
+
+/** Shown on a git worktree no task claims — Claude Code's own agent
+ * worktrees, or one added by hand. It has a record like every other row (a
+ * `detected` task row), so it holds a fixed position and can be adopted in
+ * place; this says it isn't yours yet.
+ *
+ * Neutral gray: nothing is wrong, and nothing needs doing unless you want it. */
+export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <span
+        className="rounded-md border border-border bg-muted/40 px-1 font-mono text-[10px] text-muted-foreground"
+        title="A git worktree of this repo that no task claims — adopt it to track it as your own work"
+      >
+        no task
+      </span>
+      {onAdopt && (
+        <button
+          type="button"
+          className="rounded-md px-1 font-mono text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          title="Track this worktree as one of your tasks — the row keeps its place"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAdopt();
+          }}
+        >
+          adopt
+        </button>
+      )}
     </span>
   );
 }

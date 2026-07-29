@@ -21,9 +21,11 @@ function agent(status: AgentStatus, threadName?: string) {
 }
 
 function folder(overrides: Partial<FolderData>): FolderData {
-  return {
+  const row: FolderData = {
     name: "proj",
     dir: "/code/proj",
+    repoRoot: "/code/proj",
+    record: { origin: "checkout" },
     dirMissing: false,
     branch: "main",
     isWorktree: false,
@@ -43,8 +45,8 @@ function folder(overrides: Partial<FolderData>): FolderData {
     hasPortDrift: false,
     hasLaunchConfig: false,
     quiet: false,
-    ...overrides,
   };
+  return { ...row, repoRoot: overrides.dir ?? row.repoRoot, ...overrides };
 }
 
 function repo(name: string, folders: FolderData[]): RepoData {

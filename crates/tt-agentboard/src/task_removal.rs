@@ -38,6 +38,16 @@ pub trait RemovalHooks {
     /// and pane records here — not earlier, or a blocked removal would leave the
     /// rail looking clean while the checkout stayed put.
     ///
+    /// **Two directories' worth of cached state go stale at this point, not one.**
+    /// The obvious half is `dir`'s own — a path that no longer answers. The half
+    /// that is easy to miss is the *owner* checkout's: [`ops::remove_task`] has
+    /// already run `git worktree remove` + `worktree prune` there, so the
+    /// registration is gone on disk, but any cached worktree listing the host
+    /// holds for that parent still names `dir`. A host that caches git facts must
+    /// invalidate both, or it spends the cache's whole TTL reasoning from a
+    /// worktree list pointing at nothing — which is what put a deleted task's row
+    /// back on the rail (see [`crate::engine::Engine::unrecorded_worktrees`]).
+    ///
     /// Returns its own progress notes, which land in the outcome *in the order this
     /// step ran* rather than after the later ones.
     fn after_removal(&mut self, _dir: &Path) -> Vec<String> {
