@@ -881,10 +881,9 @@ function PaneOpenButton({
         onOpen();
       }}
       className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
-      // The keys ride on `shortcutTwin` rather than being spelled into each
-      // caller's `title`: the same flag already scores this click as a
-      // passed-up keystroke, and a chip that scores one without naming it is
-      // marking the user down for a binding nothing ever showed them.
+      // A chip that scores a click as a passed-up keystroke has to name the
+      // keystroke, so the hint rides on `shortcutTwin` rather than each
+      // caller's `title`.
       title={shortcutTwin ? withHint(title, shortcutTwin) : title}
       aria-label={labeled ? undefined : label}
     >

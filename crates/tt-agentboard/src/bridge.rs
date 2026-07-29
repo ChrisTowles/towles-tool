@@ -202,9 +202,10 @@ fn build_folder(
         uncommitted_added: git.uncommitted_added,
         uncommitted_removed: git.uncommitted_removed,
         computed_at_ms: git.computed_at_ms,
-        head_commit_ms: git.head_commit_ms,
-        worktree_touched_ms: git.worktree_touched_ms,
-        last_worked_at: folder_meta.last_worked_at_for(&entry.dir).unwrap_or(0),
+        worked_at_ms: git
+            .head_commit_ms
+            .max(git.worktree_touched_ms)
+            .max(folder_meta.last_worked_at_for(&entry.dir).unwrap_or(0)),
         commits_ahead: git.commits_ahead,
         commits_behind: git.commits_behind,
         dirty: git.dirty,
@@ -223,7 +224,7 @@ fn build_folder(
 
 /// Whether a session "needs you". A session only counts if a shell actually
 /// exists for it (`live`) — otherwise a stale agent status would make the
-/// the header cry wolf about a shell that's gone. Given a real shell, it needs
+/// header cry wolf about a shell that's gone. Given a real shell, it needs
 /// you when its agent is blocked (`Waiting`) or broke (`Error`), or when its
 /// turn just ended (`Complete` / `Interrupted`) and the user hasn't looked
 /// yet (`unseen`, cleared by `ab_mark_seen` when the row is selected).

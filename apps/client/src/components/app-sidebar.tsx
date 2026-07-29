@@ -11,7 +11,7 @@ import {
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
 import { Kbd } from "@/components/ui/kbd";
-import { shortcutHint, tabShortcutId } from "@/lib/shortcuts";
+import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
@@ -34,14 +34,12 @@ export function AppSidebar() {
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
+              const showBadge = id === "agentboard" && rollup.total > 0;
+              const showSlackDot = id === "slack" && slackUnread;
               // `mod+1…9` address open tabs by position, so the digit exists
               // only once this screen *is* one — and it is the row's last
               // resort for the trailing slot, yielding to any live count.
               const tabId = tabShortcutId(openTabs, id);
-              const showKbd =
-                tabId &&
-                !(id === "agentboard" && rollup.total > 0) &&
-                !(id === "slack" && slackUnread);
               return (
                 <Button
                   key={id}
@@ -54,7 +52,7 @@ export function AppSidebar() {
                   // "Board Ctrl+2" for anyone not looking at it.
                   // `aria-keyshortcuts` is where the binding actually belongs.
                   aria-label={screen.title}
-                  aria-keyshortcuts={tabId ? shortcutHint(tabId) : undefined}
+                  aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                   className={cn(
                     "justify-start font-normal",
                     active && "bg-accent text-accent-foreground",
@@ -63,7 +61,7 @@ export function AppSidebar() {
                 >
                   <screen.icon className="text-muted-foreground" />
                   {screen.title}
-                  {id === "agentboard" && rollup.total > 0 && (
+                  {showBadge && (
                     <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
                       {rollup.total}
                       {rollup.busy > 0 && <DotCount status="busy" n={rollup.busy} />}
@@ -76,13 +74,13 @@ export function AppSidebar() {
                       )}
                     </span>
                   )}
-                  {id === "slack" && slackUnread && (
+                  {showSlackDot && (
                     <span
                       className="ml-auto size-1.5 rounded-full bg-rose-500"
                       title="unanswered DM"
                     />
                   )}
-                  {showKbd && tabId && (
+                  {tabId && !showBadge && !showSlackDot && (
                     <Kbd aria-hidden className="ml-auto opacity-50">
                       {shortcutHint(tabId)}
                     </Kbd>
@@ -128,7 +126,7 @@ export function AppSidebarIcons() {
                     <button
                       type="button"
                       aria-label={screen.title}
-                      aria-keyshortcuts={tabId ? shortcutHint(tabId) : undefined}
+                      aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                       aria-current={active || undefined}
                       onClick={() => openTab(id)}
                       className={cn(

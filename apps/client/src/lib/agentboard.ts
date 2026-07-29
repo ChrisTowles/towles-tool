@@ -192,16 +192,11 @@ export type FolderData = {
    * indistinguishable from a wedged poll. This is what lets the rail say
    * *when* instead. 0 before the first compute. */
   computedAtMs?: number;
-  /** Epoch ms of `HEAD`'s commit time — "when was this checkout last committed
-   * to". 0 on an unborn branch or before the first compute. */
-  headCommitMs?: number;
-  /** Epoch ms of the newest mtime among the working tree's changed paths — the
-   * edits that never became a commit, and the only signal that sees an
-   * editor-only session. 0 for a clean tree. */
-  worktreeTouchedMs?: number;
-  /** Epoch ms of the last pane opened or closed on this checkout (persisted in
-   * `folder_meta.json`). 0 when that never happened on this machine. */
-  lastWorkedAt?: number;
+  /** Epoch ms this checkout was last worked in, as Rust can see it: the newest
+   * of `HEAD`'s commit time, the newest mtime among the working tree's changed
+   * paths (the only signal that sees an editor-only session) and the last pane
+   * opened or closed here. 0 when none of them ever fired. */
+  workedAtMs?: number;
   /** True when a live session in this folder has drifted ports — bubbles
    * `SessionData.portDrift` up for the rail badge. */
   hasPortDrift: boolean;
@@ -765,25 +760,6 @@ export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): 
   return `waiting ${Math.floor(hrs / 24)}d`;
 }
 
-/** Every session that currently needs you (`sessionNeeds`), board-wide, ordered
- * oldest-first by `needsSinceMs` so the longest-blocked agent leads the
- * attention feed. Sessions with no stamp (older snapshots) sort last; the sort
- * is stable, so equal ages keep repo→folder→session render order. */
-export function needingSessionsOldestFirst(repos: RepoData[]): SessionData[] {
-  const needing: SessionData[] = [];
-  for (const r of repos)
-    for (const f of r.folders)
-      for (const s of f.sessions) {
-        if (sessionNeeds(s)) needing.push(s);
-      }
-  return needing
-    .map((s, i) => ({ s, i }))
-    .toSorted(
-      (a, b) => (a.s.needsSinceMs ?? Infinity) - (b.s.needsSinceMs ?? Infinity) || a.i - b.i,
-    )
-    .map(({ s }) => s);
-}
-
 /** The next (or previous) session that catches the eye (`sessionCatchesEye`),
  * board-wide, in the same repo → folder → session order the rail renders.
  * `fromSessionId` anchors the cycle — the result is the nearest match after
@@ -920,7 +896,7 @@ export function collapseTargetKeys(
 }
 
 /** How long after its last sign of agent life a folder still counts as
- * active for the hide-inactive filter, so stopping a session doesn't make
+ * active for the rail filter, so stopping a session doesn't make
  * its folder vanish from the rail the same instant. */
 export const QUIET_GRACE_MS = 45 * 60_000;
 
@@ -967,21 +943,16 @@ export function isFolderQuiet(f: FolderData, now: number): boolean {
   );
 }
 
-/** The newest sign that *someone worked in this checkout*, across every signal
- * the snapshot carries: a commit, an edit that never became one, a pane opened
- * or closed, and agent activity. 0 when none of them ever fired.
+/** The newest sign that *someone worked in this checkout* — the backend's
+ * {@link FolderData.workedAtMs} stamps, plus the agent activity only the client
+ * sees. 0 when none of them ever fired.
  *
  * Distinct from {@link folderLastActivityAt}, which is agent activity alone —
  * that answers "is an agent doing something", this answers "was I here". A
  * checkout edited by hand all morning with no agent running has an activity
  * timestamp of 0 and a worked timestamp of minutes ago. */
 export function folderLastWorkedAt(f: FolderData): number {
-  return Math.max(
-    folderLastActivityAt(f),
-    f.headCommitMs ?? 0,
-    f.worktreeTouchedMs ?? 0,
-    f.lastWorkedAt ?? 0,
-  );
+  return Math.max(folderLastActivityAt(f), f.workedAtMs ?? 0);
 }
 
 /** Whether a folder falls outside the "worked in the last `hours` hours"

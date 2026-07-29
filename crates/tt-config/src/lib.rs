@@ -122,7 +122,7 @@ pub struct AgentboardSettings {
     /// every other key in this shared file.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "lenient_notify_level",
+        deserialize_with = "lenient",
         default
     )]
     pub notify_threshold: Option<NotifyLevel>,
@@ -170,29 +170,28 @@ pub struct AgentboardSettings {
     pub board_group_by_repo: Option<bool>,
 
     /// Which checkouts the Agentboard rail shows — see [`RailFilter`]. `None` =
-    /// the built-in default ([`DEFAULT_RAIL_FILTER`], showing everything). An
-    /// unrecognized value reads as `None`, same tolerance rule as
+    /// the frontend's default (all of them). An unrecognized value reads as
+    /// `None`, same tolerance rule as
     /// [`notify_threshold`](Self::notify_threshold). Only written once the user
     /// changes it, so the shared settings file stays clean for the TS CLI.
     /// Rust never interprets this value — it's opaque storage for a
     /// frontend-only filter, same treatment as `board_group_by_repo`.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "lenient_rail_filter",
+        deserialize_with = "lenient",
         default
     )]
     pub rail_filter: Option<RailFilter>,
 
     /// How many hours back [`RailFilter::Recent`] counts as "worked in".
-    /// `None` = [`DEFAULT_RAIL_RECENT_HOURS`]. Frontend-only, like
-    /// [`rail_filter`](Self::rail_filter).
+    /// Frontend-only, like [`rail_filter`](Self::rail_filter).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_recent_hours: Option<u32>,
 
     /// Show git worktrees the Agentboard discovered but no board task is bound to — as
     /// rail folders. `None` = off, only the main checkout and worktrees the user asked
-    /// for. Unlike `hide_inactive_repos` this one *is* interpreted in Rust, by the
-    /// engine's discovery, and is only written once the user toggles it.
+    /// for. Unlike [`rail_filter`](Self::rail_filter) this one *is* interpreted in Rust,
+    /// by the engine's discovery, and is only written once the user toggles it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
@@ -211,15 +210,6 @@ pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 /// Built-in default for [`AgentboardSettings::show_unmanaged_worktrees`]: off,
 /// so only the main checkout and board-bound worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
-
-/// Built-in default for [`AgentboardSettings::rail_filter`]: everything, so a
-/// fresh install never wonders where a checkout went.
-pub const DEFAULT_RAIL_FILTER: RailFilter = RailFilter::All;
-
-/// Built-in default for [`AgentboardSettings::rail_recent_hours`]: a working
-/// half-day's tail — long enough to span lunch and a meeting, short enough that
-/// yesterday's checkouts are gone.
-pub const DEFAULT_RAIL_RECENT_HOURS: u32 = 4;
 
 /// Which checkouts reach the Agentboard rail. Three answers to "show me less",
 /// and they are not a scale — [`Active`](Self::Active) asks about *now*
@@ -310,25 +300,13 @@ impl AgentboardSettings {
     }
 }
 
-/// Read [`AgentboardSettings::notify_threshold`], mapping anything unrecognized
-/// to `None` (the default) instead of failing the whole settings file — this
-/// file is shared with the TS CLI and hand-edited.
-fn lenient_notify_level<'de, D>(de: D) -> std::result::Result<Option<NotifyLevel>, D::Error>
+/// Read an optional enum field, mapping anything unrecognized to `None` (the
+/// default) instead of failing the whole settings file — this file is shared
+/// with the TS CLI and hand-edited.
+fn lenient<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
-{
-    Ok(Option::<serde_json::Value>::deserialize(de)
-        .ok()
-        .flatten()
-        .and_then(|v| serde_json::from_value(v).ok()))
-}
-
-/// Read [`AgentboardSettings::rail_filter`] with the same tolerance as
-/// [`lenient_notify_level`] — including the `true`/`false` a settings file
-/// written before this key was an enum still holds.
-fn lenient_rail_filter<'de, D>(de: D) -> std::result::Result<Option<RailFilter>, D::Error>
-where
-    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
 {
     Ok(Option::<serde_json::Value>::deserialize(de)
         .ok()

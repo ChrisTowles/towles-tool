@@ -538,7 +538,7 @@ pub fn ab_set_folder_base_branch(state: State<Ab>, dir: String, branch: Option<S
 }
 
 /// Set (or clear) a folder's quiet override — forces it to count as quiet for
-/// the "hide inactive" rail filter regardless of its own activity.
+/// a narrowing rail filter regardless of its own activity.
 #[tauri::command]
 pub fn ab_set_folder_quiet(state: State<Ab>, dir: String, quiet: bool) {
     let changed = state.engine.lock().unwrap().set_folder_quiet(&dir, quiet);

@@ -120,9 +120,7 @@ impl Repo {
     /// `origin/main` has no commits of its own and would answer `None` there,
     /// while still being a checkout somebody committed in an hour ago.
     pub fn head_commit_unix(&self) -> Option<i64> {
-        let head = self.head_id()?;
-        let commit = self.inner().find_object(head).ok()?.try_into_commit().ok()?;
-        commit.time().ok().map(|time| time.seconds)
+        self.commit_time_unix(self.head_id()?)
     }
 
     /// Epoch seconds of the newest commit in `base..HEAD` — the branch's own
@@ -131,8 +129,11 @@ impl Repo {
         let head = self.head_id()?;
         let boundary = self.merge_base(base, "HEAD")?;
         let commits = self.rev_list(boundary, head).ok()?;
-        let newest = commits.first()?;
-        let commit = self.inner().find_object(*newest).ok()?.try_into_commit().ok()?;
+        self.commit_time_unix(*commits.first()?)
+    }
+
+    fn commit_time_unix(&self, id: gix::ObjectId) -> Option<i64> {
+        let commit = self.inner().find_object(id).ok()?.try_into_commit().ok()?;
         commit.time().ok().map(|time| time.seconds)
     }
 }

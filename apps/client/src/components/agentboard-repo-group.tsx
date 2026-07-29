@@ -147,7 +147,7 @@ export function RepoGroup({
   onOpenJarvis?: (dir: string) => void;
   /** Drops one pane from its window — a view row's ✕. */
   onClosePane: (paneId: string) => void;
-  /** Dirs the hide-inactive filter tucks behind a "N quiet" stub (empty/
+  /** Dirs the rail filter tucks behind a "N quiet" stub (empty/
    * undefined when the filter is off). Quiet folders demote to the stub
    * instead of vanishing — nothing ever silently disappears from the rail. */
   quietDirs?: Set<string>;
@@ -365,7 +365,7 @@ export function RepoGroup({
   }
 
   // Multi-checkout repo: repo header, then each folder as a sub-header. Quiet
-  // folders (hide-inactive filter) tuck behind a stub toggle row; a repo with
+  // folders (rail filter) tuck behind a stub toggle row; a repo with
   // *only* quiet folders shrinks to a single dim stub line.
   const repoCollapsed = collapsed[repo.key];
   const shownFolders = showQuiet ? repo.folders : repo.folders.filter((f) => !quiet.has(f.dir));
@@ -525,7 +525,7 @@ export function RepoGroup({
   );
 }
 
-/** A repo whose checkouts are all quiet (hide-inactive filter), demoted to
+/** A repo whose checkouts are all quiet (rail filter), demoted to
  * one dim row instead of removed — the repo stays findable, just out of the
  * way. Clicking restores the full group until toggled back. */
 function QuietRepoStub({

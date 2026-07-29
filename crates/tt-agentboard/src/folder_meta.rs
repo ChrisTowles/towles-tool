@@ -25,7 +25,7 @@ pub struct FolderMeta {
     pub base_branch: Option<String>,
     /// Forces this folder to count as quiet — the rail treats it as quiet
     /// regardless of its actual activity, so it collapses into the stub row
-    /// under "hide inactive" the same as an auto-detected one. Only ever
+    /// under a narrowing rail filter the same as an auto-detected one. Only ever
     /// `Some(true)` on disk; the setter normalizes `false` to absent so "not
     /// forced" is one state rather than two.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,7 +103,7 @@ impl FolderMetaStore {
         true
     }
 
-    /// Whether a folder's "hide inactive" quiet state is forced, regardless of
+    /// Whether a folder's quiet state is forced, regardless of
     /// its own activity signals.
     pub fn quiet_for(&self, dir: &str) -> bool {
         self.folders.get(dir).and_then(|m| m.quiet).unwrap_or(false)

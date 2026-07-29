@@ -7,16 +7,9 @@
  * never sit next to each other in it; ordering by attention is orthogonal to
  * ordering by repo. Same snapshot, different axis.
  *
- * **Only a blocked agent earns a row.** Uncommitted work and landed branches
- * are real, but they are housekeeping and the rail already states them per
- * checkout with the affordances to act — listing them here a second time turned
- * the front page into a chore list on the (common) mornings when no agent is
- * running. They come back as one counted line instead, which is the whole
- * difference between "here is everything slightly untidy" and "here is what is
- * stopped, waiting on you".
- *
- * Pure over the repo snapshot so the ranking is unit-tested; the component owns
- * only how it reads.
+ * Only a blocked agent earns a row — uncommitted work and landed branches come
+ * back as one counted line, because the rail already states them per checkout
+ * with the affordances to act on them.
  */
 import {
   fmtWaitingAge,
@@ -33,19 +26,14 @@ import {
 /** One blocked checkout: an agent is stopped and nothing happens until you
  * answer it. */
 export type StandbyRow = {
-  /** Checkout dir — the click target, selected in the rail. */
   dir: string;
-  /** De-slugged checkout title, the way the rail names it. */
   title: string;
-  /** Owning repo, so two same-titled checkouts are tellable apart. */
   repo: string;
-  /** What the agent last said about itself, or null when it never said
-   * anything. Its thread name, then the prompt it was launched with. */
+  /** What the agent last said about itself, freshest source first, or null when
+   * it never said anything — see {@link whatItSaid}. */
   said: string | null;
   /** Right-aligned state: "waiting 12m", or "errored". */
   note: string;
-  /** True when the agent broke rather than asked — a different colour, and the
-   * one row kind that isn't really a question. */
   errored: boolean;
   /** Epoch ms the wait started, for oldest-first ordering. */
   since: number;
@@ -77,7 +65,7 @@ export function buildStandby(repos: RepoData[], now: number): Standby {
   let holding = 0;
   let landed = 0;
   let lastWorkedAt = 0;
-  let lastWorkedName: string | null = null;
+  let lastWorked: FolderData | null = null;
 
   for (const repo of repos) {
     for (const folder of repo.folders) {
@@ -87,11 +75,12 @@ export function buildStandby(repos: RepoData[], now: number): Standby {
       const worked = folderLastWorkedAt(folder);
       if (worked > lastWorkedAt) {
         lastWorkedAt = worked;
-        lastWorkedName = folderTitle(folder);
+        lastWorked = folder;
       }
 
-      if (folder.landed && folderHoldsNoWork(folder)) landed += 1;
-      else if (!folderHoldsNoWork(folder)) holding += 1;
+      const holdsNoWork = folderHoldsNoWork(folder);
+      if (!holdsNoWork) holding += 1;
+      else if (folder.landed) landed += 1;
 
       const needing = folder.sessions.filter(sessionNeeds);
       if (needing.length > 0) rows.push(needsRow(repo, folder, needing, now));
@@ -103,7 +92,15 @@ export function buildStandby(repos: RepoData[], now: number): Standby {
   // for one, whatever repo either sits in.
   rows.sort((a, b) => a.since - b.since);
 
-  return { rows, working, total, holding, landed, lastWorkedAt, lastWorkedName };
+  return {
+    rows,
+    working,
+    total,
+    holding,
+    landed,
+    lastWorkedAt,
+    lastWorkedName: lastWorked && folderTitle(lastWorked),
+  };
 }
 
 function needsRow(
@@ -139,7 +136,7 @@ function folderTitle(folder: FolderData): string {
 /**
  * The agent's own words about this checkout, freshest first: its Claude thread
  * title, then the prompt it was launched with. Null when it never said
- * anything — the row then carries no second line rather than an empty one.
+ * anything, so the row carries no second line at all.
  */
 function whatItSaid(session: SessionData): string | null {
   const thread = session.agentState?.threadName?.trim();

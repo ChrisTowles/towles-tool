@@ -640,18 +640,11 @@ impl Engine {
     }
 
     /// Record that a pane was opened or closed on `dir` — the half of "I worked
-    /// here recently" that leaves no git trace. Persists on change; returns
-    /// whether the stamp moved.
-    ///
-    /// Takes a folder dir rather than a session id on purpose: a pane closing
-    /// is the last thing that happens to its session, so by the time the
-    /// caller could look the record up it may already be gone.
-    pub fn touch_folder(&mut self, dir: &str, now_ms: i64) -> bool {
-        let changed = self.folder_meta.touch(dir, now_ms);
-        if changed {
+    /// here recently" that leaves no git trace. Persists on change.
+    fn touch_folder(&mut self, dir: &str, now_ms: i64) {
+        if self.folder_meta.touch(dir, now_ms) {
             persisted(self.folder_meta.save(), "folder metadata");
         }
-        changed
     }
 
     /// Replace the persisted window layout (frontend-owned blob). Persists on
@@ -942,7 +935,7 @@ impl Engine {
 
     /// The folder dir a session record belongs to, or `None` when nothing knows
     /// that id.
-    pub fn folder_dir_of_session(&self, id: &str) -> Option<String> {
+    fn folder_dir_of_session(&self, id: &str) -> Option<String> {
         self.sessions
             .iter()
             .find(|(_, records)| records.iter().any(|r| r.id == id))

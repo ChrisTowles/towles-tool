@@ -32,7 +32,7 @@ import type { AttentionItem } from "./use-attention";
  * always-open menu would cost a rail row, so the trigger has to say which mode
  * is on without being opened. */
 const FILTER_META: Record<RailFilter, { icon: typeof Eye; title: string }> = {
-  all: { icon: Eye, title: "Showing every checkout — click to show less" },
+  all: { icon: Eye, title: "Showing every checkout" },
   active: {
     icon: EyeOff,
     title:

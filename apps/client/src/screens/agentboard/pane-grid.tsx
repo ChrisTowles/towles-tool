@@ -1,5 +1,5 @@
 import { PanePlaceholder } from "@/components/agentboard-bits";
-import { AgentboardStandby } from "@/components/agentboard-standby";
+import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
@@ -298,12 +298,12 @@ export function PaneGrid(props: {
           to the rail. */}
       {panes.length === 0 &&
         (activeFolderDir ? (
-          <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+          <Centered>
             <p className="text-sm text-muted-foreground">
               No panes open here — click a session in the rail, or{" "}
               <span className="font-mono">+ session</span> above.
             </p>
-          </div>
+          </Centered>
         ) : (
           <AgentboardStandby repos={repos} now={now} onSelectFolder={onSelectFolder} />
         ))}

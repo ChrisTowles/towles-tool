@@ -186,8 +186,8 @@ describe("buildStandby", () => {
     const board = buildStandby(
       [
         repo("alpha", [
-          folder({ name: "old", dir: "/o", isWorktree: true, headCommitMs: NOW - 5 * 60 * 60_000 }),
-          folder({ name: "newer", dir: "/n", isWorktree: true, headCommitMs: NOW - 40 * 60_000 }),
+          folder({ name: "old", dir: "/o", isWorktree: true, workedAtMs: NOW - 5 * 60 * 60_000 }),
+          folder({ name: "newer", dir: "/n", isWorktree: true, workedAtMs: NOW - 40 * 60_000 }),
         ]),
       ],
       NOW,

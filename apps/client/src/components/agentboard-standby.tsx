@@ -1,25 +1,17 @@
 /**
- * The pane area with nothing selected — Agentboard's front page.
- *
- * It used to say "Select a folder in the rail to see its sessions", which spent
- * half the window telling you to use the other half. This answers the question
- * that sentence deferred: of everything on the rail, what is stopped and
- * waiting on you, longest wait first. Ranking lives in `lib/fleet-standby.ts`;
- * this file is only how it reads.
+ * The pane area with nothing selected — Agentboard's front page: of everything
+ * on the rail, what is stopped and waiting on you, longest wait first. Ranking
+ * lives in `lib/fleet-standby.ts`; this file is only how it reads.
  *
  * Two registers, because the fleet has two conditions and they deserve opposite
  * treatments. Something blocked: rows, and nothing else on screen competes with
- * them. Nothing blocked: the one display-scale line in the app, because there
- * is nothing else to say and a fleet with no one waiting is a result rather
- * than an absence. Both end on the same quiet inventory line, so the screen
- * never claims the fleet is emptier than it is.
- *
- * Colour is state and nothing else, the same rule the rail rows follow: blue is
- * blocked-on-you, red is broken, everything structural is `foreground` at three
- * opacities.
+ * them. Nothing blocked: the one display-scale line in the app, because a fleet
+ * with no one waiting is a result rather than an absence. Both end on the same
+ * quiet inventory line, so the screen never claims the fleet is emptier than it
+ * is.
  */
+import { statusColor, type RepoData } from "@/lib/agentboard";
 import { buildStandby, type Standby, type StandbyRow } from "@/lib/fleet-standby";
-import type { RepoData } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -62,11 +54,8 @@ export function AgentboardStandby({
   );
 }
 
-/**
- * A checkout that wants something. Reads as an unread message rather than a
- * dashboard cell, which is the honest shape: an agent sitting at a prompt is
- * addressing you, and there is nowhere else in the app you would hear it.
- */
+/** A checkout that wants something — an unread message rather than a dashboard
+ * cell, which is the honest shape for an agent sitting at a prompt. */
 function StandbyRowView({ row, onSelect }: { row: StandbyRow; onSelect: () => void }) {
   return (
     <button
@@ -77,7 +66,7 @@ function StandbyRowView({ row, onSelect }: { row: StandbyRow; onSelect: () => vo
       <span
         className={cn(
           "size-2 shrink-0 -translate-y-px rounded-full",
-          row.errored ? "bg-red-500" : "bg-blue-500",
+          statusColor(row.errored ? "error" : "waiting"),
         )}
       />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -101,12 +90,9 @@ function StandbyRowView({ row, onSelect }: { row: StandbyRow; onSelect: () => vo
   );
 }
 
-/**
- * The state most mornings open in, and the only place on this screen with room
- * for a display-scale line. It states the fleet's condition and stops: from
- * here the next move is a `+` on a repo header, inches to the left, and a
- * button that then had to ask "which repo?" would be worse than no button.
- */
+/** The state most mornings open in. It states the fleet's condition and stops:
+ * the next move is a `+` on a repo header inches to the left, and a button here
+ * that then had to ask "which repo?" would be worse than no button. */
 function AllQuiet({ board, now }: { board: Standby; now: number }) {
   return (
     <Centered>
@@ -129,13 +115,9 @@ function AllQuiet({ board, now }: { board: Standby; now: number }) {
   );
 }
 
-/**
- * Work the fleet is holding, as counts rather than rows. Uncommitted changes
- * and landed-but-unremoved worktrees are real and worth knowing, but the rail
- * states both per checkout and owns the affordances to act on them — a second
- * list here would be the same information twice, with the destructive action
- * duplicated onto a surface that has no confirm dialog.
- */
+/** Work the fleet is holding, as counts rather than rows: the rail states both
+ * per checkout and owns the affordances to act, so a list here would duplicate
+ * a destructive action onto a surface with no confirm dialog. */
 function Inventory({ board }: { board: Standby }) {
   const parts = [
     board.holding > 0 && `${board.holding} holding uncommitted work`,
@@ -145,7 +127,7 @@ function Inventory({ board }: { board: Standby }) {
   return <p className="font-mono text-xs text-muted-foreground/60">{parts.join(" · ")}</p>;
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
+export function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
       {children}

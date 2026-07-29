@@ -77,7 +77,7 @@ import {
 import { useFocusTarget } from "@/lib/focus-target";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
-import { shortcutHint, useShortcuts, withHint } from "@/lib/shortcuts";
+import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { toast } from "sonner";
 import type { Result } from "better-result";
 import type { IpcError } from "@/lib/errors";
@@ -463,7 +463,6 @@ export function BoardScreen() {
               className="h-7 pl-7 text-sm"
               spellCheck={false}
               aria-label="Filter tasks"
-              title={withHint("Filter tasks", "board-filter")}
             />
           </div>
         </div>
