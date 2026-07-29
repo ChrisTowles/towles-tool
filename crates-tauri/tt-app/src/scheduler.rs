@@ -520,7 +520,7 @@ fn notify_meeting_start(app: &AppHandle, edge: &tt_store::MeetingStartEdge) {
 }
 
 /// Fire a "PR review requested" desktop notification. Suppressed when the main
-/// window is focused (the day bar already shows review-requested PRs) or when
+/// window is focused (the app header already shows review-requested PRs) or when
 /// the notification threshold rules it out (it is a routine-level kind).
 fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge) {
     use tauri_plugin_notification::NotificationExt;
@@ -540,7 +540,7 @@ fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge
 }
 
 /// Fire a "CI failing" desktop notification when one of your PRs' checks flip
-/// into failing. Suppressed when the main window is focused (the day bar already
+/// into failing. Suppressed when the main window is focused (the app header already
 /// surfaces PR check state) or when the notification threshold rules it out (it
 /// is an important-level kind).
 fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {

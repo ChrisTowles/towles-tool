@@ -36,6 +36,13 @@ export const NOTIFY_LEVELS: { value: NotifyLevel; label: string; description: st
  * `tt_config::DEFAULT_NOTIFY_THRESHOLD`): everything gets through. */
 export const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = "routine";
 
+/** Which checkouts reach the Agentboard rail — mirrors Rust's
+ * `tt_config::RailFilter`. Deliberately not a scale: `"active"` asks whether
+ * something is going on *right now*, `"recent"` asks whether you worked here in
+ * the last `railRecentHours`, and a checkout you committed to an hour ago then
+ * walked away from answers those two differently. */
+export type RailFilter = "all" | "active" | "recent";
+
 export type JournalSettings = {
   baseFolder: string;
   dailyPathTemplate: string;
@@ -186,8 +193,9 @@ export type UserSettings = {
    * reminder when a click does a binding's job; unset = on — it gates only the
    * reminder, never the keyboard-vs-mouse tracking), `boardGroupByRepo` (the
    * Board kanban groups tasks into
-   * per-repo swimlanes; unset = on), `hideInactiveRepos` (the Agentboard
-   * rail's eye-icon "hide inactive repos" filter; unset = off), and
+   * per-repo swimlanes; unset = on), `railFilter` (which checkouts the
+   * Agentboard rail shows — `"all"` / `"active"` / `"recent"`; unset = all)
+   * with `railRecentHours` (how far back `"recent"` looks; unset = 4), and
    * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees no board
    * task is bound to — Claude Code's own agent worktrees, hand-added ones;
    * unset = off), and `jarvisPane` (the native Bevy surface — the rail strip
@@ -206,7 +214,8 @@ export type UserSettings = {
     shortcutsWorkInTerminal?: boolean;
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;
-    hideInactiveRepos?: boolean;
+    railFilter?: RailFilter;
+    railRecentHours?: number;
     showUnmanagedWorktrees?: boolean;
     jarvisPane?: boolean;
   } & Record<string, unknown>;

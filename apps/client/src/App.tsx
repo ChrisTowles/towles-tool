@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
-import { DayBar } from "@/components/day-bar";
 import { DmBanner } from "@/components/dm-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { MonacoDialogHost } from "@/components/monaco-dialog-host";
@@ -154,7 +153,6 @@ function Workspace() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       {!zen && <AppHeader />}
-      {!zen && <DayBar />}
       <UpdateBanner />
       <DmBanner />
 

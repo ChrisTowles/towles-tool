@@ -1,13 +1,10 @@
 //! Persisted per-folder metadata (Folder Rail): the *base-branch override* —
-//! what this checkout's diff/ahead-behind stats compare against — and the
-//! *quiet override*, which forces a folder to count as quiet for the
-//! frontend's "hide inactive" rail filter (`isFolderQuiet` in
-//! `apps/client/src/lib/agentboard.ts`) even when its own activity signals
-//! say otherwise — the same flag whether it got set by hand or (in future) by
-//! some other rule; nothing here distinguishes "manual" from any other
-//! source. Stored in the app's own file,
-//! `~/.config/towles-tool/agentboard/folder_meta.json`, keyed by the folder's
-//! absolute dir (same per-file pattern as [`crate::sessions`]).
+//! what this checkout's diff/ahead-behind stats compare against — the *quiet
+//! override*, which forces a folder off the rail under either narrowing filter
+//! whatever its own activity says, and the *last-worked stamp*, the pane
+//! open/close half of that filter's worked-recently mode. Stored in the app's
+//! own file, `~/.config/towles-tool/agentboard/folder_meta.json`, keyed by the
+//! folder's absolute dir (same per-file pattern as [`crate::sessions`]).
 //! Path-parameterized so tests use a tempdir.
 
 use std::collections::{HashMap, HashSet};
@@ -28,16 +25,26 @@ pub struct FolderMeta {
     pub base_branch: Option<String>,
     /// Forces this folder to count as quiet — the rail treats it as quiet
     /// regardless of its actual activity, so it collapses into the stub row
-    /// under "hide inactive" the same as an auto-detected one. Only ever
+    /// under a narrowing rail filter the same as an auto-detected one. Only ever
     /// `Some(true)` on disk; the setter normalizes `false` to absent so "not
     /// forced" is one state rather than two.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
+    /// Epoch ms of the last deliberate act of working *in* this checkout that
+    /// leaves no other trace: opening or closing a pane on it. Feeds the rail's
+    /// worked-recently filter alongside the git signals
+    /// ([`crate::git_info::GitInfo::head_commit_ms`],
+    /// `worktree_touched_ms`) and agent activity.
+    ///
+    /// A stamp rather than a telemetry query: the filter runs on every rail
+    /// render, and the event log is a day of JSONL on disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_worked_at: Option<i64>,
 }
 
 impl FolderMeta {
     fn is_empty(&self) -> bool {
-        self.base_branch.is_none() && self.quiet.is_none()
+        self.base_branch.is_none() && self.quiet.is_none() && self.last_worked_at.is_none()
     }
 }
 
@@ -96,7 +103,7 @@ impl FolderMetaStore {
         true
     }
 
-    /// Whether a folder's "hide inactive" quiet state is forced, regardless of
+    /// Whether a folder's quiet state is forced, regardless of
     /// its own activity signals.
     pub fn quiet_for(&self, dir: &str) -> bool {
         self.folders.get(dir).and_then(|m| m.quiet).unwrap_or(false)
@@ -112,6 +119,23 @@ impl FolderMetaStore {
         }
         self.folders.entry(dir.to_string()).or_default().quiet = normalized;
         self.drop_if_empty(dir);
+        self.dirty.insert(dir.to_string());
+        true
+    }
+
+    /// When a pane was last opened or closed on this folder, if ever.
+    pub fn last_worked_at_for(&self, dir: &str) -> Option<i64> {
+        self.folders.get(dir).and_then(|m| m.last_worked_at)
+    }
+
+    /// Stamp `dir` as worked at `now_ms`. Returns whether it moved forward —
+    /// an out-of-order or repeat stamp is dropped, so the caller doesn't
+    /// persist a no-op.
+    pub fn touch(&mut self, dir: &str, now_ms: i64) -> bool {
+        if self.last_worked_at_for(dir).is_some_and(|prev| prev >= now_ms) {
+            return false;
+        }
+        self.folders.entry(dir.to_string()).or_default().last_worked_at = Some(now_ms);
         self.dirty.insert(dir.to_string());
         true
     }
@@ -238,6 +262,28 @@ mod tests {
         store.set_base_branch("/r/a", None);
         assert_eq!(store.base_branch_for("/r/a"), None);
         assert!(!store.quiet_for("/r/a"));
+    }
+
+    #[test]
+    fn touch_only_moves_forward() {
+        let mut store = FolderMetaStore::new(None);
+        assert_eq!(store.last_worked_at_for("/r/a"), None);
+        assert!(store.touch("/r/a", 1000));
+        assert_eq!(store.last_worked_at_for("/r/a"), Some(1000));
+        assert!(!store.touch("/r/a", 1000), "a repeat stamp is not a change");
+        assert!(!store.touch("/r/a", 500), "a clock that went backwards is ignored");
+        assert_eq!(store.last_worked_at_for("/r/a"), Some(1000));
+        assert!(store.touch("/r/a", 2000));
+        assert_eq!(store.last_worked_at_for("/r/a"), Some(2000));
+    }
+
+    #[test]
+    fn touch_survives_clearing_the_other_fields() {
+        let mut store = FolderMetaStore::new(None);
+        store.touch("/r/a", 1000);
+        store.set_quiet("/r/a", true);
+        store.set_quiet("/r/a", false);
+        assert_eq!(store.last_worked_at_for("/r/a"), Some(1000));
     }
 
     #[test]

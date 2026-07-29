@@ -148,7 +148,7 @@ Every header row (repo, folder, or a solo-repo's collapsed header) gets
 `apps/client/src/components/agentboard-folder-header.tsx` (a checkout's row) ·
 `apps/client/src/components/agentboard-session-row.tsx` (a session's row; the
 rail's other pieces are its `agentboard-*` siblings) ·
-`apps/client/src/components/day-bar.tsx` (needs-you math) ·
+`apps/client/src/components/header-status.tsx` (needs-you math) ·
 `apps/client/src/index.css` (token definitions).
 
 For behavior/flow rules (confirmations, error copy, when something needs a

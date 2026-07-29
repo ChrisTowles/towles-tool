@@ -1,7 +1,7 @@
 import type { TaskItem, TaskStatus } from "@/lib/data";
 
 /**
- * Priority order for the day bar's single "top task": what you're actively
+ * Priority order for the app header's single "top task": what you're actively
  * working on should win over stale backlog. Higher number = shown first.
  * `done` is excluded before ranking, so it needs no rank here.
  */
@@ -11,7 +11,7 @@ const STATUS_RANK: Record<Exclude<TaskStatus, "done">, number> = {
 };
 
 /**
- * Pick the one task the day bar should surface: the most in-progress work,
+ * Pick the one task the app header should surface: the most in-progress work,
  * not the oldest backlog item. Ranks by status (doing > backlog), then by
  * column position (the card nearer the top of its column wins the
  * tiebreak). Closed tasks are never eligible — including one abandoned

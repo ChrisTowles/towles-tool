@@ -50,7 +50,7 @@ import {
 } from "@/lib/agentboard";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 
 export function FolderHeader({
   scope,
@@ -403,7 +403,7 @@ export function FolderHeader({
           {!missing && (
             <IconBtn
               ghost
-              title={`New session (${shortcutHint("ab-new-session")})`}
+              title={withHint("New session", "ab-new-session")}
               onClick={() => {
                 mouseAction("ab-new-session", "agentboard");
                 onNewSession();
@@ -416,7 +416,7 @@ export function FolderHeader({
           {!missing && onNewTask && (
             <IconBtn
               ghost
-              title={`New task — goal, issues, branch (${shortcutHint("ab-new-task")})`}
+              title={withHint("New task — goal, issues, branch", "ab-new-task")}
               onClick={() => {
                 mouseAction("ab-new-task", "agentboard");
                 onNewTask();

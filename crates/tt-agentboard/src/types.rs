@@ -242,6 +242,14 @@ pub struct FolderData {
     /// indistinguishable. 0 before the first compute.
     #[serde(default)]
     pub computed_at_ms: i64,
+    /// When this checkout was last worked in, epoch ms (0 for never) — the
+    /// newest of `HEAD`'s commit time, the newest mtime among the working
+    /// tree's changed paths ([`crate::git_info::GitInfo`]) and the last pane
+    /// opened or closed here ([`crate::folder_meta::FolderMeta`]). The
+    /// frontend's worked-recently rail filter maxes this against agent-event
+    /// timestamps, which only it can see.
+    #[serde(default)]
+    pub worked_at_ms: i64,
     /// True when any live session in this folder has `port_drift` — bubbles
     /// the per-session detail up to a rail badge. Computed app-side after PTY
     /// liveness stamping (mirrors `needs`).
@@ -254,9 +262,9 @@ pub struct FolderData {
     /// carried on the snapshot.
     #[serde(default)]
     pub has_launch_config: bool,
-    /// Forced-quiet override (folder_meta.json) — the frontend's
-    /// `isFolderQuiet` treats this folder as quiet under the "hide inactive"
-    /// rail filter regardless of its actual activity signals below.
+    /// Forced-quiet override (folder_meta.json) — the frontend keeps this
+    /// folder off the rail under either narrowing filter regardless of its
+    /// actual activity signals below.
     #[serde(default)]
     pub quiet: bool,
 }

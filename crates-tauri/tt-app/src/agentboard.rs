@@ -116,7 +116,7 @@ fn prune_dead_shells(
                 let dead_shell = was_live && session.agent_state.is_none();
                 if dead_shell {
                     tracing::info!(session_id = %session.id, "session.pruned_exited_shell");
-                    engine.close_session(&session.id);
+                    engine.close_session(&session.id, now_ms());
                 }
                 !dead_shell
             });
@@ -152,7 +152,7 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
 /// needs-you (edge-detected by `tt_agentboard::NeedsYouWatch` in the emitter
 /// loop). Status-report only — there are no approve/reply actions; acting on
 /// the agent happens in the real PTY. Skipped entirely when the app window is
-/// focused (the rail/day-bar already show it) or when the user's notification
+/// focused (the rail/header already show it) or when the user's notification
 /// switch/threshold rules it out (it is an urgent-level kind).
 pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) {
     use tauri_plugin_notification::NotificationExt;
@@ -466,7 +466,7 @@ pub fn ab_rename_session(state: State<Ab>, id: String, name: String) {
 
 #[tauri::command]
 pub fn ab_close_session(state: State<Ab>, id: String) {
-    state.engine.lock().unwrap().close_session(&id);
+    state.engine.lock().unwrap().close_session(&id, now_ms());
     tracing::info!(%id, "session.closed");
     state.emit.notify_one();
 }
@@ -538,7 +538,7 @@ pub fn ab_set_folder_base_branch(state: State<Ab>, dir: String, branch: Option<S
 }
 
 /// Set (or clear) a folder's quiet override — forces it to count as quiet for
-/// the "hide inactive" rail filter regardless of its own activity.
+/// a narrowing rail filter regardless of its own activity.
 #[tauri::command]
 pub fn ab_set_folder_quiet(state: State<Ab>, dir: String, quiet: bool) {
     let changed = state.engine.lock().unwrap().set_folder_quiet(&dir, quiet);

@@ -1,29 +1,59 @@
 import { useCallback } from "react";
-import { persistAgentboardSetting, useLiveSetting } from "./settings";
+import { persistAgentboardSetting, useLiveSetting, type RailFilter } from "./settings";
 import { invoke } from "./tauri";
 
-/** Built-in default for `agentboard.hideInactiveRepos` — off, showing everything. */
-export const DEFAULT_HIDE_INACTIVE_REPOS = false;
+/** Built-in default for `agentboard.railFilter` — everything, so a fresh
+ * install never wonders where a checkout went. Mirrors Rust's
+ * `tt_config::DEFAULT_RAIL_FILTER`. */
+export const DEFAULT_RAIL_FILTER: RailFilter = "all";
+
+/** Built-in default for `agentboard.railRecentHours` — mirrors Rust's
+ * `tt_config::DEFAULT_RAIL_RECENT_HOURS`. */
+export const DEFAULT_RAIL_RECENT_HOURS = 4;
+
+/** The hour spans the rail's filter menu offers for `"recent"`. */
+export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24, 48, 96, 24 * 7];
 
 /**
- * Track the Agentboard rail's "hide inactive repos" eye-icon filter
- * (`agentboard.hideInactiveRepos`) as state, plus a setter that updates state
- * and persists back to the shared settings file. `useLiveSetting` carries the
- * re-read-on-save/focus policy every preference hook shares.
+ * Track the Agentboard rail's filter (`agentboard.railFilter`) and the window
+ * `"recent"` measures (`agentboard.railRecentHours`) as state, plus setters
+ * that update state and persist back to the shared settings file.
+ * `useLiveSetting` carries the re-read-on-save/focus policy every preference
+ * hook shares.
+ *
+ * One hook for both keys because they're one control: the mode is meaningless
+ * to the user without the span it measures, so the rail's menu shows and sets
+ * them together.
  */
-export function useHideInactiveRepos(): [boolean, (on: boolean) => void] {
-  const [hideInactive, setHideInactive] = useLiveSetting(
-    (s) => s.agentboard?.hideInactiveRepos,
-    DEFAULT_HIDE_INACTIVE_REPOS,
+export function useRailFilter(): {
+  filter: RailFilter;
+  recentHours: number;
+  setFilter: (next: RailFilter) => void;
+  setRecentHours: (next: number) => void;
+} {
+  const [filter, setFilterState] = useLiveSetting(
+    (s) => s.agentboard?.railFilter,
+    DEFAULT_RAIL_FILTER,
   );
-  const persist = useCallback(
-    (on: boolean) => {
-      setHideInactive(on);
-      void persistAgentboardSetting("hideInactiveRepos", on);
+  const [recentHours, setRecentHoursState] = useLiveSetting(
+    (s) => s.agentboard?.railRecentHours,
+    DEFAULT_RAIL_RECENT_HOURS,
+  );
+  const setFilter = useCallback(
+    (next: RailFilter) => {
+      setFilterState(next);
+      void persistAgentboardSetting("railFilter", next);
     },
-    [setHideInactive],
+    [setFilterState],
   );
-  return [hideInactive, persist];
+  const setRecentHours = useCallback(
+    (next: number) => {
+      setRecentHoursState(next);
+      void persistAgentboardSetting("railRecentHours", next);
+    },
+    [setRecentHoursState],
+  );
+  return { filter, recentHours, setFilter, setRecentHours };
 }
 
 /** Built-in default for `agentboard.showUnmanagedWorktrees` — off, so only the
@@ -35,7 +65,7 @@ export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
  * Track the Agentboard rail's "show worktrees no board task is bound to" filter
  * (`agentboard.showUnmanagedWorktrees`) as state, plus a setter.
  *
- * Unlike {@link useHideInactiveRepos} this is not a view filter the client can
+ * Unlike {@link useRailFilter} this is not a view filter the client can
  * apply itself: the setting decides which checkouts the *engine* discovers at
  * all, so the setter goes through `ab_set_show_unmanaged_worktrees` and Rust
  * owns the write (it re-emits `agentboard://state`, which is what repopulates
@@ -72,7 +102,7 @@ export const DEFAULT_JARVIS_PANE = false;
  * the rail, and whether a checkout offers the `jarvis` pane that tiles one
  * beside its terminals (`components/jarvis-pane.tsx`).
  *
- * Frontend-only like {@link useHideInactiveRepos} — Rust never reads the key.
+ * Frontend-only like {@link useRailFilter} — Rust never reads the key.
  * Off, no `NativePane` is rendered, so a checkout that never turns this on
  * never creates a surface or a renderer. It is not a way to reclaim one after
  * the fact: a shown pane's renderer is parked, never dropped, for the app's

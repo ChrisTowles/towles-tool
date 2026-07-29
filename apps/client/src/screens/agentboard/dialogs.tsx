@@ -27,7 +27,7 @@ import {
   type StartClaudeTarget,
 } from "@/lib/agentboard";
 import type { TaskItem, TaskOutcome } from "@/lib/data";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** ab-split-session picker: pick one of the active folder's not-yet-opened
@@ -187,7 +187,7 @@ export function DeleteWorktreeDialog({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            title={`Confirm (${shortcutHint("ab-confirm-close-worktree")})`}
+            title={withHint("Confirm", "ab-confirm-close-worktree")}
           >
             {task ? `Close as ${outcome}` : "Delete worktree"}
           </AlertDialogAction>

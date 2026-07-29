@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COLD_START_TAB, loadWorkspaceTabs } from "@/lib/workspace-persistence";
 
 describe("loadWorkspaceTabs", () => {
-  it("cold start (nothing stored) falls back to cockpit", () => {
+  it("cold start (nothing stored) falls back to the cold-start tab", () => {
     expect(loadWorkspaceTabs(null, null)).toEqual({
       openTabs: [COLD_START_TAB],
       activeTab: COLD_START_TAB,
@@ -14,7 +14,7 @@ describe("loadWorkspaceTabs", () => {
     expect(result).toEqual({ openTabs: ["cockpit", "board"], activeTab: "board" });
   });
 
-  it("falls back to cockpit for an unknown/removed active screen id", () => {
+  it("falls back to the cold-start tab for an unknown/removed active screen id", () => {
     const result = loadWorkspaceTabs("some-deleted-screen", JSON.stringify(["cockpit"]));
     expect(result.activeTab).toBe(COLD_START_TAB);
   });
@@ -37,17 +37,17 @@ describe("loadWorkspaceTabs", () => {
     expect(result.openTabs).not.toContain("cockpit");
   });
 
-  it("degrades to cockpit on malformed JSON", () => {
-    expect(loadWorkspaceTabs("cockpit", "{not json")).toEqual({
-      openTabs: ["cockpit"],
-      activeTab: "cockpit",
+  it("degrades to the cold-start tab on malformed JSON", () => {
+    expect(loadWorkspaceTabs(COLD_START_TAB, "{not json")).toEqual({
+      openTabs: [COLD_START_TAB],
+      activeTab: COLD_START_TAB,
     });
   });
 
-  it("degrades to cockpit seed when stored open-tabs value is not an array", () => {
+  it("degrades to the cold-start seed when stored open-tabs value is not an array", () => {
     const result = loadWorkspaceTabs("board", JSON.stringify({ nope: true }));
-    // Non-array → cockpit seed, then the valid active tab is appended.
-    expect(result.openTabs).toEqual(["cockpit", "board"]);
+    // Non-array → cold-start seed, then the valid active tab is appended.
+    expect(result.openTabs).toEqual([COLD_START_TAB, "board"]);
     expect(result.activeTab).toBe("board");
   });
 
@@ -56,10 +56,10 @@ describe("loadWorkspaceTabs", () => {
     expect(result.openTabs).toEqual(["cockpit", "board"]);
   });
 
-  it("empty stored array falls back to cockpit but keeps a valid active tab", () => {
+  it("empty stored array falls back to the cold-start seed but keeps a valid active tab", () => {
     const result = loadWorkspaceTabs("board", JSON.stringify([]));
-    // Empty → cockpit seed, then active tab appended.
-    expect(result.openTabs).toEqual(["cockpit", "board"]);
+    // Empty → cold-start seed, then active tab appended.
+    expect(result.openTabs).toEqual([COLD_START_TAB, "board"]);
     expect(result.activeTab).toBe("board");
   });
 });

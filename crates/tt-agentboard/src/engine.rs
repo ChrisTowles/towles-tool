@@ -639,6 +639,14 @@ impl Engine {
         changed
     }
 
+    /// Record that a pane was opened or closed on `dir` — the half of "I worked
+    /// here recently" that leaves no git trace. Persists on change.
+    fn touch_folder(&mut self, dir: &str, now_ms: i64) {
+        if self.folder_meta.touch(dir, now_ms) {
+            persisted(self.folder_meta.save(), "folder metadata");
+        }
+    }
+
     /// Replace the persisted window layout (frontend-owned blob). Persists on
     /// change; returns whether it changed.
     /// `touched` is the set of folder dirs whose windows/active-window the
@@ -888,6 +896,7 @@ impl Engine {
     pub fn add_session(&mut self, dir: &str, name: Option<&str>, now: i64) -> SessionRecord {
         let record = self.sessions.add(dir, name, now);
         persisted(self.sessions.save(), "sessions");
+        self.touch_folder(dir, now);
         record
     }
 
@@ -911,12 +920,26 @@ impl Engine {
 
     /// Remove a PTY session by id. Returns whether it was removed. (A folder left
     /// empty is re-seeded with a default shell on the next `compute_payload`.)
-    pub fn close_session(&mut self, id: &str) -> bool {
+    pub fn close_session(&mut self, id: &str, now: i64) -> bool {
+        // Resolved before the removal, since afterwards the record is gone.
+        let dir = self.folder_dir_of_session(id);
         let removed = self.sessions.remove(id);
         if removed {
             persisted(self.sessions.save(), "sessions");
+            if let Some(dir) = dir {
+                self.touch_folder(&dir, now);
+            }
         }
         removed
+    }
+
+    /// The folder dir a session record belongs to, or `None` when nothing knows
+    /// that id.
+    fn folder_dir_of_session(&self, id: &str) -> Option<String> {
+        self.sessions
+            .iter()
+            .find(|(_, records)| records.iter().any(|r| r.id == id))
+            .map(|(dir, _)| dir.to_string())
     }
 
     /// Session ids scoped to `dir`, without removing anything — a task
@@ -1172,9 +1195,12 @@ mod engine_tests {
         assert!(e.session_ids_for("/repo/other").is_empty());
 
         // Closing one leaves the other; closing an unknown id is a no-op.
-        assert!(e.close_session(&a.id));
-        assert!(!e.close_session("nope"));
+        assert!(e.close_session(&a.id, 1002));
+        assert!(!e.close_session("nope", 1003));
         assert_eq!(e.session_ids_for("/repo/x"), vec![b.id]);
+
+        // Opening and closing a pane both count as working in the folder.
+        assert_eq!(e.folder_meta.last_worked_at_for("/repo/x"), Some(1002));
     }
 
     #[test]

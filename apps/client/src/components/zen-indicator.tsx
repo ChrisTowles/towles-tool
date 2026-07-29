@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,7 +46,7 @@ export function ZenIndicator({ onExit }: { onExit: () => void }) {
     <button
       type="button"
       onClick={onExit}
-      title={`Exit zen focus mode (${shortcutHint("zen")} or Esc)`}
+      title={`${withHint("Exit zen focus mode", "zen")} or Esc`}
       className={cn(
         "fixed bottom-3 right-3 z-50 flex items-center gap-1.5 rounded-full border bg-background/80 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur transition-opacity duration-500 hover:text-foreground",
         visible ? "opacity-80" : "pointer-events-none opacity-0",

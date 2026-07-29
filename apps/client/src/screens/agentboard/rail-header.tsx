@@ -8,14 +8,120 @@ import {
   FolderPlus,
   FolderX,
   GitPullRequest,
+  History,
   PanelLeftClose,
 } from "lucide-react";
 import { DismissButton } from "@/components/store-bits";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { RAIL_RECENT_HOUR_CHOICES } from "@/lib/rail-prefs";
+import type { RailFilter } from "@/lib/settings";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { withHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import type { AttentionItem } from "./use-attention";
+
+/** Icon + resting tooltip per rail filter. The icon *is* the readout — an
+ * always-open menu would cost a rail row, so the trigger has to say which mode
+ * is on without being opened. */
+const FILTER_META: Record<RailFilter, { icon: typeof Eye; title: string }> = {
+  all: { icon: Eye, title: "Showing every checkout" },
+  active: {
+    icon: EyeOff,
+    title:
+      "Showing only checkouts with something going on (a live session, a dirty tree, unpushed commits, an agent waiting)",
+  },
+  recent: { icon: History, title: "Showing only checkouts you worked in recently" },
+};
+
+/**
+ * The rail's filter: how much of the fleet to show. Three answers, and the
+ * middle two are not degrees of the same thing — "going on" is about *now*
+ * (something running, dirty, unpushed, waiting on you) while "worked recently"
+ * is about the last N hours, so a checkout committed to an hour ago and walked
+ * away from is hidden by the first and kept by the second.
+ *
+ * A menu rather than a cycling icon because the hour span belongs with the mode
+ * it measures — sending the user to Settings to change "recent" from 4h to 8h
+ * would make the mode's own meaning the one thing the control can't say.
+ */
+function RailFilterMenu(props: {
+  filter: RailFilter;
+  recentHours: number;
+  onSetFilter: (next: RailFilter) => void;
+  onSetRecentHours: (next: number) => void;
+}) {
+  const { filter, recentHours, onSetFilter, onSetRecentHours } = props;
+  const { icon: Icon, title } = FILTER_META[filter];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Which checkouts to show"
+          className={cn(
+            "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
+            filter === "all"
+              ? "text-muted-foreground hover:text-foreground"
+              : "text-violet-500 hover:text-violet-400",
+          )}
+          title={title}
+        >
+          <Icon className="size-3.5" />
+          {filter === "recent" && (
+            <span className="font-mono text-[10px] leading-none">{recentHours}h</span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel>Show</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={filter}
+          onValueChange={(next) => {
+            uiAction("agentboard.rail_filter", "agentboard", next);
+            onSetFilter(next as RailFilter);
+          }}
+        >
+          <DropdownMenuRadioItem value="all">Everything</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="active">Only what&apos;s going on</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="recent">Worked recently</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        {filter === "recent" && (
+          // Deliberately not menu items: picking a span is a refinement of the
+          // mode above it, so the menu stays open while you compare 4h to 8h.
+          <div className="flex items-center gap-1 px-2 pb-1.5 pt-1">
+            {RAIL_RECENT_HOUR_CHOICES.map((hours) => (
+              <button
+                key={hours}
+                type="button"
+                aria-pressed={hours === recentHours}
+                onClick={() => {
+                  uiAction("agentboard.rail_recent_hours", "agentboard", String(hours));
+                  onSetRecentHours(hours);
+                }}
+                className={cn(
+                  "flex-1 rounded-md border py-0.5 font-mono text-[11px] hover:bg-accent/50",
+                  hours === recentHours
+                    ? "border-violet-500/40 bg-violet-500/10 text-violet-500"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {hours}h
+              </button>
+            ))}
+          </div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * The rail's fixed top: the "Repos" title row with its filter/cleanup
@@ -27,8 +133,10 @@ export function RailHeader(props: {
   missingRepoCount: number;
   dismissedPrCount: number;
   clearingDismissals: boolean;
-  hideInactive: boolean;
-  onSetHideInactive: (next: boolean) => void;
+  filter: RailFilter;
+  recentHours: number;
+  onSetFilter: (next: RailFilter) => void;
+  onSetRecentHours: (next: number) => void;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
   jarvisPane: boolean;
@@ -43,8 +151,10 @@ export function RailHeader(props: {
     missingRepoCount,
     dismissedPrCount,
     clearingDismissals,
-    hideInactive,
-    onSetHideInactive,
+    filter,
+    recentHours,
+    onSetFilter,
+    onSetRecentHours,
     showUnmanagedWorktrees,
     onSetShowUnmanagedWorktrees,
     jarvisPane,
@@ -80,28 +190,12 @@ export function RailHeader(props: {
               <FolderX className="size-3.5" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              uiAction("agentboard.hide_inactive", "agentboard", hideInactive ? "off" : "on");
-              onSetHideInactive(!hideInactive);
-            }}
-            aria-label={hideInactive ? "Show all repos" : "Hide inactive repos"}
-            aria-pressed={hideInactive}
-            className={cn(
-              "rounded-md p-1 hover:bg-accent/50",
-              hideInactive
-                ? "text-violet-500 hover:text-violet-400"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            title={
-              hideInactive
-                ? "Showing only repos with something going on — click to show all"
-                : "Hide repos with nothing going on (no live session, no dirty tree, no unpushed commits)"
-            }
-          >
-            {hideInactive ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </button>
+          <RailFilterMenu
+            filter={filter}
+            recentHours={recentHours}
+            onSetFilter={onSetFilter}
+            onSetRecentHours={onSetRecentHours}
+          />
           <button
             type="button"
             onClick={() => {
@@ -181,7 +275,7 @@ export function RailHeader(props: {
             }}
             aria-label="Collapse the rail to icons"
             className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            title={`Collapse the rail to icons (${shortcutHint("ab-toggle-rail")})`}
+            title={withHint("Collapse the rail to icons", "ab-toggle-rail")}
           >
             <PanelLeftClose className="size-3.5" />
           </button>

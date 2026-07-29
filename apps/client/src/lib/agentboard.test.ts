@@ -46,10 +46,12 @@ import {
   folderPaneDir,
   isCacheExpiring,
   claudeCommand,
+  isFolderFiltered,
   isFolderQuiet,
+  isFolderStale,
+  folderLastWorkedAt,
   isPasteableImage,
   issuesForFolder,
-  needingSessionsOldestFirst,
   normalizeWins,
   paneRects,
   paneSession,
@@ -1255,6 +1257,80 @@ describe("isFolderQuiet", () => {
   });
 });
 
+describe("isFolderStale", () => {
+  const NOW = 100 * 60 * 60_000;
+  const HOURS = 4;
+  const INSIDE = NOW - 60 * 60_000; // an hour ago
+  const OUTSIDE = NOW - 5 * 60 * 60_000; // five hours ago
+
+  it("is stale with no signal at all", () => {
+    expect(isFolderStale(folder({}), NOW, HOURS)).toBe(true);
+  });
+
+  it("is not stale when the backend's stamp falls inside the window", () => {
+    expect(isFolderStale(folder({ workedAtMs: INSIDE }), NOW, HOURS)).toBe(false);
+  });
+
+  it("is stale when that stamp fell outside it", () => {
+    expect(isFolderStale(folder({ workedAtMs: OUTSIDE }), NOW, HOURS)).toBe(true);
+  });
+
+  it("counts agent activity too, sharing folderLastActivityAt with the quiet filter", () => {
+    const f = folder({ sessions: [session({ agentState: { ...agent("complete"), ts: INSIDE } })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+
+  it("a live pane is never stale, whatever the stamps say", () => {
+    const f = folder({ workedAtMs: OUTSIDE, sessions: [session({ live: true })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+
+  it("the quiet override wins over a live pane, same as the quiet filter", () => {
+    const f = folder({ quiet: true, workedAtMs: NOW, sessions: [session({ live: true })] });
+    expect(isFolderStale(f, NOW, HOURS)).toBe(true);
+  });
+
+  it("widening the window brings a folder back", () => {
+    const f = folder({ workedAtMs: OUTSIDE });
+    expect(isFolderStale(f, NOW, 4)).toBe(true);
+    expect(isFolderStale(f, NOW, 8)).toBe(false);
+  });
+
+  it("takes the newest of the backend stamp and agent activity, not either alone", () => {
+    const f = folder({
+      workedAtMs: OUTSIDE,
+      sessions: [session({ agentState: { ...agent("complete"), ts: INSIDE } })],
+    });
+    expect(folderLastWorkedAt(f)).toBe(INSIDE);
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+});
+
+describe("isFolderFiltered", () => {
+  const NOW = 100 * 60 * 60_000;
+
+  it('"all" hides nothing, not even a folder marked quiet by hand', () => {
+    expect(isFolderFiltered(folder({ quiet: true }), "all", NOW, 4)).toBe(false);
+  });
+
+  it("the two narrowing modes ask different questions of the same folder", () => {
+    // Committed an hour ago, then walked away: nothing is going on *now*, but
+    // it is very much a checkout worked in today.
+    const f = folder({ workedAtMs: NOW - 60 * 60_000 });
+    expect(isFolderFiltered(f, "active", NOW, 4)).toBe(true);
+    expect(isFolderFiltered(f, "recent", NOW, 4)).toBe(false);
+
+    // And the other way: dirty for a week with nobody near it.
+    const week = NOW - 200 * 60 * 60_000;
+    const abandoned = folder({
+      uncommittedFiles: 3,
+      workedAtMs: week,
+    });
+    expect(isFolderFiltered(abandoned, "active", NOW, 4)).toBe(false);
+    expect(isFolderFiltered(abandoned, "recent", NOW, 4)).toBe(true);
+  });
+});
+
 function repo(key: string, folders: FolderData[]): RepoData {
   return { key, dir: key, name: key, folders, needs: 0 };
 }
@@ -1403,33 +1479,6 @@ describe("fmtWaitingAge", () => {
     expect(fmtWaitingAge(NOW - 12 * 60_000, NOW)).toBe("waiting 12m");
     expect(fmtWaitingAge(NOW - 3 * 60 * 60_000, NOW)).toBe("waiting 3h");
     expect(fmtWaitingAge(NOW - 2 * 24 * 60 * 60_000, NOW)).toBe("waiting 2d");
-  });
-});
-
-describe("needingSessionsOldestFirst", () => {
-  it("orders needing sessions oldest-first, stamp-less last, stable on ties", () => {
-    const repos = [
-      repo("a", [
-        folder({
-          dir: "a/f1",
-          sessions: [
-            session({ id: "fresh", live: true, agentState: agent("waiting"), needsSinceMs: 500 }),
-            session({ id: "nostamp", live: true, agentState: agent("error") }),
-          ],
-        }),
-      ]),
-      repo("b", [
-        folder({
-          dir: "b/f1",
-          sessions: [
-            session({ id: "old", live: true, agentState: agent("waiting"), needsSinceMs: 100 }),
-            // Not needing (busy) — excluded entirely.
-            session({ id: "busy", live: true, agentState: agent("busy"), needsSinceMs: 50 }),
-          ],
-        }),
-      ]),
-    ];
-    expect(needingSessionsOldestFirst(repos).map((s) => s.id)).toEqual(["old", "fresh", "nostamp"]);
   });
 });
 

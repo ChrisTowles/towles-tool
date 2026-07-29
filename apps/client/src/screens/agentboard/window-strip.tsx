@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint } from "@/lib/shortcuts";
+import { shortcutHint, withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** Shared chrome for the three add-actions, so they can't drift apart: no
@@ -173,7 +173,7 @@ export function WindowStrip(props: {
             onCloseSession();
           }}
           className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-          title={`Close the selected session (${shortcutHint("ab-close-session")})`}
+          title={withHint("Close the selected session", "ab-close-session")}
           aria-label="Close the selected session"
         >
           {/* "Close session", not "Close": this strip holds two different

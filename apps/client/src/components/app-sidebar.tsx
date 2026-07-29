@@ -10,11 +10,13 @@ import {
 } from "@/lib/agentboard";
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
+import { Kbd } from "@/components/ui/kbd";
+import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
 export function AppSidebar() {
-  const { activeTab, openTab } = useWorkspace();
+  const { activeTab, openTab, openTabs } = useWorkspace();
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
   // Coldness flips at most once per TTL; re-render on each state event is enough.
@@ -32,12 +34,25 @@ export function AppSidebar() {
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
+              const showBadge = id === "agentboard" && rollup.total > 0;
+              const showSlackDot = id === "slack" && slackUnread;
+              // `mod+1…9` address open tabs by position, so the digit exists
+              // only once this screen *is* one — and it is the row's last
+              // resort for the trailing slot, yielding to any live count.
+              const tabId = tabShortcutId(openTabs, id);
               return (
                 <Button
                   key={id}
                   variant="ghost"
                   size="sm"
                   aria-current={active || undefined}
+                  // The row's name is the screen, not the screen plus a
+                  // keycap: the digit is decoration beside it, and letting it
+                  // into the accessible name renames the control to
+                  // "Board Ctrl+2" for anyone not looking at it.
+                  // `aria-keyshortcuts` is where the binding actually belongs.
+                  aria-label={screen.title}
+                  aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                   className={cn(
                     "justify-start font-normal",
                     active && "bg-accent text-accent-foreground",
@@ -46,7 +61,7 @@ export function AppSidebar() {
                 >
                   <screen.icon className="text-muted-foreground" />
                   {screen.title}
-                  {id === "agentboard" && rollup.total > 0 && (
+                  {showBadge && (
                     <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
                       {rollup.total}
                       {rollup.busy > 0 && <DotCount status="busy" n={rollup.busy} />}
@@ -59,11 +74,16 @@ export function AppSidebar() {
                       )}
                     </span>
                   )}
-                  {id === "slack" && slackUnread && (
+                  {showSlackDot && (
                     <span
                       className="ml-auto size-1.5 rounded-full bg-rose-500"
                       title="unanswered DM"
                     />
+                  )}
+                  {tabId && !showBadge && !showSlackDot && (
+                    <Kbd aria-hidden className="ml-auto opacity-50">
+                      {shortcutHint(tabId)}
+                    </Kbd>
                   )}
                 </Button>
               );
@@ -81,7 +101,7 @@ export function AppSidebar() {
  * Agentboard running-agent rollup — rides along as a corner badge, so
  * collapsing the sidebar never hides "something needs you". */
 export function AppSidebarIcons() {
-  const { activeTab, openTab } = useWorkspace();
+  const { activeTab, openTab, openTabs } = useWorkspace();
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
   const rollup = agentRollup(state.repos, Date.now(), state.compactRecommendPercent);
@@ -99,12 +119,14 @@ export function AppSidebarIcons() {
               const active = activeTab === id;
               const showBadge = id === "agentboard" && rollup.total > 0;
               const showSlackDot = id === "slack" && slackUnread;
+              const tabId = tabShortcutId(openTabs, id);
               return (
                 <Tooltip key={id}>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       aria-label={screen.title}
+                      aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                       aria-current={active || undefined}
                       onClick={() => openTab(id)}
                       className={cn(
@@ -131,6 +153,7 @@ export function AppSidebarIcons() {
                   </TooltipTrigger>
                   <TooltipContent side="right">
                     {screen.title}
+                    {tabId && <Kbd className="ml-1.5">{shortcutHint(tabId)}</Kbd>}
                     {showBadge &&
                       ` — ${rollup.total} agent${rollup.total === 1 ? "" : "s"}${rollup.waiting > 0 ? `, ${rollup.waiting} waiting` : ""}${rollup.error > 0 ? `, ${rollup.error} errored` : ""}`}
                     {showSlackDot && " — unanswered DM"}

@@ -685,12 +685,17 @@ Cargo workspace + npm workspace (`apps/client` only):
   shell: resizable sidebar (the only nav UI — no visible tab strip; screens
   stay mounted in the background across switches), command palette (⌘K),
   settings dialog, status bar, keyboard shortcuts (`?` opens the help overlay).
-  Screens live in `src/screens/`; the three "Focus" screens are **Cockpit**
-  (default day home — next-meeting countdown + PRs + issue queue), **Board**
-  (cross-repo kanban of tasks — #339's unit of work: issue/PR link chips,
-  task branch, attach/detach + promote-to-issue; done rolls up from GitHub),
-  and **Agentboard** (repos + per-repo terminals; its `+` flow creates a
-  task whose worktree is an attribute of the task).
+  Screens live in `src/screens/`; the three "Focus" screens are **Agentboard**
+  (repos + per-repo terminals; its `+` flow creates a task whose worktree is
+  an attribute of the task, and with no folder selected the pane area is the
+  standby board — `components/agentboard-standby.tsx` over
+  `lib/fleet-standby.ts` — ranking blocked agents across repos, the one
+  ordering the repo-grouped rail structurally cannot give), **Cockpit** (next-meeting countdown + PRs +
+  issue queue), and **Board** (cross-repo kanban of tasks — #339's unit of
+  work: issue/PR link chips, task branch, attach/detach + promote-to-issue;
+  done rolls up from GitHub). Agentboard leads the sidebar and is the
+  cold-start screen (`COLD_START_TAB`, `lib/workspace-persistence.ts`) —
+  it's where the work happens, so it's what opens.
   Terminals are a canvas renderer over **libghostty-vt** terminal state in
   Rust (`crates/tt-vt`); the PTY host
   (`crates-tauri/tt-app/src/terminal.rs`) spawns shells with portable-pty and
@@ -698,8 +703,9 @@ Cargo workspace + npm workspace (`apps/client` only):
   closing the app kills the shells. Product rules: the app is for getting in
   the zone — manage PRs and work issues across repos; calendar is only *time
   until the next meeting*. Agent status is **reported, never re-rendered**
-  (interaction happens in the real PTY via the terminal view); the day bar
-  (`day-bar.tsx`) and the Agentboard needs-you feed unify agents, PRs, and
+  (interaction happens in the real PTY via the terminal view); the app
+  header's status readouts (`header-status.tsx` — top task, needs-you feed,
+  collector dot) and the Agentboard needs-you feed unify agents, PRs, and
   calendar into one attention model. See
   [`apps/client/CLAUDE.md`](apps/client/CLAUDE.md) for frontend-internal
   conventions (screen registration, the shortcuts registry, invoke-wrapper

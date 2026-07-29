@@ -4,9 +4,9 @@ import type { FocusTarget } from "./focus-target";
 import { prChecksFailing } from "./pr-tone";
 
 /**
- * The day bar's "needs you" feed: every item currently demanding the owner's
+ * The app header's "needs you" feed: every item currently demanding the owner's
  * attention, ranked, as one flat list the popover renders and navigates from.
- * Pure over the two live snapshots so ordering is unit-tested; the day bar owns
+ * Pure over the two live snapshots so ordering is unit-tested; the header owns
  * the presentation and the actual navigation.
  *
  * Ordering (by `tier`, then newest first): unanswered DMs and failing-CI PRs

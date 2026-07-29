@@ -2,7 +2,7 @@ import type { PrItem } from "./data";
 
 /**
  * The one PR-status → hue mapping, shared by every surface that colorizes a
- * PR (repo-header `PrChip`, Cockpit's `ChecksBadge`, the day bar's attention
+ * PR (repo-header `PrChip`, Cockpit's `ChecksBadge`, the header's attention
  * feed, the Agentboard attention strip, Board link chips). Hues follow the
  * Folder Rail status palette (`statusColor()` in `lib/agentboard.ts`):
  *
@@ -21,13 +21,13 @@ export type PrTone = "merged" | "failed" | "running" | "passing" | "review" | "p
 /**
  * Whether a PR demands the owner's attention — **the** definition, shared by
  * every needs-you surface (Cockpit's counts, the Agentboard attention strip,
- * the day bar's attention feed).
+ * the header's attention feed).
  *
  * It lives beside the tone map rather than in `components/store-bits` because
  * `lib/attention-feed.ts` needs it and a `lib/` module must not import from
  * `components/`. That layering is why the rule used to be restated inline in
  * three places — and they had drifted: the rail strip tested
- * `state !== "merged"` while the day bar and Cockpit scoped to
+ * `state !== "merged"` while the header and Cockpit scoped to
  * `state === "open"`, so a closed-but-unmerged PR with failing CI demanded
  * attention in the rail and nowhere else. `=== "open"` is the kept behavior:
  * you closed it, so its red checks are history, not a task.
