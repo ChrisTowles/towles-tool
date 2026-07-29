@@ -1,5 +1,6 @@
 //! Dev tasks (`cargo xtask <task>`). One task today: `comment-lint` — a linter for
-//! comment volume with fixed thresholds like clippy, no baseline file and no ratchet.
+//! comment volume with one set of thresholds for the whole tree — no baseline file,
+//! no per-file exceptions, no ratchet.
 //! It covers Rust and the frontend's TS/TSX/JS alike, because comment sprawl is a
 //! prose problem and neither language's own linter counts it (oxlint has no
 //! comment-volume rule at all — it skips stylistic rules by design).
@@ -16,48 +17,43 @@
 //! measure it has, total length.
 //!
 //! Warnings are the standing hit list of essays worth trimming; errors fail CI. Suppress
-//! a deliberate essay with a `verbose-ok: <why>` line inside the block. Thresholds are
-//! the consts below — tighten them as cleanups land.
+//! a deliberate essay with a `verbose-ok: <why>` line inside the block. Thresholds and
+//! measured trees live in `comment-lint.toml` at the repo root — tighten them there.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{env, fs};
 
-/// Source trees to measure, and the subpaths to skip inside them. `components/ui`
-/// is vendored shadcn; nothing under a dot-dir, `node_modules`, `target` or `dist`
-/// is ours to trim.
-const TREES: &[&str] = &[
-    "crates",
-    "crates-cli",
-    "crates-tauri",
-    "apps/client/src",
-    "scripts",
-    "e2e",
-];
-const SKIP: &[&str] = &[
-    "node_modules",
-    "target",
-    "dist",
-    "apps/client/src/components/ui",
-];
 const MARKER: &str = "verbose-ok:";
+const CONFIG_FILE: &str = "comment-lint.toml";
 
-/// A contiguous comment block trips a tier when it reaches this many lines.
-const BLOCK_LINES: Tiers<usize> = Tiers { warn: 6, error: 10 };
+/// Every threshold, read from [`CONFIG_FILE`] at the repo root. Tightening the
+/// gate is an edit to that file, not to this source — but it holds thresholds
+/// and paths only. It must never grow per-file exceptions or a baseline: a list
+/// of files allowed to fail turns a linter into a ledger of debt nobody pays.
+#[derive(serde::Deserialize)]
+struct Config {
+    /// Source trees measured for comments, and paths skipped inside them.
+    trees: Vec<String>,
+    skip: Vec<String>,
+    block: Tiers<usize>,
+    #[serde(rename = "heavy-file")]
+    heavy_file: Tiers<HeavyFile>,
+    doc: Tiers<usize>,
+}
 
-/// A file trips a tier when it meets BOTH bounds at once — mass alone would
-/// flag big well-commented files, ratio alone flags tiny doc-headed stubs.
-const HEAVY_FILE: Tiers<HeavyFile> = Tiers {
-    warn: HeavyFile { min_comment_lines: 50, min_ratio: 0.20 },
-    error: HeavyFile { min_comment_lines: 100, min_ratio: 0.30 },
-};
-
-/// A committed doc trips a tier at this many lines. Prose has no code to sit
-/// against, so length is the only signal it offers.
-const DOC_LINES: Tiers<usize> = Tiers { warn: 150, error: 250 };
+impl Config {
+    fn load(root: &Path) -> Result<Self, String> {
+        let path = root.join(CONFIG_FILE);
+        let text = fs::read_to_string(&path)
+            .map_err(|e| format!("could not read {}: {e}", path.display()))?;
+        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
 
 /// Warn/error cutoffs for one rule.
+#[derive(serde::Deserialize)]
 struct Tiers<T> {
     warn: T,
     error: T,
@@ -76,9 +72,10 @@ impl<T> Tiers<T> {
     }
 }
 
+#[derive(serde::Deserialize)]
 struct HeavyFile {
-    min_comment_lines: usize,
-    min_ratio: f64,
+    lines: usize,
+    ratio: f64,
 }
 
 struct Block {
@@ -115,8 +112,12 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let root = repo_root();
-    let stats = match measure(&root) {
-        Ok(s) => s,
+    let run = Config::load(&root).and_then(|cfg| {
+        let stats = measure(&root, &cfg)?;
+        Ok((cfg, stats))
+    });
+    let (cfg, stats) = match run {
+        Ok(pair) => pair,
         Err(e) => {
             eprintln!("{e}");
             return ExitCode::from(2);
@@ -128,7 +129,7 @@ fn main() -> ExitCode {
 
     for s in &stats {
         if let Some(lines) = s.doc_lines {
-            if let Some((sev, cap)) = DOC_LINES.hit(|&n| lines >= n) {
+            if let Some((sev, cap)) = cfg.doc.hit(|&n| lines >= n) {
                 findings.push((
                     sev,
                     format!("[long-doc] {} — {lines}-line doc (threshold {cap})", s.file),
@@ -140,7 +141,7 @@ fn main() -> ExitCode {
             if b.overridden {
                 continue;
             }
-            if let Some((sev, cap)) = BLOCK_LINES.hit(|&n| b.lines() >= n) {
+            if let Some((sev, cap)) = cfg.block.hit(|&n| b.lines() >= n) {
                 findings.push((
                     sev,
                     format!(
@@ -156,8 +157,7 @@ fn main() -> ExitCode {
 
         let ratio =
             if s.code_lines == 0 { 0.0 } else { s.comment_lines as f64 / s.code_lines as f64 };
-        let heavy =
-            HEAVY_FILE.hit(|t| s.comment_lines >= t.min_comment_lines && ratio >= t.min_ratio);
+        let heavy = cfg.heavy_file.hit(|t| s.comment_lines >= t.lines && ratio >= t.ratio);
         if let Some((sev, t)) = heavy {
             findings.push((
                 sev,
@@ -168,8 +168,8 @@ fn main() -> ExitCode {
                     s.comment_lines,
                     s.code_lines,
                     100.0 * ratio,
-                    t.min_comment_lines,
-                    100.0 * t.min_ratio,
+                    t.lines,
+                    100.0 * t.ratio,
                 ),
             ));
         }
@@ -219,14 +219,14 @@ fn language_for(name: &str) -> Option<tree_sitter::Language> {
     }
 }
 
-fn measure(root: &Path) -> Result<Vec<FileStats>, String> {
+fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
     let mut files = Vec::new();
-    for tree in TREES {
-        collect_files(root, &root.join(tree), &mut files);
+    for tree in &cfg.trees {
+        collect_files(root, &root.join(tree), cfg, &mut files);
     }
     // Docs live all over the tree (per-crate CLAUDE.md, docs/, plugin skills), so
     // they're swept from the root rather than listed.
-    collect_files(root, root, &mut files);
+    collect_files(root, root, cfg, &mut files);
     files.sort();
     files.dedup();
 
@@ -259,7 +259,7 @@ fn measure(root: &Path) -> Result<Vec<FileStats>, String> {
 /// Recurse `dir`, collecting every file this linter knows how to measure. Markdown
 /// is collected everywhere; source only under [`TREES`], which is why the root sweep
 /// and the per-tree sweeps both run.
-fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -268,19 +268,20 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
-        if SKIP.contains(&rel.as_str()) || name.starts_with('.') {
+        if cfg.skip.iter().any(|s| s == &rel) || name.starts_with('.') {
             continue;
         }
         if path.is_dir() {
-            collect_files(root, &path, out);
-        } else if name.ends_with(".md") || (language_for(&name).is_some() && under_tree(&rel)) {
+            collect_files(root, &path, cfg, out);
+        } else if name.ends_with(".md") || (language_for(&name).is_some() && under_tree(cfg, &rel))
+        {
             out.push(path);
         }
     }
 }
 
-fn under_tree(rel: &str) -> bool {
-    TREES.iter().any(|t| rel.starts_with(&format!("{t}/")))
+fn under_tree(cfg: &Config, rel: &str) -> bool {
+    cfg.trees.iter().any(|t| rel.starts_with(&format!("{t}/")))
 }
 
 fn fold_file(

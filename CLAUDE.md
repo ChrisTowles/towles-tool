@@ -30,11 +30,13 @@ cargo xtask comment-lint            # comment volume — Rust, TS/TSX/JS and com
 
 `comment-lint` is the repo's one gate on comment sprawl, and it covers the
 frontend because nothing else can: oxlint implements no comment-volume rule at
-all (it skips stylistic rules by design). Fixed thresholds in `xtask/src/main.rs`
-like clippy — no baseline file, no ratchet — over an over-long comment *block*, a
-file whose comment mass and ratio are both high, and an over-long `.md`. Suppress
-a deliberate essay with `verbose-ok: <why>` inside the block; tighten by editing
-the consts. It runs in its own workflow because it is the only gate spanning
+all (it skips stylistic rules by design). It flags an over-long comment *block*, a
+file whose comment mass and ratio are both high, and an over-long `.md`. Thresholds
+and measured trees live in **`comment-lint.toml`** at the repo root — one set of
+numbers for the whole tree, and the one place to tighten them. That file must never
+grow per-file exceptions or a baseline; the only escape hatch is a
+`verbose-ok: <why>` line inside the block, where the reason sits next to the essay
+it excuses. It runs in its own workflow because it is the only gate spanning
 Rust and frontend paths, which `ci.yml` and `frontend.yml` each filter out half of.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and

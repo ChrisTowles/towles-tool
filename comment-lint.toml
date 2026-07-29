@@ -1,0 +1,31 @@
+# Thresholds for `cargo xtask comment-lint` — the repo's gate on comment volume.
+# Tighten a number here and the whole tree is measured against it immediately.
+#
+# What this file may hold: thresholds and paths. What it may NOT grow: per-file
+# exceptions or a recorded baseline. A file that lists which files are allowed to
+# fail stops being a linter and becomes a ledger of debt nobody pays down. The one
+# escape hatch stays in the source itself — a `verbose-ok: <why>` line inside a
+# comment block, where the reason sits next to the essay it excuses.
+
+# Source trees measured for comments, and the paths skipped inside them.
+# `components/ui` is vendored shadcn.
+trees = ["crates", "crates-cli", "crates-tauri", "apps/client/src", "scripts", "e2e"]
+skip = ["node_modules", "target", "dist", "apps/client/src/components/ui"]
+
+# A contiguous run of full-line comments trips a tier at this many lines.
+[block]
+warn = 6
+error = 10
+
+# A file trips a tier only when its comment mass AND its comment-to-code ratio
+# both clear the bar. Both at once on purpose: mass alone flags big well-commented
+# files, ratio alone flags tiny doc-headed stubs whose few lines are 400% of nothing.
+[heavy-file]
+warn = { lines = 50, ratio = 0.20 }
+error = { lines = 100, ratio = 0.30 }
+
+# A committed .md trips a tier at this many lines. Prose has no code to sit
+# against, so length is the only signal it offers.
+[doc]
+warn = 150
+error = 250
