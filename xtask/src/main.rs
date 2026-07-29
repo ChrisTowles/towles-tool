@@ -182,11 +182,29 @@ enum Severity {
     Error,
 }
 
+const USAGE: &str = "usage: cargo xtask comment-budget [--report] [--surface <name>]
+
+  (no flags)          every finding, then the surface table — what CI runs
+  --report            the surface table and the worst files, no finding list
+  --surface <name>    restrict to one surface, for a session spent fixing it";
+
 fn main() -> ExitCode {
-    if env::args().nth(1).as_deref() != Some("comment-budget") {
-        eprintln!("usage: cargo xtask comment-budget");
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.first().map(String::as_str) != Some("comment-budget") {
+        eprintln!("{USAGE}");
         return ExitCode::from(2);
     }
+    let report_only = args.iter().any(|a| a == "--report");
+    let only = match args.iter().position(|a| a == "--surface") {
+        Some(i) => match args.get(i + 1) {
+            Some(name) => Some(name.clone()),
+            None => {
+                eprintln!("--surface needs a name\n{USAGE}");
+                return ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
     let root = repo_root();
     let run = Config::load(&root).and_then(|cfg| {
         let (stats, unclaimed) = measure(&root, &cfg)?;
@@ -200,22 +218,41 @@ fn main() -> ExitCode {
         }
     };
 
+    if let Some(name) = &only {
+        if !cfg.surfaces.iter().any(|s| &s.name == name) {
+            eprintln!("no surface named `{name}`. Known: {}", surface_names(&cfg));
+            return ExitCode::from(2);
+        }
+    }
+    let picked = |i: usize| only.as_ref().is_none_or(|n| &cfg.surfaces[i].name == n);
+    let stats: Vec<FileStats> = stats.into_iter().filter(|s| picked(s.surface)).collect();
+
     let mut findings = judge(&cfg, &stats);
-    findings.extend(unclaimed_findings(&unclaimed));
-    for (sev, msg) in &findings {
-        match sev {
-            Severity::Error => println!("error{msg}"),
-            Severity::Warning => println!("warning{msg}"),
+    if only.is_none() {
+        findings.extend(unclaimed_findings(&unclaimed));
+    }
+    if !report_only {
+        for (sev, msg) in &findings {
+            match sev {
+                Severity::Error => println!("error{msg}"),
+                Severity::Warning => println!("warning{msg}"),
+            }
         }
     }
     let errors = findings.iter().filter(|(s, _)| matches!(s, Severity::Error)).count();
 
-    report_surfaces(&cfg, &stats);
+    report_surfaces(&cfg, &stats, only.as_deref());
+    if report_only {
+        report_worst(&cfg, &stats, only.as_deref());
+    }
     println!(
         "\ncomment-budget: {} file(s), {errors} error(s), {} warning(s)",
         stats.len(),
         findings.len() - errors
     );
+    if report_only && !findings.is_empty() {
+        println!("Run without --report for the {} finding(s) in full.", findings.len());
+    }
     if !findings.is_empty() {
         println!(
             "\nFix by deleting, not reflowing: cut history — git already holds it — and keep \
@@ -357,11 +394,58 @@ fn unclaimed_findings(unclaimed: &[String]) -> Vec<(Severity, String)> {
         .collect()
 }
 
+fn surface_names(cfg: &Config) -> String {
+    cfg.surfaces.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+}
+
+/// How many comment lines a file would have to lose to reach its surface's
+/// target — the thing that actually orders a cleanup, since a 90%-prose file of
+/// 20 lines costs nothing to fix and a 40% one of 800 lines is a week.
+fn overshoot(s: &FileStats, target: f64) -> usize {
+    let keep = (target / (1.0 - target) * s.code as f64).floor() as usize;
+    s.counted.saturating_sub(keep)
+}
+
+/// The files whose cleanup moves the number most, per surface. Ranked by lines
+/// over target rather than by ratio, so the list is a work queue.
+fn report_worst(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
+    for (i, surface) in cfg.surfaces.iter().enumerate() {
+        if only.is_some_and(|n| n != surface.name) {
+            continue;
+        }
+        let Some(Target::Ratio(target)) = surface.target else {
+            continue;
+        };
+        let mut mine: Vec<&FileStats> = stats.iter().filter(|s| s.surface == i).collect();
+        mine.sort_by_key(|s| std::cmp::Reverse(overshoot(s, target)));
+        let worth = mine.iter().take(8).filter(|s| overshoot(s, target) > 0).collect::<Vec<_>>();
+        if worth.is_empty() {
+            continue;
+        }
+        println!(
+            "\n{} — worst files (over-target lines, {:.0}% target)",
+            surface.name,
+            100.0 * target
+        );
+        for s in worth {
+            println!(
+                "  {:>5} over   {:>3.0}%   {}",
+                overshoot(s, target),
+                100.0 * s.ratio(),
+                s.file
+            );
+        }
+    }
+}
+
 /// Each surface measured against its own target — the direction of travel that
 /// a pass/fail count can't show.
-fn report_surfaces(cfg: &Config, stats: &[FileStats]) {
+fn report_surfaces(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
     println!("\nsurface                 files    measured   target");
     for (i, surface) in cfg.surfaces.iter().enumerate() {
+        if only.is_some_and(|n| n != surface.name) {
+            continue;
+        }
         let mine: Vec<&FileStats> = stats.iter().filter(|s| s.surface == i).collect();
         if mine.is_empty() {
             println!("{:<22} {:>6}    (no files match)", surface.name, 0);

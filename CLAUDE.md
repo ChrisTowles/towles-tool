@@ -26,6 +26,8 @@ cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
 cargo xtask comment-budget          # comment volume — Rust, TS/TSX/JS and committed docs
+cargo xtask comment-budget --report # the same, as a report: surfaces + worst files, no finding list
+cargo xtask comment-budget --surface client-logic   # one surface, for a session spent fixing it
 ```
 
 `comment-budget` is the repo's one gate on comment sprawl, and it covers the
