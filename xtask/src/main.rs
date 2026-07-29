@@ -189,10 +189,10 @@ fn main() -> ExitCode {
     }
     let root = repo_root();
     let run = Config::load(&root).and_then(|cfg| {
-        let stats = measure(&root, &cfg)?;
-        Ok((cfg, stats))
+        let (stats, unclaimed) = measure(&root, &cfg)?;
+        Ok((cfg, stats, unclaimed))
     });
-    let (cfg, stats) = match run {
+    let (cfg, stats, unclaimed) = match run {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("{e}");
@@ -200,7 +200,8 @@ fn main() -> ExitCode {
         }
     };
 
-    let findings = judge(&cfg, &stats);
+    let mut findings = judge(&cfg, &stats);
+    findings.extend(unclaimed_findings(&unclaimed));
     for (sev, msg) in &findings {
         match sev {
             Severity::Error => println!("error{msg}"),
@@ -338,6 +339,24 @@ fn judge<'a>(cfg: &'a Config, stats: &'a [FileStats]) -> Vec<(Severity, String)>
     out
 }
 
+/// A file some kind can read that no surface claims. An error rather than a
+/// quiet skip: under first-match-wins the failure mode of this whole design is
+/// a tree nobody noticed was exempt, and that reads exactly like passing.
+fn unclaimed_findings(unclaimed: &[String]) -> Vec<(Severity, String)> {
+    unclaimed
+        .iter()
+        .map(|f| {
+            (
+                Severity::Error,
+                format!(
+                    "[unclaimed] {f} — no surface claims this file, so nothing measures it; \
+                     add a path to a surface in {CONFIG_FILE}"
+                ),
+            )
+        })
+        .collect()
+}
+
 /// Each surface measured against its own target — the direction of travel that
 /// a pass/fail count can't show.
 fn report_surfaces(cfg: &Config, stats: &[FileStats]) {
@@ -378,14 +397,19 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask has a parent dir").to_path_buf()
 }
 
-fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
+fn measure(root: &Path, cfg: &Config) -> Result<(Vec<FileStats>, Vec<String>), String> {
     let mut files = Vec::new();
     collect_files(root, root, cfg, &mut files);
     files.sort();
 
     let mut parser = tree_sitter::Parser::new();
     let mut stats = Vec::new();
+    let mut unclaimed = Vec::new();
     for (path, surface) in files {
+        let Some(surface) = surface else {
+            unclaimed.push(rel_path(root, &path));
+            continue;
+        };
         let content = fs::read_to_string(&path)
             .map_err(|e| format!("could not read {}: {e}", path.display()))?;
         let rel = rel_path(root, &path);
@@ -409,16 +433,16 @@ fn measure(root: &Path, cfg: &Config) -> Result<Vec<FileStats>, String> {
             },
         });
     }
-    Ok(stats)
+    Ok((stats, unclaimed))
 }
 
 fn rel_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
 }
 
-/// Recurse `dir`, collecting every file a kind can read AND a surface claims,
-/// paired with that surface.
-fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<(PathBuf, usize)>) {
+/// Recurse `dir`, collecting every file a kind can read, paired with the surface
+/// claiming it — `None` when none does, which is reported rather than skipped.
+fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<(PathBuf, Option<usize>)>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -433,9 +457,7 @@ fn collect_files(root: &Path, dir: &Path, cfg: &Config, out: &mut Vec<(PathBuf, 
         if path.is_dir() {
             collect_files(root, &path, cfg, out);
         } else if cfg.kind_for(&name).is_some() {
-            if let Some(surface) = cfg.surface_for(&rel) {
-                out.push((path, surface));
-            }
+            out.push((path, cfg.surface_for(&rel)));
         }
     }
 }

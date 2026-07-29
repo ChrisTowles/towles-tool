@@ -105,11 +105,21 @@ error = { ratio = 0.15, lines = 50 }
 warn = 4
 error = 6
 
-# Not in the original proposal, and without it these are measured by nothing:
-# first-match-wins means a file no surface claims is invisible to the gate.
+# Not in the original proposal, and without it these are measured by nothing.
+# Every file a kind can read must land on some surface — an unclaimed one is a
+# hard error, so this list is complete by construction rather than by memory.
 [[surface]]
 name   = "dev-tooling"
-paths  = ["scripts/**/*", "e2e/**/*", "xtask/**/*.rs", "crates/*/tests/**/*.rs"]
+paths  = [
+  "scripts/**/*",
+  "e2e/**/*",
+  "xtask/**/*.rs",
+  "crates/*/tests/**/*.rs",
+  "crates/*/examples/**/*.rs",
+  "crates/*/benches/**/*.rs",
+  "crates/*/build.rs",
+  "apps/client/*.ts",              # vite.config.ts, vitest.config.ts
+]
 goal   = "Read when it breaks, by someone who did not write it. Say what the tool is for and what would surprise them; skip the walkthrough."
 target = 0.12
 [surface.file]

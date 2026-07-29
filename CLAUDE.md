@@ -39,8 +39,9 @@ three things about that file are load-bearing:
 - **Budgets are per *surface*, not global.** A shared library documents its
   crossing points; a React component doesn't. Each surface carries a `goal` in
   prose and a `target` the run reports itself against, so the number has a
-  reason attached. First match wins, and a file no surface claims is measured
-  by nothing — adding a tree means adding a surface.
+  reason attached. First match wins, and a file no surface claims is an
+  **error**, not a quiet skip — under first-match-wins the failure mode is a
+  tree nobody noticed was exempt, which reads exactly like passing.
 - **`//!` is exempt, `///` and `//` are counted.** Module docs are where the
   hard-won why lives and are never capped; item docs and narration are the
   bloat. Without that split the gate can only be too loose to catch anything or
