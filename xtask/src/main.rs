@@ -182,6 +182,38 @@ enum Severity {
     Error,
 }
 
+/// SGR codes, or empty strings when the output isn't a terminal a human is
+/// reading — a redirect to a file and `NO_COLOR` both mean plain text. Resolved
+/// once at startup rather than per-line so a piped run can't emit half of each.
+struct Paint {
+    dim: &'static str,
+    bold: &'static str,
+    over: &'static str,
+    warn: &'static str,
+    name: &'static str,
+    off: &'static str,
+}
+
+impl Paint {
+    fn resolve() -> Self {
+        use std::io::IsTerminal;
+        if env::var_os("NO_COLOR").is_some() || !std::io::stdout().is_terminal() {
+            return Paint { dim: "", bold: "", over: "", warn: "", name: "", off: "" };
+        }
+        Paint {
+            dim: "\x1b[2m",
+            bold: "\x1b[1m",
+            // Red for over-target and errors, yellow for warnings, cyan for the
+            // names you scan by — the terminal's own palette, so it stays legible
+            // against whatever theme the user actually runs.
+            over: "\x1b[31m",
+            warn: "\x1b[33m",
+            name: "\x1b[36m",
+            off: "\x1b[0m",
+        }
+    }
+}
+
 const USAGE: &str = "usage: cargo xtask comment-budget [--report] [--surface <name>]
 
   (no flags)          every finding, then the surface table — what CI runs
@@ -205,6 +237,7 @@ fn main() -> ExitCode {
         },
         None => None,
     };
+    let paint = Paint::resolve();
     let root = repo_root();
     let run = Config::load(&root).and_then(|cfg| {
         let (stats, unclaimed) = measure(&root, &cfg)?;
@@ -233,17 +266,18 @@ fn main() -> ExitCode {
     }
     if !report_only {
         for (sev, msg) in &findings {
-            match sev {
-                Severity::Error => println!("error{msg}"),
-                Severity::Warning => println!("warning{msg}"),
-            }
+            let (label, hue) = match sev {
+                Severity::Error => ("error", paint.over),
+                Severity::Warning => ("warning", paint.warn),
+            };
+            println!("{hue}{label}{}{msg}", paint.off);
         }
     }
     let errors = findings.iter().filter(|(s, _)| matches!(s, Severity::Error)).count();
 
-    report_surfaces(&cfg, &stats, only.as_deref());
+    report_surfaces(&cfg, &stats, only.as_deref(), &paint);
     if report_only {
-        report_worst(&cfg, &stats, only.as_deref());
+        report_worst(&cfg, &stats, only.as_deref(), &paint);
     }
     println!(
         "\ncomment-budget: {} file(s), {errors} error(s), {} warning(s)",
@@ -408,7 +442,7 @@ fn overshoot(s: &FileStats, target: f64) -> usize {
 
 /// The files whose cleanup moves the number most, per surface. Ranked by lines
 /// over target rather than by ratio, so the list is a work queue.
-fn report_worst(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
+fn report_worst(cfg: &Config, stats: &[FileStats], only: Option<&str>, paint: &Paint) {
     for (i, surface) in cfg.surfaces.iter().enumerate() {
         if only.is_some_and(|n| n != surface.name) {
             continue;
@@ -423,16 +457,24 @@ fn report_worst(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
             continue;
         }
         println!(
-            "\n{} — worst files (over-target lines, {:.0}% target)",
+            "\n{}{}{} {}— worst files (over-target lines, {:.0}% target){}",
+            paint.bold,
             surface.name,
-            100.0 * target
+            paint.off,
+            paint.dim,
+            100.0 * target,
+            paint.off,
         );
         for s in worth {
             println!(
-                "  {:>5} over   {:>3.0}%   {}",
+                "  {}{:>5} over{}   {}{:>3.0}%{}   {}",
+                paint.over,
                 overshoot(s, target),
+                paint.off,
+                paint.dim,
                 100.0 * s.ratio(),
-                s.file
+                paint.off,
+                s.file,
             );
         }
     }
@@ -440,8 +482,11 @@ fn report_worst(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
 
 /// Each surface measured against its own target — the direction of travel that
 /// a pass/fail count can't show.
-fn report_surfaces(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
-    println!("\nsurface                 files    measured   target");
+fn report_surfaces(cfg: &Config, stats: &[FileStats], only: Option<&str>, paint: &Paint) {
+    println!(
+        "{}\nsurface                 files    measured   target      over{}",
+        paint.dim, paint.off
+    );
     for (i, surface) in cfg.surfaces.iter().enumerate() {
         if only.is_some_and(|n| n != surface.name) {
             continue;
@@ -451,10 +496,12 @@ fn report_surfaces(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
             println!("{:<22} {:>6}    (no files match)", surface.name, 0);
             continue;
         }
-        let (measured, target) = match surface.target {
+        let (measured, target, over, past_target) = match surface.target {
             Some(Target::Lines { lines }) => {
                 let avg = mine.iter().filter_map(|s| s.doc_lines).sum::<usize>() / mine.len();
-                (format!("{avg} lines"), format!("{lines} lines"))
+                let over: usize =
+                    mine.iter().filter_map(|s| s.doc_lines).map(|n| n.saturating_sub(lines)).sum();
+                (format!("{avg} lines"), format!("{lines} lines"), over, avg >= lines)
             }
             _ => {
                 let counted: usize = mine.iter().map(|s| s.counted).sum();
@@ -464,15 +511,35 @@ fn report_surfaces(cfg: &Config, stats: &[FileStats], only: Option<&str>) {
                 } else {
                     100.0 * counted as f64 / (counted + code) as f64
                 };
-                let target = match surface.target {
-                    Some(Target::Ratio(r)) => format!("{:.0}%", 100.0 * r),
-                    _ => "—".to_string(),
+                let (target, over) = match surface.target {
+                    Some(Target::Ratio(r)) => (
+                        format!("{:.0}%", 100.0 * r),
+                        mine.iter().map(|s| overshoot(s, r)).sum::<usize>(),
+                    ),
+                    _ => ("—".to_string(), 0),
                 };
-                (format!("{pct:.1}%"), target)
+                let past = matches!(surface.target, Some(Target::Ratio(r)) if pct >= 100.0 * r);
+                (format!("{pct:.1}%"), target, over, past)
             }
         };
-        println!("{:<22} {:>6}  {:>10}  {:>7}", surface.name, mine.len(), measured, target);
-        println!("  {}", surface.goal);
+        // The measured figure and the backlog are judged separately: an average
+        // can sit under target while a long tail still owes lines, which is
+        // exactly the markdown surface's shape.
+        let hue = if past_target { paint.over } else { "" };
+        let over_hue = if over > 0 { paint.over } else { "" };
+        println!(
+            "{}{:<22}{} {:>6}  {hue}{:>10}{}  {:>7}  {over_hue}{:>8}{}",
+            paint.name,
+            surface.name,
+            paint.off,
+            mine.len(),
+            measured,
+            paint.off,
+            target,
+            format!("{over} lines"),
+            paint.off,
+        );
+        println!("{}  {}{}", paint.dim, surface.goal, paint.off);
     }
 }
 
