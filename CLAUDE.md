@@ -25,36 +25,29 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
-cargo xtask comment-budget          # comment volume — Rust, TS/TSX/JS and committed docs
-cargo xtask comment-budget --report # the same, as a report: surfaces + worst files, no finding list
-cargo xtask comment-budget --surface client-logic   # one surface, for a session spent fixing it
+cargo xtask comment-budget          # comment volume on the lines this branch adds — what CI runs
+cargo xtask comment-budget --all    # every file in the repo: the standing backlog
+cargo xtask comment-budget --all --report            # the backlog as surfaces + worst files
+cargo xtask comment-budget --all --surface client-logic   # one surface, for a session spent fixing it
 ```
 
-`comment-budget` is the repo's one gate on comment sprawl, and it covers the
-frontend because nothing else can: oxlint implements no comment-volume rule at
-all (it skips stylistic rules by design). It asks one question — how much prose
-must a reader wade through to reach the code — as `comment_lines /
-(comment_lines + code_lines)`, plus an over-long run of them and an over-long
-`.md`. Everything else lives in **`comment-budget.toml`** at the repo root, and
-three things about that file are load-bearing:
+`comment-budget` is the one gate on comment sprawl, and the only one spanning
+Rust and frontend (oxlint implements no comment-volume rule at all). Budgets are
+per *surface* in **`comment-budget.toml`**; the mechanics and why they are what
+they are live in `xtask/src/comment_budget.rs`'s module doc. Three rules shape
+how you write:
 
-- **Budgets are per *surface*, not global.** A shared library documents its
-  crossing points; a React component doesn't. Each surface carries a `goal` in
-  prose and a `target` the run reports itself against, so the number has a
-  reason attached. First match wins, and a file no surface claims is an
-  **error**, not a quiet skip — under first-match-wins the failure mode is a
-  tree nobody noticed was exempt, which reads exactly like passing.
 - **`//!` is exempt, `///` and `//` are counted.** Module docs are where the
-  hard-won why lives and are never capped; item docs and narration are the
-  bloat. Without that split the gate can only be too loose to catch anything or
-  tight enough to delete the decision record.
-- **No per-file exceptions and no baseline** — a list of files allowed to fail
-  is a ledger of debt nobody pays. The only escape is
-  `comment-budget: allow(<reason>)` at the top of the file, and a reason is
-  mandatory: an unexplained opt-out is itself an error.
+  hard-won why lives and are never capped; item docs and narration are the bloat.
+- **No baseline, no per-file exceptions** — a list of files allowed to fail is a
+  ledger of debt nobody pays. The only escape is `comment-budget: allow(<reason>)`
+  at the top of a file, and the reason is mandatory.
+- **A file no surface claims is an error**, not a quiet skip: a tree nobody
+  noticed was exempt reads exactly like passing.
 
-It runs in its own workflow because it is the only gate spanning Rust and
-frontend paths, which `ci.yml` and `frontend.yml` each filter out half of.
+CI judges only the lines a branch adds. `--all` is the repo-wide backlog, at
+~500 errors — never wire it to `pull_request`, and never lower a budget to make
+it pass.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
 `tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its

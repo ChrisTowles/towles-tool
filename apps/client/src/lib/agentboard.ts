@@ -1025,29 +1025,23 @@ export function issuesForFolder(tasks: TaskItem[], dir: string): TaskIssueLink[]
   return taskForFolder(tasks, dir)?.issues ?? [];
 }
 
-/** "Would removing this lose anything": no uncommitted changes and every
- * commit has landed on `comparedBase`. A pure git fact, independent of any
- * PR — and only *half* the badge gate, which also requires a merged PR (see
- * {@link folderSafeToDelete}).
+/** "Would removing this lose anything" — a pure git fact, and only *half* the
+ * badge gate (see {@link folderSafeToDelete}).
  *
- * `landed` is deliberately not part of it: that answers "how did the work get
- * to the base", and requiring it here would be both too strict (a branch
- * nobody committed to is safe while never having landed) and too loose
- * (`"upstream gone"` reports landed on the weakest possible evidence). */
+ * `landed` is deliberately not part of it: requiring it would be both too
+ * strict (a branch nobody committed to is safe while never having landed) and
+ * too loose (`"upstream gone"` is the weakest possible evidence). */
 export function folderHoldsNoWork(folder: Pick<FolderData, "dirty" | "commitsUnlanded">): boolean {
   return !folder.dirty && folder.commitsUnlanded === 0;
 }
 
 /** Whether this checkout may be shown as **safe to delete**: its PR merged,
- * and nothing here would be lost. Both halves are required — git can prove a
- * branch's *content* reached the base but cannot tell "landed" from
- * "abandoned", so the affirmative claim rests on the merged PR. The cost is
- * deliberate: a PR-less scratch task never earns the badge even when git sees
- * it is clean, and deletion stays available through the guarded modal.
+ * *and* nothing here would be lost. Git can prove a branch's content reached
+ * the base but cannot tell "landed" from "abandoned", so the affirmative claim
+ * rests on the merged PR — a PR-less scratch task never earns the badge.
  *
- * Stricter than `tt task rm`'s guard (`crates/tt-tasks/src/guards.rs`), which
- * blocks only on a dirty tree or commits reachable from no branch/remote — so
- * no badge says nothing about whether removal would be refused. */
+ * Stricter than `tt task rm`'s guard (`crates/tt-tasks/src/guards.rs`), so no
+ * badge says nothing about whether removal would be refused. */
 export function folderSafeToDelete(
   folder: Pick<FolderData, "dirty" | "commitsUnlanded">,
   pr: Pick<PrItem, "state"> | undefined,

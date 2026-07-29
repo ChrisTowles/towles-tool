@@ -1,14 +1,19 @@
 name: Comment budget
 
-# Its own workflow rather than a step in `rust`/`frontend`, because it is the one
-# gate that spans both: `rust` is paths-ignored for apps/client and scripts, and
-# `frontend` has no cargo toolchain. Split across the two, a TS-only PR would run
-# no comment budget at all. Unfiltered on purpose — the linter reads every tracked
-# source tree plus the committed docs, so any path can change its verdict.
+# Judges only the lines a PR adds (`cargo xtask comment-budget`'s default). The
+# repo stands at ~510 errors repo-wide, so a whole-repo gate would fail every PR
+# from day one and be switched off within a week; the added-lines one passes
+# today and holds the line while the backlog drains. `--all` is the backlog view,
+# run by hand — never wire it to `pull_request`, and never lower the budgets to
+# make it pass.
+#
+# It is its own workflow rather than a step in `rust`/`frontend` because it is
+# the one gate spanning both: `rust` is paths-ignored for apps/client and
+# scripts, and `frontend` has no cargo toolchain. Split across the two, a
+# TS-only PR would run no comment budget at all.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: comment-budget-${{ github.ref }}
@@ -23,7 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the merge-base needs the base branch's history, not a shallow tip
       - name: Provision pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo xtask comment-budget
+      # The PR's own base, not `main` — a stacked PR is judged against what it
+      # actually branched from.
+      - run: cargo xtask comment-budget --new-from-merge-base "${{ github.base_ref || 'main' }}"
