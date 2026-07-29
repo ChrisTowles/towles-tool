@@ -7,6 +7,7 @@
  */
 import { useState } from "react";
 import { Folder, PanelLeftOpen } from "lucide-react";
+import { Hint } from "@/components/hint";
 import { DotCount } from "@/components/agentboard-bits";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -123,13 +124,12 @@ export function RailIconStrip({
         <TooltipContent side="right">Expand rail ({expandHint})</TooltipContent>
       </Tooltip>
       {liveColor && (
-        <span
-          className="flex items-center gap-1 py-1 font-mono text-[10px] text-muted-foreground/70"
-          title={`${liveN} running session${liveN === 1 ? "" : "s"}`}
-        >
-          <span className={cn("size-2 rounded-full", liveColor)} />
-          {liveN}
-        </span>
+        <Hint label={`${liveN} running session${liveN === 1 ? "" : "s"}`} side="right">
+          <span className="flex items-center gap-1 py-1 font-mono text-[10px] text-muted-foreground/70">
+            <span className={cn("size-2 rounded-full", liveColor)} />
+            {liveN}
+          </span>
+        </Hint>
       )}
       {attentionCount > 0 && (
         <Tooltip>
@@ -188,31 +188,29 @@ export function RollupChip({ state, now }: { state: StatePayload; now: number })
           {r.waiting > 0 && <DotCount status="waiting" n={r.waiting} />}
           {r.error > 0 && <DotCount status="error" n={r.error} />}
           {r.expiring > 0 && (
-            <span
-              className="text-amber-500"
-              title="warm prompt caches about to expire — nudge them"
-            >
-              ◔{r.expiring}
-            </span>
+            <Hint label="warm prompt caches about to expire — nudge them">
+              <span className="text-amber-500">◔{r.expiring}</span>
+            </Hint>
           )}
           {r.compact > 0 && (
-            <span className="text-sky-500" title="cold sessions worth compacting">
-              ❄{r.compact}
-            </span>
+            <Hint label="cold sessions worth compacting">
+              <span className="text-sky-500">❄{r.compact}</span>
+            </Hint>
           )}
         </>
       )}
       <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            title="Agentboard settings"
-            aria-label="Agentboard settings"
-            className="ml-auto text-muted-foreground/60 hover:text-foreground"
-          >
-            ⚙
-          </button>
-        </PopoverTrigger>
+        <Hint label="Agentboard settings">
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Agentboard settings"
+              className="ml-auto text-muted-foreground/60 hover:text-foreground"
+            >
+              ⚙
+            </button>
+          </PopoverTrigger>
+        </Hint>
         <PopoverContent align="end" className="w-72">
           <div className="flex flex-col gap-3">
             <div className="text-sm font-medium">Agentboard settings</div>

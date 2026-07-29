@@ -20,6 +20,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { RAIL_RECENT_HOUR_CHOICES } from "@/lib/rail-prefs";
 import type { RailFilter } from "@/lib/settings";
@@ -62,24 +63,25 @@ function RailFilterMenu(props: {
   const { icon: Icon, title } = FILTER_META[filter];
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Which checkouts to show"
-          className={cn(
-            "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
-            filter === "all"
-              ? "text-muted-foreground hover:text-foreground"
-              : "text-violet-500 hover:text-violet-400",
-          )}
-          title={title}
-        >
-          <Icon className="size-3.5" />
-          {filter === "recent" && (
-            <span className="font-mono text-[10px] leading-none">{recentHours}h</span>
-          )}
-        </button>
-      </DropdownMenuTrigger>
+      <Hint label={title}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Which checkouts to show"
+            className={cn(
+              "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
+              filter === "all"
+                ? "text-muted-foreground hover:text-foreground"
+                : "text-violet-500 hover:text-violet-400",
+            )}
+          >
+            <Icon className="size-3.5" />
+            {filter === "recent" && (
+              <span className="font-mono text-[10px] leading-none">{recentHours}h</span>
+            )}
+          </button>
+        </DropdownMenuTrigger>
+      </Hint>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel>Show</DropdownMenuLabel>
         <DropdownMenuRadioGroup
@@ -171,24 +173,28 @@ export function RailHeader(props: {
           Repos
         </span>
         <span className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onOpenRepoManager}
-            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-accent/50"
-            title="Manage tracked repos in Settings — track, reorder, icon and color"
-          >
-            <FolderPlus className="size-3.5" /> Manage repos
-          </button>
-          {missingRepoCount > 0 && (
+          <Hint label="Manage tracked repos in Settings — track, reorder, icon and color">
             <button
               type="button"
-              onClick={onCleanupMissing}
-              aria-label={`Untrack ${missingRepoCount} missing repos`}
-              className="rounded-md p-1 text-amber-500 hover:bg-accent/50 hover:text-amber-400"
-              title={`Untrack ${missingRepoCount} repo${missingRepoCount === 1 ? "" : "s"} whose director${missingRepoCount === 1 ? "y is" : "ies are"} gone from disk`}
+              onClick={onOpenRepoManager}
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-accent/50"
             >
-              <FolderX className="size-3.5" />
+              <FolderPlus className="size-3.5" /> Manage repos
             </button>
+          </Hint>
+          {missingRepoCount > 0 && (
+            <Hint
+              label={`Untrack ${missingRepoCount} repo${missingRepoCount === 1 ? "" : "s"} whose director${missingRepoCount === 1 ? "y is" : "ies are"} gone from disk`}
+            >
+              <button
+                type="button"
+                onClick={onCleanupMissing}
+                aria-label={`Untrack ${missingRepoCount} missing repos`}
+                className="rounded-md p-1 text-amber-500 hover:bg-accent/50 hover:text-amber-400"
+              >
+                <FolderX className="size-3.5" />
+              </button>
+            </Hint>
           )}
           <RailFilterMenu
             filter={filter}
@@ -196,36 +202,39 @@ export function RailHeader(props: {
             onSetFilter={onSetFilter}
             onSetRecentHours={onSetRecentHours}
           />
-          <button
-            type="button"
-            onClick={() => {
-              uiAction(
-                "agentboard.show_unmanaged_worktrees",
-                "agentboard",
-                showUnmanagedWorktrees ? "off" : "on",
-              );
-              onSetShowUnmanagedWorktrees(!showUnmanagedWorktrees);
-            }}
-            aria-label={
-              showUnmanagedWorktrees
-                ? "Show only worktrees you asked for"
-                : "Show every git worktree, including ones you didn't ask for"
-            }
-            aria-pressed={showUnmanagedWorktrees}
-            className={cn(
-              "rounded-md p-1 hover:bg-accent/50",
-              showUnmanagedWorktrees
-                ? "text-violet-500 hover:text-violet-400"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            title={
+          <Hint
+            label={
               showUnmanagedWorktrees
                 ? "Showing every git worktree, including ones Claude Code made for its own agents — click to show only the tasks you asked for"
                 : "Showing only the tasks you asked for — click to also show worktrees Claude Code made for its own agents, or ones added by hand"
             }
           >
-            <FolderGit2 className="size-3.5" />
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                uiAction(
+                  "agentboard.show_unmanaged_worktrees",
+                  "agentboard",
+                  showUnmanagedWorktrees ? "off" : "on",
+                );
+                onSetShowUnmanagedWorktrees(!showUnmanagedWorktrees);
+              }}
+              aria-label={
+                showUnmanagedWorktrees
+                  ? "Show only worktrees you asked for"
+                  : "Show every git worktree, including ones you didn't ask for"
+              }
+              aria-pressed={showUnmanagedWorktrees}
+              className={cn(
+                "rounded-md p-1 hover:bg-accent/50",
+                showUnmanagedWorktrees
+                  ? "text-violet-500 hover:text-violet-400"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <FolderGit2 className="size-3.5" />
+            </button>
+          </Hint>
           {/* Jarvis, the native Bevy surface: this toggles both the strip at
               the bottom of the rail and whether a checkout can tile one as a
               *pane* (`components/jarvis-pane.tsx`) — one switch for the whole
@@ -233,52 +242,59 @@ export function RailHeader(props: {
               renderer runs; turned off after the fact, the surfaces are parked
               rather than freed, because a Bevy app can't be dropped in-process
               (`crates-tauri/tt-pane`). */}
-          <button
-            type="button"
-            onClick={() => {
-              uiAction("agentboard.jarvis_pane", "agentboard", jarvisPane ? "off" : "on");
-              onSetJarvisPane(!jarvisPane);
-            }}
-            aria-label={jarvisPane ? "Hide the Jarvis pane" : "Show the Jarvis pane"}
-            aria-pressed={jarvisPane}
-            className={cn(
-              "rounded-md p-1 hover:bg-accent/50",
-              jarvisPane
-                ? "text-violet-500 hover:text-violet-400"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            title={
+          <Hint
+            label={
               jarvisPane
                 ? "Jarvis (native Bevy surface) is on — rail strip plus a “jarvis” button on each checkout that tiles one as a pane. Click to turn it off"
                 : "Turn on Jarvis, the native Bevy surface: a rail strip, and a “jarvis” pane you can tile beside a checkout's terminals (proof-of-concept; Linux/Wayland only)"
             }
           >
-            <Box className="size-3.5" />
-          </button>
-          {dismissedPrCount > 0 && (
             <button
               type="button"
-              onClick={onClearDismissals}
-              disabled={clearingDismissals}
-              aria-label="Clear all dismissed PRs"
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-              title={`Bring back ${dismissedPrCount} dismissed PR${dismissedPrCount === 1 ? "" : "s"}`}
+              onClick={() => {
+                uiAction("agentboard.jarvis_pane", "agentboard", jarvisPane ? "off" : "on");
+                onSetJarvisPane(!jarvisPane);
+              }}
+              aria-label={jarvisPane ? "Hide the Jarvis pane" : "Show the Jarvis pane"}
+              aria-pressed={jarvisPane}
+              className={cn(
+                "rounded-md p-1 hover:bg-accent/50",
+                jarvisPane
+                  ? "text-violet-500 hover:text-violet-400"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              <CircleSlash className="size-3.5" />
+              <Box className="size-3.5" />
             </button>
+          </Hint>
+          {dismissedPrCount > 0 && (
+            <Hint
+              label={`Bring back ${dismissedPrCount} dismissed PR${dismissedPrCount === 1 ? "" : "s"}`}
+            >
+              <button
+                type="button"
+                onClick={onClearDismissals}
+                disabled={clearingDismissals}
+                aria-label="Clear all dismissed PRs"
+                className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+              >
+                <CircleSlash className="size-3.5" />
+              </button>
+            </Hint>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              mouseAction("ab-toggle-rail", "agentboard");
-              onCollapseRail();
-            }}
-            aria-label="Collapse the rail to icons"
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            title={withHint("Collapse the rail to icons", "ab-toggle-rail")}
-          >
-            <PanelLeftClose className="size-3.5" />
-          </button>
+          <Hint label={withHint("Collapse the rail to icons", "ab-toggle-rail")}>
+            <button
+              type="button"
+              onClick={() => {
+                mouseAction("ab-toggle-rail", "agentboard");
+                onCollapseRail();
+              }}
+              aria-label="Collapse the rail to icons"
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            >
+              <PanelLeftClose className="size-3.5" />
+            </button>
+          </Hint>
         </span>
       </div>
 

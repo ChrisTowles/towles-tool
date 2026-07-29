@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
+import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
   BranchLabel,
@@ -269,27 +270,28 @@ export function FolderHeader({
                 aria-label="Rename task"
               />
             ) : (
-              <span
-                onClick={onToggle}
-                onDoubleClick={
-                  task && !missing
-                    ? (e) => {
-                        e.stopPropagation();
-                        startRename();
-                      }
-                    : undefined
-                }
-                title={humanTitle ? folder.name : undefined}
-                className={cn(
-                  "min-w-0 flex-1 cursor-pointer truncate",
-                  scope === "repo"
-                    ? "text-sm font-semibold"
-                    : "text-sm font-medium text-muted-foreground",
-                  missing && "line-through decoration-muted-foreground/40",
-                )}
-              >
-                {displayTitle}
-              </span>
+              <Hint label={humanTitle ? folder.name : undefined} side="right">
+                <span
+                  onClick={onToggle}
+                  onDoubleClick={
+                    task && !missing
+                      ? (e) => {
+                          e.stopPropagation();
+                          startRename();
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    "min-w-0 flex-1 cursor-pointer truncate",
+                    scope === "repo"
+                      ? "text-sm font-semibold"
+                      : "text-sm font-medium text-muted-foreground",
+                    missing && "line-through decoration-muted-foreground/40",
+                  )}
+                >
+                  {displayTitle}
+                </span>
+              </Hint>
             )}
             {missing && <GhostBadge />}
           </div>
@@ -312,17 +314,18 @@ export function FolderHeader({
               directory missing — moved or deleted
             </span>
             {onRemoveRepo && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveRepo();
-                }}
-                title="Untrack this checkout — remove it from the rail"
-                className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
-              >
-                <Trash2 className="size-3" /> Untrack
-              </button>
+              <Hint label="Untrack this checkout — remove it from the rail">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveRepo();
+                  }}
+                  className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                >
+                  <Trash2 className="size-3" /> Untrack
+                </button>
+              </Hint>
             )}
           </div>
         ) : (

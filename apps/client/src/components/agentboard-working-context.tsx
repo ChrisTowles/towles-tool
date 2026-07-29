@@ -10,6 +10,7 @@
  * `agentboard-pane.tsx`.
  */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
+import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
   ComparedBaseBadge,
@@ -149,13 +150,20 @@ export function WorkingContext({
             thing on the screen (you just clicked it in the rail) and the
             panes below are the work, so it anchors without shouting, and the
             band costs ~64px instead of ~90px. */}
+        {/* The toolbar packs *left*, right after the title, instead of being
+            pushed to the far edge by a `flex-1` title. On an ultrawide window
+            the right edge is a foot of travel from the name you just read, and
+            every glance at "which checkout is this?" was followed by a skim
+            back across empty header to click anything. The title takes only
+            the width it needs (capped, truncating), the actions sit beside it,
+            and the leftover space goes at the end where nothing has to be
+            found. */}
         <div className="flex items-center gap-2">
-          <span
-            title={humanTitle ? folder.name : undefined}
-            className="min-w-0 flex-1 truncate text-lg font-semibold leading-tight"
-          >
-            {displayTitle}
-          </span>
+          <Hint label={humanTitle ? folder.name : undefined}>
+            <span className="min-w-0 max-w-[28rem] truncate text-lg font-semibold leading-tight">
+              {displayTitle}
+            </span>
+          </Hint>
           {missing && <GhostBadge />}
           {!missing && (
             <span className="flex shrink-0 items-center gap-1.5">
@@ -208,17 +216,18 @@ export function WorkingContext({
             taskId={!missing ? task?.id : undefined}
           />
         </div>
-        {/* Line 2: what this checkout *is* on the left, what git says it holds
-            on the right — the same split the rail row uses, so the two
-            surfaces read as one grammar at two sizes. `vs <base>` and the
-            base-moved chip sit together because they are one sentence
-            ("measured against main, which is 3 ahead"), and the counts are
-            right-aligned so their column is stable while the numbers change.
-            Port drift and safe-to-delete are deliberately *not* here: they get
-            a full callout below, and a chip that duplicates its own callout
-            three lines later is noise standing where a fact should be. */}
+        {/* Line 2: what this checkout *is*, then what git says it holds.
+            `vs <base>` and the base-moved chip sit together because they are
+            one sentence ("measured against main, which is 3 ahead"). The diff
+            counts used to be right-aligned for a stable column; they are
+            clickable (they open the diff pane), so on a wide window that
+            column was another trip to the far edge — same reason line 1's
+            toolbar packs left. Port drift and safe-to-delete are deliberately
+            *not* here: they get a full callout below, and a chip that
+            duplicates its own callout three lines later is noise standing
+            where a fact should be. */}
         <div className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
-          <div className="flex min-w-0 flex-1 items-center gap-x-1.5 overflow-hidden">
+          <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden">
             {scope && <span className="shrink-0 font-mono text-muted-foreground/60">{scope}</span>}
             {repoDistinct && <span className="shrink-0 font-medium">{repo.name}</span>}
             {folder.branch && <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />}
@@ -306,24 +315,26 @@ function ActionableCallouts({
             <span className={cn("shrink-0 font-medium", meta.textClass)}>{meta.heading}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.subtitle}</span>
             {item.pr && (
-              <button
-                type="button"
-                onClick={() => void openExternalUrl(item.pr!.url)}
-                title={`Open PR #${item.pr.number} on GitHub`}
-                className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <GitPullRequest className="size-3" />#{item.pr.number}
-              </button>
+              <Hint label={`Open PR #${item.pr.number} on GitHub`}>
+                <button
+                  type="button"
+                  onClick={() => void openExternalUrl(item.pr!.url)}
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <GitPullRequest className="size-3" />#{item.pr.number}
+                </button>
+              </Hint>
             )}
             {item.kind === "safe-to-delete" && (
-              <button
-                type="button"
-                onClick={() => onDeleteWorktree(folderDir, folderLabel)}
-                title="Delete this worktree — nothing here would be lost"
-                className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
-              >
-                <Trash2 className="size-3" /> delete
-              </button>
+              <Hint label="Delete this worktree — nothing here would be lost">
+                <button
+                  type="button"
+                  onClick={() => onDeleteWorktree(folderDir, folderLabel)}
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+                >
+                  <Trash2 className="size-3" /> delete
+                </button>
+              </Hint>
             )}
           </div>
         );

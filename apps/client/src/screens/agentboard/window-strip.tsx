@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint, withHint } from "@/lib/shortcuts";
+import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 
 /** Shared chrome for the three add-actions, so they can't drift apart: no
@@ -83,104 +84,104 @@ export function WindowStrip(props: {
             className="w-24 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-[11px] outline-none"
           />
         ) : (
-          <button
-            key={w.id}
-            type="button"
-            onClick={() => onFocusWindow(w.id)}
-            onDoubleClick={() => setRenamingWin(w.id)}
-            title="double-click to rename"
-            aria-pressed={w.id === activeWinId}
-            className={cn(
-              // border-b-2 mirrors the rail's border-l-2 active edge,
-              // rotated to match this strip's horizontal layout — kept
-              // transparent at rest so the violet edge never shifts
-              // the tab's size when it becomes active.
-              "group/tab flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-[11px]",
-              w.id === activeWinId
-                ? "border-b-violet-500 bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent/50",
-            )}
-          >
-            <span className={cn("size-2 rounded-[3px]", windowColor(windows, w.id))} />
-            {w.name}
-            <span className="font-mono text-[10px] text-muted-foreground/60">
-              {w.panes.length}⊞
-            </span>
-            {windows.length > 1 && (
-              // span-with-role, not <button>: it nests inside the window
-              // chip's real <button>, and interactive elements may not nest.
-              // Keyboard support added by hand instead.
-              //
-              // Full strength on the tab you're on, faded until you point at
-              // any other — the browser-tab convention, and the reason it
-              // holds its width either way is that a tab whose size changed
-              // under the pointer would be a tab you can miss.
-              <span
-                role="button"
-                tabIndex={0}
-                title="close window (panes ungroup; sessions stay in the rail)"
-                aria-label={`close window ${w.name}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeWindow(w);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" && e.key !== " ") return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  closeWindow(w);
-                }}
-                className={cn(
-                  "text-muted-foreground/50 transition-opacity hover:text-red-500 focus-visible:opacity-100",
-                  w.id === activeWinId
-                    ? "opacity-100"
-                    : "opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100",
-                )}
-              >
-                ✕
+          <Hint key={w.id} label="double-click to rename">
+            <button
+              type="button"
+              onClick={() => onFocusWindow(w.id)}
+              onDoubleClick={() => setRenamingWin(w.id)}
+              aria-pressed={w.id === activeWinId}
+              className={cn(
+                // border-b-2 mirrors the rail's border-l-2 active edge,
+                // rotated to match this strip's horizontal layout — kept
+                // transparent at rest so the violet edge never shifts
+                // the tab's size when it becomes active.
+                "group/tab flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-[11px]",
+                w.id === activeWinId
+                  ? "border-b-violet-500 bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50",
+              )}
+            >
+              <span className={cn("size-2 rounded-[3px]", windowColor(windows, w.id))} />
+              {w.name}
+              <span className="font-mono text-[10px] text-muted-foreground/60">
+                {w.panes.length}⊞
               </span>
-            )}
-          </button>
+              {windows.length > 1 && (
+                // span-with-role, not <button>: it nests inside the window
+                // chip's real <button>, and interactive elements may not nest.
+                // Keyboard support added by hand instead.
+                //
+                // Full strength on the tab you're on, faded until you point at
+                // any other — the browser-tab convention, and the reason it
+                // holds its width either way is that a tab whose size changed
+                // under the pointer would be a tab you can miss.
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`close window ${w.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeWindow(w);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeWindow(w);
+                  }}
+                  className={cn(
+                    "text-muted-foreground/50 transition-opacity hover:text-red-500 focus-visible:opacity-100",
+                    w.id === activeWinId
+                      ? "opacity-100"
+                      : "opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100",
+                  )}
+                >
+                  ✕
+                </span>
+              )}
+            </button>
+          </Hint>
         ),
       )}
       {/* Hairline, not a gap: the eye needs one cue that the run to its right
           adds things rather than switching to them. */}
       <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
-      <button
-        type="button"
-        onClick={onNewWindow}
-        title="New window around a fresh session"
-        className={ADD_CLASS}
+      <Hint label="New window around a fresh session">
+        <button type="button" onClick={onNewWindow} className={ADD_CLASS}>
+          <Plus className="size-3 text-violet-500" /> window
+        </button>
+      </Hint>
+      <Hint
+        label={`New session in the focused folder (${shortcutHint("ab-new-session")} or ${shortcutHint("ab-new-terminal-right")})`}
       >
-        <Plus className="size-3 text-violet-500" /> window
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          mouseAction("ab-new-session", "agentboard");
-          onNewSession();
-        }}
-        className={ADD_CLASS}
-        title={`New session in the focused folder (${shortcutHint("ab-new-session")} or ${shortcutHint("ab-new-terminal-right")})`}
-      >
-        <Plus className="size-3 text-violet-500" /> session
-      </button>
-      {hasSelection && (
         <button
           type="button"
           onClick={() => {
-            mouseAction("ab-close-session", "agentboard");
-            onCloseSession();
+            mouseAction("ab-new-session", "agentboard");
+            onNewSession();
           }}
-          className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-          title={withHint("Close the selected session", "ab-close-session")}
-          aria-label="Close the selected session"
+          className={ADD_CLASS}
         >
-          {/* "Close session", not "Close": this strip holds two different
+          <Plus className="size-3 text-violet-500" /> session
+        </button>
+      </Hint>
+      {hasSelection && (
+        <Hint label={withHint("Close the selected session", "ab-close-session")}>
+          <button
+            type="button"
+            onClick={() => {
+              mouseAction("ab-close-session", "agentboard");
+              onCloseSession();
+            }}
+            className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="Close the selected session"
+          >
+            {/* "Close session", not "Close": this strip holds two different
               close actions — a tab's ✕ ends a *window* — and the one word
               that tells them apart is worth its ~45px. */}
-          Close session {shortcutHint("ab-close-session")}
-        </button>
+            Close session {shortcutHint("ab-close-session")}
+          </button>
+        </Hint>
       )}
     </div>
   );
