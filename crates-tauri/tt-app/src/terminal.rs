@@ -207,7 +207,9 @@ impl TermState {
     /// before WKWebView ever dispatches a DOM keydown for them, so those
     /// chords need a native-side path into the same PTY write the frontend
     /// otherwise drives. No-ops (returns `false`) when nothing is focused or
-    /// the focused terminal's session is gone.
+    /// the focused terminal's session is gone — which is also the caller's
+    /// verdict on whether to consume the OS event, so never report `true`
+    /// without delivering or the chord goes nowhere.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn send_key_to_focused(&self, event: KeyEvent) -> bool {
         let Some(term_id) = self.focused.lock().unwrap().clone() else {
