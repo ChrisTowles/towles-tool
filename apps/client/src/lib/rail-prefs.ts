@@ -12,7 +12,7 @@ export const DEFAULT_RAIL_FILTER: RailFilter = "all";
 export const DEFAULT_RAIL_RECENT_HOURS = 4;
 
 /** The hour spans the rail's filter menu offers for `"recent"`. */
-export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24];
+export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24, 48, 96, 24 * 7];
 
 /**
  * Track the Agentboard rail's filter (`agentboard.railFilter`) and the window
