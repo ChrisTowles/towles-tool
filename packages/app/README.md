@@ -32,7 +32,9 @@ tools without manual `claude mcp add` setup:
   Write it wherever you like, a scratch dir outside the repo included: the pane
   opens in *your* terminal's task, because the request carries the
   `TT_SESSION_ID` of the shell you're running in (see `.mcp.json` below), not
-  because of where the file sits. The user can annotate what you showed and send
+  because of where the file sits. For a file that already exists rather than
+  a page you wrote, use `file_open` instead — same pane routing, but it reveals
+  the file in the Files pane (the `tt open` CLI command is the same call). The user can annotate what you showed and send
   it straight back to you.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
@@ -69,7 +71,7 @@ in the shared settings file.
 `TT_SESSION_ID` is stamped by the app on every terminal it spawns, and Claude
 Code expands `${VAR:-default}` in `.mcp.json` headers — so each session
 identifies its own terminal without the model having to know or pass anything.
-`preview_show` routes on it. Outside an app terminal the variable is unset, the
+`preview_show` and `file_open` route on it. Outside an app terminal the variable is unset, the
 header arrives empty, and the tool falls back to matching the artifact's path
 against tracked folders. It is not a credential and grants nothing: request
 admission (loopback + no `Origin` + JSON `Content-Type`) is still the whole

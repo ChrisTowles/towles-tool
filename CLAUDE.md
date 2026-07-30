@@ -374,8 +374,8 @@ Cargo workspace + npm workspace (`apps/client` only):
     touching either half. Tools: `task_list`, `task_status`, `task_create`
     (a #339 board task in a tracked repo's swimlane, same store path as the
     app's `store_add_task`), `task_summary`, `task_start`, `task_delete`,
-    `preview_show`, plus the calendar family `calendar_today`, `calendar_next`
-    and the push-model write `calendar_set`.
+    `preview_show`, `file_open`, plus the calendar family `calendar_today`,
+    `calendar_next` and the push-model write `calendar_set`.
     `task_summary` is how a finished agent leaves a record: it writes the
     wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
     into a PTY scrollback that dies with the worktree. It is a *separate column
@@ -424,7 +424,19 @@ Cargo workspace + npm workspace (`apps/client` only):
     the fact that actually answers "whose pane is this?". The
     delivery mechanics (path not bytes, the sandboxed `srcDoc` frame) are
     documented at `tt-mcp`'s `PreviewHost` and
-    `crates-tauri/tt-app/src/preview.rs`. The broader
+    `crates-tauri/tt-app/src/preview.rs`.
+    **`file_open` is the same shape one step down**: reveal a path that already
+    exists in the caller's own Files pane, where `preview_show` renders a page
+    the agent *authored*. Same `EditorHost` hand-off, same session-first
+    routing, and it lands on the route a terminal file link and Claude Code's
+    IDE `openFile` already take (`editor://open-file` →
+    `apps/client/src/lib/editor-open.ts` → the screen's `filesOpenRequests`).
+    One asymmetry with `preview_show` is deliberate: **here the path fallback is
+    a good guess**, because a file someone asked to read names its checkout,
+    which is what lets `tt open` work from a terminal with no `TT_SESSION_ID`.
+    It is also **the one MCP tool the CLI dials** — `tt open` is a client of
+    this endpoint (see the `tt-cli` bullet), so the per-checkout port lives in
+    `tt_mcp::port` where both ends read it rather than in the transport. The broader
     dashboard-read tools (`day_brief`, `needs_you`, `snapshot`,
     PR/issue/DM/collector reads) were pruned in the 2026-07 tool-surface
     review and have not returned.
@@ -649,11 +661,24 @@ Cargo workspace + npm workspace (`apps/client` only):
 - `crates-cli/tt-cli` — `clap` 4 CLI, binary `tt`. Deliberately small after the
   2026-07-19 trim (usage review showed everything else was dead or app-owned):
   `journal daily-notes|note|meeting|jot|open|list|search` (+ `today` alias),
+  `open <path>[:<line>]` (reveal it in the running app's Files pane),
   `task init|new|ls|rm|env|ports|clean|nudge` (worktrees — see the Worktree
   tasks section). There is no `collect` group. The MCP server is not a CLI
-  surface — it runs inside the app over loopback HTTP. The removed groups
+  surface — it runs inside the app over loopback HTTP, and the CLI is only ever
+  a *client* of it (`tt open`, below). The removed groups
   (`gh`, `config`, `doctor`, `install`, `agentboard`, `collect`) live in git
   history; don't reintroduce CLI surfaces for app-owned features.
+
+  **`tt open` is the one CLI command that is a client of the app.** It makes no
+  editor decision of its own: it POSTs the `file_open` MCP tool call to the app
+  instance serving this checkout, so the file lands in the Files pane beside the
+  terminal it was typed in (`X-TT-Session` from `TT_SESSION_ID`, the same
+  routing `preview_show` uses). Hence no `preferredEditor` spawn and no fallback
+  to one — a command whose behavior depends invisibly on whether a window is up
+  is worse than one that says the window isn't up — and hence the refusal for a
+  path under no git repository, checked in the CLI because the pane browses a
+  checkout and the app has no better answer than a toast in a window that may
+  not be on screen.
 
   **`tt task nudge` is the only collector verb left, and it is routed by
   caller.** The headless runners (`collect calendar|issues|prs|slack|all`) and

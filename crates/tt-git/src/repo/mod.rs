@@ -167,6 +167,22 @@ pub fn open(dir: &Path) -> Result<Repo> {
     cache().open(dir)
 }
 
+/// The working-tree root containing `path`, walking upward like
+/// `git rev-parse --show-toplevel`. For a path handed in from outside (a CLI
+/// operand), where [`open`]'s "caller already knows the root" doesn't hold.
+///
+/// Not `discover_with_environment_overrides`: a stray `GIT_DIR` in the caller's
+/// shell must not redirect the answer to another repo. A bare repo answers
+/// `None` — no working tree, so nothing the caller named lives in one.
+pub fn discover_root(path: &Path) -> Option<PathBuf> {
+    // Handed a *file*, gitoxide reports "not a repository" instead of walking up
+    // from its parent — and a file is the ordinary operand.
+    let start = if path.is_dir() { path } else { path.parent()? };
+    let repo = gix::discover(start).ok()?;
+    let workdir = repo.workdir()?;
+    Some(std::fs::canonicalize(workdir).unwrap_or_else(|_| workdir.to_path_buf()))
+}
+
 /// Drop `dir` from the process-wide [`cache`] — for a checkout being removed.
 pub fn forget(dir: &Path) {
     cache().forget(dir);
@@ -463,6 +479,28 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cache = RepoCache::new();
         assert!(matches!(cache.open(dir.path()), Err(GitError::NotARepo(_))));
+    }
+
+    /// A *file* deep in the tree is the ordinary operand, and gitoxide won't
+    /// discover from one — see [`discover_root`].
+    #[test]
+    fn discover_root_walks_up_from_a_nested_file() {
+        let repo = TestRepo::new();
+        let nested = repo.path().join("src/deep");
+        std::fs::create_dir_all(&nested).expect("mkdir");
+        let file = nested.join("main.rs");
+        std::fs::write(&file, "fn main() {}").expect("write");
+
+        let root = std::fs::canonicalize(repo.path()).expect("canonicalize");
+        assert_eq!(discover_root(&file).as_deref(), Some(root.as_path()));
+        assert_eq!(discover_root(&nested).as_deref(), Some(root.as_path()));
+    }
+
+    #[test]
+    fn discover_root_answers_none_outside_a_repository() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(discover_root(dir.path()).is_none());
+        assert!(discover_root(&dir.path().join("nope.rs")).is_none());
     }
 
     #[test]

@@ -8987,9 +8987,11 @@ dependencies = [
  "tt-exec",
  "tt-git",
  "tt-journal",
+ "tt-mcp",
  "tt-store",
  "tt-tasks",
  "tt-telemetry",
+ "ureq",
 ]
 
 [[package]]
@@ -9103,6 +9105,7 @@ dependencies = [
  "tt-config",
  "tt-git",
  "tt-store",
+ "tt-tasks",
 ]
 
 [[package]]

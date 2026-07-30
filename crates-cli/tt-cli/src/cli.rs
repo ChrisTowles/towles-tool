@@ -31,6 +31,19 @@ pub enum Commands {
         no_open: bool,
     },
 
+    /// Show a file or folder in the running app's Files pane, in the task this
+    /// terminal belongs to (`TT_SESSION_ID`; otherwise the checkout the path is
+    /// in). Accepts the `<path>:<line>` spelling compilers and grep print.
+    Open {
+        /// File or folder to show, optionally with a `:<line>` suffix
+        #[arg(value_name = "PATH")]
+        path: String,
+
+        /// 1-based line to scroll to (overridden by a `:<line>` suffix on PATH)
+        #[arg(long, value_name = "N")]
+        line: Option<u32>,
+    },
+
     /// Worktree tasks: a main checkout (always the default branch) plus
     /// branch-named worktrees under <checkout>/.claude/worktrees/, each with
     /// rendered per-task ports/env so concurrent tasks never collide
@@ -47,6 +60,7 @@ impl Commands {
         match self {
             Commands::Journal(args) => ("journal", args.command.name()),
             Commands::Today { .. } => ("journal", "today"),
+            Commands::Open { .. } => ("open", "open"),
             Commands::Task(args) => ("task", args.command.name()),
         }
     }

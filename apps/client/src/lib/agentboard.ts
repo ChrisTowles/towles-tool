@@ -1927,6 +1927,17 @@ export type AgentboardNav =
       path: string;
       title: string;
       nonce: number;
+    }
+  /** Reveal a path already on disk in a folder's Files pane: the MCP `file_open`
+   * tool and `tt open`'s delivery (`lib/editor-open.ts`). `path` is absolute —
+   * only the screen knows the folder once `folderDir` is null. */
+  | {
+      kind: "open-file";
+      folderDir: string | null;
+      path: string;
+      isDir: boolean;
+      line: number | null;
+      nonce: number;
     };
 
 let pendingNav: AgentboardNav | null = null;
