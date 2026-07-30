@@ -167,12 +167,8 @@ async function start(): Promise<typeof import("monaco-editor")> {
       "explorer.fileNesting.enabled": true,
       "explorer.fileNesting.expand": false,
       "explorer.fileNesting.patterns": FILE_NESTING_PATTERNS,
-      // Keep the Explorer focused on source — build trees stay reachable
-      // via a terminal, not the tree.
       "files.exclude": {
         "**/.git": true,
-        "**/node_modules": true,
-        "**/target": true,
       },
     }),
   );
