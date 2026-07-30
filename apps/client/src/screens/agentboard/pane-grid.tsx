@@ -24,29 +24,15 @@ import {
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
-import type { ArtifactRequest } from "@/lib/preview-artifact";
+import type { PreviewRequest } from "@/lib/preview-artifact";
 import type { TermExit } from "@/lib/term-protocol";
 import { cn } from "@/lib/utils";
 import { paneStyle } from "./helpers";
 import type { ColumnDrag } from "./use-column-drag";
 
-/**
- * The pane area: one flat pool of mounted terminals (never remounted — a
- * remount would respawn the shell) plus the diff/files/preview/jarvis/tombstone
- * panes, all absolutely positioned into the active window's tiling.
- *
- * The active window's pane order assigns each a percent-rect; panes in other
- * windows stay hidden rather than unmounting, so scrollback survives switching
- * and regrouping. Diff/files/preview/jarvis panes are *not* pooled deliberately
- * — they rebuild from what's on disk (or, for jarvis, from a fresh surface) and
- * hold nothing that can't be recreated, whereas a terminal owns a live
- * process.
- *
- * One pane kind is not DOM at all: a **jarvis** pane hands its body to a
- * compositor surface that draws *above* the webview, so it takes `visible`
- * from `nativeVisible` rather than obeying the `hidden` this file uses
- * everywhere else. See `components/jarvis-pane.tsx`.
- */
+/** The pane area: one flat pool of mounted terminals (never remounted — a remount would respawn
+ * the shell) plus the diff/files/preview/jarvis/tombstone panes, all absolutely positioned into
+ * the active window's tiling. */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
   open: string[];
@@ -69,12 +55,10 @@ export function PaneGrid(props: {
   /** How a *crashed* session's shell died, by session id (tombstone detail). */
   exitLabels: Record<string, string>;
   filesOpenRequests: Record<string, FilesOpenRequest>;
-  /** Artifacts an agent asked to show, by folder dir — see the MCP
-   * `preview_show` tool (`lib/preview-artifact.ts`). */
-  artifactRequests: Record<string, ArtifactRequest>;
-  /** False when something must appear over the pane area — this screen isn't
-   * the active tab. Only the native (jarvis) panes care: their surface sits
-   * *above* the webview, so `hidden` on a DOM ancestor doesn't reach them. */
+  /** Files an agent asked to show, by folder dir — see the MCP
+   * `preview_file` tool (`lib/preview-artifact.ts`). */
+  previewRequests: Record<string, PreviewRequest>;
+  /** False when something must appear over the pane area — this screen isn't the active tab. */
   nativeVisible: boolean;
   /** The label to lead a session's pane with — live Claude title or backend name. */
   labelFor: (s: SessionData) => string;
@@ -105,7 +89,7 @@ export function PaneGrid(props: {
     termAttention,
     exitLabels,
     filesOpenRequests,
-    artifactRequests,
+    previewRequests,
     nativeVisible,
     labelFor,
     focusTerminalRequest,
@@ -156,10 +140,10 @@ export function PaneGrid(props: {
               onClick={() => onSelectSession(folderOf.get(id)?.dir ?? cwds.current[id] ?? "", id)}
               className={cn(
                 "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
-                // Amber (needs-you) wins the border over violet (focus) when
-                // both apply — see the folder-rail-ui skill's "Two accent hues"
-                // rule; class order here matters because `cn` (tailwind-merge)
-                // keeps only the last conflicting border-color utility.
+                // Amber (needs-you) wins the border over violet (focus) when both apply — see
+                // the folder-rail-ui skill's "Two accent hues" rule; class order here matters
+                // because `cn` (tailwind-merge) keeps only the last conflicting border-color
+                // utility.
                 focusedPaneId === id && "border-violet-500/60",
                 termAttention[id] && "border-amber-500/70",
               )}
@@ -230,7 +214,7 @@ export function PaneGrid(props: {
           <PreviewPane
             folder={folderByDir.get(dir)}
             focused={focusedPaneId === id}
-            artifact={artifactRequests[dir]}
+            file={previewRequests[dir]}
             onClose={() => onRemovePane(id)}
           />,
         );

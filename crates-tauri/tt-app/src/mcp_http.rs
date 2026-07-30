@@ -21,18 +21,14 @@ use tauri::{AppHandle, Emitter};
 use tt_mcp::Dispatcher;
 use tt_store::Store;
 
-/// Whether *this* instance bound its port and is serving MCP. Process-global rather than
-/// managed Tauri state: written from [`spawn`] during setup, read by a command, and there
-/// is exactly one server per process to key it by.
+/// Process-global rather than managed Tauri state: one server per process.
 static SERVING: AtomicBool = AtomicBool::new(false);
 /// The port [`spawn`] attempted, whether or not the bind succeeded — the UI
 /// needs it either way (to show the endpoint, or to say what's contended).
 static PORT: AtomicU16 = AtomicU16::new(0);
 
-/// Whether this instance is serving MCP, and on which port. Reported to the MCP screen so
-/// the status is the real bind outcome rather than an inference from call recency — those
-/// differ exactly when it matters: a healthy server nobody has called, and an instance
-/// whose port was taken and serves nothing.
+/// The real bind outcome, not an inference from call recency — the two differ
+/// exactly when it matters: a healthy server nobody called, and a lost port.
 #[tauri::command]
 pub fn mcp_status() -> serde_json::Value {
     serde_json::json!({
@@ -56,9 +52,8 @@ const MCP_PATH: &str = "/mcp";
 /// `calendar_set` pushing a day of events is the biggest realistic payload.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// Why a request was refused before reaching the dispatcher. Each maps to an HTTP status
-/// and a short body, kept as a type rather than inline strings so [`check_admission`]'s
-/// tests assert on the *reason*, not prose that might be reworded.
+/// A type rather than inline strings, so [`check_admission`]'s tests assert on the
+/// *reason* and not on prose that may be reworded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
     /// Request carried an `Origin` header — i.e. it came from a web page.
@@ -71,9 +66,8 @@ pub enum Refusal {
     MethodNotAllowed,
     /// Body exceeded [`MAX_BODY_BYTES`].
     TooLarge,
-    /// The body could not be read to the end (e.g. the client hung up).
-    /// Distinct from [`Refusal::TooLarge`] so the logs don't report a hangup as
-    /// an oversized upload.
+    /// Distinct from [`Refusal::TooLarge`] so a hangup isn't logged as an
+    /// oversized upload.
     Unreadable,
 }
 
@@ -105,23 +99,16 @@ impl Refusal {
     }
 }
 
-/// Decide whether a request may reach the dispatcher.
-///
-/// Pure and header-only on purpose: this is the whole security boundary, so unit tests
-/// exercise it directly rather than only through a live socket.
-///
-/// `origin_present` is deliberately a **bool, not the header's value** — the rule is
-/// presence, so the type says presence. Callers must ask `contains_key(ORIGIN)` and
-/// nothing else; `content_type` is the raw header, where the value *does* matter.
+/// Whether a request may reach the dispatcher. Pure and header-only: it is the whole
+/// security boundary, so tests must exercise it without a socket. `origin_present` is
+/// a **bool, not a value** — the rule is presence, so the type says presence.
 pub fn check_admission(
     method: &str,
     path: &str,
     origin_present: bool,
     content_type: Option<&str>,
 ) -> Result<(), Refusal> {
-    // Origin first: a browser-originated request is refused whatever else it
-    // says, and answering it with a more specific error would leak which of the
-    // other checks it passed.
+    // Origin first: a more specific error would leak which checks it passed.
     if origin_present {
         return Err(Refusal::BrowserOrigin);
     }
@@ -137,29 +124,19 @@ pub fn check_admission(
     Ok(())
 }
 
-/// Whether a `Content-Type` header names JSON.
-///
-/// Tolerates parameters (`application/json; charset=utf-8`) and case, since
-/// those are legitimate and a real client may send them — but nothing else.
-/// Notably `text/plain` is rejected, which is the point: it is the only content
-/// type a web page can send without triggering a preflight.
+/// Tolerates parameters and case (`application/json; charset=utf-8`) and nothing
+/// else. `text/plain` is rejected, which is the point: it is the only type a web
+/// page can send without triggering a preflight.
 fn is_json_content_type(value: Option<&str>) -> bool {
     let Some(value) = value else { return false };
     let essence = value.split(';').next().unwrap_or("").trim();
     essence.eq_ignore_ascii_case("application/json")
 }
 
-/// Make a real HTTP request to this instance's MCP endpoint, for the app's "test this
-/// tool" affordance.
-///
-/// **Why this lives in Rust rather than a `fetch` in the webview:** the webview is a
-/// browser context, so any `fetch` to `127.0.0.1` carries an `Origin` and
-/// [`check_admission`] rejects exactly that. The app genuinely cannot call its own
-/// endpoint from the frontend — the defense working as designed — so issuing from here
-/// (no `Origin`, like a real client) is the only way to exercise the true path.
-///
-/// `simulate_browser_origin` attaches one so the UI can *demonstrate* the rejection.
-/// Returns the status and raw body either way: a refusal is a result to display.
+/// A real request to this instance's endpoint, for the app's "test this tool"
+/// affordance. **In Rust, not a webview `fetch`**: that carries an `Origin`, which
+/// [`check_admission`] rejects, so the frontend cannot call its own endpoint.
+/// `simulate_browser_origin` attaches one to *demonstrate* the rejection.
 #[tauri::command]
 pub async fn mcp_test_call(
     body: String,
@@ -169,12 +146,9 @@ pub async fn mcp_test_call(
     use hyper::Request;
     use hyper_util::rt::TokioIo;
 
-    // Refuse unless *this* instance is the one serving. `PORT` is set before the
-    // bind is attempted, so on an instance that lost the race it still names a
-    // live socket — belonging to a different app instance, whose `Store` is a
-    // different checkout's `tt.db`. Dialing it anyway would run a write tool
-    // against a board this window will never display, under a dialog that says
-    // the call succeeded.
+    // Refuse unless *this* instance serves: `PORT` is set before the bind, so on an
+    // instance that lost the race it names another checkout's live socket — and a
+    // write tool would land on a board this window never displays.
     if !SERVING.load(Ordering::Relaxed) {
         return Err("this instance is not serving MCP (another instance holds the port), so \
                     there is nothing here to test"
@@ -228,22 +202,17 @@ pub async fn mcp_test_call(
     }))
 }
 
-/// Bind this instance's MCP port and serve until the app exits, or do nothing
-/// if something already holds it.
-///
-/// Never returns an error to the caller: failing to serve MCP must not stop the
-/// app from starting.
+/// Bind and serve until the app exits, or do nothing if something holds the port.
+/// Never errors to the caller: failing to serve MCP must not stop startup.
 pub fn spawn(app: AppHandle, port: u16) {
     PORT.store(port, Ordering::Relaxed);
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = match StdTcpListener::bind(addr) {
         Ok(listener) => listener,
         Err(error) => {
-            // Each checkout claims its own port, so reaching here is a genuine
-            // collision — a stale instance, two checkouts claiming the same
-            // port, or a hand-set `mcp.port` — and this instance's sessions
-            // will silently talk to whoever holds it instead. Hence a warning;
-            // the module doc covers why it used to be routine.
+            // Each checkout claims its own port, so this is a genuine collision
+            // (a stale instance, a hand-set `mcp.port`) and this instance's
+            // sessions will silently talk to whoever holds it.
             tracing::warn!(
                 %addr,
                 %error,
@@ -256,21 +225,16 @@ pub fn spawn(app: AppHandle, port: u16) {
         tracing::warn!(%error, "mcp.http: could not set non-blocking; not serving");
         return;
     }
-    // Re-read the port from the socket rather than trusting the requested one.
-    // `port: 0` is a legal `u16` that settings accepts, and binding it succeeds
-    // on an OS-assigned ephemeral port — so without this the UI would advertise
-    // `127.0.0.1:0` as the endpoint to paste into `.mcp.json`, and
-    // `mcp_test_call`'s `port == 0` sentinel would refuse to reach a server that
-    // is in fact listening.
+    // From the socket, not the requested value: `port: 0` is a legal `u16` that
+    // binds an ephemeral port, so the UI would advertise `127.0.0.1:0` and
+    // `mcp_test_call`'s sentinel would refuse a server that is listening.
     if let Ok(bound) = listener.local_addr() {
         PORT.store(bound.port(), Ordering::Relaxed);
     }
 
-    // The dispatcher owns its own SQLite connection rather than sharing the
-    // app's `StoreState` mutex: MCP calls and UI reads then never block each
-    // other, and SQLite handles the concurrent connections. The cost is that a
-    // write here doesn't automatically refresh the UI, which is why a mutating
-    // call re-emits the snapshot through the app's own state below.
+    // Its own SQLite connection rather than the app's `StoreState` mutex, so MCP
+    // calls and UI reads never block each other. The cost: a write here doesn't
+    // refresh the UI, hence the re-emit below.
     let store = match Store::open_default() {
         Ok(store) => store,
         Err(error) => {
@@ -278,13 +242,10 @@ pub fn spawn(app: AppHandle, port: u16) {
             return;
         }
     };
-    // Age out stale calendar rows once at startup. Retention otherwise only runs
-    // as a side effect of a calendar *write*, and the push model this server
-    // exists to serve has no guaranteed writer: the pull collector is off by
-    // default, so a machine whose events all arrive over `calendar_set` sweeps
-    // nothing at all while nobody is pushing. Without this, an app reopened
-    // after a quiet week counts down to a meeting from the last day anything
-    // was written.
+    // Age out stale calendar rows at startup: retention otherwise runs only as a
+    // side effect of a write, and the push model has no guaranteed writer (the pull
+    // collector is off by default). Without it, an app reopened after a quiet week
+    // counts down to a meeting from whenever anything was last written.
     let _ = store.sweep_old_events(crate::store::now_ms());
 
     let dispatcher = Arc::new(Mutex::new(
@@ -301,13 +262,9 @@ pub fn spawn(app: AppHandle, port: u16) {
     });
 }
 
-/// Lets the `task_delete` MCP tool reach the same delete path the app's own UI
-/// uses — see [`tt_mcp::TaskHost`] for why the tool can't do this itself.
-///
-/// Runs on the connection's `spawn_blocking` thread, right for work that is entirely git
-/// subprocesses. It holds the dispatcher's mutex throughout, so a slow delete serializes
-/// other MCP calls behind it — acceptable for a single-user local server, where releasing
-/// the lock mid-call would let a concurrent tool see the store halfway through a delete.
+/// The same delete path the app's UI uses ([`tt_mcp::TaskHost`]), on the connection's
+/// `spawn_blocking` thread and holding the dispatcher's mutex throughout: a slow
+/// delete serializes other calls, which beats a half-deleted store being read.
 struct AppTaskHost {
     app: AppHandle,
 }
@@ -332,12 +289,10 @@ impl tt_mcp::TaskHost for AppTaskHost {
                 Ok(tt_mcp::TaskDeletion::Deleted { name, messages })
             }
             TaskDeleteOutcome::Blocked { name, blockers, messages } => {
-                // Serialize through the same `Blocker` the frontend dialog
-                // renders, so an agent reading the refusal and a human reading
-                // the dialog are looking at the same fields. One conversion for
-                // the whole list, so a serialization failure is one error here
-                // rather than a `null` silently taking a blocker's place in the
-                // refusal an agent acts on.
+                // The same `Blocker` the frontend dialog renders, so agent and
+                // human read the same fields. One conversion for the list, so a
+                // failure is an error here rather than a `null` standing in for a
+                // blocker in the refusal an agent acts on.
                 let blockers = serde_json::to_value(&blockers)
                     .ok()
                     .and_then(|value| value.as_array().cloned())
@@ -347,14 +302,10 @@ impl tt_mcp::TaskHost for AppTaskHost {
         }
     }
 
-    /// Hand the start off to the frontend by emitting [`TASK_START_EVENT`]. This does
-    /// *not* create the worktree here, even though that half is ordinary
-    /// blocking work. Creating it in Rust and asking the frontend to launch the agent
-    /// would fork the start path in two: the `+` flow already runs create → pending card
-    /// → `task_create` → pane → setup → agent with the serial-drain and
-    /// no-PTY-until-rendered rules baked in, and a second half-in-Rust path would restate
-    /// and drift from those. Hence the tool answers `"starting"` — emitting can't report
-    /// whether the worktree appeared.
+    /// Emit [`TASK_START_EVENT`] and return. The worktree is deliberately *not* made
+    /// here: the `+` flow already runs create → card → pane → setup → agent with the
+    /// serial-drain and no-PTY-until-rendered rules baked in, so a half-in-Rust path
+    /// would drift from them. Hence `"starting"` — emitting can't know the outcome.
     fn start_task(&self, req: tt_mcp::TaskStartRequest) -> Result<(), String> {
         let payload = TaskStartPayload {
             task_id: req.id,
@@ -375,20 +326,16 @@ impl tt_mcp::TaskHost for AppTaskHost {
     }
 }
 
-/// Lets the `preview_show` MCP tool put an agent-authored HTML artifact on
-/// screen. Emits and returns, like [`AppTaskHost::start_task`] — see
-/// [`tt_mcp::PreviewHost`] for why the hand-off has to work this way.
+/// Puts a file the agent points at on screen. Emits and returns, like
+/// [`AppTaskHost::start_task`] — see [`tt_mcp::PreviewHost`] for why.
 struct AppPreviewHost {
     app: AppHandle,
 }
 
 impl tt_mcp::PreviewHost for AppPreviewHost {
-    fn show(&self, artifact: tt_mcp::PreviewArtifact) -> Result<(), String> {
-        let payload = PreviewShowPayload {
-            path: artifact.path,
-            title: artifact.title,
-            session: artifact.session,
-        };
+    fn show(&self, file: tt_mcp::PreviewFile) -> Result<(), String> {
+        let payload =
+            PreviewShowPayload { path: file.path, title: file.title, session: file.session };
         tracing::info!(
             path = %payload.path,
             title = %payload.title,
@@ -448,29 +395,20 @@ struct FileOpenPayload {
     session: Option<String>,
 }
 
-/// Asks the frontend to display an HTML artifact in a folder's Preview pane.
+/// Asks the frontend to display a file in a folder's Preview pane.
 /// Consumed by `apps/client/src/lib/preview-artifact.ts`.
 pub const PREVIEW_SHOW_EVENT: &str = "preview://show";
 
-/// Names the app PTY session a request came from — `TT_SESSION_ID`, which `terminal.rs`
-/// stamps on every shell the app spawns. The plugin's `.mcp.json` sets it with Claude
-/// Code's `${TT_SESSION_ID:-}` expansion, so
-/// the MCP client fills it in from the agent's environment rather than the agent doing so:
-/// a value the model must remember to pass is one it can get wrong, and `preview_show`'s
-/// failure mode is a page in a different task's window, which looks like it worked.
-///
-/// Not authentication and grants nothing — [`check_admission`] is still the entire
-/// boundary, and a forged or absent session gets a pane, not access.
+/// The PTY session a request came from — `TT_SESSION_ID`, filled in by the MCP client
+/// via `.mcp.json`'s `${TT_SESSION_ID:-}` and never by the model: a value it must
+/// remember to pass is one it can get wrong, and the failure mode is a page in another
+/// task's window. Grants nothing; [`check_admission`] is the whole boundary.
 pub const SESSION_HEADER: &str = "x-tt-session";
 
-/// What this transport knows about the caller: the app PTY session it is running in, read
-/// off [`SESSION_HEADER`]. Unlike admission this grants nothing, so an **undecodable**
-/// header is treated as
-/// absent — the opposite of `Origin`'s presence-only rule, because a garbled value should
-/// cost the caller its preferred pane, not its call. Blank values collapse to "didn't say"
-/// inside [`tt_mcp::RequestContext::for_session`], which is the common case:
-/// `${TT_SESSION_ID:-}` expands to an empty header for every session started outside an
-/// app terminal.
+/// The caller's PTY session, off [`SESSION_HEADER`]. Granting nothing, an
+/// **undecodable** header reads as absent — the opposite of `Origin`'s presence rule:
+/// a garbled value should cost a preferred pane, not the call. Blank collapses to
+/// "didn't say", the common case outside an app terminal.
 fn caller_context(headers: &hyper::HeaderMap) -> tt_mcp::RequestContext {
     tt_mcp::RequestContext::for_session(headers.get(SESSION_HEADER).and_then(|v| v.to_str().ok()))
 }
@@ -482,9 +420,7 @@ fn caller_context(headers: &hyper::HeaderMap) -> tt_mcp::RequestContext {
 struct PreviewShowPayload {
     path: String,
     title: String,
-    /// The requesting agent's PTY session, when it identified itself. The
-    /// frontend routes on this and falls back to the path when it's `None` —
-    /// see `preview-artifact.ts`.
+    /// The frontend routes on this, falling back to the path when `None`.
     session: Option<String>,
 }
 
@@ -504,14 +440,10 @@ struct TaskStartPayload {
     prompt: String,
 }
 
-/// Accept connections until the task is aborted. One failed connection recycles
-/// the loop rather than taking the server down.
-///
-/// Load-bearing in a way it isn't for a typical server: returning from this loop takes
-/// this instance's MCP down while the socket stays bound, so nothing can notice. `accept`
-/// fails for per-connection, transient reasons (a peer RSTing between SYN and accept, a
-/// momentary fd exhaustion — plausible with a PTY per terminal plus subprocesses), so
-/// those are logged and retried. `SERVING` is cleared on the paths that really give up.
+/// Accept until aborted; a failed connection recycles the loop. Load-bearing here:
+/// returning leaves the socket bound with nothing serving, so nothing can notice.
+/// `accept` fails transiently (an RST between SYN and accept, fd exhaustion), so those
+/// retry; `SERVING` clears only where we give up.
 async fn accept_loop(app: AppHandle, listener: StdTcpListener, dispatcher: Arc<Mutex<Dispatcher>>) {
     let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
         tracing::warn!("mcp.http: listener could not join the runtime; not serving");
@@ -602,11 +534,9 @@ async fn serve_connection(
             let reply = tokio::task::spawn_blocking(move || {
                 let mut dispatcher = match dispatcher.lock() {
                     Ok(guard) => guard,
-                    // A panic in a previous call poisoned the lock. Recover the
-                    // guard rather than propagating: the dispatcher holds no
-                    // invariant that a panic could have half-broken (every tool
-                    // is a self-contained store call), and taking the server
-                    // down for the rest of the session is the worse failure.
+                    // A previous panic poisoned the lock. Recover rather than
+                    // propagate: every tool is a self-contained store call, so
+                    // there's no half-broken invariant, and losing MCP is worse.
                     Err(poisoned) => poisoned.into_inner(),
                 };
                 dispatcher.dispatch(&body, &ctx)
@@ -620,13 +550,10 @@ async fn serve_connection(
                     Ok(status_response(StatusCode::ACCEPTED, String::new()))
                 }
                 Ok(handled) => {
-                    // Refresh the UI only for a call that actually wrote.
-                    // `emit_snapshot_from_app` rebuilds the *entire* snapshot and takes
-                    // `StoreState`'s lock — the one this transport opened a second
-                    // connection to stay off — so per-read it would hand that back, and an
-                    // opening `initialize` + `tools/list` would pay for two rebuilds that
-                    // changed nothing. Detached and not awaited, since the rebuild is
-                    // blocking SQLite behind a mutex sync commands also hold.
+                    // Only for a call that wrote: the rebuild is the whole snapshot
+                    // and takes the `StoreState` lock this transport opened a second
+                    // connection to avoid. Detached, being blocking SQLite behind a
+                    // mutex sync commands also hold.
                     if handled.wrote {
                         let app = app.clone();
                         tauri::async_runtime::spawn_blocking(move || {
@@ -643,12 +570,9 @@ async fn serve_connection(
         }
     });
 
-    // `.timer(...)` is not optional decoration: hyper's default 30s
-    // header-read timeout is silently dropped (with only an internal warning)
-    // when no timer is installed, and without it a peer that opens a socket and
-    // never finishes its request headers holds a task and an fd forever. On a
-    // machine-wide singleton that is enough to take MCP down for every session
-    // on the box, so the timeout is what bounds a half-open connection.
+    // `.timer(...)` is load-bearing: with no timer installed, hyper silently drops
+    // its 30s header-read timeout, and a peer that never finishes its headers then
+    // holds a task and an fd forever. It is what bounds a half-open connection.
     let mut builder = hyper::server::conn::http1::Builder::new();
     builder
         .timer(hyper_util::rt::TokioTimer::new())
@@ -660,14 +584,10 @@ async fn serve_connection(
     }
 }
 
-/// Read the whole request body, refusing anything past [`MAX_BODY_BYTES`]
-/// **without buffering it first**.
-///
-/// The cap is enforced by `Limited`, which stops reading once the budget is exhausted,
-/// rather than by checking the length after `collect()` — collecting first would
-/// materialize an oversized upload in full and only then reject it. A read that fails for
-/// any other reason is [`Refusal::Unreadable`], not "too large": mislabelling a hangup
-/// 413 would make the refusal logs misleading.
+/// Refuses anything past [`MAX_BODY_BYTES`] **without buffering it first**: `Limited`
+/// stops reading at the budget, where checking length after `collect()` would
+/// materialize the whole upload and only then reject it. Any other failure is
+/// [`Refusal::Unreadable`] — a hangup logged as 413 would mislead.
 async fn read_body(body: hyper::body::Incoming) -> Result<String, Refusal> {
     use http_body_util::{BodyExt, Limited};
 
@@ -681,13 +601,10 @@ async fn read_body(body: hyper::body::Incoming) -> Result<String, Refusal> {
     }
 }
 
-/// A response with an explicit status, built without a fallible step.
-///
-/// `Response::builder()` defers every error to `.body()`, and the natural
-/// `.unwrap_or_else(|_| Response::new(body))` fallback yields a **200 OK** —
-/// which would quietly turn a security refusal into an acceptance. Setting the
-/// parts on an already-constructed response has no failure mode, so there is no
-/// error left to mishandle.
+/// An explicit status with no fallible step: `Response::builder()` defers errors to
+/// `.body()`, and the natural `.unwrap_or_else(|_| Response::new(body))` yields a
+/// **200 OK**, turning a security refusal into an acceptance. Setting parts on an
+/// already-built response cannot fail.
 fn status_response(status: hyper::StatusCode, body: String) -> hyper::Response<String> {
     let mut response = hyper::Response::new(body);
     *response.status_mut() = status;
@@ -744,11 +661,10 @@ mod tests {
         }
     }
 
-    /// The DNS-rebinding mitigation refuses on the header's *presence*: a real MCP client
-    /// never sends one, so there is nothing to allowlist, and an allowlist would mean
-    /// trusting an attacker-controlled string. The signature takes a bool rather than the
-    /// value so the old fail-open is unrepresentable — `.to_str().ok()` yields `None` for
-    /// a present-but-non-UTF8 `Origin`, which would have been admitted as absent.
+    /// Refuses on the header's *presence*: a real MCP client never sends one, so
+    /// there is nothing to allowlist and an allowlist would trust an
+    /// attacker-controlled string. A bool makes the old fail-open unrepresentable —
+    /// `.to_str().ok()` is `None` for a non-UTF8 `Origin`, once admitted as absent.
     #[test]
     fn a_present_origin_header_is_refused_whatever_its_value() {
         assert_eq!(
@@ -783,9 +699,7 @@ mod tests {
         assert_eq!(check_admission("POST", "/mcp", false, None), Err(Refusal::NotJson));
     }
 
-    /// Both browser defenses have to hold together: a page that omits
-    /// `Content-Type` still gets caught, and one that sets it still gets caught
-    /// by Origin. Neither check is load-bearing alone.
+    /// Both defenses hold together: neither check is load-bearing alone.
     #[test]
     fn a_browser_request_is_refused_by_whichever_check_it_trips() {
         // Simple request: no preflight, but text/plain.
@@ -819,10 +733,8 @@ mod tests {
         assert_eq!(check_admission("post", "/mcp", false, Some("application/json")), Ok(()));
     }
 
-    /// An OPTIONS preflight must not be answered with anything permissive —
-    /// there are no CORS headers on any response, so a browser preflight fails
-    /// closed. Pinned because "helpfully" adding CORS headers later would
-    /// silently undo the whole defense.
+    /// No response carries CORS headers, so a preflight fails closed. Pinned
+    /// because "helpfully" adding them later would undo the whole defense.
     #[test]
     fn preflight_is_not_specially_accommodated() {
         assert_eq!(check_admission("OPTIONS", "/mcp", true, None), Err(Refusal::BrowserOrigin));
@@ -839,7 +751,7 @@ mod tests {
         assert_eq!(Refusal::Unreadable.status(), 400);
     }
 
-    // --- caller identity (`preview_show` routing) ---
+    // --- caller identity (`preview_file` routing) ---
 
     fn headers(session: Option<&str>) -> hyper::HeaderMap {
         let mut headers = hyper::HeaderMap::new();
@@ -857,11 +769,9 @@ mod tests {
         );
     }
 
-    /// What every Claude Code session outside an app terminal sends, since
-    /// `${TT_SESSION_ID:-}` expands to nothing. It has to read as "no session",
-    /// or the artifact routes to a pane that cannot exist instead of falling
-    /// back to its path. The rule itself lives in `RequestContext::for_session`;
-    /// this pins that the transport actually goes through it.
+    /// What every session outside an app terminal sends, `${TT_SESSION_ID:-}`
+    /// expanding to nothing. It must read as "no session", or the file routes to a
+    /// pane that cannot exist instead of falling back to its path.
     #[test]
     fn an_empty_session_header_means_no_session() {
         assert_eq!(caller_context(&headers(Some(""))).session, None);
@@ -873,9 +783,8 @@ mod tests {
         assert_eq!(caller_context(&headers(None)).session, None);
     }
 
-    /// The inverse of `Origin`'s presence-only rule, deliberately: this header
-    /// grants nothing, so an undecodable value costs the caller its preferred
-    /// pane rather than its request.
+    /// The inverse of `Origin`'s presence rule: granting nothing, an undecodable
+    /// value costs a preferred pane rather than the request.
     #[test]
     fn an_undecodable_session_header_is_treated_as_absent() {
         let mut raw = hyper::HeaderMap::new();

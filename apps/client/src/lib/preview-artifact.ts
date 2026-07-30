@@ -2,74 +2,88 @@ import { z } from "zod";
 import { nextOpenFileNonce, requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { invoke, isTauri } from "@/lib/tauri";
 
-/**
- * Delivery for the MCP `preview_show` tool — the agent→human direction of the
- * Preview pane.
- *
- * The backend emits `preview://show` (`crates-tauri/tt-app/src/mcp_http.rs`),
- * and this routes it to the Preview pane of the folder owning the *calling
- * agent's terminal*, as the same `requestAgentboardNav` request the UI would
- * make. The file's own location is only consulted when the caller didn't
- * identify itself — see `folderForSession` and `folderForArtifact`.
- *
- * Structured exactly like `lib/task-start.ts`, for the reasons documented
- * there: subscribed from `App.tsx` because Agentboard's screen doesn't exist
- * until first visit, and handed off through the one-shot nav mailbox so the
- * request survives that.
- */
+// Delivery for the MCP `preview_file` tool: `preview://show` (`mcp_http.rs`) →
+// the Preview pane of the folder owning the *calling agent's terminal*. The
+// file's location is consulted only when the caller didn't identify itself.
+// Structured like `lib/task-start.ts`, for the reasons documented there.
 
-/** Mirrors `PreviewShowPayload` in `mcp_http.rs`. Validated, not trusted — it
- * crosses the IPC boundary like every other event payload. */
+/** Validated, not trusted — it crosses the IPC boundary. */
 const PreviewShowPayloadSchema = z.object({
   path: z.string(),
   title: z.string(),
-  /** The PTY session the requesting agent runs in, when it identified itself
-   * (`X-TT-Session`, from `TT_SESSION_ID`). The routing key — see
-   * `folderForSession`. */
+  /** The caller's PTY session (`X-TT-Session`) — the routing key. */
   session: z.string().nullish(),
 });
 
 export type PreviewShowPayload = z.infer<typeof PreviewShowPayloadSchema>;
 
-/** What the pane renders: the file, its label, and a nonce so showing the
- * *same* artifact again still re-reads it (an agent that rewrote the file and
- * called `preview_show` a second time must not be a no-op). */
-export type ArtifactRequest = { path: string; title: string; nonce: number };
+/** The `nonce` is why re-showing a rewritten file isn't a no-op. */
+export type PreviewRequest = { path: string; title: string; nonce: number };
 
-/** One artifact read off disk — mirrors `ArtifactDoc` in `preview.rs`. */
-const ArtifactDocSchema = z.object({
+/** Mirrors `PreviewDoc` in `preview.rs`. `kind` comes from the extension, in
+ * Rust, so it can't flip between reloads of a file still being written. */
+const PreviewDocSchema = z.object({
   path: z.string(),
-  html: z.string(),
+  kind: z.enum(["html", "markdown", "text"]),
+  content: z.string(),
 });
 
-export type ArtifactDoc = z.infer<typeof ArtifactDocSchema>;
+export type PreviewDoc = z.infer<typeof PreviewDocSchema>;
 
-/** A `file://` URL for an absolute path, for handing an artifact to the real
- * browser. `encodeURI` alone isn't enough: it leaves `#` and `?` intact, and
- * either one truncates the rest of the path into a fragment or query —
- * `/tmp/plan #2.html` would open `/tmp/plan%20`. */
+/** A path the *user* typed, in the agent's own shape so nothing downstream
+ * forks. Absolute-only, like the tool: there is no cwd to resolve against. */
+export function typedPreviewRequest(raw: string): PreviewRequest | null {
+  const path = raw.trim();
+  if (!path.startsWith("/")) return null;
+  const name = path.split("/").filter(Boolean).at(-1) ?? path;
+  return { path, title: name, nonce: nextOpenFileNonce() };
+}
+
+/** `encodeURI` alone leaves `#` and `?`, either of which truncates the path
+ * into a fragment or query — `/tmp/plan #2.html` would open `/tmp/plan%20`. */
 export function fileUrl(path: string) {
   return `file://${encodeURI(path).replaceAll("#", "%23").replaceAll("?", "%3F")}`;
 }
 
-/** Read an artifact's HTML for the pane's iframe. Re-invoked on reload. */
-export const previewReadArtifact = (path: string) =>
-  invoke("preview_read_artifact", { path }, { schema: ArtifactDocSchema, timeoutMs: 10_000 });
+/** Re-invoked on reload: manual, and per `preview://file-changed`. */
+export const previewReadFile = (path: string) =>
+  invoke("preview_read_file", { path }, { schema: PreviewDocSchema, timeoutMs: 10_000 });
 
-/**
- * The folder that owns the session an agent is running in — the artifact's
- * destination, resolved from the caller rather than from the file.
- *
- * A session id is the rail's own id for a pane (`SessionData.id`, the PTY's
- * `term_id`, and the `TT_SESSION_ID` stamped into that shell's environment), so
- * this is an exact lookup with no prefix matching and no ambiguity: the pane
- * opens beside the terminal that asked for it, wherever the file happens to
- * live.
- *
- * Undefined when the caller sent no session, or one no live folder claims — a
- * session from an app instance that has since restarted, or a pane closed
- * between the call and its delivery. Both fall back to the path.
- */
+/** Refcounted in Rust, so two panes on one file share a watch. */
+export const previewWatchFile = (path: string) => invoke("preview_watch_file", { path });
+export const previewUnwatchFile = (path: string) => invoke("preview_unwatch_file", { path });
+
+/** One event per debounce batch, so a pane filters for its own path. */
+const PreviewChangedSchema = z.object({ paths: z.array(z.string()) });
+
+/** The hot-reload half: the agent rewrites the page and the pane repaints.
+ * Returns an unsubscribe; a no-op outside Tauri. */
+export function onPreviewFileChanged(path: string, cb: () => void): () => void {
+  if (!isTauri()) return () => {};
+  let cancelled = false;
+  let unlisten: (() => void) | undefined;
+  void (async () => {
+    const { listen } = await import("@tauri-apps/api/event");
+    const sub = await listen<unknown>("preview://file-changed", (event) => {
+      const parsed = PreviewChangedSchema.safeParse(event.payload);
+      if (!parsed.success) {
+        console.error("preview://file-changed: unexpected payload", parsed.error);
+        return;
+      }
+      if (parsed.data.paths.includes(path)) cb();
+    });
+    if (cancelled) sub();
+    else unlisten = sub;
+  })();
+  return () => {
+    cancelled = true;
+    unlisten?.();
+  };
+}
+
+/** The destination, resolved from the caller rather than the file: a session id
+ * is the pane's own id (`term_id`, `TT_SESSION_ID`), so this is exact. Undefined
+ * when no live folder claims it — a restarted app, a closed pane. */
 export function folderForSession(
   repos: RepoData[],
   session: string | null | undefined,
@@ -85,25 +99,10 @@ export function folderForSession(
   return undefined;
 }
 
-/**
- * The tracked folder an artifact belongs to: the folder whose directory is the
- * longest prefix of the file's path.
- *
- * **The fallback, not the rule** — `folderForSession` answers first. This is a
- * guess from the file's location, and it is wrong in the most ordinary case
- * there is: an agent writing a throwaway page into a scratch directory outside
- * every checkout matches no folder here at all, and the artifact then surfaces
- * in whichever folder the user is looking at. It stays for the callers that
- * genuinely have no session to route on — a Claude Code session started from a
- * plain terminal rather than one of the app's — where a slightly-wrong pane
- * still beats not showing the page at all.
- *
- * Longest-prefix rather than first-match because worktree tasks nest *inside*
- * their checkout (`<repo>/.claude/worktrees/<task>/`), so a file in a task
- * matches both the task's folder and the main checkout's — and the task is the
- * one whose terminal the agent is sitting in.
- */
-export function folderForArtifact(
+/** **The fallback, not the rule** — a guess, wrong in the ordinary case: a
+ * scratch page under no checkout surfaces in whichever folder is on screen.
+ * Longest-prefix, because worktree tasks nest inside their checkout. */
+export function folderForPath(
   repos: RepoData[],
   path: string,
 ): { dir: string; name: string } | undefined {
@@ -118,16 +117,14 @@ export function folderForArtifact(
   return best;
 }
 
-/** Build the Agentboard request for a validated payload. `folderDir` is the
- * folder to show it in — the caller's own session first, the file's location
- * only if that can't answer, and `null` when neither does (only the screen can
- * resolve that last fallback). Pure, so the routing is testable without Tauri. */
-export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) {
+/** `folderDir`: the caller's session first, the path only if that can't answer,
+ * `null` when neither does — only the screen resolves that last fallback. */
+export function showFileNav(payload: PreviewShowPayload, repos: RepoData[]) {
   return {
-    kind: "show-artifact" as const,
+    kind: "show-file" as const,
     folderDir:
       folderForSession(repos, payload.session)?.dir ??
-      folderForArtifact(repos, payload.path)?.dir ??
+      folderForPath(repos, payload.path)?.dir ??
       null,
     path: payload.path,
     title: payload.title,
@@ -135,15 +132,8 @@ export function showArtifactNav(payload: PreviewShowPayload, repos: RepoData[]) 
   };
 }
 
-/**
- * Subscribe to `preview://show` for the lifetime of the app. `reposNow` reads
- * the current repo list at delivery time rather than closing over it, so an
- * artifact shown before the first snapshot doesn't resolve against a stale
- * empty array — which now only costs it the *preferred* folder, not the show.
- *
- * Returns an unsubscribe. A no-op outside Tauri (browser dev has no backend to
- * emit).
- */
+/** `reposNow` reads the repo list at delivery time rather than closing over it,
+ * so a file shown before the first snapshot loses only its *preferred* folder. */
 export function subscribePreviewShow(reposNow: () => RepoData[], onRouted: () => void): () => void {
   if (!isTauri()) return () => {};
   let unlisten: (() => void) | undefined;
@@ -152,15 +142,13 @@ export function subscribePreviewShow(reposNow: () => RepoData[], onRouted: () =>
     const { listen } = await import("@tauri-apps/api/event");
     const sub = await listen<unknown>("preview://show", (event) => {
       const parsed = PreviewShowPayloadSchema.safeParse(event.payload);
-      // A malformed payload means the Rust struct and this schema drifted —
-      // drop it loudly rather than opening a pane on nothing.
+      // Drifted from the Rust struct — drop it loudly, don't open an empty pane.
       if (!parsed.success) {
         console.error("preview://show: unexpected payload", parsed.error);
         return;
       }
-      requestAgentboardNav(showArtifactNav(parsed.data, reposNow()));
-      // Bring Agentboard forward *after* the request, never by registering a
-      // nav listener here — see the same note in `task-start.ts`.
+      requestAgentboardNav(showFileNav(parsed.data, reposNow()));
+      // After the request, never via a nav listener — see `task-start.ts`.
       onRouted();
     });
     if (cancelled) sub();

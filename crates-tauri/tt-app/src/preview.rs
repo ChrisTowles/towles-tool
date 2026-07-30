@@ -8,13 +8,26 @@
 //! `preview_write_feedback` stages the annotated PNG outside any repo (same reasoning as
 //! `tt_tasks::pasted`) so the frontend can name its path in a prompt.
 //!
-//! `preview_read_artifact` serves the *other* direction, the agent→human one the
-//! `preview_show` MCP tool opens. Reading the file here rather than shipping bytes in the
+//! `preview_read_file` serves the *other* direction, the agent→human one the
+//! `preview_file` MCP tool opens. Reading the file here rather than shipping bytes in the
 //! `preview://show` event is what makes reload work — the pane re-invokes this and picks
 //! up whatever the agent wrote since, and an event bus never carries megabytes.
+//!
+//! Reload is *hot*, not just a button: `preview_watch_file` puts one `MultiFileNotifier`
+//! behind whatever paths are on screen and emits [`PREVIEW_FILE_CHANGED_EVENT`], so an
+//! agent rewriting the file it asked to show repaints the pane instead of leaving a stale
+//! page beside a finished turn. Deliberately **not** `ide_watch_files`, whose every path
+//! is confined to a checkout dir — a previewed file is routinely a scratch page under no
+//! tracked folder at all, which is the ordinary case rather than the exotic one.
+
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, State};
+use tt_agentboard::fs_notify::MultiFileNotifier;
 use tt_tasks::pasted::{self, PastedImage};
+
+use crate::ide::MAIN_WINDOW_LABEL;
 
 /// The preview surface's rectangle in CSS pixels (`getBoundingClientRect`
 /// relative to the viewport), plus the `devicePixelRatio` that scales it into
@@ -164,41 +177,132 @@ fn argb_to_straight_rgba(cropped: CroppedArgb) -> (u32, u32, Vec<u8>) {
     (cropped.width, cropped.height, buf)
 }
 
-/// One agent-authored HTML artifact, ready to drop into an iframe `srcdoc`.
+/// One file read for the preview pane, with the surface it should render on.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ArtifactDoc {
+pub struct PreviewDoc {
     pub path: String,
-    pub html: String,
+    /// `html` | `markdown` | `text` — see [`preview_kind`].
+    pub kind: &'static str,
+    pub content: String,
 }
 
-/// Largest artifact the pane will inline. Mirrors `ARTIFACT_MAX_BYTES` in
-/// `tt-mcp`, which is where an agent's oversized path is normally caught; this
-/// copy guards the paths that don't come through the tool at all — a reload
-/// after the file grew, or a future in-app "open artifact" affordance.
-const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// Largest file the pane will inline. Mirrors `PREVIEW_MAX_BYTES` in `tt-mcp`,
+/// which is where an agent's oversized path is normally caught; this copy guards
+/// the paths that don't come through the tool at all — a reload after the file
+/// grew, or a future in-app "open in preview" affordance.
+const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Read an HTML artifact for the preview pane to render.
+/// Which of the pane's three surfaces a file renders on, from its extension.
+///
+/// Extension only, never sniffed content: the frontend needs a *stable* answer
+/// across reloads — a file an agent is still writing would otherwise flip
+/// surfaces mid-edit, remounting the frame and losing scroll position — and the
+/// extension is what the agent chose deliberately.
+fn preview_kind(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    match ext.as_str() {
+        "html" | "htm" => "html",
+        "md" | "markdown" | "mdx" => "markdown",
+        _ => "text",
+    }
+}
+
+/// Read a file for the preview pane to render.
 ///
 /// Deliberately *not* served over Tauri's asset protocol, whose scope would
-/// have to be widened to every path on disk. An artifact is a single
+/// have to be widened to every path on disk. An HTML artifact is a single
 /// self-contained page (the same contract Claude's own artifacts have), so it
-/// needs no relative asset resolution and `srcdoc` costs nothing.
+/// needs no relative asset resolution and `srcdoc` costs nothing; Markdown and
+/// text are rendered by the frontend from this same string.
 #[tauri::command]
-pub async fn preview_read_artifact(path: String) -> Result<ArtifactDoc, String> {
+pub async fn preview_read_file(path: String) -> Result<PreviewDoc, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let meta = std::fs::metadata(&path).map_err(|e| format!("can't read {path}: {e}"))?;
         if !meta.is_file() {
             return Err(format!("{path} is not a file"));
         }
-        if meta.len() > ARTIFACT_MAX_BYTES {
+        if meta.len() > PREVIEW_MAX_BYTES {
             return Err(format!("{path} is too large to preview ({} bytes)", meta.len()));
         }
-        let html = std::fs::read_to_string(&path).map_err(|e| format!("can't read {path}: {e}"))?;
-        Ok(ArtifactDoc { path, html })
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| format!("can't read {path}: {e}"))?;
+        let kind = preview_kind(&path);
+        Ok(PreviewDoc { path, kind, content })
     })
     .await
-    .map_err(|e| format!("artifact read task failed: {e}"))?
+    .map_err(|e| format!("preview read task failed: {e}"))?
+}
+
+/// Emitted when a file open in a Preview pane changes on disk — the agent
+/// rewriting the page it asked to show. Carries every path in the debounce
+/// batch; each pane re-reads its own if it's named.
+pub const PREVIEW_FILE_CHANGED_EVENT: &str = "preview://file-changed";
+
+/// The live disk watches behind open Preview panes: **one**
+/// [`MultiFileNotifier`] for all of them (inotify instances are a scarce
+/// per-user resource — see its own doc), with per-path refcounts inside it, so
+/// two panes on the same file share one watch and the last close drops it.
+///
+/// One notifier for every pane rather than one per checkout, as `ide.rs` keys
+/// them: a previewed file has no owning checkout to key on.
+#[derive(Default)]
+pub struct PreviewWatches(Mutex<Option<MultiFileNotifier>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewChangedPayload {
+    paths: Vec<String>,
+}
+
+/// Start watching `path` for on-disk changes, delivered as
+/// [`PREVIEW_FILE_CHANGED_EVENT`]. Pair with [`preview_unwatch_file`] when the
+/// pane stops showing it. A failed watch is reported so the pane can fall back
+/// to its manual reload button rather than silently going cold.
+#[tauri::command]
+pub fn preview_watch_file(
+    app: AppHandle,
+    watches: State<PreviewWatches>,
+    path: String,
+) -> Result<(), String> {
+    let mut slot = watches.0.lock().unwrap();
+    let notifier = match slot.as_mut() {
+        Some(n) => n,
+        None => {
+            let app = app.clone();
+            let created = MultiFileNotifier::new(move |paths| {
+                let paths: Vec<String> =
+                    paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                tracing::debug!(files = ?paths, "preview files changed on disk");
+                let _ = app.emit_to(
+                    MAIN_WINDOW_LABEL,
+                    PREVIEW_FILE_CHANGED_EVENT,
+                    PreviewChangedPayload { paths },
+                );
+            })
+            .map_err(|e| format!("cannot start watching {path}: {e}"))?;
+            slot.insert(created)
+        }
+    };
+    notifier.add(std::path::Path::new(&path)).map_err(|e| format!("cannot watch {path}: {e}"))
+}
+
+/// Drop one reference to a preview file watch (see [`preview_watch_file`]).
+/// Unmatched calls — a watch that never started, browser dev — are a no-op.
+#[tauri::command]
+pub fn preview_unwatch_file(watches: State<PreviewWatches>, path: String) {
+    let mut slot = watches.0.lock().unwrap();
+    let Some(notifier) = slot.as_mut() else {
+        return;
+    };
+    notifier.remove(std::path::Path::new(&path));
+    if notifier.is_empty() {
+        *slot = None;
+    }
 }
 
 /// Stage an annotated preview capture as a PNG file and return its absolute

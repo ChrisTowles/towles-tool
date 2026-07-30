@@ -26,20 +26,13 @@ const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
 /// truncated with an ellipsis so a huge payload can't bloat tt.db.
 const CALL_LOG_ARGS_MAX: usize = 400;
 
-/// The app-side half of `task_delete`.
+/// The app-side half of `task_delete`. Panes and worktree are invisible from this
+/// Tauri-free crate, so the transport injects `tt-app`'s `task::
+/// delete_task_blocking` and this crate keeps only the tool's shape.
 ///
-/// Deleting a task means removing its live panes and its worktree on disk as
-/// well as its board row, and neither of the first two is visible from this
-/// Tauri-free crate — the PTYs live in the app's terminal state, and the
-/// guarded worktree teardown needs the agentboard engine to close the folder's
-/// sessions. So the serving transport injects an implementation
-/// (`tt-app`'s `task::delete_task_blocking`) and this crate keeps only the
-/// tool's shape.
-///
-/// A dispatcher with no host **refuses `task_delete` outright** rather than
-/// falling back to deleting the row: a row-only delete is precisely the
-/// half-delete this tool exists to stop, and doing it silently would strand
-/// the worktree on disk with nothing left on the board pointing at it.
+/// A dispatcher with no host **refuses outright** rather than deleting the row:
+/// that row-only delete is the half-delete this tool exists to stop, and it would
+/// strand the worktree with nothing on the board pointing at it.
 pub trait TaskHost: Send {
     /// Close the board task `id`, deleting everything bound to it (panes,
     /// worktree) while the row survives with `outcome` recorded — `None`
@@ -62,28 +55,28 @@ pub trait TaskHost: Send {
     fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
 }
 
-/// The app-side half of `preview_show` — the agent→human direction of the Preview
+/// The app-side half of `preview_file` — the agent→human direction of the Preview
 /// pane, whose human→agent half (dev server, annotated screenshot) already existed.
-/// An agent that finished something explainable writes one self-contained HTML file
-/// and asks for it on screen, instead of PTY scrollback that dies with the worktree.
+/// An agent that finished something explainable points at a file and asks for it on
+/// screen, instead of PTY scrollback that dies with the worktree.
 ///
 /// A **hand-off** like [`TaskHost::start_task`]: opening the pane means resolving a
 /// session to its folder, invisible from this Tauri-free crate, so the tool answers
 /// `"showing"` rather than claiming the user saw it.
 ///
-/// **Routing is by caller, not by path** ([`PreviewArtifact::session`]). By path — the
+/// **Routing is by caller, not by path** ([`PreviewFile::session`]). By path — the
 /// longest tracked-folder prefix — is wrong in the *ordinary* case: an agent's natural
-/// place for a throwaway page is a scratch dir matching no folder, so the artifact
+/// place for a throwaway page is a scratch dir matching no folder, so the file
 /// surfaced in whichever task was on screen.
 pub trait PreviewHost: Send {
-    /// Put `artifact` on screen in the Preview pane of the folder owning the
+    /// Put `file` on screen in the Preview pane of the folder owning the
     /// requesting agent's session.
-    fn show(&self, artifact: PreviewArtifact) -> Result<(), String>;
+    fn show(&self, file: PreviewFile) -> Result<(), String>;
 }
 
-/// A validated artifact to display — see [`PreviewHost`].
-pub struct PreviewArtifact {
-    /// Absolute path to an existing HTML file, checked by the dispatcher.
+/// A validated file to display — see [`PreviewHost`].
+pub struct PreviewFile {
+    /// Absolute path to an existing readable file, checked by the dispatcher.
     pub path: String,
     /// What to label the pane with; the file name when the caller gave none.
     pub title: String,
@@ -105,7 +98,7 @@ pub struct PreviewArtifact {
 /// *authored*. A hand-off for the same reason, hence `"opening"`.
 ///
 /// Routed by caller first, path second ([`FileToOpen::session`]) — see
-/// [`PreviewArtifact::session`]. Here the path fallback is a *good* guess: a file
+/// [`PreviewFile::session`]. Here the path fallback is a *good* guess: a file
 /// names a checkout, so the longest tracked-folder prefix is usually the task.
 pub trait EditorHost: Send {
     fn open_file(&self, request: FileToOpen) -> Result<(), String>;
@@ -129,7 +122,7 @@ pub struct FileToOpen {
 
 /// Validate a `file_open` path into `(absolute path, is_dir)`.
 ///
-/// Absolute and canonical for [`validate_artifact_path`]'s reasons: no working
+/// Absolute and canonical for [`validate_preview_path`]'s reasons: no working
 /// directory to resolve against, and one spelling per file.
 fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
     let path = std::path::Path::new(raw.trim());
@@ -147,26 +140,26 @@ fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
     Ok((resolved.to_string_lossy().into_owned(), is_dir))
 }
 
-/// Largest artifact `preview_show` will accept, checked from the same `stat`
+/// Largest file `preview_file` will accept, checked from the same `stat`
 /// that proves the file exists. The frontend inlines the whole file, so an
 /// accidental multi-hundred-MB path (a log, a core dump, a build artifact with
 /// an `.html` name) must fail as an answer to the agent rather than as a frozen
 /// window.
-const ARTIFACT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Validate a `preview_show` path into the absolute path to show.
+/// Validate a `preview_file` path into the absolute path to show.
 ///
 /// Every rejection here is something the agent can fix and would otherwise
 /// discover as a blank pane: a relative path (this server serves every session
-/// on the machine and has no idea what any of them consider "here"), a file
-/// that isn't there, a directory, a non-HTML file, or one too big to inline.
+/// on the machine), a file that isn't there, a directory, or one too big to
+/// inline. **File *type* is not one of them** — the pane renders HTML as a page,
+/// Markdown as prose and anything else as text, so refusing an extension would
+/// only refuse the ordinary case of pointing at a log or a diff.
 ///
-/// The accepted path comes back **canonical**. Chiefly so the pane and the
-/// agent agree on one spelling of the file (a second `preview_show` of the same
-/// page via a `./` or a symlinked prefix is the same artifact, and shows as
-/// one), and secondarily because the path is still what routes a request that
-/// carried no session — see [`PreviewArtifact::session`].
-fn validate_artifact_path(raw: &str) -> Result<String, String> {
+/// The accepted path comes back **canonical**, so the pane and the agent agree
+/// on one spelling of the file — and because the path is still what routes a
+/// request that carried no session (see [`PreviewFile::session`]).
+fn validate_preview_path(raw: &str) -> Result<String, String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
         return Err("missing required argument: path".to_string());
@@ -177,22 +170,15 @@ fn validate_artifact_path(raw: &str) -> Result<String, String> {
              the machine, so it has no working directory to resolve it against"
         ));
     }
-    let ext =
-        path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
-    if ext != "html" && ext != "htm" {
-        return Err(format!(
-            "{raw:?} isn't an HTML file — write the artifact as a single self-contained .html page"
-        ));
-    }
     let meta = std::fs::metadata(path).map_err(|e| format!("can't read {raw:?}: {e}"))?;
     if !meta.is_file() {
         return Err(format!("{raw:?} is not a file"));
     }
-    if meta.len() > ARTIFACT_MAX_BYTES {
+    if meta.len() > PREVIEW_MAX_BYTES {
         return Err(format!(
-            "{raw:?} is {} bytes — the preview inlines the whole file, so keep an artifact under {} bytes",
+            "{raw:?} is {} bytes — the preview inlines the whole file, so keep it under {} bytes",
             meta.len(),
-            ARTIFACT_MAX_BYTES
+            PREVIEW_MAX_BYTES
         ));
     }
     // Keep the caller's path when canonicalization fails — it already passed
@@ -201,15 +187,15 @@ fn validate_artifact_path(raw: &str) -> Result<String, String> {
     Ok(resolved.to_string_lossy().into_owned())
 }
 
-/// The pane label for an artifact: the caller's title, else the file's own
+/// The pane label for a previewed file: the caller's title, else the file's own
 /// name — never an empty header, which reads as a broken pane.
-fn artifact_title(path: &str, title: Option<&str>) -> String {
+fn preview_title(path: &str, title: Option<&str>) -> String {
     match title.map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) => t.to_string(),
         None => std::path::Path::new(path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Artifact".to_string()),
+            .unwrap_or_else(|| "Preview".to_string()),
     }
 }
 
@@ -273,7 +259,7 @@ pub struct Dispatcher {
     /// and any Tauri-free driver, where `task_delete` refuses.
     task_host: Option<Box<dyn TaskHost>>,
     /// Injected by the serving transport — see [`PreviewHost`]. `None` in
-    /// tests and any Tauri-free driver, where `preview_show` refuses.
+    /// tests and any Tauri-free driver, where `preview_file` refuses.
     preview_host: Option<Box<dyn PreviewHost>>,
     /// Injected by the serving transport — see [`EditorHost`]. `None` in tests
     /// and any Tauri-free driver, where `file_open` refuses.
@@ -287,7 +273,7 @@ pub struct Dispatcher {
 }
 
 /// What the transport knows about a caller that the JSON-RPC body cannot say — today,
-/// which of the app's terminals the agent sits in, since `preview_show` has to put a
+/// which of the app's terminals the agent sits in, since `preview_file` has to put a
 /// page on screen in *the caller's own* task.
 ///
 /// The app stamps every PTY with `TT_SESSION_ID` (`tt_agentboard::procenv`), and the
@@ -428,7 +414,7 @@ impl Dispatcher {
     }
 
     /// Inject the app-side preview host — see [`PreviewHost`]. The serving
-    /// transport in `tt-app` is the only caller; without it `preview_show`
+    /// transport in `tt-app` is the only caller; without it `preview_file`
     /// refuses.
     pub fn with_preview_host(mut self, host: Box<dyn PreviewHost>) -> Dispatcher {
         self.preview_host = Some(host);
@@ -624,7 +610,7 @@ impl Dispatcher {
             "task_summary" => self.task_summary(args, now_ms),
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
-            "preview_show" => self.preview_show(args, ctx),
+            "preview_file" => self.preview_file(args, ctx),
             "file_open" => self.file_open(args, ctx),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
@@ -666,20 +652,16 @@ impl Dispatcher {
         }
     }
 
-    /// The push-model write path: replace one calendar's events for one local day,
-    /// leaving every other calendar and day untouched.
+    /// Replace one calendar's events for one local day, leaving every other
+    /// calendar and day untouched.
     ///
-    /// **The day window is derived here, never taken from the payload.** The caller
-    /// may name a `day` (local `YYYY-MM-DD`), else it is the day containing `now_ms`;
-    /// either way the bounds come from [`Store::local_day_bounds`], so a client cannot
-    /// widen the delete beyond one day.
-    ///
-    /// **`source` must name a calendar the user actually configured**, checked against
-    /// `collectors.calendar.sources`. Two things go wrong without it: a hallucinated id
-    /// mints a lane nothing will write again, whose rows still feed `calendar_next` and
-    /// no sweep removes — the orphan-lane failure v9's migration destroyed data to
-    /// avoid; and it bounds a hijacked session, since `{source, events: []}` *clears* a
-    /// day. [`EventInput`] has no `source` field either.
+    /// **The day window is derived here, never taken from the payload** — bounds
+    /// always come from [`Store::local_day_bounds`], so a client cannot widen the
+    /// delete past one day. **`source` must name a configured calendar**
+    /// (`collectors.calendar.sources`): a hallucinated id mints an orphan lane that
+    /// still feeds `calendar_next` and no sweep removes — what v9's migration
+    /// destroyed data to avoid — and the check bounds a hijacked session, since
+    /// `{source, events: []}` *clears* a day.
     fn calendar_set(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let source = args
             .get("source")
@@ -885,13 +867,11 @@ impl Dispatcher {
     /// changes, commits that reached no branch or remote, or a foreign process on its
     /// claimed ports comes back as `status: "refused"` with the reasons, having
     /// deleted **nothing**. `force: true` is the deliberate override.
-    /// Start an existing board task — mint its worktree and launch an agent on its
-    /// goal.
-    ///
-    /// Every guard here is a store read the dispatcher can do alone, and each exists
-    /// because the failure is otherwise silent or destructive: starting a task that
-    /// already holds a worktree would abandon the running one, and starting a closed
-    /// task would resurrect finished work.
+    /// Start an existing board task — mint its worktree, launch an agent on its
+    /// goal. Every guard is a store read the dispatcher does alone, and each exists
+    /// because the failure is silent or destructive: starting a task that already
+    /// holds a worktree abandons the running one; a closed one resurrects finished
+    /// work.
     fn task_start(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -981,15 +961,15 @@ impl Dispatcher {
         }))
     }
 
-    /// Put an HTML artifact the agent wrote on screen in the app's Preview
-    /// pane — see [`PreviewHost`] for why this direction exists at all.
+    /// Put a file on screen in the app's Preview pane — see [`PreviewHost`] for
+    /// why this direction exists at all.
     ///
     /// Everything checkable is checked here rather than in the host, because
     /// every failure mode of this tool is silent by nature: a bad path shows
     /// the user an empty pane and tells the agent nothing. So the path is
-    /// validated down to "an HTML file of a sane size that exists right now",
-    /// and only then handed off.
-    fn preview_show(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
+    /// validated down to "a readable file of a sane size that exists right
+    /// now", and only then handed off.
+    fn preview_file(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
         let raw = args
             .get("path")
             .and_then(Value::as_str)
@@ -998,10 +978,10 @@ impl Dispatcher {
         // Availability before diagnosis, same as `task_start`: "this tool
         // can't work here" is a different answer from "that path is wrong".
         if self.preview_host.is_none() {
-            return Err("preview_show is unavailable: no preview host is attached".to_string());
+            return Err("preview_file is unavailable: no preview host is attached".to_string());
         }
-        let path = validate_artifact_path(raw)?;
-        let title = artifact_title(&path, args.get("title").and_then(Value::as_str));
+        let path = validate_preview_path(raw)?;
+        let title = preview_title(&path, args.get("title").and_then(Value::as_str));
 
         // Report how it was routed. An agent that sees `"routed": "path"` is
         // being told its request carried no session — the pane may open
@@ -1012,7 +992,7 @@ impl Dispatcher {
         let routed = if ctx.session.is_some() { "session" } else { "path" };
         let host =
             self.preview_host.as_ref().expect("checked above, before the path was validated");
-        host.show(PreviewArtifact {
+        host.show(PreviewFile {
             path: path.clone(),
             title: title.clone(),
             session: ctx.session.clone(),
@@ -1024,7 +1004,7 @@ impl Dispatcher {
     /// Reveal a file or folder in the caller's own Files pane — see
     /// [`EditorHost`].
     ///
-    /// Validated here rather than in the host for `preview_show`'s reason: a
+    /// Validated here rather than in the host for `preview_file`'s reason: a
     /// path that isn't there would otherwise be a pane that never appears and an
     /// agent told nothing.
     fn file_open(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
@@ -1313,12 +1293,12 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
-            "name": "preview_show",
-            "description": "Show an HTML page you wrote on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first — anywhere you like, including a scratch directory outside the repo — then call this with its absolute path. The pane opens in *your* terminal's task: the app knows which session you are calling from, so where the file lives has no bearing on where it appears. It must be a single self-contained .html file: it renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read. Overwriting the same path and calling again updates the pane.",
+            "name": "preview_file",
+            "description": "Show a file on screen in the app's Preview pane, beside the terminal you are running in — the way to hand back something worth *looking at* rather than reading as terminal output. Works for any file, artifacts included: a Markdown file renders as formatted prose, a self-contained HTML artifact renders as the page it is, and anything else (a log, a diff, JSON, source) renders as text. Good uses: a plan or design laid out for a decision, a table of what a sweep found, a before/after or diagram, a summary of a long investigation. Write the file first — anywhere you like, including a scratch directory outside the repo — then call this with its absolute path. The pane opens in *your* terminal's task: the app knows which session you are calling from, so where the file lives has no bearing on where it appears. The pane hot-reloads: it watches the file and repaints whenever you rewrite it, so you can keep editing without calling this again. An HTML artifact renders in an isolated frame with no network, so inline all CSS/JS and embed images as data: URIs — a CDN link or an external stylesheet simply won't load. Returns `status: \"showing\"`; the pane opens asynchronously, so say what you put there rather than assuming it was read.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute path to the .html file to show. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own. This names the file to render, not the task to render it in." },
+                    "path": { "type": "string", "description": "Absolute path to the file to show — Markdown, HTML, or any text file. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own. This names the file to render, not the task to render it in." },
                     "title": { "type": "string", "description": "Short label for the pane header, e.g. \"Migration plan\". Defaults to the file name." },
                 },
                 "required": ["path"],
@@ -1326,7 +1306,7 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "file_open",
-            "description": "Open a file (or folder) that already exists on disk in the app's Files pane, beside the terminal you are running in — so the human can read it without leaving the app or scrolling your output. Use it to put the thing you are talking about on screen: the file you just changed, the config you want a decision about, the test that fails. For a page *you* wrote to explain something, use preview_show instead. The pane opens in your terminal's task; the path names the file to reveal, not the task to reveal it in, and it must be inside a folder the app tracks. Returns `status: \"opening\"` — the pane opens asynchronously, so say what you put there rather than assuming it was read.",
+            "description": "Open a file (or folder) that already exists on disk in the app's Files pane, beside the terminal you are running in — so the human can read it without leaving the app or scrolling your output. Use it to put the thing you are talking about on screen: the file you just changed, the config you want a decision about, the test that fails. To *render* a file instead of revealing it in the tree — Markdown as prose, an HTML page you wrote as the page it is — use preview_file. The pane opens in your terminal's task; the path names the file to reveal, not the task to reveal it in, and it must be inside a folder the app tracks. Returns `status: \"opening\"` — the pane opens asynchronously, so say what you put there rather than assuming it was read.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1433,7 +1413,7 @@ mod tests {
     }
 
     /// [`call_tool`] from a caller the transport identified — the shape every
-    /// real `preview_show` arrives in.
+    /// real `preview_file` arrives in.
     fn call_tool_as(
         dispatcher: &mut Dispatcher,
         name: &str,
@@ -1533,7 +1513,7 @@ mod tests {
                 "task_summary",
                 "task_delete",
                 "task_start",
-                "preview_show",
+                "preview_file",
                 "file_open",
                 "calendar_today",
                 "calendar_next",
@@ -1542,7 +1522,7 @@ mod tests {
         );
     }
 
-    // preview_show
+    // preview_file
 
     /// Every `(path, title, session)` a fake preview host was handed.
     type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String, Option<String>)>>>;
@@ -1553,7 +1533,7 @@ mod tests {
             shown: Shown,
         }
         impl PreviewHost for FakePreviewHost {
-            fn show(&self, artifact: PreviewArtifact) -> Result<(), String> {
+            fn show(&self, artifact: PreviewFile) -> Result<(), String> {
                 self.shown.lock().unwrap().push((artifact.path, artifact.title, artifact.session));
                 Ok(())
             }
@@ -1564,7 +1544,7 @@ mod tests {
     }
 
     /// Write `name` into `dir` and return its absolute path — canonical, since
-    /// that is the shape `validate_artifact_path` hands on, and a temp dir is
+    /// that is the shape `validate_preview_path` hands on, and a temp dir is
     /// behind a symlink on macOS (`/var` → `/private/var`).
     fn artifact_file(dir: &tempfile::TempDir, name: &str, body: &str) -> String {
         let path = dir.path().join(name);
@@ -1573,14 +1553,14 @@ mod tests {
     }
 
     #[test]
-    fn preview_show_hands_the_artifact_to_the_host() {
+    fn preview_file_hands_the_artifact_to_the_host() {
         let (mut dispatcher, shown) = with_preview_host();
         let dir = tempfile::tempdir().unwrap();
         let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
 
         let result = call_tool(
             &mut dispatcher,
-            "preview_show",
+            "preview_file",
             json!({ "path": path, "title": "The plan" }),
         );
 
@@ -1592,14 +1572,14 @@ mod tests {
     /// The routing key comes off the transport, never the arguments — an agent
     /// that never mentions its session still gets its own pane.
     #[test]
-    fn preview_show_routes_by_the_callers_session() {
+    fn preview_file_routes_by_the_callers_session() {
         let (mut dispatcher, shown) = with_preview_host();
         let dir = tempfile::tempdir().unwrap();
         let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
 
         let result = call_tool_as(
             &mut dispatcher,
-            "preview_show",
+            "preview_file",
             json!({ "path": path }),
             &RequestContext::for_session(Some("s64abebd44298447d")),
         );
@@ -1613,14 +1593,14 @@ mod tests {
     /// the difference between falling back to the path and routing to no pane
     /// at all.
     #[test]
-    fn preview_show_treats_a_blank_session_as_absent() {
+    fn preview_file_treats_a_blank_session_as_absent() {
         let (mut dispatcher, shown) = with_preview_host();
         let dir = tempfile::tempdir().unwrap();
         let path = artifact_file(&dir, "plan.html", "<h1>plan</h1>");
 
         let result = call_tool_as(
             &mut dispatcher,
-            "preview_show",
+            "preview_file",
             json!({ "path": path }),
             &RequestContext::for_session(Some("   ")),
         );
@@ -1640,11 +1620,11 @@ mod tests {
 
         call_tool_as(
             &mut dispatcher,
-            "preview_show",
+            "preview_file",
             json!({ "path": path }),
             &RequestContext::for_session(Some("s-first")),
         );
-        call_tool(&mut dispatcher, "preview_show", json!({ "path": path }));
+        call_tool(&mut dispatcher, "preview_file", json!({ "path": path }));
 
         let shown = shown.lock().unwrap();
         assert_eq!(shown[0].2.as_deref(), Some("s-first"));
@@ -1654,12 +1634,12 @@ mod tests {
     /// A pane with no header reads as broken, so an untitled artifact is
     /// labelled with its own file name rather than nothing.
     #[test]
-    fn preview_show_falls_back_to_the_file_name_as_the_title() {
+    fn preview_file_falls_back_to_the_file_name_as_the_title() {
         let (mut dispatcher, shown) = with_preview_host();
         let dir = tempfile::tempdir().unwrap();
         let path = artifact_file(&dir, "findings.html", "<p>hi</p>");
 
-        let result = call_tool(&mut dispatcher, "preview_show", json!({ "path": path }));
+        let result = call_tool(&mut dispatcher, "preview_file", json!({ "path": path }));
 
         assert_eq!(result["title"], "findings.html");
         assert_eq!(shown.lock().unwrap()[0].1, "findings.html");
@@ -1668,19 +1648,18 @@ mod tests {
     /// Availability is answered before the path is: an agent shouldn't have to
     /// fix its arguments to discover the tool can't work here at all.
     #[test]
-    fn preview_show_without_a_host_refuses() {
+    fn preview_file_without_a_host_refuses() {
         let mut dispatcher = dispatcher();
-        let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": "/nope" }));
+        let message = call_tool_err(&mut dispatcher, "preview_file", json!({ "path": "/nope" }));
         assert!(message.contains("no preview host"), "{message}");
     }
 
     /// Every one of these would otherwise land as a blank pane and a cheerful
     /// success — the whole reason validation lives in the dispatcher.
     #[test]
-    fn preview_show_refuses_a_path_it_cannot_render() {
+    fn preview_file_refuses_a_path_it_cannot_render() {
         let dir = tempfile::tempdir().unwrap();
         let html = artifact_file(&dir, "ok.html", "<p>ok</p>");
-        let text = artifact_file(&dir, "notes.md", "# notes");
         let relative = "docs/plan.html";
         let missing = dir.path().join("gone.html").to_string_lossy().into_owned();
         let directory = dir.path().to_string_lossy().into_owned();
@@ -1688,37 +1667,50 @@ mod tests {
         for (path, expected) in [
             (relative, "must be absolute"),
             (missing.as_str(), "can't read"),
-            (text.as_str(), "isn't an HTML file"),
-            (directory.as_str(), "isn't an HTML file"),
+            (directory.as_str(), "is not a file"),
         ] {
             let (mut dispatcher, shown) = with_preview_host();
-            let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": path }));
+            let message = call_tool_err(&mut dispatcher, "preview_file", json!({ "path": path }));
             assert!(message.contains(expected), "for {path}: {message}");
             assert!(shown.lock().unwrap().is_empty(), "nothing should reach the host for {path}");
         }
 
         // …and the control: the valid one goes through.
         let (mut dispatcher, _) = with_preview_host();
-        call_tool(&mut dispatcher, "preview_show", json!({ "path": html }));
+        call_tool(&mut dispatcher, "preview_file", json!({ "path": html }));
+    }
+
+    /// The extension check is gone on purpose — Markdown and plain text are
+    /// first-class in the pane now, so pointing at either must not be refused.
+    #[test]
+    fn preview_file_accepts_markdown_and_plain_text() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["notes.md", "run.log", "Makefile"] {
+            let (mut dispatcher, shown) = with_preview_host();
+            let path = artifact_file(&dir, name, "hello");
+            let result = call_tool(&mut dispatcher, "preview_file", json!({ "path": path }));
+            assert_eq!(result["status"], "showing", "for {name}");
+            assert_eq!(shown.lock().unwrap().len(), 1, "for {name}");
+        }
     }
 
     /// The frontend inlines the whole file, so an oversized one must come back
     /// as an answer the agent can act on, not a frozen window.
     #[test]
-    fn preview_show_refuses_an_oversized_artifact() {
+    fn preview_file_refuses_an_oversized_file() {
         let (mut dispatcher, _) = with_preview_host();
         let dir = tempfile::tempdir().unwrap();
-        let path = artifact_file(&dir, "huge.html", &"x".repeat(ARTIFACT_MAX_BYTES as usize + 1));
+        let path = artifact_file(&dir, "huge.html", &"x".repeat(PREVIEW_MAX_BYTES as usize + 1));
 
-        let message = call_tool_err(&mut dispatcher, "preview_show", json!({ "path": path }));
-        assert!(message.contains("keep an artifact under"), "{message}");
+        let message = call_tool_err(&mut dispatcher, "preview_file", json!({ "path": path }));
+        assert!(message.contains("keep it under"), "{message}");
     }
 
     /// Showing something changes no store row — the transport must not repaint
     /// the board for it.
     #[test]
-    fn preview_show_is_not_a_writing_tool() {
-        assert!(!tool_writes("preview_show"));
+    fn preview_file_is_not_a_writing_tool() {
+        assert!(!tool_writes("preview_file"));
     }
 
     // file_open

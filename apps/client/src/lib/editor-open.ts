@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { nextOpenFileNonce, requestAgentboardNav, type RepoData } from "@/lib/agentboard";
-import { folderForArtifact, folderForSession } from "@/lib/preview-artifact";
+import { folderForPath, folderForSession } from "@/lib/preview-artifact";
 import { isTauri } from "@/lib/tauri";
 
 /**
@@ -29,7 +29,7 @@ export function openFileNav(payload: FileOpenPayload, repos: RepoData[]) {
     kind: "open-file" as const,
     folderDir:
       folderForSession(repos, payload.session)?.dir ??
-      folderForArtifact(repos, payload.path)?.dir ??
+      folderForPath(repos, payload.path)?.dir ??
       null,
     path: payload.path,
     isDir: payload.isDir,

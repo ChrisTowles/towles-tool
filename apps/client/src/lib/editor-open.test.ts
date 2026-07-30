@@ -64,10 +64,7 @@ describe("openFileNav", () => {
   });
 
   it("leaves the folder unresolved when nothing claims the path", () => {
-    const nav = openFileNav(
-      { path: "/etc/hosts", isDir: false, line: null, session: null },
-      REPOS,
-    );
+    const nav = openFileNav({ path: "/etc/hosts", isDir: false, line: null, session: null }, REPOS);
     expect(nav.folderDir).toBeNull();
   });
 
