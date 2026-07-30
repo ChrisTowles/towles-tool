@@ -23,12 +23,14 @@ tools without manual `claude mcp add` setup:
   and its terminal scrollback, so the record is still there when the user comes
   to confirm the work. It records only — closing the task and removing the
   worktree stay the user's call.
-- **Preview** — `preview_show`. Puts an HTML page you wrote on screen in the
+- **Preview** — `preview_file`. Puts a file you wrote on screen in the
   app's Preview pane, beside the terminal you're running in: the way to hand
   back something worth *looking at* — a plan laid out for a decision, a table of
-  what a sweep found, a diagram — rather than as terminal output. Write a single
-  self-contained `.html` file (it renders in a sandboxed frame, so inline the
-  CSS/JS and embed images as data: URIs), then call it with the absolute path.
+  what a sweep found, a diagram — rather than as terminal output. Any file works:
+  Markdown renders as prose, a self-contained `.html` artifact as the page it is
+  (in a sandboxed frame, so inline the CSS/JS and embed images as data: URIs),
+  anything else as text. Call it with the absolute path. The pane hot-reloads —
+  rewrite the file and what's on screen follows, no second call.
   Write it wherever you like, a scratch dir outside the repo included: the pane
   opens in *your* terminal's task, because the request carries the
   `TT_SESSION_ID` of the shell you're running in (see `.mcp.json` below), not
@@ -71,8 +73,8 @@ in the shared settings file.
 `TT_SESSION_ID` is stamped by the app on every terminal it spawns, and Claude
 Code expands `${VAR:-default}` in `.mcp.json` headers — so each session
 identifies its own terminal without the model having to know or pass anything.
-`preview_show` and `file_open` route on it. Outside an app terminal the variable is unset, the
-header arrives empty, and the tool falls back to matching the artifact's path
+`preview_file` and `file_open` route on it. Outside an app terminal the variable is
+unset, the header arrives empty, and the tool falls back to matching the file's path
 against tracked folders. It is not a credential and grants nothing: request
 admission (loopback + no `Origin` + JSON `Content-Type`) is still the whole
 guard.

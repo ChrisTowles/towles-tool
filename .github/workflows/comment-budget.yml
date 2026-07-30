@@ -1,11 +1,12 @@
 name: Comment budget
 
-# Judges only the lines a PR adds (`cargo xtask comment-budget`'s default). The
-# repo stands at ~510 errors repo-wide, so a whole-repo gate would fail every PR
-# from day one and be switched off within a week; the added-lines one passes
-# today and holds the line while the backlog drains. `--all` is the backlog view,
-# run by hand — never wire it to `pull_request`, and never lower the budgets to
-# make it pass.
+# Judges every file a PR touches, whole (`--whole-files`) — not only the lines it
+# adds. Touch a file and you own its comment volume: that is the point, and it is
+# what drains the backlog instead of merely holding it. The cost is real and
+# deliberate — a one-line fix in a prose-heavy legacy file means cleaning that
+# file first, so budget for it. `--all` is the whole-repo backlog view, run by
+# hand — never wire it to `pull_request`, and never lower the budgets to make
+# either one pass.
 #
 # It is its own workflow rather than a step in `rust`/`frontend` because it is
 # the one gate spanning both: `rust` is paths-ignored for apps/client and
@@ -35,4 +36,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The PR's own base, not `main` — a stacked PR is judged against what it
       # actually branched from.
-      - run: cargo xtask comment-budget --new-from-merge-base "${{ github.base_ref || 'main' }}"
+      - run: cargo xtask comment-budget --whole-files --new-from-merge-base "${{ github.base_ref || 'main' }}"

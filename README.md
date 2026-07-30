@@ -27,90 +27,19 @@ Two reasons:
 
 ## Features: in towles-tool, not yet in Claude Desktop
 
-Checked on 2026-07-19 against Claude Desktop **1.22209.0** (built 2026-07-16),
-using the published [docs](https://code.claude.com/docs/en/desktop) plus the
-installed bundle. Biggest gap first. Read the overlap list under it too: most
-of what this repo does, Desktop now does as well.
+Biggest gap first, checked against Claude Desktop 1.22209.0: **handing work to an
+agent is one gesture** (the Agentboard `+` takes a half-formed thought, a pasted
+screenshot and `#` to attach an issue, optionally through an editable prompt
+improver, and mints the worktree); **the fleet is one screen** (every repo, task
+and agent in one rail, with a standby board ranking blocked agents across repos);
+**a task's panes tile beside its terminals** — diff, file tree, a live dev-server
+preview you can draw on, and a native GPU pane; **attention is modelled, not
+guessed** (PTY-first agent status, needs-you synthesis, notifications); and
+**where your day went is answerable** from an on-disk event log — focused time,
+gestures per screen, interruptions, and a keyboard-vs-mouse habit score.
 
-- **Handing work to an agent is one gesture.** The Agentboard `+` takes a
-  half-formed thought, a pasted screenshot, and `#` to attach one of the repo's
-  open issues so the goal points at what it's for. Submit it as typed, or press
-  a prompt improver first — Direct, Plan and Brainstorm ship as defaults, each
-  an instruction you can edit — and claude rewrites the goal with the repo and
-  the image in view, proposing the title and branch. That lands in the fields,
-  editable, with Undo. Submitting mints the worktree, renders its `.env`, runs
-  the repo's setup and starts Claude on that goal, all before you look away.
-  From then on the rail is the monitor: agent state, which model is running it
-  (Fable or Sonnet), uncommitted diff, linked PR. Teardown is the same gesture
-  in reverse, and it refuses while the task still holds work only it can prove.
-
-  ![The Agentboard + flow: a rough goal plus a pasted screenshot, an optional prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](docs/images/demos/agentboard.gif)
-
-- **A file editor Claude Code can see into.** `tt-ide` makes the app an IDE-protocol server, so the Monaco editor in the Files pane is wired to the Claude Code session running in that folder's terminal. Highlight lines and the selection streams live into the session — the editor shows `L17-18 live to claude`, the CLI shows `2 lines selected` — and `@ send` turns it into an `@file#L17-18` reference in the prompt. Editing and saving go the same way. Desktop only takes context from its own panes, via spot edits, "Attach as context", and `@`-mention autocomplete; it cannot see a selection in an editor beside it.
-
-  ![Selecting lines in the app's Monaco editor, the selection streaming live into the Claude Code session beside it, sending it as an @file#L17-18 mention, and Claude answering against exactly those lines](docs/images/demos/file-editor.gif)
-
-  The same pane also bridges rust-analyzer over Tauri IPC for hover and
-  completions on Rust source, and a `path:line` link printed in a terminal
-  opens the file at that line. That LSP bridge is still a spike — it reports
-  `starting`/`ready`/`failed` in a chip, which is there to decide whether it
-  earns its keep.
-
-- **Cross-repo work board.** Board is a kanban of tasks spanning every watched
-  repo. Each task links 0..N issues, 0..N PRs, and usually a worktree,
-  and done rolls up from GitHub PR state. Desktop has nothing like it. Its
-  "tasks pane" holds background subagents inside a single session, and no
-  cross-repo surface exists.
-
-  ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](docs/images/demos/board.gif)
-
-- **Always-on local event log.** Every subprocess and user action lands as
-  JSONL at `<data_dir>/telemetry/events-<date>.jsonl`, rotated daily, tagged
-  with `tt.task`, queryable with `jq`, and never sent anywhere. Desktop's
-  OpenTelemetry surface is more configurable than this repo's, but it exports
-  to a collector you run. I found no sign of an on-disk log that is on by
-  default, though I read strings in the bundle rather than watching it run.
-
-  ![The Telemetry screen: today's records, filtered down to process.spawn spans, then one record opened to its full JSON including tt.task](docs/images/demos/telemetry.gif)
-
-- **Guarded task lifecycle.** `tt task new` in, `tt task rm`/`clean` out, with
-  a setup hook, a port lifecycle and a removal guard hung off either end (the
-  whole cycle is under [Worktree tasks](#worktree-tasks)). Desktop creates
-  worktrees and auto-archives them on PR merge or close, but has none of those
-  three — in particular no removal guard for a branch that never had a PR.
-
-  ![Diagram: tt task new creating a worktree, rendering its .env, running TT_TASK_SETUP and starting the agent; then tt task rm checking for unlanded work before teardown](docs/images/demos/lifecycle.gif)
-
-- **Per-task port isolation.** Both tools put worktrees in
-  `.claude/worktrees/`. The difference is the `${tt:port A-B}` claim: every
-  task renders its own `.env`, so ten tasks run ten dev servers without
-  colliding. Desktop's `.worktreeinclude` copies gitignored files verbatim,
-  which hands every worktree the same port.
-
-  ![Diagram: three worktrees copying one .env all collide on port 3000, while a ${tt:port} pool claim renders each its own port](docs/images/demos/ports.gif)
-
-- **Squash-merge-aware landing detection.** The guard above rests on it: only
-  the branch's cumulative diff against base can prove a squash merge landed.
-  Desktop auto-archives a worktree once its PR merges or closes, which covers
-  the common case but never has to answer whether a branch with no PR still
-  holds work.
-
-  ![Diagram: after a squash merge, reachability, SHA lookup and per-commit patch identity all report unmerged; only the cumulative diff against base proves the work landed](docs/images/demos/landed.gif)
-
-### Overlap: things Desktop already does
-
-Written down so this repo stops claiming them. Desktop ships automatic git
-worktrees at the same `.claude/worktrees/` path with auto-archive on PR merge,
-a real `node-pty` terminal, a file pane with editing and save-conflict
-detection, file-by-file diff review with batched per-line comments, PR CI
-monitoring with auto-fix and auto-merge, GUI plugin and MCP management,
-scheduled tasks, and a browser pane with element selection. On PR automation
-and telemetry configurability it is ahead of this repo.
-
-What Desktop lacks is a shorter list than it first appears. It runs
-interactive only, with no `--print` and no headless entry point, so there is no
-equivalent of `tt collect`. The Linux beta also has no
-Computer Use, no dictation, and no self-update.
+The full tour, and the honest overlap list of what Desktop now does too:
+**[docs/FEATURES.md](docs/FEATURES.md)**.
 
 ## What this is (and is not)
 
@@ -124,42 +53,33 @@ Software 3.0 framing is the one I keep returning to: generation is cheap,
 makes checking fast.
 
 So every feature answers one question: does it widen that channel — more
-precision going in, more understanding coming out? Making the agent better at
-its job is out of scope, because I could never afford to A/B-test whether it
-worked, and anything cheaper is vibe testing under ten scenarios. That kind of
-feature arrives disguised as a helpful checkbox: launch in plan mode, then
-implement, review, rebase, open the PR, merge. That's a harness wearing a
-checkbox, and it belongs in a Claude Code slash command
-([`packages/core`](packages/core/README.md)), invoked on purpose.
-
-The few prompts here are all one shape: ask claude a question, get JSON back,
-act on it. Each is a string you edit in Settings, not a pipeline compiled into
-the app.
+precision going in, more understanding coming out? Making the agent better at its
+job is out of scope: I could never afford to A/B-test whether it worked, and
+anything cheaper is vibe testing under ten scenarios. That kind of feature
+arrives disguised as a helpful checkbox — plan mode, then implement, review,
+rebase, open the PR — which is a harness wearing a checkbox, and belongs in a
+Claude Code slash command ([`packages/core`](packages/core/README.md)). The few
+prompts here are one shape: ask claude a question, get JSON back, act on it, each
+a string you edit in Settings rather than a pipeline compiled in.
 
 That channel has two halves, and they're the two things this repo owns:
 
-- **Handing work in.** A new task should cost one gesture: goal → branch →
-  isolated worktree with its own ports, agent already started on the goal.
-  That's `tt task` and the Agentboard `+` button.
+- **Handing work in.** One gesture: goal → branch → isolated worktree with its
+  own ports, agent already started. That's `tt task` and the Agentboard `+`.
 - **Understanding the work coming out.** Which session needs you *right now*,
-  what each one did, what it cost in tokens, and a real terminal to drop into
-  when it's your turn — without re-reading every line an agent wrote.
+  what each did, what it cost, and a real terminal to drop into when it's your
+  turn — without re-reading every line an agent wrote.
 
-The target is the space between a **dark factory**, where agents do the work
-and you never see the code, and an **IDE**, where you see every line. One agent
-fits in an IDE; a fleet doesn't fit in your head. That's the mental load every
-feature here is trying to reduce.
+The target is the space between a **dark factory**, where agents work and you
+never see the code, and an **IDE**, where you see every line. One agent fits in an
+IDE; a fleet doesn't fit in your head.
 
 ## Four media
 
-Four ways of showing things here, because none of them covers everything:
-
-- **HTML/GUI** — dashboards, queues, lists.
-- **Terminal** — a real PTY, where the agents actually work.
-- **Git repos** — storage, and how you hand work to someone else.
-- **Bevy** — 3D, realistic environments.
-
-Bevy is the newest and least built out.
+Four ways of showing things, because none covers everything: **HTML/GUI**
+(dashboards, queues, lists), **terminal** (a real PTY, where the agents work),
+**git repos** (storage, and how you hand work to someone else), and **Bevy** (3D,
+realistic environments — the newest and least built out).
 
 ## Critical goal: Solari, running natively inside the app
 
@@ -239,85 +159,23 @@ cargo run -p tt-cli -- task ls
 ## Worktree tasks
 
 Tasks are the "handing work in" half made concrete: branch-named git worktrees
-nested inside the checkout at `.claude/worktrees/<name>/` — Claude Code's
-native worktree location — one per parallel line of work, each with its own
-rendered `.env` (port-pool claims, inherited secrets) so concurrent agents
-never collide on ports or state. Any plain git checkout becomes task-capable
-with `tt task init`; tasks are ephemeral — created for a branch, removed when
-it merges.
+nested inside the checkout at `.claude/worktrees/<name>/`, one per parallel line
+of work, each with its own rendered `.env` (port-pool claims, inherited secrets)
+so concurrent agents never collide on ports or state. Any plain git checkout
+becomes task-capable with `tt task init`; tasks are ephemeral — created for a
+branch, removed when it merges.
 
-The whole lifecycle is one gesture in and one command out, and every entry
-point — CLI, Claude Code, or the app — runs the same machinery:
-
-```mermaid
-flowchart TB
-    subgraph gesture["⚡ One gesture in"]
-        direction LR
-        CLI["<b>tt task new</b> &quot;goal&quot;"]
-        APP["Agentboard <b>+</b> button"]
-        CLI ~~~ APP
-    end
-
-    gesture --> OPS(["one shared machinery<br/>(the tt-tasks crate)"])
-    OPS --> setup
-
-    subgraph setup["🔧 Setup — automatic"]
-        direction TB
-        WT["branch-named worktree at<br/>.claude/worktrees/&lt;branch&gt;"]
-        ENV["render .env from .env.example —<br/>each #36;#123;tt:port A–B#125; claim gets a port<br/><b>no other task holds</b>"]
-        DEP["TT_TASK_SETUP runs<br/>(npm install, migrations, …)"]
-        WT --> ENV --> DEP
-    end
-
-    setup --> fleet
-
-    subgraph fleet["🚀 Parallel agents, zero collisions"]
-        direction LR
-        T1["task A<br/>PORT=3000"]
-        T2["task B<br/>PORT=3001"]
-        T3["task C<br/>PORT=3002"]
-        T1 ~~~ T2 ~~~ T3
-    end
-
-    fleet --> MERGE(["PR merges"])
-    MERGE --> RMCMD["<b>tt task rm</b> / <b>tt task clean</b>"]
-    RMCMD --> teardown
-
-    subgraph teardown["🛡️ Teardown — guarded"]
-        direction TB
-        GUARD{"unmerged commits or<br/>uncommitted changes?"}
-        SAFE["TT_TASK_TEARDOWN runs ·<br/>worktree removed · ports freed ·<br/>board row closed"]
-        BLOCK["removal refused —<br/>nothing is ever lost"]
-        GUARD -- "no" --> SAFE
-        GUARD -- "yes" --> BLOCK
-    end
+```sh
+tt task new "Add a thing" --repo myrepo   # board task + worktree + .env, ready to work
+tt task ls                                # the fleet: branches, dirty state, ports
+tt task rm feat-thing                      # guarded removal — refuses to lose work
+tt task clean                              # sweep every merged or gone task
 ```
 
-The port claims are the part that makes ten concurrent tasks boring instead of
-painful. `.env.example` is the template: declare a `${tt:port A-B}` pool claim
-once (plus `${tt:task-name}` and `${tt:var NAME}` for pass-throughs), and every
-task renders its own `.env` from it with ports no sibling task holds — a repo
-that can't carry tokens in its `.env.example` uses the
-`.claude/task-env.template` sidecar as the template instead. The render is
-idempotent: when the template changes, `tt task env <name>` (or
-`tt task env primary` for the main checkout) re-renders the `.env` while
-keeping the ports the task already claimed, and a gitignored `.env.local`
-overrides any rendered value by hand. Nothing in the repo ever hardcodes a
-port.
-
-Teardown runs the same way in reverse — `TT_TASK_TEARDOWN`, worktree removed,
-ports freed, board row closed — but only past the guard in the diagram above:
-removal refuses while a task still holds uncommitted changes or commits that
-never reached base, and only content-based proof authorizes `git branch -D`.
-That proof has to be cumulative, because a squash-merged branch *looks*
-unmerged to reachability and per-commit patch identity alike; the `landed`
-module in `tt-tasks` is where that lives.
-
-Manage tasks with `tt task` (`init`, `new`, `ls`, `env`, `rm`, `clean`) —
-never raw `git worktree`. Claude Code's own worktree surfaces
-(`claude --worktree`, the app's parallel sessions) make their own worktrees
-and are not tasks. The Agentboard rail shows the whole fleet and can create a
-task from its `+` button. Full convention and rules: [CLAUDE.md](CLAUDE.md).
+One gesture in, one command out, and every entry point — CLI, Claude Code's MCP
+tools, or the app's `+` — runs the same machinery. The guide:
+**[docs/TASKS-GUIDE.md](docs/TASKS-GUIDE.md)**; the conventions behind it:
+**[docs/WORKTREE-TASKS.md](docs/WORKTREE-TASKS.md)**.
 
 ## Claude Code plugin
 
@@ -357,45 +215,22 @@ The CLI binary is `tt`. Run any command with `--help` for its flags.
 
 ## Crates
 
-Cargo workspace with Tauri-free shared crates plus the CLI and Tauri shells:
-
-- `crates/tt-config` — settings (shared on disk with the TypeScript CLI) and the single resolver for every mutable state path.
-- `crates/tt-exec` — process/command wrappers.
-- `crates/tt-journal` — journal/note logic and date-token path templating.
-- `crates/tt-git` — git/GitHub helpers (branch names, PR content, issue parsing).
-- `crates/tt-claude-sessions` — session token accounting, ranked waste insights, and the per-session drill-down behind the app's Claude Sessions screen.
-- `crates/tt-doctor` — dependency/environment checks behind the app's Doctor screen.
-- `crates/tt-tasks` — the worktree-task convention: `${tt:...}` env-template renderer with port-pool claims, task naming/layout, removal guards, and the shared `ops` orchestration behind `tt task` and the app.
-- `crates/tt-claude-code` — shared Claude Code transcript parsing (session JSONL, titles, token usage, model table).
-- `crates/tt-store` — the data-hub SQLite store (events, board tasks with issue/PR links + task bindings, issues, PR status, collector freshness).
-- `crates/tt-collect` — collectors that fill the store: calendar via `claude -p`, issues/PRs via `gh`, a watched Slack DM via the Slack Web API.
-- `crates/tt-agentboard` — watched-repo and agent-session tracking behind the Agentboard screen.
-- `crates/tt-ide` — Claude Code IDE-protocol core: the MCP/JSON-RPC dispatcher and lockfile schema the app uses to pose as an IDE that Claude Code sessions connect to.
-- `crates/tt-vt` — libghostty-vt terminal-state engine driving the app's canvas terminals (needs zig 0.15.x).
-- `crates/tt-jarvis` — the Bevy scene behind the native pane, rendered into a surface it did not create (Bevy from [slyedoc/bevy](https://github.com/slyedoc/bevy)).
-- `crates/tt-mcp` — the transport-free JSON-RPC MCP server over the store: board tasks (`task_list`, `task_status`, `task_create`, `task_summary`, `task_start`, `task_delete`), `preview_show` (put an HTML page the agent wrote on screen in the app's Preview pane) and the calendar family (`calendar_today`, `calendar_next`, `calendar_set`). Each app instance serves it over loopback HTTP on its own `${tt:port 8787-8986}` claim (`TT_MCP_PORT`, stamped into the terminals it spawns so a session reaches the app it belongs to; `${TT_MCP_PORT:-8787}` otherwise) — app closed means no MCP for that checkout. See the crate's trust-boundary doc.
-- `crates/tt-telemetry` — telemetry: the `tracing` subscriber/writer for the
-  local JSONL event log every subprocess and user action lands in, plus the
-  reader behind the app's Telemetry screen.
-- `crates/tt-update` — GitHub Releases update check for the running app.
-- `crates-cli/tt-cli` — the `clap` CLI (binary `tt`).
-- `crates-tauri/tt-app` — the Tauri 2 desktop shell; `apps/client` is its React + Vite frontend.
-- `crates-tauri/tt-pane` — puts `tt-jarvis`'s output on screen: a native compositor surface pinned to a rectangle of the app window.
+A Cargo workspace of Tauri-free shared crates (`crates/`) plus the CLI
+(`crates-cli/tt-cli`, binary `tt`) and the Tauri shells (`crates-tauri/tt-app`,
+`crates-tauri/tt-pane`) with `apps/client` as the React frontend. Nothing in
+`crates/` may depend on `tauri`, so the logic stays unit-testable without the app
+shell. Crate by crate: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Lineage
 
-This is a Rust rewrite of the original TypeScript `towles-tool`, now archived
-and renamed to
-[`towles-tool-tmux`](https://github.com/ChrisTowles/towles-tool-tmux) — its
-tmux-based AgentBoard is kept there as a reference example. The repo structure
-follows the [Yaak](https://github.com/mountain-loop/yaak) golden template — a
-Cargo workspace with Tauri-free shared crates, a `clap` CLI, and a React + Vite
-frontend (see [ATTRIBUTION.md](ATTRIBUTION.md)). The binary is **`tt`**; the
-`ttr` → `tt` cutover from the TypeScript CLI happened 2026-07-13 — hard
-cutover, no `ttr` alias left behind (see [docs/CUTOVER.md](docs/CUTOVER.md)).
-Features were ported over selectively, and that port is complete —
-[docs/MIGRATION.md](docs/MIGRATION.md) is the historical record of what came
-across and what was dropped.
+A Rust rewrite of the original TypeScript `towles-tool`, now archived as
+[`towles-tool-tmux`](https://github.com/ChrisTowles/towles-tool-tmux), whose
+tmux-based AgentBoard is kept there as a reference. The repo structure follows
+the [Yaak](https://github.com/mountain-loop/yaak) golden template (see
+[ATTRIBUTION.md](ATTRIBUTION.md)). The binary is **`tt`** — the `ttr` → `tt`
+cutover happened 2026-07-13, hard, no alias left behind
+([docs/CUTOVER.md](docs/CUTOVER.md)). The selective feature port is complete;
+[docs/MIGRATION.md](docs/MIGRATION.md) records what came across.
 
 ## More
 
@@ -409,4 +244,3 @@ across and what was dropped.
 
 ## License
 
-MIT © 2026 Chris Towles. See [LICENSE.md](LICENSE.md).

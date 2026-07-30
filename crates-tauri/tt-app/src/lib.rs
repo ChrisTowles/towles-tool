@@ -44,11 +44,9 @@ use tokio::sync::Notify;
 use agentboard::{Ab, Engine, STATE_EVENT, now_ms};
 use tt_agentboard::fs_notify::{MultiFileNotifier, ScopedDirNotifier};
 
-/// Human-readable name of the checkout this binary was built from — the repo-root
-/// directory (e.g. `task-migrate`, `towles-tool-primary`). Baked in at compile time from
-/// `CARGO_MANIFEST_DIR` (`<root>/crates-tauri/tt-app`), so each task's binary
-/// knows its own task without any runtime cwd/env plumbing. Lets several tasks'
-/// windows be told apart in the title bar, taskbar, and app header.
+/// The checkout this binary was built from, baked in from `CARGO_MANIFEST_DIR` so
+/// each task's binary knows its own task with no runtime cwd/env plumbing — what
+/// tells several tasks' windows apart in the title bar and header.
 pub(crate) fn task_label() -> String {
     label_from_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
 }
@@ -73,37 +71,24 @@ fn app_task() -> String {
     task_label()
 }
 
-/// The shared IPC seam for frontend `ui.action` telemetry (see the root
-/// CLAUDE.md's `tt-telemetry` bullet): the webview can't reach `tracing`, so every
-/// user gesture worth recording crosses here with a stable action id, the
-/// screen it happened on, and an optional word of `detail` (an outcome, a
-/// count — never content or continuous input).
+/// The one IPC seam for frontend `ui.action` telemetry: the webview can't reach
+/// `tracing`, so every recorded gesture crosses here with a stable action id, its
+/// screen, and a word of `detail` — never content or continuous input.
 #[tauri::command]
 fn ui_action(action: String, screen: String, detail: Option<String>) {
     tracing::info!(%action, %screen, detail = %detail.as_deref().unwrap_or(""), "ui.action");
 }
 
-/// Per-task Tauri app identifier, so each worktree's self-installed
-/// `.desktop` entry + icon (`linux_desktop::ensure_installed`) gets its own
-/// filename instead of every task's binary overwriting the same one on
-/// startup. The main checkout (not under a `.claude/worktrees/` parent)
-/// keeps the base identifier unscoped, matching how it's the one instance
-/// meant to daily-drive.
-///
-/// This used to also be load-bearing for `enableGTKAppId`, which made every
-/// same-identifier binary register as the *same* D-Bus-activatable GTK application, so
-/// any activation — a second launch, but also a dock click, `gio launch`, systemd, with
-/// no new process at all — re-entered Tauri's `setup()` and panicked rebuilding the
-/// `"main"` webview. It is off now, so this identifier no longer touches GTK/D-Bus.
+/// Per-task app identifier, so each worktree's self-installed `.desktop` entry +
+/// icon gets its own filename instead of every task overwriting one. Touches no
+/// GTK/D-Bus — see this crate's CLAUDE.md on `enableGTKAppId`.
 fn app_identifier(base: &str) -> String {
     app_identifier_from(Path::new(env!("CARGO_MANIFEST_DIR")), base)
 }
 
-/// The per-task identifier decision, parameterized on the manifest dir so it's
-/// unit-testable. A main-checkout build (`crates-tauri/tt-app` *not* nested
-/// under a `.claude/worktrees/<task>` parent) keeps `base` unscoped; a task
-/// build gets `base.task-<label>`, the label lowercased with every
-/// non-alphanumeric char folded to `-` so it's a legal reverse-DNS-ish segment.
+/// Parameterized on the manifest dir so it's unit-testable. A main-checkout build
+/// keeps `base` unscoped; a task build gets `base.task-<label>`, folded to lower
+/// case with non-alphanumerics as `-` so it's a legal reverse-DNS segment.
 fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
     // `<repo>/.claude/worktrees/<task>/crates-tauri/tt-app` — ancestors 3/4
     // are the worktrees/.claude segments exactly when this is a task build.
@@ -121,13 +106,11 @@ fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
     format!("{base}.task-{suffix}")
 }
 
-/// The binary's entry point: build the Tauri app and run its event loop until
-/// the last window closes.
+/// Build the Tauri app and run its event loop until the last window closes.
 ///
 /// # Panics
 ///
-/// If the app fails to build or the event loop dies — there is no window left
-/// to report the failure in, so startup faults abort rather than return.
+/// On a failed build or dead event loop: no window is left to report it in.
 pub fn run() {
     // Errors always print to stderr, more with RUST_LOG. Independently, every
     // span/event streams to this task's on-disk event log at debug — the app
@@ -135,11 +118,9 @@ pub fn run() {
     // when a question comes up. A failure here must never block startup.
     let _ = tt_telemetry::init("tt-app", "error");
 
-    // WebKitGTK's DMABUF renderer glitches on the NVIDIA proprietary driver:
-    // small damage regions (e.g. a terminal cursor blink) flash as
-    // window-sized artifacts (tauri-apps/tauri#9304). Opt out before any
-    // webview exists, but only where NVIDIA is actually driving the screen,
-    // and never override an explicit user setting.
+    // WebKitGTK's DMABUF renderer flashes window-sized artifacts on small damage
+    // regions under NVIDIA's driver (tauri-apps/tauri#9304). Opt out before any
+    // webview exists, only under NVIDIA, never over an explicit user setting.
     #[cfg(target_os = "linux")]
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
         && std::path::Path::new("/proc/driver/nvidia/version").exists()
@@ -152,26 +133,18 @@ pub fn run() {
     let identifier = app_identifier(&context.config().identifier);
     context.config_mut().identifier = identifier.clone();
 
-    // Set by scripts/dev-drive.mjs and scripts/e2e.mjs: both are
-    // test/verification launches, never the user actually sitting down to
-    // use the app, so the window shouldn't grab OS focus and yank them away
-    // from whatever they were doing. A runtime signal, not `#[cfg(feature =
-    // "wdio")]` — that feature means "wdio plugins are compiled in," a
-    // different concern that only happens to correlate with these two
-    // scripts today.
+    // Set by dev-drive.mjs/e2e.mjs: verification launches must not yank the
+    // user's focus. A runtime signal, not `#[cfg(feature = "wdio")]` — that
+    // feature means "wdio plugins compiled in", which merely correlates.
     if std::env::var_os("TT_NO_FOCUS_STEAL").is_some() {
         for window in &mut context.config_mut().app.windows {
             window.focus = false;
         }
     }
 
-    // Guard against a second launch of the *same* checkout (same resolved
-    // identifier — the primary, or one specific task) running concurrently:
-    // with no GTK/D-Bus single-instance registration (`enableGTKAppId` is
-    // off — see `linux_desktop`'s module doc for why), nothing else stops
-    // two processes both opening a window, duplicating PTYs and scheduler
-    // polling. Held for the whole process lifetime; a lock left by a killed
-    // process is detected and stolen (see `InstanceLock`).
+    // With no GTK/D-Bus single-instance registration (`enableGTKAppId` is off),
+    // nothing else stops one checkout being launched twice, duplicating windows,
+    // PTYs and polling. Held process-wide; a killed process's lock is stolen.
     let Some(_instance_lock) =
         instance_lock::InstanceLock::try_acquire(&format!("app-{identifier}"))
     else {
@@ -225,10 +198,9 @@ pub fn run() {
             update::check_on_startup(app.handle().clone());
 
             // A Debug-mode Zig parser saturates a core at ~130 KB/s of PTY
-            // output, so busy terminals peg engine threads and the app reads
-            // as laggy with no obvious cause. The Cargo.toml dev-profile
-            // override should make this unreachable; be loud if it regresses
-            // (the Doctor screen shows the same check).
+            // output, so busy terminals peg engine threads and the app merely
+            // reads as laggy. The dev-profile override makes this unreachable;
+            // be loud if it regresses.
             if tt_vt::parser_optimize_mode() == "Debug" {
                 eprintln!(
                     "warning: libghostty-vt compiled in Zig Debug mode (~1000x slower parsing; \
@@ -246,30 +218,20 @@ pub fn run() {
             let emit = Arc::new(Notify::new());
             let scan = Arc::new(Notify::new());
 
-            // fs-notify accelerant: a tracked repo/worktree's journal change
-            // signals an eager scan. Scoped to those checkouts' own
-            // `~/.claude/projects` subdirectories — not the whole tree, which
-            // every Claude Code session on the machine writes into (including
-            // whatever session is editing this repo right now) — see
-            // `ScopedDirNotifier`'s doc comment. The initial target set is
-            // empty; the scan loop below calls `set_targets` on its first
-            // tick and every one after, so this starts narrowing within 2s.
+            // fs-notify accelerant: a journal change signals an eager scan.
+            // Scoped to tracked checkouts' own `~/.claude/projects` subdirs, not
+            // the whole tree every session on the machine writes into
+            // (`ScopedDirNotifier`). Starts empty and narrows on the first tick.
             let projects_dir = engine.lock().unwrap().projects_dir();
             let scan_for_notify = scan.clone();
             let notifier = Arc::new(Mutex::new(
                 ScopedDirNotifier::new(move || scan_for_notify.notify_one()).ok(),
             ));
 
-            // Event-driven git-info refresh: watches each tracked repo's own
-            // `.git` internals (HEAD, index, refs, packed-refs — see
-            // `Engine::control_watch_files`) so a real commit/fetch/branch-
-            // switch/`git add` invalidates just that repo immediately instead
-            // of waiting on `GIT_CACHE_TTL_MS`'s now-long backup ceiling. The
-            // reverse-index (which dir owns which watched file) is rebuilt by
-            // the scan loop below alongside its `MultiFileNotifier`
-            // registration diff; the callback only resolves paths → dirs and
-            // invalidates. Doesn't cover unstaged working-tree edits — see
-            // `control_files_for`'s doc for why that still needs the poll.
+            // Watching each repo's `.git` internals
+            // (`Engine::control_watch_files`) invalidates just that repo on a
+            // commit/fetch/switch, instead of waiting out `GIT_CACHE_TTL_MS`.
+            // Unstaged edits still need the poll (`control_files_for`).
             let git_watch_index: Arc<Mutex<HashMap<PathBuf, String>>> = Arc::default();
             let git_watcher = {
                 let engine = engine.clone();
@@ -313,11 +275,10 @@ pub fn run() {
 
             let handle = app.handle().clone();
 
-            // Debounced emitter: coalesce a burst of triggers into one rebuild,
-            // and broadcast only when the payload actually changed — every emit
-            // costs the webview a deserialize + React re-render, and the scan
-            // and git tickers signal unconditionally. The rebuild itself runs
-            // on a blocking worker (it can shell out on cache misses).
+            // Coalesce a burst of triggers into one rebuild and broadcast only a
+            // changed payload: every emit costs the webview a deserialize plus a
+            // React render, and both tickers signal unconditionally. The rebuild
+            // runs on a blocking worker.
             {
                 let emit = emit.clone();
                 tauri::async_runtime::spawn(async move {
@@ -338,13 +299,10 @@ pub fn run() {
                         else {
                             continue;
                         };
-                        // Auto-drive backlog/doing off this same stamped
-                        // payload — the only path that moves a Board card
-                        // now that manual drag-and-drop is gone (see
-                        // `store::StoreState::sync_worktree_task_statuses`).
-                        // Runs every tick, not just on a payload change: the
-                        // signal that flips a task is agent liveness, which
-                        // this loop's own dedup would otherwise swallow.
+                        // The only path that moves a Board card now that manual
+                        // drag-and-drop is gone. Every tick, not just on a
+                        // changed payload: the signal is agent liveness, which
+                        // this loop's dedup would otherwise swallow.
                         let store_state = handle.state::<store::StoreState>();
                         if store_state.sync_worktree_task_statuses(&payload, store::now_ms()) > 0 {
                             store::emit_snapshot_from_app(&handle);
@@ -362,14 +320,10 @@ pub fn run() {
                 });
             }
 
-            // Watcher scan: every 2s, or eagerly on a (debounced) fs-notify
-            // signal. Warms any stale git-cache entries (e.g. a worktree
-            // just created — always a cache miss) OUTSIDE the engine lock
-            // first, same reasoning as the stat-poll below: `scan_once` and
-            // every `ab_*` command share this lock and (on Linux) sync
-            // commands dispatch inline on the GTK main thread, so a lock-held
-            // git subprocess chain would freeze the whole app, not just this
-            // loop. See `Engine::rail_rows`'s doc comment.
+            // Every 2s, or eagerly on a debounced fs-notify signal. Stale
+            // git-cache entries warm OUTSIDE the engine lock: `scan_once` and
+            // every `ab_*` command share it, and Linux dispatches sync commands
+            // inline on the GTK thread, so git under the lock freezes the app.
             {
                 let engine = engine.clone();
                 let emit = emit.clone();
@@ -411,30 +365,17 @@ pub fn run() {
                             })
                             .await
                             .unwrap_or_default();
-                            // Stamp with the time the batch actually *finished*,
-                            // not the `now` from before it ran. Reusing the
-                            // pre-batch timestamp made every entry born older
-                            // than `GIT_CACHE_TTL_MS` whenever the batch outran
-                            // the TTL, so the next tick found them stale again
-                            // and recomputed immediately, forever.
+                            // The time the batch *finished*, never the `now` it
+                            // was scheduled with: a batch outrunning
+                            // `GIT_CACHE_TTL_MS` then births every entry stale
+                            // and recomputes forever.
                             let warmed_at = now_ms();
                             engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
                         }
-                        // The rail's rows, refreshed before the scan so a task
-                        // created or closed since the last tick lands in this
-                        // payload. Two steps, in this order:
-                        //
-                        //  1. reconcile — git worktrees nothing has written
-                        //     down become `detected` rows, and detected rows
-                        //     whose directory is gone are forgotten. Both sides
-                        //     come from the engine as diffs, so the steady
-                        //     state writes nothing;
-                        //  2. push the resulting row list into the engine.
-                        //
-                        // Reconciling first means a worktree discovered this
-                        // tick is a row on this tick, not the next one.
-                        // `try_state` because this loop can tick before setup
-                        // has managed the store.
+                        // Reconcile rows before pushing them, so a worktree
+                        // discovered this tick is a row on this tick. Unwritten
+                        // worktrees become `detected` rows and vanished dirs are
+                        // forgotten, as diffs, so a steady state writes nothing.
                         let store_state = store_handle.try_state::<store::StoreState>();
                         if let Some(state) = &store_state {
                             let (found, vanished) = {
@@ -451,23 +392,17 @@ pub fn run() {
                             }
                             e.scan_once(now);
                         }
-                        // Narrow the fs-notify accelerant to the repos/worktrees
-                        // actually being polled. Cheap (cache-only, see
-                        // `Engine::watch_targets`'s doc) and a no-op unless the
-                        // tracked set changed since last tick, so doing this
-                        // every tick rather than only on repo add/remove is
-                        // simpler and costs nothing extra.
+                        // Narrow the accelerant to what's actually polled.
+                        // Cache-only and a no-op unless the tracked set moved,
+                        // so every tick costs nothing over add/remove hooks.
                         let targets = engine.lock().unwrap().watch_targets();
                         if let Some(n) = notifier.lock().unwrap().as_mut() {
                             n.set_targets(&projects_dir, &targets);
                         }
-                        // Same idea for the git-control-file watch: diff the
-                        // desired set against what's registered, add/remove
-                        // only the delta, and rebuild the path→dir reverse
-                        // index the watcher callback resolves against. A dir
-                        // with no cached info yet contributes no files (see
-                        // `control_files_for`) — it starts being watched from
-                        // whichever tick follows its first compute.
+                        // Same for the control-file watch: register only the
+                        // delta, rebuild the path→dir index. A dir with no cached
+                        // info contributes no files, so it's watched from the
+                        // tick after its first compute.
                         let desired = engine.lock().unwrap().control_watch_files();
                         if let Some(w) = git_watcher.lock().unwrap().as_mut() {
                             let desired_keys: HashSet<PathBuf> = desired.keys().cloned().collect();
@@ -494,18 +429,10 @@ pub fn run() {
                 });
             }
 
-            // Git-stat poll: the diagnostics-hub half of git-info refresh,
-            // outside the engine lock like the scan loop above (a slow/hung
-            // git must never wedge the `ab_*` commands sharing the lock).
-            // Staleness-gated via `stale_git_targets` — it used to
-            // unconditionally recompute every tracked repo every tick
-            // regardless of `GIT_CACHE_TTL_MS`, which meant this loop alone
-            // kept every repo on a hard 10s recompute cadence no matter how
-            // long the TTL or how precise the control-file invalidation
-            // above got; nothing downstream of *this* loop ever benefited
-            // from either. Now it shares the exact same staleness signal the
-            // scan loop's `warm_git_cache` uses, so in steady state (nothing
-            // invalidated) this tick finds nothing to do.
+            // The diagnostics-hub half, outside the engine lock like the scan
+            // loop (a hung git must never wedge the `ab_*` commands). Gated on
+            // the same `stale_git_targets` signal `warm_git_cache` uses: two
+            // signals and either loop defeats the other's savings.
             {
                 let engine = engine.clone();
                 let emit = emit.clone();
@@ -552,14 +479,10 @@ pub fn run() {
                 });
             }
 
-            // Background fetch: `git fetch origin` every 3 minutes per tracked
-            // repo (deduped across worktrees/tasks), outside the engine lock
-            // like the stat poll above. The 10s git-stat poll only reads
-            // already-cached remote-tracking refs, so without this,
-            // "commits behind main" never updates until the user happens to
-            // fetch some other way (opening a terminal, `tt task create`,
-            // `tt gh` commands). No re-emit here — the next stat-poll tick
-            // picks up whatever the fetch changed.
+            // `git fetch origin` every 3 minutes per repo, outside the engine
+            // lock. The poll only reads cached remote-tracking refs, so without
+            // this "commits behind main" never moves on its own. No re-emit: the
+            // next stat tick picks up what changed.
             {
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
@@ -590,17 +513,10 @@ pub fn run() {
             let repo_cache_store = store_state.clone();
             app.manage(store_state);
 
-            // Tracked-repo identity cache: every 10s, reconcile `tt-store`'s
-            // `repos` table (repo root -> `owner/repo`) from the currently
-            // tracked repos' cache-only git origin (no subprocess — reads
-            // whatever the scan/stat-poll loops above already computed). This
-            // is what lets `tt-mcp`'s `task_create` validate its `repo`
-            // argument against a real GitHub slug instead of a dir/basename
-            // match; `repos.json` (via the engine's tracked-repo list) stays
-            // the sole source of truth for which repos exist; a repo that's
-            // untracked or whose origin becomes unparseable just drops out of
-            // the next reconcile, with no separate untrack path to keep in
-            // sync. See `tt_store::Store::reconcile_repos`.
+            // Identity cache (root -> `owner/repo`) off the origin the loops
+            // above already computed — what lets `task_create` validate `repo`
+            // against a real slug. `repos.json` stays the truth about which
+            // repos exist; anything unparseable drops out of the next reconcile.
             {
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
@@ -629,11 +545,10 @@ pub fn run() {
                 });
             }
 
-            // Serve MCP over loopback HTTP on *this checkout's* claimed port, so
-            // a session started in this app's terminal reaches this app and its
-            // board rather than whichever instance won a race for a shared port.
-            // Deliberately after `manage(store_state)`, since a mutating call
-            // re-emits the snapshot through that state.
+            // MCP over loopback on *this checkout's* claimed port, so a session
+            // in this app's terminal reaches this app's board rather than
+            // whichever instance won a shared port. After `manage(store_state)`:
+            // a mutating call re-emits the snapshot through it.
             mcp_http::spawn(app.handle().clone(), tt_mcp::port::for_this_checkout());
 
             // Overlap guard for the manual "refresh now" command.
@@ -678,17 +593,15 @@ pub fn run() {
         .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
         .manage(ide::ViewerWatches::default())
+        .manage(preview::PreviewWatches::default())
         .manage(asset::AssetScopes::default())
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
         .on_window_event(|window, event| match event {
-            // Logged like focus_changed below, and for the same reason: an
-            // orderly close otherwise leaves *no* record, making it
-            // indistinguishable in the event log from a kill or crash (a
-            // real triage dead-end: a dev-drive window that "vanished"
-            // turned out to be a manual close, provable only by this gap).
-            // CloseRequested says someone asked; Destroyed says the window
-            // went down the orderly path.
+            // Logged like focus_changed below: without a record an orderly
+            // close is indistinguishable from a kill or crash — a real triage
+            // dead-end once. CloseRequested says someone asked; Destroyed says
+            // it went down the orderly path.
             WindowEvent::CloseRequested { .. } => {
                 tracing::info!(window = window.label(), "window.close_requested");
             }
@@ -745,7 +658,9 @@ pub fn run() {
             launch::launch_configs,
             launch::launch_register,
             preview::preview_capture,
-            preview::preview_read_artifact,
+            preview::preview_read_file,
+            preview::preview_watch_file,
+            preview::preview_unwatch_file,
             preview::preview_write_feedback,
             task::task_base_branches,
             task::task_check_branch,

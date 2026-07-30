@@ -75,7 +75,7 @@ import {
 } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
-import type { ArtifactRequest } from "@/lib/preview-artifact";
+import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
@@ -90,68 +90,23 @@ import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
 import { toast } from "sonner";
 
-/**
- * Agentboard — the Folder Rail. Left: rollup tally + needs-you strip + the
- * repos → folders (checkouts) → *panes* tree — every PTY session plus whatever
- * else the folder has open (its diff, files, preview), so what is open in
- * a checkout is answerable from the rail and not just from the pane area. Right: in-app *windows*,
- * scoped to whichever folder is active (clicking a folder header or a
- * session row focuses it) — each a named tiling of that folder's session
- * panes (side-by-side up to 3, then a 2-col grid), switched via the window
- * strip. A window never holds panes from more than one folder. Clicking a
- * rail session opens it as a pane in its own folder's active window; the
- * colored square on a row is its window's group tag. A session IS a PTY;
- * "agent" (✦) is a badge on a session where Claude is detected running —
- * status is reported, never re-rendered (the real TUI is the PTY). All
- * opened terminals live in one flat mounted pool (hidden unless in the active
- * folder's active window) so scrollback survives switching and regrouping; the
- * diff/files/preview panes are rebuilt on mount instead, owning no process. A
- * folder's diff, its file tree and its live preview each open as their own pane
- * in the same tiling (never a modal), so you review while the agents keep
- * working. Layout persists via
- * debounced `ab_save_windows`. Shortcuts come from the registry in
- * lib/shortcuts.tsx (⌘D new session, ⌘⇧W close session, ⌘⇧G diff pane,
- * ⌘⇧N/⌘⇧P jump to the next/previous session that needs you — `cycleNeedsYou`
- * in lib/agentboard.ts, board-wide, wraps around — ⌘⇧S add another session
- * as a pane in the active window, skipping straight to it when there's only
- * one candidate and opening a picker otherwise), active only while this tab
- * is shown.
- *
- * This file is the screen's wiring: local session/selection state, the
- * lifecycle actions that write to PTYs, and the layout. The self-contained
- * pieces live beside it in `screens/agentboard/` — the window layout
- * (`use-window-layout`), the worktree-delete flow (`use-worktree-delete`),
- * task creation (`use-task-creation`), the rail's derived lookups
- * (`use-rail-index`), the attention strip (`use-attention`), and the three
- * render surfaces (`rail-header`, `window-strip`, `pane-grid`).
- */
+/** Agentboard — the Folder Rail. */
 export function AgentboardScreen() {
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
   const { openTab, activeTab, openSettingsTab } = useWorkspace();
   // Deep-link focus: a "needs you" popover row scrolls its repo into view here.
   const focusRef = useFocusTarget<HTMLDivElement>("agentboard");
-  // The shared 15s clock, where this screen used to own a 30s ticker. It is the
-  // app's largest tree and it stays mounted across screen switches, so that is
-  // a real doubling of its idle re-render rate — accepted deliberately: the
-  // values it feeds are minute-resolution session ages and the cache-expiry
-  // check below, and one app-wide interval beats a second timer firing
-  // out of phase with every other countdown on screen.
+  // The shared 15s clock, where this screen used to own a 30s ticker.
   const now = useNow();
   const repos = state.repos;
 
   const [selected, setSelected] = useState<Selected>(null);
-  // Which pane tile (session, diff, files, or tombstone) last claimed the
-  // click — the sole driver of the violet focus ring below. Deliberately
-  // separate from `selected`: `selected` targets the session the toolbar's
-  // Close/⌘D/⌘W and cache-badge actions act on, while this is purely "which
-  // tile is visually active" and every pane kind can claim it, not just
-  // sessions.
+  // Which pane tile (session, diff, files, or tombstone) last claimed the click — the sole
+  // driver of the violet focus ring below.
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
-  // ab-focus-terminal (Enter): which session's terminal to imperatively give
-  // DOM focus, and a nonce so re-requesting the *same* session (e.g. Enter
-  // pressed twice) still re-fires the effect that focuses it. Read by the
-  // `<TerminalView>` instance whose id matches, via its `focusRequest` prop.
+  // ab-focus-terminal (Enter): which session's terminal to imperatively give DOM focus, and a
+  // nonce so re-requesting the *same* session (e.g.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
     id: string;
     nonce: number;
@@ -159,9 +114,9 @@ export function AgentboardScreen() {
   // The folder whose windows the main area shows — set by clicking a folder
   // header or a session row. Null until the user picks a folder.
   const [activeFolderDir, setActiveFolderDir] = useState<string | null>(null);
-  // ab-split-session picker: only shown when the active folder has more than
-  // one session not already in the active window (a single candidate is
-  // added directly — see `splitIntoWindow`).
+  // ab-split-session picker: only shown when the active folder has more than one session not
+  // already in the active window (a single candidate is added directly — see
+  // `splitIntoWindow`).
   const [splitOpen, setSplitOpen] = useState(false);
   // Pending remove awaiting confirmation because it would kill live sessions.
   const [confirmRemove, setConfirmRemove] = useState<RemoveTarget | null>(null);
@@ -172,47 +127,26 @@ export function AgentboardScreen() {
   // Session ids whose PTY is mounted (kept alive for scrollback), + their cwd.
   const [open, setOpen] = useState<string[]>([]);
   const cwds = useRef<Record<string, string>>({});
-  // How a *crashed* session's shell died ("exited · Killed"), by session id.
-  // Only crashes land here — a clean logout takes its pane with it (see
-  // `handleExit`). Entries are never invalidated: what's on screen is decided
-  // by the render filter (a tombstone needs a pane that still exists and no
-  // live terminal over the top), so a stale entry for a dismissed or reopened
-  // session is inert, and there's no invalidation scheme to keep correct.
+  // How a *crashed* session's shell died ("exited · Killed"), by session id. Only crashes land
+  // here — a clean logout takes its pane with it (see `handleExit`).
   const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
-  // Sessions whose shell we're killing on purpose. `task_delete` kills a
-  // folder's PTYs in Rust *before* the frontend unmounts their panes, so those
-  // deaths arrive as signal exits at a still-listening TerminalView — which is
-  // a crash by every test `handleExit` can apply, except that we asked for it.
-  // Ids land here just before the kill and are consumed by the exit they
-  // predict. (The `term_kill` on TerminalView unmount needs no entry: cleanup
-  // unlistens first, so that exit is never delivered.)
+  // Sessions whose shell we're killing on purpose.
   const expectedKills = useRef<Set<string>>(new Set());
   // Folder-rail collapse/expand state (issue #52) — hydrated once and then
   // this local copy is the live truth; see useCollapseState.
   const { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail } =
     useCollapseState(state);
-  // Rail filter: demote the folders it excludes behind a per-repo "N quiet"
-  // stub row, so a big rail shrinks to what's actually going on (or what you
-  // touched today) without anything silently disappearing. A view filter, not a
-  // rail-structure change. Persisted via `agentboard.railFilter` +
-  // `railRecentHours` in the shared settings file — whole-app preferences, not
-  // rail-row UI state, so they don't belong in the `collapsed` map the way
-  // `railCollapsed` does.
+  // Rail filter: demote the folders it excludes behind a per-repo "N quiet" stub row, so a big
+  // rail shrinks to what's actually going on (or what you touched today) without anything
+  // silently disappearing.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
-  // Whether auto-discovered worktrees that `tt task` didn't create (a bare
-  // `claude --worktree`, a hand-added one) get rail folders at all. Unlike
-  // the rail filter this isn't a view filter over `repos` — the backend decides
-  // which checkouts to discover, so the toggle round-trips through Rust and
-  // the rail repopulates from the next `agentboard://state`.
+  // Whether auto-discovered worktrees that `tt task` didn't create (a bare `claude --worktree`,
+  // a hand-added one) get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
-  // Whether the native Bevy surfaces exist at all — the rail strip below, and
-  // the per-checkout `jarvis` pane's entry point. Off is the default, and left
-  // off nothing is ever created; see the render site below.
+  // Whether the native Bevy surfaces exist at all — the rail strip below, and the per-checkout
+  // `jarvis` pane's entry point.
   const [jarvisPane, setJarvisPane] = useJarvisPane();
-  // Whether a native surface may be on screen right now. Every `NativePane` on
-  // this screen takes this one value: they composite *above* the webview, so a
-  // screen switch has to hide them explicitly (screens stay mounted here), and
-  // two surfaces disagreeing about it means one of them covers the next screen.
+  // Whether a native surface may be on screen right now.
   const nativeVisible = activeTab === "agentboard";
   // Per-repo "show me the quiet ones anyway" toggle (the stub row).
   const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
@@ -222,9 +156,8 @@ export function AgentboardScreen() {
   const [titles, setTitles] = useState<Record<string, string>>({});
   const onTitle = (id: string, title: string) =>
     setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
-  // Sessions whose program raised attention (BEL / OSC 9 notification —
-  // Claude Code asking for input) since the user last looked at them.
-  // Set by the terminal://notify listener below, cleared on select.
+  // Sessions whose program raised attention (BEL / OSC 9 notification — Claude Code asking for
+  // input) since the user last looked at them.
   const [termAttention, setTermAttention] = useState<Record<string, true>>({});
   // Optimistic lifecycle overlays (sessionId → forced status until ts). The
   // 2s watcher scan re-renders with ground truth; overlays just cover the gap.
@@ -258,28 +191,21 @@ export function AgentboardScreen() {
   useEffect(() => {
     selectedRef.current = selected?.sessionId ?? null;
   });
-  // Live copy of the active folder, read the same way — lets an async
-  // task-create decide, when it finally resolves, whether the user is still
-  // where they were when they submitted.
+  // Live copy of the active folder, read the same way — lets an async task-create decide, when
+  // it finally resolves, whether the user is still where they were when they submitted.
   const activeFolderDirRef = useRef<string | null>(null);
   useEffect(() => {
     activeFolderDirRef.current = activeFolderDir;
   });
-  // The rail as it stands *now*, for the same reason: the nav-request handler
-  // below is a mount-only subscription, so reading `repos`/`folderNameByDir`
-  // out of its closure would only ever see the empty first-render snapshot
-  // (the backend hasn't broadcast yet at mount).
+  // The rail as it stands *now*, for the same reason: the nav-request handler below is a mount-
+  // only subscription, so reading `repos`/`folderNameByDir` out of its closure would only ever
+  // see the empty first-render snapshot (the backend hasn't broadcast yet at mount).
   const railRef = useRef({ repos, folderNameByDir });
   useEffect(() => {
     railRef.current = { repos, folderNameByDir };
   });
 
-  // One-shot "prompt cache about to expire" toast per session per cache
-  // generation. `cacheExpiresAt` moves forward on every request Claude makes,
-  // so keying on `sessionId:cacheExpiresAt` naturally re-arms the toast after
-  // the session is nudged — while the shared `useNow` tick can't re-fire the
-  // same warning. The set is tiny (one entry per warning ever shown this mount),
-  // so it's never pruned.
+  // One-shot "prompt cache about to expire" toast per session per cache generation.
   const cacheWarned = useRef(new Set<string>());
   useEffect(() => {
     for (const repo of state.repos)
@@ -318,14 +244,9 @@ export function AgentboardScreen() {
   });
   const { requestDeleteWorktree } = worktreeDelete;
 
-  // Ctrl+Shift+Left/Right collapse/expand (complements ab-focus-up/down's
-  // Ctrl+Shift+Up/Down session nav — same modifier family, so it's also safe
-  // to steal from a focused terminal, unlike plain arrow keys which the shell
-  // needs for cursor movement). One level per press, mirroring the rail's own
-  // repo-header/folder-header nesting (`collapseTargetKeys`). Right expands
-  // the outer (repo) level first if it's the thing hiding the folder, then
-  // the folder itself; Left is the mirror, collapsing the folder before
-  // walking up to the repo.
+  // Ctrl+Shift+Left/Right collapse/expand (complements ab-focus-up/down's Ctrl+Shift+Up/Down
+  // session nav — same modifier family, so it's also safe to steal from a focused terminal,
+  // unlike plain arrow keys which the shell needs for cursor movement).
   function collapseByArrow(direction: "left" | "right") {
     if (!activeRepo || !activeFolder) return;
     const { own, parent } = collapseTargetKeys(activeRepo, activeFolder.dir);
@@ -344,19 +265,13 @@ export function AgentboardScreen() {
     }
   }
 
-  // The label to lead a session row/tab with: the live Claude terminal title
-  // when the shell is actually running, else the backend-derived task/shell
-  // name. Gating on `s.live` keeps a stopped shell from showing the `✳ <goal>`
-  // title its dead PTY last emitted (the `titles` map is never cleared), which
-  // otherwise reads as a running Claude while the status says "not started".
+  // The label to lead a session row/tab with: the live Claude terminal title when the shell is
+  // actually running, else the backend-derived task/shell name.
   const labelFor = (s: SessionData) =>
     (s.live ? claudeTitleName(titles[s.id]) : null) ?? sessionLabel(s);
 
-  // Open a folder's diff as a pane in its focused window (beside the live
-  // terminals — never a modal). Re-opening focuses the window it's already in.
-  // Every `open*` here claims the focus ring as well, so the rail row for the
-  // pane it opened (or re-focused) reads as the active one — the rail lists
-  // panes now, and a row you just clicked has to look like it.
+  // Open a folder's diff as a pane in its focused window (beside the live terminals — never a
+  // modal). Re-opening focuses the window it's already in.
   function openDiff(dir: string) {
     setActiveFolderDir(dir);
     addPaneToActive(dir, diffPaneId(dir));
@@ -378,42 +293,35 @@ export function AgentboardScreen() {
     setFocusedPaneId(previewPaneId(dir));
   }
 
-  // Claude called the preview_show tool → open (or focus) that folder's
-  // preview pane and render the artifact it wrote. Routed here for the same
-  // reason as `ide://open-file` above: only this level can *create* the pane
-  // when none is open, which is the normal case (nobody keeps a preview pane
-  // open on the off chance an agent has something to show).
-  const [artifactRequests, setArtifactRequests] = useState<Record<string, ArtifactRequest>>({});
-  function showArtifact(req: {
+  // Claude called the preview_file tool → open (or focus) that folder's preview pane and render
+  // the file it points at.
+  const [previewRequests, setPreviewRequests] = useState<Record<string, PreviewRequest>>({});
+  function showPreviewFile(req: {
     folderDir: string | null;
     path: string;
     title: string;
     nonce: number;
   }) {
-    // Where to put an artifact that belongs to no tracked folder: whatever
-    // folder is on screen, else the first one in the rail. The MCP server is
-    // one per machine, so the sessions calling this are frequently in
-    // checkouts *this* app doesn't track — and a page shown in a
-    // slightly-wrong pane beats a page not shown at all. The rail being
-    // completely empty is the only case with nowhere to go.
+    // Where to put a file that belongs to no tracked folder: whatever folder is on screen, else
+    // the first in the rail.
     const dir =
       req.folderDir ?? activeFolderDirRef.current ?? railRef.current.repos[0]?.folders[0]?.dir;
     if (!dir) {
       toast.error(`Couldn't show ${req.title} — no checkouts are open on the rail`);
       return;
     }
-    setArtifactRequests((prev) => ({
+    setPreviewRequests((prev) => ({
       ...prev,
       [dir]: { path: req.path, title: req.title, nonce: req.nonce },
     }));
-    // Ack the folder the artifact actually landed in, not the one the payload
+    // Ack the folder the file actually landed in, not the one the payload
     // named — a fallback show still puts the user in front of that folder.
     ackFolder(dir);
     openPreview(dir);
   }
 
   // The MCP `file_open` tool / `tt open`, onto the route a terminal file link
-  // takes. Shares `showArtifact`'s fallback folder, but not past the point where
+  // takes. Shares `showPreviewFile`'s fallback folder, but not past the point where
   // the file isn't inside it — the pane browses one checkout.
   function openFileFromRequest(req: {
     folderDir: string | null;
@@ -445,11 +353,8 @@ export function AgentboardScreen() {
     openFiles(dir);
   }
 
-  // Same, for this folder's native pane — a rectangle of the window rendered
-  // by Bevy rather than DOM (`components/jarvis-pane.tsx`). Gated on the same
-  // `agentboard.jarvisPane` setting as the rail's surface: while this is a
-  // proof-of-concept, off means no Bevy anywhere, so the affordance that opens
-  // one only exists when it's on.
+  // Same, for this folder's native pane — a rectangle of the window rendered by Bevy rather
+  // than DOM (`components/jarvis-pane.tsx`).
   function openJarvis(dir: string) {
     uiAction("agentboard.open_jarvis_pane", "agentboard");
     setActiveFolderDir(dir);
@@ -457,9 +362,8 @@ export function AgentboardScreen() {
     setFocusedPaneId(jarvisPaneId(dir));
   }
 
-  // Claude called the openFile tool → open (or focus) that folder's files
-  // pane and focus the file. Routed here rather than inside the pane so the
-  // request can *create* the pane when none is open yet.
+  // Claude called the openFile tool → open (or focus) that folder's files pane and focus the
+  // file.
   const [filesOpenRequests, setFilesOpenRequests] = useState<Record<string, FilesOpenRequest>>({});
   useTauriEvent<OpenFileRequest>("ide://open-file", (p) => {
     const dir = p.dir;
@@ -480,10 +384,8 @@ export function AgentboardScreen() {
     openFiles(dir);
   });
 
-  // A file link clicked in a folder's terminal → the same files-pane route as
-  // Claude's openFile, landing on the `:line` when the link carried one. Links
-  // pointing outside the checkout keep the old behavior (external editor via
-  // `term_open_path` — the files pane can only browse the checkout).
+  // A file link clicked in a folder's terminal → the same files-pane route as Claude's
+  // openFile, landing on the `:line` when the link carried one.
   function openTerminalPath(dir: string, path: string, line: number | null) {
     uiAction("terminal.link_open_file", "agentboard");
     const rel = filesPanePathFor(dir, path);
@@ -498,10 +400,8 @@ export function AgentboardScreen() {
     openFiles(dir);
   }
 
-  // Attention signals from terminals: a BEL or a desktop notification
-  // (OSC 9/777 — Claude Code's "needs your input"). The session badges
-  // amber until selected; a notification body also toasts, since the pane
-  // raising it is usually not the one on screen.
+  // Attention signals from terminals: a BEL or a desktop notification (OSC 9/777 — Claude
+  // Code's "needs your input").
   useTauriEvent<{ termId: string; kind: string; body?: string }>(
     "terminal://notify",
     ({ termId, kind, body }) => {
@@ -522,23 +422,16 @@ export function AgentboardScreen() {
       (w) => w.id === (activeFolderDir && wins?.activeWindows[activeFolderDir]),
     ) ?? windowsForFolder[0];
 
-  // The active folder's sessions not currently a pane in *any* of its
-  // windows — what ab-split-session (⌘⇧S) has to choose from. Deliberately
-  // folder-wide, not just the active window: `selectSession` (via
-  // `placePane`) never moves a pane that already has a window, it just
-  // switches focus to wherever it lives — so a session parked in another
-  // window isn't a real candidate, it'd just yank focus away from the
-  // window you're trying to add *to*.
+  // The active folder's sessions not currently a pane in *any* of its windows — what ab-split-
+  // session (⌘⇧S) has to choose from.
   const splitCandidates = useMemo(() => {
     if (!activeFolder) return [];
     const openIds = new Set(windowsForFolder.flatMap((w) => w.panes));
     return activeFolder.sessions.filter((s) => !openIds.has(s.id));
   }, [activeFolder, windowsForFolder]);
 
-  // ab-split-session: add one of the active folder's not-yet-opened sessions
-  // as a pane in its active window. One candidate adds directly (mirrors
-  // clicking it); more than one opens a picker, since a single keypress
-  // can't disambiguate.
+  // ab-split-session: add one of the active folder's not-yet-opened sessions as a pane in its
+  // active window.
   function splitIntoWindow() {
     if (!activeFolderDir) {
       toast("Select a folder first.");
@@ -555,9 +448,8 @@ export function AgentboardScreen() {
     setSplitOpen(true);
   }
 
-  // "+ window": a window can't exist without panes, so minting one means
-  // giving it content — spawn a fresh session and open the new window around
-  // it in one move.
+  // "+ window": a window can't exist without panes, so minting one means giving it content —
+  // spawn a fresh session and open the new window around it in one move.
   async function newWindow(folderDir: string) {
     const added = await invoke<SessionData>("ab_add_session", { dir: folderDir, name: null });
     if (added.isErr()) return;
@@ -581,15 +473,7 @@ export function AgentboardScreen() {
   // useColumnDrag; the release commits to the window's `cols` via updateWins.
   const columns = useColumnDrag(updateWins);
 
-  /** A shell exited on its own. Either way its terminal unmounts (the PTY is
-   * gone); how it died decides whether the pane goes with it.
-   *
-   * A clean logout is expected — you typed `exit`, and the pane disappearing
-   * *is* the feedback; the window retiles around the loss. A crash is the
-   * opposite: nothing would otherwise tell you it happened, so the pane stays
-   * as a tombstone reporting how it died, until you dismiss it or reopen the
-   * session over the top. A toast fires alongside, since the pane only speaks
-   * to whoever is looking at that folder's window. No auto-restart. */
+  /** A shell exited on its own. */
   function handleExit(sessionId: string, exit: TermExit) {
     setOpen((prev) => prev.filter((id) => id !== sessionId));
     const expected = expectedKills.current.delete(sessionId);
@@ -605,21 +489,16 @@ export function AgentboardScreen() {
     replacePaneInPlace(sessionId, exitPaneId(sessionId));
   }
 
-  // Switch the main area to a folder without selecting one of its sessions
-  // (clicking a folder header). Drops any selection from a *different*
-  // folder so the cache bar / ⌘D / ⌘W / Close button never act on a session
-  // that's no longer the one shown — a session selected in the folder you're
-  // switching to stays selected.
+  // Switch the main area to a folder without selecting one of its sessions (clicking a folder
+  // header).
   function selectFolder(folderDir: string) {
     setActiveFolderDir(folderDir);
     setSelected((cur) => (cur && cur.folderDir !== folderDir ? null : cur));
     ackFolder(folderDir);
   }
 
-  // Spawn a session's PTY and place its pane in its own folder's window,
-  // without touching `selected`/`activeFolderDir` — for sessions created in
-  // the background (e.g. a new task) that shouldn't steal focus from
-  // whatever the user is currently looking at.
+  // Spawn a session's PTY and place its pane in its own folder's window, without touching
+  // `selected`/`activeFolderDir` — for sessions created in the background (e.g.
   function mountSession(folderDir: string, sessionId: string) {
     cwds.current[sessionId] = folderDir;
     setOpen((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
@@ -640,19 +519,7 @@ export function AgentboardScreen() {
     ackFolder(folderDir);
   }
 
-  /**
-   * Run `fn` against a session's PTY, guaranteeing its shell exists first.
-   *
-   * A pane spawns its shell only once rendered, and only the active folder's
-   * active window renders — so "write to session X" really means "make X
-   * visible, wait for its shell, then write". Every PTY-writing path goes
-   * through here: open-coding the three steps is how stop/compact came to
-   * silently no-op for any folder that wasn't the active one.
-   *
-   * `folderDir` is only needed when the session isn't on the board yet (the
-   * crash-resume handoff at boot); otherwise it's resolved from state, so
-   * callers don't have to carry it.
-   */
+  /** Run `fn` against a session's PTY, guaranteeing its shell exists first. */
   async function withLiveSession(
     sessionId: string,
     fn: () => Promise<unknown>,
@@ -668,16 +535,15 @@ export function AgentboardScreen() {
   // The user is now looking at this folder's rail entry — clear its agents'
   // `unseen` flags (`sessionCatchesEye`'s pulse) via the backend tracker.
   function ackFolder(folderDir: string) {
-    // Read through the ref: the nav-request handler that also calls this is a
-    // mount-only subscription, where the rendered `folderNameByDir` is still
-    // the empty first-render map.
+    // Read through the ref: the nav-request handler that also calls this is a mount-only
+    // subscription, where the rendered `folderNameByDir` is still the empty first-render map.
     const name = railRef.current.folderNameByDir.get(folderDir);
     if (name) void invoke("ab_mark_seen", { name });
   }
 
-  // ab-jump-next/ab-jump-prev (see lib/shortcuts.tsx): board-wide, wraps
-  // around, reuses `selectSession` — the same "mount + focus + ack" path a
-  // rail click uses — so a jump behaves exactly like clicking the session.
+  // ab-jump-next/ab-jump-prev (see lib/shortcuts.tsx): board-wide, wraps around, reuses
+  // `selectSession` — the same "mount + focus + ack" path a rail click uses — so a jump behaves
+  // exactly like clicking the session.
   function jumpToNeedsYou(direction: "next" | "prev") {
     const target = cycleNeedsYou(repos, selected?.sessionId ?? null, direction);
     if (!target) {
@@ -689,9 +555,9 @@ export function AgentboardScreen() {
     selectSession(folderDir, target.id);
   }
 
-  // ab-focus-up/ab-focus-down (see lib/shortcuts.tsx): plain up/down through
-  // the whole task list in rail order, wrapping around — unlike jumpToNeedsYou
-  // this doesn't filter to sessions needing attention.
+  // ab-focus-up/ab-focus-down (see lib/shortcuts.tsx): plain up/down through the whole task
+  // list in rail order, wrapping around — unlike jumpToNeedsYou this doesn't filter to sessions
+  // needing attention.
   function focusSession(direction: "next" | "prev") {
     const target = cycleSession(repos, selected?.sessionId ?? null, direction);
     if (!target) return;
@@ -700,19 +566,9 @@ export function AgentboardScreen() {
     selectSession(folderDir, target.id);
   }
 
-  // ab-focus-terminal (Enter, see lib/shortcuts.tsx): jump into the focused
-  // folder's first session and give it real DOM focus, so the next keystroke
-  // lands in the shell instead of nowhere. "First" mirrors ab-split-session's
-  // notion of the active window: whichever of its panes is a live session
-  // (never a diff/files pane), falling back to the folder's first session at
-  // all when no window is open yet — `selectSession` mounts it either way.
-  //
-  // Returns `false` (never actually focuses anything) whenever some other
-  // element already owns Enter — a focused button, link, or anything inside
-  // a Radix dialog — so `useShortcuts` lets the browser's native Enter
-  // handling (activating that element) through instead of eating it. This is
-  // deliberately narrower than `isEditableTarget`'s guard, which only knows
-  // about inputs/terminals, not buttons — see the registry comment.
+  // ab-focus-terminal (Enter, see lib/shortcuts.tsx): jump into the focused folder's first
+  // session and give it real DOM focus, so the next keystroke lands in the shell instead of
+  // nowhere.
   function focusActiveTerminal(): boolean {
     if (!activeFolderDir || !activeFolder) return false;
     const active = document.activeElement;
@@ -742,9 +598,9 @@ export function AgentboardScreen() {
   // so it would read 0:00 throughout. Bounded by the install itself.
   useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
 
-  // ab-new-task + the working-context band's "New task" button both open the
-  // form for the focused folder's repo — expand a collapsed rail first since
-  // the form itself renders there, same as the rail's own new-task buttons.
+  // ab-new-task + the working-context band's "New task" button both open the form for the
+  // focused folder's repo — expand a collapsed rail first since the form itself renders there,
+  // same as the rail's own new-task buttons.
   function newTaskForActiveRepo() {
     if (!activeRepo) return;
     if (railCollapsed) toggleRail();
@@ -765,19 +621,14 @@ export function AgentboardScreen() {
     }
   }
 
-  // Actually launch Claude in `target`'s session, folding in whatever prompt
-  // the user entered (or none) — see `commitStartClaude`, which reads the
-  // dialog state and calls this.
+  // Actually launch Claude in `target`'s session, folding in whatever prompt the user entered
+  // (or none) — see `commitStartClaude`, which reads the dialog state and calls this.
   async function launchClaudeIn(
     target: StartClaudeTarget,
     prompt: string,
     options?: ClaudeLaunchOptions,
-    /** What the toast shows, when that should differ from what's actually
-     * typed into the PTY — the new-task flow appends attached-image paths to
-     * `prompt` that would only be noise here. Defaults to `prompt` for every
-     * other caller. Setting the session's rail purpose is the caller's job,
-     * not this function's: a session's purpose is why it exists, which is
-     * equally true of the tasks this never launches anything into. */
+    /** What the toast shows, when that should differ from what's actually typed into the PTY —
+     * the new-task flow appends attached-image paths to `prompt` that would only be noise here. */
     label?: string,
   ) {
     const { folderDir, sessionId, sessionName, restart } = target;
@@ -800,10 +651,10 @@ export function AgentboardScreen() {
     );
   }
 
-  // Start a `.claude/launch.json` dev-server config in a fresh session named
-  // after it — the same PTY-typing path `launchClaudeIn` uses (no backend
-  // spawn), then register the config→session mapping so the popover offers
-  // "focus" instead of a second launch while the pane lives.
+  // Start a `.claude/launch.json` dev-server config in a fresh session named after it — the
+  // same PTY-typing path `launchClaudeIn` uses (no backend spawn), then register the
+  // config→session mapping so the popover offers "focus" instead of a second launch while the
+  // pane lives.
   async function launchDevServer(folderDir: string, cfg: LaunchConfigStatus) {
     const added = await invoke<SessionData>("ab_add_session", {
       dir: folderDir,
@@ -831,9 +682,9 @@ export function AgentboardScreen() {
     );
   }
 
-  // Dismiss the start-Claude dialog (Enter, Escape, or click-outside all land
-  // here via `onOpenChange`/`onKeyDown`) and launch with whatever's typed —
-  // blank is a valid answer, it just skips the initial prompt + purpose.
+  // Dismiss the start-Claude dialog (Enter, Escape, or click-outside all land here via
+  // `onOpenChange`/`onKeyDown`) and launch with whatever's typed — blank is a valid answer, it
+  // just skips the initial prompt + purpose.
   function commitStartClaude() {
     const target = startClaudeTarget;
     if (!target) return;
@@ -846,14 +697,8 @@ export function AgentboardScreen() {
     void launchClaudeIn(target, prompt);
   }
 
-  // Claude Sessions' "Open in Agentboard" handoff (see `lib/agentboard.ts`'s
-  // pending-open-session bridge doc comment for why this can't be a plain
-  // function call).
-  //
-  // Requests run **one at a time** via a promise tail: `withLiveSession` makes
-  // each request's folder active to mount its pane, and only one folder can be
-  // active at a time — so overlapping them would leave every folder but the
-  // last with a pane that never started.
+  // Claude Sessions' "Open in Agentboard" handoff (see `lib/agentboard.ts`'s pending-open-
+  // session bridge doc comment for why this can't be a plain function call).
   useEffect(() => {
     let cancelled = false;
     let tail = Promise.resolve();
@@ -878,10 +723,8 @@ export function AgentboardScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only subscription; handle closes over the values it needs and must not re-subscribe
   }, []);
 
-  // Command-palette "jump to repo/session" handoff (see `requestAgentboardNav`
-  // in lib/agentboard.ts). Read-only reveal: focus the folder, and for a
-  // session request select its pane too — no PTY writes, unlike the resume
-  // handoff above.
+  // Command-palette "jump to repo/session" handoff (see `requestAgentboardNav` in
+  // lib/agentboard.ts).
   useEffect(() => {
     const handle = (req: AgentboardNav) => {
       if (req.kind === "session") {
@@ -895,10 +738,7 @@ export function AgentboardScreen() {
           req.goal,
         );
       } else if (req.kind === "start-task") {
-        // The MCP `task_start` tool. Unlike `reopen-task` this opens no form and
-        // waits for no submit — the caller already chose every field, so it goes
-        // straight down the same `createTask` path a submit would, binding the
-        // existing `taskId` instead of minting a new board row.
+        // The MCP `task_start` tool.
         setActiveFolderDir(req.repoDir);
         ackFolder(req.repoDir);
         void taskCreation.createTask(
@@ -921,11 +761,10 @@ export function AgentboardScreen() {
         );
       } else if (req.kind === "open-file") {
         openFileFromRequest(req);
-      } else if (req.kind === "show-artifact") {
-        // The MCP `preview_show` tool — the agent has something to *show*.
-        // `showArtifact` resolves the folder (the payload's may be null) and
-        // acks whichever one it landed in.
-        showArtifact(req);
+      } else if (req.kind === "show-file") {
+        // The MCP `preview_file` tool — the agent has something to *show*. `showPreviewFile`
+        // resolves the folder (the payload's may be null) and acks whichever one it landed in.
+        showPreviewFile(req);
       } else {
         setActiveFolderDir(req.folderDir);
         ackFolder(req.folderDir);
@@ -937,25 +776,18 @@ export function AgentboardScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only subscription; handle closes over current values and must not re-subscribe
   }, []);
 
-  // Actually remove: kill any live sessions first (killing a PTY is
-  // client-mediated — see `closeSession`/`TerminalView`'s unmount effect),
-  // then drop the checkout(s) from the watched list. Removes by `dir`, never
-  // by resolved session name — a multi-checkout repo removes several dirs in
-  // one batch, and `ab_remove_repo`'s name resolution shifts as each removal
-  // changes the collision-disambiguated names of whatever's left.
+  // Actually remove: kill any live sessions first (killing a PTY is client-mediated — see
+  // `closeSession`/`TerminalView`'s unmount effect), then drop the checkout(s) from the watched
+  // list.
   async function performRemove(target: RemoveTarget) {
-    // Closed here rather than by `untrackRepo` because `closeSession` also
-    // clears this screen's local pane state (open list, selection, the pane
-    // itself) — so the seam is handed an empty id list and owns only the
-    // untrack, its `Result` check, and the `ui.action` event.
+    // Closed here rather than by `untrackRepo` because `closeSession` also clears this screen's
+    // local pane state (open list, selection, the pane itself) — so the seam is handed an empty
+    // id list and owns only the untrack, its `Result` check, and the `ui.action` event.
     for (const id of target.sessionIds) await closeSession(id);
     for (const dir of target.dirs) await untrackRepo(dir, target.label, [], "agentboard");
   }
 
-  // Remove a repo (or, for a multi-checkout repo, all its checkouts) from
-  // the rail. Immediate when nothing's running; confirms first (see the
-  // AlertDialog below) when any of its sessions are live, since confirming
-  // kills them.
+  // Remove a repo (or, for a multi-checkout repo, all its checkouts) from the rail.
   function requestRemoveRepo(dirs: string[], label: string) {
     const folders = repos.flatMap((r) => r.folders).filter((f) => dirs.includes(f.dir));
     const sessionIds = folders.flatMap((f) => liveSessions(f).map((s) => s.id));
@@ -1023,9 +855,6 @@ export function AgentboardScreen() {
   };
 
   // Agentboard-scoped shortcuts (see lib/shortcuts.tsx for the registry).
-  // Gated on the tab being active: this screen stays mounted while hidden, so
-  // without the gate ⌘D would spawn sessions from the Cockpit. Close-session
-  // is ⌘⇧W (not ⌘W) — killing a shell deserves a deliberate chord.
   useShortcuts(
     useMemo(
       () => ({
@@ -1034,19 +863,15 @@ export function AgentboardScreen() {
         },
         "ab-new-task": newTaskForActiveRepo,
         "ab-remove-task": () => {
-          // `requestDeleteWorktree` always confirms before touching anything;
-          // the in-flight check mirrors the rail row dimming itself while a
-          // removal runs.
+          // `requestDeleteWorktree` always confirms before touching anything; the in-flight
+          // check mirrors the rail row dimming itself while a removal runs.
           if (!activeFolder || !folderRemovableTask(activeFolder)) return;
           if (folderBusy(activeFolder)) return;
           requestDeleteWorktree(activeFolder.dir, activeFolder.name);
         },
-        // One chord for the whole delete flow: it confirms the first dialog,
-        // and — when the guards refuse and the blocked dialog takes its place
-        // — presses that dialog's destructive button. Blocked wins the tie
-        // because only one of the two is ever open. With neither open the
-        // handler declines (`false`), leaving the keystroke to the browser
-        // rather than eating it.
+        // One chord for the whole delete flow: it confirms the first dialog, and — when the
+        // guards refuse and the blocked dialog takes its place — presses that dialog's
+        // destructive button.
         "ab-confirm-close-worktree": () => {
           if (worktreeDelete.blockedDelete) {
             worktreeDelete.forceDeleteBlocked();
@@ -1216,10 +1041,9 @@ export function AgentboardScreen() {
                               onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
-                              // Undefined while `agentboard.jarvisPane` is off:
-                              // the proof-of-concept surface has no entry point
-                              // at all rather than one that opens a disabled
-                              // pane.
+                              // Undefined while `agentboard.jarvisPane` is off: the proof-of-
+                              // concept surface has no entry point at all rather than one that
+                              // opens a disabled pane.
                               onOpenJarvis={jarvisPane ? openJarvis : undefined}
                               onClosePane={removePane}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
@@ -1341,7 +1165,7 @@ export function AgentboardScreen() {
                 termAttention={termAttention}
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}
-                artifactRequests={artifactRequests}
+                previewRequests={previewRequests}
                 nativeVisible={nativeVisible}
                 labelFor={labelFor}
                 focusTerminalRequest={focusTerminalRequest}
@@ -1389,9 +1213,9 @@ export function AgentboardScreen() {
       {/* The guards refused — shared shell, see `BlockedDeleteDialog`. */}
       <BlockedDeleteDialog
         open={worktreeDelete.blockedDelete != null}
-        // Escape/cancel abandons the flow — except once the removal itself is
-        // running, when "keep" can no longer be honored: the dialog stays up
-        // (buttons locked) until the removal resolves and closes it honestly.
+        // Escape/cancel abandons the flow — except once the removal itself is running, when
+        // "keep" can no longer be honored: the dialog stays up (buttons locked) until the
+        // removal resolves and closes it honestly.
         onOpenChange={closeOnFalse(() => {
           if (!worktreeDelete.blockedRemovalInFlight)
             worktreeDelete.endDeleteFlow(worktreeDelete.blockedDeleteDir);

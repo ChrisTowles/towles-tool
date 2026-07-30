@@ -38,11 +38,16 @@ import { type FolderData, termWriteRetry } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchConfigs } from "@/lib/launch";
 import { openExternalUrl } from "@/lib/open-url";
+import { PreviewDocView } from "@/components/preview-doc";
 import {
-  type ArtifactDoc,
-  type ArtifactRequest,
   fileUrl,
-  previewReadArtifact,
+  onPreviewFileChanged,
+  type PreviewDoc,
+  type PreviewRequest,
+  previewReadFile,
+  previewUnwatchFile,
+  previewWatchFile,
+  typedPreviewRequest,
 } from "@/lib/preview-artifact";
 import {
   ANNOTATION_COLORS,
@@ -73,33 +78,23 @@ function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
   return { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
 }
 
-/** A task's live dev server embedded beside its terminals, with draw-on-page
- * annotation sent back to that task's own Claude session as an annotated
- * screenshot. A folder pane (like diff/files): scoped to one checkout, so the
- * dev server comes from *this* folder's `.claude/launch.json` and the feedback
- * targets *this* folder's session — no global URL bar or session picker.
- *
- * The pane shows one of two things, and the second is the reason it's more
- * than a browser: a **dev server**, or an **artifact** — an HTML page the
- * folder's own agent wrote and pushed here with the `preview_show` MCP tool.
- * Both use the same surface deliberately, so the annotate-and-send flow works
- * over either: the user can circle a paragraph of the agent's own plan and
- * send it straight back to the session that wrote it. */
+/** A task's live dev server — or a file its agent pointed at with the
+ * `preview_file` MCP tool, re-read on every change — beside its terminals, with
+ * draw-on-page annotation sent back to that task's own session as a screenshot.
+ * One surface for both, so you can circle the agent's own plan and reply to it. */
 export function PreviewPane({
   folder,
   focused,
-  artifact,
+  file: pushed,
   onClose,
 }: {
   /** The checkout this pane previews; undefined when it left the rail. */
   folder: FolderData | undefined;
-  /** This pane is the one the user last clicked into — see the focus-ring
-   * rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
+  /** See the focus-ring rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused: boolean;
-  /** The artifact this folder's agent last asked to show, if any. Its `nonce`
-   * changes on every `preview_show` call, so re-showing a rewritten file at
-   * the same path re-reads it instead of no-opping. */
-  artifact?: ArtifactRequest;
+  /** The file this folder's agent last asked to show. Its `nonce` changes per
+   * `preview_file` call, so re-showing a rewritten file re-reads it. */
+  file?: PreviewRequest;
   /** Removes the pane from its window. */
   onClose: () => void;
 }) {
@@ -111,14 +106,16 @@ export function PreviewPane({
   const [frameKey, setFrameKey] = useState(0);
   const [servers, setServers] = useState<DevServer[]>([]);
 
-  // artifact (agent → user)
-  // `doc` holds the loaded HTML; `showing` is which of the two surfaces is on
-  // screen. Separate flags rather than a discriminated union because the dev
-  // server's URL must survive a look at an artifact — going back is one click,
-  // not a re-probe.
-  const [doc, setDoc] = useState<ArtifactDoc | null>(null);
+  // shown file (agent → user). Two flags rather than a union: the dev server's
+  // URL must survive a look at a file, so going back is a click, not a re-probe.
+  const [doc, setDoc] = useState<PreviewDoc | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
-  const [showing, setShowing] = useState<"server" | "artifact">("server");
+  const [showing, setShowing] = useState<"server" | "file">("server");
+  // A path the user typed shows instead of the agent's, until the agent pushes a
+  // *new* one — the whole point of a push is that it lands.
+  const [typed, setTyped] = useState<PreviewRequest | null>(null);
+  const [pathInput, setPathInput] = useState("");
+  const file = typed ?? pushed;
 
   // annotation
   const [tool, setTool] = useState<AnnotationTool | null>(null);
@@ -139,16 +136,10 @@ export function PreviewPane({
 
   const targets = useMemo(() => folderSendTargets(folder), [folder]);
 
-  // Discover this folder's dev server(s) from its launch.json — probing on
-  // mount, on folder change, and a slow interval (each probe is a TCP connect
-  // per port; the interval catches a server starting/stopping). Auto-load the
-  // first listening one so the pane opens showing something.
-  //
-  // Unlike diff-pane (which refetches off `statsKey`, a value the shared 1.5s
-  // agentboard poll already bumps), this owns a timer per open pane. That's a
-  // deliberate divergence: launch.json + port status isn't in the agentboard
-  // snapshot, and a handful of panes probing every 15s is cheap. If dev-server
-  // status ever lands on `FolderData`, key off it and drop this timer.
+  // This folder's dev servers, from its launch.json, auto-loading the first
+  // listening one. Owns a timer per pane — unlike diff-pane, which refetches off
+  // the shared poll's `statsKey` — because launch.json and port status aren't in
+  // the agentboard snapshot. Put them there and this timer goes.
   useEffect(() => {
     if (!dir) return;
     let cancelled = false;
@@ -173,42 +164,53 @@ export function PreviewPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-probe only on a changed dir, not when the label-only folder name changes
   }, [dir]);
 
-  // An agent pushed an artifact (or re-pushed the same path after rewriting
-  // it — hence keying on the nonce, not the path).
-  const artifactPath = artifact?.path;
-  const artifactNonce = artifact?.nonce;
+  // Read + watch the shown file, keyed on the nonce so a rewrite of the same
+  // path re-reads. A hot reload keeps the old content up until the new read
+  // lands: an agent's rewrite is not atomic, and a flash of error is worse.
+  const pushedNonce = pushed?.nonce;
+  useEffect(() => setTyped(null), [pushedNonce]);
+
+  const filePath = file?.path;
+  const fileNonce = file?.nonce;
+  // Follows what's on screen; a hot reload changes content, never the path.
+  useEffect(() => setPathInput(filePath ?? ""), [filePath]);
   useEffect(() => {
-    if (!artifactPath) return;
+    if (!filePath) return;
     let cancelled = false;
-    void (async () => {
-      const res = await previewReadArtifact(artifactPath);
+    const readFile = async (initial: boolean) => {
+      const res = await previewReadFile(filePath);
       if (cancelled) return;
       res.match({
         ok: (loaded) => {
           setDoc(loaded);
           setDocError(null);
-          setShowing("artifact");
+          if (initial) setShowing("file");
         },
         err: (e) => {
-          // Surfaced in the pane, not just a toast: the pane is the thing the
-          // agent told the user to look at, so it has to explain itself. The
-          // previous doc is dropped with it — keeping it would leave
-          // `sourceLabel` naming a file that isn't what's on screen.
+          // In the pane, not a toast: it's what the agent said to look at. The
+          // old doc goes too, else `sourceLabel` names what isn't on screen.
+          if (!initial) return;
           setDoc(null);
           setDocError(errorMessage(e));
-          setShowing("artifact");
+          setShowing("file");
         },
       });
-    })();
+    };
+    void readFile(true);
+    void previewWatchFile(filePath);
+    const off = onPreviewFileChanged(filePath, () => void readFile(false));
     return () => {
       cancelled = true;
+      off();
+      void previewUnwatchFile(filePath);
     };
-  }, [artifactPath, artifactNonce]);
+  }, [filePath, fileNonce]);
 
-  /** Re-read the artifact from disk — the reload button's artifact half. */
-  async function reloadArtifact() {
-    if (!artifactPath) return;
-    const res = await previewReadArtifact(artifactPath);
+  /** The reload button's file half — and the only way back from a failed first
+   * read, which no watch covers: a path that never existed has nothing to watch. */
+  async function reloadFile() {
+    if (!filePath) return;
+    const res = await previewReadFile(filePath);
     res.match({
       ok: (loaded) => {
         setDoc(loaded);
@@ -223,7 +225,7 @@ export function PreviewPane({
 
   function navigate(next: string, source: "manual" | "config") {
     const withScheme = /^[a-z]+:\/\//i.test(next) ? next : `http://${next}`;
-    // Navigating is also how you leave an artifact behind.
+    // Navigating is also how you leave a shown file behind.
     setShowing("server");
     setUrl(withScheme);
     setInput(withScheme);
@@ -231,13 +233,10 @@ export function PreviewPane({
     uiAction("preview.navigate", "agentboard", source);
   }
 
-  // canvas draw model
-  // The in-progress stroke lives only in `draftRef`, never React state: it's
-  // the authoritative value the pointer handlers mutate and paint imperatively
-  // (a `setDraft` per pointermove would re-render the whole pane every move for
-  // no benefit — and reading it back from state would drop points, since
-  // several moves can fire before a render lands). Committed `annotations` are
-  // state and repaint via the effect below.
+  // The in-progress stroke lives only in `draftRef`, painted imperatively: a
+  // `setDraft` per pointermove would re-render the pane every move, and reading
+  // it back from state would drop points (several moves per render). Committed
+  // `annotations` are state and repaint via the effect below.
   function redraw() {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -269,8 +268,7 @@ export function PreviewPane({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- repaint on committed annotations only; redraw is recreated every render and reads them fresh
   useEffect(redraw, [annotations]);
 
-  // Abandon the in-progress stroke and wipe it off the canvas — the shared
-  // "escape the current draft" used by Escape, tool-switch, and clear.
+  // Shared "escape the draft": Escape, tool-switch and clear all use it.
   function discardDraft() {
     draftRef.current = null;
     redrawRef.current();
@@ -318,15 +316,12 @@ export function PreviewPane({
     const d = draftRef.current;
     if (!d) return;
     draftRef.current = null;
-    // Promoting to state re-renders and the effect repaints it as committed —
-    // the imperative frame stays on screen until then, so no flicker.
+    // The imperative frame stays up until the effect repaints it — no flicker.
     setAnnotations((all) => [...all, d]);
   }
 
-  // Two independent top-level setStates — never setAnnotations nested inside
-  // the setTextDraft updater (StrictMode double-invoke would duplicate the
-  // note). Reading `textDraft` from the render closure is safe: callers are
-  // all fresh per-render handlers.
+  // Two top-level setStates — nesting setAnnotations inside a setTextDraft
+  // updater would duplicate the note under StrictMode's double-invoke.
   function commitTextDraft() {
     const td = textDraft;
     if (td && td.value.trim()) {
@@ -411,20 +406,16 @@ export function PreviewPane({
     });
   }
 
-  // Which surface the pane is actually showing, and whether there's anything
-  // on it — the annotation tools and the send button are about the *pixels*,
-  // so they light up for either kind of content and stay dark for neither.
-  const onArtifact = showing === "artifact" && artifact != null;
-  const hasSurface = onArtifact ? doc != null : url !== "";
-  // Reload is the one action that must survive a failed read: an agent that
-  // called `preview_show` a beat before the file was fully written leaves the
-  // pane on an error, and without this the retry button is disabled and (with
-  // no dev server probed) the pane is a dead end.
-  const canReload = onArtifact ? artifactPath != null : url !== "";
-  // Where the annotated screenshot came from, for the prompt the feedback is
-  // sent with: an artifact's path names it far better than the pane's URL,
-  // which for an artifact is whatever dev server it was last pointed at.
-  const sourceLabel = onArtifact ? (doc?.path ?? artifact.path) : url;
+  // The annotation tools are about the *pixels*, so they light up for either
+  // kind of content and stay dark for neither.
+  const onFile = showing === "file" && file != null;
+  const hasSurface = onFile ? doc != null : url !== "";
+  // Reload must survive a failed read, or a call made a beat before the file was
+  // written leaves the pane an error with its retry button disabled.
+  const canReload = onFile ? filePath != null : url !== "";
+  // Names the annotated screenshot's source in the feedback prompt — while a
+  // file is up, `url` is only whatever dev server the pane last pointed at.
+  const sourceLabel = onFile ? (doc?.path ?? file.path) : url;
 
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;
 
@@ -439,16 +430,30 @@ export function PreviewPane({
       <PaneChrome
         lens={<PaneLens kind="web" />}
         controls={
-          onArtifact ? (
+          onFile ? (
             <>
-              {/* An artifact's header is its identity, not a URL bar: the file
-                  is what the agent pointed at, and the way back to the dev
-                  server is one click rather than retyping an address. */}
+              {/* Identity + an address bar for it; the way back to the dev
+                  server is a click, not a retyped URL. */}
               <FileCode2 className="size-3 shrink-0 text-violet-500" />
-              <span className="truncate text-[11px] font-medium">{artifact.title}</span>
-              <span className="truncate font-mono text-[10px] text-muted-foreground">
-                {artifact.path}
-              </span>
+              <span className="shrink-0 truncate text-[11px] font-medium">{file.title}</span>
+              <Input
+                value={pathInput}
+                onChange={(e) => setPathInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setPathInput(filePath ?? "");
+                  if (e.key !== "Enter") return;
+                  const next = typedPreviewRequest(pathInput);
+                  if (!next) {
+                    toast.error("Enter an absolute path — the app has no working directory.");
+                    return;
+                  }
+                  setTyped(next);
+                  uiAction("preview.file.open_typed", "agentboard");
+                }}
+                placeholder="/absolute/path/to/file.md"
+                title="show another file — absolute path, Enter to open"
+                className="h-6 min-w-0 flex-1 font-mono text-[10px]"
+              />
               {url && (
                 <Button
                   variant="ghost"
@@ -456,7 +461,7 @@ export function PreviewPane({
                   className="ml-auto shrink-0"
                   onClick={() => {
                     setShowing("server");
-                    uiAction("preview.artifact.dismiss", "agentboard");
+                    uiAction("preview.file.dismiss", "agentboard");
                   }}
                 >
                   Dev server
@@ -506,13 +511,13 @@ export function PreviewPane({
         actions={
           <>
             <IconBtn
-              title={onArtifact ? "re-read the artifact from disk" : "reload preview"}
+              title={onFile ? "re-read the file from disk" : "reload preview"}
               disabled={!canReload}
               className="hover:text-sky-500"
               onClick={() => {
-                if (onArtifact) void reloadArtifact();
+                if (onFile) void reloadFile();
                 else setFrameKey((k) => k + 1);
-                uiAction("preview.reload", "agentboard", onArtifact ? "artifact" : "server");
+                uiAction("preview.reload", "agentboard", onFile ? "file" : "server");
               }}
             >
               <RotateCw className="size-3" />
@@ -523,7 +528,7 @@ export function PreviewPane({
               className="hover:text-sky-500"
               onClick={() => {
                 uiAction("preview.open_external", "agentboard");
-                void openExternalUrl(onArtifact ? fileUrl(sourceLabel) : url);
+                void openExternalUrl(onFile ? fileUrl(sourceLabel) : url);
               }}
             >
               <ExternalLink className="size-3" />
@@ -541,31 +546,22 @@ export function PreviewPane({
 
       {/* Surface: iframe + annotation canvas */}
       <div ref={surfaceRef} className="relative min-h-0 flex-1 overflow-hidden bg-background">
-        {onArtifact ? (
+        {onFile ? (
           docError != null ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
               <FileCode2 className="size-6 text-muted-foreground/60" />
               <div className="text-xs text-muted-foreground">
-                Couldn&apos;t read the artifact the agent pointed at — {docError}
+                Couldn&apos;t read the file the agent pointed at — {docError}
               </div>
             </div>
-          ) : (
-            /* Sandboxed, unlike the dev-server frame: an artifact is a page the
-             * agent wrote, so it gets scripts (charts, toggles, tabs) but a
-             * unique opaque origin — no `allow-same-origin`, so it can't reach
-             * the app's storage or back through the frame. */
-            <iframe
-              key={`${artifact.path}\u0000${artifact.nonce}`}
-              srcDoc={doc?.html ?? ""}
-              sandbox="allow-scripts"
-              title={artifact.title}
-              className="absolute inset-0 h-full w-full border-0 bg-white"
-            />
-          )
+          ) : doc != null ? (
+            /* Keyed on path + nonce, never content: remounting an artifact's
+             * frame per rewrite would drop its scroll and its scripts' state. */
+            <PreviewDocView key={`${file.path}\u0000${file.nonce}`} doc={doc} title={file.title} />
+          ) : null
         ) : url ? (
-          /* Unsandboxed by intent: the previewed page is the user's own local
-           * dev server and needs scripts + its own origin (HMR, storage) to
-           * function — the combination the sandbox lint flags as useless. */
+          /* Unsandboxed by intent: it's the user's own dev server and needs
+           * scripts + its own origin (HMR, storage) — what the lint flags. */
           // oxlint-disable-next-line react/iframe-missing-sandbox
           <iframe
             key={frameKey}

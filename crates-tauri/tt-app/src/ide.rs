@@ -30,7 +30,7 @@ use crate::terminal::TermState;
 /// Emitted whenever a Claude Code CLI connects to / disconnects from a
 /// terminal's IDE server, so the diff pane can show a live "claude" badge.
 pub const STATUS_EVENT: &str = "ide://status";
-const MAIN_WINDOW_LABEL: &str = "main";
+pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 
 /// The name Claude Code shows for this IDE (`/ide`, status line, lockfile).
 pub const IDE_NAME: &str = "Towles Tool";
@@ -805,17 +805,14 @@ fn already_exists(file_path: &str) -> String {
     format!("{file_path} {ERR_ALREADY_EXISTS}")
 }
 
-/// Guard against escapes — viewer paths must stay inside the folder.
+/// Viewer paths must stay inside the folder, and two ways out have to be closed:
+/// `..` walks up, and an *absolute* path is worse — `Path::join` discards the base
+/// and returns the argument whole, so `confined("/w/repo", "/etc/passwd")` would
+/// hand back `/etc/passwd`. Survivable while these only read; `ide_delete` and
+/// `ide_rename` mutate.
 ///
-/// Two ways out, and both have to be closed for the join to be safe. `..`
-/// walks up; an *absolute* path is worse, because `Path::join` silently
-/// discards the base and returns the argument whole, so `confined("/w/repo",
-/// "/etc/passwd")` would hand back `/etc/passwd`. That was survivable while
-/// these commands only read; `ide_delete` and `ide_rename` mutate.
-///
-/// With both rejected the join can't escape lexically, which is the right
-/// depth here: `to`/`from` for a rename may not exist yet, so canonicalizing
-/// isn't an option.
+/// Lexical is the right depth: a rename's `to`/`from` may not exist yet, so
+/// canonicalizing isn't an option.
 fn confined(dir: &Path, file_path: &str) -> Result<PathBuf, String> {
     let rel = Path::new(file_path);
     let escapes =
