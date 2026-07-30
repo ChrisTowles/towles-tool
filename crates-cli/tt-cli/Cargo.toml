@@ -13,6 +13,9 @@ tt-agentboard = { workspace = true }
 tt-collect = { workspace = true }
 tt-config = { workspace = true }
 tt-git = { workspace = true }
+# `tt open` is a client of the app's MCP endpoint: the tool call it makes and the
+# per-checkout port it dials both live there, so neither is restated here.
+tt-mcp = { workspace = true }
 tt-exec = { workspace = true }
 tt-journal = { workspace = true }
 tt-tasks = { workspace = true }
@@ -23,6 +26,10 @@ console = { workspace = true }
 tt-telemetry = { workspace = true }
 inquire = { workspace = true }
 serde_json = { workspace = true }
+# One loopback POST for `tt open`. Workspace-configured for `native-tls` like
+# every other HTTP client here (the OS trust store rule in CLAUDE.md), even
+# though this caller only ever talks to 127.0.0.1 over plain HTTP.
+ureq = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
+import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
@@ -122,6 +123,14 @@ function TaskStartBridge() {
   useEffect(
     () =>
       subscribePreviewShow(
+        () => reposRef.current,
+        () => openTabRef.current("agentboard"),
+      ),
+    [],
+  );
+  useEffect(
+    () =>
+      subscribeEditorOpenFile(
         () => reposRef.current,
         () => openTabRef.current("agentboard"),
       ),

@@ -412,6 +412,39 @@ export function AgentboardScreen() {
     openPreview(dir);
   }
 
+  // The MCP `file_open` tool / `tt open`, onto the route a terminal file link
+  // takes. Shares `showArtifact`'s fallback folder, but not past the point where
+  // the file isn't inside it — the pane browses one checkout.
+  function openFileFromRequest(req: {
+    folderDir: string | null;
+    path: string;
+    isDir: boolean;
+    line: number | null;
+    nonce: number;
+  }) {
+    const dir =
+      req.folderDir ?? activeFolderDirRef.current ?? railRef.current.repos[0]?.folders[0]?.dir;
+    if (!dir) {
+      toast.error(`Couldn't open ${req.path} — no checkouts are open on the rail`);
+      return;
+    }
+    // A directory: the tree is already rooted there, nothing to select.
+    if (!req.isDir) {
+      const rel = filesPanePathFor(dir, req.path);
+      if (rel == null) {
+        toast.error(`Couldn't open ${req.path} — it isn't inside ${dir}`);
+        return;
+      }
+      setFilesOpenRequests((prev) => ({
+        ...prev,
+        [dir]: { path: rel, anchor: { line: req.line }, nonce: req.nonce },
+      }));
+    }
+    setActiveFolderDir(dir);
+    ackFolder(dir);
+    openFiles(dir);
+  }
+
   // Same, for this folder's native pane — a rectangle of the window rendered
   // by Bevy rather than DOM (`components/jarvis-pane.tsx`). Gated on the same
   // `agentboard.jarvisPane` setting as the rail's surface: while this is a
@@ -886,6 +919,8 @@ export function AgentboardScreen() {
             taskId: req.taskId,
           },
         );
+      } else if (req.kind === "open-file") {
+        openFileFromRequest(req);
       } else if (req.kind === "show-artifact") {
         // The MCP `preview_show` tool — the agent has something to *show*.
         // `showArtifact` resolves the folder (the payload's may be null) and

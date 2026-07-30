@@ -13,6 +13,9 @@
 use std::time::Instant;
 
 use chrono::{Local, NaiveDate, TimeZone};
+
+pub mod port;
+
 use serde_json::{Value, json};
 use tt_store::{EventInput, McpCallInput, Store};
 
@@ -95,6 +98,53 @@ pub struct PreviewArtifact {
     /// happens to be on screen) — which is exactly why the session travels with
     /// the request.
     pub session: Option<String>,
+}
+
+/// The app-side half of `file_open`: put a path already on disk into the Files
+/// pane of the caller's own task, where [`PreviewHost`] shows a page the agent
+/// *authored*. A hand-off for the same reason, hence `"opening"`.
+///
+/// Routed by caller first, path second ([`FileToOpen::session`]) — see
+/// [`PreviewArtifact::session`]. Here the path fallback is a *good* guess: a file
+/// names a checkout, so the longest tracked-folder prefix is usually the task.
+pub trait EditorHost: Send {
+    fn open_file(&self, request: FileToOpen) -> Result<(), String>;
+}
+
+/// A validated path to reveal in the Files pane — see [`EditorHost`].
+pub struct FileToOpen {
+    /// Absolute, canonical path to an existing file or directory.
+    pub path: String,
+    /// Whether `path` is a directory. Sent because the frontend cannot `stat`:
+    /// a directory opens the pane on the folder, a file opens the pane *and*
+    /// selects the file, and the difference has to be decided where the syscall
+    /// is legal.
+    pub is_dir: bool,
+    /// 1-based line to reveal, when the caller named one.
+    pub line: Option<u32>,
+    /// The PTY session the caller runs in — the routing key. See
+    /// [`EditorHost`].
+    pub session: Option<String>,
+}
+
+/// Validate a `file_open` path into `(absolute path, is_dir)`.
+///
+/// Absolute and canonical for [`validate_artifact_path`]'s reasons: no working
+/// directory to resolve against, and one spelling per file.
+fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
+    let path = std::path::Path::new(raw.trim());
+    if path.as_os_str().is_empty() {
+        return Err("missing required argument: path".to_string());
+    }
+    if !path.is_absolute() {
+        return Err(format!(
+            "path must be absolute — {raw:?} is relative, and this server serves every session on \
+             the machine, so it has no working directory to resolve it against"
+        ));
+    }
+    let resolved = std::fs::canonicalize(path).map_err(|e| format!("can't open {raw:?}: {e}"))?;
+    let is_dir = resolved.is_dir();
+    Ok((resolved.to_string_lossy().into_owned(), is_dir))
 }
 
 /// Largest artifact `preview_show` will accept, checked from the same `stat`
@@ -225,6 +275,9 @@ pub struct Dispatcher {
     /// Injected by the serving transport — see [`PreviewHost`]. `None` in
     /// tests and any Tauri-free driver, where `preview_show` refuses.
     preview_host: Option<Box<dyn PreviewHost>>,
+    /// Injected by the serving transport — see [`EditorHost`]. `None` in tests
+    /// and any Tauri-free driver, where `file_open` refuses.
+    editor_host: Option<Box<dyn EditorHost>>,
     /// `clientInfo` from the session's `initialize` (e.g. `claude-code 2.1`),
     /// stamped onto call-log rows so the app's MCP screen can say who called.
     client: Option<String>,
@@ -360,6 +413,7 @@ impl Dispatcher {
             store,
             task_host: None,
             preview_host: None,
+            editor_host: None,
             client: None,
             calendar_sources: None,
         }
@@ -378,6 +432,14 @@ impl Dispatcher {
     /// refuses.
     pub fn with_preview_host(mut self, host: Box<dyn PreviewHost>) -> Dispatcher {
         self.preview_host = Some(host);
+        self
+    }
+
+    /// Inject the app-side editor host — see [`EditorHost`]. The serving
+    /// transport in `tt-app` is the only caller; without it `file_open`
+    /// refuses.
+    pub fn with_editor_host(mut self, host: Box<dyn EditorHost>) -> Dispatcher {
+        self.editor_host = Some(host);
         self
     }
 
@@ -563,6 +625,7 @@ impl Dispatcher {
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
             "preview_show" => self.preview_show(args, ctx),
+            "file_open" => self.file_open(args, ctx),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -958,6 +1021,41 @@ impl Dispatcher {
         Ok(json!({ "status": "showing", "path": path, "title": title, "routed": routed }))
     }
 
+    /// Reveal a file or folder in the caller's own Files pane — see
+    /// [`EditorHost`].
+    ///
+    /// Validated here rather than in the host for `preview_show`'s reason: a
+    /// path that isn't there would otherwise be a pane that never appears and an
+    /// agent told nothing.
+    fn file_open(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
+        let raw = args
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "missing required argument: path".to_string())?;
+
+        // Availability before diagnosis, same as `task_start`.
+        if self.editor_host.is_none() {
+            return Err("file_open is unavailable: no editor host is attached".to_string());
+        }
+        let (path, is_dir) = validate_open_path(raw)?;
+        let line = args
+            .get("line")
+            .and_then(Value::as_u64)
+            .filter(|&n| n > 0)
+            .map(|n| n.min(u64::from(u32::MAX)) as u32);
+
+        let routed = if ctx.session.is_some() { "session" } else { "path" };
+        let host = self.editor_host.as_ref().expect("checked above, before the path was validated");
+        host.open_file(FileToOpen {
+            path: path.clone(),
+            is_dir,
+            line,
+            session: ctx.session.clone(),
+        })?;
+
+        Ok(json!({ "status": "opening", "path": path, "routed": routed }))
+    }
+
     fn task_delete(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -1227,6 +1325,18 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "file_open",
+            "description": "Open a file (or folder) that already exists on disk in the app's Files pane, beside the terminal you are running in — so the human can read it without leaving the app or scrolling your output. Use it to put the thing you are talking about on screen: the file you just changed, the config you want a decision about, the test that fails. For a page *you* wrote to explain something, use preview_show instead. The pane opens in your terminal's task; the path names the file to reveal, not the task to reveal it in, and it must be inside a folder the app tracks. Returns `status: \"opening\"` — the pane opens asynchronously, so say what you put there rather than assuming it was read.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Absolute path to the file or directory to reveal. Relative paths are refused — this server is shared by every session on the machine and has no working directory of its own." },
+                    "line": { "type": "integer", "description": "1-based line to scroll to and highlight. Ignored for a directory." },
+                },
+                "required": ["path"],
+            },
+        },
+        {
             "name": "calendar_today",
             "description": "The shape of today: every meeting starting in today's local calendar day, in order. Use it to see where the uninterrupted stretches are before committing to deep work.",
             "inputSchema": no_args(),
@@ -1403,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_exactly_the_task_preview_and_calendar_families() {
+    fn tools_list_is_exactly_the_task_pane_and_calendar_families() {
         let mut dispatcher = dispatcher();
         let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string();
         let response: Value =
@@ -1424,6 +1534,7 @@ mod tests {
                 "task_delete",
                 "task_start",
                 "preview_show",
+                "file_open",
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
@@ -1608,6 +1719,102 @@ mod tests {
     #[test]
     fn preview_show_is_not_a_writing_tool() {
         assert!(!tool_writes("preview_show"));
+    }
+
+    // file_open
+
+    /// Every `(path, is_dir, line, session)` a fake editor host was handed.
+    type Opened =
+        std::sync::Arc<std::sync::Mutex<Vec<(String, bool, Option<u32>, Option<String>)>>>;
+
+    fn with_editor_host() -> (Dispatcher, Opened) {
+        struct FakeEditorHost {
+            opened: Opened,
+        }
+        impl EditorHost for FakeEditorHost {
+            fn open_file(&self, req: FileToOpen) -> Result<(), String> {
+                self.opened.lock().unwrap().push((req.path, req.is_dir, req.line, req.session));
+                Ok(())
+            }
+        }
+        let opened: Opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let host = FakeEditorHost { opened: std::sync::Arc::clone(&opened) };
+        (dispatcher().with_editor_host(Box::new(host)), opened)
+    }
+
+    #[test]
+    fn file_open_hands_the_file_to_the_host() {
+        let (mut dispatcher, opened) = with_editor_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "main.rs", "fn main() {}");
+
+        let result = call_tool(&mut dispatcher, "file_open", json!({ "path": path, "line": 42 }));
+
+        assert_eq!(result["status"], "opening");
+        assert_eq!(result["routed"], "path");
+        assert_eq!(&*opened.lock().unwrap(), &[(path, false, Some(42), None)]);
+    }
+
+    #[test]
+    fn file_open_routes_by_the_callers_session() {
+        let (mut dispatcher, opened) = with_editor_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = artifact_file(&dir, "main.rs", "fn main() {}");
+
+        let result = call_tool_as(
+            &mut dispatcher,
+            "file_open",
+            json!({ "path": path }),
+            &RequestContext::for_session(Some("s64abebd44298447d")),
+        );
+
+        assert_eq!(result["routed"], "session");
+        assert_eq!(
+            opened.lock().unwrap()[0].3.as_deref(),
+            Some("s64abebd44298447d"),
+            "the session travels with the request, not in the arguments"
+        );
+    }
+
+    /// The frontend can't `stat`, so the directory-ness is decided here — see
+    /// [`FileToOpen::is_dir`].
+    #[test]
+    fn file_open_marks_a_directory_as_one() {
+        let (mut dispatcher, opened) = with_editor_host();
+        let dir = tempfile::tempdir().unwrap();
+        let path = std::fs::canonicalize(dir.path()).unwrap().to_string_lossy().into_owned();
+
+        call_tool(&mut dispatcher, "file_open", json!({ "path": path }));
+
+        assert!(
+            opened.lock().unwrap()[0].1,
+            "a directory opens the pane, it doesn't select a file"
+        );
+    }
+
+    #[test]
+    fn file_open_refuses_a_relative_or_missing_path() {
+        let (mut dispatcher, _) = with_editor_host();
+        let message = call_tool_err(&mut dispatcher, "file_open", json!({ "path": "src/main.rs" }));
+        assert!(message.contains("must be absolute"), "{message}");
+
+        let message =
+            call_tool_err(&mut dispatcher, "file_open", json!({ "path": "/nope/gone.rs" }));
+        assert!(message.contains("can't open"), "{message}");
+    }
+
+    /// Availability before diagnosis: without a host the answer is "this tool
+    /// can't work here", not "that path is wrong".
+    #[test]
+    fn file_open_without_a_host_refuses() {
+        let mut dispatcher = dispatcher();
+        let message = call_tool_err(&mut dispatcher, "file_open", json!({ "path": "/nope" }));
+        assert!(message.contains("no editor host"), "{message}");
+    }
+
+    #[test]
+    fn file_open_is_not_a_writing_tool() {
+        assert!(!tool_writes("file_open"));
     }
 
     /// An epoch-ms instant as the RFC 3339 the tool now speaks, in local time

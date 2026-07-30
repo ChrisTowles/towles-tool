@@ -557,7 +557,7 @@ fn term_start_blocking(
     // address; leaving the var unset lets the `:-8787` default find whichever
     // instance does serve, which is strictly better than nothing.
     if let Some(port) = crate::mcp_http::serving_port() {
-        cmd.env(crate::mcp_http::MCP_PORT_ENV, port.to_string());
+        cmd.env(tt_mcp::port::MCP_PORT_ENV, port.to_string());
     }
     // Pair a `claude` started in this pane with this pane's IDE server. The
     // scrub above already dropped any *inherited* CLAUDE_CODE_SSE_PORT (that

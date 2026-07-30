@@ -1,7 +1,7 @@
 //! Loopback HTTP transport for the MCP server ([`tt_mcp`]): the socket, the HTTP framing
 //! and the request-admission rules. Every instance serves its own MCP on its own port,
 //! claimed per checkout from `.env.example`'s `${tt:port 8787-8986}`, and a session started
-//! in an app's terminal reaches *that* app because the app stamps [`MCP_PORT_ENV`] into the
+//! in an app's terminal reaches *that* app because the app stamps [`tt_mcp::port::MCP_PORT_ENV`] into the
 //! shell and the plugin's `.mcp.json` expands it. The machine-wide singleton this replaced
 //! was wrong on correctness: `tt.db` is *instance* state per checkout, so whichever instance
 //! won a fixed 8787 answered every session out of **its own** board while the rest served
@@ -42,7 +42,7 @@ pub fn mcp_status() -> serde_json::Value {
 }
 
 /// The port this instance is actually serving on, or `None` if it never bound. The
-/// distinction matters at one call site — stamping [`MCP_PORT_ENV`] into a spawned
+/// distinction matters at one call site — stamping [`tt_mcp::port::MCP_PORT_ENV`] into a spawned
 /// terminal, where advertising a port we don't serve points a session at nothing.
 pub fn serving_port() -> Option<u16> {
     SERVING.load(Ordering::Relaxed).then(|| PORT.load(Ordering::Relaxed))
@@ -50,47 +50,6 @@ pub fn serving_port() -> Option<u16> {
 
 /// The MCP endpoint path. A single route: this is not a REST API.
 const MCP_PATH: &str = "/mcp";
-
-/// Names the MCP port an app instance serves on, in its own environment and in every
-/// terminal it spawns. Rendered per checkout from the `${tt:port 8787-8986}` claim; the
-/// plugin's `.mcp.json` expands it as `${TT_MCP_PORT:-8787}`.
-pub const MCP_PORT_ENV: &str = "TT_MCP_PORT";
-
-/// The port this instance should serve on, most specific source first:
-///
-/// 1. `TT_MCP_PORT` in the process's own environment — an explicit override (a nested app
-///    inherits none of it: the PTY scrub drops `TT_*`).
-/// 2. The checkout's `TT_MCP_PORT` claim from its rendered `.env` — the normal case.
-/// 3. The settings `mcp.port` — a machine-wide default outside any checkout.
-///
-/// Pure so the precedence is tested directly: getting it wrong points every session at one
-/// instance again. A `0` is rejected with unparseable junk — port 0 binds an ephemeral port
-/// no `.mcp.json` could name.
-fn resolve_port(process_env: Option<&str>, dotenv_claim: Option<u16>, settings_port: u16) -> u16 {
-    process_env
-        .map(str::trim)
-        .and_then(|v| v.parse::<u16>().ok())
-        .filter(|&port| port > 0)
-        .or(dotenv_claim)
-        .unwrap_or(settings_port)
-}
-
-/// [`resolve_port`] against the real environment: this process's env, then the
-/// `.env` of the checkout it is running in (`None` outside one).
-///
-/// The `.env` value is read as a **port claim** ([`tt_tasks::envfile::port_claims_by_key`])
-/// rather than parsed here, so the app binds exactly the port its siblings see as taken —
-/// a value the claim scanner skips is one no sibling avoids, yet this app would bind it.
-pub fn port_for_this_instance() -> u16 {
-    let settings_port =
-        tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
-    let dotenv_claim = std::env::current_dir()
-        .ok()
-        .and_then(|dir| tt_config::checkout_root_from_dir(&dir))
-        .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
-        .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
-    resolve_port(std::env::var(MCP_PORT_ENV).ok().as_deref(), dotenv_claim, settings_port)
-}
 
 /// Largest request body accepted, enforced incrementally by `Limited` in [`read_body`] so
 /// a stray upload can't balloon memory before being rejected. MCP requests are small —
@@ -331,7 +290,8 @@ pub fn spawn(app: AppHandle, port: u16) {
     let dispatcher = Arc::new(Mutex::new(
         Dispatcher::new(store)
             .with_task_host(Box::new(AppTaskHost { app: app.clone() }))
-            .with_preview_host(Box::new(AppPreviewHost { app: app.clone() })),
+            .with_preview_host(Box::new(AppPreviewHost { app: app.clone() }))
+            .with_editor_host(Box::new(AppEditorHost { app: app.clone() })),
     ));
 
     SERVING.store(true, Ordering::Relaxed);
@@ -439,6 +399,53 @@ impl tt_mcp::PreviewHost for AppPreviewHost {
             .emit(PREVIEW_SHOW_EVENT, &payload)
             .map_err(|e| format!("couldn't ask the app to show {}: {e}", payload.path))
     }
+}
+
+/// Lets the `file_open` MCP tool reveal a path in a folder's Files pane. Emits and
+/// returns like [`AppPreviewHost::show`] — see [`tt_mcp::EditorHost`].
+struct AppEditorHost {
+    app: AppHandle,
+}
+
+impl tt_mcp::EditorHost for AppEditorHost {
+    fn open_file(&self, req: tt_mcp::FileToOpen) -> Result<(), String> {
+        let payload = FileOpenPayload {
+            path: req.path,
+            is_dir: req.is_dir,
+            line: req.line,
+            session: req.session,
+        };
+        tracing::info!(
+            path = %payload.path,
+            is_dir = payload.is_dir,
+            line = payload.line.unwrap_or(0),
+            session = payload.session.as_deref().unwrap_or("-"),
+            "editor.open_file_requested"
+        );
+        self.app
+            .emit(EDITOR_OPEN_FILE_EVENT, &payload)
+            .map_err(|e| format!("couldn't ask the app to open {}: {e}", payload.path))
+    }
+}
+
+/// Asks the frontend to reveal a path in a folder's Files pane. Consumed by
+/// `apps/client/src/lib/editor-open.ts`, which lands it on the same files-pane
+/// route as a terminal file link and the IDE protocol's `openFile`.
+pub const EDITOR_OPEN_FILE_EVENT: &str = "editor://open-file";
+
+/// The [`EDITOR_OPEN_FILE_EVENT`] payload. `camelCase` to match the frontend's
+/// Zod schema for it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileOpenPayload {
+    path: String,
+    /// Decided in Rust because the webview cannot `stat` — see
+    /// [`tt_mcp::FileToOpen::is_dir`].
+    is_dir: bool,
+    line: Option<u32>,
+    /// The caller's PTY session when it identified itself; the frontend routes
+    /// on it and falls back to the longest tracked-folder prefix of `path`.
+    session: Option<String>,
 }
 
 /// Asks the frontend to display an HTML artifact in a folder's Preview pane.
@@ -830,56 +837,6 @@ mod tests {
         assert_eq!(Refusal::MethodNotAllowed.status(), 405);
         assert_eq!(Refusal::TooLarge.status(), 413);
         assert_eq!(Refusal::Unreadable.status(), 400);
-    }
-
-    // --- port resolution ---
-
-    #[test]
-    fn the_checkouts_dotenv_claim_beats_the_shared_settings_default() {
-        assert_eq!(resolve_port(None, Some(8801), 8787), 8801);
-    }
-
-    /// An explicit env var is a deliberate override (a script, a hand-run
-    /// binary), so it outranks the file.
-    #[test]
-    fn the_process_environment_wins_over_the_dotenv() {
-        assert_eq!(resolve_port(Some("9000"), Some(8801), 8787), 9000);
-    }
-
-    /// A packaged app launched from the desktop is in no checkout and has no
-    /// `.env` to read.
-    #[test]
-    fn settings_answer_outside_a_checkout() {
-        assert_eq!(resolve_port(None, None, 9191), 9191);
-    }
-
-    /// An override can be a blank, junk, or out of range. Falling *through* to
-    /// the next source keeps the app serving on a sane port. `0` is the one
-    /// that parses and still has to be rejected — binding it takes an ephemeral
-    /// port no `.mcp.json` could name.
-    ///
-    /// The `.env` side needs no equivalent: it arrives as an already-validated
-    /// claim from `envfile::port_claims_by_key`, which is tested in `tt-tasks`
-    /// and is what rejects an unsubstituted `${tt:port 8787-8986}` token there.
-    #[test]
-    fn an_unusable_override_falls_through_instead_of_binding_nonsense() {
-        for bad in [
-            "",
-            "   ",
-            "${tt:port 8787-8986}",
-            "eight thousand",
-            "70000",
-            "-1",
-            "0",
-        ] {
-            assert_eq!(resolve_port(Some(bad), None, 8787), 8787, "should reject {bad:?}");
-            assert_eq!(resolve_port(Some(bad), Some(8801), 8787), 8801, "should reject {bad:?}");
-        }
-    }
-
-    #[test]
-    fn surrounding_whitespace_is_tolerated() {
-        assert_eq!(resolve_port(Some(" 9000 "), None, 8787), 9000);
     }
 
     // --- caller identity (`preview_show` routing) ---

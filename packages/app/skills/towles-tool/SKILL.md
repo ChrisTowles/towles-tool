@@ -21,6 +21,24 @@ tt journal list         # Recent entries
 tt journal search TEXT  # Search entries
 ```
 
+## Open a path in the app
+
+```bash
+tt open src/main.rs        # reveal it in the app's Files pane, in *this* task
+tt open src/main.rs:42     # …scrolled to line 42 (`--line 42` also works)
+tt open crates/tt-git      # a folder opens the pane on that checkout
+```
+
+Shows the path in the running app's Files pane, beside the terminal you typed it
+in — routed by the `TT_SESSION_ID` the app stamps on its terminals, so it lands
+in this task's window and not another's. From a terminal the app didn't spawn
+there's no session to route on and it falls back to the checkout the path is in.
+
+Fails (non-zero), rather than opening anything else, when: the path doesn't
+exist, it's under no git repository (the pane browses a checkout), or no app
+instance is serving this checkout — there is no `preferredEditor` fallback.
+`preferredEditor` still applies to the journal commands above.
+
 ## Worktree tasks
 
 ```bash

@@ -634,7 +634,7 @@ pub fn run() {
             // board rather than whichever instance won a race for a shared port.
             // Deliberately after `manage(store_state)`, since a mutating call
             // re-emits the snapshot through that state.
-            mcp_http::spawn(app.handle().clone(), mcp_http::port_for_this_instance());
+            mcp_http::spawn(app.handle().clone(), tt_mcp::port::for_this_checkout());
 
             // Overlap guard for the manual "refresh now" command.
             app.manage(store::CollectNowState::default());

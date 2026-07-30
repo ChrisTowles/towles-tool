@@ -39,6 +39,12 @@ fn dispatch(command: Commands, config_dir: Option<&Path>) -> i32 {
         Commands::Today { no_open } => {
             commands::journal::run(JournalCommands::DailyNotes { no_open }, config_dir)
         }
+        Commands::Open { path, line } => {
+            // A `:<line>` suffix on the operand wins over `--line`: it is the
+            // more specific spelling, and it came from whatever printed the path.
+            let (path, suffix_line) = commands::open::split_line_suffix(&path);
+            commands::open::run(Path::new(path), suffix_line.or(line))
+        }
         Commands::Task(args) => commands::task::run(args.command),
     };
 
