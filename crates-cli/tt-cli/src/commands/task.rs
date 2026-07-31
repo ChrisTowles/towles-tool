@@ -99,20 +99,15 @@ fn board_store_for(dir: &Path) -> Option<tt_store::Store> {
     tt_store::Store::open(&path).ok()
 }
 
-/// Resolve whichever board store actually holds the row bound to `dir`, the worktree
-/// being removed. Board rows are per-checkout **instance state**, so a row lives where
-/// the app instance that *created* it was scoped — normally `checkout`, the primary this
-/// task anchors to. But an instance running *from inside another task's worktree* (this
-/// repo's dev loop does exactly that) scopes itself there, so its tasks land in that
-/// worktree's store. The scope to try next is the **ambient cwd's**, since
-/// `--root`/discovery always resolve `checkout` to the primary regardless of cwd, while
-/// a person removing a task usually sits in the checkout that created it.
+/// Resolve whichever board store actually holds the row bound to `dir`. Rows
+/// are per-checkout instance state, living where the creating instance was
+/// scoped — normally `checkout`, but an instance run from inside another
+/// task's worktree scopes there, so the ambient cwd's store is tried next.
 ///
-/// Deliberately *not* `task_scope_from_dir(dir)` — that scope is what
-/// `ops::remove_task`'s `state_cleanup` wipes wholesale, so trying it would only "find"
-/// a row a heartbeat before its own database is deleted. Trying only `checkout` silently
-/// no-ops against an empty database, leaving the removed worktree's stale "doing" card
-/// on the Board forever with nothing in the successful run saying so.
+/// Deliberately *not* `task_scope_from_dir(dir)` — `state_cleanup` wipes that
+/// scope wholesale, so it would "find" a row a heartbeat before its database
+/// is deleted. Trying only `checkout` silently no-ops against an empty
+/// database, stranding the removed worktree's "doing" card forever.
 fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Store> {
     let dir_s = dir.to_string_lossy();
     let has_row = |s: &tt_store::Store| matches!(s.task_for_worktree_dir(&dir_s), Ok(Some(_)));
@@ -130,24 +125,19 @@ fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Stor
     primary.or(ambient)
 }
 
-/// Steps 4 and 5 of the removal sequence, for `tt task clean` — which removes
-/// in bulk through `ops::clean_tasks` and so has already taken each worktree
-/// off disk by the time the bindings need clearing. Same shared code as every
-/// other path.
+/// Steps 4 and 5 of the removal sequence, for `tt task clean` (bulk removal
+/// has already taken each worktree off disk by the time bindings clear).
 ///
-/// **Returns** its notes rather than printing them: `tt task clean --json`
-/// writes a machine-read document to stdout and `ui::warning` (like
-/// `ui::success`) prints to *stdout*, so a helper that reported for itself
-/// would corrupt that document. The caller folds these into its own
-/// `warnings` collection — `ui::warning` lines in text mode, a `"warnings"`
-/// array in `--json` — so `--json` sees them too, not just text mode.
+/// **Returns** notes rather than printing: `--json` writes a machine-read
+/// document to stdout and `ui::warning` also prints there, so a helper that
+/// reported for itself would corrupt it. The caller folds these into its own
+/// `warnings` output in both modes.
 fn after_removal(checkout: &Path, dir: &Path) -> Vec<String> {
     let store = board_store_for(checkout);
     task_removal::remove_bindings(
         &tt_agentboard::repos::default_repos_path(),
         store.as_ref().map(|s| s as &dyn task_removal::BoardRows),
         dir,
-        &[],
         // `clean` only sweeps *finished* tasks — landed by evidence — so the
         // close is always a done, never an abandonment.
         tt_store::TaskOutcome::Done,

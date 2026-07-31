@@ -231,6 +231,16 @@ fn build_folder(
     let needs = session_data.iter().filter(|s| session_needs(s)).count() as i64;
 
     let record = row.map(|r| r.record.clone()).unwrap_or_default();
+    // Identity comes from the record when git can't answer yet — a task row
+    // renders under its own title with its recorded branch from the first
+    // paint, instead of masquerading as "Root" until the cold git cache warms
+    // (or forever, for a detached task whose directory is gone).
+    let is_worktree = git.is_worktree || record.task().is_some();
+    let branch = if git.branch.is_empty() {
+        record.task().and_then(|t| t.branch.clone()).unwrap_or_default()
+    } else {
+        git.branch.clone()
+    };
 
     FolderData {
         name: entry.name.clone(),
@@ -240,8 +250,8 @@ fn build_folder(
         // Filled in by the app's `stamp_pty_state`; the engine can't know.
         phase: None,
         dir_missing: git.dir_missing,
-        branch: git.branch.clone(),
-        is_worktree: git.is_worktree,
+        branch,
+        is_worktree,
         committed_files: git.committed_files,
         committed_added: git.committed_added,
         committed_removed: git.committed_removed,
@@ -625,6 +635,10 @@ mod tests {
         let row = &payload.repos[0].folders[1];
         assert_eq!(row.record.task().map(|t| t.id), Some(7));
         assert_eq!(row.repo_root, "/r/demo");
+        // Identity comes from the record while git has nothing: this is a
+        // worktree row on its recorded branch, never a bare "Root".
+        assert!(row.is_worktree);
+        assert_eq!(row.branch, "feat/new");
     }
 
     /// The branch is known from the record before git can answer, so the row
@@ -674,6 +688,10 @@ mod tests {
         assert!(folder.record.task().is_some());
         assert_eq!(folder.phase, None, "the engine never claims an operation is running");
         assert_eq!(folder.record.task().and_then(|t| t.branch.as_deref()), Some("feat/gone"));
+        // A gone directory means git reports nothing, forever — the record
+        // keeps the row a named worktree instead of a permanent "Root".
+        assert!(folder.is_worktree);
+        assert_eq!(folder.branch, "feat/gone");
 
         // A tracked checkout that's missing is a ghost, not a detached task —
         // its remedy is Untrack, which `dir_missing` already drives.

@@ -209,6 +209,19 @@ pub fn run() {
                 );
             }
 
+            // Heal `repos.json` before the engine's first load: task worktrees
+            // double-tracked as repos (an old create flow wrote them) shadow
+            // their task records as duplicate "Root" rows and linger as ghosts
+            // after removal. See `nested_task_paths`.
+            match tt_agentboard::repos::untrack_nested_tasks_persisted(
+                &tt_agentboard::repos::default_repos_path(),
+            ) {
+                Ok((_, dropped)) if !dropped.is_empty() => {
+                    tracing::info!(count = dropped.len(), ?dropped, "repos.nested_tasks_untracked");
+                }
+                _ => {}
+            }
+
             // Scope to this app instance: sessions.json is shared across
             // instances, so another running app's PTY can carry the same
             // session id — its agents are that window's to report, not ours.
@@ -376,11 +389,19 @@ pub fn run() {
                         // discovered this tick is a row on this tick. Unwritten
                         // worktrees become `detected` rows and vanished dirs are
                         // forgotten, as diffs, so a steady state writes nothing.
+                        // Gated on the show-unmanaged toggle (default off):
+                        // detected rows are invisible everywhere while it's
+                        // off, and minting rows nobody can see would write to a
+                        // database three other processes share, every tick.
                         let store_state = store_handle.try_state::<store::StoreState>();
                         if let Some(state) = &store_state {
                             let (found, vanished) = {
                                 let mut e = engine.lock().unwrap();
-                                (e.unrecorded_worktrees(), e.vanished_detected_records())
+                                if e.show_unmanaged_worktrees() {
+                                    (e.unrecorded_worktrees(), e.vanished_detected_records())
+                                } else {
+                                    (Vec::new(), Vec::new())
+                                }
                             };
                             state.reconcile_detected_worktrees(&found, &vanished, now);
                         }
@@ -711,7 +732,7 @@ pub fn run() {
             telemetry::telemetry_events,
             telemetry::telemetry_attention,
             telemetry::telemetry_keyboard,
-            agentboard::ab_open_session_for_cwd,
+            agentboard::ab_ensure_session,
             doctor::doctor_run,
             settings::settings_get,
             settings::settings_set,

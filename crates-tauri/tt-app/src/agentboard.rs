@@ -27,25 +27,18 @@ pub struct Ab {
     /// session's waiting-age is stable (see `tt_agentboard::bridge::NeedsSince`).
     /// Every payload the app stamps threads through this.
     pub needs_since: Mutex<tt_agentboard::bridge::NeedsSince>,
-    /// Session ids observed with a live PTY at least once, carried across
-    /// recomputes so [`prune_dead_shells`] can tell "this shell just exited"
-    /// from "this shell's PTY hasn't started yet" (the latter is true for the
-    /// brief window between `ab_add_session` and the following `term_start`).
+    /// Session ids seen with a live PTY at least once, so
+    /// [`prune_dead_shells`] can tell "just exited" from "hasn't started yet"
+    /// (the window between `ab_add_session` and `term_start`).
     pub ever_live: Mutex<HashSet<String>>,
 }
 
 /// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from
-/// the app's PTY registry. The engine assembles them false/None/empty (the
-/// Tauri-free crate can't see PTYs); every payload leaving the app — command
-/// return or event — passes through here first.
-///
-/// Status is the load-bearing one. The engine's verdict comes from
-/// `claude agents --all --json` behind a 60s cache, so on its own it can
-/// insist a session is blocked on the user while its terminal is visibly
-/// mid-turn (and accrue a "waiting 12m" age doing it). The app hosts the PTY
-/// and sees the truth for free, so `tt_agentboard::pty_status` folds that
-/// direct observation over the top — see that module for why output activity
-/// is treated as an absolute veto while silence defers to the engine.
+/// the app's PTY registry — the engine can't see PTYs, and every payload
+/// leaving the app passes through here first. Status is the load-bearing one:
+/// the engine's verdict rides a 60s-cached `claude agents` snapshot, so
+/// `tt_agentboard::pty_status` folds the PTY's direct observation over the
+/// top (output activity vetoes; silence defers — see that module).
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
@@ -58,9 +51,7 @@ pub fn stamp_pty_state(
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
             // The one thing only this process can know (see `TaskPhases`):
-            // whether a create or removal is running on this row right now.
-            // Everything else about the row's state is derivable from `record`
-            // and `dir_missing`, which the engine already set.
+            // whether a create/removal is running on this row right now.
             folder.phase = phases.get(&folder.dir);
             let mut has_port_drift = false;
             for session in &mut folder.sessions {
@@ -87,23 +78,16 @@ pub fn stamp_pty_state(
             folder.has_port_drift = has_port_drift;
         }
     }
-    // Now that `live` is truthful, recompute every folder/repo `needs` count
-    // — the engine assembled them as 0 placeholders pre-stamp — and stamp each
-    // session's `needs_since_ms` (first-entered time, held across recomputes).
+    // With `live` truthful, recompute the placeholder `needs` counts and
+    // stamp each session's `needs_since_ms`.
     tt_agentboard::bridge::recompute_needs(payload, since, now);
 }
 
-/// Delete a plain shell's session record the moment its PTY exits, instead of
-/// leaving a permanent "Off" row — an exited shell never comes back on its
-/// own, unlike an agent pane, whose `agent_state` still carries meaningful
-/// (last-known) status after its PTY closes. Must run after
-/// [`stamp_pty_state`], which is what makes `session.live` truthful.
-///
-/// `ever_live` guards against pruning a session that simply hasn't spawned
-/// its PTY yet: `ab_add_session` persists the record and notifies the
-/// emitter *before* the frontend's follow-up `term_start` call lands, so a
-/// payload built in that window would otherwise see `live: false` on a
-/// brand-new session and delete it out from under the user.
+/// Delete a plain shell's session record the moment its PTY exits (an agent
+/// pane keeps its last-known status; an exited shell is just an "Off" row).
+/// Runs after [`stamp_pty_state`], which makes `session.live` truthful;
+/// `ever_live` keeps a brand-new session that hasn't spawned its PTY yet from
+/// being deleted out from under the user.
 fn prune_dead_shells(
     payload: &mut StatePayload,
     engine: &Mutex<Engine>,
@@ -155,12 +139,10 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
     payload
 }
 
-/// Fire a desktop notification for each session that just flipped into
-/// needs-you (edge-detected by `tt_agentboard::NeedsYouWatch` in the emitter
-/// loop). Status-report only — there are no approve/reply actions; acting on
-/// the agent happens in the real PTY. Skipped entirely when the app window is
-/// focused (the rail/header already show it) or when the user's notification
-/// switch/threshold rules it out (it is an urgent-level kind).
+/// Fire a desktop notification per session that just flipped into needs-you
+/// (edge-detected in the emitter loop). Status-report only — acting on the
+/// agent happens in the real PTY. Skipped while the window is focused or
+/// when the user's notification rules exclude it.
 pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -245,15 +227,13 @@ pub fn ab_add_repo(state: State<Ab>, path: String) {
 }
 
 /// Remove the repo at `dir` from the rail. Takes the exact dir, not a resolved session
-/// name — removing several repos in a row by name is unsafe (see `remove_repo_by_dir`).
+/// name — removing several repos in a row by name is unsafe (see `remove_repo_persisted`).
 ///
-/// `dir` is not always a `repos.json` entry: a rail row for a `tt task` worktree only
-/// gets there via live `git worktree list` discovery, so one deleted outside
-/// `tt task rm` has nothing in `repos.json` to remove and keeps reappearing every scan,
-/// because git's `.git/worktrees/<name>` registration at its owning checkout stands.
-/// Async because `git worktree remove`/`prune` are real subprocess waits, and per the
-/// crate's "never hold the Engine lock across git" rule both the owner lookup and the
-/// git calls happen with the lock released.
+/// `dir` is not always a `repos.json` entry: a worktree deleted outside `tt task rm`
+/// leaves only git's `.git/worktrees/<name>` registration at its owning checkout, which
+/// is what the prune below clears. Async because `git worktree remove`/`prune` are real
+/// subprocess waits, and per the crate's "never hold the Engine lock across git" rule
+/// both the owner lookup and the git calls happen with the lock released.
 #[tauri::command]
 pub async fn ab_remove_repo(state: State<'_, Ab>, dir: String) -> Result<(), String> {
     let removed_tracked = {
@@ -332,13 +312,9 @@ fn expand_tilde(raw: &str, home: Option<&std::path::Path>) -> std::path::PathBuf
     }
 }
 
-/// Build the manage-repos picker's candidate list: repos discovered under
-/// `roots` unioned with `existing` (repos already on the rail, which may live
-/// outside every root, e.g. added by typed path). Each candidate's `name` is
-/// its path relative to whichever root it was found under, falling back to
-/// the bare dir for repos outside every root; `active` marks whether it's in
-/// `existing`, so the picker can render it pre-checked. Pulled out of
-/// `ab_discover_repos` so it's testable without a Tauri `State`.
+/// The manage-repos picker's candidates: repos discovered under `roots` ∪
+/// `existing`, named relative to their root (bare dir outside every root),
+/// `active` = already tracked. Split from `ab_discover_repos` for testing.
 fn build_repo_candidates(existing: &[String], roots: &[std::path::PathBuf]) -> Vec<RepoCandidate> {
     use std::collections::HashSet;
     let existing_set: HashSet<&String> = existing.iter().collect();
@@ -432,37 +408,22 @@ pub fn ab_add_session(
     record
 }
 
-/// The repo dir + new session id opened by [`ab_open_session_for_cwd`], so the
-/// client can select the session immediately.
-#[derive(serde::Serialize)]
-pub struct OpenedSession {
-    pub folder_dir: String,
-    pub session_id: String,
-}
-
-/// Resolve a Claude Code session's real `cwd` to a repo (adding it to the rail
-/// first if it isn't already registered), then add a new session there. Used
-/// by the Claude Sessions screen's "Open in Agentboard" action.
+/// The folder's first session, seeding the default one if it has none — the
+/// task-creation flow's "session to type into", without a full state fetch
+/// and without risking a second row when a default already exists.
 #[tauri::command]
-pub fn ab_open_session_for_cwd(state: State<Ab>, cwd: String) -> Result<OpenedSession, String> {
-    if !std::path::Path::new(&cwd).exists() {
-        return Err(format!("{cwd} no longer exists on disk"));
-    }
-    let mut engine = state.engine.lock().unwrap();
-    let entries = tt_agentboard::repos::repo_entries(&engine.repo_dirs());
-    let dir = tt_agentboard::repos::resolve_repo_dir(&cwd, &entries).unwrap_or_else(|| {
-        tt_agentboard::repos::find_repo_root(std::path::Path::new(&cwd))
-            .to_string_lossy()
-            .to_string()
-    });
-    if engine.add_repo(&dir) {
-        state.scan.notify_one();
-    }
-    let record = engine.add_session(&dir, None, now_ms());
-    drop(engine);
-    tracing::info!(%dir, session_id = %record.id, "session.opened_for_cwd");
+pub fn ab_ensure_session(
+    state: State<Ab>,
+    dir: String,
+) -> Result<tt_agentboard::SessionRecord, String> {
+    let record = state
+        .engine
+        .lock()
+        .unwrap()
+        .ensure_session(&dir, now_ms())
+        .ok_or_else(|| format!("no session for {dir}"))?;
     state.emit.notify_one();
-    Ok(OpenedSession { folder_dir: dir, session_id: record.id })
+    Ok(record)
 }
 
 #[tauri::command]

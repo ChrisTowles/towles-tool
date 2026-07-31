@@ -4,7 +4,6 @@ import type { PrItem, TaskIssueLink, TaskItem, TaskOutcome } from "./data";
 import { ImageTooLarge, type IpcError } from "./errors";
 import type { LaunchConfigStatus } from "./launch";
 import type { RepoMeta } from "./repo-identity";
-import { OpenedSessionSchema } from "./schemas/agentboard";
 import { TaskBlockerSchema } from "./schemas/task";
 import type { RailFilter } from "./settings";
 import { invoke } from "./tauri";
@@ -230,7 +229,7 @@ export type RepoData = {
 
 export type Panes = [string, ...string[]];
 
-export function toPanes(ids: string[]): Panes | null {
+function toPanes(ids: string[]): Panes | null {
   return ids.length > 0 ? (ids as Panes) : null;
 }
 
@@ -826,7 +825,7 @@ export function folderRemovableTask(
   return folder.isWorktree && !folder.dirMissing;
 }
 
-export const TASK_BLOCKER_KINDS = ["dirtyTree", "unreachableCommits", "foreignPort"] as const;
+const TASK_BLOCKER_KINDS = ["dirtyTree", "unreachableCommits", "foreignPort"] as const;
 export type TaskBlockerKind = (typeof TASK_BLOCKER_KINDS)[number];
 
 export type TaskBlocker = z.infer<typeof TaskBlockerSchema>;
@@ -1142,8 +1141,7 @@ export function collapsedLiveColor(sessions: SessionData[]): string | null {
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export const termWrite = (termId: string, data: string) =>
-  invoke<void>("term_write", { termId, data });
+const termWrite = (termId: string, data: string) => invoke<void>("term_write", { termId, data });
 
 /** Write, retrying while the PTY spawns (a just-mounted terminal takes a beat before
  * `term_start` registers it). */
@@ -1218,7 +1216,7 @@ export function isPasteableImage(mime: string): boolean {
   return PASTEABLE_IMAGE_MIMES.includes(mime.split(";")[0].trim().toLowerCase());
 }
 
-export const MAX_PASTED_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_PASTED_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export type PastedImage = {
   id: string;
@@ -1298,13 +1296,6 @@ export function promptWithImages(goal: string, imagePaths: string[]): string {
 export function claudeResumeCommand(sessionId: string): string {
   return `claude --resume ${shellQuote(sessionId)}\r`;
 }
-
-export type OpenedSession = { folderDir: string; sessionId: string };
-
-/** Resolve a Claude Code session's real `cwd` to an Agentboard repo (adding it to the rail first
- * if it isn't already registered) and open a new session there. */
-export const abOpenSessionForCwd = (cwd: string) =>
-  invoke<OpenedSession>("ab_open_session_for_cwd", { cwd }, { schema: OpenedSessionSchema });
 
 /** A cross-screen handoff: "select this folder/session in Agentboard, then type a resume command
  * into it." Agentboard may not be mounted yet when the request is made (e.g. */

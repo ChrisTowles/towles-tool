@@ -53,25 +53,18 @@ impl StoreState {
         StoreState { store: Arc::new(Mutex::new(store)) }
     }
 
-    /// The Agentboard rail's row list — every task row with a worktree
-    /// binding, both kinds (see `tt_store::Store::rail_worktrees`).
-    ///
-    /// `None` means the store could not answer (never opened, query failed),
-    /// which is *not* the same as "there are no rows": the caller keeps the
-    /// previous list rather than emptying the rail on one bad read.
+    /// The Agentboard rail's row list (`tt_store::Store::rail_worktrees`).
+    /// `None` is "the store could not answer", not "no rows" — the caller
+    /// keeps the previous list rather than emptying the rail on one bad read.
     pub fn rail_worktrees(&self) -> Option<Vec<tt_store::RailWorktree>> {
         let guard = self.store.lock().unwrap();
         guard.as_ref()?.rail_worktrees().ok()
     }
 
-    /// Write down the git worktrees the scan found that nothing had recorded,
-    /// and forget the detected rows whose directories are gone — the rail's
-    /// reconcile step.
-    ///
-    /// Both halves are diff-driven by the engine
-    /// (`Engine::unrecorded_worktrees` / `Engine::vanished_detected_records`),
-    /// so in the steady state this is called with two empty lists and touches
-    /// the database not at all. That matters: this runs on the 2s scan tick
+    /// Record unclaimed git worktrees the scan found and forget detected rows
+    /// whose directories are gone — the rail's reconcile step. Both halves are
+    /// diff-driven by the engine, so the steady state passes two empty lists
+    /// and touches the database not at all — this runs on the 2s scan tick
     /// against a file three other processes have open.
     pub fn reconcile_detected_worktrees(
         &self,
@@ -202,14 +195,10 @@ pub fn emit_snapshot(app: &AppHandle, state: &StoreState) {
     }
 }
 
-/// Recompute and emit the snapshot given only an [`AppHandle`], for callers
-/// that hold no `State` handle of their own.
-///
-/// The MCP HTTP transport is the one such caller: its dispatcher writes through
-/// a *separate* SQLite connection, so a tool call that mutates the store would
-/// otherwise leave the UI showing stale data until its next poll. Same
-/// best-effort contract as [`emit_snapshot`] — a missing store or a failed emit
-/// is swallowed.
+/// Recompute and emit the snapshot given only an [`AppHandle`]. The MCP HTTP
+/// transport needs this: its dispatcher writes through a *separate* SQLite
+/// connection, so a mutating tool call would otherwise leave the UI stale
+/// until its next poll. Best-effort like [`emit_snapshot`].
 pub fn emit_snapshot_from_app(app: &AppHandle) {
     let state = app.state::<StoreState>();
     emit_snapshot(app, &state);
@@ -223,14 +212,9 @@ pub fn task_by_id(app: &AppHandle, id: i64) -> Result<Option<tt_store::TaskItem>
 }
 
 /// The board task bound to a worktree dir, if any. `Ok(None)` is "no task
-/// bound" — a real answer, since the rail lists worktrees the board may know
-/// nothing about.
-///
-/// Propagates store errors rather than swallowing them, matching [`task_by_id`]
-/// — the two are consumed by adjacent arms of the same match in
-/// `delete_task_blocking`, and an unreadable store must not be reported as
-/// "this worktree has no task": that would remove the checkout and silently
-/// leave its row behind, the exact half-delete the unified path exists to stop.
+/// bound" — a real answer. Store errors propagate, matching [`task_by_id`]:
+/// an unreadable store reported as "no task" would remove the checkout and
+/// silently leave its row behind — the half-delete the unified path stops.
 pub fn task_id_for_worktree_dir(app: &AppHandle, dir: &str) -> Result<Option<i64>, String> {
     let state = app.state::<StoreState>();
     with_store(&state, |store| {
@@ -450,6 +434,10 @@ pub fn store_task_set_worktree(
     })?;
     tracing::info!(task_id = id, branch = branch.as_deref().unwrap_or(""), "task.worktree_bound");
     emit_snapshot(&app, &state);
+    // The binding is what puts the row on the rail, and the engine only learns
+    // of it by re-reading `rail_worktrees` in the scan loop — wake it so the
+    // row is on screen now, not a poll tick later.
+    app.state::<crate::agentboard::Ab>().scan.notify_one();
     Ok(())
 }
 
@@ -484,15 +472,13 @@ pub fn store_set_task_status(
 }
 
 /// Best-effort close/reopen the GitHub issues linked to a task whose status just crossed
-/// the `done` boundary, on a background thread — fire-and-forget, so the caller's snapshot
-/// emit doesn't wait on network round-trips. A failed gh call self-heals on the next
-/// collector poll via [`tt_collect::rollup_task_statuses`].
+/// the `done` boundary, fire-and-forget on a background thread. A failed gh call
+/// self-heals on the next collector poll via [`tt_collect::rollup_task_statuses`].
 ///
-/// The single call site for this decision: every command that can change a task's status
-/// routes through here rather than re-deriving its own sync, so the behavior can't drift
-/// (#246 shipped only in `store_set_task_status`, so dragging a card silently skipped it).
-/// Only board-originated commands sync — the collectors' rollup writes through `tt_store`
-/// directly, so a GitHub-driven change never echoes back out as a gh mutation.
+/// The single call site for this decision — every status-changing command routes through
+/// here so the behavior can't drift (#246). Only board-originated commands sync; the
+/// collectors' rollup writes through `tt_store` directly, so a GitHub-driven change
+/// never echoes back out as a gh mutation.
 fn spawn_gh_status_sync(old_status: &str, new_status: &str, issues: &[tt_store::TaskIssueLink]) {
     let targets = tt_store::gh_close_reopen_targets(old_status, new_status, issues);
     if targets.is_empty() {
@@ -853,12 +839,8 @@ pub struct RepoSyncResult {
 }
 
 /// Manually sync one repo's issues + PRs right now, bypassing the poll
-/// cadence — the Agentboard rail's "Sync now" action, for pulling in GitHub
-/// updates the scheduler hasn't picked up yet. Re-emits the snapshot on
-/// completion. Overlap-guarded per dir: a sync already running for `dir`
-/// returns `started: false` without starting another; syncing a different dir
-/// concurrently is unaffected.
-///
+/// cadence — the rail's "Sync now" action. Overlap-guarded per dir (a running
+/// sync returns `started: false`); re-emits the snapshot on completion.
 /// Runs on a blocking worker with its own store connection (mirroring
 /// [`store_collect_now`]) so the `gh` round-trip never holds the UI's store
 /// mutex.

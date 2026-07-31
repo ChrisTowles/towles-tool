@@ -149,11 +149,13 @@ impl FolderMetaStore {
     }
 
     /// Drop metadata for folders no longer in `dirs` (called after a repo removal).
-    pub fn prune(&mut self, dirs: &HashSet<String>) {
+    pub fn prune(&mut self, dirs: &HashSet<String>) -> bool {
         let removed: Vec<String> =
             self.folders.keys().filter(|dir| !dirs.contains(*dir)).cloned().collect();
         self.folders.retain(|dir, _| dirs.contains(dir));
+        let pruned = !removed.is_empty();
         self.dirty.extend(removed);
+        pruned
     }
 
     /// Persist the folders touched since the last save; see

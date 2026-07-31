@@ -14,23 +14,9 @@ use tt_tasks::ops::{self, CreateOpts, RemoveOpts, RemovePhase};
 use tt_tasks::pasted::{self, PastedImage};
 use tt_tasks::suggest::Suggested;
 
-/// Worktree operations this process is running right now, keyed by directory.
-///
-/// The whole of [`tt_agentboard::types::RowPhase`]. Everything else the rail
-/// shows about a row's state is a fact anyone can see — the checkout is there
-/// or it isn't — and is derived from `record`/`dir_missing` rather than stored.
-/// An in-flight create or removal is not: from outside, a task
-/// mid-`worktree add` and one whose create crashed an hour ago look identical.
-/// Only the process running the operation can tell them apart, so it says so
-/// here, and [`crate::agentboard::stamp_pty_state`] folds it onto the payload
-/// on the way out — the same seam, and the same reason, as `live` and
-/// `shellKind`.
-///
-/// Deliberately **not** persisted: an entry means "a call is on a stack in this
-/// process". A crash ends the operation and the entry with it, and the row
-/// correctly falls back to reading as detached — the honest answer, and one the
-/// frontend's old `pendingTasks` array could not give because it forgot the row
-/// existed at all.
+/// Worktree operations running right now, keyed by directory — only this
+/// process can tell a task mid-`worktree add` from a crashed create. Not
+/// persisted: a crash ends the entry, the row honestly reads detached.
 #[derive(Default)]
 pub struct TaskPhases(std::sync::Mutex<std::collections::HashMap<String, RowPhase>>);
 
@@ -49,9 +35,8 @@ impl TaskPhases {
         self.0.lock().unwrap().insert(dir.to_string(), phase);
     }
 
-    /// The operation finished — however it finished. Must run on every exit
-    /// path, including the failures: a row stuck reporting `creating` forever
-    /// is worse than one that admits it is detached.
+    /// Must run on every exit path, failures included — a row stuck on
+    /// `creating` forever is worse than one that admits it's detached.
     pub fn clear(&self, dir: &str) {
         self.0.lock().unwrap().remove(dir);
     }
@@ -62,27 +47,16 @@ impl TaskPhases {
     }
 }
 
-/// Record a phase change and push a fresh snapshot out.
-///
-/// The nudge is the point: the rail repaints on the emitter's own cadence,
-/// which is far coarser than the steps of a create. Every phase write goes
-/// through here so a step is on screen when it starts, not up to a poll later
-/// — and so the row's label can't be the one thing about it that lags.
-///
-/// This replaced a pair of `task://{create,delete}_progress` events the
-/// frontend held in maps of its own. The label belongs *on* the row, and the
-/// row is already crossing this boundary every emit.
+/// Record a phase change and push a fresh snapshot — so every step is on
+/// screen when it starts, not a poll later.
 fn set_phase(app: &tauri::AppHandle, write: impl FnOnce(&TaskPhases)) {
     write(&app.state::<TaskPhases>());
     app.state::<crate::agentboard::Ab>().emit.notify_one();
 }
 
-/// Fire-and-forget `git fetch` across every tracked repo (deduped, see
-/// [`tt_agentboard::git_info::fetch_all`]), then nudge the rail to re-emit.
-/// Task lifecycle events (create/remove) are a natural moment to check
-/// whether main has moved elsewhere in the fleet too — cheaper than waiting
-/// out the periodic poll in `lib.rs`, and kept off the command's own
-/// response path so a slow/offline fetch never delays create/remove.
+/// Fire-and-forget `git fetch` across every tracked repo, then nudge the
+/// rail. Task lifecycle is a natural moment to check whether main moved
+/// fleet-wide; off the response path so a slow fetch never delays it.
 fn refresh_all_git_info_in_background(app: &tauri::AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -107,9 +81,8 @@ pub struct TaskCreated {
     pub warnings: Vec<String>,
 }
 
-/// Branches available as a base ref in the task root containing `root`
-/// (a checkout dir or the root itself), default branch first. See
-/// [`ops::BaseBranch`] for the name-vs-label split the form renders.
+/// Branches available as a base ref for `root`'s task root, default branch
+/// first ([`ops::BaseBranch`] for the name-vs-label split).
 #[tauri::command]
 pub fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> {
     let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
@@ -129,11 +102,8 @@ pub struct BranchCheck {
     pub error: Option<String>,
 }
 
-/// Preflight the new-task dialog's branch field: is it a legal git ref, does
-/// it already exist in git (the case `git worktree add` would otherwise
-/// reject only after the fetch/worktree-add work has started), and would its
-/// derived task name collide with an existing one? Read-only — safe to call
-/// on every keystroke (debounced by the caller).
+/// Preflight the branch field: legal ref, already-exists, name collision.
+/// Read-only — safe on every (debounced) keystroke.
 #[tauri::command]
 pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, String> {
     let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
@@ -147,18 +117,10 @@ pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, St
     })
 }
 
-/// A **prompt improver** button in the new-task dialog: ask `claude -p` (cwd =
-/// `dir`, the repo checkout the dialog is open for, so it sees real repo
-/// context) to rewrite the text the user typed and propose a branch name for
-/// it. `instruction` is the clicked improver's prompt from settings — it
-/// decides *how* the goal is rewritten (restate it, turn it into a plan ask, a
-/// brainstorm ask); empty falls back to the historic restate-in-one-sentence
-/// behavior. The dialog fills its editable fields with the result (Undo
-/// restores) — nothing here writes anything or is called automatically.
-/// Long-running (a cold `claude` CLI) → off the main thread.
-///
-/// Returns `tt_tasks::Suggested`, which serializes flat as
-/// `{branch, title, goal, fallback}`.
+/// A **prompt improver** button: ask `claude -p` (cwd = `dir` for real repo
+/// context) to rewrite the typed goal and propose a branch; `instruction` is
+/// the improver's user-editable prompt from settings. Nothing runs
+/// automatically. Off the main thread. Returns flat Suggested fields.
 #[tauri::command]
 pub async fn task_suggest(
     dir: String,
@@ -191,22 +153,11 @@ pub async fn task_suggest(
     result
 }
 
-/// Create the task for `branch` off `base` (empty base = the primary's
-/// branch): fetch, worktree add, render `.env`, inherit sibling secrets.
-/// Deliberately **not** the install setup step (`TT_TASK_SETUP`, e.g. `npm
-/// install`) — that alone can run for minutes (npm's per-file cost on macOS
-/// APFS + Gatekeeper scanning is far higher than on Linux), and this command
-/// gates the frontend's terminal pane. The caller fires `task_run_setup`
-/// separately, after the pane is already open, so the pane and the install
-/// aren't sequential: `frontend::createTask` in `agentboard.tsx` is the one
-/// call site. Still off the main thread — `git fetch`/`worktree add` are real
-/// subprocess work even without the install.
-///
-/// `dir` is where the worktree is *going* — `task_check_branch` derived it, and
-/// the caller has already bound it onto the task row, so a rail row for this
-/// task exists before this command is even called. All this adds is the live
-/// phase label ([`TaskPhases`]), so the row that is already on screen says what
-/// step is running rather than sitting there blank.
+/// Create the task for `branch` off `base`: fetch, worktree add, render
+/// `.env`, inherit secrets. Deliberately **not** the install step — that can
+/// run for minutes and this gates the terminal pane; the caller fires
+/// `task_run_setup` after the pane opens. `dir` is already bound onto the
+/// task row, so this only adds the live phase label. Off the main thread.
 #[tauri::command]
 pub async fn task_create(
     app: tauri::AppHandle,
@@ -241,9 +192,7 @@ pub async fn task_create(
         let mut phase_start = std::time::Instant::now();
         ops::create_task(&opts, now_ms, &mut |phase| {
             set_phase(&progress_app, |p| p.creating(&event_dir, phase.label()));
-            // `prev_ms` times the *previous* step — a step's duration isn't
-            // known until the next begins. So the first record measures root
-            // discovery, and the last step's duration comes from differencing
+            // `prev_ms` times the *previous* step; the last step differences
             // against the `task.created` event below.
             tracing::info!(
                 phase = ?phase,
@@ -255,9 +204,8 @@ pub async fn task_create(
         })
     })
     .await;
-    // Released on every path, including both failures: a row that keeps
-    // reporting `creating` after the call died would never fall back to the
-    // `Detached` state that tells the user to retry or delete it.
+    // Released on every path, failures included — else the row never falls
+    // back to detached, where retry/delete live.
     set_phase(&app, |p| p.clear(&dir));
     let created =
         created.map_err(|e| format!("worktree task failed: {e}"))?.map_err(|e| e.to_string())?;
@@ -278,27 +226,15 @@ pub async fn task_create(
     })
 }
 
-/// The system clipboard's image, as a base64 PNG the webview can preview and
-/// hand back to `task_write_pasted_images`. `Ok(None)` = the clipboard holds
-/// no image (text, or nothing) — an ordinary outcome, not an error.
-///
-/// This exists because **the DOM can't see an image paste on Linux**: a
-/// Ctrl+V there doesn't reach the webview's `paste` event at all (the same
-/// behavior `terminal-view.tsx` documents, where Ctrl+V arrives as a plain
-/// `keydown` that `encodeKey` turns into `\x16`). So the form drives image
-/// attachment off `keydown` and reads the clipboard here instead — the same
-/// native-clipboard workaround `term_copy_selection` uses for writes.
-///
-/// **Must not run on the main thread** — `read_image()` warns that the
-/// underlying Linux clipboard libraries can deadlock the whole app there
-/// (and on Linux, sync Tauri commands dispatch inline on the GTK thread).
+/// The clipboard's image as a base64 PNG; `Ok(None)` = no image. The DOM
+/// can't see an image paste on Linux, so the form reads the clipboard
+/// natively off `keydown`. Off the main thread (GTK deadlock risk).
 #[tauri::command]
 pub async fn read_clipboard_image(app: tauri::AppHandle) -> Result<Option<PastedImage>, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     tauri::async_runtime::spawn_blocking(move || {
-        // An empty/non-image clipboard surfaces as an error from the plugin;
-        // that's the common case here, so it maps to `None` rather than
-        // bubbling up as a failure the user has to read.
+        // An empty/non-image clipboard errors in the plugin — the common
+        // case, so it maps to `None`, not a user-visible failure.
         let Ok(image) = app.clipboard().read_image() else {
             return Ok(None);
         };
@@ -321,18 +257,9 @@ pub async fn read_clipboard_image(app: tauri::AppHandle) -> Result<Option<Pasted
     .map_err(|e| format!("clipboard task failed: {e}"))?
 }
 
-/// Stage the images pasted into the new-task form as files, returning their
-/// absolute paths for the caller to name in Claude's opening prompt. They
-/// land in `tt_config::pasted_images_dir()`, *not* in the repo — see
-/// `tt_tasks::pasted` for why (short version: Claude Code reads an
-/// out-of-workspace path without prompting, so there's nothing to gain from
-/// writing user content into a checkout).
-///
-/// Called before `task_create`, so a failure here means no task was created
-/// and the caller's normal retry path still applies.
-///
-/// Decoding + writing a handful of megabytes → off the main thread, which on
-/// Linux is the GTK thread every other sync command dispatches on.
+/// Stage the form's pasted images as files for Claude's opening prompt —
+/// in `tt_config::pasted_images_dir()`, not the repo (`tt_tasks::pasted`
+/// explains). Runs before `task_create`; off the main thread.
 #[tauri::command]
 pub async fn task_write_pasted_images(
     repo: String,
@@ -354,14 +281,9 @@ pub async fn task_write_pasted_images(
     .map_err(|e| e.to_string())
 }
 
-/// Run a checkout's setup step (declared `TT_TASK_SETUP` or lockfile
-/// detection). `Ok(None)` = nothing to run, or it succeeded; `Ok(Some)`
-/// carries the warning text to surface, which the caller offers a retry on.
-/// Long-running (an install can take minutes) → off the main thread.
-///
-/// The create flow's setup and the retry behind that warning both land here —
-/// `task_create` doesn't run it (see its doc), so this is the primary path.
-/// A span, so the log carries how long the install took.
+/// Run a checkout's setup step (`TT_TASK_SETUP` or lockfile detection);
+/// `Ok(Some)` carries the retry-able warning. `task_create` doesn't run it.
+/// Off the main thread; a span logs the install duration.
 #[tauri::command]
 pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
     use tracing::Instrument as _;
@@ -404,12 +326,10 @@ pub enum TaskDeleteOutcome {
     Blocked {
         name: String,
         blockers: Vec<Blocker>,
-        /// Caveats gathered before the verdict — carried for the same reason
-        /// `Removed` carries them. A refusal computed against stale refs (the
-        /// pre-flight `fetch --prune` failed) must not look identical to one
-        /// computed online: "commits unreachable from any branch/remote" can
-        /// be an artifact of the staleness rather than a fact about the
-        /// branch.
+        /// Caveats gathered before the verdict — a refusal computed against
+        /// stale refs (failed pre-flight fetch) must not look identical to
+        /// one computed online: "unreachable commits" can be an artifact of
+        /// the staleness.
         messages: Vec<String>,
     },
 }
@@ -446,13 +366,9 @@ impl From<&RmBlocked> for Blocker {
     }
 }
 
-/// What to delete. Both forms resolve to the same pair — a board row and the
-/// worktree bound to it — before anything is touched, so "delete the task I
-/// clicked on the Board" and "delete the worktree I clicked on the rail" are
-/// one operation reached through two handles, not two behaviors that can drift
-/// apart. Either half may be absent: a board task can exist with no worktree
-/// (the common case for a note-shaped todo), and a worktree discovered on disk
-/// may have no board row.
+/// What to delete. Both forms resolve to the same board-row + worktree pair
+/// before anything is touched — one operation through two handles, not two
+/// behaviors that can drift. Either half may be absent.
 #[derive(Debug, Clone)]
 pub enum DeleteTarget {
     /// A board task id — the Board screen and the `task_delete` MCP tool.
@@ -467,9 +383,7 @@ pub enum DeleteTarget {
 /// to fail.
 struct Resolved {
     /// The board row, when the target named one. `None` for a rail-initiated
-    /// delete, which knows only a directory — there the row is found by the dir
-    /// it is bound to (`BoardRows`), and taking it with the worktree is the
-    /// whole point of #339's "the worktree is an attribute of the task".
+    /// delete, where the row is found by its bound dir (`BoardRows`).
     board_id: Option<i64>,
     /// The worktree bound to it, if any. Present even when the directory has
     /// since vanished — the bindings still need tearing down.
@@ -497,20 +411,12 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
     }
 }
 
-/// Delete a task's *presence*: its live panes and its worktree on disk go, while its board
-/// row survives **closed** — stamped with how it ended and detached from the gone dir.
-/// Refuses if the worktree holds work that exists nowhere else. The only true row delete
-/// left is `purge`, row-only and refused while a worktree is bound. The single delete path
-/// — Board, rail and the `task_delete` MCP tool all land here — because a partial delete
-/// left the rest as garbage whichever half it kept.
-///
-/// **The board row is closed last, and only if the worktree really went.** A guarded
-/// refusal returns [`TaskDeleteOutcome::Blocked`] with both untouched: a dirty tree,
-/// unreachable commits, or a foreign listener on the claimed ports each come back as a
-/// typed blocker rendered with its remedy plus a force. Past the guards — via
-/// `before_removal`, so a *refused* removal never costs a live session — it kills the
-/// folder's PTYs, and session/window records drop only once removal succeeds; dropping
-/// them up front made a blocked removal look clean with the worktree still on disk.
+/// Delete a task's *presence* — panes and worktree — while its board row
+/// survives closed; refuses if the worktree holds work that exists nowhere
+/// else (`purge` is the only true row delete). The single delete path. The
+/// row closes last, only if the worktree really went; a guarded refusal
+/// returns `Blocked` with everything untouched, and PTYs die only past the
+/// guards — dropping records up front made a blocked removal look clean.
 pub fn delete_task_blocking(
     app: &tauri::AppHandle,
     target: DeleteTarget,
@@ -520,10 +426,8 @@ pub fn delete_task_blocking(
 ) -> Result<TaskDeleteOutcome, String> {
     let Resolved { board_id, dir, label } = resolve_delete_target(app, target)?;
 
-    // Purge: the explicit hard delete, and the only remaining path to one. It
-    // is row-only by design — a row still bound to a worktree refuses, because
-    // deleting it would orphan the checkout on disk (close first; closing
-    // detaches). The Board offers it only on closed cards.
+    // Purge: the only hard delete, row-only — a bound row refuses, since
+    // deleting it would orphan the checkout on disk.
     if purge {
         let Some(id) = board_id else {
             return Err("purge names a board task by id".to_string());
@@ -557,16 +461,10 @@ pub fn delete_task_blocking(
     // read now, recorded at step 5 (after the worktree is gone).
     let outcome = outcome.unwrap_or_else(|| inferred_outcome_for(app, board_id, Some(dir)));
 
-    // `resolve_task` runs here rather than inside the sequence: it is what
-    // rejects a path that isn't a worktree of its own checkout, and the
-    // caller-supplied `dir` has not been checked yet.
-    //
-    // A directory that is already gone can't be resolved, so `root` stays
-    // `None` — which is safe **only** because `MissingDir::TearDownBindings`
-    // makes the sequence skip the removal step entirely for a missing dir. Were
-    // it to call `ops::remove_task` with `root: None`, that would re-discover a
-    // root by walking up from this *process's* cwd — a different checkout — and
-    // could remove a same-named worktree there.
+    // A gone directory can't resolve, so `root` stays `None` — safe **only**
+    // because `TearDownBindings` skips the removal step for a missing dir;
+    // `remove_task` with `root: None` would re-discover a root from this
+    // process's cwd and could hit a same-named worktree elsewhere.
     let (root, name) = match ops::resolve_task_dir(std::path::Path::new(dir)) {
         Ok((checkout, name)) => (Some(checkout), name),
         Err(_) if !std::path::Path::new(dir).is_dir() => {
@@ -619,11 +517,9 @@ pub fn delete_task_blocking(
     }
 }
 
-/// The outcome to record when the caller didn't pass one: the bound row's own
-/// evidence ([`tt_store::TaskItem::inferred_outcome`] — merged PR ⇒ done),
-/// falling back to done when there is no row to read (nothing will record it
-/// anyway). The interactive path always passes an explicit outcome; this
-/// covers MCP calls and any caller that predates the prompt.
+/// The outcome when the caller didn't pass one: the row's own evidence
+/// (`inferred_outcome`, merged PR ⇒ done), else done. Covers MCP callers;
+/// the interactive path always passes one explicitly.
 fn inferred_outcome_for(
     app: &tauri::AppHandle,
     board_id: Option<i64>,
@@ -646,16 +542,13 @@ struct AppRemovalHooks<'a> {
 
 impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
     fn on_phase(&mut self, phase: RemovePhase) {
-        // The row stays on the rail for the whole removal — its record is still
-        // there until the task is closed at the very end — so it reports each
-        // step as it runs instead of disappearing the moment the directory does.
+        // The record (and so the row) survives until the close at the very
+        // end, reporting each step as it runs.
         set_phase(self.app, |p| p.removing(self.dir, phase.label()));
 
-        // `StoppingSessions` doubles as the removal's real go/no-go moment —
-        // see `RemovalHooks::on_phase`'s doc — so the PTY kill stays anchored
-        // to it rather than becoming a separate hook. Locks are scoped tight
-        // per this crate's rule: never hold the engine lock across a
-        // subprocess.
+        // `StoppingSessions` doubles as the removal's go/no-go moment (see
+        // `RemovalHooks::on_phase`), so the PTY kill anchors to it. Locks
+        // scoped tight: never hold the engine lock across a subprocess.
         if phase == RemovePhase::StoppingSessions {
             let ids = {
                 let ab = self.app.state::<crate::agentboard::Ab>();
@@ -675,9 +568,9 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         let mut notes = Vec::new();
         let ab = self.app.state::<crate::agentboard::Ab>();
         let mut engine = ab.engine.lock().unwrap();
-        // Resolved before anything is dropped, while the owner's cached
-        // worktree list still names this dir — that staleness is exactly what
-        // makes the lookup work, and exactly what the invalidate below fixes.
+        // Resolved while the owner's cached worktree list still names this
+        // dir — the staleness that makes the lookup work is what the
+        // invalidate below fixes.
         let owner = engine.find_worktree_owner(self.dir);
         let closed_ids = engine.close_folder(self.dir);
         if !closed_ids.is_empty() {
@@ -687,24 +580,14 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
                 if closed_ids.len() == 1 { "" } else { "s" }
             ));
         }
-        // Also reaps the repo's stored identity, which the shared untrack
-        // (a plain repos.json rewrite) doesn't know about. Running first makes
-        // that untrack a no-op, so it reports nothing and there is no double
-        // note.
-        engine.remove_repo(self.dir);
         // The row itself is the task record's business and outlives the
         // directory by design — all that has to go here is the cached git info
         // for a path that no longer answers. See `Engine::drop_git_cache`.
         engine.drop_git_cache(self.dir);
-        // …and the *owner's* entry, whose `linked_worktree_dirs` still names
-        // the directory that just left disk. `ops::remove_task` already ran
-        // `git worktree remove` + `worktree prune` in that checkout, so the
-        // registration is gone on disk — but the cached copy survives until
-        // GIT_CACHE_TTL_MS (60s) lets a recompute revalidate the structural
-        // key. For that whole minute the rail is working from a worktree list
-        // naming a path with nothing at it, which is what
-        // `Engine::unrecorded_worktrees` has to defend against. Invalidating
-        // here closes the window on the next tick instead of a minute later.
+        // …and the *owner's* entry, whose cached `linked_worktree_dirs`
+        // still names the gone directory until the TTL lets a recompute
+        // through. Invalidating closes that window on the next tick instead
+        // of a minute later.
         if let Some(owner) = owner {
             engine.invalidate_git(&owner);
         }
@@ -717,11 +600,9 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
 /// [`tt_agentboard::task_removal::BoardRows`]).
 struct AppBoardRows<'a> {
     app: &'a tauri::AppHandle,
-    /// The row the caller already resolved, when it had one. Preferred over a
-    /// lookup by dir: the Board hands us an explicit id, and re-deriving it
-    /// from the directory can quietly miss (a `worktree_dir` that differs by a
-    /// trailing slash or a symlink) and leave the very row the user asked to
-    /// delete in place while the command reports success.
+    /// The row the caller already resolved. Preferred over a dir lookup,
+    /// which can quietly miss (trailing slash, symlink) and leave the very
+    /// row the user asked to delete in place.
     board_id: Option<i64>,
 }
 
@@ -732,9 +613,8 @@ impl tt_agentboard::task_removal::BoardRows for AppBoardRows<'_> {
         outcome: tt_store::TaskOutcome,
         _now_ms: i64,
     ) -> Option<String> {
-        // Store errors become a note, never silence: reporting "nothing was
-        // bound" when the truth is "the store wouldn't answer" tells the user a
-        // row is gone that is still there.
+        // Store errors become a note, never silence — "nothing was bound"
+        // must not stand in for "the store wouldn't answer".
         let id = match self.board_id {
             Some(id) => id,
             None => match crate::store::task_id_for_worktree_dir(self.app, dir) {
@@ -750,14 +630,10 @@ impl tt_agentboard::task_removal::BoardRows for AppBoardRows<'_> {
     }
 }
 
-/// The Tauri command over [`delete_task_blocking`] — see its doc. Exactly one
-/// of `id`/`dir` identifies the task; the Board screen passes an id, the
-/// Agentboard rail passes a worktree dir. `outcome` is how the task ended
-/// (`done`/`abandoned`), recorded on the row it closes — omitted, the row's
-/// own evidence decides. `purge` is the explicit permanent delete, refused
-/// while a worktree is still bound.
-///
-/// Long-running → off the main thread.
+/// The Tauri command over [`delete_task_blocking`] — see its doc. Exactly
+/// one of `id`/`dir` identifies the task; `outcome` omitted lets the row's
+/// own evidence decide; `purge` is the explicit permanent delete. Off the
+/// main thread.
 #[tauri::command]
 pub async fn task_delete(
     app: tauri::AppHandle,
@@ -783,18 +659,9 @@ pub async fn task_delete(
     };
     let purge = purge.unwrap_or(false);
 
-    // A span (not a bare event) so the event log carries this command's own
-    // start/end/duration as one record — otherwise the only visible trace of
-    // a slow removal is the `git`/docker `process.spawn` spans nested inside
-    // it, with no record of the command boundary itself. Correlate against
-    // `window.focus_changed` to see whether an OS focus change landed inside
-    // this window (see the worktree-delete-focus investigation).
-    //
-    // `outcome` distinguishes all three endings, not just ok/err: a guarded
-    // refusal is the one the user is most likely to ask about later ("why
-    // wouldn't it delete?"), and it looks identical to success in a log that
-    // only records `is_ok`. `force` rides along because a forced removal is
-    // the only entry in this log that can have destroyed uncommitted work.
+    // A span for the command boundary's own duration. `outcome` covers all
+    // three endings (a refusal looks like success in an `is_ok` log); `force`
+    // rides along — the one entry that can have destroyed uncommitted work.
     let span = tracing::info_span!(
         "task_delete",
         task_id = id,
@@ -827,24 +694,17 @@ pub async fn task_delete(
     .await
 }
 
-/// Stop whatever is listening on `port` — the remedy the app offers for a
-/// `foreignPort` blocker, so a stale dev server doesn't send the user to a
-/// terminal to finish a delete they started in the app. Returns the note to
-/// show; the caller retries the removal afterwards.
-///
+/// Stop whatever is listening on `port` — the `foreignPort` blocker's remedy.
 /// `ops::stop_task_port` refuses any port the task doesn't claim in its own
-/// `.env`, which is what keeps this from being a "kill any port" primitive
-/// reachable from the UI. SIGTERM, then SIGKILL if the port is still held.
+/// `.env`, which keeps this from being a UI-reachable "kill any port"
+/// primitive. SIGTERM, then SIGKILL if still held.
 #[tauri::command]
 pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
     use tracing::Instrument as _;
 
-    // A user-initiated action that signals processes: it gets its own record
-    // (see the telemetry rule in the root CLAUDE.md) — after the fact, "the
-    // dev server died" should be answerable from the log, not a repro.
-    // `.instrument` rather than a held `enter()` guard, same as `task_delete`:
-    // an entered span across an `.await` stays entered while the task is
-    // parked, attributing whatever else runs on this thread to it.
+    // Signals processes, so it gets its own record. `.instrument`, not a
+    // held `enter()` guard — an entered span across an `.await` attributes
+    // whatever else runs on this thread to it.
     let span = tracing::info_span!(
         "task_stop_port",
         dir = %dir,
@@ -866,11 +726,8 @@ pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
             Ok(stopped) => {
                 let count = stopped.pgids.len();
                 let s = if count == 1 { "" } else { "s" };
-                // One decision for both the log field and the toast, so they
-                // can't drift into describing the same event differently.
-                // Nothing signaled = the port was already free, which happens
-                // when the user quit the dev server themselves after reading
-                // the blocker.
+                // One decision for both log field and toast. Nothing
+                // signaled = the port was already free.
                 let (outcome, message) = if count == 0 {
                     ("already_free", format!("Port {port} was already free"))
                 } else if stopped.graceful {
