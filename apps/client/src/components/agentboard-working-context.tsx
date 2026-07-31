@@ -1,13 +1,7 @@
 /**
- * The working-context band above the panes — which checkout the terminals
- * below belong to, what git says about it, and everything you can do to it,
- * plus the full-detail callouts for whatever about it is actionable.
- *
- * The band is the rail's folder row at a larger size and it shares that
- * row's grammar deliberately (identity left, counts right, controls
- * trailing) — see `agentboard-folder-header.tsx` and the `folder-rail-ui`
- * skill. Pane *chrome* (one session's header, the cold-cache overlay) is
- * `agentboard-pane.tsx`.
+ * The working-context band above the panes — deliberately the rail's folder row
+ * at a larger size, sharing its grammar (`agentboard-folder-header.tsx`, the
+ * `folder-rail-ui` skill). Pane *chrome* is `agentboard-pane.tsx`.
  */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
 import { Hint } from "@/components/hint";
@@ -46,25 +40,6 @@ import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-/** The working-context band atop the main pane: *where am I working*. Leads
- * with the focused checkout name, with the repo, branch and git facts on a
- * quieter line below it. One glance answers which checkout the terminals below
- * belong to; *what you set out to do there* is the Board task's job. The
- * trailing action cluster mirrors the rail's options for this checkout — new
- * session, new task, and the shared "···" RepoMenu — so every repo-rail option
- * stays reachable atop the panes even when the rail is collapsed or the
- * folder's row is scrolled out of view.
- *
- * **Two lines, and the same grammar as a rail row at a larger size**: identity
- * and its links on the left, git's counts right-aligned, controls at the
- * trailing edge. It used to be a `flex-wrap` run of fourteen possible chips
- * that reliably ran to three lines — facts, actions, links and alerts
- * interleaved with nothing separating them, in bordered pills identical to
- * the buttons beside them. The band is the most-repeated ~90px on the screen
- * and it sits directly above the work, so what it costs has to be earned; see
- * the "a box is a control or an alert" rule in the `folder-rail-ui` skill,
- * which this shares with the rail. Labels stay here (`labeled` on the chips) —
- * that part is a width budget, and this surface has the width. */
 export function WorkingContext({
   repo,
   folder,
@@ -84,58 +59,29 @@ export function WorkingContext({
   repo: RepoData;
   folder: FolderData;
   pr?: PrItem;
-  /** The board task bound to this checkout's worktree, when one exists —
-   * source of the linked-issue chips, the "Attach issue…" target, and (for a
-   * worktree) the human-authored title shown on line 1 — see the rail's
-   * `FolderHeader` for the same derivation. */
   task?: TaskItem;
-  /** This worktree's `task_delete` is in flight — mirrors the rail's
-   * `DeletingBadge` gating. */
   deleting?: boolean;
-  /** Session lifecycle dispatch — the dev-servers popover launches/focuses
-   * through it. */
   actions: SessionActions;
-  /** Opens the folder's diff pane in its focused window. */
   onOpenDiff: (dir: string) => void;
-  /** Opens the folder's files pane in its focused window. */
   onOpenFiles: (dir: string) => void;
-  /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
-  /** Opens the folder's rendered-agent pane. */
-  /** Opens the folder's native (Bevy) pane — undefined while
-   * `agentboard.jarvisPane` is off, which is what hides the entry point
-   * entirely rather than offering one that does nothing. */
+  /** Undefined while `agentboard.jarvisPane` is off. */
   onOpenJarvis?: (dir: string) => void;
-  /** Starts a new session (shell) in this checkout. */
   onNewSession: (dir: string) => void;
-  /** Toggles the inline new-task form open/closed for this repo (worktree
-   * hub) — never a blocking modal, see InlineNewTask. The form itself still
-   * renders in the rail under the repo's header, so this only opens it when
-   * the rail is expanded; the caller is responsible for expanding a
-   * collapsed rail first if it wants the form to be visible. */
+  /** The form renders in the rail, so the caller must expand a collapsed rail
+   * itself for this to be visible. */
   onNewTask: (repo: NewTaskRepo) => void;
-  /** Untracks this checkout from the rail. */
   onRemoveRepo: (dirs: string[], label: string) => void;
-  /** Deletes a worktree from disk (guarded `task_delete`). */
   onDeleteWorktree: (dir: string, label: string) => void;
 }) {
   const scope = pathScope(folder.dir);
-  // A task/worktree has a distinct checkout name; a lone clone shares the
-  // repo's, so we don't repeat it on the line below.
+  // A lone clone shares the repo's name; don't repeat it on the line below.
   const repoDistinct = folder.name !== repo.name;
-  // Same gating as the rail headers: no session/task actions on a ghost
-  // checkout whose directory is gone.
+  // No session/task actions on a ghost checkout whose directory is gone.
   const missing = folder.dirMissing;
-  // Same title derivation as the rail's `FolderHeader` — a worktree task's
-  // human-authored title takes line 1, falling back to the folder name read
-  // as words. Unlike the rail, this header does *not* drop a branch that
-  // merely restates the title: the fallback title is the folder name
-  // humanized (prefix stripped, dashes to spaces), so a task whose branch
-  // slugged to its folder name would show nothing on screen that is actually
-  // the branch — and `vs main` beside it reads like one. This is the header
-  // for the checkout you're looking at, so it always names the branch; a long
-  // one truncates here like everywhere else, with `BranchLabel`'s tooltip
-  // holding the verbatim answer.
+  // Unlike the rail, this never drops a branch that restates the title: the
+  // fallback title *is* the humanized folder name, so a branch slugged from it
+  // would leave no actual branch on screen.
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
   const displayTitle =
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
@@ -144,20 +90,9 @@ export function WorkingContext({
     <div className="flex items-start gap-3 border-b bg-card px-4 py-2">
       <FolderGit2 className="mt-1 size-4 shrink-0 text-violet-500" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {/* Line 1: the checkout, and everything you can do to it — the pane
-            openers, then the action cluster mirroring the rail's. `text-lg`,
-            not the `text-2xl` this used to be: the title is the most static
-            thing on the screen (you just clicked it in the rail) and the
-            panes below are the work, so it anchors without shouting, and the
-            band costs ~64px instead of ~90px. */}
-        {/* The toolbar packs *left*, right after the title, instead of being
-            pushed to the far edge by a `flex-1` title. On an ultrawide window
-            the right edge is a foot of travel from the name you just read, and
-            every glance at "which checkout is this?" was followed by a skim
-            back across empty header to click anything. The title takes only
-            the width it needs (capped, truncating), the actions sit beside it,
-            and the leftover space goes at the end where nothing has to be
-            found. */}
+        {/* Two clusters, not one run of icons: pane openers beside the title,
+            checkout-level actions at the right edge, where a destructive-ish
+            menu isn't a slip away from what you clicked to read. */}
         <div className="flex items-center gap-2">
           <Hint label={humanTitle ? folder.name : undefined}>
             <span className="min-w-0 max-w-[28rem] truncate text-lg font-semibold leading-tight">
@@ -174,58 +109,52 @@ export function WorkingContext({
               {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} labeled />}
             </span>
           )}
-          {/* Always mounted (dimmed sans launch.json) so the dev-servers
-              feature is discoverable; the dense rail stays gated. */}
-          {!missing && <DevServersButton folder={folder} actions={actions} />}
-          {!missing && (
-            <IconBtn
-              title={withHint("New session", "ab-new-session")}
-              onClick={() => {
-                mouseAction("ab-new-session", "agentboard");
-                onNewSession(folder.dir);
-              }}
-              className="hover:text-violet-500"
-            >
-              <Plus className="size-3.5" />
-            </IconBtn>
-          )}
-          {!missing && (
-            <IconBtn
-              title={withHint("New task — goal, issues, branch", "ab-new-task")}
-              onClick={() => {
-                mouseAction("ab-new-task", "agentboard");
-                newTask();
-              }}
-              className="hover:text-violet-500"
-            >
-              <FolderPlus className="size-3.5" />
-            </IconBtn>
-          )}
-          <RepoMenu
-            path={folder.dir}
-            dir={folder.dir}
-            isWorktree={folder.isWorktree}
-            quiet={folder.quiet}
-            onNewTask={!missing ? newTask : undefined}
-            onDeleteWorktree={
-              !missing && folder.isWorktree
-                ? () => onDeleteWorktree(folder.dir, folder.name)
-                : undefined
-            }
-            onRemove={() => onRemoveRepo([folder.dir], folder.name)}
-            taskId={!missing ? task?.id : undefined}
-          />
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* Always mounted (dimmed sans launch.json) so it stays
+                discoverable; the dense rail stays gated. */}
+            {!missing && <DevServersButton folder={folder} actions={actions} />}
+            {!missing && (
+              <IconBtn
+                title={withHint("New session", "ab-new-session")}
+                onClick={() => {
+                  mouseAction("ab-new-session", "agentboard");
+                  onNewSession(folder.dir);
+                }}
+                className="hover:text-violet-500"
+              >
+                <Plus className="size-3.5" />
+              </IconBtn>
+            )}
+            {!missing && (
+              <IconBtn
+                title={withHint("New task — goal, issues, branch", "ab-new-task")}
+                onClick={() => {
+                  mouseAction("ab-new-task", "agentboard");
+                  newTask();
+                }}
+                className="hover:text-violet-500"
+              >
+                <FolderPlus className="size-3.5" />
+              </IconBtn>
+            )}
+            <RepoMenu
+              path={folder.dir}
+              dir={folder.dir}
+              isWorktree={folder.isWorktree}
+              quiet={folder.quiet}
+              onNewTask={!missing ? newTask : undefined}
+              onDeleteWorktree={
+                !missing && folder.isWorktree
+                  ? () => onDeleteWorktree(folder.dir, folder.name)
+                  : undefined
+              }
+              onRemove={() => onRemoveRepo([folder.dir], folder.name)}
+              taskId={!missing ? task?.id : undefined}
+            />
+          </div>
         </div>
-        {/* Line 2: what this checkout *is*, then what git says it holds.
-            `vs <base>` and the base-moved chip sit together because they are
-            one sentence ("measured against main, which is 3 ahead"). The diff
-            counts used to be right-aligned for a stable column; they are
-            clickable (they open the diff pane), so on a wide window that
-            column was another trip to the far edge — same reason line 1's
-            toolbar packs left. Port drift and safe-to-delete are deliberately
-            *not* here: they get a full callout below, and a chip that
-            duplicates its own callout three lines later is noise standing
-            where a fact should be. */}
+        {/* Port drift and safe-to-delete get a callout below, not a chip
+            here — a chip duplicating its own callout is noise. */}
         <div className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
           <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden">
             {scope && <span className="shrink-0 font-mono text-muted-foreground/60">{scope}</span>}
@@ -282,11 +211,8 @@ const ACTIONABLE_META: Record<
   },
 };
 
-/** The working-context band's actionable section: a full-detail callout per
- * `ActionableItem` (usually at most one or two at once), replacing the rail
- * row's cramped badge with the room to say *why*. Only rendered for the
- * focused checkout — the rail keeps its own badges for scanning every other
- * folder at a glance. */
+/** One full-detail callout per `ActionableItem` — the room to say *why* that
+ * the rail's cramped badge doesn't have. Focused checkout only. */
 function ActionableCallouts({
   items,
   folderDir,
