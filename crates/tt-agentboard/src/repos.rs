@@ -124,18 +124,14 @@ pub fn remove_repo_persisted(path: &Path, dir: &str) -> std::io::Result<(Vec<Str
 
 /// Every path currently tracked in `repos.json` that names the same physical
 /// directory as `dir`, by realpath, other than `dir`'s own literal string.
+/// Needed because `git worktree add` persists a realpath-resolved form that
+/// can diverge byte-for-byte from the literal path a caller built, so a
+/// string-equality untrack strands the entry as a "missing" ghost.
 ///
-/// `git worktree add` persists a realpath-resolved form of the path it was given,
-/// which can diverge byte-for-byte from the literal path a caller built for the same
-/// directory (`tt_tasks::ops::create_task` never canonicalizes), so a
-/// string-equality untrack silently strands the entry as a "missing" ghost.
-///
-/// `canonicalize` needs the directory to exist, and `dir`'s leaf being gone here is
-/// routine (removal fires after the worktree left disk), so `realpath_of_missing`
-/// canonicalizes the nearest surviving ancestor and rejoins the tail. Only a path
-/// with *every* ancestor gone degrades to no aliases: that false negative leaves an
-/// orphaned string for the rail's "missing" handling, a false positive would
-/// untrack the wrong repo.
+/// `dir`'s leaf being gone is routine here (removal fires after the worktree
+/// left disk), so `realpath_of_missing` canonicalizes the nearest surviving
+/// ancestor and rejoins the tail. Only a path with *every* ancestor gone
+/// degrades to no aliases — a false positive would untrack the wrong repo.
 pub fn aliases_for(repos_path: &Path, dir: &Path) -> Vec<String> {
     let Some(dir_real) = std::fs::canonicalize(dir).ok().or_else(|| realpath_of_missing(dir))
     else {
@@ -239,6 +235,39 @@ pub fn untrack_broken_persisted(path: &Path) -> std::io::Result<(Vec<String>, Ve
     Ok((config.repo_paths, broken))
 }
 
+/// Tracked paths nested inside another tracked path's `.claude/worktrees/` —
+/// task worktrees double-tracked as repos. `RowRecord`'s rule is that a task
+/// worktree is never a `repos.json` entry (its record is what puts it on the
+/// rail); entries like this shadow that record with a bare "Root" checkout row
+/// and strand a ghost when a removal skips the untrack. Task creation used to
+/// write them; this is how existing files heal. Pure for tests.
+pub fn nested_task_paths(repo_paths: &[String]) -> Vec<String> {
+    repo_paths
+        .iter()
+        .filter(|p| {
+            repo_paths.iter().any(|r| {
+                r.as_str() != p.as_str()
+                    && p.starts_with(&format!("{}/.claude/worktrees/", r.trim_end_matches('/')))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Untrack every [`nested_task_paths`] entry, straight against the on-disk
+/// file (same reread-then-write rationale as [`add_repo_persisted`]). Returns
+/// the merged repo list plus the dirs that were dropped; a no-op when nothing
+/// is nested (the file is not rewritten).
+pub fn untrack_nested_tasks_persisted(path: &Path) -> std::io::Result<(Vec<String>, Vec<String>)> {
+    let mut config = load_config(path);
+    let nested = nested_task_paths(&config.repo_paths);
+    if !nested.is_empty() {
+        config.repo_paths.retain(|p| !nested.contains(p));
+        save_config(path, &config)?;
+    }
+    Ok((config.repo_paths, nested))
+}
+
 /// Dirs skipped while scanning: hidden dirs plus common heavy build/dep dirs.
 fn is_skippable(name: &str) -> bool {
     name.starts_with('.') || matches!(name, "node_modules" | "target" | "dist" | "build")
@@ -293,20 +322,15 @@ pub fn add_repo(repo_paths: &mut Vec<String>, path: &str) -> bool {
     true
 }
 
-/// Reorder `current` to match `desired` — the rail's user-chosen repo order.
+/// Reorder `current` to match `desired` — the rail's user-chosen repo order
+/// (`repoPaths` *is* the order; nothing else expresses it).
 ///
-/// `repoPaths` *is* the order (nothing else expresses it), so reordering the
-/// list is the whole feature. Deliberately tolerant of a stale `desired`,
-/// because the client that dragged a row may have been looking at a snapshot
-/// another window has since changed: dirs in `desired` are taken in that
-/// order, anything in `current` it doesn't mention keeps its relative order
-/// and lands after, and anything in `desired` that isn't tracked is ignored.
-/// So a concurrent add is never dropped by a drag that predates it.
-///
-/// Note an untracked-then-retracked repo lands at the end rather than back in
-/// its old task — deliberately, and deliberately unlike `repo_meta`, which
-/// *does* survive that round trip (see `RepoMetaStore::forget`). Re-dragging
-/// one row is cheap; re-picking a glyph and a hex colour is not.
+/// Deliberately tolerant of a stale `desired` (the dragging client may hold a
+/// snapshot another window has since changed): dirs in `desired` are taken in
+/// that order, anything unmentioned keeps its relative order and lands after,
+/// anything untracked is ignored — so a concurrent add is never dropped by a
+/// drag that predates it. An untracked-then-retracked repo lands at the end,
+/// unlike `repo_meta`, which survives the round trip (`RepoMetaStore::forget`).
 pub fn reorder_repos(current: &[String], desired: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(current.len());
     for dir in desired {
@@ -523,6 +547,31 @@ mod tests {
         // second run is a clean no-op
         let (merged, removed) = untrack_missing_persisted(&path).unwrap();
         assert_eq!(merged.len(), 1);
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn untrack_nested_tasks_persisted_drops_worktrees_of_tracked_repos() {
+        let repo = "/home/u/proj".to_string();
+        let task = "/home/u/proj/.claude/worktrees/feat-x".to_string();
+        // A worktree whose parent repo is NOT tracked has no group to fold
+        // into — it stays, whatever its shape.
+        let orphan = "/home/u/other/.claude/worktrees/feat-y".to_string();
+        // A sibling checkout that merely shares a name prefix must not match.
+        let prefix = "/home/u/proj-two".to_string();
+        let all = vec![repo.clone(), task.clone(), orphan.clone(), prefix.clone()];
+        assert_eq!(nested_task_paths(&all), vec![task.clone()]);
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("repos.json");
+        save_repos(&path, &all).unwrap();
+        let (merged, removed) = untrack_nested_tasks_persisted(&path).unwrap();
+        assert_eq!(merged, vec![repo, orphan, prefix]);
+        assert_eq!(removed, vec![task]);
+        assert_eq!(load_repos(&path), merged);
+
+        // second run is a clean no-op
+        let (_, removed) = untrack_nested_tasks_persisted(&path).unwrap();
         assert!(removed.is_empty());
     }
 

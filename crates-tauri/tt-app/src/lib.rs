@@ -209,6 +209,19 @@ pub fn run() {
                 );
             }
 
+            // Heal `repos.json` before the engine's first load: task worktrees
+            // double-tracked as repos (an old create flow wrote them) shadow
+            // their task records as duplicate "Root" rows and linger as ghosts
+            // after removal. See `nested_task_paths`.
+            match tt_agentboard::repos::untrack_nested_tasks_persisted(
+                &tt_agentboard::repos::default_repos_path(),
+            ) {
+                Ok((_, dropped)) if !dropped.is_empty() => {
+                    tracing::info!(count = dropped.len(), ?dropped, "repos.nested_tasks_untracked");
+                }
+                _ => {}
+            }
+
             // Scope to this app instance: sessions.json is shared across
             // instances, so another running app's PTY can carry the same
             // session id — its agents are that window's to report, not ours.
