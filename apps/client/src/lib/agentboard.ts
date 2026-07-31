@@ -122,6 +122,17 @@ export function folderDetached(folder: FolderData): boolean {
   return folder.record.origin !== "checkout" && folder.dirMissing && !folderBusy(folder);
 }
 
+/** The branch a detached task's worktree would be rebuilt on — the task's own
+ * record first, since a row with no directory has no git to read one from.
+ * `undefined` means nothing to rebuild — an unclaimed (`detected`) row was
+ * never the user's to recreate. */
+export function folderRecreateBranch(
+  folder: Pick<FolderData, "record" | "branch">,
+): string | undefined {
+  if (folder.record.origin !== "task") return undefined;
+  return folder.record.task.branch?.trim() || folder.branch.trim() || undefined;
+}
+
 /** An operation is running on this row, so it can't be worked in or acted on.
  * Covers both directions — a row being created and one being removed. */
 export function folderBusy(folder: FolderData): boolean {
@@ -1544,7 +1555,14 @@ export function normalizeWins(w: WindowsPayload): WindowsPayload {
 
 export type RepoCandidate = { name: string; dir: string; active: boolean };
 
-export type RemoveTarget = { label: string; dirs: string[]; sessionIds: string[] };
+export type RemoveTarget = {
+  label: string;
+  dirs: string[];
+  sessionIds: string[];
+  /** The worktree isn't on disk — the dialog then asks about closing the task,
+   * not about deleting a checkout that would be a lie to describe. */
+  dirMissing?: boolean;
+};
 
 export type BlockedDelete = {
   target: RemoveTarget;

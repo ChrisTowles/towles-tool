@@ -116,7 +116,7 @@ export function useWorktreeDelete(args: {
     setDeleteWtTask(bound);
     setDeleteWtOutcome("done");
     bumpDeleteFlow(dir); // a fresh flow — see `endDeleteFlow`
-    setConfirmDeleteWt({ label, dirs: [dir], sessionIds });
+    setConfirmDeleteWt({ label, dirs: [dir], sessionIds, dirMissing: folder?.dirMissing });
   }
 
   function confirmDeleteWorktree() {
@@ -188,7 +188,11 @@ export function useWorktreeDelete(args: {
         endDeleteFlow(dir);
         for (const id of target.sessionIds) onSessionRemoved(id);
         for (const message of verdict.messages) toast(message);
-        toast.success(`Deleted worktree ${verdict.name || target.label}`);
+        toast.success(
+          target.dirMissing
+            ? `Closed ${verdict.name || target.label}`
+            : `Deleted worktree ${verdict.name || target.label}`,
+        );
       },
       // A genuine failure (bad path, broken worktree, git fell over) — there
       // is no remedy to offer, so this stays a toast.

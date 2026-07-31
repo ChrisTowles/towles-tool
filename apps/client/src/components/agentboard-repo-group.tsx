@@ -30,7 +30,9 @@ import { hasRepoColor, repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
   folderBusy,
+  folderDetached,
   folderIsUnclaimed,
+  folderRecreateBranch,
   folderPhaseLabel,
   folderRemovableTask,
   folderTask,
@@ -90,6 +92,7 @@ export function RepoGroup({
   onNewTask,
   onRemoveRepo,
   onDeleteWorktree,
+  onRecreateWorktree,
   settingUpDirs,
   onRenameCommit,
   onOpenDiff,
@@ -133,6 +136,8 @@ export function RepoGroup({
   onRemoveRepo: (dirs: string[], label: string) => void;
   /** Delete a worktree from disk (guarded `task_delete`). */
   onDeleteWorktree: (dir: string, label: string) => void;
+  /** Rebuild a detached task's worktree on its own branch. */
+  onRecreateWorktree: (folder: FolderData) => void;
   /** Checkouts whose setup step is still running → when it started (epoch
    * ms). See `SettingUpBadge`. */
   settingUpDirs?: Map<string, number>;
@@ -336,6 +341,11 @@ export function RepoGroup({
           onDeleteWorktree={
             folderRemovableTask(folder) ? () => onDeleteWorktree(folder.dir, repo.name) : undefined
           }
+          onRecreateWorktree={
+            folderRecreateBranch(folder) && folderDetached(folder)
+              ? () => onRecreateWorktree(folder)
+              : undefined
+          }
           onOpenDiff={() => onOpenDiff(folder.dir)}
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
@@ -498,6 +508,11 @@ export function RepoGroup({
                   onDeleteWorktree={
                     folderRemovableTask(folder)
                       ? () => onDeleteWorktree(folder.dir, folder.name)
+                      : undefined
+                  }
+                  onRecreateWorktree={
+                    folderRecreateBranch(folder) && folderDetached(folder)
+                      ? () => onRecreateWorktree(folder)
                       : undefined
                   }
                   onOpenDiff={() => onOpenDiff(folder.dir)}

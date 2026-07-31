@@ -22,6 +22,7 @@ import {
   folderActionableItems,
   folderLanded,
   folderLandedButHasWork,
+  folderRecreateBranch,
   folderRemovableTask,
   forceDeleteLabel,
   branchRedundant,
@@ -532,6 +533,25 @@ describe("folderRemovableTask", () => {
     expect(
       folderRemovableTask(folder({ record: taskRow, dirMissing: true, isWorktree: false })),
     ).toBe(true);
+  });
+});
+
+describe("folderRecreateBranch", () => {
+  it("prefers the task record's branch — a row with no directory has no git to read", () => {
+    const record = { origin: "task", task: { id: 1, status: "doing", branch: "feat/a" } } as const;
+    expect(folderRecreateBranch(folder({ record, branch: "" }))).toBe("feat/a");
+  });
+
+  it("falls back to the row's branch, and is undefined when neither names one", () => {
+    const record = { origin: "task", task: { id: 1, status: "doing" } } as const;
+    expect(folderRecreateBranch(folder({ record, branch: "feat/b" }))).toBe("feat/b");
+    expect(folderRecreateBranch(folder({ record, branch: "  " }))).toBeUndefined();
+  });
+
+  it("is undefined for rows that were never the user's to rebuild", () => {
+    const detected = { origin: "detected", task: { id: 2, status: "doing", branch: "x" } } as const;
+    expect(folderRecreateBranch(folder({ record: detected, branch: "x" }))).toBeUndefined();
+    expect(folderRecreateBranch(folder({ branch: "main" }))).toBeUndefined(); // a checkout
   });
 });
 

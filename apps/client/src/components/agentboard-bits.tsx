@@ -2,6 +2,7 @@ import { useEffect, useState, type ComponentProps, type ReactNode } from "react"
 import {
   Box,
   Check,
+  CheckCheck,
   ChevronDown,
   CircleDot,
   ExternalLink,
@@ -419,6 +420,54 @@ export function DetachedBadge() {
     >
       no worktree
     </span>
+  );
+}
+
+/** The remedies for a `no worktree` row, beside its badge: rebuild the
+ * checkout, or close the task out. Inline and boxed, unlike the rail's other
+ * affordances — every other control on this row needs a directory that isn't
+ * there, so these two are all it has. */
+export function DetachedActions({
+  onRecreate,
+  onClose,
+}: {
+  /** Rebuild this task's worktree on its own branch. Absent when there's no
+   * branch to rebuild on (see `folderRecreateBranch`). */
+  onRecreate?: () => void;
+  /** Close the task out — done or abandoned, picked in the confirm dialog. */
+  onClose?: () => void;
+}) {
+  return (
+    <>
+      {onRecreate && (
+        <Hint label="Recreate this task's worktree on its branch — the task keeps its place, issues and PRs">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRecreate();
+            }}
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400"
+          >
+            <RefreshCw className="size-3" /> Recreate
+          </button>
+        </Hint>
+      )}
+      {onClose && (
+        <Hint label="Close this task — record it as done or abandoned; nothing is deleted from disk">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+          >
+            <CheckCheck className="size-3" /> Close…
+          </button>
+        </Hint>
+      )}
+    </>
   );
 }
 
@@ -1510,6 +1559,7 @@ export function RepoMenu({
   quiet,
   onNewTask,
   onDeleteWorktree,
+  deleteLabel,
   taskId,
   ghost = false,
 }: {
@@ -1528,6 +1578,10 @@ export function RepoMenu({
   /** Deletes this worktree from disk (guarded, `task_delete`) — set only
    * on worktree checkouts. */
   onDeleteWorktree?: () => void;
+  /** Overrides the delete item's wording — a detached row's directory is
+   * already gone, so "Delete worktree…" would name something that isn't
+   * there. */
+  deleteLabel?: string;
   /** The board task bound to this folder's worktree, when one exists. Set
    * enables "Attach issue…" — you can only link an issue to a task, so a
    * folder with no bound task doesn't offer it. */
@@ -1603,7 +1657,7 @@ export function RepoMenu({
               }}
               className="whitespace-nowrap"
             >
-              <Trash2 className="size-3.5" /> Delete worktree…
+              <Trash2 className="size-3.5" /> {deleteLabel ?? "Delete worktree…"}
               <DropdownMenuShortcut>{shortcutHint("ab-remove-task")}</DropdownMenuShortcut>
             </DropdownMenuItem>
           )}

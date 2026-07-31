@@ -130,15 +130,29 @@ export function DeleteWorktreeDialog({
       <AlertDialogContent className="max-w-[calc(100%-2rem)]! sm:max-w-xl!">
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">
-            {task
-              ? `Close task & delete worktree ${target?.label}?`
-              : `Delete worktree ${target?.label}?`}
+            {/* Nothing is on disk to delete — the whole operation is the
+                bookkeeping, so the question is about the task, not a checkout
+                that isn't there. */}
+            {target?.dirMissing
+              ? `Close task ${target?.label}?`
+              : task
+                ? `Close task & delete worktree ${target?.label}?`
+                : `Delete worktree ${target?.label}?`}
           </AlertDialogTitle>
           <AlertDialogDescription className="text-pretty">
-            Removes the checkout from disk (guarded — uncommitted changes, commits on no
-            branch/remote, or a dev server still on its ports will stop it and tell you what to do).
-            Its branch survives in the primary.
-            {task && " The task stays on the board, closed."}
+            {target?.dirMissing ? (
+              <>
+                This task's worktree is already gone, so nothing is deleted from disk. Its branch
+                survives in the primary. The task stays on the board, closed.
+              </>
+            ) : (
+              <>
+                Removes the checkout from disk (guarded — uncommitted changes, commits on no
+                branch/remote, or a dev server still on its ports will stop it and tell you what to
+                do). Its branch survives in the primary.
+                {task && " The task stays on the board, closed."}
+              </>
+            )}
             {target && target.sessionIds.length > 0 && (
               <>
                 {" "}
@@ -189,7 +203,7 @@ export function DeleteWorktreeDialog({
             onClick={onConfirm}
             title={withHint("Confirm", "ab-confirm-close-worktree")}
           >
-            {task ? `Close as ${outcome}` : "Delete worktree"}
+            {task || target?.dirMissing ? `Close as ${outcome}` : "Delete worktree"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

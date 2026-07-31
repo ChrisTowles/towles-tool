@@ -43,6 +43,7 @@ import {
   filesPaneId,
   filesPanePathFor,
   folderBusy,
+  folderRecreateBranch,
   folderRemovableTask,
   folderRemoving,
   isAgent,
@@ -59,15 +60,18 @@ import {
   sessionLabel,
   sleep,
   taskForFolder,
+  folderTask,
   termWriteRetry,
   useAgentboardState,
   waitForFirstFrame,
   type AgentboardNav,
   type AgentStatus,
+  type FolderData,
   type ClaudeLaunchOptions,
   type Overlay,
   type PendingOpenSession,
   type RemoveTarget,
+  type RepoData,
   type Selected,
   type SessionActions,
   type SessionData,
@@ -611,6 +615,37 @@ export function AgentboardScreen() {
     });
   }
 
+  // A `no worktree` row's way back. The ordinary create path with the existing
+  // `taskId`, so the row keeps its place, issues and PRs instead of becoming a
+  // second card for the same work — and no Claude, since this repairs a
+  // checkout rather than restarting the work the branch already holds.
+  function recreateWorktree(repo: RepoData, folder: FolderData) {
+    const branch = folderRecreateBranch(folder);
+    const task = folderTask(folder);
+    if (!branch || !task) return;
+    uiAction("agentboard.recreate_worktree", "agentboard");
+    void taskCreation.createTask(
+      { name: repo.name, dir: folder.repoRoot, key: repo.key, originUrl: repo.originUrl },
+      {
+        goal: "",
+        title: branch,
+        branch,
+        // Empty means "the repo's default base" — the branch already exists,
+        // so `git worktree add` checks it out rather than branching anew.
+        base: "",
+        options: {},
+        imagePaths: [],
+        issues: [],
+        // The dir the row already claims, so the rebuilt checkout lands where
+        // the record says it is instead of resolving to a second path.
+        dir: folder.dir,
+        worktree: true,
+        launchClaude: false,
+        taskId: task.id,
+      },
+    );
+  }
+
   async function newSession(folderDir: string, launchClaude = false) {
     const added = await invoke<SessionData>("ab_add_session", { dir: folderDir, name: null });
     if (added.isErr()) return;
@@ -1036,6 +1071,7 @@ export function AgentboardScreen() {
                               onNewTask={taskCreation.toggleTaskForm}
                               onRemoveRepo={requestRemoveRepo}
                               onDeleteWorktree={requestDeleteWorktree}
+                              onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
                               settingUpDirs={taskCreation.settingUpDirs}
                               onRenameCommit={commitRename}
                               onOpenDiff={openDiff}
