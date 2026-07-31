@@ -11,9 +11,7 @@ import {
   ownerRepoFromOrigin,
   promptWithImages,
   type ClaudeLaunchOptions,
-  type SessionData,
   type StartClaudeTarget,
-  type StatePayload,
 } from "@/lib/agentboard";
 import { storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
@@ -261,16 +259,13 @@ export function useTaskCreation(args: {
     // put the row on the rail, and a task worktree is never a `repos.json`
     // entry (`RowRecord`'s doc) — an entry shadows the record as a bare
     // "Root" row and strands a ghost when a removal skips the untrack.
-    const fresh = await invoke<StatePayload>("ab_get_state", {});
-    const folder = fresh.isOk()
-      ? fresh.value.repos.flatMap((r) => r.folders).find((f) => f.dir === created.dir)
-      : undefined;
-    let rec = folder?.sessions[0] ?? null;
-    if (!rec) {
-      const added = await invoke<SessionData>("ab_add_session", { dir: created.dir, name: null });
-      if (added.isErr()) return;
-      rec = added.value;
-    }
+    // `ab_ensure_session` reuses the folder's default not-started session if
+    // one exists rather than opening a surprise split pane beside it.
+    const ensured = await invoke<{ id: string; name: string }>("ab_ensure_session", {
+      dir: created.dir,
+    });
+    if (ensured.isErr()) return;
+    const rec = ensured.value;
     mountSession(created.dir, rec.id);
     // Label even without a launch — the goal is why this session exists, and
     // an unlaunched task would otherwise sit in the rail as an unnamed shell.

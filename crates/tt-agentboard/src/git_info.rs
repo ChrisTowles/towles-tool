@@ -84,22 +84,10 @@ pub struct GitInfo {
     /// `git worktree list` — so only *actual* worktrees of one repo nest
     /// together, never merely folders that happen to share an origin remote.
     pub common_dir: String,
-    /// Absolute paths of this repo's OTHER `git worktree` checkouts (this dir
-    /// excluded), from `git worktree list`: the main checkout plus every
-    /// linked worktree, managed task or not. Not part of the wire payload —
-    /// the engine uses it to auto-discover sibling checkouts that aren't in
-    /// `repoPaths` yet, in both directions: a tracked primary pulls in its
-    /// tasks, and a tracked task pulls in its primary, so a repo group always
-    /// has its main checkout even when only tasks were ever tracked.
-    ///
-    /// Which of them reach the rail is the engine's call, not this module's —
-    /// see [`crate::engine::Engine::rail_rows`].
-    pub worktree_dirs: Vec<String>,
-    /// The subset of `worktree_dirs` that is a *linked* worktree — every
-    /// candidate the rail's worktree filter may hide. The main checkout is
-    /// never listed here: it's what a repo group nests under. Split out
-    /// rather than filtered away so the filter can change without
-    /// invalidating a single cache entry.
+    /// Absolute paths of this repo's OTHER *linked* `git worktree` checkouts
+    /// (this dir and the main checkout excluded), from `git worktree list`.
+    /// Not part of the wire payload — the engine's detected-record reconciler
+    /// reads it, and removal uses it to find a worktree's owning checkout.
     pub linked_worktree_dirs: Vec<String>,
     /// When these numbers were last *verified* against the repository — the
     /// `now_ms` passed to [`compute_git_info`], stamped on every compute
@@ -271,19 +259,15 @@ fn open_repo(dir: &str) -> Option<tt_git::repo::Repo> {
 }
 
 /// Fingerprint of every input the landing probe reads: `HEAD`'s sha, the
-/// resolved base's sha, and whether the branch's upstream is gone.
-/// `tt_tasks::ops::work_state` is a pure function of those three (its other
-/// arguments are constants at this call site), so an unchanged fingerprint
-/// means the previous landing answer is still exact.
+/// resolved base's sha, and whether the branch's upstream is gone —
+/// `tt_tasks::ops::work_state` is a pure function of those three, so an
+/// unchanged fingerprint means the previous landing answer is still exact.
+/// This keeps the poll's cost proportional to actual git movement, not
+/// elapsed time.
 ///
-/// This is what keeps the poll's cost proportional to *actual git movement*
-/// rather than to elapsed time. It mattered more when the probe cost up to
-/// ~192 subprocesses; it still earns its keep, since the probe now walks and
-/// diffs trees rather than spawning, and neither is free.
-///
-/// Returns empty when `HEAD` or the base is unreadable — a partial fingerprint
-/// must never compare equal to a real one, so an unreadable repo re-probes
-/// instead of trusting a half-formed key.
+/// Returns empty when `HEAD` or the base is unreadable — a partial
+/// fingerprint must never compare equal to a real one, so an unreadable repo
+/// re-probes instead of trusting a half-formed key.
 fn probe_fingerprint(repo: &tt_git::repo::Repo, branch: &str, compared_base: &str) -> String {
     let (Some(head), Some(base)) = (repo.head_id(), repo.resolve(compared_base)) else {
         return String::new();
@@ -325,20 +309,14 @@ fn structural_fingerprint(common_dir: &str) -> String {
     }
 }
 
-/// Carry a checkout's structural identity across a compute that couldn't read
-/// the repository at all.
-///
-/// [`compute_git_info`] answers with a bare [`GitInfo::default`] when
-/// [`open_repo`] fails, and that can be transient: a concurrent `git worktree
-/// remove`/`prune` rewrites `.git/worktrees` while a poll is mid-read. Storing it
-/// wholesale blanks `common_dir` — which [`crate::bridge::assemble_state`] groups
-/// rail rows by — so an unrelated checkout would drop out of its repo's row for a
-/// tick or two. Every *stat* still goes empty; those really are unknown.
-///
-/// Deliberately narrow: only when the incoming answer has no `common_dir` of its
-/// own (a real recompute always wins), never for [`GitInfo::dir_missing`] (a
-/// definite answer, whose ghost row stands alone with its own Untrack), and only
-/// while `dir` still exists.
+/// Carry a checkout's structural identity across a compute that couldn't
+/// read the repository at all — a failed [`open_repo`] can be transient (a
+/// concurrent `worktree remove` rewriting `.git/worktrees` mid-read), and
+/// storing the bare default blanks `common_dir`, knocking the checkout out
+/// of its repo's rail row for a tick. Stats still go empty; those really are
+/// unknown. Narrow on purpose: only when the incoming answer has no
+/// `common_dir` of its own, never for `dir_missing` (a definite answer), and
+/// only while `dir` still exists.
 pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mut GitInfo) {
     if !info.common_dir.is_empty() || info.dir_missing || previous.common_dir.is_empty() {
         return;
@@ -348,7 +326,6 @@ pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mu
     }
     info.origin_url = previous.origin_url.clone();
     info.common_dir = previous.common_dir.clone();
-    info.worktree_dirs = previous.worktree_dirs.clone();
     info.linked_worktree_dirs = previous.linked_worktree_dirs.clone();
     info.is_worktree = previous.is_worktree;
     info.git_dir = previous.git_dir.clone();
@@ -364,7 +341,6 @@ pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mu
 struct Structural {
     origin_url: Option<String>,
     common_dir: String,
-    worktree_dirs: Vec<String>,
     linked_worktree_dirs: Vec<String>,
     structural_key: String,
     git_dir: String,
@@ -398,7 +374,6 @@ fn structural_facts(
         Some((prev, structural_key)) => Structural {
             origin_url: prev.origin_url.clone(),
             common_dir: prev.common_dir.clone(),
-            worktree_dirs: prev.worktree_dirs.clone(),
             linked_worktree_dirs: prev.linked_worktree_dirs.clone(),
             structural_key,
             git_dir,
@@ -406,10 +381,9 @@ fn structural_facts(
         },
         None => {
             let common_dir = repo.common_dir().to_string_lossy().into_owned();
-            let (worktree_dirs, linked_worktree_dirs) = other_worktrees(repo, dir);
+            let linked_worktree_dirs = other_worktrees(repo, dir);
             Structural {
                 origin_url: repo.origin_url(),
-                worktree_dirs,
                 linked_worktree_dirs,
                 structural_key: structural_fingerprint(&common_dir),
                 common_dir,
@@ -442,7 +416,6 @@ fn structural_only(
         head_commit_ms: repo.head_commit_unix().unwrap_or(0) * 1000,
         origin_url: s.origin_url,
         common_dir: s.common_dir,
-        worktree_dirs: s.worktree_dirs,
         linked_worktree_dirs: s.linked_worktree_dirs,
         structural_key: s.structural_key,
         git_dir: s.git_dir,
@@ -471,20 +444,12 @@ fn resolve_git_dir_fs(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     Some(if path.is_absolute() { path } else { dir.join(path) })
 }
 
-/// The `.git` internal files whose change invalidates
-/// `commits_ahead`/`commits_behind`/`landed`, and *staged* `dirty` only — an
-/// unstaged edit touches none of these, which is why the poll backup still
-/// matters for `dirty`/`files_changed`/the diff stats.
-///
-/// - `git_dir/HEAD` — commit, branch switch, detached checkout
-/// - `git_dir/index` — `git add`/`commit`/`reset`
-/// - `common_dir/packed-refs` — `git gc`; covers the two below once packed
-/// - `common_dir/refs/heads/<branch>` — a commit landing from elsewhere
-/// - `common_dir/refs/remotes/origin/<name>` (or `refs/heads/<name>` for a base
-///   with no origin) — `git fetch` moving the comparison baseline
-///
+/// The `.git` internal files whose change invalidates ahead/behind/landed and
+/// *staged* dirty only (an unstaged edit touches none — hence the poll
+/// backup): `git_dir/HEAD`, `git_dir/index`, `common_dir/packed-refs`,
+/// `common_dir/refs/heads/<branch>`, and the base's remote (or local) ref.
 /// Built from the fields as last computed, so it trails a branch switch by a
-/// tick and self-corrects on the recompute that switch's own `HEAD` watch fires.
+/// tick and self-corrects on the recompute that switch's own watch fires.
 fn control_files(
     git_dir: &std::path::Path,
     common_dir: &str,
@@ -529,19 +494,12 @@ pub fn control_files_for(info: &GitInfo) -> Vec<std::path::PathBuf> {
 }
 
 /// Fingerprint of every input the *ref-derived* half of [`compute_git_info`]
-/// reads: which base ref [`resolve_base_ref`] picks (`base_branch_override` plus
-/// the `.tt-task` marker's mtime) and what the refs point at (the mtimes of
-/// [`control_files`] minus `index`).
-///
-/// `index` is excluded on purpose: `git status`/`git diff` (which the fast path
-/// runs every poll) can themselves rewrite the index's stat cache, so folding it
-/// in would differ every tick and defeat the reuse — and those two re-read the
-/// state it reflects anyway.
-///
-/// Reads no refs or objects, only `fs::metadata`. Equal to a cached
-/// `revision_key`, the poll skips the HEAD read, base resolve, graph walks and
-/// landing probe. Empty when the git dir or branch is unknown, or a stat hard-
-/// errors — a partial fingerprint must never compare equal to a real one.
+/// reads: the picked base ref (override + `.tt-task` marker mtime) and the
+/// [`control_files`] mtimes minus `index` — excluded because `git status`/
+/// `diff` rewrite its stat cache every poll, which would defeat the reuse.
+/// Only `fs::metadata`, no refs or objects. Equal to a cached `revision_key`,
+/// the poll skips the graph walks and landing probe. Empty on any unknown or
+/// stat error — a partial fingerprint must never equal a real one.
 fn revision_fingerprint(
     dir: &str,
     git_dir: &str,
@@ -645,7 +603,7 @@ pub fn compute_git_info(
             info.landed = prev.landed.clone();
             info.origin_url = prev.origin_url.clone();
             info.common_dir = prev.common_dir.clone();
-            info.worktree_dirs = prev.worktree_dirs.clone();
+            info.linked_worktree_dirs = prev.linked_worktree_dirs.clone();
             info.structural_key = prev.structural_key.clone();
             info.probe_key = prev.probe_key.clone();
             info.git_dir = prev.git_dir.clone();
@@ -684,7 +642,6 @@ pub fn compute_git_info(
     let Structural {
         origin_url,
         common_dir,
-        worktree_dirs,
         linked_worktree_dirs,
         structural_key,
         git_dir,
@@ -699,7 +656,6 @@ pub fn compute_git_info(
     info.commits_behind = behind;
     info.origin_url = origin_url;
     info.common_dir = common_dir;
-    info.worktree_dirs = worktree_dirs;
     info.linked_worktree_dirs = linked_worktree_dirs;
     info.structural_key = structural_key;
     info.git_dir = git_dir;
@@ -833,36 +789,23 @@ fn git_common_dir(dir: &str) -> String {
 /// `dir` is compared canonically: [`tt_git::repo::Repo::worktrees`] reports
 /// resolved paths, and a checkout reached through a symlink must still recognize
 /// itself and drop out of its own sibling list.
-fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> (Vec<String>, Vec<String>) {
+fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
     let self_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| std::path::PathBuf::from(dir));
-    let mut all = Vec::new();
-    let mut linked = Vec::new();
-    for w in repo.worktrees() {
-        if std::path::Path::new(&w.dir) == self_dir {
-            continue;
-        }
-        if !w.is_main {
-            linked.push(w.dir.clone());
-        }
-        all.push(w.dir);
-    }
-    (all, linked)
+    repo.worktrees()
+        .into_iter()
+        .filter(|w| !w.is_main && std::path::Path::new(&w.dir) != self_dir)
+        .map(|w| w.dir)
+        .collect()
 }
 
 /// Force-remove `worktree_dir`'s registration from the repo checked out at
-/// `owner_dir`, then prune.
-///
-/// One of the two places this module still spawns `git` (the other is
-/// [`fetch_origin`]): gitoxide's worktree API is read-only, with no
-/// linked-worktree removal — see [`tt_git::repo`].
-///
-/// A worktree deleted outside `git worktree remove`/`tt task rm` reaches the rail
-/// only via [`other_worktrees`]' discovery, so `owner_dir`'s
-/// `.git/worktrees/<name>` registration is the only record of it, and git keeps
-/// reporting it — `prunable` or not — until that is cleared. `--force` is
-/// required since the directory is already gone, which a plain remove refuses;
-/// `prune` runs either way, since a failed remove can still leave a stale entry
-/// only `prune` clears. Returns whether `remove` reported success.
+/// `owner_dir`, then prune. One of the two places this module still spawns
+/// `git` (gitoxide's worktree API is read-only). For a worktree deleted
+/// outside `git worktree remove`, the owner's `.git/worktrees/<name>`
+/// registration is the only record left and git keeps reporting it until
+/// cleared. `--force` because the directory is already gone; `prune` runs
+/// either way, since a failed remove can leave a stale entry only `prune`
+/// clears. Returns whether `remove` reported success.
 pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
     let git = |args: &[&str]| {
         let mut full = vec!["-C", owner_dir];
@@ -1076,8 +1019,8 @@ mod tests {
         );
     }
 
-    /// [`other_worktrees`]' `(all, unmanaged)` by directory.
-    fn worktree_dirs_of(dir: &str) -> (Vec<String>, Vec<String>) {
+    /// [`other_worktrees`]' linked siblings by directory.
+    fn worktree_dirs_of(dir: &str) -> Vec<String> {
         open_repo(dir).map(|repo| other_worktrees(&repo, dir)).unwrap_or_default()
     }
 
@@ -1221,20 +1164,14 @@ mod tests {
             ],
         );
 
-        // Every sibling is discovered, and both linked ones are filter
-        // candidates — nothing on disk says which the user asked for, so the
-        // engine decides that from the board (see `rail_rows`).
-        let (mut all, linked) = worktree_dirs_of(main.to_str().unwrap());
-        all.sort();
-        assert_eq!(all, sorted(vec![path_s(&task), path_s(&scratch)]));
+        // Both linked siblings are discovered; nothing on disk says which the
+        // user asked for, so the engine decides that from the board.
+        let linked = worktree_dirs_of(main.to_str().unwrap());
         assert_eq!(sorted(linked), sorted(vec![path_s(&task), path_s(&scratch)]));
 
-        // From a task's perspective the primary checkout is discovered too,
-        // and is never a candidate: it's what a repo group nests under, which
-        // keeps it in the rail when only tasks were ever tracked.
-        let (mut all, linked) = worktree_dirs_of(task.to_str().unwrap());
-        all.sort();
-        assert_eq!(all, sorted(vec![path_s(&main), path_s(&scratch)]));
+        // From a task's perspective the primary checkout is never listed —
+        // it's what a repo group nests under, not a discovery candidate.
+        let linked = worktree_dirs_of(task.to_str().unwrap());
         assert_eq!(linked, vec![path_s(&scratch)]);
     }
 
@@ -1945,12 +1882,7 @@ mod tests {
         );
         // Proves a real re-derive ran rather than returning the poisoned value.
         assert_ne!(reprobed.origin_url.as_deref(), Some("sentinel"));
-        // And the re-derive classified rather than filtered: `other_worktrees`
-        // lists the sibling in `worktree_dirs` *and* as a linked worktree, so
-        // the `showUnmanagedWorktrees` toggle never has to invalidate this
-        // entry.
         let sibling_dir = path_s(&std::fs::canonicalize(&sibling).unwrap());
-        assert!(reprobed.worktree_dirs.contains(&sibling_dir));
         assert!(reprobed.linked_worktree_dirs.contains(&sibling_dir));
     }
 

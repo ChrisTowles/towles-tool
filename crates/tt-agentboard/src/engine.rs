@@ -52,13 +52,11 @@ const STUCK_MS: i64 = 3 * 60 * 1000;
 const STALE_MS: i64 = 12 * 60 * 60 * 1000;
 const IDLE_MS: i64 = 30 * 1000;
 
-/// How long a [`Engine::git_pending`] claim blocks a second `stale_git_targets`
-/// caller before it self-expires. Comfortably longer than any real
-/// `compute_git_info` (its full path is at most ~9 sequential in-process
-/// gitoxide reads, normally well under a second), so it never masks a
-/// legitimate re-poll — it only exists so a caller that never calls
-/// `store_git_info` (a panic, a dropped `spawn_blocking` result) can't strand
-/// a dir out of rotation forever.
+/// How long a [`Engine::git_pending`] claim blocks a second
+/// `stale_git_targets` caller before it self-expires. Comfortably longer than
+/// any real `compute_git_info`, so it only exists so a caller that never
+/// stores its result (panic, dropped `spawn_blocking`) can't strand a dir out
+/// of rotation forever.
 const GIT_PENDING_GUARD_MS: i64 = 30_000;
 
 /// Best-effort persistence: a store write that fails is not worth aborting the
@@ -94,14 +92,10 @@ pub struct Engine {
     projects_dir: PathBuf,
     repos_path: PathBuf,
     repo_paths: Vec<String>,
-    /// [`crate::persist::FileVersion`] of `repos.json` as of the last successful
-    /// parse, so [`Self::reload_repos`] can skip re-reading an unchanged file.
-    /// There are ~11 `reload_repos` call sites and four of them fire per scan
-    /// tick (`scan_once`, `watch_targets`, `control_watch_files`, and the
-    /// emitter's `compute_payload_with`), so an untracked file was being read
-    /// and JSON-parsed four times every 2s to answer a question that only
-    /// changes when the user adds, removes or reorders a repo. Same memoization
-    /// idiom as `git_info`'s `structural_key`.
+    /// [`crate::persist::FileVersion`] of `repos.json` at the last successful
+    /// parse — four `reload_repos` call sites fire per scan tick, so without
+    /// this the file was read and parsed 4×/2s to answer a question that only
+    /// changes when the user edits the repo list.
     repos_stat: Option<crate::persist::FileVersion>,
     tracker: AgentTracker,
     folder_meta: crate::folder_meta::FolderMetaStore,
@@ -110,33 +104,21 @@ pub struct Engine {
     collapse: crate::collapse::CollapseStore,
     sessions: SessionStore,
     git_cache: GitInfoCache,
-    /// Dirs handed out by [`Self::stale_git_targets`], stamped with when —
-    /// an in-flight claim, not a cache field. The scan loop (2s) and the
-    /// git-stat poll (10s) in `crates-tauri/tt-app/src/lib.rs` both call
-    /// `stale_git_targets` independently against the same `GIT_CACHE_TTL_MS`;
-    /// without this, both can observe the same dir as stale in the same
-    /// window (whichever tick lands right as the TTL expires) and each spawn
-    /// their own full `git` chain for it — measured live, doubled
-    /// `status`/`diff` spawns landing within the same millisecond for one
-    /// dir. Claiming a dir here the moment it's handed out makes the second
-    /// loop's `stale_git_targets` skip it instead of racing a duplicate
-    /// recompute. [`Self::store_git_info`] releases the claim on success, but
-    /// the claim is also self-expiring (see [`GIT_PENDING_GUARD_MS`]) so a
-    /// caller that panics or drops its `spawn_blocking` result before storing
-    /// can never strand a dir out of the poll rotation forever.
+    /// Dirs handed out by [`Self::stale_git_targets`], stamped with when — an
+    /// in-flight claim, not a cache field. The 2s scan loop and the 10s
+    /// git-stat poll both call `stale_git_targets` against the same TTL;
+    /// without the claim both can see the same dir stale in the same window
+    /// and race duplicate recomputes (measured live). Released by
+    /// [`Self::store_git_info`], and self-expiring
+    /// ([`GIT_PENDING_GUARD_MS`]) so a panicking caller can't strand a dir.
     git_pending: HashMap<String, i64>,
     watchers: Vec<Box<dyn AgentWatcher + Send>>,
     compact_recommend_percent: u8,
-    /// Show rows for worktrees no task claimed — the
-    /// `agentboard.showUnmanagedWorktrees` setting. Off by default: a worktree
-    /// the user never asked for (Claude Code minting one for a background
-    /// agent, a hand-added one) shouldn't populate the rail unprompted.
-    ///
-    /// Purely a **display filter** over [`RowRecord::Detected`] rows now — the
-    /// records themselves are written either way, so flipping this reveals an
-    /// already-ordered set on the next poll instead of starting a discovery
-    /// that has to settle. Read from settings at construction, updated through
-    /// [`Self::set_show_unmanaged_worktrees`].
+    /// Show rows for worktrees no task claimed
+    /// (`agentboard.showUnmanagedWorktrees`, off by default — a worktree the
+    /// user never asked for shouldn't populate the rail unprompted). A
+    /// display filter over [`RowRecord::Detected`] rows; the host also gates
+    /// the detected-record reconciler on it.
     show_unmanaged_worktrees: bool,
     /// The rail's worktree rows, refreshed from the store by the host each scan
     /// tick (`Store::rail_worktrees` → [`Self::set_task_worktrees`]). The engine
@@ -181,32 +163,20 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
         crate::watchers::claude_code::CLI_CACHE_TTL_MS,
     ));
     let live_threads: HashSet<String> = cli_agents.iter().map(|a| a.session_id.clone()).collect();
-    // Link each live agent to the PTY session it runs in: read `TT_SESSION_ID`
-    // from the agent's process env (/proc), keyed by its thread id (==
-    // sessionId). Agents with no injected id (e.g. started in an external
-    // terminal, or non-Claude kinds without a pid source) stay unmapped and
-    // fall back to their folder's default session in `assemble_state`. Agents
-    // out of `scope` (another app instance's PTYs) stay unmapped too — the
-    // watcher drops their events entirely, so nothing falls back for them.
+    // Link each live agent to its PTY session: TT_SESSION_ID from /proc,
+    // keyed by thread id. No injected id → unmapped, falls back to the
+    // folder's default session; out of `scope` → dropped entirely.
     let tt_session_by_thread: HashMap<String, String> = cli_agents
         .iter()
         .filter_map(|a| {
             crate::procenv::session_id_in_scope(a.pid, scope).map(|sid| (a.session_id.clone(), sid))
         })
         .collect();
-    // Supplement CLI detection: app-spawned Claude sessions the CLI snapshot
-    // never enumerated, found by scanning /proc for our injected
-    // TT_SESSION_ID and enriched with task name + status from the
-    // transcript the process has open. Keyed by session id; consumed only
-    // for sessions the tracker left idle. First live process per id wins.
-    //
-    // Skipped entirely for a session the CLI already accounted for: the
-    // supplement is consumed only where `pick_state` came back empty
-    // (`bridge::build_folder`), and a CLI-reported agent whose pid resolved
-    // to this session is exactly the case where it won't be. Enriching it
-    // anyway meant a 128 KiB head + 128 KiB tail read and two JSON parses
-    // per agent per payload rebuild — every ~2s, plus every fs-notify wake —
-    // for a value thrown away on the next line.
+    // Supplement CLI detection: app-spawned sessions the CLI snapshot never
+    // enumerated, found by scanning /proc for our TT_SESSION_ID. Consumed
+    // only where `pick_state` came back empty — enriching an already-
+    // accounted session cost two 128 KiB reads + JSON parses per agent per
+    // rebuild for a value thrown away on the next line.
     let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
     let mut session_agents: HashMap<String, AgentEvent> = HashMap::new();
     for proc in crate::procenv::scan_session_agents(scope) {
@@ -327,30 +297,15 @@ impl Engine {
         self.scan_once_with_resolver(&|dir| resolve_session_name(dir, &entries), now);
     }
 
-    /// Every row the rail should show, in rail order.
-    ///
-    /// **The rail's row list comes from records, never from detection.** Each
-    /// tracked `repos.json` path is a [`RowRecord::Checkout`], immediately
-    /// followed by the task rows bound to it ([`Self::task_worktrees`], pushed
-    /// in from the store) — *whether or not those directories exist*. A task
-    /// therefore has its row from the moment it is written down, before
-    /// `git worktree add` runs, and keeps it through a removal that takes a
-    /// minute; nothing here can conclude a row should vanish because a
-    /// directory did.
-    ///
-    /// Discovered-but-unrecorded worktrees are deliberately **absent**: the host
-    /// turns them into `detected` records ([`Self::unrecorded_worktrees`]) and
-    /// they arrive back here as rows like any other, which is what gives them a
-    /// stable position instead of one that depends on what git listed this tick.
-    ///
-    /// Order is `repos.json` order (the user's, persisted by `reorder_repos`)
-    /// and then `created_at` within each checkout — never name-sort, never
-    /// git's worktree-list order, so a row's position never changes once it has
-    /// one. Callers must not re-sort.
-    ///
-    /// Cache-only and allocation-light: it reads already-cached values and never
-    /// touches git or the filesystem, because it runs under the engine lock that
-    /// every `ab_*` command shares on the UI thread.
+    /// Every row the rail should show, in rail order. **Rows come from
+    /// records, never from detection**: each `repos.json` path is a
+    /// [`RowRecord::Checkout`] followed by its task rows — whether or not the
+    /// directories exist — so a task has its row from the moment it is
+    /// written down and keeps it through a removal. Discovered-but-unrecorded
+    /// worktrees are absent here; the host mints `detected` records and they
+    /// arrive back as ordinary rows. Order is `repos.json` order, then
+    /// `created_at` per checkout — never name-sort; callers must not re-sort.
+    /// Cache-only: runs under the engine lock every `ab_*` command shares.
     fn rail_rows(&mut self) -> Vec<RailRow> {
         let show_unmanaged = self.show_unmanaged_worktrees;
         let mut rows: Vec<RailRow> = Vec::with_capacity(self.repo_paths.len());
@@ -400,26 +355,16 @@ impl Engine {
     }
 
     /// Linked worktrees git knows about that no task row claims — the host
-    /// mints a `detected` record for each (`Store::record_detected_worktree`),
-    /// after which they reach the rail as ordinary rows.
+    /// mints a `detected` record for each, after which they reach the rail as
+    /// ordinary rows. Steady state returns empty, so reconciliation writes
+    /// nothing. Cache-only, safe under the lock.
     ///
-    /// Returned only while genuinely unrecorded, so the steady state is empty
-    /// and the host writes nothing: reconciliation is diff-driven, not a
-    /// per-tick upsert against a database three other processes are using.
-    /// Cache-only, safe under the lock.
-    ///
-    /// **A directory that isn't there is never offered**, and that check is
-    /// load-bearing rather than defensive. `git` keeps reporting a linked
-    /// worktree until its `.git/worktrees/<name>` registration is pruned (see
-    /// [`crate::git_info::prune_stale_worktree`]), and the cached
-    /// `linked_worktree_dirs` behind it is memoized off `structural_key`, so
-    /// for a while after a removal this list still names a path with nothing
-    /// at it. Minting a `detected` record for one puts the deleted task's row
-    /// straight back on the rail — and [`Self::vanished_detected_records`]
-    /// forgets it on the very next tick, which re-unrecords it, which mints it
-    /// again: the row flaps in and out every couple of ticks until the git
-    /// cache happens to refresh. The two reconcilers must agree on the same
-    /// predicate, so never offer what the other half would immediately retire.
+    /// **A directory that isn't there is never offered** — load-bearing, not
+    /// defensive: git keeps reporting a removed worktree until its
+    /// registration is pruned, and the memoized cache keeps it longer, so
+    /// offering it would mint a record [`Self::vanished_detected_records`]
+    /// forgets next tick — a row flapping in and out until the cache
+    /// refreshes. Both reconcilers must agree on the same predicate.
     pub fn unrecorded_worktrees(&mut self) -> Vec<UnrecordedWorktree> {
         self.reload_repos();
         let recorded: HashSet<&str> = self.task_worktrees.iter().map(|w| w.dir.as_str()).collect();
@@ -453,8 +398,8 @@ impl Engine {
     /// (`Store::forget_detected_worktree`).
     ///
     /// Only ever `detected`: a **task** whose directory vanished is precisely
-    /// the row that must survive (as [`crate::types::RowPhase::Detached`]) until the user
-    /// says what happened to it. This is the one place the engine looks at the
+    /// the row that must survive (rendered detached) until the user says what
+    /// happened to it. This is the one place the engine looks at the
     /// filesystem to decide a record's fate, and it is bounded to records that
     /// only ever existed because a directory did.
     pub fn vanished_detected_records(&self) -> Vec<String> {
@@ -478,16 +423,11 @@ impl Engine {
         self.rail_dirs()
     }
 
-    /// `.git` internal files worth watching so a commit/fetch/branch-switch/
-    /// `git add` in a tracked repo invalidates its cache entry immediately
-    /// (see [`Self::invalidate_git`]) instead of waiting out
-    /// `GIT_CACHE_TTL_MS`'s backup ceiling. Maps each watch file to the
-    /// checkout dir it belongs to, so the host's watcher callback can resolve
-    /// "this file changed" back to "invalidate this dir" — see
-    /// [`crate::git_info::control_files_for`] for exactly which files and why
-    /// (and the working-tree edits it deliberately can't cover). Cache-only,
-    /// same reasoning as `rail_rows`: never shells out, safe to
-    /// call under the lock, cheap enough to call every poll tick.
+    /// `.git` internal files worth watching, mapped to the checkout dir each
+    /// belongs to, so a commit/fetch/switch/`git add` invalidates that dir
+    /// immediately instead of waiting out the TTL — see
+    /// [`crate::git_info::control_files_for`] for which files and why.
+    /// Cache-only, safe under the lock, cheap enough for every poll tick.
     pub fn control_watch_files(&mut self) -> std::collections::HashMap<std::path::PathBuf, String> {
         self.reload_repos();
         let dirs = self.rail_dirs();
@@ -510,19 +450,12 @@ impl Engine {
         self.git_cache.invalidate(Some(dir));
     }
 
-    /// Dirs in the worktree-merged target set whose git-cache entry is
-    /// missing or older than the TTL as of `now`, paired with that folder's
-    /// base-branch override (if any) — for the host to compute with
-    /// [`crate::git_info::compute_git_info`] *outside* the engine lock, then
-    /// hand back via [`Self::warm_git_cache`]. Read-only; safe to call under
-    /// the lock since it never shells out.
-    /// Each entry also carries that folder's previously cached value, which the
-    /// host passes back into `compute_git_info` so an unmoved repo revalidates
-    /// cheaply instead of re-running the landing probe.
-    /// Also claims each returned dir in [`Self::git_pending`] so a second
-    /// caller (the other of the scan loop / git-stat poll) doesn't hand out
-    /// the same dir again before [`Self::store_git_info`]/[`Self::
-    /// warm_git_cache`] releases the claim — see that field's doc for why.
+    /// Rail dirs whose git-cache entry is missing or past the TTL, each with
+    /// its base-branch override and previously cached value — computed by the
+    /// host *outside* the engine lock, handed back via
+    /// [`Self::warm_git_cache`]. Claims each returned dir in
+    /// [`Self::git_pending`] so the other poll loop can't hand it out again
+    /// before the claim releases — see that field's doc.
     pub fn stale_git_targets(
         &mut self,
         now: i64,
@@ -580,7 +513,7 @@ impl Engine {
 
     /// One scan of every watcher: collect emits through the resolvers and feed
     /// them to the tracker (first scan's emits are seeded → marked unseen).
-    pub fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
+    fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
         let mut ctx = CollectCtx { resolve, events: Vec::new() };
         for watcher in &mut self.watchers {
             watcher.scan(&mut ctx, now);
@@ -593,7 +526,7 @@ impl Engine {
     }
 
     /// The tracked checkout that owns `dir` as a discovered `git worktree`,
-    /// if any — the repo whose cached `worktree_dirs` (from its last
+    /// if any — the repo whose cached `linked_worktree_dirs` (from its last
     /// `compute_git_info`) lists `dir`. A rail row for such a `dir` is never
     /// itself a `repos.json` entry (see [`Self::rail_rows`]'s doc), so
     /// untracking it means pruning the worktree registration at the returned
@@ -603,18 +536,14 @@ impl Engine {
         self.reload_repos();
         repo_entries(&self.repo_paths)
             .into_iter()
-            .find(|e| self.git_cache.get(&e.dir).worktree_dirs.iter().any(|w| w == dir))
+            .find(|e| self.git_cache.get(&e.dir).linked_worktree_dirs.iter().any(|w| w == dir))
             .map(|e| e.dir)
     }
 
-    /// The dirs whose git info the host should recompute (all watched repos,
-    /// freshly reloaded), paired with each folder's base-branch override (if
-    /// any). Cheap; hold the lock only for this, then run
-    /// [`crate::git_info::compute_git_info`] per dir unlocked and hand the
-    /// results back via [`Engine::store_git_info`].
-    /// Like [`Self::stale_git_targets`], each entry carries the folder's
-    /// previously cached value so the host's recompute can revalidate cheaply
-    /// instead of re-running the landing probe.
+    /// All watched repos' dirs with their base-branch overrides and cached
+    /// values, for an unlocked recompute handed back via
+    /// [`Engine::store_git_info`] — same shape as [`Self::stale_git_targets`]
+    /// without the staleness filter.
     pub fn git_targets(&mut self) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
         self.reload_repos();
         let dirs = repo_entries(&self.repo_paths).into_iter().map(|e| e.dir).collect();
@@ -643,16 +572,10 @@ impl Engine {
         changed
     }
 
-    /// Every top-level tracked repo's dir paired with its cached git origin
-    /// URL (`None` for a repo whose git info hasn't been computed yet, or
-    /// which has no `origin` remote). Read-only and cache-only — no git
-    /// subprocess — so the host can call this under the engine lock, unlike
-    /// [`Self::git_targets`]'s recompute path. Feeds the host's `tt-store`
-    /// tracked-repo identity reconciliation (see `tt_store::Store::
-    /// reconcile_repos`): the host derives an `owner/repo` slug from each
-    /// origin URL and reconciles the cache to exactly that set every tick,
-    /// so `repos.json` (via `self.repo_paths`) stays the sole source of
-    /// truth for which repos are tracked.
+    /// Every tracked repo's dir with its cached origin URL (`None` until
+    /// computed / no remote). Cache-only, safe under the lock. Feeds
+    /// `tt_store::Store::reconcile_repos`, keeping `repos.json` the sole
+    /// source of truth for which repos are tracked.
     pub fn tracked_repo_origins(&mut self) -> Vec<(String, Option<String>)> {
         self.reload_repos();
         repo_entries(&self.repo_paths)
@@ -667,10 +590,10 @@ impl Engine {
     /// Full recompute from repos.json (desktop mode). Base order is by name
     /// (createdAt is meaningless for configured repos).
     ///
-    /// Collects the agent snapshot itself — convenient for hosts without a hot
-    /// loop (the MCP server). Hot loops should call [`collect_agent_snapshot`]
-    /// unlocked and pass it to [`Engine::compute_payload_with`].
-    pub fn compute_payload(&mut self, now: i64) -> StatePayload {
+    /// Collects the agent snapshot itself. Hot loops call
+    /// [`collect_agent_snapshot`] unlocked and pass it to
+    /// [`Engine::compute_payload_with`]; this is for one-off internal reads.
+    fn compute_payload(&mut self, now: i64) -> StatePayload {
         let snapshot = collect_agent_snapshot(now, &self.scope);
         self.compute_payload_with(&snapshot, now)
     }
@@ -707,18 +630,21 @@ impl Engine {
         // records left by a genuine remove-all are pruned on the next
         // non-empty poll.
         if !entries.is_empty() {
-            let dirs: HashSet<String> = entries.iter().map(|e| e.dir.clone()).collect();
-            self.sessions.prune(&dirs);
-            self.folder_meta.prune(&dirs);
-            // Repo identity is deliberately NOT pruned here. Everything else in
-            // this block is derived state that's cheap to lose and regenerates
-            // on the next poll; a hand-picked icon and color is user-authored,
-            // has no undo, and this `dirs` set is known to churn spuriously
-            // (the `!entries.is_empty()` guard above exists for that reason).
-            // Sweeping identity on a transient stat failure or an
-            // untrack/retrack would silently destroy a choice the user made.
-            // The map is bounded by "repos the user has ever styled" — a few
-            // kilobytes — so it's reaped on explicit removal, not on a timer.
+            // Keyed on *records*, not rendered rows: a detected worktree hidden
+            // by the show-unmanaged toggle is absent from `entries` but still a
+            // real record, and pruning by display state would silently delete
+            // its session history from the shared sessions.json every poll.
+            let mut dirs: HashSet<String> = entries.iter().map(|e| e.dir.clone()).collect();
+            dirs.extend(self.task_worktrees.iter().map(|w| w.dir.clone()));
+            if self.sessions.prune(&dirs) {
+                persisted(self.sessions.save(), "sessions");
+            }
+            if self.folder_meta.prune(&dirs) {
+                persisted(self.folder_meta.save(), "folder meta");
+            }
+            // Repo identity is deliberately NOT pruned here: a hand-picked
+            // icon/color is user-authored with no undo, and this `dirs` set
+            // churns spuriously. Reaped on explicit removal only.
             let gone = self.windows.prune(&dirs);
             if !gone.is_empty() {
                 persisted(self.windows.save(&gone), "windows");
@@ -827,6 +753,14 @@ impl Engine {
         true
     }
 
+    /// Whether unmanaged (detected) worktree rows are shown. The host's
+    /// detected-record reconciler is gated on this too: minting records the
+    /// rail filters out anyway would write rows nobody can see to a database
+    /// three other processes share, on every scan tick.
+    pub fn show_unmanaged_worktrees(&self) -> bool {
+        self.show_unmanaged_worktrees
+    }
+
     /// Replace the rail's worktree rows — the host reads them from the store
     /// each scan tick (`Store::rail_worktrees` → [`Self::task_worktrees`]).
     /// Returns whether anything changed, so the host can re-emit the moment a
@@ -852,19 +786,11 @@ impl Engine {
         snapshot: &AgentSnapshot,
         now: i64,
     ) -> StatePayload {
-        // Link each live agent to the PTY session it runs in: read `TT_SESSION_ID`
-        // from the agent's process env (/proc), keyed by its thread id (==
-        // sessionId). Attributions are sticky: they live in `thread_sessions`
-        // for as long as the tracker still holds the thread, so an agent whose
-        // process exited (its final Complete/Interrupted state) stays on the
-        // pane it ran in instead of drifting to its folder's default session.
-        // Agents with no injected id (e.g. non-Claude kinds without a pid
-        // source) stay unmapped and fall back to their folder's default
-        // session in `assemble_state`.
-        // The same join, persisted: `thread_sessions` is in-memory and dies
-        // with the process, so a crash would take the pane→agent pairing with
-        // it and the next launch would have nothing to offer resuming
-        // (see [`crate::resume`]).
+        // Link each live agent to its PTY session (TT_SESSION_ID via /proc,
+        // keyed by thread id). Sticky: an exited agent stays on the pane it
+        // ran in rather than drifting to the default session; unmapped ones
+        // fall back in `assemble_state`. Also persisted, so a crash doesn't
+        // take the pane→agent pairing with it (see [`crate::resume`]).
         let mut link_changed = false;
         for (tid, sid) in &snapshot.tt_session_by_thread {
             self.thread_sessions.insert(tid.clone(), sid.clone());
@@ -1025,6 +951,17 @@ impl Engine {
         record
     }
 
+    /// The folder's first session, seeding the default one if it has none —
+    /// for a caller that wants "the session to type into" without risking a
+    /// second row (a surprise split pane) when a default already exists.
+    pub fn ensure_session(&mut self, dir: &str, now: i64) -> Option<SessionRecord> {
+        if self.sessions.ensure_default(dir, now) {
+            persisted(self.sessions.save(), "sessions");
+            self.touch_folder(dir, now);
+        }
+        self.sessions.sessions_for(dir).first().cloned()
+    }
+
     /// Rename a PTY session by id. Returns whether it changed.
     pub fn rename_session(&mut self, id: &str, name: &str) -> bool {
         let changed = self.sessions.rename(id, name);
@@ -1113,17 +1050,10 @@ impl Engine {
     }
 
     /// Drop a checkout's cached git info and any in-flight compute claim —
-    /// called from the removal sequence once the worktree is off disk.
-    ///
-    /// Only the cache. The *row* is the task record's business and outlives the
-    /// directory by design, so there is nothing to suppress here: this used to
-    /// also add the dir to a `removed_checkouts` set, which existed purely so
-    /// removal could out-race the discovery that would otherwise keep
-    /// re-deriving the row from its parent's `worktree_dirs`.
-    ///
-    /// Still worth doing at removal time: a stale claim would hold the path out
-    /// of the poll rotation, and a *new* task later created at the same path
-    /// must not be served the dead one's stats.
+    /// called from the removal sequence once the worktree is off disk. Only
+    /// the cache: the row is the task record's business and outlives the
+    /// directory by design. A stale claim would hold the path out of the poll
+    /// rotation, and a new task at the same path must not inherit dead stats.
     pub fn drop_git_cache(&mut self, dir: &str) -> bool {
         self.git_pending.remove(dir);
         self.git_cache.forget(dir)
@@ -1269,7 +1199,7 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec!["/repo/main/.claude/worktrees/thing".to_string()],
+                linked_worktree_dirs: vec!["/repo/main/.claude/worktrees/thing".to_string()],
                 ..Default::default()
             },
             1000,
@@ -1289,15 +1219,10 @@ mod engine_tests {
         assert_eq!(e.find_worktree_owner("/repo/elsewhere"), None);
     }
 
-    /// The other half of the deleted-task fix, and the reason the removal
-    /// sequence invalidates the *owner* rather than only the removed dir.
-    ///
-    /// `ops::remove_task` runs `git worktree remove` + `worktree prune` in the
-    /// owner checkout, so the registration is gone on disk — but the owner's
-    /// cached `linked_worktree_dirs` still names the deleted path, and nothing
-    /// revalidates it until `GIT_CACHE_TTL_MS` (60s) lets a recompute through.
-    /// Invalidating puts the owner back in the rotation on the next tick, so
-    /// the dead entry is dropped in seconds rather than a minute.
+    /// Why removal invalidates the *owner* too: the registration is gone on
+    /// disk but the owner's cached `linked_worktree_dirs` still names the
+    /// deleted path until the TTL lets a recompute through — invalidating
+    /// drops the dead entry in seconds rather than a minute.
     #[test]
     fn invalidating_the_owner_requeues_its_stale_worktree_list() {
         let (_tmp, mut e) = engine();
@@ -1311,7 +1236,6 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![wt.to_string()],
                 linked_worktree_dirs: vec![wt.to_string()],
                 ..Default::default()
             },
@@ -1367,7 +1291,6 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![wt.to_string()],
                 linked_worktree_dirs: vec![wt.to_string()],
                 ..Default::default()
             },
@@ -1444,7 +1367,6 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![wt.clone()],
                 linked_worktree_dirs: vec![wt.clone()],
                 ..Default::default()
             },
@@ -1480,7 +1402,6 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![gone.to_string(), live_s.clone()],
                 linked_worktree_dirs: vec![gone.to_string(), live_s.clone()],
                 ..Default::default()
             },
@@ -1514,7 +1435,6 @@ mod engine_tests {
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
-                worktree_dirs: vec![wt.to_string()],
                 linked_worktree_dirs: vec![wt.to_string()],
                 ..Default::default()
             },

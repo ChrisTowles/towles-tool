@@ -69,30 +69,18 @@ fn task_dir(checkout: &Path, name: &str) -> PathBuf {
 /// Width of one test's private port pool (see [`next_pool`]).
 const POOL_WIDTH: u16 = 20;
 
-/// First port of the whole range these tests carve their pools out of.
-///
-/// Must sit BELOW the ephemeral range (Linux defaults to 32768-60999) —
-/// `port_occupied`'s bind probe cannot tell a claimed dev server from some
-/// unrelated process that borrowed the port as an outbound source port, so an
-/// in-range pool makes the removal guard fire at random on a busy CI runner.
-/// This bit for real: the old 42410-42429 pool failed
-/// `rm_guards_dirty_and_orphan_commits` with "port 42410 is in use by a
-/// process outside the task's containers". The repo's own pools (1420-1619,
-/// 4420-4619) are below the range for the same reason.
+/// First port of the whole range these tests carve their pools out of. Must
+/// sit BELOW the ephemeral range (Linux: 32768-60999): the bind probe can't
+/// tell a claimed dev server from a borrowed outbound source port, so an
+/// in-range pool makes the removal guard fire at random on a busy runner
+/// (bit for real with the old 42410 pool).
 const POOL_FLOOR: u16 = 24410;
 
-/// A port pool no other test in this binary will touch, as a `${tt:port LO-HI}` token.
-///
-/// Every test used to share one pool, so every test's tasks claimed the *same* first
-/// free port — which collides with itself, not the machine: `port_occupied` answers "is
-/// this free?" by **binding**, so while one test's probe holds the bind a concurrent
-/// probe of the same port gets `AddrInUse` and concludes a dev server is running, making
-/// `tt task rm` refuse with `ForeignPortListener`. Cargo runs these concurrently in one
-/// binary, so with ~20 tests on one port it landed about once every ten full-suite runs;
-/// moving the shared pool only changed which port they all collided on.
-///
-/// Disjoint per-test windows remove the interference outright. The counter is
-/// process-wide, and each pool is claimed by exactly one test's tempdir registry.
+/// A port pool no other test in this binary will touch, as a `${tt:port
+/// LO-HI}` token. A shared pool made concurrent tests' bind probes collide
+/// with *each other* (`AddrInUse` reads as a running dev server ⇒ spurious
+/// `ForeignPortListener` refusals, ~1 in 10 full-suite runs). Disjoint
+/// per-test windows remove the interference outright.
 fn next_pool() -> String {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(POOL_FLOOR);
     let lo = NEXT.fetch_add(POOL_WIDTH, std::sync::atomic::Ordering::Relaxed);
@@ -886,17 +874,12 @@ fn rm_untracks_the_task_and_removes_its_instance_state() {
     );
 }
 
-/// Board rows are per-checkout instance state: a row lives wherever the app instance
-/// that created it was scoped, which need not be the primary `tt task rm` anchors to. An
-/// instance running *from inside another task's worktree* scopes itself there, so a task
-/// it creates and a later `tt task rm` from that same shell both see that worktree's
-/// scope via the ambient cwd.
-///
-/// `dir` (the *removed* task's own directory) is deliberately NOT where the fixture puts
-/// the row — that scope is what `state_cleanup` wipes wholesale regardless of this fix,
-/// so the test would pass even against the bug (confirmed by hand: an earlier draft put
-/// the row there and stayed green with the fix reverted). Run against the real store
-/// with no forced `TT_STATE_SCOPE`, so scope resolution is the real auto-detection.
+/// A row lives wherever the creating instance was scoped — here the ambient
+/// cwd's worktree, which `tt task rm` must find via the same ambient scope.
+/// The fixture deliberately does NOT put the row at the removed task's own
+/// scope (`state_cleanup` wipes that wholesale, so the test would pass even
+/// against the bug), and runs with no forced `TT_STATE_SCOPE` so scope
+/// resolution is the real auto-detection.
 #[test]
 fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     let tmp = tempfile::tempdir().unwrap();
@@ -990,60 +973,6 @@ fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
         "the row in demo-feat-container's own store must be closed (unbound from the removed \
          worktree), not left dangling as a stale \"doing\" card forever just because it lives \
          in a different scope than the primary `tt task rm` resolves to"
-    );
-}
-
-/// The stale-rail bug: a checkout reached through a symlinked path gets
-/// tracked (and its board row bound) under that literal string, but `git
-/// worktree add` persists the realpath internally — so a removal driven by
-/// the *realpath* form (what `git worktree list`, and so the rail, would
-/// report) must still find and untrack the literal entry, not silently
-/// leave it as a "directory missing" ghost.
-#[test]
-#[cfg(unix)]
-fn rm_untracks_a_symlink_aliased_worktree_and_closes_its_row() {
-    let tmp = tempfile::tempdir().unwrap();
-    let real_checkout = make_checkout(tmp.path());
-    let link_checkout = tmp.path().join("link");
-    std::os::unix::fs::symlink(&real_checkout, &link_checkout).unwrap();
-    let link_s = link_checkout.to_string_lossy().to_string();
-    let home = tmp.path().join("home");
-
-    // Create the task through the symlinked path — this is the literal
-    // string that gets tracked (and bound to a board row) in the real app.
-    new_task(&link_s, "feat/aliased").assert().success();
-    let literal_dir = link_checkout.join(".claude").join("worktrees").join("feat-aliased");
-    let literal_dir_s = literal_dir.to_string_lossy().to_string();
-
-    let shared = home.join(".config").join("towles-tool").join("tasks").join("alias-test");
-    let repos_json = shared.join("agentboard").join("repos.json");
-    std::fs::create_dir_all(repos_json.parent().unwrap()).unwrap();
-    std::fs::write(
-        &repos_json,
-        serde_json::to_string_pretty(&serde_json::json!({
-            "repoPaths": [literal_dir_s, "/kept/elsewhere"],
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    // Remove it by the *realpath* checkout — what `git worktree list` (and
-    // so the rail, and the app's delete-worktree button) would report,
-    // never byte-identical to the symlinked literal string above.
-    let real_root_s = real_checkout.to_string_lossy().to_string();
-    tt_scoped(&home, "alias-test")
-        .args(["task", "rm", "feat-aliased", "--root", &real_root_s])
-        .assert()
-        .success()
-        .stdout(contains("untracked from the agentboard rail"));
-
-    assert!(!literal_dir.exists());
-    let repos: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&repos_json).unwrap()).unwrap();
-    assert_eq!(
-        repos["repoPaths"],
-        serde_json::json!(["/kept/elsewhere"]),
-        "the symlink-aliased entry is untracked by realpath; the unrelated repo survives"
     );
 }
 

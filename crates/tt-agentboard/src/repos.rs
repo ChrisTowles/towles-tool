@@ -122,59 +122,9 @@ pub fn remove_repo_persisted(path: &Path, dir: &str) -> std::io::Result<(Vec<Str
     Ok((config.repo_paths, removed))
 }
 
-/// Every path currently tracked in `repos.json` that names the same physical
-/// directory as `dir`, by realpath, other than `dir`'s own literal string.
-/// Needed because `git worktree add` persists a realpath-resolved form that
-/// can diverge byte-for-byte from the literal path a caller built, so a
-/// string-equality untrack strands the entry as a "missing" ghost.
-///
-/// `dir`'s leaf being gone is routine here (removal fires after the worktree
-/// left disk), so `realpath_of_missing` canonicalizes the nearest surviving
-/// ancestor and rejoins the tail. Only a path with *every* ancestor gone
-/// degrades to no aliases — a false positive would untrack the wrong repo.
-pub fn aliases_for(repos_path: &Path, dir: &Path) -> Vec<String> {
-    let Some(dir_real) = std::fs::canonicalize(dir).ok().or_else(|| realpath_of_missing(dir))
-    else {
-        return Vec::new();
-    };
-    let dir_s = dir.to_string_lossy().to_string();
-    load_config(repos_path)
-        .repo_paths
-        .into_iter()
-        .filter(|p| *p != dir_s)
-        .filter(|p| {
-            std::fs::canonicalize(p).ok().or_else(|| realpath_of_missing(Path::new(p)))
-                == Some(dir_real.clone())
-        })
-        .collect()
-}
-
-/// Best-effort realpath for a path that (or whose leaf components) no longer
-/// exist: canonicalize the nearest ancestor still on disk and rejoin the
-/// missing tail literally. The tail is never itself a symlink to resolve
-/// (it's a plain worktree directory name that used to exist), so this
-/// matches what `canonicalize` would have returned had it been called before
-/// the removal. `None` when no ancestor at all exists (e.g. the whole
-/// checkout is gone, not just the worktree).
-fn realpath_of_missing(path: &Path) -> Option<PathBuf> {
-    let mut tail = Vec::new();
-    let mut cursor = path;
-    loop {
-        if cursor.exists() {
-            let mut real = std::fs::canonicalize(cursor).ok()?;
-            for name in tail.into_iter().rev() {
-                real.push(name);
-            }
-            return Some(real);
-        }
-        tail.push(cursor.file_name()?);
-        cursor = cursor.parent()?;
-    }
-}
-
 /// Tracked paths whose directory is gone (per `exists`). Pure — the caller
 /// supplies the probe so tests need no real filesystem.
-pub fn missing_repo_dirs(repo_paths: &[String], exists: impl Fn(&str) -> bool) -> Vec<String> {
+fn missing_repo_dirs(repo_paths: &[String], exists: impl Fn(&str) -> bool) -> Vec<String> {
     repo_paths.iter().filter(|p| !exists(p)).cloned().collect()
 }
 
@@ -193,55 +143,13 @@ pub fn untrack_missing_persisted(path: &Path) -> std::io::Result<(Vec<String>, V
     Ok((config.repo_paths, missing))
 }
 
-/// Whether `dir` is a linked worktree whose `.git` file points at a gitdir
-/// that no longer exists — e.g. the main checkout's `.git/worktrees/<name>`
-/// registration was removed (by hand, or a `git worktree remove`/prune that
-/// raced a delete) while the worktree's own directory is still on disk. Every
-/// git subprocess run in `dir` then fails with `fatal: not a git repository`,
-/// which [`missing_repo_dirs`]' plain [`Path::exists`] check can't catch since
-/// the directory itself is still there. A `.git` *directory* (a normal clone)
-/// is never "broken" by this check — only a linked worktree can go stale this
-/// way.
-fn is_broken_worktree(dir: &Path) -> bool {
-    let dotgit = dir.join(".git");
-    let Ok(text) = std::fs::read_to_string(&dotgit) else {
-        return false;
-    };
-    let Some(gitdir) = text.strip_prefix("gitdir:").map(str::trim) else {
-        return false;
-    };
-    let gitdir =
-        if Path::new(gitdir).is_absolute() { PathBuf::from(gitdir) } else { dir.join(gitdir) };
-    !gitdir.exists()
-}
-
-/// Tracked paths that are broken linked worktrees per [`is_broken_worktree`].
-fn broken_worktree_dirs(repo_paths: &[String]) -> Vec<String> {
-    repo_paths.iter().filter(|p| is_broken_worktree(Path::new(p))).cloned().collect()
-}
-
-/// Untrack every repo whose linked worktree has gone stale (its gitdir
-/// registration is gone, even though the directory itself remains) — straight
-/// against the on-disk file, same reread-then-write rationale as
-/// [`add_repo_persisted`]. Returns the merged repo list plus the dirs that
-/// were dropped; a no-op when nothing is broken (the file is not rewritten).
-pub fn untrack_broken_persisted(path: &Path) -> std::io::Result<(Vec<String>, Vec<String>)> {
-    let mut config = load_config(path);
-    let broken = broken_worktree_dirs(&config.repo_paths);
-    if !broken.is_empty() {
-        config.repo_paths.retain(|p| !broken.contains(p));
-        save_config(path, &config)?;
-    }
-    Ok((config.repo_paths, broken))
-}
-
 /// Tracked paths nested inside another tracked path's `.claude/worktrees/` —
 /// task worktrees double-tracked as repos. `RowRecord`'s rule is that a task
 /// worktree is never a `repos.json` entry (its record is what puts it on the
 /// rail); entries like this shadow that record with a bare "Root" checkout row
 /// and strand a ghost when a removal skips the untrack. Task creation used to
 /// write them; this is how existing files heal. Pure for tests.
-pub fn nested_task_paths(repo_paths: &[String]) -> Vec<String> {
+fn nested_task_paths(repo_paths: &[String]) -> Vec<String> {
     repo_paths
         .iter()
         .filter(|p| {
@@ -314,7 +222,7 @@ fn scan_git(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<String>) {
 }
 
 /// Add `path` if not already present. Returns whether it was added.
-pub fn add_repo(repo_paths: &mut Vec<String>, path: &str) -> bool {
+fn add_repo(repo_paths: &mut Vec<String>, path: &str) -> bool {
     if repo_paths.iter().any(|p| p == path) {
         return false;
     }
@@ -331,7 +239,7 @@ pub fn add_repo(repo_paths: &mut Vec<String>, path: &str) -> bool {
 /// anything untracked is ignored — so a concurrent add is never dropped by a
 /// drag that predates it. An untracked-then-retracked repo lands at the end,
 /// unlike `repo_meta`, which survives the round trip (`RepoMetaStore::forget`).
-pub fn reorder_repos(current: &[String], desired: &[String]) -> Vec<String> {
+fn reorder_repos(current: &[String], desired: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(current.len());
     for dir in desired {
         if current.contains(dir) && !out.contains(dir) {
@@ -367,7 +275,7 @@ pub fn reorder_repos_persisted(path: &Path, desired: &[String]) -> std::io::Resu
 /// batch by name would see earlier removals change later names out from
 /// under it (e.g. removing `a/web` first un-collides `b/web` down to a bare
 /// `web`, so a subsequent by-name removal of `b/web` silently misses).
-pub fn remove_repo_by_dir(repo_paths: &mut Vec<String>, dir: &str) -> bool {
+fn remove_repo_by_dir(repo_paths: &mut Vec<String>, dir: &str) -> bool {
     let before = repo_paths.len();
     repo_paths.retain(|p| p != dir);
     repo_paths.len() != before
@@ -576,51 +484,6 @@ mod tests {
     }
 
     #[test]
-    fn untrack_broken_persisted_drops_stale_worktrees_only() {
-        let dir = TempDir::new().unwrap();
-
-        // A normal clone: `.git` is a directory, never "broken".
-        let clone = dir.path().join("clone");
-        std::fs::create_dir_all(clone.join(".git")).unwrap();
-
-        // A healthy linked worktree: its gitdir target exists.
-        let live_gitdir = dir.path().join("main/.git/worktrees/live");
-        std::fs::create_dir_all(&live_gitdir).unwrap();
-        let live_wt = dir.path().join("live-wt");
-        std::fs::create_dir_all(&live_wt).unwrap();
-        std::fs::write(live_wt.join(".git"), format!("gitdir: {}\n", live_gitdir.display()))
-            .unwrap();
-
-        // A stale linked worktree: the directory is still on disk, but its
-        // gitdir registration under the main checkout is gone — the exact
-        // shape of the reported bug.
-        let stale_wt = dir.path().join("stale-wt");
-        std::fs::create_dir_all(&stale_wt).unwrap();
-        std::fs::write(
-            stale_wt.join(".git"),
-            format!("gitdir: {}\n", dir.path().join("main/.git/worktrees/stale").display()),
-        )
-        .unwrap();
-
-        let clone_s = clone.to_string_lossy().to_string();
-        let live_s = live_wt.to_string_lossy().to_string();
-        let stale_s = stale_wt.to_string_lossy().to_string();
-
-        let path = dir.path().join("repos.json");
-        save_repos(&path, &[clone_s.clone(), live_s.clone(), stale_s.clone()]).unwrap();
-
-        let (merged, removed) = untrack_broken_persisted(&path).unwrap();
-        assert_eq!(merged, vec![clone_s.clone(), live_s.clone()]);
-        assert_eq!(removed, vec![stale_s]);
-        assert_eq!(load_repos(&path), vec![clone_s, live_s]);
-
-        // second run is a clean no-op
-        let (merged, removed) = untrack_broken_persisted(&path).unwrap();
-        assert_eq!(merged.len(), 2);
-        assert!(removed.is_empty());
-    }
-
-    #[test]
     fn save_then_load_round_trips() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("nested").join("repos.json");
@@ -715,103 +578,6 @@ mod tests {
         let (merged, removed) = remove_repo_persisted(&path, "/repo/a").unwrap();
         assert!(removed);
         assert_eq!(merged, paths(&["/repo/b", "/repo/c"]));
-    }
-
-    /// The bug this guards against: a checkout reached through a symlink gets
-    /// tracked under the literal (symlinked) path, but `git worktree add`
-    /// persists the realpath — so a worktree discovered via `git worktree
-    /// list` and deleted from the rail carries a `dir` that never
-    /// exact-matches the tracked entry, even though both name the same
-    /// directory.
-    #[test]
-    #[cfg(unix)]
-    fn aliases_for_finds_a_symlinked_tracked_entry_by_realpath() {
-        let tmp = TempDir::new().unwrap();
-        let real = tmp.path().join("real");
-        std::fs::create_dir_all(&real).unwrap();
-        let link = tmp.path().join("link");
-        std::os::unix::fs::symlink(&real, &link).unwrap();
-
-        let path = tmp.path().join("repos.json");
-        let link_s = link.to_string_lossy().to_string();
-        save_repos(&path, &paths(&[&link_s, "/kept/elsewhere"])).unwrap();
-
-        // `dir` here is the realpath form — what git itself would report —
-        // not the literal symlinked path tracked in repos.json.
-        let aliases = aliases_for(&path, &real);
-        assert_eq!(aliases, vec![link_s]);
-    }
-
-    /// No symlink involved: nothing to alias, and the literal string is
-    /// excluded from its own alias list (the caller already matches it
-    /// directly).
-    #[test]
-    fn aliases_for_is_empty_with_no_divergence() {
-        let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("plain");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = tmp.path().join("repos.json");
-        save_repos(&path, &paths(&[&dir.to_string_lossy()])).unwrap();
-
-        assert!(aliases_for(&path, &dir).is_empty());
-    }
-
-    /// Called after the directory is already gone with no divergent form
-    /// tracked: the only tracked entry is `dir`'s own literal string, which
-    /// is always excluded from its own alias list — so still empty, just not
-    /// because resolution failed.
-    #[test]
-    fn aliases_for_is_empty_once_the_directory_is_gone() {
-        let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("gone");
-        let path = tmp.path().join("repos.json");
-        save_repos(&path, &paths(&[&dir.to_string_lossy()])).unwrap();
-
-        assert!(aliases_for(&path, &dir).is_empty());
-    }
-
-    /// The bug this guards against: task removal (`tt task rm`, the app's
-    /// `task_delete`) routinely runs *after* the worktree leaf directory
-    /// is already gone — see `task_removal::MissingDir::TearDownBindings`'s
-    /// doc. If the checkout was reached through a symlink, `repos.json` still
-    /// holds the realpath-resolved form `git worktree add` persisted, and a
-    /// naive `canonicalize(dir)` on the now-missing leaf can't resolve it —
-    /// which used to silently strand that entry as a "directory missing"
-    /// ghost forever. Canonicalizing the still-present parent and rejoining
-    /// the gone leaf must recover the same realpath.
-    #[test]
-    #[cfg(unix)]
-    fn aliases_for_finds_a_symlinked_entry_even_after_the_leaf_is_already_gone() {
-        let tmp = TempDir::new().unwrap();
-        let real_parent = tmp.path().join("real");
-        std::fs::create_dir_all(&real_parent).unwrap();
-        let link_parent = tmp.path().join("link");
-        std::os::unix::fs::symlink(&real_parent, &link_parent).unwrap();
-
-        // repos.json holds the realpath form of a worktree that once existed
-        // at `real/feat-thing` — never created here, so the leaf is "gone"
-        // from the start, same as by the time a removal hook fires.
-        let real_leaf_s = real_parent.join("feat-thing").to_string_lossy().to_string();
-        let path = tmp.path().join("repos.json");
-        save_repos(&path, &paths(&[&real_leaf_s, "/kept/elsewhere"])).unwrap();
-
-        // The caller only ever has the literal (symlinked) path, and its leaf
-        // never exists on disk in this test.
-        let link_leaf = link_parent.join("feat-thing");
-        assert_eq!(aliases_for(&path, &link_leaf), vec![real_leaf_s]);
-    }
-
-    /// Even the ancestor fallback has a floor: if the checkout itself is also
-    /// gone, there is nothing left to canonicalize against, so this must
-    /// still degrade to no aliases rather than guessing.
-    #[test]
-    fn aliases_for_is_empty_when_no_ancestor_exists_either() {
-        let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("checkout-also-gone").join("feat-thing");
-        let path = tmp.path().join("repos.json");
-        save_repos(&path, &paths(&["/kept/elsewhere"])).unwrap();
-
-        assert!(aliases_for(&path, &dir).is_empty());
     }
 
     #[test]

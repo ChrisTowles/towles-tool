@@ -4,23 +4,12 @@ import type { IpcError } from "./errors";
 import { invoke, isTauri } from "./tauri";
 import { type TaskDeleteOutcome, TaskDeleteOutcomeSchema } from "./schemas/task";
 
-/**
- * Client-side view of the personal-HQ store (the Rust `tt-store` crate, surfaced
- * by the Tauri app). Mirrors the serialized snapshot (camelCase) that the
- * `store_snapshot` command returns and the `store://snapshot` event broadcasts.
- * Timestamps are epoch milliseconds, except calendar events, whose `start`/`end`
- * are RFC 3339 with the calendar's offset (see {@link CalEvent}). Before the
- * store answers the hook holds an
- * empty snapshot with `live: false`; outside Tauri (plain-Vite browser dev) it
- * holds {@link mockSnapshot} instead, still with `live: false`.
- */
+/** Client-side view of the store (Rust `tt-store`): the camelCase snapshot
+ * from `store_snapshot` / the `store://snapshot` event. Timestamps are epoch
+ * ms except calendar `start`/`end` (RFC 3339, calendar's offset). Before the
+ * store answers, or outside Tauri, the hook holds an empty/mock snapshot. */
 
-/**
- * A calendar event exactly as the backend sends it: `start`/`end` are RFC 3339
- * strings carrying the offset the calendar reported
- * (`"2026-07-20T15:00:00+01:00"`). Kept separate from {@link CalEvent} because
- * nothing in the UI wants to do arithmetic on a string.
- */
+/** A calendar event as the backend sends it (RFC 3339 with offset). */
 export type WireCalEvent = {
   id: number;
   source: string;
@@ -33,24 +22,11 @@ export type WireCalEvent = {
   joinUrl?: string;
 };
 
-/**
- * A calendar event as the screens use it: the wire shape plus epoch-ms
- * `startTs`/`endTs`, parsed once at the snapshot boundary by
- * {@link toCalEvent}.
- *
- * Both live here on purpose. Every consumer does instant arithmetic
- * (`startTs - now`, sorting, "is it live"), which wants a number; but the
- * original `start` string is the only thing that records the meeting was booked
- * as 3pm *there*, so throwing it away at the boundary would discard exactly
- * what the RFC 3339 change was made to preserve.
- */
+/** The wire shape plus epoch-ms `startTs`/`endTs`. Both on purpose:
+ * arithmetic wants the number; only the string records "3pm *there*". */
 export type CalEvent = {
   id: number;
-  /**
-   * Which configured calendar this came from (`"google"`, `"outlook"`). Events
-   * from several calendars are merged into one timeline, so this is the only
-   * way to tell a personal meeting from a work one.
-   */
+  /** Which configured calendar this came from (`"google"`, `"outlook"`). */
   source: string;
   externalId: string;
   title: string;
@@ -66,14 +42,7 @@ export type CalEvent = {
   joinUrl?: string;
 };
 
-/**
- * Parse one wire event into the view shape.
- *
- * An unparseable `start` yields `NaN`, which would quietly poison every
- * countdown and sort it touches, so such a row is dropped by
- * {@link toCalEvents} instead — the backend only ever writes parseable values,
- * so this means the row was hand-edited.
- */
+/** An unparseable `start` (NaN poisons countdowns) drops the row. */
 function toCalEvent(e: WireCalEvent): CalEvent | null {
   const startTs = Date.parse(e.start);
   if (Number.isNaN(startTs)) return null;
@@ -90,16 +59,12 @@ export function toCalEvents(events: WireCalEvent[]): CalEvent[] {
   return events.map(toCalEvent).filter((e): e is CalEvent => e !== null);
 }
 
-/** Kanban columns a todo can live in, in board order. "Up next"/"In review"
- * were removed 2026-07-23 — a task is always either untouched, actively
- * worked (an agent running on its worktree), or done. */
+/** Kanban columns in board order: untouched, actively worked, done. */
 export const TASK_STATUSES = ["backlog", "doing", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-/** Human labels for each kanban column. The terminal column reads "Closed"
- * because it holds more than status-done cards: a task closed as `abandoned`
- * keeps its frozen status but renders here, with its outcome badge saying
- * how it ended. */
+/** Human labels per kanban column. The terminal one reads "Closed" because
+ * it also holds `abandoned` tasks, badged with their outcome. */
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   backlog: "Backlog",
   doing: "In progress",
@@ -107,7 +72,7 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 };
 
 /** How a closed task ended — `outcome` on `TaskItem`, absent while open. */
-export const TASK_OUTCOMES = ["done", "abandoned"] as const;
+const TASK_OUTCOMES = ["done", "abandoned"] as const;
 export type TaskOutcome = (typeof TASK_OUTCOMES)[number];
 
 /** One GitHub issue linked to a task; `state` is the last observed state. */
@@ -127,17 +92,8 @@ export type TaskPrLink = {
   checks: string;
 };
 
-/**
- * A task's repo binding, and the worktree its work happens in once one exists.
- *
- * `repoRoot` is the only required part: an Agentboard task knows its repo from
- * the moment of submit, so `branch` is absent until a worktree is created (and
- * absent forever for a "task only" submit). That's what puts every task in a
- * repo swimlane on the Board.
- *
- * A closed task keeps `repoRoot`/`repo`/`branch` as historical fact while
- * `dir` clears — the worktree is gone, the record stays (see `taskDelete`).
- */
+/** A task's repo binding + worktree. Only `repoRoot` is required (known at
+ * submit); a closed task keeps all but `dir` as historical fact. */
 export type TaskWorktree = {
   repoRoot: string;
   repo?: string;
@@ -161,20 +117,16 @@ export type TaskItem = {
   notes?: string;
   /** The objective the task was created to accomplish, shown on the card under the title. */
   goal?: string;
-  /** What the agent that worked the task reported when it finished, written
-   * through the MCP `task_summary` tool. The card's copy of a wrap-up that
-   * would otherwise die with the worktree's terminal scrollback — it's what
-   * the user reads to confirm the work before tearing the task down. */
+  /** The agent's wrap-up (MCP `task_summary`) — read to confirm the work
+   * before teardown; it would otherwise die with the scrollback. */
   summary?: string;
   /** When `summary` was last written. */
   summaryAt?: number;
   worktree?: TaskWorktree;
   issues: TaskIssueLink[];
   prs: TaskPrLink[];
-  /** Whether the task is closed — carries an outcome, or sits in `done`.
-   * Computed backend-side (`TaskItem::with_derived_fields` in tt-store) so
-   * every consumer agrees; closed tasks render in the terminal ("Closed")
-   * column regardless of their frozen kanban `status`. */
+  /** Closed = carries an outcome or sits in `done`. Computed backend-side so
+   * every consumer agrees; renders in "Closed" whatever the frozen status. */
   closed: boolean;
   /** The outcome badge a closed card shows: the recorded `outcome`, or
    * `done` implied by `status` for a card that rolled/dragged there.
@@ -186,12 +138,8 @@ export type TaskItem = {
   hasWorktree: boolean;
 };
 
-/**
- * `dismissedTs` is the `updatedTs` this item had the last time the user
- * dismissed it; `0` if never dismissed. The item is hidden while
- * `dismissedTs >= updatedTs` and reappears on its own once the collector
- * observes a newer `updatedTs` — see {@link isItemDismissed}.
- */
+/** `dismissedTs` = the `updatedTs` at dismissal (0 = never). Hidden while
+ * `dismissedTs >= updatedTs`; reappears on a newer `updatedTs`. */
 export type IssueItem = {
   repo: string;
   number: number;
@@ -229,12 +177,8 @@ export type CollectRun = {
   message?: string;
 };
 
-/**
- * Latest state of a watched Slack DM (the `slack:dm` collector). `fromMe`
- * means the newest message is the user's own (already answered); `dismissedTs`
- * is the last message the user marked handled. A banner shows only while
- * `!fromMe && dismissedTs < ts`.
- */
+/** Latest state of a watched Slack DM (the `slack:dm` collector). A banner
+ * shows only while `!fromMe && dismissedTs < ts`. */
 export type DmItem = {
   channel: string;
   fromName: string;
@@ -246,26 +190,14 @@ export type DmItem = {
   dismissedTs: number;
 };
 
-/**
- * Watched DMs that still need a reply: the newest message is theirs (`!fromMe`)
- * and the user hasn't marked it handled (`dismissedTs < ts`). Both the DM banner
- * and the header's needs-you count derive from this one predicate.
- */
+/** Watched DMs still needing a reply — the one predicate both the DM banner
+ * and the header's needs-you count derive from. */
 export function dmsNeedingAttention(snapshot: StoreSnapshot): DmItem[] {
   return snapshot.dms.filter((d) => !d.fromMe && d.dismissedTs < d.ts);
 }
 
-/**
- * One handled request against the towles-tool MCP server, logged by the
- * dispatcher. The server runs inside the desktop app over loopback HTTP, on the
- * port this checkout claimed (`TT_MCP_PORT`) — there is no CLI to start it, so
- * an empty log means nothing has called *this* instance. `method` is the
- * JSON-RPC method (`initialize`, `tools/call`, …); `tool` and `args` are set
- * only for `tools/call` (args are a
- * compacted one-line rendering). `ok` is false for a JSON-RPC error or an
- * `isError` tool result, with the message in `error`. `client` is the caller's
- * `clientInfo` from the session's `initialize` (e.g. `claude-code 2.1`).
- */
+/** One handled MCP request (this instance's loopback server). `tool`/`args`
+ * only for `tools/call`; `ok` false on JSON-RPC or `isError` results. */
 export type McpCall = {
   id: number;
   ts: number;
@@ -281,10 +213,7 @@ export type McpCall = {
 /** The snapshot exactly as the backend sends it — see {@link WireCalEvent}. */
 export type WireStoreSnapshot = Omit<StoreSnapshot, "events"> & { events: WireCalEvent[] };
 
-/**
- * Turn a backend snapshot into the shape the screens use: the only place event
- * times are parsed, so no consumer has to think about the wire format.
- */
+/** The one place event times are parsed out of the wire format. */
 export function toStoreSnapshot(wire: WireStoreSnapshot): StoreSnapshot {
   return { ...wire, events: toCalEvents(wire.events) };
 }
@@ -317,13 +246,8 @@ function at(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-/**
- * Static mock snapshot for plain-Vite browser dev (no Tauri host), so screens
- * like Cockpit render representative rows — including one PR per checks state
- * (`passing | failing | pending | none`) — instead of empty panels. Timestamps
- * are relative to load time; `live` stays false so the "not connected" banner
- * still shows.
- */
+/** Mock snapshot for plain-Vite browser dev — representative rows (one PR
+ * per checks state); `live` stays false so the banner still shows. */
 export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
   // Authored in the wire shape and parsed by the real `toCalEvents`, so browser
   // dev exercises the same conversion the app does rather than a parallel one
@@ -509,11 +433,8 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
   };
 }
 
-/**
- * The live store snapshot, shared across the app from a single subscription.
- * Lives in `store-snapshot.tsx` (it needs JSX for its context provider);
- * re-exported here so the ~14 consumers keep importing it from `@/lib/data`.
- */
+/** The live store snapshot (single subscription). Lives in
+ * `store-snapshot.tsx` (needs JSX); re-exported for its ~14 consumers. */
 export { useStoreSnapshot } from "./store-snapshot";
 
 /** `2:30 PM` — wall-clock time for an epoch-ms timestamp. */
@@ -555,21 +476,14 @@ export function fmtCountdown(msUntil: number): string {
   return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
-/**
- * Whether an event is live — started but not yet ended (`startTs <= now < endTs`).
- * An event with no `endTs` has no live window and is never live.
- */
+/** Started but not ended. No `endTs` ⇒ no live window, never live. */
 export function eventIsLive(e: CalEvent, now: number): boolean {
   return e.startTs <= now && e.endTs !== undefined && now < e.endTs;
 }
 
-/**
- * The meeting to surface on the Cockpit strip: the one in progress right now,
- * or the soonest still to start — whichever begins first. Mirrors tt-store's
- * `current_or_next_event`, so an in-progress meeting stays visible instead of
- * vanishing the instant it starts. An event with no `endTs` is a point in time,
- * shown only up to its start.
- */
+/** The Cockpit strip's meeting: in progress now, else soonest to start —
+ * mirrors tt-store's `current_or_next_event`, so an in-progress meeting
+ * doesn't vanish the instant it starts. */
 export function currentOrNextEvent(events: CalEvent[], now: number): CalEvent | undefined {
   return events
     .filter((e) => (e.endTs !== undefined ? now < e.endTs : e.startTs >= now))
@@ -587,11 +501,8 @@ export function fmtAge(ms: number, now: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-/**
- * Name of the checkout/task this window is running (e.g. `towles-tool-task-2`),
- * from the Rust `app_task` command. `null` outside Tauri (plain-Vite browser dev)
- * so the header badge is hidden there. Lets several tasks' windows be told apart.
- */
+/** This window's checkout/task name (`app_task`); `null` outside Tauri so
+ * the header badge hides. Tells several tasks' windows apart. */
 export function useAppTask(): string | null {
   const [task, setTask] = useState<string | null>(null);
   useEffect(() => {
@@ -620,22 +531,13 @@ export const storeSetTaskStatus = (id: number, status: TaskStatus) =>
 export const storeUpdateTask = (id: number, text: string, notes?: string) =>
   invoke<void>("store_update_task", { id, text, notes });
 
-/** Close a task and delete everything bound to it — its terminal panes and
- * its git worktree. The board row itself survives, closed with `outcome`
- * (how the work ended); omit the outcome and the backend infers it from the
- * row's own evidence (merged linked PR ⇒ done, else abandoned).
- *
- * There is deliberately no casual row delete: dropping the row while its
- * worktree stayed on disk left a checkout with nothing in the UI pointing at
- * it. Guarded, so this can come back `blocked` with reasons and having deleted
- * nothing — see `TaskDeleteOutcomeSchema`. `purge: true` is the one explicit
- * permanent delete, row-only and refused while a worktree is still bound.
- *
- * `target` is whichever handle the caller happens to hold: the Board has a
- * board id, the Agentboard rail has a worktree dir (and lists worktrees the
- * board may know nothing about). Both reach the same command, and the schema
- * binding lives here once — validated because a `foreignPort` blocker's `port`
- * is handed straight to `task_stop_port`, which signals a process group. */
+/** Close a task and delete everything bound to it — panes and worktree. The
+ * row survives, closed with `outcome` (omitted ⇒ inferred: merged linked PR ⇒
+ * done, else abandoned). Guarded — can come back `blocked` having deleted
+ * nothing. `purge: true` is the one permanent row delete, refused while a
+ * worktree is bound. `target` is whichever handle the caller holds (board id
+ * or worktree dir); validated because a `foreignPort` blocker's `port` goes
+ * straight to `task_stop_port`, which signals a process group. */
 export const taskDelete = (
   target: { id: number } | { dir: string },
   opts?: { force?: boolean; outcome?: TaskOutcome; purge?: boolean },
@@ -732,14 +634,9 @@ export const storeDismissalsClear = () => invoke<number>("store_dismissals_clear
 export const journalLog = (text: string) => invoke<void>("journal_log", { text });
 
 /**
- * Force the issues, PRs, and (when configured) Slack collectors to run right
- * now, bypassing the scheduler cadence — calendar is intentionally excluded
- * (it spends claude tokens). The store snapshot re-emits from Rust when the run
- * finishes.
- *
- * The `boolean` is a domain answer, not a success flag: `true` when this call
- * kicked off a refresh, `false` when one was already in flight (an
- * overlap-guarded no-op). A failed or unavailable command is the `Err` side.
+ * Force the issues/PRs/Slack collectors to run now — calendar excluded (it
+ * spends claude tokens). The `boolean` is a domain answer, not success:
+ * `true` = kicked off, `false` = one was already in flight.
  */
 export async function storeCollectNow(): Promise<Result<boolean, IpcError>> {
   const result = await invoke<{ started: boolean }>("store_collect_now");

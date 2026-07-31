@@ -389,11 +389,19 @@ pub fn run() {
                         // discovered this tick is a row on this tick. Unwritten
                         // worktrees become `detected` rows and vanished dirs are
                         // forgotten, as diffs, so a steady state writes nothing.
+                        // Gated on the show-unmanaged toggle (default off):
+                        // detected rows are invisible everywhere while it's
+                        // off, and minting rows nobody can see would write to a
+                        // database three other processes share, every tick.
                         let store_state = store_handle.try_state::<store::StoreState>();
                         if let Some(state) = &store_state {
                             let (found, vanished) = {
                                 let mut e = engine.lock().unwrap();
-                                (e.unrecorded_worktrees(), e.vanished_detected_records())
+                                if e.show_unmanaged_worktrees() {
+                                    (e.unrecorded_worktrees(), e.vanished_detected_records())
+                                } else {
+                                    (Vec::new(), Vec::new())
+                                }
                             };
                             state.reconcile_detected_worktrees(&found, &vanished, now);
                         }
@@ -724,7 +732,7 @@ pub fn run() {
             telemetry::telemetry_events,
             telemetry::telemetry_attention,
             telemetry::telemetry_keyboard,
-            agentboard::ab_open_session_for_cwd,
+            agentboard::ab_ensure_session,
             doctor::doctor_run,
             settings::settings_get,
             settings::settings_set,

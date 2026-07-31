@@ -1,13 +1,7 @@
 /**
- * A checkout's header row — the rail's densest row, and the one the
- * `folder-rail-ui` skill's layout rules are mostly about. Three blocks: who
- * this checkout is (title, PR/issue links), what git says about it (branch,
- * base-moved, uncommitted, committed), and what you can do to it (dev
- * servers, new session, new task, the kebab).
- *
- * A repo with a single checkout renders this at `scope="repo"` instead of a
- * separate repo header, which is why identity, accent and the toolbar all
- * branch on `scope`.
+ * A checkout's header row: identity, git facts, toolbar. A single-checkout
+ * repo renders this at `scope="repo"` instead of a separate repo header,
+ * which is why identity, accent and the toolbar all branch on `scope`.
  */
 import { useState } from "react";
 import { toast } from "sonner";
@@ -147,29 +141,20 @@ export function FolderHeader({
   // tint must mix into an opaque base (see the background comment below).
   const HeaderIcon = repoIcon(meta);
   const accent = repoAccentStyles(meta, "var(--card)");
-  // Ghost checkout: the tracked directory is gone. Dim the whole band and
-  // swap the git-facts line (branch/diff are meaningless) for an inline
-  // Untrack — a dead folder's one useful action, surfaced not buried.
+  // Ghost checkout: dim the band and swap the git-facts line (meaningless)
+  // for the one useful action, Untrack.
   const missing = folder.dirMissing;
-  // A worktree task's real, human-authored title — never substituted for the
-  // primary checkout's own header (its `title` is the repo's actual name, not
-  // a slug, and a task-only task can bind to it too — see `taskForFolder` —
-  // so showing a stray task's title there would misname the repo itself).
+  // A task's human-authored title applies to worktree rows only — on the
+  // primary checkout it would misname the repo itself (see `taskForFolder`).
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
-  // Git's own term for this checkout (git-worktree(1): "main worktree", as
-  // opposed to a "linked worktree") — shortened to "Root" so the sub-header
-  // reads as a distinct entry instead of just repeating the repo-scope title
-  // above it. Only at folder scope: the solo repo-scope header already shows
-  // `repo.name` with nothing to disambiguate against.
+  // git-worktree(1)'s "main worktree", shortened to "Root" so the folder-scope
+  // sub-header reads as a distinct entry rather than repeating the repo title.
   const isMainWorktreeSubrow = scope === "folder" && !folder.isWorktree;
   const displayTitle =
     humanTitle ||
     (folder.isWorktree ? humanizeFolderName(title) : isMainWorktreeSubrow ? "Root" : title);
-  // Once a real title is shown, the branch is no longer restating the same
-  // information under a different name — always keep it visible. Falling
-  // back to the de-slugified name (no task/title at all) is still the same
-  // information reformatted, so the existing redundancy check still applies.
-  // "Root" never restates the branch, so it always keeps the branch label too.
+  // A real title doesn't restate the branch — keep it visible; the
+  // de-slugified fallback does, so that case keeps the redundancy check.
   const showBranchLabel =
     isMainWorktreeSubrow || Boolean(humanTitle) || !branchRedundant(folder.name, folder.branch);
   const [renaming, setRenaming] = useState(false);
@@ -190,16 +175,12 @@ export function FolderHeader({
   }
 
   return (
-    // Name, git facts and controls on one line when the rail is wide enough,
-    // the git facts wrapping to a second line when it isn't — see the row
-    // comment below. The transparent border-l-2 is always present so the
-    // active violet edge never shifts content.
+    // The transparent border-l-2 is always present so the active violet edge
+    // never shifts content.
     <div
       style={
-        // Identity never outranks true status: an amber needs-you count or a
-        // missing checkout keep the row to themselves. Being the active
-        // selection is a ring layered on top, not a fill, so it doesn't erase
-        // the identity wash.
+        // Identity never outranks true status: needs-you or missing keep the
+        // row to themselves; active is a ring on top, not a fill.
         scope === "repo" && needs === 0 && !missing
           ? { ...accent.edgeStyle, ...accent.surfaceStyle }
           : undefined
@@ -324,20 +305,25 @@ export function FolderHeader({
             <span className="mr-auto min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
               directory missing — moved or deleted
             </span>
-            {onRemoveRepo && (
-              <Hint label="Untrack this checkout — remove it from the rail">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveRepo();
-                  }}
-                  className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
-                >
-                  <Trash2 className="size-3" /> Untrack
-                </button>
-              </Hint>
-            )}
+            {/* Untrack is a repos.json operation, so it only makes sense on a
+                tracked checkout; a task row with a gone directory is detached
+                (its remedies — retry, delete — live on the task). */}
+            {folder.record.origin === "checkout"
+              ? onRemoveRepo && (
+                  <Hint label="Untrack this checkout — remove it from the rail">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveRepo();
+                      }}
+                      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                    >
+                      <Trash2 className="size-3" /> Untrack
+                    </button>
+                  </Hint>
+                )
+              : folderDetached(folder) && <DetachedBadge />}
           </div>
         ) : (
           <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
@@ -360,7 +346,6 @@ export function FolderHeader({
             )}
             {folderRemoving(folder) && <DeletingBadge label={deletingLabel} />}
             {folderCreating(folder) && <CreatingBadge label={deletingLabel} />}
-            {folderDetached(folder) && <DetachedBadge />}
             {folderIsUnclaimed(folder) && <NoTaskBadge onAdopt={onAdoptWorktree} />}
             {settingUpSince !== undefined && !deleting && (
               <SettingUpBadge since={settingUpSince} now={now} />
