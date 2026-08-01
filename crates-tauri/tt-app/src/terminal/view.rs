@@ -1,11 +1,8 @@
-//! The screen coming back: geometry, scrollback, selection, search, theme,
-//! focus.
+//! The screen coming back: geometry, scrollback, selection, search, theme.
 //!
-//! These are almost all one-liners over a [`TermState`] accessor, because the
-//! engine owns every policy they touch — the view reports a gesture and the
-//! engine decides what it means. Copy, search and clipboard reads run in Rust
-//! rather than the webview: `navigator.clipboard` is unreliable under
-//! WebKitGTK, which silently broke copy-on-select and the context menu's Paste.
+//! One-liners over a [`TermState`] accessor, because the engine owns every
+//! policy they touch. Copy and clipboard reads run in Rust rather than the
+//! webview: `navigator.clipboard` is unreliable under WebKitGTK.
 
 use serde::Deserialize;
 use tauri::{AppHandle, Manager, State};
@@ -13,13 +10,10 @@ use tt_vt::{Input as VtInput, SearchMatch, Select as VtSelect};
 
 use super::session::TermState;
 
-/// Cap on scrollback search results per query — enough for "n/N matches"
-/// navigation without shipping a megabyte of positions for `query = "e"`.
+/// Enough for "n/N matches" without shipping a megabyte of positions for "e".
 const SEARCH_MATCH_LIMIT: usize = 1000;
 
-/// UI theme for a terminal engine (mirrors `tt_vt::Theme`). Sent at spawn, so
-/// color queries answer correctly from the first byte, and on every theme
-/// change via [`term_theme`].
+/// Sent at spawn too, so color queries answer correctly from the first byte.
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TermTheme {
@@ -37,9 +31,7 @@ impl From<TermTheme> for tt_vt::Theme {
     }
 }
 
-/// Keep the PTY and the terminal engine in sync with the rendered grid.
-/// `cell_width`/`cell_height` are the renderer's cell size in px (used for
-/// pixel size reports; 0 when unknown).
+/// `cell_width`/`cell_height` are the renderer's cell size in px, 0 if unknown.
 #[tauri::command]
 pub fn term_resize(
     state: State<TermState>,
@@ -52,8 +44,7 @@ pub fn term_resize(
     state.resize(&term_id, cols, rows, cell_width.unwrap_or(0), cell_height.unwrap_or(0))
 }
 
-/// Scroll the terminal viewport into scrollback (`delta` rows, up is
-/// negative); `None` jumps back to the live bottom.
+/// `delta` rows, up negative; `None` jumps back to the live bottom.
 #[tauri::command]
 pub fn term_scroll(
     state: State<TermState>,
@@ -63,9 +54,8 @@ pub fn term_scroll(
     state.send(&term_id, VtInput::Scroll(delta))
 }
 
-/// A mouse-wheel gesture at viewport cell (`x`, `y`), `lines` rows (up is
-/// negative). The view always forwards it; the engine owns the whole policy —
-/// scrollback paging, wheel reports, alternate-scroll arrows, or plain scroll.
+/// Always forwarded; the engine decides whether it means scrollback paging, a
+/// wheel report, alternate-scroll arrows, or plain scroll.
 #[tauri::command]
 pub fn term_wheel(
     state: State<TermState>,
@@ -77,25 +67,22 @@ pub fn term_wheel(
     state.send(&term_id, VtInput::Wheel { x, y, lines })
 }
 
-/// Scroll the viewport so the given absolute row (0 = oldest scrollback row)
-/// is visible — search prev/next navigation jumps the viewport to a match.
+/// `row` is absolute (0 = oldest scrollback row).
 #[tauri::command]
 pub fn term_scroll_to(state: State<TermState>, term_id: String, row: usize) -> Result<(), String> {
     state.send(&term_id, VtInput::ScrollTo(row))
 }
 
-/// Ask the engine to emit one full frame regardless of dirty state. The view
-/// calls this when a pane transitions from hidden (`display:none`) back to
-/// visible: dirty-only frames never resend rows the engine considers clean,
-/// so a stale canvas would otherwise stay stale until a scroll (#47).
+/// One full frame regardless of dirty state. A pane coming back from
+/// `display:none` needs it: dirty-only frames never resend clean rows, so the
+/// stale canvas would stay stale until a scroll (#47).
 #[tauri::command]
 pub fn term_request_full(state: State<TermState>, term_id: String) -> Result<(), String> {
     state.send(&term_id, VtInput::RequestFull)
 }
 
-/// Report whether the pane is on-screen. Frontend panes never unmount, so
-/// without this a session streaming output keeps rendering at the interactive
-/// frame cap for a canvas nothing paints. [`term_request_full`] catches it up.
+/// Frontend panes never unmount, so without this a streaming session renders at
+/// the interactive frame cap for a canvas nothing paints.
 #[tauri::command]
 pub fn term_visibility(
     state: State<TermState>,
@@ -105,17 +92,14 @@ pub fn term_visibility(
     state.send(&term_id, VtInput::Visibility(visible))
 }
 
-/// Drop the terminal's scrollback history, keeping the visible screen
-/// (right-click "Clear scrollback"). The engine forces a full frame so the
-/// view learns the scrollback depth collapsed.
+/// Drop scrollback, keep the visible screen. The engine forces a full frame so
+/// the view learns the depth collapsed.
 #[tauri::command]
 pub fn term_clear(state: State<TermState>, term_id: String) -> Result<(), String> {
     state.send(&term_id, VtInput::ClearScrollback)
 }
 
-/// Apply a selection gesture from the terminal view, in viewport cell
-/// coordinates. `kind`: drag (anchor→head range), word (double-click),
-/// line (triple-click), all, clear.
+/// Viewport cell coordinates. `kind`: drag, word, line, all, clear.
 #[tauri::command]
 pub fn term_select(
     state: State<TermState>,
@@ -142,9 +126,7 @@ pub fn term_select(
     state.send(&term_id, VtInput::Select(op))
 }
 
-/// Copy the active selection to the system clipboard, entirely in Rust.
-/// User-initiated, so unlike OSC 52 it isn't focus-gated. A dead engine yields
-/// an error rather than a hang.
+/// User-initiated, so unlike OSC 52 it isn't focus-gated.
 #[tauri::command]
 pub async fn term_copy(app: AppHandle, term_id: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -167,10 +149,8 @@ pub async fn term_copy(app: AppHandle, term_id: String) -> Result<String, String
     .map_err(|e| format!("copy task failed: {e}"))?
 }
 
-/// Case-insensitive substring search over the terminal's full scrollback +
-/// active area. Returns match positions (absolute row, column, width) top to
-/// bottom, capped at [`SEARCH_MATCH_LIMIT`]. The engine thread answers over
-/// a bounded channel; a dead engine yields an error rather than a hang.
+/// Case-insensitive, over scrollback + active area, top to bottom, capped at
+/// [`SEARCH_MATCH_LIMIT`].
 #[tauri::command]
 pub async fn term_search(
     app: AppHandle,
@@ -192,10 +172,8 @@ pub async fn term_search(
     .map_err(|e| format!("search task failed: {e}"))?
 }
 
-/// Push the UI theme (default colors, ANSI palette, dark/light) into a
-/// running terminal's engine — called on app theme changes so OSC 10/11 and
-/// color-scheme queries keep answering the truth. The engine forces a full
-/// frame, so the canvas repaints in the new colors without a separate nudge.
+/// On app theme changes, so OSC 10/11 and color-scheme queries keep answering
+/// the truth. The engine forces a full frame, so the canvas repaints too.
 #[tauri::command]
 pub fn term_theme(
     state: State<TermState>,
@@ -205,13 +183,11 @@ pub fn term_theme(
     state.send(&term_id, VtInput::Theme(theme.into()))
 }
 
-/// Record which terminal holds keyboard focus. This is what gates OSC 52, so a
-/// background pane can't hijack the clipboard.
+/// The OSC 52 gate: a background pane can't hijack the clipboard.
 #[tauri::command]
 pub fn term_focus(state: State<TermState>, term_id: String, focused: bool) {
-    // Also tell the engine: a program that asked for focus events (mode
-    // 1004) gets CSI I / CSI O; the engine is silent otherwise. A terminal
-    // whose PTY is already gone still updates the focus gate below.
+    // A program that asked for focus events (mode 1004) gets CSI I / CSI O. An
+    // already-dead PTY still updates the focus gate below.
     let _ = state.send(&term_id, VtInput::Focus(focused));
     state.set_focus(term_id, focused);
 }

@@ -5,24 +5,14 @@
 //! commands. Shells are owned by the app process — closing it kills them, nothing
 //! persists across a restart.
 //!
-//! Concurrency contract: the [`TermState`] map lock is only ever held for map surgery,
-//! never across a PTY write, a subprocess, or a kill/wait. Input goes through a
-//! per-terminal channel + writer thread, so a shell that stops reading can only back up
-//! its own terminal, and every reader/exit path is generation-checked so a replaced PTY's
-//! exit can never close its successor. The tt-vt engine thread is owned by the PTY reader
-//! thread; the map holds only a cloneable input sender.
+//! Concurrency contract: the [`TermState`] map lock is only ever held for map
+//! surgery, never across a PTY write, a subprocess, or a kill/wait. Input goes
+//! through a per-terminal channel + writer thread, and every reader/exit path is
+//! generation-checked so a replaced PTY's exit can't close its successor.
 //!
-//! The split follows the direction a byte travels, and the modules are `pub` because
-//! `lib.rs` names each `#[tauri::command]` by its full path:
-//!
-//! - [`session`] — the registry, and **the only module that locks the map**. Every
-//!   command below reaches a PTY through one of its accessors.
-//! - [`spawn`] — standing a PTY up and tearing it down, including the vt event sink
-//!   that turns engine events into `terminal://*` events.
-//! - [`shell`] — which program to run, and where.
-//! - [`input`] — keystrokes, pointer events and pastes, heading toward the shell.
-//! - [`view`] — the screen coming back: resize, scroll, selection, search, theme.
-//! - [`open_path`] — resolving a path clicked in a terminal, and opening it.
+//! Split by the direction a byte travels: [`spawn`] → [`input`] → [`view`], over
+//! [`session`], which is **the only module that locks the map**. The modules are
+//! `pub` because `lib.rs` names each command by its full path.
 
 pub mod input;
 pub mod open_path;

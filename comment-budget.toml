@@ -26,12 +26,19 @@ skip = ["node_modules", "target", "dist", "apps/client/src/components/ui"]
 # kind to files. `exempt` prefixes are not counted as comment OR code — they are
 # invisible to every signal. `counted` is the bloat being measured. A comment
 # matching neither counts, so a new syntax can't slip through unmeasured.
+#
+# `exempt_free` is what stops `exempt` being a hiding place. Only a file's first
+# N exempt lines are invisible; the rest count like any other comment, and form
+# a normal run. Without it the cheapest way to pass this linter is to move prose
+# out of `///` and into `//!`, which shortens nothing for a reader. 12 sits above
+# the repo's median header (10) and well under the outliers it is meant to catch.
 # ---------------------------------------------------------------------------
 
 [kinds.rust]
 grammar    = "rust"
 extensions = ["rs"]
-exempt     = ["//!"]              # module docs: where hard-won "why" lives, never capped
+exempt     = ["//!"]              # module docs: where hard-won "why" lives
+exempt_free = 12                  # ...but only this many lines; see below
 counted    = ["///", "//"]        # item docs and narration: the actual bloat
 
 [kinds.typescript]
