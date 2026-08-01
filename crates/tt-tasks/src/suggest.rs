@@ -81,9 +81,9 @@ pub type Result<T> = std::result::Result<T, SuggestError>;
 /// them is explicitly allowed, unlike every other file.
 ///
 /// `instruction` is the **prompt improver** the user clicked: it tells the model *how*
-/// to rewrite the goal — restate it plainly, turn it into a plan ask. Empty means
-/// [`DEFAULT_SUGGEST_INSTRUCTION`]. Only the `goal` is shaped by it; the branch is always
-/// named for the underlying task.
+/// to rewrite the goal — restate it plainly, turn it into a plan ask, interview you
+/// first. Empty means [`DEFAULT_SUGGEST_INSTRUCTION`]. Only the `goal` is shaped by it;
+/// the branch is always named for the underlying task.
 ///
 /// Never fails while the user gave us anything to slug (see [`Suggested`]).
 pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggested> {
@@ -98,7 +98,7 @@ pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> 
 /// Ask, then hold the answer to one more rule the schema can't state: a
 /// required string may still be blank, and blank fields would fill the dialog
 /// with nothing. `--model sonnet` is pinned rather than left to the user's
-/// `claude` config — this is a cheap one-shot call (restate/plan/brainstorm
+/// `claude` config — this is a cheap one-shot call (restate/clarify/brainstorm
 /// the goal), not a task the user is directing, so it shouldn't silently ride
 /// whatever heavier default model their CLI happens to be set to.
 fn ask_claude(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggestion> {

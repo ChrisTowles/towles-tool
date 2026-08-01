@@ -3,21 +3,13 @@ import { UserSettingsSchema } from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
 
-/**
- * Client-side view of the shared user settings (`crates/tt-config`), read/written
- * over the `settings_get` / `settings_set` Tauri commands. Field names mirror the
- * serialized camelCase model. The `agentboard` block is TS-owned and opaque here —
- * carried through untouched so a save never drops it.
- */
+/** Client-side view of the shared user settings (`crates/tt-config`). The file
+ * is co-owned by the TS CLI, so a save carries the whole object forward. */
 
-/** Urgency of a desktop notification — mirrors Rust's `tt_config::NotifyLevel`.
- * Ordered `routine < important < urgent`; a kind fires when its own level is at
- * or above `agentboard.notifyThreshold`. */
+/** Ordered; a kind fires at or above `agentboard.notifyThreshold`. */
 export type NotifyLevel = "routine" | "important" | "urgent";
 
-/** The threshold picker's options, least → most urgent, each naming the kinds
- * it lets through (the kind→level mapping is Rust's `NotifyKind::level`; keep
- * these descriptions in step with it). */
+/** The kind→level mapping is Rust's `NotifyKind::level`. */
 export const NOTIFY_LEVELS: { value: NotifyLevel; label: string; description: string }[] = [
   {
     value: "routine",
@@ -32,15 +24,11 @@ export const NOTIFY_LEVELS: { value: NotifyLevel; label: string; description: st
   { value: "urgent", label: "Urgent only", description: "Meetings and agents needing you." },
 ];
 
-/** Built-in default for `agentboard.notifyThreshold` (mirrors Rust's
- * `tt_config::DEFAULT_NOTIFY_THRESHOLD`): everything gets through. */
+/** Mirrors Rust's `tt_config::DEFAULT_NOTIFY_THRESHOLD`. */
 export const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = "routine";
 
-/** Which checkouts reach the Agentboard rail — mirrors Rust's
- * `tt_config::RailFilter`. Deliberately not a scale: `"active"` asks whether
- * something is going on *right now*, `"recent"` asks whether you worked here in
- * the last `railRecentHours`, and a checkout you committed to an hour ago then
- * walked away from answers those two differently. */
+/** Not a scale: `"active"` is what's running now, `"recent"` is where you
+ * worked within `railRecentHours`. */
 export type RailFilter = "all" | "active" | "recent";
 
 export type JournalSettings = {
@@ -51,7 +39,7 @@ export type JournalSettings = {
   templateDir: string;
 };
 
-/** Working-hours gate for the calendar collector (weekdays: 0 = Monday … 6 = Sunday). */
+/** Weekdays: 0 = Monday … 6 = Sunday. */
 export type CalendarQuietHours = {
   enabled: boolean;
   startHour: number;
@@ -59,14 +47,8 @@ export type CalendarQuietHours = {
   weekdays: number[];
 };
 
-/**
- * One calendar the collector pulls, with the `claude -p` prompt it uses. `id` is
- * the store lane a pull replaces, so it must stay stable; the prompt is
- * user-editable on purpose — the built-in defaults drive a Google/Outlook MCP,
- * but a machine without those can point the source at whatever does work there
- * (a CLI, a script, a different MCP), as long as it still answers with the same
- * JSON array.
- */
+/** `id` is the store lane a pull replaces, so it must stay stable; `prompt` is
+ * user-editable so a machine without a Google/Outlook MCP can still answer. */
 export type CalendarSource = {
   id: string;
   label: string;
@@ -74,21 +56,11 @@ export type CalendarSource = {
   prompt: string;
 };
 
-/**
- * A store-lane id for a newly added calendar, unique among `sources`.
- *
- * Slugged from the generated label (`Calendar 3`) so the id stays readable in
- * the store, then suffixed until it's free — a source can be removed and
- * re-added, so the label's own number is no guarantee of uniqueness. Ids are
- * assigned once and never edited afterwards: the id names the lane a pull
- * replaces, so changing it would orphan every row already stored under the old
- * one.
- */
+/** Suffixed until free — a source can be removed and re-added, so the label's
+ * own number proves nothing. */
 export function nextCalendarSourceId(sources: CalendarSource[], label: string): string {
   const taken = new Set(sources.map((s) => s.id));
-  // The shared slug rule, not a second regex: this one produces a *permanent*
-  // store-lane key, so a variant that leaves a trailing `-` (as a hand-rolled
-  // `[^a-z0-9]+` does) bakes the difference into the database.
+  // The shared slug rule, not a second regex — this key is permanent.
   const base = slugify(label) || "calendar";
   if (!taken.has(base)) return base;
   for (let n = 2; ; n += 1) {
@@ -97,20 +69,9 @@ export function nextCalendarSourceId(sources: CalendarSource[], label: string): 
   }
 }
 
-/**
- * A **prompt improver**: one button in the new-task form that rewrites the goal
- * you typed before the task starts (Direct / Plan / Brainstorm by default).
- *
- * Clicking one runs `claude -p` (the `task_suggest` command) with `prompt` as
- * the *instruction*, and fills the form's goal + branch fields with the result —
- * editable, with Undo. Because the improved text lands in the field, what you
- * see is what the session launches with: nothing is wrapped at launch time and
- * the `claude` CLI flags are never touched.
- *
- * `prompt` is therefore an instruction *about* the goal ("turn this into a
- * request for a plan"), not a template containing it. `preferred` decides
- * whether it gets its own button or sits under the form's "More" menu.
- */
+/** One button in the new-task form that rewrites the goal before the task
+ * starts. The rewrite lands *in the field*, so what you see is what launches —
+ * `prompt` is an instruction *about* the goal, not a template holding it. */
 export type PromptImprover = {
   id: string;
   label: string;
@@ -119,12 +80,8 @@ export type PromptImprover = {
   prompt: string;
 };
 
-/**
- * A stable id for a newly added prompt improver, unique among `improvers`. Same
- * slug rule as {@link nextCalendarSourceId}: the id is a permanent key (the
- * form's last-picked choice is stored by id), so it must stay stable once
- * assigned.
- */
+/** Permanent key, as {@link nextCalendarSourceId} — the form stores its
+ * last-picked improver by id. */
 export function nextPromptImproverId(improvers: PromptImprover[], label: string): string {
   const taken = new Set(improvers.map((t) => t.id));
   const base = slugify(label) || "improver";
@@ -176,34 +133,9 @@ export type UserSettings = {
   /** Prompt-improver templates for the new-task form. See {@link PromptImprover}. */
   promptImprovers: PromptImprover[];
   collectors: CollectorsSettings;
-  /**
-   * Mostly TS-owned UI block, carried through opaquely so a save never drops
-   * it. The app edits these keys: `notify` (desktop notifications master
-   * switch; unset = on), `notifyThreshold` (the least-urgent {@link
-   * NotifyLevel} still allowed through; unset = `"routine"`, i.e. everything —
-   * see {@link NOTIFY_LEVELS}), `compactRecommendPercent` (context-usage % at which
-   * a session is flagged for compaction; unset = 30), `copyOnSelect` (terminal
-   * copies the selection to the clipboard on selection end; unset = off),
-   * `terminalFontSize` (canvas terminal font px; unset = 13),
-   * `editorFontSize` (Monaco font px — the file editor and the diff panes;
-   * unset = 12), and
-   * `shortcutsWorkInTerminal` (board-wide action shortcuts, e.g. jump to
-   * next/prev session needing you, fire even while a terminal has focus;
-   * unset = on), `shortcutCoach` (show the "there's a shortcut for that"
-   * reminder when a click does a binding's job; unset = on — it gates only the
-   * reminder, never the keyboard-vs-mouse tracking), `boardGroupByRepo` (the
-   * Board kanban groups tasks into
-   * per-repo swimlanes; unset = on), `railFilter` (which checkouts the
-   * Agentboard rail shows — `"all"` / `"active"` / `"recent"`; unset = all)
-   * with `railRecentHours` (how far back `"recent"` looks; unset = 4), and
-   * `showUnmanagedWorktrees` (the Agentboard rail shows git worktrees no board
-   * task is bound to — Claude Code's own agent worktrees, hand-added ones;
-   * unset = off), and `jarvisPane` (the native Bevy surface — the rail strip
-   * *and* the per-checkout jarvis pane; unset = off). `showUnmanagedWorktrees` is the one key here
-   * Rust reads back — the agentboard engine's worktree discovery honours it —
-   * so it's written through the `ab_set_show_unmanaged_worktrees` command, not
-   * by saving settings from the client.
-   */
+  /** TS-owned UI block; every key is unset-means-default, defaulted at its
+   * consumer. `showUnmanagedWorktrees` is the one Rust reads back, so it is
+   * written through `ab_set_show_unmanaged_worktrees`, not by saving here. */
   agentboard?: {
     notify?: boolean;
     notifyThreshold?: NotifyLevel;
@@ -223,34 +155,21 @@ export type UserSettings = {
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
-/** Debounce applied to `update(fn, { defer: true })` — long enough that typing a
- * path template or pasting a token doesn't write a half-finished value to disk
- * (which `settings_set` would hand straight to the live scheduler), short enough
- * that pausing feels like it saved. */
+/** A half-finished path template must not reach disk, where `settings_set`
+ * hands it to the live scheduler. */
 const DEFER_MS = 500;
 
-/** Fired on `window` after a successful `settings_set` — lets other in-app
- * consumers of a settings value (e.g. terminal prefs, the shortcuts registry)
- * refresh live instead of waiting for a `"focus"` event that no longer fires
- * when Settings is just a tab in the same window. */
+/** Settings is a tab in the same window, so `"focus"` never fires. */
 export const SETTINGS_SAVED_EVENT = "tt:settings-saved";
 
-/**
- * Read the shared settings file, validated against {@link UserSettingsSchema}.
- * `null` in browser dev or when the read fails — every consumer here falls back
- * to a built-in default rather than surfacing the failure, so the distinction
- * isn't worth propagating. Shared by the settings screen, terminal prefs, and
- * the shortcuts registry, which all read the same file on the same triggers.
- */
+/** `null` in browser dev or on a failed read — every consumer falls back to a
+ * built-in default, so the distinction isn't worth propagating. */
 export async function loadUserSettings(): Promise<UserSettings | null> {
   const result = await invoke<UserSettings>("settings_get", {}, { schema: UserSettingsSchema });
   return result.unwrapOr(null);
 }
 
-/**
- * Persist the whole settings object and notify in-app listeners. Callers pass
- * the full object (not a patch) so the TS CLI's unknown keys survive the save.
- */
+/** The full object, never a patch, so the TS CLI's unknown keys survive. */
 export async function saveUserSettings(settings: UserSettings): Promise<boolean> {
   const saved = await invoke("settings_set", { settings });
   if (saved.isOk()) window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT));
@@ -260,17 +179,8 @@ export async function saveUserSettings(settings: UserSettings): Promise<boolean>
 /** The TS-owned `agentboard` block, as carried on {@link UserSettings}. */
 export type AgentboardBlock = NonNullable<UserSettings["agentboard"]>;
 
-/**
- * Subscribe to "the settings file may have changed": a successful in-app save
- * ({@link SETTINGS_SAVED_EVENT}) or the window regaining focus (which covers the
- * JSON being edited externally, then alt-tabbing back). Fires `load` once
- * immediately. Returns an unsubscribe.
- *
- * **The refresh policy lives here and only here.** Eight modules used to inline
- * this same subscribe/refresh/teardown block, so changing *which* signals
- * re-read a setting (adding `visibilitychange`, debouncing, moving off `window`
- * events) meant eight edits with one silently-missed copy as the failure mode.
- */
+/** "The file may have changed": an in-app save, or window focus. Fires `load`
+ * once immediately. **The refresh policy lives here and only here.** */
 export function onSettingsChanged(load: () => void): () => void {
   load();
   window.addEventListener("focus", load);
@@ -281,20 +191,9 @@ export function onSettingsChanged(load: () => void): () => void {
   };
 }
 
-/**
- * One settings value, kept live. `select` pulls it out of the loaded settings
- * (`undefined` when absent, so `fallback` applies); the value re-reads on every
- * {@link onSettingsChanged} signal, and a read resolving after unmount is
- * discarded.
- *
- * Returns the value plus a **local** setter — write-through is the caller's
- * job, via {@link persistAgentboardSetting}. That split is what every consumer
- * wants: set locally so the control responds immediately, then persist, and the
- * save's own `SETTINGS_SAVED_EVENT` re-reads and confirms.
- *
- * `select` is read from a ref, so an inline arrow at the call site is fine — it
- * needs no memoizing and does not re-subscribe.
- */
+/** One value, live across {@link onSettingsChanged} signals. The setter is
+ * **local** — write-through is the caller's job, via {@link
+ * persistAgentboardSetting}. `select` is read from a ref. */
 export function useLiveSetting<T>(
   select: (s: UserSettings) => T | undefined,
   fallback: T,
@@ -306,9 +205,7 @@ export function useLiveSetting<T>(
     let alive = true;
     const unsubscribe = onSettingsChanged(() => {
       void loadUserSettings().then((s) => {
-        // `alive` discards a read that resolved after unmount — the async gap
-        // between `loadUserSettings()` and its `.then` is exactly where a
-        // hand-copied version of this drops the guard.
+        // `alive` discards a read that resolved after unmount.
         if (alive && s) setValue(selectRef.current(s) ?? fallback);
       });
     });
@@ -320,11 +217,8 @@ export function useLiveSetting<T>(
   return [value, setValue];
 }
 
-/**
- * {@link useLiveSetting} into a ref instead of state — for consumers read from
- * inside an imperative effect that must not re-subscribe when the value
- * changes (the terminal's render loop reading `copyOnSelect`).
- */
+/** {@link useLiveSetting} into a ref — for an imperative effect that must not
+ * re-subscribe when the value changes (the terminal's render loop). */
 export function useLiveSettingRef<T>(
   select: (s: UserSettings) => T | undefined,
   fallback: T,
@@ -347,16 +241,8 @@ export function useLiveSettingRef<T>(
   return ref;
 }
 
-/**
- * Read-modify-write one `agentboard.*` key.
- *
- * The read-modify-write is the point: the settings file is **co-owned by the
- * TypeScript CLI**, so a save must carry the whole object forward or it drops
- * keys this app doesn't model. That invariant used to be restated in a comment
- * beside five separate copies of this code — and a sixth copy written without
- * the comment would corrupt the file. Best-effort: a failed persist leaves the
- * caller's in-session view correct, which is all there is to do about it.
- */
+/** The read is the point: the file is co-owned, so a save must carry the whole
+ * object forward. Best-effort. */
 export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
   key: K,
   value: AgentboardBlock[K],
@@ -369,24 +255,11 @@ export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
 export type SettingsUpdater = (prev: UserSettings) => UserSettings;
 
 /**
- * The autosave engine behind {@link useUserSettings}, kept free of React so the
- * ordering rules below are unit-testable without a DOM.
- *
- * Two invariants make concurrent writes safe, and both are easy to lose:
- *
- * 1. **Replay, don't overwrite.** A queued edit is stored as its *updater*, then
- *    replayed against a fresh read of the file at write time — never applied to
- *    a copy loaded earlier. The terminal's font-size zoom and the Board's
- *    group-by toggle read-modify-write the same `agentboard` block from
- *    elsewhere in the app, so writing a stale whole object would revert whichever
- *    of them landed in between.
- * 2. **One write at a time.** Flushes chain on `tail`. Without that, flipping two
- *    toggles quickly races: the second flush reads the file before the first's
- *    write lands, and its read-modify-write silently reverts the first change.
- *
- * `deferMs` debounces `queue(fn, { defer: true })` — used for anything typed, so
- * a half-finished path template or token isn't written (and handed to the live
- * scheduler) mid-keystroke.
+ * Two ordering rules, kept free of React so they are testable without a DOM.
+ * **Replay, don't overwrite** — a queued edit is kept as its *updater* and
+ * replayed against a fresh read, since the app writes this file elsewhere. And
+ * **one write at a time**, chained on `tail`, or the second flush reads before
+ * the first's write lands and reverts it.
  */
 export function createSettingsWriter({
   load,
@@ -422,8 +295,7 @@ export function createSettingsWriter({
       timer = null;
     }
     const run = tail.then(drain);
-    // Swallow only to keep the chain alive for the next write; `onState` has
-    // already reported the failure.
+    // Swallowed only to keep the chain alive; `onState` already reported it.
     tail = run.catch(() => {});
     return run;
   };
@@ -442,20 +314,9 @@ export function createSettingsWriter({
   };
 }
 
-/**
- * Load the settings once and persist every edit as it happens — there is no
- * explicit save.
- *
- * `update` applies an updater to the on-screen copy for instant feedback and
- * hands the same updater to {@link createSettingsWriter}, which owns the write
- * ordering. Pass `{ defer: true }` for anything typed, and call `flush` on blur
- * to commit it without waiting out the debounce; toggles and selects omit it and
- * save on the spot.
- *
- * `settings` is `null` until loaded and stays `null` in browser dev where the
- * command returns `null`; edits are dropped rather than queued in that case,
- * since there's no file to merge into.
- */
+/** Load once, persist every edit — there is no explicit save. Pass `{ defer:
+ * true }` for anything typed and `flush` on blur. `settings` stays `null` in
+ * browser dev, where edits are dropped. */
 export function useUserSettings() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -482,9 +343,8 @@ export function useUserSettings() {
     };
   }, []);
 
-  // Commit a still-pending debounce on unmount, so an edit made and immediately
-  // navigated away from isn't lost. Post-unmount `setSaveState` calls are no-ops,
-  // which is fine — the write is the part that matters.
+  // Commit a pending debounce on unmount, so an edit navigated away from
+  // immediately isn't lost.
   useEffect(
     () => () => {
       void writer.flush();

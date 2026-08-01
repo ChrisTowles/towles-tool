@@ -31,16 +31,9 @@ import {
 } from "./common";
 
 /**
- * Editor for the calendar collector's per-source list: one card per calendar,
- * each with its own enable switch, label, and `claude -p` prompt.
- *
- * The prompt is a plain textarea rather than a provider picker on purpose. The
- * built-in prompts drive a Google/Outlook MCP, which isn't necessarily
- * configured on this machine — the escape hatch is pointing a source at
- * whatever does work here (a CLI like `gws`, a script, another MCP), so long as
- * it answers with the documented JSON array. Each source writes into its own
- * store lane keyed by `id`, so a second calendar never displaces the first;
- * that's why ids are assigned once at creation and shown read-only.
+ * A plain textarea, not a provider picker: the built-in prompts drive a
+ * Google/Outlook MCP that may not be configured here. Ids are read-only
+ * because each names the store lane a pull replaces.
  */
 function CalendarSourcesEditor({
   sources,
@@ -118,12 +111,9 @@ function PreferredToggle({
 }
 
 /**
- * Editor for the new-task form's prompt improvers (Direct / Plan / Brainstorm by
- * default) — the buttons that rewrite the goal you typed before the task starts.
- * Each improver's prompt is the *instruction* handed to `claude -p`, which fills
- * the form's goal + branch fields with the rewrite. Uses the same list editor as
- * the calendar sources, plus a per-row "Preferred" toggle deciding which get
- * their own button vs. sitting under the form's "More" menu.
+ * The new-task form's improver buttons (Direct / Clarify / Brainstorm /
+ * Interview). Each prompt is the *instruction* handed to `claude -p`; the
+ * "Preferred" toggle decides its own button vs. the form's "More" menu.
  */
 export function PromptImproversEditor({
   improvers,

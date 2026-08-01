@@ -11,9 +11,10 @@ of what this repo does, Desktop now does as well.
 - **Handing work to an agent is one gesture.** The Agentboard `+` takes a
   half-formed thought, a pasted screenshot, and `#` to attach one of the repo's
   open issues so the goal points at what it's for. Submit it as typed, or press
-  a prompt improver first — Direct, Plan and Brainstorm ship as defaults, each
-  an instruction you can edit — and claude rewrites the goal with the repo and
-  the image in view, proposing the title and branch. That lands in the fields,
+  a prompt improver first — Direct, Clarify, Brainstorm and Interview ship
+  as defaults, one per rung of how sure you are, each an instruction you can
+  edit — and claude rewrites the goal with the repo and the image in view,
+  proposing the title and branch. That lands in the fields,
   editable, with Undo. Submitting mints the worktree, renders its `.env`, runs
   the repo's setup and starts Claude on that goal, all before you look away.
   From then on the rail is the monitor: agent state, which model is running it
