@@ -68,7 +68,12 @@ export function PaneGrid(props: {
   onSelectSession: (folderDir: string, sessionId: string) => void;
   onExit: (sessionId: string, exit: TermExit) => void;
   onTitle: (id: string, title: string) => void;
-  onOpenTerminalPath: (dir: string, path: string, line: number | null) => void;
+  onOpenTerminalPath: (
+    dir: string,
+    termId: string,
+    path: string,
+    line: number | null,
+  ) => Promise<void>;
   onRemovePane: (paneId: string) => void;
   onSelectFolder: (dir: string) => void;
   columns: ColumnDrag;
@@ -161,7 +166,9 @@ export function PaneGrid(props: {
                   // Only folder-owned terminals can route links into a files
                   // pane; others keep the external-editor default.
                   onOpenPath={
-                    termDir ? (path, line) => onOpenTerminalPath(termDir, path, line) : undefined
+                    termDir
+                      ? (path, line) => void onOpenTerminalPath(termDir, id, path, line)
+                      : undefined
                   }
                   focusRequest={
                     focusTerminalRequest?.id === id ? focusTerminalRequest.nonce : undefined

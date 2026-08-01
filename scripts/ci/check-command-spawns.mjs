@@ -4,19 +4,6 @@
 // `tt_exec::record_detached_spawn`. A bare `Command::new` in production code is
 // the one way to break the "what did this launch?" guarantee in the telemetry
 // log (see the tt-telemetry section in CLAUDE.md).
-//
-// This check fails if `Command::new` / `process::Command` / `tokio::process::Command`
-// appears in a .rs file outside the allowed set:
-//   - crates/tt-exec/**            (the wrapper home itself)
-//   - crates/tt-telemetry/build.rs (build-time git probe, pre-telemetry)
-//   - any `tests/` integration-test directory
-//   - any `#[cfg(test)]`-gated code (unit tests)
-//   - a whole module declared `#[cfg(test)] mod foo;` — the gate is on the
-//     declaration, so the module's own file has nothing in it to detect
-//   - the audited detached-spawn prod sites, which each call
-//     `record_detached_spawn` before the raw spawn.
-//
-// Run from the repo root: `node scripts/ci/check-command-spawns.mjs`
 
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -27,7 +14,7 @@ const SPAWN_RE = /\b(?:tokio::process::Command|process::Command|Command)::new\b/
 // `record_detached_spawn` call. Verified in the 2026-07 CI audit; keep in sync
 // if a new detached-spawn site is added (it must call record_detached_spawn).
 const ALLOWED_FILES = new Set([
-  "crates-tauri/tt-app/src/terminal.rs",
+  "crates-tauri/tt-app/src/terminal/open_path.rs",
   "crates-tauri/tt-app/src/agentboard.rs",
   "crates-tauri/tt-app/src/lsp.rs",
   "crates/tt-telemetry/build.rs",

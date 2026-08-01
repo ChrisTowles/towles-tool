@@ -6,19 +6,12 @@
 //! hard, and why each surface sits where it does all live in `comment-budget.toml`.
 //!
 //! **The default judges only the lines a branch adds**; `--all` is the repo-wide
-//! backlog, which stands at hundreds of errors — a gate that fails every run is one
-//! nobody reads, and the budgets are not the thing to lower. In the default mode the
-//! *ratio* is the added lines' own, so a branch can neither add prose nor inherit the
-//! file's existing debt. An over-long *run* is the exception: it is still measured
-//! whole and merely has to touch an added line to be reported, because a reader wades
-//! through all of it however much of it you wrote. `--whole-files` opts back into
-//! judging every touched file whole.
+//! backlog, and the budgets are not the thing to lower. A *run* is the exception:
+//! measured whole, reported if it touches an added line, because a reader wades
+//! through all of it however much of it you wrote.
 //!
-//! The `--new-from-*` flag names are golangci-lint's, which is where the idea is best
-//! known from. The diff comes from `gix` directly rather than `tt-git` (dev tooling is
-//! outside that crate's remit) or parsed `git` output, and compares the *working tree*
-//! to the base — so a local run judges what you are about to push, not only what you
-//! have committed.
+//! The diff comes from `gix` and compares the *working tree* to the base, so a
+//! local run judges what you are about to push, not only what you committed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -45,14 +38,18 @@ struct Config {
 }
 
 /// How one family of files is read. `exempt` prefixes are invisible to every
-/// signal — neither comment nor code — so a Rust `//!` header can be as long as
-/// the decision it records.
+/// signal — neither comment nor code — but only for the first `exempt_free`
+/// lines of a file; see [`spill_exempt_overflow`] for why that cap exists.
 #[derive(serde::Deserialize)]
 struct Kind {
     grammar: Grammar,
     extensions: Vec<String>,
     #[serde(default)]
     exempt: Vec<String>,
+    /// Exempt lines a file gets for free. `None` leaves them uncapped, which is
+    /// only safe for a kind that exempts nothing.
+    #[serde(default)]
+    exempt_free: Option<usize>,
     #[serde(default)]
     counted: Vec<String>,
 }
@@ -899,6 +896,7 @@ fn fold_file(
             (start.row..=last_row).filter(|&r| lines.get(r).is_some_and(|l| !l.trim().is_empty())),
         );
     }
+    spill_exempt_overflow(kind, &mut exempt_rows, &mut counted_rows);
 
     // Runs are whole-file — an added line in the middle of a long block still
     // makes a reader wade through all of it — but only those the run may judge
@@ -935,6 +933,27 @@ fn fold_file(
     })
 }
 
+/// Spill exempt lines past the kind's `exempt_free` allowance into the counted
+/// set, so `exempt` is a carve-out rather than a hiding place: without it the
+/// cheapest way to pass is to move prose from `///` into `//!`, which shortens
+/// nothing for a reader.
+fn spill_exempt_overflow(
+    kind: &Kind,
+    exempt_rows: &mut BTreeSet<usize>,
+    counted_rows: &mut BTreeSet<usize>,
+) {
+    let Some(free) = kind.exempt_free else {
+        return;
+    };
+    // BTreeSet iterates ascending, so this keeps the top-of-file header and
+    // spills what trails it — the direction prose grows.
+    let overflow: Vec<usize> = exempt_rows.iter().copied().skip(free).collect();
+    for row in overflow {
+        exempt_rows.remove(&row);
+        counted_rows.insert(row);
+    }
+}
+
 /// Whether a comment's own syntax exempts it. Longest prefix wins, so `//!`
 /// beats the `//` that also matches it; a comment matching neither list counts,
 /// so a syntax nobody listed can't slip through unmeasured.
@@ -954,5 +973,51 @@ fn collect_comment_nodes<'t>(node: tree_sitter::Node<'t>, out: &mut Vec<tree_sit
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_comment_nodes(child, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{spill_exempt_overflow, Kind};
+    use std::collections::BTreeSet;
+
+    fn rust_kind(exempt_free: Option<usize>) -> Kind {
+        Kind {
+            grammar: super::Grammar::Rust,
+            extensions: vec!["rs".into()],
+            exempt: vec!["//!".into()],
+            exempt_free,
+            counted: vec!["///".into(), "//".into()],
+        }
+    }
+
+    fn spill(free: Option<usize>, exempt: &[usize]) -> (Vec<usize>, Vec<usize>) {
+        let mut exempt_rows: BTreeSet<usize> = exempt.iter().copied().collect();
+        let mut counted_rows = BTreeSet::new();
+        spill_exempt_overflow(&rust_kind(free), &mut exempt_rows, &mut counted_rows);
+        (exempt_rows.into_iter().collect(), counted_rows.into_iter().collect())
+    }
+
+    #[test]
+    fn header_within_the_allowance_stays_invisible() {
+        let (exempt, counted) = spill(Some(12), &[0, 1, 2, 3]);
+        assert_eq!(exempt, vec![0, 1, 2, 3]);
+        assert!(counted.is_empty(), "a short header costs nothing");
+    }
+
+    /// The whole point: prose moved from `///` into `//!` has to stop paying off
+    /// past the allowance, or the linter rewards relocating bloat over cutting it.
+    #[test]
+    fn overflow_past_the_allowance_counts_like_any_other_comment() {
+        let (exempt, counted) = spill(Some(3), &[0, 1, 2, 3, 4, 5]);
+        assert_eq!(exempt, vec![0, 1, 2], "the first `exempt_free` lines are free");
+        assert_eq!(counted, vec![3, 4, 5], "the rest are bloat like any other");
+    }
+
+    #[test]
+    fn no_allowance_configured_leaves_exempt_lines_uncapped() {
+        let (exempt, counted) = spill(None, &[0, 1, 2, 3, 4, 5]);
+        assert_eq!(exempt, vec![0, 1, 2, 3, 4, 5]);
+        assert!(counted.is_empty());
     }
 }
