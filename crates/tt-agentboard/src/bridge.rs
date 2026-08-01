@@ -263,6 +263,7 @@ fn build_folder(
             .head_commit_ms
             .max(git.worktree_touched_ms)
             .max(folder_meta.last_worked_at_for(&entry.dir).unwrap_or(0)),
+        worktree_touched_ms: git.worktree_touched_ms,
         commits_ahead: git.commits_ahead,
         commits_behind: git.commits_behind,
         dirty: git.dirty,
@@ -552,6 +553,39 @@ mod tests {
         // beta has no git info → standalone path-keyed repo, name = folder basename.
         assert!(payload.repos[1].key.starts_with("path:"));
         assert_eq!(payload.repos[1].name, "beta");
+    }
+
+    /// `worked_at_ms` maxes in a pane open, so it can move without the files
+    /// under review moving. The diff pane's refetch key needs the pure signal,
+    /// which is why `worktree_touched_ms` rides across on its own rather than
+    /// being folded into the max above.
+    #[test]
+    fn worktree_touched_ms_reaches_the_folder_separately_from_worked_at_ms() {
+        let mut git = HashMap::new();
+        git.insert(
+            "/r/alpha".to_string(),
+            GitInfo {
+                branch: "main".into(),
+                head_commit_ms: 5_000,
+                worktree_touched_ms: 9_000,
+                ..Default::default()
+            },
+        );
+        let payload = assemble_state(
+            &entries(),
+            &rows_for(&entries()),
+            &git,
+            &AgentTracker::new(),
+            &SessionStore::new(None),
+            &FolderMetaStore::default(),
+            &no_attr,
+            &HashMap::new(),
+            30,
+            999,
+        );
+        let alpha = &payload.repos[0].folders[0];
+        assert_eq!(alpha.worktree_touched_ms, 9_000);
+        assert_eq!(alpha.worked_at_ms, 9_000, "the max still wins for worked_at_ms");
     }
 
     #[test]

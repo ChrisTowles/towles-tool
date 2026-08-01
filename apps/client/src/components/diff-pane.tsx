@@ -22,7 +22,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { folderStatsKey, type FolderData } from "@/lib/agentboard";
+import { folderBaseKey, folderStatsKey, type FolderData } from "@/lib/agentboard";
 import { openInExternalEditor } from "@/lib/external-editor";
 import {
   buildDiffTree,
@@ -53,17 +53,11 @@ const STATUS_COLORS: Record<string, string> = {
   M: "text-amber-500",
 };
 
-/** Compact navigation tree beside the multi-diff: same compact-folders
- * grouping as the Files pane, plus test/spec files nested under the file they
- * test (`buildDiffTree`); clicking a file scrolls its diff into view.
- * Each row carries a "reviewed" checkbox — GitHub-review-style, not git
- * staging — that collapses that file's diff in the Monaco pane so an
- * approved file is out of the way; a folder's checkbox reflects and toggles
- * every file beneath it at once. A file's own checkbox covers only itself,
- * nested tests included or not being a judgement call the reviewer makes per
- * row. Memoized: DiffPane re-renders on state
- * (refreshing, editingBase, reviews) this rail doesn't care about, and its
- * props are stable references except when `files`/`reviewed` actually change. */
+/** Navigation tree beside the multi-diff; clicking a file scrolls its diff into
+ * view. The per-row checkbox is GitHub-review-style "viewed", not git staging —
+ * it collapses that file's diff. A folder's covers every file beneath it; a
+ * file's covers only itself, since whether nested tests count is the reviewer's
+ * call. Memoized against DiffPane's unrelated re-renders. */
 const DiffTreeRail = memo(function DiffTreeRail({
   dir,
   files,
@@ -75,19 +69,16 @@ const DiffTreeRail = memo(function DiffTreeRail({
   onToggleReviewed,
   onToggleReviewedMany,
 }: {
-  /** The checkout the listed paths are relative to — what "open in editor"
-   * resolves them against. */
+  /** The checkout the listed paths are relative to. */
   dir: string;
   files: ChangedFile[];
   /** Rail width in px — dragged on the divider, owned by DiffPane. */
   width: number;
   /** Paths the reviewer has checked off. */
   reviewed: ReadonlySet<string>;
-  /** Paths with unsaved edits made right in the diff pane — same signal the
-   * Files tab's dirty dot shows, mirrored here per file. */
+  /** Paths with unsaved edits made in the diff pane — the Files tab's dirty dot. */
   dirty: ReadonlySet<string>;
-  /** Paths whose disk content changed under those unsaved edits — resolution
-   * lives in the Monaco pane's banner; this rail just marks which rows. */
+  /** Paths changed on disk under unsaved edits; the Monaco pane owns resolution. */
   conflict: ReadonlySet<string>;
   onJump: (path: string) => void;
   /** Toggle one file's reviewed flag. */
@@ -95,26 +86,20 @@ const DiffTreeRail = memo(function DiffTreeRail({
   /** Set (or clear) every path in the list at once — a folder's checkbox. */
   onToggleReviewedMany: (paths: string[], value: boolean) => void;
 }) {
-  // What the user has explicitly closed — folders and nested files alike, so
-  // both default open. The Files pane's Explorer nests *collapsed*
-  // (`explorer.fileNesting.expand: false`) and that's right for browsing a
-  // whole checkout, but this rail lists only what changed: a nested file here
-  // is a file under review, and hiding it behind a disclosure would drop it
-  // out of the reviewer's list.
+  // What the user has explicitly closed. Both folders and nested files default
+  // *open*, unlike the Files pane's Explorer: every row here is a file under
+  // review, and a disclosure would drop it out of the reviewer's list.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const tree = useMemo(() => buildDiffTree(files.map((f) => f.path)), [files]);
   const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
-  // One bottom-up pass per file-set change, not a per-render re-walk of every
-  // folder's subtree — leafPaths() is O(subtree), and calling it fresh inside
-  // renderNodes for every folder node made a deeply nested tree (this repo's
-  // own apps/client/src/components/... shape) cost O(n²) on every render,
-  // including ones that only touch unrelated pane state (refreshing, mode).
+  // One bottom-up pass per file-set change. Walking each folder's subtree inside
+  // renderNodes instead is O(n²) per render on a deeply nested tree.
   const leafPathsByFolder = useMemo(() => {
     const map = new Map<string, string[]>();
     const walk = (node: DiffTreeNode): string[] => {
       const leaves = node.children.flatMap(walk);
-      // A file's nested tests count toward the folder above it, but the file
-      // itself isn't a folder checkbox — no entry for it.
+      // A file's nested tests count toward the folder above it, but a file is
+      // not itself a folder checkbox.
       if (node.kind === "file") return [node.path, ...leaves];
       map.set(node.path, leaves);
       return leaves;
@@ -189,13 +174,11 @@ const DiffTreeRail = memo(function DiffTreeRail({
         );
       }
       const file = byPath.get(node.path);
-      // A deleted file has nothing on disk to open — the row still right-clicks
-      // (so the menu doesn't flicker in and out along a tree), the item is just
-      // dead, which reads better than an editor failing to find the path.
+      // A deleted file has nothing to open. The row still right-clicks so the
+      // menu doesn't flicker along the tree; the item is just dead.
       const deleted = file?.status === "D";
-      // The files nested under this one, if any. The disclosure is a *sibling*
-      // button, not a chevron inside the jump button — buttons can't nest
-      // (apps/client/CLAUDE.md).
+      // The disclosure is a *sibling* button, not a chevron inside the jump
+      // button — buttons can't nest (apps/client/CLAUDE.md).
       const nested = node.children.length > 0;
       const expanded = !collapsed.has(node.path);
       return (
@@ -253,9 +236,8 @@ const DiffTreeRail = memo(function DiffTreeRail({
                   <span className="min-w-0 flex-1 truncate">{node.name}</span>
                   {/* Only while collapsed, and only ever by the user's own
                    * hand — but a changed file must never be silently absent
-                   * from a review's list, so say how many are folded away.
-                   * Bare count, no `+`: the added/removed line counts sit
-                   * right beside it and `+1` there means something else. */}
+                   * from a review's list. Bare count, no `+`: the ± columns
+                   * sit right beside it. */}
                   {nested && !expanded && (
                     <span
                       title={`${node.children.length} more changed file(s) nested here`}
@@ -309,9 +291,8 @@ const DiffTreeRail = memo(function DiffTreeRail({
   );
 });
 
-/** A state setter for a `Set<string>` → a `(path, on)` toggle that only
- * produces a new Set on an actual transition — shared by the dirty and
- * conflict mirrors so the flip logic can't drift between them. */
+/** A `Set<string>` setter → a `(path, on)` toggle that allocates only on a real
+ * transition. Shared by the dirty and conflict mirrors so they can't drift. */
 function flipPathIn(setter: Dispatch<SetStateAction<Set<string>>>) {
   return (path: string, on: boolean) => {
     setter((prev) => {
@@ -330,20 +311,10 @@ const UNCOMMITTED_MODE = {
   hint: "Only what isn't committed yet — staged + unstaged changes vs HEAD",
 };
 
-/**
- * A folder's diff as a *pane* in the Agentboard tiling — it sits beside the
- * live terminals (review while the agent works) instead of covering them in a
- * modal. A changed-file list on the left, the VS Code diff editor for the
- * selected file on the right. Content refetches whenever the folder's git
- * stats change (the 1.5s poll only bumps them on real change), so the diff
- * tracks the agent's edits without a manual refresh; the open file's contents
- * refresh in place. The header's segmented toggle picks the baseline:
- * the whole branch vs main, or just the uncommitted working tree, and its
- * read-only/editable toggle decides whether the working-tree sides take
- * typing at all — locked by default, since this pane is usually read while an
- * agent edits the same tree. The full checkout tree is its own pane
- * (`FolderFilesPane`), not a tab here.
- */
+/** A folder's diff as a *pane* in the Agentboard tiling, so it sits beside the
+ * live terminals instead of covering them. Everything refetches off the
+ * backend's git snapshot rather than a timer — see the `statsKey`/`baseKey`
+ * effect below, which keeps the file list and the diffs on one repo state. */
 export function DiffPane({
   folder,
   focused,
@@ -359,15 +330,13 @@ export function DiffPane({
 }) {
   const dir = folder?.dir;
   const baseBranch = folder?.baseBranch?.trim() || null;
-  // The worktree's own creation base (`.tt-task`'s `base=`), when this
-  // folder is a task and nothing overrides it — what the backend actually
-  // auto-compares against instead of always defaulting to main.
+  // The worktree's creation base (`.tt-task`'s `base=`) — what the backend
+  // auto-compares a task against instead of defaulting to main.
   const taskBaseBranch = folder?.taskBaseBranch?.trim() || null;
   const effectiveBase = baseBranch ?? taskBaseBranch;
   const [mode, setMode] = useState<DiffMode>("main");
-  // The working-tree sides start locked: this pane is for reading a diff
-  // while an agent works in the same tree, and a stray keystroke in a focused
-  // editor used to edit — and auto-save — the file under review.
+  // Locked to start: a stray keystroke in a focused editor used to edit — and
+  // auto-save — the file under review while an agent worked in the same tree.
   const [editable, setEditable] = useState(false);
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -379,8 +348,7 @@ export function DiffPane({
   // memo() isn't defeated by a fresh callback prop on every DiffPane render.
   const jumpTo = useCallback((path: string) => revealRef.current?.(path), []);
   const [editingBase, setEditingBase] = useState(false);
-  // Claude's pending openDiff reviews for this folder (shown one at a time,
-  // oldest first). Each carries the on-disk "before" for the DiffEditor.
+  // Claude's pending openDiff reviews, oldest first, each with its "before".
   const [reviews, setReviews] = useState<Array<DiffReviewRequest & { originalContent: string }>>(
     [],
   );
@@ -424,8 +392,7 @@ export function DiffPane({
     };
   }, [dir]);
 
-  // Claude Code IDE bridge badge — the MonacoFileDiff streams selections to
-  // the folder's `claude` itself (same contract as CodeViewer).
+  // IDE bridge badge; MonacoFileDiff streams selections to the folder's `claude`.
   const ideConnected = useIdeConnected(dir);
 
   const mainMode = {
@@ -439,25 +406,21 @@ export function DiffPane({
   };
   const modes = [mainMode, UNCOMMITTED_MODE];
 
-  // Files the reviewer has checked off — a GitHub-review-style "viewed" mark,
-  // purely client-side (not persisted, no git index involved). Checking a
-  // file collapses its diff in the Monaco pane; unchecking expands it again.
+  // GitHub-review-style "viewed" marks: client-side only, no git index
+  // involved. Checking a file collapses its diff in the Monaco pane.
   const [reviewed, setReviewed] = useState<Set<string>>(() => new Set());
 
-  // Files with unsaved edits made right in the Monaco pane — mirrors what
-  // MonacoMultiDiff also reports to the IDE bridge (`ideSetDiffDirty`), kept
-  // here too so the tree rail can show the same dirty dot the Files tab does.
+  // Mirrors what MonacoMultiDiff reports to the IDE bridge, kept here too so
+  // the tree rail can show the same dirty dot the Files tab does.
   const [dirty, setDirty] = useState<Set<string>>(() => new Set());
-  // Files whose disk content changed under unsaved pane edits — reported by
-  // MonacoMultiDiff (which owns the resolution banner); mirrored here so the
-  // tree rail can mark the affected rows.
+  // Reported by MonacoMultiDiff, which owns the resolution banner; mirrored
+  // here so the tree rail can mark the affected rows.
   const [conflict, setConflict] = useState<Set<string>>(() => new Set());
   const handleDirtyChange = useMemo(() => flipPathIn(setDirty), []);
   const handleConflictChange = useMemo(() => flipPathIn(setConflict), []);
 
-  // File-rail width, dragged on the divider. One remembered width for every
-  // diff pane (not per folder): the thing being sized is how much path a
-  // reviewer wants to read, which doesn't change per checkout.
+  // One remembered width for every diff pane, not one per folder: what's being
+  // sized is how much path a reviewer wants to read.
   const [railWidth, setRailWidth] = useState(() =>
     loadDiffRailWidth(localStorage.getItem(DIFF_RAIL_WIDTH_KEY)),
   );
@@ -486,9 +449,8 @@ export function DiffPane({
       window.removeEventListener("pointerup", up);
       commitRailWidth(width);
     };
-    // On the window, like the pane-column divider (`use-column-drag`): the
-    // pointer leaves this 4px handle immediately, and only the window still
-    // hears it.
+    // On the window, like `use-column-drag`: the pointer leaves this 4px
+    // handle immediately and only the window still hears it.
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   }
@@ -497,15 +459,12 @@ export function DiffPane({
     if (!dir) return;
     setRefreshing(true);
     const list = await invoke<ChangedFile[]>("ab_get_diff_files", { dir, mode, baseBranch });
-    // Tree order, not git's flat path sort: the rail and the stacked Monaco
-    // diffs render from this one array, so ordering it here is what keeps the
-    // two columns scrolling in lockstep.
+    // Tree order, not git's flat path sort: both columns render from this one
+    // array, which is what keeps them scrolling in lockstep.
     const nextFiles = sortToTreeOrder(list.unwrapOr([]));
     setFiles(nextFiles);
-    // Prune reviewed marks for paths that dropped out of the change set
-    // (renamed/reverted/committed) — everything else keeps its mark across a
-    // refresh, so a poll mid-review doesn't quietly re-expand what's already
-    // been checked off.
+    // Prune marks for paths that left the change set; everything else keeps
+    // its mark, so a poll mid-review can't re-expand what was checked off.
     const paths = new Set(nextFiles.map((f) => f.path));
     setReviewed((prev) => {
       const next = new Set([...prev].filter((p) => paths.has(p)));
@@ -524,18 +483,15 @@ export function DiffPane({
     setEditable(false);
   }, [dir]);
 
-  // Refetch on mount and whenever the working tree measurably changes.
   const statsKey = folder ? folderStatsKey(folder) : "";
-  // The baseline can only move when a commit lands, the branch is rebased
-  // (commitsBehind snaps to 0 without commitsAhead moving), or the compared
-  // ref changes — the multi-diff refetches its read-only base sides on
-  // this, not on every working-tree stats bump.
-  const baseKey = folder
-    ? `${folder.commitsAhead}:${folder.commitsBehind}:${folder.comparedBase ?? ""}`
-    : "";
+  const baseKey = folder ? folderBaseKey(folder) : "";
+  // Both keys: a rebase or fetch moves the baseline with every working-tree
+  // stat untouched, and MonacoMultiDiff already refetches its base sides on
+  // `baseKey` — so keying the list off `statsKey` alone left the rail listing
+  // files from the old merge-base beside diffs measured from the new one.
   useEffect(() => {
     void fetchDiff();
-  }, [fetchDiff, statsKey]);
+  }, [fetchDiff, statsKey, baseKey]);
 
   async function commitBaseBranch(value: string) {
     setEditingBase(false);
@@ -551,8 +507,6 @@ export function DiffPane({
     if (stored.isErr()) toast.error(`Couldn't set base branch — ${stored.error.message}`);
   }
 
-  // Shared by the tree rail's checkboxes and the Monaco header's checkbox —
-  // toggles one file's reviewed mark.
   const toggleReviewed = useCallback((path: string) => {
     setReviewed((prev) => {
       const next = new Set(prev);
@@ -562,8 +516,6 @@ export function DiffPane({
     });
   }, []);
 
-  // A folder's checkbox in the tree rail — set (or clear) every file beneath
-  // it at once.
   const toggleReviewedMany = useCallback((paths: string[], value: boolean) => {
     setReviewed((prev) => {
       const next = new Set(prev);

@@ -39,12 +39,17 @@ needing GTK must be added to both that `--exclude` list and the `vt_or_app`
 paths-filter in `.github/workflows/ci.yml`, or it silently gets no Rust CI.**
 
 **`comment-budget` is the one gate on comment sprawl**, per-surface in
-`comment-budget.toml`. `//!` is exempt, `///` and `//` are counted; there is no
+`comment-budget.toml`. `///` and `//` are counted; `//!` only for its first
+`exempt_free` lines, so a module doc is not a place to move prose to. There is no
 baseline and no per-file exception list, only a `comment-budget: allow(<reason>)`
 directive with a mandatory reason; a file no surface claims is an error. **CI
 judges every file a PR touches, whole** (`--whole-files`) — touch a file and you
 own its comment volume. `--all` is the repo-wide backlog; never wire it to
 `pull_request`, and never lower a budget to make either pass.
+**An error is always addressed in the PR that surfaced it**, never deferred: it
+is the prompt to do the cleanup that file is owed, which is the point of judging
+touched files whole. Don't narrow a change to dodge one, don't reach for
+`allow(…)` to keep a diff small, and don't file it as follow-up.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
 mock dev server: `npm run dev:drive` plus `node scripts/drive.mjs <verb>` for

@@ -175,6 +175,10 @@ export type FolderData = {
    * commit time, the newest mtime among the working tree's changed paths (the only signal that
    * sees an editor-only session) and the last pane opened or closed here. */
   workedAtMs?: number;
+  /** Newest mtime among the working tree's changed paths, epoch ms (0 when clean). Unlike
+   * `workedAtMs`, opening a pane doesn't move it — a pure "the files under review changed"
+   * signal. See `folderStatsKey`. */
+  worktreeTouchedMs?: number;
   hasPortDrift: boolean;
   /** True when this checkout has a Claude Desktop `.claude/launch.json` — gates the rail's dev-
    * servers button and picks the pane-header button's dimmed/how-to state (`components/dev-
@@ -183,8 +187,13 @@ export type FolderData = {
   quiet: boolean;
 };
 
-/** The one definition of "this folder's working tree measurably changed" — the diff pane
- * refetches on it. */
+/** The one definition of "this folder's working tree measurably changed" — the diff and
+ * files panes refetch on it.
+ *
+ * Six aggregate counts can't tell every change from every other: a line traded between two
+ * files, or an equal-length rewrite, lands on identical totals and used to leave both panes
+ * showing the previous content until something unrelated moved. `worktreeTouchedMs` closes
+ * that — content moving is enough on its own. */
 export function folderStatsKey(folder: FolderData): string {
   return [
     folder.committedFiles,
@@ -194,7 +203,16 @@ export function folderStatsKey(folder: FolderData): string {
     folder.uncommittedAdded,
     folder.uncommittedRemoved,
     folder.commitsAhead,
+    folder.worktreeTouchedMs ?? 0,
   ].join(":");
+}
+
+/** The other half: "what this folder's diff is measured *against* moved". A rebase or a
+ * fetch changes the merge-base while every working-tree stat above stays put, so a pane
+ * that refetches on `folderStatsKey` alone goes on listing files from the old baseline.
+ * Both keys drive `DiffPane`'s refetch; `MonacoMultiDiff` takes this one for its base sides. */
+export function folderBaseKey(folder: FolderData): string {
+  return [folder.commitsAhead, folder.commitsBehind, folder.comparedBase ?? ""].join(":");
 }
 
 export function gitCheckedLabel(computedAtMs: number | undefined, now: number): string | null {
