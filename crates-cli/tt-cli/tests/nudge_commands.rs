@@ -7,12 +7,10 @@ use predicates::prelude::*;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-/// A sandboxed `tt task nudge <target>`, with the caller's session either
-/// stamped or explicitly absent.
-///
-/// `env_remove` is load-bearing: these tests inherit the environment of
-/// whatever ran them, and a session started from an app terminal already has a
-/// real `TT_SESSION_ID` that would leak into the "no session" cases.
+/// A sandboxed `tt task nudge <target>`, with the caller's session either stamped
+/// or explicitly absent. `env_remove` is load-bearing: these tests inherit the
+/// environment of whatever ran them, and a session started from an app terminal
+/// already has a real `TT_SESSION_ID` that would leak into the "no session" cases.
 fn nudge(home: &Path, target: &str, session: Option<&str>) -> assert_cmd::Command {
     let mut cmd = cli_cmd(&home.join(".config").join("towles-tool"));
     cmd.env("HOME", home)
@@ -87,4 +85,49 @@ fn a_nudge_from_outside_an_app_terminal_names_nobody() {
 fn nudge_without_a_target_fails() {
     let dir = TempDir::new().unwrap();
     cli_cmd(dir.path()).args(["task", "nudge"]).assert().failure();
+}
+
+#[test]
+fn a_nudge_from_inside_a_checkout_still_lands_in_the_machine_global_dir() {
+    // The regression that ate real nudges: the writer runs wherever the `gh`
+    // mutation happened while the app watches a single dir, so any cwd-derived
+    // scoping splits the two. `env_remove` (not the forced-empty scope `cli_cmd`
+    // sets) is the point: this exercises the ambient-cwd path from inside a fake
+    // checkout that would previously have derived a scope.
+    let home = TempDir::new().unwrap();
+    let checkout = home.path().join("repo");
+    std::fs::create_dir_all(checkout.join("crates").join("tt-config")).unwrap();
+
+    let mut cmd = nudge(home.path(), "prs", Some("sess-1"));
+    cmd.env_remove(tt_config::STATE_SCOPE_ENV).current_dir(&checkout);
+    cmd.assert().success();
+
+    assert!(nudge_dir(home.path()).join("prs").exists());
+    let scoped = home
+        .path()
+        .join("data")
+        .join(tt_config::TOOL_NAME)
+        .join("tasks")
+        .join("repo")
+        .join("nudge");
+    assert!(!scoped.exists(), "a cwd-derived scope would split writer from watchers");
+}
+
+#[test]
+fn a_forced_scope_still_isolates_the_nudge_dir() {
+    // e2e runs force `TT_STATE_SCOPE` so their nudges never wake the real app.
+    let home = TempDir::new().unwrap();
+    let mut cmd = nudge(home.path(), "prs", Some("sess-1"));
+    cmd.env(tt_config::STATE_SCOPE_ENV, "e2e-sandbox");
+    cmd.assert().success();
+
+    let forced = home
+        .path()
+        .join("data")
+        .join(tt_config::TOOL_NAME)
+        .join("tasks")
+        .join("e2e-sandbox")
+        .join("nudge");
+    assert!(forced.join("prs").exists());
+    assert!(!nudge_dir(home.path()).exists());
 }

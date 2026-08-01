@@ -90,12 +90,10 @@ impl Default for JournalSettings {
 
 /// AgentBoard UI preferences the *Rust* side reads or writes. Every field is
 /// `None` until the user changes it, so the file stays clean for the TS CLI.
-///
 /// Deliberately **not** a model of the whole `agentboard` block: the file is co-owned
 /// with the TypeScript CLI and [`save_merge_to`] deep-merges over what is on disk, so
 /// absent keys survive a Rust write. Modeling a key nothing here reads makes the struct
-/// read as if the feature exists — which is how six tmux-era fields outlived the
-/// agentboard they configured.
+/// read as if the feature exists — how six tmux-era fields outlived their agentboard.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -277,16 +275,12 @@ where
         .and_then(|v| serde_json::from_value(v).ok()))
 }
 
-/// A **prompt improver**: one button in the Agentboard new-task form that
-/// rewrites the goal you typed before the task starts (Direct / Clarify /
-/// Brainstorm / Interview by default).
-///
-/// Clicking one runs `claude -p` through [`tt_tasks::suggest`] with this improver's
-/// [`prompt`](Self::prompt) as the *instruction*, filling the form's goal + branch fields
-/// with the result. Because the improved text lands **in the field**, what you see is
-/// exactly what launches — nothing is wrapped at launch time. The prompt is therefore an
-/// instruction *about* the goal, not a template containing it: the task text is passed
-/// separately so the model can tell what to rewrite from how.
+/// A **prompt improver**: one button in the Agentboard new-task form that rewrites
+/// the goal you typed before the task starts (Direct / Clarify / Brainstorm /
+/// Interview by default). Clicking one runs `claude -p` through [`tt_tasks::suggest`]
+/// with this improver's [`prompt`](Self::prompt) as the *instruction* and the task
+/// text passed separately — an instruction *about* the goal, never a template
+/// containing it. The result fills the form's fields: what you see is what launches.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -737,16 +731,11 @@ fn detect_scope() -> Scope {
 }
 
 /// The active task scope for the running process, or `None` for the shared
-/// (unscoped) defaults.
-///
-/// Resolution order:
-/// 1. [`STATE_SCOPE_ENV`] if set (empty forces unscoped, non-empty forces that name).
-/// 2. Otherwise walk up from the current working directory to a checkout of *this*
-///    repo and use its root directory name (e.g. `towles-tool-primary`), repo-
-///    qualified for `tasks/<name>` checkouts (e.g. `towles-tool-task-migrate`).
-///
-/// A checkout is recognised by a `crates/tt-config` directory at its root, so an installed
-/// `tt` run from an arbitrary project stays unscoped and shares the daily-driver config.
+/// (unscoped) defaults. [`STATE_SCOPE_ENV`] wins when set (empty forces unscoped,
+/// non-empty forces that name); otherwise walk up from the cwd to a checkout of
+/// *this* repo — recognised by a `crates/tt-config` directory at its root — and use
+/// its dir name, repo-qualified for task checkouts. An installed `tt` run from an
+/// arbitrary project therefore stays unscoped and shares the daily-driver config.
 pub fn state_scope() -> Option<String> {
     match detect_scope() {
         Scope::None => None,
@@ -776,14 +765,12 @@ fn main_checkout_of(root: &Path) -> Option<&Path> {
         .and_then(Path::parent)
 }
 
-/// Derive a task scope from `dir`: the nearest ancestor that is a checkout of
-/// this repo (contains a `crates/tt-config` directory), or `None`. Split out
-/// from [`state_scope`] so it can be unit-tested against temp dirs without
-/// touching the real cwd/env.
-///
-/// Branch-named tasks nest at `<repo>/.claude/worktrees/<name>`, so a bare dir name is not
-/// unique across repos — those scopes are qualified as `<repo>-<name>`, while the main
-/// checkout scopes by its own dir name.
+/// Derive a task scope from `dir`: the nearest ancestor that is a checkout of this
+/// repo (contains a `crates/tt-config` directory), or `None`. Split out from
+/// [`state_scope`] so it can be unit-tested against temp dirs without touching the
+/// real cwd/env. Branch-named tasks nest at `<repo>/.claude/worktrees/<name>`, so a
+/// bare dir name is not unique across repos — those scopes are qualified as
+/// `<repo>-<name>`, while the main checkout scopes by its own dir name.
 pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
     let root = checkout_root_from_dir(dir)?;
     let name = root.file_name().and_then(|n| n.to_str())?;
@@ -795,31 +782,16 @@ pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
     }))
 }
 
-/// Like [`task_scope_from_dir`], but a `<repo>/.claude/worktrees/<name>` task
-/// checkout resolves to the *main* checkout's own scope instead of the
-/// task-qualified name. Used by [`nudge_dir_path`]: no app instance ever runs
-/// scoped to an individual worktree task, only to the main checkout that owns
-/// it, so a nudge needs to land in the scope the daily-driver scheduler
-/// actually watches.
-fn main_checkout_scope_from_dir(dir: &Path) -> Option<String> {
-    let root = checkout_root_from_dir(dir)?;
-    let main = main_checkout_of(&root).unwrap_or(&root);
-    Some(sanitize_scope(main.file_name().and_then(|n| n.to_str())?))
-}
-
-/// Like [`detect_scope`], but resolves to the scope a worktree task's *main*
-/// checkout runs under — see [`main_checkout_scope_from_dir`] for why.
-fn detect_main_scope() -> Scope {
+/// Like [`detect_scope`], but only a forced [`STATE_SCOPE_ENV`] scopes —
+/// the ambient cwd never does. Used by [`nudge_dir_path`]: the writer runs
+/// wherever the `gh` mutation happened (often a tracked repo that is not a
+/// checkout of this repo at all), so any cwd-derived nesting splits writers
+/// and watchers into dirs that never meet.
+fn detect_forced_scope() -> Scope {
     ensure_state_layout_migrated();
     match std::env::var(STATE_SCOPE_ENV) {
         Ok(v) if !v.trim().is_empty() => Scope::Forced(sanitize_scope(&v)),
-        Ok(_) => Scope::None,
-        Err(_) => {
-            match std::env::current_dir().ok().as_deref().and_then(main_checkout_scope_from_dir) {
-                Some(s) => Scope::Auto(s),
-                None => Scope::None,
-            }
-        }
+        _ => Scope::None,
     }
 }
 
@@ -902,16 +874,16 @@ pub fn store_db_path_for_scope(scope: Option<&str>) -> Result<PathBuf> {
     Ok(base.join("tt.db"))
 }
 
-/// Directory watched by the app's scheduler for an eager collector nudge: a `prs` or
-/// `issues` file touched inside it collects that target immediately rather than waiting
-/// for the poll. Scoped to the *main checkout* ([`detect_main_scope`]), not the ambient
-/// cwd — only the main checkout runs the scheduler, and board tasks live in its store, so
-/// nudging a task's own scope would touch a directory nobody watches. Its own
-/// subdirectory rather than under `data_dir()`, so the watch isn't spammed by tt.db's
-/// WAL/SHM churn.
+/// Directory watched by the app's scheduler for an eager collector nudge: touching its
+/// `prs`/`issues` file collects that target immediately instead of on the next poll.
+/// Machine-global, because the writer (`tt task nudge`) runs wherever the `gh` mutation
+/// happened — usually a *tracked* repo, not a checkout of this one — and a note only
+/// lands if writer and every watcher resolve one dir; addressing is the note's own
+/// `TT_SESSION_ID` line (`tt_collect::nudge`). Only a forced [`STATE_SCOPE_ENV`] nests
+/// it (e2e isolation), and it sits outside `data_dir()` to dodge tt.db's WAL/SHM churn.
 pub fn nudge_dir_path() -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
-    Ok(nest(base, &detect_main_scope(), true).join("nudge"))
+    Ok(nest(base, &detect_forced_scope(), true).join("nudge"))
 }
 
 /// Directory the telemetry event log streams to: `<data_dir>/telemetry`.
@@ -923,15 +895,12 @@ pub fn telemetry_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("telemetry"))
 }
 
-/// Staging directory for images pasted into the app. The bytes must become a file before
-/// a path to them can go into a Claude prompt, and that somewhere is deliberately *not*
-/// the repo — Claude Code reads an absolute path outside its workspace without prompting,
-/// so putting user content in a checkout only costs a `.gitignore`.
-///
-/// The OS temp dir, not `data_dir()`: a pasted screenshot is throwaway staging, not state
-/// worth keeping across a reboot, and `data_dir()`'s `tasks/<scope>` nesting exists to
-/// isolate state a checkout *owns*. The OS reclaims `/tmp` anyway; the caller's prune is
-/// a backstop.
+/// Staging directory for images pasted into the app. The bytes must become a file
+/// before a path can go into a Claude prompt, and deliberately *not* one in the repo —
+/// Claude Code reads an absolute path outside its workspace without prompting, so user
+/// content in a checkout only costs a `.gitignore`. The OS temp dir, not `data_dir()`:
+/// a pasted screenshot is throwaway staging, not state worth keeping across a reboot,
+/// and the OS reclaims `/tmp` anyway; the caller's prune is a backstop.
 pub fn pasted_images_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("pasted-images")
 }
@@ -958,14 +927,11 @@ pub fn agentboard_shared_dir() -> Result<PathBuf> {
 }
 
 /// Where the collectors leave their GitHub results for other checkouts to read.
-///
-/// Shared rather than per-checkout, like `repos.json`: what GitHub says about a PR depends
-/// on the machine's token, not which folder asked. `tt.db` *is* per-checkout, so every
-/// worktree ran its own collectors asking the same questions — four windows spent ~1,920
-/// points an hour out of 5,000. One file per collector per repo; `tt_collect`'s
-/// `sweep_cache` has the reasoning. Not a single-instance lock like `slack-socket`: each
-/// window reads its rows back out of its own `tt.db`, so electing one would leave the
-/// rest empty.
+/// Shared rather than per-checkout, like `repos.json`: what GitHub says about a PR
+/// depends on the machine's token, not which folder asked — per-checkout `tt.db` had
+/// four windows re-asking the same questions for ~1,920 of 5,000 points an hour. One
+/// file per collector per repo (`tt_collect`'s `sweep_cache` has the reasoning); not
+/// a single-instance lock, since each window reads rows back out of its own `tt.db`.
 pub fn gh_cache_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("gh-cache"))
 }
@@ -1090,15 +1056,12 @@ fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
     Ok(())
 }
 
-/// Write `contents` to `path` and restrict it to the owner (0600 on unix).
-///
-/// The settings file holds live credentials — the Slack user and app tokens — so it must
-/// not inherit the umask. A plain `fs::write` under the common 002/022 umask leaves it
-/// group- and world-readable, which is how it shipped.
-///
-/// The chmod is applied after the write rather than via `OpenOptions::mode` because this
-/// path also rewrites an *existing* file, whose mode `open` wouldn't touch — the case that
-/// matters for anyone upgrading. Same pattern as `tt_ide::lockfile::write`.
+/// Write `contents` to `path` and restrict it to the owner (0600 on unix). The
+/// settings file holds live credentials (the Slack tokens), so it must not inherit
+/// the umask — a plain `fs::write` under the common 002/022 leaves it group- and
+/// world-readable, which is how it shipped. The chmod comes after the write rather
+/// than via `OpenOptions::mode` because this path also rewrites an *existing* file,
+/// whose mode `open` wouldn't touch. Same pattern as `tt_ide::lockfile::write`.
 fn write_private(path: &Path, contents: &str) -> Result<()> {
     std::fs::write(path, contents)?;
     #[cfg(unix)]
@@ -1706,22 +1669,6 @@ mod tests {
     fn non_repo_dir_is_unscoped() {
         let dir = TempDir::new().unwrap();
         assert_eq!(task_scope_from_dir(dir.path()), None);
-    }
-
-    #[test]
-    fn main_checkout_scope_collapses_worktree_task_to_the_main_checkout() {
-        let dir = TempDir::new().unwrap();
-        let main = dir.path().join("towles-tool");
-        let task = main.join(".claude").join("worktrees").join("feat-thing");
-        std::fs::create_dir_all(main.join("crates").join("tt-config")).unwrap();
-        std::fs::create_dir_all(task.join("crates").join("tt-config")).unwrap();
-
-        // The main checkout scopes by its own name either way...
-        assert_eq!(main_checkout_scope_from_dir(&main), Some("towles-tool".to_string()));
-        // ...and so does a task nested under it, unlike `task_scope_from_dir`,
-        // which qualifies the task with the repo name instead of collapsing it.
-        assert_eq!(main_checkout_scope_from_dir(&task), Some("towles-tool".to_string()));
-        assert_eq!(task_scope_from_dir(&task), Some("towles-tool-feat-thing".to_string()));
     }
 
     #[test]

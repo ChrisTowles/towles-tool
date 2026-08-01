@@ -58,40 +58,24 @@ follows is a cross-cutting rule that spans multiple files.
   control_watch_files()` the same way `ScopedDirNotifier` above is; on a real
   change it calls `Engine::invalidate_git(dir)` (stamp → 0, bypassing the TTL
   entirely) and wakes the scan loop, so a commit/fetch/branch-switch/`git add`
-  in a tracked repo recomputes that repo's stats within one tick — measured
-  live: an empty commit + immediate `reset --soft HEAD~1` triggered a full
-  recompute (`status`, `merge-base`, `diff --numstat`, `rev-list`, even the
-  landing probe for the transient ahead-commit) inside 4 seconds, nowhere
-  near the TTL. `GIT_CACHE_TTL_MS` (`git_info.rs`) is now 60s specifically
-  *because* it's a backup ceiling for a missed event, not the primary
-  driver — don't shorten it back down to compensate for a watch gap; fix the
-  watch instead. The 10s "git-stat poll" (the second, independent poller) was
-  changed to use `stale_git_targets` instead of unconditionally recomputing
-  every tracked repo every tick — it used to double-poll on top of the scan
-  loop's own TTL-gated warming, which is why raising the TTL alone wouldn't
-  have been enough; both loops must respect the same staleness signal or one
-  silently defeats the other's savings. One watch gap of that kind is already
-  fixed and worth knowing before adding a control file: a registered path's
-  parent directory **may not exist**, because `git pack-refs --prune` (run by
-  `git gc --auto`) deletes both the loose `refs/heads/feat/x` and its emptied
-  `refs/heads/feat` directory, so on this repo's own slashed branch names the
-  branch ref had nothing to watch. `MultiFileNotifier::add` handles that by
-  watching the nearest existing ancestor recursively — see its doc — rather
-  than the caller pre-creating directories inside someone's `.git`.
+  in a tracked repo recomputes that repo's stats within one tick (measured:
+  ~4s, nowhere near the TTL). `GIT_CACHE_TTL_MS` (`git_info.rs`) is 60s
+  specifically *because* it's a backup ceiling for a missed event, not the
+  primary driver — don't shorten it back down to compensate for a watch gap;
+  fix the watch instead. The 10s "git-stat poll" (the second, independent
+  poller) gates on `stale_git_targets` too — both loops must respect the same
+  staleness signal or one silently defeats the other's savings. Before adding
+  a control file: a registered path's parent directory **may not exist**
+  (`git pack-refs --prune` deletes a loose slashed ref *and* its emptied
+  parent dir); `MultiFileNotifier::add` watches the nearest existing
+  ancestor — never pre-create directories inside someone's `.git`.
   **What this deliberately does not cover**: `dirty` and the `uncommitted_*`
   stats measure the *working tree*, and an edited-but-unstaged file never
   touches any of the five watched files — `index` only moves on `git add`/
-  `commit`/`reset`. There is no cheap fs-watch fix for this (it would mean
-  recursively watching the whole working tree, gitignore-aware, which is
-  exactly the inotify-instance-cost problem `MultiFileNotifier`'s own doc
-  comment already warns about) — this is why the 60s poll backup still
-  matters for those specific fields, not just as a missed-event safety net.
-  Measured before/after on this machine (steady state, no session running the
-  poll's targets): ~14.8 git spawns/sec pre-fix → ~1.9/sec after, with the
-  remainder being exactly this working-tree-state backup poll plus the
-  occasional structural/landing recompute. Those reads are no longer spawns
-  at all since the gitoxide cutover — but the staleness gating still matters
-  for the same reason, and both loops must still respect the same signal.
+  `commit`/`reset`. A cheap fs-watch fix doesn't exist (it would mean a
+  recursive, gitignore-aware watch of the whole tree — the inotify-cost
+  problem `MultiFileNotifier`'s own doc warns about), which is why the 60s
+  poll backup still matters for those fields.
 - **Every `StatePayload` leaving the app must pass through
   `stamp_pty_state`** (`agentboard.rs`). The Tauri-free engine can't see
   PTYs, so a new command that builds/returns a `StatePayload` without this
@@ -105,14 +89,10 @@ follows is a cross-cutting rule that spans multiple files.
   for a second** proves the agent is working, and 20s of silence proves it
   isn't (Claude Code repaints a live elapsed counter throughout a turn —
   measured max gap 0.27s). Both halves of the working test are load-bearing:
-  a pane whose turn has *finished* still repaints on its own every second or
-  two, so recency alone reads those twitches as work — which both flickers
-  the needs-you banner and, because the same test decides whether an
-  `OSC 777` has been superseded, discards the turn-end notification. Both
-  directions are load-bearing and were fixing observed bugs — a stale
-  `waiting` badge on a visibly running pane, and a finished agent flapping
-  `busy`/`complete` as attribution came and went, which reset its
-  `needs_since_ms` every few seconds so the waiting-age never counted up.
+  a *finished* pane still repaints every second or two, so recency alone
+  reads those twitches as work — flickering the needs-you banner, discarding
+  the turn-end `OSC 777` as superseded, and flapping `busy`/`complete` so
+  `needs_since_ms` reset before the waiting-age ever counted up.
   The signals come from `PtyActivity` in `terminal.rs`, stamped on the vt
   sink's `Frame` (output) and `Notify`/`Bell` (Claude Code's `OSC 777`
   attention notification, which is *the* fastest evidence of a blocked
@@ -142,40 +122,28 @@ follows is a cross-cutting rule that spans multiple files.
 ## Singletons and cross-task state
 
 - **`tauri.conf.json` has no `enableGTKAppId`, deliberately — do not re-add
-  it.** It used to be `true`, which made `tao` register a real
-  D-Bus-activatable GTK `Application` per resolved identifier. That doesn't
-  just risk two *processes* colliding: **any** activation of that D-Bus name
-  — a dock/taskbar icon click, `gio launch`, systemd, literally
-  `gdbus call --dest <id> --object-path /<id-with-slashes> --method
-  org.freedesktop.Application.Activate '{}'` — re-enters Tauri's internal
-  `setup()` (`tauri::app::make_run_event_loop_callback`'s `Ready` arm calls
-  it unconditionally, with no re-entrancy guard) and panics rebuilding the
-  config's `"main"` webview a second time (`a webview with label 'main'
-  already exists`, tauri-2.11.5's `app.rs:1425`). Reproduced live: with
-  `enableGTKAppId` on, a single `gdbus` `Activate` call crashed an
-  already-running instance with **zero second process involved** — so a
-  per-task/per-checkout identifier can reduce the collision surface but
-  can't close it; only dropping `enableGTKAppId` does, since without an
-  app-id `tao` never asks GLib to register a bus name at all. The identifier
-  is still patched per-task at runtime (`lib.rs`'s `app_identifier`, applied
-  to `context` right after `generate_context!()`) so `linux_desktop::
-  ensure_installed`'s self-installed `.desktop` entry/icon get their own
-  filename per task instead of every task's binary overwriting the same one.
-- **`InstanceLock` is a generic, PID-tagged file lock** (`instance_lock.rs`),
-  reused for two unrelated purposes under different lock names — don't
-  assume every holder is cross-task or every holder is per-checkout; it
-  depends which name was passed to `try_acquire`:
-  - `"slack-socket"` (`slack_socket.rs`) is a **shared, cross-task**
-    singleton: Slack credentials live in the shared config dir, so every
-    open task's process reads the same token, and without this guard N
-    open tasks would each open a duplicate Socket Mode websocket on it.
-  - `"app-<identifier>"` (`lib.rs`'s `run`, acquired before `.run()`) is
-    **per-checkout**: with no GTK/D-Bus single-instance registration
-    anymore (see above), nothing else stops the *same* checkout being
-    launched twice at once, duplicating windows/PTYs/scheduler polling. A
-    second launch just prints "already running" and exits instead of
-    proceeding — this is a resource-duplication guard now, not the crash
-    fix (dropping `enableGTKAppId` is).
+  it.** With it on, `tao` registers a D-Bus-activatable GTK `Application`,
+  and **any** activation of that name (a dock/taskbar icon click,
+  `gio launch`, systemd, a bare `gdbus` `Activate` call) re-enters Tauri's
+  `setup()` — no re-entrancy guard — and panics rebuilding the config's
+  `"main"` webview (`a webview with label 'main' already exists`,
+  tauri-2.11.5). Reproduced live with zero second process involved, so a
+  per-task identifier narrows the collision surface but can't close it; only
+  no app-id does, since then `tao` never registers a bus name at all. The
+  identifier is still patched per-task at runtime (`lib.rs`'s
+  `app_identifier`) so `linux_desktop::ensure_installed`'s self-installed
+  `.desktop` entry/icon get their own filename per task.
+- **`InstanceLock` is a generic, PID-tagged file lock** (`instance_lock.rs`)
+  reused for two unrelated purposes — the name passed to `try_acquire`
+  decides the holder's scope:
+  - `"slack-socket"` (`slack_socket.rs`) is **shared, cross-task**: every
+    open task reads the same Slack token, and without this guard N open
+    tasks would each open a duplicate Socket Mode websocket on it.
+  - `"app-<identifier>"` (`lib.rs`'s `run`) is **per-checkout**: with no
+    D-Bus single-instance registration (see above), nothing else stops the
+    same checkout launching twice and duplicating windows/PTYs/scheduler
+    polling. A second launch prints "already running" and exits — a
+    resource-duplication guard, not the crash fix.
 - **Nested shells get their env scrubbed and re-stamped** (`terminal.rs`,
   issue #39): a `tt-app` or `npm run dev` launched *inside* an embedded
   terminal doesn't collide with the outer instance's port/session identity.
@@ -201,8 +169,10 @@ follows is a cross-cutting rule that spans multiple files.
   construction is `.ok()`-swallowed like every other `DirNotifier` use — a
   failed watch (e.g. inotify limits) just falls back to the normal poll
   cadence, never breaks startup.
-  **The dir is shared by every checkout** (`nudge_dir_path` scopes to the main
-  checkout), so each note names the `TT_SESSION_ID` that wrote it and
+  **The dir is machine-global** (`nudge_dir_path` nests only under a forced
+  `TT_STATE_SCOPE`, so the writer's cwd — often a tracked repo that isn't a
+  checkout of this one — can never split it from the watchers), so each note
+  names the `TT_SESSION_ID` that wrote it and
   `note_is_mine` drops the ones belonging to another instance's terminal —
   otherwise one `gh pr create` makes every open window sweep `gh`. A note
   naming nobody (a session started outside an app terminal) still fires
@@ -253,14 +223,12 @@ follows is a cross-cutting rule that spans multiple files.
 
 ## Misc
 
-- **`TT_NO_FOCUS_STEAL` skips OS focus-steal on launch** (`lib.rs`'s `run`,
-  right after the identifier patch): when set, it flips every window
-  config's `focus` to `false` before `context` reaches the builder.
-  `scripts/dev-drive.mjs` and `scripts/e2e.mjs` set it, since both are
-  test/verification launches, never the user actually sitting down to use
-  the app. Deliberately a runtime env var, not `#[cfg(feature = "wdio")]` —
-  that feature means "wdio plugins are compiled in," a different concern
-  that only happens to correlate with these two scripts today.
+- **`TT_NO_FOCUS_STEAL` skips OS focus-steal on launch** (`lib.rs`'s `run`):
+  when set, every window config's `focus` flips to `false` before `context`
+  reaches the builder. `scripts/dev-drive.mjs` and `scripts/e2e.mjs` set it —
+  test launches, never the user sitting down to use the app. Deliberately a
+  runtime env var, not `#[cfg(feature = "wdio")]`, which means "wdio plugins
+  compiled in," a different concern.
 - **OSC 52 clipboard writes are gated on terminal focus** (`terminal.rs`) —
   a background agent pane can't hijack the system clipboard.
 - The `WEBKIT_DISABLE_DMABUF_RENDERER` env var (`lib.rs`, Linux-only) works
@@ -268,16 +236,13 @@ follows is a cross-cutting rule that spans multiple files.
   when NVIDIA is actually driving the screen, and never override an
   explicit user setting.
 - **Linux app-id / desktop-entry self-registration** (`linux_desktop.rs`):
-  `tauri build`'s packaging step normally writes a `.desktop` file + themed
-  icon so GNOME/COSMIC can show the right entry/icon in the launcher/search
-  — but the daily-driver flow (`npm start`) runs `tauri build --no-bundle`
-  and execs the raw binary, skipping packaging entirely.
-  `linux_desktop::ensure_installed` (called from `.setup()`) self-registers
-  both into `~/.local/share/{applications,icons}` on every startup instead,
-  idempotently, one `.desktop`/icon pair per task (keyed by the per-task
-  identifier). `StartupWMClass` is the constant binary name (`tt-app`), not
-  the per-task identifier — `enableGTKAppId` is off (see "Singletons and
-  cross-task state" above for why), so the running window's real WM_CLASS is
-  GTK's default, not our identifier; matching on the identifier here would
-  never resolve. The running window's dock/taskbar icon is best-effort as a
-  result — the launcher/search entry's icon is still exact.
+  the daily-driver flow (`npm start`) runs `tauri build --no-bundle` and
+  execs the raw binary, skipping the packaging step that would write a
+  `.desktop` file + themed icon for GNOME/COSMIC. `linux_desktop::
+  ensure_installed` (called from `.setup()`) self-registers both into
+  `~/.local/share/{applications,icons}` on every startup instead,
+  idempotently, one pair per task (keyed by the per-task identifier).
+  `StartupWMClass` is the constant binary name (`tt-app`), not the per-task
+  identifier — `enableGTKAppId` is off (see above), so the real WM_CLASS is
+  GTK's default and matching on the identifier would never resolve; the dock
+  icon is best-effort, the launcher/search entry's icon exact.

@@ -7,11 +7,15 @@
 # prs`/`tt task nudge issues` -- see crates-tauri/tt-app/src/scheduler.rs's
 # nudge-dir watch).
 #
-# Fails open throughout: this plugin can be enabled globally in Claude Code,
-# so it runs for every Bash command in every project, not just towles-tool
-# checkouts. Any parse hiccup, missing `jq`/`tt`, or a failed nudge just
-# exits 0 -- a pure UI-responsiveness accelerant should never block or fail
-# a Claude Code turn.
+# Fails open on *absence*: this plugin can be enabled globally in Claude
+# Code, so it runs for every Bash command in every project, not just
+# towles-tool checkouts, and a parse hiccup, missing `jq`/`tt`, or an
+# irrelevant session just exits 0 -- a pure UI-responsiveness accelerant
+# should never block a Claude Code turn. A nudge that *runs and fails* is
+# different: that's broken wiring (July 2026: a `tt` predating the
+# `collect nudge` -> `task nudge` rename ate every nudge for days, exit 0,
+# output discarded), so it exits 2 to surface the error to the session --
+# PostToolUse can't block anything, the tool already ran.
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 [ -z "$cmd" ] && exit 0
@@ -51,8 +55,9 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 #      task), recognised the same way tt_config::task_scope_from_dir does:
 #      a `crates/tt-config` directory at some ancestor.
 # Without this, a hook enabled globally would still fire for `gh` commands
-# run against completely unrelated projects in a plain tmux pane, silently
-# nudging whichever towles-tool-app instance happens to be running unscoped.
+# run against completely unrelated projects in a plain tmux pane, making
+# every running towles-tool-app instance burn a `gh` sweep on it (the nudge
+# dir is machine-global, addressed per note -- tt_config::nudge_dir_path).
 # Guard-fail is intentionally not logged anywhere: it's the expected,
 # high-volume case for a globally-enabled hook running against unrelated
 # projects, and logging it would just be noise. The one audit trail this
@@ -83,6 +88,26 @@ if [ "$in_app_terminal" -ne 1 ] && [ "$in_checkout" -ne 1 ]; then
 fi
 
 command -v tt >/dev/null 2>&1 || exit 0
-[ "$is_pr_command" -eq 1 ] && (cd "$cwd" && tt task nudge prs --trigger "pr:$pr_verb" >/dev/null 2>&1)
-[ "$is_issue_command" -eq 1 ] && (cd "$cwd" && tt task nudge issues --trigger "issue:$issue_verb" >/dev/null 2>&1)
-exit 0
+
+# stderr is captured (stdout stays discarded) because the one failure mode
+# telemetry can never record is a `tt` too old to parse its own invocation.
+failed="" detail=""
+if [ "$is_pr_command" -eq 1 ]; then
+  out=$(cd "$cwd" && tt task nudge prs --trigger "pr:$pr_verb" 2>&1 >/dev/null) || {
+    failed="prs"
+    detail="$out"
+  }
+fi
+if [ "$is_issue_command" -eq 1 ]; then
+  out=$(cd "$cwd" && tt task nudge issues --trigger "issue:$issue_verb" 2>&1 >/dev/null) || {
+    failed="${failed:+$failed,}issues"
+    detail="${detail:-$out}"
+  }
+fi
+[ -z "$failed" ] && exit 0
+{
+  printf 'gh-pr-nudge: `tt task nudge %s` failed -- the towles-tool app will not see this mutation until its next poll.\n' "$failed"
+  printf '%s\n' "${detail:-"(no error output)"}" | head -n 3
+  printf 'If the subcommand is unrecognized, the installed tt predates this plugin: reinstall it from the towles-tool repo (cargo install --path crates-cli/tt-cli).\n'
+} >&2
+exit 2

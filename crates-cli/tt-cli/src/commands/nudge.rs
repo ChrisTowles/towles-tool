@@ -8,7 +8,7 @@
 //!
 //! This survives as a CLI command because its caller *can't* be the app: the
 //! `gh-pr-nudge.sh` PostToolUse hook is a shell script, so a process boundary is
-//! the only way it can reach `tt_config`'s scope-aware nudge directory.
+//! the only way it can reach `tt_config`'s shared nudge directory.
 
 use tt_config::now_ms;
 
@@ -16,12 +16,10 @@ use crate::cli::NudgeArgs;
 use crate::ui;
 
 /// Touch `target`'s nudge file, naming the caller's session so only the app
-/// instance that owns this terminal acts on it — every checkout's app watches
-/// the same dir. See CLAUDE.md's `tt-cli` bullet for the routing.
-///
-/// Bypasses the store deliberately: this runs inside a Claude Code hook's
-/// timeout budget, so it stays a filesystem touch rather than pay to open
-/// (and migrate) tt.db.
+/// instance that owns this terminal acts on it — every instance watches the same
+/// machine-global dir. Bypasses the store deliberately: this runs inside a Claude
+/// Code hook's timeout budget, so it stays a filesystem touch rather than pay to
+/// open (and migrate) tt.db.
 pub fn run(args: NudgeArgs) -> i32 {
     let target = args.target.to_collect();
     let session = std::env::var(tt_agentboard::procenv::TT_SESSION_ENV).ok();
