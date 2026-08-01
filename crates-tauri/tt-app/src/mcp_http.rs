@@ -58,13 +58,9 @@ const MAX_BODY_BYTES: usize = 1024 * 1024;
 pub enum Refusal {
     /// Request carried an `Origin` header — i.e. it came from a web page.
     BrowserOrigin,
-    /// Missing or non-JSON `Content-Type`.
     NotJson,
-    /// Wrong path.
     NotFound,
-    /// Wrong method (only POST is served).
     MethodNotAllowed,
-    /// Body exceeded [`MAX_BODY_BYTES`].
     TooLarge,
     /// Distinct from [`Refusal::TooLarge`] so a hangup isn't logged as an
     /// oversized upload.
@@ -72,7 +68,6 @@ pub enum Refusal {
 }
 
 impl Refusal {
-    /// HTTP status to answer with.
     pub fn status(self) -> u16 {
         match self {
             Refusal::BrowserOrigin => 403,
@@ -84,7 +79,6 @@ impl Refusal {
         }
     }
 
-    /// Short human-readable reason, returned as the response body.
     pub fn message(self) -> &'static str {
         match self {
             Refusal::BrowserOrigin => {

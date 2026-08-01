@@ -1,28 +1,20 @@
 //! `tt open <PATH>` — put a file or folder on screen in the app's Files pane,
 //! in the task the caller is sitting in.
 //!
-//! It does **not** spawn `preferredEditor`. The editor the user is looking at is
-//! the one in the app window next to the terminal, and the point of the command
-//! is landing the file *there* rather than in whichever window `code` happens to
-//! reuse. So this is a client: it POSTs the `file_open` MCP tool call to the app
-//! instance serving this checkout, over the same loopback endpoint and with the
-//! same `X-TT-Session` routing an agent's own `file_open` uses (`tt-mcp`'s
-//! `EditorHost`, `tt-app`'s `mcp_http`).
+//! A client, not an editor launcher: it POSTs the `file_open` MCP tool call to
+//! the app instance serving this checkout, with the same `X-TT-Session` routing
+//! an agent's own `file_open` uses (`tt-mcp`'s `EditorHost`, `tt-app`'s
+//! `mcp_http`). The root CLAUDE.md has the why; two things it doesn't say:
 //!
-//! Three consequences worth knowing before changing it:
-//!
-//! - **Routing is by session, and `TT_SESSION_ID` is what carries it.** Every
-//!   shell the app spawns has it, so `tt open` in a task's terminal opens in that
-//!   task. Run from a plain terminal there is nothing to route on and the app
-//!   falls back to matching the path against its folders — usually right for a
-//!   file, which is why the fallback is acceptable here and not in `preview_show`.
-//! - **A path under no git repository is refused**, here rather than in the app.
-//!   The Files pane browses a checkout: a path outside every one has no pane to
-//!   appear in, and failing at the CLI names the actual problem instead of
-//!   surfacing as a toast in a window that may not even be on screen.
-//! - **No app, no open.** There is no `preferredEditor` fallback, deliberately: a
-//!   command whose behaviour silently depends on whether a window is up is worse
-//!   than one that says the window isn't up.
+//! - **`TT_SESSION_ID` is what routes.** Every shell the app spawns has it, so
+//!   `tt open` in a task's terminal opens in that task. Run from a plain
+//!   terminal there is nothing to route on and the app falls back to matching
+//!   the path against its folders — usually right for a file, which is why the
+//!   fallback is acceptable here and not in `preview_show`.
+//! - **A path under no git repository is refused here, not in the app.** The
+//!   Files pane browses a checkout, so a path outside every one has no pane to
+//!   appear in; failing at the CLI names the problem instead of surfacing as a
+//!   toast in a window that may not be on screen.
 
 use crate::ui;
 use std::path::Path;
