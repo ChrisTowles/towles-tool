@@ -50,9 +50,7 @@ impl From<PaneError> for String {
 }
 
 /// A rect as the frontend measures it: CSS pixels, relative to the window's
-/// client area.
-///
-/// Converted to physical pixels here rather than in the frontend, so the
+/// client area. Converted to physical pixels here, not in the frontend, so the
 /// rounding decision lives on one side of the wire. See
 /// [`PaneRect::from_css`](tt_jarvis::surface::PaneRect::from_css).
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -76,14 +74,11 @@ pub struct PaneInfo {
 enum RenderMsg {
     Resize(PaneRect),
     /// Stop presenting and park until [`RenderMsg::Resume`]. Sent when a pane is
-    /// hidden: it is off screen by then, so every further frame is pure waste —
-    /// and under vsync each one still blocks a thread until the compositor says
-    /// so.
+    /// hidden: every further frame is waste, and under vsync each one still
+    /// blocks a thread until the compositor says so.
     ///
-    /// Deliberately unacknowledged. Hiding is done the moment the surface moves
-    /// off screen, which the main thread has already handled itself, so waiting
-    /// for the renderer would trade a guaranteed main-thread stall (a vsync
-    /// frame at best, forever if the surface is occluded and gets no frame
+    /// Deliberately unacknowledged — waiting would trade a guaranteed
+    /// main-thread stall (forever, if the surface is occluded and gets no frame
     /// callbacks) for nothing.
     Pause,
     Resume,
@@ -101,12 +96,10 @@ pub struct Pane {
 
 #[cfg(target_os = "linux")]
 impl Pane {
-    /// Take the pane off screen and stop its renderer.
-    ///
-    /// The single home of the hide sequence — both hiding and retiring are this
-    /// — so the ordering rule below is stated once. Park the renderer first,
-    /// then move the surface: the other order lets a mid-flight frame land in
-    /// the position being vacated.
+    /// Take the pane off screen and stop its renderer — the single home of the
+    /// hide sequence, so the ordering rule is stated once: park the renderer
+    /// first, then move the surface. The other order lets a mid-flight frame
+    /// land in the position being vacated.
     fn park(&mut self) -> Result<(), PaneError> {
         let _ = self.tx.send(RenderMsg::Pause);
         self.surface.set_visible(false)
@@ -129,10 +122,9 @@ impl Pane {
 #[cfg(target_os = "linux")]
 impl Drop for Pane {
     fn drop(&mut self) {
-        // The one real teardown path, and it runs only at shutdown (the
-        // registry being cleared on window close) — see `PaneHost::detach` for
-        // why nothing tears a pane down while the app is alive. A parked
-        // renderer is blocked on `recv`, so `Stop` reaches it either way.
+        // The one real teardown path, and it runs only at shutdown — see
+        // `PaneHost::detach` for why. A parked renderer is blocked on `recv`,
+        // so `Stop` reaches it either way.
         let _ = self.tx.send(RenderMsg::Stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -162,14 +154,11 @@ impl PaneHost {
 
 #[cfg(not(target_os = "linux"))]
 mod unsupported {
-    //! macOS/Windows are not wired yet.
-    //!
-    //! The macOS design is written down (an `NSView` with a `CAMetalLayer`
-    //! added to the window's `contentView`, `addSubview:positioned:` above the
-    //! `WKWebView`, Y-flipped rect, `contentsScale` tracking
-    //! `backingScaleFactor`) but no code here has run on a Mac, and shipping an
-    //! untested implementation that silently draws nothing would be worse than
-    //! reporting honestly that it is missing.
+    //! macOS/Windows are not wired yet. The macOS design is written down (an
+    //! `NSView` with a `CAMetalLayer` above the `WKWebView`, Y-flipped rect,
+    //! `contentsScale` tracking `backingScaleFactor`) but none of it has run on
+    //! a Mac, and shipping something that silently draws nothing would be worse
+    //! than reporting it missing.
     use super::*;
 
     impl PaneHost {
@@ -201,11 +190,10 @@ mod unsupported {
 impl PaneHost {
     /// Create the pane's surface and start its renderer.
     ///
-    /// Idempotent per id: re-attaching an existing pane repositions and revives
-    /// it, so a React strict-mode double-mount or a screen remount cannot spawn
-    /// two renderers against one rectangle — and reopening a pane that was
-    /// closed earlier reuses the renderer it already has (see
-    /// [`PaneHost::detach`], which retires rather than destroys).
+    /// Idempotent per id: re-attaching repositions and revives, so a strict-mode
+    /// double-mount cannot spawn two renderers against one rectangle, and
+    /// reopening a closed pane reuses the renderer it still has (see
+    /// [`PaneHost::detach`]).
     pub fn attach(
         &self,
         window: &tauri::WebviewWindow,
@@ -296,16 +284,10 @@ impl PaneHost {
     ///
     /// It reads like a leak and is the opposite — the destructor is what's
     /// dangerous. Dropping the Bevy app tears down a wgpu device built on GDK's
-    /// own Wayland display, and doing that mid-session ended the *process*:
-    /// closing a pane exited the app within seconds, every time, cleanly enough
-    /// that the last log line was "pane render thread stopped". Nothing in a
-    /// teardown *order* fixes that, because the resource being torn down is
-    /// shared with the host toolkit.
-    ///
-    /// So a live pane outlives its UI. Re-attaching the same id revives it
-    /// ([`PaneHost::attach`]), which makes reopening a pane instant, and real
-    /// teardown happens once — at process exit, where `Pane::drop` can't hurt
-    /// anything that isn't already going away.
+    /// own Wayland display, which mid-session ended the *process*. No teardown
+    /// *order* fixes that: the resource is shared with the host toolkit. So a
+    /// live pane outlives its UI, re-attaching the same id revives it
+    /// ([`PaneHost::attach`]), and real teardown happens once, at process exit.
     pub fn detach(&self, id: &str) -> Result<(), PaneError> {
         let mut panes = self.panes.lock().unwrap();
         let Some((_, pane)) = panes.iter_mut().find(|(k, _)| k == id) else {
@@ -332,13 +314,11 @@ pub mod commands {
 
     /// Run `f` on the GTK main thread and wait for its result.
     ///
-    /// **Every entry point below must go through this.** Tauri commands execute
-    /// on a worker pool, and `PaneHost`'s methods touch GTK and Wayland proxies,
-    /// which are main-thread-only. Calling them directly from a command body
-    /// would be a data race that happens to work most of the time — the worst
-    /// kind. (The compiler flags it as a missing `Send`, which is a symptom;
-    /// adding `unsafe impl Send` without this marshalling would silence the
-    /// symptom and keep the bug.)
+    /// **Every entry point below must go through this.** Tauri commands run on
+    /// a worker pool, and `PaneHost`'s methods touch main-thread-only GTK and
+    /// Wayland proxies. The compiler flags this as a missing `Send`; an
+    /// `unsafe impl Send` without this marshalling silences the symptom and
+    /// keeps the data race.
     fn on_main<T, F>(window: &tauri::WebviewWindow, f: F) -> Result<T, PaneError>
     where
         T: Send + 'static,
