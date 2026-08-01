@@ -11,6 +11,7 @@ import {
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
 import { Kbd } from "@/components/ui/kbd";
+import { ShortcutBadge } from "@/components/hint";
 import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -153,7 +154,7 @@ export function AppSidebarIcons() {
                   </TooltipTrigger>
                   <TooltipContent side="right">
                     {screen.title}
-                    {tabId && <Kbd className="ml-1.5">{shortcutHint(tabId)}</Kbd>}
+                    {tabId && <ShortcutBadge id={tabId} />}
                     {showBadge &&
                       ` — ${rollup.total} agent${rollup.total === 1 ? "" : "s"}${rollup.waiting > 0 ? `, ${rollup.waiting} waiting` : ""}${rollup.error > 0 ? `, ${rollup.error} errored` : ""}`}
                     {showSlackDot && " — unanswered DM"}

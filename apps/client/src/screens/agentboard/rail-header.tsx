@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
 import { RAIL_RECENT_HOUR_CHOICES } from "@/lib/rail-prefs";
 import type { RailFilter } from "@/lib/settings";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { withHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import type { AttentionItem } from "./use-attention";
 
@@ -42,17 +41,11 @@ const FILTER_META: Record<RailFilter, { icon: typeof Eye; title: string }> = {
   recent: { icon: History, title: "Showing only checkouts you worked in recently" },
 };
 
-/**
- * The rail's filter: how much of the fleet to show. Three answers, and the
- * middle two are not degrees of the same thing — "going on" is about *now*
- * (something running, dirty, unpushed, waiting on you) while "worked recently"
- * is about the last N hours, so a checkout committed to an hour ago and walked
- * away from is hidden by the first and kept by the second.
- *
- * A menu rather than a cycling icon because the hour span belongs with the mode
- * it measures — sending the user to Settings to change "recent" from 4h to 8h
- * would make the mode's own meaning the one thing the control can't say.
- */
+/** The rail's filter. The middle two answers aren't degrees of one thing:
+ * "going on" is about *now* (running, dirty, unpushed, waiting on you), while
+ * "worked recently" is the last N hours — a checkout committed to an hour ago
+ * is hidden by the first, kept by the second. A menu, not a cycling icon, so
+ * the hour span sits with the mode it measures. */
 function RailFilterMenu(props: {
   filter: RailFilter;
   recentHours: number;
@@ -282,7 +275,7 @@ export function RailHeader(props: {
               </button>
             </Hint>
           )}
-          <Hint label={withHint("Collapse the rail to icons", "ab-toggle-rail")}>
+          <Hint label="Collapse the rail to icons" shortcut="ab-toggle-rail">
             <button
               type="button"
               onClick={() => {

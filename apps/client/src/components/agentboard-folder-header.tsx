@@ -52,8 +52,6 @@ import {
   type SessionActions,
 } from "@/lib/agentboard";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
-import { mouseAction } from "@/lib/shortcut-coach";
-import { withHint } from "@/lib/shortcuts";
 
 export function FolderHeader({
   scope,
@@ -415,9 +413,9 @@ export function FolderHeader({
           {!missing && (
             <IconBtn
               ghost
-              title={withHint("New session", "ab-new-session")}
+              title="New session"
+              shortcut="ab-new-session"
               onClick={() => {
-                mouseAction("ab-new-session", "agentboard");
                 onNewSession();
               }}
               className="hover:text-violet-500"
@@ -428,9 +426,9 @@ export function FolderHeader({
           {!missing && onNewTask && (
             <IconBtn
               ghost
-              title={withHint("New task — goal, issues, branch", "ab-new-task")}
+              title="New task — goal, issues, branch"
+              shortcut="ab-new-task"
               onClick={() => {
-                mouseAction("ab-new-task", "agentboard");
                 onNewTask();
               }}
               className="hover:text-violet-500"

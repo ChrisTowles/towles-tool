@@ -2,30 +2,25 @@
  * `Hint` — the app's one hover-explanation primitive.
  */
 import type { ComponentProps, ReactElement } from "react";
+import { Kbd } from "@/components/ui/kbd";
+import { shortcutHint } from "@/lib/shortcuts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-/** The one way anything in the rail or the working-context header explains
- * itself on hover.
- *
- * There were three idioms on screen at once: the native `title` attribute, the
- * Radix tooltip `IconBtn` already used, and `HoverCard`. Native `title` is the
- * odd one out and not merely as a style — it is the OS's, so it appears after a
- * ~1s delay the styled ones don't have, in a different place, with different
- * type, and in the WebKitGTK webview it is unreliable besides. Two buttons
- * sitting next to each other in the same toolbar behaved differently, which is
- * exactly what made the header feel inconsistent. So: `Hint` (this) for a
- * sentence of text, `HoverCard` when the content is a real card with structure
- * or its own controls, and no third option.
- *
- * `label` is optional so a conditional hint (`humanTitle ? … : undefined`) can
- * stay conditional at the call site — with none, the child renders bare rather
- * than inside a tooltip that would open empty. */
+/** The one way anything explains itself on hover: `Hint` for a sentence,
+ * `HoverCard` for a real card with its own controls, no third option — native
+ * `title` is the OS's, so it lands late, elsewhere, and unreliably in the
+ * WebKitGTK webview. `label` is optional so a conditional hint stays
+ * conditional at the call site, rendering the child bare rather than empty. */
 export function Hint({
   label,
+  shortcut,
   side = "bottom",
   children,
 }: {
   label?: string;
+  /** Registry id of the binding this control duplicates — renders as a keycap
+   * badge after the label. */
+  shortcut?: string;
   side?: ComponentProps<typeof TooltipContent>["side"];
   children: ReactElement;
 }) {
@@ -33,7 +28,17 @@ export function Hint({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side}>{label}</TooltipContent>
+      <TooltipContent side={side}>
+        {label}
+        {shortcut && <ShortcutBadge id={shortcut} />}
+      </TooltipContent>
     </Tooltip>
   );
+}
+
+/** The one way a tooltip names a binding: a keycap badge, never chord text
+ * spliced into the sentence. `withHint` remains only for the places that can't
+ * host an element — prose and the native `title` attribute. */
+export function ShortcutBadge({ id }: { id: string }) {
+  return <Kbd className="ml-1.5">{shortcutHint(id)}</Kbd>;
 }

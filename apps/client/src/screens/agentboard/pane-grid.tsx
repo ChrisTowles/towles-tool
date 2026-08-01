@@ -153,7 +153,15 @@ export function PaneGrid(props: {
                 termAttention[id] && "border-amber-500/70",
               )}
             >
-              {s && <PaneHeader session={s} label={labelFor(s)} now={now} actions={actions} />}
+              {s && (
+                <PaneHeader
+                  session={s}
+                  label={labelFor(s)}
+                  now={now}
+                  actions={actions}
+                  focused={focusedPaneId === id}
+                />
+              )}
               {/* data-term-host marks terminal territory for the shortcut
                   guard — keys typed here belong to the shell (Ctrl+D is EOF,
                   not "new session"). */}
