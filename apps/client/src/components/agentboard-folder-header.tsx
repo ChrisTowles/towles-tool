@@ -15,6 +15,7 @@ import {
   CommittedChip,
   CreatingBadge,
   DeletingBadge,
+  DetachedActions,
   DetachedBadge,
   NoTaskBadge,
   SettingUpBadge,
@@ -75,6 +76,7 @@ export function FolderHeader({
   onNewTask,
   onRemoveRepo,
   onDeleteWorktree,
+  onRecreateWorktree,
   onOpenDiff,
   onOpenFiles,
   onOpenPreview,
@@ -126,6 +128,9 @@ export function FolderHeader({
    * only on worktree checkouts, where untracking makes no sense (they are
    * auto-discovered from the primary and would reappear next poll). */
   onDeleteWorktree?: () => void;
+  /** Rebuild a detached task's worktree (`git worktree add` on its branch,
+   * re-bound to the same task row). Set only on a `no worktree` task row. */
+  onRecreateWorktree?: () => void;
   /** Opens the folder's diff pane in its focused window. */
   onOpenDiff: () => void;
   /** Opens the folder's files pane in its focused window. */
@@ -306,8 +311,8 @@ export function FolderHeader({
               directory missing — moved or deleted
             </span>
             {/* Untrack is a repos.json operation, so it only makes sense on a
-                tracked checkout; a task row with a gone directory is detached
-                (its remedies — retry, delete — live on the task). */}
+                tracked checkout; a task row with a gone directory is detached,
+                and its remedies live on the task itself. */}
             {folder.record.origin === "checkout"
               ? onRemoveRepo && (
                   <Hint label="Untrack this checkout — remove it from the rail">
@@ -323,7 +328,12 @@ export function FolderHeader({
                     </button>
                   </Hint>
                 )
-              : folderDetached(folder) && <DetachedBadge />}
+              : folderDetached(folder) && (
+                  <>
+                    <DetachedBadge />
+                    <DetachedActions onRecreate={onRecreateWorktree} onClose={onDeleteWorktree} />
+                  </>
+                )}
           </div>
         ) : (
           <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
@@ -437,7 +447,10 @@ export function FolderHeader({
               isWorktree={folder.isWorktree}
               quiet={folder.quiet}
               onNewTask={!missing ? onNewTask : undefined}
-              onDeleteWorktree={!missing ? onDeleteWorktree : undefined}
+              // Every menu item needs a directory except closing the task
+              // out, which is the one thing a detached row is *for*.
+              onDeleteWorktree={!missing || folderDetached(folder) ? onDeleteWorktree : undefined}
+              deleteLabel={missing ? "Close task…" : undefined}
               taskId={!missing ? task?.id : undefined}
             />
           )}
