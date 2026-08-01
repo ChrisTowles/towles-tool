@@ -76,25 +76,12 @@ import { shortcutHint, withHint } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-/**
- * Shared atoms for the Agentboard UI — one visual language for the rail rows,
- * folder headers, pane chrome, and the working-context band, so each surface
- * composes the same pieces instead of hand-rolling its own variants.
- */
+/** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
+ * working-context band, so each surface composes the same pieces. */
 
-/** A small square icon action that *reads as a button* (bordered, hover fill)
- * — shadcn outline button at icon-xs, mono glyph or lucide icon inside.
- * `title` renders as a real (Radix) tooltip: instant, styled, and — unlike a
- * native `title` attribute or CSS `:hover` reveal — reliable in the Tauri
- * WebKitGTK webview. It doubles as the `aria-label`, since the glyph alone
- * says nothing. Clicks never bubble into the row/header the button sits on.
- *
- * `ghost` drops the resting border, and is what every *rail row* uses. A pane
- * header carries one toolbar on screen; the rail repeats one per repo and per
- * folder, so the bordered form put a dozen boxes down a column whose whole job
- * is to be scanned — the same "a box is a control or an alert, not a fact"
- * rule the git chips follow, applied to a control that is simply repeated too
- * often to shout. The hover fill still arrives when you point at it. */
+/** A square icon action. `title` is a Radix tooltip, not a native one, which a
+ * WebKitGTK webview renders unreliably; it doubles as the `aria-label`.
+ * `ghost` drops the resting border and is what every rail row uses. */
 export function IconBtn({
   title,
   onClick,
@@ -145,19 +132,9 @@ export function Glyph({ agent }: { agent: boolean }) {
   );
 }
 
-/** Status dot mirroring `statusColor`; pulses while busy. A session with no
- * live PTY shows a hollow ring — the record exists but nothing is running.
- * "Look at this" is the row's amber border (`sessionCatchesEye`), not the
- * dot — a resting board stays still.
- *
- * `waiting` renders as a hollow ring rather than a filled disc: a plain
- * blue circle reads too close to `complete`'s green at a glance (color is
- * the only cue between them), and can even be mistaken for a `busy` dot
- * caught mid-`animate-pulse` dip. The ring borrows the same shape language
- * already used for "not started" — open = paused/pending on you, filled =
- * something happened — so it's a real non-color cue, not just another hue,
- * while staying quieter than the row-wide amber `sessionCatchesEye` wash
- * that already flags a waiting session for real attention. */
+/** Status dot mirroring `statusColor`; pulses while busy. Open ring =
+ * paused/pending on you, filled = something happened — a shape cue, so
+ * `waiting` and `complete` don't rely on hue alone to tell each other apart. */
 export function Dot({ session }: { session: SessionData }) {
   if (!session.live) {
     return (
@@ -187,10 +164,8 @@ export function Dot({ session }: { session: SessionData }) {
   );
 }
 
-/** A status-colored micro-dot + count, e.g. "●3", for agent rollups (the rail
- * chip and the nav sidebar). Color always derives from `statusColor`, and
- * `waiting` gets the same hollow-ring shape as the `Dot` atom, so the
- * buckets can never drift from it. */
+/** Micro-dot + count for agent rollups. Shape and color derive from `Dot` and
+ * `statusColor`, so the buckets can't drift from them. */
 export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
   return (
     <span className="flex items-center gap-1 text-muted-foreground">
@@ -207,9 +182,8 @@ export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
   );
 }
 
-/** Shown on a collapsed folder/repo header: a colored dot + count telling you
- * running sessions are hidden inside (so a collapsed folder doesn't look
- * asleep when agents are working in it). Nothing when nothing is live. */
+/** On a collapsed header: running sessions are hidden inside, so it doesn't
+ * look asleep. Nothing when nothing is live. */
 export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
   const color = collapsedLiveColor(sessions);
   if (!color) return null;
@@ -235,9 +209,8 @@ export function Chevron({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** Violet is the "a Claude session is live here" color across the app — the
- * pane headers, the selection chip, and the in-editor hint all use it, so it
- * reads as one signal rather than three unrelated decorations. */
+/** Violet is "a Claude session is live here" app-wide: pane headers, selection
+ * chip and in-editor hint all use it, so it reads as one signal. */
 export function ClaudeBadge({
   title = "A Claude Code session in this folder is connected — highlighted lines become its selection context",
   className,
@@ -261,9 +234,8 @@ export function ClaudeBadge({
   );
 }
 
-/** rust-analyzer bridge state, shown only when there is something to say (a
- * non-Rust checkout renders nothing). This is the bridge's only observable
- * surface — it started as a spike whose failures went to console.warn. */
+/** rust-analyzer bridge state — its only observable surface. A non-Rust
+ * checkout renders nothing. */
 export function LspBadge({
   state,
   detail,
@@ -308,10 +280,8 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
   );
 }
 
-/** Marks a tracked checkout whose directory no longer exists on disk — a
- * "ghost". Deliberately grayscale (dashed, dimmed): a missing dir is a dead
- * state, not the live-attention amber the needs-you math owns, so it reads as
- * "gone/inert" rather than "look at me". Grayscale tokens carry light + dark. */
+/** A tracked checkout whose directory is gone. Grayscale, not the needs-you
+ * amber: this is inert, not something to act on. */
 export function GhostBadge() {
   return (
     <Hint label="This checkout's directory is gone (moved or deleted). Untrack it, or restore the directory to bring it back.">
@@ -322,11 +292,8 @@ export function GhostBadge() {
   );
 }
 
-/** The `⎇ branch` line under a checkout's name. Worktree tasks are the common
- * case in the rail, so they stay quiet (muted, like the rest of the git row);
- * the *primary* checkout — the one clone whose `.git` is load-bearing for
- * every worktree — is the special row, and carries the sky tint that used to
- * be a "wt" badge on every task. */
+/** The `⎇ branch` line. Worktree tasks are the common case, so they stay
+ * muted; the primary checkout is the special row and carries the sky tint. */
 export function BranchLabel({
   branch,
   isWorktree,
@@ -337,9 +304,8 @@ export function BranchLabel({
   onClick?: () => void;
 }) {
   return (
-    // Always the full branch, because this is the element every surface
-    // truncates first: the rail row and the band both spend their slack on
-    // it, so without the tooltip a long branch is simply unreadable.
+    // Always the full branch: every surface truncates this element first, so
+    // without the tooltip a long branch is unreadable.
     <Hint
       label={
         isWorktree
@@ -360,16 +326,9 @@ export function BranchLabel({
   );
 }
 
-/** Shown on a worktree checkout mid-delete (`task_delete` in flight). The rail
- * row itself dims and goes `pointer-events-none` around this badge (off
- * `folder.phase`) — this is just the label explaining *why* the row went
- * inert, same job `GhostBadge` does for a missing directory. Red (not the
- * neutral gray of `GhostBadge`): unlike a ghost, which is passively gone, this
- * is an active, irreversible deletion in progress.
- *
- * `label` is the live phase text the backend stamps on the row ("running
- * teardown command", "deleting git worktree", …); a static "deleting…" before
- * the first one lands (browser dev never gets one at all). */
+/** Why a mid-delete row went inert. Red, not `GhostBadge`'s gray: this is an
+ * active, irreversible deletion. `label` is the backend's live phase text, and
+ * falls back to a static "deleting…" before the first one lands. */
 export function DeletingBadge({ label }: { label?: string }) {
   return (
     <Hint
@@ -384,14 +343,8 @@ export function DeletingBadge({ label }: { label?: string }) {
   );
 }
 
-/** Shown on a task row whose worktree is still being built (`task_create` in
- * flight). The sibling of `DeletingBadge` at the other end of a task's life,
- * and the reason a task's row can exist before its directory does: the row is
- * on the rail from the moment the task is written down, and this says what
- * step is running in it.
- *
- * Sky like `SettingUpBadge`, not `DeletingBadge`'s red — nothing is wrong and
- * nothing is being destroyed. */
+/** Why a task's row can exist before its directory does. Sky, not
+ * `DeletingBadge`'s red: nothing is wrong and nothing is being destroyed. */
 export function CreatingBadge({ label }: { label?: string }) {
   return (
     <span
@@ -403,15 +356,9 @@ export function CreatingBadge({ label }: { label?: string }) {
   );
 }
 
-/** Shown on an open task whose worktree isn't on disk and isn't being worked
- * on — a create that failed, a directory deleted outside the app, or a restart
- * mid-removal.
- *
- * This state is the point of the whole record-driven rail: the task is still
- * the user's, so its row stays and says what happened, rather than the row
- * quietly disappearing with the directory and leaving a card stranded on the
- * Board. Amber like `PortDriftBadge` — something to act on (recreate the
- * worktree, or close the task), not a dead row. */
+/** An open task whose worktree isn't on disk: a failed create, an outside
+ * delete, a restart mid-removal. The row stays and says so rather than
+ * vanishing with the directory and stranding a card on the Board. */
 export function DetachedBadge() {
   return (
     <span
@@ -423,18 +370,14 @@ export function DetachedBadge() {
   );
 }
 
-/** The remedies for a `no worktree` row, beside its badge: rebuild the
- * checkout, or close the task out. Inline and boxed, unlike the rail's other
- * affordances — every other control on this row needs a directory that isn't
- * there, so these two are all it has. */
+/** The remedies for a `no worktree` row. Inline and boxed, unlike the rail's
+ * other affordances: every other control here needs the missing directory. */
 export function DetachedActions({
   onRecreate,
   onClose,
 }: {
-  /** Rebuild this task's worktree on its own branch. Absent when there's no
-   * branch to rebuild on (see `folderRecreateBranch`). */
+  /** Absent when there's no branch to rebuild on (`folderRecreateBranch`). */
   onRecreate?: () => void;
-  /** Close the task out — done or abandoned, picked in the confirm dialog. */
   onClose?: () => void;
 }) {
   return (
@@ -471,12 +414,8 @@ export function DetachedActions({
   );
 }
 
-/** Shown on a git worktree no task claims — Claude Code's own agent
- * worktrees, or one added by hand. It has a record like every other row (a
- * `detected` task row), so it holds a fixed position and can be adopted in
- * place; this says it isn't yours yet.
- *
- * Neutral gray: nothing is wrong, and nothing needs doing unless you want it. */
+/** A git worktree no task claims — Claude Code's own, or one added by hand. It
+ * still has a `detected` record, so it holds its position and can be adopted. */
 export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
@@ -503,13 +442,9 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
   );
 }
 
-/** Shown on a checkout whose setup step (`TT_TASK_SETUP` — an install) is
- * running, with how long it's been going. Setup runs after `task_create`
- * returns, so the pending row is already gone and the rail shows an ordinary
- * folder; this says the task isn't finished being built.
- *
- * Sky, not `DeletingBadge`'s red or `PortDriftBadge`'s amber: nothing is
- * wrong and nothing needs doing. The row stays interactive throughout. */
+/** Setup (`TT_TASK_SETUP`) runs after `task_create` returns, so the pending row
+ * is already gone; this says the task isn't finished being built. The row
+ * stays interactive throughout. */
 export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   return (
     <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
@@ -520,12 +455,9 @@ export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   );
 }
 
-/** Marks a folder where a live pane's ports have drifted from what `.env`
- * currently claims — a sibling task's re-render (or a manual `tt task env`)
- * rotated a port this pane already bound to. Amber like `NeedsBadge`: unlike
- * the grayscale `GhostBadge`, this is something worth acting on (restart the
- * pane, or re-run `tt task env` and restart whatever's bound to the stale
- * port), not a dead state. */
+/** A live pane's ports have drifted from what `.env` now claims — a sibling
+ * task's re-render rotated a port this pane already bound to. Amber: worth
+ * acting on (restart the pane), not a dead state. */
 export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   if (drift.length === 0) return null;
   return (
@@ -553,10 +485,8 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   );
 }
 
-/** Which branch every git stat on this folder was measured against — `vs
- * main` or `vs docs/readme-task-clean` for a task with a different creation
- * base — next to the branch name so the ↑↓/±  numbers beside it are never
- * ambiguous about what they mean. */
+/** Which branch every git stat here was measured against, so the ± numbers
+ * beside it are never ambiguous. */
 export function ComparedBaseBadge({
   folder,
 }: {
@@ -581,30 +511,9 @@ export function ComparedBaseBadge({
   );
 }
 
-/** How far `comparedBase` has moved ahead of this branch — the old `↓2`, but
- * stated as the thing you'd actually do about it.
- *
- * Behind-ness is not a statistic about your work, it's a fact about someone
- * else's that has one response (rebase or merge the base in), which is why it
- * left the ahead/behind pair and became its own chip. Ahead-ness went the
- * other way, into `DiffButton`'s commit count, where it sits next to the ±
- * that belongs to it. Renders nothing when the base hasn't moved.
- *
- * The loudest of the three git chips, and the only *filled* one — it is the
- * one that asks for an action rather than reporting a quantity, so it should
- * be the thing the eye catches in the row. Weight and fill do that instead of
- * a hue: amber is spoken for (needs-you) and a base that has moved is far too
- * common to spend it on — nearly every row shows this chip most of the day,
- * which is exactly the kind of standing glow that teaches you to stop seeing
- * a color. See the `folder-rail-ui` skill's "two accent hues, one rule each".
- *
- * Glyph + count, not the words "base moved N": on the rail this chip shares
- * one line with the branch and both diff chips, and at ~95px the sentence was
- * the single widest thing that wasn't a number — enough to push the line into
- * a second and third row. The refresh glyph already says "bring this up to
- * date", the count says how far, and the tooltip carries the sentence for
- * whoever hasn't met the chip yet.
- */
+/** How far `comparedBase` has moved ahead — a fact about someone else's work
+ * with one response, so it's its own chip. The only *filled* git chip: weight,
+ * not a hue, since amber is spoken for and this shows on nearly every row. */
 export function BaseMovedChip({
   stats,
 }: {
@@ -625,8 +534,7 @@ export function BaseMovedChip({
   );
 }
 
-/** One row of the `DiffButton` hover's per-commit breakdown: short SHA,
- * truncated subject, and that commit's own ± tally. */
+/** One row of the per-commit breakdown: SHA, subject, that commit's ±. */
 function CommitStatRow({ commit }: { commit: CommitStat }) {
   return (
     <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
@@ -638,15 +546,9 @@ function CommitStatRow({ commit }: { commit: CommitStat }) {
   );
 }
 
-/** The per-commit breakdown inside `CommittedChip`'s hover card: every commit
- * `comparedBase` doesn't have, oldest first, with its own ± tally, then the
- * committed total, then the uncommitted work on its own row below a divider —
- * a many-commit branch's ± tally isn't one anonymous blob.
- *
- * The two totals are never added together. This card is where the whole
- * distinction is spelled out in words, because the chips themselves only have
- * room for numbers. Commits are fetched lazily (only once the card actually
- * opens) and cached for the folder's lifetime in the parent's state. */
+/** `CommittedChip`'s hover card. The two totals are never added together —
+ * this is where that distinction is spelled out, since the chips have room
+ * only for numbers. Commits are fetched lazily and cached by the parent. */
 function CommitBreakdownPreview({
   commits,
   stats,
@@ -730,47 +632,26 @@ type DiffChipStats = Pick<
 type DiffChipProps = {
   stats: DiffChipStats;
   onOpen: () => void;
-  /** Spell out what the chip counts (`uncommitted` / `committed`) instead of
-   * leaning on the icon alone.
-   *
-   * On for the pane header, off for the rail — not a preference but a width
-   * budget: the rail row already carries a branch, a PR chip, issue chips and
-   * status badges, and two extra words there push the numbers off the end.
-   * The icons stay meaningful in both places; the header is where there's
-   * room to say which is which without hovering. */
+  /** On for the pane header, off for the rail — a width budget, not a
+   * preference: two extra words push the rail row's numbers off the end. */
   labeled?: boolean;
 };
 
-/** Shared chip chrome for the git-stat chips, so they can't drift apart.
- *
- * **No resting border.** A rail row carried ~20 identical bordered pills —
- * every button, every count, every badge — so nothing in it was loud and
- * nothing was quiet, and the eye had no entry point. The rule that replaced
- * that: a *box* means a control or an alert, plain type means a fact. Diff
- * stats are facts, and mono digits with a glyph in front of them are already
- * legible at 10.5px; the `folder-rail-ui` skill's own recipe for a diff stat
- * has always been a bare `font-mono` span, so the pills were the drift.
- *
- * The box comes back on hover, where it says "this is clickable" at the moment
- * that's the question being asked. */
+/** Shared chrome for the git-stat chips. No resting border: a box means a
+ * control or an alert, plain type means a fact, and diff stats are facts. The
+ * box returns on hover, when "is this clickable?" is the question. */
 const CHIP_CLASS =
   "flex h-5 shrink-0 items-center gap-1 rounded-md px-1 font-mono text-[10.5px] transition-colors";
 
-/** The word naming what a chip counts, shown on wide surfaces only (see
- * [`DiffChipProps.labeled`]). Muted so the *number* stays the thing the eye
- * lands on — the label is there to be read once, not competed with. */
+/** Muted, so the *number* stays what the eye lands on. */
 function ChipLabel({ text, labeled }: { text: string; labeled: boolean }) {
   if (!labeled) return null;
   return <span className="opacity-60">{text}</span>;
 }
 
-/** Ticking "checked 4s ago", re-rendered on its own 1s interval.
- *
- * A caller-passed `now` won't do: the rail only re-renders when the backend
- * snapshot changes, which is exactly the case where the age is *not* moving,
- * so the label would freeze precisely when the user is asking whether
- * anything is alive. Mounted only inside hover cards/tooltips, so the timer
- * exists for the one chip being inspected, not for every row on the rail. */
+/** Ticking "checked 4s ago" on its own interval: a caller-passed `now` would
+ * freeze exactly when nothing is changing, which is when the user is asking
+ * whether anything is alive. Mounted only inside an open hover card. */
 function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -780,29 +661,10 @@ function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
   return <>{gitCheckedLabel(computedAtMs, now) ?? "not checked yet"}</>;
 }
 
-/** Uncommitted work: what the working tree holds that `HEAD` doesn't.
- *
- * First of the two chips because it is the only one whose contents **die with
- * the checkout** — that consequence, not size, is what orders them. Amber for
- * the same reason: it's the number to look at before deleting a worktree.
- *
- * **Always rendered, including at zero**, where it reads a muted `clean`. It
- * used to disappear on a clean tree, on the reasoning that its presence was
- * itself the `dirty` signal. That was wrong in the way that matters here: an
- * absent chip and a chip you didn't notice look identical, so "how much is
- * uncommitted?" — the exact question this pair exists to answer — had no
- * answer on screen for the clean case. A visible zero is an answer; nothing is
- * not. It also keeps the two chips side by side at a fixed position, so the
- * eye learns "left is uncommitted, right is committed" instead of re-reading
- * a row whose contents move.
- *
- * **Neutral chrome, not amber**, though a dirty tree is the more consequential
- * of the two counts. Amber means *needs you* in this app — a waiting or errored
- * agent, a failing PR — and uncommitted work is the normal state of any task
- * being worked on, so painting it amber put a standing false alarm on nearly
- * every active row and diluted the hue where it does mean something. The ±
- * keeps its green/red, which is the diff-stat convention rather than a status
- * color. See the `folder-rail-ui` skill's "two accent hues, one rule each". */
+/** What the working tree holds that `HEAD` doesn't — first of the two chips
+ * because its contents die with the checkout. Always rendered, `clean` at
+ * zero: an absent chip and one you didn't notice look identical. Neutral
+ * chrome, since uncommitted work is the normal state of an active task. */
 export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
   const { uncommittedFiles, uncommittedAdded, uncommittedRemoved } = stats;
   const clean = uncommittedFiles === 0;
@@ -817,14 +679,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             onOpen();
           }}
           className={`${CHIP_CLASS} hover:bg-accent ${
-            clean
-              ? // Nothing at stake: stay out of the way, and let the gap in
-                // weight against the dirty state below carry the difference.
-                "text-muted-foreground/60"
-              : // Full-weight — this is work that exists nowhere but this
-                // checkout, so it earns the loudest treatment available short
-                // of the needs-you hue.
-                "font-medium text-foreground"
+            clean ? "text-muted-foreground/60" : "font-medium text-foreground"
           }`}
         >
           <Pencil className="size-3" />
@@ -868,18 +723,10 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
   );
 }
 
-/** Committed work: what this branch's commits hold that `comparedBase`
- * doesn't. Always visible (even at zero, so the diff pane stays findable
- * from every row) and hovering previews the per-commit breakdown.
- *
- * **The count shown is `commitsUnlanded`, not `commitsAhead`, whenever they
- * disagree** — and that is the whole point of the chip. `commitsAhead` is SHA
- * reachability, so a rebase or squash merge that rewrote the commits leaves it
- * pinned at 15 forever; `commitsUnlanded` is content-based and correctly drops
- * to 0. The old chip led with the reachability number and mentioned the truth
- * only in a tooltip, so a finished task read as fifteen commits of pending
- * work. Now a fully-landed branch says so in a word, and a partly-landed one
- * shows `4/15c` rather than picking one number and hiding the other. */
+/** What this branch's commits hold that `comparedBase` doesn't. Shows
+ * `commitsUnlanded`, not `commitsAhead`, whenever they disagree: the latter is
+ * SHA reachability, so a squash merge leaves it pinned at 15 forever while the
+ * content-based count correctly drops to 0. */
 export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
   const { dir, committedAdded, committedRemoved, commitsAhead, commitsUnlanded, baseBranch } =
     stats;
@@ -917,10 +764,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           <GitCompare className="size-3" />
           <ChipLabel text="committed" labeled={labeled} />
           {commitsAhead === 0 ? (
-            /* Unlabeled, the word has to double as the affordance ("this
-               opens the diff"), since there's no number to show. Labeled,
-               `committed` already names the chip, so the value slot can say
-               plainly that there is nothing — matching `clean` next to it. */
+            /* Unlabeled, the word doubles as the affordance; labeled,
+               `committed` already names the chip. */
             <span>{labeled ? "none" : "diff"}</span>
           ) : landedClean ? (
             <span>
@@ -973,14 +818,9 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
   );
 }
 
-/** One folder-header chip that opens a pane — the shared shell behind the
- * `files`/`preview`/`jarvis` buttons below, which differ only in glyph,
- * word and tooltip. `stopPropagation` because every one of these sits inside a
- * clickable folder row that would otherwise also fire.
- *
- * `mouseAction` is opt-in per chip rather than automatic: it must fire only for
- * a chip that is the exact twin of a keyboard shortcut, or the keyboard-habit
- * score counts a keystroke the user never passed up (see `lib/shortcut-coach`). */
+/** The shell behind the `files`/`preview`/`jarvis` chips. `mouseAction` is
+ * opt-in per chip: it must fire only for an exact shortcut twin, or the
+ * keyboard-habit score counts a keystroke the user never passed up. */
 function PaneOpenButton({
   glyph,
   label,
@@ -996,9 +836,8 @@ function PaneOpenButton({
   shortcutTwin?: string;
 }) {
   return (
-    // A chip that scores a click as a passed-up keystroke has to name the
-    // keystroke, so the hint rides on `shortcutTwin` rather than each caller's
-    // `title`.
+    // A chip scoring a click as a passed-up keystroke has to name it, so the
+    // hint rides on `shortcutTwin` rather than the caller's `title`.
     <Hint label={shortcutTwin ? withHint(title, shortcutTwin) : title}>
       <button
         type="button"
@@ -1017,24 +856,12 @@ function PaneOpenButton({
   );
 }
 
-/** What the four pane-open buttons take from their caller.
- *
- * `labeled` is the same width budget as [`DiffChipProps.labeled`], and set the
- * same way round: on for the pane header, off for the rail. These four sit at
- * the tail of the rail's git line, holding their width even while faded out,
- * so their words cost ~170px of a line that also has to fit a branch and two
- * ± chips — the cost that used to buy a third row of height. The glyph plus
- * the tooltip is the whole button on the rail; the header, which has room, is
- * where they say which is which without hovering. */
+/** `labeled` is the same width budget as [`DiffChipProps.labeled`]: these four
+ * sit at the tail of the rail's git line, where their words cost ~170px. */
 type PaneOpenButtonProps = { onOpen: () => void; labeled?: boolean };
 
-/** The files entry point, DiffButton's sibling: opens the folder's full file
- * tree as a pane ("tell claude about any file"), always visible for the same
- * findability reason.
- *
- * `FolderTree`, not lucide's `Files` — two stacked pages is the near-universal
- * *copy* glyph, and next to a row of other actions it read as "copy something"
- * rather than "browse the tree". */
+/** Opens the folder's file tree as a pane. `FolderTree`, not lucide's `Files`:
+ * two stacked pages is the near-universal *copy* glyph. */
 export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -1048,10 +875,8 @@ export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** Opens the folder's native pane — a rectangle of the window Bevy draws into
- * (`components/jarvis-pane.tsx`), tiled beside the folder's terminals. Only
- * mounted when `agentboard.jarvisPane` is on, so the proof-of-concept costs
- * nothing (and shows nothing) until it's asked for. */
+/** Opens the rectangle Bevy draws into (`components/jarvis-pane.tsx`). Mounted
+ * only when `agentboard.jarvisPane` is on. */
 export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -1064,13 +889,9 @@ export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** Opens the folder's live-preview pane — the task's own dev server embedded
- * beside its terminals, with draw-on-page feedback to that task's session.
- *
- * `Eye`, not `AppWindow`: the pane is for *looking at* the running app, and a
- * window outline sat next to the file glyph as one more generic rectangle. The
- * repo menu's quiet toggle also uses `Eye`, which is fine — that one is a
- * labeled menu item, so neither has to carry the meaning alone. */
+/** The task's own dev server embedded beside its terminals, with draw-on-page
+ * feedback to that task's session. `Eye`, not `AppWindow`: a window outline is
+ * one more generic rectangle next to the file glyph. */
 export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -1083,17 +904,9 @@ export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** Precise reason a landed branch's checkout still isn't safe to delete — the
- * two conditions `folderHoldsNoWork` checks, each named *with its own
- * consequence*, so the tooltip never leaves you guessing which one is blocking
- * it or how much it matters. Null once both are satisfied (the caller has
- * nothing left to warn about).
- *
- * The two axes are independent and are not equally serious, which is the whole
- * point of separating them: uncommitted changes exist nowhere but this
- * directory and deleting it destroys them, while unlanded commits stay on the
- * branch and survive. Collapsing both into one "still has work" phrase is what
- * made the old warning unreadable. */
+/** Why a landed branch's checkout still isn't safe to delete, each condition
+ * named with its own consequence — they are not equally serious: uncommitted
+ * changes die with the directory, unlanded commits stay on the branch. */
 function unsafeToDeleteReason(
   stats: Pick<FolderData, "dirty" | "commitsUnlanded">,
   base: string,
@@ -1109,16 +922,9 @@ function unsafeToDeleteReason(
   return reasons.join("; and ");
 }
 
-/** Clickable `#N` chip for the folder's PR, tinted by the shared PR tone map
- * (`lib/pr-tone.ts`: cyan CI running · red failed/closed · green passing ·
- * gray no checks). Once merged the chip normally turns purple — the task is
- * done, time to `tt task rm` it — but merged only means the *PR's* content
- * is safe; it says nothing about this checkout. If `stats` shows uncommitted
- * changes or commits that haven't landed on the base branch yet
- * (`folderHoldsNoWork`), the chip turns amber (this app's needs-you hue)
- * instead, since removing the task would lose that work despite the PR being
- * merged — see the adjacent `SafeToDeleteBadge` for the positive case.
- * Opens GitHub. */
+/** The folder's PR, tinted by `lib/pr-tone.ts`. Merged means the *PR's*
+ * content is safe and says nothing about this checkout, so local uncommitted
+ * or unlanded work overrides the merged purple with needs-you amber. */
 export function PrChip({
   pr,
   stats,
@@ -1160,14 +966,9 @@ export function PrChip({
   );
 }
 
-/** Clickable `#N` chip for a GitHub issue *manually linked* to this folder's
- * bound task — the issue-side mirror of {@link PrChip}. Unlike a PR, an issue
- * has no branch, so it never auto-attaches: this chip only appears for issues
- * put there by "Attach issue…" (`RepoMenu`), and it's the visible answer to
- * "does this task hold that issue?". A closed issue tints purple (done, like
- * `PrChip`'s merged tint); an open one stays a quiet neutral. The chip is a
- * menu: open on GitHub, or detach (issues are user-managed, so removal is a
- * first-class action, not a Board-only chore). */
+/** An issue *manually linked* to this folder's bound task. Unlike a PR, an
+ * issue has no branch, so it never auto-attaches — this only appears for one
+ * put there by "Attach issue…", and detaching is a first-class action. */
 export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueLink }) {
   const closed = issue.state === "closed";
   const tone = closed
@@ -1217,12 +1018,8 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
   );
 }
 
-/** The dialog behind `RepoMenu`'s "Attach issue…" — searches the folder repo's
- * issues (all states, via `store_search_issues`) and links the picked one to
- * the folder's bound task. Search is debounced so typing doesn't fire a `gh`
- * call per keystroke; a blank query shows nothing. This is the manual,
- * deliberate counterpart to PR auto-attach — issues have no branch to match a
- * folder on, so associating one is always an explicit act. */
+/** The dialog behind `RepoMenu`'s "Attach issue…". The manual counterpart to
+ * PR auto-attach: an issue has no branch to match a folder on. */
 function AttachIssueDialog({
   open,
   onOpenChange,
@@ -1238,11 +1035,8 @@ function AttachIssueDialog({
   const [results, setResults] = useState<IssueItem[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Debounced live search: a blank query resets to nothing without shelling
-  // out; otherwise wait for a typing pause before the `gh` round-trip. The
-  // cleanup cancels a pending timer so only the latest keystroke queries, and
-  // browser dev (`NotInTauri`) quietly yields an empty list rather than a
-  // toast on every pause.
+  // Debounced so typing doesn't fire a `gh` call per keystroke; the cleanup
+  // cancels a pending timer so only the latest keystroke queries.
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -1322,20 +1116,10 @@ function AttachIssueDialog({
   );
 }
 
-/** How this branch's work reached the base, straight from git — `merged`,
- * `rebase-merged` or `squash-merged` (see `FolderData.landed`).
- *
- * This exists because a squash merge — how this repo's PRs land — is invisible
- * to every naive git check, so a fully merged task used to read as outstanding
- * work with nothing on screen to contradict it. It also covers the task that
- * never had a PR at all, where GitHub can say nothing and this is the only
- * evidence there is.
- *
- * Purple, matching `PrChip`'s merged tint, because it reports the *same*
- * status by other means — this is "it landed", not the separate, actionable
- * "and nothing here would be lost" that `SafeToDeleteBadge` says in emerald.
- * A plain `<span>`: a fact, not a control (rule: static things must not look
- * clickable). Gating lives in {@link FolderLandedBadge}. */
+/** How this branch's work reached the base, straight from git. A squash merge
+ * — how this repo's PRs land — is invisible to naive git checks, and a task
+ * that never had a PR has no other evidence at all. Purple, matching
+ * `PrChip`'s merged tint, since it reports the same status by other means. */
 export function LandedBadge({ landed, base }: { landed: LandedVia; base: string }) {
   return (
     <Tooltip>
@@ -1352,10 +1136,8 @@ export function LandedBadge({ landed, base }: { landed: LandedVia; base: string 
   );
 }
 
-/** {@link LandedBadge} plus the rule about when it may show at all: only when a
- * merged `PrChip` isn't already saying the same thing — one signal per fact.
- * This is the whole point of `landed`: a task with no PR (or one whose branch
- * merged locally) can still report that it's finished. */
+/** {@link LandedBadge}, gated on a merged `PrChip` not already saying the same
+ * thing — one signal per fact. */
 export function FolderLandedBadge({
   folder,
   pr,
@@ -1367,27 +1149,17 @@ export function FolderLandedBadge({
   return <LandedBadge landed={folder.landed} base={comparedBaseLabel(folder)} />;
 }
 
-/** The positive counterpart to `PrChip`'s amber warning: a folder whose PR
- * merged, has no uncommitted changes, and has every commit landed on its
- * base — `folderSafeToDelete`. A PR-less task never gets here, by design: git
- * can prove content landed but not that it was *accepted*, so the affirmative
- * claim is gated on the merged PR. Deliberately louder than a bare chip (the bug
- * this replaces: a subdued purple "#N" was the *only* signal, indistinguishable
- * at a glance from an ordinary merged-but-still-active checkout). Emerald
- * (this app's "done/complete" hue — matches `statusColor`'s `complete` dot and
- * the diff `+` count) rather than the PR chip's purple, so it reads as a
- * distinct, actionable "you're done here" rather than another PR-state tint.
- * Clicking goes straight to the same guarded delete-worktree confirmation as
- * the folder's "···" menu — not a shortcut around it, just a louder path to
- * it, since this state is exactly when you'd want to take that action. */
+/** The positive counterpart to `PrChip`'s amber warning (`folderSafeToDelete`).
+ * A PR-less task never gets here by design: git can prove content landed but
+ * not that it was *accepted*. Clicking reaches the same guarded confirmation
+ * as the "···" menu — a louder path to it, not a shortcut around it. */
 export function SafeToDeleteBadge({
   base,
   landed,
   onDeleteWorktree,
 }: {
   base: string;
-  /** How git saw the branch land, when it could tell — named in the tooltip so
-   * the claim is attributable rather than asserted. */
+  /** Named in the tooltip, so the claim is attributable rather than asserted. */
   landed?: LandedVia | null;
   onDeleteWorktree: () => void;
 }) {
@@ -1413,23 +1185,16 @@ export function SafeToDeleteBadge({
   );
 }
 
-/** Visual weight per model family, scaling with how much the model matters:
- * Haiku/Sonnet are the quiet workhorses (neutral, read only when looked for),
- * Opus tints violet — the rail's agent hue, "a serious brain is on this" —
- * and Fable/Mythos get the meta cluster's only *filled* chip, a fuchsia→violet
- * gradient, so the top-tier model is spottable without hunting. Deliberately
- * not amber (needs-you) and not animated (resting facts don't pulse). */
+/** Weight per model family: Haiku/Sonnet neutral, Opus violet, Fable/Mythos
+ * the cluster's only filled chip. Never amber (needs-you), never animated. */
 const MODEL_TONE: Record<string, string> = {
   O: "border-violet-500/50 bg-violet-500/10 text-violet-600 dark:text-violet-400",
   F: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
   M: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
 };
 
-/** Which Claude model is powering a live agent session, as a boxed single
- * letter (`H`/`S`/`O`/`F`/`M` — see `modelLetter`) in the row's meta cluster,
- * weighted by tier (see {@link MODEL_TONE}). The tooltip carries the exact id
- * plus context (`claude-opus-4-8 · 412K / 1M`). Renders nothing when the model
- * is unknown or the family unrecognized. */
+/** The live session's model as a boxed letter (`modelLetter`), weighted by
+ * tier ({@link MODEL_TONE}). Nothing when the family is unrecognized. */
 export function ModelBadge({ session }: { session: SessionData }) {
   const d = session.agentState?.details;
   const letter = modelLetter(d?.model);
@@ -1470,15 +1235,11 @@ export function CacheBadge({
   if (!session.live || !d?.contextUsed || !d.contextMax) return null;
   const pct = ctxPct(d);
   const cold = isCold(d, now);
-  // Which model, and how much context a cold resume would re-send — the two
-  // facts that turn "this is cold" into "this is what it would cost". Drops
-  // out cleanly (separator and all) on the rare session we can't name.
   const what = modelContextLabel(d);
   const lead = what ? `${what} — ` : "";
 
   if (needsCompact(d, now, compactPct)) {
-    // Pulses like the busy dot — a cold-and-huge session is a live nudge
-    // ("compact this before you resume it"), not a passive fact.
+    // Pulses like the busy dot: a live nudge, not a passive fact.
     const pill =
       "shrink-0 animate-pulse rounded-md border border-sky-500/50 bg-sky-500/10 px-1.5 font-mono text-[10.5px] text-sky-500";
     const hint = `${lead}${pct}% of context used and the prompt cache expired, so resuming re-reads everything.`;
@@ -1528,9 +1289,8 @@ export function CacheBadge({
               : "text-muted-foreground/70",
         )}
       >
-        {/* Fixed 4ch slot ("100%"), right-aligned: the percent is 1–3 digits,
-            and without a reserved width every element after it drifts per row,
-            so the rail's meta columns never line up vertically. */}
+        {/* Fixed 4ch slot: the percent is 1–3 digits, and without a reserved
+            width the rail's meta columns never line up vertically. */}
         <span className="inline-block w-[4ch] text-right">{pct}%</span>{" "}
         <span className="inline-block min-w-[4ch]">{warmth}</span>
       </span>
@@ -1543,14 +1303,10 @@ export function fmtMins(ms: number): string {
   return `${Math.max(1, Math.round(ms / 60_000))}m`;
 }
 
-/** "···" overflow menu for a checkout — the one place every secondary action
- * lives, shared verbatim by the rail's repo/folder headers and the
- * working-context band atop the panes (so the two surfaces never diverge):
- * full folder path (when given), "New task…" (task-convention repos),
- * "Delete worktree…" (worktree checkouts, guarded `task_delete`), "Sync now",
- * "Create issue…", "Mark quiet"/"Unmark quiet" (forces this folder into the
- * rail filter's stub row under either narrowing mode, regardless of its actual
- * activity — see `isFolderFiltered`), and "Remove from rail". */
+/** The one place every secondary action for a checkout lives, shared verbatim
+ * by the rail's headers and the working-context band so the two can't diverge.
+ * "Mark quiet" forces the folder into the filter's stub row whatever its
+ * actual activity (`isFolderFiltered`). */
 export function RepoMenu({
   path,
   onRemove,
@@ -1566,27 +1322,20 @@ export function RepoMenu({
   path?: string;
   onRemove: () => void;
   dir: string;
-  /** Worktree checkouts have no "Remove from rail" — meaningless (they are
-   * auto-discovered from the primary and would reappear next poll); deletion
-   * is the "Delete worktree…" item instead. */
+  /** Worktree checkouts have no "Remove from rail": auto-discovered from the
+   * primary, they would reappear next poll. */
   isWorktree?: boolean;
-  /** Whether this folder currently has the quiet override set
-   * (`FolderData.quiet`) — flips the menu item between "Mark"/"Unmark". */
   quiet: boolean;
-  /** Opens the new-task modal — set only on a task-convention repo. */
+  /** Set only on a task-convention repo. */
   onNewTask?: () => void;
-  /** Deletes this worktree from disk (guarded, `task_delete`) — set only
-   * on worktree checkouts. */
+  /** Set only on worktree checkouts. */
   onDeleteWorktree?: () => void;
-  /** Overrides the delete item's wording — a detached row's directory is
-   * already gone, so "Delete worktree…" would name something that isn't
-   * there. */
+  /** A detached row's directory is already gone, so "Delete worktree…" would
+   * name something that isn't there. */
   deleteLabel?: string;
-  /** The board task bound to this folder's worktree, when one exists. Set
-   * enables "Attach issue…" — you can only link an issue to a task, so a
-   * folder with no bound task doesn't offer it. */
+  /** Enables "Attach issue…" — an issue can only be linked to a task. */
   taskId?: number;
-  /** Ghost trigger (no resting border) — see [`IconBtn`]'s `ghost`. */
+  /** See [`IconBtn`]'s `ghost`. */
   ghost?: boolean;
 }) {
   const [attachOpen, setAttachOpen] = useState(false);
@@ -1594,8 +1343,7 @@ export function RepoMenu({
   async function syncNow() {
     (await abSyncRepo(dir)).match({
       ok: (result) => {
-        // `started: false` means a sync for this dir was already in flight
-        // (e.g. another window) — quietly ignore rather than double-toast.
+        // Already in flight elsewhere — ignore rather than double-toast.
         if (!result.started) return;
         if (result.ok) toast.success("Synced with GitHub");
         else toast.error(result.message ?? "Sync failed");
@@ -1704,14 +1452,9 @@ export function RepoMenu({
   );
 }
 
-/** What a pane tile shows when it has no content to render: a dashed outline,
- * one line saying what happened, and a single way out. The three cases are a
- * folder pane whose folder is gone (diff, files) and a terminal pane whose
- * shell crashed — that last one passes `detail` to report how it died, and
- * `tone="alert"` to say the pane didn't mean to end up here.
- *
- * Removal is the only affordance on purpose: restarting is the rail's job, so
- * a tile that offers it competes with the rail for the same decision. */
+/** What a pane tile shows with no content: a gone folder, or a crashed shell
+ * (which passes `detail` and `tone="alert"`). Removal is the only affordance
+ * on purpose — restarting is the rail's job. */
 export function PanePlaceholder({
   label,
   detail,
@@ -1722,8 +1465,7 @@ export function PanePlaceholder({
   label: string;
   detail?: string;
   tone?: "muted" | "alert";
-  /** This pane is the one the user last clicked into — see the focus-ring
-   * rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
+  /** See the focus-ring rule at `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused?: boolean;
   onRemove: () => void;
 }) {

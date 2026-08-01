@@ -1,11 +1,5 @@
-/**
- * One repo in the rail: its sticky header, the checkouts under it, and each
- * checkout's sessions and panes. This is the file that decides what a repo's
- * subtree *contains* — which folders show, which are demoted to a quiet stub,
- * where the inline new-task form goes, how a window's rows are bracketed —
- * and delegates how each row *looks* to `FolderHeader`, `SessionRow` and
- * `ViewPaneRow`.
- */
+/** What a repo's rail subtree *contains*. How each row *looks* belongs to
+ * `FolderHeader`, `SessionRow` and `ViewPaneRow`. */
 import { type ReactElement } from "react";
 import { toast } from "sonner";
 import { FolderGit2, FolderPlus } from "lucide-react";
@@ -55,10 +49,7 @@ import { withHint } from "@/lib/shortcuts";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
 
-/**
- * Only a `detected` row can be adopted; every other row already belongs to
- * someone. Returning undefined is what keeps the affordance off the rest.
- */
+/** Undefined for every row but `detected` — that is what hides the affordance. */
 function adoptWorktree(folder: FolderData) {
   const task = folderTask(folder);
   if (!folderIsUnclaimed(folder) || !task) return undefined;
@@ -112,12 +103,9 @@ export function RepoGroup({
   now: number;
   compactPct: number;
   prs: PrItem[];
-  /** Board tasks (`store://snapshot`), for mapping a folder → its bound task's
-   * linked issues (the rail IssueChips). Threaded the same way `prs` is. */
   tasks: TaskItem[];
   selectedSessionId: string | null;
-  /** The focused pane tile (`focusedPaneId`) — what marks a *view* row active,
-   * since a view pane has no session record for `selectedSessionId` to name. */
+  /** A view pane has no session record, so `selectedSessionId` can't name it. */
   activePaneId: string | null;
   activeFolderDir: string | null;
   collapsed: Record<string, boolean>;
@@ -130,42 +118,27 @@ export function RepoGroup({
   onSelectFolder: (folderDir: string) => void;
   onSelect: (folderDir: string, sessionId: string) => void;
   onNewSession: (folderDir: string, launchClaude?: boolean) => void;
-  /** Toggles the inline new-task form open/closed for a task-convention repo
-   * (worktree hub) — never a blocking modal, see InlineNewTask. */
   onNewTask: (repo: NewTaskRepo) => void;
   onRemoveRepo: (dirs: string[], label: string) => void;
-  /** Delete a worktree from disk (guarded `task_delete`). */
   onDeleteWorktree: (dir: string, label: string) => void;
-  /** Rebuild a detached task's worktree on its own branch. */
   onRecreateWorktree: (folder: FolderData) => void;
-  /** Checkouts whose setup step is still running → when it started (epoch
-   * ms). See `SettingUpBadge`. */
+  /** Checkouts whose setup step is still running → when it started (epoch ms). */
   settingUpDirs?: Map<string, number>;
   onRenameCommit: (sessionId: string, name: string) => void;
-  /** Opens the folder's diff pane in its focused window. */
   onOpenDiff: (dir: string) => void;
-  /** Opens the folder's files pane in its focused window. */
   onOpenFiles: (dir: string) => void;
-  /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: (dir: string) => void;
-  /** Opens the folder's rendered-agent pane in its focused window. */
-  /** Opens the folder's native (Bevy) pane in its focused window — undefined
-   * while `agentboard.jarvisPane` is off, which hides the entry point rather
-   * than offering one that opens nothing. */
+  /** Undefined while `agentboard.jarvisPane` is off: hide the entry point
+   * rather than offer one that opens nothing. */
   onOpenJarvis?: (dir: string) => void;
-  /** Drops one pane from its window — a view row's ✕. */
   onClosePane: (paneId: string) => void;
-  /** Dirs the rail filter tucks behind a "N quiet" stub (empty/
-   * undefined when the filter is off). Quiet folders demote to the stub
-   * instead of vanishing — nothing ever silently disappears from the rail. */
+  /** Quiet folders demote to a stub rather than vanish — nothing silently
+   * disappears from the rail. Empty when the filter is off. */
   quietDirs?: Set<string>;
-  /** Whether this repo's quiet folders are temporarily shown. */
   quietRevealed?: boolean;
   onToggleQuiet?: () => void;
-  /** Whether this repo's inline new-task form is open. */
   taskFormOpen: boolean;
-  /** Pre-fills the goal field — set when the form was opened to reopen a
-   * closed task rather than to start a new one. */
+  /** Set when the form was opened to reopen a closed task, not to start one. */
   taskFormInitialGoal?: string;
   onCancelTaskForm: () => void;
   onSubmitTaskForm: (input: NewTaskSubmit) => void;
@@ -192,11 +165,8 @@ export function RepoGroup({
     </motion.div>
   );
 
-  // One opener per view-pane kind. A table rather than a ternary chain so the
-  // next kind is an entry, not another level of nesting — and so `jarvis`'s
-  // absence is expressible: its row can outlive the setting being turned back
-  // off (the layout persists), and with no opener a click is a no-op, leaving ✕
-  // as the row's only live affordance.
+  // A table, not a ternary chain, so `jarvis`'s absence is expressible: its row
+  // outlives the setting (the layout persists), and no opener means ✕ only.
   const viewPaneOpener: Record<ViewPaneKind, ((dir: string) => void) | undefined> = {
     diff: onOpenDiff,
     files: onOpenFiles,
@@ -215,14 +185,8 @@ export function RepoGroup({
     </motion.div>
   );
 
-  /**
-   * One rail row per pane of a folder's window, whichever kind it is: a PTY
-   * session or one of the folder's views (diff, files, preview).
-   *
-   * The rail used to list PTY sessions and nothing else, so a diff or file tree
-   * you had opened was reachable only by finding it in the pane area. What is
-   * open in a folder is now the rail's answer, not the pane area's alone.
-   */
+  /** One rail row per pane, PTY session or view: what is open in a folder is
+   * the rail's answer, not the pane area's alone. */
   const paneRow = (folder: FolderData, paneId: string, byId: Map<string, SessionData>) => {
     const session = byId.get(paneId);
     if (session) return sessionRow(folder, session);
@@ -230,18 +194,9 @@ export function RepoGroup({
     return kind ? viewRow(folder, paneId, kind) : null;
   };
 
-  // Sessions render grouped by the window (pane group) they belong to: a
-  // window holding multiple panes gets a vertical color spine running beside
-  // its rows (no text label — window names carry no signal in the rail);
-  // sessions in no window ("loose" shells) list on their own below. Grouping
-  // is purely visual — the click mechanics that move panes in and out of
-  // windows are unchanged.
-  //
-  // One AnimatePresence per window group plus one for the loose rows: a
-  // group's exiting row has to stay inside its own spine while it collapses.
-  // Closing a window's *last* pane unmounts the group wrapper outright, so
-  // that row does not animate — a spine with nothing left to attach to is not
-  // worth keeping on screen for an extra frame.
+  // Grouping is purely visual; the mechanics that move panes between windows
+  // are unchanged. One AnimatePresence per group plus one for loose rows, so a
+  // group's exiting row stays inside its own spine while it collapses.
   const sessionRows = (folder: FolderData) => {
     const folderWins = (wins?.windows ?? []).filter((w) => w.folderDir === folder.dir);
     const byId = new Map(folder.sessions.map((s) => [s.id, s] as const));
@@ -302,10 +257,7 @@ export function RepoGroup({
     if (quiet.has(folder.dir) && !showQuiet) {
       return <QuietRepoStub name={repo.name} count={1} onToggle={onToggleQuiet} />;
     }
-    // A row mid-create or mid-removal is inert and says which. Both come off
-    // the folder itself now (`folder.phase`) rather than from sets held
-    // alongside the rail: the row and its state arrive together, so a row can
-    // never be dimmed for an operation on a row that is no longer there.
+    // Phase rides on the folder, so a row is never dimmed for a departed one.
     const deleting = folderBusy(folder);
     const deletingLabel = folderPhaseLabel(folder);
     const settingUpSince = settingUpDirs?.get(folder.dir);
@@ -367,38 +319,29 @@ export function RepoGroup({
     );
   }
 
-  // Multi-checkout repo: repo header, then each folder as a sub-header. Quiet
-  // folders (rail filter) tuck behind a stub toggle row; a repo with
-  // *only* quiet folders shrinks to a single dim stub line.
+  // Multi-checkout repo: repo header, then each folder as a sub-header. A repo
+  // with *only* quiet folders shrinks to a single dim stub line.
   const repoCollapsed = collapsed[repo.key];
   const shownFolders = showQuiet ? repo.folders : repo.folders.filter((f) => !quiet.has(f.dir));
   if (shownFolders.length === 0) {
     return <QuietRepoStub name={repo.name} count={quiet.size} onToggle={onToggleQuiet} />;
   }
-  // One of this repo's checkouts is the focused folder — bubble the violet
-  // active edge up to the repo header too, so a collapsed (or just
-  // easy-to-miss) repo row still shows it holds the folder you're looking
-  // at (folder-rail rule: focus never stops at the child level).
+  // Folder-rail rule: focus never stops at the child level, so a collapsed repo
+  // row still shows it holds the folder you're looking at.
   const repoActive = repo.folders.some((f) => f.dir === activeFolderDir);
   const scopePrefix = pathScope(repo.folders[0].dir);
   const RepoIcon = repoIcon(repo.meta);
-  // The header is sticky, so its wash must resolve to an opaque color — rows
-  // scroll underneath it and a translucent tint reads as a rendering glitch.
+  // Sticky header: every background on this row must resolve to a fully opaque
+  // color, or rows scrolling underneath show through and read as a glitch.
   const accent = repoAccentStyles(repo.meta, "var(--card)");
-  // Identity never outranks true status: a repo waiting on you (amber) never
-  // gets the calmer identity wash laid over it. Being the active selection is
-  // shown as a ring, not a fill, so it layers over the identity wash instead
-  // of replacing it.
+  // Identity never outranks status: a repo waiting on you keeps the amber. The
+  // active selection is a ring, not a fill, so it layers over the wash.
   const statusOwnsRow = repo.needs > 0;
   return (
     <div className="border-b" data-focus-kind="repo" data-focus-id={repo.key}>
       <div
         style={statusOwnsRow ? undefined : { ...accent.edgeStyle, ...accent.surfaceStyle }}
         className={cn(
-          // Every background on this row must be fully opaque. It is sticky, so
-          // folder and session rows scroll *underneath* it — a translucent tint
-          // (bg-accent/60 for active, /50 for hover) lets their text show
-          // through the stuck header and reads as a rendering glitch.
           "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-2 border-border border-l-transparent bg-card px-3 py-2 hover:bg-accent",
           repoActive && "border-l-violet-500 ring-1 ring-inset ring-violet-500/50",
         )}
@@ -424,8 +367,7 @@ export function RepoGroup({
             {repo.needs > 0 && <NeedsBadge n={repo.needs} />}
           </span>
         </button>
-        {/* Same fixed-width right-edge toolbar as the folder rows — see the
-            cluster comment in `FolderHeader`. */}
+        {/* Same fixed-width right-edge toolbar as the folder rows. */}
         <div className="flex shrink-0 items-center gap-1 pl-1">
           <IconBtn
             ghost
@@ -462,10 +404,8 @@ export function RepoGroup({
           initialGoal={taskFormInitialGoal}
         />
       )}
-      {/* The collapse test stays *outside* AnimatePresence: inside it,
-          collapsing a repo would read as every folder being deleted at once
-          and play a full exit on each. Unmounting the boundary itself
-          collapses instantly, matching how session rows already behave. */}
+      {/* Collapse test outside AnimatePresence: inside, collapsing a repo would
+          play a full exit on every folder as if each were deleted. */}
       {!repoCollapsed && (
         <AnimatePresence initial={false}>
           {shownFolders.map((folder) => {
@@ -478,9 +418,8 @@ export function RepoGroup({
               <motion.div
                 key={folder.dir}
                 {...railRowMotion}
-                // The dim goes through `animate`, not an opacity-50 class:
-                // this element is animated, so motion writes an inline
-                // opacity that a class could never win against.
+                // Dim via `animate`, not a class: motion writes an inline
+                // opacity no class could win against.
                 animate={{ opacity: deleting ? 0.5 : 1, x: 0 }}
                 className={cn(deleting && "pointer-events-none")}
               >
@@ -533,9 +472,7 @@ export function RepoGroup({
   );
 }
 
-/** A repo whose checkouts are all quiet (rail filter), demoted to
- * one dim row instead of removed — the repo stays findable, just out of the
- * way. Clicking restores the full group until toggled back. */
+/** An all-quiet repo, demoted to one dim row rather than removed. */
 function QuietRepoStub({
   name,
   count,
@@ -563,8 +500,7 @@ function QuietRepoStub({
   );
 }
 
-/** The stub/toggle row under a repo's visible folders: "N quiet" when its
- * quiet checkouts are tucked away, "hide N quiet" while they're shown. */
+/** The stub row under a repo's visible folders: "N quiet" / "hide N quiet". */
 function QuietToggleRow({
   count,
   revealed,
