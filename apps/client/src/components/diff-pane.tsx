@@ -115,6 +115,13 @@ const DiffTreeRail = memo(function DiffTreeRail({
         const isCollapsed = collapsed.has(node.path);
         const paths = leafPathsByFolder.get(node.path) ?? [];
         const reviewedCount = paths.filter((p) => reviewed.has(p)).length;
+        let sumAdded = 0;
+        let sumRemoved = 0;
+        for (const p of paths) {
+          const f = byPath.get(p);
+          sumAdded += f?.linesAdded ?? 0;
+          sumRemoved += f?.linesRemoved ?? 0;
+        }
         const checked: boolean | "indeterminate" =
           reviewedCount === 0 ? false : reviewedCount === paths.length ? true : "indeterminate";
         return (
@@ -155,7 +162,13 @@ const DiffTreeRail = memo(function DiffTreeRail({
                         !isCollapsed && "rotate-90",
                       )}
                     />
-                    <span className="truncate">{node.name}</span>
+                    <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                    {(sumAdded > 0 || sumRemoved > 0) && (
+                      <span className="shrink-0 pr-1 text-[10px]">
+                        <span className="text-emerald-500">+{sumAdded}</span>{" "}
+                        <span className="text-red-500">−{sumRemoved}</span>
+                      </span>
+                    )}
                   </button>
                 </div>
               </ContextMenuTrigger>
