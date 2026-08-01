@@ -61,8 +61,8 @@ pub use bridge::StatePayload;
 pub use engine::{RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{
-    CommitStat, DiffFile, DiffMode, base_file_content, commit_stats, compute_git_info, diff_files,
-    prune_stale_worktree,
+    CommitStat, DiffFile, DiffFiles, DiffMode, UntrackedCapInfo, base_file_content, commit_stats,
+    compute_git_info, diff_files, prune_stale_worktree,
 };
 pub use launch::{LaunchConfig, port_listening, read_launch_file};
 pub use notify::{NeedsYouEdge, NeedsYouWatch};

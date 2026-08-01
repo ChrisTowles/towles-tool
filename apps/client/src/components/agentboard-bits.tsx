@@ -621,6 +621,7 @@ type DiffChipStats = Pick<
   | "uncommittedFiles"
   | "uncommittedAdded"
   | "uncommittedRemoved"
+  | "uncommittedCapped"
   | "commitsAhead"
   | "commitsUnlanded"
   | "landed"
@@ -666,8 +667,11 @@ function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
  * zero: an absent chip and one you didn't notice look identical. Neutral
  * chrome, since uncommitted work is the normal state of an active task. */
 export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
-  const { uncommittedFiles, uncommittedAdded, uncommittedRemoved } = stats;
+  const { uncommittedFiles, uncommittedAdded, uncommittedRemoved, uncommittedCapped } = stats;
   const clean = uncommittedFiles === 0;
+  // A `+` because the count is a floor: an untracked directory was too large
+  // to list, so the real number is higher. The diff pane's banner names it.
+  const filesLabel = `${uncommittedFiles}${uncommittedCapped ? "+" : ""}f`;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -688,7 +692,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             <span>clean</span>
           ) : (
             <>
-              <span>{uncommittedFiles}f</span>
+              <span>{filesLabel}</span>
               <span className="text-emerald-600 dark:text-emerald-400">
                 +{fmtDiffLines(uncommittedAdded)}
               </span>
@@ -706,7 +710,9 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           <span>
             {clean
               ? "Nothing uncommitted — every change here is in a commit."
-              : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
+              : uncommittedCapped
+                ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the diff for which one.`
+                : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
           </span>
           <span className="opacity-70">
             {clean

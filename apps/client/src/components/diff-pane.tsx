@@ -10,7 +10,7 @@ import {
 } from "react";
 import { ChevronRight, Pencil, RefreshCw, X } from "lucide-react";
 import { DiffReview, type DiffReviewRequest } from "@/components/diff-review";
-import { MonacoMultiDiff, type ChangedFile } from "@/components/diff-monaco";
+import { MonacoMultiDiff, type ChangedFile, type ChangedFiles } from "@/components/diff-monaco";
 import { EditableToggle } from "@/components/editable-toggle";
 import { EditorFontButtons } from "@/components/editor-font-buttons";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
@@ -259,6 +259,14 @@ const DiffTreeRail = memo(function DiffTreeRail({
                       />
                     )
                   )}
+                  {file && file.untrackedFiles > 0 && (
+                    <span
+                      title="Untracked directory, too large to list file by file — probably missing from .gitignore"
+                      className="shrink-0 rounded-full border border-amber-500/60 px-1 text-[9px] leading-[1.4] text-amber-500"
+                    >
+                      {file.untrackedFiles}+ files
+                    </span>
+                  )}
                   {file && (file.linesAdded > 0 || file.linesRemoved > 0) && (
                     <span className="shrink-0 pr-1 text-[10px]">
                       <span className="text-emerald-500">+{file.linesAdded}</span>{" "}
@@ -290,6 +298,22 @@ const DiffTreeRail = memo(function DiffTreeRail({
     </ul>
   );
 });
+
+/** Says the file list is a floor, and names the directory responsible.
+ *
+ * A count short by a hundred thousand files must never read as a total, and
+ * the cause is nearly always one missing `.gitignore` line — so this names the
+ * directory instead of reporting a generic limit. */
+function UntrackedCapBanner({ cap }: { cap: NonNullable<ChangedFiles["untrackedCap"]> }) {
+  return (
+    <div className="mx-2 mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
+      <span className="font-mono">{cap.dir}</span> is untracked and too large to list — stopped at{" "}
+      {cap.files} files
+      {cap.total ? ", and other untracked directories were left out entirely" : ""}. It probably
+      belongs in <span className="font-mono">.gitignore</span>; until then these counts are a floor.
+    </div>
+  );
+}
 
 /** A `Set<string>` setter → a `(path, on)` toggle that allocates only on a real
  * transition. Shared by the dirty and conflict mirrors so they can't drift. */
@@ -339,6 +363,9 @@ export function DiffPane({
   // auto-save — the file under review while an agent worked in the same tree.
   const [editable, setEditable] = useState(false);
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
+  // Which untracked directory the backend stopped expanding, if any — the
+  // file list is then a floor and has to say so.
+  const [untrackedCap, setUntrackedCap] = useState<ChangedFiles["untrackedCap"]>(null);
   const [refreshing, setRefreshing] = useState(false);
   const revealRef = useRef<((path: string) => void) | null>(null);
   const registerReveal = useCallback((fn: ((path: string) => void) | null) => {
@@ -458,10 +485,12 @@ export function DiffPane({
   const fetchDiff = useCallback(async () => {
     if (!dir) return;
     setRefreshing(true);
-    const list = await invoke<ChangedFile[]>("ab_get_diff_files", { dir, mode, baseBranch });
+    const list = await invoke<ChangedFiles>("ab_get_diff_files", { dir, mode, baseBranch });
+    const payload = list.unwrapOr({ files: [], untrackedCap: null });
+    setUntrackedCap(payload.untrackedCap);
     // Tree order, not git's flat path sort: both columns render from this one
     // array, which is what keeps them scrolling in lockstep.
-    const nextFiles = sortToTreeOrder(list.unwrapOr([]));
+    const nextFiles = sortToTreeOrder(payload.files);
     setFiles(nextFiles);
     // Prune marks for paths that left the change set; everything else keeps
     // its mark, so a poll mid-review can't re-expand what was checked off.
@@ -482,6 +511,10 @@ export function DiffPane({
     // …and a different checkout is locked again, same as a fresh pane.
     setEditable(false);
   }, [dir]);
+
+  // A collapsed untracked directory is a directory: Monaco would try to read
+  // it as a file, so only the rail lists it.
+  const diffable = useMemo(() => (files ?? []).filter((f) => f.untrackedFiles === 0), [files]);
 
   const statsKey = folder ? folderStatsKey(folder) : "";
   const baseKey = folder ? folderBaseKey(folder) : "";
@@ -624,6 +657,7 @@ export function DiffPane({
           </>
         }
       />
+      {untrackedCap && <UntrackedCapBanner cap={untrackedCap} />}
       <div ref={splitRef} className="relative flex min-h-0 flex-1 p-2">
         {files == null ? (
           <p className="p-2 text-sm text-muted-foreground">Loading…</p>
@@ -654,7 +688,7 @@ export function DiffPane({
             <div className="min-w-0 flex-1">
               <MonacoMultiDiff
                 dir={dir!}
-                files={files}
+                files={diffable}
                 mode={mode}
                 baseBranch={baseBranch}
                 refreshKey={statsKey}

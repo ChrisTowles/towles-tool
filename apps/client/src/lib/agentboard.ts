@@ -160,6 +160,9 @@ export type FolderData = {
   uncommittedFiles: number;
   uncommittedAdded: number;
   uncommittedRemoved: number;
+  /** `uncommittedFiles` is a floor: an untracked directory was too large to list file by file
+   * (almost always a `.gitignore` gap). The chip shows a `+`, the diff pane names the directory. */
+  uncommittedCapped: boolean;
   commitsAhead: number;
   commitsBehind: number;
   dirty: boolean;

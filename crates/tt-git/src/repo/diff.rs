@@ -16,6 +16,16 @@ use std::collections::BTreeMap;
 
 use super::{GitError, Repo, Result};
 
+/// How many files one untracked directory is expanded into before the walk
+/// gives up and reports the directory itself. A build-output tree a
+/// `.gitignore` forgot — `node_modules`, `target`, `.venv` — is hundreds of
+/// thousands of files, and the rail asks for this diff on every poll.
+const UNTRACKED_PER_DIR_CAP: usize = 1_000;
+
+/// The same bound across one whole diff, so a hundred capped directories
+/// can't add up to the walk the per-directory cap just prevented.
+const UNTRACKED_TOTAL_CAP: usize = 5_000;
+
 /// One changed file, with the line counts `--numstat` reports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileChange {
@@ -30,6 +40,42 @@ pub struct FileChange {
     /// Binary content, which has no line counts (`--numstat` prints `-`). The
     /// file still counts as changed.
     pub binary: bool,
+    /// Nonzero only on a `?` row that is a whole untracked *directory* left
+    /// collapsed because expanding it hit a cap: how many files were found
+    /// beneath it before the walk stopped, i.e. a floor, never a total.
+    pub untracked_files: i64,
+}
+
+/// A diff, plus whether listing it was cut short.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Changes {
+    pub files: Vec<FileChange>,
+    /// Set when untracked expansion hit [`UNTRACKED_PER_DIR_CAP`] or
+    /// [`UNTRACKED_TOTAL_CAP`]. Every count on this diff is then a floor, and
+    /// callers must say so rather than print a truncated number as a total.
+    pub untracked_cap: Option<UntrackedCap>,
+}
+
+impl Changes {
+    /// Files covered, counting a collapsed untracked directory as the files
+    /// found beneath it rather than as the single row it occupies. A floor
+    /// whenever [`Self::untracked_cap`] is set.
+    pub fn file_count(&self) -> i64 {
+        self.files.iter().map(|change| change.untracked_files.max(1)).sum()
+    }
+}
+
+/// Where an untracked walk stopped — enough to name the directory that is
+/// almost certainly a `.gitignore` gap.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UntrackedCap {
+    /// Repo-relative directory whose expansion was cut short.
+    pub dir: String,
+    /// Files listed beneath it before stopping.
+    pub files: i64,
+    /// The whole-diff budget ran out, not just this directory's share — so
+    /// other untracked directories went unlisted too.
+    pub total: bool,
 }
 
 /// Cumulative totals of one diff: how many files it touches and its ±.
@@ -58,12 +104,27 @@ pub struct CommitStat {
 /// A file's two sides. `None` means absent on that side (added or deleted).
 type Sides = (Option<Vec<u8>>, Option<Vec<u8>>);
 
+/// What one untracked status entry expanded to.
+enum Untracked {
+    Files(Vec<String>),
+    /// The walk stopped at its cap; the directory stays one row carrying how
+    /// many files were seen before stopping.
+    Capped {
+        count: i64,
+    },
+}
+
 impl Repo {
     /// Every file that differs between `base` and the working tree, with line
     /// counts — the in-process `git diff --numstat -M <base>` plus untracked
     /// files, which `git diff` never shows but which the rail counts as
     /// changed.
-    pub fn changes_vs(&self, base: &str) -> Result<Vec<FileChange>> {
+    ///
+    /// Untracked *directories* are expanded to their files only up to a cap
+    /// ([`Changes::untracked_cap`]); past it the directory stays one row with
+    /// a count, because a repository with an unignored `node_modules` would
+    /// otherwise stat and list half a million paths on every rail poll.
+    pub fn changes_vs(&self, base: &str) -> Result<Changes> {
         let base_id = self.resolve(base).ok_or_else(|| GitError::NoSuchRev(base.to_string()))?;
         let base_tree = self.tree_of(base_id)?;
 
@@ -101,12 +162,37 @@ impl Repo {
         // Uncommitted half: anything the status walk sees, which is also the
         // only way untracked files enter the list.
         let status = self.status()?;
+        let mut budget = UNTRACKED_TOTAL_CAP;
+        let mut cap: Option<UntrackedCap> = None;
+        let mut collapsed: BTreeMap<String, i64> = BTreeMap::new();
         for entry in &status.entries {
             if entry.untracked {
                 // An untracked *directory* collapses to one status entry; the
-                // rail counts files, so expand it.
-                for file in self.untracked_files_under(entry) {
-                    paths.entry(file).or_insert('?');
+                // rail counts files, so expand it — but only so far.
+                match self.untracked_files_under(entry, budget) {
+                    Untracked::Files(files) => {
+                        budget -= files.len().min(budget);
+                        for file in files {
+                            paths.entry(file).or_insert('?');
+                        }
+                    }
+                    Untracked::Capped { count } => {
+                        let dir = entry.path.trim_end_matches('/').to_string();
+                        let hit = UntrackedCap {
+                            dir: dir.clone(),
+                            files: count,
+                            total: budget <= UNTRACKED_PER_DIR_CAP,
+                        };
+                        budget = budget.saturating_sub(count as usize);
+                        collapsed.insert(dir.clone(), count);
+                        paths.entry(dir).or_insert('?');
+                        // The first cap is the one worth naming, unless a later
+                        // one exhausted the whole diff's budget — that is the
+                        // bigger fact, and it hides directories entirely.
+                        if cap.as_ref().is_none_or(|prev| hit.total && !prev.total) {
+                            cap = Some(hit);
+                        }
+                    }
                 }
             } else {
                 paths.entry(entry.path.clone()).or_insert('M');
@@ -115,18 +201,25 @@ impl Repo {
 
         let mut out = Vec::with_capacity(paths.len());
         for (path, status) in paths {
+            // An untracked path has no diff to compute, so nothing here may
+            // read its bytes: reading every file of an unignored `node_modules`
+            // only to discard the contents is what froze the rail. Existence is
+            // the whole question — a collapsed directory doesn't even need that.
+            if status == '?' {
+                // Membership, not a nonzero count: a directory the budget ran
+                // out before entering counts 0 files and must still be listed.
+                let collapsed_dir = collapsed.get(&path).copied();
+                if collapsed_dir.is_none() && !self.is_workdir_file(&path) {
+                    continue;
+                }
+                let untracked_files = collapsed_dir.unwrap_or_default();
+                out.push(FileChange { path, status, untracked_files, ..Default::default() });
+                continue;
+            }
             let old_path = renames.get(&path).cloned();
             let source = old_path.as_deref().unwrap_or(&path);
             let (before, after) = self.sides(&base_tree, source, &path);
-            // An untracked file has no diff — `git diff` never shows one, and
-            // the diff pane lists it with empty ± columns. It counts as a
-            // changed *file* and nothing more; giving it line counts here
-            // would make the rail's totals disagree with the pane beside it.
-            let (added, removed, binary) = if status == '?' {
-                (0, 0, false)
-            } else {
-                count_lines(before.as_deref(), after.as_deref())
-            };
+            let (added, removed, binary) = count_lines(before.as_deref(), after.as_deref());
             // A path the diff reported but whose two sides are identical is not
             // a change: an edit saved and then reverted leaves the status walk
             // reporting it (the index stat is stale) while the content matches.
@@ -137,7 +230,7 @@ impl Repo {
                 }
             }
             let status = match (before.is_some(), after.is_some(), status) {
-                (_, _, existing @ ('R' | 'C' | '?')) => existing,
+                (_, _, existing @ ('R' | 'C')) => existing,
                 (false, true, _) => 'A',
                 (true, false, _) => 'D',
                 _ => 'M',
@@ -149,9 +242,10 @@ impl Repo {
                 lines_added: added,
                 lines_removed: removed,
                 binary,
+                untracked_files: 0,
             });
         }
-        Ok(out)
+        Ok(Changes { files: out, untracked_cap: cap })
     }
 
     /// What `base..HEAD` **committed** — the tree-to-tree half of
@@ -271,13 +365,22 @@ impl Repo {
     /// directory is only ever reported when *nothing* in it is tracked or
     /// ignored, so everything under it is untracked by construction — no
     /// second ignore check is needed here.
-    fn untracked_files_under(&self, entry: &super::StatusEntry) -> Vec<String> {
+    ///
+    /// `budget` is what remains of the diff's whole untracked allowance; the
+    /// walk stops at the smaller of it and [`UNTRACKED_PER_DIR_CAP`] and the
+    /// caller keeps the directory as one row. Stopping also ends the one walk
+    /// here that a symlink cycle could otherwise run forever.
+    fn untracked_files_under(&self, entry: &super::StatusEntry, budget: usize) -> Untracked {
         if !entry.is_dir {
-            return vec![entry.path.clone()];
+            return Untracked::Files(vec![entry.path.clone()]);
         }
         let Some(workdir) = self.inner().workdir() else {
-            return Vec::new();
+            return Untracked::Files(Vec::new());
         };
+        let cap = UNTRACKED_PER_DIR_CAP.min(budget);
+        if cap == 0 {
+            return Untracked::Capped { count: 0 };
+        }
         let root = workdir.join(entry.path.trim_end_matches('/'));
         let mut out = Vec::new();
         let mut stack = vec![root];
@@ -291,10 +394,18 @@ impl Repo {
                     stack.push(path);
                 } else if let Ok(rel) = path.strip_prefix(workdir) {
                     out.push(rel.to_string_lossy().into_owned());
+                    if out.len() >= cap {
+                        return Untracked::Capped { count: out.len() as i64 };
+                    }
                 }
             }
         }
-        out
+        Untracked::Files(out)
+    }
+
+    /// Whether a repo-relative path is a regular file in the working tree.
+    fn is_workdir_file(&self, path: &str) -> bool {
+        self.inner().workdir().is_some_and(|dir| dir.join(path).is_file())
     }
 
     /// The tree of whatever `id` names — a commit's tree, or the tree itself.
@@ -366,6 +477,7 @@ mod tests {
         let mut seen: Vec<(i64, i64, String)> = git
             .changes_vs(base)
             .expect("changes")
+            .files
             .into_iter()
             .filter(|c| c.status != '?')
             .map(|c| (c.lines_added, c.lines_removed, c.path))
@@ -409,7 +521,8 @@ mod tests {
         repo.commit_file("gone.txt", "a\nb\n");
         repo.git(&["update-ref", "refs/remotes/origin/main", "main"]);
         repo.git(&["rm", "--quiet", "gone.txt"]);
-        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+        let changes =
+            Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes").files;
         let gone = changes.iter().find(|c| c.path == "gone.txt").expect("deletion reported");
         assert_eq!((gone.status, gone.lines_added, gone.lines_removed), ('D', 0, 2));
     }
@@ -424,7 +537,8 @@ mod tests {
         repo.git(&["mv", "old.txt", "new.txt"]);
         repo.git(&["commit", "--quiet", "-m", "rename"]);
 
-        let changes = Repo::open(repo.path()).expect("open").changes_vs("origin/main").unwrap();
+        let changes =
+            Repo::open(repo.path()).expect("open").changes_vs("origin/main").unwrap().files;
         let renamed = changes.iter().find(|c| c.path == "new.txt").expect("rename reported");
         assert_eq!(renamed.status, 'R');
         assert_eq!(renamed.old_path.as_deref(), Some("old.txt"));
@@ -439,7 +553,8 @@ mod tests {
         let repo = TestRepo::new();
         repo.write("fresh.txt", "new\n");
         repo.write("nested/deep.txt", "deep\n");
-        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+        let changes =
+            Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes").files;
         let untracked: Vec<&FileChange> = changes.iter().filter(|c| c.status == '?').collect();
         let mut paths: Vec<&str> = untracked.iter().map(|c| c.path.as_str()).collect();
         paths.sort();
@@ -450,13 +565,95 @@ mod tests {
         );
     }
 
+    /// `count` untracked files under `dir`, the shape of a `node_modules` that
+    /// no `.gitignore` covers.
+    fn untracked_tree(repo: &TestRepo, dir: &str, count: usize) {
+        for i in 0..count {
+            // Nested, so the walk has directories to descend as well as files.
+            repo.write(&format!("{dir}/pkg{}/file{i}.js", i % 20), "x\n");
+        }
+    }
+
+    #[test]
+    fn a_huge_untracked_directory_stays_one_collapsed_row() {
+        let repo = TestRepo::new();
+        untracked_tree(&repo, "node_modules", UNTRACKED_PER_DIR_CAP + 500);
+        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+
+        let paths: Vec<&str> = changes.files.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, vec!["node_modules"], "the directory must not be expanded: {paths:?}");
+        let row = &changes.files[0];
+        assert_eq!((row.status, row.untracked_files), ('?', UNTRACKED_PER_DIR_CAP as i64));
+        // The count is the files behind the row, not the one row itself.
+        assert_eq!(changes.file_count(), UNTRACKED_PER_DIR_CAP as i64);
+
+        let cap = changes.untracked_cap.expect("the cap that was hit is reported");
+        assert_eq!(cap.dir, "node_modules");
+        assert_eq!(cap.files, UNTRACKED_PER_DIR_CAP as i64);
+        assert!(!cap.total, "one directory's cap is not the whole diff's: {cap:?}");
+    }
+
+    #[test]
+    fn a_small_untracked_directory_is_still_expanded_file_by_file() {
+        let repo = TestRepo::new();
+        untracked_tree(&repo, "smalldir", 3);
+        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+        assert_eq!(changes.files.len(), 3, "{:?}", changes.files);
+        assert!(changes.files.iter().all(|c| c.status == '?' && c.untracked_files == 0));
+        assert_eq!(changes.untracked_cap, None);
+        assert_eq!(changes.file_count(), 3);
+    }
+
+    #[test]
+    fn many_capped_directories_stop_at_the_whole_diff_budget() {
+        let repo = TestRepo::new();
+        // Six directories over the per-dir cap: five exhaust the total budget,
+        // and the sixth must not be walked at all.
+        for i in 0..6 {
+            untracked_tree(&repo, &format!("dir{i}"), UNTRACKED_PER_DIR_CAP + 1);
+        }
+        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+        // Five directories' worth of cap, plus the sixth as a bare row: it was
+        // never walked, so it stands for "at least one more file over here".
+        assert_eq!(changes.files.len(), 6);
+        assert_eq!(changes.file_count(), UNTRACKED_TOTAL_CAP as i64 + 1);
+        let cap = changes.untracked_cap.expect("capped");
+        assert!(cap.total, "the whole-diff budget ran out, which hides directories: {cap:?}");
+        // The first directory squeezed by the whole-diff budget rather than by
+        // its own cap. The `total` flag is what says the rest exist too.
+        assert_eq!(cap.dir, "dir4");
+        assert_eq!(cap.files, UNTRACKED_PER_DIR_CAP as i64);
+    }
+
+    #[test]
+    fn an_untracked_file_is_listed_without_its_content_being_read() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // An unreadable file is the observable form of "nothing here reads the
+        // bytes": the old code's `fs::read` failed and dropped the row, which
+        // is the same discarded read that made an unignored `node_modules`
+        // freeze the rail.
+        let repo = TestRepo::new();
+        repo.write("secret.txt", "new\n");
+        let path = repo.path().join("secret.txt");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+        if std::fs::read(&path).is_ok() {
+            return; // running as root, where no file is unreadable
+        }
+
+        let changes = Repo::open(repo.path()).expect("open").changes_vs("HEAD").expect("changes");
+        let paths: Vec<&str> = changes.files.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, vec!["secret.txt"]);
+    }
+
     #[test]
     fn binary_files_count_as_changed_without_line_counts() {
         let repo = TestRepo::new();
         std::fs::write(repo.path().join("blob.bin"), [0u8, 1, 2, 0, 3]).expect("write");
         repo.git(&["add", "-A"]);
         repo.git(&["commit", "--quiet", "-m", "binary"]);
-        let changes = Repo::open(repo.path()).expect("open").changes_vs("origin/main").unwrap();
+        let changes =
+            Repo::open(repo.path()).expect("open").changes_vs("origin/main").unwrap().files;
         let bin = changes.iter().find(|c| c.path == "blob.bin").expect("binary reported");
         assert!(bin.binary);
         assert_eq!((bin.lines_added, bin.lines_removed), (0, 0));

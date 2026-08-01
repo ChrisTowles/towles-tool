@@ -39,6 +39,13 @@ pub struct GitInfo {
     pub uncommitted_files: i64,
     pub uncommitted_added: i64,
     pub uncommitted_removed: i64,
+    /// `uncommitted_files` is a floor, not a total: an untracked directory was
+    /// too large to list and stayed collapsed (`tt_git::repo::UntrackedCap`).
+    /// The rail renders the number with a `+` rather than silently reporting a
+    /// truncated count as the real one — nearly always a `.gitignore` gap,
+    /// which the diff pane's banner names.
+    #[serde(default)]
+    pub uncommitted_capped: bool,
     /// Commits on HEAD that `compared_base` doesn't have.
     pub commits_ahead: i64,
     /// Commits on `compared_base` that HEAD doesn't have. Kept separate from
@@ -729,17 +736,18 @@ fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: 
     let committed = repo.committed_totals_vs(base).unwrap_or_default();
     // Reuses the paths the diff just produced rather than a second status walk.
     let worktree_touched =
-        repo.newest_mtime_unix(uncommitted.iter().map(|c| c.path.as_str())).unwrap_or(0);
+        repo.newest_mtime_unix(uncommitted.files.iter().map(|c| c.path.as_str())).unwrap_or(0);
     GitInfo {
         branch: branch.to_string(),
         is_worktree,
         committed_files: committed.files_changed,
         committed_added: committed.lines_added,
         committed_removed: committed.lines_removed,
-        uncommitted_files: uncommitted.len() as i64,
-        uncommitted_added: uncommitted.iter().map(|c| c.lines_added).sum(),
-        uncommitted_removed: uncommitted.iter().map(|c| c.lines_removed).sum(),
-        dirty: !uncommitted.is_empty(),
+        uncommitted_files: uncommitted.file_count(),
+        uncommitted_added: uncommitted.files.iter().map(|c| c.lines_added).sum(),
+        uncommitted_removed: uncommitted.files.iter().map(|c| c.lines_removed).sum(),
+        uncommitted_capped: uncommitted.untracked_cap.is_some(),
+        dirty: !uncommitted.files.is_empty(),
         worktree_touched_ms: worktree_touched * 1000,
         ..Default::default()
     }
@@ -886,6 +894,32 @@ pub struct DiffFile {
     pub status: String,
     pub lines_added: i64,
     pub lines_removed: i64,
+    /// Nonzero on a `?` row that is a whole untracked directory left collapsed
+    /// because listing it hit a cap — how many files were found before the
+    /// walk stopped, so the pane can say "1000+ files" instead of showing one
+    /// unopenable row.
+    pub untracked_files: i64,
+}
+
+/// The diff pane's file list, and whether producing it was cut short.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffFiles {
+    pub files: Vec<DiffFile>,
+    /// The untracked directory whose expansion stopped at the cap, if any.
+    pub untracked_cap: Option<UntrackedCapInfo>,
+}
+
+/// Wire form of `tt_git::repo::UntrackedCap` — what the pane's banner needs to
+/// name the directory that is almost certainly missing from `.gitignore`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UntrackedCapInfo {
+    pub dir: String,
+    pub files: i64,
+    /// The whole diff's budget ran out, so other untracked directories are
+    /// missing from the list entirely — not just this one's contents.
+    pub total: bool,
 }
 
 /// The commit the diff pane compares against: merge-base with the resolved
@@ -910,17 +944,17 @@ fn resolve_diff_base(
 /// The diff pane's changed-file list, rename-aware, baseline picked by `mode`.
 /// Untracked files appear with status `?` and no line counts — they have no
 /// diff yet. Empty when `dir` isn't a repo or nothing changed.
-pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> Vec<DiffFile> {
+pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffFiles {
     if dir.is_empty() {
-        return Vec::new();
+        return DiffFiles::default();
     }
     let Some(repo) = open_repo(dir) else {
-        return Vec::new();
+        return DiffFiles::default();
     };
     let base = resolve_diff_base(&repo, dir, mode, base_branch);
-    let mut files: Vec<DiffFile> = repo
-        .changes_vs(&base)
-        .unwrap_or_default()
+    let changes = repo.changes_vs(&base).unwrap_or_default();
+    let mut files: Vec<DiffFile> = changes
+        .files
         .into_iter()
         .map(|change| DiffFile {
             path: change.path,
@@ -928,10 +962,16 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> Vec<D
             status: change.status.to_string(),
             lines_added: change.lines_added,
             lines_removed: change.lines_removed,
+            untracked_files: change.untracked_files,
         })
         .collect();
     files.sort_by(|a, b| a.path.cmp(&b.path));
-    files
+    let untracked_cap = changes.untracked_cap.map(|cap| UntrackedCapInfo {
+        dir: cap.dir,
+        files: cap.files,
+        total: cap.total,
+    });
+    DiffFiles { files, untracked_cap }
 }
 
 /// A file's content at the diff baseline, for the original side of the diff
@@ -1328,6 +1368,33 @@ mod tests {
     /// this module can read its own invention — so the assertions moved onto a
     /// real repository, where they can catch a genuine disagreement about what
     /// counts as a change.
+    /// A `node_modules` no `.gitignore` covers: the rail must report a floor
+    /// and say so, and the pane must name the directory rather than list
+    /// hundreds of thousands of rows.
+    #[test]
+    fn an_unignored_dependency_tree_is_capped_and_flagged() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo_with_origin(root.path());
+        let dir = root.path().to_str().unwrap();
+        for i in 0..1_100 {
+            let pkg = root.path().join(format!("node_modules/pkg{}", i % 20));
+            std::fs::create_dir_all(&pkg).unwrap();
+            std::fs::write(pkg.join(format!("f{i}.js")), "x\n").unwrap();
+        }
+
+        let info = compute_git_info(dir, None, None, NOW);
+        assert!(info.dirty);
+        assert!(info.uncommitted_capped, "a truncated count must not read as a total");
+        assert!(info.uncommitted_files > 0);
+
+        let listed = diff_files(dir, DiffMode::Uncommitted, None);
+        assert_eq!(listed.files.len(), 1, "the directory stays one row: {:?}", listed.files);
+        assert_eq!(listed.files[0].status, "?");
+        assert!(listed.files[0].untracked_files > 0);
+        let cap = listed.untracked_cap.expect("the pane can name the directory");
+        assert_eq!(cap.dir, "node_modules");
+    }
+
     #[test]
     fn dirty_and_uncommitted_counts_track_the_working_tree() {
         let root = tempfile::TempDir::new().unwrap();

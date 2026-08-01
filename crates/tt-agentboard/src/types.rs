@@ -212,6 +212,10 @@ pub struct FolderData {
     pub uncommitted_files: i64,
     pub uncommitted_added: i64,
     pub uncommitted_removed: i64,
+    /// `uncommitted_files` is a floor — an untracked directory was too large to
+    /// list. See [`crate::git_info::GitInfo::uncommitted_capped`].
+    #[serde(default)]
+    pub uncommitted_capped: bool,
     pub commits_ahead: i64,
     pub commits_behind: i64,
     /// Unlike `committed_files`, which stays nonzero for any real branch even
