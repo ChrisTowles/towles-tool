@@ -44,8 +44,6 @@ import {
 import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
-import { mouseAction } from "@/lib/shortcut-coach";
-import { withHint } from "@/lib/shortcuts";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
 
@@ -371,9 +369,9 @@ export function RepoGroup({
         <div className="flex shrink-0 items-center gap-1 pl-1">
           <IconBtn
             ghost
-            title={withHint("New task — goal, issues, branch", "ab-new-task")}
+            title="New task — goal, issues, branch"
+            shortcut="ab-new-task"
             onClick={() => {
-              mouseAction("ab-new-task", "agentboard");
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
             }}
             className="hover:text-violet-500"

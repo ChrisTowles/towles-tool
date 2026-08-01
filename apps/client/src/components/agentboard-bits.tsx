@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
-import { Hint } from "@/components/hint";
+import { Hint, ShortcutBadge } from "@/components/hint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
@@ -72,7 +72,7 @@ import {
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint, withHint } from "@/lib/shortcuts";
+import { shortcutAria, shortcutHint, withHint } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +84,7 @@ import { cn } from "@/lib/utils";
  * `ghost` drops the resting border and is what every rail row uses. */
 export function IconBtn({
   title,
+  shortcut,
   onClick,
   className,
   ghost = false,
@@ -91,6 +92,12 @@ export function IconBtn({
   ...props
 }: {
   title: string;
+  /** Registry id of the binding this button duplicates. The tooltip grows a
+   * keycap badge and the click scores itself as a passed-up keystroke, so a
+   * caller passing this must not also call `mouseAction`. Keycaps stay out of
+   * `aria-label` — a screen reader gets the plain title plus
+   * `aria-keyshortcuts`. */
+  shortcut?: string;
   onClick: () => void;
   className?: string;
   ghost?: boolean;
@@ -103,8 +110,12 @@ export function IconBtn({
           variant={ghost ? "ghost" : "outline"}
           size="icon-xs"
           aria-label={title}
+          aria-keyshortcuts={shortcut ? shortcutAria(shortcut) : undefined}
           onClick={(e) => {
             e.stopPropagation();
+            // Every `IconBtn` is an agentboard atom, so that is the screen its clicks
+            // score against — see the file header.
+            if (shortcut) mouseAction(shortcut, "agentboard");
             onClick();
           }}
           className={cn("font-mono text-xs text-muted-foreground", className)}
@@ -113,7 +124,10 @@ export function IconBtn({
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{title}</TooltipContent>
+      <TooltipContent side="bottom">
+        {title}
+        {shortcut && <ShortcutBadge id={shortcut} />}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -838,7 +852,7 @@ function PaneOpenButton({
   return (
     // A chip scoring a click as a passed-up keystroke has to name it, so the
     // hint rides on `shortcutTwin` rather than the caller's `title`.
-    <Hint label={shortcutTwin ? withHint(title, shortcutTwin) : title}>
+    <Hint label={title} shortcut={shortcutTwin}>
       <button
         type="button"
         onClick={(e) => {

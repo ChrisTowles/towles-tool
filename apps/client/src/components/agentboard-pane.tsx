@@ -15,16 +15,12 @@ import {
 } from "@/lib/agentboard";
 import { cn } from "@/lib/utils";
 
-/** Cache health for one pane, shown only while Claude is actually running in
- * it (a live agent for this session). Cache warmth only — no context percent —
- * so the pane chrome stays quiet: `⧗ 42m left` / `◔ 3m left` while warm
- * (amber once inside the warn window — nudge Claude before the cache lapses),
- * `❄ cache cold` once the prompt cache has expired. Nothing when no agent is
- * running here or the session never touched a cache. */
+/** Cache health for one pane. Warmth only — no context percent — so the pane
+ * chrome stays quiet, and nothing at all unless Claude is running here right
+ * now (`agentState` is pruned when the pid dies, so `isAgent && live` is the
+ * gate). */
 function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) {
   const d = session.agentState?.details;
-  // Gate on a live Claude in this pane: `agentState` is pruned when the pid
-  // dies, so `isAgent && live` == "Claude running here right now".
   if (!session.live || !isAgent(session) || !d?.cacheExpiresAt) return null;
   const cold = isCold(d, now);
   const expiring = isCacheExpiring(d, now);
@@ -59,10 +55,8 @@ function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) 
 /** Blocks the terminal until the user deliberately acknowledges a cold prompt
  * cache: unlike the quiet ❄ in the pane header, a cold resume silently
  * re-reads the whole transcript at full price, so this earns a click rather
- * than a glance. The ❄ pulses to draw the eye across a busy multi-pane grid;
- * the card itself stays put so the buttons are always easy to hit. Re-arms on
- * the next cold generation (keyed by `cacheExpiresAt`, the same dedup key the
- * board-wide toast in `screens/agentboard.tsx` uses). */
+ * than a glance. Re-arms on the next cold generation, keyed by `cacheExpiresAt`
+ * — the same dedup key the board-wide toast in `screens/agentboard.tsx` uses. */
 export function ColdCacheOverlay({
   session,
   now,
@@ -117,23 +111,25 @@ export function ColdCacheOverlay({
   );
 }
 
-/** One pane's chrome: glyph · dot · session name · shell kind · running time ·
- * waiting age · cache info · lifecycle buttons. The repo / folder / branch /
- * diff live once in the working-context band above (every pane in a window
- * shares that folder), so they're not repeated here — the pane header only
- * identifies *which session* this is and how it's doing, mirroring the same
- * badges the rail row shows (`fmtElapsed`, `fmtWaitingAge`) so the two
- * surfaces never disagree. */
+/** One pane's chrome. Repo / folder / branch / diff live once in the
+ * working-context band above (every pane in a window shares that folder), so
+ * this header only says *which session* this is and how it's doing — reusing
+ * the rail row's `fmtElapsed`/`fmtWaitingAge` so the two can't disagree. */
 export function PaneHeader({
   session,
   label,
   now,
   actions,
+  focused,
 }: {
   session: SessionData;
   label: string;
   now: number;
   actions: SessionActions;
+  /** Whether this is the tile the `ab-close-session` binding would act on. Only
+   * then does the ✕ name the chord — on any other pane the two aren't twins,
+   * and both the tooltip and the habit score would be lying. */
+  focused: boolean;
 }) {
   const agent = isAgent(session) && session.live;
   const waitingAge = fmtWaitingAge(session.needsSinceMs, now);
@@ -178,6 +174,7 @@ export function PaneHeader({
           )}
           <IconBtn
             title="close session (kills the PTY, drops the record)"
+            shortcut={focused ? "ab-close-session" : undefined}
             onClick={() => actions.close(session.id)}
             className="hover:text-red-500"
           >

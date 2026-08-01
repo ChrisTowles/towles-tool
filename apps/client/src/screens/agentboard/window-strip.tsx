@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
-import { shortcutHint, withHint } from "@/lib/shortcuts";
+import { shortcutHint } from "@/lib/shortcuts";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 
@@ -12,23 +12,11 @@ import { cn } from "@/lib/utils";
 const ADD_CLASS =
   "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
-/**
- * The main area's window strip: one chip per window of the active folder,
- * plus "+ window" / "+ session" and the selected session's Close.
- *
- * A window may only ever hold panes from the one folder it belongs to, so
- * switching folders switches the whole strip, not just which panes show.
- *
- * **Two zones, split by a hairline: tabs, then the things that add one.**
- * Everything here used to be the same 11px pill, so a window (identity, and
- * switchable) looked exactly like "+ session" (an action) — five equivalent
- * buttons in a row. And all three add-actions were violet at rest, which in
- * this app means agent-ness or focus (see the `folder-rail-ui` skill): three
- * of them side by side is decoration, and it spends the hue that has to still
- * mean something on the ✦ next to it. So the glyph keeps the violet and the
- * word goes muted — the group reads as one run of "add something here"
- * without any of it shouting.
- */
+/** The main area's window strip: one chip per window of the active folder,
+ * plus the add-actions and the selected session's Close. Two zones split by a
+ * hairline, because identity and action read alike at one uniform pill size;
+ * only the add glyphs keep violet, so the hue still means agent-ness or focus
+ * (the `folder-rail-ui` skill) rather than decorating three buttons. */
 export function WindowStrip(props: {
   windows: AgWindow[];
   activeWinId: string | undefined;
@@ -108,13 +96,10 @@ export function WindowStrip(props: {
               </span>
               {windows.length > 1 && (
                 // span-with-role, not <button>: it nests inside the window
-                // chip's real <button>, and interactive elements may not nest.
-                // Keyboard support added by hand instead.
-                //
-                // Full strength on the tab you're on, faded until you point at
-                // any other — the browser-tab convention, and the reason it
-                // holds its width either way is that a tab whose size changed
-                // under the pointer would be a tab you can miss.
+                // chip's real <button>, so keyboard support is hand-rolled.
+                // Full strength on the current tab, faded elsewhere until
+                // pointed at — and it holds its width either way, since a tab
+                // that resized under the pointer would be one you can miss.
                 <span
                   role="button"
                   tabIndex={0}
@@ -166,7 +151,7 @@ export function WindowStrip(props: {
         </button>
       </Hint>
       {hasSelection && (
-        <Hint label={withHint("Close the selected session", "ab-close-session")}>
+        <Hint label="Close the selected session" shortcut="ab-close-session">
           <button
             type="button"
             onClick={() => {
