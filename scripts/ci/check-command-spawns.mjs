@@ -27,7 +27,7 @@ const SPAWN_RE = /\b(?:tokio::process::Command|process::Command|Command)::new\b/
 // `record_detached_spawn` call. Verified in the 2026-07 CI audit; keep in sync
 // if a new detached-spawn site is added (it must call record_detached_spawn).
 const ALLOWED_FILES = new Set([
-  "crates-tauri/tt-app/src/terminal.rs",
+  "crates-tauri/tt-app/src/terminal/open_path.rs",
   "crates-tauri/tt-app/src/agentboard.rs",
   "crates-tauri/tt-app/src/lsp.rs",
   "crates/tt-telemetry/build.rs",
