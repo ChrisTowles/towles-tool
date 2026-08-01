@@ -502,6 +502,18 @@ export function dropPane(w: WindowsPayload, paneId: string): WindowsPayload {
   };
 }
 
+/** The pane that should inherit focus when `paneId` closes: the neighbor that slides into its
+ * slot (its right, else its left), or — when it was its window's last pane — the first pane of
+ * the same-folder sibling window `dropPane` will activate. Null when nothing is left. */
+export function successorPane(w: WindowsPayload, paneId: string): string | null {
+  const host = w.windows.find((win) => win.panes.includes(paneId));
+  if (!host) return null;
+  const rest = host.panes.filter((p) => p !== paneId);
+  if (rest.length > 0) return rest[Math.min(host.panes.indexOf(paneId), rest.length - 1)];
+  const sibling = w.windows.find((win) => win.folderDir === host.folderDir && win.id !== host.id);
+  return sibling?.panes[0] ?? null;
+}
+
 /** Swap one pane id for another in place — same window, same position, same column widths. */
 export function replacePane(w: WindowsPayload, fromId: string, toId: string): WindowsPayload {
   const host = w.windows.find((win) => win.panes.includes(fromId));

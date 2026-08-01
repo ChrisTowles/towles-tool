@@ -32,6 +32,7 @@ import {
   modelContextLabel,
   modelLetter,
   stoppablePort,
+  successorPane,
   type TaskBlocker,
   folderHoldsNoWork,
   folderSafeToDelete,
@@ -862,6 +863,45 @@ describe("dropPane", () => {
   it("is a no-op for a pane no window holds", () => {
     const w: WindowsPayload = { windows: [win("w1", "/f", ["s1"])], activeWindows: {} };
     expect(dropPane(w, "ghost")).toBe(w);
+  });
+});
+
+describe("successorPane", () => {
+  it("hands focus to the right-hand neighbor (the pane sliding into the slot)", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["s1", "s2", "s3"])],
+      activeWindows: { "/f": "w1" },
+    };
+    expect(successorPane(w, "s2")).toBe("s3");
+  });
+
+  it("falls back to the left neighbor when closing the last-in-row pane", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["s1", "s2"])],
+      activeWindows: { "/f": "w1" },
+    };
+    expect(successorPane(w, "s2")).toBe("s1");
+  });
+
+  it("crosses into the sibling window dropPane will activate when the window empties", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["s1"]), win("w2", "/f", ["s2", "s3"])],
+      activeWindows: { "/f": "w1" },
+    };
+    expect(successorPane(w, "s1")).toBe("s2");
+  });
+
+  it("never crosses into another folder's window", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["s1"]), win("w2", "/g", ["s2"])],
+      activeWindows: { "/f": "w1", "/g": "w2" },
+    };
+    expect(successorPane(w, "s1")).toBeNull();
+  });
+
+  it("is null for a pane no window holds", () => {
+    const w: WindowsPayload = { windows: [win("w1", "/f", ["s1"])], activeWindows: {} };
+    expect(successorPane(w, "ghost")).toBeNull();
   });
 });
 

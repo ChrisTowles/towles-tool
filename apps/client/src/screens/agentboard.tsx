@@ -59,6 +59,7 @@ import {
   previewPaneId,
   sessionLabel,
   sleep,
+  successorPane,
   taskForFolder,
   folderTask,
   termWriteRetry,
@@ -488,14 +489,16 @@ export function AgentboardScreen() {
     setOpen((prev) => prev.filter((id) => id !== sessionId));
     const expected = expectedKills.current.delete(sessionId);
     if (expected || !exitIsCrash(exit.code, exit.signal)) {
-      removePane(sessionId);
+      closePane(sessionId);
       return;
     }
     const label = exitLabel(exit.code, exit.signal);
     const s = sessionById.get(sessionId);
     toast.error(`${s ? labelFor(s) : "shell"} ${label}`);
     setExitLabels((m) => ({ ...m, [sessionId]: label }));
-    // The task keeps its place in the tiling; only its occupant changes.
+    // The task keeps its place in the tiling; only its occupant changes — the focus ring rides
+    // along.
+    setFocusedPaneId((cur) => (cur === sessionId ? exitPaneId(sessionId) : cur));
     replacePaneInPlace(sessionId, exitPaneId(sessionId));
   }
 
@@ -840,11 +843,37 @@ export function AgentboardScreen() {
     setConfirmRemove(target);
   }
 
+  // Closing the focused pane hands focus to its window neighbor instead of leaving nothing
+  // focused — `selected` moves with it when the neighbor is a live session, so a repeated
+  // ab-close-session chord keeps eating panes. Closing an unfocused pane moves nothing.
+  function shiftFocusFrom(...closedIds: string[]) {
+    const lost = closedIds.some((id) => id === focusedPaneId || id === selected?.sessionId);
+    if (!lost) return;
+    const next = wins
+      ? (closedIds.map((id) => successorPane(wins, id)).find((n) => n !== null) ?? null)
+      : null;
+    if (next === null) {
+      setFocusedPaneId(null);
+      return;
+    }
+    const dir = wins?.windows.find((w) => w.panes.includes(next))?.folderDir;
+    if (dir && sessionById.has(next)) selectSession(dir, next);
+    else setFocusedPaneId(next);
+  }
+
   async function closeSession(sessionId: string) {
     await invoke("ab_close_session", { id: sessionId });
+    // Both ids: a crashed session's tile holds its tombstone, not the session id itself.
+    shiftFocusFrom(sessionId, exitPaneId(sessionId));
     setOpen((prev) => prev.filter((id) => id !== sessionId));
     setSelected((cur) => (cur?.sessionId === sessionId ? null : cur));
     removeSessionPane(sessionId);
+  }
+
+  /** A view pane's ✕ / close shortcut: focus hand-off, then the layout drop. */
+  function closePane(paneId: string) {
+    shiftFocusFrom(paneId);
+    removePane(paneId);
   }
 
   async function commitRename(sessionId: string, name: string) {
@@ -951,6 +980,7 @@ export function AgentboardScreen() {
       [
         activeFolderDir,
         selected,
+        focusedPaneId,
         wins,
         repos,
         folderOf,
@@ -1087,7 +1117,7 @@ export function AgentboardScreen() {
                               // concept surface has no entry point at all rather than one that
                               // opens a disabled pane.
                               onOpenJarvis={jarvisPane ? openJarvis : undefined}
-                              onClosePane={removePane}
+                              onClosePane={closePane}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
                               taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
                               onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
@@ -1215,7 +1245,7 @@ export function AgentboardScreen() {
                 onExit={handleExit}
                 onTitle={onTitle}
                 onOpenTerminalPath={openTerminalPath}
-                onRemovePane={removePane}
+                onRemovePane={closePane}
                 columns={columns}
               />
             </div>
