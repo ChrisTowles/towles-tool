@@ -385,12 +385,18 @@ export function AgentboardScreen() {
   });
 
   // A file link clicked in a folder's terminal → the same files-pane route as Claude's
-  // openFile, landing on the `:line` when the link carried one.
-  function openTerminalPath(dir: string, path: string, line: number | null) {
+  // openFile, landing on the `:line` when the link carried one. The backend resolves first
+  // (`term_resolve_path`) because a relative link is only folder-relative until the pane's
+  // shell `cd`s elsewhere; going through an absolute path also makes `filesPanePathFor` tell
+  // the truth about a hit outside this folder instead of claiming it as one of ours.
+  async function openTerminalPath(dir: string, termId: string, path: string, line: number | null) {
     uiAction("terminal.link_open_file", "agentboard");
-    const rel = filesPanePathFor(dir, path);
+    const resolved = (
+      await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
+    ).unwrapOr(null);
+    const rel = filesPanePathFor(dir, resolved ?? path);
     if (rel == null) {
-      void invoke("term_open_path", { path, cwd: dir, line });
+      void invoke("term_open_path", { path, cwd: dir, line, termId });
       return;
     }
     setFilesOpenRequests((prev) => ({
