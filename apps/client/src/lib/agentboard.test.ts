@@ -19,6 +19,8 @@ import {
   fmtTokens,
   fmtWaitingAge,
   gitCheckedLabel,
+  folderBaseKey,
+  folderStatsKey,
   folderActionableItems,
   folderLanded,
   folderLandedButHasWork,
@@ -1205,6 +1207,40 @@ function folder(overrides: Partial<FolderData>): FolderData {
     ...overrides,
   };
 }
+
+describe("folderStatsKey / folderBaseKey", () => {
+  it("splits working-tree movement from baseline movement", () => {
+    // A fetch or rebase-merge lands new commits on the base: the merge-base the
+    // diff is measured from moves while every working-tree stat stays put. Only
+    // folderBaseKey sees it — which is why DiffPane refetches its file list on
+    // both, not on folderStatsKey alone.
+    const before = folder({ commitsBehind: 0, comparedBase: "origin/main" });
+    const after = folder({ commitsBehind: 12, comparedBase: "origin/main" });
+    expect(folderStatsKey(after)).toBe(folderStatsKey(before));
+    expect(folderBaseKey(after)).not.toBe(folderBaseKey(before));
+  });
+
+  it("sees a retargeted base ref", () => {
+    const a = folder({ comparedBase: "origin/main" });
+    const b = folder({ comparedBase: "origin/develop" });
+    expect(folderBaseKey(a)).not.toBe(folderBaseKey(b));
+  });
+
+  it("sees an edit the aggregate counts can't tell apart", () => {
+    // A line traded between two files: same file count, same ±, different diff.
+    // Only the changed paths' mtime separates them.
+    const before = folder({ uncommittedFiles: 2, worktreeTouchedMs: 1_000 });
+    const after = folder({ uncommittedFiles: 2, worktreeTouchedMs: 2_000 });
+    expect(folderStatsKey(after)).not.toBe(folderStatsKey(before));
+  });
+
+  it("sees an edit that leaves the baseline alone", () => {
+    const clean = folder({ uncommittedFiles: 0, uncommittedAdded: 0 });
+    const dirty = folder({ uncommittedFiles: 1, uncommittedAdded: 3 });
+    expect(folderStatsKey(dirty)).not.toBe(folderStatsKey(clean));
+    expect(folderBaseKey(dirty)).toBe(folderBaseKey(clean));
+  });
+});
 
 describe("isFolderQuiet", () => {
   // Far enough past the ts:1 the `agent()` helper stamps that the grace
