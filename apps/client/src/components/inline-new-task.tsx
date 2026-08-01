@@ -1,11 +1,7 @@
-// Inline new-task flow: give a goal, pick the base branch, and a branch-named
-// worktree is created under the repo's .claude/worktrees/ dir
-// (`task_create` → tt-tasks ops, shared with `tt task new`). The goal slugs the branch name
-// (editable). Unlike the old modal this never blocks the rest of the rail —
-// the form hands off to the caller on submit and closes. The submit binds the
-// task's worktree directory, which is what puts its row on the rail
-// immediately, so the create runs against a row that is already on screen and
-// switching to other repos/sessions meanwhile just works.
+// Inline new-task flow: a goal and a base branch become a branch-named worktree
+// (`task_create` → tt-tasks ops, shared with `tt task new`). It never blocks the
+// rail — submit hands off to the caller and closes, binding the worktree dir so
+// the row is on screen before the git work runs.
 import { Check, ChevronDown, CircleDot, ImagePlus, Sparkles, Undo2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -81,10 +77,8 @@ export type NewTaskRepo = {
   originUrl?: string | null;
 };
 
-/** The fallback improver when settings can't be read (browser dev) or none are
- * configured: one button reproducing the historic "Suggest name + goal"
- * behavior. Its empty `prompt` makes the backend use its own default
- * instruction (`tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`). */
+/** Fallback when settings can't be read or none are enabled. The empty `prompt`
+ * makes the backend use `tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`. */
 const FALLBACK_IMPROVER: PromptImprover = {
   id: "direct",
   label: "Suggest name + goal",
@@ -96,10 +90,8 @@ const FALLBACK_IMPROVER: PromptImprover = {
 /** What the new-task form hands its parent on submit. */
 export type NewTaskSubmit = {
   goal: string;
-  /** Short human-readable card label — a peer of `branch`, not derived from
-   * it. Defaults from the goal (see `goalToTitle`) but is independently
-   * editable, since the goal is Claude's launch instructions and the title
-   * is just what the rail shows. */
+  /** A peer of `branch`, not derived from it: the goal is Claude's launch
+   * instructions, the title is only what the rail shows. */
   title: string;
   branch: string;
   base: string;
@@ -109,16 +101,12 @@ export type NewTaskSubmit = {
   imagePaths: string[];
   /** GitHub issues to attach to the created task (multi-select). */
   issues: IssueItem[];
-  /** Where the worktree will be (`BranchCheck.dir`), bound onto the task row
-   * at submit so its rail row exists before `git worktree add` runs. `null`
-   * when the preflight hasn't answered — the row then appears when the create
-   * resolves, as it used to. */
+  /** Bound onto the task row at submit so the rail row exists before `git
+   * worktree add` runs. `null` until the preflight answers. */
   dir: string | null;
   /** False for "Task only": create the board task but no worktree/agent. */
   worktree: boolean;
-  /** False to create the worktree and its session but leave the PTY at a
-   * bare shell — no `claude` line typed. For work you want the task for but
-   * intend to drive yourself. */
+  /** False leaves the PTY at a bare shell — no `claude` line typed. */
   launchClaude: boolean;
 };
 
@@ -134,9 +122,7 @@ export type TaskCreated = {
 /** Mirrors the Rust `BranchCheck` payload from `task_check_branch`. */
 export type BranchCheck = {
   name: string | null;
-  /** Where the worktree will be, derived from the branch. Known before
-   * anything is created, which is what lets the submit bind it onto the task
-   * row and put the rail row on screen ahead of the git work. */
+  /** Derived from the branch, so it is known before anything is created. */
   dir: string | null;
   taken: boolean;
   branchExists: boolean;
@@ -148,9 +134,8 @@ export type TaskSuggestion = {
   branch: string;
   title: string;
   goal: string;
-  /** Set when claude couldn't answer and the fields were filled from a
-   * locally derived slug instead. A note, not an error — the suggestion is
-   * still usable, so it renders muted rather than red. */
+  /** Set when claude couldn't answer and a local slug filled the fields — a
+   * note, not an error, so it renders muted. */
   fallback: string | null;
 };
 
@@ -159,13 +144,10 @@ export type TaskSuggestion = {
  * become a second copy of the whole goal. */
 export const BRANCH_SLUG_SOURCE_CHARS = 50;
 
-/** Per-repo "assigned to me" vs "all open issues" scope for the issue
- * picker below, persisted per `repo.key` rather than one global toggle — a
- * repo where you triage everything and a repo where only your own issues
- * are relevant want different defaults, and both should stick across opens.
- * Defaults to "all" when nothing's stored yet: unlike the Kanban board's
- * import dialog, a new task is just as often started from someone else's
- * open issue as from one of your own. */
+/** Issue-picker scope, per `repo.key` rather than one global toggle — a repo
+ * you triage and a repo where only your own issues matter want different
+ * defaults. "all" when unset: a task starts as often from someone else's
+ * issue as from your own. */
 function issueScopeKey(repoKey: string): string {
   return `tt-new-task-issue-mine:${repoKey}`;
 }
@@ -186,9 +168,8 @@ export function goalToBranch(goal: string): string {
   return slug ? `feat/${slug}` : "";
 }
 
-/** How much of the goal `goalToTitle` keeps — mirrors
- * `tt_tasks::suggest`'s `TITLE_MAX_CHARS`, so the no-Claude title default
- * here matches what the "Suggest" flow's own local fallback would produce. */
+/** Mirrors `tt_tasks::suggest`'s `TITLE_MAX_CHARS`, so the no-Claude default
+ * matches what the suggest flow's local fallback produces. */
 export const TITLE_MAX_CHARS = 60;
 
 /** Goal → title default: the goal itself, cut at a word boundary — plain
@@ -202,20 +183,17 @@ export function goalToTitle(goal: string): string {
   return lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
 }
 
-/** Issue → branch name: `feat/<number>-<slug>`, keeping this form's own
- * `feat/` prefix (not tt-git's `feature/<number>-<slug>`, which is Cockpit's
- * issue-branch convention on an already-existing checkout, not a new task)
- * so a picked issue produces the same shape of branch name as a typed goal. */
+/** `feat/<number>-<slug>` — this form's prefix, not tt-git's `feature/`
+ * (Cockpit's convention, for an existing checkout), so a picked issue and a
+ * typed goal produce the same shape. */
 export function branchFromIssue(number: number, title: string): string {
   const slug = slugify(title.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${number}-${slug}` : `feat/${number}`;
 }
 
-/** The inline goal/branch/base form, embedded directly in the rail under the
- * repo (or, for a solo repo, the merged repo+folder) header whose "+" opened
- * it. Submitting hands the collected input to `onSubmit` and closes — it does
- * not itself wait on `task_create`, so the parent is free to run that call in
- * the background against the rail row the submit has already created. */
+/** Embedded in the rail under the header whose "+" opened it. Submit hands the
+ * input to `onSubmit` and closes without awaiting `task_create`, so the parent
+ * can run it against the row the submit already created. */
 export function InlineNewTask({
   repo,
   onCancel,
@@ -231,10 +209,8 @@ export function InlineNewTask({
 }) {
   const [goal, setGoal] = useState(initialGoal ?? "");
   const [images, setImages] = useState<PastedImage[]>([]);
-  // Attached images are written to disk as soon as they're pasted, not at
-  // submit: "Suggest name + goal" needs real paths to hand `claude -p` (a
-  // screenshot is often the entire brief), and staging once means create and
-  // suggest reference the same files instead of writing two copies.
+  // Staged on paste, not at submit: an improver needs real paths to hand
+  // `claude -p`, and staging once keeps create and suggest on the same files.
   const [imagePaths, setImagePaths] = useState<string[]>([]);
   // Which attachment the full-size viewer is showing, by id — see
   // `ImageLightbox` for why it isn't an index.
@@ -250,10 +226,7 @@ export function InlineNewTask({
   // the user explicitly picks one, so their own defaults apply.
   const [model, setModel] = useState<ModelChoice>(USE_DEFAULT);
   const [effort, setEffort] = useState<EffortChoice>(USE_DEFAULT);
-  // Prompt improvers (Direct / Plan / Brainstorm by default) — loaded from
-  // settings, filtered to the enabled ones. Each is a button that rewrites the
-  // goal field via `claude -p`; `suggesting` holds the id of the one currently
-  // running so only that button shows the spinner text.
+  // Prompt improvers, loaded from settings and filtered to the enabled ones.
   const [improvers, setImprovers] = useState<PromptImprover[]>([FALLBACK_IMPROVER]);
   const [moreOpen, setMoreOpen] = useState(false);
   // Launching Claude on the goal is the whole point of the flow, so it's on
@@ -261,19 +234,14 @@ export function InlineNewTask({
   const [launchClaude, setLaunchClaude] = useState(true);
   const [branches, setBranches] = useState<BaseBranch[]>([]);
   const [baseOpen, setBaseOpen] = useState(false);
-  // One task for whatever the form has to say — an error (nothing happened)
-  // or a note (something happened, with a caveat). Modeled as one piece of
-  // state because they are mutually exclusive on screen; two would mean every
-  // `showError` also had to remember to clear the other one.
+  // One slot for an error or a note: mutually exclusive on screen, and two
+  // would mean every `showError` had to remember to clear the other.
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "note" } | null>(null);
   const showError = (text: string) => setNotice({ text, kind: "error" });
   const [branchCheck, setBranchCheck] = useState<BranchCheck | null>(null);
-  // The id of the improver currently running, or null — so only the clicked
-  // button shows its running state while the others just disable.
+  // Only the clicked improver shows a running state; the rest just disable.
   const [suggesting, setSuggesting] = useState<string | null>(null);
-  // What the goal/branch fields held right before the last accepted
-  // suggestion or picked issue overwrote them — lets "Undo" put them back
-  // exactly.
+  // What the fields held before the last overwrite, so "Undo" is exact.
   const [preOverwrite, setPreOverwrite] = useState<{
     goal: string;
     branchEdit: string | null;
@@ -283,16 +251,13 @@ export function InlineNewTask({
   // Set by either issue path — the Pick-issue popover or the goal field's `#`
   // autocomplete — so `gh` is shelled once, on first need, either way.
   const [issuesWanted, setIssuesWanted] = useState(false);
-  // Lazy-initialized once from this repo's stored preference: the form
-  // remounts fresh per open (see the base-branches effect below), so there's
-  // no prop-change case to keep in sync with.
+  // Lazy once from the stored preference — the form remounts per open.
   const [issueAssignedToMe, setIssueAssignedToMeState] = useState(() =>
     loadIssueScopeMine(repo.key),
   );
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuesError, setIssuesError] = useState<string | null>(null);
-  // Issues to attach to the created task — multi-select (#339); the first
-  // pick also seeds the goal/branch fields.
+  // Multi-select; the first pick also seeds the goal/branch fields.
   const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>([]);
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
@@ -305,10 +270,7 @@ export function InlineNewTask({
   const title = titleEdit ?? goalToTitle(goal);
 
   useEffect(() => {
-    // Guarded like the branchCheck effect below: the caller unmounts this
-    // form on cancel/submit rather than reusing one instance across opens,
-    // so this mainly guards a fast close-then-reopen of the same repo's form
-    // against a stale fetch's `.then` landing after a fresh one already has.
+    // Guards a fast close-then-reopen against a stale fetch's `.then`.
     let cancelled = false;
     void invoke<BaseBranch[]>(
       "task_base_branches",
@@ -327,17 +289,12 @@ export function InlineNewTask({
     return () => {
       cancelled = true;
     };
-    // Only re-fetch if the repo this form is open for changes — the fields
-    // themselves start empty once per mount, which is once per open (the
-    // caller unmounts the form on cancel/submit rather than hiding it).
+    // Re-fetch only on a changed repo; a mount is an open.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on a changed repo; showError is stable and the setters are React-stable
   }, [repo.dir]);
 
-  // Load the enabled prompt improvers once per open. Reads the same shared
-  // settings file the Settings screen writes, so an improver added/edited there
-  // shows up the next time this form opens. Falls back to the single historic
-  // "Suggest name + goal" button if settings can't be read (browser dev) or
-  // none are enabled, so the row is never empty.
+  // Once per open, from the same file Settings writes — an improver edited
+  // there shows up on the next open. Never an empty row: see the fallback.
   useEffect(() => {
     let cancelled = false;
     void loadUserSettings().then((s) => {
@@ -350,9 +307,8 @@ export function InlineNewTask({
     };
   }, []);
 
-  // Debounced preflight: is `branch` a legal git ref, and would its derived
-  // task name collide with an existing one? Cheap and read-only, so it's
-  // safe to fire on every settled keystroke rather than only at submit time.
+  // Debounced preflight: legal ref, and no colliding task name. Read-only,
+  // so it can fire on every settled keystroke.
   useEffect(() => {
     if (!branch) {
       setBranchCheck(null);
@@ -379,9 +335,8 @@ export function InlineNewTask({
     (branchCheck?.taken ? `a task named "${branchCheck.name}" already exists` : null) ??
     (branchCheck?.branchExists ? `a branch named "${branch.trim()}" already exists` : null);
 
-  // Preferred improvers get their own button; the rest sit under "More". If
-  // none are marked preferred, showing an empty row and hiding everything
-  // behind a menu would be strictly worse than promoting them all.
+  // Preferred get their own button, the rest sit under "More" — unless none
+  // are preferred, where an empty row would be strictly worse.
   const anyPreferred = improvers.some((i) => i.preferred);
   const preferredImprovers = anyPreferred ? improvers.filter((i) => i.preferred) : improvers;
   const otherImprovers = anyPreferred ? improvers.filter((i) => !i.preferred) : [];
@@ -390,16 +345,12 @@ export function InlineNewTask({
   const improverDisabled =
     suggesting !== null || staging || (!goal.trim() && imagePaths.length === 0);
 
-  // A prompt-improver button. Manual only — never runs on a timer or
-  // keystroke. Asks claude -p (cwd = the repo, so it has real repo context) to
-  // rewrite the goal per `improver.prompt` and propose a branch name, then
-  // fills both editable fields directly. The fields stay editable (or "Undo"
-  // puts back exactly what was there) — that's the confirmation step, not a
-  // separate accept/reject panel. Because the rewrite lands in the field, the
-  // launch path needs no improver knowledge at all.
+  // Manual only — never a timer or a keystroke. Asks `claude -p` (cwd = the
+  // repo, for real context) to rewrite the goal per `improver.prompt` and fills
+  // the editable fields directly: staying editable, with Undo, *is* the
+  // confirmation step, and the launch path needs no improver knowledge.
   async function runImprover(improver: PromptImprover) {
-    // An attached screenshot is a complete brief on its own ("make it look
-    // like this"), so images alone are enough to ask — not just typed text.
+    // A screenshot is a complete brief on its own, so images alone can ask.
     if (suggesting || (!goal.trim() && !imagePaths.length)) return;
     setMoreOpen(false);
     setSuggesting(improver.id);
@@ -440,10 +391,8 @@ export function InlineNewTask({
     saveIssueScopeMine(repo.key, mine);
   }
 
-  // Issue list follows the repo this form is open for and the assignee
-  // toggle, and only loads once the picker is opened — a task is created far
-  // more often by typing a goal than by picking an issue, so there's no
-  // reason to shell `gh` on every form mount.
+  // Loads only once the picker opens — a task is created far more often by
+  // typing a goal, and this shells `gh`.
   useEffect(() => {
     if (!issuesWanted) return;
     let cancelled = false;
@@ -458,10 +407,8 @@ export function InlineNewTask({
     };
   }, [issuesWanted, issueAssignedToMe, repo.dir]);
 
-  /** Attach an issue without touching the goal/branch fields — the `#`
-   * autocomplete already wrote the reference the user typed, so seeding those
-   * (the way a first `toggleIssue` pick does) would clobber what they're
-   * mid-sentence on. Idempotent: re-referencing `#12` doesn't double-attach. */
+  /** Attach without touching the fields — the `#` autocomplete already wrote
+   * what the user typed. Idempotent: `#12` twice attaches once. */
   function attachIssue(issue: IssueItem) {
     setSelectedIssues((prev) =>
       prev.some((i) => i.repo === issue.repo && i.number === issue.number)
@@ -470,14 +417,10 @@ export function InlineNewTask({
     );
   }
 
-  // Toggle an issue in/out of the selection (multi-select, #339 — every
-  // selected issue becomes a link on the created task). The *first* pick
-  // additionally seeds goal + branch, no confirmation step — same "just
-  // overwrite, Undo is the confirmation" shape as `suggest()` above; later
-  // picks only attach, so an edited goal is never clobbered. The title (plus
-  // the number, for traceability and so Claude can `gh issue view` it for
-  // the rest) is all there is to seed with: the issue-list fetch this form
-  // uses doesn't carry the issue body. The popover stays open for more picks.
+  // The *first* pick also seeds goal + branch — same overwrite-with-Undo shape
+  // as `suggest()`; later picks only attach, so an edited goal survives. Title
+  // and number are all there is to seed with (the list carries no body), and
+  // the number lets Claude `gh issue view` the rest.
   function toggleIssue(issue: IssueItem) {
     const already = selectedIssues.some((i) => i.repo === issue.repo && i.number === issue.number);
     if (already) {
@@ -495,15 +438,10 @@ export function InlineNewTask({
     setSelectedIssues((prev) => [...prev, issue]);
   }
 
-  // Screenshots are how a lot of goals actually get described ("make it look
-  // like this", "this is the error"), so the goal field takes an image paste
-  // directly. The bytes are held here until submit, then staged as files
-  // outside the repo (`tt_tasks::pasted`) whose paths go into Claude's
-  // opening prompt.
-  // Two paths can attach the same image (the DOM paste event on platforms
-  // that populate it, and the host-clipboard read below), so adding is
-  // idempotent on the bytes — identical content is the double-path, not a
-  // user asking for two copies of one screenshot.
+  // The goal field takes an image paste directly; bytes are staged outside the
+  // repo (`tt_tasks::pasted`) and their paths go into Claude's opening prompt.
+  // Two paths can attach the same image (the DOM event and the host-clipboard
+  // read below), so adding is idempotent on the bytes.
   async function addImages(incoming: PastedImage[]) {
     if (!incoming.length) return;
     const seen = new Set(images.map((i) => i.dataBase64));
@@ -515,10 +453,8 @@ export function InlineNewTask({
     await stageImages(next);
   }
 
-  /** Write `list` to the staging dir and remember the paths. Failing here is
-   * worth surfacing immediately — the image is visibly attached, so silently
-   * having no file behind it would only show up later as a prompt pointing at
-   * nothing. */
+  /** Failing here is surfaced immediately: the image looks attached, so a
+   * missing file would only show up as a prompt pointing at nothing. */
   async function stageImages(list: PastedImage[]) {
     if (!list.length) {
       setImagePaths([]);
@@ -552,14 +488,9 @@ export function InlineNewTask({
     });
   }
 
-  // Read the image off the OS clipboard through Rust.
-  //
-  // This is the *primary* path, not a fallback, because the DOM can't be
-  // relied on here: WebKitGTK delivers an image paste with empty
-  // `clipboardData`, and a Ctrl+V there may not fire a `paste` event at all.
-  // Hanging image paste off that event would make the feature work on some
-  // platforms and silently do nothing on this one. `keydown` always fires,
-  // and the host clipboard is the same source the user actually copied to.
+  // The *primary* path, not a fallback: WebKitGTK delivers an image paste with
+  // empty `clipboardData`, and Ctrl+V there may fire no `paste` event at all.
+  // `keydown` always fires, and the host clipboard is what was copied to.
   async function pasteFromHostClipboard(): Promise<boolean> {
     const image = await clipboardImageFromHost();
     if (!image) return false;
@@ -576,14 +507,10 @@ export function InlineNewTask({
     void stageImages(next);
   }
 
-  /** Fold any `#N` already typed in the goal into the attach list, so a goal
-   * that already names an issue doesn't also require a separate manual
-   * Pick-issue step. Deterministic text matching against whatever issue list
-   * has already loaded (from the Pick-issue popover or the goal's own `#`
-   * autocomplete) — no extra `gh` round-trip at submit, and no LLM guessing
-   * at looser references. If the issue list hasn't loaded yet, this is a
-   * no-op for this submit; the reference is still visibly highlighted in the
-   * goal text either way. */
+  /** Fold any `#N` typed in the goal into the attach list, so naming an issue
+   * doesn't also need a Pick-issue step. Deterministic matching against the
+   * already-loaded list — no `gh` round-trip at submit, no guessing at looser
+   * references, and a no-op if nothing has loaded yet. */
   function reconcileGoalIssueRefs(): IssueItem[] {
     if (!issues) return selectedIssues;
     const already = new Set(selectedIssues.map((i) => `${i.repo}#${i.number}`));
@@ -653,9 +580,8 @@ export function InlineNewTask({
           );
           if (pastedImages.length) {
             e.preventDefault();
-            // An image type we can't write (SVG, say) would otherwise vanish
-            // silently — the paste is already swallowed by the preventDefault
-            // above, so say why rather than looking like nothing happened.
+            // The preventDefault above already swallowed the paste, so an
+            // unwritable type (SVG) must say why rather than vanish.
             if (!pastedImages.some((it) => isPasteableImage(it.type))) {
               showError(`Can't attach ${pastedImages[0].type} — paste a PNG, JPEG, GIF, or WebP.`);
               return;
@@ -663,14 +589,11 @@ export function InlineNewTask({
             void pasteImages(e.clipboardData);
             return;
           }
-          // Text paste: leave it to the textarea. Checked via getData rather
-          // than `items` because that's the accessor WebKitGTK actually
-          // populates (same reason terminal-view.tsx uses it).
+          // Text: leave it to the textarea. `getData`, not `items` — that is
+          // what WebKitGTK populates.
           if (e.clipboardData?.getData("text")) return;
-          // Nothing in the event at all. On WebKitGTK that's exactly what an
-          // image paste looks like (Ctrl+V of a screenshot fires `paste` with
-          // empty clipboardData), so ask the OS clipboard via Rust before
-          // concluding there's nothing to attach.
+          // Empty is what a WebKitGTK image paste looks like, so ask the OS
+          // clipboard before concluding there's nothing to attach.
           e.preventDefault();
           void pasteFromHostClipboard();
         }}
@@ -686,10 +609,8 @@ export function InlineNewTask({
             submit();
           }
           if (e.key === "Escape") cancel();
-          // Ctrl/Cmd+V: check the OS clipboard for an image. Deliberately
-          // does NOT preventDefault — a text paste must still land in the
-          // textarea natively, and a clipboard holding an image has no text
-          // to insert anyway, so both cases do the right thing.
+          // No preventDefault: a text paste must still land natively, and an
+          // image-only clipboard has no text to insert.
           if (e.key.toLowerCase() === "v" && (e.metaKey || e.ctrlKey)) {
             void pasteFromHostClipboard();
           }

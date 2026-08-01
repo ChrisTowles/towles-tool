@@ -89,7 +89,7 @@ impl Default for JournalSettings {
 }
 
 /// AgentBoard UI preferences the *Rust* side reads or writes. Every field is
-/// optional.
+/// `None` until the user changes it, so the file stays clean for the TS CLI.
 ///
 /// Deliberately **not** a model of the whole `agentboard` block: the file is co-owned
 /// with the TypeScript CLI and [`save_merge_to`] deep-merges over what is on disk, so
@@ -101,25 +101,17 @@ impl Default for JournalSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentboardSettings {
     /// Context-% at/above which a cold (cache-expired) Claude session gets the
-    /// "compact" nudge in the app. `None` = the built-in default (30). Only
-    /// written once the user changes it, so the shared settings file stays
-    /// clean for the TS CLI.
+    /// "compact" nudge. `None` = 30.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_recommend_percent: Option<u8>,
 
-    /// Desktop notifications master switch — off silences every
-    /// [`NotifyKind`]. `None` = the built-in default (on). Only written once
-    /// the user changes it, so the shared settings file stays clean for the TS
-    /// CLI.
+    /// Master switch — off silences every [`NotifyKind`]. `None` = on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notify: Option<bool>,
 
-    /// Least-urgent [`NotifyLevel`] still allowed through while [`notify`] is
-    /// on: a kind notifies when its own level is at or above this. `None` = the
-    /// built-in default ([`DEFAULT_NOTIFY_THRESHOLD`], i.e. everything). An
-    /// unrecognized value (a newer build's level, a hand-edit) reads as `None`
-    /// rather than failing the whole settings file — same tolerance rule as
-    /// every other key in this shared file.
+    /// A kind notifies when its own level is at or above this. `None` =
+    /// [`DEFAULT_NOTIFY_THRESHOLD`]. An unrecognized value (a newer build's
+    /// level, a hand-edit) reads as `None` rather than failing the whole file.
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "lenient",
@@ -127,55 +119,37 @@ pub struct AgentboardSettings {
     )]
     pub notify_threshold: Option<NotifyLevel>,
 
-    /// Copy the terminal's active selection to the clipboard as soon as a
-    /// selection gesture ends (copy-on-select). `None` = the built-in default
-    /// (on). Only written once the user changes it, so the shared settings
-    /// file stays clean for the TS CLI.
+    /// Copy the terminal selection to the clipboard when the gesture ends.
+    /// `None` = on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copy_on_select: Option<bool>,
 
-    /// Font size (px) for the app's canvas terminals. `None` = the built-in
-    /// default (13). Written when the user zooms with Ctrl/⌘ +/- or edits the
-    /// setting, so the shared settings file stays clean for the TS CLI until
-    /// then.
+    /// Canvas-terminal font px; also written by the Ctrl/⌘ +/- zoom. `None` = 13.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_font_size: Option<u8>,
 
-    /// Font size (px) for the app's Monaco surfaces (editor and diff panes).
-    /// `None` = the built-in default (12).
+    /// Monaco font px (editor and diff panes). `None` = 12.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub editor_font_size: Option<u8>,
 
-    /// Let board-wide action shortcuts (jump to next/prev session needing you,
-    /// close/split session, toggle diff/rail) fire even while a terminal has
-    /// focus, instead of being swallowed as shell input. `None` = the built-in
-    /// default (on). Only written once the user changes it, so the shared
-    /// settings file stays clean for the TS CLI.
+    /// Let board-wide action shortcuts fire even while a terminal has focus,
+    /// instead of being swallowed as shell input. `None` = on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcuts_work_in_terminal: Option<bool>,
 
-    /// Show the one-line "there's a shortcut for that" reminder when a click
-    /// does something a keyboard binding also does. `None` = the built-in
-    /// default (on). Only the *reminder* is switched off — the
-    /// keyboard-vs-mouse tracking behind the Telemetry screen's Keyboard tab
-    /// is part of the event log and has no switch. Only written once the user
-    /// changes it, so the shared settings file stays clean for the TS CLI.
+    /// Show the "there's a shortcut for that" reminder when a click does a
+    /// binding's job. `None` = on. Gates only the *reminder* — the
+    /// keyboard-vs-mouse tracking is event log, and has no switch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcut_coach: Option<bool>,
 
-    /// Group the Board kanban's tasks into per-repo swimlanes. `None` = the
-    /// built-in default (on). Only written once the user changes it, so the
-    /// shared settings file stays clean for the TS CLI.
+    /// Group the Board kanban into per-repo swimlanes. `None` = on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board_group_by_repo: Option<bool>,
 
-    /// Which checkouts the Agentboard rail shows — see [`RailFilter`]. `None` =
-    /// the frontend's default (all of them). An unrecognized value reads as
-    /// `None`, same tolerance rule as
-    /// [`notify_threshold`](Self::notify_threshold). Only written once the user
-    /// changes it, so the shared settings file stays clean for the TS CLI.
-    /// Rust never interprets this value — it's opaque storage for a
-    /// frontend-only filter, same treatment as `board_group_by_repo`.
+    /// Which checkouts the rail shows — see [`RailFilter`]. `None` = all.
+    /// Opaque storage: Rust never interprets it, and an unrecognized value
+    /// reads as `None` like [`notify_threshold`](Self::notify_threshold).
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "lenient",
@@ -188,18 +162,15 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_recent_hours: Option<u32>,
 
-    /// Show git worktrees the Agentboard discovered but no board task is bound to — as
-    /// rail folders. `None` = off, only the main checkout and worktrees the user asked
-    /// for. Unlike [`rail_filter`](Self::rail_filter) this one *is* interpreted in Rust,
-    /// by the engine's discovery, and is only written once the user toggles it.
+    /// Show discovered worktrees no board task is bound to. `None` = off.
+    /// Unlike [`rail_filter`](Self::rail_filter) this one *is* read in Rust, by
+    /// the engine's discovery.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
-    /// Enable the native Bevy surface (`tt-jarvis`): the strip at the bottom of the rail
-    /// and the per-checkout `jarvis` pane. `None` = off — it is a proof-of-concept, and an
-    /// attached pane holds a Wayland subsurface plus a vsync-paced render thread for the
-    /// app's whole life. Rust never interprets this; the frontend mounting or unmounting
-    /// `NativePane` is what starts and stops that thread.
+    /// The native Bevy surface (`tt-jarvis`): the rail strip and the `jarvis`
+    /// pane. `None` = off — a proof-of-concept holding a Wayland subsurface and
+    /// a vsync-paced render thread. Mounting `NativePane` is what starts it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_pane: Option<bool>,
 }
@@ -211,12 +182,9 @@ pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 /// so only the main checkout and board-bound worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
 
-/// Which checkouts reach the Agentboard rail. Three answers to "show me less",
-/// and they are not a scale — [`Active`](Self::Active) asks about *now*
-/// (something running, dirty, unpushed, waiting on you) while
-/// [`Recent`](Self::Recent) asks about the last N hours, so a checkout you
-/// committed to an hour ago and walked away from is hidden by the first and
-/// kept by the second.
+/// Which checkouts reach the rail. Not a scale: [`Active`](Self::Active) asks
+/// about *now* (running, dirty, unpushed), [`Recent`](Self::Recent) about the
+/// last N hours, and a checkout you walked away from answers them differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -232,14 +200,11 @@ pub enum RailFilter {
 /// Built-in default for [`AgentboardSettings::notify`]: notifications on.
 pub const DEFAULT_NOTIFY: bool = true;
 
-/// Built-in default for [`AgentboardSettings::notify_threshold`]: the least
-/// urgent level, so an untouched install still gets every notification — what
-/// the five per-kind switches this replaced defaulted to.
+/// Least urgent, so an untouched install still gets every notification.
 pub const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = NotifyLevel::Routine;
 
-/// How much a notification is worth interrupting for. Ordered: `Routine <
-/// Important < Urgent`, which is the whole point — [`AgentboardSettings::
-/// notify_threshold`] compares against it.
+/// Ordered `Routine < Important < Urgent`, which is the whole point —
+/// [`AgentboardSettings::notify_threshold`] compares against it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -278,9 +243,8 @@ pub enum NotifyKind {
 }
 
 impl NotifyKind {
-    /// This kind's fixed urgency. Meetings and blocked agents are urgent
-    /// because acting late is worthless; your own broken CI is important;
-    /// someone else's review request and a sick collector keep until you look.
+    /// Meetings and blocked agents are urgent because acting late is
+    /// worthless; your own broken CI is important; the rest keeps.
     pub fn level(self) -> NotifyLevel {
         match self {
             NotifyKind::NeedsYou | NotifyKind::MeetingStart => NotifyLevel::Urgent,
@@ -291,9 +255,8 @@ impl NotifyKind {
 }
 
 impl AgentboardSettings {
-    /// Whether `kind` may fire a desktop notification: the master switch is on
-    /// and the kind is at least as urgent as the threshold. The one place that
-    /// decision is made — callers gate on this, never on the raw fields.
+    /// The one place the decision is made — callers gate on this, never on
+    /// the raw fields.
     pub fn notifies(&self, kind: NotifyKind) -> bool {
         self.notify.unwrap_or(DEFAULT_NOTIFY)
             && kind.level() >= self.notify_threshold.unwrap_or(DEFAULT_NOTIFY_THRESHOLD)
@@ -315,8 +278,8 @@ where
 }
 
 /// A **prompt improver**: one button in the Agentboard new-task form that
-/// rewrites the goal you typed before the task starts (Direct / Plan /
-/// Brainstorm by default).
+/// rewrites the goal you typed before the task starts (Direct / Clarify /
+/// Brainstorm / Interview by default).
 ///
 /// Clicking one runs `claude -p` through [`tt_tasks::suggest`] with this improver's
 /// [`prompt`](Self::prompt) as the *instruction*, filling the form's goal + branch fields
@@ -345,10 +308,10 @@ pub struct PromptImprover {
 }
 
 impl PromptImprover {
-    /// The built-in improvers, all enabled and preferred: Direct (restate it
-    /// plainly — the historic "Suggest name + goal" behavior), Plan (turn it
-    /// into a plan-first ask), and Brainstorm (turn it into an explore-options
-    /// ask).
+    /// The built-in improvers, all enabled and preferred. They run along one
+    /// axis — how sure you are of the task — from Direct (I know what needs
+    /// doing, go) through Clarify and Brainstorm to Interview (I can't state
+    /// it yet; question me first).
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -359,11 +322,11 @@ impl PromptImprover {
                 prompt: DEFAULT_IMPROVER_DIRECT.to_string(),
             },
             Self {
-                id: "plan".to_string(),
-                label: "Plan".to_string(),
+                id: "clarify".to_string(),
+                label: "Clarify".to_string(),
                 enabled: true,
                 preferred: true,
-                prompt: DEFAULT_IMPROVER_PLAN.to_string(),
+                prompt: DEFAULT_IMPROVER_CLARIFY.to_string(),
             },
             Self {
                 id: "brainstorm".to_string(),
@@ -371,6 +334,13 @@ impl PromptImprover {
                 enabled: true,
                 preferred: true,
                 prompt: DEFAULT_IMPROVER_BRAINSTORM.to_string(),
+            },
+            Self {
+                id: "interview".to_string(),
+                label: "Interview".to_string(),
+                enabled: true,
+                preferred: true,
+                prompt: DEFAULT_IMPROVER_INTERVIEW.to_string(),
             },
         ]
     }
@@ -381,22 +351,25 @@ impl PromptImprover {
 /// "Suggest name + goal" button used to have.
 pub const DEFAULT_IMPROVER_DIRECT: &str = "Restate the task clearly and concisely in one sentence.";
 
-/// Default "Plan" improver: rewrite the ask so the session plans before editing.
-pub const DEFAULT_IMPROVER_PLAN: &str = "Rewrite the task as a request for an implementation plan: \
-research the codebase first and do not edit any files yet; lay out the approach, the key decisions \
-worth revisiting, and the concrete steps, then wait for approval before implementing. Keep the \
-original task's intent and any specifics it named.";
+/// Default "Clarify" improver: Direct with room to say what a one-liner leaves
+/// implied — which is what the extra sentences are *for*.
+pub const DEFAULT_IMPROVER_CLARIFY: &str = "Restate the task in 2 to 3 sentences, making \
+explicit what a one-line version leaves implied.";
 
-/// Default "Brainstorm" improver: rewrite the ask into an explore-options one.
-pub const DEFAULT_IMPROVER_BRAINSTORM: &str = "Rewrite the task as a request to brainstorm several \
-distinct approaches before any implementation: for each, sketch the idea, its tradeoffs, and when \
-it's the right call; do not edit any files; end by recommending one and asking which to pursue. \
-Keep the original task's intent and any specifics it named.";
+/// Default "Brainstorm" improver: the plan decisions-first, so what comes back
+/// is the handful of choices worth overruling, not a wall of mechanical steps.
+pub const DEFAULT_IMPROVER_BRAINSTORM: &str = "Rewrite the task as a request for an \
+implementation plan in HTML that leads with the decisions I'm most likely to tweak — data model, \
+type interfaces, anything user-facing — and buries the mechanical work at the bottom.";
 
-/// Data-hub collector settings (the Rust CLI/app's tt.db collectors; the TS CLI
-/// ignores this block). Each collector is configured independently — enable
-/// flag, refresh cadence, and (for the claude-backed calendar) which MCP
-/// provider to drive so the same app works at home (Google) and work (Outlook).
+/// Default "Interview" improver: for a task you can't state yet — the session
+/// reads the code first, so its questions are the ones the code can't answer.
+pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to research the \
+codebase first and then interview me one question at a time about what is still ambiguous, \
+prioritizing questions where my answer would change the architecture.";
+
+/// Data-hub collectors (Rust-only; the TS CLI ignores this block). Each is
+/// configured independently — enable flag, cadence, and its own prompt.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -407,27 +380,21 @@ pub struct CollectorsSettings {
     pub slack: SlackDmCollector,
 }
 
-/// Calendar collector: shells out to `claude -p` per configured source, so it
-/// costs tokens — disabled by default; opt in per machine.
-///
-/// The collector's only purpose is **focus protection** — knowing when the next
-/// meeting is and how much focus time is left — not calendar management. Each
-/// [`CalendarSource`] is pulled and stored independently so a personal and a
-/// work calendar can be merged into one timeline without clobbering each other.
+/// Shells out to `claude -p` per source, so it costs tokens — off by default.
+/// Its only purpose is **focus protection**, not calendar management. Each
+/// [`CalendarSource`] is pulled and stored independently, so a personal and a
+/// work calendar merge into one timeline without clobbering each other.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarCollector {
     pub enabled: bool,
     pub refresh_minutes: u64,
-    /// Working-hours window that further gates *when* the (already token-costing)
-    /// calendar collector may run. Skips nights and weekends when there's no
-    /// meeting to count down to. Only narrows an already-`enabled` collector;
-    /// disable it (`enabled = false`) to restore 24/7 running.
+    /// Narrows *when* an already-`enabled` collector may run; disable it to
+    /// restore 24/7.
     pub quiet_hours: CalendarQuietHours,
-    /// Calendars to pull, each with its own prompt. Every enabled source is run
-    /// separately and written under its own `id`, so adding a second calendar
-    /// never displaces the first.
+    /// Each enabled source is run separately and written under its own `id`,
+    /// so a second calendar never displaces the first.
     pub sources: Vec<CalendarSource>,
 }
 
@@ -442,19 +409,16 @@ impl Default for CalendarCollector {
     }
 }
 
-/// One calendar the collector pulls, and the prompt it uses to do so.
-///
-/// The prompt is user-editable on purpose: the built-in defaults ask for a Google/Outlook
-/// MCP, which isn't necessarily configured, so pointing a source at whatever works there
-/// is the intended escape hatch. The *shape* of the answer is not the prompt's job —
-/// `tt_collect` asks with `--json-schema`, so the CLI validates events first.
+/// One calendar the collector pulls. The prompt is user-editable because the
+/// built-in defaults need a Google/Outlook MCP that may not be configured; the
+/// answer's *shape* is not its job, since `tt_collect` asks with
+/// `--json-schema`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarSource {
-    /// Stable identifier, also written to the store's `events.source` column so
-    /// a re-pull replaces only this calendar's rows. Keep it short and stable
-    /// (`"google"`, `"outlook"`) — changing it orphans previously stored rows.
+    /// Also the store's `events.source` column, so a re-pull replaces only
+    /// this calendar's rows — changing it orphans them.
     pub id: String,
     /// Human label for the settings UI and event provenance.
     pub label: String,
@@ -464,13 +428,11 @@ pub struct CalendarSource {
 }
 
 impl CalendarSource {
-    /// The built-in sources: personal Google (on) and work Outlook (off), each
-    /// carrying the prompt that used to be a compiled-in constant.
+    /// Personal Google (on) and work Outlook (off).
     ///
-    /// **These are defaults, not a migration.** The retired `provider` key is an unknown
-    /// field now, so a file carrying `"provider": "outlook"` and no `sources` gets this
-    /// list — Google on, Outlook off — and starts pulling the *other* calendar. A silent
-    /// hard-cutover cost, fixed in one line in Settings → Collectors → Calendar.
+    /// **Defaults, not a migration.** A file carrying the retired
+    /// `"provider": "outlook"` and no `sources` gets this list and starts
+    /// pulling the *other* calendar — one line to fix in Settings.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -489,15 +451,11 @@ impl CalendarSource {
     }
 }
 
-/// Default prompt for the personal Google calendar.
+/// Asks *which events* and nothing about JSON — the schema is the contract for
+/// shape. Keep in sync with [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`].
 ///
-/// It asks *which events* and nothing about JSON: the schema is the contract for the
-/// shape, so the prompt carries only what a schema can't — which calendar, which day,
-/// which events to leave out. Keep it in sync with [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`].
-///
-/// **Times stay as the calendar reported them, never converted or computed.** A
-/// correctness choice first: a 13-digit epoch is arithmetic a model cannot check, and a
-/// wrong one is indistinguishable from a right one until the countdown is hours off.
+/// **Times stay as the calendar reported them.** A 13-digit epoch is arithmetic
+/// a model cannot check, and a wrong one reads exactly like a right one.
 pub const DEFAULT_CALENDAR_PROMPT_GOOGLE: &str = "\
 Using the Google Calendar MCP, list the events on my primary calendar for today \
 only, in my local timezone. Report each time exactly as the calendar gives it, \
@@ -513,26 +471,18 @@ gives it, keeping its UTC offset — do not convert to UTC and do not compute \
 epoch numbers. Skip all-day events and events I have declined. Omit any field \
 whose value is null or unknown.";
 
-/// Working-hours gate for the calendar collector: a daily time window plus a
-/// weekday mask, evaluated in local time. When `enabled`, the collector runs
-/// only inside `[startHour:00, endHour:00)` on a listed weekday; outside it
-/// (nights, weekends) the token-costing `claude -p` run is skipped. Set
-/// `enabled = false` to run on the plain refresh cadence around the clock.
-///
-/// `weekdays` are day-of-week numbers with **0 = Monday … 6 = Sunday** (matching
-/// chrono's `num_days_from_monday`); the default is Mon–Fri.
+/// Local-time window `[startHour:00, endHour:00)` on a listed weekday, outside
+/// which the token-costing run is skipped. `weekdays` are **0 = Monday … 6 =
+/// Sunday** (chrono's `num_days_from_monday`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarQuietHours {
-    /// When false the gate is off entirely and the collector runs 24/7 on its
-    /// refresh cadence (the historic behaviour).
+    /// False runs the collector 24/7 on its refresh cadence.
     pub enabled: bool,
     /// First local hour (0–23) the collector may run, inclusive of `:00`.
     pub start_hour: u8,
-    /// Local hour (0–23) at which the window closes, exclusive — a run at
-    /// exactly `endHour:00` is skipped. With the default `18` the last runnable
-    /// minute is `17:59`.
+    /// Exclusive: with the default `18`, the last runnable minute is `17:59`.
     pub end_hour: u8,
     /// Weekdays the collector may run, as `0 = Monday … 6 = Sunday`. Default Mon–Fri.
     pub weekdays: Vec<u8>,
@@ -551,13 +501,11 @@ impl Default for CalendarQuietHours {
 #[serde(rename_all = "camelCase", default)]
 pub struct PrCollector {
     pub enabled: bool,
-    /// Cadence for the authored + review-requested open-PR sweep — the data
-    /// Board/Cockpit render from, so this stays the fast cadence.
+    /// The authored + review-requested sweep — what Board/Cockpit render, so
+    /// this is the fast cadence.
     pub refresh_seconds: u64,
-    /// Cadence for the separate recently-merged-PRs sweep. Looser than
-    /// `refresh_seconds` on purpose: this list only exists to catch a
-    /// just-merged branch before its worktree is removed, not to drive
-    /// live-looking UI, so it doesn't need the same freshness.
+    /// The merged-PRs sweep. Looser on purpose: it only catches a just-merged
+    /// branch before its worktree is removed.
     pub merged_refresh_minutes: u64,
 }
 
@@ -577,9 +525,8 @@ pub struct SlackDmCollector {
     pub enabled: bool,
     /// Slack user OAuth token (`xoxp-…`). Empty = collector stays off.
     pub token: String,
-    /// Slack app-level token (`xapp-…`) for Socket Mode real-time delivery.
-    /// Empty = no socket, poll-only. Distinct from `token`: this authorizes
-    /// `apps.connections.open`, not the Web API DM calls.
+    /// App-level token (`xapp-…`) for Socket Mode. Empty = poll-only. Distinct
+    /// from `token`: it authorizes `apps.connections.open`.
     #[serde(default)]
     pub app_token: String,
     /// Slack member ID of the person to watch (e.g. `U0123ABCD`).
@@ -617,23 +564,22 @@ impl Default for IssueCollector {
     }
 }
 
-/// `tt-mcp`'s HTTP transport — Rust-only. (Beware: the legacy TS CLI strips keys its zod
-/// schema doesn't model and rewrites the file, so a legacy run reverts this to default.)
+/// `tt-mcp`'s HTTP transport — Rust-only, and the legacy TS CLI reverts it to
+/// default on any run (it strips keys its zod schema lacks).
 ///
-/// Served over loopback HTTP by the desktop app, not a per-session stdio subprocess.
-/// There is **no bearer token**: one only ever defended against browser-originated
-/// requests, and is replaced by refusing any request carrying an `Origin` and requiring
-/// `Content-Type: application/json`. See `crates/tt-mcp/src/lib.rs`.
+/// Loopback HTTP from the desktop app, not a per-session stdio subprocess.
+/// **No bearer token**: one only ever defended against browser-originated
+/// requests, and refusing any `Origin` plus requiring `Content-Type:
+/// application/json` does that instead.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct McpSettings {
     /// Loopback TCP port the app serves MCP on.
     ///
-    /// Only the *fallback*, for an app running outside any checkout: an instance in a
-    /// checkout serves the `${tt:port 8787-8986}` claim from its rendered `.env` instead
-    /// (see `mcp_http::resolve_port`). The plugin's `.mcp.json` expands
-    /// `${TT_MCP_PORT:-8787}`, which is why the pool starts at this value.
+    /// Only the *fallback*, for an app outside any checkout: an instance in one
+    /// serves its `.env`'s `${tt:port 8787-8986}` claim instead. The plugin's
+    /// `.mcp.json` expands `${TT_MCP_PORT:-8787}`, hence this value.
     pub port: u16,
 }
 
@@ -658,29 +604,21 @@ pub struct UserSettings {
 
     pub agentboard: AgentboardSettings,
 
-    /// Prompt improvers for the Agentboard new-task form (Direct / Plan /
-    /// Brainstorm by default) — the buttons that rewrite the typed goal before
-    /// the task starts. User-editable; managed with the same list editor the
-    /// calendar sources use. See [`PromptImprover`].
+    /// The new-task form's improver buttons — see [`PromptImprover`].
     pub prompt_improvers: Vec<PromptImprover>,
 
     pub collectors: CollectorsSettings,
 
-    /// Lenient on purpose: the docs invite hand-editing this block, and a slip
-    /// there (`"mcp": null`, a port as the string `"8787"`) must not fail the
-    /// whole settings file — every command loads it, so that would brick the
-    /// app, doctor, journal, and collect at once. A malformed block instead
-    /// falls back to the default port and the rest of the file keeps working.
+    /// Lenient on purpose: the docs invite hand-editing, and a slip
+    /// (`"mcp": null`) must not fail the whole file — every command loads it,
+    /// so that would brick the app, journal and collect at once.
     #[serde(default, deserialize_with = "lenient_mcp")]
     pub mcp: McpSettings,
 }
 
-/// Deserialize [`McpSettings`] but degrade any shape other than the documented
-/// object form to the default — see the field's doc comment on
-/// `UserSettings::mcp` for why. Non-object shapes are rejected outright rather
-/// than fed to serde: a struct happily deserializes from a JSON *array*
-/// positionally (`"mcp": [9999]` would set the port), and the transport config
-/// must not be settable through an undocumented shape.
+/// Degrade any shape but the documented object to the default. Non-objects are
+/// rejected before serde sees them: a struct deserializes from a JSON *array*
+/// positionally, so `"mcp": [9999]` would otherwise set the port.
 fn lenient_mcp<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<McpSettings, D::Error> {
@@ -1460,7 +1398,7 @@ mod tests {
     fn prompt_improver_defaults() {
         let s = UserSettings::default();
         let ids: Vec<&str> = s.prompt_improvers.iter().map(|g| g.id.as_str()).collect();
-        assert_eq!(ids, vec!["direct", "plan", "brainstorm"]);
+        assert_eq!(ids, vec!["direct", "clarify", "brainstorm", "interview"]);
         // All built-ins are offered, and all get their own button by default.
         assert!(s.prompt_improvers.iter().all(|g| g.enabled && g.preferred));
         // Every improver carries a non-empty instruction for `claude -p`. These
