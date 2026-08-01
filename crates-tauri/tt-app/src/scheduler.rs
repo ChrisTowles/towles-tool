@@ -113,10 +113,9 @@ fn reuse_window_ms(seconds: u64) -> i64 {
 
 /// One in-flight flag per collector. A batch is fire-and-forget spawned so the
 /// select! loop never parks on it (a calendar run can take the full
-/// `CLAUDE_TIMEOUT`); the flag makes sure a slow run doesn't stack a second run
-/// of the *same* collector on the next tick. Persisted across settings reloads
-/// (like the attention watchers) so an in-flight batch is still tracked after a
-/// cadence rebuild.
+/// `CLAUDE_TIMEOUT`); the flag keeps a slow run from stacking a second run of the
+/// *same* collector on the next tick. Persisted across settings reloads (like the
+/// attention watchers) so an in-flight batch is still tracked after a rebuild.
 #[derive(Default)]
 struct BatchGuards {
     prs_open: Arc<AtomicBool>,
@@ -147,13 +146,11 @@ struct NudgeSeen {
     slack: Option<SystemTime>,
 }
 
-/// Whether this instance should act on `target`'s nudge note.
-///
-/// Every checkout's app watches the *same* nudge dir — [`tt_config::nudge_dir_path`]
-/// scopes to the main checkout — so a note has to say who it is for or all of
-/// them sweep `gh` for a mutation that happened in one terminal. A note naming
-/// nobody still reaches everyone: that is what a caller outside an app terminal
-/// writes, and dropping it would lose the nudge entirely rather than duplicate it.
+/// Whether this instance should act on `target`'s nudge note. Every instance
+/// watches the same machine-global dir ([`tt_config::nudge_dir_path`]), so a note
+/// says who it is for or everyone sweeps `gh` for one terminal's mutation. A note
+/// naming nobody still reaches everyone: that is what a caller outside an app
+/// terminal writes, and dropping it would lose the nudge rather than duplicate it.
 fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str) -> bool) -> bool {
     match tt_collect::nudge::session_of(dir, target) {
         Some(session) => mine(&session),
@@ -161,16 +158,11 @@ fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str)
     }
 }
 
-/// Given a debounced "something in the nudge dir changed" wakeup, return the batches whose
-/// file advanced *and* was addressed here. Filenames and note format come from
-/// [`tt_collect::nudge`], so this side and the CLI writer can't drift.
-///
-/// `mine` answers "is this one of my PTY sessions?" ([`crate::terminal::TermState::live_ids`]
-/// at the call site); `slack_config` is carried into a fired [`Batch::SlackDm`] as the
-/// `slack_tick` arm does, and the caller still gates on Slack being enabled.
-///
-/// `seen` advances even for a note addressed elsewhere, so another instance's nudge is
-/// skipped once rather than re-read on every later wakeup.
+/// Given a debounced "something in the nudge dir changed" wakeup, return the batches
+/// whose file advanced *and* was addressed here ([`tt_collect::nudge`] owns filenames
+/// and note format, so this side and the CLI writer can't drift). `mine` answers "is
+/// this one of my PTY sessions?" ([`crate::terminal::TermState::live_ids`]); `seen`
+/// advances even for a note addressed elsewhere, so it is skipped once, not re-read.
 fn changed_nudge_batches(
     dir: &Path,
     seen: &mut NudgeSeen,
@@ -232,16 +224,11 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
         // In-flight guards also persist across reloads: a batch spawned under the
         // old cadence must still block a duplicate under the new one.
         let guards = BatchGuards::default();
-        // Eager-refresh accelerant: an external process (the `towles-tool-app`
-        // Claude Code plugin's PostToolUse hook, via `tt collect nudge prs`/
-        // `tt collect nudge issues`) can touch a file in the nudge dir right
-        // after a `gh pr`/`gh issue` mutation to make that view update well
-        // before its next scheduled tick. Same debounced fs-notify pattern as
-        // the agentboard journal watch in `lib.rs` — `.ok()` so a watch
-        // failure (e.g. inotify limits) just falls back to the normal poll
-        // cadence instead of breaking startup. The watch itself only signals
-        // "something in the dir changed"; `changed_nudge_batches` below
-        // resolves that into which target(s) actually advanced.
+        // Eager-refresh accelerant: the towles-tool-app plugin's PostToolUse hook
+        // runs `tt task nudge prs|issues` after a `gh pr`/`gh issue` mutation so
+        // that view updates before its next scheduled tick. Same debounced
+        // fs-notify pattern as the journal watch in `lib.rs` — `.ok()` falls back to
+        // the poll cadence — and `changed_nudge_batches` resolves what advanced.
         let nudge_dir = tt_config::nudge_dir_path().ok();
         let nudge_notify = Arc::new(Notify::new());
         let _nudge_watcher = nudge_dir.as_ref().and_then(|dir| {
@@ -449,19 +436,11 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
     }
 }
 
-/// Check the day-model attention watchers against the current tt.db state and
-/// fire notifications for any new edges. The SQLite reads run on a blocking
-/// worker (tt.db is shared, and a busy db can block); the watchers' edge state
-/// lives on the async side so it survives across ticks. Unlike the collector
-/// batches this runs even while the window is minimized — an unattended window
-/// is exactly when a desktop notification matters.
-/// `store_slot` carries the connection between ticks. This fires every
-/// [`NOTIFY_TICK_SECS`], and `Store::open` runs the whole idempotent migration
-/// pass on every call — reopening per tick meant ~4 full migration passes a
-/// minute, forever, to read three tables. The connection is moved *into* the
-/// blocking closure and handed back out rather than shared, because
-/// `rusqlite::Connection` is `Send` but not `Sync`; a tick that fails to open
-/// simply leaves the slot empty and retries next time.
+/// Check the day-model attention watchers against tt.db and fire notifications for
+/// new edges — even minimized: an unattended window is exactly when one matters.
+/// SQLite reads run on a blocking worker while edge state stays async-side across
+/// ticks. `store_slot` carries the connection between ticks, dodging `Store::open`'s
+/// full migration pass; it moves into the closure and back (`Send`, not `Sync`).
 async fn run_notify_check(
     app: &AppHandle,
     store_slot: &mut Option<tt_store::Store>,
@@ -562,10 +541,9 @@ fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {
 
 /// Fire a "collector went stale" desktop notification — a collector stopped
 /// refreshing or is failing repeatedly (expired `gh` auth, revoked Slack token).
-/// Unlike the meeting/review notifications this is *not* suppressed while the
-/// window is focused: there's no always-on in-app surface for collector health,
-/// so a focused user would otherwise never learn a collector died. Gated only by
-/// the notification switch/threshold (it is a routine-level kind).
+/// Unlike the meeting/review notifications this is *not* suppressed while focused:
+/// with no always-on in-app surface for collector health, a focused user would
+/// otherwise never learn a collector died. Gated only by the switch/threshold.
 fn notify_stale_collector(app: &AppHandle, edge: &tt_store::StaleCollectorEdge) {
     use tauri_plugin_notification::NotificationExt;
 

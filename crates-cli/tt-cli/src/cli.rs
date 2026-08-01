@@ -31,9 +31,7 @@ pub enum Commands {
         no_open: bool,
     },
 
-    /// Show a file or folder in the running app's Files pane, in the task this
-    /// terminal belongs to (`TT_SESSION_ID`; otherwise the checkout the path is
-    /// in). Accepts the `<path>:<line>` spelling compilers and grep print.
+    /// Show a file/folder in the app's Files pane, in this terminal's task; accepts `<path>:<line>`
     Open {
         /// File or folder to show, optionally with a `:<line>` suffix
         #[arg(value_name = "PATH")]
@@ -44,18 +42,13 @@ pub enum Commands {
         line: Option<u32>,
     },
 
-    /// Worktree tasks: a main checkout (always the default branch) plus
-    /// branch-named worktrees under <checkout>/.claude/worktrees/, each with
-    /// rendered per-task ports/env so concurrent tasks never collide
+    /// Worktree tasks: a main checkout plus branch-named worktrees with rendered per-task ports/env
     Task(TaskArgs),
 }
 
 impl Commands {
-    /// The `(group, subcommand)` pair naming this invocation in the event log.
-    ///
-    /// Operands stay out of it (see CLAUDE.md's `tt-cli` bullet); `today` keeps
-    /// its own name rather than folding into `daily-notes`, so the alias's own
-    /// worth stays measurable.
+    /// The `(group, subcommand)` pair naming this invocation in the event log — operands
+    /// stay out; `today` keeps its own name so the alias's own worth stays measurable.
     pub fn telemetry_name(&self) -> (&'static str, &'static str) {
         match self {
             Commands::Journal(args) => ("journal", args.command.name()),
@@ -75,18 +68,13 @@ pub struct TaskArgs {
 
 #[derive(Subcommand)]
 pub enum TaskCommands {
-    /// Create a task (the unit of work): a board-task row in a tracked repo's
-    /// swimlane PLUS its worktree under .claude/worktrees/ + rendered .env
-    /// (port claims, inherited sibling secrets) + setup step (TT_TASK_SETUP
-    /// from the rendered .env, else lockfile-detected install). Mirrors the
-    /// MCP `task_create` params, with the worktree stood up in the same shot.
+    /// Create a task: board row + worktree + rendered .env + setup step (the MCP `task_create` params)
     New {
         /// Task title (also the goal the worktree is created for)
         #[arg(value_name = "TITLE")]
         title: String,
 
-        /// Tracked repo the task belongs to — its name or absolute dir (as
-        /// shown by the Agentboard rail). The worktree is created here.
+        /// Tracked repo (name or absolute dir, as the Agentboard rail shows it)
         #[arg(long, value_name = "NAME|DIR")]
         repo: String,
 
@@ -98,13 +86,11 @@ pub enum TaskCommands {
         #[arg(long)]
         notes: Option<String>,
 
-        /// The objective the task is meant to accomplish, shown on the board
-        /// card under the title (default: none)
+        /// Objective shown on the board card under the title (default: none)
         #[arg(long)]
         goal: Option<String>,
 
-        /// Branch to create and check out (default: slugged from TITLE, e.g.
-        /// "Fix login" -> fix-login; the task folder is the same slug)
+        /// Branch to create and check out (default: slugged from TITLE)
         #[arg(long, short = 'b')]
         branch: Option<String>,
 
@@ -117,16 +103,13 @@ pub enum TaskCommands {
         json: bool,
     },
 
-    /// List the main checkout and tasks with branch, work state (uncommitted
-    /// changes vs commits that never reached the base), and claimed ports
+    /// List the main checkout and tasks: branch, work state, claimed ports
     Ls {
         /// Emit checkouts as a JSON array
         #[arg(long)]
         json: bool,
 
-        /// Show only tasks with no new commits in the last N days that have not
-        /// landed (default 7). Adds an AGE column of days since the branch's
-        /// newest own commit; a landed or empty branch is never stale.
+        /// Only tasks with no unlanded commits in the last N days (default 7); adds an AGE column
         #[arg(long, value_name = "DAYS", num_args = 0..=1, default_missing_value = "7")]
         stale: Option<u64>,
 
@@ -135,9 +118,7 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Remove a task: guarded (clean tree, no commits unreachable from a
-    /// branch or remote, nothing foreign on its ports), then docker compose
-    /// down -v, anchored container/volume sweep, worktree remove
+    /// Remove a task: guarded, then docker cleanup and worktree remove
     Rm {
         /// Task directory name under .claude/worktrees/, e.g. task-migrate
         name: String,
@@ -146,8 +127,7 @@ pub enum TaskCommands {
         #[arg(long)]
         force: bool,
 
-        /// How the task ended, recorded on its board row (the row is closed,
-        /// not deleted). Default: done if a linked PR merged, else abandoned
+        /// Outcome recorded on the closed board row (default: done if a linked PR merged)
         #[arg(long, value_parser = ["done", "abandoned"])]
         outcome: Option<String>,
 
@@ -156,20 +136,16 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Onboard this repo onto the task convention (idempotent): pick/create
-    /// the env template, gitignore .env, and render the primary checkout's
-    /// .env so it claims its ports
+    /// Onboard this repo onto the task convention (idempotent): template, gitignore, primary .env
     Init {
         /// Repo checkout (default: walk up from cwd to the nearest git checkout)
         #[arg(long, value_name = "DIR")]
         root: Option<PathBuf>,
     },
 
-    /// (Re)render a checkout's .env from the template — idempotent: existing
-    /// port claims and keys the template doesn't know are preserved
+    /// (Re)render a checkout's .env from the template, preserving existing claims and unknown keys
     Env {
-        /// Task directory name under .claude/worktrees/, or `primary` for the
-        /// main checkout
+        /// Task directory name under .claude/worktrees/, or `primary`
         name: String,
 
         /// Repo checkout (default: walk up from cwd to the nearest git checkout)
@@ -177,12 +153,9 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// The repo's port picture: every claim in any checkout's live .env
-    /// merged with the persistent registry, each probed for a listener —
-    /// or probe one arbitrary port with --probe
+    /// Every port claim across checkouts merged with the registry, each probed for a listener
     Ports {
-        /// Probe a single port for a listener instead of reporting the
-        /// repo's claims (what scripts/task-port.mjs delegates to)
+        /// Probe a single port for a listener instead of reporting claims
         #[arg(long, value_name = "PORT")]
         probe: Option<u16>,
 
@@ -195,11 +168,7 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Remove every task whose branch's work has landed (merged into the
-    /// main checkout's branch, or upstream deleted after a squash/rebase
-    /// merge) — same guards as rm, never forced — then sweep the
-    /// per-checkout state dirs and agentboard windows/sessions left behind
-    /// by checkouts that no longer exist
+    /// Remove every landed task (same guards as rm, never forced), then sweep gone checkouts' state
     Clean {
         /// Report what would be removed/swept without touching anything
         #[arg(long)]
@@ -214,10 +183,8 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Ask the app instance that owns this terminal to refresh a collector now
-    /// rather than on its next poll. Called by the `gh-pr-nudge.sh` hook after
-    /// a `gh pr`/`gh issue` mutation; routed by `TT_SESSION_ID`, so a caller
-    /// outside an app terminal nudges every instance
+    /// Refresh a collector in this terminal's app instance now rather than on its next
+    /// poll — the `gh-pr-nudge.sh` hook's callee, routed by `TT_SESSION_ID`
     Nudge(NudgeArgs),
 }
 
@@ -243,20 +210,13 @@ pub struct NudgeArgs {
     #[arg(value_enum)]
     pub target: NudgeTarget,
 
-    /// Short label for what caused this nudge (e.g. `pr:create`,
-    /// `issue:close`), recorded on the telemetry event only — never parsed,
-    /// never written to the nudge file itself. Lets `gh pr create`/`merge`
-    /// (which run outside `tt-exec`, so no `process.spawn` span exists for
-    /// them) still leave a record in the event log.
+    /// Label for the telemetry event only (e.g. `pr:create`) — never parsed nor written to the file
     #[arg(long)]
     pub trigger: Option<String>,
 }
 
-/// Which collector `tt collect nudge` eagerly refreshes. A thin clap-parsing
-/// mirror of [`tt_collect::NudgeTarget`], which owns the key ↔ nudge-filename
-/// contract the app's scheduler nudge-dir watch reads
-/// (`crates-tauri/tt-app/src/scheduler.rs`). The accepted CLI values are the
-/// collector keys themselves (`prs`, `issues`, `slack:dm`).
+/// Clap mirror of [`tt_collect::NudgeTarget`], which owns the key ↔ nudge-filename
+/// contract; the accepted CLI values are the collector keys themselves.
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub enum NudgeTarget {
     Prs,
@@ -423,9 +383,7 @@ mod tests {
         }
     }
 
-    /// A copy-pasted arm in one of the `name()` impls would silently file two
-    /// commands under one name, and the usage counts read from the event log
-    /// would be wrong rather than obviously broken.
+    /// A copy-pasted `name()` arm would silently file two commands under one name.
     #[test]
     fn no_two_commands_share_a_name() {
         let mut seen = HashSet::new();
