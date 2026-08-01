@@ -308,7 +308,8 @@ pub struct PromptImprover {
 }
 
 impl PromptImprover {
-    /// The built-in improvers, all enabled and preferred. They run along one
+    /// The built-in improvers, all enabled; only Direct is preferred, so the
+    /// form shows one button with the rest under "More". They run along one
     /// axis — how sure you are of the task — from Direct (I know what needs
     /// doing, go) through Clarify and Brainstorm to Interview (I can't state
     /// it yet; question me first).
@@ -325,21 +326,21 @@ impl PromptImprover {
                 id: "clarify".to_string(),
                 label: "Clarify".to_string(),
                 enabled: true,
-                preferred: true,
+                preferred: false,
                 prompt: DEFAULT_IMPROVER_CLARIFY.to_string(),
             },
             Self {
                 id: "brainstorm".to_string(),
                 label: "Brainstorm".to_string(),
                 enabled: true,
-                preferred: true,
+                preferred: false,
                 prompt: DEFAULT_IMPROVER_BRAINSTORM.to_string(),
             },
             Self {
                 id: "interview".to_string(),
                 label: "Interview".to_string(),
                 enabled: true,
-                preferred: true,
+                preferred: false,
                 prompt: DEFAULT_IMPROVER_INTERVIEW.to_string(),
             },
         ]
@@ -1399,8 +1400,12 @@ mod tests {
         let s = UserSettings::default();
         let ids: Vec<&str> = s.prompt_improvers.iter().map(|g| g.id.as_str()).collect();
         assert_eq!(ids, vec!["direct", "clarify", "brainstorm", "interview"]);
-        // All built-ins are offered, and all get their own button by default.
-        assert!(s.prompt_improvers.iter().all(|g| g.enabled && g.preferred));
+        // All built-ins are offered, but only Direct gets its own button — the
+        // rest live under the "More" menu until marked preferred in Settings.
+        assert!(s.prompt_improvers.iter().all(|g| g.enabled));
+        let preferred: Vec<&str> =
+            s.prompt_improvers.iter().filter(|g| g.preferred).map(|g| g.id.as_str()).collect();
+        assert_eq!(preferred, vec!["direct"]);
         // Every improver carries a non-empty instruction for `claude -p`. These
         // are instructions *about* the task, never templates containing it —
         // the task text is passed to the model separately.

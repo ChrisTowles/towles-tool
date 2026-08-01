@@ -763,15 +763,19 @@ export function InlineNewTask({
             Undo
           </Button>
         )}
-        {/* Prompt improvers: one button per preferred improver, the rest under
-            "More". Each rewrites the goal + branch fields in place via
-            `claude -p` — Undo restores. */}
-        {preferredImprovers.map((improver) => (
+        {/* Prompt improvers: one button per preferred improver, the rest behind
+            a chevron segment attached to the last one (a split button). Each
+            rewrites the goal + branch fields in place via `claude -p` — Undo
+            restores. */}
+        {preferredImprovers.map((improver, i) => (
           <Button
             key={improver.id}
             variant="outline"
             size="sm"
-            className="h-6 gap-1 px-1.5 text-[10.5px]"
+            className={cn(
+              "h-6 gap-1 px-1.5 text-[10.5px]",
+              otherImprovers.length > 0 && i === preferredImprovers.length - 1 && "rounded-r-none",
+            )}
             title={improver.prompt || undefined}
             disabled={improverDisabled}
             onClick={() => void runImprover(improver)}
@@ -786,11 +790,10 @@ export function InlineNewTask({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-6 gap-1 px-1.5 text-[10.5px]"
+                className="-ml-[9px] h-6 rounded-l-none border-l-0 px-1 text-[10.5px]"
                 title="More prompt improvers — mark one Preferred in Settings to give it its own button"
                 disabled={improverDisabled}
               >
-                More
                 <ChevronDown className="size-3" />
               </Button>
             </PopoverTrigger>
