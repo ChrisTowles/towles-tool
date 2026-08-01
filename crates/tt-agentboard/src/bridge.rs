@@ -258,6 +258,7 @@ fn build_folder(
         uncommitted_files: git.uncommitted_files,
         uncommitted_added: git.uncommitted_added,
         uncommitted_removed: git.uncommitted_removed,
+        uncommitted_capped: git.uncommitted_capped,
         computed_at_ms: git.computed_at_ms,
         worked_at_ms: git
             .head_commit_ms

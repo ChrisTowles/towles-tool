@@ -22,7 +22,7 @@ mod graph;
 mod patch;
 mod status;
 
-pub use diff::{CommitStat, DiffTotals, FileChange};
+pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 
 pub use patch::PatchId;
 pub use status::{StatusEntry, StatusSummary};

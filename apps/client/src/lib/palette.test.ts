@@ -42,6 +42,7 @@ function folder(overrides: Partial<FolderData>): FolderData {
     uncommittedFiles: 0,
     uncommittedAdded: 0,
     uncommittedRemoved: 0,
+    uncommittedCapped: false,
     commitsAhead: 0,
     commitsBehind: 0,
     dirty: false,

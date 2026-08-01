@@ -591,7 +591,7 @@ pub async fn ab_get_diff_files(
     dir: String,
     mode: String,
     base_branch: Option<String>,
-) -> Vec<tt_agentboard::DiffFile> {
+) -> tt_agentboard::DiffFiles {
     let mode = parse_diff_mode(&mode);
     tauri::async_runtime::spawn_blocking(move || {
         tt_agentboard::diff_files(&dir, mode, base_branch.as_deref())
