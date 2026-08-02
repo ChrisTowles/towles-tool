@@ -1,10 +1,6 @@
-/**
- * End-to-end smoke test driving the real Tauri shell via @wdio/tauri-service.
- * Exercises the command palette the way a user does — open with Ctrl/Cmd+K,
- * type, Enter — and proves navigation lands on the target screen. Also checks
- * the task badge, whose value comes from the real `app_task` Rust command.
- * Read-only — never writes settings or other state.
- */
+/** Drives the command palette in the real Tauri shell the way a user does —
+ * Ctrl/Cmd+K, type, Enter — and proves navigation lands. Also checks the header
+ * badge against the real `app_task` command. Read-only. */
 
 /// <reference types="@wdio/globals/types" />
 /// <reference types="@wdio/mocha-framework" />
@@ -16,14 +12,9 @@ import { expectObject } from "../ipc.js";
 // frontend's IS_MAC). The suite runs on Linux/WebKitGTK, but keep it portable.
 const MOD = process.platform === "darwin" ? Key.Command : Key.Ctrl;
 
-/**
- * Open the palette via the real keyboard shortcut and wait for its input.
- *
- * The synthetic chord silently no-ops when focus sits somewhere the global
- * keydown listener can't see it (e.g. an input on whichever screen the session
- * restored), so normalize focus by blurring the active element and retry the
- * chord until the palette actually opens rather than firing it once and hoping.
- */
+/** Open the palette via the real chord. The synthetic chord silently no-ops when
+ * focus sits where the global keydown listener can't see it, so blur the active
+ * element and retry until the palette actually opens. */
 async function openPalette(): Promise<void> {
   await browser.waitUntil(
     async () => {
@@ -72,13 +63,9 @@ async function navigateTo(query: string, title: string = query): Promise<void> {
     .waitForExist({ reverse: true, timeout: 10000 });
 }
 
-/**
- * Wait until an active (aria-current) sidebar control is labelled `title`.
- * Expanded, it's a visible-text button (`AppSidebar`); icon-collapsed (the
- * e2e default), it's icon-only with the title as `aria-label`
- * (`AppSidebarIcons`) — check both so the assertion holds regardless of
- * collapse state.
- */
+/** Wait until an active (aria-current) sidebar control is labelled `title` — by
+ * visible text when expanded, by `aria-label` when icon-collapsed (the e2e
+ * default), so the assertion holds in either collapse state. */
 async function expectActiveTab(title: string): Promise<void> {
   await browser.waitUntil(
     async () => {

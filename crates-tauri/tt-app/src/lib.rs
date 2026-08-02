@@ -44,17 +44,14 @@ use tokio::sync::Notify;
 use agentboard::{Ab, Engine, STATE_EVENT, now_ms};
 use tt_agentboard::fs_notify::{MultiFileNotifier, ScopedDirNotifier};
 
-/// The checkout this binary was built from, baked in from `CARGO_MANIFEST_DIR` so
-/// each task's binary knows its own task with no runtime cwd/env plumbing — what
-/// tells several tasks' windows apart in the title bar and header.
+/// The checkout this binary was built from, baked in from `CARGO_MANIFEST_DIR`
+/// so several tasks' windows tell apart with no runtime cwd/env plumbing.
 pub(crate) fn task_label() -> String {
     label_from_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
 }
 
-/// The task label for a `crates-tauri/tt-app` manifest dir: the repo-root
-/// directory name, two ancestors up (`<root>/crates-tauri/tt-app` → `<root>`'s
-/// basename). Pure so the nth-ancestor/basename rule is unit-testable without
-/// the compile-time `CARGO_MANIFEST_DIR`.
+/// The repo-root directory name, two ancestors up from the manifest dir. Pure
+/// so the rule is unit-testable without the compile-time `CARGO_MANIFEST_DIR`.
 fn label_from_manifest_dir(manifest_dir: &Path) -> String {
     manifest_dir
         .ancestors()
@@ -81,8 +78,7 @@ fn app_task() -> AppTask {
     }
 }
 
-/// The one IPC seam for frontend `ui.action` telemetry: the webview can't reach
-/// `tracing`, so every recorded gesture crosses here with a stable action id, its
+/// The one IPC seam for frontend `ui.action` telemetry: a stable action id, its
 /// screen, and a word of `detail` — never content or continuous input.
 #[tauri::command]
 fn ui_action(action: String, screen: String, detail: Option<String>) {
@@ -98,16 +94,14 @@ fn is_task_manifest_dir(manifest_dir: &Path) -> bool {
             == Some(std::ffi::OsStr::new(".claude"))
 }
 
-/// Per-task app identifier, so each worktree's self-installed `.desktop` entry +
-/// icon gets its own filename instead of every task overwriting one. Touches no
-/// GTK/D-Bus — see this crate's CLAUDE.md on `enableGTKAppId`.
+/// Per-task app identifier, so each worktree's self-installed `.desktop` entry
+/// gets its own filename. Touches no GTK/D-Bus — see CLAUDE.md on `enableGTKAppId`.
 fn app_identifier(base: &str) -> String {
     app_identifier_from(Path::new(env!("CARGO_MANIFEST_DIR")), base)
 }
 
-/// Parameterized on the manifest dir so it's unit-testable. A main-checkout build
-/// keeps `base` unscoped; a task build gets `base.task-<label>`, folded to lower
-/// case with non-alphanumerics as `-` so it's a legal reverse-DNS segment.
+/// A task build gets `base.task-<label>`, folded to lowercase with
+/// non-alphanumerics as `-` so it's a legal reverse-DNS segment.
 fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
     if !is_task_manifest_dir(manifest_dir) {
         return base.to_string();
@@ -125,15 +119,13 @@ fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
 ///
 /// On a failed build or dead event loop: no window is left to report it in.
 pub fn run() {
-    // Errors always print to stderr, more with RUST_LOG. Independently, every
-    // span/event streams to this task's on-disk event log at debug — the app
-    // runs unattended for hours, so its telemetry has to already be captured
+    // Every span/event also streams to this task's on-disk event log at debug —
+    // the app runs unattended for hours, so telemetry must already be captured
     // when a question comes up. A failure here must never block startup.
     let _ = tt_telemetry::init("tt-app", "error");
 
-    // WebKitGTK's DMABUF renderer flashes window-sized artifacts on small damage
-    // regions under NVIDIA's driver (tauri-apps/tauri#9304). Opt out before any
-    // webview exists, only under NVIDIA, never over an explicit user setting.
+    // WebKitGTK's DMABUF renderer flashes artifacts under NVIDIA (tauri#9304):
+    // opt out before any webview exists, never over an explicit user setting.
     #[cfg(target_os = "linux")]
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
         && std::path::Path::new("/proc/driver/nvidia/version").exists()
@@ -147,17 +139,15 @@ pub fn run() {
     context.config_mut().identifier = identifier.clone();
 
     // Set by dev-drive.mjs/e2e.mjs: verification launches must not yank the
-    // user's focus. A runtime signal, not `#[cfg(feature = "wdio")]` — that
-    // feature means "wdio plugins compiled in", which merely correlates.
+    // user's focus. A runtime signal, not the merely-correlated `wdio` feature.
     if std::env::var_os("TT_NO_FOCUS_STEAL").is_some() {
         for window in &mut context.config_mut().app.windows {
             window.focus = false;
         }
     }
 
-    // With no GTK/D-Bus single-instance registration (`enableGTKAppId` is off),
-    // nothing else stops one checkout being launched twice, duplicating windows,
-    // PTYs and polling. Held process-wide; a killed process's lock is stolen.
+    // With `enableGTKAppId` off, nothing else stops one checkout launching
+    // twice, duplicating windows/PTYs/polling. A killed process's lock is stolen.
     let Some(_instance_lock) =
         instance_lock::InstanceLock::try_acquire(&format!("app-{identifier}"))
     else {
@@ -170,50 +160,39 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init());
 
-    // Repo bytes (Markdown-preview images and GIFs) served over their own URI
-    // scheme — see `asset`'s module doc for why this isn't base64 over IPC,
-    // and for the two guards that keep a hostile README inside the checkout
-    // the user opened.
+    // Repo bytes served over their own URI scheme — see `asset`'s module doc
+    // for why not base64 over IPC, and the guards on a hostile README.
     let builder = asset::register(builder);
 
-    // WebdriverIO E2E plugins, only under `--features wdio` (see e2e/):
-    // tauri-plugin-wdio exposes the execute/mock IPC surface, and
-    // tauri-plugin-wdio-webdriver runs the in-app WebDriver server the
-    // @wdio/tauri-service embedded provider connects to.
+    // WebdriverIO E2E plugins, only under `--features wdio` (see e2e/): the
+    // execute/mock IPC surface plus the in-app WebDriver server wdio dials.
     #[cfg(feature = "wdio")]
     let builder =
         builder.plugin(tauri_plugin_wdio::init()).plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
         .setup(|app| {
-            // Register the wdio capability at runtime (feature-gated) so normal
-            // builds never reference the plugins' ACL and stay clean.
+            // Runtime so normal builds never reference the plugins' ACL.
             #[cfg(feature = "wdio")]
             app.handle().add_capability(include_str!("../wdio-capability.json"))?;
 
-            // Register (or refresh) the desktop entry + icon this app-id
-            // resolves to — see linux_desktop's module doc for why this is
-            // needed even outside a packaged build.
+            // See linux_desktop's module doc for why this is needed even
+            // outside a packaged build.
             #[cfg(target_os = "linux")]
             linux_desktop::ensure_installed(&app.config().identifier);
 
-            // Distinguish concurrent task windows in the title bar / taskbar.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_title(&format!("Towles Tool — {}", task_label()));
             }
 
-            // No-op off macOS — see macos_keys' module doc for why the
-            // terminal needs a native Ctrl+C interceptor there.
+            // No-op off macOS — see macos_keys' module doc.
             macos_keys::install(app.handle());
 
-            // Fire-and-forget: check GitHub for a newer release and, if one
-            // exists, push the update banner event + an OS notification.
+            // Fire-and-forget release check → update banner + OS notification.
             update::check_on_startup(app.handle().clone());
 
             // A Debug-mode Zig parser saturates a core at ~130 KB/s of PTY
-            // output, so busy terminals peg engine threads and the app merely
-            // reads as laggy. The dev-profile override makes this unreachable;
-            // be loud if it regresses.
+            // output; be loud if the dev-profile override regresses.
             if tt_vt::parser_optimize_mode() == "Debug" {
                 eprintln!(
                     "warning: libghostty-vt compiled in Zig Debug mode (~1000x slower parsing; \
@@ -222,10 +201,8 @@ pub fn run() {
                 );
             }
 
-            // Heal `repos.json` before the engine's first load: task worktrees
-            // double-tracked as repos (an old create flow wrote them) shadow
-            // their task records as duplicate "Root" rows and linger as ghosts
-            // after removal. See `nested_task_paths`.
+            // Heal `repos.json` first: worktrees double-tracked as repos shadow
+            // their task records as duplicates. See `nested_task_paths`.
             match tt_agentboard::repos::untrack_nested_tasks_persisted(
                 &tt_agentboard::repos::default_repos_path(),
             ) {
@@ -235,9 +212,8 @@ pub fn run() {
                 _ => {}
             }
 
-            // Scope to this app instance: sessions.json is shared across
-            // instances, so another running app's PTY can carry the same
-            // session id — its agents are that window's to report, not ours.
+            // sessions.json is shared across instances, so another running
+            // app's PTY can carry the same session id — not ours to report.
             let engine = Arc::new(Mutex::new(Engine::new(
                 tt_agentboard::procenv::InstanceScope::this_app(),
             )));
@@ -245,19 +221,15 @@ pub fn run() {
             let scan = Arc::new(Notify::new());
 
             // fs-notify accelerant: a journal change signals an eager scan.
-            // Scoped to tracked checkouts' own `~/.claude/projects` subdirs, not
-            // the whole tree every session on the machine writes into
-            // (`ScopedDirNotifier`). Starts empty and narrows on the first tick.
+            // Scoped to tracked checkouts' subdirs, not the whole projects tree.
             let projects_dir = engine.lock().unwrap().projects_dir();
             let scan_for_notify = scan.clone();
             let notifier = Arc::new(Mutex::new(
                 ScopedDirNotifier::new(move || scan_for_notify.notify_one()).ok(),
             ));
 
-            // Watching each repo's `.git` internals
-            // (`Engine::control_watch_files`) invalidates just that repo on a
-            // commit/fetch/switch, instead of waiting out `GIT_CACHE_TTL_MS`.
-            // Unstaged edits still need the poll (`control_files_for`).
+            // Watching `.git` internals invalidates just that repo on a commit/
+            // fetch/switch, not the TTL. Unstaged edits still need the poll.
             let git_watch_index: Arc<Mutex<HashMap<PathBuf, String>>> = Arc::default();
             let git_watcher = {
                 let engine = engine.clone();
@@ -292,27 +264,22 @@ pub fn run() {
                 ever_live: Mutex::new(std::collections::HashSet::new()),
             });
 
-            // Compiler-diagnostics hub for the Claude Code IDE bridge: fed by
-            // CLI connects, working-tree changes (git-stat poll below), and
-            // the manual refresh command; consumed by the per-terminal IDE
-            // servers' getDiagnostics.
+            // Compiler-diagnostics hub for the Claude Code IDE bridge, consumed
+            // by the per-terminal IDE servers' getDiagnostics.
             let diag_hub = diagnostics::DiagHub::spawn(app.handle().clone());
             app.manage(diag_hub.clone());
 
             let handle = app.handle().clone();
 
-            // Coalesce a burst of triggers into one rebuild and broadcast only a
-            // changed payload: every emit costs the webview a deserialize plus a
-            // React render, and both tickers signal unconditionally. The rebuild
-            // runs on a blocking worker.
+            // Coalesce a burst of triggers into one rebuild (on a blocking
+            // worker) and broadcast only a changed payload: every emit costs
+            // the webview a deserialize plus a React render.
             {
                 let emit = emit.clone();
                 tauri::async_runtime::spawn(async move {
-                    // Compared with `ts` zeroed: the stamp changes every
-                    // rebuild, the rest only when state does.
+                    // Compared with `ts` zeroed: the stamp changes every rebuild.
                     let mut last: Option<tt_agentboard::StatePayload> = None;
-                    // Edge detector for needs-you desktop notifications: fires
-                    // once per flip into needs-you, never on the level.
+                    // Fires once per flip into needs-you, never on the level.
                     let mut needs_watch = tt_agentboard::NeedsYouWatch::new();
                     loop {
                         emit.notified().await;
@@ -325,10 +292,9 @@ pub fn run() {
                         else {
                             continue;
                         };
-                        // The only path that moves a Board card now that manual
-                        // drag-and-drop is gone. Every tick, not just on a
-                        // changed payload: the signal is agent liveness, which
-                        // this loop's dedup would otherwise swallow.
+                        // The only path that moves a Board card. Every tick, not
+                        // just on a changed payload: the signal is agent
+                        // liveness, which this loop's dedup would swallow.
                         let store_state = handle.state::<store::StoreState>();
                         if store_state.sync_worktree_task_statuses(&payload, store::now_ms()) > 0 {
                             store::emit_snapshot_from_app(&handle);
@@ -346,10 +312,9 @@ pub fn run() {
                 });
             }
 
-            // Every 2s, or eagerly on a debounced fs-notify signal. Stale
-            // git-cache entries warm OUTSIDE the engine lock: `scan_once` and
-            // every `ab_*` command share it, and Linux dispatches sync commands
-            // inline on the GTK thread, so git under the lock freezes the app.
+            // Every 2s, or eagerly on fs-notify. Stale git-cache entries warm
+            // OUTSIDE the engine lock — git under it freezes every `ab_*`
+            // command on the GTK thread.
             {
                 let engine = engine.clone();
                 let emit = emit.clone();
@@ -391,21 +356,17 @@ pub fn run() {
                             })
                             .await
                             .unwrap_or_default();
-                            // The time the batch *finished*, never the `now` it
-                            // was scheduled with: a batch outrunning
-                            // `GIT_CACHE_TTL_MS` then births every entry stale
-                            // and recomputes forever.
+                            // The time the batch *finished*: stamped with the
+                            // scheduling `now`, a batch outrunning the TTL
+                            // births every entry stale and recomputes forever.
                             let warmed_at = now_ms();
                             engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
                         }
                         // Reconcile rows before pushing them, so a worktree
-                        // discovered this tick is a row on this tick. Unwritten
-                        // worktrees become `detected` rows and vanished dirs are
-                        // forgotten, as diffs, so a steady state writes nothing.
-                        // Gated on the show-unmanaged toggle (default off):
-                        // detected rows are invisible everywhere while it's
-                        // off, and minting rows nobody can see would write to a
-                        // database three other processes share, every tick.
+                        // discovered this tick is a row on this tick — as diffs,
+                        // so a steady state writes nothing. Gated on the
+                        // show-unmanaged toggle: minting rows nobody can see
+                        // would write to a shared database every tick.
                         let store_state = store_handle.try_state::<store::StoreState>();
                         if let Some(state) = &store_state {
                             let (found, vanished) = {
@@ -426,17 +387,14 @@ pub fn run() {
                             }
                             e.scan_once(now);
                         }
-                        // Narrow the accelerant to what's actually polled.
-                        // Cache-only and a no-op unless the tracked set moved,
-                        // so every tick costs nothing over add/remove hooks.
+                        // Narrow the accelerant to what's actually polled —
+                        // a no-op unless the tracked set moved.
                         let targets = engine.lock().unwrap().watch_targets();
                         if let Some(n) = notifier.lock().unwrap().as_mut() {
                             n.set_targets(&projects_dir, &targets);
                         }
                         // Same for the control-file watch: register only the
-                        // delta, rebuild the path→dir index. A dir with no cached
-                        // info contributes no files, so it's watched from the
-                        // tick after its first compute.
+                        // delta, rebuild the path→dir index.
                         let desired = engine.lock().unwrap().control_watch_files();
                         if let Some(w) = git_watcher.lock().unwrap().as_mut() {
                             let desired_keys: HashSet<PathBuf> = desired.keys().cloned().collect();
@@ -451,10 +409,8 @@ pub fn run() {
                                 let _ = w.add(&fresh);
                             }
                             git_watched = desired_keys;
-                            // Settle any registration whose `.git` directory
-                            // didn't exist when it was made (a packed branch
-                            // ref — see `MultiFileNotifier`'s doc) onto its
-                            // real parent now that it does.
+                            // Settle registrations whose `.git` parent didn't
+                            // exist yet (packed ref — see `MultiFileNotifier`).
                             w.rewatch_pending();
                         }
                         *git_watch_index.lock().unwrap() = desired;
@@ -463,8 +419,7 @@ pub fn run() {
                 });
             }
 
-            // The diagnostics-hub half, outside the engine lock like the scan
-            // loop (a hung git must never wedge the `ab_*` commands). Gated on
+            // The diagnostics-hub half, also outside the engine lock. Gated on
             // the same `stale_git_targets` signal `warm_git_cache` uses: two
             // signals and either loop defeats the other's savings.
             {
@@ -502,9 +457,7 @@ pub fn run() {
                         .unwrap_or_default();
                         if !changed_dirs.is_empty() {
                             emit.notify_one();
-                            // A folder whose working tree moved has stale
-                            // diagnostics; the hub skips folders without a
-                            // connected Claude session.
+                            // The hub skips folders without a connected session.
                             for dir in &changed_dirs {
                                 diag.request(std::path::Path::new(dir));
                             }
@@ -513,10 +466,8 @@ pub fn run() {
                 });
             }
 
-            // `git fetch origin` every 3 minutes per repo, outside the engine
-            // lock. The poll only reads cached remote-tracking refs, so without
-            // this "commits behind main" never moves on its own. No re-emit: the
-            // next stat tick picks up what changed.
+            // `git fetch origin` every 3 minutes per repo: the poll only reads
+            // cached remote refs, so without this "behind main" never moves.
             {
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
@@ -539,18 +490,16 @@ pub fn run() {
                 });
             }
 
-            // Personal-dashboard store + journal logging. Open the store once; if it
-            // fails, the app still runs and store commands return an error.
+            // Open the store once; on failure the app still runs and store
+            // commands return an error.
             let store_state = store::StoreState::open();
-            // Emit the initial store snapshot for the dashboard's first mount.
             store::emit_snapshot(&app.handle().clone(), &store_state);
             let repo_cache_store = store_state.clone();
             app.manage(store_state);
 
-            // Identity cache (root -> `owner/repo`) off the origin the loops
-            // above already computed — what lets `task_create` validate `repo`
-            // against a real slug. `repos.json` stays the truth about which
-            // repos exist; anything unparseable drops out of the next reconcile.
+            // Identity cache (root -> `owner/repo`) off already-computed
+            // origins — what lets `task_create` validate `repo` against a real
+            // slug. `repos.json` stays the truth about which repos exist.
             {
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
@@ -563,10 +512,8 @@ pub fn run() {
                             .into_iter()
                             .filter_map(|(dir, origin_url)| {
                                 let url = origin_url?;
-                                // Case-preserving: this is the repo's *identity*,
-                                // stored next to `gh`-reported slugs on issue/PR
-                                // rows and grouped on by the Board. A folded copy
-                                // reads as a second repo.
+                                // Case-preserving: a folded copy reads as a
+                                // second repo next to `gh`-reported slugs.
                                 let slug =
                                     tt_git::task_assign::repo_slug_from_remote_preserving_case(
                                         &url,
@@ -580,23 +527,19 @@ pub fn run() {
             }
 
             // MCP over loopback on *this checkout's* claimed port, so a session
-            // in this app's terminal reaches this app's board rather than
-            // whichever instance won a shared port. After `manage(store_state)`:
-            // a mutating call re-emits the snapshot through it.
+            // in this app's terminal reaches this app's board. After
+            // `manage(store_state)`: a mutating call re-emits through it.
             mcp_http::spawn(app.handle().clone(), tt_mcp::port::for_this_checkout());
 
-            // Overlap guard for the manual "refresh now" command.
+            // Overlap guards for the manual "refresh now" / "Sync now" commands.
             app.manage(store::CollectNowState::default());
-            // Per-dir overlap guard for the rail's manual "Sync now" command.
             app.manage(store::RepoSyncState::default());
 
-            // Collector scheduler: fills tt.db (PRs + issues via gh, calendar via
-            // claude -p per settings.collectors) and re-emits the snapshot. The
-            // shared signal lets `settings_set` make cadence edits take effect live.
+            // Collector scheduler: fills tt.db and re-emits the snapshot; the
+            // signal lets `settings_set` make cadence edits take effect live.
             let scheduler_reload = Arc::new(Notify::new());
-            // Slack Socket Mode: real-time DM delivery when an app-level token is
-            // configured (no-op otherwise). Its own reload signal so a settings
-            // write reliably reaches it alongside the scheduler.
+            // Slack Socket Mode gets its own reload signal so a settings write
+            // reliably reaches it alongside the scheduler.
             let slack_socket_reload = Arc::new(Notify::new());
             app.manage(settings::SettingsSignal {
                 scheduler: scheduler_reload.clone(),
@@ -605,20 +548,17 @@ pub fn run() {
             scheduler::spawn(app.handle().clone(), scheduler_reload);
             slack_socket::spawn(app.handle().clone(), slack_socket_reload);
 
-            // Clear IDE lockfiles left by towles-tool processes that died
-            // without cleanup, so Claude Code never dials a dead server.
+            // So Claude Code never dials a dead server's lockfile.
             ide::sweep_stale_lockfiles();
 
-            // Keep the run marker fresh so a prior run's estimated end time
-            // stays close to the real one (see `resume`).
+            // Keeps the prior run's estimated end time close to real (`resume`).
             resume::spawn_heartbeat(app.handle().clone());
 
             // Kick an initial scan so the first snapshot has data.
             scan.notify_one();
             Ok(())
         })
-        // The native Bevy pane registry (see `tt-pane`). Shared, because a pane
-        // outlives the command that created it and the render thread it owns.
+        // Shared: a pane outlives the command that created it (see `tt-pane`).
         .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
@@ -632,25 +572,19 @@ pub fn run() {
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
         .on_window_event(|window, event| match event {
-            // Logged like focus_changed below: without a record an orderly
-            // close is indistinguishable from a kill or crash — a real triage
-            // dead-end once. CloseRequested says someone asked; Destroyed says
-            // it went down the orderly path.
+            // Without a record an orderly close is indistinguishable from a
+            // kill or crash — a real triage dead-end once.
             WindowEvent::CloseRequested { .. } => {
                 tracing::info!(window = window.label(), "window.close_requested");
             }
             WindowEvent::Destroyed => {
                 tracing::info!(window = window.label(), "window.destroyed");
                 terminal::on_window_destroyed(window.app_handle(), window.label());
-                // Records the exact shutdown moment so the next launch's
-                // resume offer uses it instead of the last (possibly stale)
-                // heartbeat.
+                // The exact shutdown moment beats the last stale heartbeat.
                 resume::on_window_destroyed(window.app_handle());
             }
-            // The only record of the window's OS-level focus history — nothing
-            // else logs this. Answers "did the app steal focus, and when?"
-            // after the fact instead of needing to catch it live under a
-            // debugger (see the worktree-delete-focus investigation).
+            // The only record of OS-level focus history — answers "did the app
+            // steal focus, and when?" after the fact.
             WindowEvent::Focused(focused) => {
                 tracing::info!(focused = *focused, window = window.label(), "window.focus_changed");
             }
@@ -802,14 +736,12 @@ mod tests {
 
     #[test]
     fn label_is_the_repo_root_two_ancestors_up() {
-        // Main checkout: <root>/crates-tauri/tt-app → <root>'s basename.
         assert_eq!(
             label_from_manifest_dir(Path::new(
                 "/home/u/code/towles-tool-primary/crates-tauri/tt-app"
             )),
             "towles-tool-primary"
         );
-        // Task worktree: the task dir is the label.
         assert_eq!(
             label_from_manifest_dir(Path::new(
                 "/home/u/repo/.claude/worktrees/feat-thing/crates-tauri/tt-app"
@@ -838,7 +770,6 @@ mod tests {
 
     #[test]
     fn identifier_stays_unscoped_for_a_main_checkout() {
-        // Not nested under `.claude/worktrees` → the base identifier is kept.
         assert_eq!(
             app_identifier_from(
                 Path::new("/home/u/code/towles-tool-primary/crates-tauri/tt-app"),
@@ -857,7 +788,6 @@ mod tests {
             ),
             "dev.towles.tool.task-feat-thing"
         );
-        // Uppercase and non-alphanumerics in the task dir fold to lowercase `-`.
         assert_eq!(
             app_identifier_from(
                 Path::new("/home/u/repo/.claude/worktrees/Chore_Repo.Audit/crates-tauri/tt-app"),
@@ -869,7 +799,6 @@ mod tests {
 
     #[test]
     fn identifier_requires_both_worktrees_and_claude_segments() {
-        // A `worktrees` dir not under `.claude` is not a task layout.
         assert_eq!(
             app_identifier_from(
                 Path::new("/home/u/repo/worktrees/feat-thing/crates-tauri/tt-app"),

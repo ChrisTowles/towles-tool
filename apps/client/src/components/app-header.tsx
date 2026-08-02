@@ -20,11 +20,8 @@ import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
-/**
- * Fixed palette of literal Tailwind classes (so the JIT sees them) — one per
- * task window, picked by hashing the task name so a given checkout always keeps
- * the same accent.
- */
+/** Literal classes so the Tailwind JIT sees them; hashing the task name keeps a
+ * given checkout on the same accent across windows. */
 const TASK_COLORS = [
   "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
   "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
