@@ -21,6 +21,7 @@ pub mod env_drift;
 pub mod folder_meta;
 pub mod fs_notify;
 pub mod git_info;
+pub mod git_meter;
 pub mod launch;
 pub mod notify;
 pub mod persist;
@@ -34,6 +35,7 @@ pub mod task_removal;
 pub mod task_status;
 pub mod text;
 pub mod tracker;
+pub mod turn_end;
 pub mod types;
 pub mod watcher;
 pub mod watchers;
@@ -58,17 +60,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 // reachable through its module path; the 2026-07-19 CLI trim removed the
 // last importer of the wider re-export list.
 pub use bridge::StatePayload;
-pub use engine::{RailRow, UnrecordedWorktree};
+pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{
     CommitStat, DiffFile, DiffFiles, DiffMode, UntrackedCapInfo, base_file_content, commit_stats,
     compute_git_info, diff_files, prune_stale_worktree,
 };
+pub use git_meter::{GitWork, GitWorkMeter};
 pub use launch::{LaunchConfig, port_listening, read_launch_file};
 pub use notify::{NeedsYouEdge, NeedsYouWatch};
 pub use repo_meta::{HexColor, RepoAccentStyle, RepoMeta};
 pub use repos::{RepoEntry, default_repos_path, load_repos, remove_repo_persisted, repo_entries};
 pub use sessions::SessionRecord;
+pub use turn_end::TurnEndWatch;
 pub use types::{
     AgentEvent, AgentEventDetails, AgentStatus, FolderData, LoopInfo, NeedsYouReason, RepoData,
     SessionData, SubagentInfo,

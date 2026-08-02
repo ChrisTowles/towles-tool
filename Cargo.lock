@@ -8885,6 +8885,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "tracing",
  "tt-claude-code",
  "tt-config",
  "tt-exec",

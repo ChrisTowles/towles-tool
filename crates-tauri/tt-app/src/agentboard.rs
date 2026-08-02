@@ -33,12 +33,11 @@ pub struct Ab {
     pub ever_live: Mutex<HashSet<String>>,
 }
 
-/// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from
-/// the app's PTY registry — the engine can't see PTYs, and every payload
-/// leaving the app passes through here first. Status is the load-bearing one:
-/// the engine's verdict rides a 60s-cached `claude agents` snapshot, so
-/// `tt_agentboard::pty_status` folds the PTY's direct observation over the
-/// top (output activity vetoes; silence defers — see that module).
+/// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from the
+/// app's PTY registry — the engine can't see PTYs, and every payload leaving the
+/// app passes through here first. Status is load-bearing: the engine's verdict
+/// rides a 60s-cached `claude agents` snapshot, so `tt_agentboard::pty_status`
+/// folds the PTY's direct observation over the top.
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
@@ -226,14 +225,13 @@ pub fn ab_add_repo(state: State<Ab>, path: String) {
     state.emit.notify_one();
 }
 
-/// Remove the repo at `dir` from the rail. Takes the exact dir, not a resolved session
-/// name — removing several repos in a row by name is unsafe (see `remove_repo_persisted`).
+/// Remove the repo at `dir` from the rail — the exact dir, not a resolved session
+/// name, since removing several by name in a row is unsafe (see
+/// `remove_repo_persisted`).
 ///
-/// `dir` is not always a `repos.json` entry: a worktree deleted outside `tt task rm`
-/// leaves only git's `.git/worktrees/<name>` registration at its owning checkout, which
-/// is what the prune below clears. Async because `git worktree remove`/`prune` are real
-/// subprocess waits, and per the crate's "never hold the Engine lock across git" rule
-/// both the owner lookup and the git calls happen with the lock released.
+/// `dir` is not always a `repos.json` entry: a worktree deleted outside `tt task
+/// rm` leaves only git's `.git/worktrees/<name>` registration at its owning
+/// checkout, which the prune below clears.
 #[tauri::command]
 pub async fn ab_remove_repo(state: State<'_, Ab>, dir: String) -> Result<(), String> {
     let removed_tracked = {
@@ -252,7 +250,11 @@ pub async fn ab_remove_repo(state: State<'_, Ab>, dir: String) -> Result<(), Str
         false
     };
     if let Some(owner) = owner {
-        state.engine.lock().unwrap().invalidate_git(&owner);
+        state
+            .engine
+            .lock()
+            .unwrap()
+            .invalidate_git(&owner, tt_agentboard::GitInvalidation::WorktreeRemoved);
     }
     tracing::info!(%dir, removed_tracked, pruned, "repo.removed");
     if removed_tracked || pruned {
@@ -506,6 +508,16 @@ pub fn ab_set_folder_base_branch(state: State<Ab>, dir: String, branch: Option<S
     }
 }
 
+/// Claim the short git-freshness ceiling for the checkout whose diff pane just
+/// mounted, and release it on unmount (`focused: false`). Not instrumented:
+/// pane visibility fires on every folder switch, not once per user decision.
+#[tauri::command]
+pub fn ab_set_diff_focus(state: State<Ab>, dir: String, focused: bool) {
+    if state.engine.lock().unwrap().set_diff_focus(&dir, focused) {
+        state.scan.notify_one();
+    }
+}
+
 /// Set (or clear) a folder's quiet override — forces it to count as quiet for
 /// a narrowing rail filter regardless of its own activity.
 #[tauri::command]
@@ -551,12 +563,10 @@ pub fn ab_set_show_unmanaged_worktrees(state: State<Ab>, show: bool) {
     }
 }
 
-/// Persist the window layout (frontend-owned; saved debounced from the client).
-/// Deliberately does NOT re-emit — echoing the blob back would clobber
-/// rapid-fire local edits; the client's copy is the live truth.
-/// `touched_folders` are the folder dirs the client actually mutated since its
-/// last save — see `WindowsStore::save`'s doc comment for why a whole-blob
-/// save can't be applied blindly across every folder.
+/// Persist the window layout (frontend-owned, saved debounced from the client).
+/// Deliberately does NOT re-emit — echoing the blob back would clobber rapid
+/// local edits. `touched_folders` are the dirs the client actually mutated; see
+/// `WindowsStore::save` for why a whole-blob save can't be applied blindly.
 #[tauri::command]
 pub fn ab_save_windows(
     state: State<Ab>,

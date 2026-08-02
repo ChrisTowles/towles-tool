@@ -589,7 +589,7 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         // through. Invalidating closes that window on the next tick instead
         // of a minute later.
         if let Some(owner) = owner {
-            engine.invalidate_git(&owner);
+            engine.invalidate_git(&owner, tt_agentboard::GitInvalidation::WorktreeRemoved);
         }
         notes
     }

@@ -248,7 +248,7 @@ pub fn run() {
                         {
                             let mut e = engine.lock().unwrap();
                             for dir in &dirs {
-                                e.invalidate_git(dir);
+                                e.invalidate_git(dir, tt_agentboard::GitInvalidation::ControlFile);
                             }
                         }
                         scan.notify_one();
@@ -256,6 +256,10 @@ pub fn run() {
                     .ok(),
                 ))
             };
+
+            // Shared by both git pollers: nothing spawns for a git read any
+            // more, so this is the only account of what they cost.
+            let git_meter = Arc::new(Mutex::new(tt_agentboard::GitWorkMeter::new(now_ms())));
 
             app.manage(Ab {
                 engine: engine.clone(),
@@ -277,11 +281,15 @@ pub fn run() {
             // the webview a deserialize plus a React render.
             {
                 let emit = emit.clone();
+                let engine = engine.clone();
+                let scan = scan.clone();
                 tauri::async_runtime::spawn(async move {
                     // Compared with `ts` zeroed: the stamp changes every rebuild.
                     let mut last: Option<tt_agentboard::StatePayload> = None;
                     // Fires once per flip into needs-you, never on the level.
                     let mut needs_watch = tt_agentboard::NeedsYouWatch::new();
+                    // …and once per folder whose last agent stopped working.
+                    let mut turn_watch = tt_agentboard::TurnEndWatch::new();
                     loop {
                         emit.notified().await;
                         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -305,6 +313,23 @@ pub fn run() {
                         probe.ts = 0;
                         if last.as_ref() != Some(&probe) {
                             last = Some(probe);
+                            // An agent's turn ending is the only notice that a
+                            // checkout's *working tree* moved — an edit it never
+                            // staged touched no watched `.git` file, so without
+                            // this those stats wait out the backup poll.
+                            let ended = turn_watch.observe(&payload);
+                            if !ended.is_empty() {
+                                {
+                                    let mut e = engine.lock().unwrap();
+                                    for dir in &ended {
+                                        e.invalidate_git(
+                                            dir,
+                                            tt_agentboard::GitInvalidation::TurnEnd,
+                                        );
+                                    }
+                                }
+                                scan.notify_one();
+                            }
                             let edges = needs_watch.observe(&payload);
                             agentboard::notify_needs_you(&handle, &edges);
                             let _ = handle.emit(STATE_EVENT, payload);
@@ -324,6 +349,7 @@ pub fn run() {
                 let projects_dir = projects_dir.clone();
                 let git_watcher = git_watcher.clone();
                 let git_watch_index = git_watch_index.clone();
+                let git_meter = git_meter.clone();
                 let store_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(Duration::from_millis(2000));
@@ -345,18 +371,29 @@ pub fn run() {
                                 stale
                                     .into_iter()
                                     .map(|(dir, base_branch, previous)| {
+                                        let started = std::time::Instant::now();
                                         let info = tt_agentboard::git_info::compute_git_info(
                                             &dir,
                                             base_branch.as_deref(),
                                             Some(&previous),
                                             now_ms(),
                                         );
-                                        (dir, info)
+                                        (dir, info, started.elapsed().as_millis() as i64)
                                     })
                                     .collect::<Vec<_>>()
                             })
                             .await
                             .unwrap_or_default();
+                            let warmed = {
+                                let mut meter = git_meter.lock().unwrap();
+                                warmed
+                                    .into_iter()
+                                    .map(|(dir, info, took)| {
+                                        meter.record(&dir, took);
+                                        (dir, info)
+                                    })
+                                    .collect()
+                            };
                             // The time the batch *finished*: stamped with the
                             // scheduling `now`, a batch outrunning the TTL
                             // births every entry stale and recomputes forever.
@@ -415,6 +452,16 @@ pub fn run() {
                             w.rewatch_pending();
                         }
                         *git_watch_index.lock().unwrap() = desired;
+                        if let Some(work) = git_meter.lock().unwrap().take_due(now_ms()) {
+                            tracing::debug!(
+                                count = work.count,
+                                total_ms = work.total_ms,
+                                slowest_ms = work.slowest_ms,
+                                slowest_dir = %work.slowest_dir,
+                                window_ms = work.window_ms,
+                                "git.recompute_window"
+                            );
+                        }
                         emit.notify_one();
                     }
                 });
@@ -427,22 +474,29 @@ pub fn run() {
                 let engine = engine.clone();
                 let emit = emit.clone();
                 let diag = diag_hub.clone();
+                let git_meter = git_meter.clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(Duration::from_secs(10));
                     loop {
                         interval.tick().await;
                         let poll_engine = engine.clone();
+                        let poll_meter = git_meter.clone();
                         let now = now_ms();
                         let changed_dirs = tauri::async_runtime::spawn_blocking(move || {
                             let targets = poll_engine.lock().unwrap().stale_git_targets(now);
                             let mut changed_dirs = Vec::new();
                             for (dir, base_branch, previous) in targets {
+                                let started = std::time::Instant::now();
                                 let info = tt_agentboard::git_info::compute_git_info(
                                     &dir,
                                     base_branch.as_deref(),
                                     Some(&previous),
                                     now_ms(),
                                 );
+                                poll_meter
+                                    .lock()
+                                    .unwrap()
+                                    .record(&dir, started.elapsed().as_millis() as i64);
                                 let stored = poll_engine.lock().unwrap().store_git_info(
                                     &dir,
                                     info,
@@ -623,6 +677,7 @@ pub fn run() {
             agentboard::ab_save_windows,
             agentboard::ab_save_collapsed,
             agentboard::ab_get_diff_files,
+            agentboard::ab_set_diff_focus,
             agentboard::ab_get_base_file,
             agentboard::ab_get_commit_stats,
             browser::browser_status,
