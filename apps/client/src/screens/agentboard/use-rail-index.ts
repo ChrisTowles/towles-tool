@@ -39,8 +39,8 @@ export function useRailIndex(args: {
   filter: RailFilter;
   /** How far back `filter: "recent"` counts as worked in. */
   recentHours: number;
-  /** Per-repo "show me the quiet ones anyway" toggle (the stub row). */
-  quietRevealed: Record<string, boolean>;
+  /** Repo keys whose "N quiet" stub is peeked open right now. */
+  quietRevealed: Set<string>;
   activeFolderDir: string | null;
   /** Ticks every 30s — plenty for the 45-minute quiet grace window. */
   now: number;
@@ -68,7 +68,7 @@ export function useRailIndex(args: {
     return repos
       .map((r) => {
         const q = quietDirs.get(r.key);
-        if (!q || quietRevealed[r.key]) return r;
+        if (!q || quietRevealed.has(r.key)) return r;
         return { ...r, folders: r.folders.filter((f) => !q.has(f.dir)) };
       })
       .filter((r) => r.folders.length > 0);

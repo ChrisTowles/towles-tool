@@ -59,6 +59,7 @@ import {
   abSetSessionPurpose,
   prForFolder,
   previewPaneId,
+  repoQuietMarkKey,
   sessionLabel,
   sleep,
   successorPane,
@@ -148,7 +149,13 @@ export function AgentboardScreen() {
   const [jarvisPane, setJarvisPane] = useJarvisPane();
   const [browserPane] = useBrowserPane();
   const nativeVisible = activeTab === "agentboard";
-  const [quietRevealed, setQuietRevealed] = useState<Record<string, boolean>>({});
+  // Held as the marks the peek was opened against, so marking one more quiet ends it.
+  const [quietRevealed, setQuietRevealed] = useState<Record<string, string>>({});
+  const revealedQuiet = useMemo(
+    () =>
+      new Set(repos.filter((r) => quietRevealed[r.key] === repoQuietMarkKey(r)).map((r) => r.key)),
+    [repos, quietRevealed],
+  );
   const [renaming, setRenaming] = useState<string | null>(null);
   // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
   const [titles, setTitles] = useState<Record<string, string>>({});
@@ -171,7 +178,14 @@ export function AgentboardScreen() {
     folderByDir,
     activeFolder,
     activeRepo,
-  } = useRailIndex({ repos, filter, recentHours, quietRevealed, activeFolderDir, now });
+  } = useRailIndex({
+    repos,
+    filter,
+    recentHours,
+    quietRevealed: revealedQuiet,
+    activeFolderDir,
+    now,
+  });
 
   const { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane } =
     useWindowLayout({
@@ -1052,9 +1066,13 @@ export function AgentboardScreen() {
                             <RepoGroup
                               repo={repo}
                               quietDirs={quietDirs.get(repo.key)}
-                              quietRevealed={!!quietRevealed[repo.key]}
+                              quietRevealed={revealedQuiet.has(repo.key)}
                               onToggleQuiet={() =>
-                                setQuietRevealed((m) => ({ ...m, [repo.key]: !m[repo.key] }))
+                                setQuietRevealed((m) => {
+                                  const key = repoQuietMarkKey(repo);
+                                  const { [repo.key]: was, ...rest } = m;
+                                  return was === key ? rest : { ...rest, [repo.key]: key };
+                                })
                               }
                               now={now}
                               compactPct={state.compactRecommendPercent}
