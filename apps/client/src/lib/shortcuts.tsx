@@ -190,6 +190,14 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    // The wider net beside jump-next — idle agents too, not only flagged ones.
+    id: "ab-jump-idle",
+    scope: "agentboard",
+    keys: "mod+shift+a",
+    description: "Jump to next agent that isn't busy — idle or needing you",
+    allowInEditable: true,
+  },
+  {
     id: "ab-focus-up",
     scope: "agentboard",
     keys: "mod+shift+arrowup",
@@ -349,11 +357,21 @@ export function useShortcutsWorkInTerminal(): RefObject<boolean> {
 }
 
 function matches(spec: KeySpec, e: KeyboardEvent): boolean {
-  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+  const mod = IS_MAC ? e.metaKey || macCtrlAlias(spec, e) : e.ctrlKey;
+  // A mac Ctrl chord this binding didn't claim belongs to the shell (⌃C, ⌃D),
+  // so it must never fall through and match on the main key alone.
+  if (IS_MAC && e.ctrlKey && !macCtrlAlias(spec, e)) return false;
   // `?` arrives as key "?" with shiftKey set — compare shift only for
   // modifier-style specs, where shift is a deliberate chord component.
   const shiftOk = spec.mod ? e.shiftKey === spec.shift : true;
   return mod === spec.mod && shiftOk && e.altKey === spec.alt && e.key.toLowerCase() === spec.key;
+}
+
+/** Ctrl+Shift stands in for ⌘⇧ on mac, so one spelling drives both platforms.
+ * Only for shift-bearing chords: Ctrl+Shift is no terminal control character,
+ * while bare Ctrl is the shell's and is never aliased. */
+function macCtrlAlias(spec: KeySpec, e: KeyboardEvent): boolean {
+  return spec.mod && spec.shift && e.ctrlKey && e.shiftKey && !e.metaKey;
 }
 
 /** Somewhere that owns its own keystrokes — in a terminal, Ctrl+D is EOF. */

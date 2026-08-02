@@ -112,6 +112,68 @@ jobs:
       - name: test
         run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
 
+  rust-macos:
+    name: Rust macOS (clippy, test)
+    # The only per-PR compile of every `#[cfg(target_os = "macos")]` block —
+    # tt-app's NSEvent monitor, the mac terminal path, tt-browser's Chrome
+    # lookup. Deliberately ungated: a Linux-only API can be introduced by any
+    # crate, so the paths filter that spares rust-vt/rust-app would miss it.
+    # macos-14 rather than macos-latest is what dodges the zig 0.15/Xcode 26.4
+    # linker bug release.yml has to work around (ziglang/zig#31658).
+    runs-on: macos-14
+    env:
+      GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
+      GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same repo-root rust-toolchain.toml pin, and the same strip of the
+      # runner's preinstalled toolchain, as the `rust` job — see its comment for
+      # why a stray toolchain wrecks the rust-cache key.
+      - name: Provision pinned Rust toolchain
+        run: |
+          rustup toolchain install
+          active=$(rustup show active-toolchain | awk '{print $1}')
+          for tc in $(rustup toolchain list | awk '{print $1}'); do
+            [ "$tc" = "$active" ] || rustup toolchain uninstall "$tc"
+          done
+
+      # tt-app depends on tt-vt, whose build script shells out to `zig build`
+      # against a ghostty checkout — same provisioning as the rust-vt job.
+      - name: Provision Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Cache ghostty source
+        id: ghostty-cache
+        uses: actions/cache@v4
+        with:
+          path: ghostty-src
+          key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
+
+      - name: Clone ghostty source
+        if: steps.ghostty-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/ghostty-org/ghostty.git ghostty-src
+          git -C ghostty-src checkout "$GHOSTTY_COMMIT"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-14
+
+      # No exclude list at all, unlike the Linux jobs: they split around
+      # webkit2gtk/GTK, which mac doesn't need (the shell links AppKit and
+      # WebKit from the SDK), and both GTK dependants — tt-pane's `gtk` and
+      # tt-jarvis's cadence-benchmark dev-deps — are already
+      # `cfg(target_os = "linux")` gated, so `--all-targets` never reaches them.
+      - name: clippy
+        run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test --profile ci --workspace
+
   rust-vt:
     name: Rust tt-vt (zig + ghostty)
     needs: changes

@@ -5,6 +5,7 @@ import {
   changedFolderDirs,
   moveFocus,
   cycleNeedsYou,
+  cycleNotBusy,
   cycleSession,
   colCount,
   diffPaneDir,
@@ -70,7 +71,9 @@ import {
   pruneWins,
   replacePane,
   QUIET_GRACE_MS,
+  sessionCatchesEye,
   sessionNeeds,
+  sessionNotBusy,
   waitForFirstFrame,
   type AgentStatus,
   type FolderData,
@@ -1621,6 +1624,77 @@ describe("cycleNeedsYou", () => {
     // From "a2" (idle, sits between a1 and b1) — next should be b1, prev should be a1.
     expect(cycleNeedsYou(repos, "a2", "next")?.id).toBe("b1");
     expect(cycleNeedsYou(repos, "a2", "prev")?.id).toBe("a1");
+  });
+});
+
+describe("sessionNotBusy", () => {
+  it("takes any agent that isn't working, live or not", () => {
+    expect(sessionNotBusy(session({ live: true, agentState: agent("idle") }))).toBe(true);
+    expect(sessionNotBusy(session({ live: true, agentState: agent("complete") }))).toBe(true);
+    expect(sessionNotBusy(session({ live: false, agentState: agent("idle") }))).toBe(true);
+  });
+
+  it("leaves out a busy agent, even one flagged unseen", () => {
+    expect(sessionNotBusy(session({ live: true, agentState: agent("busy") }))).toBe(false);
+    expect(sessionNotBusy(session({ live: true, unseen: true, agentState: agent("busy") }))).toBe(
+      false,
+    );
+  });
+
+  it("leaves out a plain shell no agent ever ran in", () => {
+    expect(sessionNotBusy(session({ live: true }))).toBe(false);
+  });
+
+  it("is a superset of the attention jump, busy aside", () => {
+    const flagged = session({ live: true, unseen: true });
+    expect(sessionCatchesEye(flagged)).toBe(true);
+    expect(sessionNotBusy(flagged)).toBe(true);
+  });
+});
+
+describe("cycleNotBusy", () => {
+  // Board order: a1 (busy), a2 (idle agent), b1 (plain shell), b2 (waiting)
+  const repos = [
+    repo("a", [
+      folder({
+        dir: "a/f1",
+        sessions: [
+          session({ id: "a1", live: true, agentState: agent("busy") }),
+          session({ id: "a2", live: true, agentState: agent("idle") }),
+        ],
+      }),
+    ]),
+    repo("b", [
+      folder({
+        dir: "b/f1",
+        sessions: [
+          session({ id: "b1", live: true }),
+          session({ id: "b2", live: true, agentState: agent("waiting") }),
+        ],
+      }),
+    ]),
+  ];
+
+  it("cycles the idle and the needy alike, skipping busy agents and plain shells", () => {
+    expect(cycleNotBusy(repos, null, "next")?.id).toBe("a2");
+    expect(cycleNotBusy(repos, "a2", "next")?.id).toBe("b2");
+    expect(cycleNotBusy(repos, "b2", "next")?.id).toBe("a2");
+  });
+
+  it("anchors on the busy session you are sitting in", () => {
+    expect(cycleNotBusy(repos, "a1", "next")?.id).toBe("a2");
+  });
+
+  it("returns null when every agent is busy", () => {
+    const swamped = [
+      repo("a", [
+        folder({
+          dir: "a/f1",
+          sessions: [session({ id: "a1", live: true, agentState: agent("busy") })],
+        }),
+      ]),
+    ];
+    expect(cycleNotBusy(swamped, null, "next")).toBeNull();
   });
 });
 
