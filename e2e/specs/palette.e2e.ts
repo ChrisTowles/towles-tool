@@ -10,7 +10,7 @@
 /// <reference types="@wdio/mocha-framework" />
 
 import { Key } from "webdriverio";
-import { expectString } from "../ipc.js";
+import { expectObject } from "../ipc.js";
 
 // The app binds the palette to ⌘K on macOS, Ctrl+K everywhere else (mirrors the
 // frontend's IS_MAC). The suite runs on Linux/WebKitGTK, but keep it portable.
@@ -44,20 +44,11 @@ async function openPalette(): Promise<void> {
   );
 }
 
-/**
- * Type a query, press Enter on whatever the palette selected, and wait for the
- * palette to close.
- *
- * Deliberately Enter-on-selected rather than clicking the exact-labelled row:
- * typing a screen's full title and hitting Enter is the palette's whole point,
- * and it is the assertion that catches a selection regression. It used to be
- * unsafe — a persisted "Recent" entry (Agentboard, whose title contains
- * "board") sat above the exact `Go to > Board` match, so what Enter committed
- * depended on prior-session state (#480). Recent is now suppressed while a
- * query is typed and an exact title match scores 1, so the top hit is the
- * exact match regardless of history; the assertion below is what keeps that
- * true.
- */
+/** Type a query, press Enter on whatever the palette selected, and wait for the
+ * palette to close. Deliberately Enter-on-selected rather than clicking the
+ * exact-labelled row: it is the assertion that catches a selection regression —
+ * Recent is suppressed while a query is typed and an exact title match ranks
+ * first (#480), and this is what keeps that true. */
 async function navigateTo(query: string, title: string = query): Promise<void> {
   const input = await browser.$('[data-slot="command-input"]');
   await input.setValue(query);
@@ -114,13 +105,14 @@ describe("Command palette navigation", () => {
   });
 
   it("shows the task badge from the real app_task command", async () => {
-    const task = expectString(
+    const task = expectObject<{ label: string; isWorktree: boolean }>(
       await browser.tauri.execute(({ core }) => core.invoke("app_task")),
       "app_task",
     );
-    expect(task.length).toBeGreaterThan(0);
-    // The header badge carries the full task as its title attribute.
-    const badge = await browser.$(`[title="${task}"]`);
+    expect(task.label.length).toBeGreaterThan(0);
+    // The header badge's title states the checkout kind plus the full label.
+    const kind = task.isWorktree ? "Task worktree" : "Main checkout";
+    const badge = await browser.$(`[title="${kind} — ${task.label}"]`);
     await badge.waitForDisplayed({ timeout: 10000 });
     expect((await badge.getText()).length).toBeGreaterThan(0);
   });

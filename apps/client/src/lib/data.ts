@@ -501,15 +501,20 @@ export function fmtAge(ms: number, now: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-/** This window's checkout/task name (`app_task`); `null` outside Tauri so
- * the header badge hides. Tells several tasks' windows apart. */
-export function useAppTask(): string | null {
-  const [task, setTask] = useState<string | null>(null);
+/** This window's checkout (`app_task`): label plus main-vs-task-worktree kind. */
+export interface AppTask {
+  label: string;
+  isWorktree: boolean;
+}
+
+/** `null` outside Tauri so the header badge hides. */
+export function useAppTask(): AppTask | null {
+  const [task, setTask] = useState<AppTask | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
     let active = true;
     void (async () => {
-      const s = await invoke<string>("app_task");
+      const s = await invoke<AppTask>("app_task");
       if (active) setTask(s.unwrapOr(null));
     })();
     return () => {

@@ -65,10 +65,20 @@ fn label_from_manifest_dir(manifest_dir: &Path) -> String {
         .to_string()
 }
 
-/// Task name for the frontend header badge (see `task_label`).
+/// What the header badge shows: the label and whether this is a task build.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppTask {
+    label: String,
+    is_worktree: bool,
+}
+
 #[tauri::command]
-fn app_task() -> String {
-    task_label()
+fn app_task() -> AppTask {
+    AppTask {
+        label: task_label(),
+        is_worktree: is_task_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR"))),
+    }
 }
 
 /// The one IPC seam for frontend `ui.action` telemetry: the webview can't reach
@@ -77,6 +87,15 @@ fn app_task() -> String {
 #[tauri::command]
 fn ui_action(action: String, screen: String, detail: Option<String>) {
     tracing::info!(%action, %screen, detail = %detail.as_deref().unwrap_or(""), "ui.action");
+}
+
+/// A task build's manifest dir is `<repo>/.claude/worktrees/<task>/crates-tauri/tt-app`
+/// — ancestors 3/4 are the worktrees/.claude segments exactly then.
+fn is_task_manifest_dir(manifest_dir: &Path) -> bool {
+    manifest_dir.ancestors().nth(3).and_then(|p| p.file_name())
+        == Some(std::ffi::OsStr::new("worktrees"))
+        && manifest_dir.ancestors().nth(4).and_then(|p| p.file_name())
+            == Some(std::ffi::OsStr::new(".claude"))
 }
 
 /// Per-task app identifier, so each worktree's self-installed `.desktop` entry +
@@ -90,13 +109,7 @@ fn app_identifier(base: &str) -> String {
 /// keeps `base` unscoped; a task build gets `base.task-<label>`, folded to lower
 /// case with non-alphanumerics as `-` so it's a legal reverse-DNS segment.
 fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
-    // `<repo>/.claude/worktrees/<task>/crates-tauri/tt-app` — ancestors 3/4
-    // are the worktrees/.claude segments exactly when this is a task build.
-    let under_worktrees = manifest_dir.ancestors().nth(3).and_then(|p| p.file_name())
-        == Some(std::ffi::OsStr::new("worktrees"))
-        && manifest_dir.ancestors().nth(4).and_then(|p| p.file_name())
-            == Some(std::ffi::OsStr::new(".claude"));
-    if !under_worktrees {
+    if !is_task_manifest_dir(manifest_dir) {
         return base.to_string();
     }
     let suffix: String = label_from_manifest_dir(manifest_dir)
@@ -808,6 +821,19 @@ mod tests {
     #[test]
     fn label_falls_back_when_the_path_is_too_shallow() {
         assert_eq!(label_from_manifest_dir(Path::new("/tt-app")), "towles-tool");
+    }
+
+    #[test]
+    fn task_detection_requires_the_claude_worktrees_nesting() {
+        assert!(is_task_manifest_dir(Path::new(
+            "/home/u/repo/.claude/worktrees/feat-thing/crates-tauri/tt-app"
+        )));
+        assert!(!is_task_manifest_dir(Path::new(
+            "/home/u/code/towles-tool-primary/crates-tauri/tt-app"
+        )));
+        assert!(!is_task_manifest_dir(Path::new(
+            "/home/u/repo/worktrees/feat-thing/crates-tauri/tt-app"
+        )));
     }
 
     #[test]

@@ -8,14 +8,6 @@
  * dereference three lines later.
  */
 
-/** Narrow an IPC reply to a string. */
-export function expectString(value: unknown, command: string): string {
-  if (typeof value !== "string") {
-    throw new TypeError(`${command} should answer a string, got ${describe(value)}`);
-  }
-  return value;
-}
-
 /** Narrow an IPC reply to an array. */
 export function expectArray(value: unknown, command: string): unknown[] {
   if (!Array.isArray(value)) {
