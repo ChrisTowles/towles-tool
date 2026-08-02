@@ -18,14 +18,11 @@ pub fn upstream_gone(track: &str) -> bool {
     track.trim() == "[gone]"
 }
 
-/// Which of the `existing` per-scope state dirs (children of a
-/// `…/towles-tool/tasks/` parent; see `tt_config::state_scope`) are stale:
-/// they belong to `repo` — task scopes are `<repo>-<task>`, so membership is
-/// an anchored `<repo>-` prefix (never a bare substring, so repo `blog`
-/// doesn't claim `blog2-thing`; the main checkout's own scope is its bare
-/// dir name, which the anchored prefix never matches) — but no live checkout
-/// claims them. Scopes of other repos and hand-forced `TT_STATE_SCOPE` names
-/// are left alone. Sorted for deterministic output.
+/// Which of the `existing` per-scope state dirs (see `tt_config::state_scope`) belong to
+/// `repo` but no live checkout. Task scopes are `<repo>-<task>`, so membership is an
+/// anchored `<repo>-` prefix, never a bare substring: repo `blog` must not claim
+/// `blog2-thing`, and the main checkout's bare dir name must not match either. Other
+/// repos' scopes and hand-forced `TT_STATE_SCOPE` names are left alone.
 pub fn stale_scope_dirs(
     repo: &str,
     live_scopes: &BTreeSet<String>,

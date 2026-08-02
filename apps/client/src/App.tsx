@@ -88,12 +88,9 @@ function Shortcuts() {
   return <ShortcutHelpHost activeScopes={activeScopes} screen={activeTab} />;
 }
 
-/**
- * Delivery for the MCP `task_start` tool, subscribed app-wide rather than inside
- * Agentboard: that screen mounts on first visit, so a listener there would miss
- * every start on a fresh launch. Opens Agentboard so the pane the start is about
- * to create is actually on screen. See `lib/task-start.ts`.
- */
+/** Delivery for the MCP `task_start` tool, subscribed app-wide: Agentboard
+ * mounts on first visit, so a listener there would miss every start on a fresh
+ * launch. Opens Agentboard so the new pane is on screen. */
 function TaskStartBridge() {
   const { openTab } = useWorkspace();
   const state = useAgentboardState();

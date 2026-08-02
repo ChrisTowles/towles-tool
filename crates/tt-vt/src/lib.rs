@@ -26,14 +26,12 @@ pub use frame::{Frame, Modes};
 pub use search::SearchMatch;
 pub use session::{Event, Input, Sender, Session, SpawnError};
 
-/// The Zig optimize mode the linked libghostty-vt parser was compiled with
-/// (`"Debug"`, `"ReleaseSafe"`, `"ReleaseSmall"`, `"ReleaseFast"`, or
-/// `"unknown"` if the query fails). A Debug parser is ~3 orders of magnitude
+/// The Zig optimize mode the linked libghostty-vt parser was compiled with, or
+/// `"unknown"` if the query fails. A Debug parser is ~3 orders of magnitude
 /// slower — it saturates a core at ~130 KB/s of PTY output — which the
-/// `[profile.dev.package.libghostty-vt-sys]` override in the workspace
-/// Cargo.toml exists to prevent; doctor surfaces this so losing that
-/// override (or a crate bump changing its build script's semantics) shows
-/// up as a warning instead of months of mystery lag.
+/// `[profile.dev.package.libghostty-vt-sys]` override exists to prevent. Doctor
+/// surfaces this so losing that override shows up as a warning rather than
+/// months of mystery lag.
 pub fn parser_optimize_mode() -> &'static str {
     use libghostty_vt::build_info::OptimizeMode;
     match libghostty_vt::build_info::optimize_mode() {

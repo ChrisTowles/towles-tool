@@ -1,11 +1,6 @@
-/**
- * Wire types for `terminal://frame` events (mirrors crates/tt-vt/src/frame.rs)
- * plus the DOM-key → escape-sequence encoder the canvas terminal view uses.
- * Pure module — no Tauri, no DOM rendering.
- */
+/** Wire types for `terminal://frame`, mirroring crates/tt-vt/src/frame.rs. */
 
-// Duplicated from shortcuts.tsx's IS_MAC rather than imported — that module
-// pulls in Dialog/React UI, which this pure module deliberately stays free of.
+// Duplicated from shortcuts.tsx rather than imported: that module pulls in React UI.
 const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
 
 export interface Run {
@@ -16,23 +11,18 @@ export interface Run {
   fg?: number;
   bg?: number;
   flags?: number;
-  /** OSC 8 hyperlink URI, when the run's cells carry one. Takes priority over
-   * regex-based link detection (see term-links.ts) since the visible text
-   * (e.g. a markdown-style link label) may not itself look like a URL. */
+  /** OSC 8 URI. Beats term-links.ts's regex: the text need not look like a URL. */
   link?: string;
-  /** Underline style past single — 2 double, 3 curly, 4 dotted, 5 dashed
-   * (SGR 4:x). Absent = none/single; UNDERLINE still flags "any". */
+  /** Style past single — 2 double, 3 curly, 4 dotted, 5 dashed (SGR 4:x). */
   ul?: number;
-  /** SGR 58 underline color, packed 0xRRGGBB; absent = underline in fg. */
+  /** SGR 58 underline color, packed; absent = underline in fg. */
   ulc?: number;
 }
 
 export interface RowUpdate {
   y: number;
   runs: Run[];
-  /** This row soft-wraps into the next: its content continues on row `y + 1`
-   * (libghostty's per-row wrap bit; absent = false). term-links joins rows on
-   * this flag rather than guessing from text that reaches the last column. */
+  /** libghostty's wrap bit — term-links joins rows on this, not on text width. */
   wrapped?: boolean;
   /** Row-local selected column range, inclusive. */
   sel?: [number, number];
@@ -52,11 +42,9 @@ export interface Cursor {
   password?: boolean;
 }
 
-/** Mode hints for input *routing* only — all encoding happens engine-side. */
+/** Hints for input *routing* only — all encoding happens engine-side. */
 export interface Modes {
-  /** Alternate screen active (fullscreen TUI owns the scrollback chords). */
   altScreen: boolean;
-  /** Clicks go to the program instead of local selection; Shift bypasses. */
   mouseTracking: boolean;
 }
 
@@ -70,56 +58,37 @@ export interface Frame {
   modes: Modes;
   title?: string;
   scrollbackRows: number;
-  /** Absolute row index of the viewport's top (0 = oldest scrollback row);
-   * equals `scrollbackRows` at the live bottom. */
+  /** Absolute index of the viewport's top row (0 = oldest scrollback row). */
   viewportTop: number;
 }
 
-/** Payload of a `terminal://exit` event (mirrors `TermExit` in
- * crates-tauri/tt-app/src/terminal.rs): the dead shell's exit code and, when a
- * signal ended it, that signal's resolved name. A signal death leaves `code`
- * at portable-pty's placeholder, so consumers prefer `signal` when present. */
+/** A signal death leaves `code` at portable-pty's placeholder — prefer `signal`. */
 export interface TermExit {
   termId: string;
   code: number;
-  /** Signal name ("Killed", "Terminated", …) when the shell was signalled;
-   * null/absent for a normal exit. */
   signal?: string | null;
 }
 
-/** Human label for a dead shell's exit status: "exited" for a code-0 logout,
- * "exited · Killed" when a signal ended it, "exited · code 2" otherwise. */
 export function exitLabel(code: number, signal?: string | null): string {
   if (signal) return `exited · ${signal}`;
   if (code === 0) return "exited";
   return `exited · code ${code}`;
 }
 
-/** Whether a shell's exit looks like a crash (nonzero code or a signal) rather
- * than a clean logout. A crashing pane vanishes like any other, so this is what
- * decides whether its death is worth a toast — a clean logout is expected and
- * says nothing; a crash is the one exit you'd otherwise never learn about. */
+/** A crash is the one exit you'd never learn about, so only it earns a toast. */
 export function exitIsCrash(code: number, signal?: string | null): boolean {
   return code !== 0 || signal != null;
 }
 
-/** Tauri IPC command that drops a terminal's scrollback while leaving the
- * visible screen intact (right-click "Clear scrollback"). Handled by
- * `term_clear` in crates-tauri/tt-app/src/terminal.rs, which forces a full
- * frame so the view learns the scrollback depth collapsed. */
+/** Drops scrollback; forces a full frame so the view learns the depth collapsed. */
 export const TERM_CLEAR_COMMAND = "term_clear";
 
-/** One scrollback search hit (mirrors tt-vt's `SearchMatch`): absolute row
- * (0 = oldest scrollback row), starting column, width in columns. */
 export interface SearchMatch {
   row: number;
   col: number;
   width: number;
 }
 
-/** The matches visible in the current viewport, mapped to viewport rows.
- * `index` is the match's position in the full list (to mark the current
- * match distinctly). */
 export function viewportMatches(
   matches: SearchMatch[],
   viewportTop: number,
@@ -134,7 +103,6 @@ export function viewportMatches(
   return out;
 }
 
-/** Step a match index by ±1 with wrap-around; -1 when there are no matches. */
 export function stepMatch(count: number, current: number, dir: 1 | -1): number {
   if (count <= 0) return -1;
   return (((current + dir) % count) + count) % count;
@@ -159,11 +127,7 @@ const graphemeSegmenter =
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
 
-/** Split a run's text into grapheme clusters — the unit that fills exactly one
- * terminal cell. A cell may carry several codepoints (a base plus combining
- * marks, or an emoji with a variation selector); those must render as one glyph
- * and advance the grid by one cell, not one column per codepoint. Falls back to
- * codepoint iteration only where `Intl.Segmenter` is unavailable. */
+/** One cluster fills one cell: combining marks must not advance the grid twice. */
 export function graphemeClusters(text: string): string[] {
   if (!graphemeSegmenter) return [...text];
   const out: string[] = [];
@@ -171,27 +135,15 @@ export function graphemeClusters(text: string): string[] {
   return out;
 }
 
-/** Whether a run may contain wide (2-column) characters: its column width
- * exceeds its grapheme-cluster count (one cluster = one cell). Counting
- * clusters, not codepoints, keeps combining marks / emoji selectors from
- * looking like extra cells. */
 export function isWideRun(run: Run): boolean {
   return run.width > graphemeClusters(run.text).length;
 }
 
-/** The subset of `KeyboardEvent` the key encoders read — lets callers pass a
- * synthetic event (e.g. the alt-screen path forwarding an unshifted key). */
 type KeyEventLike = Pick<KeyboardEvent, "key" | "shiftKey" | "altKey" | "ctrlKey" | "metaKey">;
 
 export type ScrollbackAction = "page-up" | "page-down" | "top" | "bottom";
 
-/**
- * The terminal-emulator scrollback chords — Shift+PageUp/PageDown scroll a
- * page, Shift+Home/End jump to the top / live bottom. The canvas view drives
- * its own scrollback for these (see terminal-view.tsx) instead of sending
- * them to the shell. Returns the action, or null when the event isn't a
- * bare-shift scrollback chord.
- */
+/** The canvas view drives its own scrollback for these, never the shell. */
 export function scrollbackKey(e: KeyEventLike): ScrollbackAction | null {
   if (!e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return null;
   switch (e.key) {
@@ -208,10 +160,7 @@ export function scrollbackKey(e: KeyEventLike): ScrollbackAction | null {
   }
 }
 
-/** A keystroke on the `term_key` wire (mirrors tt-app's `TermKey` /
- * tt-vt's `KeyEvent`): DOM `code`/`key` plus modifiers. The Rust engine
- * encodes it against live terminal state — kitty keyboard protocol, DECCKM,
- * keypad mode — so no escape sequences are built in the frontend. */
+/** The engine encodes this against live terminal state; no escapes built here. */
 export interface KeyEventWire {
   code: string;
   key: string;
@@ -224,47 +173,33 @@ export interface KeyEventWire {
   numLock: boolean;
 }
 
-/** The subset of `KeyboardEvent` the wire mapper reads. */
 export type KeyWireEventLike = KeyEventLike &
   Pick<KeyboardEvent, "code" | "repeat"> & {
     getModifierState?: (key: string) => boolean;
   };
 
-/** Bare modifier keys: wired to the engine (kitty REPORT_ALL wants them) but
- * they never mean "the user typed something" — the view uses this to skip
- * its jump-to-live-bottom on a plain Shift press. */
+/** Wired to the engine, but never "the user typed something" — no jump to bottom. */
 export const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock"]);
 
-/** The app's copy chord: ⌘+Shift+C on macOS, Ctrl+Shift+C elsewhere. Shared
- * by `terminal-view.tsx`'s `onKeyDown` (which handles the chord) and
- * `keyEventWire` below (which must yield the same keystroke to the shell). */
+/** Shared with `keyEventWire` below, which must yield the same keystroke. */
 export function isCopyChord(e: KeyEventLike): boolean {
   const mod = IS_MAC ? e.metaKey : e.ctrlKey;
   return mod && e.shiftKey && (e.key === "C" || e.key === "c");
 }
 
-/** The app's paste chord: ⌘+Shift+V on macOS, Ctrl+Shift+V elsewhere — must
- * reach the native `paste` event rather than the shell. See {@link isCopyChord}. */
 export function isPasteChord(e: KeyEventLike): boolean {
   const mod = IS_MAC ? e.metaKey : e.ctrlKey;
   return mod && e.shiftKey && (e.key === "V" || e.key === "v");
 }
 
-/**
- * Map a DOM key event onto the `term_key` wire, or null when the keystroke
- * isn't the shell's to consume: any Cmd/Meta chord stays with the OS (this
- * also covers macOS's ⌘⇧C/⌘⇧V copy/paste chords, matched by
- * {@link isCopyChord}/{@link isPasteChord} below), and Ctrl+Shift+C/V are
- * the app's copy/paste chords on Linux/Windows (Ctrl+Shift+V must reach the
- * native paste event). Everything else is routed — the engine decides what
- * bytes, if any, the current terminal modes produce for it.
- */
+/** null when the keystroke isn't the shell's to consume — Meta stays with the OS,
+ * Ctrl/⌘+Shift+C/V are the app's. Everything else the engine decides. */
 export function keyEventWire(
   e: KeyWireEventLike,
   action: "press" | "release" = "press",
 ): KeyEventWire | null {
-  if (e.metaKey) return null; // OS shortcuts stay with the OS
-  if (isCopyChord(e) || isPasteChord(e)) return null; // copy/paste chords are the app's
+  if (e.metaKey) return null;
+  if (isCopyChord(e) || isPasteChord(e)) return null;
   return {
     code: e.code,
     key: e.key,
@@ -278,6 +213,4 @@ export function keyEventWire(
   };
 }
 
-// Paste encoding lives in the Rust engine (`term_paste` → tt-vt's
-// `Engine::paste`): libghostty's encoder strips bytes that could escape the
-// paste bracket, which a frontend string-wrap cannot do safely.
+// Paste encoding is the engine's: libghostty strips bytes that escape the bracket.

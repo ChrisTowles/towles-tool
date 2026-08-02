@@ -17,24 +17,14 @@ export function clampTerminalFontSize(px: number): number {
   return Math.max(MIN_TERMINAL_FONT_SIZE, Math.min(MAX_TERMINAL_FONT_SIZE, Math.round(px)));
 }
 
-/**
- * Track the `agentboard.copyOnSelect` preference in a ref the terminal's render
- * effect can read live without re-subscribing. Re-reads on `SETTINGS_SAVED_EVENT`
- * (fired right after a successful save — see `useUserSettings` in `settings.ts`)
- * and on window focus (covers the JSON file being edited externally then
- * alt-tabbing back).
- */
+/** `agentboard.copyOnSelect` in a ref the terminal's render effect can read
+ * live without re-subscribing. */
 export function useCopyOnSelect(): RefObject<boolean> {
   return useLiveSettingRef((s) => s.agentboard?.copyOnSelect, DEFAULT_COPY_ON_SELECT);
 }
 
-/**
- * Track the terminal font size (`agentboard.terminalFontSize`) as state so the
- * canvas render effect can key on it and re-measure the cell grid on change,
- * plus a setter that clamps, updates state, and persists back to the shared
- * settings file. Like {@link useCopyOnSelect}, we re-read on `SETTINGS_SAVED_EVENT`
- * and on window focus so a change made elsewhere flows back into this hook.
- */
+/** Terminal font size as state, so the canvas render effect can key on it and
+ * re-measure the cell grid on change; the setter clamps and persists. */
 export function useTerminalFontSize(): [number, (px: number) => void] {
   // Clamped in the selector too, not just on write: the file is hand-editable
   // and co-owned, so an out-of-range value can arrive from outside this app.

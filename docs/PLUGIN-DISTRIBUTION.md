@@ -61,3 +61,21 @@ rewrite takes over. **This is an options analysis, not a decision — Chris deci
   only one with zero user action.
 - Whatever is chosen, the URL users add (and the app's setup flow registers) must
   match the published `marketplace.json`, or new installs point at the wrong manifest.
+
+## What ships, and where a new piece goes
+
+The repo root doubles as a plugin marketplace (`.claude-plugin/marketplace.json`);
+each plugin lives in `packages/<name>/` with its own manifest. Two ship today.
+
+**`tt`** (`packages/core`) is the map-vs-territory workflow commands and skills.
+**`towles-tool-app`** (`packages/app`) bridges Claude Code to the desktop app
+itself: the MCP server via a static checked-in `.mcp.json`, the `towles-tool` and
+`task-onboarding` skills, and a `PostToolUse` hook that nudges a running instance
+to refresh PR or issue data after a `gh pr`/`gh issue` mutation. It is meant to
+be enabled globally, so its hook fails open outside a relevant session — don't
+drop that guard.
+
+A new hook, skill or MCP entry belongs in a plugin package, not loose in
+`.claude/`, which is for hooks scoped to *this repo's* sessions. Any commit
+touching a plugin package is auto-checked by `.githooks/pre-commit`, which bumps
+the version and validates the manifests.

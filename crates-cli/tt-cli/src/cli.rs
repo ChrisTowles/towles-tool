@@ -1,3 +1,4 @@
+//! comment-budget: allow(every `///` below is `--help` text clap prints, not prose — deleting one silently removes user-facing help)
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -47,8 +48,6 @@ pub enum Commands {
 }
 
 impl Commands {
-    /// The `(group, subcommand)` pair naming this invocation in the event log — operands
-    /// stay out; `today` keeps its own name so the alias's own worth stays measurable.
     pub fn telemetry_name(&self) -> (&'static str, &'static str) {
         match self {
             Commands::Journal(args) => ("journal", args.command.name()),
@@ -183,13 +182,11 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Refresh a collector in this terminal's app instance now rather than on its next
-    /// poll — the `gh-pr-nudge.sh` hook's callee, routed by `TT_SESSION_ID`
+    /// Refresh a collector in this terminal's app instance now rather than on its next poll
     Nudge(NudgeArgs),
 }
 
 impl TaskCommands {
-    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
     fn name(&self) -> &'static str {
         match self {
             TaskCommands::New { .. } => "new",
@@ -215,8 +212,6 @@ pub struct NudgeArgs {
     pub trigger: Option<String>,
 }
 
-/// Clap mirror of [`tt_collect::NudgeTarget`], which owns the key ↔ nudge-filename
-/// contract; the accepted CLI values are the collector keys themselves.
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub enum NudgeTarget {
     Prs,
@@ -226,7 +221,6 @@ pub enum NudgeTarget {
 }
 
 impl NudgeTarget {
-    /// Map to the crate-owned target that carries the filename contract.
     pub fn to_collect(self) -> tt_collect::NudgeTarget {
         match self {
             NudgeTarget::Prs => tt_collect::NudgeTarget::Prs,
@@ -336,7 +330,6 @@ pub enum JournalCommands {
 }
 
 impl JournalCommands {
-    /// This subcommand's name in the event log. See [`Commands::telemetry_name`].
     fn name(&self) -> &'static str {
         match self {
             JournalCommands::DailyNotes { .. } => "daily-notes",
@@ -355,7 +348,6 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Every command reachable from argv, with the pair it must log.
     const CASES: &[(&[&str], (&str, &str))] = &[
         (&["tt", "journal", "daily-notes"], ("journal", "daily-notes")),
         (&["tt", "journal", "note"], ("journal", "note")),
@@ -383,7 +375,6 @@ mod tests {
         }
     }
 
-    /// A copy-pasted `name()` arm would silently file two commands under one name.
     #[test]
     fn no_two_commands_share_a_name() {
         let mut seen = HashSet::new();

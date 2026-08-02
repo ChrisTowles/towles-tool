@@ -10,8 +10,7 @@ import { invoke } from "./tauri";
 
 /** Client-side view of the agentboard bridge (`crates-tauri/tt-app/src/agentboard.rs`). */
 
-/** Outcome of `abSyncRepo` (mirrors the Rust `RepoSyncResult`). `started` is `false` only when a
- * sync for this dir was already in flight — a deduped no-op the caller should ignore quietly. */
+/** `started` is `false` only for a deduped no-op: a sync was already in flight. */
 export type RepoSyncResult = {
   started: boolean;
   ok: boolean;
@@ -19,9 +18,7 @@ export type RepoSyncResult = {
   message?: string | null;
 };
 
-/** Force the repo checked out at `dir` to sync its issues + PRs from GitHub right now, bypassing
- * the collector poll cadence — the rail's "Sync now" action, for pulling in updates the poll
- * hasn't picked up yet. */
+/** Sync issues + PRs from GitHub now, bypassing the collector's poll cadence. */
 export const abSyncRepo = (dir: string) => invoke<RepoSyncResult>("store_sync_repo", { dir });
 
 export const abSetSessionPurpose = (id: string, text: string | null) =>
@@ -29,8 +26,7 @@ export const abSetSessionPurpose = (id: string, text: string | null) =>
 
 export type AgentStatus = "idle" | "busy" | "complete" | "error" | "waiting" | "interrupted";
 
-/** Per-agent live details from the transcript tail (tokens, cache, model).
- * Mirrors the Rust `AgentEventDetails`; only the fields the UI renders. */
+/** Live details from the transcript tail; only the fields the UI renders. */
 export type AgentEventDetails = {
   model?: string | null;
   contextUsed?: number | null;
@@ -50,12 +46,10 @@ export type AgentEvent = {
   details?: AgentEventDetails | null;
 };
 
-/** One port a session's shell saw in its folder's `.env` at spawn time that the file now claims
- * differently — e.g. */
+/** A port the shell saw in `.env` at spawn that the file now claims differently. */
 export type PortDrift = { key: string; spawnedPort: number; currentPort: number };
 
-/** One PTY shell inside a folder. "Agent" is a badge: `agentState` is set when
- * Claude (or another agent) is detected running in this PTY. */
+/** One PTY shell. "Agent" is a badge: `agentState` is set when one is detected. */
 export type SessionData = {
   id: string;
   name: string;
@@ -66,8 +60,7 @@ export type SessionData = {
   needsSinceMs?: number | null;
   agentState?: AgentEvent | null;
   agents: AgentEvent[];
-  /** Echo of the prompt Claude was launched with, auto-captured at launch so the rail's hover
-   * tooltip can explain why this session exists. */
+  /** Echo of the launch prompt, so the rail's tooltip can explain the session. */
   purpose?: string | null;
   portDrift?: PortDrift[];
 };
@@ -80,24 +73,18 @@ export type RowTask = {
   branch?: string;
 };
 
-/** Why a rail row exists — the record behind it, never a fact about the filesystem
- * (`tt_agentboard::types::RowRecord`). A row is on screen because something wrote it down. */
+/** Why a rail row exists — a record, never a fact about the filesystem. */
 export type RowRecord =
-  /** A `repos.json` entry — a checkout the user tracks. The one row kind with
-   * no task: tracking a repo isn't a unit of work. */
+  /** The one row kind with no task: tracking a repo isn't a unit of work. */
   | { origin: "checkout" }
   /** The user's own work. */
   | { origin: "task"; task: RowTask }
-  /** A git worktree found on disk that no task claimed — Claude Code's own agent worktrees, or a
-   * hand-added one. */
+  /** A worktree on disk no task claimed — Claude Code's own, or hand-added. */
   | { origin: "detected"; task: RowTask };
 
-/** The worktree operation running on a row right now (`tt_agentboard::types::RowPhase`), stamped
- * by the app — the only thing that can tell a create in progress from one that died an hour
- * ago. */
+/** Stamped by the app — the only thing that tells a live create from a dead one. */
 export type RowPhase = { state: "creating"; label: string } | { state: "removing"; label: string };
 
-/** The board row behind a folder, if it has one. */
 export function folderTask(folder: FolderData): RowTask | undefined {
   return folder.record.origin === "checkout" ? undefined : folder.record.task;
 }
@@ -106,26 +93,21 @@ export function folderIsUnclaimed(folder: FolderData): boolean {
   return folder.record.origin === "detected";
 }
 
-/** `git worktree add` is running for this row right now. */
 export function folderCreating(folder: FolderData): boolean {
   return folder.phase?.state === "creating";
 }
 
-/** The removal sequence is running for this row right now. */
 export function folderRemoving(folder: FolderData): boolean {
   return folder.phase?.state === "removing";
 }
 
-/** The task's worktree isn't on disk and nothing is working on it — a failed create, a directory
- * deleted outside the app, or a restart mid-removal. */
+/** Not on disk and nothing working on it — a failed create, or deleted outside. */
 export function folderDetached(folder: FolderData): boolean {
   return folder.record.origin !== "checkout" && folder.dirMissing && !folderBusy(folder);
 }
 
-/** The branch a detached task's worktree would be rebuilt on — the task's own
- * record first, since a row with no directory has no git to read one from.
- * `undefined` means nothing to rebuild — an unclaimed (`detected`) row was
- * never the user's to recreate. */
+/** The task's own record first: a row with no directory has no git to read from.
+ * `undefined` means nothing to rebuild — an unclaimed row isn't the user's. */
 export function folderRecreateBranch(
   folder: Pick<FolderData, "record" | "branch">,
 ): string | undefined {
@@ -133,8 +115,7 @@ export function folderRecreateBranch(
   return folder.record.task.branch?.trim() || folder.branch.trim() || undefined;
 }
 
-/** An operation is running on this row, so it can't be worked in or acted on.
- * Covers both directions — a row being created and one being removed. */
+/** Being created or removed, so it can't be worked in or acted on. */
 export function folderBusy(folder: FolderData): boolean {
   return folder.phase !== undefined;
 }
@@ -155,13 +136,13 @@ export type FolderData = {
   committedFiles: number;
   committedAdded: number;
   committedRemoved: number;
-  /** What the working tree holds that `HEAD` doesn't — staged, unstaged and untracked. Untracked
-   * files count as files but carry no line counts. Never add this to `committed*`. */
+  /** Staged, unstaged and untracked; untracked carry no lines. Never add these
+   * to `committed*`. */
   uncommittedFiles: number;
   uncommittedAdded: number;
   uncommittedRemoved: number;
-  /** `uncommittedFiles` is a floor: an untracked directory was too large to list file by file
-   * (almost always a `.gitignore` gap). The chip shows a `+`, the diff pane names the directory. */
+  /** `uncommittedFiles` is a floor: an untracked directory was too large to list
+   * (almost always a `.gitignore` gap). The chip shows a `+`. */
   uncommittedCapped: boolean;
   commitsAhead: number;
   commitsBehind: number;
@@ -174,29 +155,22 @@ export type FolderData = {
   taskBaseBranch?: string | null;
   comparedBase?: string;
   computedAtMs?: number;
-  /** Epoch ms this checkout was last worked in, as Rust can see it: the newest of `HEAD`'s
-   * commit time, the newest mtime among the working tree's changed paths (the only signal that
-   * sees an editor-only session) and the last pane opened or closed here. */
+  /** Newest of `HEAD`'s commit time, the changed paths' mtimes (the only signal
+   * that sees an editor-only session) and the last pane opened here. */
   workedAtMs?: number;
-  /** Newest mtime among the working tree's changed paths, epoch ms (0 when clean). Unlike
-   * `workedAtMs`, opening a pane doesn't move it — a pure "the files under review changed"
-   * signal. See `folderStatsKey`. */
+  /** Changed paths' newest mtime, 0 when clean. Unlike `workedAtMs`, opening a
+   * pane doesn't move it — purely "the files under review changed". */
   worktreeTouchedMs?: number;
   hasPortDrift: boolean;
-  /** True when this checkout has a Claude Desktop `.claude/launch.json` — gates the rail's dev-
-   * servers button and picks the pane-header button's dimmed/how-to state (`components/dev-
-   * servers.tsx`); the configs themselves are fetched on demand via `launch_configs`. */
+  /** Gates the rail's dev-servers button; the configs themselves are fetched on
+   * demand via `launch_configs`. */
   hasLaunchConfig: boolean;
   quiet: boolean;
 };
 
-/** The one definition of "this folder's working tree measurably changed" — the diff and
- * files panes refetch on it.
- *
- * Six aggregate counts can't tell every change from every other: a line traded between two
- * files, or an equal-length rewrite, lands on identical totals and used to leave both panes
- * showing the previous content until something unrelated moved. `worktreeTouchedMs` closes
- * that — content moving is enough on its own. */
+/** The one definition of "this folder's working tree changed"; the diff and files
+ * panes refetch on it. Counts alone miss an equal-length rewrite, which is why
+ * `worktreeTouchedMs` is in the key. */
 export function folderStatsKey(folder: FolderData): string {
   return [
     folder.committedFiles,
@@ -210,10 +184,9 @@ export function folderStatsKey(folder: FolderData): string {
   ].join(":");
 }
 
-/** The other half: "what this folder's diff is measured *against* moved". A rebase or a
- * fetch changes the merge-base while every working-tree stat above stays put, so a pane
- * that refetches on `folderStatsKey` alone goes on listing files from the old baseline.
- * Both keys drive `DiffPane`'s refetch; `MonacoMultiDiff` takes this one for its base sides. */
+/** The other half: what the diff is measured *against* moved. A rebase or fetch
+ * shifts the merge-base while every working-tree stat stays put, so both keys
+ * drive `DiffPane`'s refetch. */
 export function folderBaseKey(folder: FolderData): string {
   return [folder.commitsAhead, folder.commitsBehind, folder.comparedBase ?? ""].join(":");
 }
@@ -227,8 +200,7 @@ export function gitCheckedLabel(computedAtMs: number | undefined, now: number): 
   return `checked ${Math.round(mins / 60)}h ago`;
 }
 
-/** One commit ahead of `comparedBase`, with its own line-count diff — not the folder's
- * cumulative `linesAdded`/`linesRemoved`. */
+/** One commit's own line counts — not the folder's cumulative ones. */
 export type CommitStat = {
   sha: string;
   subject: string;
@@ -242,20 +214,18 @@ export function comparedBaseLabel(folder: Pick<FolderData, "comparedBase">): str
   return base.startsWith("origin/") ? base.slice("origin/".length) : base;
 }
 
-/** A logical repo: a checkout plus every other rail folder that's a `git worktree` sibling of it
- * (same git common dir), whether that sibling is explicitly tracked or only discovered via `git
- * worktree list` (see `RepoData` in `crates/tt-agentboard/src/types.rs`). */
+/** A checkout plus every rail folder sharing its git common dir, tracked or
+ * merely discovered by `git worktree list`. */
 export type RepoData = {
   key: string;
-  /** Absolute dir of the checkout this row is anchored to — the dir also embedded in `key`, as a
-   * field so readers never parse it back out. */
+  /** Also embedded in `key`, as a field so readers never parse it back out. */
   dir: string;
   name: string;
   originUrl?: string | null;
   folders: FolderData[];
   needs: number;
-  /** User-chosen icon/color for this repo (Settings → Agentboard). Absent — or absent fields —
-   * means "render exactly as an unthemed repo": never synthesize a color from the name. */
+  /** Absent — or absent fields — means "render unthemed": never synthesize a
+   * color from the name. */
   meta?: RepoMeta;
 };
 
@@ -265,8 +235,7 @@ function toPanes(ids: string[]): Panes | null {
   return ids.length > 0 ? (ids as Panes) : null;
 }
 
-/** One in-app window: a named tiling of pane session-ids. Scoped to a single folder — a window
- * may never hold panes from more than one checkout. */
+/** A named tiling of pane ids. A window may never span more than one folder. */
 export type AgWindow = {
   id: string;
   name: string;
@@ -277,8 +246,8 @@ export type AgWindow = {
 
 export type WindowsPayload = { windows: AgWindow[]; activeWindows: Record<string, string> };
 
-/** `AgWindow` as persisted / sent over the wire, before parsing: `panes` may
- * be empty in blobs written before empty windows became unrepresentable. */
+/** Before parsing: `panes` may be empty in blobs written before empty windows
+ * became unrepresentable. */
 export type WireWindow = Omit<AgWindow, "panes"> & { panes: string[] };
 export type WireWindowsPayload = { windows: WireWindow[]; activeWindows: Record<string, string> };
 
@@ -304,8 +273,7 @@ export function windowColor(wins: AgWindow[], windowId: string): string {
   return i < 0 ? "bg-muted-foreground/40" : WINDOW_COLORS[i % WINDOW_COLORS.length];
 }
 
-// Folder panes (diff, files) A window's `panes` normally hold session ids (`s<16 hex>` from the
-// backend's `gen_id`).
+// Folder panes. A window's `panes` otherwise hold session ids (`s<16 hex>`).
 
 const DIFF_PANE_PREFIX = "~diff:";
 const FILES_PANE_PREFIX = "~files:";
@@ -314,7 +282,6 @@ const JARVIS_PANE_PREFIX = "~jarvis:";
 const BROWSER_PANE_PREFIX = "~browser:";
 const EXIT_PANE_PREFIX = "~exit:";
 
-/** The (per-folder) pane id of the folder's diff pane. */
 export function diffPaneId(folderDir: string): string {
   return `${DIFF_PANE_PREFIX}${folderDir}`;
 }
@@ -323,12 +290,10 @@ export function isDiffPane(paneId: string): boolean {
   return paneId.startsWith(DIFF_PANE_PREFIX);
 }
 
-/** The folder dir a diff pane id points at (null otherwise). */
 export function diffPaneDir(paneId: string): string | null {
   return isDiffPane(paneId) ? paneId.slice(DIFF_PANE_PREFIX.length) : null;
 }
 
-/** The (per-folder) pane id of the folder's files pane. */
 export function filesPaneId(folderDir: string): string {
   return `${FILES_PANE_PREFIX}${folderDir}`;
 }
@@ -337,14 +302,12 @@ export function isFilesPane(paneId: string): boolean {
   return paneId.startsWith(FILES_PANE_PREFIX);
 }
 
-/** The folder dir a files pane id points at (null otherwise). */
 export function filesPaneDir(paneId: string): string | null {
   return isFilesPane(paneId) ? paneId.slice(FILES_PANE_PREFIX.length) : null;
 }
 
-/** Resolve a terminal file-link path to a files-pane path relative to the folder checkout, or
- * null when the file lives outside it (the files pane can only browse the checkout — outside
- * paths stay external-editor territory). */
+/** Null when the file lives outside the checkout — the files pane can only
+ * browse it, so outside paths stay external-editor territory. */
 export function filesPanePathFor(folderDir: string, path: string): string | null {
   if (path.startsWith(`${folderDir}/`)) return path.slice(folderDir.length + 1);
   if (path.startsWith("/") || path.startsWith("~")) return null;
@@ -362,14 +325,12 @@ export function isPreviewPane(paneId: string): boolean {
   return paneId.startsWith(PREVIEW_PANE_PREFIX);
 }
 
-/** The folder dir a preview pane id points at (null otherwise). */
 export function previewPaneDir(paneId: string): string | null {
   return isPreviewPane(paneId) ? paneId.slice(PREVIEW_PANE_PREFIX.length) : null;
 }
 
-/** The (per-folder) pane id of the folder's native pane — a rectangle of the window handed to
- * `tt-jarvis`'s Bevy renderer as a real compositor surface (`components/native-pane.tsx`),
- * tiled beside the folder's terminals rather than pinned under the rail. */
+/** A rectangle of the window handed to `tt-jarvis`'s Bevy renderer as a real
+ * compositor surface, tiled beside the folder's terminals. */
 export function jarvisPaneId(folderDir: string): string {
   return `${JARVIS_PANE_PREFIX}${folderDir}`;
 }
@@ -378,14 +339,11 @@ export function isJarvisPane(paneId: string): boolean {
   return paneId.startsWith(JARVIS_PANE_PREFIX);
 }
 
-/** The folder dir a native pane id points at (null otherwise). */
 export function jarvisPaneDir(paneId: string): string | null {
   return isJarvisPane(paneId) ? paneId.slice(JARVIS_PANE_PREFIX.length) : null;
 }
 
-/** The (per-folder) pane id of the folder's Chrome pane — a real headless
- * Chrome on the app-owned profile, streamed onto a canvas
- * (`components/browser-pane.tsx`). */
+/** A real Chrome on the app-owned profile, streamed onto a canvas. */
 export function browserPaneId(folderDir: string): string {
   return `${BROWSER_PANE_PREFIX}${folderDir}`;
 }
@@ -394,7 +352,6 @@ export function isBrowserPane(paneId: string): boolean {
   return paneId.startsWith(BROWSER_PANE_PREFIX);
 }
 
-/** The folder dir a Chrome pane id points at (null otherwise). */
 export function browserPaneDir(paneId: string): string | null {
   return isBrowserPane(paneId) ? paneId.slice(BROWSER_PANE_PREFIX.length) : null;
 }
@@ -409,7 +366,6 @@ export function folderPaneDir(paneId: string): string | null {
   );
 }
 
-/** The pane id of a crashed session's tombstone. */
 export function exitPaneId(sessionId: string): string {
   return `${EXIT_PANE_PREFIX}${sessionId}`;
 }
@@ -418,13 +374,11 @@ export function isExitPane(paneId: string): boolean {
   return paneId.startsWith(EXIT_PANE_PREFIX);
 }
 
-/** The session a tombstone reports on (null for any other pane). */
 export function exitPaneSession(paneId: string): string | null {
   return isExitPane(paneId) ? paneId.slice(EXIT_PANE_PREFIX.length) : null;
 }
 
-/** The session a pane belongs to, live or dead — a session pane is its own id, a tombstone
- * unwraps to the session it reports on, folder panes have none. */
+/** A session pane is its own id, a tombstone unwraps, folder panes have none. */
 export function paneSession(paneId: string): string | null {
   if (folderPaneDir(paneId) !== null) return null;
   return exitPaneSession(paneId) ?? paneId;
@@ -435,9 +389,8 @@ export type PaneCloseTarget =
   | { kind: "session"; sessionId: string }
   | { kind: "pane"; paneId: string };
 
-/** The pane `ab-close-pane` acts on. Null when the ring sits on a pane the visible window
- * doesn't hold — `focusedPaneId` survives clicking away to another folder, and a chord that
- * closes something off-screen loses work. A tombstone closes as a pane: its shell is gone. */
+/** Null when the ring sits on a pane the visible window doesn't hold: a chord
+ * that closes something off-screen loses work. A tombstone closes as a pane. */
 export function paneCloseTarget(
   focusedPaneId: string | null,
   panes: readonly string[],
@@ -449,13 +402,11 @@ export function paneCloseTarget(
     : { kind: "session", sessionId };
 }
 
-// Pure window-layout reducers (unit-tested; the screen wraps them in
-// `updateWins` for persistence)
+// Pure window-layout reducers; the screen wraps them in `updateWins`.
 
 /** Last id handed out, so a same-millisecond mint can't repeat one. */
 let lastWindowSeq = 0;
 
-/** Mint a window id. */
 export function nextWindowId(): string {
   const now = Date.now();
   lastWindowSeq = now > lastWindowSeq ? now : lastWindowSeq + 1;
@@ -469,11 +420,10 @@ export function nextOpenFileNonce(): number {
   return ++openFileNonce;
 }
 
-/** Last id handed out, so a same-millisecond mint can't repeat one. */
 let lastDraftScopeSeq = 0;
 
-/** Mint a scope id for a new-task form's image staging directory. Same reasoning as {@link
- * nextWindowId}: two forms opened in the same millisecond (e.g. */
+/** Scope id for a new-task form's image staging dir; same mint as
+ * {@link nextWindowId}, so same-millisecond forms can't collide. */
 export function nextDraftScopeId(): string {
   const now = Date.now();
   lastDraftScopeSeq = now > lastDraftScopeSeq ? now : lastDraftScopeSeq + 1;
@@ -494,9 +444,8 @@ export function placePane(
   }
   let windowId = w.activeWindows[folderDir];
   if (!w.windows.some((win) => win.id === windowId && win.folderDir === folderDir)) {
-    // Stale/missing active entry: reuse the folder's first existing window before minting a new
-    // one — otherwise a dangling entry spawns a duplicate "primary" beside the window the user
-    // already has.
+    // Reuse the folder's first existing window before minting: a dangling active
+    // entry would spawn a duplicate "primary" beside the one the user has.
     const existing = w.windows.find((win) => win.folderDir === folderDir);
     if (!existing) {
       // Windows are born around their first pane — never empty.
@@ -516,8 +465,7 @@ export function placePane(
   };
 }
 
-/** Append while keeping the non-empty tuple type (a plain spread widens to
- * `string[]`). */
+/** Keeps the non-empty tuple type; a plain spread widens to `string[]`. */
 function appendPane(panes: Panes, paneId: string): Panes {
   const [first, ...rest] = panes;
   return [first, ...rest, paneId];
@@ -542,9 +490,8 @@ export function dropPane(w: WindowsPayload, paneId: string): WindowsPayload {
   };
 }
 
-/** The pane that should inherit focus when `paneId` closes: the neighbor that slides into its
- * slot (its right, else its left), or — when it was its window's last pane — the first pane of
- * the same-folder sibling window `dropPane` will activate. Null when nothing is left. */
+/** The neighbor sliding into the closed slot, else the first pane of the sibling
+ * window `dropPane` will activate. Null when nothing is left. */
 export function successorPane(w: WindowsPayload, paneId: string): string | null {
   const host = w.windows.find((win) => win.panes.includes(paneId));
   if (!host) return null;
@@ -570,9 +517,7 @@ export function replacePane(w: WindowsPayload, fromId: string, toId: string): Wi
   };
 }
 
-/** The folder dirs whose slice of the layout (their windows, in order, or their active-window
- * entry) differs between two payloads — exactly the `touchedFolders` the backend's merge-by-
- * folder save needs. */
+/** Exactly the `touchedFolders` the backend's merge-by-folder save needs. */
 export function changedFolderDirs(a: WireWindowsPayload, b: WireWindowsPayload): string[] {
   const dirs = new Set<string>([
     ...a.windows.map((win) => win.folderDir),
@@ -583,7 +528,6 @@ export function changedFolderDirs(a: WireWindowsPayload, b: WireWindowsPayload):
   return [...dirs].filter((d) => folderSignature(a, d) !== folderSignature(b, d));
 }
 
-/** One folder's slice of a layout, as a comparable string. */
 function folderSignature(p: WireWindowsPayload, dir: string): string {
   return JSON.stringify([
     p.windows.filter((win) => win.folderDir === dir),
@@ -591,7 +535,6 @@ function folderSignature(p: WireWindowsPayload, dir: string): string {
   ]);
 }
 
-/** Parse a persisted layout into the live shape. */
 export function hydrateWins(w: WireWindowsPayload): WindowsPayload {
   const windows: AgWindow[] = [];
   for (const win of w.windows) {
@@ -614,8 +557,7 @@ export function pruneWins(
       win.panes.filter((p) => {
         const dir = folderPaneDir(p);
         if (dir !== null) return validFolderDirs.has(dir);
-        // A tombstone lives and dies with the session it reports on: once the record is gone
-        // there's nothing left to name, so it prunes like the session pane it replaced.
+        // A tombstone dies with the session it reports on — nothing left to name.
         return validSessionIds.has(paneSession(p)!);
       }),
     );
@@ -633,15 +575,12 @@ export function pruneWins(
   return changedFolderDirs(w, next).length === 0 ? w : next;
 }
 
-/** A session is an "agent" session iff Claude is running in it right now. */
 export function isAgent(s: SessionData): boolean {
   return s.agentState != null;
 }
 
-/** A session "needs you" only when a shell actually exists for it (live PTY — anything else is a
- * stale record whose agent status can't be current) AND its agent demands attention: blocked on
- * input, errored, or its turn just ended and you haven't looked yet (`unseen` terminal state,
- * cleared by `ab_mark_seen` on select). */
+/** Requires a live PTY — anything else is a stale record whose agent status
+ * can't be current — plus an agent blocked, errored, or done and unseen. */
 export function sessionNeeds(s: SessionData): boolean {
   if (!s.live) return false;
   const st = s.agentState?.status;
@@ -649,9 +588,7 @@ export function sessionNeeds(s: SessionData): boolean {
   return s.unseen && (st === "complete" || st === "interrupted");
 }
 
-/** A session should catch your eye when it needs you right now (`sessionNeeds`) or when its
- * agent reached a terminal state (done/errored/interrupted) you haven't acknowledged yet
- * (`unseen`, cleared by `ab_mark_seen` on select). */
+/** Needs you now, or reached a terminal state you haven't acknowledged. */
 export function sessionCatchesEye(s: SessionData): boolean {
   return sessionNeeds(s) || s.unseen;
 }
@@ -707,15 +644,12 @@ export function cycleSession(
   return fromIndex === -1 ? all[all.length - 1] : all[(fromIndex - 1 + all.length) % all.length];
 }
 
-/** A folder's currently-running (PTY-live) sessions. */
 export function liveSessions(folder: FolderData): SessionData[] {
   return folder.sessions.filter((s) => s.live);
 }
 
-/** Every distinct port-drift entry across a folder's live sessions, deduped by key +
- * spawned/current pair (several panes spawned at different times can carry the same drift, or
- * genuinely different ones if a port rotated more than once) — the detail list for the folder-
- * header badge's tooltip. */
+/** Deduped by key + spawned/current pair: panes spawned at different times can
+ * carry the same drift, or different ones if a port rotated twice. */
 export function folderPortDrift(folder: Pick<FolderData, "sessions">): PortDrift[] {
   const seen = new Map<string, PortDrift>();
   for (const s of folder.sessions) {
@@ -726,8 +660,7 @@ export function folderPortDrift(folder: Pick<FolderData, "sessions">): PortDrift
   return [...seen.values()];
 }
 
-/** The label a session row leads with: when an agent is running, its task/thread name (so the
- * row reads as *the agent*, not a bare "shell 1"); otherwise the shell's own name. */
+/** An agent's thread name when it has one, so the row reads as *the agent*. */
 export function sessionLabel(s: SessionData): string {
   const thread = s.agentState?.threadName?.trim();
   return thread && thread.length > 0 ? thread : s.name;
@@ -766,8 +699,7 @@ export function isSoloRepo(r: RepoData): boolean {
   return r.folders.length === 1;
 }
 
-/** Which layer of the board holds keyboard focus: a rail entry, the window strip, or a
- * pane tile. One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
+/** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
 export type FocusLevel = "rail" | "window" | "pane";
 
 export type FocusMove =
@@ -776,11 +708,8 @@ export type FocusMove =
   | { kind: "pane"; id: string }
   | { kind: "window"; id: string };
 
-// The whole arrow-navigation state machine, pure so it's testable: Up/Down walk rail
-// sessions; Right descends rail → window strip → panes (skipping the window level when the
-// folder has a single window); Left steps back through panes/windows and off the left edge
-// lands on the rail; Up climbs pane → window strip only when there's another window to
-// choose, else straight to the rail.
+// Right descends rail → window strip → panes, skipping the window level for a
+// single-window folder; Left and Up climb back out, ending on the rail.
 export function moveFocus(args: {
   level: FocusLevel;
   direction: "up" | "down" | "left" | "right";
@@ -820,8 +749,8 @@ export function moveFocus(args: {
   return { kind: "level", level: multiWin ? "window" : "rail" };
 }
 
-/** How long after its last sign of agent life a folder still counts as active for the rail
- * filter, so stopping a session doesn't make its folder vanish from the rail the same instant. */
+/** Grace after the last sign of agent life, so stopping a session doesn't make
+ * a folder vanish from the rail the same instant. */
 export const QUIET_GRACE_MS = 45 * 60_000;
 
 export function folderLastActivityAt(f: FolderData): number {
@@ -835,10 +764,8 @@ export function folderLastActivityAt(f: FolderData): number {
   return last;
 }
 
-/** A folder (checkout) is "quiet" when nothing about it needs attention right now: no live
- * session, no session that catches the eye (waiting/errored/ unseen), no unpushed local commits
- * or dirty working tree, and no agent activity within the `QUIET_GRACE_MS` grace window (so a
- * folder eases off the rail a while after work stops, rather than the moment it does). */
+/** Nothing here needs attention: no live or eye-catching session, nothing
+ * unpushed or dirty, and no agent activity inside `QUIET_GRACE_MS`. */
 export function isFolderQuiet(f: FolderData, now: number): boolean {
   return (
     f.quiet ||
@@ -850,8 +777,7 @@ export function isFolderQuiet(f: FolderData, now: number): boolean {
   );
 }
 
-/** The newest sign that *someone worked in this checkout* — the backend's {@link
- * FolderData.workedAtMs} stamps, plus the agent activity only the client sees. */
+/** {@link FolderData.workedAtMs} plus the agent activity only the client sees. */
 export function folderLastWorkedAt(f: FolderData): number {
   return Math.max(folderLastActivityAt(f), f.workedAtMs ?? 0);
 }
@@ -863,8 +789,7 @@ export function isFolderStale(f: FolderData, now: number, hours: number): boolea
   return now - folderLastWorkedAt(f) >= hours * 3_600_000;
 }
 
-/** The rail's one filter predicate: whether `filter` demotes this folder to the per-repo "N
- * quiet" stub row. */
+/** Whether `filter` demotes this folder to the per-repo "N quiet" stub row. */
 export function isFolderFiltered(
   f: FolderData,
   filter: RailFilter,
@@ -886,8 +811,7 @@ export function pathScope(dir: string): string | null {
   return m ? `${m[1]}/` : null;
 }
 
-/** The open PR for a folder's branch: exact branch match, scoped to the repo via its origin URL
- * (PR rows carry gh's `owner/name`, which both https and ssh remote URLs contain). */
+/** PR rows carry gh's `owner/name`, which both https and ssh origins contain. */
 export function ownerRepoFromOrigin(originUrl: string | null | undefined): string | undefined {
   if (!originUrl) return undefined;
   const match = originUrl.trim().match(/[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/);
@@ -905,8 +829,7 @@ export function prForFolder(
   return prs.find((p) => p.branch === branch && (!origin || origin.includes(p.repo.toLowerCase())));
 }
 
-/** The board task bound to a folder's worktree, matched on `worktree.dir` — the one link from a
- * rail folder back to its #339 task. */
+/** The one link from a rail folder back to its board task, via `worktree.dir`. */
 export function taskForFolder(tasks: TaskItem[], dir: string): TaskItem | undefined {
   return tasks.find((t) => t.worktree?.dir === dir);
 }
@@ -915,14 +838,12 @@ export function issuesForFolder(tasks: TaskItem[], dir: string): TaskIssueLink[]
   return taskForFolder(tasks, dir)?.issues ?? [];
 }
 
-/** "Would removing this lose anything" — a pure git fact, and only *half* the badge gate (see
- * {@link folderSafeToDelete}). */
+/** A pure git fact, and only *half* of {@link folderSafeToDelete}'s gate. */
 export function folderHoldsNoWork(folder: Pick<FolderData, "dirty" | "commitsUnlanded">): boolean {
   return !folder.dirty && folder.commitsUnlanded === 0;
 }
 
-/** Whether this checkout may be shown as **safe to delete**: its PR merged, *and* nothing here
- * would be lost. */
+/** Safe to delete: its PR merged, *and* nothing here would be lost. */
 export function folderSafeToDelete(
   folder: Pick<FolderData, "dirty" | "commitsUnlanded">,
   pr: Pick<PrItem, "state"> | undefined,
@@ -930,9 +851,7 @@ export function folderSafeToDelete(
   return pr?.state === "merged" && folderHoldsNoWork(folder);
 }
 
-/** True when this branch's work reached the base branch — proven either by git itself
- * (`folder.landed`, which sees merge commits, rebases and squash merges alike) or by a merged
- * GitHub PR. */
+/** Proven by git itself (merge, rebase or squash alike) or by a merged PR. */
 export function folderLanded(
   folder: Pick<FolderData, "landed">,
   pr: Pick<PrItem, "state"> | undefined,
@@ -940,8 +859,7 @@ export function folderLanded(
   return folder.landed !== null || pr?.state === "merged";
 }
 
-/** Whether the delete-worktree affordances (rail menu, the `ab-remove-task` chord) apply to a
- * folder. */
+/** Whether the delete-worktree affordances apply to a folder. */
 export function folderRemovableTask(
   folder: Pick<FolderData, "record" | "isWorktree" | "dirMissing">,
 ): boolean {
@@ -978,9 +896,7 @@ export function stoppablePort(blocker: TaskBlocker): number | null {
   return typeof blocker.port === "number" ? blocker.port : null;
 }
 
-/** True when a branch having landed doesn't actually make its checkout safe to delete: the work
- * reached the base (`folderLanded` — a merged PR, or git's own proof), but the checkout still
- * has uncommitted changes or commits that haven't landed yet (`!folderHoldsNoWork`). */
+/** Landed, yet the checkout still holds uncommitted or unlanded work. */
 export function folderLandedButHasWork(
   folder: Pick<FolderData, "dirty" | "commitsUnlanded" | "landed">,
   pr: Pick<PrItem, "state"> | undefined,
@@ -988,8 +904,7 @@ export function folderLandedButHasWork(
   return folderLanded(folder, pr) && !folderHoldsNoWork(folder);
 }
 
-/** A per-folder actionable signal: the checkout is safe to clean up, has sessions waiting on
- * you, or its live panes have drifted ports. */
+/** A per-folder actionable signal. */
 export type ActionableKind = "safe-to-delete" | "needs-you" | "port-drift";
 
 export type ActionableItem = {
@@ -998,8 +913,7 @@ export type ActionableItem = {
   pr?: Pick<PrItem, "number" | "url">;
 };
 
-/** Every actionable signal that applies to one folder — the same gates the rail's badges use
- * (`folderSafeToDelete`, `folder.needs > 0`, `folderPortDrift`). */
+/** The same gates the rail's badges use, in one list. */
 export function folderActionableItems(
   folder: Pick<
     FolderData,
@@ -1062,12 +976,10 @@ export function ctxPct(d: AgentEventDetails | null | undefined): number {
 export function fmtTokens(n: number): string {
   if (n < 1_000) return `${n}`;
   const k = Math.round(n / 1_000);
-  // Promote on the *rounded* value, not the raw one: 999_500 rounds to 1000K,
-  // which has to read as 1M.
+  // Promote on the *rounded* value: 999_500 rounds to 1000K, which reads as 1M.
   if (k < 1_000) return `${k}K`;
   const m = Math.round(n / 100_000) / 10;
-  // 1M, not 1.0M — but keep 1.5M's fraction. Tested after rounding, so 1_020_000
-  // reads as 1M rather than 1.0M.
+  // 1M, not 1.0M — but keep 1.5M's fraction. Tested after rounding.
   return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
 }
 
@@ -1076,32 +988,27 @@ export function fmtDiffLines(n: number): string {
   if (n < 10_000) return `${n}`;
   const k = n / 1_000;
   if (k < 100) return `${Math.round(k * 10) / 10}K`;
-  // Promote on the *rounded* value, like `fmtTokens`: 999,500 rounds to
-  // 1000K, which has to read as 1M.
+  // Promote on the *rounded* value, like `fmtTokens`.
   const rounded = Math.round(k);
   if (rounded < 1_000) return `${rounded}K`;
   const m = Math.round(n / 100_000) / 10;
   return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
 }
 
-/** `412K / 1M` — what a session is holding against what it can hold. Null when the window size
- * is unknown, since a bare used-count answers nothing. */
+/** `412K / 1M`. Null without a window size — a bare used-count answers nothing. */
 export function fmtContext(d: AgentEventDetails | null | undefined): string | null {
   if (!d?.contextMax) return null;
   if (!d.contextUsed) return `${fmtTokens(d.contextMax)} window`;
   return `${fmtTokens(d.contextUsed)} / ${fmtTokens(d.contextMax)}`;
 }
 
-/** `claude-opus-4-8 · 412K / 1M` — what a cold resume would cost, in one line: which model, and
- * how much context it would re-send. */
+/** `claude-opus-4-8 · 412K / 1M` — what a cold resume would cost. */
 export function modelContextLabel(d: AgentEventDetails | null | undefined): string | null {
   const parts = [d?.model, fmtContext(d)].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** True when a folder's branch label would only restate the folder's own name: a worktree task's
- * directory *is* the slug of its branch (`feat/model-indicator-badge` → `feat-model-indicator-
- * badge`), so printing both spends a rail line saying one thing twice. */
+/** A task's directory *is* its branch slug, so printing both says it twice. */
 export function branchRedundant(folderName: string, branch: string | null | undefined): boolean {
   if (!branch) return false;
   const slug = branch
@@ -1113,9 +1020,8 @@ export function branchRedundant(folderName: string, branch: string | null | unde
   return folderName === slug;
 }
 
-/** The conventional-commit prefixes `tt task new`/the create-branch flow use (see the root
- * CLAUDE.md's branch-naming convention) — stripped off before humanizing so a worktree folder
- * with no bound task title still reads as a sentence, not "Feat today we use…". */
+/** Stripped before humanizing, so the name reads as a sentence rather than
+ * "Feat today we use…". */
 const FOLDER_NAME_PREFIXES = new Set([
   "feat",
   "fix",
@@ -1129,9 +1035,7 @@ const FOLDER_NAME_PREFIXES = new Set([
   "style",
 ]);
 
-/** Render-time-only fallback for a worktree folder with no bound task (or whose task has no
- * title): turn the slugged folder name back into a plain-words guess — strip a conventional
- * prefix segment, dashes to spaces, sentence-case. */
+/** Render-time-only fallback for a folder with no bound task title. */
 export function humanizeFolderName(folderName: string): string {
   const parts = folderName.split("-").filter(Boolean);
   if (parts.length > 1 && FOLDER_NAME_PREFIXES.has(parts[0].toLowerCase())) {
@@ -1158,8 +1062,7 @@ export function isCold(d: AgentEventDetails | null | undefined, now: number): bo
   return !d?.cacheExpiresAt || now >= d.cacheExpiresAt;
 }
 
-/** How far before expiry the cache counts as "expiring": 2m on the 5-minute cache, 10m on the
- * 1-hour cache — enough headroom to nudge the session (any request re-warms the cache) before a
+/** Headroom to nudge the session — any request re-warms the cache — before a
  * resume goes full-price. */
 export function cacheWarnMs(ttlMs: number | null | undefined): number {
   return ttlMs === 3_600_000 ? 600_000 : 120_000;
@@ -1171,8 +1074,7 @@ export function isCacheExpiring(d: AgentEventDetails | null | undefined, now: nu
   return d.cacheExpiresAt - now <= cacheWarnMs(d.cacheTtlMs);
 }
 
-/** The compact nudge: cold AND at/above the settings threshold. Warm-and-huge
- * is fine to keep going — the cost only bites on a cold resume. */
+/** Cold AND over threshold: warm-and-huge is fine, the cost bites on resume. */
 export function needsCompact(
   d: AgentEventDetails | null | undefined,
   now: number,
@@ -1211,8 +1113,7 @@ export function agentRollup(
   return r;
 }
 
-/** The one dot color for a whole rollup — same busy/waiting/error precedence as a collapsed rail
- * row, so a collapsed nav icon's badge never disagrees with the rail's own collapsed dots. */
+/** Same precedence as a collapsed rail row, so the two never disagree. */
 export function rollupAlertColor(r: AgentRollup): string | null {
   if (r.error > 0) return "bg-red-500";
   if (r.waiting > 0) return "bg-blue-500";
@@ -1221,9 +1122,7 @@ export function rollupAlertColor(r: AgentRollup): string | null {
   return null;
 }
 
-/** Badge text color to pair with `rollupAlertColor`'s background — white reads fine on the
- * red/blue/emerald fills, but on cyan-500 (busy) it's nearly illegible, so that one badge needs
- * dark text instead. */
+/** White reads fine on every fill but cyan-500, where it's nearly illegible. */
 export function rollupAlertTextColor(bg: string | null): string {
   return bg === "bg-cyan-500" ? "text-cyan-950" : "text-white";
 }
@@ -1249,9 +1148,7 @@ export function statusColor(status: AgentStatus): string {
   }
 }
 
-/** Ambient status color for a set of sessions hidden behind a collapse: red if one errored, blue
- * if one is waiting on you, cyan while an agent is busy, else a calm emerald for "live but
- * idle". */
+/** Ambient color for sessions hidden behind a collapse; emerald means live. */
 export function collapsedLiveColor(sessions: SessionData[]): string | null {
   const live = sessions.filter((s) => s.live);
   if (live.length === 0) return null;
@@ -1267,8 +1164,7 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const termWrite = (termId: string, data: string) => invoke<void>("term_write", { termId, data });
 
-/** Write, retrying while the PTY spawns (a just-mounted terminal takes a beat before
- * `term_start` registers it). */
+/** Retries while the PTY spawns — `term_start` registers a beat after mount. */
 export async function termWriteRetry(
   termId: string,
   data: string,
@@ -1281,10 +1177,8 @@ export async function termWriteRetry(
   return last;
 }
 
-/** Wait for `termId`'s first `terminal://frame` (the shell's first output — a real proxy for
- * "the PTY is actually reading input", unlike a successful `term_write`, which only proves the
- * Rust-side write conduit exists and can still race the shell sourcing its rc files and eating
- * a queued command). */
+/** The shell's first output — the only proof the PTY is reading input. A bare
+ * `term_write` can still race the shell sourcing its rc files. */
 export async function waitForFirstFrame(termId: string, timeoutMs = 5000): Promise<void> {
   if (!("__TAURI_INTERNALS__" in window)) return;
   const { listen } = await import("@tauri-apps/api/event");
@@ -1305,8 +1199,7 @@ export async function waitForFirstFrame(termId: string, timeoutMs = 5000): Promi
   });
 }
 
-/** Single-quote a string for safe injection into a shell command line typed
- * into a PTY (POSIX `'...'` escaping — embedded `'` becomes `'\''`). */
+/** POSIX `'...'` escaping for a command typed into a PTY. */
 export function shellQuote(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
@@ -1320,9 +1213,7 @@ export type ClaudeLaunchOptions = {
   effort?: ClaudeEffort;
 };
 
-/** The `claude` invocation for a session's PTY: bare, or with an initial prompt passed as an
- * argument so Claude starts working on it immediately instead of waiting at an empty prompt,
- * plus an optional `--model`/`--effort` pair for callers (e.g. */
+/** The prompt goes in as an argument so Claude starts on it immediately. */
 export function claudeCommand(prompt: string, options?: ClaudeLaunchOptions): string {
   const trimmed = prompt.trim();
   const parts = [
@@ -1394,8 +1285,7 @@ async function readImageFile(file: File, index: number): Promise<PastedImage> {
     reader.readAsDataURL(file);
   });
   return {
-    // Clipboard images arrive as `image.png` every time, so the index keeps
-    // React keys distinct across several pastes in one form.
+    // Clipboard images are always `image.png`; the index keeps React keys apart.
     id: `${file.name || "pasted"}-${index}-${previewUrl.length}-${file.size}`,
     name: file.name || `pasted-image-${index + 1}`,
     mime: file.type,
@@ -1415,14 +1305,12 @@ export function promptWithImages(goal: string, imagePaths: string[]): string {
   return trimmed ? `${trimmed} — ${attachment}` : attachment;
 }
 
-/** The `claude` invocation to resume a past session (from the Claude Sessions
- * history) in place, typed into the folder's PTY. */
+/** Resume a past session in place, typed into the folder's PTY. */
 export function claudeResumeCommand(sessionId: string): string {
   return `claude --resume ${shellQuote(sessionId)}\r`;
 }
 
-/** A cross-screen handoff: "select this folder/session in Agentboard, then type a resume command
- * into it." Agentboard may not be mounted yet when the request is made (e.g. */
+/** A cross-screen handoff — Agentboard may not be mounted when it's made. */
 export type PendingOpenSession = {
   folderDir: string;
   sessionId: string;
@@ -1430,9 +1318,8 @@ export type PendingOpenSession = {
   label: string;
 };
 
-/** A queue, not a single task: the resume picker hands off every ticked pane at once, at boot,
- * when Agentboard is typically not mounted yet — so all of them stash and keeping only the last
- * would resume one session out of N. */
+/** A queue: the picker hands off every ticked pane at once, so keeping only
+ * the last would resume one session out of N. */
 let pendingOpenSessions: PendingOpenSession[] = [];
 const openSessionListeners = new Set<(req: PendingOpenSession) => void>();
 
@@ -1455,8 +1342,7 @@ export function onOpenSessionRequest(cb: (req: PendingOpenSession) => void): () 
   return () => openSessionListeners.delete(cb);
 }
 
-/** One pane the app was running Claude in when it last closed — crash or ordinary quit. Mirrors
- * the Rust `ResumeCandidate` payload (`tt_agentboard::resume`). */
+/** A pane the app was running Claude in when it last closed. */
 export type ResumeCandidate = {
   folderDir: string;
   paneId: string;
@@ -1466,19 +1352,15 @@ export type ResumeCandidate = {
   lastActiveMs: number;
 };
 
-/** Panes to offer resuming from the previous run, however it ended — crash, kill, or an ordinary
- * quit. Empty when there's no prior run to offer (e.g. */
+/** Panes to offer resuming from the previous run, however it ended. */
 export const resumeCandidates = () => invoke<ResumeCandidate[]>("ab_resume_candidates");
 
-/** A read-only "reveal this folder/session in Agentboard" handoff — the command palette's jump-
- * to-repo/session entries. */
+/** A read-only "reveal this in Agentboard" handoff. */
 export type AgentboardNav =
   | { kind: "folder"; folderDir: string }
   | { kind: "session"; folderDir: string; sessionId: string }
-  /** Reopen a closed task: open its repo's inline new-task form, pre-filled with the task's text
-   * as the goal and bound to its existing id (see the Board screen's "Reopen" action) —
-   * submitting mints a fresh worktree for the same task instead of a new card, mirroring "start
-   * a task". */
+  /** Pre-fills the new-task form bound to an existing id, so submitting mints a
+   * fresh worktree for that task instead of a new card. */
   | {
       kind: "reopen-task";
       repoDir: string;
@@ -1488,8 +1370,7 @@ export type AgentboardNav =
       taskId: number;
       goal: string;
     }
-  /** Start a task with no human at the form: mint its worktree on `branch` and launch an agent
-   * on `goal`, immediately. */
+  /** No human at the form: mint the worktree and launch an agent immediately. */
   | {
       kind: "start-task";
       repoDir: string;
@@ -1501,8 +1382,7 @@ export type AgentboardNav =
       branch: string;
       base?: string;
     }
-  /** Put a file the agent points at on screen in a folder's Preview pane: the MCP `preview_file`
-   * tool's delivery (see `lib/preview-artifact.ts`). */
+  /** The MCP `preview_file` tool's delivery (`lib/preview-artifact.ts`). */
   | {
       kind: "show-file";
       folderDir: string | null;
@@ -1510,8 +1390,7 @@ export type AgentboardNav =
       title: string;
       nonce: number;
     }
-  /** Reveal a path already on disk in a folder's Files pane: the MCP `file_open`
-   * tool and `tt open`'s delivery (`lib/editor-open.ts`). `path` is absolute —
+  /** The MCP `file_open` tool and `tt open`'s delivery. `path` is absolute:
    * only the screen knows the folder once `folderDir` is null. */
   | {
       kind: "open-file";
@@ -1546,8 +1425,7 @@ export function onAgentboardNavRequest(cb: (req: AgentboardNav) => void): () => 
 
 // Session lifecycle + layout shared types
 
-/** The lifecycle actions a session row can trigger. All are PTY writes — the
- * agent is whatever runs in the real shell, never a re-rendered proxy. */
+/** All PTY writes — the agent is the real shell, never a re-rendered proxy. */
 export type SessionActions = {
   start: (folderDir: string, s: SessionData) => void;
   startClaude: (folderDir: string, s: SessionData) => void;
@@ -1563,8 +1441,7 @@ export type SessionActions = {
 
 export type PaneRect = { left: number; top: number; width: number; height: number };
 
-/** Column widths (`AgWindow.cols`) are stored in per-mille of the tiling width
- * so persisted layouts stay integer (the Rust mirror keeps `Eq`). */
+/** Per-mille, so persisted layouts stay integer and the Rust mirror keeps `Eq`. */
 export const COL_TOTAL = 1000;
 /** Narrowest a column can be dragged, per-mille (10%). */
 const MIN_COL = 100;
@@ -1575,8 +1452,7 @@ export function colCount(n: number): number {
   return n <= 3 ? n : 2;
 }
 
-/** `cols` when it matches the current layout (right length, sane values), else
- * `null` — a pane count changed since the drag falls back to equal columns. */
+/** `null` when the pane count changed since the drag — falls back to equal. */
 function validCols(n: number, cols: number[] | undefined): number[] | null {
   const k = colCount(n);
   if (!cols || cols.length !== k) return null;
@@ -1632,8 +1508,7 @@ export function snapCol(pos: number): number {
   return Math.round(pos);
 }
 
-/** Column widths after dragging divider `i` (the boundary between columns `i` and `i+1`) to
- * `pos` per-mille from the tiling's left edge. */
+/** Divider `i` sits between columns `i` and `i+1`; `pos` is from the left edge. */
 export function dragCol(n: number, cols: number[] | undefined, i: number, pos: number): number[] {
   const widths = [...(validCols(n, cols) ?? equalCols(colCount(n)))];
   if (i < 0 || i >= widths.length - 1) return widths;
@@ -1647,15 +1522,13 @@ export function dragCol(n: number, cols: number[] | undefined, i: number, pos: n
   return widths;
 }
 
-/** Optimistic status shown for ~2.5s after a lifecycle action, until the
- * watcher's ground truth catches up on its next scan. */
+/** Optimistic status, until the watcher's ground truth catches up. */
 export type Overlay = { status: AgentStatus; until: number };
 
 export type Selected = { folderDir: string; sessionId: string } | null;
 
-/** Drop any `activeWindows` entries pointing at a window that no longer exists (or whose folder
- * no longer matches) — windows are created lazily per folder as sessions open, so there's no
- * "at least one window" floor. */
+/** Windows are created lazily per folder, so there is no "at least one" floor
+ * to restore — a stale `activeWindows` entry is simply dropped. */
 export function normalizeWins(w: WindowsPayload): WindowsPayload {
   const activeWindows: Record<string, string> = {};
   for (const [folderDir, windowId] of Object.entries(w.activeWindows)) {
@@ -1672,8 +1545,7 @@ export type RemoveTarget = {
   label: string;
   dirs: string[];
   sessionIds: string[];
-  /** The worktree isn't on disk — the dialog then asks about closing the task,
-   * not about deleting a checkout that would be a lie to describe. */
+  /** Not on disk, so the dialog asks about closing the task instead. */
   dirMissing?: boolean;
 };
 
@@ -1682,13 +1554,12 @@ export type BlockedDelete = {
   name: string;
   outcome?: TaskOutcome;
   blockers: TaskBlocker[];
-  /** Caveats about how the verdict was reached (a failed fetch → stale refs),
-   * carried through so the dialog can qualify the blockers it lists. */
+  /** How the verdict was reached (a failed fetch → stale refs), so the dialog
+   * can qualify the blockers it lists. */
   messages: string[];
 };
 
-/** A session about to get Claude launched in it, awaiting the "what are you working toward?"
- * prompt (see `commitStartClaude`). */
+/** Awaiting the "what are you working toward?" prompt (`commitStartClaude`). */
 export type StartClaudeTarget = {
   folderDir: string;
   sessionId: string;

@@ -1,11 +1,6 @@
-/**
- * The editable surfaces' amber "the disk moved underneath you" strip —
- * rendered by CodeViewer (conflict + deleted states) and MonacoMultiDiff
- * (conflict state), absolutely positioned over the editor's top edge.
- * Buttons render only when their handler is given; the deleted notice is the
- * button-less case. One component so the five copies of these classes can't
- * drift apart again.
- */
+/** The editable surfaces' amber "the disk moved underneath you" strip, absolutely
+ * positioned over the editor's top edge. Buttons render only when their handler is
+ * given; the deleted notice is the button-less case. */
 export function ViewerBanner({
   message,
   onTheirs,

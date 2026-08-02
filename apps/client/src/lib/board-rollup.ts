@@ -1,19 +1,8 @@
 import type { TaskItem } from "@/lib/data";
 
 /**
- * Why a Board card is sitting in `done` when nobody put it there.
- *
- * The collector rolls a linked task across the done boundary on its own once
- * every linked issue is closed and every linked PR is merged or closed
- * (`tt_collect::rollup_task_statuses`). From the Board that looks like a card
- * that finished itself, and the only evidence on screen is a row of link chips
- * the eye reads as decoration. This module reconstructs the rollup's own guard
- * from the snapshot so the card can name the refs that resolved it.
- *
- * Nothing is persisted for this: the guard is a pure function of the task's
- * links, so re-deriving it here always agrees with the backend that moved the
- * card, and there is no reason column to keep truthful across detaches,
- * reopens and manual moves.
+ * Why a Board card sits in `done` when nobody put it there: re-derives
+ * `tt_collect::rollup_task_statuses`'s guard, so no reason column is stored.
  */
 
 /** One resolved link that counts as evidence the task is finished. */
@@ -40,15 +29,8 @@ export type TaskRollup = {
 const NAME_REFS_UP_TO = 3;
 
 /**
- * The rollup behind a `done` card, or `null` if the card got there some other
- * way.
- *
- * Mirrors `rollup_task_statuses`'s guard on purpose — a card only qualifies
- * when it is in `done`, carries no recorded `outcome` (an explicit close is
- * the user's decision, already spelled out by the card's outcome badge; a
- * rollup line there would be inventing a cause), has at least one link, and
- * every one of those links has reached a terminal state. A card whose links
- * were detached after the fact reports nothing rather than guessing.
+ * Mirrors `rollup_task_statuses`'s guard on purpose. A recorded `outcome` is
+ * the user's own decision, so a rollup line there would invent a cause.
  */
 export function taskRollup(task: TaskItem): TaskRollup | null {
   if (task.status !== "done" || task.outcome !== undefined) return null;

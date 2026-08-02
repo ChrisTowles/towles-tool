@@ -1,18 +1,9 @@
 import { useEffect, useRef } from "react";
 import { isTauri } from "@/lib/tauri";
 
-/**
- * Subscribe to a Tauri event for the lifetime of the component.
- *
- * The `listen` import is dynamic (browser dev has no Tauri host, so
- * `isTauri()` short-circuits before it), which makes subscribing async — and
- * an unmount during that gap has nothing to unlisten yet, hence the `disposed`
- * flag that tears the subscription down the moment it resolves.
- *
- * `handler` is read through a latest-callback ref, so the subscription
- * registers exactly once while the handler still sees fresh state every
- * event — re-subscribing per render would drop events in the gap.
- */
+// The dynamic `listen` import makes subscribing async, and an unmount in that
+// gap has nothing to unlisten yet — hence `disposed`. The latest-callback ref
+// keeps the handler fresh without re-subscribing, which would drop events.
 export function useTauriEvent<T>(event: string, handler: (payload: T) => void) {
   const latest = useRef(handler);
   latest.current = handler;

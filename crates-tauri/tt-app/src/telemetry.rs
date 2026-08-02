@@ -41,12 +41,8 @@ pub async fn telemetry_events(date: String) -> Result<Vec<TelemetryRecord>, Stri
 }
 
 /// One day's attention picture — focused time, gestures per screen,
-/// interruptions, subprocess wait. Reads the same file as
-/// [`telemetry_events`] but aggregates it here, so the Attention tab costs a
-/// few hundred bytes over IPC instead of a day's worth of records; on the
-/// 75,000-record days that motivated the caveat above, that difference is the
-/// whole reason this is its own command rather than a frontend `useMemo` over
-/// the records the Log tab already holds.
+/// interruptions, subprocess wait. Aggregated here rather than in a frontend
+/// `useMemo`, so a 75,000-record day costs a few hundred bytes over IPC.
 #[tauri::command]
 pub async fn telemetry_attention(date: String) -> Result<AttentionSummary, String> {
     let dir = telemetry_dir()?;
@@ -62,13 +58,10 @@ pub async fn telemetry_attention(date: String) -> Result<AttentionSummary, Strin
 /// the log's own retention, which is the most history there can be.
 const KEYBOARD_WINDOW_DAYS: i64 = 14;
 
-/// Finished days, keyed by date. Unlike the two commands above, this one is
-/// polled (the status-bar indicator) *and* reads a whole window rather than
-/// one day, so an uncached call would re-parse a fortnight of logs — on the
-/// 75,000-record days this crate's docs warn about, several hundred thousand
-/// lines every tick. A past date's file never changes once the date has
-/// rolled over, so caching it is exact rather than a staleness trade; today's
-/// is always re-read.
+/// Finished days, keyed by date. This one is polled (the status-bar indicator)
+/// *and* reads a fortnight per call, so uncached it would re-parse hundreds of
+/// thousands of lines every tick. A past date's file never changes once the date
+/// rolls over, so caching it is exact rather than a staleness trade.
 static PAST_DAYS: Mutex<Option<HashMap<String, KeyboardDay>>> = Mutex::new(None);
 
 /// The keyboard-shortcut habit: today's keyboard-vs-mouse split, the streak of

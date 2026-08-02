@@ -7,22 +7,19 @@ use crate::model::*;
 use crate::{Result, Store};
 
 /// Local midnight of `date` as epoch ms, resolving DST edges rather than
-/// giving up on them: an ambiguous midnight takes the earlier instant, and a
-/// nonexistent one (spring-forward at 00:00) walks forward to the first valid
-/// minute of that day. `None` only if the whole day is unrepresentable.
+/// giving up on them. `None` only if the whole day is unrepresentable.
 fn local_midnight(date: chrono::NaiveDate) -> Option<i64> {
     use chrono::{Local, LocalResult, TimeZone};
 
     match date.and_hms_opt(0, 0, 0).map(|dt| Local.from_local_datetime(&dt)) {
         Some(LocalResult::Single(dt)) => return Some(dt.timestamp_millis()),
-        // Fall-back fold: two instants map to this local time. Take the earlier
-        // so the day window still starts at the first occurrence of midnight.
+        // Fall-back fold: take the earlier instant so the day window still
+        // starts at the first occurrence of midnight.
         Some(LocalResult::Ambiguous(earlier, _)) => return Some(earlier.timestamp_millis()),
         _ => {}
     }
-    // Spring-forward at 00:00: midnight doesn't exist. Step forward a minute at
-    // a time to the first instant that does — bounded, since a DST jump is
-    // never more than a couple of hours.
+    // Spring-forward at 00:00: midnight doesn't exist, so walk to the first
+    // instant that does. Bounded — a DST jump is never more than a few hours.
     for minute in 1..=180 {
         if let Some(dt) = date.and_hms_opt(0, 0, 0).map(|dt| dt + chrono::Duration::minutes(minute))
             && let Some(resolved) = Local.from_local_datetime(&dt).earliest()
@@ -34,22 +31,12 @@ fn local_midnight(date: chrono::NaiveDate) -> Option<i64> {
 }
 
 impl Store {
-    // Writes
-
     /// The `[start, end)` epoch-ms bounds of the local calendar day containing
     /// `reference_ms` — the window callers pass to [`Store::replace_events_for_source`].
-    /// It lives beside the delete it scopes because **every writer must agree on it**:
-    /// it existed twice once, with different DST fallbacks — one widening to a ±1-day
-    /// window, the other collapsing to empty — so on a transition day the same civil
-    /// day swept two days of rows from the collector and none over MCP.
-    ///
-    /// DST is handled rather than punted on:
-    /// - An **ambiguous** local midnight (a fall-back fold, real in zones that
-    ///   transition at midnight) resolves to the *earlier* instant, covering the whole
-    ///   civil day. `.single()` returned `None` here, skipping the delete twice a year.
-    /// - A **nonexistent** local midnight walks forward to the first valid instant.
-    /// - Only if both boundaries are unresolvable does it fall back — to the *empty*
-    ///   window, never a wider one: stale rows a later pull fixes beat destroyed data.
+    /// It lives beside the delete it scopes because **every writer must agree on it**;
+    /// two copies with different DST fallbacks once swept two days of rows from one
+    /// caller and none from another. An unresolvable boundary falls back to the
+    /// *empty* window, never a wider one: stale rows beat destroyed data.
     pub fn local_day_bounds(reference_ms: i64) -> (i64, i64) {
         use chrono::{Duration, Local, TimeZone};
 
@@ -65,19 +52,12 @@ impl Store {
         }
     }
 
-    /// Drop calendar events older than the retention window, independent of any
-    /// write.
+    /// Drop calendar events older than the retention window, returning the row count.
     ///
-    /// [`Store::replace_events_for_source`] sweeps as a side effect, which is
-    /// enough while some calendar is still being pulled — but not when the last
-    /// one is switched off. Then no write ever happens again, the sweep never
-    /// runs, and whatever was in the table stays forever: `calendar_next` keeps
-    /// returning a meeting from the day the user turned collection off, with an
-    /// ever-more-negative `minutesUntil` feeding the countdown and the
-    /// meeting-start notification. The collector calls this even on the
-    /// nothing-to-do path for exactly that reason.
-    ///
-    /// Returns how many rows were removed.
+    /// [`Store::replace_events_for_source`] sweeps as a side effect, but once the last
+    /// calendar is switched off no write happens again and `calendar_next` feeds the
+    /// countdown a meeting from the day collection stopped. So the collector calls
+    /// this even on its nothing-to-do path.
     pub fn sweep_old_events(&self, now_ms: i64) -> Result<usize> {
         Ok(self.conn.execute(
             "DELETE FROM events WHERE starts_at_utc < ?1",
@@ -86,19 +66,10 @@ impl Store {
     }
 
     /// Replace one calendar's events within one day window, leaving every other
-    /// calendar — and every other day — untouched.
-    ///
-    /// Deliberately *not* a full-table swap: several calendars are pulled
-    /// independently into one timeline, so a global `DELETE FROM events` meant
-    /// whichever pulled second erased the first. Scoping to `(source, day)` makes each
-    /// pull idempotent within its own lane.
-    ///
-    /// `source` is assigned by the *caller*, never the data, and [`EventInput`] has no
-    /// `source` field — a model-authored payload must not name the lane it writes to.
-    ///
-    /// The window is `[day_start_ms, day_end_ms)` against `start_ts`, passed in rather
-    /// than derived so the local-day boundary stays the caller's decision. Events
-    /// outside it are inserted but not swept by this call.
+    /// calendar — and every other day — untouched. Deliberately *not* a full-table
+    /// swap: calendars are pulled independently into one timeline, so a global delete
+    /// meant whichever pulled second erased the first. `source` is assigned by the
+    /// *caller*, never the data — a model-authored payload must not name its lane.
     pub fn replace_events_for_source(
         &self,
         source: &str,
@@ -113,24 +84,14 @@ impl Store {
                AND starts_at_utc >= ?2 AND starts_at_utc < ?3",
             params![source, utc_key(day_start_ms), utc_key(day_end_ms)],
         )?;
-        // Retention. The delete above is scoped to one lane and one day, so
-        // unlike the full-table swap it replaced it bounds nothing over time:
-        // yesterday's meetings, and every row belonging to a calendar the user
-        // has since renamed or removed, would otherwise accumulate forever.
-        // Sweeping by age (not by source) is what catches the orphaned-lane
-        // case, since no per-source write will ever visit those rows again.
-        // Cheap to run here — this path fires per collector tick, not per read.
-        // Delegated to `sweep_old_events` rather than repeating its SQL, so
-        // write-time and standalone sweeping cannot drift apart; `tx` is an
-        // `unchecked_transaction` on `self.conn`, so the call joins it.
+        // The delete above is scoped to one lane and one day, so it bounds nothing
+        // over time; sweeping by *age* is what reclaims rows of a calendar the user
+        // renamed or removed, which no per-source write will ever visit again.
+        // `tx` is an `unchecked_transaction` on `self.conn`, so this call joins it.
         self.sweep_old_events(now_ms)?;
-        // De-duplicate by external_id before inserting. The upsert below would
-        // otherwise let a repeated id overwrite its own earlier row inside this
-        // loop — one row lands, the other vanishes, and the returned count still
-        // claims both were written. A model emitting the same recurring-meeting
-        // instance twice is exactly how that happens, so collapse it here and
-        // report what actually landed. Last occurrence wins, matching the
-        // upsert's own semantics.
+        // De-duplicate by external_id: the upsert would otherwise let a repeated id
+        // overwrite its own earlier row inside the loop while the returned count still
+        // claimed both landed. Last occurrence wins, matching the upsert's semantics.
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let deduped: Vec<&EventInput> = events
             .iter()
@@ -189,11 +150,9 @@ impl Store {
     /// The meeting to surface at `now_ms`: the one in progress right now, or
     /// the soonest still to start — whichever begins first.
     ///
-    /// An event counts as in progress while `start_ts <= now_ms < end_ts`, so
-    /// a meeting stays selected until it actually ends rather than vanishing
-    /// the instant it starts. An event with no `end_ts` is treated as a point
-    /// in time and is only returned while still in the future
-    /// (`start_ts >= now_ms`). Returns `None` once the last event has ended.
+    /// A meeting stays selected until it actually ends rather than vanishing the
+    /// instant it starts. An event with no `end_ts` is a point in time, returned
+    /// only while still in the future.
     pub fn current_or_next_event(&self, now_ms: i64) -> Result<Option<CalEvent>> {
         Ok(self
             .query_events(
@@ -242,10 +201,9 @@ impl Store {
                 join_url,
             ) = row?;
             let attendees: Vec<String> = serde_json::from_str(&attendees_json)?;
-            // Rows are written from a `DateTime`, so a value that no longer
-            // parses means the column was edited by hand or by another tool.
-            // Skip that row rather than failing the whole query: one bad row
-            // must not blank the countdown, and it ages out with retention.
+            // Rows are written from a `DateTime`, so an unparseable value means
+            // the column was hand-edited. Skip the row rather than fail the query:
+            // one bad row must not blank the countdown, and it ages out.
             let Some(start) = parse_rfc3339(&starts_at) else {
                 log_unparseable_event(&external_id, &starts_at);
                 continue;

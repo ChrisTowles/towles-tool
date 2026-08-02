@@ -1,9 +1,6 @@
 /**
- * End-to-end spec driving the real Tauri shell via @wdio/tauri-service.
- * Covers the Board screen: the store snapshot answers over real Rust IPC
- * (store_snapshot), and palette-navigating to Board renders its toolbar
- * controls. Read-only — asserts structure, never machine-specific contents,
- * and never writes state.
+ * Board screen against the real Tauri shell. Read-only — asserts structure,
+ * never machine-specific contents, and never writes state.
  */
 
 /// <reference types="@wdio/globals/types" />
@@ -12,9 +9,7 @@
 import { expectObject } from "../ipc.js";
 import { bootReady, gotoScreen } from "./nav.js";
 
-// The camelCase snapshot the `store_snapshot` command returns (mirrors
-// StoreSnapshot in apps/client/src/lib/data.ts). Only the collections the
-// Board renders from are named here; each is asserted structurally.
+// Mirrors StoreSnapshot in apps/client/src/lib/data.ts, narrowed to what Board reads.
 type StoreSnapshot = {
   tasks: unknown[];
   events: unknown[];
@@ -30,7 +25,6 @@ describe("Board screen", () => {
       await browser.tauri.execute(({ core }) => core.invoke("store_snapshot")),
       "store_snapshot",
     );
-    // Structure only — the counts depend on the developer's real store.
     expect(Array.isArray(snapshot.tasks)).toBe(true);
     expect(Array.isArray(snapshot.events)).toBe(true);
     expect(Array.isArray(snapshot.issues)).toBe(true);
@@ -39,8 +33,7 @@ describe("Board screen", () => {
 
   it("navigates to Board and renders the filter control", async () => {
     await gotoScreen("Board");
-    // The toolbar renders above the empty-state branch, so the filter input is
-    // present regardless of how many tasks (if any) the store holds.
+    // The toolbar renders above the empty-state branch, so this holds at zero tasks.
     const filter = await browser.$('[aria-label="Filter tasks"]');
     await filter.waitForDisplayed({ timeout: 10000 });
   });

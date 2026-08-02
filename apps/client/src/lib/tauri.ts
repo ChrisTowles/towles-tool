@@ -3,33 +3,17 @@ import { Result } from "better-result";
 import { IpcFailed, IpcTimeout, NotInTauri, SchemaMismatch } from "@/lib/errors";
 import type { IpcError } from "@/lib/errors";
 
-/** True when running inside the Tauri shell (vs. plain-Vite browser dev). */
 export const isTauri = () => "__TAURI_INTERNALS__" in window;
 
-/** Per-call knobs. Both are off by default. */
 export type InvokeOptions<T> = {
-  /**
-   * Validates the response at this boundary. A mismatch is a
-   * {@link SchemaMismatch} error, not a thrown exception — backend/frontend
-   * contract drift is an expected failure, not a defect.
-   */
+  /** Contract drift is an expected failure: a mismatch is {@link SchemaMismatch}, not a throw. */
   schema?: ZodType<T>;
-  /**
-   * Fails the call with {@link IpcTimeout} once elapsed, so a command whose
-   * backend work never resolves can't leave an "in progress" UI state stuck
-   * forever. This only abandons *this* promise — the backend command keeps
-   * running to completion regardless, since Tauri commands aren't cancelable.
-   */
+  /** Abandons *this* promise only — the backend command runs to completion
+   * regardless, since Tauri commands aren't cancelable. */
   timeoutMs?: number;
 };
 
-/**
- * Invoke a Tauri command. Never throws and never rejects: no host, a rejected
- * command, a schema mismatch and a timeout all come back as a typed `Err`, so
- * each call site picks its own failure UX (`unwrapOr` / `match` / `isErr`) —
- * see apps/client/CLAUDE.md for the three shapes. Fire-and-forget is safe by
- * construction: an ignored `Result` can't produce an unhandled rejection.
- */
+/** Never throws or rejects; every failure is a typed `Err`. See apps/client/CLAUDE.md. */
 export async function invoke<T>(
   cmd: string,
   args: Record<string, unknown> = {},
@@ -40,9 +24,8 @@ export async function invoke<T>(
   const { schema, timeoutMs } = options;
   const core = await import("@tauri-apps/api/core");
 
-  // The command is invoked inside the thunk, not before it, so each attempt is
-  // a fresh call — re-awaiting one already-settled promise would make any
-  // future `retry` config a silent no-op.
+  // Invoked inside the thunk so each attempt is a fresh call; re-awaiting a
+  // settled promise would make any future `retry` config a silent no-op.
   const settled = await Result.tryPromise({
     try: () => {
       const call = core.invoke<T>(cmd, args);
@@ -61,28 +44,17 @@ export async function invoke<T>(
   });
 }
 
-/**
- * A binary-capable IPC channel for streaming commands (the browser pane's
- * frames). Constructed here so the `@tauri-apps/api/core` import stays
- * confined to this boundary module. Callers must already hold an `isTauri()`
- * gate — a Channel cannot exist without the host — which is why this returns
- * the raw channel to pass as a command arg rather than a `Result`.
- */
+/** Callers must already hold an `isTauri()` gate — hence a raw channel, not a `Result`. */
 export async function rawChannel(onData: (bytes: Uint8Array) => void): Promise<unknown> {
   const core = await import("@tauri-apps/api/core");
   const channel = new core.Channel<ArrayBuffer | number[]>();
-  // Channel is not an EventTarget; `onmessage` is its whole API.
   // oxlint-disable-next-line unicorn/prefer-add-event-listener
   channel.onmessage = (data) =>
     onData(data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data));
   return channel;
 }
 
-/**
- * Rejects with {@link IpcTimeout} once `ms` elapses. Rejecting (rather than
- * resolving an `Err`) keeps this composable with `Result.tryPromise` above,
- * which classifies it back into the error union.
- */
+/** Rejects rather than resolving an `Err`, to stay composable with `Result.tryPromise`. */
 function withTimeout<T>(promise: Promise<T>, ms: number, command: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new IpcTimeout({ command, timeoutMs: ms })), ms);

@@ -83,11 +83,8 @@ import type { Result } from "better-result";
 import type { IpcError } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace";
 
-/**
- * Fire a board mutation and report a failure. Every card action here paints an
- * optimistic overlay first, so a dropped write would otherwise look like it
- * worked right up until the next snapshot quietly reverted it.
- */
+/** Every card action paints an optimistic overlay first, so a dropped write
+ * would look like it worked until the next snapshot quietly reverted it. */
 async function commit(mutation: Promise<Result<unknown, IpcError>>, what: string): Promise<void> {
   const done = await mutation;
   if (done.isErr()) toast.error(`Couldn't ${what} — ${done.error.message}`);
@@ -102,26 +99,9 @@ type TaskEdit = { text?: string; notes?: string | undefined };
  * `owner/name`, a path basename, or `NO_REPO_GROUP`). */
 const ALL_TASKS_LANE = "__all_tasks__";
 
-/**
- * Board — the cross-repo kanban for finding and watching work in flight.
- *
- * Columns are the five task statuses; rows are automatic per-repo swimlanes
- * derived from each task's repo binding (see `lib/board-groups.ts`), so a lane
- * appears and disappears with its work rather than being managed by hand. The
- * header's Swimlanes switch (persisted as `agentboard.boardGroupByRepo`)
- * flattens the board to one unnamed lane; cards carry their repo's identity
- * (icon/color/tint) either way.
- *
- * **This screen does not create tasks** — the Agentboard's `+` flow is the only
- * creator, so a task and the repo it belongs to are established together at
- * submit. A card's column is never set by hand: `backlog`/`doing` are driven
- * entirely by whether a live agent is running on its worktree (see
- * `tt_agentboard::task_status`), and `done` only by closing it. Here a card
- * can be renamed, linked to issues/PRs, promoted to a GitHub issue, reopened
- * (mints a fresh worktree, same as starting a task), or deleted. Read-only
- * over the snapshot with local optimistic overlays for edits and deletes
- * until the next `store://snapshot` arrives.
- */
+/** **This screen does not create tasks** — the Agentboard's `+` flow is the
+ * only creator. A card's column is never set by hand either: `backlog`/`doing`
+ * follow whether an agent is live on the worktree, `done` follows closing. */
 export function BoardScreen() {
   const { snapshot } = useStoreSnapshot();
   const { activeTab, openTab, openTabWithFocus } = useWorkspace();
@@ -135,21 +115,16 @@ export function BoardScreen() {
   // still running (a close can take a minute of git work), until the snapshot
   // re-arrives with the recorded one.
   const [closeOverrides, setCloseOverrides] = useState<Record<number, TaskOutcome>>({});
-  // Archived rows are hidden by default; the header chip reveals them dimmed
-  // in place.
   const [showArchived, setShowArchived] = useState(false);
-  // A refused close, held for the dialog that reports it. Closing a card
-  // also deletes its worktree, so the guards can refuse — see `remove`. No
-  // name is stored: a refusal deleted nothing, so the row is still in `merged`
-  // and the dialog reads the current text from there. `outcome` rides along
-  // so a forced retry records the same answer the user already gave.
+  // A refused close, held for the dialog that reports it. No name is stored: a
+  // refusal deleted nothing, so the dialog reads current text from `merged`.
+  // `outcome` rides along so a forced retry records the same answer.
   const [blockedDelete, setBlockedDelete] = useState<{
     id: number;
     outcome?: TaskOutcome;
     blockers: TaskBlocker[];
     messages: string[];
   } | null>(null);
-  // Quick filter: case-insensitive substring over each todo's text + repo tag.
   const [filter, setFilter] = useState("");
 
   // Board-scoped shortcuts (see lib/shortcuts.tsx for the registry). Gated on
@@ -167,11 +142,8 @@ export function BoardScreen() {
   );
   const agentState = useAgentboardState();
 
-  // Repo identity (chosen icon + color) for the swimlane headers, keyed the
-  // way lanes are: GitHub `owner/name`, bridged from each tracked repo's
-  // origin URL. Sourced from the same agentboard snapshot the rail renders —
-  // no second poll. Only repos that actually carry a `meta` land here, so an
-  // unthemed lane keeps today's plain folder glyph.
+  // Keyed the way lanes are: GitHub `owner/name`, bridged from each repo's
+  // origin URL. From the rail's own snapshot — no second poll.
   const repoMetaByKey = useMemo(() => {
     const m = new Map<string, RepoMeta>();
     for (const r of agentState.repos) {
@@ -184,8 +156,7 @@ export function BoardScreen() {
     return m;
   }, [agentState.repos]);
 
-  // Repos we know about (from collected PRs/issues + already-linked tasks) — the
-  // promote-to-issue targets.
+  // The promote-to-issue targets.
   const repos = useMemo(() => {
     const set = new Set<string>();
     for (const p of snapshot.prs) set.add(p.repo);
@@ -210,32 +181,24 @@ export function BoardScreen() {
     [snapshot.tasks, editOverrides, deletedIds, closeOverrides, showArchived],
   );
 
-  // The cards actually rendered: everything matching the quick filter (an empty
-  // filter matches all). `n hidden` below is the count the filter removes.
   const visible = useMemo(
     () => merged.filter((t) => matchesTaskFilter(t, filter)),
     [merged, filter],
   );
   const hiddenCount = merged.length - visible.length;
-  // Truly empty: no todos in any column (a filter hiding all is a different
-  // state — the header still shows the count and the filter box).
+  // A filter hiding every card is a different state from having none.
   const isEmpty = merged.length === 0;
 
-  // Counted off the raw snapshot, not `merged` — the chip advertises what the
-  // archive holds while the archive is hidden.
+  // Off the raw snapshot, not `merged`: the chip advertises what is hidden.
   const archivedCount = useMemo(
     () => snapshot.tasks.filter((t) => t.archivedAt !== undefined).length,
     [snapshot.tasks],
   );
 
-  // Repo swimlanes. Grouping is automatic — a lane is just "the tasks that
-  // resolved to this repo" — so lanes appear and vanish with the work and
-  // there is nothing to create, name, or clean up.
+  // Automatic: a lane is "the tasks that resolved to this repo", so lanes
+  // appear and vanish with the work — nothing to create, name, or clean up.
   const grouped = useMemo(() => groupTasksByRepo(visible), [visible]);
 
-  // Swimlanes are a preference: toggled off, the board is one unnamed lane
-  // holding every card (each card keeps its repo glyph, so identity survives
-  // the flattening). Persisted in the shared settings file.
   const [groupByRepo, setGroupByRepo] = useBoardGroupByRepo();
   const lanes = useMemo(() => {
     const groups: TaskGroup[] = groupByRepo
@@ -244,9 +207,8 @@ export function BoardScreen() {
     return groups.map((g) => ({ ...g, columns: bucketByStatus(g.tasks) }));
   }, [grouped, groupByRepo, visible]);
 
-  // Real repos only — the "No repo" lane is a bucket, not a repo, and must
-  // not inflate the header's repo count. Counted from the real grouping so
-  // the swimlane toggle never changes what the header claims.
+  // "No repo" is a bucket, not a repo. Counted from the real grouping so the
+  // swimlane toggle never changes what the header claims.
   const repoLaneCount = useMemo(
     () => grouped.filter((l) => l.key !== NO_REPO_GROUP).length,
     [grouped],
@@ -255,12 +217,9 @@ export function BoardScreen() {
   // Per-status totals for the sticky header (and the Clear-done gate).
   const counts = useMemo(() => countByStatus(visible), [visible]);
 
-  // Reopen a closed task the same way starting one works: hand off to
-  // Agentboard's inline new-task form, pre-filled with the task's text and
-  // bound to its existing id, so submitting mints a fresh worktree for this
-  // same task instead of a new card (see `requestAgentboardNav`'s
-  // `reopen-task` kind). Only offered for a task whose repo is on the rail —
-  // `railRepoKeyForTask` resolves that from the task's worktree binding.
+  // Hands off to Agentboard's new-task form bound to the existing id, so
+  // submitting mints a fresh worktree for this task rather than a new card.
+  // Only offered for a task whose repo is on the rail.
   function reopen(task: TaskItem) {
     const railKey = railRepoKeyForTask(agentState.repos, task);
     const repo = railKey ? agentState.repos.find((r) => r.key === railKey) : undefined;
@@ -321,12 +280,9 @@ export function BoardScreen() {
     void commit(storeUpdateTask(id, current.text, value), "save those notes");
   }
 
-  /** Close a task — its worktree and panes go, the row survives with
-   * `outcome` recorded — or, with `purge`, delete a (worktree-free) row for
-   * good. Close paints the outcome optimistically (the git teardown can take
-   * a minute); purge hides the card. A guarded refusal reverts either —
-   * nothing changed in that case, so leaving the overlay up would show the
-   * user a close that didn't happen. */
+  /** Close paints the outcome optimistically (the git teardown can take a
+   * minute); purge hides the card. A guarded refusal reverts either — nothing
+   * changed, so the overlay would show a close that didn't happen. */
   async function remove(
     id: number,
     {
@@ -379,10 +335,8 @@ export function BoardScreen() {
     void commit(storeArchiveDone(), "archive the Closed column");
   }
 
-  // Jump to a card's repo on the Agentboard: same focus primitive the
-  // needs-you popover uses — land on the screen, scroll the rail row into
-  // view, flash it. `railKey` is resolved per card at render, so a card whose
-  // repo isn't on the rail simply doesn't offer the jump.
+  // `railKey` is resolved per card at render, so a card whose repo isn't on
+  // the rail simply doesn't offer the jump.
   const openOnAgentboard = useCallback(
     (railKey: string) => {
       uiAction("board.open_agentboard", "board");
@@ -535,10 +489,8 @@ export function BoardScreen() {
                       header — the sticky status row above is enough. */}
                     {lane.key !== ALL_TASKS_LANE && (
                       <div
-                        // The lane header is the repo-identity surface on this
-                        // screen: colored edge always (when themed), plus the
-                        // soft wash for `style: "tint"`. Transparent edge keeps
-                        // unthemed lanes aligned with themed ones.
+                        // A transparent edge keeps unthemed lanes aligned with
+                        // themed ones.
                         className="mb-1 flex items-center gap-1.5 rounded-md border-l-2 border-l-transparent px-1.5 py-1"
                         style={{ ...laneAccent.edgeStyle, ...laneAccent.surfaceStyle }}
                       >
@@ -634,11 +586,8 @@ export function BoardScreen() {
   );
 }
 
-/**
- * The notes editor inside a card's dropdown. Seeded from the todo's current
- * notes each time the menu opens (Radix unmounts the content on close), edited
- * locally, and committed on blur so we don't write to the store per keystroke.
- */
+/** Seeded each time the menu opens (Radix unmounts content on close) and
+ * committed on blur, so the store isn't written per keystroke. */
 function NotesField({
   task,
   onSetNotes,
@@ -662,8 +611,6 @@ function NotesField({
   );
 }
 
-/** A swimlane's repo glyph: the repo's chosen icon tinted with its color, or
- * the plain folder glyph when it has no identity set. */
 function LaneGlyph({ meta }: { meta?: RepoMeta }) {
   if (!meta) {
     return <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
@@ -700,24 +647,15 @@ function Card({
 }: {
   task: TaskItem;
   repos: string[];
-  /** The chosen icon/color of the repo this task resolved to, when that repo
-   * has one. Undefined (no repo, or an unthemed repo) renders the card
-   * exactly as it did before repo identity existed. */
   repoMeta?: RepoMeta;
-  /** The repo name to print on the card — set only in flat (no-swimlane) mode,
-   * where no lane header identifies the repo. Undefined in grouped mode and
-   * for no-repo tasks. */
+  /** Set only in flat (no-swimlane) mode, where no lane header names the repo. */
   repoLabel?: string;
-  /** Jump to this task's repo row on the Agentboard rail. Undefined when the
-   * repo isn't on the rail — the affordances don't render. */
+  /** Undefined when the repo isn't on the rail — the affordances don't render. */
   onOpenAgentboard?: () => void;
-  /** Collected open issues — the "Attach issue…" candidates. */
   openIssues: IssueItem[];
-  /** Collected PRs — the "Attach PR…" candidates. */
   openPrs: PrItem[];
-  /** Mint a fresh worktree for this task via Agentboard's inline new-task
-   * form, pre-filled and bound to the task's existing id — used both to
-   * reopen a closed task and to start a worktree-less "task only" one. */
+  /** Mints a fresh worktree bound to the task's existing id — both reopening a
+   * closed task and starting a worktree-less "task only" one. */
   onReopen: (task: TaskItem) => void;
   onPromote: (id: number, repo: string) => void;
   onAttachIssue: (id: number, issue: IssueItem) => void;
@@ -726,11 +664,10 @@ function Card({
   onDetachPr: (id: number, link: TaskPrLink) => void;
   onRename: (id: number, text: string) => void;
   onSetNotes: (id: number, notes: string) => void;
-  /** Close the task with an outcome — removes its worktree/panes, keeps the row. */
+  /** Removes the worktree/panes, keeps the row. */
   onClose: (id: number, outcome: TaskOutcome) => void;
-  /** Bring an archived task back onto the board. */
   onRestore: (id: number) => void;
-  /** Permanently delete the row — only offered when no worktree is bound. */
+  /** Only offered when no worktree is bound. */
   onPurge: (id: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -744,18 +681,12 @@ function Card({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const hasNotes = (task.notes ?? "").trim() !== "";
   const summary = (task.summary ?? "").trim();
-  // `closed`/`displayOutcome`/`hasWorktree` are computed backend-side
-  // (`TaskItem::with_derived_fields` in tt-store) so every consumer agrees —
-  // the card just renders them. A bound worktree means there's a live
-  // session to jump to ("Open on Agentboard"); without one — a "task only"
-  // backlog card, or any closed task (its worktree is torn down on close) —
-  // the useful action is starting/reopening one, routed through the same
-  // `onReopen` machinery rather than a dead-end navigation to an empty rail
-  // row.
+  // Derived backend-side (`TaskItem::with_derived_fields`) so every consumer
+  // agrees. No worktree means the useful action is starting/reopening one,
+  // not a dead-end navigation to an empty rail row.
   const { closed, hasWorktree } = task;
   const outcome = task.displayOutcome ?? null;
   const archived = task.archivedAt !== undefined;
-  // Attach candidates: collected refs not already linked to this task.
   const attachableIssues = openIssues.filter(
     (i) => !task.issues.some((l) => l.repo === i.repo && l.number === i.number),
   );
@@ -776,13 +707,10 @@ function Card({
         .filter(Boolean)
         .join("\n")
     : undefined;
-  // Repo identity on the card: tinted glyph, colored edge, and (for
-  // `style: "tint"`) a background wash mixed into the card's own opaque
-  // background.
+  // The wash mixes into the card's own opaque background.
   const accent = repoAccentStyles(repoMeta, "var(--background)");
   const RepoGlyph = repoMeta ? repoIcon(repoMeta) : null;
   const identityStyle = { ...accent.edgeStyle, ...accent.surfaceStyle };
-  // The identity row's text: `repo · ⎇ branch`, either part optional.
   const branch = task.worktree?.branch;
   const detached = branch !== undefined && !hasWorktree;
   const identityRowText = [repoLabel, branch && `⎇ ${branch}${detached ? " · detached" : ""}`]
@@ -1167,11 +1095,9 @@ function Card({
           <span
             className={cn(
               "block whitespace-pre-wrap text-[11px] leading-snug text-foreground/80",
-              // Collapsed by height, not `line-clamp-*`: the clamp applies
-              // (WebKitGTK reports `-webkit-line-clamp: 4`) but does not take
-              // effect on this text, because `whitespace-pre-wrap` gives it
-              // hard newlines and the engine keeps rendering past the limit.
-              // A max-height crops the same block with no engine dependency.
+              // Height, not `line-clamp-*`: WebKitGTK reports the clamp but
+              // ignores it once `whitespace-pre-wrap` gives the text hard
+              // newlines. A max-height crops with no engine dependency.
               !summaryOpen && "max-h-16 overflow-hidden",
             )}
           >

@@ -9,10 +9,8 @@ use crate::model::*;
 use crate::{Error, Result, Store};
 
 impl Store {
-    /// Add a task. Lands in `status` (validated against [`TASK_STATUSES`]) at
-    /// the end of that column; `notes` is free-form context. Issues/PRs are
-    /// attached separately ([`Store::attach_task_issue`] /
-    /// [`Store::attach_task_pr`]), the worktree via [`Store::set_task_worktree`].
+    /// Add a task at the end of `status`'s column. Issues, PRs and the worktree
+    /// binding are attached separately.
     pub fn add_task(
         &self,
         text: &str,
@@ -40,12 +38,9 @@ impl Store {
         self.task_by_id(self.conn.last_insert_rowid())
     }
 
-    /// Move a todo to a kanban column, appending it at the end of the target
-    /// column (position = max there + 1, ignoring the task itself). Sets
-    /// `completed_at` when entering `done`, clears it otherwise. Moving to any
-    /// non-`done` column also reopens a closed task — `outcome` and
-    /// `archived_at` clear, since the card is active again. Unknown statuses
-    /// are rejected.
+    /// Move a todo to the end of a kanban column. Moving to any non-`done` column
+    /// also reopens a closed task — `outcome` and `archived_at` clear, since the
+    /// card is active again.
     pub fn set_task_status(&self, id: i64, status: &str, now_ms: i64) -> Result<()> {
         if !TASK_STATUSES.contains(&status) {
             return Err(Error::Sqlite(rusqlite::Error::InvalidParameterName(format!(
@@ -70,11 +65,8 @@ impl Store {
         Ok(())
     }
 
-    /// Edit a todo's free-form fields: its `text` and optional `notes`. This
-    /// is a full replace of both fields — passing `None` for `notes` clears it
-    /// (there is no "leave unchanged" sentinel). Status, position, and any
-    /// issue link are left untouched. Returns the updated todo, or
-    /// [`Error::TaskNotFound`] when no todo has `id`.
+    /// A full replace of `text` and `notes` — `None` clears the notes, there is no
+    /// "leave unchanged" sentinel. Status, position and links are untouched.
     pub fn update_task(&self, id: i64, text: &str, notes: Option<&str>) -> Result<TaskItem> {
         let affected = self.conn.execute(
             "UPDATE tasks SET text = ?1, notes = ?2 WHERE id = ?3",
@@ -86,11 +78,8 @@ impl Store {
         self.task_by_id(id)
     }
 
-    /// Record what the agent working this task reported when it finished — a
-    /// full replace of `summary`, stamped with `now_ms`. A replace rather than
-    /// an append so a retried write (the same report sent twice) leaves one
-    /// copy, not two. Blank input clears the summary. Returns the updated
-    /// task, or [`Error::TaskNotFound`] when no task has `id`.
+    /// Record the agent's finishing report. A replace rather than an append so a
+    /// retried write leaves one copy, not two; blank input clears it.
     pub fn set_task_summary(&self, id: i64, summary: &str, now_ms: i64) -> Result<TaskItem> {
         let trimmed = summary.trim();
         let (text, at) =
@@ -105,8 +94,7 @@ impl Store {
         self.task_by_id(id)
     }
 
-    /// Delete a task permanently, cascading its issue/PR link rows. Returns
-    /// [`Error::TaskNotFound`] when no task has `id`.
+    /// Delete a task permanently, cascading its issue/PR link rows.
     pub fn delete_task(&self, id: i64) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let affected = tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
@@ -119,15 +107,11 @@ impl Store {
         Ok(())
     }
 
-    /// Close a task: record how it ended and detach it from its worktree
-    /// directory — the row survives as the record, this is what replaced
-    /// deleting it. Closing as [`TaskOutcome::Done`] also lands the card at
-    /// the end of the `done` column (matching [`Store::set_task_status`]);
-    /// closing as [`TaskOutcome::Abandoned`] freezes `status` where the work
-    /// stopped. Either way `completed_at` is stamped if not already set,
-    /// which is what later ages the row into the archive
-    /// ([`Store::archive_closed_tasks`]). Returns the updated task, or
-    /// [`Error::TaskNotFound`] when no task has `id`.
+    /// Record how a task ended and detach it from its worktree directory — the row
+    /// survives as the record, which is what replaced deleting it. `Done` lands the
+    /// card at the end of the `done` column; `Abandoned` freezes `status` where the
+    /// work stopped. Either way `completed_at` is stamped if unset, which is what
+    /// later ages the row into the archive.
     pub fn close_task(&self, id: i64, outcome: TaskOutcome, now_ms: i64) -> Result<TaskItem> {
         let outcome = outcome.as_str();
         let tx = self.conn.unchecked_transaction()?;
@@ -160,10 +144,8 @@ impl Store {
         self.task_by_id(id)
     }
 
-    /// Bring an archived task back onto the board. Its `status` and `outcome`
-    /// are left as they were — it reappears in the terminal column, and a
-    /// status move out of there reopens it fully. Returns
-    /// [`Error::TaskNotFound`] when no task has `id`.
+    /// Bring an archived task back onto the board. `status` and `outcome` are left
+    /// as they were, so it reappears in the terminal column; moving it out reopens it.
     pub fn unarchive_task(&self, id: i64) -> Result<()> {
         let affected =
             self.conn.execute("UPDATE tasks SET archived_at = NULL WHERE id = ?1", params![id])?;
@@ -173,13 +155,9 @@ impl Store {
         Ok(())
     }
 
-    /// Archive closed tasks (an `outcome` on record, or sitting in `done`)
-    /// that finished before `before_ms`, returning how many were archived.
-    /// This replaced the old hard-delete sweep — history is hidden, never
-    /// destroyed. Open tasks and recently-finished ones are left untouched; a
-    /// closed row with a NULL `completed_at` (legacy data) is never swept,
-    /// since its completion time is unknown. Both instants are injected — the
-    /// clock read happens at the call boundary, not here.
+    /// Archive closed tasks that finished before `before_ms`, returning the count.
+    /// This replaced a hard-delete sweep — history is hidden, never destroyed. A
+    /// closed row with a NULL `completed_at` is never swept, its time being unknown.
     pub fn archive_closed_tasks(&self, before_ms: i64, now_ms: i64) -> Result<usize> {
         Ok(self.conn.execute(
             "UPDATE tasks SET archived_at = ?2
@@ -190,9 +168,8 @@ impl Store {
         )?)
     }
 
-    /// Attach a GitHub issue to a task. Re-attaching an existing link only
-    /// refreshes the `url` — the cached `state` is preserved (the collector
-    /// owns it). Returns [`Error::TaskNotFound`] when no task has `id`.
+    /// Re-attaching an existing link only refreshes the `url`; the cached `state`
+    /// is preserved, since the collector owns it.
     pub fn attach_task_issue(&self, id: i64, repo: &str, number: i64, url: &str) -> Result<()> {
         self.require_task(id)?;
         self.conn.execute(
@@ -203,8 +180,7 @@ impl Store {
         Ok(())
     }
 
-    /// Detach a GitHub issue from a task. Detaching a link that doesn't exist
-    /// is a no-op.
+    /// Detaching a link that doesn't exist is a no-op.
     pub fn detach_task_issue(&self, id: i64, repo: &str, number: i64) -> Result<()> {
         self.conn.execute(
             "DELETE FROM task_issues WHERE task_id = ?1 AND repo = ?2 AND number = ?3",
@@ -213,9 +189,7 @@ impl Store {
         Ok(())
     }
 
-    /// Attach a GitHub PR to a task. Re-attaching refreshes only the `url`
-    /// (state/checks stay collector-owned). Returns [`Error::TaskNotFound`]
-    /// when no task has `id`.
+    /// Re-attaching refreshes only the `url`; state/checks stay collector-owned.
     pub fn attach_task_pr(&self, id: i64, repo: &str, number: i64, url: &str) -> Result<()> {
         self.require_task(id)?;
         self.conn.execute(
@@ -226,8 +200,7 @@ impl Store {
         Ok(())
     }
 
-    /// Detach a GitHub PR from a task. Detaching a link that doesn't exist is
-    /// a no-op.
+    /// Detaching a link that doesn't exist is a no-op.
     pub fn detach_task_pr(&self, id: i64, repo: &str, number: i64) -> Result<()> {
         self.conn.execute(
             "DELETE FROM task_prs WHERE task_id = ?1 AND repo = ?2 AND number = ?3",
@@ -236,18 +209,12 @@ impl Store {
         Ok(())
     }
 
-    /// Bind a task to its repo, and to the worktree its work happens in
-    /// once one exists. Called twice in the Agentboard's new-task flow: at
-    /// submit with the repo alone (`branch`/`dir` `None`), then again once
-    /// `task_create` resolves. A "task only" submit stops after the first.
-    ///
-    /// The optional columns are upserts, never clears: a `None` means "leave
-    /// as is" (`COALESCE`), so a repo-only rebind — e.g. retrying a failed
-    /// `task_create` on a task whose worktree already exists — can't erase an
-    /// established branch/dir. Nothing here un-sets a branch or a dir: the
-    /// one legitimate detach is [`Store::close_task`], which clears `dir` (the
-    /// worktree is off disk) while `repo_root`/`branch` survive as historical
-    /// fact. Returns [`Error::TaskNotFound`] when no task has `id`.
+    /// Bind a task to its repo, and to the worktree its work happens in once one
+    /// exists. Called twice in the new-task flow: at submit with the repo alone,
+    /// then again once `task_create` resolves. A "task only" submit stops after the
+    /// first. The optional columns are upserts, never clears — a `None` means
+    /// "leave as is", so a repo-only rebind can't erase an established branch/dir.
+    /// The one legitimate detach is [`Store::close_task`].
     pub fn set_task_worktree(
         &self,
         id: i64,
@@ -291,9 +258,8 @@ impl Store {
             .next())
     }
 
-    /// All tasks in kanban order, links and worktree included. The collectors'
-    /// rollup walks this; the board gets it via [`Store::snapshot`]. Board rows
-    /// only — see [`TASK_KIND_FILTER`].
+    /// All tasks in kanban order, links and worktree included. Board rows only —
+    /// see [`TASK_KIND_FILTER`].
     pub fn all_tasks(&self) -> Result<Vec<TaskItem>> {
         self.query_tasks(
             &format!("SELECT {TASK_COLS} FROM tasks WHERE {TASK_KIND_FILTER} {TASK_ORDER}"),
@@ -301,11 +267,9 @@ impl Store {
         )
     }
 
-    /// Issue refs whose cached link state is still `open` but which are
-    /// missing from the collector's `issues` snapshot — the ambiguous set
-    /// (closed? reassigned away?) that needs a targeted `gh issue view`.
-    /// Terminal-state links absent from the snapshot are *not* returned:
-    /// their cached state stands until the ref reappears in the snapshot.
+    /// Issue refs cached `open` but missing from the collector's snapshot — the
+    /// ambiguous set (closed? reassigned away?) needing a targeted `gh issue view`.
+    /// Terminal-state links stand until the ref reappears in the snapshot.
     pub fn open_issue_refs_missing_from_cache(&self) -> Result<Vec<(String, i64)>> {
         self.query_refs(
             "SELECT DISTINCT ti.repo, ti.number FROM task_issues ti
@@ -316,8 +280,7 @@ impl Store {
         )
     }
 
-    /// PR refs whose cached link state is still `open` but which are missing
-    /// from the `pr_status` snapshot. See
+    /// PR refs cached `open` but missing from the `pr_status` snapshot. See
     /// [`Store::open_issue_refs_missing_from_cache`].
     pub fn open_pr_refs_missing_from_cache(&self) -> Result<Vec<(String, i64)>> {
         self.query_refs(
@@ -344,9 +307,8 @@ impl Store {
         )?)
     }
 
-    /// Stamp the observed state onto every link row for one PR ref. `checks`
-    /// updates when given; `None` keeps the cached value (the targeted fetch
-    /// only learns the state).
+    /// Stamp the observed state onto every link row for one PR ref. `None` checks
+    /// keeps the cached value — the targeted fetch only learns the state.
     pub fn set_pr_link_state(
         &self,
         repo: &str,
@@ -362,10 +324,8 @@ impl Store {
         )?)
     }
 
-    /// Refresh every issue/PR link row whose ref is present in the collector
-    /// snapshot (`issues` / `pr_status`), copying state (and checks) across.
-    /// Refs absent from the snapshot are left untouched — see the targeted
-    /// fetch in `tt-collect` for those.
+    /// Copy state (and checks) onto every link row whose ref is in the collector
+    /// snapshot. Absent refs are left to the targeted fetch in `tt-collect`.
     pub fn refresh_link_states_from_cache(&self, now_ms: i64) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
         let issues = tx.execute(
@@ -392,15 +352,11 @@ impl Store {
         Ok(issues + prs)
     }
 
-    /// Auto-attach collected PRs to worktree-bound tasks: any `pr_status` row
-    /// whose `(repo, branch)` matches a task's `(worktree_repo, worktree_branch)`
-    /// becomes a `task_prs` link — "PRs open in the worktree, linked to the task"
-    /// without a manual step. Existing links are left untouched. Archived
-    /// tasks are excluded: their kept `branch` is historical fact, and a
-    /// reused branch name must not link a future PR to a long-dead task. A
-    /// merely *closed* task still attaches — a PR that merges right as the
-    /// worktree is deleted completes the record. Returns how many links were
-    /// created.
+    /// Link any `pr_status` row whose `(repo, branch)` matches a task's worktree
+    /// binding, with no manual step. Archived tasks are excluded: their kept
+    /// `branch` is historical fact, and a reused name must not link a future PR to
+    /// a long-dead task. A merely *closed* task still attaches — a PR that merges
+    /// as the worktree is deleted completes the record.
     pub fn auto_attach_worktree_prs(&self, now_ms: i64) -> Result<usize> {
         Ok(self.conn.execute(
             "INSERT OR IGNORE INTO task_prs (task_id, repo, number, url, state, checks, state_ts)
@@ -413,22 +369,12 @@ impl Store {
         )?)
     }
 
-    /// Every worktree the Agentboard rail should show, both kinds, oldest
-    /// first.
-    ///
-    /// This is the rail's row list. It is a *record* query, not a filesystem
-    /// one: a row is here because something wrote it down — the user asking for
-    /// a task, or the scan noticing a worktree — so the rail can show a task
-    /// before its directory exists and keep showing it while removal runs.
-    /// `Engine::set_task_worktrees` is the consumer, pushed in each scan tick.
-    ///
-    /// Sorted by `created_at` because that is the one ordering nothing can
-    /// perturb: kanban position moves when a card does, and anything derived
-    /// from git reshuffles rows as directories come and go.
-    ///
-    /// Archived rows are excluded — closing a task already cleared its
-    /// `worktree_dir`, and a worktree later re-created at the same path is a
-    /// new row, not a resurrection of that one.
+    /// Every worktree the rail should show, both kinds. A *record* query, not a
+    /// filesystem one: a row is here because something wrote it down, so the rail
+    /// can show a task before its directory exists and keep showing it while removal
+    /// runs. Sorted by `created_at`, the one ordering nothing perturbs — kanban
+    /// position moves with a card, and git-derived order reshuffles constantly.
+    /// Archived rows are excluded: a re-created worktree is a new row.
     pub fn rail_worktrees(&self) -> Result<Vec<RailWorktree>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, status, worktree_repo_root, worktree_dir, worktree_branch, created_at
@@ -452,14 +398,11 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Record a git worktree that exists on disk but has no task, so the rail
-    /// can show it as a row like any other. Idempotent: a dir that already has
-    /// a row of *either* kind is left alone, which is what stops the scan
-    /// re-minting a detected row over an adopted one every tick.
-    ///
-    /// The `text` is the branch (or the directory's name) purely so the row
-    /// reads as something in the rare places a detected row is listed by title;
-    /// it is not a goal anyone typed.
+    /// Record a git worktree that exists on disk but has no task, so the rail can
+    /// show it as a row like any other. A dir that already has a row of *either*
+    /// kind is left alone, which stops the scan re-minting a detected row over an
+    /// adopted one every tick. `text` is the branch or directory name, not a goal
+    /// anyone typed.
     pub fn record_detected_worktree(
         &self,
         repo_root: &str,
@@ -482,13 +425,11 @@ impl Store {
         Ok(())
     }
 
-    /// Drop the detected row for `dir` — its worktree is gone from disk.
-    ///
-    /// Deletes rather than closes, and refuses anything that isn't
-    /// [`TaskKind::Detected`]: a detected row is bookkeeping with no outcome
-    /// worth recording, while a *task* whose directory vanished is exactly the
-    /// row the rail must keep showing (as `detached`) until the user says what
-    /// happened to it. Returns whether a row went.
+    /// Drop the detected row for `dir` — its worktree is gone from disk. Deletes
+    /// rather than closes, and refuses anything that isn't [`TaskKind::Detected`]:
+    /// a detected row is bookkeeping with no outcome worth recording, while a
+    /// *task* whose directory vanished is exactly the row the rail must keep
+    /// showing until the user says what happened to it.
     pub fn forget_detected_worktree(&self, dir: &str) -> Result<bool> {
         let tx = self.conn.unchecked_transaction()?;
         let ids: Vec<i64> = {
@@ -506,14 +447,10 @@ impl Store {
         Ok(!ids.is_empty())
     }
 
-    /// Promote a detected worktree's row to the user's own work — the "adopt"
-    /// action on a `no task` rail row.
-    ///
-    /// A kind change on the existing row, deliberately: minting a fresh task
-    /// and deleting this one would move the row (a new `created_at` re-sorts
-    /// it) and lose its id. Adopting an already-adopted row is a no-op, not an
-    /// error — two clicks on the same row shouldn't fail the second one.
-    /// Returns [`Error::TaskNotFound`] when no task has `id`.
+    /// Promote a detected worktree's row to the user's own work. A kind change on
+    /// the existing row, deliberately: minting a fresh task and deleting this one
+    /// would move the row (a new `created_at` re-sorts it) and lose its id.
+    /// Adopting an already-adopted row is a no-op, so a second click can't fail.
     pub fn adopt_detected_worktree(&self, id: i64) -> Result<TaskItem> {
         self.require_task(id)?;
         self.conn.execute(
@@ -540,21 +477,17 @@ impl Store {
 
     // Row-mapping helpers
 
-    /// One task by id, with its links and worktree binding (the same row shape
-    /// [`Store::open_tasks`] returns).
+    /// One task by id, with its links and worktree binding.
     pub fn task_by_id(&self, id: i64) -> Result<TaskItem> {
         self.query_tasks(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = ?1"), [id])?
-            // `TaskNotFound`, like every other id lookup in this module — not a
-            // fabricated `Sqlite(QueryReturnedNoRows)`. A caller has to be able
-            // to tell "this row does not exist" from "the database could not
-            // answer", and the `?` above already carries the genuine failures.
+            // `TaskNotFound`, not a fabricated `Sqlite(QueryReturnedNoRows)`: a
+            // caller must be able to tell "no such row" from "the db couldn't answer".
             .into_iter()
             .next()
             .ok_or(Error::TaskNotFound(id))
     }
 
-    /// Map one `TASK_COLS` row to a `TaskItem`, links left empty (the caller
-    /// fills them via [`Store::load_task_links`], or deliberately doesn't).
+    /// Links are left empty; the caller fills them via `load_task_links`, or doesn't.
     fn map_task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskItem> {
         let worktree_repo_root: Option<String> = r.get(7)?;
         let worktree_repo: Option<String> = r.get(8)?;
@@ -566,9 +499,8 @@ impl Store {
         let summary: Option<String> = r.get(14)?;
         let summary_at: Option<i64> = r.get(15)?;
         let kind = TaskKind::parse(&r.get::<_, String>(16)?);
-        // Keyed on `repo_root` alone: a repo-bound task with no worktree
-        // yet still has a worktree binding, and dropping it here would hide
-        // the task's repo from the Board's swimlanes.
+        // Keyed on `repo_root` alone: a repo-bound task with no worktree yet still
+        // has a binding, and dropping it hides its repo from the Board's swimlanes.
         let worktree = worktree_repo_root.map(|repo_root| TaskWorktree {
             repo_root,
             repo: worktree_repo,
@@ -607,16 +539,11 @@ impl Store {
         Ok(tasks)
     }
 
-    /// Open, worktree-bound tasks whose status the agentboard may auto-drive —
-    /// `backlog`/`doing`, not closed, not archived, with a worktree dir.
-    ///
-    /// A narrow twin of [`Store::all_tasks`] for `tt_agentboard::task_status::
-    /// sync_worktree_task_statuses`, which runs on the emit path (~every 2s)
-    /// while the app's `store` mutex is held. `all_tasks` selects *every* row
-    /// including closed and archived ones and then hydrates both link tables
-    /// onto all of them — and that caller discards most rows in its first
-    /// three lines and reads neither `issues` nor `prs`. The `WHERE` clause
-    /// mirrors those discards exactly, and links are deliberately left empty.
+    /// Open, worktree-bound tasks whose status the agentboard may auto-drive. A
+    /// narrow twin of [`Store::all_tasks`] for `sync_worktree_task_statuses`, which
+    /// runs on the emit path (~every 2s) holding the app's `store` mutex: the
+    /// `WHERE` clause mirrors the rows that caller would discard anyway, and links
+    /// are deliberately left empty since it reads neither.
     pub fn worktree_bound_open_tasks(&self) -> Result<Vec<TaskItem>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {TASK_COLS} FROM tasks
@@ -630,9 +557,8 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Fill `issues`/`prs` on already-mapped tasks. Loads both link tables
-    /// whole (they are small — one row per attached ref) and distributes by
-    /// `task_id`, keeping `(repo, number)` order deterministic.
+    /// Loads both link tables whole (they are small) and distributes by `task_id`,
+    /// keeping `(repo, number)` order deterministic.
     fn load_task_links(&self, tasks: &mut [TaskItem]) -> Result<()> {
         if tasks.is_empty() {
             return Ok(());

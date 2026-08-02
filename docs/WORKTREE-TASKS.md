@@ -28,11 +28,10 @@ tt task clean [--dry-run]                 # rm every merged/gone task + sweep st
 
 **Claude Code's own worktree surfaces are not tasks.** `claude --worktree`,
 background agents and the desktop app's parallel sessions make their own
-worktrees, and nothing here renders, tracks or removes them. There is no
-`WorktreeCreate`/`WorktreeRemove` wiring any more — routing them through
-`tt task` gave every background agent a marker, ports, an `.env` and a rail
-folder nobody asked for, which is the whole reason it's gone. A task is
-created deliberately: `tt task new`, or the app's `+`.
+worktrees, and nothing here renders, tracks or removes them — routing them
+through `tt task` gave every background agent a marker, ports, an `.env` and a
+rail folder nobody asked for. A task is created deliberately: `tt task new`, or
+the app's `+`.
 
 The Agentboard rail shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
@@ -118,13 +117,9 @@ Rules when working in a task:
   A session started *outside* an app terminal has no `TT_MCP_PORT` and falls
   back to `8787`, reaching whichever checkout claimed it — usually the main one.
 
-  Before 2026-07-26 this was a one-per-machine bind-or-skip singleton on a fixed
-  `8787`, and the failure was genuinely counter-intuitive: an app that started
-  second served nothing for its whole life and never retried, so a running
-  `tt-app` was no evidence MCP was up. Worse, `tt.db` is instance state scoped
-  per checkout, so the winning instance answered every session from *its own*
-  board — a `task_create` in a worktree session silently landed on another
-  checkout's board. Don't reintroduce a shared port.
+  **Don't reintroduce a shared port.** A machine-wide `8787` makes the instance
+  that binds first answer every session from *its own* `tt.db`, so a
+  `task_create` in one worktree silently lands on another checkout's board.
 - Task logic lives in `crates/tt-tasks` (template grammar, removal guards,
   pure decisions) with shared orchestration in `tt_tasks::ops`; the CLI and
   the app's `task_create` command are thin shells over it. Change behavior

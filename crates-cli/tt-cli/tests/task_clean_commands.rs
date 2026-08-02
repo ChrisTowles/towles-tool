@@ -44,15 +44,10 @@ fn task_dir(checkout: &Path, name: &str) -> PathBuf {
     checkout.join(".claude").join("worktrees").join(name)
 }
 
-/// A port pool no other test in this binary will touch.
-///
-/// Same reasoning as `task_commands.rs`'s `next_pool` (see its doc for the
-/// full mechanism): `port_occupied` answers by **binding**, so tests sharing
-/// one pool make each other's probes report a phantom listener, and
-/// `tt task clean` runs the same removal guard `tt task rm` does. The floor
-/// also moves below the ephemeral range — 42440-42469 sat inside it
-/// (32768-60999), where any outbound connection's source port can masquerade
-/// as a dev server.
+/// A port pool no other test in this binary will touch, kept below the ephemeral
+/// range (32768-60999). `port_occupied` answers by binding, so a shared pool makes
+/// tests read each other's probes as phantom listeners — see `task_commands.rs`'s
+/// `next_pool` for the full mechanism.
 fn next_pool() -> String {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(26410);
     let lo = NEXT.fetch_add(30, std::sync::atomic::Ordering::Relaxed);

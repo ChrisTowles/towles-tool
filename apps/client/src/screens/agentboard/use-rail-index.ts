@@ -31,18 +31,9 @@ export type RailIndex = {
   activeRepo: RepoData | undefined;
 };
 
-/**
- * Every derived lookup the rail and the pane area need, in one pass over the
- * repo tree.
- *
- * The lookups (folderOf, sessionById, …) stay on the **full** `repos` list
- * while only the two render surfaces apply the rail filter — a pane already
- * open for a now-filtered folder must keep working. `isFolderFiltered` is the
- * filter's definition (nothing going on right now, or nothing worked in the
- * last `recentHours` — see `lib/agentboard.ts`); the active folder is never
- * filtered out, so switching away from what you're looking at never happens as
- * a side effect of the filter.
- */
+// The lookups stay on the **full** `repos` list while only the two render
+// surfaces apply the rail filter — a pane already open for a now-filtered
+// folder must keep working, and the active folder is never filtered out.
 export function useRailIndex(args: {
   repos: RepoData[];
   filter: RailFilter;

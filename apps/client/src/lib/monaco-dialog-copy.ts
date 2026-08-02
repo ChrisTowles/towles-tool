@@ -1,27 +1,17 @@
-/**
- * Presentation helpers for the confirmations the VS Code layer raises. Kept
- * apart from `monaco-dialogs.ts` because that module pulls in the whole
- * `@codingame/monaco-vscode-api` graph (CSS and all), which a logic-only
- * vitest run can't load — this file stays importable by tests.
- */
+/** Presentation helpers for the confirmations the VS Code layer raises. Kept
+ * apart from `monaco-dialogs.ts`, which pulls in the whole
+ * `@codingame/monaco-vscode-api` graph that a logic-only vitest run can't
+ * load — this file stays importable by tests. */
 
 /** VS Code writes mnemonics as `&&Delete`; show a plain label. */
 export function stripMnemonic(label: string): string {
   return label.replace(/&&/g, "");
 }
 
-/**
- * Make the delete confirmation tell the truth.
- *
- * The file service thinks trashing is unsupported — `OverlayFileSystemProvider`
- * drops the `Trash` capability our provider advertises — so VS Code asks to
- * "permanently delete" and warns the action is irreversible. Our provider
- * trashes anyway (see `monaco-fs.ts`'s `delete`, and note that registering
- * directly to fix this at the source breaks quick-open), which would make that
- * wording a lie. Rewrite it to match what actually happens.
- *
- * Narrow on purpose: an unrelated confirmation passes through untouched.
- */
+/** Make the delete confirmation tell the truth: `OverlayFileSystemProvider`
+ * drops the `Trash` capability, so VS Code says "permanently delete" while our
+ * provider trashes anyway (`monaco-fs.ts`). Narrow on purpose — an unrelated
+ * confirmation passes through untouched. */
 export function deleteCopyForTrash(
   message: string,
   detail: string | undefined,

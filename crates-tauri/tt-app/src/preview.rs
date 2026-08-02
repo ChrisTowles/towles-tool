@@ -1,19 +1,15 @@
-//! Preview screen backend: the capture half of the annotate-and-send flow. The screen
-//! embeds a running dev server in an `<iframe>` and lets the user draw
-//! annotations over it on a DOM canvas. "Send to agent" needs a pixel-accurate PNG of
-//! what the user sees, and the DOM can't produce one — a cross-origin iframe taints any
-//! canvas it is drawn into. `webkit_web_view_get_snapshot` rasterizes the app webview's
-//! composited viewport instead, embedded iframe included, being a privileged native API
-//! with no CORS-taint concept. `preview_capture` crops that to the surface's rect;
-//! `preview_write_feedback` stages the annotated PNG outside any repo (same reasoning as
-//! `tt_tasks::pasted`) so the frontend can name its path in a prompt.
+//! Preview screen backend: the capture half of the annotate-and-send flow. "Send to
+//! agent" needs a pixel-accurate PNG of what the user sees, and the DOM can't produce
+//! one — a cross-origin iframe taints any canvas it is drawn into.
+//! `webkit_web_view_get_snapshot` rasterizes the app webview's composited viewport
+//! instead, embedded iframe included, being a privileged native API with no CORS-taint
+//! concept. `preview_write_feedback` stages the annotated PNG outside any repo (same
+//! reasoning as `tt_tasks::pasted`) so the frontend can name its path in a prompt.
 //!
 //! `preview_read_file` serves the *other* direction, the agent→human one the
 //! `preview_file` MCP tool opens. Reading the file here rather than shipping bytes in the
-//! `preview://show` event is what makes reload work — the pane re-invokes this and picks
-//! up whatever the agent wrote since, and an event bus never carries megabytes.
-//!
-//! That reload is *hot*, not just a button — see [`PreviewWatches`].
+//! `preview://show` event is what makes reload work — and that reload is *hot*, not just
+//! a button; see [`PreviewWatches`].
 
 use std::sync::Mutex;
 
@@ -24,11 +20,9 @@ use tt_tasks::pasted::{self, PastedImage};
 
 use crate::ide::MAIN_WINDOW_LABEL;
 
-/// The preview surface's rect in CSS pixels, plus the `devicePixelRatio` that
-/// scales it into the snapshot surface's device-pixel space.
-///
-/// Only the Linux path reads these fields; the macOS/Windows stub deserializes
-/// a `CaptureRect` and ignores it, hence the `allow(dead_code)`.
+/// CSS pixels, plus the `devicePixelRatio` that scales them into the snapshot
+/// surface's device-pixel space. Only the Linux path reads these fields; the
+/// macOS/Windows stub ignores them, hence the `allow(dead_code)`.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -40,9 +34,8 @@ pub struct CaptureRect {
     pub device_pixel_ratio: f64,
 }
 
-/// Rasterize the main webview's visible viewport and crop to `rect`, as a
-/// base64 PNG. Here rather than in the webview because the webview cannot read
-/// these pixels itself (see the module docs).
+/// Rasterize the main webview's visible viewport and crop to `rect`, as a base64
+/// PNG. Here rather than in the webview, which cannot read its own pixels.
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn preview_capture(
@@ -55,10 +48,8 @@ pub async fn preview_capture(
     let (tx, rx) = tokio::sync::oneshot::channel();
     window
         .with_webview(move |webview| {
-            // Runs on the GTK main thread — the only place webkit calls are
-            // legal, and the snapshot's completion lands there too. So this
-            // does the cheapest work possible; the un-premultiply and the PNG
-            // encode wait for spawn_blocking below, off the compositor thread.
+            // Runs on the GTK main thread, so keep it cheap — the un-premultiply
+            // and the PNG encode wait for the spawn_blocking below.
             webview.inner().snapshot(
                 SnapshotRegion::Visible,
                 SnapshotOptions::NONE,
@@ -84,18 +75,16 @@ pub async fn preview_capture(
     Ok(base64::engine::general_purpose::STANDARD.encode(png))
 }
 
-/// A crop of the snapshot surface, still cairo's premultiplied ARGB32 with a
-/// tight row stride — the raw form that leaves the GTK thread.
+/// Cairo's premultiplied ARGB32 with a tight row stride — the raw form that
+/// leaves the GTK thread. `data` is BGRA, `width * height * 4` bytes.
 #[cfg(target_os = "linux")]
 struct CroppedArgb {
     width: u32,
     height: u32,
-    /// Premultiplied BGRA (little-endian ARGB32), `width * height * 4` bytes.
     data: Vec<u8>,
 }
 
-/// No capture path on Windows/macOS yet (wry exposes no `capturePage` there);
-/// the frontend surfaces this on the send action, not by hiding the screen.
+/// No capture path on Windows/macOS yet (wry exposes no `capturePage` there).
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
 pub async fn preview_capture(
@@ -106,8 +95,7 @@ pub async fn preview_capture(
 }
 
 /// Crop to `rect` (scaled by DPR). Runs on the GTK thread, so it stays
-/// memcpy-cheap — no per-pixel arithmetic here, that's
-/// `argb_to_straight_rgba`'s job, off-thread.
+/// memcpy-cheap — per-pixel arithmetic is `argb_to_straight_rgba`'s job.
 #[cfg(target_os = "linux")]
 fn crop_surface_argb(surface: &cairo::Surface, rect: CaptureRect) -> Result<CroppedArgb, String> {
     let dpr = if rect.device_pixel_ratio.is_finite() && rect.device_pixel_ratio > 0.0 {
@@ -161,7 +149,6 @@ fn argb_to_straight_rgba(cropped: CroppedArgb) -> (u32, u32, Vec<u8>) {
     (cropped.width, cropped.height, buf)
 }
 
-/// One file read for the preview pane, with the surface it should render on.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewDoc {
@@ -172,15 +159,11 @@ pub struct PreviewDoc {
 }
 
 /// Mirrors `PREVIEW_MAX_BYTES` in `tt-mcp`, which catches an agent's oversized
-/// path first; this copy guards what never comes through the tool — a reload
-/// after the file grew.
+/// path first; this copy guards a reload after the file grew.
 const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Which of the pane's three surfaces a file renders on, from its extension.
-///
-/// Extension only, never sniffed content: a file an agent is still writing
-/// would otherwise flip surfaces mid-edit, remounting the frame and losing
-/// scroll position.
+/// Extension only, never sniffed content: a file an agent is still writing would
+/// otherwise flip surfaces mid-edit, remounting the frame and losing scroll.
 fn preview_kind(path: &str) -> &'static str {
     let ext = std::path::Path::new(path)
         .extension()
@@ -194,11 +177,9 @@ fn preview_kind(path: &str) -> &'static str {
     }
 }
 
-/// Read a file for the preview pane to render.
-///
-/// Deliberately *not* Tauri's asset protocol, whose scope would have to widen
-/// to every path on disk. A previewed HTML artifact is a single self-contained
-/// page, so it needs no relative asset resolution and `srcdoc` costs nothing.
+/// Deliberately *not* Tauri's asset protocol, whose scope would have to widen to
+/// every path on disk. A previewed HTML artifact is self-contained, so `srcdoc`
+/// costs nothing.
 #[tauri::command]
 pub async fn preview_read_file(path: String) -> Result<PreviewDoc, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -218,17 +199,13 @@ pub async fn preview_read_file(path: String) -> Result<PreviewDoc, String> {
     .map_err(|e| format!("preview read task failed: {e}"))?
 }
 
-/// Emitted when a file open in a Preview pane changes on disk. Carries every
-/// path in the debounce batch; each pane re-reads its own if it's named.
+/// Carries every path in the debounce batch; each pane re-reads its own if named.
 pub const PREVIEW_FILE_CHANGED_EVENT: &str = "preview://file-changed";
 
-/// The live disk watches behind open Preview panes: **one**
-/// [`MultiFileNotifier`] for all of them (inotify instances are a scarce
-/// per-user resource — see its own doc), with per-path refcounts inside it, so
-/// two panes on the same file share one watch and the last close drops it.
-///
-/// Not `ide_watch_files`, whose every path is confined to a checkout dir: a
-/// previewed file is routinely a scratch page under no tracked folder at all.
+/// **One** [`MultiFileNotifier`] for every open pane (inotify instances are a
+/// scarce per-user resource), with per-path refcounts inside it. Not
+/// `ide_watch_files`, whose paths are confined to a checkout dir: a previewed
+/// file is routinely a scratch page under no tracked folder at all.
 #[derive(Default)]
 pub struct PreviewWatches(Mutex<Option<MultiFileNotifier>>);
 
@@ -239,8 +216,7 @@ struct PreviewChangedPayload {
 }
 
 /// Pair with [`preview_unwatch_file`] when the pane stops showing `path`. A
-/// failed watch is reported so the pane can fall back to its reload button
-/// rather than silently going cold.
+/// failed watch is reported so the pane can fall back to its reload button.
 #[tauri::command]
 pub fn preview_watch_file(
     app: AppHandle,
@@ -269,7 +245,6 @@ pub fn preview_watch_file(
     notifier.add(std::path::Path::new(&path)).map_err(|e| format!("cannot watch {path}: {e}"))
 }
 
-/// Drop one reference to a preview file watch (see [`preview_watch_file`]).
 /// Unmatched calls — a watch that never started, browser dev — are a no-op.
 #[tauri::command]
 pub fn preview_unwatch_file(watches: State<PreviewWatches>, path: String) {
@@ -283,11 +258,9 @@ pub fn preview_unwatch_file(watches: State<PreviewWatches>, path: String) {
     }
 }
 
-/// Stage an annotated preview capture as a PNG file and return its absolute
-/// path for the caller to name in an agent prompt. One scope per send — a
-/// second send must not clear the previous one's directory out from under an
-/// agent that hasn't read the first file yet — with `pasted::prune` sweeping
-/// scopes past their retention window on every write.
+/// Stage an annotated capture as a PNG and return its absolute path for the
+/// caller to name in an agent prompt. One scope per send, so a second send can't
+/// clear the previous one out from under an agent still reading it.
 #[tauri::command]
 pub async fn preview_write_feedback(
     repo: String,

@@ -1,18 +1,9 @@
 #!/usr/bin/env node
-// Orchestrates the WebdriverIO E2E run against the *real* Tauri shell.
-//
-// Ports come from the rendered `.env`/`.env.local` (same mechanism as
-// `npm run dev`): TT_DEV_PORT is the Vite dev-server port; the embedded
-// WebDriver port is the .env claim TT_E2E_WEBDRIVER_PORT, else
-// TT_DEV_PORT + 3000. Nothing is hardcoded.
-//
-// Steps:
-//   1. resolve the dev port from .env.local,
-//   2. build the app with the `wdio` cargo feature (skip with --no-build),
-//   3. serve the wdio-enabled frontend on that port (VITE_WDIO=1),
-//   4. run wdio with TAURI_WEBVIEW_AUTOMATION=true so the launched app's WebView
-//      is automatable; wdio navigates it to the dev port (see wdio.conf.ts),
-//   5. always tear the Vite server down.
+// Orchestrates the WebdriverIO E2E run against the *real* Tauri shell: build
+// with the `wdio` cargo feature (skip with --no-build), serve the wdio-enabled
+// frontend, run wdio against the launched app's WebView, tear Vite down. Ports
+// come from the rendered `.env`/`.env.local`, never hardcoded: TT_DEV_PORT for
+// Vite, TT_E2E_WEBDRIVER_PORT (else TT_DEV_PORT + 3000) for the WebDriver.
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
@@ -49,9 +40,7 @@ function tryConnect(port, host) {
   });
 }
 
-// Vite may bind only one loopback stack (::1 or 127.0.0.1); treat the port as up
-// if either accepts a connection.
-/**
+/** Vite may bind only one loopback stack, so either accepting counts as up.
  * @param {number} port
  * @param {number} timeoutMs
  * @returns {Promise<Result<void, PortNeverListened>>}
@@ -75,16 +64,11 @@ function waitForPort(port, timeoutMs) {
   });
 }
 
-/**
- * Run a command to completion, inheriting stdio. A non-zero exit is an
- * ordinary result (the `number`); only failing to *launch* is an error —
- * without that split, a missing `cargo`/`npx` exits 1 with nothing said.
- *
+/** A non-zero exit is an ordinary result; only failing to *launch* is an error.
  * @param {string} cmd
  * @param {string[]} args
  * @param {import("node:child_process").SpawnSyncOptions} [opts]
- * @returns {Result<number, SpawnFailed>}
- */
+ * @returns {Result<number, SpawnFailed>} */
 function run(cmd, args, opts) {
   const res = spawnSync(cmd, args, {
     stdio: "inherit",
@@ -172,9 +156,7 @@ async function main() {
 }
 
 /**
- * Report, tear the Vite server down, and exit non-zero — the one terminal
- * boundary for every failure this script can hit.
- *
+ * The one terminal boundary for every failure this script can hit.
  * @param {string} message
  * @returns {never}
  */

@@ -3,17 +3,9 @@ import type { StatePayload } from "./agentboard";
 import type { FocusTarget } from "./focus-target";
 import { prChecksFailing } from "./pr-tone";
 
-/**
- * The app header's "needs you" feed: every item currently demanding the owner's
- * attention, ranked, as one flat list the popover renders and navigates from.
- * Pure over the two live snapshots so ordering is unit-tested; the header owns
- * the presentation and the actual navigation.
- *
- * Ordering (by `tier`, then newest first): unanswered DMs and failing-CI PRs
- * are the top tier, then review-requested PRs, then repos with agents blocked
- * on you. Agent status is only *reported* here — rows navigate to the row, they
- * never act on the agent.
- */
+/** The app header's "needs you" feed: everything demanding attention, ranked by
+ * `tier` then newest first, as one flat list. Agent status is only *reported*
+ * here — rows navigate to the row, they never act on the agent. */
 
 export type AttentionKind = "dm" | "pr-ci" | "pr-review" | "agent";
 

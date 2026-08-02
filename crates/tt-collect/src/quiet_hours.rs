@@ -15,14 +15,12 @@ use chrono::{Datelike, Local, TimeZone, Timelike, Weekday};
 use tt_config::CalendarQuietHours;
 
 /// Whether the calendar collector may run at the instant `now_ms` (epoch ms),
-/// given the quiet-hours config. Converts `now_ms` to the system-local time
-/// zone and defers to [`should_run_at`].
+/// given the quiet-hours config.
 ///
 /// On an ambiguous local instant (a fall-back DST overlap) either candidate is
-/// close enough for an hour-granularity window, so the earlier one is used. On a
-/// nonexistent instant (a spring-forward gap — `now_ms` can't actually name such
-/// a wall-clock time, but the conversion is total) the gate errs open and lets
-/// the run proceed rather than silently suppressing it.
+/// close enough for an hour-granularity window, so the earlier one is used. A
+/// nonexistent instant (a spring-forward gap) errs open rather than silently
+/// suppressing the run.
 pub fn should_run_calendar(now_ms: i64, quiet: &CalendarQuietHours) -> bool {
     if !quiet.enabled {
         return true;

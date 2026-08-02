@@ -93,7 +93,7 @@ the mock dev server:
 Both are gated behind the `wdio` cargo feature + `VITE_WDIO` flag, so nothing
 ships in normal/release builds. Ports come from the env files (`TT_DEV_PORT` in `.env.local`, or `.env` rendered by `tt task`;
 webdriver = the `TT_E2E_WEBDRIVER_PORT` claim, falling back to `+3000`); `dev:drive` and `e2e` share a task's ports, so don't run
-both at once in one task. Full docs + Linux gotchas: [e2e/README.md](e2e/README.md).
+both at once in one task. Full docs + Linux gotchas: [e2e/README.md](../e2e/README.md).
 
 **After finishing a task that touches the app, leave it running for Chris to
 check.** Once the change builds/lints/tests clean, launch `npm start`
@@ -109,4 +109,15 @@ the app to look at (CLI-only, docs-only, crate-internal refactors with no
 
 > The binary is **`tt`**. The `ttr` → `tt` cutover from the TypeScript CLI
 > happened 2026-07-13 — hard cutover, no `ttr` alias left behind (see
-> [docs/CUTOVER.md](docs/CUTOVER.md)).
+> [docs/CUTOVER.md](CUTOVER.md)).
+
+## The CI variant of the Rust checks
+
+`cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.15.x),
+`tt-app` and `tt-pane` (webkit2gtk/GTK) and `tt-jarvis` (Bevy from a git fork).
+Without those prerequisites installed, use CI's variant, which excludes exactly
+those four.
+
+**A new crate needing GTK must be added to both that `--exclude` list and the
+`vt_or_app` paths-filter in `.github/workflows/ci.yml`**, or it silently gets no
+Rust CI at all.

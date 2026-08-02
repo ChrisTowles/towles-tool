@@ -2,13 +2,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 /// One parsed line from an `events-<date>.jsonl` file, as read back by
-/// [`crate::read_day`]. The fields every record carries
-/// (`ts`/`kind`/`level`/`target`/`name`, plus the resource attributes
-/// [`crate::init`] stamps on everything) are pulled out for filtering and
-/// display; everything else — `duration_ms`, `cmd`, `exit_code`, `action`,
-/// whatever a given span/event happened to record — rides along in `fields`
-/// for the drill-down view and free-text search, and `raw` keeps the
-/// original line verbatim for a "show me exactly what was logged" view.
+/// [`crate::read_day`]. The fields every record carries are pulled out for
+/// filtering and display; whatever else a span/event recorded rides along in
+/// `fields` for drill-down and free-text search, and `raw` keeps the original
+/// line verbatim.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryRecord {

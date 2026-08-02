@@ -3,21 +3,9 @@ import { Sparkles } from "lucide-react";
 import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-/**
- * A tiny, unobtrusive pill shown only while zen focus mode is on, so the
- * hidden-chrome state is never mysterious. It stays out of the way: invisible
- * until the pointer moves near the bottom of the window, then fades out again a
- * couple seconds later. Folder-rail styled (muted, bordered, low-contrast).
- *
- * It sits **bottom**-right, over the strip the hidden status bar owned, and not
- * top-right where it used to: every screen's trailing action cluster lives in
- * the content's top-right corner (the Agentboard pane header's badges + kebab,
- * the DM banner's actions, the terminal's overlay controls), and with the app
- * header hidden that cluster slides up to y=0 — directly under this pill, which
- * clipped the badges into unreadable half-words and swallowed clicks on the
- * buttons. Nothing interactive is anchored bottom-right; toasts and the IDE
- * selection chip pass through there, but both are transient like this pill.
- */
+/** A pill shown only while zen focus mode is on, so hidden chrome is never
+ * mysterious. It must stay **bottom**-right: with the header hidden, each screen's
+ * trailing action cluster slides to y=0, where this clipped badges and ate clicks. */
 export function ZenIndicator({ onExit }: { onExit: () => void }) {
   const [visible, setVisible] = useState(true);
 

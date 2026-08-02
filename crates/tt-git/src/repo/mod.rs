@@ -5,13 +5,10 @@
 //! back 10–100× faster from a cached [`Repo`] (`rev-parse HEAD`: 0.75ms vs 0.01ms).
 //! Ref reads, graph walks, status, diffs, ignore checks and patch identity are here.
 //!
-//! Three operations still shell out, and none is an oversight:
-//!
-//! - **Worktree add/remove/prune** — gitoxide's worktree API is read-only.
-//! - **`merge --ff-only`** — it updates the working tree, and gitoxide has no
-//!   checkout to do it with. ([`Repo::create_branch_at_head`] is a pure ref write.)
-//! - **`fetch`** — network-bound, where in-process buys nothing measurable and would
-//!   put credential helpers, SSH and a TLS stack on the line for no gain.
+//! Three operations still shell out, none an oversight: **worktree
+//! add/remove/prune** (gitoxide's worktree API is read-only), **`merge
+//! --ff-only`** (it updates the working tree, which gitoxide cannot), and
+//! **`fetch`** (network-bound, so in-process buys nothing measurable).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,50 +24,34 @@ pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 pub use patch::PatchId;
 pub use status::{StatusEntry, StatusSummary};
 
-/// The line-diff algorithm, applied everywhere lines are counted or compared.
-///
-/// Myers because that is git's default, and the numbers here sit next to
-/// numbers the user gets from `git diff`. This is not a formality: on this
-/// repo's own `Cargo.lock`, Histogram reports `+1226 −2` where git reports
-/// `+1310 −86` — the same net change split into different hunks, and a rail
-/// that disagreed with the terminal would read as a bug in the rail. Paired
-/// with slider heuristics, which is git's default `diff.indentHeuristic`.
+/// Myers because that is git's default, and these numbers sit next to numbers
+/// the user gets from `git diff`. Not a formality: on this repo's `Cargo.lock`,
+/// Histogram reports `+1226 −2` where git reports `+1310 −86`, and a rail that
+/// disagreed with the terminal would read as a bug in the rail.
 pub(crate) const DIFF_ALGORITHM: gix::diff::blob::Algorithm = gix::diff::blob::Algorithm::Myers;
 
-/// A git read that did not answer.
-///
-/// Deliberately coarse: every caller in this workspace degrades to a
-/// conservative default (empty stats, "work is present") rather than branching
-/// on *why* git could not answer, so a rich error taxonomy would be typed
-/// vocabulary nobody reads. What callers do need is the message, for the
-/// telemetry log.
+/// A git read that did not answer. Deliberately coarse: every caller degrades
+/// to a conservative default rather than branching on *why*, so a rich taxonomy
+/// would be vocabulary nobody reads. What callers need is the message.
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
-    /// The path exists but is not inside a git repository.
     #[error("not a git repository: {0}")]
     NotARepo(String),
-    /// Opening the repository failed (unreadable config, broken gitdir link).
+    /// Unreadable config, broken gitdir link.
     #[error("cannot open git repository at {path}: {detail}")]
     Open { path: String, detail: String },
-    /// A ref, object, or index read failed.
     #[error("git read failed: {0}")]
     Read(String),
-    /// A revspec that resolved to nothing — a branch that does not exist, a
-    /// `origin/main` in a repo with no remote.
     #[error("no such revision: {0}")]
     NoSuchRev(String),
 }
 
 pub type Result<T> = std::result::Result<T, GitError>;
 
-/// One open repository per folder, shared across polls.
-///
-/// Opening is the expensive part of gitoxide (~0.3ms: config discovery, ref
-/// store, ODB setup); the queries afterwards are microseconds. Handles are
-/// cheap to clone out, safe to share across threads, and self-healing: refs
-/// and objects stay correct in a held handle, but config is parsed once at
-/// open, so [`RepoCache::open`] stats `config` and reopens on change (as it
-/// does for a checkout that went away).
+/// One open repository per folder, shared across polls. Opening is the
+/// expensive part of gitoxide (~0.3ms); the queries afterwards are
+/// microseconds. Refs and objects stay correct in a held handle, but config is
+/// parsed once at open, so [`RepoCache::open`] stats `config` and reopens.
 #[derive(Debug, Default)]
 pub struct RepoCache {
     entries: Mutex<HashMap<PathBuf, Entry>>,
@@ -79,9 +60,8 @@ pub struct RepoCache {
 #[derive(Debug)]
 struct Entry {
     repo: gix::ThreadSafeRepository,
-    /// Modification time of the repository's `config` at open. gitoxide parses
-    /// config once per open, so a `remote set-url` (or any other config edit)
-    /// would otherwise be invisible to a long-lived handle.
+    /// gitoxide parses config once per open, so a `remote set-url` would
+    /// otherwise be invisible to a long-lived handle.
     config_stamp: Option<std::time::SystemTime>,
 }
 
@@ -90,12 +70,9 @@ impl RepoCache {
         Self::default()
     }
 
-    /// Open `dir`'s repository, reusing the cached handle when one is valid.
-    ///
-    /// Returns [`GitError::NotARepo`] for a plain directory and for a missing
-    /// one — callers treat both as "no git info", and distinguishing them is
-    /// the *caller's* job via the filesystem (see `GitInfo::dir_missing`),
-    /// since a git error cannot tell them apart either.
+    /// Returns [`GitError::NotARepo`] for a plain directory *and* a missing
+    /// one — callers treat both as "no git info", and telling them apart is the
+    /// caller's job via the filesystem, since a git error can't either.
     pub fn open(&self, dir: &Path) -> Result<Repo> {
         let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
         let mut entries = self.lock();
@@ -116,16 +93,14 @@ impl RepoCache {
         Ok(Repo { repo: handle })
     }
 
-    /// Drop `dir`'s cached handle. For a checkout that has just been removed —
-    /// nothing breaks if it is skipped (the next `open` re-validates anyway),
-    /// but holding an open ODB against a deleted worktree keeps file handles
-    /// alive for no reason.
+    /// Nothing breaks if a removed checkout is never forgotten (the next
+    /// `open` re-validates), but its ODB keeps file handles alive for nothing.
     pub fn forget(&self, dir: &Path) {
         let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
         self.lock().remove(&key);
     }
 
-    /// Number of cached repositories. For tests and diagnostics.
+    /// For tests and diagnostics.
     pub fn len(&self) -> usize {
         self.lock().len()
     }
@@ -134,10 +109,8 @@ impl RepoCache {
         self.len() == 0
     }
 
-    /// A poisoned mutex here means another thread panicked mid-cache-write.
-    /// The map is a pure memoization of on-disk state — nothing it holds can be
-    /// left logically inconsistent by an interrupted write — so recovering the
-    /// guard is strictly better than propagating a panic into a status poll.
+    /// The map is a pure memoization of on-disk state, so recovering a poisoned
+    /// guard beats propagating a panic into a status poll.
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Entry>> {
         self.entries.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -149,34 +122,26 @@ fn config_stamp(repo: &gix::ThreadSafeRepository) -> Option<std::time::SystemTim
         .ok()
 }
 
-/// The process-wide cache.
-///
-/// One cache rather than one per caller is the point: the Agentboard poll, the
-/// task machinery, and the CLI all read the same handful of checkouts, and a
-/// per-caller cache would reopen each of them once per caller. Folders are
-/// bounded by how many checkouts a person has open, so this never grows
-/// meaningfully; [`forget`] trims a removed one anyway.
+/// One cache rather than one per caller: the Agentboard poll, the task
+/// machinery and the CLI all read the same handful of checkouts. Bounded by how
+/// many checkouts a person has open, and [`forget`] trims a removed one.
 pub fn cache() -> &'static RepoCache {
     static CACHE: std::sync::OnceLock<RepoCache> = std::sync::OnceLock::new();
     CACHE.get_or_init(RepoCache::new)
 }
 
-/// Open `dir` through the process-wide [`cache`]. The entry point for
-/// essentially every caller.
+/// The entry point for essentially every caller.
 pub fn open(dir: &Path) -> Result<Repo> {
     cache().open(dir)
 }
 
-/// The working-tree root containing `path`, walking upward like
-/// `git rev-parse --show-toplevel`. For a path handed in from outside (a CLI
-/// operand), where [`open`]'s "caller already knows the root" doesn't hold.
-///
-/// Not `discover_with_environment_overrides`: a stray `GIT_DIR` in the caller's
-/// shell must not redirect the answer to another repo. A bare repo answers
-/// `None` — no working tree, so nothing the caller named lives in one.
+/// `git rev-parse --show-toplevel`, for a path handed in from outside where
+/// [`open`]'s "caller already knows the root" doesn't hold. Not
+/// `discover_with_environment_overrides`: a stray `GIT_DIR` in the caller's
+/// shell must not redirect the answer to another repo.
 pub fn discover_root(path: &Path) -> Option<PathBuf> {
-    // Handed a *file*, gitoxide reports "not a repository" instead of walking up
-    // from its parent — and a file is the ordinary operand.
+    // Handed a *file* — the ordinary operand — gitoxide reports "not a
+    // repository" instead of walking up from its parent.
     let start = if path.is_dir() { path } else { path.parent()? };
     let repo = gix::discover(start).ok()?;
     let workdir = repo.workdir()?;
@@ -188,8 +153,8 @@ pub fn forget(dir: &Path) {
     cache().forget(dir);
 }
 
-/// A handle to one repository. Cheap to create from [`RepoCache::open`], not
-/// `Send` — hold it for the duration of one folder's work, not across threads.
+/// Cheap to create from [`RepoCache::open`], not `Send` — hold it for one
+/// folder's work, not across threads.
 pub struct Repo {
     repo: gix::Repository,
 }
@@ -201,8 +166,7 @@ impl std::fmt::Debug for Repo {
 }
 
 impl Repo {
-    /// Open a repository directly, without a cache. For one-shot callers (the
-    /// CLI, a test) where a cache would outlive nothing.
+    /// Uncached, for one-shot callers where a cache would outlive nothing.
     pub fn open(dir: &Path) -> Result<Self> {
         let repo = gix::open(dir).map_err(|e| match e {
             gix::open::Error::NotARepository { .. } => {
@@ -213,24 +177,21 @@ impl Repo {
         Ok(Self { repo })
     }
 
-    /// The underlying gitoxide repository, for operations this wrapper has no
-    /// reason to name.
+    /// For operations this wrapper has no reason to name.
     pub fn inner(&self) -> &gix::Repository {
         &self.repo
     }
 
-    /// This checkout's own git directory — `.git` for a main worktree,
-    /// `<repo>/.git/worktrees/<name>` for a linked one.
+    /// `.git` for a main worktree, `<repo>/.git/worktrees/<name>` for a linked
+    /// one.
     pub fn git_dir(&self) -> PathBuf {
         self.repo.git_dir().to_path_buf()
     }
 
-    /// The repository's shared git directory: identical across every linked
-    /// worktree of one repo and nowhere else, which is what makes it the
-    /// Folder Rail's grouping key. Canonicalized, because gitoxide reports it
-    /// as a path *relative to* the worktree's gitdir
-    /// (`…/worktrees/<name>/../..`) and two spellings of one directory must
-    /// never read as two repos.
+    /// Identical across every linked worktree of one repo and nowhere else,
+    /// which makes it the Folder Rail's grouping key. Canonicalized: gitoxide
+    /// reports it relative to the worktree's gitdir, and two spellings of one
+    /// directory must never read as two repos.
     pub fn common_dir(&self) -> PathBuf {
         let raw = self.repo.common_dir();
         std::fs::canonicalize(raw).unwrap_or_else(|_| raw.to_path_buf())
@@ -241,15 +202,12 @@ impl Repo {
         self.repo.head_name().ok().flatten().map(|name| name.shorten().to_string())
     }
 
-    /// `HEAD`'s commit id, or `None` on an unborn branch (a fresh `git init`
-    /// with no commit).
+    /// `None` on an unborn branch.
     pub fn head_id(&self) -> Option<gix::ObjectId> {
         self.repo.head_id().ok().map(|id| id.detach())
     }
 
-    /// Resolve a revspec (`origin/main`, `HEAD`, a sha, `main^{tree}`) to a
-    /// single object id. `None` when it names nothing — the in-process
-    /// equivalent of `git rev-parse --verify --quiet`.
+    /// `git rev-parse --verify --quiet`: `None` when the spec names nothing.
     pub fn resolve(&self, spec: &str) -> Option<gix::ObjectId> {
         self.repo.rev_parse_single(spec).ok().map(|id| id.detach())
     }
@@ -266,10 +224,8 @@ impl Repo {
         Some(url.to_bstring().to_string())
     }
 
-    /// Whether the branch's upstream is *gone* — configured but no longer
-    /// present on the remote, the `[gone]` of `%(upstream:track)`. The weakest
-    /// landing signal there is (see [`crate::repo::graph`] callers), and
-    /// deliberately distinct from "no upstream configured", which is `false`:
+    /// The `[gone]` of `%(upstream:track)` — the weakest landing signal there
+    /// is, and deliberately distinct from "no upstream configured" (`false`):
     /// a branch that was never pushed has not had anything deleted.
     pub fn upstream_gone(&self, branch: &str) -> bool {
         let Ok(Some(reference)) = self.repo.try_find_reference(branch) else {
@@ -281,13 +237,12 @@ impl Repo {
         else {
             return false;
         };
-        // Configured, but the remote-tracking ref it names is not in the repo:
-        // a `git fetch --prune` after the remote branch was deleted.
+        // Configured, but its remote-tracking ref is gone: `fetch --prune`
+        // after the remote branch was deleted.
         self.repo.try_find_reference(upstream.as_ref().as_bstr()).ok().flatten().is_none()
     }
 
-    /// Every local branch's short name, unordered — `git for-each-ref
-    /// refs/heads --format=%(refname:short)`.
+    /// Unordered — `git for-each-ref refs/heads`.
     pub fn local_branches(&self) -> Vec<String> {
         let Ok(platform) = self.repo.references() else {
             return Vec::new();
@@ -301,13 +256,9 @@ impl Repo {
             .collect()
     }
 
-    /// Delete a local branch — `git branch -D <branch>`.
-    ///
-    /// Force semantics, like the `-D` it replaces: whether the branch has
-    /// landed is the caller's decision, and in this workspace only
-    /// content-based landing proof justifies calling it (see
-    /// `tt_tasks::landed::LandedVia::is_content_proof`). Deleting a ref does
-    /// not delete commits; they survive until git's own gc.
+    /// Force semantics, like the `git branch -D` it replaces: whether the
+    /// branch has landed is the caller's decision, and only content-based
+    /// landing proof justifies calling it.
     pub fn delete_branch(&self, branch: &str) -> Result<()> {
         let full = format!("refs/heads/{branch}");
         let name = gix::refs::FullName::try_from(full.as_str())
@@ -325,17 +276,9 @@ impl Repo {
         Ok(())
     }
 
-    /// Is `relative_path` excluded by the repository's ignore rules — the
-    /// `git check-ignore -q` this replaces.
-    ///
-    /// # Errors
-    ///
-    /// [`GitError::Read`] when the index or the exclude stack won't load, so
-    /// "the rules say no" and "there are no readable rules" stay distinct:
-    /// `tt task init` treats the failure as *not ignored* (appending a
-    /// possibly-redundant `.gitignore` entry is the harmless direction), while
-    /// `render_task_env` treats it as ignored rather than warning a user about
-    /// a rule set it never managed to read.
+    /// `git check-ignore -q`. Errors rather than answering when the exclude
+    /// stack won't load, so "the rules say no" and "there are no readable
+    /// rules" stay distinct — the two callers pick opposite safe defaults.
     pub fn is_ignored(&self, relative_path: &str) -> Result<bool> {
         let index = self.repo.index_or_empty().map_err(|e| GitError::Read(e.to_string()))?;
         let mut excludes = self
@@ -352,10 +295,8 @@ impl Repo {
         Ok(platform.excluded_kind().is_some())
     }
 
-    /// Number of stash entries — `git stash list`'s line count.
-    ///
-    /// The stash is the reflog of `refs/stash`, so an empty count and a missing
-    /// ref are the same answer: nothing stashed.
+    /// The stash is the reflog of `refs/stash`, so an empty count and a
+    /// missing ref are the same answer: nothing stashed.
     pub fn stash_count(&self) -> usize {
         let Ok(Some(stash)) = self.repo.try_find_reference("refs/stash") else {
             return 0;
@@ -363,19 +304,11 @@ impl Repo {
         stash.log_iter().all().ok().flatten().map(|log| log.flatten().count()).unwrap_or(0)
     }
 
-    /// Create `branch` at the current `HEAD` and switch to it — `git checkout
-    /// -b <branch>` for the one case this workspace performs it in: a checkout
-    /// the caller has already verified is **clean**.
-    ///
-    /// That precondition is what makes this two ref writes rather than a
-    /// checkout. Creating a branch at `HEAD` and pointing `HEAD` at it changes
-    /// no file: the commit is the same one already checked out, so index and
-    /// working tree are correct by construction. gitoxide has no working-tree
-    /// checkout to fall back on, so a caller that has *not* established a clean
-    /// tree must not use this — it would silently skip the file updates a real
-    /// switch performs.
-    ///
-    /// Fails when `branch` already exists, matching `git checkout -b`.
+    /// `git checkout -b <branch>` for the one case this workspace performs it
+    /// in: a checkout the caller has already verified is **clean**. That
+    /// precondition is what makes this two ref writes rather than a checkout —
+    /// the commit is the one already checked out, so index and working tree are
+    /// correct by construction. A caller with a dirty tree must not use it.
     pub fn create_branch_at_head(&self, branch: &str) -> Result<()> {
         let head = self.head_id().ok_or_else(|| GitError::NoSuchRev("HEAD".to_string()))?;
         let full = format!("refs/heads/{branch}");
@@ -399,8 +332,8 @@ impl Repo {
                 deref: false,
             })
             .map_err(|e| GitError::Read(e.to_string()))?;
-        // Point HEAD at the new branch. Symbolic, exactly as a checkout leaves
-        // it — an object target here would detach HEAD instead.
+        // Symbolic, exactly as a checkout leaves it — an object target here
+        // would detach HEAD instead.
         self.repo
             .edit_reference(gix::refs::transaction::RefEdit {
                 change: gix::refs::transaction::Change::Update {
@@ -420,13 +353,10 @@ impl Repo {
         Ok(())
     }
 
-    /// Every checkout of this repository: the main worktree first, then each
-    /// linked one.
-    ///
-    /// gitoxide reports the two separately — [`gix::Repository::worktrees`]
-    /// covers *linked* worktrees only — so the main checkout is prepended here.
-    /// A caller that dropped it would silently stop pulling a tracked task's
-    /// primary into the Folder Rail.
+    /// The main worktree first, then each linked one.
+    /// [`gix::Repository::worktrees`] covers *linked* worktrees only, so the
+    /// main checkout is prepended here; dropping it would silently stop pulling
+    /// a tracked task's primary into the Folder Rail.
     pub fn worktrees(&self) -> Vec<WorktreeEntry> {
         let mut out = Vec::new();
         let main = self
@@ -450,15 +380,12 @@ impl Repo {
 /// One checkout of a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeEntry {
-    /// Absolute path to the working directory.
     pub dir: String,
-    /// Whether this is the repository's main worktree.
     pub is_main: bool,
 }
 
-/// Canonicalize for comparison, falling back to the path as given. Worktree
-/// paths are compared against caller-supplied directory strings, and a symlink
-/// spelled two ways must not read as two checkouts.
+/// Worktree paths are compared against caller-supplied directory strings, and
+/// a symlink spelled two ways must not read as two checkouts.
 fn canonical(path: &Path) -> String {
     std::fs::canonicalize(path)
         .unwrap_or_else(|_| path.to_path_buf())
@@ -481,8 +408,7 @@ mod tests {
         assert!(matches!(cache.open(dir.path()), Err(GitError::NotARepo(_))));
     }
 
-    /// A *file* deep in the tree is the ordinary operand, and gitoxide won't
-    /// discover from one — see [`discover_root`].
+    /// gitoxide won't discover from a file — see [`discover_root`].
     #[test]
     fn discover_root_walks_up_from_a_nested_file() {
         let repo = TestRepo::new();
@@ -630,8 +556,8 @@ mod tests {
         let repo = TestRepo::new();
         Repo::open(repo.path()).expect("open").create_branch_at_head("feat/new").expect("create");
 
-        // Ask git itself what happened, not gix — the point is that a real
-        // checkout is left in the state `git checkout -b` would leave.
+        // Ask git itself, not gix: the point is that a real checkout is left
+        // in the state `git checkout -b` would leave.
         assert_eq!(repo.git(&["rev-parse", "--abbrev-ref", "HEAD"]), "feat/new");
         assert_eq!(repo.rev_parse("feat/new"), repo.rev_parse("main"));
         assert_eq!(repo.git(&["status", "--porcelain"]), "", "the tree must be untouched");
@@ -657,11 +583,9 @@ mod tests {
         let repo = TestRepo::new();
         repo.git(&["checkout", "--quiet", "-b", "feature"]);
         repo.commit_file("f.txt", "work");
-        // Configured upstream whose remote-tracking ref does not exist: exactly
-        // the state `git fetch --prune` leaves after the PR branch is deleted.
-        // The remote itself must exist for the upstream to resolve to a
-        // remote-tracking ref name at all — that mapping comes from its
-        // fetch refspec.
+        // Exactly the state `git fetch --prune` leaves after the PR branch is
+        // deleted. The remote itself must exist for the upstream to resolve to
+        // a remote-tracking ref name at all.
         repo.git(&["remote", "add", "origin", "https://example.com/x.git"]);
         repo.git(&["config", "branch.feature.remote", "origin"]);
         repo.git(&["config", "branch.feature.merge", "refs/heads/feature"]);

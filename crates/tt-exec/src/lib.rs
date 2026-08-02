@@ -14,28 +14,17 @@ use std::process::Command;
 use std::time::Duration;
 use thiserror::Error;
 
-/// Env-var name prefixes that identify the running app instance and must not
-/// leak into a process spawned inside it: its dev-server port and session /
-/// instance stamps (`TT_`, e.g. `TT_DEV_PORT`, `TT_SESSION_ID`,
-/// `TT_APP_INSTANCE`), its Tauri build + automation config (`TAURI_`, e.g.
-/// `TAURI_CONFIG`, `TAURI_ENV_TARGET_TRIPLE`, `TAURI_ANDROID_*`), and the npm
-/// process that launched it (`npm_`, e.g. `npm_config_*`, `npm_lifecycle_*`).
-///
-/// A shell spawned inside the app that then starts a *nested* app instance
-/// (`npm run dev`, `tt-app`) must re-derive its own port and session identity;
-/// inheriting the parent's makes the nested instance collide on the parent's
-/// port and mis-attribute to the parent's session (issue #39).
+/// Env-var name prefixes identifying the running app instance, which must not
+/// leak into a process spawned inside it. A shell that starts a *nested* app
+/// instance must re-derive its own port and session identity; inheriting the
+/// parent's collides on its port and mis-attributes to its session (#39).
 pub const APP_INSTANCE_ENV_PREFIXES: &[&str] = &["TT_", "TAURI_", "npm_"];
 
-/// Env vars that stamp a process as living *inside* a Claude Code session.
-/// When the app itself was launched from a Claude session (an agent running
-/// `npm run dev`), these leak into every terminal the app spawns, and any
-/// interactive `claude` started there inherits them. With
+/// Env vars that stamp a process as living *inside* a Claude Code session. With
 /// `CLAUDE_CODE_CHILD_SESSION=1` present, Claude Code treats the session as a
-/// nested child and never writes its conversation transcript to
-/// `~/.claude/projects/` — the session is unrecoverable after the window dies
-/// (verified against Claude Code 2.1.207). The app's terminals host top-level
-/// user sessions, never children, so the whole identity set is dropped.
+/// nested child and never writes its transcript to `~/.claude/projects/`, so it
+/// is unrecoverable once the window dies. The app's terminals host top-level
+/// user sessions, so the whole identity set is dropped.
 pub const CLAUDE_SESSION_ENV_VARS: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_CODE_CHILD_SESSION",
@@ -45,18 +34,14 @@ pub const CLAUDE_SESSION_ENV_VARS: &[&str] = &[
     "AI_AGENT",
 ];
 
-/// Whether `key` names an env var a spawned process must not inherit: an
-/// app-instance var (see [`APP_INSTANCE_ENV_PREFIXES`]) or a Claude-session
-/// identity var (see [`CLAUDE_SESSION_ENV_VARS`]).
+/// Whether `key` names an env var a spawned process must not inherit.
 pub fn is_app_instance_env(key: &str) -> bool {
     APP_INSTANCE_ENV_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
         || CLAUDE_SESSION_ENV_VARS.contains(&key)
 }
 
-/// Filter the app-instance env vars out of `env`, returning the pairs a nested
-/// process should inherit. Pure and order-preserving; the caller applies the
-/// result to the child (see the app's `terminal.rs`). Everything not matched by
-/// [`is_app_instance_env`] survives (PATH, HOME, TERM, SHELL, …).
+/// Pure and order-preserving; the caller applies the result to the child.
+/// Everything [`is_app_instance_env`] doesn't match survives.
 pub fn scrub_app_instance_env<I, K, V>(env: I) -> Vec<(K, V)>
 where
     I: IntoIterator<Item = (K, V)>,
@@ -86,12 +71,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Env vars that make `git` fail fast instead of blocking on an interactive
-/// credential/SSH prompt. Without these, a missing credential-helper entry or
-/// an SSH key needing a passphrase can pop a GUI prompt (e.g. macOS Keychain
-/// "Allow Access") behind the app window; the git process then blocks reading
-/// stdin until [`run_with_timeout`]'s kill fires, stalling the caller for the
-/// full timeout instead of failing immediately with a clear error.
+/// Makes `git` fail fast instead of blocking on an interactive credential/SSH
+/// prompt — which can pop a GUI dialog *behind* the app window, stalling the
+/// caller for the full timeout instead of failing with a clear error.
 pub const GIT_NON_INTERACTIVE_ENV: &[(&str, &str)] = &[
     ("GIT_TERMINAL_PROMPT", "0"),
     ("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10"),
@@ -106,7 +88,6 @@ pub struct Output {
 }
 
 impl Output {
-    /// Whether the process exited with status 0.
     pub fn ok(&self) -> bool {
         self.exit_code == 0
     }
@@ -116,16 +97,10 @@ fn display_cmd(cmd: &str, args: &[&str]) -> String {
     if args.is_empty() { cmd.to_string() } else { format!("{cmd} {}", args.join(" ")) }
 }
 
-/// Open the telemetry span covering one subprocess.
-///
-/// Every process this crate spawns goes through here, which makes the event log a
-/// complete record of what the tool shelled out to, with no instrumentation at each
-/// call site. `outcome` and `exit_code` fill in before the span closes, so one record
-/// carries the command and its result. Field names follow OpenTelemetry's
-/// `process.*` conventions.
-///
-/// Only argv is recorded, never stdin or captured output: stdin carries things like
-/// PR bodies, stdout is unbounded, and argv for `gh`/`git`/`claude` holds no
+/// Every process this crate spawns goes through here, which makes the event log
+/// a complete record of what the tool shelled out to with no per-call-site
+/// instrumentation. Only argv is recorded, never stdin or captured output:
+/// stdin carries things like PR bodies, stdout is unbounded, and argv holds no
 /// credentials — tokens travel via settings and env, not flags.
 fn spawn_span(
     cmd: &str,
@@ -151,23 +126,17 @@ fn record_exit(span: &tracing::Span, exit_code: i32) {
     span.record("outcome", if exit_code == 0 { "ok" } else { "non_zero_exit" });
 }
 
-/// Stamp `outcome` on a span whose process never produced an exit code, and
-/// build the matching error. The single home for the failure vocabulary, so
-/// adding an outcome or renaming the field is one edit rather than one per
-/// spawn site.
+/// The single home for the failure vocabulary, so adding an outcome or renaming
+/// the field is one edit rather than one per spawn site.
 fn spawn_error(span: &tracing::Span, outcome: &str, cmd: &str, source: std::io::Error) -> Error {
     span.record("outcome", outcome);
     Error::Spawn { cmd: cmd.to_string(), source }
 }
 
 /// Record a process this crate does *not* run to completion: a PTY shell, a
-/// long-lived language server, a detached editor. Those have a different
-/// lifecycle than [`run`] and friends — there is no exit code to wait for —
-/// so they can't use the span-per-call shape, but they still belong in the
-/// event log, which is what makes "what did the app launch?" answerable.
-///
-/// Emits a single event rather than a span, since there is no duration to
-/// close over. `kind` names the launch shape (`"pty"`, `"lsp"`, `"editor"`).
+/// language server, a detached editor. No exit code to wait for, so a single
+/// event rather than a span — but it still belongs in the event log, which is
+/// what makes "what did the app launch?" answerable. `kind` names the shape.
 pub fn record_detached_spawn(cmd: &str, args: &[&str], kind: &str) {
     tracing::debug!(
         "process.executable.name" = cmd,
@@ -197,12 +166,9 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
     })
 }
 
-/// Run a command, capturing output, but give up after `timeout`. On expiry the
-/// child is killed (and reaped) and `Err(Error::Timeout)` is returned so a hung
-/// subprocess can't block the caller forever. Does not fail on a non-zero exit.
-///
-/// stdout/stderr are drained on dedicated threads while the child runs, so a
-/// chatty child can't deadlock by filling a pipe the parent isn't reading.
+/// On expiry the child is killed (and reaped) so a hung subprocess can't block
+/// the caller forever. Does not fail on a non-zero exit. stdout/stderr drain on
+/// dedicated threads, so a chatty child can't deadlock on a full pipe.
 pub fn run_with_timeout(cmd: &str, args: &[&str], timeout: Duration) -> Result<Output> {
     run_with_timeout_in(cmd, args, None, &[], timeout)
 }
@@ -269,17 +235,16 @@ fn run_with_timeout_in(
         .map_err(|source| spawn_error(&span, "wait_failed", cmd, source))?;
 
     let Some(status) = status else {
-        // Timed out: kill and reap so we don't leave a zombie. The drain threads
-        // then observe EOF on the closed pipes and finish on their own.
+        // Kill and reap so we don't leave a zombie; the drain threads then
+        // observe EOF on the closed pipes.
         let _ = child.kill();
         let _ = child.wait();
         span.record("outcome", "timed_out");
         return Err(Error::Timeout { cmd: display_cmd(cmd, args), timeout });
     };
 
-    // The child has exited, so its pipes are closed and the drain threads will
-    // return promptly. `join` only errors if a thread panicked — treat that as
-    // empty output rather than propagating a panic.
+    // `join` only errors if a drain thread panicked — treat that as empty
+    // output rather than propagating the panic.
     let stdout = out_thread.join().unwrap_or_default();
     let stderr = err_thread.join().unwrap_or_default();
 
@@ -311,7 +276,6 @@ mod tests {
         let start = std::time::Instant::now();
         let err = run_with_timeout("sleep", &["5"], Duration::from_millis(200)).unwrap_err();
         assert!(matches!(err, Error::Timeout { .. }));
-        // The kill must happen near the timeout, not after the full 5s sleep.
         assert!(start.elapsed() < Duration::from_secs(2));
     }
 
@@ -346,14 +310,13 @@ mod tests {
     fn run_in_dir_with_timeout_sets_cwd() {
         let dir = std::env::temp_dir();
         let output = run_in_dir_with_timeout("pwd", &[], &dir, Duration::from_secs(5)).unwrap();
-        // Canonicalize both sides: temp_dir is often a symlink (e.g. /tmp → /private/tmp).
+        // temp_dir is often a symlink, so canonicalize both sides.
         let reported = std::fs::canonicalize(output.stdout.trim()).unwrap();
         assert_eq!(reported, std::fs::canonicalize(&dir).unwrap());
     }
 
     #[test]
     fn app_instance_env_prefixes_are_stripped() {
-        // Every documented app-instance var (issue #39) must be recognized.
         for key in [
             "TT_DEV_PORT",
             "TT_SESSION_ID",
@@ -373,8 +336,6 @@ mod tests {
 
     #[test]
     fn ordinary_env_survives() {
-        // Vars a shell needs, plus look-alikes that merely contain a prefix
-        // (not at the start), must all survive.
         for key in [
             "PATH",
             "HOME",
@@ -426,7 +387,6 @@ mod tests {
 
     #[test]
     fn scrub_accepts_owned_pairs() {
-        // The app passes owned Strings from the inherited env.
         let env = vec![
             ("TT_DEV_PORT".to_string(), "1440".to_string()),
             ("PATH".to_string(), "/usr/bin".to_string()),
@@ -435,20 +395,12 @@ mod tests {
         assert_eq!(scrubbed, vec![("PATH".to_string(), "/usr/bin".to_string())]);
     }
 
-    /// Run `body` with an event-log-backed subscriber installed, returning the
-    /// `process.spawn` records it produced. A local subscriber, so these tests
-    /// don't fight over the global one.
-    ///
-    /// **Serialized across the whole binary**, which is load-bearing, not tidiness.
-    /// `with_default` installs a *thread-local* subscriber, but `tracing`'s
-    /// callsite-interest cache is **global**: one thread could evaluate `spawn_span`'s
-    /// callsite while another sat between `with_default` calls, caching "never
-    /// interested" and silently dropping the other's span — reproducing as `index out
-    /// of bounds: the len is 0` once per ~60 runs, never under `--test-threads=1`.
-    /// Holding the lock means only one subscriber is ever installed.
-    ///
-    /// Deliberately poison-tolerant: a panicking body must fail that one test, not
-    /// cascade into the rest of the module.
+    /// Runs `body` under a local event-log subscriber, returning its
+    /// `process.spawn` records. **Serialized across the whole binary**, which is
+    /// load-bearing: `with_default` is thread-local but `tracing`'s
+    /// callsite-interest cache is global, so a thread evaluating a callsite
+    /// while another sits between `with_default` calls caches "never
+    /// interested" and silently drops the other's span.
     fn spawn_records(body: impl FnOnce()) -> Vec<serde_json::Value> {
         use tracing_subscriber::prelude::*;
 
@@ -506,8 +458,7 @@ mod tests {
             run_in_dir_with_timeout("pwd", &[], dir.path(), Duration::from_secs(10)).unwrap();
         });
 
-        // The cwd is what attributes a `gh` call to a specific checkout, which
-        // is the whole point of recording it.
+        // The cwd is what attributes a `gh` call to a specific checkout.
         assert_eq!(records[0]["process.working_directory"], dir.path().display().to_string());
         assert_eq!(records[0]["timeout_ms"], 10_000);
     }

@@ -50,12 +50,9 @@ fn local_datetime(ms: i64) -> DateTime<Local> {
 /// (local calendar day, local hour) pair.
 ///
 /// `cutoff_ms` (from [`crate::calculate_cutoff_ms`], `0` = no filtering) is
-/// applied per-*prompt*, not just per-session: `details` was already
-/// filtered by session mtime, which is not the same window. A long-running
-/// or resumed session can be touched (and pass the mtime filter) today while
-/// carrying prompt timestamps from months earlier — without this second
-/// filter, a "last 30 days" cadence view would silently include prompts from
-/// well outside that window.
+/// applied per-*prompt*, not just per-session: `details` was filtered by session
+/// mtime, and a resumed session touched today can carry prompt timestamps from
+/// months earlier.
 pub fn build_cadence(details: &[SessionDetail], cutoff_ms: i64) -> CadenceSummary {
     let mut by_day: BTreeMap<String, i64> = BTreeMap::new();
     let mut by_day_hour: BTreeMap<(String, u8), i64> = BTreeMap::new();

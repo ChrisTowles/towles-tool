@@ -29,15 +29,11 @@ export type Attention = {
   clearDismissals: () => Promise<void>;
 };
 
-/**
- * The rail's compact attention strip: failing/review PRs + the next imminent
- * meeting. A dismissed PR stays hidden until it changes again (see
- * `isItemDismissed`), and "clear dismissals" brings the whole set back.
- */
+// Failing/review PRs plus the next imminent meeting. A dismissed PR stays
+// hidden until it changes again (`isItemDismissed`).
 export function useAttention(args: {
   snapshot: StoreSnapshot;
   now: number;
-  /** Opens a screen — the meeting row jumps to the Cockpit. */
   openTab: (id: "cockpit") => void;
 }): Attention {
   const { snapshot, now, openTab } = args;

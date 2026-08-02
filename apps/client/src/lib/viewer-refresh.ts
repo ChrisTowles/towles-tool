@@ -1,19 +1,11 @@
-/**
- * What the code viewer does when its open file changes on disk (the
- * `ide://file-changed` event) — the policy behind agent-edit refresh, kept
- * pure so it's testable without Monaco.
- *
- * The mtime compare is the own-save suppressor: the viewer's ⌘S lands on
- * disk and fires the watcher too, but by then the buffer's mtime token
- * already matches the disk, so the echo is ignored instead of re-read into
- * a self-reload loop.
- */
+/** What the code viewer does when its open file changes on disk
+ * (`ide://file-changed`), kept pure so it's testable without Monaco. The mtime
+ * compare is the own-save suppressor: ⌘S fires the watcher too, but the
+ * buffer's token already matches disk, so the echo can't start a reload loop. */
 
-/** How long typing must pause before an editable buffer (the file viewer,
- * the diff pane's modified sides) auto-saves. ⌘S stays as save-now; a file
- * in conflict never auto-saves (resolution is the banner's explicit choice),
- * and neither does a deleted-on-disk one (recreating it is ⌘S's deliberate
- * act). */
+/** How long typing must pause before an editable buffer auto-saves. A file in
+ * conflict never auto-saves, and neither does a deleted-on-disk one — ⌘S stays
+ * the deliberate act for both. */
 export const AUTOSAVE_DELAY_MS = 1000;
 
 export type DiskChangeAction =

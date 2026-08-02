@@ -16,49 +16,28 @@ import {
 import { invoke } from "@/lib/tauri";
 
 export type WindowLayout = {
-  /** The whole persisted layout — null until the first backend payload lands. */
   wins: WindowsPayload | null;
-  /** Apply `fn` to the layout and schedule a debounced save, naming the folder
-   * dirs it touched (the backend merges per folder — see `WindowsStore::save`). */
   updateWins: (folderDirs: string[], fn: (w: WindowsPayload) => WindowsPayload) => void;
-  /** Add a pane (session, diff, files, preview) to its folder's focused window. */
   addPaneToActive: (folderDir: string, paneId: string) => void;
-  /** Drop one pane from whichever window holds it. */
   removePane: (paneId: string) => void;
-  /** Swap a pane's occupant while it keeps its place in the tiling — a crashed
-   * session handing its tile to its tombstone. */
   replacePaneInPlace: (from: string, to: string) => void;
-  /** Drop whichever pane a session occupies — its terminal or its tombstone. */
   removeSessionPane: (sessionId: string) => void;
 };
 
-/**
- * Window layout (Tier 5): frontend-owned, hydrated once from the backend
- * payload, saved back debounced. After hydration this local copy is the live
- * truth and only ever flows outward.
- *
- * The layout is also reconciled against reality on every change — sessions and
- * folders vanish out from under the persisted blob (closed by another task's
- * app instance, a repo removed with non-live session records, a crash before
- * the debounced save), leaving ghost pane ids holding a tile with nothing to
- * render in it. See the prune effect for why locally-mounted terminals count
- * as valid before the backend catches up.
- */
+// Hydrated once from the backend, then frontend-owned and saved back debounced.
+// Reconciled on every change: sessions and folders vanish out from under the
+// persisted blob, leaving ghost pane ids holding a tile with nothing to render.
 export function useWindowLayout(args: {
   state: StatePayload;
   repos: RepoData[];
-  /** Session ids whose PTY is mounted locally, and their cwds — both carve-outs
-   * in the prune below, so a just-created session's pane never loses the race. */
   open: string[];
   cwds: React.RefObject<Record<string, string>>;
 }): WindowLayout {
   const { state, repos, open, cwds } = args;
   const [wins, setWins] = useState<WindowsPayload | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Folder dirs actually mutated since the last flush — the backend merges
-  // by folder dir on save, so it needs to know which ones we touched (a
-  // never-hydrated-vs-explicitly-emptied folder look identical in the blob
-  // alone; see `WindowsStore::save`'s doc comment).
+  // The backend merges by folder dir on save, so it needs which ones we touched:
+  // never-hydrated and explicitly-emptied are identical in the blob alone.
   const dirtyWinFolders = useRef<Set<string>>(new Set());
 
   function scheduleSave(next: WindowsPayload, folderDirs: string[]) {
@@ -80,11 +59,6 @@ export function useWindowLayout(args: {
   }
 
   useEffect(() => {
-    // Hydrate from the first real payload (mock or ab_get_state); after that
-    // the local copy is the live truth and only flows outward. `hydrateWins`
-    // is the parse boundary: paneless windows restored from old blobs are
-    // residue (the empty-pane state is unrepresentable now) — swept there,
-    // and the sweep is persisted if it changed anything.
     if (wins !== null || state.ts === 0) return;
     const hydrated = hydrateWins(state.windows);
     setWins(hydrated);
@@ -93,13 +67,9 @@ export function useWindowLayout(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scheduleSave is stable within a render; the reactive inputs are all listed
   }, [wins, state.ts, state.windows]);
 
-  // Locally-mounted terminals (`open`) count as valid even before the
-  // backend's state event catches up, so a just-created session's pane never
-  // loses the race to this prune — and so do their folders (via the cwd
-  // recorded at mount): a just-created task's window is keyed on a folder dir
-  // the backend hasn't broadcast yet, and without that carve-out this prune
-  // ate the whole window (and persisted the loss), leaving the new task's main
-  // area empty until re-clicked.
+  // Locally-mounted terminals (`open`) and their cwds count as valid before the
+  // backend's state event catches up, or this prune eats — and persists the
+  // loss of — a just-created task's window, keyed on a dir not yet broadcast.
   useEffect(() => {
     if (!wins) return;
     const validSessions = new Set(open);
@@ -119,15 +89,11 @@ export function useWindowLayout(args: {
         pruneWins(cur, validSessions, validFolders),
       );
     }
-    // updateWins is stable within a render pass; wins/repos/open are the inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- updateWins is stable within a render; the reactive inputs are all listed
   }, [wins, repos, open]);
 
-  // Add a pane (session or diff) to its own folder's focused window — the
-  // placement rules live in the pure `placePane` reducer (lib/agentboard.ts).
-  // A session reclaims its own tombstone first: the crashed pane is that
-  // session's task, so reopening fills it in place instead of `placePane`
-  // appending a second pane beside the corpse.
+  // A session reclaims its own tombstone first, so reopening fills the crashed
+  // pane in place instead of appending a second pane beside the corpse.
   function addPaneToActive(folderDir: string, paneId: string) {
     updateWins([folderDir], (w) =>
       placePane(replacePane(w, exitPaneId(paneId), paneId), folderDir, paneId, nextWindowId),
@@ -135,8 +101,6 @@ export function useWindowLayout(args: {
   }
 
   function removePane(paneId: string) {
-    // A pane lives in exactly one folder's window; find it before mutating
-    // so we know which single folder to mark touched.
     const folderDir = wins?.windows.find((win) => win.panes.includes(paneId))?.folderDir;
     updateWins(folderDir ? [folderDir] : [], (w) => dropPane(w, paneId));
   }
@@ -146,10 +110,8 @@ export function useWindowLayout(args: {
     updateWins(folderDir ? [folderDir] : [], (w) => replacePane(w, from, to));
   }
 
-  /** Remove whichever pane a session currently occupies — its terminal, or the
-   * tombstone that replaced it when the shell crashed. Every session-keyed
-   * removal (close, worktree delete) goes through here, so none of them has
-   * to know which of the two it's looking at. */
+  // Terminal or the tombstone that replaced it — every session-keyed removal
+  // comes through here, so no caller has to know which of the two it sees.
   function removeSessionPane(sessionId: string) {
     const ids = [sessionId, exitPaneId(sessionId)];
     const folderDir = wins?.windows.find((win) =>

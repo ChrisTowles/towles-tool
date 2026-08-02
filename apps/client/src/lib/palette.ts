@@ -4,16 +4,12 @@ import type { IssueItem, PrItem } from "./data";
 import { SCREENS, type ScreenId } from "./screens";
 
 /**
- * Pure builders for the command palette's dynamic sections (repos, sessions,
- * open PRs, open issues). Kept out of the component so the ordering/labelling rules are
- * unit-testable without a DOM: the palette itself just maps these to
- * `<CommandItem>`s. All are read-only projections of the agentboard state and
- * store snapshot — nothing here writes.
+ * Pure builders for the palette's dynamic sections — read-only projections of
+ * the agentboard state and store snapshot, unit-testable without a DOM.
  */
 
 /** A checkout (folder) to jump to in Agentboard. */
 export type PaletteRepoEntry = {
-  /** Stable de-dupe/react key. */
   key: string;
   folderDir: string;
   /** Repo name, e.g. `octo/widgets` (the rail's logical repo). */
@@ -21,9 +17,7 @@ export type PaletteRepoEntry = {
   /** Checkout name — distinguishes worktrees/tasks of the same repo. */
   folderName: string;
   branch: string;
-  /** Sessions in this checkout that need attention right now. */
   needs: number;
-  /** Extra fuzzy-match terms (repo, folder, branch). */
   keywords: string[];
 };
 
@@ -40,7 +34,6 @@ export type PaletteSessionEntry = {
   keywords: string[];
 };
 
-/** An open PR to open in the browser. */
 export type PalettePrEntry = {
   key: string;
   url: string;
@@ -51,14 +44,12 @@ export type PalettePrEntry = {
   keywords: string[];
 };
 
-/** A "create a todo from the current query" action. */
 export type PaletteQuickAddEntry = {
   key: string;
   /** Trimmed query — the title the todo is created with. */
   title: string;
 };
 
-/** An open issue to open in the browser. */
 export type PaletteIssueEntry = {
   key: string;
   url: string;
@@ -114,8 +105,7 @@ export function paletteSessionEntries(repos: RepoData[]): PaletteSessionEntry[] 
   return stableSortByNeeds(out, (e) => e.needs);
 }
 
-/** One entry per open PR, newest-updated first. Non-open PRs are dropped —
- * the palette action opens the PR page, which only makes sense while it's live. */
+/** Open PRs only, newest-updated first — the action opens the PR page. */
 export function palettePrEntries(prs: PrItem[]): PalettePrEntry[] {
   return prs
     .filter((p) => p.state === "open")
@@ -132,8 +122,7 @@ export function palettePrEntries(prs: PrItem[]): PalettePrEntry[] {
     }));
 }
 
-/** One entry per open issue, newest-updated first. Non-open issues are dropped —
- * the palette action opens the issue page, which only makes sense while it's live. */
+/** Open issues only, newest-updated first — the action opens the issue page. */
 export function paletteIssueEntries(issues: IssueItem[]): PaletteIssueEntry[] {
   return issues
     .filter((i) => i.state === "open")
@@ -149,35 +138,20 @@ export function paletteIssueEntries(issues: IssueItem[]): PaletteIssueEntry[] {
     }));
 }
 
-/** The quick-add action for the current palette query, or `null` when the query
- * is empty/whitespace (nothing to name a todo). The trimmed query is preserved
- * verbatim as the title — long text and internal whitespace stay intact. */
+/** `null` for an empty query — nothing to name a todo. The trimmed query is
+ * the title verbatim; long text and internal whitespace stay intact. */
 export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null {
   const title = query.trim();
   if (!title) return null;
   return { key: "quick-add", title };
 }
 
-/** How many MRU screens the Recent group shows — a shortcut, not a second full
- * screen list. */
+/** A shortcut, not a second full screen list. */
 const RECENT_LIMIT = 4;
 
 /**
- * The screens the "Recent" group renders: MRU minus the screen you're already
- * looking at, capped, and **empty whenever the query is non-empty**.
- *
- * The emptying is the fix for the exact-title-match bug, not a cosmetic choice.
- * cmdk ranks *items* within a group by score correctly, but its cross-group
- * ordering is broken for any heading containing a character `encodeURIComponent`
- * escapes: it looks the group element up with
- * `[cmdk-group][data-value="${encodeURIComponent(heading)}"]` while the element
- * carries the heading verbatim, so `Go to` never matches and that group is never
- * hoisted. The first group in DOM order therefore keeps the initial selection —
- * with Agentboard in Recent, typing `Board` auto-selected `Recent > Agentboard`
- * and Enter navigated to the wrong screen. Recent is a zero-query convenience
- * (every screen is already in "Go to"), so dropping it while searching both
- * removes the duplicate rows and leaves "Go to" as the first group, where the
- * within-group score sort puts the exact match on top.
+ * Empty while searching: cmdk can't hoist a group whose heading contains an
+ * escaped character, so Recent's duplicate rows stole "Go to"'s exact match.
  */
 export function paletteRecentScreens(
   recent: readonly string[],
@@ -191,14 +165,8 @@ export function paletteRecentScreens(
 }
 
 /**
- * Palette scoring: an exact match of an item's own value wins outright, else
- * cmdk's default fuzzy score.
- *
- * cmdk's default filter appends an item's keywords to its value before scoring,
- * so typing a screen's exact title (`Board`) scores 0.99 rather than 1 and can
- * be tied or beaten by a longer entry that happens to contain it. Typing
- * something's full name is an unambiguous statement of intent, so it ranks first
- * regardless of what else matched.
+ * An exact match of an item's own value wins outright: cmdk's default appends
+ * keywords before scoring, so an exact title scores 0.99 and can be beaten.
  */
 export function paletteFilter(value: string, search: string, keywords?: string[]): number {
   const q = search.trim().toLowerCase();
@@ -206,9 +174,8 @@ export function paletteFilter(value: string, search: string, keywords?: string[]
   return defaultFilter(value, search, keywords);
 }
 
-/** Stable partition: entries flagged by `needs` keep their relative order but
- * come first. (`Array.prototype.sort` is stable in modern engines, but a plain
- * partition makes the intent obvious and avoids comparator sign juggling.) */
+/** Stable partition: entries flagged by `needs` come first, keeping their
+ * relative order. A partition rather than a comparator, for legibility. */
 function stableSortByNeeds<T>(items: T[], needs: (item: T) => boolean): T[] {
   const hot: T[] = [];
   const rest: T[] = [];

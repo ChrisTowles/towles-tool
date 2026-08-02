@@ -140,10 +140,8 @@ impl RepoMetaStore {
     ///
     /// Deliberately not a poll-driven `prune(&dirs)` like the sibling stores:
     /// those hold derived state that regenerates, this holds a hand-picked
-    /// choice with no undo. Reaping it on a churny dirs-set (see the note in
-    /// `Engine::poll`) would silently destroy the user's work; a repo that
-    /// merely goes missing keeps its identity, so retracking restores it.
-    /// Returns whether anything was forgotten; caller persists on `true`.
+    /// choice with no undo, so a repo that merely goes missing keeps its
+    /// identity. Returns whether anything was forgotten; caller persists.
     pub fn forget(&mut self, dir: &str) -> bool {
         if self.repos.remove(dir).is_none() {
             return false;

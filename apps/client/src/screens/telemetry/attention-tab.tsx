@@ -4,29 +4,15 @@ import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits
 import { cn } from "@/lib/utils";
 import { fmtDuration, focusShare, type AttentionSummary, type FocusSession } from "@/lib/telemetry";
 
-/**
- * Attention — the Telemetry screen's derived view, over the same day the Log
- * tab browses raw. Where the other tabs answer "what did the app record?",
- * this one answers "where did the day go?": how long the window actually held
- * focus, in how many unbroken stretches, what was clicked and on which
- * screens, how often the app interrupted, and how much of the elapsed time
- * was spent waiting on subprocesses.
- *
- * Every number here is computed in Rust (`crates/tt-telemetry/src/
- * attention.rs`) and arrives as one small `AttentionSummary`, so this file is
- * presentation only — no aggregation, no second definition of what a focus
- * session is. Read that module for the two counting rules that surprise
- * people (event identity comes from `message`, not `name`; hour buckets are
- * local while the day file is UTC).
- */
+/** Attention — where the day went. Presentation only: every number is computed in
+ * `crates/tt-telemetry/src/attention.rs`, along with the two counting rules that surprise
+ * people (event identity from `message`, not `name`; local hour buckets over a UTC day). */
 
-/** A day with fewer than this many focus stretches has no fragmentation story
- * worth telling — one or two short glances is just a quiet day, not thrash. */
+/** Below this, a stretch or two is a quiet day rather than thrash. */
 const FRAGMENT_CALLOUT_MIN_SESSIONS = 4;
 
-/** Fragmented share of the day's stretches at or above which the callout
- * fires. Half the day's focus being glances is the point where "you kept
- * bouncing off this app" is a real observation rather than noise. */
+/** Half the day's stretches being glances is where "you kept bouncing off this
+ * app" becomes an observation rather than noise. */
 const FRAGMENT_CALLOUT_RATIO = 0.5;
 
 export function AttentionTab({
@@ -193,12 +179,9 @@ export function AttentionTab({
   );
 }
 
-/**
- * Focused time per local hour, all 24 shown. The empty hours are the point:
- * a chart of only the busy ones hides the shape of the day, and the shape is
- * what this tab is for. Bars scale against a full hour rather than against
- * the busiest hour, so a bar's height means the same thing on every day.
- */
+/** Focused time per local hour, all 24 shown — the empty ones are the shape of the
+ * day, which is what this tab is for. Bars scale against a full hour rather than the
+ * busiest one, so a bar's height means the same thing on every day. */
 function HourChart({ hours }: { hours: AttentionSummary["hours"] }) {
   const busiest = Math.max(1, ...hours.map((h) => h.actions));
   return (
@@ -246,12 +229,9 @@ function Legend({ className, label }: { className: string; label: string }) {
   );
 }
 
-/**
- * Every focus stretch placed on one strip spanning the first to the last
- * stretch of the day, so the gaps between them are as visible as the blocks —
- * a day of six evenly spaced check-ins looks nothing like a day with one long
- * afternoon, and the totals above can't tell them apart.
- */
+/** One strip from the day's first stretch to its last, so the gaps read as loudly
+ * as the blocks — six evenly spaced check-ins and one long afternoon have totals
+ * that can't tell them apart. */
 function FocusTimeline({ sessions }: { sessions: FocusSession[] }) {
   const placed = useMemo(() => {
     const start = new Date(sessions[0]?.start ?? "").getTime();
@@ -262,8 +242,7 @@ function FocusTimeline({ sessions }: { sessions: FocusSession[] }) {
       key: `${s.start}-${i}`,
       session: s,
       leftPct: ((new Date(s.start).getTime() - start) / span) * 100,
-      // Floored so a 30-second stretch on an eight-hour strip is still a
-      // visible tick rather than a sub-pixel nothing.
+      // Floored so a 30-second stretch on an eight-hour strip stays visible.
       widthPct: Math.max(0.6, (s.durationMs / span) * 100),
     }));
   }, [sessions]);
@@ -287,9 +266,8 @@ function FocusTimeline({ sessions }: { sessions: FocusSession[] }) {
   );
 }
 
-/** A bar row whose right-hand column is a formatted string rather than a raw
- * count — `BarRow` renders the number it scales by, which is milliseconds
- * here and unreadable as digits. */
+/** A bar row with a formatted right column — `BarRow` renders the number it scales
+ * by, which is milliseconds here and unreadable as digits. */
 function MeterRow({
   label,
   value,
@@ -330,8 +308,8 @@ function Figure({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Median rather than mean: one four-hour stretch among a dozen glances would
- * drag an average up to something the day never looked like. */
+/** Median, not mean: one four-hour stretch among a dozen glances drags an average
+ * up to something the day never looked like. */
 function medianDuration(sessions: FocusSession[]): number {
   if (sessions.length === 0) return 0;
   const sorted = sessions.map((s) => s.durationMs).toSorted((a, b) => a - b);

@@ -2,11 +2,8 @@ import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
 
-/**
- * Flips between explicit light and dark. "system" (the default until the user
- * clicks) resolves against the OS preference here so the first click always
- * inverts what's currently on screen.
- */
+/** Flips between explicit light and dark. "system" resolves against the OS
+ * preference here so the first click always inverts what's on screen. */
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
 

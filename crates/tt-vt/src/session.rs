@@ -3,15 +3,12 @@
 //! channels and receive [`Event`]s on a sink callback run on that thread.
 //!
 //! Batching falls out of the loop shape: one blocking wait, drain everything queued,
-//! then a single render pass, so a PTY flood coalesces into one frame. Renders are also
-//! throttled to [`MIN_FRAME_INTERVAL`] — without it every chunk gets its own frame
-//! event, the UI queue backs up faster than the webview paints, and input latency grows
-//! with sustained output. Two problems the throttle alone doesn't solve, both handled
-//! by splitting byte and control input onto separate channels. **Bounded memory**: a
-//! firehose into a slow webview would queue raw bytes unbounded, so bytes ride a
-//! *bounded* channel ([`MAX_QUEUED_BYTE_CHUNKS`]) and once full the reader blocks, the
-//! kernel's PTY buffer fills and the shell gets real flow control. **Responsive UI**:
-//! control rides an *unbounded* channel the engine drains first, never behind bytes.
+//! then a single render pass, so a PTY flood coalesces into one frame throttled to
+//! [`MIN_FRAME_INTERVAL`]. Two problems the throttle alone doesn't solve are handled by
+//! splitting byte and control input onto separate channels. **Bounded memory**: bytes
+//! ride a *bounded* channel ([`MAX_QUEUED_BYTE_CHUNKS`]); once full the reader blocks,
+//! the kernel's PTY buffer fills and the shell gets real flow control. **Responsive
+//! UI**: control rides an *unbounded* channel the engine drains first.
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -23,38 +20,26 @@ use crate::engine::{
 use crate::frame::Frame;
 use crate::search::SearchMatch;
 
-/// Minimum time between render passes (~90 fps). Caps how fast frames can be
-/// produced so the UI side can never fall behind unboundedly.
+/// Minimum time between render passes (~90 fps), so the UI can't fall behind.
 const MIN_FRAME_INTERVAL: Duration = Duration::from_micros(1_000_000 / 90);
 
 /// Render interval while the pane is hidden (~2 fps). Frontend panes never
-/// unmount — a backgrounded tab sits behind another one at `display:none` —
-/// so without this a session streaming output (an active agent, a chatty
-/// build) keeps rendering at the interactive cap for a canvas nothing is
-/// painting. Still fast enough to keep title/cursor state fresh for the
-/// rail's live label; [`Input::RequestFull`] catches the canvas up in full
-/// once the pane is shown again.
+/// unmount, so without this a streaming session renders at the interactive cap
+/// for a canvas nothing paints. [`Input::RequestFull`] catches it up later.
 const HIDDEN_FRAME_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Longest a synchronized-output batch (DEC mode 2026) may hold rendering.
-/// While an application keeps BSU open the loop defers frames so half-drawn
-/// updates never reach the canvas — but a program that crashes mid-batch
-/// must not freeze the pane, so after this long the frame ships anyway.
-/// 150 ms matches the hold cap other emulators use (kitty, contour).
+/// Longest a synchronized-output batch (DEC mode 2026) may hold rendering — a
+/// program that crashes mid-batch must not freeze the pane. Matches kitty.
 const SYNC_OUTPUT_MAX_HOLD: Duration = Duration::from_millis(150);
 
-/// Cap on unconsumed PTY byte chunks queued for the engine. At the PTY
-/// reader's 64 KiB read size this bounds the in-flight backlog to ~4 MB —
-/// far more than any interactive burst, so normal output never blocks, but a
-/// firehose into a stalled engine blocks the reader instead of ballooning
-/// memory. Control inputs are never counted against this bound.
+/// Cap on unconsumed PTY byte chunks queued for the engine — ~4 MB in flight
+/// at the reader's 64 KiB read size, far above any interactive burst. A
+/// firehose blocks the reader rather than ballooning memory; control is exempt.
 const MAX_QUEUED_BYTE_CHUNKS: usize = 64;
 
 pub enum Input {
-    /// Raw PTY output bytes.
     Bytes(Vec<u8>),
-    /// A keystroke to encode against live terminal state and write to the
-    /// PTY (see [`Engine::key`]).
+    /// A keystroke to encode against live terminal state and write to the PTY.
     Key(KeyEvent),
     Resize {
         cols: u16,
@@ -64,32 +49,28 @@ pub enum Input {
     },
     /// Scroll the viewport by rows (up is negative); `None` jumps to bottom.
     Scroll(Option<isize>),
-    /// A mouse-wheel gesture at viewport cell (`x`, `y`), `lines` rows (up
-    /// is negative). The engine picks what it means: scrollback paging, a
-    /// wheel report to the program, or alternate-scroll arrow keys (see
-    /// [`Engine::wheel`]).
-    Wheel { x: u16, y: u16, lines: i32 },
-    /// A pointer event for the program, when it enabled mouse tracking (see
-    /// [`Engine::mouse`]).
+    /// A mouse-wheel gesture at viewport cell (`x`, `y`). [`Engine::wheel`]
+    /// decides: scrollback paging, a wheel report, or alternate-scroll keys.
+    Wheel {
+        x: u16,
+        y: u16,
+        lines: i32,
+    },
+    /// A pointer event for the program, when it enabled mouse tracking.
     Mouse(MouseInput),
-    /// The pane gained/lost keyboard focus — reported to the program when it
-    /// asked for focus events, mode 1004 (see [`Engine::focus`]).
+    /// Reported to the program when it asked for focus events (mode 1004).
     Focus(bool),
-    /// Apply a selection operation.
     Select(Select),
-    /// Reply with the active selection's plain text on the provided channel.
+    /// Replies with the active selection's plain text.
     Copy(mpsc::SyncSender<Option<String>>),
-    /// Paste text into the shell through libghostty's paste encoder (strips
-    /// dangerous control bytes, honors bracketed paste). The outcome is sent
-    /// on `reply`; `NeedsConfirm` means nothing was written (see
-    /// [`Engine::paste`]).
+    /// Paste through libghostty's encoder (strips dangerous control bytes,
+    /// honors bracketed paste). `NeedsConfirm` means nothing was written.
     Paste {
         text: String,
         force: bool,
         reply: mpsc::SyncSender<PasteOutcome>,
     },
-    /// Case-insensitive scrollback search; matches (up to `limit`) are sent
-    /// back on the provided channel, top to bottom.
+    /// Case-insensitive scrollback search; matches come back top to bottom.
     Search {
         query: String,
         limit: usize,
@@ -97,33 +78,28 @@ pub enum Input {
     },
     /// Scroll the viewport so the given absolute row is visible.
     ScrollTo(usize),
-    /// Force the next render to be a full frame (re-shown pane needs a
-    /// complete repaint; see [`Engine::request_full`]).
+    /// Force a full frame — a re-shown pane needs a complete repaint.
     RequestFull,
-    /// Drop scrollback history, keeping the visible screen (see
-    /// [`Engine::clear_scrollback`]).
+    /// Drop scrollback history, keeping the visible screen.
     ClearScrollback,
-    /// The pane was shown or hidden in the frontend — widens the render
-    /// interval to [`HIDDEN_FRAME_INTERVAL`] while hidden.
+    /// Widens the render interval to [`HIDDEN_FRAME_INTERVAL`] while hidden.
     Visibility(bool),
-    /// Push the UI theme (default colors, ANSI palette, dark/light) into the
-    /// emulator so color queries answer the truth (see [`Engine::set_theme`]).
+    /// Push the UI theme into the emulator so color queries answer the truth.
     Theme(Theme),
 }
 
 #[derive(Debug)]
 pub enum Event {
-    /// A render frame for the UI.
     Frame(Frame),
     /// Bytes the terminal wants written back to the PTY (query replies).
     PtyReply(Vec<u8>),
     /// The program rang the bell (BEL) — an attention signal for the UI.
     Bell,
-    /// The program raised a desktop notification (OSC 9 / OSC 777) — e.g.
-    /// Claude Code asking for input. The body is the notification text.
+    /// A desktop notification (OSC 9 / OSC 777) — e.g. Claude Code asking for
+    /// input.
     Notify(String),
-    /// Text a program copied via an OSC 52 set-clipboard sequence. The host
-    /// writes it to the system clipboard, gated on this terminal being focused.
+    /// Text a program copied via OSC 52. The host writes it to the system
+    /// clipboard, gated on this terminal being focused.
     Clipboard(String),
 }
 
@@ -138,10 +114,7 @@ pub enum SpawnError {
 }
 
 /// Cloneable handle for feeding a session. [`Input::Bytes`] rides a bounded
-/// channel — sending blocks when the engine is behind, which is the
-/// backpressure that reaches the PTY reader. Every other (control) input rides
-/// an unbounded channel the engine drains first, so control is never blocked
-/// behind queued bytes.
+/// channel, and blocking there is the backpressure that reaches the PTY reader.
 #[derive(Clone)]
 pub struct Sender {
     bytes: mpsc::SyncSender<Vec<u8>>,
@@ -150,8 +123,8 @@ pub struct Sender {
 }
 
 impl Sender {
-    /// Send an input to the engine. Bytes may block under backpressure;
-    /// control never does. Returns false once the session thread is gone.
+    /// Bytes may block under backpressure; control never does. False once the
+    /// session thread is gone.
     pub fn send(&self, input: Input) -> bool {
         match input {
             Input::Bytes(bytes) => {
@@ -165,15 +138,13 @@ impl Sender {
                 }
             }
         }
-        // Payload is enqueued; wake the engine. A failed wake means the engine
-        // is gone — the payload send above would then have failed too, so on
-        // success here there is nothing to report.
+        // A failed wake means the engine is gone, which the payload send above
+        // would already have caught.
         let _ = self.wake.send(());
         true
     }
 
-    /// Replace the channels with dead stand-ins so dropping this handle lets
-    /// the engine thread's wake loop end (once every clone is gone too).
+    /// Dead stand-ins, so dropping this handle ends the engine's wake loop.
     fn disconnect(&mut self) {
         let (bytes, _) = mpsc::sync_channel(0);
         self.bytes = bytes;
@@ -190,8 +161,7 @@ pub struct Session {
 }
 
 impl Session {
-    /// Spawn the engine thread. Fails if the engine can't be created
-    /// (creation happens on the new thread; the error is relayed back).
+    /// Engine creation happens on the new thread, so its error is relayed back.
     pub fn spawn(
         opts: EngineOptions,
         mut sink: impl FnMut(Event) + Send + 'static,
@@ -213,26 +183,23 @@ impl Session {
                 }
             };
 
-            // `hidden` is set by `Input::Visibility` and read outside the
-            // closure to pick the render interval, so it takes `&mut bool`
-            // instead of living inside `apply_control`'s captures.
+            // `hidden` picks the render interval outside this closure, so it is
+            // passed rather than captured.
             let apply_control = |engine: &mut Engine, hidden: &mut bool, input: Input| match input {
-                // Bytes never route through the control channel (see
-                // `Sender::send`); feed defensively rather than panic.
+                // Bytes never route here; feed defensively rather than panic.
                 Input::Bytes(b) => engine.feed(&b),
                 Input::Resize { cols, rows, cell_width_px, cell_height_px } => {
-                    // A failed resize (zero cols during layout races)
-                    // keeps the old grid; the next resize fixes it.
+                    // A failed resize (zero cols in a layout race) keeps the
+                    // old grid; the next one fixes it.
                     let _ = engine.resize(cols, rows, cell_width_px, cell_height_px);
                 }
                 Input::Scroll(delta) => engine.scroll(delta),
-                // Encoding can only fail on allocation; a lost keystroke
-                // reads like a dropped input, never a crash.
+                // Encoding fails only on allocation; a lost keystroke or wheel
+                // report reads as dropped input, never a crash. Same for the
+                // mouse, focus, selection and scroll arms below.
                 Input::Key(event) => {
                     let _ = engine.key(&event);
                 }
-                // Encoding can only fail on allocation; the report is
-                // best-effort like any other input.
                 Input::Wheel { x, y, lines } => {
                     let _ = engine.wheel(x, y, lines);
                 }
@@ -242,17 +209,14 @@ impl Session {
                 Input::Focus(focused) => {
                     let _ = engine.focus(focused);
                 }
-                // Out-of-bounds coordinates (layout races) are ignored;
-                // the selection just doesn't change.
                 Input::Select(op) => {
                     let _ = engine.select(op);
                 }
                 Input::Copy(reply) => {
                     let _ = reply.try_send(engine.copy_selection().ok().flatten());
                 }
-                // An FFI failure (allocation-only) reads as pasted-and-lost,
-                // like input dropped by a full queue — never as NeedsConfirm,
-                // which would raise a spurious dialog.
+                // An FFI failure reads as pasted-and-lost; NeedsConfirm here
+                // would raise a spurious dialog.
                 Input::Paste { text, force, reply } => {
                     let _ =
                         reply.try_send(engine.paste(&text, force).unwrap_or(PasteOutcome::Pasted));
@@ -266,8 +230,7 @@ impl Session {
                 Input::RequestFull => engine.request_full(),
                 Input::ClearScrollback => engine.clear_scrollback(),
                 Input::Visibility(visible) => *hidden = !visible,
-                // A failed theme push keeps the old colors; the next theme
-                // change (or a restart) retries.
+                // A failed push keeps the old colors; the next change retries.
                 Input::Theme(theme) => {
                     let _ = engine.set_theme(&theme);
                 }
@@ -276,21 +239,15 @@ impl Session {
             // Start in the past so the first input renders immediately.
             let mut last_render = Instant::now() - MIN_FRAME_INTERVAL;
             let mut hidden = false;
-            // When the application opened a synchronized-output batch
-            // (`Engine::sync_output`); bounds the render hold to
-            // [`SYNC_OUTPUT_MAX_HOLD`] from this instant.
+            // Bounds the render hold to `SYNC_OUTPUT_MAX_HOLD` from the instant
+            // the application opened its synchronized-output batch.
             let mut sync_since: Option<Instant> = None;
-            // Block for a wake, then drain and render. Buffered wakes are
-            // delivered before disconnect, so a dropped session still drains
-            // its queued input before the loop ends.
+            // Buffered wakes arrive before disconnect, so a dropped session
+            // still drains its queued input before the loop ends.
             while wake_rx.recv().is_ok() {
                 let mut applied = false;
-                // Absorb input until the frame interval since the last render
-                // has passed. An idle terminal renders its first input with no
-                // delay; a flood coalesces into ~90 fps frames (or ~2 fps
-                // while hidden — see `HIDDEN_FRAME_INTERVAL`). Control is
-                // drained before bytes on every pass so UI ops never wait
-                // behind queued output.
+                // Absorb input until the frame interval passes; control drains
+                // before bytes so UI ops never wait behind output.
                 loop {
                     while let Ok(input) = control_rx.try_recv() {
                         apply_control(&mut engine, &mut hidden, input);
@@ -301,11 +258,8 @@ impl Session {
                         applied = true;
                     }
                     // A synchronized-output batch (DEC 2026) holds the frame
-                    // until the app closes it (ESU) or the hold cap expires —
-                    // we own both the emulator and the canvas, so honoring it
-                    // means half-drawn TUI updates never reach the screen.
-                    // Past the cap the batch renders anyway and this pass
-                    // falls through to the normal interval pacing below.
+                    // until the app closes it (ESU) or the cap expires, so
+                    // half-drawn TUI updates never reach the screen.
                     if engine.sync_output() {
                         let since = *sync_since.get_or_insert_with(Instant::now);
                         if let Some(hold) = SYNC_OUTPUT_MAX_HOLD.checked_sub(since.elapsed()) {
@@ -326,13 +280,12 @@ impl Session {
                     }
                     match wake_rx.recv_timeout(interval - elapsed) {
                         Ok(()) => continue,
-                        // Timeout: interval reached. Disconnected: render what
-                        // we have; the outer recv ends the loop.
+                        // Interval reached, or disconnected: render what we
+                        // have and let the outer recv end the loop.
                         Err(_) => break,
                     }
                 }
-                // A lone wake token whose payload an earlier pass already
-                // drained: nothing changed, so skip the render.
+                // A lone wake token an earlier pass already drained.
                 if !applied {
                     continue;
                 }
@@ -356,8 +309,7 @@ impl Session {
                         last_render = Instant::now();
                     }
                     Ok(None) => {}
-                    // Render errors are terminal-state bugs, not
-                    // recoverable I/O; stop the session.
+                    // Render errors are state bugs, not recoverable I/O.
                     Err(_) => break,
                 }
             }
@@ -370,16 +322,13 @@ impl Session {
         })
     }
 
-    /// Send input to the engine. Bytes block under backpressure (see
-    /// [`Sender::send`]); control never does. Returns false if the session
-    /// thread is gone.
+    /// See [`Sender::send`].
     pub fn send(&self, input: Input) -> bool {
         self.sender.send(input)
     }
 
-    /// A cloneable sender for feeding this session from other threads (e.g. a
-    /// PTY reader). The engine thread exits once the [`Session`] is dropped
-    /// AND every cloned sender is gone.
+    /// For feeding this session from other threads. The engine thread exits
+    /// once the [`Session`] is dropped AND every clone is gone.
     pub fn sender(&self) -> Sender {
         self.sender.clone()
     }
@@ -387,8 +336,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        // Drop our senders so the thread's wake loop can end once every cloned
-        // sender is gone, then join it.
+        // Drop our senders so the wake loop can end once every clone is gone.
         self.sender.disconnect();
         if let Some(join) = self.join.take() {
             let _ = join.join();
@@ -400,17 +348,14 @@ impl Drop for Session {
 mod tests {
     use super::*;
 
-    /// Generous upper bound on a signal that *should* arrive — a failure here
-    /// means a real hang, not a slow machine.
+    /// A failure against this means a real hang, not a slow machine.
     const TIMEOUT: Duration = Duration::from_secs(5);
-    /// Shorter bound for confirming progress has *stopped* (the feeder blocked).
-    /// Successive accepted chunks arrive microseconds apart, so a gap this long
-    /// means the bounded queue is genuinely full.
+    /// Accepted chunks arrive microseconds apart, so a gap this long means the
+    /// bounded queue is genuinely full.
     const STALL_TIMEOUT: Duration = Duration::from_millis(500);
 
-    /// A sink that parks the engine thread inside the very first frame it
-    /// emits (and never again), so the test can observe the engine stalled.
-    /// Returns the session plus a "parked" signal and a release trigger.
+    /// A sink that parks the engine thread inside the first frame it emits, so
+    /// a test can observe the engine stalled.
     fn spawn_parked() -> (Session, mpsc::Receiver<()>, mpsc::Sender<()>) {
         let (entered_tx, entered_rx) = mpsc::sync_channel::<()>(1);
         let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -422,7 +367,6 @@ mod tests {
                     if !parked {
                         parked = true;
                         let _ = entered_tx.send(());
-                        // Block the engine thread here until the test releases.
                         let _ = release_rx.recv();
                     }
                 }
@@ -436,19 +380,16 @@ mod tests {
     fn stalled_sink_bounds_the_byte_feed() {
         let (session, entered_rx, release_tx) = spawn_parked();
 
-        // First chunk triggers a frame; the sink parks the engine thread so it
-        // stops draining the byte queue.
+        // First chunk triggers a frame, parking the engine mid-sink.
         assert!(session.send(Input::Bytes(b"hi".to_vec())));
         entered_rx.recv_timeout(TIMEOUT).expect("engine parked in the sink");
 
-        // Feed from another thread, reporting how many chunks the bounded byte
-        // path accepts before it blocks.
         let feeder = session.sender();
         let (count_tx, count_rx) = mpsc::channel::<usize>();
         let handle = std::thread::spawn(move || {
             let mut n = 0;
-            // Cap well above the bound so a broken (unbounded) feed still
-            // terminates the thread instead of hanging the test.
+            // Capped above the bound so a broken (unbounded) feed terminates
+            // instead of hanging the test.
             while n < MAX_QUEUED_BYTE_CHUNKS + 100 {
                 if !feeder.send(Input::Bytes(vec![b'x'])) {
                     break;
@@ -458,8 +399,7 @@ mod tests {
             }
         });
 
-        // Drain progress until it stalls: the feeder blocks once the bounded
-        // queue is full.
+        // Drain progress until it stalls: the feeder blocks once full.
         let mut accepted = 0;
         while let Ok(n) = count_rx.recv_timeout(STALL_TIMEOUT) {
             accepted = n;
@@ -470,8 +410,7 @@ mod tests {
         );
         assert!(!handle.is_finished(), "the feeder is blocked on backpressure, not finished");
 
-        // Release the engine: it drains, frees the queue, and the feeder runs
-        // to its safety cap and exits.
+        // Released, the engine drains and the feeder runs to its safety cap.
         let _ = release_tx.send(());
         handle.join().expect("feeder joins once backpressure lifts");
         drop(session);
@@ -484,7 +423,6 @@ mod tests {
         assert!(session.send(Input::Bytes(b"hi".to_vec())));
         entered_rx.recv_timeout(TIMEOUT).expect("engine parked in the sink");
 
-        // Saturate the byte queue (bounded), then stop; the last send blocks.
         let feeder = session.sender();
         let (satc_tx, satc_rx) = mpsc::channel::<usize>();
         let sat = std::thread::spawn(move || {
@@ -497,15 +435,13 @@ mod tests {
                 let _ = satc_tx.send(n);
             }
         });
-        // Wait until the queue is full (the feeder is now blocked on its next
-        // send).
+        // Wait until the queue is full and the feeder blocks on its next send.
         let mut accepted = 0;
         while accepted < MAX_QUEUED_BYTE_CHUNKS {
             accepted = satc_rx.recv_timeout(TIMEOUT).expect("byte queue fills");
         }
 
-        // With bytes saturated, a control send must still complete promptly —
-        // it rides its own unbounded channel, never blocked behind bytes.
+        // With bytes saturated, a control send must still complete promptly.
         let control = session.sender();
         let (done_tx, done_rx) = mpsc::channel::<bool>();
         std::thread::spawn(move || {
@@ -517,8 +453,7 @@ mod tests {
             "control send accepted while the byte queue is full"
         );
 
-        // Release the engine and confirm control is actually processed while a
-        // byte backlog is pending: a Copy reply comes back.
+        // Confirm control is actually *processed* with a backlog pending.
         let _ = release_tx.send(());
         let (reply_tx, reply_rx) = mpsc::sync_channel::<Option<String>>(1);
         assert!(session.send(Input::Copy(reply_tx)));

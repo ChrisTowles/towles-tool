@@ -1,8 +1,5 @@
-/**
- * The rail rows that aren't a PTY session: the view panes, plus the colored
- * spine bracketing a multi-pane window. A view pane is a *view of* the
- * folder, so it carries no status and closes without asking.
- */
+// The rail rows that aren't a PTY session. A view pane is a *view of* the
+// folder, so it carries no status and closes without asking.
 import { useState } from "react";
 import { AppWindow, Box, Eye, FolderTree, GitCompare } from "lucide-react";
 import { Hint } from "@/components/hint";
@@ -18,10 +15,7 @@ import {
   type AgWindow,
 } from "@/lib/agentboard";
 
-/** Vertical color spine beside a multi-pane window's rows in the rail: the
- * window's group color as a thin bar bracketing its sessions, clicking
- * focuses that window in the pane area. Replaces the old text label — window
- * names carry no signal in the rail; the color + tooltip is enough. */
+/** Color, not a text label: window names carry no signal in the rail. */
 export function WindowSpine({
   win,
   folderWins,

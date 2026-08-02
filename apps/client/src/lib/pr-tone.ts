@@ -1,60 +1,29 @@
 import type { PrItem } from "./data";
 
-/**
- * The one PR-status → hue mapping, shared by every surface that colorizes a
- * PR (repo-header `PrChip`, Cockpit's `ChecksBadge`, the header's attention
- * feed, the Agentboard attention strip, Board link chips). Hues follow the
- * Folder Rail status palette (`statusColor()` in `lib/agentboard.ts`):
- *
- * - `running` → cyan, the rail's busy hue. CI in flight is progress, not a
- *   problem — never red/amber, which read as "act now".
- * - `failed` → red: checks failed, or the PR was closed without merging.
- * - `passing` → green, mirroring the rail's `complete`.
- * - `merged` → purple, matching `LandedBadge` — done, clean up the task.
- * - `review` → blue, the rail's waiting-on-you hue (review requested is a
- *   fact about *you*, orthogonal to the checks axis — callers pick it
- *   explicitly, `prTone` never returns it).
- * - `plain` → neutral: open with no checks reported.
- */
+/** Hues follow the rail's status palette. `running` is cyan, never red/amber:
+ * CI in flight is progress, not "act now". `review` is an axis about *you*, so
+ * callers pick it explicitly and `prTone` never returns it. */
 export type PrTone = "merged" | "failed" | "running" | "passing" | "review" | "plain";
 
-/**
- * Whether a PR demands the owner's attention — **the** definition, shared by
- * every needs-you surface (Cockpit's counts, the Agentboard attention strip,
- * the header's attention feed).
- *
- * It lives beside the tone map rather than in `components/store-bits` because
- * `lib/attention-feed.ts` needs it and a `lib/` module must not import from
- * `components/`. That layering is why the rule used to be restated inline in
- * three places — and they had drifted: the rail strip tested
- * `state !== "merged"` while the header and Cockpit scoped to
- * `state === "open"`, so a closed-but-unmerged PR with failing CI demanded
- * attention in the rail and nowhere else. `=== "open"` is the kept behavior:
- * you closed it, so its red checks are history, not a task.
- */
+/** **The** definition of "this PR wants you", shared by every needs-you
+ * surface; three inline copies had drifted. `=== "open"` is deliberate — you
+ * closed it, so its red checks are history, not a task. */
 export function prNeedsYou(pr: Pick<PrItem, "state" | "checks" | "reviewState">): boolean {
   return prChecksFailing(pr) || (pr.state === "open" && pr.reviewState === "review_requested");
 }
 
-/** The CI half of [`prNeedsYou`] — also the "Checks failing" vs "Review
- * requested" discriminant every caller needs after the predicate passes. */
 export function prChecksFailing(pr: Pick<PrItem, "state" | "checks">): boolean {
   return pr.state === "open" && pr.checks === "failing";
 }
 
-/** PR ordering weight: failing checks outrank review-requested outrank the rest. */
 export function prRank(pr: Pick<PrItem, "state" | "checks" | "reviewState">): number {
   if (prChecksFailing(pr)) return 2;
   if (pr.reviewState === "review_requested") return 1;
   return 0;
 }
 
-/** The subset of tones a checks rollup alone can produce. */
 export type ChecksTone = Extract<PrTone, "failed" | "passing" | "plain" | "running">;
 
-/** Tone of a checks rollup alone, ignoring PR state — for surfaces that show
- * the CI axis by itself (e.g. `ChecksBadge`, where a merged PR still reads
- * "passing", not purple). */
 export function checksTone(checks: string): ChecksTone {
   if (checks === "failing") return "failed";
   if (checks === "passing") return "passing";
@@ -64,14 +33,12 @@ export function checksTone(checks: string): ChecksTone {
   return "running";
 }
 
-/** Resolve a PR's tone from its collector-observed state + checks rollup. */
 export function prTone(pr: Pick<PrItem, "state" | "checks">): PrTone {
   if (pr.state === "merged") return "merged";
   if (pr.state === "closed") return "failed";
   return checksTone(pr.checks);
 }
 
-/** Tailwind classes per tone, one facet per surface shape. */
 export const PR_TONE: Record<
   PrTone,
   { chip: string; text: string; border: string; badge: string }

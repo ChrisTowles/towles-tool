@@ -1,8 +1,5 @@
-/**
- * One PTY session in the rail: glyph, status dot, name, what it's doing, and
- * the hover-revealed lifecycle controls. The row that has to hold the most
- * status in the least width, since a folder can have several.
- */
+// One PTY session in the rail — the row that has to hold the most status in
+// the least width, since a folder can have several.
 import { useState } from "react";
 import { MoreVertical } from "lucide-react";
 import { Hint } from "@/components/hint";
@@ -78,15 +75,11 @@ export function SessionRow({
       : session;
   const needs = sessionCatchesEye(eff);
   const agent = isAgent(eff);
-  // Prefer the live Claude terminal title (`✳ <title>`) only while the shell is
-  // actually running — a stopped PTY's last title lingers in the caller's
-  // `titles` map (never cleared) and would otherwise label a dead shell as a
-  // running Claude.
+  // Live only: a stopped PTY's last title lingers in the caller's `titles` map
+  // and would label a dead shell as a running Claude.
   const label = (eff.live ? claudeTitleName(title) : null) ?? sessionLabel(eff);
-  // Hover-reveal is driven by JS state, not CSS `:hover` — the Tauri webview's
-  // WebKitGTK doesn't reliably update `:hover` on real pointer movement, so
-  // `group-hover` utilities never fire even though `matchMedia('(hover:
-  // hover)')` reports true.
+  // JS state, not CSS `:hover` — WebKitGTK doesn't reliably update `:hover` on
+  // real pointer movement, so `group-hover` never fires.
   const [hovered, setHovered] = useState(false);
   return (
     <Hint label={eff.purpose ? `✦ ${eff.purpose}` : undefined} side="right">
@@ -213,11 +206,8 @@ export function SessionRow({
   );
 }
 
-/** Hover-reveal lifecycle controls for a session row: ✕ close stays inline
- * (the one action common to every row), everything else — which varies by
- * state (not started → ▶ shell / ✦ Claude; live shell → ✦ Claude; live agent
- * → ■ stop / ⤿ compact / ↻ restart; plus ✎ rename) — lives behind a "···"
- * menu instead of crowding the row. */
+/** ✕ close stays inline as the one action every row has; the rest vary by state
+ * and live behind "···" instead of crowding the row. */
 function RowControls({
   session,
   folderDir,

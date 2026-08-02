@@ -18,13 +18,9 @@ export type DiffReviewRequest = {
   tabName: string;
 };
 
-/**
- * Accept/reject review for one of Claude's proposed edits (the blocking
- * `openDiff` tool): original file vs proposed contents in a Monaco
- * DiffEditor. The proposed side is editable — accept saves whatever is in
- * it (tweak-then-accept, like VS Code). Resolution goes through
- * `ide_diff_resolve`, which answers the CLI's blocked tool call.
- */
+/** Accept/reject review for Claude's blocking `openDiff` tool. The proposed side
+ * is editable — accept saves whatever is in it (tweak-then-accept, like VS Code).
+ * `ide_diff_resolve` is what answers the CLI's blocked tool call. */
 export function DiffReview({
   review,
   originalContent,

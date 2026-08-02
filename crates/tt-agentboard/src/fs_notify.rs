@@ -20,16 +20,13 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// Watches a directory tree and invokes `on_change` (debounced) when anything
-/// under it changes. Hold the returned value alive for as long as
-/// notifications are wanted; dropping it stops watching and ends the debounce
-/// thread.
+/// under it changes. Dropping it stops watching and ends the debounce thread.
 pub struct DirNotifier {
     _watcher: RecommendedWatcher,
 }
 
 impl DirNotifier {
-    /// Start watching `dir` recursively, calling `on_change` at most once per
-    /// debounce window while events keep arriving.
+    /// Watch `dir` recursively, calling `on_change` once per debounce window.
     pub fn watch<F>(dir: &Path, on_change: F) -> notify::Result<Self>
     where
         F: Fn() + Send + 'static,
@@ -49,17 +46,12 @@ impl DirNotifier {
 }
 
 /// Like [`DirNotifier`], but watches a *changing set* of directories under one
-/// root instead of the whole tree — built for `~/.claude/projects`, which every
-/// Claude Code session on the machine writes into. A plain `DirNotifier` there
-/// fires the eager rescan for *any* session's activity, which on a machine
-/// running several reduces the accelerant to "rescan constantly".
+/// root — built for `~/.claude/projects`, which every Claude Code session on the
+/// machine writes into. A plain `DirNotifier` there fires the eager rescan for
+/// *any* session's activity, reducing the accelerant to "rescan constantly".
 ///
-/// [`set_targets`](Self::set_targets) recomputes the watched set from a list of
-/// checkout dirs, diffing against what's watched so an unchanged set touches no
-/// watcher calls. Each maps to its transcript dir via
-/// [`crate::watchers::claude_code::encode_project_dir_name`]; a checkout with no
-/// sessions yet isn't watched — under-watching here is a latency tradeoff, never
-/// a staleness bug, since the poll loop stays the correctness baseline.
+/// A checkout with no sessions yet isn't watched: under-watching is a latency
+/// tradeoff, never a staleness bug, since the poll loop stays the baseline.
 pub struct ScopedDirNotifier {
     watcher: RecommendedWatcher,
     watched: HashSet<PathBuf>,
@@ -80,10 +72,9 @@ impl ScopedDirNotifier {
         Ok(Self { watcher, watched: HashSet::new() })
     }
 
-    /// Recompute the watched set from `targets` (absolute checkout dirs).
-    /// Idempotent — an unchanged `targets` list is a no-op, so calling this
-    /// on every poll tick (cheap: no subprocess, just `notify` add/remove
-    /// calls on the *changed* entries) is the intended usage.
+    /// Recompute the watched set from `targets` (absolute checkout dirs), each
+    /// mapped through [`crate::watchers::claude_code::encode_project_dir_name`].
+    /// Idempotent and diffed, so calling it on every poll tick is intended.
     pub fn set_targets(&mut self, projects_dir: &Path, targets: &[String]) {
         let desired: HashSet<PathBuf> = targets
             .iter()
@@ -109,20 +100,13 @@ impl ScopedDirNotifier {
     }
 }
 
-/// Watches a *set of files* for on-disk changes with **one** OS watcher instance,
-/// debounced like [`DirNotifier`]. Backs the code-viewer/diff-pane refresh.
-///
-/// One instance per checkout, not per file: inotify *instances* are a scarce
-/// per-user resource (`max_user_instances` defaults to 128), while individual
-/// directory *watches* on one instance are the cheap plural resource.
-///
-/// Each file's *parent directory* is watched, not the file: every well-behaved
-/// writer here — atomic save, tmp+rename, `git checkout` — retires the file's
-/// inode, and an inode watch goes permanently silent after the first replace. A
-/// file whose parent is absent watches an ancestor — [`rewatch_pending`](Self::rewatch_pending).
-///
-/// Known degradation: a deleted watched *parent* isn't re-watched until every
-/// registration drains and re-adds. Files go silent, not wrong — the poll catches it.
+/// Watches a *set of files* with **one** OS watcher instance, debounced like
+/// [`DirNotifier`]. One per checkout, not per file: inotify *instances* are
+/// scarce per-user (128 by default), while directory *watches* on one are the
+/// cheap plural resource. Each file's *parent directory* is what gets watched,
+/// since every well-behaved writer retires the file's inode and an inode watch
+/// goes permanently silent after the first replace. A deleted watched *parent*
+/// is the known gap.
 pub struct MultiFileNotifier {
     watcher: RecommendedWatcher,
     /// What the watcher callback matches events against — shared with it.
@@ -132,16 +116,13 @@ pub struct MultiFileNotifier {
     parents: HashMap<PathBuf, u32>,
     /// Registered file → the directory actually watched on its behalf. Kept
     /// because [`MultiFileNotifier::remove`] can't re-derive it: a pending
-    /// file's real parent may exist by then, which would release the wrong
-    /// watch.
+    /// file's real parent may exist by then, releasing the wrong watch.
     watched_for: HashMap<PathBuf, PathBuf>,
 }
 
 /// How many missing levels [`MultiFileNotifier::add`] walks up before giving
-/// up. One covers every real control file (`refs/heads/<prefix>` is the only
-/// directory git prunes under a checkout's `.git`); four leaves room for a
-/// `feat/a/b/c` branch name without ever reaching a directory broad enough
-/// that watching it would be a problem.
+/// up. One covers every real control file; four leaves room for a `feat/a/b/c`
+/// branch name without reaching a directory broad enough to be a problem.
 const MAX_MISSING_ANCESTORS: usize = 4;
 
 /// The callback's view of what's registered: exact paths with refcounts, plus
@@ -154,9 +135,8 @@ struct Targets {
 }
 
 impl Targets {
-    /// The registered files an event on `path` should report. Exactly `path`
-    /// when it's registered; otherwise every pending file `path` is an
-    /// ancestor of — the directory appearing on the way to that file.
+    /// The registered files an event on `path` should report: exactly `path`
+    /// when registered, otherwise every pending file `path` is an ancestor of.
     fn hits(&self, path: &Path) -> Vec<PathBuf> {
         if self.files.contains_key(path) {
             return vec![path.to_path_buf()];
@@ -166,9 +146,8 @@ impl Targets {
 }
 
 impl MultiFileNotifier {
-    /// Create an empty notifier. `on_change` receives the deduplicated batch
-    /// of registered files touched during a debounce window — content
-    /// writes, replaces, deletions alike, leaving "what changed" to the
+    /// Create an empty notifier. `on_change` receives the deduplicated batch of
+    /// registered files touched in a window, leaving "what changed" to the
     /// caller's re-read.
     pub fn new<F>(on_change: F) -> notify::Result<Self>
     where
@@ -195,10 +174,9 @@ impl MultiFileNotifier {
         Ok(Self { watcher, targets, parents: HashMap::new(), watched_for: HashMap::new() })
     }
 
-    /// Register `file` (absolute path). Refcounted — a second registration of
-    /// the same path is free and requires a matching [`remove`](Self::remove).
-    /// The parent directory need not exist yet; see
-    /// [`rewatch_pending`](Self::rewatch_pending) for what is watched instead.
+    /// Register `file` (absolute path). Refcounted, so a second registration
+    /// needs a matching [`remove`](Self::remove). The parent need not exist —
+    /// see [`rewatch_pending`](Self::rewatch_pending).
     pub fn add(&mut self, file: &Path) -> notify::Result<()> {
         if let Some(count) = self.targets.lock().unwrap().files.get_mut(file) {
             *count += 1;
@@ -217,20 +195,13 @@ impl MultiFileNotifier {
         Ok(())
     }
 
-    /// Move every pending registration whose real parent directory now exists
-    /// onto that parent, so its next change fires as an exact match rather
-    /// than the one-shot ancestor hit. Cheap (an `is_dir` per pending file),
-    /// so the owner calls it on the tick it diffs the registered set.
+    /// Move every pending registration whose real parent now exists onto that
+    /// parent, so its next change fires as an exact match rather than the
+    /// one-shot ancestor hit. Cheap, so call it on the rebuild tick.
     ///
-    /// Registrations go pending because a parent directory need not exist:
-    /// `git pack-refs --prune` removes the loose `refs/heads/feat/x` *and* the
-    /// `refs/heads/feat` directory it emptied, so a branch with a `/` in its
-    /// name has no parent to watch until the ref goes loose again.
-    /// [`add`](Self::add) falls back to the nearest existing ancestor (within
-    /// [`MAX_MISSING_ANCESTORS`] levels), where an event on any ancestor counts
-    /// as a hit. Watching it *recursively* instead does not work: notify
-    /// installs the new subdirectory's watch in response to its creation event,
-    /// by which time git has already written the ref inside.
+    /// They go pending because `git pack-refs --prune` removes the emptied
+    /// `refs/heads/feat` too. Watching the ancestor *recursively* is not the
+    /// fix: notify installs that watch after git has written the ref.
     pub fn rewatch_pending(&mut self) {
         let ready: Vec<PathBuf> = {
             let targets = self.targets.lock().unwrap();
@@ -280,8 +251,7 @@ impl MultiFileNotifier {
     }
 
     /// Drop one reference to `file`; the last drop stops delivering it and
-    /// releases the directory watch held on its behalf when no sibling needs
-    /// it. Unmatched calls are a no-op.
+    /// releases its directory watch when no sibling needs it.
     pub fn remove(&mut self, file: &Path) {
         {
             let mut targets = self.targets.lock().unwrap();
@@ -306,13 +276,10 @@ impl MultiFileNotifier {
     }
 }
 
-/// Which directory to actually watch for a file whose parent is `parent`:
-/// `parent` itself when it exists (the ordinary case), otherwise its nearest
-/// existing ancestor within [`MAX_MISSING_ANCESTORS`] levels — where the
-/// registration is *pending* and matched by ancestry until
-/// [`MultiFileNotifier::rewatch_pending`] moves it down. `None` when no
-/// ancestor exists that close, which keeps a nonsense path from escalating
-/// into a watch on `/` or a home directory.
+/// Which directory to actually watch: `parent` when it exists, otherwise its
+/// nearest existing ancestor within [`MAX_MISSING_ANCESTORS`] levels, where the
+/// registration stays *pending*. `None` beyond that, which keeps a nonsense
+/// path from escalating into a watch on `/` or a home directory.
 fn watch_point(parent: &Path) -> Option<PathBuf> {
     if parent.is_dir() {
         return Some(parent.to_path_buf());
@@ -327,10 +294,9 @@ fn watch_point(parent: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Block for a first message, drain everything else arriving within the
-/// window into a deduplicated batch, then flush once. Exits when the sender
-/// drops. [`DirNotifier`] sends `()` (the batch collapses to one entry and
-/// the payload is ignored); [`MultiFileNotifier`] sends the changed paths.
+/// Block for a first message, drain the rest of the window into a deduplicated
+/// batch, then flush once. Exits when the sender drops. [`DirNotifier`] sends
+/// `()` and ignores the payload; [`MultiFileNotifier`] sends changed paths.
 fn debounce_loop<T: PartialEq, F: Fn(Vec<T>)>(rx: &mpsc::Receiver<T>, on_change: F) {
     while let Ok(first) = rx.recv() {
         let mut batch = vec![first];
@@ -397,19 +363,14 @@ mod tests {
         assert_eq!(flushed.as_slice(), &[vec![PathBuf::from("/a"), PathBuf::from("/b")]]);
     }
 
-    /// The core reason this type exists: `set_targets` must only ever watch
-    /// directories that correspond to a currently tracked checkout, never
-    /// the whole `~/.claude/projects` tree — a repo dropped from the tracked
-    /// set (task removed, repo untracked) must stop being watched, not just
-    /// stop being added to.
+    /// The reason this type exists: a repo dropped from the tracked set must
+    /// stop being watched, not just stop being added to.
     #[test]
     fn set_targets_watches_only_tracked_checkouts_and_drops_untracked_ones() {
         let root = tempfile::TempDir::new().unwrap();
         let projects = root.path().join("projects");
         std::fs::create_dir_all(&projects).unwrap();
-        // Two checkouts with a session transcript dir already on disk, one
-        // without — the third proves a checkout with no Claude session yet
-        // is simply never watched, not an error.
+        // Two on disk; the third checkout has no session yet, which is not an error.
         std::fs::create_dir_all(projects.join("-home-u-repo-a")).unwrap();
         std::fs::create_dir_all(projects.join("-home-u-repo-b")).unwrap();
 
@@ -422,12 +383,9 @@ mod tests {
         assert_eq!(n.watched(), &HashSet::from([projects.join("-home-u-repo-b")]));
     }
 
-    /// A worktree checkout's path runs through `.claude/worktrees/...` — the
-    /// literal dot is exactly the case the naive `/`→`-` guess used to miss
-    /// (see `watchers::claude_code::encode_project_dir_name`'s doc). This is
-    /// the scenario the storm investigation actually hit: this app's own
-    /// worktree tasks must resolve to their real transcript directory, not
-    /// silently go unwatched.
+    /// The literal dot in `.claude/worktrees/...` is what the naive `/`→`-`
+    /// guess used to miss, silently leaving this app's own worktree tasks
+    /// unwatched (see `watchers::claude_code::encode_project_dir_name`).
     #[test]
     fn set_targets_resolves_a_worktree_checkout_through_the_dot_in_its_path() {
         let root = tempfile::TempDir::new().unwrap();
@@ -440,10 +398,8 @@ mod tests {
         assert_eq!(n.watched(), &HashSet::from([projects.join(encoded)]));
     }
 
-    /// Calling `set_targets` again with an identical list must not touch the
-    /// watcher at all — this is what makes it cheap enough to call on every
-    /// 2s poll tick rather than only when the tracked set is known to have
-    /// changed.
+    /// An identical list must not touch the watcher at all — what makes it
+    /// cheap enough to call on every 2s poll tick.
     #[test]
     fn set_targets_is_a_no_op_when_the_target_list_is_unchanged() {
         let root = tempfile::TempDir::new().unwrap();
@@ -458,12 +414,8 @@ mod tests {
         assert_eq!(n.watched(), &watched_after_first);
     }
 
-    /// End-to-end proof, not just set bookkeeping: a write inside an
-    /// untracked project dir (some other Claude Code session, anywhere on
-    /// the machine) must never fire the callback, while a write inside a
-    /// tracked one still does. This is the actual behavior the storm
-    /// investigation needed — a global `DirNotifier` on `~/.claude/projects`
-    /// fires on both.
+    /// End-to-end, not just set bookkeeping: another session's write must
+    /// never fire the callback where a global `DirNotifier` would.
     #[test]
     fn only_a_tracked_checkouts_journal_write_fires_the_callback() {
         let root = tempfile::TempDir::new().unwrap();
@@ -493,11 +445,9 @@ mod tests {
         );
     }
 
-    /// Real-filesystem check of the behaviors the viewer/diff pane depend on:
-    /// unregistered-sibling churn stays silent, a tmp+rename replace (the
-    /// atomic-save shape agents and the viewer itself use) fires with the
-    /// right path, files in different subdirectories share the one instance,
-    /// and a removed registration goes silent again.
+    /// Real-filesystem check of what the viewer/diff pane depend on: sibling
+    /// churn stays silent, a tmp+rename replace fires with the right path,
+    /// subdirectories share the one instance, a removed registration goes quiet.
     #[test]
     fn multi_file_notifier_filters_and_routes_by_path() {
         let root = tempfile::tempdir().unwrap();
@@ -541,12 +491,9 @@ mod tests {
         assert!(!notifier.is_empty(), "the other file is still registered");
     }
 
-    /// The git-info accelerant's real failure mode before this: a checkout on
-    /// a branch with a `/` in its name, in a repo `git gc` has packed, has no
-    /// `refs/heads/<prefix>` directory at all — so registering its branch ref
-    /// used to fail outright and that ref quietly left the watch set. The
-    /// registration must survive the gap and fire when git writes the ref
-    /// loose again.
+    /// The git-info accelerant's failure mode: a slashed branch name in a
+    /// packed repo has no `refs/heads/<prefix>` directory, so registering its
+    /// ref used to fail and that ref quietly left the watch set.
     #[test]
     fn multi_file_notifier_registers_a_file_whose_parent_does_not_exist_yet() {
         let root = tempfile::tempdir().unwrap();
@@ -572,10 +519,8 @@ mod tests {
         assert!(notifier.is_empty());
     }
 
-    /// The second half of that: once the directory exists, the registration
-    /// must stop depending on the one-shot ancestor hit and behave like any
-    /// other watched file, so the *next* write to the ref fires too. That's
-    /// what `rewatch_pending` is for — the owner calls it on its rebuild tick.
+    /// The second half: once the directory exists, the registration must stop
+    /// depending on the one-shot ancestor hit, so the *next* write fires too.
     #[test]
     fn multi_file_notifier_promotes_a_pending_file_once_its_parent_appears() {
         let root = tempfile::tempdir().unwrap();
@@ -599,8 +544,7 @@ mod tests {
             "an existing parent means nothing is pending any more"
         );
 
-        // A second update, with no directory being created this time — only an
-        // exact-path watch on the real parent can see this one.
+        // No directory created this time, so only an exact-path watch sees it.
         std::fs::write(&branch_ref, "two\n").unwrap();
         let batch = fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(batch, vec![branch_ref]);

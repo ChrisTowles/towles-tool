@@ -111,14 +111,10 @@ impl Repo {
             .unwrap_or(0)
     }
 
-    /// Epoch seconds of `HEAD`'s own commit time — "when was this checkout last
-    /// committed to", regardless of which branch it sits on or what it forked
-    /// from. `None` on an unborn branch.
-    ///
-    /// Unlike [`Self::last_own_commit_unix`] this has no base to compare
-    /// against, which is the point: a main checkout sitting exactly on
-    /// `origin/main` has no commits of its own and would answer `None` there,
-    /// while still being a checkout somebody committed in an hour ago.
+    /// "When was this checkout last committed to", regardless of branch or
+    /// fork point. Unlike [`Self::last_own_commit_unix`] there is no base to
+    /// compare against, which is the point: a main checkout sitting on
+    /// `origin/main` has no commits of its own but was still committed in.
     pub fn head_commit_unix(&self) -> Option<i64> {
         self.commit_time_unix(self.head_id()?)
     }

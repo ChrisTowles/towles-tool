@@ -35,24 +35,17 @@ pub fn parse(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Ports this env file claims, keyed by the assignment's `KEY`: every `*PORT`
-/// assignment whose value is a bare decimal port number. The key filter is
-/// load-bearing: identity values like `TASK=3` are small bare numbers too, and
-/// treating them as claims made the removal guard report "port 3 in use"
-/// (binding low ports always fails without root). The rendered `.env` is the
-/// claim record — stable until the task is removed (or re-rendered), at which
-/// point the ports self-release. Keeping the key lets a drift check report
-/// *which* var's port changed (e.g. `UI_PORT 3001 -> 3007`), not just that the
-/// claimed set differs.
+/// Every `*PORT` assignment whose value is a bare decimal port. The key filter is
+/// load-bearing: identity values like `TASK=3` are small bare numbers too, and treating
+/// them as claims made the removal guard report "port 3 in use". Keeping the key lets a
+/// drift check name *which* var moved (`UI_PORT 3001 -> 3007`).
 pub fn port_claims_by_key(text: &str) -> BTreeMap<String, u16> {
     port_claims_in_order(text).into_iter().collect()
 }
 
-/// [`port_claims_by_key`] in the order the file declares them, for the one
-/// caller that displays them (`tt task ls`'s port column): the template's
-/// grouping is meaningful to a reader, and a `BTreeMap` would scramble it into
-/// alphabetical order. Same filter, different view — the filter itself lives
-/// here so the display and the claim set can never disagree about what counts.
+/// [`port_claims_by_key`] in declaration order, for `tt task ls`'s port column — the
+/// template's grouping is meaningful and a `BTreeMap` scrambles it. The filter lives here
+/// so the display and the claim set can never disagree about what counts.
 pub fn port_claims_in_order(text: &str) -> Vec<(String, u16)> {
     parse(text)
         .into_iter()
@@ -65,21 +58,17 @@ pub fn port_claims_in_order(text: &str) -> Vec<(String, u16)> {
         .collect()
 }
 
-/// Ports this env file claims, as a flat set — [`port_claims_by_key`] without
-/// the keys, for callers that only care what's taken (sibling-claim scanning,
-/// the removal guard).
+/// [`port_claims_by_key`] without the keys, for callers that only care what's taken.
 pub fn port_claims(text: &str) -> BTreeSet<u16> {
     port_claims_by_key(text).into_values().collect()
 }
 
-/// Merge `src`'s assignments into `dst` without disturbing anything `dst`
-/// already sets: fill keys that are present-but-empty (`KEY=`), append keys
-/// `dst` lacks entirely, and never touch a key with a value (rendered ports,
-/// template-filled values). Returns the merged text and how many keys moved.
+/// Merge `src` into `dst` without disturbing anything `dst` already sets: fill
+/// present-but-empty keys, append missing ones, never touch a key with a value. Returns
+/// the merged text and how many keys moved.
 ///
-/// This is both the secrets-inheritance path (new task copies a sibling's API
-/// keys) and the re-render preservation path (a re-rendered `.env` keeps keys
-/// the template doesn't know about) — re-renders must be idempotent.
+/// Both the secrets-inheritance path and the re-render preservation path, so re-renders
+/// must be idempotent.
 pub fn merge_missing_keys(dst: &str, src: &str) -> (String, usize) {
     let mut lines: Vec<String> = dst.lines().map(str::to_string).collect();
     let mut added = 0;

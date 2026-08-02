@@ -6,42 +6,31 @@
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
-/// The sort/range key format for calendar events: UTC, fixed width, matching
-/// the `starts_at_utc`/`ends_at_utc` generated columns' `strftime` format
-/// **exactly**.
-///
-/// Fixed width is the whole point. These keys are compared lexically by SQLite's
-/// default `BINARY` collation, and that only equals chronological order when
-/// every value has identical shape and zone. `2026-07-20T09:00:00-05:00` sorts
-/// before `2026-07-20T10:00:00+01:00` byte-wise while being an hour *later* in
-/// real time — which is exactly why the authored column is never the sort key.
-/// If this format and the DDL's ever disagree, range queries silently return
-/// wrong rows, so the two are asserted equal in `utc_key_matches_the_generated_column`.
+/// UTC, fixed width, matching the `starts_at_utc`/`ends_at_utc` generated columns'
+/// `strftime` format **exactly**. Fixed width is the point — these compare under
+/// SQLite's `BINARY` collation, chronological only when shape and zone match. A
+/// disagreement silently returns wrong rows, so
+/// `utc_key_matches_the_generated_column` asserts the two are equal.
 pub(crate) const UTC_KEY_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3fZ";
 
-/// An instant as its `starts_at_utc` sort key — the bridge between the injected
-/// `now_ms` clock and the events table's text columns.
 pub(crate) fn utc_key(ms: i64) -> String {
     match chrono::DateTime::from_timestamp_millis(ms) {
         Some(dt) => dt.format(UTC_KEY_FORMAT).to_string(),
-        // Beyond what chrono can represent — callers pass `i64::MIN`/`i64::MAX`
-        // to mean "no bound". Clamp to a key that sorts outside every real
-        // value; collapsing to the epoch instead (the obvious `unwrap_or`)
-        // would turn an unbounded window into an empty one.
+        // Callers pass `i64::MIN`/`i64::MAX` to mean "no bound", so clamp outside
+        // every real value; the obvious `unwrap_or` to the epoch would turn an
+        // unbounded window into an empty one.
         None if ms < 0 => "0000-01-01T00:00:00.000Z".to_string(),
         None => "9999-12-31T23:59:59.999Z".to_string(),
     }
 }
 
-/// Parse a stored event time, keeping its offset. `None` for anything that
-/// isn't RFC 3339 — see the call site in `query_events` for why that is skipped
-/// rather than propagated.
+/// Parse a stored event time, keeping its offset. `None` for anything that isn't
+/// RFC 3339 — `query_events` skips such a row rather than propagating.
 pub(crate) fn parse_rfc3339(text: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(text).ok()
 }
 
-/// One unparseable event row, logged so a hand-edit is discoverable instead of
-/// silently shrinking the calendar.
+/// Logged so a hand-edit is discoverable instead of silently shrinking the calendar.
 pub(crate) fn log_unparseable_event(external_id: &str, value: &str) {
     tracing::warn!(%external_id, %value, "tt-store: unparseable event time; row skipped");
 }
@@ -49,31 +38,22 @@ pub(crate) fn log_unparseable_event(external_id: &str, value: &str) {
 /// How many MCP call-log rows are retained; older rows are pruned on insert.
 pub(crate) const MCP_CALL_RETAIN: i64 = 500;
 
-/// How far back calendar events are kept, swept on each calendar write.
-/// Public so writers can refuse a backfill their own sweep would reclaim.
-///
-/// Events are a cache in service of "when is my next meeting", so history has
-/// no value here — but a few days of slack means a clock skew or a late-running
-/// pull can't discard a meeting that hasn't happened yet.
+/// How far back calendar events are kept, swept on each calendar write. Public so
+/// writers can refuse a backfill their own sweep would reclaim. A few days of
+/// slack so clock skew or a late pull can't discard a future meeting.
 pub const EVENT_RETAIN_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// How many MCP call-log rows ride along in a [`Snapshot`] (newest first).
 pub(crate) const MCP_CALL_SNAPSHOT_LIMIT: usize = 100;
 
-/// Kanban columns a todo can live in, in board order. `next`/`review` (Up
-/// Next / In Review) were removed 2026-07-23: in practice every task was
-/// either not started (`backlog`), had an agent running on it (`doing`), or
-/// was finished (`done`) — the two middle columns never held anything.
+/// Kanban columns a todo can live in, in board order.
 pub const TASK_STATUSES: [&str; 3] = ["backlog", "doing", "done"];
 
-/// How a closed task ended. Orthogonal to [`TASK_STATUSES`]: `status` is where
-/// the card sits on the board, `outcome` is the record of how the work
-/// finished — set once when the task is closed (usually as its worktree is
-/// deleted), `NULL` while the task is open.
+/// How a closed task ended. Orthogonal to [`TASK_STATUSES`]: `status` is where the
+/// card sits, `outcome` is how the work finished — set once at close, `NULL` while open.
 pub const TASK_OUTCOMES: [&str; 2] = ["done", "abandoned"];
 
-/// A parsed task outcome — the typed form of [`TASK_OUTCOMES`]. String input
-/// (MCP args, CLI flags, IPC payloads) parses at the boundary via
+/// The typed form of [`TASK_OUTCOMES`]. String input parses at the boundary via
 /// [`TaskOutcome::parse`]; everything past it carries the enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskOutcome {
@@ -82,7 +62,6 @@ pub enum TaskOutcome {
 }
 
 impl TaskOutcome {
-    /// The stored/wire spelling, one of [`TASK_OUTCOMES`].
     pub fn as_str(self) -> &'static str {
         match self {
             TaskOutcome::Done => "done",
@@ -90,7 +69,6 @@ impl TaskOutcome {
         }
     }
 
-    /// Parse the stored/wire spelling; `None` for anything else.
     pub fn parse(s: &str) -> Option<TaskOutcome> {
         match s {
             "done" => Some(TaskOutcome::Done),
@@ -100,25 +78,11 @@ impl TaskOutcome {
     }
 }
 
-/// What a `tasks` row *is*.
-///
-/// Every worktree the Agentboard rail shows is backed by one of these, which is
-/// what lets a row exist before its directory does and survive after it is
-/// gone — the record puts the row on screen, not `git worktree list`. The two
-/// kinds differ in who authored the row and what killing it means:
-///
-/// - [`TaskKind::Task`] is the user's work. Born from the rail's `+` form,
-///   `tt task new` or MCP `task_create`; it ends when the user closes it, and
-///   nothing about the filesystem may retire it.
-/// - [`TaskKind::Detected`] is a git worktree found on disk with no task —
-///   Claude Code's own agent worktrees, or one added by hand. Minted by the
-///   rail's scan so a discovered checkout gets a durable record and a fixed
-///   position, and retired when its directory goes away, since it holds no
-///   intent worth preserving.
-///
-/// Adopting a detected worktree is a kind change on the same row
-/// ([`Store::adopt_detected_worktree`]) — the row keeps its id, its links and
-/// its place in the rail's order, so nothing moves on screen.
+/// What a `tasks` row *is*. Every worktree the rail shows is backed by one, letting
+/// a row exist before its directory does and survive after it is gone. A `Task` is
+/// the user's work and nothing on the filesystem may retire it; a `Detected` row is
+/// a worktree found on disk with no task, retired when its directory goes away.
+/// Adopting one is a kind change on the same row, so it keeps its place in the rail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskKind {
@@ -127,7 +91,6 @@ pub enum TaskKind {
 }
 
 impl TaskKind {
-    /// The stored/wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             TaskKind::Task => "task",
@@ -135,10 +98,8 @@ impl TaskKind {
         }
     }
 
-    /// Parse the stored spelling. Anything unrecognized reads as
-    /// [`TaskKind::Task`]: an unknown kind written by a newer build is still
-    /// somebody's work, and silently hiding it from the board would be worse
-    /// than showing it.
+    /// Anything unrecognized reads as [`TaskKind::Task`]: an unknown kind from a
+    /// newer build is still somebody's work, better shown than silently hidden.
     pub fn parse(s: &str) -> TaskKind {
         match s {
             "detected" => TaskKind::Detected,
@@ -147,58 +108,40 @@ impl TaskKind {
     }
 }
 
-/// One row of the Agentboard rail's worktree list: a task row that has (or
-/// expects) a checkout on disk.
-///
-/// The rail's whole input, and deliberately not a [`TaskItem`] — the engine
-/// needs the binding and the identity, not the links, and this is read on the
-/// scan path every couple of seconds. `dir` may not exist yet (a task whose
-/// worktree is still being created) or any more (one being removed, or deleted
-/// from under the app); that is the point.
+/// One row of the Agentboard rail's worktree list. Deliberately not a [`TaskItem`]:
+/// the rail needs the binding, not the links, and reads this every couple of
+/// seconds. `dir` may not exist yet, or any more.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RailWorktree {
     pub task_id: i64,
     pub kind: TaskKind,
-    /// Kanban column (`backlog`/`doing`/`done`), so the rail can badge the row
-    /// without a second lookup.
     pub status: String,
-    /// The checkout this worktree belongs to — how the rail groups a row whose
-    /// directory doesn't exist yet, since git can't answer for it.
+    /// How the rail groups a row whose directory doesn't exist yet.
     pub repo_root: String,
     pub dir: String,
     pub branch: Option<String>,
-    /// Ordering key. The rail sorts a repo's rows by this and never by
-    /// anything the filesystem reports, so a row's position never changes once
-    /// it has one.
+    /// Ordering key — never anything the filesystem reports.
     pub created_at: i64,
 }
 
-/// How long a finished task stays visible in the terminal column before
-/// [`Store::archive_closed_tasks`] hides it. One constant for every sweeper —
-/// the app's manual "Archive done" button and the collector-side auto-sweep
-/// must agree on what "old enough" means.
+/// How long a finished task stays visible in the terminal column. One constant so
+/// the manual "Archive done" button and the auto-sweep agree on "old enough".
 pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 // Column lists, kept in sync with the row-mapping closures in the domain modules.
-// Column lists, kept in sync with the row-mapping closures below.
 pub(crate) const EVENT_COLS: &str =
     "id, source, external_id, title, starts_at, ends_at, attendees, location, join_url";
-// `kind` is appended rather than slotted next to the other identity columns so
-// the positional indices `map_task_row` reads stay put.
+// `kind` is appended so the positional indices `map_task_row` reads stay put.
 pub(crate) const TASK_COLS: &str = "id, text, status, position, created_at, completed_at, notes, \
      worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal, \
      summary, summary_at, kind";
 
-/// The board's own rows, excluding the rail's bookkeeping ones. Every read
-/// path that means *the user's board* — [`Store::open_tasks`],
-/// [`Store::all_tasks`], [`Store::worktree_bound_open_tasks`] — carries this,
-/// so a [`TaskKind::Detected`] row never reaches the Board, the Cockpit, the
-/// collectors' rollup or MCP `task_list`. The Agentboard rail is the one
-/// consumer that reads both kinds, via [`Store::rail_worktrees`].
+/// Every read path meaning *the user's board* carries this, so a
+/// [`TaskKind::Detected`] row never reaches the Board, Cockpit, rollup or MCP
+/// `task_list`. [`Store::rail_worktrees`] is the one reader of both kinds.
 pub(crate) const TASK_KIND_FILTER: &str = "kind = 'task'";
-// Aliased to `i`/`p` and joined against `item_dismissals` in the read paths
-// below, so each column list carries its own dismissed_ts.
+// Aliased to `i`/`p` and joined against `item_dismissals` for dismissed_ts.
 pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0)";
 pub(crate) const PR_COLS: &str = "p.repo, p.number, p.title, p.branch, p.state, p.checks, p.review_state, \
      p.url, p.updated_ts, COALESCE(d.dismissed_ts, 0)";
@@ -219,13 +162,10 @@ ORDER BY CASE status
 #[serde(rename_all = "camelCase")]
 pub struct CalEvent {
     pub id: i64,
-    /// Which configured calendar this came from (`tt_config::CalendarSource::id`
-    /// — e.g. `"google"`, `"outlook"`). Provenance for the UI, and the scope key
-    /// for [`Store::replace_events_for_source`].
+    /// `tt_config::CalendarSource::id` — [`Store::replace_events_for_source`]'s scope key.
     pub source: String,
     pub external_id: String,
     pub title: String,
-    /// When the meeting starts, with the offset the calendar reported.
     pub start: DateTime<FixedOffset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<DateTime<FixedOffset>>,
@@ -237,34 +177,28 @@ pub struct CalEvent {
 }
 
 impl CalEvent {
-    /// The start instant as epoch ms, for arithmetic against an injected
-    /// `now_ms`. Lossy on purpose — the offset is presentation, not instant.
+    /// Lossy on purpose — the offset is presentation, not instant.
     pub fn start_ms(&self) -> i64 {
         self.start.timestamp_millis()
     }
 
-    /// The end instant as epoch ms, when the event has one.
     pub fn end_ms(&self) -> Option<i64> {
         self.end.map(|end| end.timestamp_millis())
     }
 }
 
-/// Deserializing a [`TaskItem`] that predates the `kind` field (an older
-/// payload, a fixture) yields the user's own work — see [`TaskKind::parse`].
+/// A [`TaskItem`] payload predating the `kind` field is the user's own work.
 fn default_task_kind() -> TaskKind {
     TaskKind::Task
 }
 
-/// A task on the board (#339): the unit of work. Local by default; it can
-/// link any number of GitHub issues and PRs, and usually gets a worktree
-/// worktree (its [`TaskWorktree`] binding).
+/// A task on the board: the unit of work. Local by default; it can link any number
+/// of GitHub issues and PRs, and usually gets a [`TaskWorktree`] binding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskItem {
     pub id: i64,
-    /// What this row is — see [`TaskKind`]. Board-facing reads only ever return
-    /// [`TaskKind::Task`]; the field is on the struct for the rail's sake and
-    /// for `adopt`, which has to be able to tell them apart.
+    /// Board-facing reads only ever return [`TaskKind::Task`]; here for the rail.
     #[serde(default = "default_task_kind")]
     pub kind: TaskKind,
     pub text: String,
@@ -275,26 +209,19 @@ pub struct TaskItem {
     pub completed_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
-    /// The objective the task was created to accomplish, as typed into the
-    /// new-task form's goal field. Distinct from `text` (the card's title):
-    /// set once at creation and never edited afterward.
+    /// Distinct from `text` (the card's title): set once at creation, never edited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
-    /// What the agent working the task reported when it finished — the
-    /// durable version of the wrap-up it would otherwise have written into a
-    /// PTY that dies with the worktree. Written through the MCP `task_summary`
-    /// tool; deliberately separate from `notes`, which is the user's own
-    /// context and is read back *into* a `task_start` prompt.
+    /// The agent's wrap-up, made durable instead of dying with the worktree's PTY.
+    /// Separate from `notes`, the user's own context, read back *into* `task_start`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// When `summary` was last written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_at: Option<i64>,
-    /// How the task ended (see [`TASK_OUTCOMES`]); `None` while it is open.
+    /// See [`TASK_OUTCOMES`]; `None` while the task is open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
-    /// When the closed task was archived off the active board; `None` while
-    /// it is open or still visible in the terminal column.
+    /// `None` while open or still visible in the terminal column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,34 +230,21 @@ pub struct TaskItem {
     pub issues: Vec<TaskIssueLink>,
     #[serde(default)]
     pub prs: Vec<TaskPrLink>,
-    /// A closed task renders in the terminal ("Closed") column regardless of
-    /// its frozen kanban `status` — true once the task carries an `outcome`
-    /// or its `status` itself is `done`. Presentation, computed once here so
-    /// every consumer (app UI, MCP) reads the same answer instead of
-    /// re-deriving it from `status`/`outcome`.
+    /// A closed task renders in the terminal column regardless of its frozen kanban
+    /// `status`. Computed once here so every consumer reads the same answer.
     #[serde(default)]
     pub closed: bool,
-    /// The outcome badge a closed card shows: the recorded `outcome`, or
-    /// `done` implied by `status` for a task that rolled/dragged into the
-    /// done column without an explicit close. `None` while the task is open.
+    /// The recorded `outcome`, or `done` implied by a task dragged into that column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_outcome: Option<String>,
-    /// Whether this task has a live worktree checkout on disk right now — as
-    /// opposed to a "task only" card that was never given one, or a closed
-    /// task whose worktree was torn down. Drives whether the UI offers "jump
-    /// to the running session" vs. "start/reopen this task".
+    /// Drives "jump to the running session" vs. "start/reopen this task".
     #[serde(default)]
     pub has_worktree: bool,
 }
 
 impl TaskItem {
-    /// The best-evidence default outcome for closing this task without a user
-    /// answer: a merged linked PR — or already sitting in `done` — closes as
-    /// [`TaskOutcome::Done`], anything else as [`TaskOutcome::Abandoned`].
-    /// Strictly `merged`, never `closed`: an unmerged-closed PR is evidence
-    /// of abandonment, not completion. Every headless close path (CLI, MCP)
-    /// shares this one inference; interactive paths ask the user and use it
-    /// only to pre-answer.
+    /// The best-evidence outcome for closing without a user answer. Strictly
+    /// `merged`, never `closed`: an unmerged-closed PR is evidence of abandonment.
     pub fn inferred_outcome(&self) -> TaskOutcome {
         if self.status == "done" || self.prs.iter().any(|pr| pr.state == "merged") {
             TaskOutcome::Done
@@ -339,10 +253,8 @@ impl TaskItem {
         }
     }
 
-    /// Materialize `closed`/`display_outcome`/`has_worktree` from the raw
-    /// `status`/`outcome`/`worktree` fields — the one place this
-    /// presentation logic is computed, called right after every row maps
-    /// into a `TaskItem` (see `Store::query_tasks`).
+    /// The one place the derived presentation fields are computed — called on
+    /// every row mapped into a `TaskItem` (see `Store::query_tasks`).
     pub(crate) fn with_derived_fields(mut self) -> Self {
         self.closed = self.status == "done" || self.outcome.is_some();
         self.display_outcome = self
@@ -355,17 +267,10 @@ impl TaskItem {
 }
 
 /// A task's repo binding, and the worktree its work happens in once one exists.
-///
-/// `repo_root` is the only required part: a task created from the Agentboard
-/// knows its repo from the moment of submit, including a "task only" submit
-/// that never creates a worktree. `branch` is therefore `None` until the worktree
-/// is created — which is what lets every task land in a repo swimlane on the
-/// Board rather than an "unassigned" bucket.
-///
-/// `repo_root` and `branch` survive worktree removal as historical fact; `dir` is
-/// cleared when the worktree is removed (a "detached" task). `repo` is the
-/// GitHub `owner/name`, used to auto-attach collected PRs whose head branch
-/// matches `branch`.
+/// `repo_root` is the only required part, known even for a "task only" submit —
+/// which is what lets every task land in a repo swimlane rather than "unassigned".
+/// It and `branch` survive worktree removal as historical fact; `dir` is cleared
+/// with the worktree. `repo` auto-attaches PRs whose head branch matches.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskWorktree {
@@ -378,8 +283,8 @@ pub struct TaskWorktree {
     pub dir: Option<String>,
 }
 
-/// One GitHub issue linked to a task. `state` is the last observed state
-/// (`open` | `closed`), cached on the link (see [`SCHEMA_TASK_LINKS_V7`]).
+/// One GitHub issue linked to a task; `state` (`open` | `closed`) is the last
+/// observed value, cached on the link (see [`SCHEMA_TASK_LINKS_V7`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskIssueLink {
@@ -389,16 +294,10 @@ pub struct TaskIssueLink {
     pub state: String,
 }
 
-/// Which gh actions a task's status change should trigger: entering `done`
-/// closes every linked issue still cached `open`; leaving `done` reopens the
-/// ones cached `closed`. Returns `(repo, number, close)` tuples. Empty for
-/// link-less tasks, moves that don't touch `done`, and links already in the
-/// target state (so re-running is a no-op and a half-failed batch converges on
-/// retry).
-///
-/// A pure decision — the caller (`tt-app`'s `spawn_gh_status_sync`) turns the
-/// tuples into `gh issue close`/`reopen` spawns. Lives here, next to
-/// [`TaskIssueLink`], so it's unit-testable without the Tauri shell.
+/// Entering `done` closes every linked issue still cached `open`, leaving `done`
+/// reopens the ones cached `closed`. Empty for links already in the target state,
+/// so re-running is a no-op and a half-failed batch converges on retry. A pure
+/// decision, so it is testable without the Tauri shell that spawns the `gh` calls.
 pub fn gh_close_reopen_targets(
     old_status: &str,
     new_status: &str,
@@ -421,8 +320,7 @@ pub fn gh_close_reopen_targets(
         .collect()
 }
 
-/// One GitHub PR linked to a task. `state` is the last observed state
-/// (`open` | `merged` | `closed`); `checks` mirrors [`PrItem::checks`].
+/// One GitHub PR linked to a task; `checks` mirrors [`PrItem::checks`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskPrLink {
@@ -443,13 +341,9 @@ pub struct IssueItem {
     pub state: String,
     pub url: String,
     pub updated_ts: i64,
-    /// The `updated_ts` this item had the last time the user dismissed it
-    /// (see [`Store::dismiss_item`]); `0` if never dismissed. The UI hides an
-    /// item while `dismissed_ts >= updated_ts` and re-shows it the moment the
-    /// collector observes a newer `updated_ts` — a dismissal survives the
-    /// item leaving and re-entering the collector snapshot the same way
-    /// [`DmItem::dismissed_ts`] does, but expires on its own once the item
-    /// actually changes rather than needing a matching new "message".
+    /// The `updated_ts` this item had when last dismissed; `0` if never. The UI hides
+    /// it while `dismissed_ts >= updated_ts`, so a dismissal survives the item leaving
+    /// and re-entering the snapshot but expires once the item changes.
     pub dismissed_ts: i64,
 }
 
@@ -479,10 +373,9 @@ pub struct CollectRun {
     pub message: Option<String>,
 }
 
-/// The latest state of one watched DM conversation. `from_me` means the most
-/// recent message in the channel is the user's own (i.e. already answered);
-/// `dismissed_ts` is the `ts` of the last message the user marked handled, so
-/// the UI shows a banner only when `!from_me && dismissed_ts < ts`.
+/// The latest state of one watched DM conversation. `from_me` means the channel's
+/// most recent message is the user's own, so the UI banners only when
+/// `!from_me && dismissed_ts < ts`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DmItem {
@@ -497,10 +390,8 @@ pub struct DmItem {
     pub dismissed_ts: i64,
 }
 
-/// One handled MCP request: what came in (method, tool, compacted args), how it
-/// went (`ok`/`error`), how long the handler took, and which client sent it
-/// (from the session's `initialize`). Written by the MCP dispatcher,
-/// read by the app's MCP screen.
+/// One handled MCP request, written by the dispatcher and read by the app's MCP
+/// screen. `client` comes from the session's `initialize`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpCall {
@@ -541,13 +432,9 @@ pub struct Snapshot {
 pub struct EventInput {
     pub external_id: String,
     pub title: String,
-    /// RFC 3339 with an offset (`2026-07-20T15:00:00+01:00` or `…Z`).
-    ///
-    /// A `DateTime`, not a `String`, so an unparseable value is rejected by
-    /// serde with a real message at the edge rather than reaching the store as
-    /// text nothing can order. `FixedOffset` (not `Utc`) because the offset is
-    /// data: normalizing on the way in would discard the one thing this type
-    /// exists to carry.
+    /// A `DateTime`, not a `String`, so serde rejects an unparseable value at the edge
+    /// rather than letting text nothing can order reach the store. `FixedOffset` (not
+    /// `Utc`) because normalizing on the way in would discard the offset.
     pub start: DateTime<FixedOffset>,
     #[serde(default)]
     pub end: Option<DateTime<FixedOffset>>,
@@ -560,12 +447,10 @@ pub struct EventInput {
 }
 
 impl EventInput {
-    /// The start instant as epoch ms.
     pub fn start_ms(&self) -> i64 {
         self.start.timestamp_millis()
     }
 
-    /// The end instant as epoch ms, when the event has one.
     pub fn end_ms(&self) -> Option<i64> {
         self.end.map(|end| end.timestamp_millis())
     }
@@ -597,8 +482,7 @@ pub struct DmInput {
     pub url: Option<String>,
 }
 
-/// What the MCP dispatcher hands the store for one handled request. The row's
-/// `ts` comes from the dispatcher's injected `now_ms`, never a clock read here.
+/// One handled request; `ts` comes from the dispatcher's injected `now_ms`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpCallInput {

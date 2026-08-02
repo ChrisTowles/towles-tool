@@ -12,16 +12,9 @@ function isScreenId(value: unknown): value is ScreenId {
   return typeof value === "string" && value in SCREENS;
 }
 
-/** Restore the persisted tab state from raw localStorage strings.
- *
- * Pure and DOM-independent (callers pass the raw strings) so it can be unit
- * tested and reasoned about in isolation. Any missing, malformed, or
- * stale-screen-id input degrades to the cold-start default rather than
- * throwing — a removed screen id can never break boot.
- *
- * `openTabs` always includes `activeTab`, and both only ever contain screen
- * ids that still exist in the registry, so a closed tab (dropped from the
- * stored open-tabs list) never resurrects on reload. */
+/** Restore persisted tab state from raw localStorage strings. Missing,
+ * malformed, or stale-screen-id input degrades to the cold-start default
+ * rather than throwing — a removed screen id can never break boot. */
 export function loadWorkspaceTabs(
   rawActive: string | null,
   rawOpenTabs: string | null,

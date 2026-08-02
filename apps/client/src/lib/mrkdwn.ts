@@ -1,16 +1,6 @@
 /**
- * A small, pure parser for Slack's `mrkdwn` message format — the flavor
- * `conversations.history` returns for DM text. It is deliberately not full
- * Markdown: Slack uses single `*bold*`, `_italic_`, `~strike~`, backtick
- * `code`, triple-backtick blocks, angle-wrapped links (`<url|label>`) and
- * mentions (`<@U123>`, `<#C1|name>`, `<!here>`), and HTML-escapes only
- * `& < >` as `&amp; &lt; &gt;`.
- *
- * Parsing produces a flat list of {@link MrkdwnNode}s (emphasis nests) that the
- * {@link file:./../components/mrkdwn-text.tsx} renderer turns into React. Keeping
- * the parse pure (no React, no Tauri) makes it unit-testable and keeps link
- * opening — which must go through the OS browser, never the webview — a concern
- * of the renderer.
+ * Pure parser for Slack's `mrkdwn`, which is deliberately not Markdown: single
+ * `*bold*`, `_italic_`, `~strike~`, `<url|label>`, `<@U123>`, `& < >` escaped.
  */
 
 export type MrkdwnNode =
@@ -117,9 +107,8 @@ function findEmphasis(
 }
 
 /**
- * Whether a marker at `i` can open an emphasis span. Requires a non-word char
- * (or start) before it — so `snake_case` and `2*3` don't become emphasis — and
- * a non-space, non-duplicate marker right after.
+ * Requires a non-word char (or start) before the marker — so `snake_case` and
+ * `2*3` don't emphasize — and a non-space, non-duplicate one right after.
  */
 function opensHere(text: string, i: number, marker: string): boolean {
   const prev = text[i - 1];
@@ -151,10 +140,8 @@ export function unescapeEntities(s: string): string {
 }
 
 /**
- * Resolve a `<@U…>` mention to a display label. An explicit label in the
- * payload wins; otherwise the watched user's id resolves to their name; anything
- * else (my own id, an unknown third party) falls back to a generic `@user`
- * since a DM only ever has the two of us.
+ * An explicit label wins, then the watched user's id resolving to their name;
+ * anything else is `@user`, since a DM only ever has the two of us.
  */
 export function mentionLabel(
   id: string,

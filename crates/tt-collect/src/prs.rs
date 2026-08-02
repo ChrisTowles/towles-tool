@@ -25,11 +25,9 @@ const MERGED_LIST_LIMIT: &str = "20";
 /// of recently-merged authored PRs, for one repo dir.
 ///
 /// Returns the repo's `owner/name` alongside its PRs so callers know which repo
-/// a (possibly empty) result belongs to. Returns an error string (never panics)
-/// if `gh` is missing, times out, exits non-zero, or emits unparseable JSON.
+/// a (possibly empty) result belongs to, or an error string (never a panic).
 /// Dedup is by PR number; a review-requested entry wins over an authored one
-/// for the same PR (a merged PR can't collide with either, since GitHub never
-/// reports the same number as both open and merged).
+/// for the same PR.
 pub(crate) fn collect_repo_prs(dir: &Path) -> Result<(String, Vec<PrInput>), String> {
     let repo = gh::repo_name_with_owner(dir)?;
     let mut open = open_prs_by_number(dir, &repo)?;

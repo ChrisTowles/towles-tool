@@ -73,14 +73,9 @@ impl FrameLog {
         self.samples_us.is_empty()
     }
 
-    /// Drop the first `n` frames.
-    ///
-    /// Startup frames are not representative and there are a lot of them:
-    /// pipeline compilation, the first swapchain acquire, and — for the
-    /// embedded case specifically — the compositor's first commit round-trip.
-    /// Leaving them in would flatter the *embedded* run's p99 relative to the
-    /// baseline in one direction and wreck it in the other, so both runs discard
-    /// the same count.
+    /// Drop the first `n` frames: pipeline compilation, the first swapchain acquire and
+    /// (embedded only) the compositor's first commit round-trip are not representative.
+    /// Both runs discard the same count, or the comparison skews either way.
     pub fn drop_warmup(&mut self, n: usize) {
         let n = n.min(self.samples_us.len());
         self.samples_us.drain(..n);

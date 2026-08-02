@@ -10,17 +10,9 @@ import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
-/**
- * Task Explorer — a live process view of what this app itself is running:
- * the `tt-app` process, then one group per embedded terminal (its shell and
- * everything that shell has spawned, per `task_explorer.rs`'s session-id
- * sweep). Auto-polls while this screen is the active tab, the same
- * "inherently live" expectation as Activity Monitor/htop; stops polling the
- * moment the tab isn't active rather than running in the background forever.
- * `formatMemory` is shared with the status bar, whose CPU/RAM readout is
- * this same total (see `status-bar.tsx`), so the two numbers can't drift
- * apart in formatting even if the underlying values ever did.
- */
+/** Task Explorer — `tt-app` and one group per embedded terminal. Polls only
+ * while this screen is the active tab, and shares `formatMemory` with the
+ * status bar so the same total can't drift in formatting. */
 
 const POLL_MS = 2500;
 

@@ -24,12 +24,9 @@ pub struct LaunchState {
     running: Mutex<HashMap<(String, String), String>>,
 }
 
-/// One `launch.json` config plus what the client needs to render its row:
-/// the config itself (flattened — `name`/`runtimeExecutable`/`runtimeArgs`/
-/// `port`), whether anything is listening on its port, and the app session
-/// it runs in when we launched it ourselves. `sessionId` set → "focus that
-/// pane"; unset but `portListening` → running outside the app (don't offer
-/// a second launch); neither → launchable.
+/// One `launch.json` config plus what the client needs to render its row.
+/// `sessionId` set → "focus that pane"; unset but `portListening` → running
+/// outside the app (don't offer a second launch); neither → launchable.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchConfigStatus {
@@ -98,11 +95,9 @@ fn launch_configs_blocking(
 }
 
 /// Record "config `name` from `dir`'s launch.json now runs in session
-/// `session_id`" — called by the client right after typing the launch
-/// command into that pane. Also the event-log record of the launch gesture
-/// itself (root CLAUDE.md: every user-initiated action is logged): the PTY
-/// only sees anonymous keystrokes, so without this event a dev-server
-/// launch would be indistinguishable from any other typing.
+/// `session_id`" — called by the client right after typing the launch command
+/// into that pane. Also the event-log record of the launch gesture itself: the
+/// PTY only sees anonymous keystrokes.
 #[tauri::command]
 pub fn launch_register(
     state: State<'_, LaunchState>,

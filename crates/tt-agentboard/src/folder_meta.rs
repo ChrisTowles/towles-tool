@@ -30,14 +30,11 @@ pub struct FolderMeta {
     /// forced" is one state rather than two.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
-    /// Epoch ms of the last deliberate act of working *in* this checkout that
-    /// leaves no other trace: opening or closing a pane on it. Feeds the rail's
-    /// worked-recently filter alongside the git signals
-    /// ([`crate::git_info::GitInfo::head_commit_ms`],
-    /// `worktree_touched_ms`) and agent activity.
-    ///
-    /// A stamp rather than a telemetry query: the filter runs on every rail
-    /// render, and the event log is a day of JSONL on disk.
+    /// Epoch ms of a pane opened or closed on this checkout — the one act of
+    /// working here that leaves no other trace. Feeds the rail's
+    /// worked-recently filter alongside the git signals and agent activity. A
+    /// stamp rather than a telemetry query, since the filter runs on every rail
+    /// render.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_worked_at: Option<i64>,
 }

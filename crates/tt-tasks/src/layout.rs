@@ -76,17 +76,13 @@ impl AsRef<str> for TaskName {
     }
 }
 
-/// Task directory name for a branch: the *whole* branch, reduced to
-/// `[A-Za-z0-9._-]` (`feat/thing` → `feat-thing`) — the folder keeps the
-/// branch's full shape instead of discarding its type prefix.
+/// Task directory name for a branch: the *whole* branch reduced to `[A-Za-z0-9._-]`
+/// (`feat/thing` → `feat-thing`), keeping the type prefix rather than discarding it.
 ///
-/// This mapping is strictly ONE-WAY (branch → folder). Nothing may ever
-/// derive a branch back from a folder name — a dash-from-slash and a literal
-/// dash are indistinguishable, so any reverse parse would be a guess. The
-/// branch is always taken from ground truth instead: read from git in the
-/// task (`branch --show-current`), or supplied verbatim by the caller.
-/// Distinct branches can collide on one slug (`feat/thing` vs a literal
-/// `feat-thing`); creation then fails loudly with `TaskExists`.
+/// Strictly ONE-WAY. Nothing may derive a branch back from a folder name — a
+/// dash-from-slash and a literal dash are indistinguishable, so the branch always comes
+/// from ground truth instead. Distinct branches can collide on one slug; creation then
+/// fails loudly with `TaskExists`.
 pub fn task_name_from_branch(branch: &str) -> Option<String> {
     let name = sanitize_segment(branch);
     (!name.is_empty()).then_some(name)

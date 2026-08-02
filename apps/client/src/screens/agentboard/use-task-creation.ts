@@ -20,16 +20,11 @@ import { invoke } from "@/lib/tauri";
 import { createTaskForSubmit } from "./helpers";
 
 export type TaskCreation = {
-  /** Repo keys whose inline new-task form is open — several can be at once. */
   openTaskForms: Set<string>;
-  /** Repo keys whose open form reopens a closed task: its goal + id to rebind. */
   reopenTasks: Map<string, { taskId: number; goal: string }>;
-  /** Checkouts whose background setup step is running → when it started. */
   settingUpDirs: Map<string, number>;
-  /** Open/close a repo's form — clicking the affordance again closes it. */
   toggleTaskForm: (repo: NewTaskRepo) => void;
   closeTaskForm: (key: string) => void;
-  /** Board's "Reopen": open the repo's form pre-filled, bound to the same task. */
   openReopenForm: (repo: NewTaskRepo, taskId: number, goal: string) => void;
   createTask: (
     repo: NewTaskRepo,
@@ -37,22 +32,16 @@ export type TaskCreation = {
   ) => Promise<void>;
 };
 
-/**
- * Creating a task end to end: board card → worktree → session → Claude on the
- * goal. The board task is created *first*; its worktree binding is what puts
- * the row on the rail, so a failed create leaves the row reading `detached`.
- */
-/** The worktree dir for `branch`, when the MCP `task_start` caller skipped
- * the form's preflight — needed *before* the create. */
+// Needed *before* the create, for an MCP `task_start` caller that skipped the
+// form's preflight.
 async function resolveWorktreeDir(root: string, branch: string): Promise<string | null> {
   const check = await invoke<BranchCheck>("task_check_branch", { root, branch });
   return check.isOk() ? check.value.dir : null;
 }
 
 export function useTaskCreation(args: {
-  /** Spawn a session's PTY and place its pane *without* stealing focus. */
+  /** Places the pane *without* stealing focus; `selectSession` also focuses. */
   mountSession: (folderDir: string, sessionId: string) => void;
-  /** Mount + focus + ack, the same path a rail click uses. */
   selectSession: (folderDir: string, sessionId: string) => void;
   launchClaudeIn: (
     target: StartClaudeTarget,
@@ -60,7 +49,6 @@ export function useTaskCreation(args: {
     options?: ClaudeLaunchOptions,
     label?: string,
   ) => Promise<void>;
-  /** Live focus, read at resolve time to avoid stealing the user's view. */
   selectedRef: React.RefObject<string | null>;
   activeFolderDirRef: React.RefObject<string | null>;
   railCollapsed: boolean;
@@ -112,8 +100,7 @@ export function useTaskCreation(args: {
     setOpenTaskForms((prev) => new Set(prev).add(repo.key));
   }
 
-  // Both setup paths mark the dir for the whole run so the folder header can
-  // badge the install; a retry is the same install, only the toasts differ.
+  // Marked for the whole run so the folder header can badge the install.
   function markSetupRunning(dir: string) {
     setSettingUpDirs((prev) => new Map(prev).set(dir, Date.now()));
   }
@@ -145,8 +132,7 @@ export function useTaskCreation(args: {
     return { label: "Retry", onClick: () => void retrySetup(dir) };
   }
 
-  // The pane opens as soon as the worktree exists; setup runs afterward in the
-  // background. Failure gets the retry-able toast, success is silent.
+  // The pane opens as soon as the worktree exists; setup runs after it.
   function runSetupInBackground(dir: string) {
     markSetupRunning(dir);
     void invoke<string | null>("task_run_setup", { dir }).then((result) => {
@@ -164,8 +150,7 @@ export function useTaskCreation(args: {
     repo: NewTaskRepo,
     input: NewTaskSubmit & { taskId?: number; reopen?: boolean },
   ) {
-    // Focus at submit time — `taskCreated`'s yardstick for whether
-    // auto-focusing the new task would steal a view the user moved to since.
+    // `taskCreated` auto-focuses only if the user hasn't moved since submit.
     const focusAtSubmit = {
       sessionId: selectedRef.current,
       folderDir: activeFolderDirRef.current,
@@ -174,16 +159,13 @@ export function useTaskCreation(args: {
     const worktreeDir = input.worktree
       ? (input.dir ?? (await resolveWorktreeDir(repo.dir, input.branch)))
       : null;
-    // A reopened task is closed (frozen status): clear that first; live-agent
-    // sync settles it into backlog/doing once the fresh worktree exists.
+    // Clear the frozen closed status first; live-agent sync settles it after.
     if (input.reopen && taskId !== undefined) {
       const reopened = await storeSetTaskStatus(taskId, "backlog");
       if (reopened.isErr()) toast.error(`Couldn't reopen that task — ${reopened.error.message}`);
     }
-    // Bind repo, branch and the dir the worktree is *going* to live in, up
-    // front: the binding is what puts the row on the rail, before `git fetch`
-    // has started. Awaited — the row must exist before the create starts, or
-    // the phase the backend stamps has no row to land on.
+    // The binding is what puts the row on the rail, so it is bound to the dir
+    // the worktree is *going* to live in, and awaited before the create starts.
     if (taskId !== undefined) {
       const bound = await storeTaskSetWorktree(
         taskId,
@@ -203,76 +185,62 @@ export function useTaskCreation(args: {
       return;
     }
     const imagePaths = input.imagePaths;
-    // 60s covers a fetch (10s server-side cap) plus a worktree add — the
-    // install no longer runs inside `task_create`.
+    // 60s covers a fetch (10s server-side cap) plus a worktree add.
     const result = await invoke<TaskCreated>(
       "task_create",
       { root: repo.dir, branch: input.branch, base: input.base, dir: worktreeDir ?? "" },
       { schema: TaskCreatedSchema, timeoutMs: 60_000 },
     );
     if (result.isErr()) {
-      // The row stays and reads as `detached`, where its retry and delete
-      // live — so the failure needs no bookkeeping of its own here.
+      // The row stays and reads `detached`, where its retry and delete live.
       toast.error(`couldn't create the worktree: ${result.error.message}`);
       return;
     }
     const created = result.value;
-    // Re-bind with what the create actually produced (a branch can normalize
-    // on the way through).
+    // Re-bind: a branch can normalize on the way through the create.
     if (taskId !== undefined) {
       void storeTaskSetWorktree(taskId, repo.dir, created.branch, {
         repo: ownerRepoFromOrigin(repo.originUrl),
         dir: created.dir,
       });
     }
-    // Only fetch/worktree-add/secret-inherit warnings land here — the install
-    // reports through its own toast.
     for (const warning of created.warnings) {
       toast(warning);
     }
     runSetupInBackground(created.dir);
 
-    // An image with no typed goal is still a valid ask — give the rail
-    // something to show rather than an unlabeled session.
     const label =
       input.goal ||
       (imagePaths.length ? `attached ${imagePaths.length === 1 ? "image" : "images"}` : "");
-    // The goal launches exactly as it reads — prompt improvers rewrite the
-    // field *before* submit. No prompt means "leave the PTY at a bare shell".
+    // No prompt means "leave the PTY at a bare shell".
     const prompt = input.launchClaude ? promptWithImages(input.goal, imagePaths) : "";
     await taskCreated(created, prompt, input.options, label, focusAtSubmit);
   }
 
-  // A task the inline form just created: mount its first session in the
-  // background and start Claude on the goal, without stealing the user's view.
+  // Mounts the new task's first session in the background and starts Claude on
+  // the goal, without stealing the user's view.
   async function taskCreated(
     created: TaskCreated,
     prompt: string,
     options: ClaudeLaunchOptions,
-    /** The goal as typed — image paths appended to the prompt stay out of it. */
     label?: string,
-    /** Focus at submit time; auto-focus only if the user hasn't moved since. */
     focusAtSubmit?: { sessionId: string | null; folderDir: string | null },
   ) {
     toast(`created ${created.name}${created.branch ? ` on ${created.branch}` : ""}`);
-    // Deliberately NOT tracked as a repo: the binding written in `createTask`
-    // put the row on the rail, and a task worktree is never a `repos.json`
-    // entry (`RowRecord`'s doc) — an entry shadows the record as a bare
-    // "Root" row and strands a ghost when a removal skips the untrack.
-    // `ab_ensure_session` reuses the folder's default not-started session if
-    // one exists rather than opening a surprise split pane beside it.
+    // Deliberately NOT tracked as a repo: a task worktree is never a
+    // `repos.json` entry (`RowRecord`'s doc), and an entry would shadow the
+    // record as a bare "Root" row and strand a ghost on removal.
     const ensured = await invoke<{ id: string; name: string }>("ab_ensure_session", {
       dir: created.dir,
     });
     if (ensured.isErr()) return;
     const rec = ensured.value;
     mountSession(created.dir, rec.id);
-    // Label even without a launch — the goal is why this session exists, and
-    // an unlaunched task would otherwise sit in the rail as an unnamed shell.
+    // Label even without a launch, or the task sits in the rail unnamed.
     if (label) void abSetSessionPurpose(rec.id, label);
     if (prompt) {
-      // `launchClaudeIn` waits for the PTY's first frame itself and focuses
-      // the pane on its own, so the auto-focus below is bare-shell-only.
+      // `launchClaudeIn` focuses the pane itself; the auto-focus below is
+      // therefore bare-shell-only.
       await launchClaudeIn(
         { folderDir: created.dir, sessionId: rec.id, sessionName: rec.name, restart: false },
         prompt,
@@ -281,8 +249,7 @@ export function useTaskCreation(args: {
       );
       return;
     }
-    // Bare-shell task: focus the parked pane, but only if the user is still
-    // where they were at submit — otherwise the toast is the signal.
+    // Bare-shell task: focus the parked pane only if the user stayed put.
     const stayedPut =
       selectedRef.current === (focusAtSubmit?.sessionId ?? null) &&
       activeFolderDirRef.current === (focusAtSubmit?.folderDir ?? null);

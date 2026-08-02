@@ -129,17 +129,11 @@ fn process_row(sys: &System, pid: Pid, cores: f32) -> Option<ProcessRow> {
     })
 }
 
-/// Every pid belonging to `shell_pid`'s process set, including the shell
-/// itself. Threads never qualify: on Linux, `sysinfo::System::processes()`
-/// also surfaces every thread of every process (tagged via
-/// `Process::thread_kind`, `Some` for a thread and `None` for a real
-/// process) — a thread shares its process's session id, so an unfiltered
-/// sweep pulled in every thread of every process in the shell's session and
-/// double-, triple-, N-counted that one process's memory once per thread
-/// (a `claude`/Bun session with dozens of worker threads inflated the
-/// group's total from tens of MB to gigabytes). Filtering here, at the
-/// source, is cheaper than filtering downstream since it also shrinks the
-/// set `process_row` has to resolve.
+/// Every pid belonging to `shell_pid`'s process set, including the shell itself.
+/// Threads never qualify: on Linux `sysinfo` also surfaces every thread, and a thread
+/// shares its process's session id — an unfiltered sweep N-counted one process's memory
+/// once per thread (a Bun session with dozens of workers read as gigabytes). Filtering
+/// at the source also shrinks the set `process_row` has to resolve.
 #[cfg(unix)]
 fn related_pids(sys: &System, shell_pid: Pid) -> HashSet<Pid> {
     sys.processes()

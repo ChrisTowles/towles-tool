@@ -2,16 +2,9 @@ import { cn } from "@/lib/utils";
 import { ClaudeBadge } from "@/components/agentboard-bits";
 import { formatLineRange, type MentionRange } from "@/lib/ide-selection";
 
-/**
- * The floating "these lines are going to Claude" chip, shown over the file
- * viewer and the diff editor whenever text is selected.
- *
- * Selecting text already *streams* to the connected session as ambient
- * context; the chip's job is to say so, and to offer the explicit gesture —
- * `@ send`, which drops an `@file#L12-40` reference into the session's prompt.
- * Restored from the diff pane's original gutter UI, minus its dismiss button:
- * Monaco owns Esc and a click collapses the selection, so this self-dismisses.
- */
+/** Selecting text already streams to the connected session as ambient context;
+ * this says so, and offers `@ send` for an explicit `@file#L12-40` reference.
+ * No dismiss button — Monaco owns Esc, and a click collapses the selection. */
 export function IdeSelectionChip({
   range,
   connected,
@@ -78,12 +71,8 @@ function IdeConnectedHint() {
   );
 }
 
-/**
- * The editor's whole Claude-selection surface: the chip once something is
- * selected, the discoverability hint while it isn't, and nothing at all until
- * the editor has loaded. Both editor components render exactly this, so the
- * empty-state policy lives in one place.
- */
+/** Both editor components render exactly this, so the empty-state policy lives
+ * in one place. */
 export function IdeSelectionOverlay({
   selection,
   label,

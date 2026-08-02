@@ -14,7 +14,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
-// Epoch milliseconds (scheduler boundary clock).
 use tt_config::now_ms;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -28,25 +27,18 @@ use tt_store::{
 
 use crate::store::SNAPSHOT_EVENT;
 
-/// How often the day-model attention watchers check for a meeting whose
-/// countdown reached zero or a PR that newly entered the review-requested set.
-/// Independent of collector cadence (those can be slow or off): this reads the
-/// data already in tt.db, so the notification fires within one tick of the
-/// event regardless of when the data was last refreshed.
+/// Independent of collector cadence (those can be slow or off): this reads the data
+/// already in tt.db, so a notification fires within one tick of the event.
 const NOTIFY_TICK_SECS: u64 = 15;
 
-/// A collector counts as stale once its last healthy run has aged past this
-/// many times its own refresh cadence — enough missed cycles that it's clearly
-/// stuck, not just one skipped tick.
+/// Cadence multiplier before a collector counts as stale — enough missed cycles that
+/// it's clearly stuck, not just one skipped tick.
 const STALE_CADENCE_MULT: i64 = 4;
 
-/// Floor for a collector's staleness threshold, so a fast collector (Slack every
-/// minute) still gets a few minutes of grace before it alarms.
+/// Floor, so a fast collector still gets a few minutes of grace before it alarms.
 const STALE_FLOOR_MS: i64 = 5 * 60_000;
 
-/// Build the [`WatchedCollector`] list for the stale-collector watch from the
-/// current settings: one entry per *enabled* collector (disabled ones are
-/// omitted, so they never fire), with a per-collector staleness threshold
+/// One entry per *enabled* collector, so a disabled one never fires, with a threshold
 /// derived from that collector's refresh cadence.
 fn watched_collectors(collectors: &tt_config::CollectorsSettings) -> Vec<WatchedCollector> {
     fn threshold(cadence_ms: i64) -> i64 {
@@ -86,36 +78,29 @@ enum Batch {
     PrsOpen {
         reuse_ms: i64,
     },
-    /// Slow cadence: recently-merged authored PRs (just enough to catch a
-    /// just-merged branch before its worktree is removed).
+    /// Slow cadence: enough to catch a merged branch before its worktree is removed.
     PrsMerged {
         reuse_ms: i64,
     },
     Issues {
         reuse_ms: i64,
     },
-    /// Carries the calendar sources to pull, snapshotted from settings when the
-    /// tick fired — the same way [`Batch::SlackDm`] carries its config — so the
-    /// batch is self-contained and a settings reload mid-run can't change what
-    /// it's pulling.
+    /// Sources snapshotted when the tick fired, so a settings reload mid-run can't
+    /// change what this batch is pulling.
     Calendar(Arc<Vec<CalendarSource>>),
     SlackDm(tt_collect::SlackDmConfig),
 }
 
-/// How old another window's GitHub results may be before this batch goes and
-/// fetches its own. A tick is happy with anything newer than its own cadence —
-/// that's what stops four open windows making four sets of identical calls (see
-/// `tt_collect`'s `sweep_cache`). A nudge is not: it fired because a `gh pr`
-/// mutation just happened, and the answer we want is younger than any file.
+/// How old another window's GitHub results may be before this batch fetches its own. A
+/// tick settles for anything newer than its own cadence, which is what stops four open
+/// windows making four identical sets of calls; a nudge never does.
 fn reuse_window_ms(seconds: u64) -> i64 {
     seconds as i64 * 1_000
 }
 
-/// One in-flight flag per collector. A batch is fire-and-forget spawned so the
-/// select! loop never parks on it (a calendar run can take the full
-/// `CLAUDE_TIMEOUT`); the flag keeps a slow run from stacking a second run of the
-/// *same* collector on the next tick. Persisted across settings reloads (like the
-/// attention watchers) so an in-flight batch is still tracked after a rebuild.
+/// One in-flight flag per collector: a batch is spawned fire-and-forget so the select!
+/// loop never parks on it, and the flag keeps a slow run from stacking a second run of
+/// the *same* collector. Persisted across settings reloads, like the watchers.
 #[derive(Default)]
 struct BatchGuards {
     prs_open: Arc<AtomicBool>,
@@ -125,20 +110,14 @@ struct BatchGuards {
     slack: Arc<AtomicBool>,
 }
 
-/// Try to claim a collector's in-flight slot for this tick. Returns `true` when
-/// the slot was free (now marked in-flight, caller runs the batch and must
-/// release it when done); `false` when a previous run is still ongoing and this
-/// tick should be skipped. A pure CAS on the guard — the only decision the
-/// fire-and-forget path makes, unit-tested below.
+/// `true` when the slot was free and is now claimed — the caller must release it when
+/// the batch finishes. `false` skips this tick.
 fn claim_in_flight(guard: &AtomicBool) -> bool {
     guard.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
 }
 
-/// Last-observed mtime of each nudge-dir file, so [`changed_nudge_batches`]
-/// can tell *which* target actually changed instead of eagerly refreshing
-/// `prs` on any touch to the directory (the dir is watched non-recursively
-/// per-file-unaware — see `tt_agentboard::fs_notify::DirNotifier`). Persists
-/// across settings-reload rebuilds, like the batch guards.
+/// Last-observed mtime per nudge file, so [`changed_nudge_batches`] can tell *which*
+/// target changed — the watcher only reports that the directory did.
 #[derive(Default)]
 struct NudgeSeen {
     prs: Option<SystemTime>,
@@ -146,11 +125,9 @@ struct NudgeSeen {
     slack: Option<SystemTime>,
 }
 
-/// Whether this instance should act on `target`'s nudge note. Every instance
-/// watches the same machine-global dir ([`tt_config::nudge_dir_path`]), so a note
-/// says who it is for or everyone sweeps `gh` for one terminal's mutation. A note
-/// naming nobody still reaches everyone: that is what a caller outside an app
-/// terminal writes, and dropping it would lose the nudge rather than duplicate it.
+/// Every instance watches the same machine-global dir, so a note says who it is for or
+/// everyone sweeps `gh` for one terminal's mutation. A note naming nobody still reaches
+/// everyone: that is what a caller outside an app terminal writes.
 fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str) -> bool) -> bool {
     match tt_collect::nudge::session_of(dir, target) {
         Some(session) => mine(&session),
@@ -158,11 +135,9 @@ fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str)
     }
 }
 
-/// Given a debounced "something in the nudge dir changed" wakeup, return the batches
-/// whose file advanced *and* was addressed here ([`tt_collect::nudge`] owns filenames
-/// and note format, so this side and the CLI writer can't drift). `mine` answers "is
-/// this one of my PTY sessions?" ([`crate::terminal::TermState::live_ids`]); `seen`
-/// advances even for a note addressed elsewhere, so it is skipped once, not re-read.
+/// Off a debounced "something changed" wakeup, the batches whose file advanced *and*
+/// was addressed here. `mine` answers "is this one of my PTY sessions?"; `seen` advances
+/// even for a note addressed elsewhere, so it is skipped once, not re-read.
 fn changed_nudge_batches(
     dir: &Path,
     seen: &mut NudgeSeen,
@@ -179,9 +154,8 @@ fn changed_nudge_batches(
         && prs_mtime != seen.prs
         && note_is_mine(dir, tt_collect::NudgeTarget::Prs, mine)
     {
-        // A `gh pr`/`gh issue` mutation just happened: refresh both halves of
-        // the PR collector so a just-merged PR shows up immediately, not only
-        // on the next slow merged-cadence tick.
+        // Both halves, so a just-merged PR shows up now rather than on the next
+        // slow merged-cadence tick.
         changed.push(Batch::PrsOpen { reuse_ms: tt_collect::FETCH_NOW });
         changed.push(Batch::PrsMerged { reuse_ms: tt_collect::FETCH_NOW });
     }
@@ -205,30 +179,25 @@ fn changed_nudge_batches(
     changed
 }
 
-/// Spawn the scheduler loop. Collector cadence/enable/sources are re-read from
-/// settings whenever `reload` is signalled (the `settings_set` command fires it),
-/// so edits in the Settings screen take effect live — no relaunch needed.
+/// Spawn the scheduler loop. Settings are re-read whenever `reload` is signalled, so
+/// edits in the Settings screen take effect live.
 pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
     tauri::async_runtime::spawn(async move {
-        // Attention watchers persist across settings reloads: their edge state
-        // (which meeting is being tracked, which PRs are already requested) must
-        // survive a cadence rebuild so a reload never re-fires a stale edge.
+        // Watchers persist across settings reloads: their edge state must survive a
+        // cadence rebuild so a reload never re-fires a stale edge.
         let mut meeting_watch = MeetingStartWatch::new();
         let mut review_watch = ReviewRequestedWatch::new();
         let mut checks_watch = ChecksFailedWatch::new();
         let mut stale_watch = StaleCollectorWatch::new();
-        // The notify tick's connection, kept across ticks. See
-        // [`run_notify_check`] — it fires every 15s and `Store::open` runs the
-        // full migration pass every time.
+        // Kept across ticks: the tick fires every 15s and `Store::open` runs the full
+        // migration pass every time.
         let mut notify_store: Option<tt_store::Store> = None;
-        // In-flight guards also persist across reloads: a batch spawned under the
-        // old cadence must still block a duplicate under the new one.
+        // Guards persist across reloads too: a batch spawned under the old cadence must
+        // still block a duplicate under the new one.
         let guards = BatchGuards::default();
-        // Eager-refresh accelerant: the towles-tool-app plugin's PostToolUse hook
-        // runs `tt task nudge prs|issues` after a `gh pr`/`gh issue` mutation so
-        // that view updates before its next scheduled tick. Same debounced
-        // fs-notify pattern as the journal watch in `lib.rs` — `.ok()` falls back to
-        // the poll cadence — and `changed_nudge_batches` resolves what advanced.
+        // Eager-refresh accelerant: the plugin's PostToolUse hook runs `tt task nudge`
+        // after a `gh` mutation so that view updates before its next scheduled tick.
+        // `.ok()` falls back to the poll cadence.
         let nudge_dir = tt_config::nudge_dir_path().ok();
         let nudge_notify = Arc::new(Notify::new());
         let _nudge_watcher = nudge_dir.as_ref().and_then(|dir| {
@@ -238,16 +207,14 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
         });
         let mut nudge_seen = NudgeSeen::default();
         loop {
-            // (Re)load config and rebuild the tick intervals for this cycle.
             let collectors = tt_config::load().map(|s| s.collectors).unwrap_or_default();
-            // Rebuilt each cycle so enable/cadence edits change what's watched;
-            // the watch's edge state persists across the rebuild.
+            // Rebuilt each cycle so cadence edits change what's watched; the watch's
+            // edge state persists across the rebuild.
             let watched = watched_collectors(&collectors);
             let calendar_sources = Arc::new(collectors.calendar.sources.clone());
             let calendar_period_ms = collectors.calendar.refresh_minutes.max(1) as i64 * 60_000;
 
-            // Each tick's cadence doubles as how long it'll settle for another
-            // window's results — see `reuse_window_ms`.
+            // Each tick's cadence doubles as its reuse window — see `reuse_window_ms`.
             let pr_seconds = collectors.prs.refresh_seconds.max(30);
             let pr_merged_seconds = collectors.prs.merged_refresh_minutes.max(1) * 60;
             let issue_seconds = collectors.issues.refresh_minutes.max(1) * 60;
@@ -268,12 +235,11 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                 collectors.slack.refresh_seconds.max(30),
             ));
             slack_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            // Fixed cadence, independent of any collector's enable/refresh: the
-            // attention watchers only read existing tt.db rows.
+            // Fixed cadence: the watchers only read existing tt.db rows.
             let mut notify_tick = tokio::time::interval(Duration::from_secs(NOTIFY_TICK_SECS));
             notify_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            // Enabled but unconfigured stays quiet: without a token every tick
-            // would just record the same failure.
+            // Enabled but unconfigured stays quiet: every tick would record the
+            // same failure.
             let slack_on = collectors.slack.enabled && !collectors.slack.token.trim().is_empty();
             let slack_config = tt_collect::SlackDmConfig {
                 token: collectors.slack.token.clone(),
@@ -281,8 +247,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                 watch_name: collectors.slack.watch_name.clone(),
             };
 
-            // Inner loop runs the current cadence until settings change, then
-            // breaks to rebuild from the top with the new values.
+            // Runs the current cadence until settings change, then rebuilds from the top.
             loop {
                 tokio::select! {
                     _ = reload.notified() => break,
@@ -299,10 +264,8 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                         spawn_batch(&app, batch, calendar_period_ms, &guards.issues);
                     }
                     _ = calendar_tick.tick(), if collectors.calendar.enabled => {
-                        // Quiet-hours gate: outside the configured working-hours
-                        // window (nights/weekends) skip the token-costing
-                        // `claude -p` run entirely. Evaluated per tick against the
-                        // local wall clock; disabling quiet hours restores 24/7.
+                        // Outside working hours, skip the token-costing `claude -p`
+                        // run entirely.
                         if tt_collect::should_run_calendar(
                             now_ms(),
                             &collectors.calendar.quiet_hours,
@@ -325,8 +288,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                     }
                     _ = nudge_notify.notified() => {
                         if let Some(dir) = &nudge_dir {
-                            // Read once per wakeup, not once per target: this
-                            // takes the same lock the keystroke path uses.
+                            // Once per wakeup: this takes the keystroke path's lock.
                             let live = app.state::<crate::terminal::TermState>().live_ids();
                             let mine = |session: &str| live.contains(session);
                             for batch in
@@ -361,10 +323,8 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
     });
 }
 
-/// Fire-and-forget a collect batch so the select! loop stays hot. If the
-/// collector's previous run is still in flight the tick is skipped; otherwise the
-/// guard is claimed, the batch runs on its own task (blocking work stays on the
-/// blocking pool inside `run_batch`), and the guard is released when it finishes.
+/// Fire-and-forget a collect batch so the select! loop stays hot. A tick whose
+/// collector is still in flight is skipped.
 fn spawn_batch(app: &AppHandle, batch: Batch, calendar_period_ms: i64, guard: &Arc<AtomicBool>) {
     if !claim_in_flight(guard) {
         return;
@@ -386,9 +346,8 @@ async fn run_batch(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
 }
 
 fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
-    // Data collected while the window is minimized has no audience; skip the
-    // subprocess sweep (and, for calendar, the claude tokens). The next tick
-    // after a restore refreshes everything.
+    // Data collected while minimized has no audience; the first tick after a restore
+    // refreshes everything.
     if main_window_minimized(app) {
         return;
     }
@@ -416,11 +375,9 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
             log_failure(tt_collect::collect_issues(&store, &repos, reuse_ms, now));
         }
         Batch::Calendar(sources) => {
-            // Token-cost guard: an interval's first tick fires at startup, so a
-            // relaunch inside half a refresh period would re-bill `claude -p`
-            // for data we already have — and a run that just FAILED must back
-            // off rather than re-bill immediately on the next relaunch, so any
-            // recorded run (ok or not) counts as fresh here.
+            // Token-cost guard: an interval's first tick fires at startup, so a relaunch
+            // inside half a refresh period would re-bill `claude -p`. Any recorded run
+            // counts as fresh, failures included — a failed run already burned tokens.
             if claude_ran_within(&store, now, calendar_period_ms / 2) {
                 return;
             }
@@ -436,11 +393,9 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
     }
 }
 
-/// Check the day-model attention watchers against tt.db and fire notifications for
-/// new edges — even minimized: an unattended window is exactly when one matters.
-/// SQLite reads run on a blocking worker while edge state stays async-side across
-/// ticks. `store_slot` carries the connection between ticks, dodging `Store::open`'s
-/// full migration pass; it moves into the closure and back (`Send`, not `Sync`).
+/// Fires notifications for new edges even while minimized: an unattended window is
+/// exactly when one matters. `store_slot` carries the connection between ticks, dodging
+/// `Store::open`'s migration pass; it moves into the closure and back.
 async fn run_notify_check(
     app: &AppHandle,
     store_slot: &mut Option<tt_store::Store>,
@@ -483,9 +438,7 @@ async fn run_notify_check(
     }
 }
 
-/// Fire a "meeting starting now" desktop notification. Suppressed when the main
-/// window is focused (the header countdown already shows it) or when the
-/// notification threshold rules it out (it is an urgent-level kind).
+/// Suppressed when focused — the header countdown already shows it.
 fn notify_meeting_start(app: &AppHandle, edge: &tt_store::MeetingStartEdge) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -498,9 +451,7 @@ fn notify_meeting_start(app: &AppHandle, edge: &tt_store::MeetingStartEdge) {
     let _ = app.notification().builder().title("Meeting starting now").body(&edge.title).show();
 }
 
-/// Fire a "PR review requested" desktop notification. Suppressed when the main
-/// window is focused (the app header already shows review-requested PRs) or when
-/// the notification threshold rules it out (it is a routine-level kind).
+/// Suppressed when focused — the header already shows review-requested PRs.
 fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -518,10 +469,7 @@ fn notify_review_requested(app: &AppHandle, edge: &tt_store::ReviewRequestedEdge
         .show();
 }
 
-/// Fire a "CI failing" desktop notification when one of your PRs' checks flip
-/// into failing. Suppressed when the main window is focused (the app header already
-/// surfaces PR check state) or when the notification threshold rules it out (it
-/// is an important-level kind).
+/// Suppressed when focused — the header already surfaces PR check state.
 fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -539,11 +487,8 @@ fn notify_checks_failed(app: &AppHandle, edge: &tt_store::ChecksFailedEdge) {
         .show();
 }
 
-/// Fire a "collector went stale" desktop notification — a collector stopped
-/// refreshing or is failing repeatedly (expired `gh` auth, revoked Slack token).
-/// Unlike the meeting/review notifications this is *not* suppressed while focused:
-/// with no always-on in-app surface for collector health, a focused user would
-/// otherwise never learn a collector died. Gated only by the switch/threshold.
+/// Unlike the notifications above this is *not* suppressed while focused: with no
+/// always-on surface for collector health, a focused user would never learn one died.
 fn notify_stale_collector(app: &AppHandle, edge: &tt_store::StaleCollectorEdge) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -571,8 +516,7 @@ fn collector_label(key: &str) -> &str {
     }
 }
 
-/// Render an elapsed duration (ms) as a compact `Nh`/`Nm`/`Ns` string for a
-/// notification body, rounding down to the largest whole unit.
+/// A compact `Nh`/`Nm`/`Ns` string, rounded down to the largest whole unit.
 fn human_duration(ms: i64) -> String {
     let secs = ms.max(0) / 1000;
     if secs >= 3600 {
@@ -584,16 +528,12 @@ fn human_duration(ms: i64) -> String {
     }
 }
 
-/// Whether the main window currently reports itself focused. Unknown states
-/// (no window, backend error) count as not-focused so a notification still
-/// fires rather than being silently swallowed.
+/// Unknown states count as not-focused, so a notification still fires.
 fn window_focused(app: &AppHandle) -> bool {
     app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false)
 }
 
-/// Whether the main window currently reports itself minimized. Unknown states
-/// (no window, backend error) count as visible so collection never silently
-/// starves.
+/// Unknown states count as visible, so collection never silently starves.
 fn main_window_minimized(app: &AppHandle) -> bool {
     app.get_webview_window("main").map(|w| w.is_minimized().unwrap_or(false)).unwrap_or(false)
 }
@@ -608,9 +548,8 @@ fn log_failure(summary: tt_collect::CollectSummary) {
     }
 }
 
-/// Whether any `claude:*` collector run — successful or not — is younger than
-/// `max_age_ms`. Failed runs count: a claude invocation that burned tokens and
-/// then failed parsing must not be retried at relaunch speed.
+/// Failed runs count: an invocation that burned tokens and then failed parsing must not
+/// be retried at relaunch speed.
 fn claude_ran_within(store: &tt_store::Store, now: i64, max_age_ms: i64) -> bool {
     match store.runs() {
         Ok(runs) => runs
@@ -628,12 +567,9 @@ mod tests {
     #[test]
     fn claim_in_flight_claims_a_free_slot_then_blocks_until_released() {
         let guard = AtomicBool::new(false);
-        // First tick claims the free slot.
         assert!(claim_in_flight(&guard), "a free slot is claimable");
-        // A second tick while the batch is still running is skipped.
         assert!(!claim_in_flight(&guard), "an in-flight slot is not re-claimable");
         assert!(!claim_in_flight(&guard), "repeated ticks keep skipping");
-        // Once the batch releases the guard, the next tick claims it again.
         guard.store(false, Ordering::Release);
         assert!(claim_in_flight(&guard), "a released slot is claimable again");
     }
@@ -669,8 +605,7 @@ mod tests {
         }
     }
 
-    /// Ownership predicate for the tests that write bare notes naming nobody,
-    /// where it is never consulted.
+    /// For the tests writing bare notes, where the predicate is never consulted.
     fn anyone(_: &str) -> bool {
         true
     }
@@ -712,9 +647,8 @@ mod tests {
 
     #[test]
     fn a_nudge_naming_nobody_still_reaches_every_instance() {
-        // A Claude Code session started outside an app terminal has no
-        // `TT_SESSION_ID` to pass on. Losing its nudge would be worse than
-        // running it in more than one window.
+        // A session outside an app terminal has no `TT_SESSION_ID` to pass on, and
+        // losing its nudge is worse than running it in more than one window.
         let dir = tempfile::tempdir().unwrap();
         let mut seen = NudgeSeen::default();
         let slack = test_slack_config();
@@ -729,8 +663,8 @@ mod tests {
 
     #[test]
     fn a_skipped_nudge_is_not_reconsidered_on_the_next_wakeup() {
-        // `seen` has to advance even when the note was for someone else, or
-        // every later wakeup re-reads and re-rejects the same file.
+        // `seen` advances even for someone else's note, or every later wakeup
+        // re-reads and re-rejects the same file.
         let dir = tempfile::tempdir().unwrap();
         let mut seen = NudgeSeen::default();
         let slack = test_slack_config();
@@ -744,9 +678,8 @@ mod tests {
         );
     }
 
-    /// Nudge-file basenames must match what the CLI writer touches. The CLI
-    /// resolves them through `tt_collect::NudgeTarget::file_name`, so pin the
-    /// scheduler's filesystem paths to the same source of truth.
+    /// Basenames must match what the CLI writer touches; both sides resolve them
+    /// through `tt_collect::NudgeTarget::file_name`.
     #[test]
     fn nudge_file_names_match_the_shared_contract() {
         assert_eq!(tt_collect::NudgeTarget::Prs.file_name(), "prs");
@@ -770,7 +703,6 @@ mod tests {
             vec!["prs_open", "prs_merged"],
             "a gh pr/issue mutation refreshes both PR cadences immediately"
         );
-        // Already acknowledged: polling again with no further touch is quiet.
         assert!(changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty());
     }
 
@@ -798,8 +730,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut seen = NudgeSeen::default();
         let slack = test_slack_config();
-        // The Slack nudge file is `slack` (the `:` is dropped for a plain
-        // filename), distinct from the `slack:dm` collector key.
+        // The nudge file is `slack`, distinct from the `slack:dm` collector key.
         std::fs::write(dir.path().join("slack"), "1").unwrap();
         let batches = changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone);
         assert_eq!(batch_names(&batches), vec!["slack"]);
@@ -807,7 +738,6 @@ mod tests {
             Batch::SlackDm(config) => assert_eq!(config.token, "xoxb-test"),
             _ => panic!("expected a SlackDm batch"),
         }
-        // Acknowledged: a second poll with no further touch stays quiet.
         assert!(changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone).is_empty());
     }
 
@@ -820,10 +750,8 @@ mod tests {
         std::fs::write(&path, "1").unwrap();
         changed_nudge_batches(dir.path(), &mut seen, &slack, &anyone);
 
-        // A second `gh pr merge` before the app's next poll re-touches the
-        // same file; only the mtime is ever read (content is just a
-        // debugging aid), so bump it explicitly rather than relying on
-        // filesystem mtime resolution across two quick writes.
+        // Only the mtime is ever read, so bump it explicitly rather than relying on
+        // filesystem resolution across two quick writes.
         let file = std::fs::File::open(&path).unwrap();
         file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
         assert_eq!(

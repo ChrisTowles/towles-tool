@@ -7,11 +7,9 @@ import { previewSanitizeSchema } from "@/lib/markdown-sanitize";
 import { remarkAlerts } from "@/lib/remark-alerts";
 import type { PreviewDoc } from "@/lib/preview-artifact";
 
-/** The rendered body of a file in the Preview pane — one of three surfaces, by
- * the `kind` Rust derives from the extension. Deliberately not
- * `components/file-preview.tsx`, which looks like the same job: every path there
- * is *checkout*-relative, and a previewed file is routinely a scratch page under
- * no tracked folder. */
+/** The rendered body of a file in the Preview pane, by the `kind` Rust derives
+ * from the extension. Not `components/file-preview.tsx`, which looks like the same
+ * job: every path there is *checkout*-relative, a previewed file routinely isn't. */
 
 const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm, remarkAlerts];
 /** `previewSanitizeSchema` is what stops a `<script>` in a Markdown file

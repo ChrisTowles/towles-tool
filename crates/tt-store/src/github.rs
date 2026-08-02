@@ -91,13 +91,9 @@ impl Store {
     }
 
     /// Reconcile the tracked-repo identity cache to exactly `repos`
-    /// (`repo_root` -> `owner_repo` pairs): upsert each pair, then delete any
-    /// existing row whose `repo_root` isn't in the set. The Agentboard poll
-    /// loop calls this every cycle with the currently tracked repos and their
-    /// freshly-derived git origin, so untracking a repo (or its origin
-    /// becoming unparseable) drops its row on the next poll with no separate
-    /// untrack step — `repos.json` stays the one source of truth for which
-    /// repos exist, and this table can never drift into holding a stale one.
+    /// (`repo_root` -> `owner_repo` pairs). The Agentboard poll loop calls this
+    /// every cycle, so untracking a repo drops its row on the next poll with no
+    /// separate untrack step — `repos.json` stays the one source of truth.
     pub fn reconcile_repos(&self, repos: &[(String, String)], now_ms: i64) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         {
@@ -127,15 +123,10 @@ impl Store {
     /// The tracked `(repo_root, owner_repo)` for a given slug, matched
     /// **case-insensitively** and returning the identity cache's own spelling.
     ///
-    /// Both halves exist for the same reason. GitHub slugs are case-preserving
-    /// but not case-sensitive, and this repo has more than one source for them:
-    /// `gh` reports `ChrisTowles/towles-tool` on issue and PR rows, while the
-    /// origin-derived cache historically stored a folded copy. An exact-match
-    /// lookup therefore rejected the *correct* casing and accepted only the
-    /// folded one, and callers then persisted the folded string — which the
-    /// Board treats as a different repo, splitting one repo's cards across two
-    /// identically-labelled swimlanes. Matching loosely and writing back the
-    /// stored spelling keeps every new row on one identity.
+    /// GitHub slugs are case-preserving but not case-sensitive, and this repo has
+    /// more than one source for them — an exact-match lookup rejected the correct
+    /// casing, and callers persisted the folded string, splitting one repo's cards
+    /// across two identically-labelled Board swimlanes.
     pub fn tracked_repo_for_owner_repo(
         &self,
         owner_repo: &str,

@@ -93,12 +93,9 @@ fn daily_notes(config_dir: Option<&Path>, no_open: bool) -> i32 {
     0
 }
 
-/// `tt journal jot "<text>"` — append a timestamped bullet to today's daily note.
-///
-/// Reads the bullet text from the argument, or from stdin when the argument is omitted
-/// or is `-` (so `echo ... | tt journal jot` and `tt journal jot -` both work). Never
-/// spawns an editor. The clock is read here (the CLI boundary) and the resulting
-/// `HH:MM`/date is injected into the Tauri-free library fn.
+/// Append a timestamped bullet to today's daily note, from the argument or from stdin
+/// when it is omitted or `-`. Never spawns an editor. The clock is read here at the CLI
+/// boundary and the resulting `HH:MM`/date injected into the Tauri-free library fn.
 fn jot(config_dir: Option<&Path>, text: Option<String>) -> i32 {
     let settings = match load_settings(config_dir) {
         Ok(s) => s,
@@ -222,14 +219,9 @@ fn resolve_title(title: Option<String>, label: &str) -> Result<String, String> {
         .map_err(|e| format!("Could not read {label} title: {e}"))
 }
 
-/// `tt journal open [--last] [--pick] [--type <t>] [--no-open]` — reopen a journal entry.
-///
-/// Uses the same collection/sorting helpers as `list` (newest-first by date, optional
-/// type filter) and the same editor path as `note`. Without `--pick`, targets the single
-/// most-recent entry. With `--pick`, feeds the top ~50 entries into an interactive fuzzy
-/// picker (like `tt gh branch`) and opens the selection. With `--no-open` — or whenever
-/// stdout is not a TTY — the absolute path is printed instead of launching an editor. An
-/// empty (or fully-filtered-out) journal is a clear error with exit code 1.
+/// Reopen a journal entry: the most recent one, or a fuzzy pick over the top ~50 with
+/// `--pick`. `--no-open` — or a non-TTY stdout — prints the absolute path instead of
+/// launching an editor; an empty or fully-filtered journal exits 1.
 fn open(config_dir: Option<&Path>, pick: bool, ty: Option<String>, no_open: bool) -> i32 {
     let settings = match load_settings(config_dir) {
         Ok(s) => s,

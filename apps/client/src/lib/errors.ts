@@ -1,19 +1,11 @@
-// Typed errors for the frontend's failure modes, as tagged unions rather than
-// thrown `unknown`. See .claude/rules/typescript.md ("errors are values") —
-// this is the TypeScript half of the convention the Rust crates already follow
-// with `thiserror`.
+// Tagged unions, not thrown `unknown` — .claude/rules/typescript.md.
 import { TaggedError, isTaggedError } from "better-result";
 import type { ZodError } from "zod";
 
-/** The issue list Zod reports on a failed `safeParse`. */
 type ZodIssues = ZodError["issues"];
 
-/**
- * No Tauri host — plain-Vite browser dev. Kept distinct from a real failure so
- * a genuine backend error can't masquerade as "not wired in browser"; callers
- * that want to degrade quietly outside the shell test for it explicitly with
- * `NotInTauri.is(error)`.
- */
+/** No Tauri host (browser dev) — distinct so a real backend failure can't
+ * masquerade as it. Test with `NotInTauri.is(error)`. */
 export class NotInTauri extends TaggedError("NotInTauri")<{
   command: string;
   message: string;
@@ -34,10 +26,7 @@ export class IpcFailed extends TaggedError("IpcFailed")<{
   }
 }
 
-/**
- * The command resolved, but its payload didn't match the Zod schema the call
- * site declared. A backend/frontend contract drift, not a runtime failure.
- */
+/** Resolved, but the payload missed the call site's schema — contract drift. */
 export class SchemaMismatch extends TaggedError("SchemaMismatch")<{
   command: string;
   issues: ZodIssues;
@@ -51,10 +40,7 @@ export class SchemaMismatch extends TaggedError("SchemaMismatch")<{
   }
 }
 
-/**
- * The command didn't resolve within its timeout. Only abandons the *promise* —
- * Tauri commands aren't cancelable, so the backend work keeps running.
- */
+/** Abandons the *promise* only — Tauri commands aren't cancelable. */
 export class IpcTimeout extends TaggedError("IpcTimeout")<{
   command: string;
   timeoutMs: number;
@@ -65,16 +51,11 @@ export class IpcTimeout extends TaggedError("IpcTimeout")<{
   }
 }
 
-/** Every way a Tauri command invocation can fail. */
 export type IpcError = NotInTauri | IpcFailed | SchemaMismatch | IpcTimeout;
 
-/**
- * A pasted/dropped image exceeded the size cap the new-task form enforces
- * (mirrors `MAX_IMAGE_BYTES` in `tt_tasks::pasted`). A value, not a throw —
- * the caller surfaces it inline the same way it surfaces a staging failure.
- */
 const toMb = (n: number) => Math.round(n / 1024 / 1024);
 
+/** Over the new-task form's cap (mirrors `MAX_IMAGE_BYTES` in `tt_tasks::pasted`). */
 export class ImageTooLarge extends TaggedError("ImageTooLarge")<{
   name: string;
   bytes: number;
@@ -91,14 +72,7 @@ export class ImageTooLarge extends TaggedError("ImageTooLarge")<{
   }
 }
 
-/**
- * Human-readable text for an error, for toasts and inline error UI.
- *
- * Prefer this to `String(error)`, which degrades to `"[object Object]"` on a
- * rejected Tauri command (Tauri rejects with a bare string) and on any
- * non-`Error` throw. Where the value is already typed as an {@link IpcError},
- * `error.message` reads better — tagged errors compose their own message.
- */
+/** Display text — `String(error)` gives `"[object Object]"` for a Tauri reject. */
 export function errorMessage(error: unknown): string {
   if (isTaggedError(error)) return error.message;
   return describe(error);

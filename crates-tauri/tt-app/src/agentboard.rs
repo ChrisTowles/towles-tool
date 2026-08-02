@@ -13,10 +13,8 @@ use tt_agentboard::StatePayload;
 
 pub use tt_agentboard::engine::{Engine, now_ms};
 
-/// Tauri event carrying the state snapshot.
 pub const STATE_EVENT: &str = "agentboard://state";
 
-/// Managed Tauri state: the engine plus the task-signal handles.
 pub struct Ab {
     pub engine: Arc<Mutex<Engine>>,
     /// Signals the debounced emitter to rebuild + emit.
@@ -24,20 +22,18 @@ pub struct Ab {
     /// Signals the scan task to run an eager scan (fs-notify accelerant).
     pub scan: Arc<Notify>,
     /// First-entered "needs you" timestamps, carried across recomputes so a
-    /// session's waiting-age is stable (see `tt_agentboard::bridge::NeedsSince`).
-    /// Every payload the app stamps threads through this.
+    /// session's waiting-age is stable. Every payload the app stamps threads here.
     pub needs_since: Mutex<tt_agentboard::bridge::NeedsSince>,
-    /// Session ids seen with a live PTY at least once, so
-    /// [`prune_dead_shells`] can tell "just exited" from "hasn't started yet"
-    /// (the window between `ab_add_session` and `term_start`).
+    /// Session ids seen with a live PTY at least once, so [`prune_dead_shells`]
+    /// can tell "just exited" from "hasn't started yet".
     pub ever_live: Mutex<HashSet<String>>,
 }
 
 /// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from the
 /// app's PTY registry — the engine can't see PTYs, and every payload leaving the
 /// app passes through here first. Status is load-bearing: the engine's verdict
-/// rides a 60s-cached `claude agents` snapshot, so `tt_agentboard::pty_status`
-/// folds the PTY's direct observation over the top.
+/// rides a 60s-cached `claude agents` snapshot, so the PTY's direct observation
+/// folds over the top.
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
@@ -49,24 +45,21 @@ pub fn stamp_pty_state(
         terms.emit_state();
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
-            // The one thing only this process can know (see `TaskPhases`):
-            // whether a create/removal is running on this row right now.
+            // Only this process knows whether a create/removal is running here.
             folder.phase = phases.get(&folder.dir);
             let mut has_port_drift = false;
             for session in &mut folder.sessions {
                 session.live = live.contains(&session.id);
                 session.shell_kind = shell_kinds.get(&session.id).cloned();
-                // Only sessions this app actually hosts a PTY for: everything
-                // else (another window's session, a row whose shell has
-                // exited) has no direct evidence to apply.
+                // Only sessions this app hosts a PTY for; everything else has no
+                // direct evidence to apply.
                 if let Some(signal) = pty_signals.get(&session.id)
                     && let Some(state) = session.agent_state.as_mut()
                 {
                     state.status =
                         tt_agentboard::pty_status::resolve_status(Some(state.status), signal, now);
                 }
-                // Only a live PTY's drift is meaningful — a stopped shell's
-                // last-known ports say nothing about anything running now.
+                // A stopped shell's last-known ports say nothing about now.
                 session.port_drift = if session.live {
                     port_drift.get(&session.id).cloned().unwrap_or_default()
                 } else {
@@ -77,16 +70,13 @@ pub fn stamp_pty_state(
             folder.has_port_drift = has_port_drift;
         }
     }
-    // With `live` truthful, recompute the placeholder `needs` counts and
-    // stamp each session's `needs_since_ms`.
+    // Only now is `live` truthful enough to recompute the `needs` counts.
     tt_agentboard::bridge::recompute_needs(payload, since, now);
 }
 
-/// Delete a plain shell's session record the moment its PTY exits (an agent
-/// pane keeps its last-known status; an exited shell is just an "Off" row).
-/// Runs after [`stamp_pty_state`], which makes `session.live` truthful;
-/// `ever_live` keeps a brand-new session that hasn't spawned its PTY yet from
-/// being deleted out from under the user.
+/// Delete a plain shell's session record the moment its PTY exits (an agent pane
+/// keeps its last-known status). Must run after [`stamp_pty_state`]; `ever_live`
+/// keeps a session that hasn't spawned its PTY yet from being deleted.
 fn prune_dead_shells(
     payload: &mut StatePayload,
     engine: &Mutex<Engine>,
@@ -113,10 +103,8 @@ fn prune_dead_shells(
     }
 }
 
-/// The stamped payload, recomputed now. Shared by `ab_get_state` and emitters.
 /// The agent snapshot (claude CLI + `/proc` + transcript reads) is collected
-/// BEFORE taking the engine lock so its subprocess work can't stall other
-/// `ab_*` commands.
+/// BEFORE taking the engine lock, so its subprocess work can't stall `ab_*`.
 pub fn stamped_payload(app: &AppHandle) -> StatePayload {
     let snapshot = tt_agentboard::engine::collect_agent_snapshot(
         now_ms(),
@@ -138,10 +126,8 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
     payload
 }
 
-/// Fire a desktop notification per session that just flipped into needs-you
-/// (edge-detected in the emitter loop). Status-report only — acting on the
-/// agent happens in the real PTY. Skipped while the window is focused or
-/// when the user's notification rules exclude it.
+/// Fire a desktop notification per session that just flipped into needs-you.
+/// Status-report only — acting on the agent happens in the real PTY.
 pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) {
     use tauri_plugin_notification::NotificationExt;
 
@@ -159,9 +145,7 @@ pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) 
     }
     for edge in edges {
         // The only record of a native notification firing — correlate against
-        // `window.focus_changed` to see whether the OS raised the window as a
-        // side effect of this (it's the notification daemon's call, not ours;
-        // see the worktree-delete-focus investigation).
+        // `window.focus_changed` to see if the OS raised the window off it.
         tracing::info!(
             repo = edge.repo,
             session = edge.session,
@@ -177,8 +161,7 @@ pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) 
     }
 }
 
-/// The notification body wording for a needs-you edge, keyed off *why* the
-/// session needs you. Text label only — no interaction happens here.
+/// Text label only — no interaction happens here.
 fn needs_you_body(edge: &tt_agentboard::NeedsYouEdge) -> String {
     use tt_agentboard::NeedsYouReason::*;
     let what = match edge.reason {
@@ -189,9 +172,6 @@ fn needs_you_body(edge: &tt_agentboard::NeedsYouEdge) -> String {
     format!("{} {}", edge.session, what)
 }
 
-// Tauri commands.
-
-/// Pull the current snapshot (initial mount).
 #[tauri::command]
 pub fn ab_get_state(app: AppHandle) -> StatePayload {
     stamped_payload(&app)
@@ -225,13 +205,10 @@ pub fn ab_add_repo(state: State<Ab>, path: String) {
     state.emit.notify_one();
 }
 
-/// Remove the repo at `dir` from the rail — the exact dir, not a resolved session
-/// name, since removing several by name in a row is unsafe (see
-/// `remove_repo_persisted`).
-///
-/// `dir` is not always a `repos.json` entry: a worktree deleted outside `tt task
-/// rm` leaves only git's `.git/worktrees/<name>` registration at its owning
-/// checkout, which the prune below clears.
+/// Takes the exact dir, not a resolved session name — removing several by name
+/// in a row is unsafe (see `remove_repo_persisted`). `dir` is not always a
+/// `repos.json` entry either: a worktree deleted outside `tt task rm` leaves only
+/// git's `.git/worktrees/<name>` registration, which the prune below clears.
 #[tauri::command]
 pub async fn ab_remove_repo(state: State<'_, Ab>, dir: String) -> Result<(), String> {
     let removed_tracked = {
@@ -265,8 +242,7 @@ pub async fn ab_remove_repo(state: State<'_, Ab>, dir: String) -> Result<(), Str
 }
 
 /// Untrack every tracked repo whose directory is gone from disk (the rail's
-/// "missing" ghosts — e.g. removed worktrees). Returns the dropped dirs
-/// so the client can toast a count.
+/// "missing" ghosts). Returns the dropped dirs so the client can toast a count.
 #[tauri::command]
 pub fn ab_untrack_missing(state: State<Ab>) -> Vec<String> {
     let removed = state.engine.lock().unwrap().untrack_missing();
@@ -277,15 +253,13 @@ pub fn ab_untrack_missing(state: State<Ab>) -> Vec<String> {
     removed
 }
 
-/// Read the add-repo picker's configured scan roots (`scanRoots` in repos.json).
 /// Empty ⇒ the picker falls back to `~/code`.
 #[tauri::command]
 pub fn ab_get_scan_roots(state: State<Ab>) -> Vec<String> {
     state.engine.lock().unwrap().scan_roots()
 }
 
-/// Set the add-repo picker's scan roots. Blank entries are dropped; an empty
-/// list clears the key so the picker falls back to `~/code`.
+/// Blank entries are dropped; an empty list clears the key.
 #[tauri::command]
 pub fn ab_set_scan_roots(state: State<Ab>, roots: Vec<String>) {
     let cleaned: Vec<String> =
@@ -294,19 +268,15 @@ pub fn ab_set_scan_roots(state: State<Ab>, roots: Vec<String>) {
     state.engine.lock().unwrap().set_scan_roots(cleaned);
 }
 
-/// A repo candidate for the manage-repos picker: either already on the rail
-/// or discoverable under a scan root.
+/// Either already on the rail or discoverable under a scan root.
 #[derive(serde::Serialize)]
 pub struct RepoCandidate {
     /// Friendly label, e.g. `p/towles-tool` (path relative to the scan root).
     pub name: String,
-    /// Absolute path, passed back verbatim to `ab_add_repo`/`ab_remove_repo`.
     pub dir: String,
-    /// Whether this repo is currently on the rail.
     pub active: bool,
 }
 
-/// Expand a leading `~`/`~/` in a configured scan root to the home dir.
 fn expand_tilde(raw: &str, home: Option<&std::path::Path>) -> std::path::PathBuf {
     match (raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~")), home) {
         (Some(rest), Some(home)) => home.join(rest),
@@ -314,9 +284,8 @@ fn expand_tilde(raw: &str, home: Option<&std::path::Path>) -> std::path::PathBuf
     }
 }
 
-/// The manage-repos picker's candidates: repos discovered under `roots` ∪
-/// `existing`, named relative to their root (bare dir outside every root),
-/// `active` = already tracked. Split from `ab_discover_repos` for testing.
+/// Repos under `roots` ∪ `existing`, named relative to their root (bare dir
+/// outside every root). Split from `ab_discover_repos` for testing.
 fn build_repo_candidates(existing: &[String], roots: &[std::path::PathBuf]) -> Vec<RepoCandidate> {
     use std::collections::HashSet;
     let existing_set: HashSet<&String> = existing.iter().collect();
@@ -347,9 +316,7 @@ fn build_repo_candidates(existing: &[String], roots: &[std::path::PathBuf]) -> V
         .collect()
 }
 
-/// List every repo the manage-repos picker should show (see
-/// `build_repo_candidates`) under the configured scan roots (`scanRoots` in
-/// repos.json, defaulting to `~/code`).
+/// Scan roots come from `scanRoots` in repos.json, defaulting to `~/code`.
 #[tauri::command]
 pub fn ab_discover_repos(state: State<Ab>) -> Vec<RepoCandidate> {
     let (existing, configured): (Vec<String>, Vec<String>) = {
@@ -376,8 +343,7 @@ mod tests {
         std::fs::create_dir_all(base.join("p/proj/.git")).unwrap();
         std::fs::create_dir_all(base.join("p/other/.git")).unwrap();
 
-        // "p/other" is already on the rail; "p/proj" is only discovered;
-        // "/elsewhere/typed" is on the rail but outside every scan root.
+        // On the rail: "p/other" and "/elsewhere/typed" (outside every root).
         let other_dir = base.join("p/other").to_str().unwrap().to_string();
         let existing = vec![other_dir.clone(), "/elsewhere/typed".to_string()];
         let candidates = build_repo_candidates(&existing, &[base.to_path_buf()]);
@@ -396,8 +362,7 @@ mod tests {
     }
 }
 
-/// Add a PTY session to a folder. Returns the new record so the client can
-/// select it immediately.
+/// Returns the new record so the client can select it immediately.
 #[tauri::command]
 pub fn ab_add_session(
     state: State<Ab>,
@@ -410,9 +375,8 @@ pub fn ab_add_session(
     record
 }
 
-/// The folder's first session, seeding the default one if it has none — the
-/// task-creation flow's "session to type into", without a full state fetch
-/// and without risking a second row when a default already exists.
+/// The folder's first session, seeding the default if it has none — the
+/// task-creation flow's "session to type into", without a full state fetch.
 #[tauri::command]
 pub fn ab_ensure_session(
     state: State<Ab>,
@@ -442,13 +406,11 @@ pub fn ab_close_session(state: State<Ab>, id: String) {
     state.emit.notify_one();
 }
 
-/// Set the rail's repo order to `dirs` (the user dragging a row in Settings →
-/// Agentboard → Repos). Tolerant of a stale list — see `reorder_repos`.
+/// Tolerant of a stale list — see `reorder_repos`.
 #[tauri::command]
 pub fn ab_set_repo_order(state: State<Ab>, dirs: Vec<String>) -> Result<(), String> {
-    // Returns the failure rather than swallowing it: a drag that didn't reach
-    // disk otherwise looks settled and is simply gone on the next launch, and
-    // the client's revert path would be unreachable code.
+    // Surfaced rather than swallowed: a drag that didn't reach disk otherwise
+    // looks settled and is simply gone on the next launch.
     let result = state.engine.lock().unwrap().set_repo_order(&dirs);
     match result {
         Ok(()) => {
@@ -463,11 +425,9 @@ pub fn ab_set_repo_order(state: State<Ab>, dirs: Vec<String>) -> Result<(), Stri
     }
 }
 
-/// Set a repo's chosen icon/color identity. All-`None` resets it to the
-/// default look. A `color` that isn't a hex color is stored as unset rather
-/// than rejecting the whole edit — the picker validates first, so a malformed
-/// value here means a hand-edited file, and dropping one field beats failing
-/// the user's icon change along with it.
+/// All-`None` resets to the default look. A `color` that isn't hex is stored as
+/// unset rather than rejecting the whole edit — the picker validates first, so a
+/// malformed value here means a hand-edited file.
 #[tauri::command]
 pub fn ab_set_repo_meta(
     state: State<Ab>,
@@ -487,18 +447,14 @@ pub fn ab_set_repo_meta(
         meta.color.as_ref().map(|c| c.as_str().to_string()).unwrap_or_default(),
     );
     let changed = state.engine.lock().unwrap().set_repo_meta(&dir, meta);
-    // Not named `ui.action` — the click already emitted one of those; this is
-    // the backend record of what actually changed on disk.
     tracing::info!(repo_dir = %dir, icon, color, changed, "repo.identity_set");
     if changed {
         state.emit.notify_one();
     }
 }
 
-/// Set (or clear with `None`/blank) a folder's base-branch override — the
-/// parent branch its diff pane compares against instead of the
-/// origin/main-or-master auto-detect. For a long-running branch that didn't
-/// fork from main.
+/// The parent branch a folder's diff pane compares against instead of the
+/// origin/main-or-master auto-detect, for a branch that didn't fork from main.
 #[tauri::command]
 pub fn ab_set_folder_base_branch(state: State<Ab>, dir: String, branch: Option<String>) {
     let changed = state.engine.lock().unwrap().set_folder_base_branch(&dir, branch.as_deref());
@@ -508,9 +464,8 @@ pub fn ab_set_folder_base_branch(state: State<Ab>, dir: String, branch: Option<S
     }
 }
 
-/// Claim the short git-freshness ceiling for the checkout whose diff pane just
-/// mounted, and release it on unmount (`focused: false`). Not instrumented:
-/// pane visibility fires on every folder switch, not once per user decision.
+/// Claim the short git-freshness ceiling while a diff pane is mounted. Not
+/// instrumented: pane visibility fires on every folder switch.
 #[tauri::command]
 pub fn ab_set_diff_focus(state: State<Ab>, dir: String, focused: bool) {
     if state.engine.lock().unwrap().set_diff_focus(&dir, focused) {
@@ -518,8 +473,8 @@ pub fn ab_set_diff_focus(state: State<Ab>, dir: String, focused: bool) {
     }
 }
 
-/// Set (or clear) a folder's quiet override — forces it to count as quiet for
-/// a narrowing rail filter regardless of its own activity.
+/// Forces a folder to count as quiet for a narrowing rail filter regardless of
+/// its own activity.
 #[tauri::command]
 pub fn ab_set_folder_quiet(state: State<Ab>, dir: String, quiet: bool) {
     let changed = state.engine.lock().unwrap().set_folder_quiet(&dir, quiet);
@@ -529,8 +484,7 @@ pub fn ab_set_folder_quiet(state: State<Ab>, dir: String, quiet: bool) {
     }
 }
 
-/// Set (or clear with `None`/blank) a session's user-authored purpose —
-/// captured when starting Claude, so the rail can show why a session exists.
+/// Captured when starting Claude, so the rail can show why a session exists.
 #[tauri::command]
 pub fn ab_set_session_purpose(state: State<Ab>, id: String, text: Option<String>) {
     let changed = state.engine.lock().unwrap().set_session_purpose(&id, text.as_deref());
@@ -540,7 +494,6 @@ pub fn ab_set_session_purpose(state: State<Ab>, id: String, text: Option<String>
     }
 }
 
-/// Set the compact-nudge threshold (context-%), persisting to shared settings.
 #[tauri::command]
 pub fn ab_set_compact_percent(state: State<Ab>, percent: u8) {
     let changed = state.engine.lock().unwrap().set_compact_recommend_percent(percent);
@@ -550,10 +503,9 @@ pub fn ab_set_compact_percent(state: State<Ab>, percent: u8) {
     }
 }
 
-/// Show (or hide) auto-discovered worktrees that `tt task` didn't create,
-/// persisting to shared settings. Rust owns this one end to end — the engine
-/// reads it when deciding which checkouts to discover — so the client toggles
-/// it here rather than writing the settings file itself.
+/// Show (or hide) auto-discovered worktrees that `tt task` didn't create. Rust
+/// owns this end to end — the engine reads it when deciding what to discover —
+/// so the client toggles it here rather than writing the settings file itself.
 #[tauri::command]
 pub fn ab_set_show_unmanaged_worktrees(state: State<Ab>, show: bool) {
     let changed = state.engine.lock().unwrap().set_show_unmanaged_worktrees(show);
@@ -563,7 +515,6 @@ pub fn ab_set_show_unmanaged_worktrees(state: State<Ab>, show: bool) {
     }
 }
 
-/// Persist the window layout (frontend-owned, saved debounced from the client).
 /// Deliberately does NOT re-emit — echoing the blob back would clobber rapid
 /// local edits. `touched_folders` are the dirs the client actually mutated; see
 /// `WindowsStore::save` for why a whole-blob save can't be applied blindly.
@@ -576,7 +527,6 @@ pub fn ab_save_windows(
     state.engine.lock().unwrap().set_windows(payload, &touched_folders);
 }
 
-/// Set (or clear) one folder-rail row's collapsed state (issue #52).
 /// Deliberately does NOT re-emit — same rationale as `ab_save_windows`.
 #[tauri::command]
 pub fn ab_save_collapsed(state: State<Ab>, key: String, collapsed: bool) {
@@ -591,11 +541,9 @@ fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
     }
 }
 
-/// Changed-file list for the diff pane's Monaco diff editor. `mode` picks the
-/// baseline: `"uncommitted"` diffs the working tree vs HEAD, anything else
-/// diffs vs the merge-base with `base_branch` (the folder's base-branch
-/// override, from `FolderData.baseBranch`) or origin/main if unset. Async:
-/// a large branch diff is real work, even in-process.
+/// `mode` picks the baseline: `"uncommitted"` diffs the working tree vs HEAD,
+/// anything else diffs vs the merge-base with `base_branch` (or origin/main if
+/// unset). Async: a large branch diff is real work, even in-process.
 #[tauri::command]
 pub async fn ab_get_diff_files(
     dir: String,
@@ -610,9 +558,8 @@ pub async fn ab_get_diff_files(
     .unwrap_or_default()
 }
 
-/// A file's content at the diff baseline (`git show`), the original side of
-/// the diff editor. `None` when the file doesn't exist at the base
-/// (added/untracked).
+/// The original side of the diff editor. `None` when the file doesn't exist at
+/// the base (added/untracked).
 #[tauri::command]
 pub async fn ab_get_base_file(
     dir: String,
@@ -628,10 +575,8 @@ pub async fn ab_get_base_file(
     .unwrap_or_default()
 }
 
-/// Per-commit line-count breakdown for a folder's `DiffButton` hover, oldest
-/// commit first — see `tt_agentboard::commit_stats`. `base_branch` is the
-/// folder's base-branch override, same as [`ab_get_diff_files`]. Async for the
-/// same reason: a many-commit branch means one tree diff per commit.
+/// Per-commit line counts for the `DiffButton` hover, oldest commit first. Async
+/// like [`ab_get_diff_files`]: a many-commit branch is one tree diff per commit.
 #[tauri::command]
 pub async fn ab_get_commit_stats(
     dir: String,

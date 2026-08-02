@@ -12,19 +12,15 @@ use super::claims::{
 use super::{OpsError, Result, TEMPLATE_SIDECAR, TaskRoot, base_branch, write_atomic};
 use crate::{envfile, layout};
 
-/// The template sidecar's path: `<checkout>/.claude/task-env.template`,
-/// next to the repo's Claude Code settings (committable, but gitignoring it
-/// works too — render only reads it).
+/// The template sidecar's path: `<checkout>/.claude/task-env.template`.
 pub fn template_sidecar_path(sr: &TaskRoot) -> PathBuf {
     sr.checkout.join(layout::CLAUDE_DIR).join(TEMPLATE_SIDECAR)
 }
 
 /// Create the [`TEMPLATE_SIDECAR`] for repos that don't commit a tokenized
-/// `.env.example` (`tt task init`). Purely a starting point: a repo with no
-/// template at all still renders tasks (an empty `.env` — see
-/// [`render_task_env`]), so the sidecar exists to give `${tt:...}` tokens an
-/// obvious home when the repo later needs one.
-/// Idempotent: an existing sidecar is left untouched.
+/// `.env.example` (`tt task init`). Purely a starting point — a repo with no
+/// template renders an empty `.env` — so the sidecar just gives `${tt:...}`
+/// tokens an obvious home. Idempotent.
 pub fn init_template_sidecar(sr: &TaskRoot) -> Result<PathBuf> {
     let sidecar = template_sidecar_path(sr);
     if sidecar.is_file() {
@@ -53,18 +49,12 @@ pub struct RenderSummary {
     pub warnings: Vec<String>,
 }
 
-/// Render a checkout's `.env`: template → text (reusing existing claims),
-/// then merge back any keys the template doesn't know (inherited secrets,
-/// local adds). Works for tasks and for the checkout itself — the checkout is
-/// where the user runs the app, so it claims ports like any task. Task dirs
-/// also get the `.tt-task` marker.
+/// Render a checkout's `.env`: template → text (reusing existing claims), then
+/// merge back any keys the template doesn't know. The checkout claims ports
+/// like any task; task dirs also get the `.tt-task` marker.
 ///
-/// `new_task_base` seeds the marker's `base=` field the *first* time a task is rendered
-/// — the actual ref the worktree was created from, not the checkout's current branch. A
-/// re-render of an *existing* task keeps the marker's recorded base: it is fixed at
-/// creation and must never drift because the checkout's branch has since changed.
-///
-/// `now_ms` stamps the registry's `claimed_at_ms`, passed in at the CLI/app boundary.
+/// `new_task_base` seeds the marker's `base=` only on a task's *first* render —
+/// it is fixed at creation and must not drift with the checkout's branch.
 pub fn render_task_env(
     sr: &TaskRoot,
     dir: &Path,
@@ -78,12 +68,9 @@ pub fn render_task_env(
         .to_string();
     let is_task = dir.parent().is_some_and(|p| p == sr.tasks_dir());
 
-    // template: the repo's own .env.example when it carries ${tt:...} tokens
-    // (the committed convention), else the .claude/ sidecar (repos that
-    // don't commit tt tokens in their .env.example), else empty — a repo
-    // that declares nothing to template (no ports, no per-task config) still
-    // renders (an empty .env), so any plain checkout is task-capable with no
-    // onboarding step.
+    // Template precedence: a tokenized `.env.example`, else the `.claude/`
+    // sidecar, else empty — a repo declaring nothing still renders, so any
+    // plain checkout is task-capable with no onboarding step.
     let repo_template = dir.join(".env.example");
     let sidecar = template_sidecar_path(sr);
     let (template_path, template) = match fs::read_to_string(&repo_template) {
@@ -98,9 +85,8 @@ pub fn render_task_env(
 
     let _lock = ClaimLock::acquire(&sr.checkout)?;
 
-    // Resolved once; a failed resolution (no home dir) degrades to the live
-    // `.env` scan alone rather than failing the render — surfaced as a
-    // warning where the registry would have been written below.
+    // A failed resolution degrades to the live `.env` scan alone rather than
+    // failing the render; warned about where the registry write happens below.
     let registry_path = port_registry_path(&sr.checkout);
 
     let env_path = dir.join(".env");
@@ -116,17 +102,14 @@ pub fn render_task_env(
             sibling_claims.extend(envfile::port_claims(&text));
         }
     }
-    // The persistent ledger backstops the live scan above: a task whose
-    // `.env` is gone, unreadable, or hand-edited still keeps its claimed
-    // ports off the table until it's actually removed.
+    // The ledger backstops the live scan above: a task whose `.env` is gone or
+    // hand-edited still keeps its ports off the table until it's removed.
     if let Ok(path) = &registry_path {
         sibling_claims.extend(registry_claims(sr, path, &name));
     }
 
-    // A marker already on disk (re-rendering an existing task) wins over
-    // `new_task_base` — the base is set once at creation, not re-derived on
-    // every `tt task env`. Only a fresh task (no marker yet) or the checkout
-    // (never gets a marker) falls back to `new_task_base`/the checkout's branch.
+    // A marker already on disk wins over `new_task_base`; only a fresh task or
+    // the checkout (never gets a marker) reaches the fallbacks.
     let recorded_base = layout::read_task_base(dir);
     let ctx_base = recorded_base
         .clone()
@@ -135,8 +118,7 @@ pub fn render_task_env(
     let ctx = crate::TaskContext { task_name: &name, base_branch: &ctx_base };
     let outcome = crate::render(&template, &ctx, &existing, &sibling_claims, |p| !port_occupied(p))
         .map_err(|source| OpsError::Template {
-            // an empty (no-template) render can't fail, so this always names
-            // a real file
+            // an empty render can't fail, so this always names a real file
             path: template_path.display().to_string(),
             source,
         })?;
@@ -155,8 +137,7 @@ pub fn render_task_env(
 
     let mut warnings = Vec::new();
 
-    // Best-effort like the rest of the registry: it's a backstop for the
-    // live `.env` scan, so a failed write degrades protection, it doesn't
+    // Best-effort: a failed registry write degrades protection, it doesn't
     // invalidate the `.env` this render just successfully wrote.
     let claimed_now: Vec<(String, u16)> =
         outcome.reused.iter().chain(outcome.claimed.iter()).cloned().collect();
@@ -167,10 +148,9 @@ pub fn render_task_env(
         warnings.push(format!("could not update the port registry: {e}"));
     }
 
-    // A manual `.env.local` pin bypasses the claim system entirely — warn
-    // when it collides with a port some sibling checkout has claimed, since
-    // nothing else ever surfaces that (the pin silently wins at dev-server
-    // launch and the two servers fight over the port at runtime).
+    // A manual `.env.local` pin bypasses the claim system entirely, and nothing
+    // else ever surfaces the collision — the pin silently wins at launch and
+    // the two servers fight over the port at runtime.
     if let Ok(local) = fs::read_to_string(dir.join(".env.local")) {
         for (var, port) in envfile::port_claims_by_key(&local) {
             if sibling_claims.contains(&port) {
@@ -181,13 +161,10 @@ pub fn render_task_env(
             }
         }
     }
-    // `tt_git::repo`, not `git check-ignore` — the workspace's one git reader.
-    // A repo whose ignore rules won't load answers `Err`, and that stays quiet
-    // (`unwrap_or(true)`): this is an advisory warning about the tree the task
-    // is about to dirty, and "we couldn't read the rules" is not evidence
-    // `.env` is uncovered — telling the user to fix a gitignore that may
-    // already be correct is the worse direction here. `tt task init` takes the
-    // opposite default, because appending a redundant entry is harmless.
+    // Unreadable ignore rules stay quiet (`unwrap_or(true)`): this warning is
+    // advisory, and "we couldn't read the rules" is not evidence `.env` is
+    // uncovered. `tt task init` defaults the other way — appending a redundant
+    // gitignore entry is harmless.
     if let Ok(repo) = super::repo_at(dir)
         && !repo.is_ignored(".env").unwrap_or(true)
     {
@@ -205,9 +182,8 @@ pub fn render_task_env(
 }
 
 /// Ignore the marker and the nested worktrees dir via the main checkout's
-/// `.git/info/exclude` — no repo `.gitignore` commit needed. The worktrees
-/// entry keeps `git status` at the checkout root clean even in repos that
-/// never added `.claude/worktrees/` to their `.gitignore`.
+/// `.git/info/exclude`, so `git status` stays clean with no repo `.gitignore`
+/// commit needed.
 pub(crate) fn ensure_excludes(checkout: &Path) -> Result<()> {
     let info = checkout.join(".git").join("info");
     let exclude = info.join("exclude");

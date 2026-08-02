@@ -18,21 +18,9 @@ import { fmtAge } from "@/lib/data";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
-/**
- * After the app comes back up, offer to relaunch the Claude sessions that
- * were running in tt's panes on the previous run (`claude --resume`) —
- * whether that run crashed or was closed normally.
- *
- * The backend decides *whether* to prompt at all — it returns candidates only
- * when a previous run's marker was found (and it wasn't just a second
- * instance still running), and only once per launch — so this mounts
- * unconditionally and stays invisible when there's nothing to offer. That
- * keeps the "is there a prior run to offer?" logic in one tested place
- * (`tt_agentboard::resume`) rather than split across the UI.
- *
- * Everything is pre-checked: the common case is "give me all of it back", and
- * unticking the odd one is cheaper than hunting down five checkboxes.
- */
+/** Offers to relaunch the Claude sessions from the previous run (`claude
+ * --resume`). `tt_agentboard::resume` decides *whether* to prompt, so this mounts
+ * unconditionally and stays invisible when there's nothing to offer. */
 export function ResumePicker() {
   const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
   const [chosen, setChosen] = useState<Set<string>>(new Set());

@@ -1,15 +1,6 @@
-/**
- * The pane area with nothing selected — Agentboard's front page: of everything
- * on the rail, what is stopped and waiting on you, longest wait first. Ranking
- * lives in `lib/fleet-standby.ts`; this file is only how it reads.
- *
- * Two registers, because the fleet has two conditions and they deserve opposite
- * treatments. Something blocked: rows, and nothing else on screen competes with
- * them. Nothing blocked: the one display-scale line in the app, because a fleet
- * with no one waiting is a result rather than an absence. Both end on the same
- * quiet inventory line, so the screen never claims the fleet is emptier than it
- * is.
- */
+// Agentboard's front page: what is stopped and waiting on you, longest wait
+// first. Ranking lives in `lib/fleet-standby.ts`; this file is only how it
+// reads — rows when something is blocked, display scale when nothing is.
 import { statusColor, type RepoData } from "@/lib/agentboard";
 import { buildStandby, type Standby, type StandbyRow } from "@/lib/fleet-standby";
 import { fmtAge } from "@/lib/data";

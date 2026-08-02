@@ -1,11 +1,8 @@
 //! Slack Socket Mode driver: the WebSocket loop that turns the 60s DM poll into real-time
 //! delivery when an app-level token (`xapp-…`) is configured. All protocol decisions live
-//! in the Tauri-free `tt_collect::slack_socket` and are
-//! unit-tested there. This is the I/O shell: open a connection with
-//! `apps.connections.open`, connect the returned `wss://` URL, ack each envelope, and on
-//! a message in the watched DM re-run the `slack:dm` collector and re-emit the snapshot.
-//! The poll stays on as fallback; the socket just makes it instant. Absence of an app
-//! token is a clean no-op — the task parks on the reload signal.
+//! in the Tauri-free `tt_collect::slack_socket` and are unit-tested there; this is the
+//! I/O shell. The poll stays on as fallback; the socket just makes it instant. Absence
+//! of an app token is a clean no-op — the task parks on the reload signal.
 //!
 //! Settings (and so the token) are shared across every open worktree, so spawning this
 //! unconditionally would have each task's process connect on the same token — duplicate
@@ -28,17 +25,13 @@ use crate::store::SNAPSHOT_EVENT;
 /// How often a non-primary instance rechecks whether the lock has freed up.
 const LOCK_RETRY: Duration = Duration::from_secs(30);
 
-/// The Slack config a socket connection needs: the user token (Web API DM
-/// calls + file fetch), the app token (`apps.connections.open`), and the watched
-/// user for event matching.
 struct SocketConfig {
     dm: SlackDmConfig,
     app_token: String,
 }
 
-/// Read socket config from settings, or `None` when Socket Mode is off: the
-/// slack collector disabled, or any of the user token / app token / watch id
-/// missing. Absence keeps the task idle rather than erroring.
+/// `None` when Socket Mode is off — a disabled collector or a missing token/watch id.
+/// Absence keeps the task idle rather than erroring.
 fn read_config() -> Option<SocketConfig> {
     let slack = tt_config::load().ok()?.collectors.slack;
     if !slack.enabled
@@ -62,16 +55,14 @@ fn read_config() -> Option<SocketConfig> {
 enum Outcome {
     /// Settings changed mid-connection — re-read config immediately.
     Reload,
-    /// Slack closed the socket cleanly (it does this every few minutes by
-    /// design) — reconnect promptly with a fresh `apps.connections.open`.
+    /// Slack closes the socket cleanly every few minutes by design — reconnect promptly.
     Disconnected,
     /// The connection failed or dropped with an error — back off before retry.
     Error,
 }
 
-/// Spawn the Socket Mode loop. Re-reads settings whenever `reload` fires (a
-/// `settings_set`), so enabling Socket Mode or changing tokens takes effect
-/// without a relaunch.
+/// Spawn the Socket Mode loop. Re-reads settings whenever `reload` fires, so changing
+/// tokens takes effect without a relaunch.
 pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
     tauri::async_runtime::spawn(async move {
         let mut backoff = Backoff::new();
@@ -113,10 +104,8 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
     });
 }
 
-/// Open one Socket Mode connection and pump envelopes until it ends. Returns how
-/// it ended so the caller can decide the reconnect cadence. Resets `backoff` on
-/// `hello` so a connection that proved healthy — then dropped with an error —
-/// reconnects at the base delay rather than an inflated one.
+/// Open one connection and pump envelopes until it ends, returning how it ended so the
+/// caller can pick a reconnect cadence.
 async fn run_connection(
     app: &AppHandle,
     config: &SocketConfig,
@@ -141,10 +130,9 @@ async fn run_connection(
         }
     };
 
-    // native-tls verifies against the OS trust store, matching the ureq client
-    // in tt-collect — required for networks that TLS-inspect with a corporate
-    // root CA (Zscaler and similar), which rustls's bundled webpki-roots (the
-    // `connect_async` default) doesn't trust.
+    // native-tls verifies against the OS trust store — required for networks that
+    // TLS-inspect with a corporate root CA, which `connect_async`'s bundled
+    // webpki-roots never sees.
     let connector = match native_tls::TlsConnector::new() {
         Ok(c) => tokio_tungstenite::Connector::NativeTls(c),
         Err(e) => {
@@ -163,9 +151,8 @@ async fn run_connection(
             }
         };
 
-    // Resolve the watched DM channel once so events match the exact conversation
-    // (mine and theirs). If it fails we fall back to sender-matching inside
-    // `is_watched_message`, which still catches the watched user's messages.
+    // Resolved once so events match the exact conversation; on failure
+    // `is_watched_message` falls back to sender-matching.
     let dm = config.dm.clone();
     let watched_channel =
         tauri::async_runtime::spawn_blocking(move || tt_collect::dm_channel_id(&dm))
@@ -192,16 +179,14 @@ async fn run_connection(
                     }
                 };
                 match tt_collect::parse_envelope(&text) {
-                    // The connection is live: drop back to the base reconnect
-                    // delay so a later error doesn't inherit an inflated backoff.
+                    // Live: a later error shouldn't inherit an inflated backoff.
                     Envelope::Hello => backoff.reset(),
                     Envelope::Disconnect { reason } => {
                         eprintln!("slack socket: server disconnect ({reason}); reconnecting");
                         return Outcome::Disconnected;
                     }
                     Envelope::Event { envelope_id, message } => {
-                        // Ack first — Slack drops the socket if an events
-                        // envelope goes unacked within a few seconds.
+                        // Ack first — Slack drops the socket on an unacked envelope.
                         if let Err(e) =
                             ws.send(Message::Text(tt_collect::ack_json(&envelope_id).into())).await
                         {
@@ -225,10 +210,8 @@ async fn run_connection(
     }
 }
 
-/// Re-run the `slack:dm` collector and re-emit the snapshot so the attention
-/// banner and any open chat panel reflect the new message immediately — the
-/// same refresh path `slack_dm_send` uses. Best-effort: a store hiccup just
-/// leaves the next poll to catch up.
+/// The same refresh path `slack_dm_send` uses. Best-effort: a store hiccup just leaves
+/// the next poll to catch up.
 async fn refresh_dm(app: &AppHandle, config: &SlackDmConfig) {
     if main_window_minimized(app) {
         return;
@@ -247,9 +230,8 @@ async fn refresh_dm(app: &AppHandle, config: &SlackDmConfig) {
     .await;
 }
 
-/// Whether the main window is minimized — mirrors the scheduler's guard so a
-/// backgrounded app doesn't churn the store on every incoming message. Unknown
-/// states count as visible.
+/// Mirrors the scheduler's guard so a backgrounded app doesn't churn the store on every
+/// incoming message. Unknown states count as visible.
 fn main_window_minimized(app: &AppHandle) -> bool {
     app.get_webview_window("main").map(|w| w.is_minimized().unwrap_or(false)).unwrap_or(false)
 }

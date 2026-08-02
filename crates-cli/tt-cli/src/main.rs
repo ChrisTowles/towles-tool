@@ -53,12 +53,10 @@ fn dispatch(command: Commands, config_dir: Option<&Path>) -> i32 {
     exit_code
 }
 
-/// Install telemetry, mapping the `-v` count onto the stderr level. `RUST_LOG`
-/// still overrides when set. The `-v` count only affects what reaches the
-/// terminal — the on-disk event log always records at debug (see `tt_telemetry`).
+/// Install telemetry, mapping the `-v` count onto the stderr level (`RUST_LOG` still
+/// overrides). The on-disk event log always records at debug regardless.
 ///
-/// A failure here is ignored: telemetry must never stop the CLI from running
-/// its command.
+/// A failure is ignored: telemetry must never stop a command from running.
 fn init_logging(verbose: u8) {
     let default_level = match verbose {
         0 => "warn",

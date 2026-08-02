@@ -25,13 +25,11 @@ pub fn spawn(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) -
 }
 
 fn run(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) {
-    // SAFETY: the `Pane` holding this surface joins this thread before dropping
-    // it, so the surface outlives every frame in flight.
-    // Paced by the display deliberately: both faster present modes were measured
-    // and both flood the compositor, losing the Wayland connection within seconds
-    // (`tt-jarvis/examples/jarvis_demo.rs` holds the per-mode numbers). This paces
-    // presentation only — per-frame work stays uncapped, which is where a fast
-    // renderer's headroom belongs.
+    // SAFETY: the `Pane` holding this surface joins this thread before dropping it, so
+    // the surface outlives every frame in flight.
+    //
+    // Vsync deliberately: both faster present modes were measured and both flood the
+    // compositor, losing the Wayland connection within seconds.
     let mut app = unsafe { tt_jarvis::embedded_app(surface, rect, PresentMode::AutoVsync) };
     app.add_plugins(JarvisScenePlugin);
 
@@ -40,17 +38,14 @@ fn run(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) {
     // Nothing to pump while waiting: the main thread owns the Wayland queue.
     tt_jarvis::finalize_embedded_app(&mut app, std::thread::yield_now);
 
-    // Parked = hidden: the pane has been moved off every output, so the app
-    // stays alive but stops presenting — under vsync each frame blocks this
-    // thread on a compositor callback for something nobody can see. Blocking on
-    // `recv` while parked is the point; it costs nothing until there is
-    // something to do. Resizes still apply, because the pane's tile keeps moving
-    // underneath it and the first frame after resuming should already be right.
+    // Parked = hidden: the app stays alive but stops presenting, since under vsync each
+    // frame blocks this thread on a callback for something nobody can see. Resizes still
+    // apply, so the first frame after resuming is already right.
     let mut paused = false;
 
     loop {
-        // Parked, so wait for work; running, so take whatever has arrived. A
-        // dropped sender is terminal either way — the pane is gone.
+        // Blocking on `recv` while parked is the point: it costs nothing until there is
+        // something to do. A dropped sender is terminal either way.
         let msg = if paused {
             match rx.recv() {
                 Ok(msg) => Some(msg),

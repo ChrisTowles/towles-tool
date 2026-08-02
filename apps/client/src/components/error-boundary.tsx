@@ -1,14 +1,9 @@
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
-/**
- * Isolates a render crash to one subtree. Each screen's mount point is wrapped
- * so one screen throwing on bad live-snapshot data shows an inline card instead
- * of white-screening the whole app — and, critically, leaves the CloseGuard
- * dialog and the window's close path mounted, so the window stays closable
- * (the Rust side intercepts close while live shells exist and needs the React
- * tree alive to resolve it). Reset re-mounts the wrapped children.
- */
+/** Isolates a render crash to one subtree. Wrapping each screen's mount point
+ * keeps the CloseGuard dialog and close path alive — Rust intercepts close while
+ * live shells exist and needs the React tree up to resolve it. */
 type Props = { children: ReactNode; label?: string };
 type State = { error: Error | null; resetKey: number };
 

@@ -32,49 +32,41 @@ import { type DevServer, devServersOf, previewCapture } from "@/lib/preview";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
-/** A task's live dev server — or a file its agent pointed at with the
- * `preview_file` MCP tool, re-read on every change — beside its terminals, with
- * draw-on-page annotation sent back to that task's own session as a screenshot.
- * One surface for both, so you can circle the agent's own plan and reply to it. */
+/** A task's dev server or a file its agent pushed with `preview_file`, on one
+ * surface, so you can circle the agent's own plan and reply to it. */
 export function PreviewPane({
   folder,
   focused,
   file: pushed,
   onClose,
 }: {
-  /** The checkout this pane previews; undefined when it left the rail. */
+  /** Undefined when the checkout left the rail. */
   folder: FolderData | undefined;
   /** See the focus-ring rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused: boolean;
-  /** The file this folder's agent last asked to show. Its `nonce` changes per
-   * `preview_file` call, so re-showing a rewritten file re-reads it. */
+  /** `nonce` changes per `preview_file` call, so a rewrite re-reads. */
   file?: PreviewRequest;
-  /** Removes the pane from its window. */
   onClose: () => void;
 }) {
   const dir = folder?.dir;
 
-  // URL / navigation
   const [url, setUrl] = useState("");
   const [input, setInput] = useState("");
   const [frameKey, setFrameKey] = useState(0);
   const [servers, setServers] = useState<DevServer[]>([]);
 
-  // shown file (agent → user). Two flags rather than a union: the dev server's
-  // URL must survive a look at a file, so going back is a click, not a re-probe.
+  // Two flags rather than a union: the dev server's URL must survive a look at
+  // a file, so going back is a click, not a re-probe.
   const [doc, setDoc] = useState<PreviewDoc | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [showing, setShowing] = useState<"server" | "file">("server");
-  // A path the user typed shows instead of the agent's, until the agent pushes a
-  // *new* one — the whole point of a push is that it lands.
+  // A typed path wins until the agent pushes a *new* one — a push must land.
   const [typed, setTyped] = useState<PreviewRequest | null>(null);
   const [pathInput, setPathInput] = useState("");
   const file = typed ?? pushed;
 
-  // This folder's dev servers, from its launch.json, auto-loading the first
-  // listening one. Owns a timer per pane — unlike diff-pane, which refetches off
-  // the shared poll's `statsKey` — because launch.json and port status aren't in
-  // the agentboard snapshot. Put them there and this timer goes.
+  // A timer per pane, because launch.json and port status aren't in the
+  // agentboard snapshot. Put them there and this goes.
   useEffect(() => {
     if (!dir) return;
     let cancelled = false;
@@ -95,13 +87,11 @@ export function PreviewPane({
       cancelled = true;
       clearInterval(timer);
     };
-    // folder?.name only feeds labels; dir is the identity that matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-probe only on a changed dir, not when the label-only folder name changes
   }, [dir]);
 
-  // Read + watch the shown file, keyed on the nonce so a rewrite of the same
-  // path re-reads. A hot reload keeps the old content up until the new read
-  // lands: an agent's rewrite is not atomic, and a flash of error is worse.
+  // A hot reload keeps the old content up until the new read lands: an agent's
+  // rewrite is not atomic, and a flash of error is worse.
   const pushedNonce = pushed?.nonce;
   useEffect(() => setTyped(null), [pushedNonce]);
 
@@ -122,8 +112,7 @@ export function PreviewPane({
           if (initial) setShowing("file");
         },
         err: (e) => {
-          // In the pane, not a toast: it's what the agent said to look at. The
-          // old doc goes too, else `sourceLabel` names what isn't on screen.
+          // The old doc goes too, else `sourceLabel` names what isn't on screen.
           if (!initial) return;
           setDoc(null);
           setDocError(errorMessage(e));
@@ -141,8 +130,8 @@ export function PreviewPane({
     };
   }, [filePath, fileNonce]);
 
-  /** The reload button's file half — and the only way back from a failed first
-   * read, which no watch covers: a path that never existed has nothing to watch. */
+  /** The only way back from a failed first read: a path that never existed has
+   * nothing to watch. */
   async function reloadFile() {
     if (!filePath) return;
     const res = await previewReadFile(filePath);
@@ -168,14 +157,12 @@ export function PreviewPane({
     uiAction("preview.navigate", "agentboard", source);
   }
 
-  // The ink tools light up for either kind of content, dark for neither.
   const onFile = showing === "file" && file != null;
   const hasSurface = onFile ? doc != null : url !== "";
-  // Reload must survive a failed read, or a call made a beat before the file was
-  // written leaves the pane an error with its retry button disabled.
+  // Must survive a failed read, or a call a beat before the file was written
+  // leaves the pane an error with its retry button disabled.
   const canReload = onFile ? filePath != null : url !== "";
-  // Names the annotated screenshot's source in the feedback prompt — while a
-  // file is up, `url` is only whatever dev server the pane last pointed at.
+  // Names the screenshot's source: `url` is only the last dev server probed.
   const sourceLabel = onFile ? (doc?.path ?? file.path) : url;
 
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;
@@ -336,8 +323,7 @@ export function PreviewPane({
             <PreviewDocView key={`${file.path}\u0000${file.nonce}`} doc={doc} title={file.title} />
           ) : null
         ) : url ? (
-          /* Unsandboxed by intent: it's the user's own dev server and needs
-           * scripts + its own origin (HMR, storage) — what the lint flags. */
+          /* Unsandboxed by intent: the user's own dev server needs its origin. */
           // oxlint-disable-next-line react/iframe-missing-sandbox
           <iframe
             key={frameKey}

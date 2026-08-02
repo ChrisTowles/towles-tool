@@ -88,9 +88,7 @@ CREATE TABLE IF NOT EXISTS dm_status (
 );
 ";
 
-/// v5: the MCP server's incoming-call log (one row per JSON-RPC request the
-/// MCP dispatcher handled). `IF NOT EXISTS`, so `migrate` stays
-/// idempotent and pre-v5 dbs gain the table in place.
+/// v5: the MCP server's incoming-call log, one row per JSON-RPC request handled.
 const SCHEMA_MCP_CALLS_V5: &str = "\
 CREATE TABLE IF NOT EXISTS mcp_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,12 +103,9 @@ CREATE TABLE IF NOT EXISTS mcp_calls (
 );
 ";
 
-/// v7 (#339): a task links 0..N GitHub issues and 0..N PRs. Link rows cache
-/// the last observed `state` (and `checks` for PRs) because the collector
-/// snapshot only holds open-assigned issues and a bounded merged-PR list —
-/// absence from the snapshot is ambiguous, so once a ref is observed
-/// closed/merged that fact must survive the ref leaving the snapshot.
-/// `state_ts` is when the state was last confirmed.
+/// v7: a task links 0..N GitHub issues and 0..N PRs. Link rows cache the last
+/// observed `state` (and `checks`) because absence from the collector snapshot is
+/// ambiguous — once a ref is seen closed/merged, that must survive it leaving.
 const SCHEMA_TASK_LINKS_V7: &str = "\
 CREATE TABLE IF NOT EXISTS task_issues (
     task_id INTEGER NOT NULL,
@@ -134,11 +129,8 @@ CREATE TABLE IF NOT EXISTS task_prs (
 ";
 
 /// v12: tracked-repo identity cache (repo root -> GitHub `owner/repo` slug).
-/// Reconciled wholesale by the Agentboard poll loop from the shared
-/// `repos.json` tracked-repo list plus each repo's freshly-derived git
-/// origin (see [`Store::reconcile_repos`]), so `repos.json` stays the sole
-/// source of truth for "which repos are tracked" and this table is a pure,
-/// self-healing cache — there is no separate untrack path to keep in sync.
+/// Reconciled wholesale by the Agentboard poll loop, so `repos.json` stays the sole
+/// source of truth and this is a self-healing cache with no untrack path to sync.
 const SCHEMA_REPOS_V12: &str = "\
 CREATE TABLE IF NOT EXISTS repos (
     repo_root TEXT PRIMARY KEY,
@@ -147,14 +139,10 @@ CREATE TABLE IF NOT EXISTS repos (
 );
 ";
 
-/// v15: per-item dismissals for the `issues`/`pr_status` tables. Those two
-/// tables are fully replaced by every collector run (see
-/// [`Store::replace_issues`]/[`Store::replace_prs`]), so a dismissal can't
-/// live as a column on them the way `dm_status.dismissed_ts` does — it would
-/// vanish the moment the row is reinserted. This table is independent and
-/// keyed on `(kind, repo, number)` (`kind` is `"issue"` or `"pr"` — plain
-/// numbers collide across the two per repo), diffed against the live rows at
-/// read time in [`Store::issues`]/[`Store::get_issue`]/[`Store::prs`].
+/// v15: per-item dismissals for `issues`/`pr_status`. Those tables are fully
+/// replaced by every collector run, so a dismissal can't be a column on them the
+/// way `dm_status.dismissed_ts` is — it would vanish on reinsert. `kind` is in the
+/// key because plain numbers collide across issues and PRs within a repo.
 const SCHEMA_ITEM_DISMISSALS_V15: &str = "\
 CREATE TABLE IF NOT EXISTS item_dismissals (
     kind TEXT NOT NULL,
@@ -166,15 +154,13 @@ CREATE TABLE IF NOT EXISTS item_dismissals (
 ";
 
 impl Store {
-    /// Open (creating if needed) the store at `path`, running migrations. Parent
-    /// directories are created if absent.
+    /// Open (creating if needed) the store at `path`, running migrations.
     pub fn open(path: &Path) -> Result<Store> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        // The file is shared by several connections at once (app UI, the app's
-        // collector scheduler, the CLI, the MCP server); WAL plus a busy timeout
+        // Several processes hold this file open at once; WAL plus a busy timeout
         // lets their writes interleave instead of failing with SQLITE_BUSY.
         conn.busy_timeout(std::time::Duration::from_millis(5000))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -183,9 +169,8 @@ impl Store {
         Ok(store)
     }
 
-    /// Open the store at the resolved default location. Unscoped this is
-    /// `<data_dir>/towles-tool/tt.db` (e.g. `~/.local/share/towles-tool/tt.db`);
-    /// in a worktree checkout it nests under `…/tasks/<scope>/` (see [`tt_config`]).
+    /// Unscoped this is `<data_dir>/towles-tool/tt.db`; in a worktree checkout it
+    /// nests under `…/tasks/<scope>/` (see [`tt_config`]).
     pub fn open_default() -> Result<Store> {
         let path = tt_config::store_db_path().map_err(|_| Error::NoDataDir)?;
         Store::open(&path)
@@ -209,11 +194,9 @@ impl Store {
         self.migrate_tasks_v11_worktree_cols()?;
         self.migrate_tasks_v13_outcome()?;
         self.migrate_tasks_v14_drop_next_review()?;
-        // Additive `ALTER TABLE ADD COLUMN` migrations run last, after every
-        // rebuild-style migration above (v2/v7/v11/v13/v14 all `CREATE TABLE
-        // tasks_vN` + `INSERT INTO ... SELECT` a fixed column list) — a rebuild
-        // that predates a column silently drops it, the same trap v4's `notes`
-        // dodges by living here rather than before v7.
+        // Additive `ADD COLUMN` migrations run last, after every rebuild-style one
+        // above: a rebuild's fixed `INSERT … SELECT` column list silently drops any
+        // column added before it.
         self.migrate_tasks_goal_v16()?;
         self.migrate_tasks_summary_v17()?;
         self.migrate_tasks_kind_v18()?;
@@ -236,15 +219,10 @@ impl Store {
         Ok(())
     }
 
-    /// `CREATE TABLE IF NOT EXISTS` is a no-op on a `tasks` table that already
-    /// existed under the pre-kanban schema (`source`/`source_ref`/`done`, no
-    /// `status`/`position`/`repo`/`issue_number`/`issue_url`), so a db created
-    /// before the day-screens pivot never gained the new columns. Rebuild such
-    /// a table to the v2 shape. A rebuild — not `ALTER TABLE ADD COLUMN` — is
-    /// required because the legacy `source` column is `NOT NULL` without a
-    /// default: left in place it fails every future `INSERT INTO tasks`
-    /// (SQLite can't drop a column's NOT NULL in place). Drops the `emails`
-    /// table, dead since the same pivot.
+    /// `CREATE TABLE IF NOT EXISTS` is a no-op on a pre-kanban `tasks` table, so
+    /// rebuild one to the v2 shape. A rebuild, not `ADD COLUMN`: the legacy `source`
+    /// column is `NOT NULL` without a default, so left in place it fails every
+    /// future insert and SQLite can't drop the constraint in place.
     fn migrate_tasks_v2(&self) -> Result<()> {
         let mut has_source = false;
         {
@@ -287,11 +265,8 @@ impl Store {
         Ok(())
     }
 
-    /// v6: drop `collect_runs` freshness rows for collectors that no longer
-    /// exist (`claude:email` and `claude:tasks` died in the day-screens pivot,
-    /// but their rows lingered forever). Kept as a `NOT IN` sweep against the
-    /// live collector keys — the same set `tt-collect` records under — so any
-    /// future retired collector is cleaned up the same way. Idempotent.
+    /// v6: drop `collect_runs` rows for collectors that no longer exist. A `NOT IN`
+    /// sweep against the live keys, so any future retirement is cleaned up too.
     fn migrate_collect_runs_v6(&self) -> Result<()> {
         self.conn.execute(
             "DELETE FROM collect_runs
@@ -301,9 +276,8 @@ impl Store {
         Ok(())
     }
 
-    /// v4: free-form `notes` on todos. Dbs created before v4 (including ones the
-    /// v2 rebuild just produced) lack the column; a nullable ADD COLUMN brings
-    /// them forward in place. Idempotent via the `PRAGMA table_info` check.
+    /// v4: free-form `notes` on todos. A nullable ADD COLUMN, idempotent via the
+    /// `PRAGMA table_info` check the later ADD-COLUMN migrations copy.
     fn migrate_tasks_notes_v4(&self) -> Result<()> {
         let mut has_notes = false;
         {
@@ -322,8 +296,7 @@ impl Store {
         Ok(())
     }
 
-    /// v16: `goal` — the objective a task was created for, distinct from its
-    /// `text` title. Same nullable-ADD-COLUMN idiom as [`Self::migrate_tasks_notes_v4`].
+    /// v16: `goal` — the objective a task was created for, distinct from its title.
     fn migrate_tasks_goal_v16(&self) -> Result<()> {
         let mut has_goal = false;
         {
@@ -342,13 +315,9 @@ impl Store {
         Ok(())
     }
 
-    /// v17: `summary`/`summary_at` — what the agent that worked the task
-    /// reported when it finished, written once through the MCP `task_summary`
-    /// tool. It lives on the row rather than in `notes` because `notes` is the
-    /// user's own context and is fed *into* a `task_start` prompt: folding an
-    /// agent's exit report into it would make the next session read its
-    /// predecessor's summary as instructions. Same nullable-ADD-COLUMN idiom as
-    /// [`Self::migrate_tasks_notes_v4`].
+    /// v17: `summary`/`summary_at` — the agent's exit report. Its own column rather
+    /// than `notes`, because `notes` is fed *into* a `task_start` prompt: folding
+    /// the report in would make the next session read it as instructions.
     fn migrate_tasks_summary_v17(&self) -> Result<()> {
         let mut has_summary = false;
         {
@@ -370,17 +339,10 @@ impl Store {
         Ok(())
     }
 
-    /// v18: `kind` — what the row *is*, now that every worktree on the
-    /// Agentboard rail is backed by a task row. `task` is the user's own work
-    /// (the `+` form, `tt task new`, MCP `task_create`); `detected` is a git
-    /// worktree found on disk with no task, minted by the rail's scan so a
-    /// discovered checkout has a durable record and a fixed position instead of
-    /// existing only for as long as detection sees it. Every read path that
-    /// means *the board* filters to `task`; only the rail reads both.
-    ///
-    /// Defaulted rather than nullable — every pre-v18 row is the user's work by
-    /// definition, since nothing else could create one. Same ADD-COLUMN idiom as
-    /// [`Self::migrate_tasks_notes_v4`].
+    /// v18: `kind` — what the row *is*, now that every worktree on the Agentboard
+    /// rail is backed by a task row (see [`crate::TaskKind`]). Defaulted rather
+    /// than nullable: every pre-v18 row is the user's work by definition, since
+    /// nothing else could have created one.
     fn migrate_tasks_kind_v18(&self) -> Result<()> {
         let mut has_kind = false;
         {
@@ -400,15 +362,10 @@ impl Store {
         Ok(())
     }
 
-    /// v7 (#339): tasks become the unit of work. The single issue link
-    /// (`repo`/`issue_number`/`issue_url` columns) generalizes into the
-    /// `task_issues` link table, and the task gains its worktree binding
-    /// (`worktree_repo_root`/`worktree_repo`/`worktree_branch`/`worktree_dir`). A rebuild —
-    /// not `ALTER` — for the same reason as the v2 repair (dropping columns
-    /// in place is off the table). Existing single links are ported into
-    /// `task_issues` with state `open`; the next collect pass refreshes
-    /// their real state. Detects a pre-v7 table by the `repo` column, so it
-    /// is idempotent and a no-op on fresh dbs.
+    /// v7: the single issue link generalizes into the `task_issues` link table and
+    /// the task gains its `worktree_*` binding. A rebuild, for the same reason as
+    /// the v2 repair. Ported links start at state `open`; the next collect pass
+    /// refreshes them. Detected by the `repo` column, so fresh dbs skip it.
     fn migrate_tasks_v7(&self) -> Result<()> {
         let mut has_repo = false;
         {
@@ -455,18 +412,13 @@ impl Store {
         Ok(())
     }
 
-    /// v9: calendar events gained a `source` column so a personal and a work calendar
-    /// merge into one timeline without clobbering each other (the old write path was a
-    /// full-table swap, so whichever pushed second wiped the first).
+    /// v9: events gained a `source` column so two calendars merge into one timeline
+    /// without clobbering each other. A rebuild rather than `ADD COLUMN` because the
+    /// uniqueness rule changes too, which SQLite can't alter in place.
     ///
-    /// A rebuild rather than `ALTER TABLE ADD COLUMN`, because the uniqueness rule
-    /// changes too — `external_id` was `UNIQUE` alone, and two providers can issue the
-    /// same id — which SQLite cannot alter in place.
-    ///
-    /// **Pre-v9 rows are dropped, not migrated.** There is no honest source to
-    /// attribute them to, and a row labelled with a source that never pushes again is
-    /// never replaced, so it lingers in the countdown forever. Events are a
-    /// collector-owned cache, so the cost is one refresh interval of staleness.
+    /// **Pre-v9 rows are dropped, not migrated**: there is no honest source to
+    /// attribute them to, and a row labelled with a source that never pushes again
+    /// is never replaced. Events are a cache, so the cost is one refresh interval.
     fn migrate_events_v9(&self) -> Result<()> {
         let mut has_source = false;
         {
@@ -500,20 +452,11 @@ impl Store {
         Ok(())
     }
 
-    /// v10: event times became RFC 3339 text that keeps its offset, replacing
-    /// the `start_ts`/`end_ts` epoch-ms integers.
-    ///
-    /// An epoch integer answers "when" and nothing else: the calendar knows a meeting
-    /// was booked as 3pm London, and storing `1784732400000` discards that, so the
-    /// same row reads differently after a flight.
-    ///
-    /// A rebuild, because SQLite cannot `ALTER TABLE ADD COLUMN` a **STORED** generated
-    /// column, and the sort key has to be stored to be indexable.
-    ///
-    /// **Rows are converted, not dropped** — unlike v9, the instant is known exactly
-    /// and only the authored offset is unknown, which `Z` states truthfully rather than
-    /// inventing a zone. Dropping would blank the countdown until something writes,
-    /// and with the pull collector off by default that may be a while.
+    /// v10: event times became RFC 3339 text keeping their offset, since an epoch
+    /// integer discards that a meeting was booked as 3pm London. A rebuild, because
+    /// SQLite cannot `ADD COLUMN` a **STORED** generated column and the sort key
+    /// must be stored to be indexable. **Rows are converted, not dropped** — unlike
+    /// v9 the instant is known exactly, and `Z` states the unknown offset truthfully.
     fn migrate_events_v10_iso(&self) -> Result<()> {
         let mut has_starts_at = false;
         let mut has_source = false;
@@ -529,9 +472,7 @@ impl Store {
                 }
             }
         }
-        // `has_source` false means the table is pre-v9 and `migrate_events_v9`
-        // just rebuilt it in the v9 shape; either way the epoch columns are what
-        // exist, so the conversion below is the same.
+        // Either way the epoch columns are what exist, so the conversion is the same.
         let _ = has_source;
         if !has_starts_at {
             self.conn.execute_batch(
@@ -575,11 +516,8 @@ impl Store {
         Ok(())
     }
 
-    /// v8: due dates are gone from tasks (2026-07-19 — GitHub issues carry no
-    /// native due date, and the Board leans on status + links for urgency), so
-    /// drop the column from dbs that predate the removal. Detected by column
-    /// presence, so it's idempotent and a no-op on fresh dbs; `due_ts` was
-    /// nullable and unindexed, so a plain `DROP COLUMN` is safe.
+    /// v8: due dates are gone from tasks. `due_ts` was nullable and unindexed, so a
+    /// plain `DROP COLUMN` is safe; detected by column presence.
     fn migrate_tasks_v8_drop_due(&self) -> Result<()> {
         let mut has_due = false;
         {
@@ -598,13 +536,9 @@ impl Store {
         Ok(())
     }
 
-    /// v11: the worktree-"slot" vocabulary rename (2026-07-20). A task's
-    /// worktree binding used to be stored in `slot_repo_root`/`slot_repo`/
-    /// `slot_branch`/`slot_dir`; those columns become `worktree_*`. Dbs created
-    /// at v7 (before the rename) carry the `slot_*` names — rename them in place
-    /// with `ALTER TABLE … RENAME COLUMN` (SQLite ≥ 3.25), which preserves data
-    /// and is cheaper than a rebuild. Detected by the `slot_repo_root` column,
-    /// so it's idempotent and a no-op on fresh dbs (built straight to `worktree_*`).
+    /// v11: the worktree-"slot" vocabulary rename — `slot_*` columns become
+    /// `worktree_*`. `RENAME COLUMN` (SQLite ≥ 3.25) preserves data and is cheaper
+    /// than a rebuild; detected by the `slot_repo_root` column.
     fn migrate_tasks_v11_worktree_cols(&self) -> Result<()> {
         let mut has_slot = false;
         {
@@ -628,11 +562,9 @@ impl Store {
         Ok(())
     }
 
-    /// v13: closing a task stopped deleting its row (2026-07-22). `outcome`
-    /// records how it ended (see [`TASK_OUTCOMES`]) and `archived_at` hides it
-    /// from active views — both `NULL` for every pre-existing (open) row.
-    /// Detected by the `outcome` column, so it's idempotent and a no-op on
-    /// fresh dbs (built straight to the full shape).
+    /// v13: closing a task stopped deleting its row. `outcome` records how it ended
+    /// and `archived_at` hides it from active views — both `NULL` for every
+    /// pre-existing open row.
     fn migrate_tasks_v13_outcome(&self) -> Result<()> {
         let mut has_outcome = false;
         {
@@ -654,14 +586,9 @@ impl Store {
         Ok(())
     }
 
-    /// v14: the "Up Next" and "In Review" columns are gone (2026-07-23) —
-    /// they never held a task in practice, since a card was always either
-    /// untouched, actively worked (an agent running on its worktree), or
-    /// done. Remap existing rows onto the columns that remain: `next` folds
-    /// back to `backlog` (never started), `review` folds forward to `doing`
-    /// (work had begun). A plain `UPDATE`, not a rebuild, since no column
-    /// shape changes — and it's idempotent: after the first pass no row
-    /// matches `next`/`review` again.
+    /// v14: the "Up Next" and "In Review" columns are gone. `next` folds back to
+    /// `backlog` (never started), `review` forward to `doing` (work had begun). A
+    /// plain `UPDATE`, since no column shape changes.
     fn migrate_tasks_v14_drop_next_review(&self) -> Result<()> {
         self.conn.execute_batch(
             "UPDATE tasks SET status = 'backlog' WHERE status = 'next';

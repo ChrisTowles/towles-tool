@@ -1,16 +1,11 @@
-/**
- * `Hint` — the app's one hover-explanation primitive.
- */
 import type { ComponentProps, ReactElement } from "react";
 import { Kbd } from "@/components/ui/kbd";
 import { shortcutHint } from "@/lib/shortcuts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** The one way anything explains itself on hover: `Hint` for a sentence,
- * `HoverCard` for a real card with its own controls, no third option — native
- * `title` is the OS's, so it lands late, elsewhere, and unreliably in the
- * WebKitGTK webview. `label` is optional so a conditional hint stays
- * conditional at the call site, rendering the child bare rather than empty. */
+ * `HoverCard` for a real card, no third option — native `title` lands late and
+ * unreliably in the WebKitGTK webview. `label` optional: renders the child bare. */
 export function Hint({
   label,
   shortcut,

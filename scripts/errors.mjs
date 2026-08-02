@@ -1,30 +1,13 @@
-// Typed failures for the dev-tooling scripts, as tagged errors rather than
-// thrown `unknown` or a `null` that conflates several causes. See
-// .claude/rules/typescript.md ("errors are values"); this is the scripts-side
-// twin of apps/client/src/lib/errors.ts.
-//
-// `TaggedError("Tag")<Props>()` is TypeScript syntax and these are plain
-// `.mjs` files, so each class casts the factory's return to
-// `TaggedErrorClass<Tag, Props>` to declare its props. The cast is the only
-// way to name Props without a `.d.mts` sidecar, and it keeps `Tag.is(value)`
-// and the props typed at every call site.
+// Typed failures for the dev-tooling scripts — the scripts-side twin of
+// apps/client/src/lib/errors.ts. `TaggedError("Tag")<Props>()` is TypeScript
+// syntax and these are `.mjs`, so each class casts the factory's return to name
+// its Props; without the cast `Tag.is(value)` and the props go untyped.
 import { TaggedError } from "better-result";
 
-/**
- * @typedef {object} EnvFileUnreadableProps
- * @property {string} path
- * @property {unknown} cause
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"EnvFileUnreadable", EnvFileUnreadableProps>} */
+/** @type {import("better-result").TaggedErrorClass<"EnvFileUnreadable", { path: string; cause: unknown; message: string }>} */
 const EnvFileUnreadableBase = TaggedError("EnvFileUnreadable")();
 
-/**
- * An env file exists but could not be read (permissions, a directory in its
- * place, I/O). Deliberately distinct from "absent", which is the normal case
- * for a checkout with no `.env.local` and is not an error at all.
- */
+/** Distinct from "absent", the normal case for a checkout with no `.env.local`. */
 export class EnvFileUnreadable extends EnvFileUnreadableBase {
   /** @param {{ path: string; cause: unknown }} args */
   constructor(args) {
@@ -32,35 +15,20 @@ export class EnvFileUnreadable extends EnvFileUnreadableBase {
   }
 }
 
-/**
- * @typedef {object} DevPortUnsetProps
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"DevPortUnset", DevPortUnsetProps>} */
+/** @type {import("better-result").TaggedErrorClass<"DevPortUnset", { message: string }>} */
 const DevPortUnsetBase = TaggedError("DevPortUnset")();
 
-/**
- * No `TT_DEV_PORT` anywhere — shell env, `.env.local`, or the rendered `.env`.
- * Recoverable: the launchers render the task's `.env` and retry. Kept separate
- * from {@link DevPortInvalid}, which is a typo the user has to fix.
- */
+/** Recoverable: the launchers render the task's `.env` and retry. */
 export class DevPortUnset extends DevPortUnsetBase {
   constructor() {
     super({ message: "no TT_DEV_PORT for this checkout" });
   }
 }
 
-/**
- * @typedef {object} DevPortInvalidProps
- * @property {string} value
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"DevPortInvalid", DevPortInvalidProps>} */
+/** @type {import("better-result").TaggedErrorClass<"DevPortInvalid", { value: string; message: string }>} */
 const DevPortInvalidBase = TaggedError("DevPortInvalid")();
 
-/** `TT_DEV_PORT` is set to something that isn't a port number in 1-65535. */
+/** Unlike {@link DevPortUnset}, a typo the user has to fix. */
 export class DevPortInvalid extends DevPortInvalidBase {
   /** @param {{ value: string }} args */
   constructor(args) {
@@ -68,20 +36,9 @@ export class DevPortInvalid extends DevPortInvalidBase {
   }
 }
 
-/**
- * @typedef {object} TaskEnvRenderFailedProps
- * @property {string} name
- * @property {unknown} cause
- * @property {string} message
- */
-
-/**
- * @type {import("better-result").TaggedErrorClass<
- *   "TaskEnvRenderFailed", TaskEnvRenderFailedProps>}
- */
+/** @type {import("better-result").TaggedErrorClass<"TaskEnvRenderFailed", { name: string; cause: unknown; message: string }>} */
 const TaskEnvRenderFailedBase = TaggedError("TaskEnvRenderFailed")();
 
-/** `tt task env <name>` could not run or exited non-zero — `tt` missing, or the render failed. */
 export class TaskEnvRenderFailed extends TaskEnvRenderFailedBase {
   /** @param {{ name: string; cause: unknown }} args */
   constructor(args) {
@@ -92,21 +49,10 @@ export class TaskEnvRenderFailed extends TaskEnvRenderFailedBase {
   }
 }
 
-/**
- * @typedef {object} SpawnFailedProps
- * @property {string} command
- * @property {unknown} cause
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"SpawnFailed", SpawnFailedProps>} */
+/** @type {import("better-result").TaggedErrorClass<"SpawnFailed", { command: string; cause: unknown; message: string }>} */
 const SpawnFailedBase = TaggedError("SpawnFailed")();
 
-/**
- * A child process never started — the binary is missing or not executable.
- * Distinct from a process that ran and exited non-zero, which is an exit code,
- * not a failure to launch.
- */
+/** A child that never started — not one that ran and exited non-zero. */
 export class SpawnFailed extends SpawnFailedBase {
   /** @param {{ command: string; cause: unknown }} args */
   constructor(args) {
@@ -114,16 +60,9 @@ export class SpawnFailed extends SpawnFailedBase {
   }
 }
 
-/**
- * @typedef {object} BadVersionProps
- * @property {string} version
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"BadVersion", BadVersionProps>} */
+/** @type {import("better-result").TaggedErrorClass<"BadVersion", { version: string; message: string }>} */
 const BadVersionBase = TaggedError("BadVersion")();
 
-/** A `plugin.json` version that isn't `major.minor.patch`. */
 export class BadVersion extends BadVersionBase {
   /** @param {{ version: string }} args */
   constructor(args) {
@@ -134,19 +73,9 @@ export class BadVersion extends BadVersionBase {
   }
 }
 
-/**
- * @typedef {object} VersionLineMissingProps
- * @property {string} needle
- * @property {string} message
- */
-
-/**
- * @type {import("better-result").TaggedErrorClass<
- *   "VersionLineMissing", VersionLineMissingProps>}
- */
+/** @type {import("better-result").TaggedErrorClass<"VersionLineMissing", { needle: string; message: string }>} */
 const VersionLineMissingBase = TaggedError("VersionLineMissing")();
 
-/** The manifest has no `"version": "<from>"` line to rewrite. */
 export class VersionLineMissing extends VersionLineMissingBase {
   /** @param {{ needle: string }} args */
   constructor(args) {
@@ -154,17 +83,9 @@ export class VersionLineMissing extends VersionLineMissingBase {
   }
 }
 
-/**
- * @typedef {object} PortNeverListenedProps
- * @property {number} port
- * @property {number} timeoutMs
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"PortNeverListened", PortNeverListenedProps>} */
+/** @type {import("better-result").TaggedErrorClass<"PortNeverListened", { port: number; timeoutMs: number; message: string }>} */
 const PortNeverListenedBase = TaggedError("PortNeverListened")();
 
-/** Nothing accepted a connection on the port within the timeout. */
 export class PortNeverListened extends PortNeverListenedBase {
   /** @param {{ port: number; timeoutMs: number }} args */
   constructor(args) {
@@ -172,17 +93,10 @@ export class PortNeverListened extends PortNeverListenedBase {
   }
 }
 
-/**
- * @typedef {object} RequestFailedProps
- * @property {string} url
- * @property {unknown} cause
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"RequestFailed", RequestFailedProps>} */
+/** @type {import("better-result").TaggedErrorClass<"RequestFailed", { url: string; cause: unknown; message: string }>} */
 const RequestFailedBase = TaggedError("RequestFailed")();
 
-/** The automation server was unreachable — nothing answered on the socket. */
+/** Nothing answered on the socket at all. */
 export class RequestFailed extends RequestFailedBase {
   /** @param {{ url: string; base: string; cause: unknown }} args */
   constructor(args) {
@@ -197,19 +111,10 @@ export class RequestFailed extends RequestFailedBase {
   }
 }
 
-/**
- * @typedef {object} RemoteRejectedProps
- * @property {string} detail
- * @property {string} message
- */
-
-/** @type {import("better-result").TaggedErrorClass<"RemoteRejected", RemoteRejectedProps>} */
+/** @type {import("better-result").TaggedErrorClass<"RemoteRejected", { detail: string; message: string }>} */
 const RemoteRejectedBase = TaggedError("RemoteRejected")();
 
-/**
- * The automation server answered, but with a failure — a non-2xx status, a
- * WebDriver error body, or a payload missing the field the caller needed.
- */
+/** It answered, but with a non-2xx, a WebDriver error, or a missing field. */
 export class RemoteRejected extends RemoteRejectedBase {
   /** @param {{ action: string; detail: string }} args */
   constructor(args) {
@@ -218,9 +123,7 @@ export class RemoteRejected extends RemoteRejectedBase {
 }
 
 /**
- * The `code` of a Node system error (`ECONNREFUSED`, `ENOENT`, …), when there
- * is one. `fetch` buries it one level down, in the `TypeError`'s `cause`.
- *
+ * `fetch` buries a Node errno one level down, in the `TypeError`'s `cause`.
  * @param {unknown} cause
  * @returns {string | undefined}
  */
@@ -232,13 +135,10 @@ function errnoCode(cause) {
 }
 
 /**
- * Human-readable text for an arbitrary thrown value, for a tagged error's
- * composed `message`. `String(e)` degrades to `"[object Object]"` on the
- * non-`Error` values `execFileSync` and `fetch` can reject with.
- *
+ * `String(e)` degrades to `"[object Object]"` on the non-`Error` values
+ * `execFileSync` and `fetch` can reject with.
  * @param {unknown} cause
- * @returns {string}
- */
+ * @returns {string} */
 export function describe(cause) {
   if (typeof cause === "string") return cause;
   if (cause instanceof Error) return cause.message;

@@ -27,15 +27,10 @@ impl std::fmt::Display for PatchId {
     }
 }
 
-/// Ceiling on how many of the base branch's commits are hashed when building
-/// the set to compare against.
-///
-/// A busy `main` can hold thousands of commits since a task's merge-base, and
-/// every one costs a tree diff. The cap bounds that, and it is safe in one
-/// direction only — which is the direction that matters: a truncated set can
-/// only *fail* to recognize that something landed, never invent a match. The
-/// failure mode is a merged task reported as still holding work, i.e. a task
-/// that does not get cleaned up. The opposite error would be deleting work.
+/// Ceiling on how many base-branch commits are hashed, since every one costs a
+/// tree diff. Safe in one direction only — the one that matters: a truncated
+/// set can only *fail* to recognize a landing, never invent one, so the failure
+/// mode is a merged task left uncleaned rather than deleted work.
 const MAX_BASE_PATCHES: usize = 4096;
 
 impl Repo {

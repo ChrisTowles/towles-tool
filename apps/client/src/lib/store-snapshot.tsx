@@ -8,18 +8,9 @@ import {
   type WireStoreSnapshot,
 } from "./data";
 
-/**
- * A single app-wide subscription to the live store snapshot. Every screen stays
- * mounted (App.tsx toggles `hidden` rather than unmounting), so before this
- * provider each of ~14 consumers registered its own `store://snapshot` listener
- * and re-parsed the wire payload independently — one event meant ~14 parses.
- * The provider subscribes once and shares the parsed value through context,
- * modeled on {@link NowProvider} (`lib/now.tsx`).
- *
- * Until the real store answers, the snapshot is empty and `live` is false;
- * outside Tauri entirely (plain-Vite browser dev) it falls back to
- * {@link mockSnapshot}.
- */
+/** A single app-wide subscription to the live store snapshot: screens stay
+ * mounted, so ~14 consumers each listening meant ~14 parses per event. Empty
+ * with `live` false until the store answers, {@link mockSnapshot} outside Tauri. */
 type StoreSnapshotValue = { snapshot: StoreSnapshot; live: boolean };
 
 const StoreSnapshotContext = createContext<StoreSnapshotValue | null>(null);
@@ -77,11 +68,8 @@ export function StoreSnapshotProvider({ children }: { children: ReactNode }) {
   return <StoreSnapshotContext.Provider value={value}>{children}</StoreSnapshotContext.Provider>;
 }
 
-/**
- * The live store snapshot and whether it's backed by the real store yet, shared
- * across the app from a single subscription. Must be used under a
- * {@link StoreSnapshotProvider}.
- */
+/** The live store snapshot and whether the real store has answered yet. Must be
+ * used under a {@link StoreSnapshotProvider}. */
 export function useStoreSnapshot(): StoreSnapshotValue {
   const ctx = useContext(StoreSnapshotContext);
   if (ctx === null) {

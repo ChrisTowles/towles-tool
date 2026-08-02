@@ -12,16 +12,12 @@
 /// plugin's `.mcp.json` expands it as `${TT_MCP_PORT:-8787}`.
 pub const MCP_PORT_ENV: &str = "TT_MCP_PORT";
 
-/// The port this instance should serve on, most specific source first:
-///
-/// 1. `TT_MCP_PORT` in the process's own environment — an explicit override (a nested app
-///    inherits none of it: the PTY scrub drops `TT_*`).
-/// 2. The checkout's `TT_MCP_PORT` claim from its rendered `.env` — the normal case.
-/// 3. The settings `mcp.port` — a machine-wide default outside any checkout.
+/// The port this instance should serve on, most specific source first: an explicit
+/// `TT_MCP_PORT` in the process env (a nested app inherits none — the PTY scrub drops
+/// `TT_*`), the checkout's `.env` claim, then settings `mcp.port`.
 ///
 /// Pure so the precedence is tested directly: getting it wrong points every session at one
-/// instance again. A `0` is rejected with unparseable junk — port 0 binds an ephemeral port
-/// no `.mcp.json` could name.
+/// instance again. `0` is rejected — it binds an ephemeral port no `.mcp.json` could name.
 pub fn resolve_port(
     process_env: Option<&str>,
     dotenv_claim: Option<u16>,
@@ -35,16 +31,13 @@ pub fn resolve_port(
         .unwrap_or(settings_port)
 }
 
-/// [`resolve_port`] against the real environment: this process's env, then the
-/// `.env` of the checkout the *calling process* runs in (`None` outside one).
-///
-/// Called by the app to decide what to bind and by the CLI to decide what to
-/// dial. Both run from the same checkout in the normal case, which is precisely
-/// why one function answers both.
+/// [`resolve_port`] against the real environment: this process's env, then the `.env` of
+/// the checkout the *calling process* runs in (`None` outside one). The app calls it to
+/// decide what to bind and the CLI to decide what to dial; both run from the same checkout,
+/// which is why one function answers both.
 ///
 /// The `.env` value is read as a **port claim** ([`tt_tasks::envfile::port_claims_by_key`])
-/// rather than parsed here, so the app binds exactly the port its siblings see as taken —
-/// a value the claim scanner skips is one no sibling avoids, yet this app would bind it.
+/// rather than parsed here — a value the claim scanner skips is one no sibling avoids.
 pub fn for_this_checkout() -> u16 {
     let settings_port =
         tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
@@ -79,14 +72,9 @@ mod tests {
         assert_eq!(resolve_port(None, None, 9191), 9191);
     }
 
-    /// An override can be a blank, junk, or out of range. Falling *through* to
-    /// the next source keeps the app serving on a sane port. `0` is the one
-    /// that parses and still has to be rejected — binding it takes an ephemeral
-    /// port no `.mcp.json` could name.
-    ///
-    /// The `.env` side needs no equivalent: it arrives as an already-validated
-    /// claim from `envfile::port_claims_by_key`, which is tested in `tt-tasks`
-    /// and is what rejects an unsubstituted `${tt:port 8787-8986}` token there.
+    /// Falling *through* to the next source keeps the app on a sane port. `0` is
+    /// the one that parses and still has to be rejected. The `.env` side needs no
+    /// equivalent — it arrives already validated by `envfile::port_claims_by_key`.
     #[test]
     fn an_unusable_override_falls_through_instead_of_binding_nonsense() {
         for bad in [

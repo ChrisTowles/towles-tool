@@ -50,27 +50,9 @@ import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
-/**
- * Telemetry — a viewer over `tt-telemetry`'s on-disk event log
- * (`events-<date>.jsonl`): every subprocess span and user-gesture event this
- * checkout has recorded for one day, browsable and searchable. Mirrors the
- * Claude Sessions/MCP layout (header · stat strip · vertical tabs):
- * **Overview** (what's dominating today's log), **Attention** (where the day
- * went — see `screens/telemetry/attention-tab.tsx`), **Log** (the full
- * searchable/filterable list), **Insights** (slowest spans, busiest names).
- * Reads the log fresh off disk rather than caching, and refreshes on the
- * button below and whenever this screen regains focus — not live-tailed.
- *
- * Loads and holds one full day's records in memory unconditionally — this
- * screen was sized for "dozens-hundreds of records/day" but a real,
- * actively-used dev checkout has been observed producing 75,000+/day
- * (`tt-telemetry`'s own doc comment undersold this). `RENDER_LIMIT` below
- * only bounds the DOM (the freeze that prompted it); the load/filter/search
- * path still scales with the full day's file size. A day that large is
- * itself worth investigating — see `OverviewTab`'s dominant-source callout —
- * and true fix likely needs backend-side pagination/date-range narrowing,
- * which is out of scope for this pass.
- */
+/** Telemetry — a viewer over `tt-telemetry`'s `events-<date>.jsonl`, re-read on
+ * Refresh and on focus, never live-tailed. Holds a full day in memory (75,000+
+ * records is normal) and `RENDER_LIMIT` bounds only the DOM; the fix is paging. */
 
 const LEVEL_TONE: Record<string, string> = {
   ERROR: "text-red-600 dark:text-red-400",
@@ -80,14 +62,12 @@ const LEVEL_TONE: Record<string, string> = {
   TRACE: "text-muted-foreground/70",
 };
 
-/** Rendered log rows are capped — a real day's log runs into the thousands,
- * and rendering that many rows as plain DOM nodes is what froze the page
- * before this cap existed. Narrowing the search/filters is the way to see
- * past it, the same tradeoff Claude Sessions/MCP make with their own caps. */
+/** Rendering a day's rows as plain DOM nodes is what froze the page before this
+ * cap existed; narrowing the search/filters is the way to see past it. */
 const RENDER_LIMIT = 300;
 
-// Read once at module load, so the Log tab reopens with the filters last left
-// on it — the same restore-at-import pattern the workspace tabs use.
+// Read once at module load, so the Log tab reopens with the filters last left on
+// it — the same restore-at-import pattern the workspace tabs use.
 const restoredFilters = loadTelemetryFilters(localStorage.getItem(TELEMETRY_FILTERS_KEY));
 
 /** Groups `items` by `key`, one pass. */
@@ -134,13 +114,9 @@ export function TelemetryScreen() {
     setLoading(false);
   }
 
-  /**
-   * The Attention tab's own read. Deliberately separate from `loadEvents`
-   * and only fired while that tab is showing: it re-reads the same file, and
-   * a big day's file is expensive enough (75,000+ records) that paying for it
-   * on every visit to the Log tab would be a real regression. What comes back
-   * is the aggregate, not the records — see `lib/telemetry.ts`.
-   */
+  /** Kept separate from `loadEvents` and fired only while the Attention tab
+   * shows: it re-reads the same (possibly huge) file, and returns the
+   * aggregate rather than the records. */
   async function loadAttention(d: string) {
     setAttentionLoading(true);
     const r = await telemetryAttention(d);
@@ -154,11 +130,8 @@ export function TelemetryScreen() {
     setAttentionLoading(false);
   }
 
-  /**
-   * The Keyboard tab's read. Takes no day: the habit score spans a fixed
-   * 14-day window (see `screens/telemetry/keyboard-tab.tsx`), so it ignores
-   * the day picker every other tab here obeys.
-   */
+  /** Takes no day: the habit score spans a fixed 14-day window, so it ignores
+   * the day picker every other tab here obeys. */
   async function loadKeyboard() {
     setKeyboardLoading(true);
     const r = await keyboardScore();
@@ -186,11 +159,8 @@ export function TelemetryScreen() {
     });
   }
 
-  // Loads on mount and again whenever this screen regains focus — `activeTab`
-  // flips back to "telemetry" on return, which is also true the first time
-  // the screen mounts (see apps/client/CLAUDE.md's workspace-tabs section).
-  // `day`'s own effect below only fires on a *changed* day, so a focus
-  // regain with the day unchanged still needs its own explicit reload here.
+  // Mount and every focus regain: `day`'s effect below fires only on a *changed*
+  // day, so an unchanged day still needs its own reload here.
   useEffect(() => {
     if (activeTab !== "telemetry") return;
     void refreshDays();
@@ -205,9 +175,8 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the day actually changes; loadEvents' identity is not a trigger
   }, [day]);
 
-  // Attention re-reads on a changed day *and* on every switch back to its
-  // tab — the same "fresh off disk, not live-tailed" contract the rest of the
-  // screen keeps, with the read scoped to when the tab is actually showing.
+  // Attention re-reads on a changed day *and* on every switch back to its tab,
+  // scoped to when the tab is actually showing.
   useEffect(() => {
     if (tab === "keyboard") void loadKeyboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadKeyboard is read fresh, not tracked
@@ -239,20 +208,15 @@ export function TelemetryScreen() {
 
   const targets = useMemo(() => [...new Set(events.map((e) => e.target))].toSorted(), [events]);
 
-  // A persisted target may name a module the loaded day never wrote; using it
-  // as-is would leave the select's trigger blank and hide every row. Fall back
-  // to "all" for this day's view while leaving the stored choice intact for a
-  // day that does have it.
+  // A persisted target the loaded day never wrote would blank the select and
+  // hide every row — fall back for this view, leaving the stored choice intact.
   const effectiveTarget = target === "all" || targets.includes(target) ? target : "all";
 
-  // One pass over `events`, shared by the stat strip and Overview's "By
-  // level" breakdown — computing this twice (once per level via five
-  // separate filters) was the original version of this screen's waste.
+  // One pass, shared by the stat strip and Overview's "By level" breakdown.
   const levelCounts = useMemo(() => countBy(events, (e) => e.level), [events]);
 
-  // `hay` and `summary` are derived once per data change here, not per
-  // render — they'd otherwise redo `JSON.stringify`/`Object.entries` work
-  // for every visible row on every keystroke in the search box.
+  // Derived per data change, not per render — otherwise every keystroke in the
+  // search box redoes `JSON.stringify`/`Object.entries` for every visible row.
   const indexed = useMemo(
     () => events.map((e) => ({ e, hay: searchHaystack(e), summary: fieldsSummary(e.fields) })),
     [events],

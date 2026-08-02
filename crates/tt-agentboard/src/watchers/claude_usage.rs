@@ -16,18 +16,11 @@ pub struct ClaudeUsageSummary {
     pub last_activity_at: i64,
 }
 
-/// Context window size for a session's usage.
-///
-/// Two signals, take the larger:
-/// 1. **The maintained model → window table** ([`context_window`]) — the base
-///    tier for the model (and platform, e.g. Bedrock caps at 200K). This is the
-///    source of truth for the common case; keep it updated as models ship.
-/// 2. **The observed prompt size** — `input + cache_read + cache_creation` is the
-///    tokens actually sitting in the window at request time, and a prompt can't
-///    exceed its window. So a prompt beyond the table's base *proves* a larger
-///    tier than the table knew (e.g. a 1M session the table mapped to 200K, or a
-///    model too new to be in the table). Output tokens are excluded (generated,
-///    not context).
+/// Context window size for a session's usage — the larger of the maintained
+/// model → window table ([`context_window`], keep it updated as models ship) and
+/// what the observed prompt proves. A prompt can't exceed its window, so one
+/// beyond the table's base means a larger tier than the table knew. Output
+/// tokens are excluded: generated, not context.
 pub fn context_max(model: &str, usage: &Usage) -> i64 {
     let base = context_window(model);
     let prompt_tokens = usage.input_tokens.unwrap_or(0)

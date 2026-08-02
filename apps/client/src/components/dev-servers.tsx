@@ -25,14 +25,9 @@ const REFRESH_MS = 3000;
  * servers" section of the Claude Code desktop docs. */
 const LAUNCH_JSON_DOCS_URL = "https://code.claude.com/docs/en/desktop#configure-preview-servers";
 
-/** The dev-servers affordance for a checkout's Claude Desktop
- * `.claude/launch.json`: a folder-header icon button opening a popover of
- * the file's configs. Each row shows a running dot (port probe) and one
- * action — launch into a fresh pane, focus the pane we already launched it
- * in, or an inert "external" chip when something outside the app holds the
- * port. The pane header mounts it for every checkout (dimmed when the file
- * is absent, with a how-to-enable empty state) so the feature is
- * discoverable; the dense rail still gates on `folder.hasLaunchConfig`. */
+/** Popover of a checkout's `.claude/launch.json` configs, each row a port-probe
+ * dot and one action. The pane header mounts it for every checkout (dimmed when
+ * the file is absent); the dense rail still gates on `folder.hasLaunchConfig`. */
 export function DevServersButton({
   folder,
   actions,

@@ -17,14 +17,10 @@ use tt_git::task_assign::validate_task_for_repo;
 /// Timeout for `gh issue develop` (talks to the network, then fetches).
 const GH_DEVELOP_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Gather the task's remote/status/stash and run the clean-tree + matching-repo
-/// guard. Returns `Ok(())` only when `task_dir` is a clean checkout of the same
-/// GitHub repo (`owner/name`) the issue belongs to. Hard-fails with no `--force`
-/// escape hatch — the whole point is that a dispatch can never trample a task
-/// holding in-progress work.
-///
-/// A repository that cannot be read fails the guard rather than passing it:
-/// "we could not tell" and "it is clean" must never be the same answer here.
+/// Passes only when `task_dir` is a clean checkout of the same GitHub repo the
+/// issue belongs to. No `--force` escape hatch: a dispatch must never trample a
+/// task holding in-progress work. A repo that cannot be read fails rather than
+/// passes — "we could not tell" is not "it is clean".
 fn guard_task(repo: &str, task_dir: &Path) -> Result<(), String> {
     let git = tt_git::repo::open(task_dir)
         .map_err(|e| format!("{} is not a usable git checkout: {e}", task_dir.display()))?;
@@ -68,14 +64,10 @@ pub async fn cockpit_assign_issue(
     .map_err(|e| format!("assign task failed: {e}"))?
 }
 
-/// `cockpit_create_issue_branch`: create a local `feature/<number>-<slug>`
-/// branch (from the issue title) in the task checkout at `task_dir`, after the
-/// same clean-tree guard. Purely local — no `gh` or network — for starting work
-/// without the issue-develop linkage.
-///
-/// The guard running first is what makes the branch switch two ref writes
-/// rather than a working-tree checkout; see
-/// [`tt_git::repo::Repo::create_branch_at_head`].
+/// Create a local `feature/<number>-<slug>` branch after the same clean-tree
+/// guard. Purely local — no `gh` or network — for starting work without the
+/// issue-develop linkage. The guard passing first is what makes the switch two
+/// ref writes rather than a working-tree checkout.
 #[tauri::command]
 pub async fn cockpit_create_issue_branch(
     repo: String,

@@ -1,21 +1,6 @@
-/**
- * Link detection over the terminal grid mirror (rows of style runs), so the
- * canvas terminal can make URLs and file paths hoverable/clickable. Pure
- * module — no DOM.
- *
- * A cell may carry a real OSC 8 hyperlink URI (`Run.link`); when it does,
- * `linkAt` trusts it outright — the visible text needn't look like a URL at
- * all (e.g. `gh`/markdown-style link labels like "here"). A `file://` URI
- * comes back as a *path* link (`fileUrlToPath`), not a URL. Otherwise links are
- * found by regex over reconstructed row text. Rows are joined across soft
- * wraps using the engine's real per-row wrap flag (`RowUpdate.wrapped`, from
- * libghostty), which is how long links printed by CLIs (e.g. Claude Code)
- * span lines. Two kinds are recognised: `http(s)` URLs, and file paths
- * (absolute, or repo-relative with an extension) that dominate agent output,
- * e.g. `crates/tt-vt/src/search.rs:42`. Besides the link text, `linkAt`
- * reports the exact cells it covers (one segment per row), so the renderer
- * can underline it on hover.
- */
+/** Link detection over the terminal grid mirror, so the canvas terminal can make
+ * URLs and file paths hoverable. Rows are joined across soft wraps via the
+ * engine's per-row `wrapped` flag — that is how a CLI's long link spans lines. */
 
 import { isWideRun, type Run } from "@/lib/term-protocol";
 
@@ -26,54 +11,38 @@ export interface LinkSegment {
   end: number;
 }
 
-/** An `http(s)` URL — opened in the system browser. */
 export interface UrlLink {
   kind: "url";
   url: string;
-  /** One segment per row the link spans (consecutive rows when wrapped). */
   segments: LinkSegment[];
 }
 
-/** A file path (optionally with a `:line` suffix) — opened in the editor. */
 export interface PathLink {
   kind: "path";
-  /** The filesystem path, without any `:line[:col]` suffix. */
   path: string;
-  /** The 1-based line from a `:line` suffix, if present. */
   line: number | null;
   segments: LinkSegment[];
 }
 
 export type TermLink = UrlLink | PathLink;
 
-/** Display text for a link (URL, or `path[:line]`) — drives the hover tooltip
- * and the hover-dedup identity. */
 export function linkLabel(link: TermLink): string {
   if (link.kind === "url") return link.url;
   return link.line != null ? `${link.path}:${link.line}` : link.path;
 }
 
 const URL_RE = /https?:\/\/[^\s"'`<>]+/g;
-/**
- * A file path: an optional `/`, `./`, `../`, or `~/` prefix, any number of
- * `dir/` segments, then a filename with an extension, and an optional
- * `:line[:col]` suffix. Over-matches (any `word.ext` token); `isPathLike`
- * then keeps only candidates anchored by a `/` or a `:line`, so prose like
- * `example.com` or a bare `1.2.3` version is rejected.
- */
+/** Deliberately over-matches any `word.ext` token; `isPathLike` then rejects
+ * prose like `example.com` or a bare `1.2.3` version. */
 const PATH_RE = /(?:\/|\.\.?\/|~\/)?(?:[\w.@~+-]+\/)*[\w.@~+-]+\.[A-Za-z0-9]+(?::\d+(?::\d+)?)?/g;
-/** Punctuation that ends sentences around a link, not the link itself. */
 const TRAILING = new Set([".", ",", ";", ":", "!", "?"]);
 const CLOSERS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
 /** How many rows a wrapped link may span in either direction from the probe. */
 const MAX_WRAP_ROWS = 4;
 
-/** Reconstruct a row's text column-by-column (length = `cols`), so string
- * indices equal terminal columns. Wide characters fill their trailing column
- * with a space. */
+/** Length = `cols`, so string indices equal terminal columns. */
 export function rowText(runs: Run[], cols: number): string {
-  // Runs once per row per frame — `new Array().fill()` allocates once;
-  // `Array.from({length}).fill()` would visit every index twice.
+  // Once per row per frame: `Array.from({length}).fill()` visits every index twice.
   // oxlint-disable-next-line unicorn/no-new-array
   const chars = new Array<string>(cols).fill(" ");
   for (const run of runs) {
@@ -88,12 +57,9 @@ export function rowText(runs: Run[], cols: number): string {
   return chars.join("");
 }
 
-/** Reconstruct a row's per-column hyperlink URI (length = `cols`), mirroring
- * `rowText`. A run's `link` (or its absence) applies to every column it
- * spans — the engine only merges cells sharing the same link, so a run never
- * straddles a link boundary. */
+/** The engine only merges cells sharing a link, so a run never straddles a
+ * link boundary — its `link` applies to every column it spans. */
 export function rowLinks(runs: Run[], cols: number): (string | undefined)[] {
-  // See rowText above: same per-row hot path, same reason to avoid Array.from.
   // oxlint-disable-next-line unicorn/no-new-array
   const out = new Array<string | undefined>(cols).fill(undefined);
   if (cols <= 0) return out;
@@ -105,21 +71,15 @@ export function rowLinks(runs: Run[], cols: number): (string | undefined)[] {
   return out;
 }
 
-/**
- * Parse a `file://` hyperlink URI into a filesystem path + optional 1-based
- * line, or null when the URI has another scheme. CLIs hyperlink the paths
- * they print (Claude Code's tool headers do), and treating those as web URLs
- * hands them to the system opener, which silently does nothing — a file URI
- * is a *path* link. Handles an empty or `localhost` authority, %-encoding,
- * and line carried as `&line=`/`?line=`/`#L` (Claude Code appends
- * `&line={line}&column={column}` without a `?`).
- */
+/** CLIs hyperlink the paths they print, and handing those to the system opener
+ * as web URLs silently does nothing — a `file://` URI is a *path* link. Line
+ * may arrive as `&line=`/`?line=`/`#L` (Claude Code omits the `?`). */
 export function fileUrlToPath(url: string): { path: string; line: number | null } | null {
   if (!url.startsWith("file://")) return null;
   let rest = url.slice("file://".length);
   const slash = rest.indexOf("/");
   if (slash < 0) return null;
-  rest = rest.slice(slash); // drop the authority (empty or localhost)
+  rest = rest.slice(slash);
   const cut = rest.search(/[?&#]/);
   const rawPath = cut < 0 ? rest : rest.slice(0, cut);
   const suffix = cut < 0 ? "" : rest.slice(cut);
@@ -133,8 +93,6 @@ export function fileUrlToPath(url: string): { path: string; line: number | null 
   return { path, line: m ? Number.parseInt(m[1], 10) : null };
 }
 
-/** Drop sentence punctuation and unbalanced closing brackets off a match
- * (links in prose commonly end with `.` or a wrapping `)`). */
 function trimTrailing(text: string): string {
   let end = text.length;
   while (end > 0) {
@@ -158,26 +116,17 @@ function trimTrailing(text: string): string {
   return text.slice(0, end);
 }
 
-/** Blank out `http(s)` URL spans so the path matcher never re-claims a URL's
- * tail (e.g. `example.com/x.html`). Indices stay aligned (same length). */
+/** Same length, so indices stay aligned; stops paths re-claiming a URL's tail. */
 function maskUrls(joined: string): string {
   return joined.replace(URL_RE, (m) => " ".repeat(m.length));
 }
 
-/** Keep only path candidates anchored by a `/` or a `:line` suffix, so a bare
- * `foo.rs` or a prose `example.com` / `1.2.3` isn't treated as a path. */
 function isPathLike(raw: string): boolean {
   return raw.includes("/") || /:\d/.test(raw);
 }
 
-/**
- * A bare `name.ext` (no `/`, no `:line`) is still a path when it is the whole
- * argument of an agent tool-call header — `Update(README.md)`,
- * `Write(vitest.config.ts)` — which is how Claude Code prints root-level
- * files. Anchoring on the `CapitalizedWord(…)` wrapper keeps prose
- * (`example.com`, `1.2.3`, `e.g.`) unlinked. `start`/`end` are the match's
- * inclusive offsets into `text`.
- */
+/** A bare `name.ext` is still a path as the whole argument of an agent tool-call
+ * header — `Update(README.md)`. The `CapitalizedWord(…)` wrapper is the anchor. */
 function isToolHeaderArg(text: string, start: number, end: number): boolean {
   if (text[start - 1] !== "(" || text[end + 1] !== ")") return false;
   let i = start - 2;
@@ -185,8 +134,6 @@ function isToolHeaderArg(text: string, start: number, end: number): boolean {
   return /^[A-Z][A-Za-z]+$/.test(text.slice(i + 1, start - 1));
 }
 
-/** Split a matched path into its filesystem path and 1-based line (paths never
- * contain `:`, so the first colon starts the `:line[:col]` suffix). */
 function splitPathLine(raw: string): { path: string; line: number | null } {
   const colon = raw.indexOf(":");
   if (colon < 0) return { path: raw, line: null };
@@ -194,8 +141,7 @@ function splitPathLine(raw: string): { path: string; line: number | null } {
   return { path: raw.slice(0, colon), line: Number.isNaN(line) ? null : line };
 }
 
-/** The cells a link covers, given its inclusive `[start, end]` offsets into the
- * wrap-joined block that starts at viewport row `startRow`. */
+/** Offsets are into the wrap-joined block starting at viewport row `startRow`. */
 function segmentsFor(start: number, end: number, startRow: number, cols: number): LinkSegment[] {
   const segments: LinkSegment[] = [];
   const first = Math.floor(start / cols);
@@ -210,12 +156,8 @@ function segmentsFor(start: number, end: number, startRow: number, cols: number)
   return segments;
 }
 
-/**
- * The link under viewport cell (x, y), or null. `lines` is the grid mirror's
- * row array; rows the engine marked soft-wrapped (`wrapped`) are joined into
- * one string before matching. URLs win over paths where both could match
- * (URL spans are masked out before path detection).
- */
+/** The link under viewport cell (x, y), or null. URLs win over paths where both
+ * could match, since URL spans are masked out before path detection. */
 export function linkAt(
   lines: { runs: Run[]; wrapped?: boolean }[],
   cols: number,
@@ -226,8 +168,7 @@ export function linkAt(
 
   const text = (row: number) => rowText(lines[row]?.runs ?? [], cols);
 
-  // Find the wrapped block containing row y: walk up while the row above
-  // flows into ours, then down while rows keep flowing.
+  // The wrapped block containing row y: up while the row above flows into ours.
   let startRow = y;
   while (y - startRow < MAX_WRAP_ROWS && startRow > 0 && lines[startRow - 1]?.wrapped) {
     startRow--;
@@ -246,8 +187,7 @@ export function linkAt(
   const joined = rows.join("");
   const probe = (y - startRow) * cols + x;
 
-  // A real OSC 8 hyperlink is an unambiguous signal — trust it over the
-  // regex heuristics below, since the visible text may not look like a link.
+  // A real OSC 8 hyperlink outranks the regexes below: its text may not look like one.
   const hyperlink = linkRows[probe];
   if (hyperlink) {
     let start = probe;

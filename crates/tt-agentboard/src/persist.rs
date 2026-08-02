@@ -32,12 +32,10 @@ pub fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 
 /// A cheap "is this the same file contents I last read?" key, from one `stat`.
 ///
-/// Exact for every file [`write_atomic`] produces, and that is the whole point
-/// of pairing the two: an atomic write renames a *fresh* temp file over the
-/// target, so every write mints a new inode. A change that leaves `(mtime, len)`
-/// untouched — a same-length rewrite landing inside one mtime granule, which is
-/// exactly what a `repos.json` drag-to-reorder is — still moves the inode. A
-/// memo keyed on mtime and length alone could miss it; this can't.
+/// Exact for every file [`write_atomic`] produces, which is the point of pairing
+/// the two: each write renames a fresh temp file over the target, so a
+/// same-length rewrite inside one mtime granule — a `repos.json` drag-to-reorder
+/// — still moves the inode. An mtime+length memo could miss it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileVersion {
     id: (u64, u64),
@@ -67,13 +65,9 @@ fn file_id(_meta: &std::fs::Metadata) -> (u64, u64) {
 /// touched keys into it, then atomically write the merged value back and hand
 /// it to the caller to adopt as its new in-memory state.
 ///
-/// The one home of the merge-on-save clobber-safety property every shared
-/// agentboard JSON file depends on (#75, #315): each is written by every open
-/// instance, so a save must never write this instance's *whole* view — it would
-/// clobber keys another window touched that this copy hasn't heard about yet (the
-/// #75 bug: one poll saw zero repos and pruned every folder's records). Callers
-/// own the path/dirty guards and the merge; this owns the read → write →
-/// return-merged sequence so the four `save()` sites can't drift apart.
+/// The one home of the clobber-safety property every shared agentboard JSON file
+/// depends on (#75, #315): a save must never write this instance's *whole* view,
+/// which would erase keys another window touched. Callers own path/dirty guards.
 pub fn merge_on_save<T: serde::Serialize>(
     path: &Path,
     load: impl FnOnce(&Path) -> T,

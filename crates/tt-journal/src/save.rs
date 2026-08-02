@@ -30,13 +30,9 @@ fn temp_path_for(path: &Path) -> PathBuf {
 
 /// Replace the full content of an existing file at `path` with `new_content`.
 ///
-/// `expected_original` is the content the caller loaded earlier; the save re-reads the
-/// file and refuses to overwrite (returning [`Error::FileChangedOnDisk`]) if it no
-/// longer matches, so a concurrent append or external edit is reported rather than
-/// silently lost. The write is atomic (temp file + rename in the same directory).
-///
-/// Returns an [`Error::Io`] if the file (or its parent directory) does not exist or
-/// cannot be read/written.
+/// `expected_original` is what the caller loaded earlier; the save re-reads and returns
+/// [`Error::FileChangedOnDisk`] if it no longer matches, so a concurrent append or external
+/// edit is reported rather than silently lost. Atomic: temp file + rename in the same dir.
 pub fn save_file(path: &Path, expected_original: &str, new_content: &str) -> Result<()> {
     let current = std::fs::read_to_string(path)?;
     if current != expected_original {

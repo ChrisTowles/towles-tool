@@ -70,14 +70,9 @@ pub struct CreatedTask {
 }
 
 /// Create the task for `branch`: worktree under `tasks/`, rendered `.env`
-/// with port claims, sibling-secrets inheritance, setup step.
-/// `now_ms` (epoch ms) stamps the port registry's `claimed_at_ms` — read at
-/// the CLI/app boundary, never here.
-///
-/// `on_phase` fires at each [`CreatePhase`] in order, as
-/// [`super::remove_task`] does. Not part of [`CreateOpts`]: it's a marker in
-/// this function's control flow, not a creation setting. Pass `&mut |_| {}`
-/// to ignore.
+/// with port claims, sibling-secrets inheritance, setup step. `now_ms` is read
+/// at the CLI/app boundary, never here. `on_phase` fires at each
+/// [`CreatePhase`] in order; pass `&mut |_| {}` to ignore.
 pub fn create_task(
     opts: &CreateOpts,
     now_ms: i64,

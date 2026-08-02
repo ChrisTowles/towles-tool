@@ -1,15 +1,9 @@
 import { Lock, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * The read-only ⇄ editable switch both Monaco surfaces carry in their header
- * (the diff pane's working-tree sides, the files pane's open file).
- *
- * Both panes default to **read-only**: they're read constantly while an agent
- * works, often with the keyboard focused in them, and a stray keystroke used
- * to land in the file and auto-save itself to disk. Editing is still one
- * click away — the toggle is the deliberate act that arms it.
- */
+/** The read-only ⇄ editable switch both Monaco surfaces carry. They default to
+ * read-only because they're read while an agent works, often with the keyboard
+ * focused in them, and a stray keystroke used to auto-save itself to disk. */
 export function EditableToggle({
   editable,
   onChange,
@@ -31,9 +25,8 @@ export function EditableToggle({
       }
       onClick={() => onChange(!editable)}
       className={cn(
-        // `whitespace-nowrap` because this sits in a grid column that a narrow
-        // pane squeezes — a wrapped two-line lock is a worse target than one
-        // that pushes its neighbors.
+        // `whitespace-nowrap`: a narrow pane squeezes this grid column, and a
+        // wrapped two-line lock is a worse target than one pushing its neighbors.
         "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors",
         editable
           ? "border-amber-500/60 text-amber-500"

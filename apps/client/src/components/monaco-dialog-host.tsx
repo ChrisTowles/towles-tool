@@ -11,15 +11,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { dialogStore } from "@/lib/monaco-dialog-store";
 
-/**
- * Renders the confirmations the VS Code layer asks for — today that's the
- * Explorer's delete. Mounted once at the app root, because the workbench can
- * raise one from anywhere (a command palette action, a keybinding) and it must
- * not depend on which pane is visible.
- *
- * The alternative is VS Code's own `window.confirm()`, which freezes the Tauri
- * window outright; see `lib/monaco-dialogs.ts`.
- */
+/** Renders the confirmations the VS Code layer asks for. Mounted once at the app
+ * root: the workbench raises them from anywhere. The alternative is VS Code's own
+ * `window.confirm()`, which freezes the Tauri window outright. */
 export function MonacoDialogHost() {
   const pending = useSyncExternalStore(dialogStore.subscribe, dialogStore.get);
   // One at a time — the workbench raises these serially, and stacking modals

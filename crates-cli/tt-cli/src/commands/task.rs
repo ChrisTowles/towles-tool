@@ -52,12 +52,9 @@ pub fn run(command: TaskCommands) -> i32 {
     }
 }
 
-/// Remove a worktree task and everything bound to it, through the one shared
-/// sequence in [`tt_agentboard::task_removal`]. The CLI has no panes and no
-/// in-memory rail, so it passes no hooks; the app passes its own and gets the
-/// identical ordering. `outcome` is what the board row records; `None` (a
-/// stdin-free CLI never prompts) infers from the row's own evidence — a
-/// merged linked PR closes as done, anything else as abandoned.
+/// Remove a worktree task and everything bound to it, through the one shared sequence
+/// in [`tt_agentboard::task_removal`]; the CLI passes no hooks, the app passes its own
+/// and gets identical ordering. `None` outcome infers from the row's own evidence.
 fn remove_task_fully(
     opts: &RemoveOpts,
     dir: &Path,
@@ -87,27 +84,20 @@ fn remove_task_fully(
         .map_err(|e| e.to_string())
 }
 
-/// Open the board store scoped to `dir` (see `tt_config::task_scope_from_dir`
-/// — instance state, tt.db included, nests per-checkout).
-///
-/// `None` on a store that won't open — best-effort by design, since the
-/// worktree removal has already happened by the time this matters and failing
-/// the command now would report a removal that really occurred as a failure.
+/// Open the board store scoped to `dir` (instance state, tt.db included, nests
+/// per-checkout). `None` on a store that won't open: the worktree removal has already
+/// happened by then, and failing now would report a real removal as a failure.
 fn board_store_for(dir: &Path) -> Option<tt_store::Store> {
     let scope = tt_config::task_scope_from_dir(dir);
     let path = tt_config::store_db_path_for_scope(scope.as_deref()).ok()?;
     tt_store::Store::open(&path).ok()
 }
 
-/// Resolve whichever board store actually holds the row bound to `dir`. Rows
-/// are per-checkout instance state, living where the creating instance was
-/// scoped — normally `checkout`, but an instance run from inside another
-/// task's worktree scopes there, so the ambient cwd's store is tried next.
-///
-/// Deliberately *not* `task_scope_from_dir(dir)` — `state_cleanup` wipes that
-/// scope wholesale, so it would "find" a row a heartbeat before its database
-/// is deleted. Trying only `checkout` silently no-ops against an empty
-/// database, stranding the removed worktree's "doing" card forever.
+/// Resolve whichever board store actually holds the row bound to `dir`: normally
+/// `checkout`, but an instance run from inside another task's worktree scopes there,
+/// hence the ambient cwd fallback. Deliberately *not* `task_scope_from_dir(dir)` —
+/// `state_cleanup` wipes that scope wholesale, so it would find a row a heartbeat
+/// before its database is deleted.
 fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Store> {
     let dir_s = dir.to_string_lossy();
     let has_row = |s: &tt_store::Store| matches!(s.task_for_worktree_dir(&dir_s), Ok(Some(_)));
@@ -119,19 +109,14 @@ fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Stor
     if ambient.as_ref().is_some_and(has_row) {
         return ambient;
     }
-    // Neither has the row (a worktree with no bound task at all is the
-    // common case for many tasks) — keep the primary-anchored store so
-    // existing behavior for that case is unchanged.
+    // Neither has the row (common — many worktrees have no bound task): keep the
+    // primary-anchored store.
     primary.or(ambient)
 }
 
-/// Steps 4 and 5 of the removal sequence, for `tt task clean` (bulk removal
-/// has already taken each worktree off disk by the time bindings clear).
-///
-/// **Returns** notes rather than printing: `--json` writes a machine-read
-/// document to stdout and `ui::warning` also prints there, so a helper that
-/// reported for itself would corrupt it. The caller folds these into its own
-/// `warnings` output in both modes.
+/// Steps 4 and 5 of the removal sequence, for `tt task clean` (bulk removal has already
+/// taken each worktree off disk by then). **Returns** notes rather than printing —
+/// `ui::warning` shares stdout with `--json`'s document, so the caller folds them in.
 fn after_removal(checkout: &Path, dir: &Path) -> Vec<String> {
     let store = board_store_for(checkout);
     task_removal::remove_bindings(
@@ -145,12 +130,9 @@ fn after_removal(checkout: &Path, dir: &Path) -> Vec<String> {
     )
 }
 
-/// Create a task (the unit of work): a board-task row PLUS its worktree, in one
-/// shot. Params mirror the MCP `task_create` tool (title/repo/status/notes) and
-/// add the worktree's branch/base, defaulted so `tt task new "Fix login" --repo
-/// myrepo` is enough. The board row is the same store path the app's `+` flow and
-/// MCP `task_create` write; the worktree is the same `ops::create_task` the app's
-/// `task_create` command uses — this is those two flows unified behind one verb.
+/// Create a task (the unit of work): a board-task row PLUS its worktree, in one shot.
+/// Same store path as the app's `+` flow and MCP `task_create`, same
+/// `ops::create_task` — those two flows unified behind one verb.
 #[allow(clippy::too_many_arguments)] // mirrors `TaskCommands::New`'s own flags 1:1
 fn cmd_new(
     title: &str,
@@ -167,15 +149,12 @@ fn cmd_new(
         return Err("a task needs a title".to_string());
     }
 
-    // Resolve the tracked repo (by name or dir), exactly as MCP `task_create`
-    // does — the worktree is created inside this checkout, and the board row
-    // lands in its swimlane.
+    // Resolved by name or dir, exactly as MCP `task_create` does.
     let repos = tt_agentboard::repos::load_repos(&tt_agentboard::repos::default_repos_path());
     let entries = tt_agentboard::repos::repo_entries(&repos);
     let repo_dir = match entries.iter().find(|e| e.dir == repo || e.name == repo) {
         Some(e) => e.dir.clone(),
-        // A repo not on the rail is still usable when it names a real checkout on
-        // disk — the worktree is created there and the board row records its path.
+        // A repo not on the rail is still usable when it names a real checkout on disk.
         None if Path::new(repo).is_dir() => repo.to_string(),
         None => {
             return Err(format!("unknown repo {repo:?} — track it on the Agentboard rail first"));
@@ -194,10 +173,9 @@ fn cmd_new(
         }
     };
 
-    // `--repo` may name any dir inside the checkout (including one of its own
-    // worktrees); `ops::create_task` anchors to the main checkout, so resolve it
-    // here too and bind the board row to *that* — a nested path recorded as
-    // `worktree_repo_root` would key the card to a Board swimlane matching no repo.
+    // `--repo` may name any dir inside the checkout, including one of its own worktrees.
+    // Bind the row to the main checkout as `ops::create_task` does: a nested path in
+    // `worktree_repo_root` keys the card to a Board swimlane matching no repo.
     let sr = ops::discover_root(Some(Path::new(&repo_dir))).map_err(|e| e.to_string())?;
     let repo_root = sr.checkout.to_string_lossy().to_string();
 
@@ -207,28 +185,21 @@ fn cmd_new(
         base: base.map(str::to_string),
         run_setup: true,
     };
-    // Narrated in text mode only: `ui::info` writes to *stdout*, so an eager
-    // step line would corrupt `--json`'s document the same way a warning
-    // would (see the comment below). Worth printing at all because the setup
-    // step alone can run for minutes with nothing else on screen.
+    // Text mode only — `ui::info` writes to stdout, which `--json`'s document owns.
+    // Worth printing because the setup step can run for minutes in silence.
     let created = ops::create_task(&opts, now_ms(), &mut |phase| {
         if !json {
             ui::info(phase.label());
         }
     })
     .map_err(|e| e.to_string())?;
-    // Collected rather than printed here: `ui::warning` writes to *stdout*
-    // (see `cmd_clean`'s doc comment on the same hazard), so printing eagerly
-    // would corrupt `--json`'s document whenever a warning fires — which is
-    // not a rare edge case, since a store contended by another `tt`/the app's
-    // own scheduler is exactly when this path is exercised. Every warning
-    // still reaches the caller: as `ui::warning` lines in text mode, as a
-    // `"warnings"` array in `--json`.
+    // Collected, not printed: `ui::warning` also writes to stdout, and a store
+    // contended by another `tt` is exactly when this path fires. Warnings still reach
+    // the caller — as `ui::warning` lines in text mode, as `"warnings"` in `--json`.
     let mut warnings = created.warnings.clone();
     let dir_s = created.dir.to_string_lossy().to_string();
 
-    // Record the board task and bind it to the repo + the new worktree. A store
-    // that can't open (or a rejected status) is a soft failure: the worktree
+    // A store that can't open (or a rejected status) is a soft failure: the worktree
     // exists and is usable, so warn rather than abort.
     let task_id =
         match record_board_task(title, status, notes, goal, &repo_root, &created.branch, &dir_s) {
@@ -280,9 +251,8 @@ fn cmd_new(
     Ok(())
 }
 
-/// Write the #339 board-task row and bind it to `repo_root` + the new worktree
-/// (`branch`/`dir`). Same store path as the app's `store_add_task` +
-/// `store_task_set_worktree` and MCP `task_create`. Returns the new task id.
+/// Write the #339 board-task row and bind it to `repo_root` + the new worktree. Same
+/// store path as the app's `store_add_task` + `store_task_set_worktree`.
 fn record_board_task(
     title: &str,
     status: &str,
@@ -363,8 +333,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
     checkouts.extend(sr.tasks().into_iter().map(|(name, dir)| (name, dir, false)));
 
     let refs = ops::base_refs(&sr.checkout);
-    // One clock read at the command boundary; the staleness math takes it as an
-    // injected instant (tt_tasks::staleness::assess reads no clock of its own).
+    // One clock read at the command boundary; `staleness::assess` reads none of its own.
     let now_unix = now_ms() / 1000;
 
     struct Row {
@@ -373,11 +342,9 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
         detached: bool,
         broken: bool,
         work: tt_tasks::landed::WorkState,
-        /// Rendered STATE cell — each arm below knows which vocabulary applies
-        /// to it, so nothing downstream has to re-derive that.
+        /// Rendered STATE cell — each arm below knows which vocabulary applies to it.
         state: String,
-        /// Activity recency, only computed when `--stale` is in play (one extra
-        /// git call per row, so the default `ls` path doesn't pay for it).
+        /// Only computed under `--stale`: one extra git call per row.
         staleness: Option<tt_tasks::Staleness>,
         ports: Vec<(String, String)>,
         primary: bool,
@@ -385,9 +352,8 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
 
     let mut rows = Vec::new();
     for (name, dir, is_primary) in checkouts {
-        // One cached `tt_git::repo` handle per row instead of three `git`
-        // spawns: a repo that won't open *is* the broken case, and the branch
-        // and short sha come off the same handle.
+        // One cached `tt_git::repo` handle per row instead of three `git` spawns; a
+        // repo that won't open *is* the broken case.
         let repo = ops::repo_at(&dir).ok();
         let broken = repo.is_none();
         let (branch, detached, work, state) = if broken {
@@ -397,12 +363,9 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
             let current = repo.head_branch().unwrap_or_default();
             let uncommitted = ops::uncommitted_count(&dir);
             if current.is_empty() {
-                // A detached HEAD has no branch to compare against a base, so
-                // the landed axes are unanswerable — but the orphan count is
-                // base-independent and is exactly the work removal destroys,
-                // so it is measured rather than left at a default 0 that would
-                // report `holdsWork: false` for a task holding unreachable
-                // commits.
+                // A detached HEAD leaves the landed axes unanswerable, but the orphan
+                // count is base-independent and is exactly the work removal destroys —
+                // defaulting it to 0 would report `holdsWork: false` for unreachable work.
                 let sha = repo
                     .head_id()
                     .map(|id| id.to_hex_with_len(7).to_string())
@@ -415,9 +378,8 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                 let state = work.headline();
                 (format!("detached:{sha}"), true, work, state)
             } else if current == refs.base {
-                // A checkout sitting on the base branch has no line of work to
-                // judge; running it through the landed vocabulary would label
-                // the main checkout "no commits".
+                // A checkout on the base branch has no line of work to judge; the landed
+                // vocabulary would label the main checkout "no commits".
                 let work = tt_tasks::landed::WorkState { uncommitted, ..Default::default() };
                 let state = match uncommitted {
                     0 => "clean".to_string(),
@@ -436,18 +398,15 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                 (current, false, work, state)
             }
         };
-        // Recency is a separate axis from landed-vs-not: measure the branch's
-        // own newest commit and let `staleness::assess` combine it with
-        // landedness. A broken checkout has no git to ask.
+        // Recency is a separate axis from landed-vs-not; `staleness::assess` combines
+        // them. A broken checkout has no git to ask.
         let staleness = stale.map(|threshold| {
             let last = if broken { None } else { ops::last_own_commit_unix(&dir, &refs.base) };
             tt_tasks::assess_staleness(last, now_unix, threshold, work.landed.is_some())
         });
         let env_text = fs::read_to_string(dir.join(".env")).unwrap_or_default();
-        // The same claim filter the removal guard, the sibling scan and the
-        // app's MCP bind all use — `tt task ls` is the human-readable view of
-        // that set, so it must not count things they skip (a hand-rolled
-        // filter here counted `FOO_PORT=0` and `FOO_PORT=999999` as claims).
+        // The same claim filter the removal guard, the sibling scan and the app's MCP
+        // bind use — a hand-rolled one here counted `FOO_PORT=0` as a claim.
         // `_in_order`, not `_by_key`: the column stays in `.env` order.
         let ports: Vec<(String, String)> = envfile::port_claims_in_order(&env_text)
             .into_iter()
@@ -482,8 +441,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                     "branch": r.branch,
                     "detached": r.detached,
                     "broken": r.broken,
-                    // The two axes, separately: work that exists only here and
-                    // dies with the task, vs commits the base has never seen.
+                    // Two axes: work that dies with the task, vs commits base never saw.
                     "uncommitted": r.work.uncommitted,
                     "unlanded": r.work.unlanded,
                     "orphaned": r.work.orphaned,
@@ -493,8 +451,8 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                     "ports": port_map,
                     "primary": r.primary,
                 });
-                // The recency axis, only present when `--stale` computed it —
-                // absent keys keep the default document byte-identical.
+                // Absent unless `--stale` computed it, so the default document stays
+                // byte-identical.
                 if let Some(s) = r.staleness {
                     let map = item.as_object_mut().expect("json! built an object");
                     map.insert("ageDays".into(), s.age_days.into());
@@ -505,14 +463,12 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
             .collect();
         println!("{}", serde_json::to_string_pretty(&items).unwrap_or_default());
     } else if let Some(threshold) = stale.filter(|_| rows.is_empty()) {
-        // A query that matched nothing reads as an empty table otherwise —
-        // easily mistaken for "the tool didn't run".
+        // An empty table reads as "the tool didn't run".
         println!("no stale tasks (no commits in {threshold}+ days, still unlanded)");
     } else {
-        // `--stale` slots an AGE column in ahead of PORTS; the base view is
-        // unchanged. Task names are branch slugs and run long, so columns are
-        // sized to the actual rows — a fixed width silently shifted every later
-        // column out of alignment as soon as one name overflowed it.
+        // `--stale` slots an AGE column ahead of PORTS. Columns are sized to the actual
+        // rows: task names are branch slugs, and one overflowing a fixed width shifted
+        // every later column out of alignment.
         let mut headers: Vec<&str> = vec!["CHECKOUT", "BRANCH", "STATE"];
         if stale.is_some() {
             headers.push("AGE");
@@ -535,8 +491,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                 row
             })
             .collect();
-        // Width counts chars, not bytes, so a multi-byte branch name doesn't
-        // over-pad its column.
+        // Chars, not bytes: a multi-byte branch name must not over-pad its column.
         let width = |i: usize| {
             cells
                 .iter()
@@ -576,8 +531,7 @@ fn cmd_rm(
     let opts = RemoveOpts { root: root.map(Path::to_path_buf), name: name.to_string(), force };
     // clap's value_parser guarantees the spelling; parse never fails here.
     let outcome = outcome.and_then(tt_store::TaskOutcome::parse);
-    // The name came from the command line, so a missing worktree is a typo to
-    // report, not a no-op to celebrate.
+    // The name came from the command line, so a missing worktree is a typo to report.
     match remove_task_fully(&opts, &dir, &sr.checkout, outcome, task_removal::MissingDir::Fail)? {
         task_removal::Outcome::Removed { name, messages } => {
             for message in messages {
@@ -592,15 +546,11 @@ fn cmd_rm(
     }
 }
 
-/// Render a guard refusal for the terminal: each reason paired with its
-/// remedy, then a closing note about `--force`. The reason alone says what's
-/// wrong but not what to do next, which is the difference between a dead end
-/// and a decision. Sole owner of this text — `RemoveOutcome::Blocked` carries
-/// typed reasons precisely so each shell can format them its own way.
-/// `messages` carries caveats gathered before the verdict — chiefly a failed
-/// `fetch --prune`, which means the guards judged against stale `origin/*`
-/// refs. Printed above the reasons rather than dropped: a refusal that might
-/// be an artifact of being offline reads exactly like a real one otherwise.
+/// Render a guard refusal for the terminal: each reason with its remedy, since a reason
+/// alone is a dead end rather than a decision. Sole owner of this text — `Blocked`
+/// carries typed reasons so each shell formats its own. `messages` are caveats from
+/// before the verdict — chiefly a failed `fetch --prune`, since a refusal judged against
+/// stale `origin/*` refs otherwise reads exactly like a real one.
 fn refusal(name: &str, blocked: &[tt_tasks::RmBlocked], messages: &[String]) -> String {
     let mut out = format!("refused to remove {name}:");
     for note in messages {
@@ -627,13 +577,9 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
     let report =
         ops::clean_tasks(&opts, tt_config::task_scope_from_dir).map_err(|e| e.to_string())?;
 
-    // Each removed task may be tracked on the agentboard rail (same rationale
-    // as `tt task rm`'s untracking below) — drop its now-dangling repos.json
-    // entry so collectors (`prs`/`issues`) don't keep retrying a gone dir.
-    // Collected rather than printed eagerly — `ui::warning` writes to
-    // *stdout*, so printing here would corrupt `--json`'s document whenever
-    // one fires (the same hazard fixed in `cmd_new`); every note still
-    // reaches the caller, just via `warnings` in both modes.
+    // Drop each removed task's now-dangling repos.json entry so collectors don't keep
+    // retrying a gone dir. Collected, not printed: `ui::warning` shares stdout with
+    // `--json`'s document (the hazard fixed in `cmd_new`).
     let mut warnings = report.warnings.clone();
     if !dry_run {
         for task in &report.removed {
@@ -643,9 +589,8 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         }
     }
 
-    // Agentboard stores that survive the sweep: the unscoped daily driver's
-    // plus every remaining checkout's scope. Removed scopes' stores just got
-    // deleted wholesale with their state dir.
+    // Stores that survive the sweep: the unscoped daily driver's plus every remaining
+    // checkout's. Removed scopes went wholesale with their state dir.
     let mut store_dirs = vec![bases.agentboard_dir(None)];
     store_dirs.extend(report.live_scopes.iter().map(|s| bases.agentboard_dir(Some(s))));
     let mut prunes = Vec::new();
@@ -736,11 +681,9 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
     Ok(())
 }
 
-/// `tt task ports [--probe N] [--json]` — the repo's port picture, or a
-/// single-port listener probe. The probe mode is what `scripts/task-port.mjs`
-/// delegates its port-freeness checks to, so the bind semantics
-/// (`ops::port_occupied` — both loopback stacks, EACCES) have exactly one
-/// implementation.
+/// The repo's port picture, or a single-port listener probe. `scripts/task-port.mjs`
+/// delegates its freeness checks to the probe, so the bind semantics
+/// (`ops::port_occupied` — both loopback stacks, EACCES) have one implementation.
 fn cmd_ports(probe: Option<u16>, json: bool, root: Option<&Path>) -> Result<(), String> {
     if let Some(port) = probe {
         let occupied = ops::port_occupied(port);

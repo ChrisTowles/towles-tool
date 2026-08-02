@@ -10,11 +10,8 @@ export type UpdateCheck = {
 };
 
 /**
- * Subscribes to `update://available`, the event the app's startup check fires
- * only when a newer GitHub release exists (see
- * `crates-tauri/tt-app/src/update.rs`). Never fires for "checked, nothing
- * newer" or in plain-Vite browser dev, so the initial state is simply "no
- * update known yet" — there's no separate loading/error state to model.
+ * `update://available` fires only when a newer release exists, so the initial
+ * state is just "no update known yet" — no loading/error state to model.
  */
 export function useUpdateCheck(): UpdateCheck | null {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);

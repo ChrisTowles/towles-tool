@@ -3,13 +3,10 @@
 use assert_cmd::Command;
 use std::path::Path;
 
-/// Build a `tt` command pointed at an isolated config directory, so tests never
-/// touch the real `~/.config/towles-tool`.
-///
-/// Also forces `TT_STATE_SCOPE=` empty so state-path resolution stays *unscoped*
-/// (the daily-driver defaults) even though the test binary runs from inside a
-/// task checkout, whose cwd would otherwise auto-derive a task scope. These
-/// black-box tests assert on the documented default paths.
+/// Build a `tt` command pointed at an isolated config directory, with
+/// `TT_STATE_SCOPE` forced empty so state paths stay *unscoped* even though the
+/// test binary runs from inside a task checkout, whose cwd would otherwise
+/// auto-derive a task scope.
 pub fn cli_cmd(config_dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("tt").expect("binary `tt` should build");
     cmd.arg("--config-dir").arg(config_dir);
@@ -17,8 +14,8 @@ pub fn cli_cmd(config_dir: &Path) -> Command {
     cmd
 }
 
-/// Write a settings file into `config_dir` whose journal `baseFolder` and `templateDir`
-/// point inside the sandbox, so journal tests never touch the real home directory.
+/// Point journal `baseFolder`/`templateDir` inside the sandbox, so journal tests
+/// never touch the real home directory.
 pub fn write_journal_settings(config_dir: &Path, base_folder: &Path, template_dir: &Path) {
     std::fs::create_dir_all(config_dir).unwrap();
     let settings = serde_json::json!({

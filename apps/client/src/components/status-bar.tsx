@@ -42,13 +42,9 @@ function shortLimitLabel(label: string): string {
   return scoped ? scoped[1] : label;
 }
 
-/**
- * Claude Code's own 5h-session / weekly / model-scoped rate-limit
- * percentages, read from the CLI's cached `~/.claude.json` snapshot (via
- * `tt-claude-sessions`) — never a live call. The CLI only refreshes this
- * cache when it makes a real API request, so a shorter poll wouldn't see
- * fresher data; this just picks up that refresh promptly.
- */
+/** Read from the CLI's cached `~/.claude.json`, never a live call. The cache
+ * only refreshes when the CLI makes a real API request, so a shorter poll would
+ * see nothing fresher. */
 function useClaudeUsageLimits(): UsageLimits | null {
   const [limits, setLimits] = useState<UsageLimits | null>(null);
   useEffect(() => {
@@ -68,16 +64,13 @@ function useClaudeUsageLimits(): UsageLimits | null {
   return limits;
 }
 
-/** Fill color by how close a limit is to capping out — same severity ramp as
- * {@link COLLECTOR_STATE_DOT}. */
+/** Same severity ramp as {@link COLLECTOR_STATE_DOT}. */
 function limitFillColor(percent: number): string {
   if (percent >= 90) return "bg-red-500 dark:bg-red-400";
   if (percent >= 70) return "bg-amber-500/80 dark:bg-amber-400/80";
   return "bg-foreground/50";
 }
 
-/** One rate-limit bar: short label + a mini progress track, exact percent and
- * reset countdown in the tooltip. */
 function LimitBar({ bar }: { bar: UsageLimitBar }) {
   const pct = Math.min(100, Math.max(0, bar.percent));
   const resetMs = bar.resetsAt ? new Date(bar.resetsAt).getTime() - Date.now() : null;
@@ -102,15 +95,9 @@ function LimitBar({ bar }: { bar: UsageLimitBar }) {
   );
 }
 
-/**
- * Passive CPU/RAM readout across everything this app is running — its own
- * process plus every embedded terminal's shell and descendants (#78, widened
- * once the Task Explorer screen made the full breakdown available). Polls
- * the Rust sampler on an interval; renders nothing in browser dev or until
- * the first sample lands. Sums `task_explorer_snapshot`'s groups rather than
- * calling `app_resource_usage` directly, so the status bar's number always
- * agrees with the Task Explorer screen's own total.
- */
+/** Sums `task_explorer_snapshot`'s groups rather than calling
+ * `app_resource_usage`, so this number always agrees with the Task Explorer
+ * screen's own total. */
 function useResourceUsage(): ResourceUsage | null {
   const [usage, setUsage] = useState<ResourceUsage | null>(null);
   useEffect(() => {
@@ -133,7 +120,6 @@ function useResourceUsage(): ResourceUsage | null {
   return usage;
 }
 
-/** One muted dot per collector with a health tooltip (name, age, ok/fail). */
 function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: number }) {
   const { label, state, run } = health;
   return (
@@ -161,11 +147,8 @@ function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: num
   );
 }
 
-/**
- * Always-on collector health: a compact cluster of dots so a focused user sees
- * `gh` auth expiring (a red dot) before PRs quietly go missing. Classification
- * lives in the pure {@link collectorHealth}; this only paints it.
- */
+/** Always on, so a focused user sees `gh` auth expiring before PRs quietly go
+ * missing. Classification lives in the pure {@link collectorHealth}. */
 function CollectorHealthCluster() {
   const { snapshot } = useStoreSnapshot();
   const now = useNow();
@@ -179,16 +162,8 @@ function CollectorHealthCluster() {
   );
 }
 
-/**
- * The keyboard-shortcut habit, always in the corner of the eye: today's
- * keyboard share of the actions that *have* a shortcut, and the streak of days
- * that cleared the goal. Deliberately the smallest possible readout — a
- * percentage and a flame — with the coaching detail (what the goal is, how
- * close today is, which binding the pointer keeps winning) in the tooltip,
- * because a habit gauge that competes for attention defeats the app's whole
- * point. Numbers come from the event log via {@link useKeyboardScore}; opens
- * the Telemetry screen, whose Attention tab holds the full breakdown.
- */
+/** Deliberately the smallest possible readout, coaching detail kept in the
+ * tooltip: a habit gauge that competes for attention defeats the app's point. */
 function KeyboardHabit({ score }: { score: KeyboardScore }) {
   const { openTab } = useWorkspace();
   const { today, streak } = score;

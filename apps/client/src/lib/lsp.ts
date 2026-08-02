@@ -1,21 +1,6 @@
-/**
- * LSP bridge: rust-analyzer runs app-side (`lsp_start` spawns it per
- * workspace, `crates-tauri/tt-app/src/lsp.rs`), and monaco-languageclient in
- * the webview speaks to it over Tauri IPC — `lsp_send` down, `lsp://msg`
- * events up. No WebSocket, no port claims. One server at a time, following
- * the active workspace (`syncLspWorkspace`, called by setMonacoWorkspace);
- * a folder without Cargo.toml just stops the previous server.
- *
- * Status is reported (`lib/lsp-status.ts`) rather than swallowed: this started
- * as a spike whose failures went to console.warn, which meant nobody could
- * tell whether it had ever served a single hover. The Files pane shows the
- * state so the keep-or-cut call can be made on evidence.
- *
- * Note the extension host this depends on is NOT lazy — `vscode/
- * localExtensionHost` registers an initialize-time participant, so it has to
- * be imported before `api.initialize` whether or not a Rust checkout is ever
- * opened. That cost is paid by every editor mount; see `lib/monaco.ts`.
- */
+/** LSP bridge: rust-analyzer runs app-side (`crates-tauri/tt-app/src/lsp.rs`);
+ * monaco-languageclient speaks to it over Tauri IPC — `lsp_send` down,
+ * `lsp://msg` events up. One server, following the active workspace. */
 
 import { AbstractMessageReader, AbstractMessageWriter } from "vscode-jsonrpc";
 import type { DataCallback, Disposable, Message } from "vscode-jsonrpc";
@@ -27,14 +12,12 @@ import { setLspStatus } from "@/lib/lsp-status";
 class TauriMessageReader extends AbstractMessageReader {
   private unlisten: (() => void) | null = null;
   private callback: DataCallback | null = null;
-  /** Messages that arrived before the client attached its callback. */
   private buffered: Message[] = [];
   constructor(private readonly serverId: number) {
     super();
   }
-  /** Attach the Tauri event listeners. Await this BEFORE starting the
-   * language client — otherwise the server's `initialize` response can race
-   * the listener registration and get dropped. */
+  /** Await this BEFORE starting the language client, or the server's
+   * `initialize` response can race listener registration and get dropped. */
   async attach(): Promise<void> {
     const { listen } = await import("@tauri-apps/api/event");
     const msg = await listen<{ id: number; message: string }>("lsp://msg", (e) => {
@@ -68,9 +51,8 @@ class TauriMessageWriter extends AbstractMessageWriter {
   constructor(private readonly serverId: number) {
     super();
   }
-  /** `MessageWriter` is vscode-jsonrpc's contract: a failed write must reject
-   * so the language client tears the connection down instead of waiting on a
-   * response that will never arrive. */
+  /** vscode-jsonrpc's contract: a failed write must reject, or the language
+   * client waits on a response that will never arrive. */
   async write(msg: Message): Promise<void> {
     const sent = await invoke("lsp_send", { id: this.serverId, message: JSON.stringify(msg) });
     if (sent.isErr()) throw new Error(errorMessage(sent.error));
@@ -83,9 +65,8 @@ let current: { dir: string; stop: () => void } | null = null;
 // reap them before the first start. (Module scope = runs once per page.)
 let switching: Promise<void> = invoke("lsp_stop_all").then(() => {});
 
-/** Point the (single) rust-analyzer at this workspace: stop the previous
- * server, start one if the folder is a Rust workspace. Serialized — rapid
- * workspace switches can't interleave. */
+/** Serialized, so rapid workspace switches can't interleave. A folder without
+ * Cargo.toml just stops the previous server. */
 export function syncLspWorkspace(dir: string): void {
   if (!isTauri()) return;
   switching = switching
@@ -109,9 +90,7 @@ export function syncLspWorkspace(dir: string): void {
         console.warn(`rust-analyzer bridge failed to start: ${detail}\n${stack}`);
       }
       // The chain is the serialization mechanism, so it must never settle
-      // rejected: one throw outside the try above (a `stop()` that blew up, say)
-      // would leave every later workspace switch chained onto a rejected promise
-      // and silently skipped for the life of the window.
+      // rejected — every later workspace switch would be silently skipped.
     })
     .catch((e: unknown) => {
       setLspStatus({ state: "failed", dir, detail: errorMessage(e) });

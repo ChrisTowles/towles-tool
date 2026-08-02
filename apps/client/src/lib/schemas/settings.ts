@@ -1,10 +1,8 @@
 import { z } from "zod";
 
 /**
- * Runtime validators for `UserSettings` — a file that is hand-edited and
- * shared with the TS CLI. `.passthrough()` everywhere matches the Rust
- * side's tolerance, so a key this schema doesn't know survives a read
- * instead of being dropped from what gets saved back.
+ * `.passthrough()` everywhere matches the Rust side, so an unknown key in the
+ * hand-edited settings file survives a read instead of being dropped on save.
  */
 
 const JournalSettingsSchema = z

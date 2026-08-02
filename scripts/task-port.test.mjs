@@ -17,9 +17,8 @@ import {
   killPort,
 } from "./task-port.mjs";
 
-// Run `fn` with `process.env` restored afterwards, so env-reading functions
-// (resolveDevPort/resolveWebdriverPort) don't leak state between tests.
 /**
+ * Run `fn` with `process.env` restored afterwards, so nothing leaks between tests.
  * @param {string[]} keys
  * @param {() => void} fn
  */
@@ -267,12 +266,8 @@ async function findEphemeralFreePort() {
   });
 }
 
-// A pure-node port probe for the killPort test. We can't use the production
-// `isPortFree` here: it shells out to `tt task ports --probe`, and the scripts
-// test job doesn't build the `tt` binary. The Rust side (`ops::port_occupied`)
-// owns and tests that probe's semantics; this test only needs to observe
-// whether a port is bound to verify killPort, so a local bind attempt suffices.
 /**
+ * Not the production `isPortFree`: that shells out to `tt`, never built here.
  * @param {number} port
  * @returns {Promise<boolean>}
  */

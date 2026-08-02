@@ -4,12 +4,9 @@ import { Button } from "@/components/ui/button";
 import { openExternalUrl } from "@/lib/open-url";
 import { useUpdateCheck } from "@/lib/update";
 
-/**
- * Full-width strip under the app header announcing a newer GitHub release (see
- * `useUpdateCheck`). Dismiss is session-only — no persisted "skip this
- * version" state, so it reappears on relaunch until the app is actually
- * updated. Mirrors `DmBanner`'s layout/styling.
- */
+/** Full-width strip announcing a newer GitHub release. Dismiss is session-only —
+ * no persisted "skip this version" state, so it reappears on relaunch until the
+ * app is actually updated. */
 export function UpdateBanner() {
   const update = useUpdateCheck();
   const [dismissed, setDismissed] = useState(false);

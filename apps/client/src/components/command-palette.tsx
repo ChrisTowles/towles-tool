@@ -40,13 +40,9 @@ import { SCREENS } from "@/lib/screens";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
-/**
- * ⌘K launcher. Beyond the static "go to screen" list and app actions it pulls
- * live sections from the same read-only hooks the screens use: recent
- * screens (MRU), Agentboard checkouts/sessions to jump to, and open PRs and
- * issues to open in the browser. Shortcut hints come from `shortcutHint()` so glyphs are
- * platform-correct (Ctrl on Linux, ⌘ on mac) instead of hardcoded.
- */
+/** ⌘K launcher. Live sections — recent screens, Agentboard checkouts and
+ * sessions, open PRs and issues — come from the same read-only hooks the screens
+ * use; `shortcutHint()` keeps glyphs platform-correct rather than hardcoded. */
 export function CommandPalette() {
   const {
     paletteOpen,

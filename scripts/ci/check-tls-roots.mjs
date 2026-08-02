@@ -1,16 +1,9 @@
 #!/usr/bin/env node
-// Invariant: outbound TLS clients must verify against the OS trust store, never
-// a bundled Mozilla root list — Chris develops behind a Zscaler-style
-// TLS-inspecting proxy whose root CA lives only in the OS store (see the
-// TLS-clients convention in CLAUDE.md). `rustls` + `webpki-roots` (or any
-// bundled-roots rustls variant) never sees that CA and fails to connect.
-//
-// This check fails if Cargo.lock declares a `webpki-roots` or `rustls` package.
-// It matches package-name lines only (`name = "..."`) so an unrelated substring
-// can't false-positive. Prefer `native-tls` or an OS-native-roots rustls variant
-// (rustls-native-certs / rustls-tls-native-roots) instead.
-//
-// Run from the repo root: `node scripts/ci/check-tls-roots.mjs`
+// Fails if Cargo.lock declares `webpki-roots` or `rustls`: Chris develops behind
+// a Zscaler-style TLS-inspecting proxy whose root CA lives only in the OS trust
+// store, which a bundled Mozilla root list never sees. Prefer `native-tls` or an
+// OS-native-roots rustls variant (rustls-native-certs / rustls-tls-native-roots).
+// Run from the repo root.
 
 import { readFileSync } from "node:fs";
 

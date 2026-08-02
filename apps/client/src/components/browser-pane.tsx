@@ -1,8 +1,6 @@
-/**
- * The Chrome pane: a real headless Chrome on the app-owned profile, streamed
- * onto a canvas over CDP. The process lives in Rust, so this is only a view
- * and may unmount freely — the logins live in the profile directory.
- */
+// A real headless Chrome on the app-owned profile, streamed onto a canvas over
+// CDP. The process lives in Rust, so this is only a view and may unmount
+// freely — the logins live in the profile directory.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppWindow, ArrowLeft, ArrowRight, ExternalLink, Loader2, RotateCw, X } from "lucide-react";
 import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";

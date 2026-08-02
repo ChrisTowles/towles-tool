@@ -35,35 +35,12 @@ import {
   type MentionRange,
 } from "@/lib/ide-selection";
 
-/**
- * Monaco editor for one repo file (the Files tab's right pane). Opens
- * **read-only** — the pane header's toggle is what arms typing (see
- * `EditableToggle`), so reading a file an agent is working in can't edit it
- * by accident. Two bridges:
- * selections stream to the folder's Claude session as character-precise
- * selection_changed (debounced 300ms, like VS Code), and edits **auto-save**
- * after an `AUTOSAVE_DELAY_MS` typing pause (⌘S is save-now; both take the
- * same atomic write, refused if the file changed on disk since it was read —
- * an agent may be editing the same tree). Unmount/file-switch flushes a
- * pending save so autosave can't eat the last second of typing. Dirty state
- * rides to Claude via getOpenEditors / checkDocumentDirty.
- *
- * The open file is also watched on disk (`ide_watch_file` →
- * `ide://file-changed`), because the usual other writer is a Claude session
- * working in this same checkout: a clean buffer silently reloads in place
- * (view state and undo history survive), while a dirty one raises a
- * conflict banner — "load theirs" discards the buffer, "keep mine"
- * overwrites the disk with it now — so neither side's edits are ever
- * dropped without a choice. A conflicted or deleted-on-disk file never
- * auto-saves: conflict resolution is the banner's explicit choice, and
- * recreating a deleted file is ⌘S's deliberate act. `lib/viewer-refresh.ts`
- * is the decision; the watcher's echo of our own save is ignored there by
- * mtime.
- */
+/** Monaco editor for one repo file. Opens **read-only** (the pane header's
+ * toggle arms typing) and auto-saves after a typing pause; a write is refused
+ * if the file moved on disk — `lib/viewer-refresh.ts` decides the banner. */
 
-/** Where to land in the file: text anchors from Claude's openFile tool
- * (select startText..endText), or a bare 1-based line from a terminal
- * `path:line` link. Text anchors win when both are present. */
+/** Text anchors from Claude's openFile tool, or a bare line from a `path:line`
+ * terminal link; text anchors win when both are set. */
 export type ViewerAnchor = {
   startText?: string | null;
   endText?: string | null;
@@ -71,8 +48,6 @@ export type ViewerAnchor = {
   line?: number | null;
 };
 
-/** Move the editor to an anchor: text anchors select and center the match;
- * a bare line centers it with the cursor at column 1 (clamped to the file). */
 function applyViewerAnchor(
   monaco: typeof import("monaco-editor"),
   editor: import("monaco-editor").editor.IStandaloneCodeEditor,
@@ -134,14 +109,10 @@ export function CodeViewer({
   path: string;
   /** Changes identity per openFile request so re-anchoring re-runs. */
   anchor?: ViewerAnchor & { nonce?: number };
-  /** Soft-wrap long lines instead of horizontal scrolling. Defaults on. */
   wordWrap?: boolean;
-  /** Accept typing. Defaults off — the pane header's toggle arms it. Only the
-   * *editor* is locked: disk reloads and conflict resolution still write the
-   * model, since those are programmatic edits Monaco's `readOnly` doesn't
-   * block. */
+  /** Only the *editor* is locked: disk reloads and conflict resolution still
+   * write the model, being programmatic edits `readOnly` doesn't block. */
   editable?: boolean;
-  /** A Claude session is live in this folder — enables the @-send gesture. */
   connected?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -149,14 +120,10 @@ export function CodeViewer({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<MentionRange | null>(null);
-  /** The disk moved underneath the buffer: "conflict" = changed while the
-   * buffer has unsaved edits (the banner's choice resolves it), "deleted" =
-   * the file is gone and the buffer is all that's left (⌘S recreates it —
-   * the save token is nulled so the stale-mtime refusal can't block it).
-   * Mutually exclusive by construction, hence one state. */
+  /** "conflict" = disk changed under unsaved edits, "deleted" = file gone and
+   * the buffer is all that's left (⌘S recreates it). Mutually exclusive. */
   const [banner, setBannerState] = useState<"none" | "conflict" | "deleted">("none");
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
-  /** Set per mount — the banner's buttons resolve against the live model. */
   const resolveConflictRef = useRef<((choice: "theirs" | "mine") => Promise<void>) | null>(null);
   const savedVersionRef = useRef(0);
   const mtimeRef = useRef<number | null>(null);
@@ -170,22 +137,17 @@ export function CodeViewer({
   fontSizeRef.current = fontSize;
   const setFontSizeRef = useRef(setFontSize);
   setFontSizeRef.current = setFontSize;
-  // Read at create time; later flips ride the updateOptions effect below —
-  // the editor must not be rebuilt for a mode change (undo stack, scroll).
+  // A mode change must not rebuild the editor (undo stack, scroll).
   const editableRef = useRef(editable);
   editableRef.current = editable;
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
 
-  /** Explicit @-mention of whatever is selected right now — read live from the
-   * editor, never from the debounced chip state, so the gesture can't fire
-   * against a stale range. */
+  /** Read live from the editor, not the debounced chip state — never stale. */
   const mention = useCallback(async () => {
     const editor = editorRef.current;
     if (!editor) return;
     await ideMention(dir, path, mentionRangeFrom(editor.getSelection()));
-    // Stable across renders so listing it in the editor effect below doesn't
-    // tear down and rebuild Monaco on every render.
   }, [dir, path]);
 
   useEffect(() => {
@@ -193,18 +155,12 @@ export function CodeViewer({
     let editor: import("monaco-editor").editor.IStandaloneCodeEditor | undefined;
     let model: import("monaco-editor").editor.ITextModel | undefined;
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    /** Whether a selection is currently parked in the session's context. */
     let streamed = false;
-    /** A disk reload is being applied — the content listener must not treat
-     * it as user typing. */
     let applyingDisk = false;
     let offDiskChange: (() => void) | undefined;
     let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
-    /** Closure mirror of the banner state — the autosave deadline fires
-     * outside React and needs it synchronously. */
+    /** Closure mirror — the autosave deadline fires outside React. */
     let bannerNow: "none" | "conflict" | "deleted" = "none";
-    /** Set once the editor (and its `save`) exists — cleanup flushes a
-     * dirty buffer through it before disposal. */
     let flushSave: (() => void) | undefined;
 
     setError(null);
@@ -258,9 +214,7 @@ export function CodeViewer({
       if (remembered) {
         editor.restoreViewState(remembered as import("monaco-editor").editor.ICodeEditorViewState);
       }
-      // The request that opened this file usually lands before the editor
-      // exists (the anchor effect above finds no editor and bails) — apply it
-      // now that the model is live.
+      // The open request usually lands before the editor exists.
       if (anchorRef.current) applyViewerAnchor(monaco, editor, anchorRef.current);
       ideSetOpenFile(dir, path, false);
 
@@ -271,43 +225,29 @@ export function CodeViewer({
         onDirtyRef.current?.(dirty);
       };
 
-      // Banner transitions in one place: mirror into the closure for the
-      // autosave deadline, and kill a pending autosave on entry — it would
-      // only bounce off the save's mtime guard with an error toast.
+      // A pending autosave would only bounce off the save's mtime guard.
       const setBanner = (value: "none" | "conflict" | "deleted") => {
         bannerNow = value;
         if (value !== "none") clearTimeout(autosaveTimer);
         setBannerState(value);
       };
 
-      // The one save path — ⌘S, the debounced autosave, the banner's "keep
-      // mine", and the cleanup flush all land here. Cancels any pending
-      // autosave so the same buffer isn't written twice back-to-back.
-      // Serialized: the buffer is snapshotted now, but the write waits for
-      // any in-flight save — overlapping writes would race each other's
-      // mtime tokens and get the later one refused (losing its tail when
-      // it was the unmount flush).
+      // The one save path — ⌘S, autosave, "keep mine", the cleanup flush.
+      // Serialized: overlapping writes race each other's mtime tokens.
       let saveChain: Promise<void> = Promise.resolve();
       const save = () => {
         if (!model || model.isDisposed()) return saveChain;
         clearTimeout(autosaveTimer);
         const snapshot = snapshotModel(model);
         saveChain = saveChain.then(async () => {
-          // The token is read here — after the previous save refreshed it.
           const result = await saveBufferSnapshot(dir, path, snapshot, mtimeRef.current);
           if (!result) return;
-          // A disposed model means this generation is dead (the unmount
-          // flush racing the next mount) — the write itself was the point;
-          // the bookkeeping belongs to the next mount's own fresh read, and
-          // stamping it here would hand that mount an old-generation
-          // version id and a token its buffer never saw.
+          // A disposed model means this generation is dead (the unmount flush
+          // racing the next mount); the bookkeeping is that mount's to redo.
           if (!model || model.isDisposed()) return;
           mtimeRef.current = result.mtimeMs;
           savedVersionRef.current = result.versionAtSave;
           setDirty(model.getAlternativeVersionId() !== result.versionAtSave);
-          // A successful save means disk and buffer agree again — a deleted
-          // file is recreated by it, and a conflict can only reach here
-          // after its resolution re-armed the token.
           setBanner("none");
         });
         return saveChain;
@@ -316,12 +256,7 @@ export function CodeViewer({
         if (dirtyRef.current && bannerNow === "none") void save();
       };
 
-      /** (Re)arm the debounced autosave — every keystroke pushes the
-       * deadline out. At fire time the world may have moved on, so re-check:
-       * a clean buffer has nothing to save, and a raised banner means the
-       * user owns the next move (conflict resolution is the banner's
-       * explicit choice; recreating a deleted file stays ⌘S's deliberate
-       * act). */
+      /** Re-checked at fire time: clean buffer, or a banner the user owns. */
       const scheduleAutosave = () => {
         clearTimeout(autosaveTimer);
         autosaveTimer = setTimeout(() => {
@@ -338,9 +273,7 @@ export function CodeViewer({
         scheduleAutosave();
       });
 
-      /** Take the disk's content into the buffer in place — cursor/scroll and
-       * undo history survive (an agent's edit stays undoable). The equality
-       * guard makes an mtime-only change (touch, identical rewrite) free. */
+      /** In place, so cursor/scroll and undo survive; a touch costs nothing. */
       const applyDisk = (disk: FileRead) => {
         if (!editor || !model || model.isDisposed()) return;
         if (model.getValue() !== disk.content) {
@@ -360,28 +293,21 @@ export function CodeViewer({
         setBanner("none");
       };
 
-      // Stat-first: the most frequent event this watcher delivers is the
-      // echo of our own save, and a stat answers "did anything actually
-      // move?" without paying a full content read + IPC transfer for it.
+      // Stat-first: most events here are the echo of our own save.
       const onDiskChange = async () => {
         const stat = await ideStat(dir, path);
         if (disposed || !model || model.isDisposed()) return;
         if (stat.isErr()) {
           if (NotInTauri.is(stat.error)) return;
-          // Gone — an agent deleted it. Surface that, keep the buffer as
-          // the sole copy, and null the save token so ⌘S recreates it. The
-          // dirty flag is deliberately left alone: a buffer that was clean
-          // at deletion silently adopts the recreated content when the file
-          // comes back (dirty=false → "reload"), instead of raising a
-          // conflict over edits that don't exist.
+          // Gone — keep the buffer as the sole copy and null the token so ⌘S
+          // recreates it. Dirty is left alone: a clean buffer adopts what returns.
           mtimeRef.current = null;
           setBanner("deleted");
           return;
         }
         if (stat.value.mtimeMs === mtimeRef.current) return;
         const reread = await ideReadFile(dir, path);
-        // A failed read after a successful stat (mid-rename, turned binary)
-        // keeps the buffer as-is; a later event re-checks.
+        // A failed read after a good stat (mid-rename, binary) keeps the buffer.
         if (disposed || reread.isErr() || !model || model.isDisposed()) return;
         const action = diskChangeAction({
           dirty: dirtyRef.current,
@@ -402,11 +328,8 @@ export function CodeViewer({
           }
           applyDisk(reread.value);
         } else {
-          // Keep mine: re-arm the save token to the current disk state (a
-          // stat is enough — only the mtime is used; null when the file
-          // vanished, the save then recreates it) and overwrite the disk
-          // with the buffer right now — decisive, same as the diff pane,
-          // instead of leaving a zombie-dirty buffer around.
+          // Keep mine: re-arm the token to the current disk state (null once
+          // the file vanished, so the save recreates it) and overwrite now.
           const stat = await ideStat(dir, path);
           if (disposed || !model || model.isDisposed()) return;
           mtimeRef.current = stat.isOk() ? stat.value.mtimeMs : null;
@@ -416,10 +339,7 @@ export function CodeViewer({
       };
 
       void ideWatchFiles(dir, [path]).then((started) => {
-        // One catch-up check once the watch is live: an edit landing between
-        // the initial read and the watch start would otherwise be missed
-        // forever. The stat-first check makes the common nothing-changed
-        // case nearly free.
+        // Catch-up for an edit between the initial read and the watch start.
         if (started.isOk() && !disposed) void onDiskChange();
       });
       offDiskChange = onFileChangedOnDisk(dir, path, () => void onDiskChange());
@@ -452,14 +372,10 @@ export function CodeViewer({
       }
 
       editor.onDidChangeCursorSelection((e) => {
-        // The chip tracks the selection immediately — only the bridge traffic
-        // is debounced.
         const next = mentionRangeFrom(e.selection);
         setSelection((prev) => (sameMentionRange(prev, next) ? prev : next));
-        // Read the highlighted text off the model *now*, not inside the
-        // debounce: this buffer is editable, so the text is the only thing
-        // the backend can't recover from disk, and 300ms later the model may
-        // already be disposed by a file switch.
+        // Read the text off the model *now*: the backend can't recover it from
+        // disk, and 300ms later a file switch may have disposed the model.
         const sel = e.selection;
         const text =
           sel.isEmpty() || !model || model.isDisposed() ? "" : model.getValueInRange(sel);
@@ -480,25 +396,18 @@ export function CodeViewer({
       disposed = true;
       clearTimeout(debounce);
       clearTimeout(autosaveTimer);
-      // Flush a dirty buffer before the model dies — with autosave the user
-      // no longer thinks about saving, so switching files must not eat the
-      // last second of typing. (The buffer is read synchronously before the
-      // dispose below; conflicted/deleted buffers are skipped — unresolved
-      // means neither side has won.)
+      // Flush before the model dies: switching files must not eat the last
+      // second of typing. Conflicted/deleted skipped — neither side has won.
       flushSave?.();
       offDiskChange?.();
       const leaving = editor?.saveViewState();
       if (leaving) rememberViewState(viewStateKey(dir, path), leaving);
-      // Unmatched unwatches are a no-op, so this needs no "did the watch
-      // actually start" bookkeeping.
       void ideUnwatchFiles(dir, [path]);
       resolveConflictRef.current = null;
       editorRef.current = null;
       editor?.dispose();
       model?.dispose();
-      // Closing a file with text selected must not leave that range as the
-      // folder's ambient context — getLatestSelection would keep serving it
-      // into the next prompt.
+      // A closed file's selection must not stay the folder's ambient context.
       if (streamed) ideClearSelection(dir, path);
       ideSetOpenFile(dir, null);
     };
@@ -516,10 +425,7 @@ export function CodeViewer({
     editorRef.current?.updateOptions({ fontSize });
   }, [fontSize]);
 
-  // An open request can ask for a landing spot (startText..endText selection,
-  // or a bare :line) — apply it against the live editor. The mount effect
-  // applies `anchorRef` itself once the model loads, covering the fresh-open
-  // case where this runs before the editor exists.
+  // The mount effect covers fresh-open, where this runs before the editor.
   useEffect(() => {
     if (!anchor?.startText && anchor?.line == null) return;
     void (async () => {

@@ -1,30 +1,24 @@
 import { invoke } from "@/lib/tauri";
 
-/**
- * Client-side bridge to the Claude Sessions screen (the Rust
- * `tt-claude-sessions` crate, surfaced via
- * `crates-tauri/tt-app/src/claude_sessions.rs`). Plain request/response; the
- * backend caches the scan so search stays in-memory.
- */
+/** Client-side bridge to the Claude Sessions screen (`tt-claude-sessions`). The
+ * backend caches the scan, so search stays in-memory. Every `costUsd` is an
+ * estimate priced per model. */
 
 export type ProjectBar = {
   project: string;
   totalTokens: number;
-  /** Estimated USD cost for the same sessions (approximate; priced per model). */
   costUsd: number;
 };
 
 export type ModelBar = {
   model: string;
   totalTokens: number;
-  /** Estimated USD cost billed to this model family (approximate). */
   costUsd: number;
 };
 
 export type LedgerDay = {
   date: string;
   projects: ProjectBar[];
-  /** Estimated USD cost for the day (approximate; priced per model). */
   costUsd: number;
 };
 
@@ -34,13 +28,11 @@ export type LedgerTotals = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  /** Estimated USD cost across the window (approximate; priced per model). */
   costUsd: number;
 };
 
 export type ClaudeSession = {
   sessionId: string;
-  /** Absolute path to the session's transcript `.jsonl` file. */
   path: string;
   title: string | null;
   project: string;
@@ -49,11 +41,10 @@ export type ClaudeSession = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  /** Estimated USD cost, priced per model (approximate). */
   costUsd: number;
   /** Real launch directory; null for transcripts that predate the field. */
   cwd: string | null;
-  /** Prompt-text context around the match; only present on search hits. */
+  /** Prompt-text context; only present on search hits. */
   snippet?: string;
 };
 
@@ -65,7 +56,6 @@ export type ClaudeSessionsSummary = {
   topSessions: ClaudeSession[];
 };
 
-/** Rolled-up token totals for the last `days` days of transcripts. */
 export const claudeSessionsSummary = (days: number) =>
   invoke<ClaudeSessionsSummary>("claude_sessions_summary", { days });
 
@@ -82,12 +72,10 @@ export type UsageLimits = {
   bars: UsageLimitBar[];
 };
 
-/** The CLI's own cached 5h/weekly rate-limit percentages from
- * `~/.claude.json` — the same numbers its `/usage` command shows. No live
- * call; `null` if the CLI hasn't populated the cache yet. */
+/** The CLI's own cached rate-limit percentages from `~/.claude.json` — no live
+ * call, and `null` until the CLI populates the cache. */
 export const claudeUsageLimits = () => invoke<UsageLimits | null>("claude_usage_limits");
 
-/** Sessions in the window whose prompt text matches `query`. */
 export const claudeSessionsSearch = (days: number, query: string) =>
   invoke<ClaudeSession[]>("claude_sessions_search", { days, query });
 
@@ -98,12 +86,10 @@ export type ClaudeSessionInsight = {
   kind: InsightKind;
   /** Headline number, e.g. "6.2× median" or "38 re-reads". */
   metric: string;
-  /** One-sentence "why this matters". */
   detail: string;
   session: ClaudeSession;
 };
 
-/** Ranked waste/habit findings for the window (rides the cached scan). */
 export const claudeSessionsInsights = (days: number) =>
   invoke<ClaudeSessionInsight[]>("claude_sessions_insights", { days });
 
@@ -131,7 +117,7 @@ export type SessionBreakdown = {
   turns: TurnBreakdown[];
 };
 
-/** One session's turn/tool drill-down (parses that session on demand). */
+/** Parses that session on demand, rather than riding the cached scan. */
 export const claudeSessionsBreakdown = (sessionId: string) =>
   invoke<SessionBreakdown>("claude_sessions_breakdown", { sessionId });
 
@@ -142,7 +128,6 @@ export type DayBucket = {
 };
 
 export type DayHourCell = {
-  /** `YYYY-MM-DD`, local. */
   date: string;
   /** Local hour of day, 0-23. */
   hour: number;
@@ -150,14 +135,12 @@ export type DayHourCell = {
 };
 
 export type CadenceSummary = {
-  /** Days with at least one prompt, ascending by date. */
+  /** Ascending by date; only days with at least one prompt. */
   byDay: DayBucket[];
-  /** Nonzero (day, hour) cells, sorted by date then hour. */
+  /** Nonzero cells only, sorted by date then hour. */
   byDayHour: DayHourCell[];
   totalPrompts: number;
 };
 
-/** Human-prompt cadence (time-of-day + per-day counts) for the window —
- * when in the day you prompt and how often, not token/cost accounting. */
 export const claudeSessionsCadence = (days: number) =>
   invoke<CadenceSummary>("claude_sessions_cadence", { days });

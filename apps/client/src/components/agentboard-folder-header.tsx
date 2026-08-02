@@ -1,8 +1,6 @@
-/**
- * A checkout's header row: identity, git facts, toolbar. A single-checkout
- * repo renders this at `scope="repo"` instead of a separate repo header,
- * which is why identity, accent and the toolbar all branch on `scope`.
- */
+// A checkout's header row. A single-checkout repo renders it at `scope="repo"`
+// instead of a separate repo header, which is why identity, accent and the
+// toolbar all branch on `scope`.
 import { useState } from "react";
 import { toast } from "sonner";
 import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
@@ -83,84 +81,59 @@ export function FolderHeader({
   onOpenBrowser,
 }: {
   scope: "repo" | "folder";
-  /** repo.name at repo scope, folder.name at folder scope. */
   title: string;
-  /** The owning repo's chosen icon/color — set only at repo scope (a solo
-   * repo's collapsed repo+folder header). Absent renders the default look. */
+  /** Set only at repo scope; absent renders the default look. */
   meta?: RepoMeta;
-  /** The checkout this header describes: dir, branch, worktree + diff facts. */
   folder: FolderData;
   needs: number;
-  /** The open PR for this folder's branch, when the store knows of one. */
   pr?: PrItem;
-  /** The board task bound to this folder's worktree, when one exists — source
-   * of the manually-linked issue chips and the "Attach issue…" target. */
   task?: TaskItem;
   collapsed: boolean;
-  /** Whether this folder is the one currently shown in the main pane area. */
   active: boolean;
   now: number;
-  /** An operation on this worktree is in flight — the caller already dims and
-   * disables the whole row (`pointer-events-none opacity-50`); the badges here
-   * say which operation. Derived from `folder.phase`, same as they are. */
+  /** The caller already dims and disables the whole row; the badges here say
+   * which operation. */
   deleting?: boolean;
-  /** Live phase text for the in-flight operation ("fetching origin", "deleting
-   * git worktree", …) — the badges fall back to a static label when absent
-   * (nothing has been stamped yet, and browser dev never gets one). */
+  /** Badges fall back to a static label when absent — nothing stamped yet, and
+   * browser dev never gets one. */
   deletingLabel?: string;
-  /** Adopt this row's detected worktree as the user's own task. Absent when
-   * the row isn't a detected one. */
+  /** Absent when the row isn't a detected one. */
   onAdoptWorktree?: () => void;
-  /** When this checkout's setup step started (epoch ms), while it's still
-   * running. Absent means nothing is installing. */
+  /** Epoch ms; absent means nothing is installing. */
   settingUpSince?: number;
-  /** Session lifecycle dispatch — the dev-servers popover launches/focuses
-   * through it. */
   actions: SessionActions;
   onToggle: () => void;
   onNewSession: () => void;
-  /** Opens the new-task modal — set only on a solo task-convention repo's
-   * collapsed repo+folder header (the multi-checkout repo tier renders its
-   * own button). */
+  /** Set only on a solo task-convention repo's collapsed repo+folder header —
+   * the multi-checkout repo tier renders its own button. */
   onNewTask?: () => void;
   onRemoveRepo?: () => void;
-  /** Deletes this worktree from disk (guarded, `task_delete`) — set
-   * only on worktree checkouts, where untracking makes no sense (they are
-   * auto-discovered from the primary and would reappear next poll). */
+  /** Set only on worktree checkouts, where untracking makes no sense: they are
+   * auto-discovered from the primary and would reappear next poll. */
   onDeleteWorktree?: () => void;
-  /** Rebuild a detached task's worktree (`git worktree add` on its branch,
-   * re-bound to the same task row). Set only on a `no worktree` task row. */
+  /** Set only on a `no worktree` task row. */
   onRecreateWorktree?: () => void;
-  /** Opens the folder's diff pane in its focused window. */
   onOpenDiff: () => void;
-  /** Opens the folder's files pane in its focused window. */
   onOpenFiles: () => void;
-  /** Opens the folder's live-preview pane in its focused window. */
   onOpenPreview: () => void;
-  /** Opens the folder's native (Bevy) pane — undefined while
-   * `agentboard.jarvisPane` is off. */
+  /** Undefined while `agentboard.jarvisPane` is off. */
   onOpenJarvis?: () => void;
   onOpenBrowser?: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
-  // Repo identity, repo scope only. A repo-scope header is sticky, so its
-  // tint must mix into an opaque base (see the background comment below).
+  // A repo-scope header is sticky, so its tint mixes into an opaque base.
   const HeaderIcon = repoIcon(meta);
   const accent = repoAccentStyles(meta, "var(--card)");
-  // Ghost checkout: dim the band and swap the git-facts line (meaningless)
-  // for the one useful action, Untrack.
   const missing = folder.dirMissing;
   // A task's human-authored title applies to worktree rows only — on the
   // primary checkout it would misname the repo itself (see `taskForFolder`).
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
-  // git-worktree(1)'s "main worktree", shortened to "Root" so the folder-scope
-  // sub-header reads as a distinct entry rather than repeating the repo title.
+  // "Root" so the sub-header reads as an entry, not a repeat of the repo title.
   const isMainWorktreeSubrow = scope === "folder" && !folder.isWorktree;
   const displayTitle =
     humanTitle ||
     (folder.isWorktree ? humanizeFolderName(title) : isMainWorktreeSubrow ? "Root" : title);
-  // A real title doesn't restate the branch — keep it visible; the
-  // de-slugified fallback does, so that case keeps the redundancy check.
+  // A real title doesn't restate the branch; the de-slugified fallback does.
   const showBranchLabel =
     isMainWorktreeSubrow || Boolean(humanTitle) || !branchRedundant(folder.name, folder.branch);
   const [renaming, setRenaming] = useState(false);
@@ -192,15 +165,11 @@ export function FolderHeader({
           : undefined
       }
       className={cn(
-        // pr-3 matches the repo-scope header above and the session rows below:
-        // the rail's trailing controls all land on one right edge instead of a
-        // ragged one that shifts by tier.
+        // pr-3: the rail's trailing controls all land on one right edge.
         "group @container/row border-b border-l-2 border-border border-l-transparent bg-card pr-3",
-        // A repo-scope header is sticky, so rows scroll underneath it and every
-        // background it can take must be opaque — a translucent tint lets their
-        // text show through the stuck header, so its active state is a ring
-        // instead of a fill. Folder-scope rows sit in normal flow with nothing
-        // passing beneath and carry no identity wash, so they keep the fill.
+        // A sticky repo-scope header must stay opaque or the rows scrolling
+        // beneath show through, so its active state is a ring rather than a
+        // fill. Folder rows sit in normal flow and keep the fill.
         scope === "repo"
           ? cn(
               "sticky top-0 z-10 pl-3 hover:bg-accent",

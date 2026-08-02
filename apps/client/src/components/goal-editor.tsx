@@ -1,15 +1,6 @@
-// The new-task form's goal field: a plain textarea with two GitHub-ish
-// affordances layered on — `#` autocompletes the repo's open issues, and URLs
-// and `#123` refs are highlighted.
-//
-// It stays a real <textarea> rather than a contenteditable/rich editor because
-// the surrounding form depends on textarea behavior that's painful to
-// reimplement: image paste (WebKitGTK delivers it with empty clipboardData —
-// see `inline-new-task.tsx`), drag-drop, Cmd+Enter submit, Escape to cancel,
-// and native undo. Highlighting is therefore an aria-hidden mirror div sitting
-// exactly behind transparent text; the two must keep identical typography,
-// padding and wrapping or the colours slide off the words, which is why the
-// shared classes live in one constant below.
+// Stays a real <textarea> — the form leans on image paste, drag-drop, Cmd+Enter
+// and native undo. So highlighting is an aria-hidden mirror div behind
+// transparent text, and the two must keep identical metrics or the colours slide.
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Textarea } from "@/components/ui/textarea";
@@ -23,14 +14,9 @@ import {
 import type { IssueItem } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
-/** Typography/box metrics shared by the textarea and its highlight mirror.
- * Any change here must stay in both — that's the whole point of the constant.
- *
- * `md:text-xs` is not redundant: shadcn's Textarea base ends in `md:text-sm`,
- * and tailwind-merge only dedupes classes within the same modifier, so a bare
- * `text-xs` loses to it above 768px. The textarea would then render a size
- * larger than the mirror and the caret would drift further right with every
- * character typed. */
+/** `md:text-xs` is not redundant: tailwind-merge dedupes only within a modifier,
+ * so a bare `text-xs` loses to shadcn's `md:text-sm` above 768px and the caret
+ * drifts further from the mirror with every character typed. */
 const SHARED_BOX = "px-2.5 py-2 text-xs leading-normal md:text-xs";
 
 export function GoalEditor({
@@ -47,34 +33,28 @@ export function GoalEditor({
 }: {
   value: string;
   onChange: (next: string) => void;
-  /** The form's own key handling (Cmd+Enter submit, Escape cancel). Not called
-   * while the mention popup is open and owns the key. */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  /** Open issues for autocomplete; `null` while loading. */
+  /** `null` while loading. */
   issues: IssueItem[] | null;
   issuesError: string | null;
-  /** Ask the parent to fetch issues — fired the first time a `#` is typed, so
-   * `gh` is never shelled for a goal that has no issue reference. */
+  /** Fired the first time a `#` is typed, so `gh` is never shelled for a goal
+   * that has no issue reference. */
   onNeedIssues: () => void;
-  /** A picked issue also gets attached to the task, matching the Pick-issue
-   * popover; the reference text is inserted by this component. */
+  /** A picked issue also gets attached to the task; the reference text is
+   * inserted here. */
   onPickIssue: (issue: IssueItem) => void;
-  /** Extra affordance text for the hint row, after the `#` chip. */
   hint?: ReactNode;
   className?: string;
 } & Omit<React.ComponentProps<"textarea">, "value" | "onChange" | "onKeyDown">) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
-  // The mention being typed, or null. Held as the token's start index plus its
-  // query so a pick can replace exactly that span.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [active, setActive] = useState(0);
 
   const matches = mention && issues ? matchIssues(issues, mention.query).slice(0, 8) : [];
   const open = mention !== null;
 
-  // Keep the mirror's scroll pinned to the textarea's, or the highlights lag
-  // behind the text once the field scrolls.
+  // Pin the mirror's scroll to the textarea's, or highlights lag once it scrolls.
   useLayoutEffect(() => {
     const el = ref.current;
     const m = mirror.current;
@@ -95,16 +75,14 @@ export function GoalEditor({
     onChange(next.text);
     onPickIssue(issue);
     setMention(null);
-    // Restore the caret after React re-renders with the new value; setting it
-    // synchronously would be overwritten by the controlled re-render.
+    // A caret set synchronously is overwritten by the controlled re-render.
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(next.caret, next.caret);
     });
   }
 
-  /** The hint button's job: start a mention and open the list, so the feature
-   * is discoverable by clicking as well as by knowing to type `#`. */
+  /** Makes the feature discoverable by clicking, not only by typing `#`. */
   function startMention() {
     const el = ref.current;
     if (!el) return;
@@ -112,8 +90,6 @@ export function GoalEditor({
     const next = insertMentionTrigger(value, caret);
     onChange(next.text);
     if (issues === null) onNeedIssues();
-    // Same reason as pick(): the caret must be set after the controlled
-    // re-render, and the mention state has to describe the text we just wrote.
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(next.caret, next.caret);
@@ -159,8 +135,7 @@ export function GoalEditor({
           {...textareaProps}
           ref={ref}
           value={value}
-          // Transparent text with a visible caret: the mirror underneath supplies
-          // the glyphs, and `relative` keeps the field above it for input.
+          // Transparent text, visible caret: the mirror underneath has the glyphs.
           className={cn(
             "relative bg-transparent text-transparent caret-foreground",
             SHARED_BOX,
@@ -176,8 +151,7 @@ export function GoalEditor({
           onClick={(e) => syncMention(e.currentTarget)}
           onBlur={() => setMention(null)}
           onKeyDown={(e) => {
-            // While the popup owns the keyboard, the form must not see these —
-            // Enter would submit the task and Escape would close the whole form.
+            // The form must not see these: Enter would submit, Escape would cancel.
             if (open && matches.length > 0) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -217,8 +191,7 @@ export function GoalEditor({
                 <button
                   key={issue.number}
                   type="button"
-                  // The textarea's blur would close the popup before the click
-                  // lands, so commit on mousedown instead.
+                  // Blur would close the popup before a click lands.
                   onMouseDown={(e) => {
                     e.preventDefault();
                     pick(issue);
@@ -246,8 +219,7 @@ export function GoalEditor({
         <button
           type="button"
           aria-label="Link an issue"
-          // mousedown, not click: a plain click blurs the textarea first, and
-          // onBlur closes the mention we are trying to open.
+          // A click would blur the textarea, closing the mention we are opening.
           onMouseDown={(e) => {
             e.preventDefault();
             startMention();

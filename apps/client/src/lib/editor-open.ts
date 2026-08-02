@@ -3,11 +3,9 @@ import { nextOpenFileNonce, requestAgentboardNav, type RepoData } from "@/lib/ag
 import { folderForPath, folderForSession } from "@/lib/preview-artifact";
 import { isTauri } from "@/lib/tauri";
 
-/**
- * Delivery for the MCP `file_open` tool and `tt open`. Structured exactly like
- * `preview-artifact.ts`, except the path fallback is a *good* guess here: a file
- * names its checkout, which is how `tt open` resolves with no session.
- */
+/** Delivery for the MCP `file_open` tool and `tt open`. Structured like
+ * `preview-artifact.ts`, except the path fallback is a *good* guess here: a
+ * file names its checkout, which is how `tt open` resolves with no session. */
 
 /** Mirrors `FileOpenPayload` in `mcp_http.rs`. Validated, not trusted. */
 const FileOpenPayloadSchema = z.object({

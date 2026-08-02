@@ -6,10 +6,9 @@
 //! CLAUDE.md context). The one carve-out is attached screenshots, named by path and
 //! explicitly readable, since a pasted image is frequently the entire brief.
 //!
-//! The shape of the answer is the CLI's problem: `--json-schema` routes the model
-//! through a structured-output tool and returns a validated object, so there is no
-//! JSON-out-of-prose extraction here. The call lives in [`tt_exec::claude`], shared with
-//! the calendar collector; this file supplies the schema, the prompt and what counts as
+//! The shape of the answer is the CLI's problem: `--json-schema` returns a validated
+//! object, so there is no JSON-out-of-prose extraction here. The call lives in
+//! [`tt_exec::claude`]; this file supplies the schema, the prompt and what counts as
 //! usable. Anything that still goes wrong lands on [`local_fallback`], never an error.
 
 use std::path::Path;
@@ -17,21 +16,17 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Generous — a cold `claude` CLI (auth check, MCP startup) can take a while,
-/// but this is a manual, one-shot user action, not a background poll.
+/// Generous — a cold `claude` CLI can take a while, and this is a manual one-shot action.
 const CLAUDE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Mirrors the dialog's own `BRANCH_SLUG_SOURCE_CHARS`.
 const BRANCH_SLUG_SOURCE_CHARS: usize = 50;
 
-/// The no-Claude title fallback's length budget — short enough to read as a
-/// card label, not a sentence.
+/// Short enough to read as a card label, not a sentence.
 const TITLE_MAX_CHARS: usize = 60;
 
-/// JSON Schema handed to `claude -p --json-schema`, which makes the CLI itself
-/// enforce the shape: the model answers through a structured-output tool and
-/// the envelope carries a validated `structured_output` object. That's the
-/// difference between "we asked nicely for JSON" and "the CLI guarantees it".
+/// Handed to `claude -p --json-schema`, which makes the CLI itself enforce the shape —
+/// the difference between "we asked nicely for JSON" and "the CLI guarantees it".
 const SUGGESTION_SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
@@ -50,14 +45,10 @@ pub struct Suggestion {
     pub goal: String,
 }
 
-/// What [`suggest`] hands back: always a usable suggestion. `fallback` is
-/// `Some(why)` when `claude` couldn't be reached or answered unusably and the
-/// branch/goal were derived locally instead — the dialog shows that as a note,
-/// not an error, because the fields still got filled with something sane.
-///
-/// Serializes flat (`{branch, title, goal, fallback}`) so the Tauri command can hand
-/// it straight to the dialog instead of restating the fields in a parallel
-/// payload type.
+/// Always a usable suggestion. `fallback` is `Some(why)` when the branch/goal were
+/// derived locally instead; the dialog shows that as a note, not an error, since the
+/// fields still got filled with something sane. Serializes flat so the Tauri command
+/// hands it straight to the dialog rather than restating the fields in a parallel type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Suggested {
     #[serde(flatten)]
@@ -65,27 +56,17 @@ pub struct Suggested {
     pub fallback: Option<String>,
 }
 
-/// The shared structured-`claude -p` error: "never ran", "ran and errored,
-/// here's the CLI's reason", "answered in the wrong shape" — kept apart so a
-/// credit-balance or rate-limit failure reads as itself in the dialog's
-/// fallback note.
+/// Never ran / ran and errored / answered in the wrong shape, kept apart so a
+/// credit-balance or rate-limit failure reads as itself in the dialog's fallback note.
 pub type SuggestError = tt_exec::claude::Error;
 
 pub type Result<T> = std::result::Result<T, SuggestError>;
 
-/// Ask `claude -p` (run with cwd = `cwd`) to propose a cleaned-up goal and a
-/// legal, kebab-case branch name for it.
-///
-/// `images` are absolute paths to attached screenshots (staged by [`crate::pasted`]). A
-/// screenshot is often the *whole* brief, so they are named in the prompt and reading
-/// them is explicitly allowed, unlike every other file.
-///
-/// `instruction` is the **prompt improver** the user clicked: it tells the model *how*
-/// to rewrite the goal — restate it plainly, turn it into a plan ask, interview you
-/// first. Empty means [`DEFAULT_SUGGEST_INSTRUCTION`]. Only the `goal` is shaped by it;
-/// the branch is always named for the underlying task.
-///
-/// Never fails while the user gave us anything to slug (see [`Suggested`]).
+/// Ask `claude -p` (cwd = `cwd`) to propose a cleaned-up goal and a legal branch name.
+/// `images` are screenshots staged by [`crate::pasted`], the one file kind reading is
+/// allowed for. `instruction` is the **prompt improver** the user clicked — it shapes
+/// only the `goal`, never the branch, which is always named for the underlying task.
+/// Empty means [`DEFAULT_SUGGEST_INSTRUCTION`]. Never fails while there is a slug to make.
 pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggested> {
     match ask_claude(cwd, goal, images, instruction) {
         Ok(suggestion) => Ok(Suggested { suggestion, fallback: None }),
@@ -95,12 +76,9 @@ pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> 
     }
 }
 
-/// Ask, then hold the answer to one more rule the schema can't state: a
-/// required string may still be blank, and blank fields would fill the dialog
-/// with nothing. `--model sonnet` is pinned rather than left to the user's
-/// `claude` config — this is a cheap one-shot call (restate/clarify/brainstorm
-/// the goal), not a task the user is directing, so it shouldn't silently ride
-/// whatever heavier default model their CLI happens to be set to.
+/// Ask, then hold the answer to the one rule the schema can't state: a required string
+/// may still be blank. `--model sonnet` is pinned rather than left to the user's `claude`
+/// config, so this cheap one-shot call can't silently ride a heavier default.
 fn ask_claude(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggestion> {
     let prompt = prompt_for(goal, images, instruction);
     let answer: Suggestion = tt_exec::claude::Ask::new(&prompt, SUGGESTION_SCHEMA, CLAUDE_TIMEOUT)
@@ -123,11 +101,9 @@ fn usable(answer: Suggestion) -> Result<Suggestion> {
     Ok(trimmed)
 }
 
-/// Derive a suggestion without `claude` at all: the goal as typed, the same
-/// `feat/<slug>` the dialog's branch field already derives — same rules and
-/// source-char budget, through the one shared slug helper, so the two can't
-/// disagree about what the branch should be — and a plain-words title
-/// truncated at a word boundary (never slugged; a title is prose, not a ref).
+/// Derive a suggestion without `claude`: the goal as typed, the same `feat/<slug>` the
+/// dialog's branch field derives (through the one shared slug helper, so the two can't
+/// disagree), and a title truncated at a word boundary — never slugged, a title is prose.
 fn local_fallback(goal: &str) -> Option<Suggestion> {
     let goal = goal.trim();
     let slug =
@@ -139,8 +115,8 @@ fn local_fallback(goal: &str) -> Option<Suggestion> {
     })
 }
 
-/// Truncate `s` to at most [`TITLE_MAX_CHARS`] chars, cutting at the last word
-/// boundary within the budget so a title never ends mid-word.
+/// Cut at the last word boundary within [`TITLE_MAX_CHARS`], so a title never ends
+/// mid-word.
 fn truncate_title(s: &str) -> String {
     if s.chars().count() <= TITLE_MAX_CHARS {
         return s.to_string();
@@ -153,11 +129,8 @@ fn truncate_title(s: &str) -> String {
 }
 
 fn prompt_for(goal: &str, images: &[String], instruction: &str) -> String {
-    // Reading the attached screenshots is the one carve-out from the
-    // otherwise blanket "touch nothing" rule: without it the model answers
-    // from the goal text alone and an image-only brief yields a generic
-    // suggestion. The carve-out is enumerated by path, not a general
-    // permission to read the repo.
+    // The one carve-out from the blanket "touch nothing" rule, and it is enumerated by
+    // path rather than a general permission to read the repo.
     let (image_rule, image_task) = if images.is_empty() {
         (
             "Do not read or write any files and do not run any commands — just answer \
@@ -206,9 +179,8 @@ fn prompt_for(goal: &str, images: &[String], instruction: &str) -> String {
     )
 }
 
-/// The instruction [`suggest`] uses when the caller passes none: the historic
-/// "Suggest name + goal" behavior, kept as the fallback so a machine with no
-/// prompt improvers configured still gets a usable rewrite.
+/// Used when the caller passes none, so a machine with no prompt improvers configured
+/// still gets a usable rewrite.
 pub const DEFAULT_SUGGEST_INSTRUCTION: &str =
     "Restate the task clearly and concisely in one sentence.";
 
@@ -236,9 +208,8 @@ mod tests {
 
     #[test]
     fn an_image_only_brief_still_asks_for_a_goal() {
-        // Pasting a screenshot with no typed text is a complete brief; the
-        // prompt has to say so rather than sending an empty "Goal:" line that
-        // reads like a mistake.
+        // A screenshot with no typed text is a complete brief, so the prompt must say
+        // so rather than send an empty "Goal:" line that reads like a mistake.
         let p = prompt_for("   ", &["/stage/paste-1.png".to_string()], "");
         assert!(p.contains("(no goal text — use the images)"));
         assert!(p.contains("base the goal on what it shows"));
@@ -257,11 +228,8 @@ mod tests {
     fn the_improver_instruction_drives_the_goal_rewrite() {
         let p = prompt_for("add dark mode", &[], "Turn this into a request for a plan.");
         assert!(p.contains("Turn this into a request for a plan."));
-        // The task text stays separate from the instruction, so the model can
-        // tell what to rewrite from how to rewrite it.
         assert!(p.contains("Task: add dark mode"));
-        // The branch must name the task, not the instruction — otherwise every
-        // "Plan" click would produce a branch called `feat/produce-a-plan`.
+        // Otherwise every "Plan" click produces a branch called `feat/produce-a-plan`.
         assert!(p.contains("never for the instruction above"));
     }
 
@@ -273,8 +241,7 @@ mod tests {
 
     #[test]
     fn the_schema_is_the_contract_for_the_three_fields() {
-        // The flags that make the CLI enforce it are asserted in
-        // `tt_exec::claude`; here it's the schema's own shape that matters.
+        // The enforcing flags are asserted in `tt_exec::claude`; this is the shape.
         let schema: serde_json::Value = serde_json::from_str(SUGGESTION_SCHEMA).unwrap();
         assert_eq!(schema["required"], serde_json::json!(["branch", "title", "goal"]));
         assert_eq!(schema["additionalProperties"], serde_json::json!(false));
@@ -282,8 +249,7 @@ mod tests {
 
     #[test]
     fn serializes_flat_for_the_dialog() {
-        // The dialog reads {branch, title, goal, fallback}; `flatten` is what
-        // keeps the Tauri command from needing a parallel payload struct.
+        // `flatten` is what keeps the Tauri command from needing a parallel struct.
         let s = Suggested {
             suggestion: Suggestion {
                 branch: "feat/a".into(),
@@ -315,8 +281,7 @@ mod tests {
 
     #[test]
     fn blank_fields_count_as_unparseable() {
-        // A schema can require a string but not require it to say anything, so
-        // the blank check stays here rather than in the shared seam.
+        // A schema can require a string but not require it to say anything.
         for answer in [
             Suggestion { branch: "  ".into(), title: "x".into(), goal: "x".into() },
             Suggestion { branch: "feat/x".into(), title: "  ".into(), goal: "x".into() },
@@ -337,9 +302,8 @@ mod tests {
 
     #[test]
     fn a_long_goal_only_slugs_its_opening() {
-        // Counted in chars, not bytes — the budget is `chars().take(..)`, so a
-        // byte-length assertion would pass on ASCII and miss a multi-byte
-        // overrun entirely.
+        // Chars, not bytes: a byte-length assertion passes on ASCII and misses a
+        // multi-byte overrun entirely.
         for goal in [&"word ".repeat(40), &"wörd ".repeat(40)] {
             let s = local_fallback(goal).unwrap();
             let slug_chars = s.branch.chars().count() - "feat/".chars().count();
@@ -365,16 +329,13 @@ mod tests {
     #[test]
     fn a_fallback_note_stays_one_line() {
         // The note is a single 11px line in the dialog; raw stderr is not.
-        // `brief` lives in the shared seam, but the dialog is what depends on
-        // it, so the guarantee is asserted from here too.
         let e = SuggestError::Failed("error: boom\n  at frame one\n  at frame two".into());
         assert_eq!(e.brief(), "claude -p failed: error: boom");
     }
 
     #[test]
     fn nothing_to_slug_means_no_fallback() {
-        // An image-only brief with no typed text: there is genuinely nothing
-        // to derive, so the caller surfaces the real error instead.
+        // Nothing to derive, so the caller surfaces the real error instead.
         assert_eq!(local_fallback("   "), None);
         assert_eq!(local_fallback("!!!"), None);
     }

@@ -53,14 +53,10 @@ impl StatusSummary {
 }
 
 impl Repo {
-    /// The working tree's status: tree-vs-index (staged) and index-vs-worktree
-    /// (unstaged and untracked) changes, deduplicated by path so a file that is
-    /// both staged and modified counts once — as `git status --porcelain`'s one
-    /// line per path did.
-    ///
-    /// Ignored files are excluded, and untracked directories collapse to the
-    /// directory (`newdir/`), matching porcelain: both are gitoxide defaults,
-    /// verified against real `git` output in this module's tests.
+    /// Staged and unstaged/untracked changes, deduplicated by path so a file
+    /// that is both counts once, as `git status --porcelain` did. Ignored files
+    /// are excluded and untracked directories collapse to the directory, both
+    /// gitoxide defaults verified against real `git` in this module's tests.
     pub fn status(&self) -> Result<StatusSummary> {
         let platform = self
             .inner()
@@ -92,15 +88,11 @@ impl Repo {
         Ok(StatusSummary { entries })
     }
 
-    /// Epoch seconds of the most recently modified of `paths` (repo-relative),
-    /// or `None` when none of them can be stat'd. Answers "when did somebody
-    /// last edit in this checkout" for the edits that never became a commit —
-    /// callers pass the paths a diff or status already told them are changed,
-    /// so this never walks the tree itself.
-    ///
-    /// A path that no longer exists (a deletion, a rename's source) is skipped
-    /// rather than failing the batch. `symlink_metadata`, so a dangling symlink
-    /// still reports the link's own mtime instead of vanishing.
+    /// "When did somebody last edit in this checkout", for edits that never
+    /// became a commit. Callers pass paths a diff or status already reported
+    /// changed, so this never walks the tree. A path that no longer exists is
+    /// skipped rather than failing the batch; `symlink_metadata`, so a dangling
+    /// symlink reports the link's own mtime instead of vanishing.
     pub fn newest_mtime_unix<'a>(&self, paths: impl Iterator<Item = &'a str>) -> Option<i64> {
         let workdir = self.inner().workdir()?;
         paths

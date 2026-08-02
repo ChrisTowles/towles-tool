@@ -1,12 +1,8 @@
 import path from "node:path";
 import { requireDevPort, resolveWebdriverPort } from "../scripts/task-port.mjs";
 
-// Ports are injected by scripts/e2e.mjs (resolved from the rendered
-// `.env`/`.env.local`). The dev server serves the wdio-enabled frontend; the
-// embedded WebDriver server runs inside the app on wdPort. A direct
-// `npx wdio` run without TT_DEV_PORT resolves the same per-checkout claim
-// (and fails with instructions if the checkout has none) — never a
-// hardcoded 1420, which would collide across concurrent worktrees.
+// Never a hardcoded 1420: concurrent worktrees would collide, so ports resolve
+// from this checkout's rendered `.env` (scripts/e2e.mjs injects them).
 const repoRoot = process.cwd();
 const devPort = requireDevPort(repoRoot, { tag: "wdio" });
 const wdPort = resolveWebdriverPort(devPort);
@@ -38,9 +34,7 @@ export const config: WebdriverIO.Config = {
       "@wdio/tauri-service",
       {
         appBinaryPath: appBinary,
-        // Embedded W3C WebDriver server (tauri-plugin-wdio-webdriver) — the app
-        // is launched with TAURI_WEBVIEW_AUTOMATION=true (set by e2e.mjs) so its
-        // WebKitGTK WebView is automatable.
+        // Needs TAURI_WEBVIEW_AUTOMATION=true (set by e2e.mjs) to be automatable.
         driverProvider: "embedded",
         embeddedPort: wdPort,
         // GTK/WebKit GUI cold-starts in ~6-8s; give the readiness poll room.

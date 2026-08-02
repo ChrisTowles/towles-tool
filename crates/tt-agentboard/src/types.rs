@@ -123,8 +123,7 @@ pub struct SessionData {
     pub needs_since_ms: Option<i64>,
     pub agent_state: Option<AgentEvent>,
     pub agents: Vec<AgentEvent>,
-    /// Echo of the launch prompt, read-only. Nothing user-authored — there is no
-    /// editable per-session note.
+    /// Echo of the launch prompt, read-only — never user-authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
     /// Ports this shell saw in `.env` at spawn that it now claims differently
@@ -133,10 +132,9 @@ pub struct SessionData {
     pub port_drift: Vec<crate::env_drift::PortDrift>,
 }
 
-/// Why a rail row exists — a record, never a fact about the filesystem.
-/// Disjoint by construction (a task worktree is never a `repos.json` entry), so
-/// exactly one record answers for any row, and detection can fill a row in but
-/// never retire a task's.
+/// Why a rail row exists — a record, never a fact about the filesystem. Disjoint
+/// by construction (a task worktree is never a `repos.json` entry), so detection
+/// can fill a row in but never retire a task's.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "origin", rename_all = "camelCase")]
 pub enum RowRecord {
@@ -174,11 +172,9 @@ pub struct RowTask {
     pub branch: Option<String>,
 }
 
-/// The worktree operation running **right now**, if any — deliberately only the
-/// in-flight pair. "Detached" is not stored because it isn't an independent
-/// fact: it is a task, plus a missing directory, plus nothing working on it, all
-/// three already on the wire. A variant would make `Detached` with
-/// `dir_missing: false` representable and meaningless.
+/// The worktree operation running **right now** — only the in-flight pair.
+/// "Detached" isn't stored: it is a task plus a missing directory plus nothing
+/// working on it, all three already on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum RowPhase {
@@ -199,8 +195,8 @@ pub struct FolderData {
     pub record: RowRecord,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<RowPhase>,
-    /// A tracked checkout moved or deleted. Such rows are ghosts: still carrying
-    /// session records, unworkable until re-tracked.
+    /// A tracked checkout moved or deleted — a ghost row, still carrying session
+    /// records but unworkable until re-tracked.
     pub dir_missing: bool,
     pub branch: String,
     pub is_worktree: bool,
@@ -212,8 +208,7 @@ pub struct FolderData {
     pub uncommitted_files: i64,
     pub uncommitted_added: i64,
     pub uncommitted_removed: i64,
-    /// `uncommitted_files` is a floor — an untracked directory was too large to
-    /// list. See [`crate::git_info::GitInfo::uncommitted_capped`].
+    /// `uncommitted_files` is a floor: an untracked directory was too big to list.
     #[serde(default)]
     pub uncommitted_capped: bool,
     pub commits_ahead: i64,
@@ -227,8 +222,7 @@ pub struct FolderData {
     pub commits_unlanded: i64,
     /// How the work reached `compared_base` (`"merged"`, `"rebase-merged"`,
     /// `"squash-merged"`, `"upstream gone"`), else `None`. Git evidence, not a
-    /// GitHub PR — which never sees a locally-merged branch, and whose "merged"
-    /// says nothing about work committed since.
+    /// GitHub PR, which never sees a locally-merged branch.
     pub landed: Option<String>,
     pub sessions: Vec<SessionData>,
     /// Bubbles to the repo. See `bridge::session_needs`.
@@ -243,28 +237,24 @@ pub struct FolderData {
     /// What `committed*`/`commits*` were measured against. Empty until computed.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub compared_base: String,
-    /// So the rail can say *when*, rather than leaving "unchanged" and "stuck"
-    /// indistinguishable.
+    /// So the rail can say *when*, not just "unchanged".
     #[serde(default)]
     pub computed_at_ms: i64,
     /// Newest of `HEAD`'s commit time, `worktree_touched_ms`, and the last pane
     /// opened here; the frontend maxes it against agent events only it sees.
     #[serde(default)]
     pub worked_at_ms: i64,
-    /// Newest mtime among the changed paths (0 when clean). Separate from
-    /// `worked_at_ms`, which opening a pane also moves: this is the only field
-    /// here that shifts when an edit lands whose aggregate counts match what was
-    /// already there, so the diff pane folds it into its refetch key.
+    /// Newest mtime among the changed paths (0 when clean). The only field here
+    /// that shifts when an edit leaves the aggregate counts unchanged, so the
+    /// diff pane folds it into its refetch key.
     #[serde(default)]
     pub worktree_touched_ms: i64,
     #[serde(default)]
     pub has_port_drift: bool,
-    /// Gates the dev-servers button; the `.claude/launch.json` configs are
-    /// fetched on demand, not carried here.
+    /// Gates the dev-servers button; the configs are fetched on demand.
     #[serde(default)]
     pub has_launch_config: bool,
-    /// Forced-quiet override (folder_meta.json) — off the rail regardless of
-    /// actual activity.
+    /// Forced-quiet override (folder_meta.json), regardless of actual activity.
     #[serde(default)]
     pub quiet: bool,
 }
@@ -276,8 +266,7 @@ pub struct RepoData {
     /// `"path:<dir>"` of whichever folder `assemble_state` saw first (stable
     /// across polls: entries are name-sorted).
     pub key: String,
-    /// The dir in `key`, as a field, so readers never parse it back out. Repo
-    /// identity (`meta`) is looked up by it.
+    /// The dir in `key`, as a field, so readers never parse it back out.
     pub dir: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

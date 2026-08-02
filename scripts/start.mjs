@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// Builds tt-app in release mode (optimized, no `cargo build --debug`
-// slowness) and runs the resulting binary directly — no installer bundling.
-// Debug builds (`npm run dev`) are fine for iterating, but their unoptimized
-// terminal rendering + IPC path is visibly laggy under everyday use (scroll,
-// typing) once several worktree tasks + agent sessions are running at once.
-// This is the "just run it fast" counterpart to `npm run dev` — `npm start`.
+// Builds tt-app in release mode and runs the binary directly — no installer
+// bundling. Debug builds (`npm run dev`) are fine for iterating, but their
+// unoptimized terminal rendering + IPC path is visibly laggy under everyday use
+// once several worktree tasks + agent sessions are running at once. The "just
+// run it fast" counterpart to `npm run dev`.
 import { spawn, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,11 +19,9 @@ const isMac = process.platform === "darwin";
 
 // macOS reads an app's name and icon from the Info.plist of the `.app` its
 // executable sits in; a bare binary has neither, so the Dock shows the generic
-// Unix-executable icon (the one with "exec" written on it). Building the `app`
-// bundle target is only a copy of the same release binary plus resources — no
-// dmg, no installer — and launching the executable *inside* the bundle keeps
-// stdio inherited while giving the process a real bundle identity. Other
-// platforms don't care, so they skip bundling entirely.
+// Unix-executable icon. The `app` bundle target is only a copy of the same
+// release binary plus resources — no dmg, no installer — and launching from
+// inside it keeps stdio inherited. Other platforms skip bundling entirely.
 const bundleArgs = isMac ? ["--bundles", "app"] : ["--no-bundle"];
 
 const build = spawnSync(
@@ -48,10 +45,8 @@ const bin = isMac ? macAppBinary() : path.join(
 );
 
 /**
- * Path to the executable inside the bundle the macOS `app` target just wrote.
- * Both the `.app` and the executable it holds are named after `productName`,
- * which lives in tauri.conf.json rather than here — read them off disk instead
- * of restating the name and drifting from it.
+ * Both the bundle and the executable it holds are named after `productName`,
+ * which lives in tauri.conf.json — read them off disk rather than restate it.
  * @returns {string}
  */
 function macAppBinary() {

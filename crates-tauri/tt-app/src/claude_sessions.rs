@@ -18,11 +18,9 @@ use tt_claude_sessions::{
     scan_sessions_detailed, search_sessions,
 };
 
-/// Max sessions scanned, matching the CLI's `SESSION_LIMIT`.
+/// Matching the CLI's `SESSION_LIMIT`.
 const SESSION_LIMIT: usize = 500;
-/// Sessions returned in the summary's ranked list.
 const TOP_SESSIONS: usize = 50;
-/// Max search hits returned.
 const SEARCH_LIMIT: usize = 100;
 
 /// `~/.claude`, honoring `$HOME` so tests/multiple tasks can redirect it.
@@ -30,31 +28,26 @@ fn claude_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude")
 }
 
-/// `~/.claude.json` — the CLI's global config file (a sibling of `~/.claude/`,
-/// not inside it), holding `cachedUsageUtilization` among other state.
+/// `~/.claude.json` — the CLI's global config, a sibling of `~/.claude/`, not inside it.
 fn claude_json_path() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude.json")
 }
 
-/// The last scan, kept so `claude_sessions_search` filters in memory. Keyed
-/// by the `days` window it was scanned for.
+/// The last scan, kept so search filters in memory. Keyed by its `days` window.
 struct CachedScan {
     days: f64,
     details: Vec<SessionDetail>,
 }
 
-/// Managed state: the cached scan behind an `Arc` so blocking-pool closures can
-/// own a handle.
+/// Managed state; `Arc` so blocking-pool closures can own a handle.
 #[derive(Clone, Default)]
 pub struct ClaudeSessionsCache(Arc<Mutex<Option<CachedScan>>>);
 
-/// One session row for the frontend (ranked list and search results).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeSessionRow {
     pub session_id: String,
-    /// Absolute path to the session's transcript `.jsonl` file, for pointing
-    /// Claude at a specific session file.
+    /// Absolute path to the session's transcript `.jsonl` file.
     pub path: String,
     pub title: Option<String>,
     pub project: String,
@@ -65,8 +58,7 @@ pub struct ClaudeSessionRow {
     pub cache_creation_tokens: i64,
     /// Estimated USD cost, priced per model (approximate — see `tt-claude-sessions`).
     pub cost_usd: f64,
-    /// The session's real launch directory, for "Open in Agentboard". `None`
-    /// for transcripts predating the `cwd` field.
+    /// Real launch directory. `None` for transcripts predating the `cwd` field.
     pub cwd: Option<String>,
     /// Prompt-text context around the match; only set on search hits.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,8 +105,7 @@ fn scan(days: f64) -> Result<Vec<SessionDetail>, String> {
     scan_sessions_detailed(&projects_dir, SESSION_LIMIT, days, now_ms).map_err(|e| e.to_string())
 }
 
-/// Scan (blocking pool — multi-MB parses would freeze the main thread), cache
-/// the details for search, and return the aggregates.
+/// Blocking pool: multi-MB parses would freeze the main thread.
 #[tauri::command]
 pub async fn claude_sessions_summary(
     days: f64,
@@ -148,11 +139,9 @@ pub async fn claude_sessions_summary(
     .map_err(|e| format!("claude sessions scan task panicked: {e}"))?
 }
 
-/// Rate-limit bars for the status bar (5h session, 7-day all-model, any
-/// 7-day model-scoped cap), read straight from the CLI's own cached
-/// `~/.claude.json` snapshot — never a live call of any kind, and not
-/// instrumented (`app_resource_usage`-style pure poller). `None` when the
-/// CLI hasn't populated the cache yet (e.g. a fresh install).
+/// Rate-limit bars for the status bar, read from the CLI's own cached
+/// `~/.claude.json` snapshot — never a live call. `None` before the CLI
+/// populates that cache.
 #[tauri::command]
 pub async fn claude_usage_limits() -> Result<Option<UsageLimits>, String> {
     tauri::async_runtime::spawn_blocking(|| read_cached_usage_limits(&claude_json_path()))
@@ -160,20 +149,17 @@ pub async fn claude_usage_limits() -> Result<Option<UsageLimits>, String> {
         .map_err(|e| format!("claude usage limits task panicked: {e}"))
 }
 
-/// One ranked waste finding with its session attached, for the Insights tab.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeSessionInsight {
-    /// Discriminant the frontend maps to icon/color: `tokenOutlier`,
-    /// `rereadLoop`, `cacheChurn`, `marathon`.
+    /// Discriminant the frontend maps to icon/color.
     pub kind: tt_claude_sessions::InsightKind,
     pub metric: String,
     pub detail: String,
     pub session: ClaudeSessionRow,
 }
 
-/// Ranked waste/habit findings for the window, riding the cached scan (same
-/// rescan-on-mismatch rule as search).
+/// Rides the cached scan, same rescan-on-mismatch rule as search.
 #[tauri::command]
 pub async fn claude_sessions_insights(
     days: f64,
@@ -201,8 +187,7 @@ pub async fn claude_sessions_insights(
     .map_err(|e| format!("claude sessions insights task panicked: {e}"))?
 }
 
-/// One session's turn/tool breakdown (the Sessions-table drill-down). The only
-/// per-session re-parse in the screen, done when a row is opened.
+/// The only per-session re-parse in the screen, done when a row is opened.
 #[tauri::command]
 pub async fn claude_sessions_breakdown(session_id: String) -> Result<SessionBreakdown, String> {
     tracing::info!("claude_sessions.breakdown_opened");
@@ -217,8 +202,7 @@ pub async fn claude_sessions_breakdown(session_id: String) -> Result<SessionBrea
     .map_err(|e| format!("claude sessions breakdown task panicked: {e}"))?
 }
 
-/// Human-prompt cadence (hour-of-day + per-day counts) for the window, riding
-/// the cached scan — same rescan-on-mismatch rule as search/insights.
+/// Human-prompt cadence: hour-of-day + per-day counts, off the cached scan.
 #[tauri::command]
 pub async fn claude_sessions_cadence(
     days: f64,
@@ -232,10 +216,8 @@ pub async fn claude_sessions_cadence(
             *guard = Some(CachedScan { days, details });
         }
         let details = &guard.as_ref().expect("cache populated above").details;
-        // Filters per-*prompt*, not just per-session: `details` was scanned by
-        // session mtime, which is a wider window than the prompt's own
-        // timestamp for a long-running/resumed session — see `build_cadence`'s
-        // doc comment.
+        // Filters per-*prompt*: `details` was scanned by session mtime, a wider window
+        // than a resumed session's own prompt timestamps. See `build_cadence`.
         let cutoff_ms =
             tt_claude_sessions::calculate_cutoff_ms(days, chrono::Local::now().timestamp_millis());
         Ok(build_cadence(details, cutoff_ms))
@@ -244,8 +226,8 @@ pub async fn claude_sessions_cadence(
     .map_err(|e| format!("claude sessions cadence task panicked: {e}"))?
 }
 
-/// Search the cached scan's titles + prompt text; rescans only when the cache
-/// is missing or was built for a different window. Hits come back newest-first.
+/// Searches titles + prompt text in the cached scan; rescans only when the cache is
+/// missing or was built for a different window. Hits come back newest-first.
 #[tauri::command]
 pub async fn claude_sessions_search(
     days: f64,

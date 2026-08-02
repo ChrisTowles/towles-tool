@@ -51,9 +51,9 @@ import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 
-/** The files pane: VS Code's real Explorer beside a Monaco viewer, the checkout as workspace. It
- * opens read-only and arming editing is deliberate — an agent works this same tree. An image or
- * video *replaces* the editor rather than splitting against it: Monaco cannot open one. */
+/** VS Code's real Explorer beside a Monaco viewer, the checkout as workspace. It opens read-only
+ * and arming editing is deliberate — an agent works this same tree. An image or video *replaces*
+ * the editor rather than splitting against it: Monaco cannot open one. */
 
 /** Claude called openFile — focus this file (new nonce per request). */
 export type FilesOpenRequest = { path: string; anchor: ViewerAnchor; nonce: number };
@@ -107,40 +107,28 @@ export function FilesPane({
   dir: string;
   connected: boolean;
   openRequest?: FilesOpenRequest;
-  /** Reports the checkout-relative path of the file in the editor (and
-   * whether it has unsaved edits) so the pane header can name it. The header
-   * lives in `FolderFilesPane`, outside Monaco's subtree — without this the
-   * header has nothing to say but the folder name, which every other pane in
-   * the window already says. */
+  /** The header lives in `FolderFilesPane`, outside Monaco's subtree, so what's
+   * open has to be reported up to it. */
   onOpenFileChange?: (open: { path: string; dirty: boolean } | null) => void;
-  /** Reports which view the sidebar column shows, for the same reason as
-   * `onOpenFileChange` — the pane header would otherwise keep calling itself
-   * the explorer while the column shows the search form. */
   onSidebarViewChange?: (view: SidebarView | null) => void;
 }) {
   const [history, setHistory] = useState<FileHistory>(NO_HISTORY);
   const open = currentPath(history);
   const openPath = (path: string) => setHistory((h) => visitPath(h, path));
   const [dirty, setDirty] = useState(false);
-  // Mirror the open file up to the pane header. Effect rather than a call in
-  // each setter: `open`/`dirty` move from several places (dir reset, an
-  // openRequest from Claude, a click in the explorer), and one effect can't
-  // drift out of sync with them the way four call sites would.
+  // An effect, not a call in each setter: `open`/`dirty` move from four places
+  // and one effect can't drift out of sync with them.
   useEffect(() => {
     onOpenFileChange?.(open ? { path: open, dirty } : null);
   }, [open, dirty, onOpenFileChange]);
 
   const [wordWrap, setWordWrap] = useState(true);
-  // The viewer opens locked — see `EditableToggle`. Per-pane, not per-file:
-  // arming edit mode once shouldn't have to be repeated for every file in the
-  // same sitting (a *new* checkout does re-lock, with `dir` below).
+  // Opens locked, and per-pane rather than per-file: arming edit mode once
+  // shouldn't repeat for every file in a sitting. A *new* checkout re-locks.
   const [editable, setEditable] = useState(false);
   const [viewMode, setViewMode] = useState<EditorViewMode>("code");
-  // The sidebar part is a workbench singleton that switches view without
-  // asking — right-clicking a tree row and picking "Find in Folder" opens
-  // search over the pane. Follow the part instead of tracking our own idea of
-  // the mode, or the toggle disagrees with what's on screen the first time
-  // that happens (and there was no way back to the tree at all before it).
+  // The sidebar part is a workbench singleton that switches view without asking
+  // ("Find in Folder"), so follow it rather than tracking our own idea of it.
   const [sidebarView, setSidebarView] = useState<SidebarView | null>(null);
   useEffect(() => watchSidebarView(setSidebarView), []);
   useEffect(() => {
@@ -150,16 +138,12 @@ export function FilesPane({
   const explorerRef = useRef<HTMLDivElement>(null);
   const editorPanelRef = useRef<PanelImperativeHandle>(null);
   const previewPanelRef = useRef<PanelImperativeHandle>(null);
-  // Set while the effect below is driving the panels, so the `onResize` echo
-  // of our own collapse/expand doesn't get read back as a user drag. Without
-  // it the two directions chase each other: expanding the preview for
-  // "preview" mode momentarily leaves both panels open, which reads as
-  // "split", which re-expands the editor we were about to collapse.
+  // Set while the effect below drives the panels, so the `onResize` echo isn't
+  // read back as a user drag — otherwise the two directions chase each other.
   const drivingPanelsRef = useRef(false);
 
-  // Reset on a genuine dir *change* only — skipping the initial mount keeps
-  // this independent of the openRequest effect below, whose request may have
-  // just created this pane (a mount-time reset would clobber it).
+  // A genuine dir *change* only: the openRequest below may have just created
+  // this pane, and a mount-time reset would clobber it.
   const prevDirRef = useRef(dir);
   useEffect(() => {
     if (prevDirRef.current === dir) return;
@@ -173,15 +157,14 @@ export function FilesPane({
     if (openRequest) setHistory((h) => visitPath(h, openRequest.path));
   }, [openRequest]);
 
-  // A newly-opened file starts on the code — the previous file's view mode
-  // says nothing about this one, which may not even have a preview.
+  // The previous file's view mode says nothing about this one, which may not
+  // even have a preview.
   useEffect(() => {
     setViewMode("code");
   }, [open]);
 
-  // The only way back out of fullscreen is the header toggle, and the header
-  // only renders while a file is open — so closing the file has to drop it too,
-  // or the pane is stuck covering the viewport with no affordance.
+  // The fullscreen toggle lives in the header, which only renders while a file
+  // is open — so closing the file must drop it, or the pane is stuck.
   useEffect(() => {
     if (!open) setFullscreen(false);
   }, [open]);
@@ -198,9 +181,8 @@ export function FilesPane({
     navigate(direction);
   };
 
-  // Bubble phase plus the `defaultPrevented` check keep Escape from being stolen from Monaco,
-  // which prevents the default whenever it consumes one (find widget, suggest popup). An open
-  // Radix dialog, Monaco's own host included, closes first for the same reason.
+  // Bubble phase plus `defaultPrevented` keep Escape from being stolen from Monaco, which
+  // prevents the default whenever it consumes one. An open Radix dialog closes first, likewise.
   useEffect(() => {
     if (!fullscreen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -215,18 +197,13 @@ export function FilesPane({
   }, [fullscreen]);
 
   const previewKind = open ? previewKindFor(open) : null;
-  // Two different shapes hide behind "this file isn't plain source": one has a
-  // code side and splits against the editor, the other replaces it outright.
-  // Splitting an image against an editor that cannot open it would show a
-  // permanently empty half.
+  // Two shapes hide behind "not plain source": one splits against the editor,
+  // the other replaces it — an image split would leave a permanently empty half.
   const splitKind = previewKind !== null && opensInEditor(previewKind) ? previewKind : null;
   const mediaKind = previewKind !== null && !opensInEditor(previewKind) ? previewKind : null;
 
-  // Drive the panels from the mode. Split sizes explicitly rather than
-  // leaning on `expand()`, which restores a panel to its *most recent* size —
-  // and the preview's most recent size is 0 until the user has opened it once,
-  // so expanding alone lands on a useless sliver. The single-panel modes just
-  // collapse the other half and let it take the whole group.
+  // Split sizes explicitly rather than leaning on `expand()`, which restores a
+  // panel's *most recent* size — 0 for a preview never opened, so a sliver.
   useEffect(() => {
     if (!splitKind) return;
     const editor = editorPanelRef.current;
@@ -262,9 +239,8 @@ export function FilesPane({
     setViewMode(modeForPanels(!editor.isCollapsed(), !preview.isCollapsed()));
   };
 
-  // This pane is the VS Code workspace. Keyed on `open` too — panes stay mounted forever, so
-  // mount order says nothing about where the user is; the pane they last opened a file in wins,
-  // workspace and sidebar and open-handler stealing together.
+  // This pane is the VS Code workspace. Keyed on `open` too — panes stay mounted forever, so the
+  // pane the user last opened a file in wins, stealing workspace, sidebar and open handler.
   useEffect(() => {
     let disposed = false;
     let detach: (() => void) | null = null;
@@ -291,9 +267,8 @@ export function FilesPane({
     };
   }, [dir, open]);
 
-  // Whole-file mention. A range mention is the viewer's own gesture (select
-  // lines, then the chip's @ send or ⌘⇧A) — it needs the live selection, which
-  // only the editor has.
+  // Whole-file only. A range mention is the viewer's own gesture: it needs the
+  // live selection, which only the editor has.
   const mention = (path: string) => void ideMention(dir, path, null);
 
   return (
@@ -301,10 +276,8 @@ export function FilesPane({
       onKeyDown={onPaneKeyDown}
       className={cn(
         "flex min-h-0 flex-1 overflow-hidden rounded-lg border",
-        // Fullscreen leaves the pane in the React tree — portalling it would
-        // remount `CodeViewer`, and rebuilding the Monaco model throws away the
-        // undo stack and scroll position. Nothing in the Agentboard tiling is
-        // transformed, so `fixed` still resolves against the viewport here.
+        // Fullscreen leaves the pane in the React tree: portalling remounts
+        // `CodeViewer`, losing the undo stack and scroll position.
         fullscreen && "fixed inset-0 z-50 rounded-none border-0 bg-background",
       )}
     >
@@ -330,8 +303,6 @@ export function FilesPane({
               </IconBtn>
             ))}
           </span>
-          {/* No mode name here — the column is 16rem wide and the LSP chip
-           * already fills it; the pane header above names the mode instead. */}
           <span className="min-w-0 flex-1" />
           <LspChip dir={dir} />
           {sidebarView !== "search" && (
@@ -357,10 +328,8 @@ export function FilesPane({
       <div className="flex min-w-0 flex-1 flex-col">
         {open ? (
           <>
-            {/* `1fr auto 1fr`, the same three-column row `PaneChrome` uses
-             * when it's given a center slot — the lock lands in the same
-             * place whichever pane you're in, instead of sliding with the
-             * open file's path length. */}
+            {/* `PaneChrome`'s three-column row, so the lock lands in the same
+             * place whichever pane you're in. */}
             <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-card px-3 py-1.5">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="flex shrink-0 items-center gap-0.5">
@@ -489,13 +458,10 @@ export function FilesPane({
             </div>
             <div className="min-h-0 flex-1">
               {mediaKind ? (
-                // No editor at all: nothing here is text, so the pane is the
-                // file itself.
                 <FilePreview dir={dir} path={open} kind={mediaKind} />
               ) : splitKind ? (
                 // Both panels stay mounted in all three modes — see
-                // `lib/editor-view-mode.ts` for why collapsing beats
-                // unmounting.
+                // `lib/editor-view-mode.ts` for why collapsing beats unmounting.
                 <ResizablePanelGroup orientation="horizontal">
                   <ResizablePanel
                     panelRef={editorPanelRef}
@@ -561,9 +527,8 @@ export function FilesPane({
   );
 }
 
-/** A folder's file tree as a *pane* in the Agentboard tiling — `DiffPane`'s sibling beside the
- * live terminals. Claude's openFile requests arrive as `openRequest`, the screen having opened
- * the pane first if none existed. */
+/** A folder's file tree as a *pane* in the Agentboard tiling — `DiffPane`'s sibling. Claude's
+ * openFile requests arrive as `openRequest`, the screen opening the pane first if none existed. */
 export function FolderFilesPane({
   folder,
   focused,
@@ -572,12 +537,8 @@ export function FolderFilesPane({
 }: {
   /** The checkout this pane browses; undefined when it left the rail. */
   folder: FolderData | undefined;
-  /** This pane is the one the user last clicked into — see the focus-ring
-   * rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused: boolean;
-  /** Removes the pane from its window. */
   onClose: () => void;
-  /** Claude called openFile — focus this file (new nonce per request). */
   openRequest?: FilesOpenRequest;
 }) {
   const ideConnected = useIdeConnected(folder?.dir);
@@ -586,7 +547,7 @@ export function FolderFilesPane({
 
   // The Explorer's provider has no disk watch (`lib/monaco-fs.ts`), so a file an agent creates
   // never appears on its own; the folder's git stats notice exactly that. Keyed on the *full*
-  // stats — a count-only key misses M→D and renames — and throttled, since every save moves it.
+  // stats, since a count-only key misses M→D and renames.
   const statsKey = folder ? folderStatsKey(folder) : "";
   const statsSeen = useRef(false);
   const lastRefreshAtRef = useRef(0);

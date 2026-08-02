@@ -1,19 +1,13 @@
-// Auto-bumps a Claude Code plugin's `.claude-plugin/plugin.json` patch
-// version whenever a commit touches that plugin's directory. Skipped for a
-// plugin whose manifest version was already hand-edited in the same commit
-// (e.g. a deliberate minor/major bump) — see `manifestsToBump`. Invoked by
-// `.githooks/pre-commit`; wired up via the root "prepare" npm script running
-// `git config core.hooksPath .githooks`.
+// Auto-bumps a Claude Code plugin's `.claude-plugin/plugin.json` patch version
+// whenever a commit touches that plugin's directory, unless the manifest version
+// was already hand-edited in the same commit. Invoked by `.githooks/pre-commit`,
+// wired up by the root "prepare" script running `git config core.hooksPath`.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Result } from "better-result";
 import { BadVersion, VersionLineMissing } from "./errors.mjs";
 
-/**
- * A plugin package: the directory whose changes trigger a bump, and the
- * manifest that carries the version.
- * @typedef {{ dir: string; manifest: string }} Plugin
- */
+/** @typedef {{ dir: string; manifest: string }} Plugin */
 
 /** @type {Plugin[]} */
 export const PLUGINS = [
@@ -22,8 +16,6 @@ export const PLUGINS = [
 ];
 
 /**
- * Bumps the patch component of a `major.minor.patch` version string.
- *
  * @param {string} version
  * @returns {Result<string, BadVersion>}
  */
@@ -36,20 +28,10 @@ export function nextPatchVersion(version) {
 }
 
 /**
- * Which plugins need an auto-bump, given the set of staged file paths and a
- * `readVersions(manifest) -> { head, index }` lookup (HEAD's committed
- * version vs. the version currently staged in the index). Pure aside from
- * that injected reader, so it's testable without a real git repo.
- *
- * A plugin is skipped when: none of its files are staged, it has no HEAD
- * version yet (brand-new plugin — let the authored version stand), or its
- * manifest version already differs from HEAD (hand-edited this commit).
- *
+ * Pure aside from the injected reader, so it's testable without a real git repo.
  * @param {string[]} stagedFiles
  * @param {Plugin[]} plugins
- * @param {(manifest: string) => { head: string | null; index: string | null }} readVersions
- * @returns {Plugin[]}
- */
+ * @param {(manifest: string) => { head: string | null; index: string | null }} readVersions */
 export function manifestsToBump(stagedFiles, plugins, readVersions) {
   return plugins.filter((p) => {
     const touched = stagedFiles.some((f) => f === p.manifest || f.startsWith(`${p.dir}/`));
@@ -60,14 +42,10 @@ export function manifestsToBump(stagedFiles, plugins, readVersions) {
 }
 
 /**
- * Rewrites just the `"version": "..."` line in-place, preserving all other
- * formatting.
- *
  * @param {string} manifestContents
  * @param {string} from
  * @param {string} to
- * @returns {Result<string, VersionLineMissing>}
- */
+ * @returns {Result<string, VersionLineMissing>} */
 export function withBumpedVersion(manifestContents, from, to) {
   const needle = `"version": "${from}"`;
   if (!manifestContents.includes(needle)) {
@@ -76,22 +54,16 @@ export function withBumpedVersion(manifestContents, from, to) {
   return Result.ok(manifestContents.replace(needle, `"version": "${to}"`));
 }
 
-/**
- * @param {string[]} args
- * @returns {string}
- */
+/** @param {string[]} args */
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8" });
 }
 
 /**
- * The manifest's `version` at a git ref, or `null` when the file doesn't exist
- * there or isn't parseable — both mean "no committed version to compare".
- *
+ * `null` when the file is absent at that ref or unparseable — both mean "no
+ * committed version to compare".
  * @param {string} ref
- * @param {string} manifest
- * @returns {string | null}
- */
+ * @param {string} manifest */
 function manifestVersionAt(ref, manifest) {
   try {
     return JSON.parse(git(["show", `${ref}:${manifest}`])).version ?? null;
@@ -107,10 +79,8 @@ function stagedFiles() {
 }
 
 /**
- * Runs the real pre-commit bump against the current git index; used by
- * `.githooks/pre-commit`. A malformed version or an unrewritable manifest
- * aborts the commit rather than letting it land with a stale version.
- *
+ * A malformed version or an unrewritable manifest aborts the commit rather than
+ * letting it land with a stale version.
  * @returns {Result<void, BadVersion | VersionLineMissing>}
  */
 export function runPreCommitBump() {

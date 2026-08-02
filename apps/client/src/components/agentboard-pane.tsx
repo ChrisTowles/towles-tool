@@ -15,10 +15,8 @@ import {
 } from "@/lib/agentboard";
 import { cn } from "@/lib/utils";
 
-/** Cache health for one pane. Warmth only — no context percent — so the pane
- * chrome stays quiet, and nothing at all unless Claude is running here right
- * now (`agentState` is pruned when the pid dies, so `isAgent && live` is the
- * gate). */
+/** Warmth only, no context percent, and nothing at all unless Claude is running
+ * here right now — `agentState` is pruned when the pid dies. */
 function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) {
   const d = session.agentState?.details;
   if (!session.live || !isAgent(session) || !d?.cacheExpiresAt) return null;
@@ -52,11 +50,9 @@ function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) 
   );
 }
 
-/** Blocks the terminal until the user deliberately acknowledges a cold prompt
- * cache: unlike the quiet ❄ in the pane header, a cold resume silently
- * re-reads the whole transcript at full price, so this earns a click rather
- * than a glance. Re-arms on the next cold generation, keyed by `cacheExpiresAt`
- * — the same dedup key the board-wide toast in `screens/agentboard.tsx` uses. */
+/** A cold resume silently re-reads the whole transcript at full price, so this
+ * earns a click rather than a glance. Re-arms per cold generation, keyed by
+ * `cacheExpiresAt` — the board-wide toast dedups on the same key. */
 export function ColdCacheOverlay({
   session,
   now,
@@ -111,10 +107,8 @@ export function ColdCacheOverlay({
   );
 }
 
-/** One pane's chrome. Repo / folder / branch / diff live once in the
- * working-context band above (every pane in a window shares that folder), so
- * this header only says *which session* this is and how it's doing — reusing
- * the rail row's `fmtElapsed`/`fmtWaitingAge` so the two can't disagree. */
+/** Repo/folder/branch/diff live once in the working-context band above, so this
+ * says only which session it is — via the rail row's own formatters. */
 export function PaneHeader({
   session,
   label,

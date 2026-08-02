@@ -55,19 +55,13 @@ pub trait TaskHost: Send {
     fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
 }
 
-/// The app-side half of `preview_file` — the agent→human direction of the Preview
-/// pane, whose human→agent half (dev server, annotated screenshot) already existed.
+/// The app-side half of `preview_file` — the agent→human direction of the Preview pane.
 /// An agent that finished something explainable points at a file and asks for it on
 /// screen, instead of PTY scrollback that dies with the worktree.
 ///
-/// A **hand-off** like [`TaskHost::start_task`]: opening the pane means resolving a
-/// session to its folder, invisible from this Tauri-free crate, so the tool answers
-/// `"showing"` rather than claiming the user saw it.
-///
-/// **Routing is by caller, not by path** ([`PreviewFile::session`]). By path — the
-/// longest tracked-folder prefix — is wrong in the *ordinary* case: an agent's natural
-/// place for a throwaway page is a scratch dir matching no folder, so the file
-/// surfaced in whichever task was on screen.
+/// A **hand-off** like [`TaskHost::start_task`]: resolving a session to its folder is
+/// invisible from this Tauri-free crate, so the tool answers `"showing"` rather than
+/// claiming the user saw it. Routed by caller, not path — see [`PreviewFile::session`].
 pub trait PreviewHost: Send {
     /// Put `file` on screen in the Preview pane of the folder owning the
     /// requesting agent's session.
@@ -80,16 +74,12 @@ pub struct PreviewFile {
     pub path: String,
     /// What to label the pane with; the file name when the caller gave none.
     pub title: String,
-    /// The PTY session the requesting agent runs in
-    /// ([`RequestContext::session`]) — **the routing key**. The app resolves it
-    /// to the folder owning that session and opens the pane there.
+    /// The PTY session the requesting agent runs in ([`RequestContext::session`]) — **the
+    /// routing key**; the app resolves it to the folder owning that session.
     ///
-    /// `None` when the caller isn't in an app terminal, which is the only case
-    /// that still falls back to matching the path against the rail's folders.
-    /// That fallback is a guess and reliably picks the wrong task for a file
-    /// under no tracked folder (a `/tmp` scratch page lands in whichever folder
-    /// happens to be on screen) — which is exactly why the session travels with
-    /// the request.
+    /// `None` when the caller isn't in an app terminal, the only case that falls back to
+    /// matching the path against the rail's folders. That fallback reliably picks the
+    /// wrong task for a file under no tracked folder — hence the session on the request.
     pub session: Option<String>,
 }
 
@@ -140,25 +130,18 @@ fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
     Ok((resolved.to_string_lossy().into_owned(), is_dir))
 }
 
-/// Largest file `preview_file` will accept, checked from the same `stat`
-/// that proves the file exists. The frontend inlines the whole file, so an
-/// accidental multi-hundred-MB path (a log, a core dump, a build artifact with
-/// an `.html` name) must fail as an answer to the agent rather than as a frozen
-/// window.
+/// Largest file `preview_file` will accept, checked from the same `stat` that proves the
+/// file exists. The frontend inlines the whole file, so an accidental multi-hundred-MB
+/// path must fail as an answer to the agent rather than as a frozen window.
 const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Validate a `preview_file` path into the absolute path to show.
+/// Validate a `preview_file` path into the absolute path to show. Every rejection is
+/// something the agent can fix and would otherwise discover as a blank pane: a relative
+/// path, a missing file, a directory, or one too big to inline. **File *type* is not one
+/// of them** — the pane renders HTML, Markdown and plain text alike.
 ///
-/// Every rejection here is something the agent can fix and would otherwise
-/// discover as a blank pane: a relative path (this server serves every session
-/// on the machine), a file that isn't there, a directory, or one too big to
-/// inline. **File *type* is not one of them** — the pane renders HTML as a page,
-/// Markdown as prose and anything else as text, so refusing an extension would
-/// only refuse the ordinary case of pointing at a log or a diff.
-///
-/// The accepted path comes back **canonical**, so the pane and the agent agree
-/// on one spelling of the file — and because the path is still what routes a
-/// request that carried no session (see [`PreviewFile::session`]).
+/// The path comes back **canonical** so pane and agent agree on one spelling, and because
+/// the path still routes a request that carried no session ([`PreviewFile::session`]).
 fn validate_preview_path(raw: &str) -> Result<String, String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
@@ -199,16 +182,13 @@ fn preview_title(path: &str, title: Option<&str>) -> String {
     }
 }
 
-/// Everything the host needs to start a task, resolved by the dispatcher from
-/// the row so the host does no store reads of its own.
+/// Everything the host needs to start a task, resolved by the dispatcher from the row so
+/// the host does no store reads of its own.
 ///
-/// **This is a hand-off, not a completed action.** Minting the worktree is
-/// ordinary blocking work, but *launching the agent* is not: a pane has no PTY
-/// until the frontend renders it, and the goal is typed into that PTY. So the
-/// host can only ask the app to start the task; it cannot stand here and watch
-/// it finish. The tool reports `status: "starting"` accordingly, and
-/// `task_list`/`task_status` are how a caller confirms the worktree appeared.
-/// Reporting a synchronous "started" would be a lie the caller can't check.
+/// **A hand-off, not a completed action.** A pane has no PTY until the frontend renders
+/// it and the goal is typed into that PTY, so the host can only ask the app to start the
+/// task. The tool reports `status: "starting"`; `task_list`/`task_status` are how a caller
+/// confirms the worktree appeared.
 pub struct TaskStartRequest {
     pub id: i64,
     /// The row's title, for the host's own logging/labelling.
@@ -228,15 +208,10 @@ pub struct TaskStartRequest {
 /// What a [`TaskHost::delete_task`] attempt produced.
 ///
 /// The refusal is an `Ok` variant for the same reason it is one in
-/// `tt_tasks::ops::RemoveOutcome`: "your worktree still has uncommitted work"
-/// is an answer with a next step attached, not a malfunction. Reporting it as
-/// an error would tell a calling agent the delete *failed* — inviting a retry
-/// with force — when the truth is that it was declined on purpose.
-///
-/// Both variants carry `name` — what the host called the thing it acted on —
-/// so the dispatcher never has to read the row itself just to name it in the
-/// reply. That read would be a second trip over a second SQLite connection for
-/// a string the host already had in hand.
+/// `tt_tasks::ops::RemoveOutcome`: "your worktree still has uncommitted work" is an answer
+/// with a next step, not a malfunction, and reported as an error it would invite a forced
+/// retry. Both variants carry `name` so the dispatcher never re-reads the row over a
+/// second SQLite connection just to name the thing in the reply.
 pub enum TaskDeletion {
     /// The task is gone: panes, worktree, and board row.
     Deleted { name: String, messages: Vec<String> },
@@ -272,19 +247,13 @@ pub struct Dispatcher {
     calendar_sources: Option<Vec<String>>,
 }
 
-/// What the transport knows about a caller that the JSON-RPC body cannot say — today,
-/// which of the app's terminals the agent sits in, since `preview_file` has to put a
-/// page on screen in *the caller's own* task.
+/// What the transport knows about a caller that the JSON-RPC body cannot say — which of
+/// the app's terminals the agent sits in, since `preview_file` puts a page on screen in
+/// *the caller's own* task. `TT_SESSION_ID` is stamped on every PTY and forwarded by the
+/// plugin's `.mcp.json` as `X-TT-Session`, so the model never reads its own environment.
 ///
-/// The app stamps every PTY with `TT_SESSION_ID` (`tt_agentboard::procenv`), and the
-/// plugin's `.mcp.json` forwards it as the `X-TT-Session` header via Claude Code's
-/// `${VAR:-default}` expansion — identity rides the transport, set once in config, so
-/// the model is never asked to read its own environment. `None` is normal: a session
-/// started outside the app has none, and routing falls back to the artifact's path.
-///
-/// Passed *through* the dispatch call rather than stashed on the [`Dispatcher`]: one
-/// long-lived dispatcher serves every session, so identity held as state would have to
-/// be cleared on every exit path to stop one agent's page opening in another's.
+/// Passed *through* dispatch rather than stashed on the [`Dispatcher`]: one long-lived
+/// dispatcher serves every session, so identity held as state leaks between agents.
 #[derive(Debug, Clone, Default)]
 pub struct RequestContext {
     /// The app PTY session id the caller runs in — `TT_SESSION_ID`, which is
@@ -310,14 +279,11 @@ impl RequestContext {
     }
 }
 
-/// What one dispatched request produced: the reply to send back, and whether
-/// the call actually wrote to the store.
+/// What one dispatched request produced: the reply to send back, and whether the call
+/// wrote to the store.
 ///
-/// `wrote` is deliberately narrow, and it answers "**must the transport
-/// repaint?**" — not "did this mutate?". A refusal, a failed write, and every
-/// read all report false, so a transport can skip work only a real mutation
-/// justifies; so does a tool in [`SELF_REFRESHING_TOOLS`], which already
-/// repainted on its own and would otherwise be repainted twice.
+/// `wrote` answers "**must the transport repaint?**", not "did this mutate?". A refusal, a
+/// failed write and every read report false, as does a tool in [`SELF_REFRESHING_TOOLS`].
 pub struct Handled {
     /// The response line, or `None` for a notification (which gets no reply).
     pub response: Option<String>,
@@ -332,17 +298,13 @@ impl Handled {
     }
 }
 
-/// The tools that write to the store. One list, read two ways: [`tool_writes`]
-/// answers the transport's "must the UI refresh?" question from it, and
-/// [`tool_definitions`] stamps `annotations.readOnlyHint: false` from it — so
-/// the wire contract and the internal decision cannot disagree, because there
-/// is only one fact.
+/// The tools that write to the store. One list read two ways: [`tool_writes`] answers the
+/// transport's "must the UI refresh?" and [`tool_definitions`] stamps
+/// `annotations.readOnlyHint: false` from it, so the wire contract and the internal
+/// decision cannot disagree.
 ///
-/// The direction matters. Deriving the *internal* answer by reading the
-/// *external* JSON back out would route control flow through an advisory client
-/// hint (and rebuild the whole tool contract per request to do it); a tool added
-/// to [`Dispatcher::call_tool`] but missed here is one edit away from a stale
-/// board either way, but here the fix is a single obvious list.
+/// The direction matters: deriving the internal answer from the external JSON would route
+/// control flow through an advisory client hint, and rebuild the contract per request.
 const WRITING_TOOLS: &[&str] = &["task_create", "task_summary", "task_delete", "calendar_set"];
 
 /// Whether a tool writes to the store — see [`WRITING_TOOLS`].
@@ -350,19 +312,13 @@ pub fn tool_writes(name: &str) -> bool {
     WRITING_TOOLS.contains(&name)
 }
 
-/// Writing tools that refresh the UI themselves, so the transport must not do
-/// it again.
+/// Writing tools that refresh the UI themselves, so the transport must not do it again.
 ///
-/// `task_delete` runs through the app's own delete path, which emits a snapshot
-/// the moment the row goes. Letting [`Handled::wrote`] stay true here would
-/// rebuild the whole snapshot a second time — under the `StoreState` mutex the
-/// transport opened a separate connection specifically to avoid — and would do
-/// it even for a *refused* delete, which changed nothing at all.
-///
-/// Deliberately separate from [`WRITING_TOOLS`] rather than removing the tool
-/// from it: `readOnlyHint` must still say the tool writes, because it does.
-/// The two questions ("does this mutate?" and "who repaints?") only looked like
-/// one question while every writer went through the dispatcher's own store.
+/// `task_delete` runs through the app's own delete path, which emits a snapshot the moment
+/// the row goes. Leaving [`Handled::wrote`] true would rebuild the whole snapshot again —
+/// under the `StoreState` mutex the transport opened a separate connection to avoid — even
+/// for a *refused* delete. Kept separate from [`WRITING_TOOLS`] rather than removed from
+/// it, because `readOnlyHint` must still say the tool writes.
 const SELF_REFRESHING_TOOLS: &[&str] = &["task_delete"];
 
 /// The result of dispatching one request: the response line to write back, plus
@@ -474,16 +430,12 @@ impl Dispatcher {
         self.dispatch_at(request_json, now_ms, &RequestContext::none()).response
     }
 
-    /// Handle one request line and report what it did, not just what to send
-    /// back.
+    /// Handle one request line and report what it did, not just what to send back.
     ///
-    /// A transport needs [`Handled::wrote`] to decide whether anything
-    /// downstream must be refreshed. Only the dispatcher can answer that
-    /// honestly — it knows which tool ran — and guessing costs real work: the
-    /// app rebuilds and broadcasts an entire store snapshot per refresh, so
-    /// treating every `ping` and `task_list` as a possible write means a full
-    /// snapshot per read, taken against the very lock the transport opened a
-    /// second SQLite connection to avoid contending with.
+    /// A transport needs [`Handled::wrote`] to decide whether anything downstream must be
+    /// refreshed, and only the dispatcher knows which tool ran. Guessing costs real work:
+    /// the app rebuilds and broadcasts an entire store snapshot per refresh, against the
+    /// very lock the transport opened a second SQLite connection to avoid.
     pub fn dispatch(&mut self, request_json: &str, ctx: &RequestContext) -> Handled {
         self.dispatch_at(request_json, now_ms(), ctx)
     }
@@ -652,16 +604,13 @@ impl Dispatcher {
         }
     }
 
-    /// Replace one calendar's events for one local day, leaving every other
-    /// calendar and day untouched.
+    /// Replace one calendar's events for one local day, leaving every other calendar and
+    /// day untouched.
     ///
-    /// **The day window is derived here, never taken from the payload** — bounds
-    /// always come from [`Store::local_day_bounds`], so a client cannot widen the
-    /// delete past one day. **`source` must name a configured calendar**
-    /// (`collectors.calendar.sources`): a hallucinated id mints an orphan lane that
-    /// still feeds `calendar_next` and no sweep removes — what v9's migration
-    /// destroyed data to avoid — and the check bounds a hijacked session, since
-    /// `{source, events: []}` *clears* a day.
+    /// **The day window is derived here, never taken from the payload** — bounds come from
+    /// [`Store::local_day_bounds`], so a client cannot widen the delete past one day.
+    /// **`source` must name a configured calendar**: a hallucinated id mints an orphan lane
+    /// that still feeds `calendar_next` and that no sweep removes.
     fn calendar_set(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let source = args
             .get("source")
@@ -679,13 +628,10 @@ impl Dispatcher {
             .ok_or_else(|| "missing required argument: events (an array)".to_string())?;
         let events: Vec<EventInput> = serde_json::from_value(events_arg.clone())
             .map_err(|e| format!("invalid events payload: {e}"))?;
-        // An event that ends before it starts is accepted by the schema and
-        // then read inconsistently: `calendar_today` windows on `start_ts` and
-        // lists it, while `current_or_next_event` matches on `end_ts > now` and
-        // drops it — so the meeting shows up in the day's shape but never in
-        // the countdown or the meeting-start notification. Swapped or
-        // timezone-slipped fields are exactly what a model gets wrong, so this
-        // is a refusal, not a silent repair.
+        // An event ending before it starts is schema-valid and then read inconsistently:
+        // `calendar_today` windows on `start_ts` and lists it, `current_or_next_event`
+        // matches on `end_ts > now` and drops it. Swapped or timezone-slipped fields are
+        // exactly what a model gets wrong, so refuse rather than silently repair.
         if let Some(bad) = events.iter().find(|e| e.end.is_some_and(|end| end < e.start)) {
             return Err(format!(
                 "event {} ends before it starts (start {}, end {}) — check the field order",
@@ -702,11 +648,9 @@ impl Dispatcher {
         };
         let (day_start, day_end) = Store::local_day_bounds(reference_ms);
 
-        // Refuse a day the store's retention sweep would immediately reclaim.
-        // Without this the tool accepts the write, reports `written: N`, and the
-        // very next calendar write from any source deletes those rows — a
-        // success return value with a one-tick shelf life. Better to say no than
-        // to be briefly, confidently wrong.
+        // Refuse a day the store's retention sweep would immediately reclaim: the write
+        // would report `written: N` and the next calendar write from any source would
+        // delete those rows — a success value with a one-tick shelf life.
         if day_end <= now_ms.saturating_sub(tt_store::EVENT_RETAIN_MS) {
             return Err(format!(
                 "day {} is past the {}-day retention window — events that old are swept, so \
@@ -716,14 +660,11 @@ impl Dispatcher {
             ));
         }
 
-        // Every event must fall inside the day it is being pushed for.
-        // `replace_events_for_source` only deletes within `[day_start, day_end)`,
-        // and retention only sweeps the *past*, so a row landing outside the
-        // window is reachable by neither: no later push to this lane covers it,
-        // no sweep ages it out, and it feeds `calendar_next` as a phantom
-        // meeting until an event with the identical `externalId` happens to
-        // replace it. A model that mis-dates one entry (wrong day, wrong year,
-        // a timezone slip) is the likely author, so name the offender.
+        // Every event must fall inside the day it is pushed for.
+        // `replace_events_for_source` only deletes within `[day_start, day_end)` and
+        // retention only sweeps the *past*, so a row outside the window is reachable by
+        // neither and feeds `calendar_next` as a phantom meeting. A model that mis-dates
+        // one entry is the likely author, so name the offender.
         if let Some(stray) =
             events.iter().find(|e| e.start_ms() < day_start || e.start_ms() >= day_end)
         {
@@ -782,18 +723,12 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Record what an agent working a task reported when it finished, on the
-    /// task's own row.
+    /// Record what an agent reported when it finished, on the task's own row.
     ///
-    /// This is the durable half of a session's ending: the worktree and its
-    /// terminal scrollback are torn down when the user confirms the task is
-    /// done, so a wrap-up written only into the PTY is gone by the time they
-    /// look. Writing it here puts it on the card, which outlives both.
-    ///
-    /// Deliberately *not* folded into `notes`: notes are the user's own
-    /// context and [`task_prompt`] feeds them into a `task_start` prompt, so a
-    /// summary landing there would come back as instructions to the next
-    /// session.
+    /// The durable half of a session's ending: the worktree and its terminal scrollback are
+    /// torn down when the user confirms the task is done, so a wrap-up written only into the
+    /// PTY is gone. Deliberately *not* folded into `notes` — [`task_prompt`] feeds notes into
+    /// a `task_start` prompt, so a summary there would come back as instructions.
     fn task_summary(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -813,12 +748,9 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Create a board task in a tracked repo — the same store path as the
-    /// app's Agentboard `+` flow: [`Store::add_task`] then a repo-only
-    /// [`Store::set_task_worktree`], so the task lands in that repo's Board
-    /// swimlane immediately (no worktree yet).
-    ///
-    /// `repo` must be a GitHub `owner/repo` slug.
+    /// Create a board task in a tracked repo — the same store path as the app's Agentboard
+    /// `+` flow, so the task lands in that repo's Board swimlane immediately (no worktree
+    /// yet). `repo` must be a GitHub `owner/repo` slug.
     fn task_create(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let title = args
             .get("title")
@@ -836,11 +768,9 @@ impl Dispatcher {
         let notes = args.get("notes").and_then(Value::as_str);
         let goal = args.get("goal").and_then(Value::as_str);
 
-        // Matched case-insensitively, and the row is stamped with the tracked
-        // repo's own spelling rather than `repo_arg` — a caller passing
-        // `christowles/x` must not mint a second identity beside the
-        // `gh`-reported `ChrisTowles/x` that every issue, PR and existing task
-        // carries, or the Board splits one repo across two identical lanes.
+        // Matched case-insensitively, and stamped with the tracked repo's own spelling
+        // rather than `repo_arg`: a `christowles/x` must not mint a second identity beside
+        // the `gh`-reported `ChrisTowles/x`, splitting one repo across two Board lanes.
         let (repo_root, repo) = self
             .store
             .tracked_repo_for_owner_repo(repo_arg)
@@ -860,18 +790,10 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Delete a board task and everything bound to it — live panes and worktree as
-    /// well as its row — through the injected [`TaskHost`].
-    ///
-    /// The refusal path is the point of this tool. A worktree holding uncommitted
-    /// changes, commits that reached no branch or remote, or a foreign process on its
-    /// claimed ports comes back as `status: "refused"` with the reasons, having
-    /// deleted **nothing**. `force: true` is the deliberate override.
-    /// Start an existing board task — mint its worktree, launch an agent on its
-    /// goal. Every guard is a store read the dispatcher does alone, and each exists
-    /// because the failure is silent or destructive: starting a task that already
-    /// holds a worktree abandons the running one; a closed one resurrects finished
-    /// work.
+    /// Start an existing board task — mint its worktree, launch an agent on its goal. Every
+    /// guard is a store read the dispatcher does alone, and each exists because the failure
+    /// is silent or destructive: starting a task that already holds a worktree abandons the
+    /// running one; a closed one resurrects finished work.
     fn task_start(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -886,9 +808,8 @@ impl Dispatcher {
             .filter(|b| !b.is_empty())
             .map(str::to_string);
 
-        // Availability before diagnosis: "this tool can't work here" is a
-        // different class of answer from "that task can't be started", and a
-        // caller shouldn't have to fix its arguments to discover the first.
+        // Availability before diagnosis: a caller shouldn't have to fix its arguments to
+        // discover that the tool can't work here at all.
         if self.task_host.is_none() {
             return Err("task_start is unavailable: no task host is attached".to_string());
         }
@@ -961,14 +882,12 @@ impl Dispatcher {
         }))
     }
 
-    /// Put a file on screen in the app's Preview pane — see [`PreviewHost`] for
-    /// why this direction exists at all.
+    /// Put a file on screen in the app's Preview pane — see [`PreviewHost`] for why this
+    /// direction exists at all.
     ///
-    /// Everything checkable is checked here rather than in the host, because
-    /// every failure mode of this tool is silent by nature: a bad path shows
-    /// the user an empty pane and tells the agent nothing. So the path is
-    /// validated down to "a readable file of a sane size that exists right
-    /// now", and only then handed off.
+    /// Everything checkable is checked here rather than in the host, because every failure
+    /// mode of this tool is silent: a bad path shows an empty pane and tells the agent
+    /// nothing.
     fn preview_file(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
         let raw = args
             .get("path")
@@ -1186,14 +1105,10 @@ fn unknown_calendar_source_message(source: &str, configured: &[String]) -> Strin
     )
 }
 
-/// What the agent starting a task is told to do: its `goal`, then its `notes`
-/// under a header.
-///
-/// Both halves matter, and sending only one is the bug this replaced. The
-/// Board's own "Start task" action passes the card's *title* — which is a label,
-/// not an instruction — so a task carrying a carefully written goal and pages of
-/// handoff notes started an agent that had seen neither. `text` is the last
-/// resort, for a bare row with nothing else on it.
+/// What the agent starting a task is told to do: its `goal`, then its `notes` under a
+/// header. Both halves matter — the Board's own "Start task" passes the card's *title*, a
+/// label rather than an instruction, so a task with a written goal and pages of handoff
+/// notes started an agent that had seen neither. `text` is the last resort.
 fn task_start_prompt(task: &tt_store::TaskItem) -> String {
     let goal = task.goal.as_deref().map(str::trim).filter(|g| !g.is_empty());
     let notes = task.notes.as_deref().map(str::trim).filter(|n| !n.is_empty());

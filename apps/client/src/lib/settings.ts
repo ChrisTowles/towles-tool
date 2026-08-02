@@ -3,8 +3,8 @@ import { UserSettingsSchema } from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
 
-/** Client-side view of the shared user settings (`crates/tt-config`). The file
- * is co-owned by the TS CLI, so a save carries the whole object forward. */
+/** Client-side view of the shared user settings (`crates/tt-config`), co-owned
+ * by the TS CLI — so a save carries the whole object forward. */
 
 /** Ordered; a kind fires at or above `agentboard.notifyThreshold`. */
 export type NotifyLevel = "routine" | "important" | "urgent";
@@ -47,8 +47,7 @@ export type CalendarQuietHours = {
   weekdays: number[];
 };
 
-/** `id` is the store lane a pull replaces, so it must stay stable; `prompt` is
- * user-editable so a machine without a Google/Outlook MCP can still answer. */
+/** `id` is the store lane a pull replaces, so it must stay stable. */
 export type CalendarSource = {
   id: string;
   label: string;
@@ -56,8 +55,7 @@ export type CalendarSource = {
   prompt: string;
 };
 
-/** Suffixed until free — a source can be removed and re-added, so the label's
- * own number proves nothing. */
+/** Suffixed until free; a source can be removed and re-added. */
 export function nextCalendarSourceId(sources: CalendarSource[], label: string): string {
   const taken = new Set(sources.map((s) => s.id));
   // The shared slug rule, not a second regex — this key is permanent.
@@ -70,8 +68,7 @@ export function nextCalendarSourceId(sources: CalendarSource[], label: string): 
 }
 
 /** One button in the new-task form that rewrites the goal before the task
- * starts. The rewrite lands *in the field*, so what you see is what launches —
- * `prompt` is an instruction *about* the goal, not a template holding it. */
+ * starts. `prompt` is an instruction *about* the goal, not a template. */
 export type PromptImprover = {
   id: string;
   label: string;
@@ -80,8 +77,7 @@ export type PromptImprover = {
   prompt: string;
 };
 
-/** Permanent key, as {@link nextCalendarSourceId} — the form stores its
- * last-picked improver by id. */
+/** Permanent key, as {@link nextCalendarSourceId}. */
 export function nextPromptImproverId(improvers: PromptImprover[], label: string): string {
   const taken = new Set(improvers.map((t) => t.id));
   const base = slugify(label) || "improver";
@@ -130,12 +126,11 @@ export type CollectorsSettings = {
 export type UserSettings = {
   preferredEditor: string;
   journalSettings: JournalSettings;
-  /** Prompt-improver templates for the new-task form. See {@link PromptImprover}. */
   promptImprovers: PromptImprover[];
   collectors: CollectorsSettings;
-  /** TS-owned UI block; every key is unset-means-default, defaulted at its
-   * consumer. `showUnmanagedWorktrees` is the one Rust reads back, so it is
-   * written through `ab_set_show_unmanaged_worktrees`, not by saving here. */
+  /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
+   * the one Rust reads back, so it is written through
+   * `ab_set_show_unmanaged_worktrees`, not by saving here. */
   agentboard?: {
     notify?: boolean;
     notifyThreshold?: NotifyLevel;
@@ -156,15 +151,13 @@ export type UserSettings = {
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
-/** A half-finished path template must not reach disk, where `settings_set`
- * hands it to the live scheduler. */
+/** A half-finished path template must not reach the live scheduler. */
 const DEFER_MS = 500;
 
 /** Settings is a tab in the same window, so `"focus"` never fires. */
 export const SETTINGS_SAVED_EVENT = "tt:settings-saved";
 
-/** `null` in browser dev or on a failed read — every consumer falls back to a
- * built-in default, so the distinction isn't worth propagating. */
+/** `null` in browser dev or on a failed read; every consumer has a default. */
 export async function loadUserSettings(): Promise<UserSettings | null> {
   const result = await invoke<UserSettings>("settings_get", {}, { schema: UserSettingsSchema });
   return result.unwrapOr(null);
@@ -177,7 +170,6 @@ export async function saveUserSettings(settings: UserSettings): Promise<boolean>
   return saved.isOk();
 }
 
-/** The TS-owned `agentboard` block, as carried on {@link UserSettings}. */
 export type AgentboardBlock = NonNullable<UserSettings["agentboard"]>;
 
 /** "The file may have changed": an in-app save, or window focus. Fires `load`
@@ -193,8 +185,7 @@ export function onSettingsChanged(load: () => void): () => void {
 }
 
 /** One value, live across {@link onSettingsChanged} signals. The setter is
- * **local** — write-through is the caller's job, via {@link
- * persistAgentboardSetting}. `select` is read from a ref. */
+ * **local** — write-through is the caller's job. */
 export function useLiveSetting<T>(
   select: (s: UserSettings) => T | undefined,
   fallback: T,
@@ -218,8 +209,7 @@ export function useLiveSetting<T>(
   return [value, setValue];
 }
 
-/** {@link useLiveSetting} into a ref — for an imperative effect that must not
- * re-subscribe when the value changes (the terminal's render loop). */
+/** {@link useLiveSetting} into a ref, for an effect that must not re-subscribe. */
 export function useLiveSettingRef<T>(
   select: (s: UserSettings) => T | undefined,
   fallback: T,
@@ -242,8 +232,7 @@ export function useLiveSettingRef<T>(
   return ref;
 }
 
-/** The read is the point: the file is co-owned, so a save must carry the whole
- * object forward. Best-effort. */
+/** The read is the point: a save must carry the whole object forward. */
 export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
   key: K,
   value: AgentboardBlock[K],
@@ -255,13 +244,10 @@ export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
 
 export type SettingsUpdater = (prev: UserSettings) => UserSettings;
 
-/**
- * Two ordering rules, kept free of React so they are testable without a DOM.
+/** Two ordering rules, kept free of React so they are testable without a DOM.
  * **Replay, don't overwrite** — a queued edit is kept as its *updater* and
- * replayed against a fresh read, since the app writes this file elsewhere. And
- * **one write at a time**, chained on `tail`, or the second flush reads before
- * the first's write lands and reverts it.
- */
+ * replayed against a fresh read. And **one write at a time**, chained on
+ * `tail`, or the second flush reads before the first's write lands. */
 export function createSettingsWriter({
   load,
   save,
@@ -316,8 +302,7 @@ export function createSettingsWriter({
 }
 
 /** Load once, persist every edit — there is no explicit save. Pass `{ defer:
- * true }` for anything typed and `flush` on blur. `settings` stays `null` in
- * browser dev, where edits are dropped. */
+ * true }` for anything typed and `flush` on blur. */
 export function useUserSettings() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -344,8 +329,7 @@ export function useUserSettings() {
     };
   }, []);
 
-  // Commit a pending debounce on unmount, so an edit navigated away from
-  // immediately isn't lost.
+  // Commit a pending debounce on unmount, or an edit navigated away from is lost.
   useEffect(
     () => () => {
       void writer.flush();

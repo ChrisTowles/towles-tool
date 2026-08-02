@@ -1,17 +1,14 @@
 //! Model → context-window lookup. The table lives in
 //! [`context_windows.json`](./context_windows.json), embedded at build time.
-//! **Updating a window is a data edit in that file, not a code change** — a window is
-//! a property of the model *and* its platform, so there is no deriving it offline.
-//! [`resolve_window`] returns the count *and* how it was determined
-//! ([`WindowSource`]); no match resolves to [`WindowSource::Unknown`], an explicit
-//! "this is a guess" rather than a silent default, so callers can flag it.
+//! **Updating a window is a data edit in that file, not a code change** — a
+//! window is a property of the model *and* its platform.
+//! [`resolve_window`] returns the count *and* how it was determined, so an
+//! unrecognized model is an explicit guess rather than a silent default.
 //!
 //! Precedence (first match wins):
 //! 1. An explicit `[1m]` marker on the model string → the marker window.
-//! 2. A **Bedrock** id (`anthropic.<id>`, or `us.`/`eu.`/`apac.`/`global.`-prefixed)
-//!    → the Bedrock window, so those don't fall through to a 1M family match.
-//! 3. A known **family** substring (case-insensitive), else
-//!    [`WindowSource::Unknown`] at the default window.
+//! 2. A **Bedrock** id (`anthropic.<id>`, or `us.`/`eu.`/`apac.`/`global.`-prefixed).
+//! 3. A known **family** substring (case-insensitive), else the default window.
 
 use serde::Deserialize;
 use std::sync::LazyLock;
@@ -31,24 +28,19 @@ struct Family {
     window: i64,
 }
 
-/// The parsed table. Field names are camelCase to match the JSON; unknown keys
-/// (e.g. `$comment`, `note`, `lastReviewed`) are ignored so the data file can
-/// stay self-documenting.
+/// The parsed table. Unknown keys (`$comment`, `note`, `lastReviewed`) are
+/// ignored so the data file can stay self-documenting.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowTable {
-    /// Reported window for an unrecognized model.
     default_window: i64,
-    /// Window for Bedrock / region-prefixed inference-profile ids.
     bedrock_window: i64,
-    /// Window forced by an explicit `[1m]` marker.
     marker_window: i64,
     families: Vec<Family>,
 }
 
 /// Parsed once on first use. The embedded JSON is a build-time constant, so a
-/// parse failure is a programmer error (and the `embedded_json_parses` test
-/// guards it), hence `expect` rather than a fallible public API.
+/// parse failure is a programmer error — hence `expect`, not a fallible API.
 static TABLE: LazyLock<WindowTable> = LazyLock::new(|| {
     serde_json::from_str(TABLE_JSON).expect("embedded context_windows.json must parse")
 });
@@ -62,32 +54,26 @@ pub enum WindowSource {
     Bedrock,
     /// Matched a known model family; carries the matched `contains` needle.
     Family(String),
-    /// No rule matched. The reported window is the conservative default — a
-    /// guess. Callers should treat the model as unrecognized and flag it.
+    /// No rule matched: the conservative default, and callers should flag it.
     Unknown,
 }
 
 /// A resolved context window plus how it was determined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWindow {
-    /// Context-window size, in tokens.
     pub tokens: i64,
-    /// Which rule produced [`ResolvedWindow::tokens`].
     pub source: WindowSource,
 }
 
 impl ResolvedWindow {
-    /// `true` when a rule recognized the model; `false` when it fell back to the
-    /// default (i.e. [`WindowSource::Unknown`]).
+    /// `true` when a rule recognized the model, `false` on the default fallback.
     pub fn is_known(&self) -> bool {
         !matches!(self.source, WindowSource::Unknown)
     }
 }
 
-/// Resolve a model id to its context window *and* how we got there.
-///
-/// Prefer this over [`context_window`] when the caller wants to distinguish a
-/// recognized model from an unrecognized one (see [`WindowSource::Unknown`]).
+/// Resolve a model id to its context window *and* how we got there. Prefer this
+/// over [`context_window`] to distinguish a recognized model from a guess.
 pub fn resolve_window(model: &str) -> ResolvedWindow {
     let table = &*TABLE;
     let m = model.to_ascii_lowercase();
@@ -96,10 +82,8 @@ pub fn resolve_window(model: &str) -> ResolvedWindow {
     if m.ends_with("[1m]") {
         return ResolvedWindow { tokens: table.marker_window, source: WindowSource::Marker };
     }
-    // 2. Amazon Bedrock: a bare `anthropic.<model>` or a region-prefixed
-    //    cross-region inference profile (`us.anthropic.*`, `eu.`, `apac.`,
-    //    `global.`). Match the `anthropic.` segment so region-prefixed profiles
-    //    don't fall through to a 1M family match below.
+    // 2. Bedrock: match the `anthropic.` segment so region-prefixed inference
+    //    profiles don't fall through to a 1M family match below.
     if m.starts_with("anthropic.") || m.contains(".anthropic.") {
         return ResolvedWindow { tokens: table.bedrock_window, source: WindowSource::Bedrock };
     }
@@ -117,16 +101,13 @@ pub fn resolve_window(model: &str) -> ResolvedWindow {
 }
 
 /// Context-window size (in tokens) for a model id, per the maintained table.
-///
-/// A thin wrapper over [`resolve_window`] for callers that only need the number
-/// (unrecognized models get the conservative default). Use [`resolve_window`] or
-/// [`model_known`] to detect the unrecognized case.
+/// Unrecognized models get the conservative default silently — use
+/// [`resolve_window`] or [`model_known`] to detect that case.
 pub fn context_window(model: &str) -> i64 {
     resolve_window(model).tokens
 }
 
-/// `true` when the model id matched a rule (marker, Bedrock, or a known family);
-/// `false` when it fell back to the default (unrecognized).
+/// `true` when the model id matched a rule (marker, Bedrock, or known family).
 pub fn model_known(model: &str) -> bool {
     resolve_window(model).is_known()
 }
@@ -137,8 +118,6 @@ mod tests {
 
     #[test]
     fn embedded_json_parses() {
-        // The build-time asset must be valid JSON matching the table shape, and
-        // carry at least one family so the lookup is non-trivial.
         let table: WindowTable =
             serde_json::from_str(TABLE_JSON).expect("context_windows.json should parse");
         assert!(!table.families.is_empty());
@@ -177,21 +156,16 @@ mod tests {
 
     #[test]
     fn unknown_model_is_flagged_not_silent() {
-        // A brand-new model the table doesn't know yet: reported at the
-        // conservative default, but explicitly flagged Unknown so callers don't
-        // trust the guess.
         let r = resolve_window("claude-opus-4-9-future");
         assert_eq!(r.tokens, CONTEXT_200K);
         assert_eq!(r.source, WindowSource::Unknown);
         assert!(!r.is_known());
         assert!(!model_known("claude-opus-4-9-future"));
-        // The empty id is likewise unrecognized.
         assert!(!model_known(""));
     }
 
     #[test]
     fn one_m_marker_forces_1m() {
-        // The old Sonnet 4/4.5 opt-in — a 200K-native family with the [1m] marker.
         let r = resolve_window("claude-sonnet-4-5[1m]");
         assert_eq!(r.tokens, CONTEXT_1M);
         assert_eq!(r.source, WindowSource::Marker);
@@ -200,7 +174,6 @@ mod tests {
 
     #[test]
     fn bedrock_prefix_caps_at_200k() {
-        // Same model, Bedrock prefix → 200K even though first-party is 1M.
         let r = resolve_window("anthropic.claude-opus-4-8");
         assert_eq!(r.tokens, CONTEXT_200K);
         assert_eq!(r.source, WindowSource::Bedrock);
@@ -210,13 +183,11 @@ mod tests {
 
     #[test]
     fn bedrock_region_inference_profiles_cap_at_200k() {
-        // Cross-region inference profiles embed a 1M-native family but must still
-        // report 200K, so the `.anthropic.` segment has to win over the family match.
+        // These embed a 1M-native family, so `.anthropic.` must win the match.
         assert_eq!(context_window("us.anthropic.claude-opus-4-8-v1"), CONTEXT_200K);
         assert_eq!(context_window("eu.anthropic.claude-sonnet-5-v1"), CONTEXT_200K);
         assert_eq!(context_window("apac.anthropic.claude-opus-4-8"), CONTEXT_200K);
         assert_eq!(context_window("global.anthropic.claude-fable-5"), CONTEXT_200K);
-        // The bare first-party id is unchanged (still 1M).
         assert_eq!(context_window("claude-opus-4-8"), CONTEXT_1M);
     }
 

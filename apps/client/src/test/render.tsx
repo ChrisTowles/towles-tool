@@ -1,9 +1,6 @@
-// Shared harness for render-level component tests (`*.test.tsx`, jsdom env).
-// Not itself a test file. Wraps a component in the same provider tree App.tsx
-// mounts, so hooks like useStoreSnapshot / useNow / useWorkspace resolve. In
-// jsdom there is no `__TAURI_INTERNALS__`, so every `invoke` returns
-// `NotInTauri` and each component renders its colocated browser-dev fallback
-// (mock snapshot, empty lists) — the documented backend seam, no mock plumbing.
+// Shared harness for render-level component tests (`*.test.tsx`, jsdom env), not
+// itself a test file. jsdom has no `__TAURI_INTERNALS__`, so every `invoke` returns
+// `NotInTauri` and each component paints its browser-dev fallback — the backend seam.
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
