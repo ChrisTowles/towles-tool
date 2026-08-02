@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command,
   CommandDialog,
@@ -106,21 +107,33 @@ export function RemoveRepoDialog({
   );
 }
 
+/** A forced delete must never read as the guarded one it is nothing like. */
+function confirmLabel(hasTask: boolean, dirMissing: boolean, outcome: TaskOutcome, force: boolean) {
+  if (dirMissing) return `Close as ${outcome}`;
+  if (hasTask) return force ? `Close as ${outcome} & force delete` : `Close as ${outcome}`;
+  return force ? "Force delete" : "Delete worktree";
+}
+
 /** Confirm deleting a worktree from disk — and, when a board task is bound to
- * it, how that task ended (defaulted to done, with a swap link to abandoned). */
+ * it, how that task ended (defaulted to done, with a swap link to abandoned).
+ * `force` waives the guards up front, for when the answer is already known. */
 export function DeleteWorktreeDialog({
   target,
   task,
   outcome,
+  force,
   onOpenChange,
   onSwapOutcome,
+  onForceChange,
   onConfirm,
 }: {
   target: RemoveTarget | null;
   task: TaskItem | null;
   outcome: TaskOutcome;
+  force: boolean;
   onOpenChange: (open: boolean) => void;
   onSwapOutcome: () => void;
+  onForceChange: (force: boolean) => void;
   onConfirm: () => void;
 }) {
   return (
@@ -144,6 +157,13 @@ export function DeleteWorktreeDialog({
               <>
                 This task's worktree is already gone, so nothing is deleted from disk. Its branch
                 survives in the primary. The task stays on the board, closed.
+              </>
+            ) : force ? (
+              <>
+                Removes the checkout from disk with the guards off — uncommitted changes and commits
+                on no branch/remote go with it, and a dev server on its ports is left running. Its
+                branch survives in the primary.
+                {task && " The task stays on the board, closed."}
               </>
             ) : (
               <>
@@ -197,13 +217,40 @@ export function DeleteWorktreeDialog({
             </button>
           </div>
         )}
+        {/* Nothing on disk means no guards to waive, so the option would be a
+            checkbox that changes nothing. `<label htmlFor>`, not a button —
+            Radix's Checkbox is one already (see apps/client/CLAUDE.md). */}
+        {target && !target.dirMissing && (
+          <label
+            htmlFor="force-delete-worktree"
+            className={cn(
+              "flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-xs",
+              force ? "border-destructive/40 bg-destructive/10" : "border-border bg-muted/40",
+            )}
+          >
+            <Checkbox
+              id="force-delete-worktree"
+              checked={force}
+              onCheckedChange={(checked) => onForceChange(checked === true)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">Skip the guards</span>
+              <span className="text-muted-foreground">
+                Delete even with uncommitted changes, commits on no branch/remote, or a dev server
+                on its ports.
+              </span>
+            </span>
+          </label>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            variant={force && !target?.dirMissing ? "destructive" : "default"}
             onClick={onConfirm}
             title={withHint("Confirm", "ab-confirm-close-worktree")}
           >
-            {task || target?.dirMissing ? `Close as ${outcome}` : "Delete worktree"}
+            {confirmLabel(task != null, target?.dirMissing === true, outcome, force)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

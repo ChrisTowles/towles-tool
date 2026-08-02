@@ -19,6 +19,8 @@ export type WorktreeDelete = {
   deleteWtTask: TaskItem | null;
   deleteWtOutcome: TaskOutcome;
   swapOutcome: () => void;
+  deleteWtForce: boolean;
+  setDeleteWtForce: (force: boolean) => void;
 
   blockedDelete: BlockedDelete | null;
   blockedDeleteDir: string | undefined;
@@ -47,6 +49,7 @@ export function useWorktreeDelete(args: {
   const [confirmDeleteWt, setConfirmDeleteWt] = useState<RemoveTarget | null>(null);
   const [deleteWtTask, setDeleteWtTask] = useState<TaskItem | null>(null);
   const [deleteWtOutcome, setDeleteWtOutcome] = useState<TaskOutcome>("done");
+  const [deleteWtForce, setDeleteWtForce] = useState(false);
   const [blockedDelete, setBlockedDelete] = useState<BlockedDelete | null>(null);
   const [stoppingPort, setStoppingPort] = useState<number | null>(null);
   const [deletingDirs, setDeletingDirs] = useState<Set<string>>(new Set());
@@ -65,18 +68,24 @@ export function useWorktreeDelete(args: {
     const bound = tasks.find((t) => t.worktree?.dir === dir) ?? null;
     setDeleteWtTask(bound);
     setDeleteWtOutcome("done");
+    // Never sticky: a waiver granted for one worktree must not carry to the next.
+    setDeleteWtForce(false);
     bumpDeleteFlow(dir);
     setConfirmDeleteWt({ label, dirs: [dir], sessionIds, dirMissing: folder?.dirMissing });
   }
 
   function confirmDeleteWorktree() {
     if (!confirmDeleteWt) return;
+    // The same event as forcing past the blocked dialog: both are "the user
+    // waived the guards", and splitting them would split that count in two.
+    const force = deleteWtForce && !confirmDeleteWt.dirMissing;
     uiAction(
-      "agentboard.delete_worktree",
+      force ? "agentboard.force_delete_worktree" : "agentboard.delete_worktree",
       "agentboard",
       deleteWtTask ? deleteWtOutcome : "no-task",
     );
     void performDeleteWorktree(confirmDeleteWt, {
+      force,
       outcome: deleteWtTask ? deleteWtOutcome : undefined,
     });
     setConfirmDeleteWt(null);
@@ -182,6 +191,8 @@ export function useWorktreeDelete(args: {
     deleteWtTask,
     deleteWtOutcome,
     swapOutcome: () => setDeleteWtOutcome((cur) => (cur === "done" ? "abandoned" : "done")),
+    deleteWtForce,
+    setDeleteWtForce,
     blockedDelete,
     blockedDeleteDir,
     blockedRemovalInFlight,
