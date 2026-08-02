@@ -20,7 +20,7 @@ pub mod session;
 
 pub use engine::{
     Engine, EngineOptions, KeyAction, KeyEvent, MouseAction, MouseButton, MouseInput, PasteOutcome,
-    Select, Theme, VtError,
+    Pointer, Select, Theme, VtError,
 };
 pub use frame::{Frame, Modes};
 pub use search::SearchMatch;
@@ -691,13 +691,32 @@ mod tests {
         assert_eq!(row_text(&frame, 1), "line19");
     }
 
+    /// Surface pixels. The test engines never resize, so cell metrics stay at
+    /// the 1px default and cell N spans x in [N, N+1) — `N + LEFT` points at
+    /// its left half, `N + RIGHT` at its right. Selection ends snap to the
+    /// nearer cell edge, so which half a gesture starts and ends in is what
+    /// decides whether that cell is in the selection.
+    const LEFT: f64 = 0.25;
+    const RIGHT: f64 = 0.75;
+    fn press(e: &mut Engine, x: f64, y: f64, time_ms: f64) {
+        e.pointer(engine::Pointer::Press { x, y, time_ms }).expect("press");
+    }
+    fn drag_to(e: &mut Engine, x: f64, y: f64) {
+        e.pointer(engine::Pointer::Drag { x, y, rectangle: false }).expect("drag");
+    }
+    fn release(e: &mut Engine) {
+        e.pointer(engine::Pointer::Release).expect("release");
+    }
+
     #[test]
     fn selection_highlights_rows_and_copies_text() {
         let mut e = engine(20, 4);
         e.feed(b"alpha beta\r\ngamma");
         e.render().expect("render").expect("frame");
 
-        e.select(engine::Select::Range { ax: 0, ay: 0, bx: 2, by: 1 }).expect("select");
+        press(&mut e, LEFT, 0.5, 0.0);
+        drag_to(&mut e, 2.0 + RIGHT, 1.5);
+        release(&mut e);
         let frame = e.render().expect("render").expect("selection forces a frame");
         assert!(frame.full, "selection change repaints everything");
         let row0 = frame.changed.iter().find(|r| r.y == 0).unwrap();
@@ -727,16 +746,20 @@ mod tests {
     }
 
     #[test]
-    fn selection_rows_are_absolute_not_viewport_relative() {
+    fn a_selection_keeps_its_text_when_the_viewport_moves() {
         let mut e = scrolled_engine();
-        // Row 4 is deep in scrollback, nowhere near the visible viewport.
-        e.select(engine::Select::Line { x: 0, y: 4 }).expect("select line");
-        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line4"));
+        // Triple-click the viewport's top row: three presses inside the repeat
+        // window, which libghostty promotes to a line selection.
+        for t in [0.0, 100.0, 200.0] {
+            press(&mut e, LEFT, 0.5, t);
+            release(&mut e);
+        }
+        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line18"));
 
-        // Still true after the viewport moves — the row was named in screen
-        // space, so scrolling doesn't re-point it at whatever is now on top.
+        // The gesture anchors on a tracked grid reference, so paging the
+        // viewport does not re-point it at whatever now sits on that row.
         e.scroll(Some(-6));
-        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line4"));
+        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line18"));
     }
 
     #[test]
@@ -744,16 +767,17 @@ mod tests {
         let mut e = scrolled_engine();
         let top = e.viewport_top().expect("viewport_top");
 
-        // Press on the last column of the viewport's top row ("line18"), then
-        // page up mid-gesture — the view re-sends that same absolute anchor
-        // with the head on the newly revealed top row.
-        let anchor = top;
-        e.select(engine::Select::Range { ax: 5, ay: anchor, bx: 5, by: anchor }).expect("select");
+        // Press mid-way along the viewport's top row ("line18"), then page up
+        // mid-gesture and drag to the newly revealed top row. The view never
+        // names the anchor again — the gesture still holds it.
+        assert!(top > 0, "precondition: the viewport sits over scrollback");
+        press(&mut e, 5.0 + RIGHT, 0.5, 0.0);
         e.scroll(Some(-3));
-        let head = e.viewport_top().expect("viewport_top");
-        e.select(engine::Select::Range { ax: 5, ay: anchor, bx: 0, by: head }).expect("select");
+        drag_to(&mut e, LEFT, 0.5);
 
         let text = e.copy_selection().expect("copy").expect("selection text");
+        // The anchor is still on line18 three pages later, which is the point:
+        // nothing re-sent it.
         assert_eq!(
             text, "line15\nline16\nline17\nline18",
             "drag reaches back through scrollback from its original anchor"
@@ -763,7 +787,11 @@ mod tests {
     #[test]
     fn a_selection_scrolled_out_of_view_still_reports_itself() {
         let mut e = scrolled_engine();
-        e.select(engine::Select::Line { x: 0, y: 4 }).expect("select line");
+        for t in [0.0, 100.0, 200.0] {
+            press(&mut e, LEFT, 0.5, t);
+            release(&mut e);
+        }
+        e.scroll(Some(-6));
         let frame = e.render().expect("render").expect("frame");
         assert!(frame.selection, "selection is live");
         assert!(
@@ -799,7 +827,11 @@ mod tests {
         e.feed(b"alpha beta");
         e.render().expect("render").expect("frame");
 
-        e.select(engine::Select::Word { x: 7, y: 0 }).expect("select word");
+        // Double-click inside "beta".
+        press(&mut e, 7.0 + LEFT, 0.5, 0.0);
+        release(&mut e);
+        press(&mut e, 7.0 + LEFT, 0.5, 100.0);
+        release(&mut e);
         let text = e.copy_selection().expect("copy").expect("word text");
         assert_eq!(text, "beta");
     }

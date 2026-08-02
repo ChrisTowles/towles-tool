@@ -763,6 +763,7 @@ pub fn run() {
             terminal::view::term_request_full,
             terminal::view::term_visibility,
             terminal::view::term_select,
+            terminal::view::term_pointer,
             terminal::view::term_copy,
             terminal::view::term_search,
             terminal::view::term_clear,

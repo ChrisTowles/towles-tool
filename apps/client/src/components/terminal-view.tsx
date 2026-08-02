@@ -30,11 +30,6 @@ import {
 import { linkAt, linkLabel, type TermLink } from "@/lib/term-links";
 import { resolveTermTheme } from "@/lib/term-theme";
 import {
-  selectionGestureKey,
-  selectionKindForDetail,
-  shouldCopyOnSelect,
-} from "@/lib/terminal-selection";
-import {
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
   useCopyOnSelect,
@@ -77,11 +72,6 @@ const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
 const FONT_FAMILY =
   "'FiraCode Nerd Font Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
 const LINE_HEIGHT = 1.25;
-
-/** Selection autoscroll: rows scale with how far past the edge the pointer
- * is, so a small overshoot creeps and a big one moves. */
-const AUTOSCROLL_INTERVAL_MS = 50;
-const AUTOSCROLL_MAX_ROWS = 5;
 
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
  * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
@@ -779,40 +769,25 @@ export function TerminalView({
       // Reconcile if the persisted size loaded after this effect measured.
       if (fontPx !== fontSizeRef.current) bridgeRef.current.setFontSize(fontSizeRef.current);
 
-      // The pending select IPC, so copy-on-select can await it before
+      // The pending selection IPC, so copy-on-select can await it before
       // `term_copy` reads — those calls are otherwise unordered.
       let lastSelect: Promise<unknown> = Promise.resolve();
-      // Endpoints are ABSOLUTE cells (`row` from the oldest scrollback row).
-      // A drag outlives the viewport it began in, so a viewport row re-sent
-      // on the next mousemove names whatever text has since slid into that
-      // slot. See `Select` in tt-vt.
-      const select = (
-        kind: "drag" | "word" | "line" | "all" | "clear",
-        a?: { x: number; row: number },
-        b?: { x: number; row: number },
-      ) => {
-        lastSelect = invoke("term_select", {
-          termId,
-          kind,
-          ax: a?.x,
-          ay: a?.row,
-          bx: b?.x,
-          by: b?.row,
-        });
+      const select = (kind: "all" | "clear") => {
+        lastSelect = invoke("term_select", { termId, kind });
         return lastSelect;
       };
-      /** The absolute cell a viewport cell currently sits on. */
-      const absolute = (cell: { x: number; y: number }) => ({
-        x: cell.x,
-        row: grid.viewportTop + cell.y,
-      });
-      // What the last copy-on-select took, so repeating the gesture doesn't
-      // re-take the clipboard. Reset on clear and blur: both are new intent.
-      let lastCopiedGesture: string | null = null;
-      const maybeCopyOnSelect = (kind: "drag" | "word" | "line", gesture: string | null) => {
-        if (!shouldCopyOnSelect(copyOnSelectRef.current, kind, gesture, lastCopiedGesture)) return;
-        lastCopiedGesture = gesture;
-        void lastSelect.then(copySelection);
+      // A raw report; tt-vt's gesture engine decides what it means.
+      const pointer = (action: "press" | "drag" | "release", e: MouseEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        lastSelect = invoke("term_pointer", {
+          termId,
+          action,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+          timeMs: e.timeStamp,
+          rectangle: e.altKey,
+        });
+        return lastSelect;
       };
       // Measured off the canvas rect rather than `offsetX/offsetY`, so the
       // same function serves events on the canvas, on the padded host (the
@@ -828,18 +803,8 @@ export function TerminalView({
           y: Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y))),
         };
       };
-      // The drag's fixed end, absolute so it keeps naming the pressed text.
-      let anchor: { x: number; row: number } | null = null;
-      let dragged = false;
-      // The pointer, in canvas cell units and deliberately *unclamped*: a `y`
-      // outside `[0, rows)` is what says "keep scrolling".
-      let dragPoint: { x: number; y: number } | null = null;
-      let autoscrollTimer: ReturnType<typeof setInterval> | null = null;
-      const stopAutoscroll = () => {
-        if (autoscrollTimer === null) return;
-        clearInterval(autoscrollTimer);
-        autoscrollTimer = null;
-      };
+      // Whether a left-drag gesture is ours (vs. forwarded to the program).
+      let dragging = false;
       // A tracking program gets wheel, motion, middle and plain left clicks —
       // never left drags or word/line gestures, which stay local selection. So
       // a left press waits for mouseup to know which it was.
@@ -870,56 +835,6 @@ export function TerminalView({
             anyButton: e.buttons !== 0,
           },
         });
-      /** How far past an edge the pointer sits, in rows; 0 while inside. */
-      const edgeOverrun = () => {
-        if (!dragPoint) return 0;
-        if (dragPoint.y < 0) return Math.max(-AUTOSCROLL_MAX_ROWS, Math.floor(dragPoint.y));
-        if (dragPoint.y >= grid.rows) {
-          return Math.min(AUTOSCROLL_MAX_ROWS, Math.floor(dragPoint.y) - grid.rows + 1);
-        }
-        return 0;
-      };
-      /** Re-point the drag's head at the pointer, against the live viewport. */
-      const extendDrag = () => {
-        if (!anchor || !dragPoint) return;
-        const head = absolute({
-          x: Math.max(0, Math.min(grid.cols - 1, Math.floor(dragPoint.x))),
-          y: Math.max(0, Math.min(grid.rows - 1, Math.floor(dragPoint.y))),
-        });
-        if (!dragged && head.x === anchor.x && head.row === anchor.row) return;
-        dragged = true;
-        setHoveredLink(null);
-        void select("drag", anchor, head);
-      };
-      // Dragging past an edge pages the viewport and keeps selecting — the
-      // only way to take a selection taller than one screen. On a timer, since
-      // a pointer held outside the pane stops producing events; against a
-      // *predicted* `viewportTop`, since the frame reporting the scroll lands
-      // after this tick must already say where the head goes.
-      const autoscrollTick = () => {
-        const delta = edgeOverrun();
-        if (!anchor || delta === 0) {
-          stopAutoscroll();
-          return;
-        }
-        const next = Math.max(0, Math.min(grid.scrollbackRows, grid.viewportTop + delta));
-        // Nothing left to reveal at this end — the head already sits on it.
-        if (next === grid.viewportTop) return;
-        scroll(delta);
-        grid.viewportTop = next;
-        dragged = true;
-        void select("drag", anchor, {
-          x: Math.max(0, Math.min(grid.cols - 1, Math.floor(dragPoint?.x ?? 0))),
-          row: delta < 0 ? grid.viewportTop : grid.viewportTop + grid.rows - 1,
-        });
-      };
-      const syncAutoscroll = () => {
-        if (anchor && edgeOverrun() !== 0) {
-          autoscrollTimer ??= setInterval(autoscrollTick, AUTOSCROLL_INTERVAL_MS);
-        } else {
-          stopAutoscroll();
-        }
-      };
       const onMouseDown = (e: MouseEvent) => {
         focusInput();
         if (e.button !== 0) {
@@ -942,25 +857,16 @@ export function TerminalView({
             return;
           }
         }
-        const kind = selectionKindForDetail(e.detail);
-        const at = absolute(cell);
-        if (kind === "word" || kind === "line") {
-          void select(kind, at);
-          // Keyed on the absolute scrollback row, so a scroll makes it new.
-          maybeCopyOnSelect(kind, selectionGestureKey(kind, at.x, at.row));
-        } else {
-          anchor = at;
-          pressCell = cell;
-          dragPoint = pointOf(e);
-          dragged = false;
-          clickToProgram = mouseToProgram(e);
-        }
+        dragging = true;
+        pressCell = cell;
+        clickToProgram = mouseToProgram(e);
+        void pointer("press", e);
       };
       const onMouseMove = (e: MouseEvent) => {
         const cell = cellOf(e);
         // Motion during a forwarded gesture, or hover under mode 1003. Deduped
         // to cell granularity.
-        if (mouseGestureToProgram || (!anchor && mouseToProgram(e))) {
+        if (mouseGestureToProgram || (!dragging && mouseToProgram(e))) {
           if (lastMotionCell?.x !== cell.x || lastMotionCell?.y !== cell.y) {
             lastMotionCell = cell;
             sendMouse(e, "motion", cell);
@@ -969,20 +875,19 @@ export function TerminalView({
         }
         // A drag is tracked on the window instead (see `onWindowMouseMove`),
         // so it survives the pointer leaving the canvas.
-        if (!anchor) setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
+        if (!dragging) setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
       };
-      // Every pooled pane hears this; `anchor` is what says the drag is ours.
+      // Every pooled pane hears this; `dragging` is what says the drag is ours.
       const onWindowMouseMove = (e: MouseEvent) => {
-        if (!anchor) return;
+        if (!dragging) return;
         // A mouseup swallowed elsewhere (another app grabbed the pointer)
         // would otherwise leave the gesture — and its autoscroll — running.
         if (e.buttons === 0) {
           onMouseUp(e);
           return;
         }
-        dragPoint = pointOf(e);
-        extendDrag();
-        syncAutoscroll();
+        setHoveredLink(null);
+        void pointer("drag", e);
       };
       const onMouseUp = (e: MouseEvent) => {
         if (mouseGestureToProgram) {
@@ -990,34 +895,28 @@ export function TerminalView({
           sendMouse(e, "release", lastMotionCell ?? cellOf(e));
           return;
         }
-        stopAutoscroll();
-        if (anchor && !dragged) {
-          void select("clear");
-          lastCopiedGesture = null;
-          // Deliver the click the program was owed (held back at mousedown).
-          if (clickToProgram && pressCell && mouseToProgram(e)) {
-            sendMouse(e, "press", pressCell);
-            sendMouse(e, "release", pressCell);
-          }
-        } else if (anchor && dragged) {
-          // This fires for every window mouseup in every pooled pane, and a
-          // stale `dragged` re-copied this pane's old selection on each one.
-          maybeCopyOnSelect("drag", null);
-        }
-        anchor = null;
-        pressCell = null;
-        dragPoint = null;
-        dragged = false;
+        // Every pooled pane hears this; `dragging` says which owns it.
+        if (!dragging) return;
+        dragging = false;
+        // The click the program was owed, held back at mousedown.
+        const owed = clickToProgram && pressCell && mouseToProgram(e) ? pressCell : null;
         clickToProgram = false;
+        pressCell = null;
+        void pointer("release", e).then(() => {
+          // No dedup needed: a completed gesture is discrete, and `term_copy`
+          // writes nothing when it left no selection (a plain click clears).
+          if (copyOnSelectRef.current) void copySelection();
+          if (owed) {
+            sendMouse(e, "press", owed);
+            sendMouse(e, "release", owed);
+          }
+        });
       };
       const onMouseLeave = () => setHoveredLink(null);
       // OSC 52 writes are gated to the focused terminal in the backend.
       const setFocus = (focused: boolean) => void invoke("term_focus", { termId, focused });
       const onFocus = () => setFocus(true);
-      const onBlur = () => {
-        setFocus(false);
-        lastCopiedGesture = null;
-      };
+      const onBlur = () => setFocus(false);
 
       input.addEventListener("keydown", onKeyDown);
       input.addEventListener("keyup", onKeyUp);
@@ -1032,7 +931,6 @@ export function TerminalView({
       window.addEventListener("mousemove", onWindowMouseMove);
       window.addEventListener("mouseup", onMouseUp);
       disposers.push(() => {
-        stopAutoscroll();
         input.removeEventListener("keydown", onKeyDown);
         input.removeEventListener("keyup", onKeyUp);
         input.removeEventListener("paste", onPaste);
