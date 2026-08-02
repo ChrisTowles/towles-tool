@@ -6,185 +6,48 @@ user-invocable: true
 
 # Visual design — the app-wide language
 
-Grew out of the folder rail and now governs every surface; the rail remains
-its densest example.
+Neutral grayscale shadcn base; hue is a budget spent on exactly three things:
+**status**, **attention**, **identity**. Everything else is type, spacing, and
+restraint. The full rendition — Agentboard anatomy (the named UI parts), live
+specimens, token/recipe tables, the ΔE rationale — is
+[visual-design.html](visual-design.html); read it before styling anything new.
 
-Neutral grayscale shadcn base (`apps/client/src/index.css`); a hue is added
-only to carry agent status, attention, or identity (the [identity
-wash](#identity-wash-which-reporcheckout-is-this) below), never decoration.
+## The rules that bite
 
-**Hierarchy:** repo (1..N folders: clone/worktree/task) → folder (1..N
-sessions) → session (`✦` Claude agent or `❯` zsh shell). Solo-repo folders
-collapse repo+folder into one header. Attention bubbles up session→folder→repo.
-Never flatten this.
+- **Status dots mirror `statusColor()`** (`lib/agentboard.ts`) exactly; a new
+  color implies a new state. Busy is cyan (never amber/yellow — that's the
+  needs-you accent); interrupted is orange-800 (orange-500 sits inside both
+  amber's and red's confusion radius). Before adding/tuning any hue, check
+  OKLab ΔE by hand against every color it can sit next to; under ~15 between
+  co-occurring colors is a real risk, not a nitpick.
+- **Amber = needs-you, violet = agent-ness/focus.** A needs-you row gets the
+  full treatment — `border-l-2 border-l-amber-500`, row-wide `bg-amber-500/10`
+  (`/15` hover), flag dot beside the status dot; a thin border alone was
+  tested and rejected. When a row is both active and needs-you, amber wins the
+  border and fill; violet stays on the glyph.
+- **Identity wash** (`identityColor()`, `lib/identity-color.ts`): a surface
+  that *is* one repo/checkout wears its hashed accent as a /10 wash. Key by
+  what the surface identifies — checkout for the app header, repo for the
+  working-context band — and never mix keys on one surface. Absence is a
+  state: an unwashed header *means* main checkout. Status and attention always
+  render unchanged on top.
+- **A box is a control or an alert, never a fact.** Rail facts (diff counts,
+  branch, base-moved) are bare `font-mono`; the box arrives on hover. Only
+  needs-you, port drift, safe-to-delete and deleting keep a resting box. A
+  pane header (one toolbar, room to spare) keeps the bordered, worded form.
+- **Hierarchy:** repo → folder → session (`✦` agent / `❯` shell); attention
+  bubbles up, and a deeper level never outranks its parent.
+- **Type:** sans (Geist, 13px base) for chrome; `font-mono` for everything
+  git/shell-owned — branches, ±diff stats, timestamps, counts, glyphs.
+- **Don't animate resting UI** — `animate-pulse` is only a live,
+  currently-true nudge (the busy dot), never a passive fact or rollup.
+- **Tailwind + shadcn tokens only** — no raw colors, no hand-written CSS, so
+  light and dark both work.
 
-## Neutral tokens
-| Role | Class |
-|---|---|
-| Background | `bg-background` |
-| Card/header/terminal chrome | `bg-card` |
-| Hover (row on `bg-card`) | `hover:bg-accent/50` |
-| Hover (row on bare `bg-background`) | `bg-accent` (full — `/50` misreads as a header at dark-mode lightness) |
-| Active/selected row | `bg-accent` |
-| Divider | `border-border` |
-| Primary / secondary / faint text | `text-foreground` / `text-muted-foreground` / `text-muted-foreground/60` |
+## Source of truth
 
-Radius: cards/panels `rounded-lg`, chips/badges/tabs `rounded-md`, dots circular.
-
-**A box is a control or an alert, never a fact.** In a rail row — repeated
-dozens of times down a column whose whole job is to be scanned — a fact (diff
-counts, branch, base-moved, a pane-open button) is bare `font-mono` type, and
-the border/fill arrives on `hover:` where "is this clickable?" is the question
-being asked; icon buttons take the ghost variant. Only needs-you, port drift,
-safe-to-delete and deleting keep a resting box. A *pane header* is the
-opposite case (one toolbar on screen, room to spare) and keeps the bordered,
-worded form. A surface that boxes everything ranks nothing.
-
-## Status dots — mirror `statusColor()` in `apps/client/src/lib/agentboard.ts` exactly
-| `AgentStatus` | class |
-|---|---|
-| `busy` | `bg-cyan-500` (`animate-pulse` while live only) — deliberately *not* amber/yellow, which reads as the needs-you accent below |
-| `waiting` | `bg-blue-500` |
-| `error` | `bg-red-500` |
-| `complete` | `bg-green-500` |
-| `interrupted` | `bg-orange-800` — not orange-500, which sits inside amber-500's *and* red-500's confusion radius (OKLab ΔE ~10); an unseen interrupted session shows this dot inside an amber-washed needs-you row, so it must stay clearly not-amber |
-| `idle` (default) | `bg-muted-foreground/40` |
-
-Dot = `size-2 rounded-full`.
-
-When adding or re-tuning a status/accent color, don't eyeball hue distance —
-check OKLab ΔE by hand against the full set of colors that can appear
-adjacent (status dots + amber + violet). A normal-vision ΔE under ~15 between
-two colors that can co-occur is a real risk, not a nitpick — that's how the
-original yellow/amber busy bug and the orange/amber interrupted bug both got in.
-
-## Two accent hues, one rule each
-- **Amber (`amber-500`)** = needs-you (`status ∈ {waiting, error}` + failing
-  PRs). A needs-you *row* (session list) gets the full treatment: left border
-  `border-l-2 border-l-amber-500`, a row-wide wash `bg-amber-500/10`
-  (`/15` on hover), and a flag dot `bg-amber-500` sitting right after the
-  status dot — in the same glance as the glyph and name, not stranded at the
-  row's far edge. A thin border alone was tested and rejected: it reads as a
-  decoration you have to go looking for, not an alert. A needs-you *badge*
-  (folder/repo aggregate count, not a full row) stays the lighter chip:
-  `text-amber-500 border border-amber-500/50 bg-amber-500/10`.
-- **Violet (`violet-500`)** = agent-ness / currently focused. Agent glyph `✦`,
-  active row `border-l-2 border-l-violet-500 bg-accent`, `+ session` action,
-  terminal prompt caret.
-- If a row is both active and needs-you: **amber wins the border and the
-  fill**; show violet elsewhere (glyph, tab). Needs-you is the rarer, more
-  urgent signal — "this is where you're currently looking" is redundant once
-  you're looking at it.
-
-## Identity wash — "which repo/checkout is this?"
-
-The third sanctioned use of hue, named **identity wash**: a surface that *is*
-one repo or checkout carries that identity's hashed accent as a translucent
-wash, so window/pane identity reads peripherally — before any text.
-`identityColor(key)` in `apps/client/src/lib/identity-color.ts` is the single
-source: six literal Tailwind accents (blue/emerald/amber/violet/rose/cyan),
-picked by hashing a stable key so one identity keeps its hue everywhere.
-
-- **Key by what the surface identifies.** The app header washes by the
-  *checkout* (`task_label`) — it answers "which window is this". The
-  working-context band washes by the *repo* (`repo.name`) — it answers "which
-  repo am I looking at". Don't mix the two on one surface.
-- **Recipe:** `wash` = `bg-<hue>-500/10 border-b-<hue>-500/40` on the surface;
-  `badge` for its name chip; `text` for an inline readout. Text on a wash stays
-  token-colored (`text-foreground`/`muted`) — the wash is background, not ink.
-- **Absence is a state.** The main checkout's app header stays unwashed: a
-  colored header *means* "task worktree". Don't wash neutral/global surfaces.
-- **Status and attention always win.** Amber needs-you rows, status dots, and
-  the violet active accent render unchanged on top of a wash; never restyle
-  them per-identity. (Amber and violet appearing in the identity palette is
-  fine — the wash is /10 background, far below the accents' contrast.)
-- Paired with words where kind matters: the header's dead-center
-  `MAIN CHECKOUT` (sky) / `TASK WORKTREE` (accent) readout says the state
-  outright rather than asking the user to decode a hue.
-
-## Level ladder (never let a deeper level outrank its parent)
-| Level | Glyph | Weight | Indent |
-|---|---|---|---|
-| Repo | `FolderGit2`, `text-muted-foreground` | `font-semibold text-foreground` | `px-3` |
-| Folder | `Folder`, `/70` | `font-medium text-muted-foreground` | `pl-6` |
-| Session | `✦` violet / `❯` `/60` | normal (`text-foreground` if live) | `pl-9` + `ml-1.5` |
-
-Every header row (repo, folder, or a solo-repo's collapsed header) gets
-`border-b border-border` so it reads as a header band, not a session row.
-
-## Typography
-- Sans (Geist Variable) for UI chrome, 13px base.
-- `font-mono` for anything git/shell-owned: branch names, `+/−` diff stats,
-  timestamps, counts, keyboard hints, `✦`/`❯`, terminal content.
-- Diff stats: `text-green-500 +N` / `text-red-500 −N`, mono.
-
-## Component recipes
-```tsx
-// status dot
-<span className={cn("size-2 rounded-full", statusColor(status), live && "animate-pulse")} />
-
-// session row — a real <button> can't be used here: this row contains its
-// own interactive descendants (inline rename input, trailing action
-// buttons), which is invalid inside <button> and React only reports at
-// runtime, not via lint/tsc/tests. Use a div with role="button" instead.
-<div
-  role="button"
-  tabIndex={0}
-  onClick={onSelect}
-  onKeyDown={(e) => e.key === "Enter" && onSelect()}
-  className={cn(
-    "flex items-center gap-2.5 py-1.5 pr-3 pl-9 cursor-pointer border-l-2 border-transparent",
-    hovered && !needsYou && "bg-accent",
-    active && !needsYou && "bg-accent border-l-violet-500",
-    // needs-you wins the edge AND the fill over hover/active — see "Two accent
-    // hues" above for why a thin border alone isn't enough.
-    needsYou && "border-l-amber-500 bg-amber-500/10",
-    needsYou && hovered && "bg-amber-500/15",
-  )}
->
-  <span className={cn("font-mono text-xs w-4 text-center",
-    type === "agent" ? "text-violet-500" : "text-muted-foreground/60")}>
-    {type === "agent" ? "✦" : "❯"}
-  </span>
-  <span className={cn("size-2 rounded-full", statusColor(status))} />
-  {needsYou && <span className="size-1.5 rounded-full bg-amber-500" />}
-  <span className="text-foreground">{name}</span>
-  <span className="ml-auto text-[11px] text-muted-foreground">{message}</span>
-</div>
-
-// folder count badge (needs-you)
-<span className="rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5 font-mono text-[10.5px] text-amber-500">
-  {n} ⚑
-</span>
-
-// branch + diff stats
-<span className="font-mono text-[11px] text-muted-foreground">⎇ {branch}</span>
-<span className="font-mono text-[11px] text-green-500">+{add}</span>
-<span className="font-mono text-[11px] text-red-500">−{del}</span>
-```
-
-## Do / Don't
-- Do drive every hue from `statusColor()` or the amber/violet rules above —
-  a new color implies a new *status*, question it.
-- Do use shadcn tokens (not raw colors) so light + dark both work.
-- Don't hand-write CSS/CSS-in-JS — Tailwind + shadcn only (`npx shadcn@latest add <name>`).
-- Don't animate resting UI — `animate-pulse` is reserved for a live, currently-
-  true nudge (the busy dot; the cache badge's "cold and worth compacting"
-  pill), never a passive fact or a summary/rollup count.
-- Don't let violet (focus) override amber (attention) on a row's border.
-
-## Source of truth in the app
-`apps/client/src/lib/agentboard.ts` (`statusColor()`, types) ·
-`apps/client/src/components/agentboard-folder-header.tsx` (a checkout's row) ·
-`apps/client/src/components/agentboard-session-row.tsx` (a session's row; the
-rail's other pieces are its `agentboard-*` siblings) ·
-`apps/client/src/components/header-status.tsx` (needs-you math) ·
-`apps/client/src/lib/identity-color.ts` (the identity wash accents) ·
-`apps/client/src/index.css` (token definitions).
-
-A browsable rendition of this language — Agentboard anatomy (the named UI
-parts), live specimens, the identity wash — is
-[docs/reference/visual-design.html](../../../docs/reference/visual-design.html).
-
-For behavior/flow rules (confirmations, error copy, when something needs a
-setting) rather than look, see the `ui-rules` skill.
+`lib/agentboard.ts` (`statusColor()`) · `lib/identity-color.ts` (identity
+wash) · `components/app-header.tsx` · the `agentboard-*` row files ·
+`components/header-status.tsx` (needs-you math) · `src/index.css` (tokens).
+Behavior/flow rules (confirmations, error copy, settings) are the `ui-rules`
+skill, not here.

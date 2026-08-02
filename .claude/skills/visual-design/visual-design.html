@@ -460,7 +460,46 @@
   </section>
 
   <section>
-    <h2><span class="sec">07</span>Do / Don't</h2>
+    <h2><span class="sec">07</span>Neutral tokens, radius, and recipes</h2>
+    <div class="tablewrap"><table>
+      <tr><th>role</th><th>class</th></tr>
+      <tr><td>Background / card &amp; chrome</td><td><code>bg-background</code> / <code>bg-card</code></td></tr>
+      <tr><td>Hover on <code>bg-card</code> row</td><td><code>hover:bg-accent/50</code></td></tr>
+      <tr><td>Hover on bare <code>bg-background</code> row</td><td><code>bg-accent</code> full — <code>/50</code> misreads as a header at dark-mode lightness</td></tr>
+      <tr><td>Active/selected row</td><td><code>bg-accent</code></td></tr>
+      <tr><td>Divider</td><td><code>border-border</code></td></tr>
+      <tr><td>Primary / secondary / faint text</td><td><code>text-foreground</code> / <code>text-muted-foreground</code> / <code>text-muted-foreground/60</code></td></tr>
+      <tr><td>Radius</td><td>cards/panels <code>rounded-lg</code> · chips/badges/tabs <code>rounded-md</code> · dots circular</td></tr>
+      <tr><td>Needs-you badge (aggregate chip)</td><td><code>text-amber-500 border border-amber-500/50 bg-amber-500/10</code></td></tr>
+    </table></div>
+    <pre><code>// status dot — mirror statusColor() exactly
+&lt;span className={cn("size-2 rounded-full", statusColor(status), live &amp;&amp; "animate-pulse")} /&gt;
+
+// session row — NOT a &lt;button&gt;: it contains interactive descendants (inline
+// rename input, trailing actions), invalid inside &lt;button&gt; and reported by
+// React only at runtime. div + role="button" + keyboard handler instead.
+&lt;div role="button" tabIndex={0} onClick={onSelect}
+  onKeyDown={(e) =&gt; e.key === "Enter" &amp;&amp; onSelect()}
+  className={cn(
+    "flex items-center gap-2.5 py-1.5 pr-3 pl-9 cursor-pointer border-l-2 border-transparent",
+    hovered &amp;&amp; !needsYou &amp;&amp; "bg-accent",
+    active &amp;&amp; !needsYou &amp;&amp; "bg-accent border-l-violet-500",
+    needsYou &amp;&amp; "border-l-amber-500 bg-amber-500/10",   // amber wins edge AND fill
+    needsYou &amp;&amp; hovered &amp;&amp; "bg-amber-500/15",
+  )}&gt;
+
+// folder needs-you count badge
+&lt;span className="rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5
+  font-mono text-[10.5px] text-amber-500"&gt;{n} ⚑&lt;/span&gt;
+
+// branch + diff stats — bare mono facts, no box
+&lt;span className="font-mono text-[11px] text-muted-foreground"&gt;⎇ {branch}&lt;/span&gt;
+&lt;span className="font-mono text-[11px] text-green-500"&gt;+{add}&lt;/span&gt;
+&lt;span className="font-mono text-[11px] text-red-500"&gt;−{del}&lt;/span&gt;</code></pre>
+  </section>
+
+  <section>
+    <h2><span class="sec">08</span>Do / Don't</h2>
     <div class="dont">
       <div class="card"><span class="tag">do</span><p>Drive every hue from <code>statusColor()</code>,
         the amber/violet rules, or <code>identityColor()</code>. A new color implies a new meaning —
@@ -476,7 +515,7 @@
   </section>
 
   <section>
-    <h2><span class="sec">08</span>Source of truth</h2>
+    <h2><span class="sec">09</span>Source of truth</h2>
     <div class="tablewrap"><table>
       <tr><th>file</th><th>owns</th></tr>
       <tr><td><code>lib/agentboard.ts</code></td><td><code>statusColor()</code>, agent status types</td></tr>
