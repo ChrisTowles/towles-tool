@@ -81,10 +81,9 @@ const MAX_STACKED_REPOS = 4;
  * the amber outlier treatment — "this one is not like the others". */
 const OUTLIER_FACTOR = 5;
 
-/** CVD-validated categorical palette (carried over from the retired HTML
- * report, `dataviz`-skill validated). This screen is a data-exploration
- * surface: hue encodes series identity here, a sanctioned exception to the
- * app's hue-is-for-status default. */
+/** CVD-validated categorical palette (from the retired HTML report). Hue
+ * encodes series identity on this data-exploration screen — a sanctioned
+ * exception to the app's hue-is-for-status default. */
 const PALETTE = [
   "#3987e5", // blue
   "#008300", // green
@@ -165,18 +164,25 @@ function useEChart(render: (chart: echarts.ECharts) => void, deps: unknown[]) {
     let chart: echarts.ECharts | undefined;
     let observer: ResizeObserver | undefined;
     let cancelled = false;
-    // A tab switch mounts this container before layout has settled, so the
-    // container can be 0×0 at echarts.init() time. A ResizeObserver catches
-    // the first real layout pass, not just later window-level resizes.
     const onResize = () => chart?.resize();
     // echarts is code-split; init once it lands, unless the effect already
     // cleaned up (fast tab switch / dep change) while the import was in flight.
     void import("echarts").then((echarts) => {
       if (cancelled || !ref.current) return;
-      chart = echarts.init(el);
-      render(chart);
+      // A hidden or pre-layout mount is 0×0, and echarts.init() at 0×0 warns
+      // and draws nothing — defer init to the ResizeObserver's first real
+      // layout pass (screens stay mounted `hidden`, so this can be minutes).
+      const initWhenSized = () => {
+        if (chart || el.clientWidth === 0 || el.clientHeight === 0) return;
+        chart = echarts.init(el);
+        render(chart);
+      };
+      initWhenSized();
       window.addEventListener("resize", onResize);
-      observer = new ResizeObserver(onResize);
+      observer = new ResizeObserver(() => {
+        initWhenSized();
+        chart?.resize();
+      });
       observer.observe(el);
     });
     return () => {
@@ -319,10 +325,9 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
   return <div ref={ref} style={{ height: 240 }} />;
 }
 
-/** A horizontal ranked bar chart: identity on the axis label, one palette hue
- * per rank (rows are sorted descending, matching the day-stack's ordering so
- * a repo keeps its hue across both charts). Each row is labelled with its
- * tokens and estimated cost. */
+/** Horizontal ranked bars, one palette hue per rank — sorted descending to
+ * match the day-stack's ordering, so a repo keeps its hue across both charts;
+ * each row labelled with tokens and estimated cost. */
 function RankedBarChart({
   bars,
 }: {
@@ -408,10 +413,9 @@ function localDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** The grid's date span: the selected window (`days`, `"0"` = all time)
- * ending today. The backend already clips `byDay`/`byDayHour` to this same
- * window per-prompt (not just per-session mtime — see `build_cadence`'s doc
- * comment), so this only needs to mirror that window for the axis. */
+/** The selected window (`"0"` = all time) ending today. The backend clips
+ * `byDay`/`byDayHour` to the same window per-prompt (see `build_cadence`), so
+ * this only mirrors that window for the axis. */
 function dateRange(daysSel: string, byDay: CadenceSummary["byDay"]): [string, string] {
   const today = new Date();
   const end = localDateStr(today);
@@ -468,11 +472,8 @@ function lerpColor(a: string, b: string, t: number): string {
 }
 
 /** Quantile (equal-*count*, not equal-value) bins over the nonzero counts, so
- * a heavily skewed distribution — a handful of marathon hours against many
- * 1-2-prompt hours — still spreads across the gradient instead of every cell
- * but the outliers landing in one bucket. Up to 9 bins (10 total ranges once
- * the zero piece is added), fewer only when the data has too little spread
- * to fill that many distinct boundaries. */
+ * a skewed distribution still spreads across the gradient. Up to 9 bins,
+ * fewer when the data has too few distinct boundaries. */
 function buildCountPieces(counts: number[]): { min: number; max: number; color: string }[] {
   const nonzero = counts.filter((c) => c > 0);
   if (nonzero.length === 0) return [];
@@ -492,15 +493,9 @@ function buildCountPieces(counts: number[]): { min: number; max: number; color: 
   });
 }
 
-/** Punch-card heat map: one column per day (oldest on the left, so the axis
- * reads left-to-right as time passing), one row per hour, one block per
- * cell. Every (day, hour) pair is included — even zero-prompt ones — and
- * rendered white via `visualMap.outOfRange` (`min: 1` puts zero cells
- * outside the mapped range), so an empty cell reads as "no prompts" rather
- * than disappearing into the page background. Fixed square cells via the
- * grid's own pixel `width`/`height` (not `left`+`right`, which would give
- * echarts a fixed box and it'd silently re-stretch the cells to fill it —
- * the same trap the calendar-coordinate version of this chart hit before). */
+/** Punch-card heat map: a column per day (oldest left), a row per hour; zero
+ * cells stay included and render white. Square cells via the grid's pixel
+ * `width`/`height` — `left`+`right` makes echarts re-stretch cells to fill. */
 function DayHourHeatmap({
   byDayHour,
   range,
@@ -521,13 +516,9 @@ function DayHourHeatmap({
       const card = cssVar("--card");
 
       const countByCell = new Map(byDayHour.map((c) => [`${c.date}|${c.hour}`, c.count]));
-      // Cells are fully opaque, so a background layer behind them (tried
-      // `markArea`, then `xAxis.splitArea` — neither rendered, and once this
-      // was understood as an opacity problem rather than an API one, the fix
-      // is obvious: verified live that both are simply painted over). A
-      // per-cell border is the one cue that survives on top — amber for a
-      // weekend day, teal for an 8am–5pm weekday hour (the two are mutually
-      // exclusive, so no cell needs both).
+      // Cells are fully opaque and paint over any background layer (markArea
+      // and xAxis.splitArea both verified painted-over live); a per-cell
+      // border is the one cue that survives — amber weekend, teal work hour.
       const data: { value: [number, number, number]; itemStyle?: { borderColor: string } }[] = [];
       days.forEach((date, dayIndex) => {
         const weekend = isWeekend(date);
@@ -555,12 +546,9 @@ function DayHourHeatmap({
             }`,
         },
         visualMap: {
-          // Piecewise, not continuous: a continuous visualMap with `min: 1`
-          // and an explicit `outOfRange` still painted every zero cell the
-          // same as the nonzero low end (verified live — `outOfRange` never
-          // took effect regardless of `color` shape or `dimension`).
-          // Piecewise pieces are colored independently with no such
-          // fallback, so the zero piece reliably renders white.
+          // Piecewise, not continuous: with `min: 1` a continuous visualMap
+          // still painted zero cells like the nonzero low end (verified live —
+          // `outOfRange` never took effect); piecewise zero renders white.
           type: "piecewise",
           dimension: 2,
           show: false,
@@ -1085,10 +1073,9 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
   );
 }
 
-/** Ranked waste findings for the window — answer-first: each card names one
- * session, one number, and why it matters. Fetches only while this tab is
- * the active one (a `days` change on another tab is picked up on the next
- * activation). */
+/** Ranked waste findings — answer-first: each card names one session, one
+ * number, and why it matters. Fetches only while this tab is active; a `days`
+ * change elsewhere is picked up on the next activation. */
 function InsightsTab({ days, nonce, active }: { days: string; nonce: number; active: boolean }) {
   const [insights, setInsights] = useState<ClaudeSessionInsight[] | null>(null);
   const [loading, setLoading] = useState(false);

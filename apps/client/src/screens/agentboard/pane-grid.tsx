@@ -145,10 +145,8 @@ export function PaneGrid(props: {
               onClick={() => onSelectSession(folderOf.get(id)?.dir ?? cwds.current[id] ?? "", id)}
               className={cn(
                 "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
-                // Amber (needs-you) wins the border over violet (focus) when both apply — see
-                // the folder-rail-ui skill's "Two accent hues" rule; class order here matters
-                // because `cn` (tailwind-merge) keeps only the last conflicting border-color
-                // utility.
+                // Amber (needs-you) beats violet (focus) — the visual-design
+                // rule; order matters, tailwind-merge keeps the last border-color.
                 focusedPaneId === id && "border-violet-500/60",
                 termAttention[id] && "border-amber-500/70",
               )}

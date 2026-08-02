@@ -1,20 +1,6 @@
-/**
- * Parsers for replies coming back over `browser.tauri.execute`.
- *
- * The bridge types `core.invoke` as `(command, ...args) => Promise<unknown>` —
- * it can't know a command's payload shape, and unlike the frontend there is no
- * Zod schema here to lean on. These narrow at the test boundary so a backend
- * contract change fails as a named assertion rather than as an `undefined`
- * dereference three lines later.
- */
-
-/** Narrow an IPC reply to a string. */
-export function expectString(value: unknown, command: string): string {
-  if (typeof value !== "string") {
-    throw new TypeError(`${command} should answer a string, got ${describe(value)}`);
-  }
-  return value;
-}
+/** Narrowers for `browser.tauri.execute` replies. The bridge types `core.invoke`
+ * as answering `unknown` and there is no Zod here, so these make a backend
+ * contract change fail as a named assertion, not an `undefined` dereference. */
 
 /** Narrow an IPC reply to an array. */
 export function expectArray(value: unknown, command: string): unknown[] {

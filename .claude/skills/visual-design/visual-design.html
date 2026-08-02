@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towles Tool — Visual Design</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --card: #f5f6f8;
+    --border: #e3e6ea;
+    --fg: #16181d;
+    --muted: #5c6470;
+    --faint: #9aa1ac;
+    --amber: #d97706;
+    --violet: #7c3aed;
+    --sky: #0284c7;
+    --cyan: #0891b2;
+    --blue: #2563eb;
+    --red: #dc2626;
+    --green: #16a34a;
+    --orange8: #9a3412;
+    --id-blue: #2563eb;   --id-blue-bg: rgba(59,130,246,.10);
+    --id-emerald: #059669; --id-emerald-bg: rgba(16,185,129,.10);
+    --id-amber: #d97706;  --id-amber-bg: rgba(245,158,11,.10);
+    --id-violet: #7c3aed; --id-violet-bg: rgba(139,92,246,.10);
+    --id-rose: #e11d48;   --id-rose-bg: rgba(244,63,94,.10);
+    --id-cyan: #0891b2;   --id-cyan-bg: rgba(6,182,212,.10);
+    --code-bg: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0c10; --card: #11141a; --border: #262b33;
+      --fg: #e6e9ee; --muted: #8b93a1; --faint: #566070;
+      --amber: #f59e0b; --violet: #a78bfa; --sky: #38bdf8;
+      --cyan: #22d3ee; --blue: #60a5fa; --red: #f87171;
+      --green: #4ade80; --orange8: #c2612b;
+      --id-blue: #93c5fd; --id-emerald: #6ee7b7; --id-amber: #fcd34d;
+      --id-violet: #c4b5fd; --id-rose: #fda4af; --id-cyan: #67e8f9;
+      --code-bg: #0e1116;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0c10; --card: #11141a; --border: #262b33;
+    --fg: #e6e9ee; --muted: #8b93a1; --faint: #566070;
+    --amber: #f59e0b; --violet: #a78bfa; --sky: #38bdf8;
+    --cyan: #22d3ee; --blue: #60a5fa; --red: #f87171;
+    --green: #4ade80; --orange8: #c2612b;
+    --id-blue: #93c5fd; --id-emerald: #6ee7b7; --id-amber: #fcd34d;
+    --id-violet: #c4b5fd; --id-rose: #fda4af; --id-cyan: #67e8f9;
+    --code-bg: #0e1116;
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --card: #f5f6f8; --border: #e3e6ea;
+    --fg: #16181d; --muted: #5c6470; --faint: #9aa1ac;
+    --amber: #d97706; --violet: #7c3aed; --sky: #0284c7;
+    --cyan: #0891b2; --blue: #2563eb; --red: #dc2626;
+    --green: #16a34a; --orange8: #9a3412;
+    --id-blue: #2563eb; --id-emerald: #059669; --id-amber: #d97706;
+    --id-violet: #7c3aed; --id-rose: #e11d48; --id-cyan: #0891b2;
+    --code-bg: #eef0f3;
+  }
+
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.6 ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+    margin: 0; padding: 3rem 1.25rem 5rem;
+  }
+  .mono { font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace; }
+  main { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 3rem; }
+
+  header.masthead { display: flex; flex-direction: column; gap: .75rem; }
+  .eyebrow {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  h1 { font-size: 2rem; line-height: 1.15; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+  .thesis { color: var(--muted); max-width: 60ch; margin: 0; }
+  .thesis strong { color: var(--fg); }
+
+  section { display: flex; flex-direction: column; gap: 1rem; }
+  h2 { font-size: 1.2rem; margin: 0; letter-spacing: -.005em; }
+  h2 .sec { color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: .85rem; margin-right: .5rem; }
+  p { margin: 0; max-width: 68ch; }
+  p.note { color: var(--muted); font-size: 13px; }
+  code {
+    font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: .92em; background: var(--code-bg);
+    border: 1px solid var(--border); border-radius: 4px; padding: .05em .35em;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .9rem 1rem; overflow-x: auto; margin: 0;
+    font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.55;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .tablewrap { overflow-x: auto; }
+  th, td { text-align: left; padding: .45rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+  }
+  td code { white-space: nowrap; }
+
+  /* ——— specimens ——— */
+  .specimen {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--bg);
+  }
+  .specimen-label {
+    font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint);
+    padding: .4rem .8rem; border-bottom: 1px solid var(--border); background: var(--card);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; flex-shrink: 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: .1rem .6rem; font-size: 12px; height: 20px; white-space: nowrap;
+  }
+
+  .appbar {
+    display: flex; align-items: center; gap: .6rem;
+    height: 44px; padding: 0 .75rem; border-bottom: 1px solid var(--border);
+    font-size: 13px; position: relative;
+  }
+  .appbar .title { font-weight: 600; }
+  .appbar .center {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: .5rem; white-space: nowrap;
+  }
+  .kind {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 600;
+    display: inline-flex; gap: .35rem; align-items: center;
+  }
+  .clock { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  .sep { color: var(--faint); }
+
+  .row {
+    display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem .45rem 2.2rem;
+    border-left: 2px solid transparent; font-size: 13px;
+  }
+  .row .glyph { font-family: ui-monospace, Menlo, monospace; width: 1rem; text-align: center; }
+  .row .msg { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+  .band { display: flex; flex-direction: column; gap: .15rem; padding: .55rem .9rem; border-bottom: 1px solid var(--border); }
+  .band .bt { font-weight: 600; font-size: 15px; }
+  .band .bs { font-size: 12px; color: var(--muted); display: flex; gap: .6rem; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .6rem; }
+  .swatch { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 11.5px; }
+  .swatch .fill { height: 44px; }
+  .swatch .cap { padding: .3rem .55rem; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; display: flex; flex-direction: column; gap: .4rem; }
+  .card h3 { margin: 0; font-size: .95rem; }
+  .card p { font-size: 12.5px; color: var(--muted); }
+  .hue { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+
+  ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .35rem; max-width: 68ch; }
+  li::marker { color: var(--faint); }
+
+  .dont { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+  .dont .card { border-left: 2px solid var(--green); }
+  .dont .card.no { border-left-color: var(--red); }
+  .dont .tag { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
+  .dont .card .tag { color: var(--green); }
+  .dont .card.no .tag { color: var(--red); }
+
+  /* ——— anatomy wireframe ——— */
+  .anatomy {
+    display: grid; gap: 2px; background: var(--border);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    grid-template-columns: 44px 220px 1fr;
+    grid-template-rows: 40px 52px 34px 1fr 30px;
+    grid-template-areas:
+      "hdr  hdr  hdr"
+      "nav  rail band"
+      "nav  rail strip"
+      "nav  rail grid"
+      "stat stat stat";
+    min-height: 340px; font-size: 11.5px;
+  }
+  .zone { background: var(--bg); position: relative; padding: .5rem .6rem; color: var(--muted); }
+  .zone .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 999px; margin-right: .4rem;
+    background: var(--fg); color: var(--bg);
+    font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 700;
+  }
+  .zone .zn { color: var(--fg); font-weight: 600; }
+  .zone.sub { border-top: 1px dashed var(--border); padding-left: 1.1rem; background: none; }
+  .zone .file { display: block; margin-top: .1rem; font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--faint); overflow-wrap: anywhere; }
+  .z-hdr { grid-area: hdr; } .z-nav { grid-area: nav; padding: .5rem .3rem; }
+  .z-rail { grid-area: rail; display: flex; flex-direction: column; padding: 0; }
+  .z-rail > div { padding: .45rem .6rem; }
+  .z-band { grid-area: band; } .z-strip { grid-area: strip; }
+  .z-grid { grid-area: grid; display: flex; flex-direction: column; }
+  .z-grid .panes { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .5rem .6rem; flex: 1; }
+  .z-grid .pane-cell { border: 1px dashed var(--border); border-radius: 6px; padding: .35rem .5rem; color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; }
+  .z-stat { grid-area: stat; }
+
+  @media (max-width: 640px) {
+    .anatomy { grid-template-columns: 36px 150px 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<main>
+  <header class="masthead">
+    <span class="eyebrow">towles-tool · apps/client · design reference</span>
+    <h1>The visual design language</h1>
+    <p class="thesis">A neutral grayscale shadcn ground where hue is a budget, spent on exactly three
+    things: <strong>status</strong> (what an agent is doing), <strong>attention</strong> (what needs
+    you), and <strong>identity</strong> (which repo or checkout this is). Everything else is type,
+    spacing, and restraint.</p>
+  </header>
+
+  <section>
+    <h2><span class="sec">00</span>Anatomy — the parts of the Agentboard, named</h2>
+    <p>The vocabulary the rest of this document (and the codebase) uses. One window is one
+    checkout's instance; the Agentboard is its cold-start screen.</p>
+    <div class="anatomy">
+      <div class="zone z-hdr"><span class="num">1</span><span class="zn">App header</span> — identity-washed by checkout · kind readout dead-center</div>
+      <div class="zone z-nav"><span class="num">2</span></div>
+      <div class="zone z-rail">
+        <div><span class="num">3</span><span class="zn">Rail</span></div>
+        <div class="zone sub"><span class="zn">Rail header</span> — REPOS, manage, tally</div>
+        <div class="zone sub"><span class="zn">Repo group</span> — one repo's subtree</div>
+        <div class="zone sub" style="padding-left:1.6rem"><span class="zn">Folder header</span> — one checkout's row</div>
+        <div class="zone sub" style="padding-left:2.1rem"><span class="zn">Session row</span> — ✦ agent / ❯ shell</div>
+        <div class="zone sub" style="padding-left:2.1rem"><span class="zn">Pane rows</span> — chat, views, window spine</div>
+      </div>
+      <div class="zone z-band"><span class="num">4</span><span class="zn">Working-context band</span> — identity-washed by repo · the rail's folder row at large size</div>
+      <div class="zone z-strip"><span class="num">5</span><span class="zn">Window strip</span> — window tabs · + window · + session</div>
+      <div class="zone z-grid">
+        <div style="padding:.45rem .6rem"><span class="num">6</span><span class="zn">Pane grid</span> — the active folder's active window</div>
+        <div class="panes">
+          <div class="pane-cell">terminal (pooled — owns a PTY)</div>
+          <div class="pane-cell">diff / files / preview (refetch on mount)</div>
+          <div class="pane-cell">jarvis (native Bevy surface)</div>
+          <div class="pane-cell">…</div>
+        </div>
+      </div>
+      <div class="zone z-stat"><span class="num">7</span><span class="zn">Status bar</span> — Doctor · usage meters · CPU/mem · version</div>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>#</th><th>part</th><th>owned by</th><th>what it is</th></tr>
+      <tr><td>1</td><td>App header</td><td><code>components/app-header.tsx</code></td>
+        <td>Persistent across all screens: sidebar toggle, title, checkout name chip, top-task chip;
+        dead-center the kind readout + clock; right the needs-you chip, collector dot, palette,
+        theme, zen, settings. Identity-washed by <em>checkout</em>.</td></tr>
+      <tr><td>2</td><td>Nav sidebar</td><td><code>components/app-sidebar.tsx</code></td>
+        <td>The only nav — icon strip (collapsed) or labeled list; screens stay mounted when you
+        switch away.</td></tr>
+      <tr><td>3</td><td>Rail</td><td><code>components/agentboard-rail.tsx</code> + the
+        <code>agentboard-*</code> row files</td>
+        <td>Resizable (300–760px) tree of repo group → folder header → session/pane rows; atoms in
+        <code>agentboard-bits.tsx</code>, rail chrome + rollup tally in the rail file itself,
+        header in <code>screens/agentboard/rail-header.tsx</code>.</td></tr>
+      <tr><td>4</td><td>Working-context band</td><td><code>components/agentboard-working-context.tsx</code></td>
+        <td>The focused checkout at full size: title, files/preview/jarvis openers, repo + branch +
+        diff line, actionable callouts (needs-you, port drift, safe-to-delete). Identity-washed by
+        <em>repo</em>.</td></tr>
+      <tr><td>5</td><td>Window strip</td><td><code>screens/agentboard/window-strip.tsx</code></td>
+        <td>Named windows within one checkout — each window is a pane layout; inline rename swaps
+        chip for input.</td></tr>
+      <tr><td>6</td><td>Pane grid</td><td><code>screens/agentboard/pane-grid.tsx</code></td>
+        <td>Renders the active folder's active window. Terminals come from a flat pool (a pane that
+        owns a process must outlive tab switches); diff/files/preview mount fresh; jarvis is a
+        compositor surface above the webview.</td></tr>
+      <tr><td>7</td><td>Status bar</td><td><code>components/status-bar.tsx</code></td>
+        <td>Doctor entry, usage meters (5h/week/model), CPU + memory, shell kind, version.</td></tr>
+    </table></div>
+    <p class="note">Not pictured: the update and DM banners slide in directly under the app header
+    (<code>App.tsx</code>); zen mode hides the header entirely.</p>
+  </section>
+
+  <section>
+    <h2><span class="sec">01</span>The three hue budgets</h2>
+    <div class="cols">
+      <div class="card">
+        <span class="hue" style="color:var(--cyan)">status</span>
+        <h3>Dots mirror <code>statusColor()</code></h3>
+        <p>Six agent states, one dot each, defined once in <code>lib/agentboard.ts</code>. Never
+        invent a seventh color — a new color implies a new state.</p>
+      </div>
+      <div class="card">
+        <span class="hue" style="color:var(--amber)">attention</span>
+        <h3>Amber needs-you, violet focus</h3>
+        <p>Amber = waiting / error / failing PRs. Violet = agent-ness and the row you're on.
+        Amber always wins the border and fill when both apply.</p>
+      </div>
+      <div class="card">
+        <span class="hue" style="color:var(--id-emerald)">identity</span>
+        <h3>The identity wash</h3>
+        <p>A surface that <em>is</em> one repo or checkout carries its hashed accent as a /10
+        wash — <code>identityColor()</code> in <code>lib/identity-color.ts</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="sec">02</span>Status dots</h2>
+    <div class="tablewrap"><table>
+      <tr><th>state</th><th>dot</th><th>class</th><th>why this hue</th></tr>
+      <tr><td class="mono">busy</td><td><span class="dot" style="background:var(--cyan)"></span></td>
+        <td><code>bg-cyan-500</code></td><td>deliberately not amber/yellow — that's the needs-you accent. <code>animate-pulse</code> only while live.</td></tr>
+      <tr><td class="mono">waiting</td><td><span class="dot" style="background:var(--blue)"></span></td>
+        <td><code>bg-blue-500</code></td><td></td></tr>
+      <tr><td class="mono">error</td><td><span class="dot" style="background:var(--red)"></span></td>
+        <td><code>bg-red-500</code></td><td></td></tr>
+      <tr><td class="mono">complete</td><td><span class="dot" style="background:var(--green)"></span></td>
+        <td><code>bg-green-500</code></td><td></td></tr>
+      <tr><td class="mono">interrupted</td><td><span class="dot" style="background:var(--orange8)"></span></td>
+        <td><code>bg-orange-800</code></td><td>orange-500 sits inside both amber's and red's confusion radius (OKLab ΔE ≈ 10); this one reads clearly not-amber inside an amber-washed row.</td></tr>
+      <tr><td class="mono">idle</td><td><span class="dot" style="background:var(--faint)"></span></td>
+        <td><code>bg-muted-foreground/40</code></td><td></td></tr>
+    </table></div>
+    <p class="note">When adding or re-tuning any accent, check OKLab ΔE by hand against every color
+    it can sit next to. A normal-vision ΔE under ~15 between co-occurring colors is how the
+    yellow/amber busy bug and the orange/amber interrupted bug both shipped.</p>
+  </section>
+
+  <section>
+    <h2><span class="sec">03</span>Attention: amber wins, violet yields</h2>
+    <div class="specimen">
+      <div class="specimen-label">session rows — idle · active (violet) · needs-you (amber)</div>
+      <div class="row">
+        <span class="glyph" style="color:var(--faint)">❯</span>
+        <span class="dot" style="background:var(--faint)"></span>
+        shell 1 <span class="msg">idle</span>
+      </div>
+      <div class="row" style="border-left-color:var(--violet); background:color-mix(in srgb, var(--fg) 7%, transparent)">
+        <span class="glyph" style="color:var(--violet)">✦</span>
+        <span class="dot" style="background:var(--cyan)"></span>
+        refactor-vt <span class="msg">running · 2m</span>
+      </div>
+      <div class="row" style="border-left-color:var(--amber); background:color-mix(in srgb, var(--amber) 10%, transparent)">
+        <span class="glyph" style="color:var(--violet)">✦</span>
+        <span class="dot" style="background:var(--blue)"></span>
+        <span class="dot" style="background:var(--amber); width:6px; height:6px"></span>
+        fix-scheduler <span class="msg">waiting on you · 4m</span>
+      </div>
+    </div>
+    <ul>
+      <li>A needs-you <em>row</em> gets the full treatment: <code>border-l-2 border-l-amber-500</code>,
+        a row-wide <code>bg-amber-500/10</code> wash, and a flag dot beside the status dot — in the
+        same glance as the name, never stranded at the row's far edge. A thin border alone was tested
+        and rejected: it reads as decoration, not an alert.</li>
+      <li>Violet marks agent-ness and the focused row (<code>✦</code>, active border, prompt caret).
+        When a row is both active and needs-you, amber takes the border and fill; violet stays on the
+        glyph. "You are here" is redundant once you're looking at it.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="sec">04</span>The identity wash</h2>
+    <p>The newest named pattern. Six literal Tailwind accents, picked by hashing a stable key, so one
+    identity keeps its hue everywhere it appears. The wash is background, not ink — text on it stays
+    token-colored, and status and attention render unchanged on top.</p>
+    <div class="swatches">
+      <div class="swatch"><div class="fill" style="background:var(--id-blue-bg); border-bottom:2px solid var(--id-blue)"></div><div class="cap">blue-500</div></div>
+      <div class="swatch"><div class="fill" style="background:var(--id-emerald-bg); border-bottom:2px solid var(--id-emerald)"></div><div class="cap">emerald-500</div></div>
+      <div class="swatch"><div class="fill" style="background:var(--id-amber-bg); border-bottom:2px solid var(--id-amber)"></div><div class="cap">amber-500</div></div>
+      <div class="swatch"><div class="fill" style="background:var(--id-violet-bg); border-bottom:2px solid var(--id-violet)"></div><div class="cap">violet-500</div></div>
+      <div class="swatch"><div class="fill" style="background:var(--id-rose-bg); border-bottom:2px solid var(--id-rose)"></div><div class="cap">rose-500</div></div>
+      <div class="swatch"><div class="fill" style="background:var(--id-cyan-bg); border-bottom:2px solid var(--id-cyan)"></div><div class="cap">cyan-500</div></div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-label">app header — keyed by checkout: main stays unwashed; a task worktree wears its accent</div>
+      <div class="appbar">
+        <span class="title">Towles Tool</span>
+        <span class="chip" style="color:var(--muted)"><span style="color:var(--sky)">⌂</span> towles-tool-rs</span>
+        <span class="center">
+          <span class="kind" style="color:var(--sky)">⌂ MAIN CHECKOUT</span>
+          <span class="sep">·</span><span class="clock">8:46 PM</span>
+        </span>
+      </div>
+      <div class="appbar" style="background:var(--id-cyan-bg); border-bottom-color:var(--id-cyan)">
+        <span class="title">Towles Tool</span>
+        <span class="chip" style="color:var(--id-cyan); border-color:color-mix(in srgb, var(--id-cyan) 40%, transparent); background:var(--id-cyan-bg)">⎇ feat-topbar-indicator</span>
+        <span class="center">
+          <span class="kind" style="color:var(--id-cyan)">⎇ TASK WORKTREE</span>
+          <span class="sep">·</span><span class="clock">8:46 PM</span>
+        </span>
+      </div>
+      <div class="appbar" style="background:var(--id-rose-bg); border-bottom:0; border-bottom-color:var(--id-rose)">
+        <span class="title">Towles Tool</span>
+        <span class="chip" style="color:var(--id-rose); border-color:color-mix(in srgb, var(--id-rose) 40%, transparent); background:var(--id-rose-bg)">⎇ fix-scheduler-race</span>
+        <span class="center">
+          <span class="kind" style="color:var(--id-rose)">⎇ TASK WORKTREE</span>
+          <span class="sep">·</span><span class="clock">8:46 PM</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-label">working-context band — keyed by repo: every checkout of one repo shares its hue</div>
+      <div class="band" style="background:var(--id-violet-bg)">
+        <span class="bt">toolbox</span>
+        <span class="bs mono"><span>p/</span><span style="color:var(--sky)">⎇ main</span><span>1 files <span style="color:var(--green)">+7</span> <span style="color:var(--red)">−7</span></span></span>
+      </div>
+      <div class="band" style="background:var(--id-cyan-bg); border-bottom:0">
+        <span class="bt">towles-tool-rs</span>
+        <span class="bs mono"><span>p/</span><span style="color:var(--muted)">⎇ feat/topbar-worktree-indicator</span><span>5 files <span style="color:var(--green)">+47</span> <span style="color:var(--red)">−53</span></span></span>
+      </div>
+    </div>
+
+    <ul>
+      <li><strong>Key by what the surface identifies.</strong> The app header answers "which window
+        is this" — keyed by checkout (<code>task_label</code>). The working-context band answers
+        "which repo am I looking at" — keyed by <code>repo.name</code>. Never mix keys on one surface.</li>
+      <li><strong>Absence is a state.</strong> The main checkout's header stays unwashed; a colored
+        header <em>means</em> task worktree. Don't wash neutral or global surfaces.</li>
+      <li><strong>Words where kind matters.</strong> The header pairs the wash with a dead-center
+        <code>MAIN CHECKOUT</code> / <code>TASK WORKTREE</code> readout — state the fact, don't make
+        the user decode a hue.</li>
+      <li><strong>Recipe.</strong> <code>wash</code> = <code>bg-&lt;hue&gt;-500/10 border-b-&lt;hue&gt;-500/40</code>
+        on the surface, <code>badge</code> for its name chip, <code>text</code> for an inline readout.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="sec">05</span>Hierarchy and the level ladder</h2>
+    <p>Repo (1..N folders: clone / worktree / task) → folder (1..N sessions) → session
+    (<code>✦</code> Claude agent or <code>❯</code> zsh shell). Attention bubbles up
+    session → folder → repo. Never flatten it, and never let a deeper level outrank its parent.</p>
+    <div class="tablewrap"><table>
+      <tr><th>level</th><th>glyph</th><th>weight</th><th>indent</th></tr>
+      <tr><td>Repo</td><td><code>FolderGit2</code> muted</td><td><code>font-semibold text-foreground</code></td><td><code>px-3</code></td></tr>
+      <tr><td>Folder</td><td><code>Folder</code> /70</td><td><code>font-medium text-muted-foreground</code></td><td><code>pl-6</code></td></tr>
+      <tr><td>Session</td><td><code>✦</code> violet / <code>❯</code> /60</td><td>normal, <code>text-foreground</code> if live</td><td><code>pl-9</code> + <code>ml-1.5</code></td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2><span class="sec">06</span>Boxes, type, and facts</h2>
+    <ul>
+      <li><strong>A box is a control or an alert, never a fact.</strong> In a rail row, facts (diff
+        counts, branch, base-moved) are bare <code>font-mono</code> type; the border arrives on hover,
+        where "is this clickable?" is the question being asked. Only needs-you, port drift,
+        safe-to-delete and deleting keep a resting box. A pane header — one toolbar, room to spare —
+        keeps the bordered, worded form. A surface that boxes everything ranks nothing.</li>
+      <li><strong>Mono is git's voice.</strong> Branch names, <span class="mono" style="color:var(--green)">+47</span>
+        <span class="mono" style="color:var(--red)">−53</span> diff stats, timestamps, counts,
+        keyboard hints, <code>✦</code>/<code>❯</code>, terminal content. Sans (Geist, 13px base) is
+        the app's own voice.</li>
+      <li><strong>Radius:</strong> cards/panels <code>rounded-lg</code>, chips/badges/tabs
+        <code>rounded-md</code>, dots circular.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="sec">07</span>Neutral tokens, radius, and recipes</h2>
+    <div class="tablewrap"><table>
+      <tr><th>role</th><th>class</th></tr>
+      <tr><td>Background / card &amp; chrome</td><td><code>bg-background</code> / <code>bg-card</code></td></tr>
+      <tr><td>Hover on <code>bg-card</code> row</td><td><code>hover:bg-accent/50</code></td></tr>
+      <tr><td>Hover on bare <code>bg-background</code> row</td><td><code>bg-accent</code> full — <code>/50</code> misreads as a header at dark-mode lightness</td></tr>
+      <tr><td>Active/selected row</td><td><code>bg-accent</code></td></tr>
+      <tr><td>Divider</td><td><code>border-border</code></td></tr>
+      <tr><td>Primary / secondary / faint text</td><td><code>text-foreground</code> / <code>text-muted-foreground</code> / <code>text-muted-foreground/60</code></td></tr>
+      <tr><td>Radius</td><td>cards/panels <code>rounded-lg</code> · chips/badges/tabs <code>rounded-md</code> · dots circular</td></tr>
+      <tr><td>Needs-you badge (aggregate chip)</td><td><code>text-amber-500 border border-amber-500/50 bg-amber-500/10</code></td></tr>
+    </table></div>
+    <pre><code>// status dot — mirror statusColor() exactly
+&lt;span className={cn("size-2 rounded-full", statusColor(status), live &amp;&amp; "animate-pulse")} /&gt;
+
+// session row — NOT a &lt;button&gt;: it contains interactive descendants (inline
+// rename input, trailing actions), invalid inside &lt;button&gt; and reported by
+// React only at runtime. div + role="button" + keyboard handler instead.
+&lt;div role="button" tabIndex={0} onClick={onSelect}
+  onKeyDown={(e) =&gt; e.key === "Enter" &amp;&amp; onSelect()}
+  className={cn(
+    "flex items-center gap-2.5 py-1.5 pr-3 pl-9 cursor-pointer border-l-2 border-transparent",
+    hovered &amp;&amp; !needsYou &amp;&amp; "bg-accent",
+    active &amp;&amp; !needsYou &amp;&amp; "bg-accent border-l-violet-500",
+    needsYou &amp;&amp; "border-l-amber-500 bg-amber-500/10",   // amber wins edge AND fill
+    needsYou &amp;&amp; hovered &amp;&amp; "bg-amber-500/15",
+  )}&gt;
+
+// folder needs-you count badge
+&lt;span className="rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5
+  font-mono text-[10.5px] text-amber-500"&gt;{n} ⚑&lt;/span&gt;
+
+// branch + diff stats — bare mono facts, no box
+&lt;span className="font-mono text-[11px] text-muted-foreground"&gt;⎇ {branch}&lt;/span&gt;
+&lt;span className="font-mono text-[11px] text-green-500"&gt;+{add}&lt;/span&gt;
+&lt;span className="font-mono text-[11px] text-red-500"&gt;−{del}&lt;/span&gt;</code></pre>
+  </section>
+
+  <section>
+    <h2><span class="sec">08</span>Do / Don't</h2>
+    <div class="dont">
+      <div class="card"><span class="tag">do</span><p>Drive every hue from <code>statusColor()</code>,
+        the amber/violet rules, or <code>identityColor()</code>. A new color implies a new meaning —
+        question it.</p></div>
+      <div class="card"><span class="tag">do</span><p>Use shadcn tokens, never raw colors, so light
+        and dark both work. Tailwind + shadcn only; no hand-written CSS.</p></div>
+      <div class="card no"><span class="tag">don't</span><p>Animate resting UI. <code>animate-pulse</code>
+        is reserved for a live, currently-true nudge — the busy dot — never a passive fact or a
+        rollup count.</p></div>
+      <div class="card no"><span class="tag">don't</span><p>Let violet (focus) override amber
+        (attention) on a row's edge, or restyle status dots per-identity. The budgets don't trade.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="sec">09</span>Source of truth</h2>
+    <div class="tablewrap"><table>
+      <tr><th>file</th><th>owns</th></tr>
+      <tr><td><code>lib/agentboard.ts</code></td><td><code>statusColor()</code>, agent status types</td></tr>
+      <tr><td><code>lib/identity-color.ts</code></td><td>the identity wash accents + hash</td></tr>
+      <tr><td><code>components/app-header.tsx</code></td><td>header wash, kind readout, name chip</td></tr>
+      <tr><td><code>components/agentboard-working-context.tsx</code></td><td>the repo-washed band</td></tr>
+      <tr><td><code>components/agentboard-folder-header.tsx</code> · <code>agentboard-session-row.tsx</code></td><td>a checkout's row · a session's row</td></tr>
+      <tr><td><code>components/header-status.tsx</code></td><td>needs-you math</td></tr>
+      <tr><td><code>src/index.css</code></td><td>token definitions</td></tr>
+      <tr><td><code>.claude/skills/visual-design/SKILL.md</code></td><td>this language, as the enforced cheat sheet</td></tr>
+    </table></div>
+    <p class="note">Behavior and flow rules (confirmations, error copy, when something needs a
+    setting) live in the <code>ui-rules</code> skill, not here.</p>
+  </section>
+</main>
+</body>
+</html>

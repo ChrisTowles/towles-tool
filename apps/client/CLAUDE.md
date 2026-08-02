@@ -7,24 +7,19 @@ read of the code won't surface.
 
 ## Three unrelated things are called "tab" in this repo
 
-- **Workspace tabs** — the open-screens bookkeeping in `useWorkspace()`
-  (`openTabs`/`activeTab`/`openTab`/`closeTab`, `src/lib/workspace.tsx`,
-  persisted via `src/lib/workspace-persistence.ts`). There's no visible tab
-  strip — the sidebar is the only nav UI — but screens still stay mounted in
-  the background when you switch away (e.g. an Agentboard terminal keeps
-  running), and `close-tab`/`next-tab`/`prev-tab`/`tab-1`…`9`
-  (`src/lib/shortcuts.tsx`) still operate on this set headlessly. This is
-  what "tab" means in most of this codebase's docs/comments.
-- **Settings' sub-tab panel** — the General/Appearance/Agentboard/etc. panes
-  inside the Settings screen, built on the vendored shadcn/Radix `Tabs`
-  primitive (`src/components/ui/tabs.tsx`), consumed only by
-  `src/screens/settings.tsx`. Unrelated to the tab bar above — it's a
-  generic tabbed-panel widget, not app-level screen navigation.
-- **IDE editor/diff tabs** — `crates/tt-ide` and `crates-tauri/tt-app/src/
-  ide.rs`'s `tabs`/`close_tab`/`closeAllDiffTabs`, part of the Claude Code
-  IDE-protocol integration (see
-  [docs/CLAUDE-CODE-IDE.md](../../docs/CLAUDE-CODE-IDE.md)). A VS
-  Code-style concept with no shared code path with either of the above.
+- **Workspace tabs** — open-screens bookkeeping in `useWorkspace()`
+  (`src/lib/workspace.tsx`, persisted by `workspace-persistence.ts`). No
+  visible tab strip — the sidebar is the only nav — but screens stay mounted
+  when you switch away (a terminal keeps running), and
+  `close-tab`/`next-tab`/`prev-tab`/`tab-1`…`9` operate on this set
+  headlessly. This is what "tab" means in most docs/comments here.
+- **Settings' sub-tab panel** — the panes inside the Settings screen, on the
+  vendored shadcn/Radix `Tabs` primitive (`src/components/ui/tabs.tsx`). A
+  generic tabbed-panel widget, not app-level navigation.
+- **IDE editor/diff tabs** — `crates/tt-ide` / `ide.rs`'s
+  `tabs`/`close_tab`/`closeAllDiffTabs`, the Claude Code IDE protocol
+  ([docs/CLAUDE-CODE-IDE.md](../../docs/CLAUDE-CODE-IDE.md)). No shared code
+  path with either of the above.
 
 ## Adding a screen is a 4-file ritual — there's no single source of truth
 
@@ -32,19 +27,14 @@ read of the code won't surface.
    `src/lib/screens.ts`.
 2. Wire the component into `SCREEN_COMPONENTS` in `src/screens/index.tsx`.
 3. Add it to a `NAV_SECTIONS` group in `src/lib/screens.ts` — miss this and
-   the screen is only reachable via the command palette / tab restore, not
-   the sidebar.
+   the screen is reachable only via palette / tab restore, not the sidebar.
 4. If it needs shortcuts, extend `SHORTCUTS` in `src/lib/shortcuts.tsx`.
 
-`fullBleed` is load-bearing, not cosmetic: `App.tsx` branches per-screen on
-`SCREENS[id].fullBleed` to skip the centered `max-w-3xl` `ScrollArea`
-wrapper. A new full-screen/canvas screen that forgets this flag gets
-squeezed into the narrow content column.
-
-Screens stay mounted forever once visited — `App.tsx` toggles `hidden`
-rather than unmounting, so a screen's local state (e.g. terminal buffers)
-survives tab switches. `closeTab` (`src/lib/workspace.tsx`) is the only
-unmount path, and it refuses to close the last tab.
+`fullBleed` is load-bearing: `App.tsx` branches on it to skip the centered
+`max-w-3xl` `ScrollArea` wrapper — a canvas screen that forgets it gets
+squeezed into the narrow column. Screens stay mounted forever once visited
+(`App.tsx` toggles `hidden`), so local state like terminal buffers survives
+tab switches; `closeTab` is the only unmount path and refuses the last tab.
 
 ## IPC failures are values — the call site picks the UX
 
@@ -55,10 +45,9 @@ schema mismatch, and a timeout all come back as typed `Err`s
 (`src/lib/errors.ts` — `NotInTauri`, `IpcFailed`, `SchemaMismatch`,
 `IpcTimeout`).
 
-That is deliberate. There used to be four wrappers, each hardcoding one
-failure UX, and picking the wrong one silently changed behavior — the two
-that degraded to `null`/`false` made a real backend error indistinguishable
-from "not wired in browser". Now each call site states its own intent:
+That is deliberate: four wrappers each hardcoded one failure UX, and the two
+that degraded to `null`/`false` hid real backend errors as "not wired in
+browser". Each call site states its own intent:
 
 ```ts
 const repos = (await invoke<Repo[]>("list_repos")).unwrapOr([]);      // degrade
@@ -80,27 +69,23 @@ Three rules that follow from this:
   display. Tauri rejects with a bare string, which `String()` renders as
   `"[object Object]"`.
 
-Two boundaries deliberately keep a *throwing* contract because a foreign
-interface demands it: `lib/monaco-fs.ts` (monaco's `IFileSystemProvider`
-expects thrown `FileSystemProviderError`s) and `lib/lsp.ts` (vscode-jsonrpc
-requires a rejecting `write`). Translate `Err` → throw at those edges only.
+Two boundaries keep a *throwing* contract because a foreign interface demands
+it: `lib/monaco-fs.ts` (monaco's `IFileSystemProvider`) and `lib/lsp.ts`
+(vscode-jsonrpc's rejecting `write`). Translate `Err` → throw there only.
 
 `.claude/hooks/guard-better-result.sh` flags drift back to the old shapes
 on every edit.
 
 ## Mock-data fallback is colocated per-module, not a single file
 
-There is no `mock-data.ts`. Each module owns its own fallback (e.g.
-`mockSnapshot` in `src/lib/data.ts`, `mockView` in `src/lib/slack.ts`),
-gated on `!isTauri()` (`src/lib/tauri.ts`) so plain-Vite browser dev still
-renders something. Add new fallbacks the same way — colocated, not in a
-shared mock file.
+There is no `mock-data.ts`: each module owns its fallback (`mockSnapshot` in
+`src/lib/data.ts`, `mockView` in `src/lib/slack.ts`), gated on `!isTauri()`
+so plain-Vite browser dev still renders. Add new ones the same way.
 
 ## Shortcuts registry validates at build time
 
-`defineShortcuts`/`parseKeys` (`src/lib/shortcuts.tsx`) throw at
-module-eval time on a bad spec or duplicate id — a typo'd shortcut fails
-the build, not silently mismatches at runtime.
+`defineShortcuts`/`parseKeys` (`src/lib/shortcuts.tsx`) throw at module-eval
+time on a bad spec or duplicate id — a typo'd shortcut fails the build.
 
 Every binding that fires records `shortcut.<id>`, and every *click target that
 does the same thing as a binding* must record `mouse.<id>` by calling
@@ -124,67 +109,51 @@ propagates immediately, no relaunch or app-level refocus needed.
 ## Terminal rendering is a custom protocol, not xterm.js
 
 `src/lib/term-protocol.ts` defines the `terminal://frame` wire shape
-(dirty-row `RowUpdate`/`Run` diffs, packed `0xRRGGBB` colors, style bit
-flags) mirroring the Rust `tt-vt` crate, plus a hand-rolled DOM-key→escape
-encoder (`encodeKey`) and grapheme-cluster-aware wide-char handling
-(`isWideRun`). A new terminal feature must be threaded through both the
-Rust frame struct (`crates/tt-vt`) and this file's types in lockstep — see
-[`crates/tt-vt/CLAUDE.md`](../../crates/tt-vt/CLAUDE.md) for the Rust side.
+(dirty-row diffs, packed colors, style bits) mirroring the Rust `tt-vt`
+crate, plus the DOM-key→escape encoder (`encodeKey`) and wide-char handling
+(`isWideRun`). A new terminal feature threads through the Rust frame struct
+and this file in lockstep ([`crates/tt-vt/CLAUDE.md`](../../crates/tt-vt/CLAUDE.md)).
 
 ## A pane has no PTY until it is rendered
 
-`term_start` runs from `TerminalView`'s mount effect, and `screens/
-agentboard.tsx` renders only the **active folder's active window** panes.
-So a session can exist in the rail, and even be reported as agent-running
-(the watcher reads Claude's on-disk state, not the PTY), while its pane has
-never mounted and no shell exists.
+`term_start` runs from `TerminalView`'s mount effect, and the screen renders
+only the **active folder's active window** panes — so a session can exist in
+the rail, even report agent-running (the watcher reads Claude's on-disk
+state, not the PTY), while no shell exists.
 
-Anything that writes to a PTY must therefore `selectSession(folderDir, id)`
-first and then `await waitForFirstFrame(id)`. `termWriteRetry` alone is not
-enough — it only covers the few hundred ms before `term_start` registers the
-id, not the case where the pane was never mounted at all. **A write to an
-unmounted pane resolves `Err`** (`term_write` is `Result<(), String>` in
-Rust), and an unchecked one surfaces as an action that appeared to work and
-did nothing — worse when an optimistic overlay then reports a state change
-that never happened. Check it: `if ((await termWrite(id, data)).isErr())`.
+Anything that writes to a PTY must `selectSession(folderDir, id)` and then
+`await waitForFirstFrame(id)` — `termWriteRetry` only covers the few hundred
+ms before `term_start` registers the id, not a never-mounted pane. **A write
+to an unmounted pane resolves `Err`**; unchecked, the action appears to work
+and does nothing (worse under an optimistic overlay). Check it:
+`if ((await termWrite(id, data)).isErr())`. This is why every `SessionActions`
+lifecycle action takes `folderDir`, including `stopClaude`/`compactClaude` —
+their triggers render for *every* folder, not just the active one.
 
-This is why every lifecycle action in `SessionActions` takes `folderDir`,
-including `stopClaude`/`compactClaude` — their triggers (rail kebab, cache
-badge) render for *every* folder, not just the active one.
-
-Restoring several sessions at once must additionally drain **serially** —
-select a folder, await its first frame, write, then move to the next — because
-only one folder is active at a time. See the open-session drain effect in
-`screens/agentboard.tsx`; firing the requests concurrently leaves every folder
-but the last with a placed-but-never-started pane.
+Restoring several sessions must drain **serially** — select, await first
+frame, write, next — since only one folder is active at a time; concurrent
+requests leave every folder but the last with a placed-but-never-started pane
+(the open-session drain effect in `screens/agentboard.tsx`).
 
 ## A pane that owns a process is pooled; one that owns a view is not
 
-`PaneGrid` renders only the **active folder's active window**, so any pane it
-renders conditionally is unmounted the moment you click another folder in the
-rail. That is fine for the diff, files and preview panes — they refetch on
-mount and own nothing that can't be rebuilt — and unacceptable for the kind
-that owns a process: a terminal and its shell. Those are therefore rendered
-from a flat pool of *every* such pane open in *any* window, merely `hidden`
-when they aren't in the active one, so unmount means "really closed" and the
-unmount effect can keep killing the process.
+`PaneGrid` renders only the **active folder's active window**, so a
+conditionally rendered pane unmounts the moment you click another folder.
+Fine for diff/files/preview (refetch on mount, own nothing) — unacceptable
+for a terminal and its shell. Those render from a flat pool of *every* such
+pane open in *any* window, merely `hidden` elsewhere, so unmount means
+"really closed" and the unmount effect can kill the process. **A new pane
+kind that owns a process or accumulates state must join the pool and keep its
+state outside the component** — adding it to the conditionally-rendered list
+is the bug this rule exists to prevent.
 
-**A new pane kind that owns a process or accumulates state must join the pool
-and keep its state outside the component** — a component that can unmount
-cannot be the home of a live process or a conversation, and adding it to the
-conditionally-rendered list is the bug this rule exists to prevent.
-
-The **jarvis** pane (`components/jarvis-pane.tsx`) is the near-miss that shows
-where the line actually falls: it owns a Bevy render thread and is still *not*
-pooled, because unmounting it doesn't destroy anything — the host retires the
-renderer and revives it if the pane comes back (dropping a Bevy app mid-session
-ends the process; see `crates-tauri/tt-pane`). A shell's scrollback has no such
-safety net, which is what puts it in the pool.
-
-It also breaks the other assumption this file makes about hiding — its body is
-a compositor surface drawn *above* the webview, so `hidden` on an ancestor is
-invisible to it and the screen-switch case has to be pushed down as
-`visible={false}` (`PaneGrid`'s `nativeVisible`).
+The **jarvis** pane (`components/jarvis-pane.tsx`) is the near-miss that
+shows where the line falls: it owns a Bevy render thread yet is *not* pooled,
+because unmounting destroys nothing — the host retires and revives the
+renderer (`crates-tauri/tt-pane`); a shell's scrollback has no such net. Its
+body is also a compositor surface *above* the webview, so `hidden` on an
+ancestor is invisible to it — screen switches push down as `visible={false}`
+(`PaneGrid`'s `nativeVisible`).
 
 ## Clickable rows can't be `<button>`s
 
@@ -211,33 +180,26 @@ check — see below.
 
 ## The rail is five files, split by what a row *is*
 
-`components/agentboard-rail.tsx` is the rail's own chrome (collapsed icon
-strip, rollup tally) — not the tree. The tree is
-`agentboard-repo-group` (a repo's subtree: which checkouts show, where the
-inline new-task form goes) → `agentboard-folder-header` (a checkout's row) →
-`agentboard-session-row` (a PTY) / `agentboard-pane-rows` (a chat, the view
-panes, the window spine). Anything two of them share is an atom in
-`agentboard-bits`, and anything pure is in `lib/agentboard.ts`. It was one
-1,800-line file; if a new row kind needs a home, add a sixth file rather
-than growing one of these back.
+`components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
+rollup tally) — not the tree. The tree is `agentboard-repo-group` (a repo's
+subtree) → `agentboard-folder-header` (a checkout's row) →
+`agentboard-session-row` (a PTY) / `agentboard-pane-rows` (chat, view panes,
+window spine). Shared atoms live in `agentboard-bits`, pure logic in
+`lib/agentboard.ts`. It was one 1,800-line file; a new row kind gets a sixth
+file, not a grown one.
 
 **In a rail row, a box means a control or an alert — never a fact.** Diff
 counts, branch, base-moved and the pane buttons are bare mono type
-(`CHIP_CLASS`), with the box arriving on hover, where "is this clickable?" is
-the question actually being asked; per-row icon buttons pass `ghost`
-(`IconBtn`, `RepoMenu`, `DevServersButton`) for the same reason. Only
-needs-you, port drift, safe-to-delete and deleting keep a resting box, because
-they are rare and meant to catch the eye. A pane *header* is the opposite case
-— one toolbar on screen, room to spare — so it keeps the bordered form and the
-labeled chips (`labeled` on the diff and pane-open chips). This is what the
-`folder-rail-ui` skill's bare-`font-mono` diff-stat recipe has always said; a
-rail that boxes everything ranks nothing.
+(`CHIP_CLASS`), the box arriving on hover; per-row icon buttons pass `ghost`.
+Only needs-you, port drift, safe-to-delete and deleting keep a resting box. A
+pane *header* is the opposite case (one toolbar, room to spare) and keeps the
+bordered, `labeled` form. Per the `visual-design` skill: a rail that boxes
+everything ranks nothing.
 
-A folder row is **one line when the rail is wide enough and two when it
-isn't** — `@container/row` at 34rem, with an `order` swap that keeps the
-toolbar on the name's line while the git counts drop below. Container, not
-viewport: the question is whether *this row* has room, and the rail is
-independently resizable (300–760px).
+A folder row is **one line when the rail is wide enough, two when it isn't**
+— `@container/row` at 34rem, an `order` swap keeping the toolbar on the
+name's line while git counts drop below. Container, not viewport: the rail is
+independently resizable (300–760px), so the question is *this row's* room.
 
 ## Two animation idioms — the choice is mechanical, not stylistic
 
@@ -266,27 +228,20 @@ functions that are unit-testable without a DOM (e.g. `workspace-persistence.ts`
 exists solely to make tab-restore logic testable). Prefer that seam when you
 can.
 
-Render-level tests (`*.test.tsx`) exist too, for the case a pure function
-can't cover — that a screen mounts and renders its shell without throwing.
-They opt into jsdom per-file with a `// @vitest-environment jsdom` docblock
-(so the Node suite stays quick) and render through `src/test/render.tsx`'s
-`renderWithProviders`, which wraps the component in App.tsx's provider tree.
-**The backend seam is jsdom itself:** there is no `__TAURI_INTERNALS__`, so
-every `invoke` returns `NotInTauri` and each component paints its colocated
-browser-dev fallback — stub at that seam, never mock component internals.
-`renderWithProviders` polyfills the browser APIs jsdom omits (`matchMedia`,
-`ResizeObserver`, pointer capture). Keep these as smoke/regression guards
-(does it render? are the tabs there?), not a substitute for driving the real
-shell.
+Render-level tests (`*.test.tsx`) cover what a pure function can't — a
+screen mounts without throwing. They opt into jsdom per-file
+(`// @vitest-environment jsdom`, keeping the Node suite quick) and render
+through `src/test/render.tsx`'s `renderWithProviders` (App.tsx's provider
+tree plus the polyfills jsdom omits). **The backend seam is jsdom itself:**
+no `__TAURI_INTERNALS__`, so every `invoke` returns `NotInTauri` and each
+component paints its colocated browser-dev fallback — stub at that seam,
+never mock component internals. Smoke/regression guards only, not a
+substitute for driving the real shell.
 
-**A green test run still says little about whether the page rendered
-*correctly*.** These smoke tests catch a throw on mount, but the authoritative
-signal for a runtime React complaint (invalid DOM nesting, a bad hook order)
-is the page's own console, which the app buffers under `VITE_WDIO`
-(`lib/wdio-console.ts`). Every `scripts/drive.mjs` verb prints a `⚠ N console
-error(s)` summary when the buffer is non-empty, and `drive.mjs console` dumps
-it (exiting non-zero on real errors, so it can gate a script). Verify real
-UI/IPC behavior by driving the shell (`npm run e2e` / `npm run dev:drive` —
-see the root CLAUDE.md's Commands section); if you changed UI and never looked
-at that output, the change is unverified — an invalid-DOM warning otherwise
-reaches only the `dev:drive` terminal, a different process from `drive.mjs`.
+**A green test run still says little about a *correct* render.** The
+authoritative signal for a runtime React complaint (invalid DOM nesting, bad
+hook order) is the page's own console, buffered under `VITE_WDIO`
+(`lib/wdio-console.ts`): every `scripts/drive.mjs` verb prints a console-error
+summary, and `drive.mjs console` dumps it, exiting non-zero on real errors.
+Verify UI/IPC by driving the shell (`npm run e2e` / `npm run dev:drive`); a
+UI change made without looking at that output is unverified.

@@ -12,11 +12,9 @@ import { cn } from "@/lib/utils";
 const ADD_CLASS =
   "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
-/** The main area's window strip: one chip per window of the active folder,
- * plus the add-actions and the selected session's Close. Two zones split by a
- * hairline, because identity and action read alike at one uniform pill size;
- * only the add glyphs keep violet, so the hue still means agent-ness or focus
- * (the `folder-rail-ui` skill) rather than decorating three buttons. */
+/** One chip per window of the active folder, plus add-actions and the selected
+ * session's Close, split by a hairline. Only the add glyphs keep violet, so the
+ * hue still means agent-ness or focus (the `visual-design` skill). */
 export function WindowStrip(props: {
   windows: AgWindow[];
   activeWinId: string | undefined;
@@ -82,10 +80,8 @@ export function WindowStrip(props: {
               onDoubleClick={() => setRenamingWin(w.id)}
               aria-pressed={w.id === activeWinId}
               className={cn(
-                // border-b-2 mirrors the rail's border-l-2 active edge,
-                // rotated to match this strip's horizontal layout — kept
-                // transparent at rest so the violet edge never shifts
-                // the tab's size when it becomes active.
+                // border-b-2 mirrors the rail's border-l-2 active edge, rotated
+                // horizontal — transparent at rest so activation never resizes.
                 "group/tab flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-[11px]",
                 w.id === activeWinId
                   ? "border-b-violet-500 bg-accent text-foreground"
@@ -99,11 +95,9 @@ export function WindowStrip(props: {
                 {w.panes.length}⊞
               </span>
               {windows.length > 1 && (
-                // span-with-role, not <button>: it nests inside the window
-                // chip's real <button>, so keyboard support is hand-rolled.
-                // Full strength on the current tab, faded elsewhere until
-                // pointed at — and it holds its width either way, since a tab
-                // that resized under the pointer would be one you can miss.
+                // span-with-role: it nests inside the chip's real <button>, so
+                // keyboard support is hand-rolled. Holds its width faded or not
+                // — a tab that resizes under the pointer is one you can miss.
                 <span
                   role="button"
                   tabIndex={0}

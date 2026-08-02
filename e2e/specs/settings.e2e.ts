@@ -1,14 +1,11 @@
-/**
- * End-to-end smoke test driving the real Tauri shell via @wdio/tauri-service.
- * Proves three things the bare-browser path can't: the app boots in the real
- * WebView, real Rust IPC commands answer (settings_get / app_task /
- * ab_discover_repos), and IPC mocking works. Read-only — never writes settings.
- */
+/** Drives the real Tauri shell (@wdio/tauri-service): the app boots in the real
+ * WebView and real Rust IPC answers (settings_get / app_task / ab_discover_repos).
+ * Read-only — never writes settings. */
 
 /// <reference types="@wdio/globals/types" />
 /// <reference types="@wdio/mocha-framework" />
 
-import { expectArray, expectObject, expectString } from "../ipc.js";
+import { expectArray, expectObject } from "../ipc.js";
 
 type UserSettings = {
   preferredEditor: string;
@@ -28,11 +25,12 @@ describe("Towles Tool desktop shell", () => {
   });
 
   it("answers a real Rust command (app_task)", async () => {
-    const task = expectString(
+    const task = expectObject<{ label: string; isWorktree: boolean }>(
       await browser.tauri.execute(({ core }) => core.invoke("app_task")),
       "app_task",
     );
-    expect(task.length).toBeGreaterThan(0);
+    expect(task.label.length).toBeGreaterThan(0);
+    expect(typeof task.isWorktree).toBe("boolean");
   });
 
   it("reads real settings over settings_get IPC", async () => {

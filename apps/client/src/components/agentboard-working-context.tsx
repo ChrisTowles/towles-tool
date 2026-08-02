@@ -1,8 +1,6 @@
-/**
- * The working-context band above the panes — deliberately the rail's folder row
- * at a larger size, sharing its grammar (`agentboard-folder-header.tsx`, the
- * `folder-rail-ui` skill). Pane *chrome* is `agentboard-pane.tsx`.
- */
+/** The working-context band above the panes — deliberately the rail's folder
+ * row at a larger size, sharing its grammar (`agentboard-folder-header.tsx`,
+ * the `visual-design` skill). Pane *chrome* is `agentboard-pane.tsx`. */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
 import { Hint } from "@/components/hint";
 import {
@@ -35,6 +33,7 @@ import {
   type SessionActions,
 } from "@/lib/agentboard";
 import type { PrItem, TaskItem } from "@/lib/data";
+import { identityColor } from "@/lib/identity-color";
 import { openExternalUrl } from "@/lib/open-url";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +84,15 @@ export function WorkingContext({
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
-    <div className="flex items-start gap-3 border-b bg-card px-4 py-2">
+    // Identity wash (visual-design skill), keyed by the repo: every checkout of
+    // one repo shares its hue, so "which repo am I looking at" reads before
+    // the title does.
+    <div
+      className={cn(
+        "flex items-start gap-3 border-b bg-card px-4 py-2",
+        identityColor(repo.name).wash,
+      )}
+    >
       <FolderGit2 className="mt-1 size-4 shrink-0 text-violet-500" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {/* Two clusters, not one run of icons: pane openers beside the title,

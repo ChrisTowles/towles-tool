@@ -1,4 +1,12 @@
-import { PanelLeftClose, PanelLeftOpen, Search, Settings, Sparkles } from "lucide-react";
+import {
+  FolderGit2,
+  GitBranch,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 import { CollectorDot, NeedsYouChip, TopTaskChip } from "@/components/header-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -7,48 +15,11 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@/lib/data";
+import { identityColor } from "@/lib/identity-color";
 import { useNow } from "@/lib/now";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
-
-/**
- * Fixed palette of literal Tailwind classes (so the JIT sees them) — one per
- * task window, picked by hashing the task name so a given checkout always keeps
- * the same accent.
- */
-const TASK_COLORS = [
-  {
-    badge: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-    dot: "bg-blue-500",
-  },
-  {
-    badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    dot: "bg-emerald-500",
-  },
-  {
-    badge: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    dot: "bg-amber-500",
-  },
-  {
-    badge: "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-    dot: "bg-violet-500",
-  },
-  {
-    badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-    dot: "bg-rose-500",
-  },
-  {
-    badge: "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-    dot: "bg-cyan-500",
-  },
-];
-
-function taskColor(task: string) {
-  let hash = 0;
-  for (let i = 0; i < task.length; i++) hash = (hash * 31 + task.charCodeAt(i)) | 0;
-  return TASK_COLORS[Math.abs(hash) % TASK_COLORS.length];
-}
 
 /** Strip the shared prefix so the badge reads "task-2", not the whole repo name. */
 function taskShortName(task: string): string {
@@ -56,24 +27,64 @@ function taskShortName(task: string): string {
   return m ? m[0] : task;
 }
 
+/** Main checkout: quiet chip, sky folder (the rail's primary-checkout hue).
+ * Task worktree: color-washed chip, branch glyph — readable without the name. */
 function TaskBadge() {
   const task = useAppTask();
   if (!task) return null;
-  const color = taskColor(task);
+  if (!task.isWorktree) {
+    return (
+      <Badge
+        variant="outline"
+        className="text-muted-foreground"
+        title={`Main checkout — ${task.label}`}
+      >
+        <FolderGit2 className="text-sky-500" />
+        {task.label}
+      </Badge>
+    );
+  }
   return (
-    <Badge variant="outline" className={color.badge} title={task}>
-      <span className={`size-2 rounded-full ${color.dot}`} />
-      {taskShortName(task)}
+    <Badge
+      variant="outline"
+      className={identityColor(task.label).badge}
+      title={`Task worktree — ${task.label}`}
+    >
+      <GitBranch />
+      {taskShortName(task.label)}
     </Badge>
   );
 }
 
-/**
- * Dead-center of the header: the clock, plus what the time means next — the
- * upcoming meeting's countdown (amber inside 15 minutes). Absolutely centered
- * so it stays put regardless of what sits left/right. Driven by the shared app
- * clock (same `now` as the rest of the header).
- */
+/** Dead-center kind readout: MAIN CHECKOUT in sky vs TASK WORKTREE in the
+ * checkout's accent — the words themselves, not just a hue to decode. */
+function CheckoutKindChip() {
+  const task = useAppTask();
+  if (!task) return null;
+  if (!task.isWorktree) {
+    return (
+      <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-sky-500">
+        <FolderGit2 className="size-3.5" />
+        MAIN CHECKOUT
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1.5 font-mono text-xs font-semibold",
+        identityColor(task.label).text,
+      )}
+    >
+      <GitBranch className="size-3.5" />
+      TASK WORKTREE
+    </span>
+  );
+}
+
+/** Dead-center: the clock plus the next meeting's countdown (amber inside 15
+ * minutes). Absolutely centered so it stays put regardless of what sits
+ * left/right, on the shared app clock. */
 function ClockCluster() {
   const { openTab } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
@@ -86,6 +97,8 @@ function ClockCluster() {
 
   return (
     <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+      <CheckoutKindChip />
+      <span className="text-muted-foreground/40">·</span>
       <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
         {fmtClock(now)}
       </span>
@@ -114,12 +127,18 @@ function ClockCluster() {
 export function AppHeader() {
   const { sidebarCollapsed, toggleSidebar, setPaletteOpen, openSettingsTab, toggleZen, activeTab } =
     useWorkspace();
+  const task = useAppTask();
   // Every control in this header has a shortcut twin, so each click is a
   // measured (and occasionally coached) miss — see `lib/shortcut-coach.ts`.
   const clicked = (id: string) => mouseAction(id, activeTab);
 
   return (
-    <header className="relative flex h-11 shrink-0 items-center gap-2 border-b px-2">
+    <header
+      className={cn(
+        "relative flex h-11 shrink-0 items-center gap-2 border-b px-2",
+        task?.isWorktree && identityColor(task.label).wash,
+      )}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

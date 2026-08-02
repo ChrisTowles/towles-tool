@@ -4,12 +4,10 @@ import type { IpcError } from "./errors";
 import { invoke, isTauri } from "./tauri";
 import { type TaskDeleteOutcome, TaskDeleteOutcomeSchema } from "./schemas/task";
 
-/** Client-side view of the store (Rust `tt-store`): the camelCase snapshot
- * from `store_snapshot` / the `store://snapshot` event. Timestamps are epoch
- * ms except calendar `start`/`end` (RFC 3339, calendar's offset). Before the
- * store answers, or outside Tauri, the hook holds an empty/mock snapshot. */
+/** Client-side view of the store (Rust `tt-store`): the camelCase snapshot from
+ * `store_snapshot` / the `store://snapshot` event. Timestamps are epoch ms
+ * except calendar `start`/`end` (RFC 3339, calendar's offset). */
 
-/** A calendar event as the backend sends it (RFC 3339 with offset). */
 export type WireCalEvent = {
   id: number;
   source: string;
@@ -26,16 +24,12 @@ export type WireCalEvent = {
  * arithmetic wants the number; only the string records "3pm *there*". */
 export type CalEvent = {
   id: number;
-  /** Which configured calendar this came from (`"google"`, `"outlook"`). */
   source: string;
   externalId: string;
   title: string;
-  /** RFC 3339 with the calendar's own offset — presentation and provenance. */
   start: string;
   end?: string;
-  /** `start` as epoch ms. Derived; the instant, with the offset dropped. */
   startTs: number;
-  /** `end` as epoch ms, when the event has one. */
   endTs?: number;
   attendees: string[];
   location?: string;
@@ -54,7 +48,6 @@ function toCalEvent(e: WireCalEvent): CalEvent | null {
   };
 }
 
-/** Parse a snapshot's events, dropping any row whose `start` doesn't parse. */
 export function toCalEvents(events: WireCalEvent[]): CalEvent[] {
   return events.map(toCalEvent).filter((e): e is CalEvent => e !== null);
 }
@@ -63,8 +56,7 @@ export function toCalEvents(events: WireCalEvent[]): CalEvent[] {
 export const TASK_STATUSES = ["backlog", "doing", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-/** Human labels per kanban column. The terminal one reads "Closed" because
- * it also holds `abandoned` tasks, badged with their outcome. */
+/** The terminal column reads "Closed" because it also holds `abandoned` tasks. */
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   backlog: "Backlog",
   doing: "In progress",
@@ -75,7 +67,6 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 const TASK_OUTCOMES = ["done", "abandoned"] as const;
 export type TaskOutcome = (typeof TASK_OUTCOMES)[number];
 
-/** One GitHub issue linked to a task; `state` is the last observed state. */
 export type TaskIssueLink = {
   repo: string;
   number: number;
@@ -83,7 +74,6 @@ export type TaskIssueLink = {
   state: "open" | "closed" | (string & {});
 };
 
-/** One GitHub PR linked to a task. */
 export type TaskPrLink = {
   repo: string;
   number: number;
@@ -92,8 +82,7 @@ export type TaskPrLink = {
   checks: string;
 };
 
-/** A task's repo binding + worktree. Only `repoRoot` is required (known at
- * submit); a closed task keeps all but `dir` as historical fact. */
+/** A closed task keeps all but `dir` as historical fact. */
 export type TaskWorktree = {
   repoRoot: string;
   repo?: string;
@@ -109,18 +98,12 @@ export type TaskItem = {
   position: number;
   createdAt: number;
   completedAt?: number;
-  /** How the task ended (`done`/`abandoned`); absent while it is open. */
   outcome?: TaskOutcome;
-  /** When the closed task was archived off the active board; absent until then. */
   archivedAt?: number;
-  /** Free-form context attached to the task. */
   notes?: string;
-  /** The objective the task was created to accomplish, shown on the card under the title. */
   goal?: string;
-  /** The agent's wrap-up (MCP `task_summary`) — read to confirm the work
-   * before teardown; it would otherwise die with the scrollback. */
+  /** The agent's wrap-up (MCP `task_summary`) — would die with the scrollback. */
   summary?: string;
-  /** When `summary` was last written. */
   summaryAt?: number;
   worktree?: TaskWorktree;
   issues: TaskIssueLink[];
@@ -128,13 +111,10 @@ export type TaskItem = {
   /** Closed = carries an outcome or sits in `done`. Computed backend-side so
    * every consumer agrees; renders in "Closed" whatever the frozen status. */
   closed: boolean;
-  /** The outcome badge a closed card shows: the recorded `outcome`, or
-   * `done` implied by `status` for a card that rolled/dragged there.
-   * Absent while the task is open. */
+  /** The badge a closed card shows: `outcome`, or `done` implied by `status`. */
   displayOutcome?: TaskOutcome;
-  /** Whether this task has a live worktree checkout on disk right now — as
-   * opposed to a "task only" card that was never given one, or a closed
-   * task whose worktree was torn down. */
+  /** A live worktree checkout on disk right now — not a "task only" card or a
+   * closed task whose worktree was torn down. */
   hasWorktree: boolean;
 };
 
@@ -164,8 +144,6 @@ export type PrItem = {
   dismissedTs: number;
 };
 
-/** Whether a dismissed PR/issue should stay hidden — it was actually
- * dismissed (`dismissedTs > 0`) and hasn't changed since. */
 export function isItemDismissed(item: { dismissedTs: number; updatedTs: number }): boolean {
   return item.dismissedTs > 0 && item.dismissedTs >= item.updatedTs;
 }
@@ -177,8 +155,7 @@ export type CollectRun = {
   message?: string;
 };
 
-/** Latest state of a watched Slack DM (the `slack:dm` collector). A banner
- * shows only while `!fromMe && dismissedTs < ts`. */
+/** Latest state of a watched Slack DM (the `slack:dm` collector). */
 export type DmItem = {
   channel: string;
   fromName: string;
@@ -190,14 +167,12 @@ export type DmItem = {
   dismissedTs: number;
 };
 
-/** Watched DMs still needing a reply — the one predicate both the DM banner
- * and the header's needs-you count derive from. */
+/** The one predicate both the DM banner and the needs-you count derive from. */
 export function dmsNeedingAttention(snapshot: StoreSnapshot): DmItem[] {
   return snapshot.dms.filter((d) => !d.fromMe && d.dismissedTs < d.ts);
 }
 
-/** One handled MCP request (this instance's loopback server). `tool`/`args`
- * only for `tools/call`; `ok` false on JSON-RPC or `isError` results. */
+/** One handled MCP request (this instance's loopback server). */
 export type McpCall = {
   id: number;
   ts: number;
@@ -230,7 +205,6 @@ export type StoreSnapshot = {
 
 const MINUTE = 60_000;
 
-/** An empty snapshot — the state until the real store answers. */
 export const EMPTY_SNAPSHOT: StoreSnapshot = {
   events: [],
   tasks: [],
@@ -241,17 +215,13 @@ export const EMPTY_SNAPSHOT: StoreSnapshot = {
   mcpCalls: [],
 };
 
-/** Epoch ms → the RFC 3339 wire shape the calendar rows are authored in. */
 function at(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-/** Mock snapshot for plain-Vite browser dev — representative rows (one PR
- * per checks state); `live` stays false so the banner still shows. */
+/** Browser-dev fallback: representative rows, authored in the wire shape and
+ * parsed by the real `toCalEvents` so the conversion can't drift. */
 export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
-  // Authored in the wire shape and parsed by the real `toCalEvents`, so browser
-  // dev exercises the same conversion the app does rather than a parallel one
-  // that could drift from it.
   return {
     events: toCalEvents([
       {
@@ -433,8 +403,7 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
   };
 }
 
-/** The live store snapshot (single subscription). Lives in
- * `store-snapshot.tsx` (needs JSX); re-exported for its ~14 consumers. */
+/** Lives in `store-snapshot.tsx` (needs JSX); re-exported for its consumers. */
 export { useStoreSnapshot } from "./store-snapshot";
 
 /** `2:30 PM` — wall-clock time for an epoch-ms timestamp. */
@@ -454,9 +423,8 @@ export function fmtDate(ms: number): string {
   });
 }
 
-/** Below this span the countdown switches to `m:ss` and (in the Cockpit) ticks
- * every second, so the final approach reads "1:30 … 0:59 … 0:05" instead of a
- * coarse "1m" that the 15s shared clock can leave stale 20s out. */
+/** Below this the countdown switches to `m:ss` and ticks every second, instead
+ * of a coarse "1m" the 15s shared clock can leave stale 20s out. */
 export const COUNTDOWN_SECONDS_THRESHOLD = 2 * MINUTE;
 
 /** `0:59` / `1:30` (under {@link COUNTDOWN_SECONDS_THRESHOLD}) / `22m` /
@@ -481,8 +449,7 @@ export function eventIsLive(e: CalEvent, now: number): boolean {
   return e.startTs <= now && e.endTs !== undefined && now < e.endTs;
 }
 
-/** The Cockpit strip's meeting: in progress now, else soonest to start —
- * mirrors tt-store's `current_or_next_event`, so an in-progress meeting
+/** Mirrors tt-store's `current_or_next_event`, so an in-progress meeting
  * doesn't vanish the instant it starts. */
 export function currentOrNextEvent(events: CalEvent[], now: number): CalEvent | undefined {
   return events
@@ -501,15 +468,20 @@ export function fmtAge(ms: number, now: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-/** This window's checkout/task name (`app_task`); `null` outside Tauri so
- * the header badge hides. Tells several tasks' windows apart. */
-export function useAppTask(): string | null {
-  const [task, setTask] = useState<string | null>(null);
+/** This window's checkout (`app_task`): label plus main-vs-task-worktree kind. */
+export interface AppTask {
+  label: string;
+  isWorktree: boolean;
+}
+
+/** `null` outside Tauri so the header badge hides. */
+export function useAppTask(): AppTask | null {
+  const [task, setTask] = useState<AppTask | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
     let active = true;
     void (async () => {
-      const s = await invoke<string>("app_task");
+      const s = await invoke<AppTask>("app_task");
       if (active) setTask(s.unwrapOr(null));
     })();
     return () => {
@@ -527,17 +499,13 @@ export const storeAddTask = (text: string, opts?: { status?: TaskStatus; goal?: 
 export const storeSetTaskStatus = (id: number, status: TaskStatus) =>
   invoke<void>("store_set_task_status", { id, status });
 
-/** Overwrite a task's editable fields. */
 export const storeUpdateTask = (id: number, text: string, notes?: string) =>
   invoke<void>("store_update_task", { id, text, notes });
 
-/** Close a task and delete everything bound to it — panes and worktree. The
- * row survives, closed with `outcome` (omitted ⇒ inferred: merged linked PR ⇒
- * done, else abandoned). Guarded — can come back `blocked` having deleted
- * nothing. `purge: true` is the one permanent row delete, refused while a
- * worktree is bound. `target` is whichever handle the caller holds (board id
- * or worktree dir); validated because a `foreignPort` blocker's `port` goes
- * straight to `task_stop_port`, which signals a process group. */
+/** Close a task and delete everything bound to it — panes and worktree; the row
+ * survives, closed with `outcome` (omitted ⇒ merged linked PR ⇒ done, else
+ * abandoned). Guarded — can come back `blocked` having deleted nothing.
+ * `purge: true` is the one permanent row delete, refused while a worktree is bound. */
 export const taskDelete = (
   target: { id: number } | { dir: string },
   opts?: { force?: boolean; outcome?: TaskOutcome; purge?: boolean },
@@ -553,8 +521,7 @@ export const taskDelete = (
     { schema: TaskDeleteOutcomeSchema },
   );
 
-/** Archive every currently-closed task now — they leave the board but the
- * rows survive. */
+/** Archive every closed task — they leave the board but the rows survive. */
 export const storeArchiveDone = () => invoke<void>("store_archive_done");
 
 /** Bring one archived task back onto the board. */
@@ -564,11 +531,9 @@ export const storeUnarchiveTask = (id: number) => invoke<void>("store_unarchive_
 export const storePromoteTaskToIssue = (id: number, repo: string) =>
   invoke<void>("store_promote_task_to_issue", { id, repo });
 
-/** Attach a GitHub issue to a task. */
 export const storeAttachTaskIssue = (id: number, repo: string, number: number, url: string) =>
   invoke<void>("store_attach_task_issue", { id, repo, number, url });
 
-/** Detach a GitHub issue from a task. */
 export const storeDetachTaskIssue = (id: number, repo: string, number: number) =>
   invoke<void>("store_detach_task_issue", { id, repo, number });
 
@@ -576,13 +541,11 @@ export const storeDetachTaskIssue = (id: number, repo: string, number: number) =
 export const storeAttachTaskPr = (id: number, repo: string, number: number, url: string) =>
   invoke<void>("store_attach_task_pr", { id, repo, number, url });
 
-/** Detach a GitHub PR from a task. */
 export const storeDetachTaskPr = (id: number, repo: string, number: number) =>
   invoke<void>("store_detach_task_pr", { id, repo, number });
 
-/** Bind a task to its repo, and to the worktree its work happens in once
- * one exists. The new-task flow calls this at submit with the repo alone, then
- * again with `branch`/`dir` once `task_create` resolves. */
+/** Bind a task to its repo/worktree — at submit with the repo alone, then again
+ * with `branch`/`dir` once `task_create` resolves. */
 export const storeTaskSetWorktree = (
   id: number,
   repoRoot: string,
@@ -597,18 +560,15 @@ export const storeTaskSetWorktree = (
     dir: opts?.dir,
   });
 
-/** Adopt a detected worktree — promote its rail row from a `detected` record
- * to the user's own task. A kind change on the existing row, so the row keeps
- * its id and its place in the rail. */
+/** Promote a detected worktree's rail row to the user's own task — a kind
+ * change on the existing row, so it keeps its id and rail position. */
 export const taskAdoptWorktree = (id: number) => invoke<void>("task_adopt_worktree", { id });
 
 /** Open issues in `dir`'s repo, for the new-task flow's issue picker. */
 export const storeGhIssuesList = (dir: string, assignedToMe: boolean) =>
   invoke<IssueItem[]>("store_gh_issues_list", { dir, assignedToMe });
 
-/** Search issues in `dir`'s repo (all states), for the attach-to-task picker.
- * Read-only, unlike the open-assigned list `storeGhIssuesList` returns — a
- * task can be linked to any existing issue. */
+/** Search issues in `dir`'s repo, all states — a task can link any issue. */
 export const storeSearchIssues = (dir: string, query: string) =>
   invoke<IssueItem[]>("store_search_issues", { dir, query });
 
@@ -616,9 +576,8 @@ export const storeSearchIssues = (dir: string, query: string) =>
 export const storeDmDismiss = (channel: string, ts: number) =>
   invoke<void>("store_dm_dismiss", { channel, ts });
 
-/** Dismiss one GitHub issue/PR (`kind` is `"issue"` or `"pr"`) — it drops out
- * of the attention feed until the collector observes a newer `updatedTs`
- * than the one passed in. */
+/** Dismiss one GitHub issue/PR — hidden from the attention feed until the
+ * collector observes a newer `updatedTs` than the one passed in. */
 export const storeItemDismiss = (
   kind: "issue" | "pr",
   repo: string,
@@ -626,18 +585,15 @@ export const storeItemDismiss = (
   updatedTs: number,
 ) => invoke<void>("store_item_dismiss", { kind, repo, number, updatedTs });
 
-/** Clear every dismissed issue/PR at once — the "clear all dismissals" action.
- * Resolves to how many were cleared. */
+/** Clear every dismissed issue/PR at once; resolves to how many were cleared. */
 export const storeDismissalsClear = () => invoke<number>("store_dismissals_clear", {});
 
 /** Append a line to today's journal note. */
 export const journalLog = (text: string) => invoke<void>("journal_log", { text });
 
-/**
- * Force the issues/PRs/Slack collectors to run now — calendar excluded (it
- * spends claude tokens). The `boolean` is a domain answer, not success:
- * `true` = kicked off, `false` = one was already in flight.
- */
+/** Force the issues/PRs/Slack collectors now — calendar excluded (it spends
+ * claude tokens). The `boolean` is a domain answer, not success: `true` =
+ * kicked off, `false` = one was already in flight. */
 export async function storeCollectNow(): Promise<Result<boolean, IpcError>> {
   const result = await invoke<{ started: boolean }>("store_collect_now");
   return result.map((r) => r.started);
