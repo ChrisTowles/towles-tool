@@ -1,6 +1,6 @@
 /** The working-context band above the panes — deliberately the rail's folder
  * row at a larger size, sharing its grammar (`agentboard-folder-header.tsx`,
- * the `folder-rail-ui` skill). Pane *chrome* is `agentboard-pane.tsx`. */
+ * the `visual-design` skill). Pane *chrome* is `agentboard-pane.tsx`. */
 import { FolderGit2, FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
 import { Hint } from "@/components/hint";
 import {
@@ -84,7 +84,7 @@ export function WorkingContext({
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
-    // Identity wash (folder-rail skill), keyed by the repo: every checkout of
+    // Identity wash (visual-design skill), keyed by the repo: every checkout of
     // one repo shares its hue, so "which repo am I looking at" reads before
     // the title does.
     <div

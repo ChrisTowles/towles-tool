@@ -230,7 +230,7 @@ needs-you, port drift, safe-to-delete and deleting keep a resting box, because
 they are rare and meant to catch the eye. A pane *header* is the opposite case
 — one toolbar on screen, room to spare — so it keeps the bordered form and the
 labeled chips (`labeled` on the diff and pane-open chips). This is what the
-`folder-rail-ui` skill's bare-`font-mono` diff-stat recipe has always said; a
+`visual-design` skill's bare-`font-mono` diff-stat recipe has always said; a
 rail that boxes everything ranks nothing.
 
 A folder row is **one line when the rail is wide enough and two when it

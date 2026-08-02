@@ -1,6 +1,6 @@
 ---
 name: ui-rules
-description: General-purpose usability/UX design rules for building or reviewing any UI — matching user mental models, reducing decisions, visible affordances, forgiving forms, actionable errors, and a pre-ship usability checklist. Use when designing a new screen or flow, adding a confirmation dialog, writing button/error copy, deciding whether something needs a setting, or reviewing a UI for usability before shipping. This governs behavior and flow; for this app's specific color/typography/layout system see the folder-rail-ui skill instead.
+description: General-purpose usability/UX design rules for building or reviewing any UI — matching user mental models, reducing decisions, visible affordances, forgiving forms, actionable errors, and a pre-ship usability checklist. Use when designing a new screen or flow, adding a confirmation dialog, writing button/error copy, deciding whether something needs a setting, or reviewing a UI for usability before shipping. This governs behavior and flow; for this app's specific color/typography/layout system see the visual-design skill instead.
 user-invocable: true
 ---
 
@@ -11,12 +11,12 @@ Source: [praeclarum/ui.md](https://github.com/praeclarum/ui.md), MIT licensed. S
 Vendored verbatim below so it travels with the repo and can be referenced without
 a network fetch.
 
-**Relationship to [[folder-rail-ui]]:** this skill is about *behavior* — what
-the UI should do, what it should ask, what it should remember. `folder-rail-ui`
+**Relationship to [[visual-design]]:** this skill is about *behavior* — what
+the UI should do, what it should ask, what it should remember. `visual-design`
 is about *appearance* in this specific app — which Tailwind classes, which
 colors, which layout. Apply both when touching `apps/client`: use this skill to
 decide the flow and whether a control/dialog/setting should exist at all, then
-use `folder-rail-ui` to style it.
+use `visual-design` to style it.
 
 ---
 

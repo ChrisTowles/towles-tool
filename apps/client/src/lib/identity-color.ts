@@ -1,4 +1,4 @@
-/** Identity wash — the folder-rail skill's named recipe for coloring a surface
+/** Identity wash — the visual-design skill's named recipe for coloring a surface
  * by *which repo or checkout it is*: six literal Tailwind accents (the JIT must
  * see them), picked by hashing a stable identity key so a given identity keeps
  * its hue everywhere it appears. Status/attention hues always win over it. */

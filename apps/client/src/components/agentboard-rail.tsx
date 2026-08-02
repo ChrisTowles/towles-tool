@@ -80,7 +80,7 @@ export function RailIconStrip({
             className={cn(
               "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-muted-foreground hover:bg-accent/50",
               active && "border-l-violet-500 text-foreground ring-1 ring-inset ring-violet-500/50",
-              // Attention outranks focus on the accent edge (folder-rail rule).
+              // Attention outranks focus on the accent edge (visual-design rule).
               needs > 0 && "border-l-amber-500",
             )}
           >

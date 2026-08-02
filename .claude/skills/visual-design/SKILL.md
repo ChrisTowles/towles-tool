@@ -1,10 +1,13 @@
 ---
-name: folder-rail-ui
-description: Visual design language ("Folder Rail" style) for new or restyled UI in the Towles Tool desktop app (apps/client) — color tokens, agent-status semantics, the identity wash (per-repo/checkout accent), folder/session hierarchy, spacing, glyphs, Tailwind recipes. Use when adding a new screen/component, restyling an existing one, or the user asks about the app's look, the "folder rail", status dots/colors, the identity wash / repo colors, or the repo→folder→session hierarchy. Not needed for logic-only changes to already-styled components.
+name: visual-design
+description: The Towles Tool desktop app's visual design language (apps/client), app-wide — color tokens, agent-status semantics, the identity wash (per-repo/checkout accent), folder/session hierarchy, spacing, glyphs, Tailwind recipes. Use when adding a new screen/component, restyling an existing one, or the user asks about the app's look, visual design, the rail, status dots/colors, the identity wash / repo colors, or the repo→folder→session hierarchy. Not needed for logic-only changes to already-styled components.
 user-invocable: true
 ---
 
-# Folder Rail — visual language cheat sheet
+# Visual design — the app-wide language
+
+Grew out of the folder rail and now governs every surface; the rail remains
+its densest example.
 
 Neutral grayscale shadcn base (`apps/client/src/index.css`); a hue is added
 only to carry agent status, attention, or identity (the [identity
@@ -181,7 +184,7 @@ rail's other pieces are its `agentboard-*` siblings) ·
 
 A browsable rendition of this language — Agentboard anatomy (the named UI
 parts), live specimens, the identity wash — is
-[docs/reference/folder-rail-visual-language.html](../../../docs/reference/folder-rail-visual-language.html).
+[docs/reference/visual-design.html](../../../docs/reference/visual-design.html).
 
 For behavior/flow rules (confirmations, error copy, when something needs a
 setting) rather than look, see the `ui-rules` skill.

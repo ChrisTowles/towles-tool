@@ -146,7 +146,7 @@ export function PaneGrid(props: {
               className={cn(
                 "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
                 // Amber (needs-you) wins the border over violet (focus) when both apply — see
-                // the folder-rail-ui skill's "Two accent hues" rule; class order here matters
+                // the visual-design skill's "Two accent hues" rule; class order here matters
                 // because `cn` (tailwind-merge) keeps only the last conflicting border-color
                 // utility.
                 focusedPaneId === id && "border-violet-500/60",

@@ -43,7 +43,7 @@ import { toast } from "sonner";
 /** Which baseline the pane diffs against (mirrors `DiffMode` in tt-agentboard). */
 type DiffMode = "main" | "uncommitted";
 
-/** Git name-status letter → folder-rail-ish color in the tree rail. */
+/** Git name-status letter → rail-style color in the tree rail. */
 const STATUS_COLORS: Record<string, string> = {
   A: "text-emerald-500",
   "?": "text-emerald-500",

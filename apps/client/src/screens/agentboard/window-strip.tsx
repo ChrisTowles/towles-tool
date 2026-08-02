@@ -16,7 +16,7 @@ const ADD_CLASS =
  * plus the add-actions and the selected session's Close. Two zones split by a
  * hairline, because identity and action read alike at one uniform pill size;
  * only the add glyphs keep violet, so the hue still means agent-ness or focus
- * (the `folder-rail-ui` skill) rather than decorating three buttons. */
+ * (the `visual-design` skill) rather than decorating three buttons. */
 export function WindowStrip(props: {
   windows: AgWindow[];
   activeWinId: string | undefined;
