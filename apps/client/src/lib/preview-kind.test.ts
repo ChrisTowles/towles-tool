@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { opensInEditor, previewKindFor } from "@/lib/preview-kind";
+import { hasRenderedView, opensInEditor, previewKindFor } from "@/lib/preview-kind";
 
 describe("previewKindFor", () => {
   it("routes markdown and html to the split view", () => {
@@ -70,5 +70,15 @@ describe("opensInEditor", () => {
     expect(opensInEditor("image")).toBe(false);
     expect(opensInEditor("video")).toBe(false);
     expect(opensInEditor("binary")).toBe(false);
+  });
+});
+
+describe("hasRenderedView", () => {
+  it("is the two markup kinds and nothing else", () => {
+    expect(hasRenderedView("markdown")).toBe(true);
+    expect(hasRenderedView("html")).toBe(true);
+    for (const kind of [null, "image", "video", "binary"] as const) {
+      expect(hasRenderedView(kind)).toBe(false);
+    }
   });
 });
