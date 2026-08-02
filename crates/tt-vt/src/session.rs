@@ -49,12 +49,14 @@ pub enum Input {
     },
     /// Scroll the viewport by rows (up is negative); `None` jumps to bottom.
     Scroll(Option<isize>),
-    /// A mouse-wheel gesture at viewport cell (`x`, `y`). [`Engine::wheel`]
-    /// decides: scrollback paging, a wheel report, or alternate-scroll keys.
+    /// A mouse-wheel gesture at viewport cell (`x`, `y`), with `shift` held.
+    /// [`Engine::wheel`] decides: scrollback paging, a wheel report, or
+    /// alternate-scroll keys.
     Wheel {
         x: u16,
         y: u16,
         lines: i32,
+        shift: bool,
     },
     /// A pointer event for the program, when it enabled mouse tracking.
     Mouse(MouseInput),
@@ -200,8 +202,8 @@ impl Session {
                 Input::Key(event) => {
                     let _ = engine.key(&event);
                 }
-                Input::Wheel { x, y, lines } => {
-                    let _ = engine.wheel(x, y, lines);
+                Input::Wheel { x, y, lines, shift } => {
+                    let _ = engine.wheel(x, y, lines, shift);
                 }
                 Input::Mouse(input) => {
                     let _ = engine.mouse(&input);

@@ -37,11 +37,3 @@ export function shouldCopyOnSelect(
   if (!enabled || kind === "clear") return false;
   return gesture === null || gesture !== lastGesture;
 }
-
-/**
- * Whether any row carries a selection range. Drives the context menu's Copy
- * item, which is enabled only when there is something to copy.
- */
-export function rowsHaveSelection(lines: { sel?: [number, number] }[]): boolean {
-  return lines.some((l) => l.sel !== undefined);
-}

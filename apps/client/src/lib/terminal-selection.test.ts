@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  rowsHaveSelection,
   selectionGestureKey,
   selectionKindForDetail,
   shouldCopyOnSelect,
@@ -72,16 +71,5 @@ describe("shouldCopyOnSelect", () => {
   it("always copies a drag, whose range is new by construction", () => {
     expect(shouldCopyOnSelect(true, "drag", null, "line:120")).toBe(true);
     expect(shouldCopyOnSelect(true, "drag", null, null)).toBe(true);
-  });
-});
-
-describe("rowsHaveSelection", () => {
-  it("is true when any row carries a selection range", () => {
-    expect(rowsHaveSelection([{ runs: undefined }, { sel: [1, 4] }] as never)).toBe(true);
-  });
-
-  it("is false when no row is selected", () => {
-    expect(rowsHaveSelection([{}, {}])).toBe(false);
-    expect(rowsHaveSelection([])).toBe(false);
   });
 });

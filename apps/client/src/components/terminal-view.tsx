@@ -30,7 +30,6 @@ import {
 import { linkAt, linkLabel, type TermLink } from "@/lib/term-links";
 import { resolveTermTheme } from "@/lib/term-theme";
 import {
-  rowsHaveSelection,
   selectionGestureKey,
   selectionKindForDetail,
   shouldCopyOnSelect,
@@ -78,6 +77,11 @@ const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
 const FONT_FAMILY =
   "'FiraCode Nerd Font Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
 const LINE_HEIGHT = 1.25;
+
+/** Selection autoscroll: rows scale with how far past the edge the pointer
+ * is, so a small overshoot creeps and a big one moves. */
+const AUTOSCROLL_INTERVAL_MS = 50;
+const AUTOSCROLL_MAX_ROWS = 5;
 
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
  * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
@@ -250,8 +254,16 @@ export function TerminalView({
       scrolledBack: false,
       /** URL under the mouse — underlined and Ctrl/Cmd-clickable. */
       hoveredLink: null as TermLink | null,
-      /** Absolute row of the viewport top — maps search matches to viewport rows. */
+      /** Absolute row of the viewport top — maps search matches to viewport
+       * rows, and converts pointer cells to the absolute rows `term_select`
+       * speaks. */
       viewportTop: 0,
+      /** Scrollback depth, which is also the largest `viewportTop` can get
+       * (they are equal at the live bottom) — the clamp an optimistic scroll
+       * predicts against. */
+      scrollbackRows: 0,
+      /** A selection is installed, wherever it currently sits. */
+      selection: false,
     };
 
     const setFont = (flags: number) => {
@@ -466,6 +478,8 @@ export function TerminalView({
       grid.cursor = frame.cursor;
       grid.modes = frame.modes;
       grid.viewportTop = frame.viewportTop;
+      grid.scrollbackRows = frame.scrollbackRows;
+      grid.selection = frame.selection;
       // Tracking the engine's colors keeps OSC 10/11 answers honest.
       theme.fg = rgb(frame.colors.fg);
       theme.bg = rgb(frame.colors.bg);
@@ -707,10 +721,11 @@ export function TerminalView({
             ? Math.round(e.deltaY)
             : Math.round(e.deltaY / cellH) || Math.sign(e.deltaY);
         if (lines === 0) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = Math.max(0, Math.min(grid.cols - 1, Math.floor((e.clientX - rect.left) / cellW)));
-        const y = Math.max(0, Math.min(grid.rows - 1, Math.floor((e.clientY - rect.top) / cellH)));
-        void invoke("term_wheel", { termId, x, y, lines });
+        const cell = cellOf(e);
+        // Shift means "this gesture is mine, not the program's" — the same
+        // override the click path applies, and the only way into scrollback
+        // while a program holds mouse tracking open.
+        void invoke("term_wheel", { termId, x: cell.x, y: cell.y, lines, shift: e.shiftKey });
       };
       const focusInput = () => input.focus({ preventScroll: true });
 
@@ -723,7 +738,9 @@ export function TerminalView({
         copy: copySelection,
         paste: pasteClipboard,
         selectAll: () => void select("all"),
-        hasSelection: () => rowsHaveSelection(grid.lines),
+        // The engine's answer, not `grid.lines`: a selection scrolled out of
+        // the viewport highlights no row while still being copyable.
+        hasSelection: () => grid.selection,
         clearScrollback: () => void invoke(TERM_CLEAR_COMMAND, { termId }),
         // `onOpenPath` when the parent wired one, else the external editor.
         openPath: (link) => {
@@ -765,21 +782,30 @@ export function TerminalView({
       // The pending select IPC, so copy-on-select can await it before
       // `term_copy` reads — those calls are otherwise unordered.
       let lastSelect: Promise<unknown> = Promise.resolve();
+      // Endpoints are ABSOLUTE cells (`row` from the oldest scrollback row).
+      // A drag outlives the viewport it began in, so a viewport row re-sent
+      // on the next mousemove names whatever text has since slid into that
+      // slot. See `Select` in tt-vt.
       const select = (
         kind: "drag" | "word" | "line" | "all" | "clear",
-        a?: { x: number; y: number },
-        b?: { x: number; y: number },
+        a?: { x: number; row: number },
+        b?: { x: number; row: number },
       ) => {
         lastSelect = invoke("term_select", {
           termId,
           kind,
           ax: a?.x,
-          ay: a?.y,
+          ay: a?.row,
           bx: b?.x,
-          by: b?.y,
+          by: b?.row,
         });
         return lastSelect;
       };
+      /** The absolute cell a viewport cell currently sits on. */
+      const absolute = (cell: { x: number; y: number }) => ({
+        x: cell.x,
+        row: grid.viewportTop + cell.y,
+      });
       // What the last copy-on-select took, so repeating the gesture doesn't
       // re-take the clipboard. Reset on clear and blur: both are new intent.
       let lastCopiedGesture: string | null = null;
@@ -788,19 +814,41 @@ export function TerminalView({
         lastCopiedGesture = gesture;
         void lastSelect.then(copySelection);
       };
-      const cellOf = (e: MouseEvent) => ({
-        x: Math.max(0, Math.min(grid.cols - 1, Math.floor(e.offsetX / cellW))),
-        y: Math.max(0, Math.min(grid.rows - 1, Math.floor(e.offsetY / cellH))),
-      });
-      let anchor: { x: number; y: number } | null = null;
+      // Measured off the canvas rect rather than `offsetX/offsetY`, so the
+      // same function serves events on the canvas, on the padded host (the
+      // wheel), and on the window (a drag that left the pane).
+      const pointOf = (e: MouseEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (e.clientX - rect.left) / cellW, y: (e.clientY - rect.top) / cellH };
+      };
+      const cellOf = (e: MouseEvent) => {
+        const p = pointOf(e);
+        return {
+          x: Math.max(0, Math.min(grid.cols - 1, Math.floor(p.x))),
+          y: Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y))),
+        };
+      };
+      // The drag's fixed end, absolute so it keeps naming the pressed text.
+      let anchor: { x: number; row: number } | null = null;
       let dragged = false;
+      // The pointer, in canvas cell units and deliberately *unclamped*: a `y`
+      // outside `[0, rows)` is what says "keep scrolling".
+      let dragPoint: { x: number; y: number } | null = null;
+      let autoscrollTimer: ReturnType<typeof setInterval> | null = null;
+      const stopAutoscroll = () => {
+        if (autoscrollTimer === null) return;
+        clearInterval(autoscrollTimer);
+        autoscrollTimer = null;
+      };
       // A tracking program gets wheel, motion, middle and plain left clicks —
       // never left drags or word/line gestures, which stay local selection. So
       // a left press waits for mouseup to know which it was.
       const mouseToProgram = (e: MouseEvent) =>
         grid.modes.mouseTracking && !grid.scrolledBack && !e.shiftKey;
-      // A held-back left press owed to the program if no drag develops.
+      // A held-back left press owed to the program if no drag develops, plus
+      // the *viewport* cell to replay it at — not the anchor's space.
       let clickToProgram = false;
+      let pressCell: { x: number; y: number } | null = null;
       const MOUSE_BUTTONS = ["left", "middle", "right"] as const;
       let mouseGestureToProgram = false;
       let lastMotionCell: { x: number; y: number } | null = null;
@@ -822,6 +870,56 @@ export function TerminalView({
             anyButton: e.buttons !== 0,
           },
         });
+      /** How far past an edge the pointer sits, in rows; 0 while inside. */
+      const edgeOverrun = () => {
+        if (!dragPoint) return 0;
+        if (dragPoint.y < 0) return Math.max(-AUTOSCROLL_MAX_ROWS, Math.floor(dragPoint.y));
+        if (dragPoint.y >= grid.rows) {
+          return Math.min(AUTOSCROLL_MAX_ROWS, Math.floor(dragPoint.y) - grid.rows + 1);
+        }
+        return 0;
+      };
+      /** Re-point the drag's head at the pointer, against the live viewport. */
+      const extendDrag = () => {
+        if (!anchor || !dragPoint) return;
+        const head = absolute({
+          x: Math.max(0, Math.min(grid.cols - 1, Math.floor(dragPoint.x))),
+          y: Math.max(0, Math.min(grid.rows - 1, Math.floor(dragPoint.y))),
+        });
+        if (!dragged && head.x === anchor.x && head.row === anchor.row) return;
+        dragged = true;
+        setHoveredLink(null);
+        void select("drag", anchor, head);
+      };
+      // Dragging past an edge pages the viewport and keeps selecting — the
+      // only way to take a selection taller than one screen. On a timer, since
+      // a pointer held outside the pane stops producing events; against a
+      // *predicted* `viewportTop`, since the frame reporting the scroll lands
+      // after this tick must already say where the head goes.
+      const autoscrollTick = () => {
+        const delta = edgeOverrun();
+        if (!anchor || delta === 0) {
+          stopAutoscroll();
+          return;
+        }
+        const next = Math.max(0, Math.min(grid.scrollbackRows, grid.viewportTop + delta));
+        // Nothing left to reveal at this end — the head already sits on it.
+        if (next === grid.viewportTop) return;
+        scroll(delta);
+        grid.viewportTop = next;
+        dragged = true;
+        void select("drag", anchor, {
+          x: Math.max(0, Math.min(grid.cols - 1, Math.floor(dragPoint?.x ?? 0))),
+          row: delta < 0 ? grid.viewportTop : grid.viewportTop + grid.rows - 1,
+        });
+      };
+      const syncAutoscroll = () => {
+        if (anchor && edgeOverrun() !== 0) {
+          autoscrollTimer ??= setInterval(autoscrollTick, AUTOSCROLL_INTERVAL_MS);
+        } else {
+          stopAutoscroll();
+        }
+      };
       const onMouseDown = (e: MouseEvent) => {
         focusInput();
         if (e.button !== 0) {
@@ -845,12 +943,15 @@ export function TerminalView({
           }
         }
         const kind = selectionKindForDetail(e.detail);
+        const at = absolute(cell);
         if (kind === "word" || kind === "line") {
-          void select(kind, cell);
+          void select(kind, at);
           // Keyed on the absolute scrollback row, so a scroll makes it new.
-          maybeCopyOnSelect(kind, selectionGestureKey(kind, cell.x, grid.viewportTop + cell.y));
+          maybeCopyOnSelect(kind, selectionGestureKey(kind, at.x, at.row));
         } else {
-          anchor = cell;
+          anchor = at;
+          pressCell = cell;
+          dragPoint = pointOf(e);
           dragged = false;
           clickToProgram = mouseToProgram(e);
         }
@@ -866,14 +967,22 @@ export function TerminalView({
           }
           if (mouseGestureToProgram) return;
         }
-        if (!anchor) {
-          setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
+        // A drag is tracked on the window instead (see `onWindowMouseMove`),
+        // so it survives the pointer leaving the canvas.
+        if (!anchor) setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
+      };
+      // Every pooled pane hears this; `anchor` is what says the drag is ours.
+      const onWindowMouseMove = (e: MouseEvent) => {
+        if (!anchor) return;
+        // A mouseup swallowed elsewhere (another app grabbed the pointer)
+        // would otherwise leave the gesture — and its autoscroll — running.
+        if (e.buttons === 0) {
+          onMouseUp(e);
           return;
         }
-        if (!dragged && cell.x === anchor.x && cell.y === anchor.y) return;
-        dragged = true;
-        setHoveredLink(null);
-        void select("drag", anchor, cell);
+        dragPoint = pointOf(e);
+        extendDrag();
+        syncAutoscroll();
       };
       const onMouseUp = (e: MouseEvent) => {
         if (mouseGestureToProgram) {
@@ -881,13 +990,14 @@ export function TerminalView({
           sendMouse(e, "release", lastMotionCell ?? cellOf(e));
           return;
         }
+        stopAutoscroll();
         if (anchor && !dragged) {
           void select("clear");
           lastCopiedGesture = null;
           // Deliver the click the program was owed (held back at mousedown).
-          if (clickToProgram && mouseToProgram(e)) {
-            sendMouse(e, "press", anchor);
-            sendMouse(e, "release", anchor);
+          if (clickToProgram && pressCell && mouseToProgram(e)) {
+            sendMouse(e, "press", pressCell);
+            sendMouse(e, "release", pressCell);
           }
         } else if (anchor && dragged) {
           // This fires for every window mouseup in every pooled pane, and a
@@ -895,6 +1005,8 @@ export function TerminalView({
           maybeCopyOnSelect("drag", null);
         }
         anchor = null;
+        pressCell = null;
+        dragPoint = null;
         dragged = false;
         clickToProgram = false;
       };
@@ -917,8 +1029,10 @@ export function TerminalView({
       canvas.addEventListener("mousedown", onMouseDown);
       canvas.addEventListener("mousemove", onMouseMove);
       canvas.addEventListener("mouseleave", onMouseLeave);
+      window.addEventListener("mousemove", onWindowMouseMove);
       window.addEventListener("mouseup", onMouseUp);
       disposers.push(() => {
+        stopAutoscroll();
         input.removeEventListener("keydown", onKeyDown);
         input.removeEventListener("keyup", onKeyUp);
         input.removeEventListener("paste", onPaste);
@@ -929,6 +1043,7 @@ export function TerminalView({
         canvas.removeEventListener("mousedown", onMouseDown);
         canvas.removeEventListener("mousemove", onMouseMove);
         canvas.removeEventListener("mouseleave", onMouseLeave);
+        window.removeEventListener("mousemove", onWindowMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
         setFocus(false);
       });

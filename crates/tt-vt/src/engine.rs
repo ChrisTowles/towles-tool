@@ -28,25 +28,34 @@ use crate::osc_color::{ColorQuery, OscColorScanner};
 use crate::osc_notify::OscNotifyScanner;
 use crate::search::{self, SearchMatch};
 
-/// A selection operation, in viewport cell coordinates.
+/// A selection operation, in **absolute screen coordinates** — row 0 is the
+/// oldest scrollback row, the same space as [`Engine::viewport_top`] and
+/// [`Engine::search`]'s matches.
+///
+/// Absolute, not viewport-relative, because a drag outlives the viewport it
+/// started in: the pointer can page into scrollback mid-gesture, and output
+/// arriving on the live screen scrolls rows out from under it either way. A
+/// viewport-row anchor re-sent on the next drag event names whatever text
+/// has since moved into that slot, so the selection walks away from the text
+/// the user grabbed.
 #[derive(Debug, Clone, Copy)]
 pub enum Select {
     /// Anchor→head drag selection (both ends inclusive).
     Range {
         ax: u16,
-        ay: u16,
+        ay: usize,
         bx: u16,
-        by: u16,
+        by: usize,
     },
     /// Select the word at a cell (double-click).
     Word {
         x: u16,
-        y: u16,
+        y: usize,
     },
     /// Select the line at a cell (triple-click).
     Line {
         x: u16,
-        y: u16,
+        y: usize,
     },
     All,
     Clear,
@@ -201,6 +210,13 @@ pub struct Engine {
     /// tracking covers cell content only, so a pure cursor move leaves
     /// `dirty()` clean and the cursor would appear stuck without this.
     last_cursor: Option<Cursor>,
+    /// Whether a selection is installed, carried on every frame. The view
+    /// can't infer this from the rows it was sent — a selection scrolled out
+    /// of the viewport highlights nothing, and "no highlighted row" would
+    /// read as "nothing to copy" while the selection is still very much
+    /// there. Owned here because libghostty exposes no getter for the active
+    /// selection short of formatting it, which is not a per-frame cost.
+    has_selection: bool,
 }
 
 impl Engine {
@@ -274,6 +290,7 @@ impl Engine {
             mouse_encoder: mouse::Encoder::new()?,
             force_full: false,
             last_cursor: None,
+            has_selection: false,
         })
     }
 
@@ -543,16 +560,20 @@ impl Engine {
     }
 
     /// A mouse-wheel gesture at viewport cell (`x`, `y`). The engine owns the
-    /// whole policy, in order: scrolled back into history pages our scrollback;
-    /// negotiated mouse tracking sends wheel reports (buttons 4/5), one per
-    /// line, capped at [`MAX_WHEEL_REPORTS`]; alternate screen with mode 1007
-    /// sends arrow keys through the key encoder so DECCKM is honored, same cap;
-    /// otherwise scroll our viewport.
-    pub fn wheel(&mut self, x: u16, y: u16, lines: i32) -> Result<()> {
+    /// whole policy, in order: `shift` held or scrolled back into history pages
+    /// our scrollback; negotiated mouse tracking sends wheel reports (buttons
+    /// 4/5), one per line, capped at [`MAX_WHEEL_REPORTS`]; alternate screen
+    /// with mode 1007 sends arrow keys through the key encoder so DECCKM is
+    /// honored, same cap; otherwise scroll our viewport.
+    ///
+    /// Shift outranking tracking is what makes scrollback reachable at all
+    /// under Claude Code, which holds `?1003h` on the primary screen all
+    /// session.
+    pub fn wheel(&mut self, x: u16, y: u16, lines: i32, shift: bool) -> Result<()> {
         if lines == 0 {
             return Ok(());
         }
-        if self.viewport_top()? < self.term.scrollback_rows()? {
+        if shift || self.viewport_top()? < self.term.scrollback_rows()? {
             self.scroll(Some(lines as isize));
             return Ok(());
         }
@@ -595,9 +616,10 @@ impl Engine {
         Ok(())
     }
 
-    /// Apply a selection operation (viewport cell coordinates). Selection
-    /// changes don't reliably mark rows dirty, so the next render is forced
-    /// full to repaint highlights everywhere (including deselection).
+    /// Apply a selection operation (absolute screen coordinates — see
+    /// [`Select`]). Selection changes don't reliably mark rows dirty, so the
+    /// next render is forced full to repaint highlights everywhere
+    /// (including deselection).
     pub fn select(&mut self, op: Select) -> Result<()> {
         match op {
             Select::Range { ax, ay, bx, by } => {
@@ -605,26 +627,31 @@ impl Engine {
                 let b = self.grid_ref(bx, by)?;
                 let sel = Selection::new(a, b, false);
                 self.term.set_selection(Some(&sel))?;
+                self.has_selection = true;
             }
             Select::Word { x, y } => {
                 let g = self.grid_ref(x, y)?;
                 if let Some(sel) = self.term.select_word(SelectWordOptions::new(g))? {
                     self.term.set_selection(Some(&sel))?;
+                    self.has_selection = true;
                 }
             }
             Select::Line { x, y } => {
                 let g = self.grid_ref(x, y)?;
                 if let Some(sel) = self.term.select_line(SelectLineOptions::new(g))? {
                     self.term.set_selection(Some(&sel))?;
+                    self.has_selection = true;
                 }
             }
             Select::All => {
                 if let Some(sel) = self.term.select_all()? {
                     self.term.set_selection(Some(&sel))?;
+                    self.has_selection = true;
                 }
             }
             Select::Clear => {
                 self.term.set_selection(None)?;
+                self.has_selection = false;
             }
         }
         self.force_full = true;
@@ -738,8 +765,11 @@ impl Engine {
         Ok(bytes.map(|b| String::from_utf8_lossy(&b).into_owned()))
     }
 
-    fn grid_ref(&self, x: u16, y: u16) -> Result<libghostty_vt::screen::GridRef<'_>> {
-        Ok(self.term.grid_ref(Point::Viewport(PointCoordinate { x, y: u32::from(y) }))?)
+    /// A grid reference for an absolute screen row (0 = oldest scrollback
+    /// row), so a caller's coordinates don't shift when the viewport moves.
+    fn grid_ref(&self, x: u16, y: usize) -> Result<libghostty_vt::screen::GridRef<'_>> {
+        let y = u32::try_from(y).unwrap_or(u32::MAX);
+        Ok(self.term.grid_ref(Point::Screen(PointCoordinate { x, y }))?)
     }
 
     /// Produce a frame of everything that changed since the last call, or
@@ -933,6 +963,7 @@ impl Engine {
             pwd,
             scrollback_rows: self.term.scrollback_rows()?,
             viewport_top: self.viewport_top()?,
+            selection: self.has_selection,
         }))
     }
 }
