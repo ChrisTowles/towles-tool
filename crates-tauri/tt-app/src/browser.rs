@@ -135,8 +135,21 @@ pub async fn browser_open(
     emit_state(&app, bare_state(pane_id.clone(), "launching", url.clone().unwrap_or_default()));
     let conn = ensure_instance(&app, &host, true)?;
 
-    // A relaunch for the same pane replaces its route; drop the stale one.
-    host.routes.lock().unwrap().retain(|_, r| r.pane_id != pane_id);
+    // A relaunch for the same pane replaces its route — and its target must
+    // close with it, or every reopen leaks a hidden tab.
+    let stale: Vec<String> = {
+        let mut routes = host.routes.lock().unwrap();
+        let stale = routes
+            .values()
+            .filter(|r| r.pane_id == pane_id)
+            .map(|r| r.target_id.clone())
+            .collect();
+        routes.retain(|_, r| r.pane_id != pane_id);
+        stale
+    };
+    for target_id in stale {
+        conn.send(None, "Target.closeTarget", json!({ "targetId": target_id }));
+    }
 
     let target = conn
         .call(None, "Target.createTarget", json!({ "url": "about:blank" }))

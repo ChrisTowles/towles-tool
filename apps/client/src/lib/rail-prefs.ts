@@ -93,6 +93,24 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
  * {@link DEFAULT_SHOW_UNMANAGED_WORKTREES} this has no Rust counterpart to
  * mirror: nothing in Rust interprets the setting, since mounting `NativePane`
  * is what starts the render thread. This is the only default. */
+export const DEFAULT_BROWSER_PANE = false;
+
+/** `agentboard.browserPane` — whether checkouts offer the Chrome pane
+ * (`components/browser-pane.tsx`). Frontend-only, like {@link useJarvisPane}:
+ * Rust never reads the key; off means no entry point rather than a disabled
+ * one. */
+export function useBrowserPane(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useLiveSetting((s) => s.agentboard?.browserPane, DEFAULT_BROWSER_PANE);
+  const persist = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      void persistAgentboardSetting("browserPane", next);
+    },
+    [setOn],
+  );
+  return [on, persist];
+}
+
 export const DEFAULT_JARVIS_PANE = false;
 
 /**

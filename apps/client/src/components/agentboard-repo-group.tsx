@@ -88,6 +88,7 @@ export function RepoGroup({
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
+  onOpenBrowser,
   onClosePane,
   quietDirs,
   quietRevealed,
@@ -129,6 +130,7 @@ export function RepoGroup({
   /** Undefined while `agentboard.jarvisPane` is off: hide the entry point
    * rather than offer one that opens nothing. */
   onOpenJarvis?: (dir: string) => void;
+  onOpenBrowser?: (dir: string) => void;
   onClosePane: (paneId: string) => void;
   /** Quiet folders demote to a stub rather than vanish — nothing silently
    * disappears from the rail. Empty when the filter is off. */
@@ -169,6 +171,7 @@ export function RepoGroup({
     diff: onOpenDiff,
     files: onOpenFiles,
     preview: onOpenPreview,
+    browser: onOpenBrowser,
     jarvis: onOpenJarvis,
   };
 
@@ -299,6 +302,7 @@ export function RepoGroup({
           onOpenDiff={() => onOpenDiff(folder.dir)}
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
+          onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
           onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
         />
         {taskFormOpen && (
@@ -456,6 +460,7 @@ export function RepoGroup({
                   onOpenDiff={() => onOpenDiff(folder.dir)}
                   onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
+                  onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
                   onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
                 />
                 {!fCollapsed && <div className="pb-1">{sessionRows(folder)}</div>}

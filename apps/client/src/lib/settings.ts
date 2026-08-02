@@ -150,6 +150,7 @@ export type UserSettings = {
     railRecentHours?: number;
     showUnmanagedWorktrees?: boolean;
     jarvisPane?: boolean;
+    browserPane?: boolean;
   } & Record<string, unknown>;
 };
 

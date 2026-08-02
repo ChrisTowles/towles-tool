@@ -124,6 +124,7 @@ const AgentboardBlockSchema = z
     railRecentHours: z.number().optional(),
     showUnmanagedWorktrees: z.boolean().optional(),
     jarvisPane: z.boolean().optional(),
+    browserPane: z.boolean().optional(),
   })
   .catchall(z.unknown());
 

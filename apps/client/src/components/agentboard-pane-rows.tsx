@@ -8,7 +8,7 @@
  * and closes without asking.
  */
 import { useState } from "react";
-import { Box, Eye, FolderTree, GitCompare } from "lucide-react";
+import { AppWindow, Box, Eye, FolderTree, GitCompare } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { IconBtn } from "@/components/agentboard-bits";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
   isDiffPane,
   isFilesPane,
   isJarvisPane,
+  isBrowserPane,
   isPreviewPane,
   windowColor,
   type AgWindow,
@@ -53,12 +54,13 @@ export function WindowSpine({
 /** The pane kinds that are a *view of* the folder rather than something
  * running in it — each still gets a rail row, so what's open in a folder is
  * answerable from the rail alone. */
-export type ViewPaneKind = "diff" | "files" | "preview" | "jarvis";
+export type ViewPaneKind = "diff" | "files" | "preview" | "browser" | "jarvis";
 
 export function viewPaneKind(paneId: string): ViewPaneKind | null {
   if (isDiffPane(paneId)) return "diff";
   if (isFilesPane(paneId)) return "files";
   if (isPreviewPane(paneId)) return "preview";
+  if (isBrowserPane(paneId)) return "browser";
   if (isJarvisPane(paneId)) return "jarvis";
   return null;
 }
@@ -70,6 +72,7 @@ const VIEW_PANE_META: Record<
   diff: { Icon: GitCompare, label: "diff", title: "This checkout's changed files, side by side" },
   files: { Icon: FolderTree, label: "files", title: "This checkout's file tree and editor" },
   preview: { Icon: Eye, label: "preview", title: "This checkout's live dev server" },
+  browser: { Icon: AppWindow, label: "chrome", title: "A real Chrome with persistent sign-ins" },
   jarvis: { Icon: Box, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 

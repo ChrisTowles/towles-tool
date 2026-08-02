@@ -48,6 +48,7 @@ import {
   folderRemoving,
   isAgent,
   isCacheExpiring,
+  browserPaneId,
   jarvisPaneId,
   liveSessions,
   nextOpenFileNonce,
@@ -90,7 +91,12 @@ import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
-import { useJarvisPane, useRailFilter, useShowUnmanagedWorktrees } from "@/lib/rail-prefs";
+import {
+  useBrowserPane,
+  useJarvisPane,
+  useRailFilter,
+  useShowUnmanagedWorktrees,
+} from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -159,6 +165,7 @@ export function AgentboardScreen() {
   // Whether the native Bevy surfaces exist at all — the rail strip below, and the per-checkout
   // `jarvis` pane's entry point.
   const [jarvisPane, setJarvisPane] = useJarvisPane();
+  const [browserPane] = useBrowserPane();
   // Whether a native surface may be on screen right now.
   const nativeVisible = activeTab === "agentboard";
   // Per-repo "show me the quiet ones anyway" toggle (the stub row).
@@ -274,6 +281,15 @@ export function AgentboardScreen() {
   const openDiff = (dir: string) => placeViewPane(dir, diffPaneId(dir));
   const openFiles = (dir: string) => placeViewPane(dir, filesPaneId(dir));
   const openPreview = (dir: string) => placeViewPane(dir, previewPaneId(dir));
+
+  // Same, for the folder's Chrome pane — a real browser whose sign-ins stick
+  // (`components/browser-pane.tsx`).
+  function openBrowser(dir: string) {
+    uiAction("agentboard.open_browser_pane", "agentboard");
+    setActiveFolderDir(dir);
+    addPaneToActive(dir, browserPaneId(dir));
+    setFocusedPaneId(browserPaneId(dir));
+  }
 
   // Claude called the preview_file tool → open (or focus) that folder's preview pane and render
   // the file it points at.
@@ -1145,6 +1161,7 @@ export function AgentboardScreen() {
                               // Undefined while `agentboard.jarvisPane` is off: the proof-of-
                               // concept surface has no entry point at all rather than one that
                               // opens a disabled pane.
+                              onOpenBrowser={browserPane ? openBrowser : undefined}
                               onOpenJarvis={jarvisPane ? openJarvis : undefined}
                               onClosePane={closePane}
                               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
@@ -1227,6 +1244,7 @@ export function AgentboardScreen() {
                   onOpenDiff={openDiff}
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
+                  onOpenBrowser={browserPane ? openBrowser : undefined}
                   onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
                   onNewTask={newTaskForActiveRepo}

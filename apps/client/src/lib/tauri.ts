@@ -81,6 +81,23 @@ export async function invoke<T>(
 }
 
 /**
+ * A binary-capable IPC channel for streaming commands (the browser pane's
+ * frames). Constructed here so the `@tauri-apps/api/core` import stays
+ * confined to this boundary module. Callers must already hold an `isTauri()`
+ * gate — a Channel cannot exist without the host — which is why this returns
+ * the raw channel to pass as a command arg rather than a `Result`.
+ */
+export async function rawChannel(onData: (bytes: Uint8Array) => void): Promise<unknown> {
+  const core = await import("@tauri-apps/api/core");
+  const channel = new core.Channel<ArrayBuffer | number[]>();
+  // Channel is not an EventTarget; `onmessage` is its whole API.
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener
+  channel.onmessage = (data) =>
+    onData(data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data));
+  return channel;
+}
+
+/**
  * Rejects with {@link IpcTimeout} once `ms` elapses. Rejecting (rather than
  * resolving an `Err`) keeps this composable with `Result.tryPromise` above,
  * which classifies it back into the error union.

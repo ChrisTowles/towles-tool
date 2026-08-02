@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Box, Files as FilesIcon, GitCompare, Globe } from "lucide-react";
+import { AppWindow, Box, Files as FilesIcon, GitCompare, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -112,7 +112,7 @@ export function PaneChrome({
  * keep the `✦`/`❯` glyphs the rail already uses for sessions rather than
  * borrowing a lucide icon, so a session pane and its rail row still name
  * themselves the same way. */
-export type LensKind = "agent" | "shell" | "diff" | "files" | "web" | "jarvis";
+export type LensKind = "agent" | "shell" | "diff" | "files" | "web" | "browser" | "jarvis";
 
 const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof GitCompare }> = {
   agent: { label: "claude", glyph: "✦" },
@@ -120,6 +120,7 @@ const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof Gi
   diff: { label: "diff", icon: GitCompare },
   files: { label: "files", icon: FilesIcon },
   web: { label: "web", icon: Globe },
+  browser: { label: "chrome", icon: AppWindow },
   // The one pane that is not DOM at all: a compositor surface Bevy draws into.
   jarvis: { label: "jarvis", icon: Box },
 };
