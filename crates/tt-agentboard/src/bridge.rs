@@ -11,7 +11,8 @@
 //!   own row. The row's non-worktree checkout leads its folder list and owns the
 //!   `key`, so a worktree that merely sorted first never keys the row.
 //! - An attributed agent event renders only on that exact session (a foreign id
-//!   is dropped, never guessed); only an unattributed one falls back to default.
+//!   is dropped, never guessed). An unattributed one goes to the pane that
+//!   recorded running its thread, and only failing that to the default.
 
 use std::collections::HashMap;
 
@@ -21,7 +22,7 @@ use crate::engine::RailRow;
 use crate::folder_meta::FolderMetaStore;
 use crate::git_info::GitInfo;
 use crate::repos::RepoEntry;
-use crate::sessions::SessionStore;
+use crate::sessions::{SessionRecord, SessionStore};
 use crate::tracker::AgentTracker;
 use crate::types::{
     AgentEvent, AgentStatus, FolderData, NeedsYouReason, RepoData, RowRecord, SessionData,
@@ -50,7 +51,7 @@ pub struct StatePayload {
 ///
 /// `attribute` maps an agent event to the PTY session id it was detected in; an id
 /// matching none of the folder's records drops the event, and `None` falls back to the
-/// folder's default session. `session_agents` supplements the tracker where it is empty.
+/// pane that remembers the thread, then to the default.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_state(
     entries: &[RepoEntry],
@@ -152,7 +153,7 @@ pub fn assemble_state(
 
 /// Build one folder: git stats + its persisted sessions with agents distributed
 /// by `attribute` (attributed → that exact session or dropped; no attribution →
-/// default session), plus a placeholder `needs` count (always 0 here — see
+/// the remembering pane, else default), plus a placeholder `needs` count (always 0 here — see
 /// [`session_needs`] — the app recomputes it after stamping shell liveness via
 /// [`recompute_needs`]).
 #[allow(clippy::too_many_arguments)]
@@ -173,13 +174,23 @@ fn build_folder(
     // Bucket each agent onto the session it ran in. An id that isn't one of
     // this folder's records means the agent runs in another app instance's
     // session (sessions.json is shared), and dropping it beats pinning
-    // someone else's agent onto an unrelated pane. Only agents with no
-    // attribution machinery at all fall back to the default session.
+    // someone else's agent onto an unrelated pane.
     let mut by_session: HashMap<String, Vec<AgentEvent>> = HashMap::new();
     for agent in folder_agents {
         let sid = match attribute(&agent) {
             Some(id) => records.iter().any(|r| r.id == id).then_some(id),
-            None => default_id.clone(),
+            // A live link is readable only while the process is, so an agent
+            // whose pid went unreadable — it exited, or the cached CLI
+            // snapshot outran it — would otherwise jump to pane 1 and take
+            // its needs-you signal along. `note_agent`'s record outlives the
+            // process. A thread another folder's pane remembers isn't ours to
+            // default either: the tracker buckets by folder *name*, so
+            // same-basename checkouts see each other's agents here.
+            None => match remembering_record(records, &agent) {
+                Some(id) => Some(id),
+                None if remembered_elsewhere(sessions, records, &agent) => None,
+                None => default_id.clone(),
+            },
         };
         if let Some(sid) = sid {
             by_session.entry(sid).or_default().push(agent);
@@ -263,6 +274,29 @@ fn build_folder(
         has_launch_config: git.has_launch_config,
         quiet: folder_meta.quiet_for(&entry.dir),
     }
+}
+
+/// The folder's session record that last ran this agent's thread, if any.
+fn remembering_record(records: &[SessionRecord], agent: &AgentEvent) -> Option<String> {
+    let tid = agent.thread_id.as_deref()?;
+    records.iter().find(|r| r.last_claude_session_id.as_deref() == Some(tid)).map(|r| r.id.clone())
+}
+
+/// Whether a pane in some *other* folder recorded running this agent's thread.
+fn remembered_elsewhere(
+    sessions: &SessionStore,
+    records: &[SessionRecord],
+    agent: &AgentEvent,
+) -> bool {
+    let Some(tid) = agent.thread_id.as_deref() else {
+        return false;
+    };
+    let ours: Vec<&str> = records.iter().map(|r| r.id.as_str()).collect();
+    sessions.iter().any(|(_, list)| {
+        list.iter().any(|r| {
+            r.last_claude_session_id.as_deref() == Some(tid) && !ours.contains(&r.id.as_str())
+        })
+    })
 }
 
 /// Whether a session "needs you". Only a session with a shell (`live`) counts,
@@ -1002,6 +1036,67 @@ mod tests {
         let two = folder.sessions.iter().find(|s| s.id == s2.id).unwrap();
         assert!(one.agent_state.is_none());
         assert_eq!(two.agent_state.as_ref().unwrap().status, AgentStatus::Busy);
+    }
+
+    #[test]
+    fn an_unattributed_agent_returns_to_the_pane_that_ran_it() {
+        // Pane two ran thread `ta` and recorded it. The live link is gone (the
+        // pid is unreadable the moment the process exits, while the 60s CLI
+        // snapshot still lists it) — the agent must stay on pane two rather
+        // than jump to pane one with its unseen/needs-you state.
+        let mut tracker = AgentTracker::new();
+        tracker.apply_event(ev("alpha", AgentStatus::Complete, "ta"), false);
+        let mut store = SessionStore::new(None);
+        let s1 = store.add("/r/alpha", Some("one"), 1);
+        let s2 = store.add("/r/alpha", Some("two"), 2);
+        store.note_agent(&s2.id, "ta");
+        let git = HashMap::new();
+        let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
+
+        let payload = assemble(&entries, &git, &tracker, &store, &|_| None);
+        let folder = &payload.repos[0].folders[0];
+        let one = folder.sessions.iter().find(|s| s.id == s1.id).unwrap();
+        let two = folder.sessions.iter().find(|s| s.id == s2.id).unwrap();
+        assert!(one.agent_state.is_none());
+        assert_eq!(two.agent_state.as_ref().unwrap().status, AgentStatus::Complete);
+    }
+
+    #[test]
+    fn an_unremembered_agent_still_falls_back_to_the_default_pane() {
+        // Nothing ever attributed this thread (no `/proc` on macOS), so the
+        // default is all we have — better than hiding a running agent.
+        let mut tracker = AgentTracker::new();
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "tz"), false);
+        let mut store = SessionStore::new(None);
+        let s1 = store.add("/r/alpha", Some("one"), 1);
+        let s2 = store.add("/r/alpha", Some("two"), 2);
+        store.note_agent(&s2.id, "ta"); // a different thread
+        let git = HashMap::new();
+        let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
+
+        let payload = assemble(&entries, &git, &tracker, &store, &|_| None);
+        let folder = &payload.repos[0].folders[0];
+        let one = folder.sessions.iter().find(|s| s.id == s1.id).unwrap();
+        assert_eq!(one.agent_state.as_ref().unwrap().status, AgentStatus::Busy);
+    }
+
+    #[test]
+    fn a_sibling_folders_agent_does_not_default_onto_this_folders_pane() {
+        // Two checkouts share the basename `alpha`, so both read the same
+        // tracker bucket. The thread belongs to the other checkout's pane.
+        let mut tracker = AgentTracker::new();
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        let mut store = SessionStore::new(None);
+        let mine = store.add("/r/one/alpha", Some("one"), 1);
+        let theirs = store.add("/r/two/alpha", Some("one"), 2);
+        store.note_agent(&theirs.id, "ta");
+        let git = HashMap::new();
+        let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/one/alpha".into() }];
+
+        let payload = assemble(&entries, &git, &tracker, &store, &|_| None);
+        let folder = &payload.repos[0].folders[0];
+        let pane = folder.sessions.iter().find(|s| s.id == mine.id).unwrap();
+        assert!(pane.agent_state.is_none());
     }
 
     #[test]

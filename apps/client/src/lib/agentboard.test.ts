@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   agentRollup,
   cacheWarnMs,
+  contextBand,
+  hasSubagentSpend,
+  sessionTotalTokens,
+  subagentLabel,
   changedFolderDirs,
   moveFocus,
   cycleNeedsYou,
@@ -1845,6 +1849,44 @@ describe("cache expiry warning", () => {
   it("falls back to the 5m warn window for an unknown TTL", () => {
     expect(cacheWarnMs(null)).toBe(120_000);
     expect(cacheWarnMs(ONE_HOUR)).toBe(600_000);
+  });
+});
+
+describe("contextBand", () => {
+  it("steps at each threshold, inclusive of the floor", () => {
+    expect(contextBand(0)).toBe("calm");
+    expect(contextBand(19)).toBe("calm");
+    expect(contextBand(20)).toBe("noted");
+    expect(contextBand(39)).toBe("noted");
+    expect(contextBand(40)).toBe("half");
+    expect(contextBand(60)).toBe("heavy");
+    expect(contextBand(79)).toBe("heavy");
+    expect(contextBand(80)).toBe("critical");
+    expect(contextBand(140)).toBe("critical");
+  });
+});
+
+describe("sub-agent spend", () => {
+  it("totals the session's own context with every sub-agent's", () => {
+    expect(sessionTotalTokens({ contextUsed: 128_000, subagentContextUsed: 284_000 })).toBe(
+      412_000,
+    );
+    expect(sessionTotalTokens({ contextUsed: 128_000 })).toBe(128_000);
+    expect(sessionTotalTokens(null)).toBe(0);
+  });
+
+  it("only claims sub-agent spend when there is both a count and tokens", () => {
+    expect(hasSubagentSpend({ subagentCount: 3, subagentContextUsed: 284_000 })).toBe(true);
+    expect(hasSubagentSpend({ subagentCount: 3, subagentContextUsed: 0 })).toBe(false);
+    expect(hasSubagentSpend({ subagentContextUsed: 284_000 })).toBe(false);
+    expect(hasSubagentSpend(null)).toBe(false);
+  });
+
+  it("labels a sub-agent by type, then description, then position", () => {
+    expect(subagentLabel({ agentType: "Explore", description: "d" }, 0)).toBe("Explore");
+    expect(subagentLabel({ description: "review the docs" }, 0)).toBe("review the docs");
+    expect(subagentLabel({ agentType: "  " }, 2)).toBe("sub 3");
+    expect(subagentLabel({}, 0)).toBe("sub 1");
   });
 });
 

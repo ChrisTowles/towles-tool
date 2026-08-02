@@ -59,6 +59,9 @@ pub struct SubagentInfo {
     pub agent_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Context this thread carries — spend the parent's readout never shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_used: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -80,6 +83,12 @@ pub struct AgentEventDetails {
     pub last_tool: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagents: Option<Vec<SubagentInfo>>,
+    /// Every sub-agent spawned, finished included: `subagents` lists only the
+    /// active few, and shedding them on retirement would under-report spend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_context_used: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_count: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#loop: Option<LoopInfo>,
 }
