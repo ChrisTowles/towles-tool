@@ -1,9 +1,7 @@
 /**
- * The Chrome pane: a real headless Chrome (app-owned profile, sign-ins
- * persist) streamed onto a canvas over CDP, input forwarded back. The
- * process lives in the Rust `BrowserHost`; this component is only a view,
- * which is what lets it render conditionally like preview/diff — unmount
- * closes the pane's tab, and durable state (logins) lives in the profile.
+ * The Chrome pane: a real headless Chrome on the app-owned profile, streamed
+ * onto a canvas over CDP. The process lives in Rust, so this is only a view
+ * and may unmount freely — the logins live in the profile directory.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppWindow, ArrowLeft, ArrowRight, ExternalLink, Loader2, RotateCw, X } from "lucide-react";

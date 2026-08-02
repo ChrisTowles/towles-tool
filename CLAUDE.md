@@ -116,7 +116,10 @@ Cargo workspace + npm workspace (`apps/client` only). Crate by crate:
   from the clock), `tt-collect`, `tt-mcp` (`preview_file` renders a file, `file_open`
   reveals one — [docs/MCP.md](docs/MCP.md)),
   `tt-telemetry` ([docs/TELEMETRY.md](docs/TELEMETRY.md)), `tt-ide`, `tt-vt`,
-  `tt-jarvis` ([docs/NATIVE-PANE.md](docs/NATIVE-PANE.md)), `tt-agentboard`
+  `tt-jarvis` ([docs/NATIVE-PANE.md](docs/NATIVE-PANE.md)),
+  `tt-browser` (a real Chrome on an app-owned profile so **sign-ins made in
+  the pane persist**; CDP frames onto a canvas, Linux *and* macOS —
+  [docs/BROWSER-PANE.md](docs/BROWSER-PANE.md)), `tt-agentboard`
   (**agent status is PTY-first**, and the one home of the task-removal
   sequence), `tt-claude-sessions`, `tt-claude-code`, `tt-doctor`, `tt-update`.
 - `crates-cli/tt-cli` — `clap` 4, binary `tt`, deliberately small: `journal`,

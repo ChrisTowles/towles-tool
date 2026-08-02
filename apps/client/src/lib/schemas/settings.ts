@@ -1,13 +1,10 @@
 import { z } from "zod";
 
 /**
- * Runtime validators for `UserSettings` (`lib/settings.ts`) — the shared
- * settings file every worktree reads/writes, hand-edited on disk and
- * carried across a TS-CLI compatibility boundary (#38). Mirrors the TS type
- * field-for-field; `.passthrough()` on every object matches the Rust side's
- * `#[serde(default)]`/no-`deny_unknown_fields` tolerance so a field this
- * schema doesn't know about yet survives a validated read instead of being
- * silently dropped from what gets saved back.
+ * Runtime validators for `UserSettings` — a file that is hand-edited and
+ * shared with the TS CLI. `.passthrough()` everywhere matches the Rust
+ * side's tolerance, so a key this schema doesn't know survives a read
+ * instead of being dropped from what gets saved back.
  */
 
 const JournalSettingsSchema = z

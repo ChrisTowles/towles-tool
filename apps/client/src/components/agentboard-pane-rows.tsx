@@ -1,11 +1,7 @@
 /**
- * The rail rows that aren't a PTY session: the view panes (diff, files,
- * preview, jarvis), plus the colored spine that brackets a multi-pane window's
- * rows.
- *
- * They live together because they share one shape — a pane, not a process —
- * and one rule: a view pane is a *view of* the folder, so it carries no status
- * and closes without asking.
+ * The rail rows that aren't a PTY session: the view panes, plus the colored
+ * spine bracketing a multi-pane window. A view pane is a *view of* the
+ * folder, so it carries no status and closes without asking.
  */
 import { useState } from "react";
 import { AppWindow, Box, Eye, FolderTree, GitCompare } from "lucide-react";
@@ -76,15 +72,9 @@ const VIEW_PANE_META: Record<
   jarvis: { Icon: Box, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 
-/**
- * A folder's diff / files / preview pane as a rail row.
- *
- * Quieter than a session row — no status dot, since there is nothing
- * running to have a status — but present, because "what is open in this folder"
- * is a question the rail should answer. Clicking focuses the pane (the same
- * call the folder header's chip makes, which is a no-op placement when the pane
- * already exists); ✕ closes it.
- */
+/** A view pane as a rail row: quieter than a session (nothing running to
+ * have a status) but present, because "what is open here" is a question the
+ * rail should answer. Click focuses, ✕ closes. */
 export function ViewPaneRow({
   kind,
   active,

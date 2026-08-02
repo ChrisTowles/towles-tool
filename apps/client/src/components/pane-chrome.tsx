@@ -2,24 +2,10 @@ import type { ReactNode } from "react";
 import { AppWindow, Box, Files as FilesIcon, GitCompare, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * One header row, shared by every pane kind in the Agentboard tiling.
- *
- * The ordering rule is the whole point: **the lens leads, the subject
- * follows, the folder never appears.** A window is scoped to a single
- * checkout (`AgWindow.folderDir`), so every pane in it shows the same folder
- * — printing that name in each header spends the most prominent task on the
- * one value guaranteed to be constant, leaving the panes to be told apart by
- * a 14px muted glyph. Repo / folder / branch live once in the working-context
- * band above, which is the rule `PaneHeader` already documented and the diff,
- * files, and preview headers each drifted from by copy-paste.
- *
- * Type is carried by shape and words, never by hue. Violet means "focused /
- * agent" and amber means "needs you" across the app; a per-kind color would
- * put a third meaning on color and weaken both. The lens chip is neutral
- * (`bg-muted`) for every kind except the Claude session, which keeps the
- * violet `✦` it already had.
- */
+/** One header row for every pane kind. **The lens leads, the subject
+ * follows, the folder never appears** — a window is scoped to one checkout,
+ * so that name belongs in the working-context band. Type is carried by shape
+ * and words, never hue: violet and amber already mean focused and needs-you. */
 export function PaneChrome({
   lens,
   subject,
@@ -28,32 +14,17 @@ export function PaneChrome({
   center,
   actions,
 }: {
-  /** The lens chip (see [`PaneLens`]), plus any always-present marker the
-   * kind owns — the session panes pass their status `Dot` here. */
+  /** The lens chip, plus any marker the kind owns (a session's status `Dot`). */
   lens: ReactNode;
-  /** What is unique to *this* pane: the diff's baseline, the open file, the
-   * loaded URL, the session's label. Omitted when the kind has nothing to
-   * say yet, which drops the rule with it rather than leaving it dangling. */
+  /** What is unique to *this* pane: the baseline, the file, the URL, the label. */
   subject?: ReactNode;
   /** Hover text for a subject the row is likely to truncate (a long path). */
   subjectTitle?: string;
-  /** Kind-specific controls that sit inline with the subject rather than in
-   * the trailing action cluster — the diff pane's baseline toggle. */
+  /** Controls inline with the subject rather than in the trailing cluster. */
   controls?: ReactNode;
-  /** One control given the middle of the row to itself — for the thing worth
-   * hitting without reading the header first (the diff pane's
-   * read-only/editable toggle).
-   *
-   * Passing one switches the row from flex to a `1fr auto 1fr` grid, which is
-   * what makes it centered *against the pane* rather than against whatever
-   * chips happen to sit beside it — a target that slides when the baseline
-   * label goes from `vs main` to `vs feat/whatever` is one you have to look
-   * for every time. Both layouts are kept because the grid's equal side
-   * columns would truncate a long subject (a session's name, a file path) at
-   * half the row, and the panes without a center slot are exactly the ones
-   * whose subject needs that width. A pane too narrow for all three columns
-   * degrades by pushing the center off-center — never by overlapping, which
-   * is what absolute centering did at half width. */
+  /** One control given the middle of the row. Passing it switches the row to a
+   * `1fr auto 1fr` grid so the target stays put as the subject's width changes;
+   * the flex layout is kept for panes whose subject needs the whole row. */
   center?: ReactNode;
   /** Trailing icon buttons, right-aligned. */
   actions: ReactNode;
@@ -108,10 +79,8 @@ export function PaneChrome({
   );
 }
 
-/** The lens kinds, in the order they read as a family. `agent` and `shell`
- * keep the `✦`/`❯` glyphs the rail already uses for sessions rather than
- * borrowing a lucide icon, so a session pane and its rail row still name
- * themselves the same way. */
+/** `agent` and `shell` keep the rail's `✦`/`❯` glyphs, so a session pane and
+ * its rail row name themselves the same way. */
 export type LensKind = "agent" | "shell" | "diff" | "files" | "web" | "browser" | "jarvis";
 
 const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof GitCompare }> = {
@@ -125,17 +94,15 @@ const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof Gi
   jarvis: { label: "jarvis", icon: Box },
 };
 
-/** The leading chip that names a pane's kind — icon-or-glyph plus the word.
- * The word is what makes two panes of the same checkout distinguishable
- * without reading them, which an icon alone measurably failed to do. */
+/** The chip naming a pane's kind. The word carries it — an icon alone
+ * measurably failed to distinguish two panes of one checkout. */
 export function PaneLens({
   kind,
   label,
   title,
 }: {
   kind: LensKind;
-  /** Overrides the default word — the shell panes pass their real shell
-   * (`zsh`, `bash`) when the backend reported one. */
+  /** Overrides the default word — shells pass their real one (`zsh`). */
   label?: string;
   title?: string;
 }) {

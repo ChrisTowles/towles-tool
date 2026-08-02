@@ -147,13 +147,15 @@ kind that owns a process or accumulates state must join the pool and keep its
 state outside the component** — adding it to the conditionally-rendered list
 is the bug this rule exists to prevent.
 
-The **jarvis** pane (`components/jarvis-pane.tsx`) is the near-miss that
-shows where the line falls: it owns a Bevy render thread yet is *not* pooled,
-because unmounting destroys nothing — the host retires and revives the
-renderer (`crates-tauri/tt-pane`); a shell's scrollback has no such net. Its
-body is also a compositor surface *above* the webview, so `hidden` on an
-ancestor is invisible to it — screen switches push down as `visible={false}`
-(`PaneGrid`'s `nativeVisible`).
+Two panes show where the line actually falls. **Chrome**
+(`browser-pane.tsx`) owns a browser process, but that process lives in Rust,
+so the component is only a view and stays conditional — the sign-ins live in
+the profile directory, not React. **Jarvis** (`jarvis-pane.tsx`) owns a Bevy
+render thread and is still not pooled, because unmounting retires the
+renderer rather than destroying it (`crates-tauri/tt-pane`); a shell's
+scrollback has no such net. Jarvis' body is also a compositor surface
+*above* the webview, so `hidden` on an ancestor is invisible to it — screen
+switches push down as `visible={false}` (`PaneGrid`'s `nativeVisible`).
 
 ## Clickable rows can't be `<button>`s
 

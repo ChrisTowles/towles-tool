@@ -14,17 +14,9 @@ export const DEFAULT_RAIL_RECENT_HOURS = 4;
 /** The hour spans the rail's filter menu offers for `"recent"`. */
 export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24, 48, 96, 24 * 7];
 
-/**
- * Track the Agentboard rail's filter (`agentboard.railFilter`) and the window
- * `"recent"` measures (`agentboard.railRecentHours`) as state, plus setters
- * that update state and persist back to the shared settings file.
- * `useLiveSetting` carries the re-read-on-save/focus policy every preference
- * hook shares.
- *
- * One hook for both keys because they're one control: the mode is meaningless
- * to the user without the span it measures, so the rail's menu shows and sets
- * them together.
- */
+/** The rail's filter and the span `"recent"` measures. One hook for both
+ * keys because they are one control: the mode is meaningless without the
+ * span, so the rail's menu shows and sets them together. */
 export function useRailFilter(): {
   filter: RailFilter;
   recentHours: number;
@@ -61,17 +53,10 @@ export function useRailFilter(): {
  * `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
 export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
 
-/**
- * Track the Agentboard rail's "show worktrees no board task is bound to" filter
- * (`agentboard.showUnmanagedWorktrees`) as state, plus a setter.
- *
- * Unlike {@link useRailFilter} this is not a view filter the client can
- * apply itself: the setting decides which checkouts the *engine* discovers at
- * all, so the setter goes through `ab_set_show_unmanaged_worktrees` and Rust
- * owns the write (it re-emits `agentboard://state`, which is what repopulates
- * the rail). Reads still come off the settings file, so a change made from
- * another window flows back on focus / `SETTINGS_SAVED_EVENT`.
- */
+/** Not a view filter the client can apply: it decides which checkouts the
+ * *engine* discovers, so the setter goes through
+ * `ab_set_show_unmanaged_worktrees` and Rust owns the write. Reads still come
+ * off the settings file, so another window's change flows back on focus. */
 export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   const [show, setShow] = useLiveSetting(
     (s) => s.agentboard?.showUnmanagedWorktrees,
@@ -95,10 +80,8 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
  * is what starts the render thread. This is the only default. */
 export const DEFAULT_BROWSER_PANE = false;
 
-/** `agentboard.browserPane` — whether checkouts offer the Chrome pane
- * (`components/browser-pane.tsx`). Frontend-only, like {@link useJarvisPane}:
- * Rust never reads the key; off means no entry point rather than a disabled
- * one. */
+/** Whether checkouts offer the Chrome pane. Off means no entry point rather
+ * than a disabled one. */
 export function useBrowserPane(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useLiveSetting((s) => s.agentboard?.browserPane, DEFAULT_BROWSER_PANE);
   const persist = useCallback(
@@ -113,19 +96,9 @@ export function useBrowserPane(): [boolean, (on: boolean) => void] {
 
 export const DEFAULT_JARVIS_PANE = false;
 
-/**
- * Track whether the native Bevy surface is enabled at all
- * (`agentboard.jarvisPane`), plus a setter that persists back to the shared
- * settings file. One switch covers both surfaces: the strip at the bottom of
- * the rail, and whether a checkout offers the `jarvis` pane that tiles one
- * beside its terminals (`components/jarvis-pane.tsx`).
- *
- * Frontend-only like {@link useRailFilter} — Rust never reads the key.
- * Off, no `NativePane` is rendered, so a checkout that never turns this on
- * never creates a surface or a renderer. It is not a way to reclaim one after
- * the fact: a shown pane's renderer is parked, never dropped, for the app's
- * life (`crates-tauri/tt-pane`).
- */
+/** One switch for both Bevy surfaces: the rail strip and the `jarvis` pane.
+ * Off, no `NativePane` renders at all — but it is not a way to reclaim one
+ * after the fact: a shown pane's renderer is parked for the app's life. */
 export function useJarvisPane(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useLiveSetting((s) => s.agentboard?.jarvisPane, DEFAULT_JARVIS_PANE);
   const persist = useCallback(

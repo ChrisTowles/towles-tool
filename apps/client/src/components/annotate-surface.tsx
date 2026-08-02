@@ -1,13 +1,6 @@
-/**
- * Draw-on-page annotation, shared by the preview and Chrome panes: it wraps
- * whatever the pane shows, overlays an ink canvas, and sends the marked-up
- * screenshot to a session's prompt.
- *
- * Panes differ only in where the pixels come from, which is the `capture`
- * prop. The preview pane's WebKit snapshot already contains the ink (the
- * canvas is inside the webview it rasterizes); a CDP screenshot does not, so
- * `compositeInk` re-draws the strokes onto the returned image instead.
- */
+/** Draw-on-page annotation, shared by the preview and Chrome panes. They
+ * differ only in `capture`: a WebKit snapshot already contains the ink, a CDP
+ * screenshot does not — hence `compositeInk`. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Pen, Send, Slash, Square, Type } from "lucide-react";
 import { toast } from "sonner";

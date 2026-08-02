@@ -139,11 +139,8 @@ pub async fn browser_open(
     // close with it, or every reopen leaks a hidden tab.
     let stale: Vec<String> = {
         let mut routes = host.routes.lock().unwrap();
-        let stale = routes
-            .values()
-            .filter(|r| r.pane_id == pane_id)
-            .map(|r| r.target_id.clone())
-            .collect();
+        let stale =
+            routes.values().filter(|r| r.pane_id == pane_id).map(|r| r.target_id.clone()).collect();
         routes.retain(|_, r| r.pane_id != pane_id);
         stale
     };

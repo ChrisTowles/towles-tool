@@ -83,6 +83,11 @@ Cargo workspace + npm workspace (`apps/client` only):
     create, opt-in and off by default. Nothing takes a pane down while the app
     runs, and that is deliberate — that plus the Bevy fork pin, the subsurface
     traps and `bevy_solari`'s blocker: **[docs/NATIVE-PANE.md](docs/NATIVE-PANE.md)**.
+  - `tt-browser` — Chrome as a supervised child driven over CDP, behind the
+    **Chrome pane**. The profile is the app's own and starts empty: the
+    feature is login persistence, never an import of the user's Chrome
+    profile. Shutdown goes through CDP `Browser.close` or the cookie DB
+    never flushes: **[docs/BROWSER-PANE.md](docs/BROWSER-PANE.md)**.
   - `tt-agentboard` — watchers/engine: repo list, session tracking, needs-you
     synthesis. **Agent status is PTY-first** (`pty_status` folds what the
     terminal observes over the cached `claude agents` verdict — read that
