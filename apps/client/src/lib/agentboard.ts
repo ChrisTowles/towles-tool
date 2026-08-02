@@ -699,6 +699,17 @@ export function isSoloRepo(r: RepoData): boolean {
   return r.folders.length === 1;
 }
 
+/** A repo's **hand-marked** quiet checkouts as one comparable value: the rail keys a peek to
+ * it, so marking one more ends the peek and the row folds away rather than the mark reading as
+ * ignored. Marks only — a checkout going quiet on its own must not close a peek. */
+export function repoQuietMarkKey(r: RepoData): string {
+  return r.folders
+    .filter((f) => f.quiet)
+    .map((f) => f.dir)
+    .toSorted()
+    .join("\n");
+}
+
 /** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
 export type FocusLevel = "rail" | "window" | "pane";
 

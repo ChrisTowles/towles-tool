@@ -1303,6 +1303,7 @@ export function RepoMenu({
   path,
   onRemove,
   dir,
+  quietDirs,
   isWorktree,
   quiet,
   onNewTask,
@@ -1315,8 +1316,12 @@ export function RepoMenu({
   path?: string;
   onRemove: () => void;
   dir: string;
+  /** What "Mark quiet" covers when that isn't just `dir`: a *repo* header means
+   * every checkout under it, or the worktrees stay and the mark looks ignored. */
+  quietDirs?: string[];
   /** No "Remove from rail": auto-discovered, they reappear next poll. */
   isWorktree?: boolean;
+  /** Whether *everything* `quietDirs` covers is already marked. */
   quiet: boolean;
   /** Set only on a task-convention repo. */
   onNewTask?: () => void;
@@ -1347,7 +1352,7 @@ export function RepoMenu({
 
   async function toggleQuiet() {
     const result = await invoke<void>("ab_set_folder_quiet", {
-      dir,
+      dirs: quietDirs ?? [dir],
       quiet: !quiet,
     });
     if (result.isErr()) toast.error(`Couldn't update — ${result.error.message}`);

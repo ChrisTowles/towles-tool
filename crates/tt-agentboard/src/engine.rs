@@ -654,9 +654,17 @@ impl Engine {
         changed
     }
 
-    /// Set (or clear) a folder's quiet override. Persists on change.
-    pub fn set_folder_quiet(&mut self, dir: &str, quiet: bool) -> bool {
-        let changed = self.folder_meta.set_quiet(dir, quiet);
+    /// Set (or clear) the quiet override on every one of `dirs`, in one save.
+    /// Takes a set because the unit the user marks quiet is a *repo* — its root
+    /// checkout and every worktree under it — and marking half of one leaves the
+    /// repo on the rail, which reads as the mark not having worked.
+    pub fn set_folder_quiet(&mut self, dirs: &[String], quiet: bool) -> bool {
+        // `|=` over a loop, never `any`: `any` stops at the first change, which is how half a
+        // repo ends up marked.
+        let mut changed = false;
+        for dir in dirs {
+            changed |= self.folder_meta.set_quiet(dir, quiet);
+        }
         if changed {
             persisted(self.folder_meta.save(), "folder metadata");
         }
@@ -1535,8 +1543,28 @@ mod engine_tests {
         assert!(!e.set_collapsed("row-1", true));
         assert!(e.set_collapsed("row-1", false));
 
-        assert!(e.set_folder_quiet("/repo/x", true));
-        assert!(!e.set_folder_quiet("/repo/x", true));
-        assert!(e.set_folder_quiet("/repo/x", false));
+        let one = [String::from("/repo/x")];
+        assert!(e.set_folder_quiet(&one, true));
+        assert!(!e.set_folder_quiet(&one, true));
+        assert!(e.set_folder_quiet(&one, false));
+    }
+
+    /// Marking a repo means the root checkout *and* its worktrees: the set is
+    /// changed if any member is, so a repo half-marked already still reports the
+    /// change and persists the rest.
+    #[test]
+    fn set_folder_quiet_marks_every_dir_it_is_given() {
+        let (_tmp, mut e) = engine();
+        let root = String::from("/repo");
+        let worktree = String::from("/repo/.claude/worktrees/task");
+
+        assert!(e.set_folder_quiet(std::slice::from_ref(&root), true));
+        assert!(e.set_folder_quiet(&[root.clone(), worktree.clone()], true));
+        assert!(e.folder_meta.quiet_for(&root));
+        assert!(e.folder_meta.quiet_for(&worktree));
+
+        assert!(e.set_folder_quiet(&[root.clone(), worktree.clone()], false));
+        assert!(!e.folder_meta.quiet_for(&root));
+        assert!(!e.folder_meta.quiet_for(&worktree));
     }
 }

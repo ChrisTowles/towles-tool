@@ -64,6 +64,7 @@ import {
   pathScope,
   placePane,
   prForFolder,
+  repoQuietMarkKey,
   taskForFolder,
   promptWithImages,
   pruneWins,
@@ -1413,6 +1414,26 @@ describe("isFolderStale", () => {
     });
     expect(folderLastWorkedAt(f)).toBe(INSIDE);
     expect(isFolderStale(f, NOW, HOURS)).toBe(false);
+  });
+});
+
+describe("repoQuietMarkKey", () => {
+  it("changes when a checkout is marked or unmarked, so the peek closes and the row folds", () => {
+    const before = repo("r", [folder({ dir: "/a" }), folder({ dir: "/b" })]);
+    const after = repo("r", [folder({ dir: "/a" }), folder({ dir: "/b", quiet: true })]);
+    expect(repoQuietMarkKey(after)).not.toBe(repoQuietMarkKey(before));
+  });
+
+  it("ignores a checkout the filter quieted on its own — that must not close a peek", () => {
+    const marks = repo("r", [folder({ dir: "/a", quiet: true })]);
+    const alsoIdle = repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b" })]);
+    expect(repoQuietMarkKey(alsoIdle)).toBe(repoQuietMarkKey(marks));
+  });
+
+  it("doesn't depend on folder order", () => {
+    const a = repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b", quiet: true })]);
+    const b = repo("r", [folder({ dir: "/b", quiet: true }), folder({ dir: "/a", quiet: true })]);
+    expect(repoQuietMarkKey(a)).toBe(repoQuietMarkKey(b));
   });
 });
 

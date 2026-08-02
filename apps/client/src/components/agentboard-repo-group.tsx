@@ -391,7 +391,10 @@ export function RepoGroup({
               )
             }
             dir={repo.folders[0].dir}
-            quiet={repo.folders[0].quiet}
+            // A repo header speaks for the whole repo: "Mark quiet" covers the
+            // root checkout *and* every worktree, or the repo stays on the rail.
+            quietDirs={repo.folders.map((f) => f.dir)}
+            quiet={repo.folders.every((f) => f.quiet)}
             dirMissing={repo.folders[0].dirMissing}
             onNewTask={() =>
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })
