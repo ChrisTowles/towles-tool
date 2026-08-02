@@ -35,7 +35,7 @@ approaches that do work:
 
 ### 1. Vite HMR against the live Tauri window (preferred)
 
-`npm run dev` keeps the Vite dev server attached to the real WebView, so any
+`bun run dev` keeps the Vite dev server attached to the real WebView, so any
 source edit hot-reloads into the running app in ~1s. To put the UI in a
 desired state, temporarily hard-code that state, screenshot, revert:
 
@@ -50,7 +50,7 @@ effect on re-render. Revert the edit when done — never commit it.
 
 ### 2. Bare browser via Chrome DevTools (for real interaction)
 
-The same frontend runs in a normal browser (`npm run client:dev` if the
+The same frontend runs in a normal browser (`bun run client:dev` if the
 Tauri app isn't already running the dev server, defaults to
 `http://localhost:1420`). There, browser-automation tooling (Chrome DevTools
 MCP) can click, type, and screenshot the page normally. Caveat: the app
@@ -60,12 +60,12 @@ the real shell via approach 1.
 
 ## Misc
 
-- `npm run dev` (root) picks a deterministic per-task port automatically via
+- `bun run dev` (root) picks a deterministic per-task port automatically via
   `scripts/dev-port.mjs` instead of hardcoding 1420, so running this repo
   from multiple worktrees at once no longer collides (a stale listener
   on that port gets killed rather than skipped). Watch its
   `[dev-port] using port N` log line to find which port a given task's
-  WebView/browser target is on. `npm run client:dev` (bare Vite, no Tauri)
+  WebView/browser target is on. `bun run client:dev` (bare Vite, no Tauri)
   still defaults to 1420 since it isn't task-aware.
 - If the tt-app build script fails reading plugin permissions from a *stale
   absolute path* (another checkout's `target/`), the cargo build cache was

@@ -5,7 +5,7 @@ points here; the deepest subsystems have their own docs ([MCP](MCP.md),
 [telemetry](TELEMETRY.md), [the native pane](NATIVE-PANE.md), [the browser
 pane](BROWSER-PANE.md)).
 
-Cargo workspace + npm workspace (`apps/client` only).
+Cargo workspace + bun workspace (`apps/client` only).
 
 ## `crates/` — Tauri-free shared libraries
 

@@ -1,6 +1,6 @@
 name: Cleanup caches
 
-# ci.yml/frontend.yml populate a full copy of the Rust/npm/zig build caches
+# ci.yml/frontend.yml populate a full copy of the Rust/bun/zig build caches
 # under each PR's own ref (refs/pull/<n>/merge). Those caches are only ever
 # useful to that PR's own runs, but nothing deletes them once the PR closes
 # — they just sit in the repo's 10GB total Actions-cache budget forever,

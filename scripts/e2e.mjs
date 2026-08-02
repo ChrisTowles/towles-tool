@@ -112,7 +112,7 @@ async function main() {
   }
 
   console.log(`[e2e] starting Vite on ${devPort} …`);
-  vite = spawn("npx", ["vite", "--port", String(devPort), "--strictPort"], {
+  vite = spawn("bunx", ["vite", "--port", String(devPort), "--strictPort"], {
     cwd: path.join(repoRoot, "apps/client"),
     env: { ...process.env, TT_DEV_PORT: String(devPort), VITE_WDIO: "1" },
     stdio: "inherit",
@@ -132,7 +132,7 @@ async function main() {
   if (up.isErr()) die(up.error.message);
 
   console.log("[e2e] running wdio …");
-  const ran = run("npx", ["wdio", "run", "e2e/wdio.conf.ts"], {
+  const ran = run("bunx", ["wdio", "run", "e2e/wdio.conf.ts"], {
     env: {
       ...process.env,
       // Forced scope = full state isolation (shared stores included) — the

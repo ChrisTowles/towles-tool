@@ -1,6 +1,6 @@
 //! Detects when a live session's ports have drifted from what its folder's
 //! `.env` currently claims. A PTY never reads `.env` itself — it inherits the
-//! app's environment at spawn — so anything the user ran inside it (`npm run
+//! app's environment at spawn — so anything the user ran inside it (`bun run
 //! dev`) cannot notice a later `tt task env` rotating that port out from under
 //! it (see `tt_tasks::template::render`'s reuse-vs-rotate logic).
 //!

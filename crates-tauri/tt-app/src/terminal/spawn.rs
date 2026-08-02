@@ -5,7 +5,7 @@
 //! The sink is where a new `tt_vt::Event` gets wired in.
 //!
 //! Three concerns overlap in the env block, in this order: the shell's declared
-//! *identity*, this instance's own vars *scrubbed* so a nested `npm run dev`
+//! *identity*, this instance's own vars *scrubbed* so a nested `bun run dev`
 //! can't collide with the outer one (#39), then the *stamps* pointing a Claude
 //! session here at this pane's IDE server and this window's MCP port.
 

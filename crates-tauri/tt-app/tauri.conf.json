@@ -6,8 +6,8 @@
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../../apps/client/dist",
-    "beforeDevCommand": "npm run dev --workspace @towles-tool/client",
-    "beforeBuildCommand": "npm run build --workspace @towles-tool/client"
+    "beforeDevCommand": "bun run --filter @towles-tool/client dev",
+    "beforeBuildCommand": "bun run --filter @towles-tool/client build"
   },
   "app": {
     "withGlobalTauri": true,

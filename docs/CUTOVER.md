@@ -29,7 +29,7 @@ archive).
 Local-first (it's a personal tool):
 
 1. **Now / dev**: `cargo install --path crates-cli/tt-cli` installs `tt` to
-   `~/.cargo/bin`. The app runs via `npm run dev` or `npm run build` (tauri
+   `~/.cargo/bin`. The app runs via `bun run dev` or `bun run build` (tauri
    bundle → .deb/.AppImage in `target/release/bundle/`).
 2. **At cutover**: same commands, plus the rename below. No registry publish
    needed for a single-user tool; revisit cargo-dist / an npm wrapper /

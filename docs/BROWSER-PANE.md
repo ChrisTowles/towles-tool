@@ -73,7 +73,7 @@ with it, so it is single-pane only.
 
 ## Verifying
 
-`npm run dev:drive`, then drive it: the surface is a DOM canvas, so plain
+`bun run dev:drive`, then drive it: the surface is a DOM canvas, so plain
 `drive.mjs shot` sees it and `winshot` is unnecessary. `TT_BROWSER_BIN`
 overrides the binary for tests. Two traps when driving: headless Chrome
 inherits a dark `prefers-color-scheme`, so `about:blank` renders dark and

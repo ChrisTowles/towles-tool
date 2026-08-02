@@ -1,7 +1,7 @@
 //! Self-registers a `.desktop` entry + icon per task so each checkout shows up as its own
 //! entry in the launcher/search, with the right icon and an `Exec` pointing at that task's
 //! binary. `tauri build` normally writes both in its Linux packaging step, but the
-//! daily-driver flow (`npm start`) runs `--no-bundle` and execs the raw binary, so nothing
+//! daily-driver flow (`bun start`) runs `--no-bundle` and execs the raw binary, so nothing
 //! installs them. Idempotent — only touches disk when the content differs.
 //!
 //! `StartupWMClass` is deliberately the constant binary name (`tt-app`), not `app_id`:

@@ -58,7 +58,7 @@ UI_PORT=${tt:port 5173-5272}          # port-pool claim, unique per checkout
 DB_NAME=myapp_${tt:task-name}         # checkout dir basename
 URL=http://localhost:${tt:var UI_PORT}  # value rendered on an earlier line
 BASE=${tt:base}                       # branch this task PRs into
-TT_TASK_SETUP=npm install --prefer-offline
+TT_TASK_SETUP=bun install
 #TT_TASK_TEARDOWN=docker compose down --volumes
 ```
 

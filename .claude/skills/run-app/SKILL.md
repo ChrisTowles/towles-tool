@@ -19,12 +19,12 @@ Paths below are relative to the repo/task root.
   ```bash
   sudo apt-get install -y libwebkit2gtk-4.1-dev webkit2gtk-driver
   ```
-- `npm install` at the repo root.
+- `bun install` at the repo root.
 
 ## Run (agent path) — start here
 
 ```bash
-npm run dev:drive > /tmp/dev-drive.log 2>&1 &
+bun run dev:drive > /tmp/dev-drive.log 2>&1 &
 disown
 until node scripts/drive.mjs status 2>/dev/null | grep -q '"ready":true'; do sleep 5; done
 ```
@@ -49,20 +49,20 @@ resolve automatically per task, no config needed.
 ## Run (human path)
 
 ```bash
-npm start   # release build + run — daily-driving
-npm run dev # debug build, laggier
+bun start   # release build + run — daily-driving
+bun run dev # debug build, laggier
 ```
 
 Neither is automatable (no WebDriver server attached) — use `dev:drive`
 for anything an agent needs to drive.
 
 Per this repo's `CLAUDE.md`: after finishing a task that touches the app,
-launch `npm start` in the background as the last step so it's already on
+launch `bun start` in the background as the last step so it's already on
 screen for Chris — doesn't replace driving it yourself first.
 
 ## Gotchas
 
-- `dev:drive` and `npm run e2e` share a task's ports — don't run both at once.
+- `dev:drive` and `bun run e2e` share a task's ports — don't run both at once.
 - `click`/`type` need CSS selectors, not text — use `clicktext` for text.
 - Nav rail icons have no visible text, only `aria-label`:
   ```bash
