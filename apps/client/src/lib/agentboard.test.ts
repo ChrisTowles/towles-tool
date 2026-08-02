@@ -3,7 +3,7 @@ import {
   agentRollup,
   cacheWarnMs,
   changedFolderDirs,
-  collapseTargetKeys,
+  moveFocus,
   cycleNeedsYou,
   cycleSession,
   colCount,
@@ -1444,15 +1444,62 @@ function repo(key: string, folders: FolderData[]): RepoData {
   return { key, dir: key, name: key, folders, needs: 0 };
 }
 
-describe("collapseTargetKeys", () => {
-  it("collapses a solo-checkout repo at the repo header, with no parent level", () => {
-    const solo = repo("a", [folder({ dir: "a/f1" })]);
-    expect(collapseTargetKeys(solo, "a/f1")).toEqual({ own: "a", parent: null });
+describe("moveFocus", () => {
+  const base = {
+    panes: ["s1", "~diff:/x", "s2"],
+    focusedPaneId: null as string | null,
+    windows: ["w1"],
+    activeWindowId: "w1",
+  };
+  const at = (
+    level: "rail" | "window" | "pane",
+    dir: "up" | "down" | "left" | "right",
+    over = {},
+  ) => moveFocus({ ...base, level, direction: dir, ...over });
+
+  it("walks rail sessions with up/down", () => {
+    expect(at("rail", "up")).toEqual({ kind: "session", direction: "prev" });
+    expect(at("rail", "down")).toEqual({ kind: "session", direction: "next" });
+    expect(at("rail", "left")).toBeNull();
   });
 
-  it("collapses a multi-checkout repo's folder, nested under the repo header", () => {
-    const multi = repo("a", [folder({ dir: "a/f1" }), folder({ dir: "a/f2" })]);
-    expect(collapseTargetKeys(multi, "a/f2")).toEqual({ own: "a::a/f2", parent: "a" });
+  it("descends right from the rail — window strip only when there are several windows", () => {
+    expect(at("rail", "right")).toEqual({ kind: "pane", id: "s1" });
+    expect(at("rail", "right", { windows: ["w1", "w2"] })).toEqual({
+      kind: "level",
+      level: "window",
+    });
+    expect(at("rail", "right", { panes: [] })).toBeNull();
+  });
+
+  it("moves between windows at the strip, left edge landing on the rail", () => {
+    const wins = { windows: ["w1", "w2"], activeWindowId: "w2" };
+    expect(at("window", "left", wins)).toEqual({ kind: "window", id: "w1" });
+    expect(at("window", "right", { windows: ["w1", "w2"] })).toEqual({ kind: "window", id: "w2" });
+    expect(at("window", "right", wins)).toBeNull();
+    expect(at("window", "left")).toEqual({ kind: "level", level: "rail" });
+    expect(at("window", "up")).toEqual({ kind: "level", level: "rail" });
+    expect(at("window", "down")).toEqual({ kind: "pane", id: "s1" });
+  });
+
+  it("steps panes with left/right/down, entering at the first", () => {
+    expect(at("pane", "right", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~diff:/x" });
+    expect(at("pane", "down", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~diff:/x" });
+    expect(at("pane", "right", { focusedPaneId: "s2" })).toBeNull();
+    expect(at("pane", "right")).toEqual({ kind: "pane", id: "s1" });
+    expect(at("pane", "left", { focusedPaneId: "s2" })).toEqual({ kind: "pane", id: "~diff:/x" });
+  });
+
+  it("climbs out of the panes to the window strip only when there is another window", () => {
+    expect(at("pane", "up", { focusedPaneId: "~diff:/x" })).toEqual({
+      kind: "level",
+      level: "rail",
+    });
+    expect(at("pane", "up", { focusedPaneId: "~diff:/x", windows: ["w1", "w2"] })).toEqual({
+      kind: "level",
+      level: "window",
+    });
+    expect(at("pane", "left", { focusedPaneId: "s1" })).toEqual({ kind: "level", level: "rail" });
   });
 });
 

@@ -726,18 +726,58 @@ export function isSoloRepo(r: RepoData): boolean {
   return r.folders.length === 1;
 }
 
-/** The collapse-map key(s) plain Left/Right arrow navigation acts on for a given repo + its
- * focused folder — the same keying the rail's click-to-toggle chevrons already use
- * (`agentboard-repo-group.tsx`): a solo-checkout repo collapses at the repo header (`repo.key`,
- * one level, no parent); a multi-checkout repo collapses per-folder (``
- * `${repo.key}::${folder.dir}` ``) nested under the repo header (`repo.key`) as a distinct
- * outer level. */
-export function collapseTargetKeys(
-  repo: Pick<RepoData, "key" | "folders">,
-  folderDir: string,
-): { own: string; parent: string | null } {
-  if (isSoloRepo(repo as RepoData)) return { own: repo.key, parent: null };
-  return { own: `${repo.key}::${folderDir}`, parent: repo.key };
+/** Which layer of the board holds keyboard focus: a rail entry, the window strip, or a
+ * pane tile. One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
+export type FocusLevel = "rail" | "window" | "pane";
+
+export type FocusMove =
+  | { kind: "session"; direction: "next" | "prev" }
+  | { kind: "level"; level: FocusLevel }
+  | { kind: "pane"; id: string }
+  | { kind: "window"; id: string };
+
+// The whole arrow-navigation state machine, pure so it's testable: Up/Down walk rail
+// sessions; Right descends rail → window strip → panes (skipping the window level when the
+// folder has a single window); Left steps back through panes/windows and off the left edge
+// lands on the rail; Up climbs pane → window strip only when there's another window to
+// choose, else straight to the rail.
+export function moveFocus(args: {
+  level: FocusLevel;
+  direction: "up" | "down" | "left" | "right";
+  panes: readonly string[];
+  focusedPaneId: string | null;
+  windows: readonly string[];
+  activeWindowId: string | null;
+}): FocusMove | null {
+  const { level, direction, panes, focusedPaneId, windows, activeWindowId } = args;
+  const multiWin = windows.length > 1;
+  const firstPane = (): FocusMove | null =>
+    panes.length > 0 ? { kind: "pane", id: panes[0] } : null;
+
+  if (level === "rail") {
+    if (direction === "up") return { kind: "session", direction: "prev" };
+    if (direction === "down") return { kind: "session", direction: "next" };
+    if (direction === "right") return multiWin ? { kind: "level", level: "window" } : firstPane();
+    return null;
+  }
+
+  if (level === "window") {
+    const wi = activeWindowId ? windows.indexOf(activeWindowId) : -1;
+    if (direction === "up") return { kind: "level", level: "rail" };
+    if (direction === "down") return firstPane();
+    if (direction === "right") {
+      return wi >= 0 && wi < windows.length - 1 ? { kind: "window", id: windows[wi + 1] } : null;
+    }
+    return wi > 0 ? { kind: "window", id: windows[wi - 1] } : { kind: "level", level: "rail" };
+  }
+
+  const idx = focusedPaneId ? panes.indexOf(focusedPaneId) : -1;
+  if (direction === "right" || direction === "down") {
+    if (idx === -1) return firstPane();
+    return idx < panes.length - 1 ? { kind: "pane", id: panes[idx + 1] } : null;
+  }
+  if (direction === "left" && idx > 0) return { kind: "pane", id: panes[idx - 1] };
+  return { kind: "level", level: multiWin ? "window" : "rail" };
 }
 
 /** How long after its last sign of agent life a folder still counts as active for the rail

@@ -9,8 +9,6 @@ export type CollapseState = {
   collapsed: Record<string, boolean>;
   /** Flip one entry and persist it incrementally. */
   toggleCollapsed: (key: string) => void;
-  /** Set (rather than flip) one entry — used by arrow-key navigation. */
-  setCollapsedTo: (key: string, next: boolean) => void;
   /** Whether the whole rail is collapsed to its icon strip. */
   railCollapsed: boolean;
   /** Toggle the whole-rail icon collapse (emits its ui.action). */
@@ -42,17 +40,6 @@ export function useCollapseState(state: StatePayload): CollapseState {
     });
   }
 
-  // Set (rather than flip) one collapse-map entry — used by arrow-key
-  // navigation, where left always means collapsed and right always means
-  // expanded regardless of the current state.
-  function setCollapsedTo(key: string, next: boolean) {
-    setCollapsed((c) => {
-      if (!!c[key] === next) return c;
-      void invoke("ab_save_collapsed", { key, collapsed: next });
-      return { ...c, [key]: next };
-    });
-  }
-
   // Whole-rail icon collapse (issue #70): same persisted map, sentinel key.
   const railCollapsed = !!collapsed[RAIL_COLLAPSE_KEY];
   const toggleRail = () => {
@@ -60,5 +47,5 @@ export function useCollapseState(state: StatePayload): CollapseState {
     toggleCollapsed(RAIL_COLLAPSE_KEY);
   };
 
-  return { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail };
+  return { collapsed, toggleCollapsed, railCollapsed, toggleRail };
 }

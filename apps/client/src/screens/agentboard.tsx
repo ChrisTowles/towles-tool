@@ -33,7 +33,7 @@ import {
   claudeCommand,
   claudeResumeCommand,
   claudeTitleName,
-  collapseTargetKeys,
+  moveFocus,
   consumePendingAgentboardNav,
   consumePendingOpenSessions,
   cycleNeedsYou,
@@ -67,6 +67,7 @@ import {
   waitForFirstFrame,
   type AgentboardNav,
   type AgentStatus,
+  type FocusLevel,
   type FolderData,
   type ClaudeLaunchOptions,
   type Overlay,
@@ -96,6 +97,12 @@ import { uiAction } from "@/lib/ui-action";
 import { toast } from "sonner";
 
 /** Agentboard — the Folder Rail. */
+/** Release the shell's claim on the keyboard when focus moves off its pane. */
+function blurTerminal() {
+  const el = document.activeElement;
+  if (el instanceof HTMLElement && el.closest("[data-term-host]")) el.blur();
+}
+
 export function AgentboardScreen() {
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
@@ -110,6 +117,8 @@ export function AgentboardScreen() {
   // Which pane tile (session, diff, files, or tombstone) last claimed the click — the sole
   // driver of the violet focus ring below.
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
+  // Which layer the Ctrl+Shift arrow cursor is on — rail entries, window strip, or panes.
+  const [focusLevel, setFocusLevel] = useState<FocusLevel>("rail");
   // ab-focus-terminal (Enter): which session's terminal to imperatively give DOM focus, and a
   // nonce so re-requesting the *same* session (e.g.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
@@ -139,8 +148,7 @@ export function AgentboardScreen() {
   const expectedKills = useRef<Set<string>>(new Set());
   // Folder-rail collapse/expand state (issue #52) — hydrated once and then
   // this local copy is the live truth; see useCollapseState.
-  const { collapsed, toggleCollapsed, setCollapsedTo, railCollapsed, toggleRail } =
-    useCollapseState(state);
+  const { collapsed, toggleCollapsed, railCollapsed, toggleRail } = useCollapseState(state);
   // Rail filter: demote the folders it excludes behind a per-repo "N quiet" stub row, so a big
   // rail shrinks to what's actually going on (or what you touched today) without anything
   // silently disappearing.
@@ -249,54 +257,23 @@ export function AgentboardScreen() {
   });
   const { requestDeleteWorktree } = worktreeDelete;
 
-  // Ctrl+Shift+Left/Right collapse/expand (complements ab-focus-up/down's Ctrl+Shift+Up/Down
-  // session nav — same modifier family, so it's also safe to steal from a focused terminal,
-  // unlike plain arrow keys which the shell needs for cursor movement).
-  function collapseByArrow(direction: "left" | "right") {
-    if (!activeRepo || !activeFolder) return;
-    const { own, parent } = collapseTargetKeys(activeRepo, activeFolder.dir);
-    if (direction === "right") {
-      if (parent && collapsed[parent]) {
-        setCollapsedTo(parent, false);
-        return;
-      }
-      setCollapsedTo(own, false);
-      return;
-    }
-    if (!collapsed[own]) {
-      setCollapsedTo(own, true);
-    } else if (parent) {
-      setCollapsedTo(parent, true);
-    }
-  }
-
   // The label to lead a session row/tab with: the live Claude terminal title when the shell is
   // actually running, else the backend-derived task/shell name.
   const labelFor = (s: SessionData) =>
     (s.live ? claudeTitleName(titles[s.id]) : null) ?? sessionLabel(s);
 
-  // Open a folder's diff as a pane in its focused window (beside the live terminals — never a
-  // modal). Re-opening focuses the window it's already in.
-  function openDiff(dir: string) {
+  // Open (or refocus) a view pane in the folder's active window, beside the live terminals —
+  // never a modal. The arrow cursor lands on the new pane.
+  function placeViewPane(dir: string, paneId: string) {
     setActiveFolderDir(dir);
-    addPaneToActive(dir, diffPaneId(dir));
-    setFocusedPaneId(diffPaneId(dir));
+    addPaneToActive(dir, paneId);
+    setFocusedPaneId(paneId);
+    setFocusLevel("pane");
   }
 
-  // Same, for the folder's full file tree.
-  function openFiles(dir: string) {
-    setActiveFolderDir(dir);
-    addPaneToActive(dir, filesPaneId(dir));
-    setFocusedPaneId(filesPaneId(dir));
-  }
-
-  // Same, for the folder's live dev-server preview (embedded browser + draw-on-
-  // page feedback to this task's own session).
-  function openPreview(dir: string) {
-    setActiveFolderDir(dir);
-    addPaneToActive(dir, previewPaneId(dir));
-    setFocusedPaneId(previewPaneId(dir));
-  }
+  const openDiff = (dir: string) => placeViewPane(dir, diffPaneId(dir));
+  const openFiles = (dir: string) => placeViewPane(dir, filesPaneId(dir));
+  const openPreview = (dir: string) => placeViewPane(dir, previewPaneId(dir));
 
   // Claude called the preview_file tool → open (or focus) that folder's preview pane and render
   // the file it points at.
@@ -362,9 +339,7 @@ export function AgentboardScreen() {
   // than DOM (`components/jarvis-pane.tsx`).
   function openJarvis(dir: string) {
     uiAction("agentboard.open_jarvis_pane", "agentboard");
-    setActiveFolderDir(dir);
-    addPaneToActive(dir, jarvisPaneId(dir));
-    setFocusedPaneId(jarvisPaneId(dir));
+    placeViewPane(dir, jarvisPaneId(dir));
   }
 
   // Claude called the openFile tool → open (or focus) that folder's files pane and focus the
@@ -507,6 +482,7 @@ export function AgentboardScreen() {
   function selectFolder(folderDir: string) {
     setActiveFolderDir(folderDir);
     setSelected((cur) => (cur && cur.folderDir !== folderDir ? null : cur));
+    setFocusLevel("rail");
     ackFolder(folderDir);
   }
 
@@ -522,6 +498,8 @@ export function AgentboardScreen() {
     mountSession(folderDir, sessionId);
     setSelected({ folderDir, sessionId });
     setFocusedPaneId(sessionId);
+    // Rail-level selection by default; focusPane overrides to pane in the same batch.
+    setFocusLevel("rail");
     setActiveFolderDir(folderDir);
     // Looking at it acknowledges it — drop the attention badge.
     setTermAttention((m) => {
@@ -593,8 +571,57 @@ export function AgentboardScreen() {
     const targetId = sessionPaneId ?? activeFolder.sessions[0]?.id;
     if (!targetId) return false;
     selectSession(activeFolderDir, targetId);
+    setFocusLevel("pane");
     setFocusTerminalRequest((r) => ({ id: targetId, nonce: (r?.nonce ?? 0) + 1 }));
     return true;
+  }
+
+  // Give a pane keyboard reality, not just the violet ring: a session pane is selected the
+  // same way clicking it would be and its terminal takes DOM focus; a view pane takes the
+  // ring and the previous shell loses the keyboard.
+  function focusPane(paneId: string) {
+    if (sessionById.has(paneId)) {
+      const dir = folderOf.get(paneId)?.dir ?? cwds.current[paneId];
+      if (!dir) return;
+      selectSession(dir, paneId);
+      setFocusTerminalRequest((r) => ({ id: paneId, nonce: (r?.nonce ?? 0) + 1 }));
+    } else {
+      setFocusedPaneId(paneId);
+      blurTerminal();
+    }
+    // After selectSession, which claims rail level — the batch resolves to pane.
+    setFocusLevel("pane");
+  }
+
+  // ab-focus-up/down/left/right (see lib/shortcuts.tsx): one cursor over the whole board —
+  // rail entries, the window strip, panes — and the arrows always move whichever is focused.
+  // The transitions live in `moveFocus` (lib/agentboard.ts); this just applies its verdict.
+  function focusByArrow(direction: "up" | "down" | "left" | "right") {
+    const move = moveFocus({
+      level: focusLevel,
+      direction,
+      panes: activeWin?.panes ?? [],
+      focusedPaneId,
+      windows: windowsForFolder.map((w) => w.id),
+      activeWindowId: activeWin?.id ?? null,
+    });
+    if (!move) return;
+    switch (move.kind) {
+      case "session":
+        focusSession(move.direction);
+        break;
+      case "level":
+        setFocusLevel(move.level);
+        setFocusedPaneId(null);
+        blurTerminal();
+        break;
+      case "pane":
+        focusPane(move.id);
+        break;
+      case "window":
+        actions.focusWindow(move.id);
+        break;
+    }
   }
 
   const taskCreation = useTaskCreation({
@@ -917,6 +944,7 @@ export function AgentboardScreen() {
       const win = wins?.windows.find((w) => w.id === windowId);
       if (!win) return;
       selectFolder(win.folderDir);
+      setFocusLevel("window");
       updateWins([win.folderDir], (w) => ({
         ...w,
         activeWindows: { ...w.activeWindows, [win.folderDir]: windowId },
@@ -962,12 +990,12 @@ export function AgentboardScreen() {
         "ab-toggle-rail": toggleRail,
         "ab-jump-next": () => jumpToNeedsYou("next"),
         "ab-jump-prev": () => jumpToNeedsYou("prev"),
-        "ab-focus-up": () => focusSession("prev"),
-        "ab-focus-down": () => focusSession("next"),
-        "ab-focus-up-bracket": () => focusSession("prev"),
-        "ab-focus-down-bracket": () => focusSession("next"),
-        "ab-collapse-left": () => collapseByArrow("left"),
-        "ab-collapse-right": () => collapseByArrow("right"),
+        "ab-focus-up": () => focusByArrow("up"),
+        "ab-focus-down": () => focusByArrow("down"),
+        "ab-focus-up-bracket": () => focusByArrow("up"),
+        "ab-focus-down-bracket": () => focusByArrow("down"),
+        "ab-focus-left": () => focusByArrow("left"),
+        "ab-focus-right": () => focusByArrow("right"),
         "ab-focus-terminal": focusActiveTerminal,
         "ab-split-session": splitIntoWindow,
         "ab-new-terminal-right": () => {
@@ -981,6 +1009,8 @@ export function AgentboardScreen() {
         activeFolderDir,
         selected,
         focusedPaneId,
+        focusLevel,
+        windowsForFolder,
         wins,
         repos,
         folderOf,
@@ -989,7 +1019,6 @@ export function AgentboardScreen() {
         activeFolder,
         activeWin,
         sessionById,
-        collapsed,
         railCollapsed,
         worktreeDelete.confirmDeleteWt,
         worktreeDelete.deleteWtTask,
@@ -1209,6 +1238,7 @@ export function AgentboardScreen() {
                 <WindowStrip
                   windows={windowsForFolder}
                   activeWinId={activeWin?.id}
+                  keyboardFocused={focusLevel === "window"}
                   hasSelection={selected !== null}
                   updateWins={updateWins}
                   onFocusWindow={actions.focusWindow}
@@ -1232,7 +1262,10 @@ export function AgentboardScreen() {
                 now={now}
                 actions={actions}
                 focusedPaneId={focusedPaneId}
-                onFocusPane={setFocusedPaneId}
+                onFocusPane={(id) => {
+                  setFocusedPaneId(id);
+                  setFocusLevel("pane");
+                }}
                 onSelectFolder={selectFolder}
                 termAttention={termAttention}
                 exitLabels={exitLabels}
@@ -1241,7 +1274,10 @@ export function AgentboardScreen() {
                 nativeVisible={nativeVisible}
                 labelFor={labelFor}
                 focusTerminalRequest={focusTerminalRequest}
-                onSelectSession={selectSession}
+                onSelectSession={(dir, id) => {
+                  selectSession(dir, id);
+                  setFocusLevel("pane");
+                }}
                 onExit={handleExit}
                 onTitle={onTitle}
                 onOpenTerminalPath={openTerminalPath}
