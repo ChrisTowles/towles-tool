@@ -1,6 +1,7 @@
 import { PanePlaceholder } from "@/components/agentboard-bits";
 import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
+import { BrowserPane } from "@/components/browser-pane";
 import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
 import { JarvisPane } from "@/components/jarvis-pane";
@@ -23,6 +24,8 @@ import {
   type RepoData,
   type SessionActions,
   type SessionData,
+  browserPaneDir,
+  isBrowserPane,
 } from "@/lib/agentboard";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import type { TermExit } from "@/lib/term-protocol";
@@ -228,6 +231,21 @@ export function PaneGrid(props: {
             folder={folderByDir.get(dir)}
             focused={focusedPaneId === id}
             file={previewRequests[dir]}
+            onClose={() => onRemovePane(id)}
+          />,
+        );
+      })}
+      {/* Chrome panes: a real headless Chrome streamed onto a canvas — the
+          process lives in the Rust BrowserHost, so conditional rendering is
+          safe: unmount closes the pane's tab, sign-ins persist in the
+          profile. */}
+      {panes.filter(isBrowserPane).map((id) => {
+        const dir = browserPaneDir(id) ?? "";
+        return paneBox(
+          id,
+          <BrowserPane
+            folder={folderByDir.get(dir)}
+            focused={focusedPaneId === id}
             onClose={() => onRemovePane(id)}
           />,
         );

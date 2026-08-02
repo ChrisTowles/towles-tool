@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import {
+  AppWindow,
   Box,
   Check,
   CheckCheck,
@@ -919,6 +920,21 @@ export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
       glyph={<Eye className="size-3" />}
       label="preview"
       title="Preview this checkout's dev server — annotate the page and send it to the agent"
+      onOpen={onOpen}
+      labeled={labeled}
+    />
+  );
+}
+
+/** A real Chrome on the app-owned profile, tiled beside the terminals —
+ * sign-ins made there persist across restarts. Mounted only when
+ * `agentboard.browserPane` is on. */
+export function BrowserButton({ onOpen, labeled }: PaneOpenButtonProps) {
+  return (
+    <PaneOpenButton
+      glyph={<AppWindow className="size-3" />}
+      label="chrome"
+      title="Open a real Chrome in this window — log in once, it sticks"
       onOpen={onOpen}
       labeled={labeled}
     />

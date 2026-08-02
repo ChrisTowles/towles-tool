@@ -24,30 +24,11 @@ export type InvokeOptions<T> = {
 };
 
 /**
- * Invoke a Tauri command. Never throws and never rejects: every failure —
- * no Tauri host, a rejected command, a schema mismatch, a timeout — comes back
- * as a typed `Err` in the {@link IpcError} union.
- *
- * Because failure is a value, each call site picks its own failure UX rather
- * than inheriting one from the function it happened to call. The three shapes
- * in use here:
- *
- * ```ts
- * // Degrade quietly to a fallback.
- * const repos = (await invoke<Repo[]>("list_repos")).unwrapOr([]);
- *
- * // Surface real failures, but stay silent in plain-Vite browser dev.
- * (await invoke<View>("load_view")).match({
- *   ok: setView,
- *   err: (e) => { if (!NotInTauri.is(e)) toast.error(e.message); },
- * });
- *
- * // Branch on the outcome.
- * if ((await invoke("task_delete", { id })).isErr()) revertOptimisticDelete();
- * ```
- *
- * Fire-and-forget is safe by construction: an ignored `Result` can't produce an
- * unhandled rejection, so the hot PTY-write path needs no `.catch`.
+ * Invoke a Tauri command. Never throws and never rejects: no host, a rejected
+ * command, a schema mismatch and a timeout all come back as a typed `Err`, so
+ * each call site picks its own failure UX (`unwrapOr` / `match` / `isErr`) —
+ * see apps/client/CLAUDE.md for the three shapes. Fire-and-forget is safe by
+ * construction: an ignored `Result` can't produce an unhandled rejection.
  */
 export async function invoke<T>(
   cmd: string,
@@ -78,6 +59,23 @@ export async function invoke<T>(
       ? Result.ok<T, IpcError>(parsed.data)
       : Result.err<T, IpcError>(new SchemaMismatch({ command: cmd, issues: parsed.error.issues }));
   });
+}
+
+/**
+ * A binary-capable IPC channel for streaming commands (the browser pane's
+ * frames). Constructed here so the `@tauri-apps/api/core` import stays
+ * confined to this boundary module. Callers must already hold an `isTauri()`
+ * gate — a Channel cannot exist without the host — which is why this returns
+ * the raw channel to pass as a command arg rather than a `Result`.
+ */
+export async function rawChannel(onData: (bytes: Uint8Array) => void): Promise<unknown> {
+  const core = await import("@tauri-apps/api/core");
+  const channel = new core.Channel<ArrayBuffer | number[]>();
+  // Channel is not an EventTarget; `onmessage` is its whole API.
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener
+  channel.onmessage = (data) =>
+    onData(data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data));
+  return channel;
 }
 
 /**

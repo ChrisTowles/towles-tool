@@ -1,29 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AppWindow,
-  Circle,
-  ExternalLink,
-  FileCode2,
-  Pen,
-  RotateCw,
-  Send,
-  Slash,
-  Square,
-  Type,
-  X,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { AppWindow, ExternalLink, FileCode2, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
-import { Glyph, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -32,9 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
-import { type FolderData, termWriteRetry } from "@/lib/agentboard";
+import type { FolderData } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchConfigs } from "@/lib/launch";
 import { openExternalUrl } from "@/lib/open-url";
@@ -49,34 +28,9 @@ import {
   previewWatchFile,
   typedPreviewRequest,
 } from "@/lib/preview-artifact";
-import {
-  ANNOTATION_COLORS,
-  ANNOTATION_FONT,
-  type Annotation,
-  type AnnotationTool,
-  type DevServer,
-  devServersOf,
-  drawAnnotation,
-  feedbackPrompt,
-  feedbackPtyData,
-  folderSendTargets,
-  previewCapture,
-  previewWriteFeedback,
-} from "@/lib/preview";
+import { type DevServer, devServersOf, previewCapture } from "@/lib/preview";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-
-const TOOLS: { tool: AnnotationTool; icon: typeof Pen; title: string }[] = [
-  { tool: "pen", icon: Pen, title: "Draw freehand" },
-  { tool: "line", icon: Slash, title: "Line" },
-  { tool: "rect", icon: Square, title: "Rectangle" },
-  { tool: "ellipse", icon: Circle, title: "Ellipse" },
-  { tool: "text", icon: Type, title: "Text note" },
-];
-
-function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
-  return { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
-}
 
 /** A task's live dev server — or a file its agent pointed at with the
  * `preview_file` MCP tool, re-read on every change — beside its terminals, with
@@ -116,25 +70,6 @@ export function PreviewPane({
   const [typed, setTyped] = useState<PreviewRequest | null>(null);
   const [pathInput, setPathInput] = useState("");
   const file = typed ?? pushed;
-
-  // annotation
-  const [tool, setTool] = useState<AnnotationTool | null>(null);
-  const [color, setColor] = useState<string>(ANNOTATION_COLORS[0]);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [textDraft, setTextDraft] = useState<{ x: number; y: number; value: string } | null>(null);
-
-  // send dialog
-  const [capture, setCapture] = useState<string | null>(null);
-  const [comment, setComment] = useState("");
-  const [targetId, setTargetId] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const draftRef = useRef<Annotation | null>(null);
-  const redrawRef = useRef<() => void>(() => {});
-
-  const targets = useMemo(() => folderSendTargets(folder), [folder]);
 
   // This folder's dev servers, from its launch.json, auto-loading the first
   // listening one. Owns a timer per pane — unlike diff-pane, which refetches off
@@ -233,181 +168,7 @@ export function PreviewPane({
     uiAction("preview.navigate", "agentboard", source);
   }
 
-  // The in-progress stroke lives only in `draftRef`, painted imperatively: a
-  // `setDraft` per pointermove would re-render the pane every move, and reading
-  // it back from state would drop points (several moves per render). Committed
-  // `annotations` are state and repaint via the effect below.
-  function redraw() {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const a of annotations) drawAnnotation(ctx, a, dpr);
-    if (draftRef.current) drawAnnotation(ctx, draftRef.current, dpr);
-  }
-  redrawRef.current = redraw;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const surface = surfaceRef.current;
-    if (!canvas || !surface) return;
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const r = surface.getBoundingClientRect();
-      canvas.width = Math.round(r.width * dpr);
-      canvas.height = Math.round(r.height * dpr);
-      redrawRef.current();
-    };
-    const ro = new ResizeObserver(resize);
-    ro.observe(surface);
-    resize();
-    return () => ro.disconnect();
-  }, []);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- repaint on committed annotations only; redraw is recreated every render and reads them fresh
-  useEffect(redraw, [annotations]);
-
-  // Shared "escape the draft": Escape, tool-switch and clear all use it.
-  function discardDraft() {
-    draftRef.current = null;
-    redrawRef.current();
-  }
-
-  useEffect(() => {
-    if (!tool) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (textDraft) setTextDraft(null);
-      else if (draftRef.current) discardDraft();
-      else setTool(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [tool, textDraft]);
-
-  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!tool || e.button !== 0) return;
-    const p = pointFrom(e);
-    if (tool === "text") {
-      commitTextDraft();
-      setTextDraft({ x: p.x, y: p.y, value: "" });
-      return;
-    }
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    draftRef.current = { tool, color, points: [p] };
-    redrawRef.current();
-  }
-
-  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    const d = draftRef.current;
-    if (!d) return;
-    const p = pointFrom(e);
-    draftRef.current =
-      d.tool === "pen" ? { ...d, points: [...d.points, p] } : { ...d, points: [d.points[0], p] };
-    redrawRef.current();
-  }
-
-  function onPointerUp() {
-    const d = draftRef.current;
-    if (!d) return;
-    draftRef.current = null;
-    // The imperative frame stays up until the effect repaints it — no flicker.
-    setAnnotations((all) => [...all, d]);
-  }
-
-  // Two top-level setStates — nesting setAnnotations inside a setTextDraft
-  // updater would duplicate the note under StrictMode's double-invoke.
-  function commitTextDraft() {
-    const td = textDraft;
-    if (td && td.value.trim()) {
-      setAnnotations((all) => [
-        ...all,
-        { tool: "text", color, points: [{ x: td.x, y: td.y }], text: td.value.trim() },
-      ]);
-    }
-    setTextDraft(null);
-  }
-
-  function clearAnnotations() {
-    draftRef.current = null;
-    setTextDraft(null);
-    setAnnotations([]); // effect repaints the now-empty canvas
-  }
-
-  function selectTool(next: AnnotationTool | null) {
-    commitTextDraft();
-    discardDraft();
-    setTool(next);
-  }
-
-  async function openSendDialog() {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    commitTextDraft();
-    uiAction("preview.feedback.capture", "agentboard");
-    const r = surface.getBoundingClientRect();
-    const res = await previewCapture({
-      x: r.x,
-      y: r.y,
-      width: r.width,
-      height: r.height,
-      devicePixelRatio: window.devicePixelRatio || 1,
-    });
-    res.match({
-      ok: (png) => {
-        setCapture(png);
-        setComment("");
-        setTargetId(targets.at(0)?.sessionId ?? null);
-      },
-      err: (e) => toast.error(`Capture failed: ${errorMessage(e)}`),
-    });
-  }
-
-  async function sendFeedback() {
-    if (!capture || !dir) return;
-    const target = targets.find((t) => t.sessionId === targetId);
-    if (!target) {
-      toast.error("That session is no longer running — pick another.");
-      return;
-    }
-    setSending(true);
-    const written = await previewWriteFeedback(folder?.name ?? "preview", [
-      { mime: "image/png", dataBase64: capture },
-    ]);
-    if (written.isErr()) {
-      setSending(false);
-      uiAction("preview.feedback.send", "agentboard", "err");
-      toast.error(`Send failed: ${errorMessage(written.error)}`);
-      return;
-    }
-    const prompt = feedbackPrompt(comment, sourceLabel, written.value);
-    const sent = await termWriteRetry(
-      target.sessionId,
-      feedbackPtyData(prompt, target.agentRunning),
-    );
-    setSending(false);
-    sent.match({
-      ok: () => {
-        uiAction("preview.feedback.send", "agentboard", "ok");
-        toast.success(`Sent to ${target.label}`);
-        setCapture(null);
-        setAnnotations([]);
-        setTool(null);
-      },
-      err: (e) => {
-        uiAction("preview.feedback.send", "agentboard", "err");
-        toast.error(`Send failed: ${errorMessage(e)}`);
-      },
-    });
-  }
-
-  // The annotation tools are about the *pixels*, so they light up for either
-  // kind of content and stay dark for neither.
+  // The ink tools light up for either kind of content, dark for neither.
   const onFile = showing === "file" && file != null;
   const hasSurface = onFile ? doc != null : url !== "";
   // Reload must survive a failed read, or a call made a beat before the file was
@@ -544,8 +305,22 @@ export function PreviewPane({
         }
       />
 
-      {/* Surface: iframe + annotation canvas */}
-      <div ref={surfaceRef} className="relative min-h-0 flex-1 overflow-hidden bg-background">
+      {/* Surface: iframe or shown file, under the shared ink layer */}
+      <AnnotateSurface
+        folder={folder}
+        capture={(rect) =>
+          previewCapture({
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            devicePixelRatio: window.devicePixelRatio || 1,
+          })
+        }
+        sourceLabel={sourceLabel}
+        enabled={hasSurface}
+        telemetryPrefix="preview"
+      >
         {onFile ? (
           docError != null ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
@@ -578,132 +353,7 @@ export function PreviewPane({
             </div>
           </div>
         )}
-        <canvas
-          ref={canvasRef}
-          className={cn(
-            "absolute inset-0 h-full w-full",
-            tool === "text" ? "cursor-text" : "cursor-crosshair",
-          )}
-          style={{ pointerEvents: tool ? "auto" : "none" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-        />
-        {textDraft && (
-          <input
-            autoFocus
-            value={textDraft.value}
-            onChange={(e) => setTextDraft({ ...textDraft, value: e.target.value })}
-            onBlur={commitTextDraft}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitTextDraft();
-            }}
-            className="absolute z-10 border border-dashed bg-transparent outline-none"
-            style={{
-              left: textDraft.x,
-              top: textDraft.y,
-              color,
-              borderColor: color,
-              font: ANNOTATION_FONT,
-              minWidth: 100,
-            }}
-          />
-        )}
-      </div>
-
-      {/* Annotation toolbar */}
-      <div className="flex shrink-0 items-center gap-1 border-t bg-card px-2 py-1">
-        {TOOLS.map(({ tool: t, icon: Icon, title }) => (
-          <Button
-            key={t}
-            variant="ghost"
-            size="icon"
-            title={title}
-            disabled={!hasSurface}
-            className={cn("size-6", tool === t && "bg-accent text-foreground")}
-            onClick={() => selectTool(tool === t ? null : t)}
-          >
-            <Icon className="size-3.5" />
-          </Button>
-        ))}
-        <Separator orientation="vertical" className="mx-0.5 h-4" />
-        {ANNOTATION_COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            title="Ink color"
-            className={cn(
-              "size-3.5 rounded-full border border-border",
-              color === c && "ring-2 ring-ring ring-offset-1 ring-offset-card",
-            )}
-            style={{ backgroundColor: c }}
-            onClick={() => setColor(c)}
-          />
-        ))}
-        <div className="ml-auto flex items-center gap-1.5">
-          {annotations.length > 0 && (
-            <Button variant="ghost" size="xs" onClick={clearAnnotations}>
-              Clear
-            </Button>
-          )}
-          <Button size="xs" disabled={!hasSurface} onClick={() => void openSendDialog()}>
-            <Send /> Send to agent
-          </Button>
-        </div>
-      </div>
-
-      {/* Capture → comment → target dialog */}
-      <Dialog open={capture != null} onOpenChange={(open) => !open && setCapture(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Send annotated feedback</DialogTitle>
-            <DialogDescription>
-              The screenshot below (with your markup) is staged as a file and its path typed into
-              the session&apos;s prompt.
-            </DialogDescription>
-          </DialogHeader>
-          {capture && (
-            <img
-              src={`data:image/png;base64,${capture}`}
-              alt="Annotated preview capture"
-              className="max-h-64 w-full rounded-md border border-border object-contain"
-            />
-          )}
-          <Textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="What should the agent do about it?"
-            rows={2}
-          />
-          {targets.length > 1 ? (
-            <Select value={targetId ?? ""} onValueChange={setTargetId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Send to session…" />
-              </SelectTrigger>
-              <SelectContent>
-                {targets.map((t) => (
-                  <SelectItem key={t.sessionId} value={t.sessionId}>
-                    <Glyph agent={t.agentRunning} />
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : targets.length === 0 ? (
-            <div className="text-xs text-muted-foreground">
-              No live session in this checkout — start one in the rail first.
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCapture(null)}>
-              Cancel
-            </Button>
-            <Button disabled={sending || !targetId} onClick={() => void sendFeedback()}>
-              {sending ? "Sending…" : "Send"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </AnnotateSurface>
     </div>
   );
 }

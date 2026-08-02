@@ -1,0 +1,23 @@
+[package]
+name = "tt-browser"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+base64 = { workspace = true }
+libc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tt-exec = { workspace = true }
+# Sync WebSocket for the one CDP connection; TLS-free on purpose (localhost).
+tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }
+wait-timeout = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.14.0"
+
+[lints]
+workspace = true

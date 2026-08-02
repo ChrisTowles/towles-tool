@@ -311,6 +311,7 @@ const DIFF_PANE_PREFIX = "~diff:";
 const FILES_PANE_PREFIX = "~files:";
 const PREVIEW_PANE_PREFIX = "~preview:";
 const JARVIS_PANE_PREFIX = "~jarvis:";
+const BROWSER_PANE_PREFIX = "~browser:";
 const EXIT_PANE_PREFIX = "~exit:";
 
 /** The (per-folder) pane id of the folder's diff pane. */
@@ -382,9 +383,29 @@ export function jarvisPaneDir(paneId: string): string | null {
   return isJarvisPane(paneId) ? paneId.slice(JARVIS_PANE_PREFIX.length) : null;
 }
 
+/** The (per-folder) pane id of the folder's Chrome pane — a real headless
+ * Chrome on the app-owned profile, streamed onto a canvas
+ * (`components/browser-pane.tsx`). */
+export function browserPaneId(folderDir: string): string {
+  return `${BROWSER_PANE_PREFIX}${folderDir}`;
+}
+
+export function isBrowserPane(paneId: string): boolean {
+  return paneId.startsWith(BROWSER_PANE_PREFIX);
+}
+
+/** The folder dir a Chrome pane id points at (null otherwise). */
+export function browserPaneDir(paneId: string): string | null {
+  return isBrowserPane(paneId) ? paneId.slice(BROWSER_PANE_PREFIX.length) : null;
+}
+
 export function folderPaneDir(paneId: string): string | null {
   return (
-    diffPaneDir(paneId) ?? filesPaneDir(paneId) ?? previewPaneDir(paneId) ?? jarvisPaneDir(paneId)
+    diffPaneDir(paneId) ??
+    filesPaneDir(paneId) ??
+    previewPaneDir(paneId) ??
+    jarvisPaneDir(paneId) ??
+    browserPaneDir(paneId)
   );
 }
 

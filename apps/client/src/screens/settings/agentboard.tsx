@@ -53,7 +53,7 @@ import {
   type NotifyLevel,
   type UserSettings,
 } from "@/lib/settings";
-import { DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
+import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { DEFAULT_EDITOR_FONT_SIZE, clampEditorFontSize } from "@/lib/editor-prefs";
 import { cn } from "@/lib/utils";
@@ -237,6 +237,23 @@ export function agentboardSections(
         ),
       },
       {
+        label: "Chrome pane",
+        keywords: ["chrome", "browser", "web", "pane", "login", "sign in", "cdp", "headless"],
+        node: (
+          <ToggleRow
+            label="Chrome pane"
+            description="Add a “chrome” button to each checkout that opens a real Chrome beside its terminals. It keeps its own browser profile, separate from your personal Chrome and empty to start — sign into a site once there and it stays signed in. Needs Chrome or Chromium installed."
+            checked={settings.agentboard?.browserPane ?? DEFAULT_BROWSER_PANE}
+            onCheckedChange={(v) =>
+              update((s) => ({
+                ...s,
+                agentboard: { ...s.agentboard, browserPane: v },
+              }))
+            }
+          />
+        ),
+      },
+      {
         label: "Terminal font size",
         keywords: ["terminal", "font", "size", "zoom", "text"],
         node: (
@@ -302,12 +319,9 @@ export function agentboardSections(
   return [{ rows }];
 }
 
-/**
- * Urgency threshold for desktop notifications: the least urgent level still
- * allowed through. Disabled (but still shown, so the choice stays discoverable)
- * while the master switch is off. Each option names the kinds it lets through —
- * the kind→level mapping itself lives in Rust (`tt_config::NotifyKind::level`).
- */
+/** The least urgent level still allowed through. Shown-but-disabled while
+ * the master switch is off, so the choice stays discoverable; the kind→level
+ * mapping lives in Rust (`tt_config::NotifyKind::level`). */
 function NotifyThresholdRow({
   value,
   disabled,
@@ -336,12 +350,9 @@ function NotifyThresholdRow({
   );
 }
 
-/**
- * Scan-root editor for repo discovery. Reads/writes `scanRoots`
- * in `~/.config/towles-tool/agentboard/repos.json` over the `ab_*` Tauri
- * commands (no shared settings file, no zod — pure Rust round-trip). One root
- * per line; empty falls back to `~/code`.
- */
+/** Scan-root editor for repo discovery: `scanRoots` in `repos.json` over the
+ * `ab_*` commands, not the shared settings file. Empty falls back to
+ * `~/code`. */
 function AgentboardSettings() {
   const [roots, setRoots] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -423,17 +434,9 @@ function AgentboardSettings() {
   );
 }
 
-/**
- * The **one** place repos are managed. Track/untrack, drag to set the rail's
- * order, and give a repo its own glyph and color — all against the same
- * agentboard snapshot the rail renders. (There used to be a second surface, a
- * "Manage repos" command dialog on the Agentboard screen; it was deleted, and
- * its rail button now deep-links here.)
- *
- * Identity is only offered for *tracked* repos: a discovered-but-untracked
- * candidate has nowhere to render an icon, so those rows carry a Track action
- * and nothing else rather than dead controls.
- */
+/** The **one** place repos are managed. Identity is offered only for
+ * *tracked* repos: an untracked candidate has nowhere to show an icon, so
+ * those rows carry a Track action rather than dead controls. */
 function RepoManager() {
   const { repos } = useAgentboardState();
   const [candidates, setCandidates] = useState<RepoCandidate[]>([]);
@@ -768,12 +771,9 @@ function RepoIdentityRow({
 
   return (
     <div
-      // Give the row the same repo-identity decoration as the rail header — the
-      // colored left edge and (for `tint`) the soft wash — so a repo's chosen
-      // color is visible where you set it, not only after the fact on the rail.
-      // Both are `undefined` for a repo with no color, so plain repos stay
-      // plain. The row isn't sticky, so the wash mixes into `transparent`
-      // (letting the panel show through) rather than an opaque base.
+      // The rail header's own identity decoration, so a repo's color is
+      // visible where you set it. Both are `undefined` without a color, so
+      // plain repos stay plain.
       style={{ ...accent.edgeStyle, ...accent.surfaceStyle }}
       onDragOver={(e) => {
         e.preventDefault();

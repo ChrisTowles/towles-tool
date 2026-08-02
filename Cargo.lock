@@ -8929,6 +8929,7 @@ dependencies = [
  "tracing",
  "trash",
  "tt-agentboard",
+ "tt-browser",
  "tt-claude-sessions",
  "tt-collect",
  "tt-config",
@@ -8946,6 +8947,22 @@ dependencies = [
  "tt-vt",
  "uuid",
  "webkit2gtk",
+]
+
+[[package]]
+name = "tt-browser"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "tt-exec",
+ "tungstenite",
+ "wait-timeout",
 ]
 
 [[package]]

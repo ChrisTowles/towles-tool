@@ -1,14 +1,10 @@
 /**
- * The rail rows that aren't a PTY session: the view panes (diff, files,
- * preview, jarvis), plus the colored spine that brackets a multi-pane window's
- * rows.
- *
- * They live together because they share one shape — a pane, not a process —
- * and one rule: a view pane is a *view of* the folder, so it carries no status
- * and closes without asking.
+ * The rail rows that aren't a PTY session: the view panes, plus the colored
+ * spine bracketing a multi-pane window. A view pane is a *view of* the
+ * folder, so it carries no status and closes without asking.
  */
 import { useState } from "react";
-import { Box, Eye, FolderTree, GitCompare } from "lucide-react";
+import { AppWindow, Box, Eye, FolderTree, GitCompare } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { IconBtn } from "@/components/agentboard-bits";
 import { cn } from "@/lib/utils";
@@ -16,6 +12,7 @@ import {
   isDiffPane,
   isFilesPane,
   isJarvisPane,
+  isBrowserPane,
   isPreviewPane,
   windowColor,
   type AgWindow,
@@ -53,12 +50,13 @@ export function WindowSpine({
 /** The pane kinds that are a *view of* the folder rather than something
  * running in it — each still gets a rail row, so what's open in a folder is
  * answerable from the rail alone. */
-export type ViewPaneKind = "diff" | "files" | "preview" | "jarvis";
+export type ViewPaneKind = "diff" | "files" | "preview" | "browser" | "jarvis";
 
 export function viewPaneKind(paneId: string): ViewPaneKind | null {
   if (isDiffPane(paneId)) return "diff";
   if (isFilesPane(paneId)) return "files";
   if (isPreviewPane(paneId)) return "preview";
+  if (isBrowserPane(paneId)) return "browser";
   if (isJarvisPane(paneId)) return "jarvis";
   return null;
 }
@@ -70,18 +68,13 @@ const VIEW_PANE_META: Record<
   diff: { Icon: GitCompare, label: "diff", title: "This checkout's changed files, side by side" },
   files: { Icon: FolderTree, label: "files", title: "This checkout's file tree and editor" },
   preview: { Icon: Eye, label: "preview", title: "This checkout's live dev server" },
+  browser: { Icon: AppWindow, label: "chrome", title: "A real Chrome with persistent sign-ins" },
   jarvis: { Icon: Box, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 
-/**
- * A folder's diff / files / preview pane as a rail row.
- *
- * Quieter than a session row — no status dot, since there is nothing
- * running to have a status — but present, because "what is open in this folder"
- * is a question the rail should answer. Clicking focuses the pane (the same
- * call the folder header's chip makes, which is a no-op placement when the pane
- * already exists); ✕ closes it.
- */
+/** A view pane as a rail row: quieter than a session (nothing running to
+ * have a status) but present, because "what is open here" is a question the
+ * rail should answer. Click focuses, ✕ closes. */
 export function ViewPaneRow({
   kind,
   active,

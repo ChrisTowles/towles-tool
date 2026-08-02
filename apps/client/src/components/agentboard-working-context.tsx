@@ -10,6 +10,7 @@ import {
   CommittedChip,
   UncommittedChip,
   FilesButton,
+  BrowserButton,
   JarvisButton,
   FolderLandedBadge,
   GhostBadge,
@@ -48,6 +49,7 @@ export function WorkingContext({
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
+  onOpenBrowser,
   onNewSession,
   onNewTask,
   onRemoveRepo,
@@ -64,6 +66,7 @@ export function WorkingContext({
   onOpenPreview: (dir: string) => void;
   /** Undefined while `agentboard.jarvisPane` is off. */
   onOpenJarvis?: (dir: string) => void;
+  onOpenBrowser?: (dir: string) => void;
   onNewSession: (dir: string) => void;
   /** The form renders in the rail, so the caller must expand a collapsed rail
    * itself for this to be visible. */
@@ -111,6 +114,7 @@ export function WorkingContext({
               {folder.hasLaunchConfig && (
                 <PreviewButton onOpen={() => onOpenPreview(folder.dir)} labeled />
               )}
+              {onOpenBrowser && <BrowserButton onOpen={() => onOpenBrowser(folder.dir)} labeled />}
               {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} labeled />}
             </span>
           )}

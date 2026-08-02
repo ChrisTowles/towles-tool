@@ -24,6 +24,7 @@ import {
   GhostBadge,
   IconBtn,
   IssueChip,
+  BrowserButton,
   JarvisButton,
   NeedsBadge,
   PortDriftBadge,
@@ -79,6 +80,7 @@ export function FolderHeader({
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
+  onOpenBrowser,
 }: {
   scope: "repo" | "folder";
   /** repo.name at repo scope, folder.name at folder scope. */
@@ -138,6 +140,7 @@ export function FolderHeader({
   /** Opens the folder's native (Bevy) pane — undefined while
    * `agentboard.jarvisPane` is off. */
   onOpenJarvis?: () => void;
+  onOpenBrowser?: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
   // Repo identity, repo scope only. A repo-scope header is sticky, so its
@@ -396,6 +399,7 @@ export function FolderHeader({
             <span className="pointer-events-none flex w-0 items-center gap-1 overflow-hidden opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:w-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:w-auto group-hover:opacity-100">
               <FilesButton onOpen={onOpenFiles} />
               {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
+              {onOpenBrowser && <BrowserButton onOpen={onOpenBrowser} />}
               {onOpenJarvis && <JarvisButton onOpen={onOpenJarvis} />}
             </span>
           )}
