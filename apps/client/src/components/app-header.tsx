@@ -15,52 +15,11 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@/lib/data";
+import { identityColor } from "@/lib/identity-color";
 import { useNow } from "@/lib/now";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
-
-/** Literal classes so the Tailwind JIT sees them; hashing the task name keeps a
- * given checkout on the same accent across windows. `wash` tints the whole
- * header bar so which window this is reads from across the room. */
-const TASK_COLORS = [
-  {
-    badge: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-    text: "text-blue-700 dark:text-blue-300",
-    wash: "bg-blue-500/10 border-b-blue-500/40",
-  },
-  {
-    badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    text: "text-emerald-700 dark:text-emerald-300",
-    wash: "bg-emerald-500/10 border-b-emerald-500/40",
-  },
-  {
-    badge: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    text: "text-amber-700 dark:text-amber-300",
-    wash: "bg-amber-500/10 border-b-amber-500/40",
-  },
-  {
-    badge: "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-    text: "text-violet-700 dark:text-violet-300",
-    wash: "bg-violet-500/10 border-b-violet-500/40",
-  },
-  {
-    badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-    text: "text-rose-700 dark:text-rose-300",
-    wash: "bg-rose-500/10 border-b-rose-500/40",
-  },
-  {
-    badge: "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-    text: "text-cyan-700 dark:text-cyan-300",
-    wash: "bg-cyan-500/10 border-b-cyan-500/40",
-  },
-];
-
-function taskColor(task: string) {
-  let hash = 0;
-  for (let i = 0; i < task.length; i++) hash = (hash * 31 + task.charCodeAt(i)) | 0;
-  return TASK_COLORS[Math.abs(hash) % TASK_COLORS.length];
-}
 
 /** Strip the shared prefix so the badge reads "task-2", not the whole repo name. */
 function taskShortName(task: string): string {
@@ -88,7 +47,7 @@ function TaskBadge() {
   return (
     <Badge
       variant="outline"
-      className={taskColor(task.label).badge}
+      className={identityColor(task.label).badge}
       title={`Task worktree — ${task.label}`}
     >
       <GitBranch />
@@ -114,7 +73,7 @@ function CheckoutKindChip() {
     <span
       className={cn(
         "flex items-center gap-1.5 font-mono text-xs font-semibold",
-        taskColor(task.label).text,
+        identityColor(task.label).text,
       )}
     >
       <GitBranch className="size-3.5" />
@@ -177,7 +136,7 @@ export function AppHeader() {
     <header
       className={cn(
         "relative flex h-11 shrink-0 items-center gap-2 border-b px-2",
-        task?.isWorktree && taskColor(task.label).wash,
+        task?.isWorktree && identityColor(task.label).wash,
       )}
     >
       <Tooltip>

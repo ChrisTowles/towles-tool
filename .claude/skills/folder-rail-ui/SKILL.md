@@ -1,13 +1,14 @@
 ---
 name: folder-rail-ui
-description: Visual design language ("Folder Rail" style) for new or restyled UI in the Towles Tool desktop app (apps/client) — color tokens, agent-status semantics, folder/session hierarchy, spacing, glyphs, Tailwind recipes. Use when adding a new screen/component, restyling an existing one, or the user asks about the app's look, the "folder rail", status dots/colors, or the repo→folder→session hierarchy. Not needed for logic-only changes to already-styled components.
+description: Visual design language ("Folder Rail" style) for new or restyled UI in the Towles Tool desktop app (apps/client) — color tokens, agent-status semantics, the identity wash (per-repo/checkout accent), folder/session hierarchy, spacing, glyphs, Tailwind recipes. Use when adding a new screen/component, restyling an existing one, or the user asks about the app's look, the "folder rail", status dots/colors, the identity wash / repo colors, or the repo→folder→session hierarchy. Not needed for logic-only changes to already-styled components.
 user-invocable: true
 ---
 
 # Folder Rail — visual language cheat sheet
 
 Neutral grayscale shadcn base (`apps/client/src/index.css`); a hue is added
-only to carry agent status or attention, never decoration.
+only to carry agent status, attention, or identity (the [identity
+wash](#identity-wash-which-reporcheckout-is-this) below), never decoration.
 
 **Hierarchy:** repo (1..N folders: clone/worktree/task) → folder (1..N
 sessions) → session (`✦` Claude agent or `❯` zsh shell). Solo-repo folders
@@ -71,6 +72,32 @@ original yellow/amber busy bug and the orange/amber interrupted bug both got in.
   fill**; show violet elsewhere (glyph, tab). Needs-you is the rarer, more
   urgent signal — "this is where you're currently looking" is redundant once
   you're looking at it.
+
+## Identity wash — "which repo/checkout is this?"
+
+The third sanctioned use of hue, named **identity wash**: a surface that *is*
+one repo or checkout carries that identity's hashed accent as a translucent
+wash, so window/pane identity reads peripherally — before any text.
+`identityColor(key)` in `apps/client/src/lib/identity-color.ts` is the single
+source: six literal Tailwind accents (blue/emerald/amber/violet/rose/cyan),
+picked by hashing a stable key so one identity keeps its hue everywhere.
+
+- **Key by what the surface identifies.** The app header washes by the
+  *checkout* (`task_label`) — it answers "which window is this". The
+  working-context band washes by the *repo* (`repo.name`) — it answers "which
+  repo am I looking at". Don't mix the two on one surface.
+- **Recipe:** `wash` = `bg-<hue>-500/10 border-b-<hue>-500/40` on the surface;
+  `badge` for its name chip; `text` for an inline readout. Text on a wash stays
+  token-colored (`text-foreground`/`muted`) — the wash is background, not ink.
+- **Absence is a state.** The main checkout's app header stays unwashed: a
+  colored header *means* "task worktree". Don't wash neutral/global surfaces.
+- **Status and attention always win.** Amber needs-you rows, status dots, and
+  the violet active accent render unchanged on top of a wash; never restyle
+  them per-identity. (Amber and violet appearing in the identity palette is
+  fine — the wash is /10 background, far below the accents' contrast.)
+- Paired with words where kind matters: the header's dead-center
+  `MAIN CHECKOUT` (sky) / `TASK WORKTREE` (accent) readout says the state
+  outright rather than asking the user to decode a hue.
 
 ## Level ladder (never let a deeper level outrank its parent)
 | Level | Glyph | Weight | Indent |
@@ -149,6 +176,7 @@ Every header row (repo, folder, or a solo-repo's collapsed header) gets
 `apps/client/src/components/agentboard-session-row.tsx` (a session's row; the
 rail's other pieces are its `agentboard-*` siblings) ·
 `apps/client/src/components/header-status.tsx` (needs-you math) ·
+`apps/client/src/lib/identity-color.ts` (the identity wash accents) ·
 `apps/client/src/index.css` (token definitions).
 
 For behavior/flow rules (confirmations, error copy, when something needs a
