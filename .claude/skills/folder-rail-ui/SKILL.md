@@ -179,5 +179,9 @@ rail's other pieces are its `agentboard-*` siblings) ·
 `apps/client/src/lib/identity-color.ts` (the identity wash accents) ·
 `apps/client/src/index.css` (token definitions).
 
+A browsable rendition of this language — Agentboard anatomy (the named UI
+parts), live specimens, the identity wash — is
+[docs/reference/folder-rail-visual-language.html](../../../docs/reference/folder-rail-visual-language.html).
+
 For behavior/flow rules (confirmations, error copy, when something needs a
 setting) rather than look, see the `ui-rules` skill.
