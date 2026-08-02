@@ -943,6 +943,17 @@ pub fn gh_cache_dir() -> Result<PathBuf> {
 /// temp dir — a ledger must survive reboots) and not inside the repo (state
 /// a collaborator's clone should never see). A forced [`STATE_SCOPE_ENV`]
 /// isolates it like every shared store.
+/// The browser pane's Chrome profile (its user-data-dir). A *shared* store
+/// like `repos.json` — a sign-in is a machine fact — and it starts empty:
+/// login persistence, never an import of the personal Chrome profile. Under
+/// the data base rather than config because it's a binary tree Chrome owns,
+/// not settings; Chrome's own singleton lock allows one process per profile
+/// dir, so tt-app serializes cross-instance access with an `InstanceLock`.
+pub fn browser_profile_dir() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("chrome-profile"))
+}
+
 pub fn task_ports_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("task-ports"))
 }

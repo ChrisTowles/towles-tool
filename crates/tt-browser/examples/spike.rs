@@ -24,7 +24,7 @@ fn main() {
     println!("chrome: {}", binary.display());
     println!("profile: {}", profile.display());
 
-    let cfg = ChromeConfig { binary, user_data_dir: profile, headless: true };
+    let cfg = ChromeConfig { binary, user_data_dir: profile, headless: true, start_url: None };
 
     // Round 1: frame sources + UA + cookie write.
     {

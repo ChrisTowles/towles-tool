@@ -38,7 +38,12 @@ pub fn find_chrome(override_path: Option<&Path>) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let names = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+    let names = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+    ];
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         for name in names {
@@ -56,11 +61,16 @@ pub struct ChromeConfig {
     pub binary: PathBuf,
     pub user_data_dir: PathBuf,
     pub headless: bool,
+    pub start_url: Option<String>,
 }
 
+/// CDP stays on in headful mode too — the pop-out window keeps a debugging
+/// endpoint (our profile isn't Chrome's default dir, so the 136+ block never
+/// applies), which is what makes reattach able to read the URL back.
 pub fn build_args(cfg: &ChromeConfig) -> Vec<String> {
     let mut args = vec![
         format!("--user-data-dir={}", cfg.user_data_dir.display()),
+        "--remote-debugging-port=0".into(),
         "--no-first-run".into(),
         "--no-default-browser-check".into(),
         "--hide-crash-restore-bubble".into(),
@@ -68,11 +78,10 @@ pub fn build_args(cfg: &ChromeConfig) -> Vec<String> {
     ];
     if cfg.headless {
         args.push("--headless".into());
-        args.push("--remote-debugging-port=0".into());
         args.push("--disable-renderer-backgrounding".into());
         args.push("--disable-background-timer-throttling".into());
-        args.push("about:blank".into());
     }
+    args.push(cfg.start_url.clone().unwrap_or_else(|| "about:blank".into()));
     args
 }
 
@@ -238,19 +247,26 @@ mod tests {
     }
 
     #[test]
-    fn headless_args_carry_the_profile_and_debug_port() {
+    fn args_carry_profile_and_debug_port_in_both_modes() {
         let cfg = ChromeConfig {
             binary: "/usr/bin/google-chrome".into(),
             user_data_dir: "/tmp/prof".into(),
             headless: true,
+            start_url: None,
         };
         let args = build_args(&cfg);
         assert!(args.contains(&"--user-data-dir=/tmp/prof".to_string()));
         assert!(args.contains(&"--headless".to_string()));
         assert!(args.contains(&"--remote-debugging-port=0".to_string()));
-        let headful = build_args(&ChromeConfig { headless: false, ..cfg });
-        assert!(!headful.iter().any(|a| a.contains("remote-debugging")));
+        assert_eq!(args.last().map(String::as_str), Some("about:blank"));
+        let headful = build_args(&ChromeConfig {
+            headless: false,
+            start_url: Some("https://example.com".into()),
+            ..cfg
+        });
+        assert!(headful.contains(&"--remote-debugging-port=0".to_string()));
         assert!(!headful.contains(&"--headless".to_string()));
+        assert_eq!(headful.last().map(String::as_str), Some("https://example.com"));
     }
 
     #[test]

@@ -6,6 +6,7 @@
 
 mod agentboard;
 mod asset;
+mod browser;
 mod claude_sessions;
 mod diagnostics;
 mod doctor;
@@ -558,6 +559,7 @@ pub fn run() {
             scan.notify_one();
             Ok(())
         })
+        .manage(browser::BrowserHost::default())
         // Shared: a pane outlives the command that created it (see `tt-pane`).
         .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
@@ -623,6 +625,15 @@ pub fn run() {
             agentboard::ab_get_diff_files,
             agentboard::ab_get_base_file,
             agentboard::ab_get_commit_stats,
+            browser::browser_status,
+            browser::browser_open,
+            browser::browser_navigate,
+            browser::browser_input,
+            browser::browser_set_viewport,
+            browser::browser_set_visible,
+            browser::browser_capture,
+            browser::browser_close,
+            browser::browser_popout,
             launch::launch_configs,
             launch::launch_register,
             preview::preview_capture,

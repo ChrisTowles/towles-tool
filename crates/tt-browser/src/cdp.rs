@@ -212,7 +212,11 @@ mod tests {
         };
         dispatch(r#"{"id":3,"result":{"ok":true}}"#, &pending, &sink);
         assert_eq!(rx.recv().unwrap().unwrap()["ok"], true);
-        dispatch(r#"{"method":"Page.frameNavigated","params":{},"sessionId":"S"}"#, &pending, &sink);
+        dispatch(
+            r#"{"method":"Page.frameNavigated","params":{},"sessionId":"S"}"#,
+            &pending,
+            &sink,
+        );
         dispatch("not json", &pending, &sink);
         let events = events.lock().unwrap();
         assert_eq!(events.len(), 1);
