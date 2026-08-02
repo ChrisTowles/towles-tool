@@ -1270,8 +1270,10 @@ export function AgentboardScreen() {
         target={worktreeDelete.confirmDeleteWt}
         task={worktreeDelete.deleteWtTask}
         outcome={worktreeDelete.deleteWtOutcome}
+        force={worktreeDelete.deleteWtForce}
         onOpenChange={closeOnFalse(worktreeDelete.clearConfirm)}
         onSwapOutcome={worktreeDelete.swapOutcome}
+        onForceChange={worktreeDelete.setDeleteWtForce}
         onConfirm={worktreeDelete.confirmDeleteWorktree}
       />
 
