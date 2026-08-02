@@ -19,6 +19,29 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 /// Coalescing window for filesystem-event bursts.
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
+/// A path spelled the way the OS watcher will report it. macOS resolves every
+/// symlink in a watched path (`/var` → `/private/var`, and any symlinked home
+/// or checkout), so a registration keyed on the caller's spelling never matches
+/// its own events and the accelerant silently dies back to the poll. Only the
+/// deepest *existing* ancestor can be resolved: a pending file, and often its
+/// parent, does not exist yet.
+fn resolved(path: &Path) -> PathBuf {
+    let mut missing: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+    loop {
+        if let Ok(real) = std::fs::canonicalize(cursor) {
+            return missing.iter().rev().fold(real, |acc, part| acc.join(part));
+        }
+        match (cursor.parent(), cursor.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                cursor = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
 /// Watches a directory tree and invokes `on_change` (debounced) when anything
 /// under it changes. Dropping it stops watching and ends the debounce thread.
 pub struct DirNotifier {
@@ -55,6 +78,11 @@ impl DirNotifier {
 pub struct ScopedDirNotifier {
     watcher: RecommendedWatcher,
     watched: HashSet<PathBuf>,
+    /// The same set [`resolved`], shared with the callback. The scope has to
+    /// be re-checked there because macOS FSEvents delivers a watched directory's
+    /// *siblings* too — trusting the watch registration alone puts every
+    /// session on the machine back through the eager rescan.
+    scope: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl ScopedDirNotifier {
@@ -64,12 +92,17 @@ impl ScopedDirNotifier {
     {
         let (tx, rx) = mpsc::channel::<()>();
         std::thread::spawn(move || debounce_loop(&rx, move |_batch| on_change()));
+        let scope: Arc<Mutex<HashSet<PathBuf>>> = Arc::default();
+        let cb_scope = scope.clone();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if res.is_ok() {
-                let _ = tx.send(());
+            if let Ok(event) = res {
+                let scope = cb_scope.lock().unwrap();
+                if event.paths.iter().any(|p| scope.iter().any(|dir| p.starts_with(dir))) {
+                    let _ = tx.send(());
+                }
             }
         })?;
-        Ok(Self { watcher, watched: HashSet::new() })
+        Ok(Self { watcher, watched: HashSet::new(), scope })
     }
 
     /// Recompute the watched set from `targets` (absolute checkout dirs), each
@@ -92,6 +125,7 @@ impl ScopedDirNotifier {
                 self.watched.insert(fresh);
             }
         }
+        *self.scope.lock().unwrap() = self.watched.iter().map(|d| resolved(d)).collect();
     }
 
     /// The currently watched directories — test/diagnostic seam.
@@ -127,21 +161,32 @@ const MAX_MISSING_ANCESTORS: usize = 4;
 
 /// The callback's view of what's registered: exact paths with refcounts, plus
 /// the pending ones matched by ancestry (see [`MultiFileNotifier`]'s doc).
+/// Keyed by [`resolved`] path — what events carry — while every value keeps
+/// the caller's spelling, which is what `on_change` reports back.
 #[derive(Default)]
 struct Targets {
-    files: HashMap<PathBuf, u32>,
+    files: HashMap<PathBuf, Registration>,
     /// Files whose parent didn't exist at registration.
-    pending: HashSet<PathBuf>,
+    pending: HashMap<PathBuf, PathBuf>,
+}
+
+struct Registration {
+    as_given: PathBuf,
+    count: u32,
 }
 
 impl Targets {
     /// The registered files an event on `path` should report: exactly `path`
     /// when registered, otherwise every pending file `path` is an ancestor of.
     fn hits(&self, path: &Path) -> Vec<PathBuf> {
-        if self.files.contains_key(path) {
-            return vec![path.to_path_buf()];
+        if let Some(reg) = self.files.get(path) {
+            return vec![reg.as_given.clone()];
         }
-        self.pending.iter().filter(|f| f.starts_with(path)).cloned().collect()
+        self.pending
+            .iter()
+            .filter(|(res, _)| res.starts_with(path))
+            .map(|(_, given)| given.clone())
+            .collect()
     }
 }
 
@@ -178,19 +223,20 @@ impl MultiFileNotifier {
     /// needs a matching [`remove`](Self::remove). The parent need not exist —
     /// see [`rewatch_pending`](Self::rewatch_pending).
     pub fn add(&mut self, file: &Path) -> notify::Result<()> {
-        if let Some(count) = self.targets.lock().unwrap().files.get_mut(file) {
-            *count += 1;
+        let key = resolved(file);
+        if let Some(reg) = self.targets.lock().unwrap().files.get_mut(&key) {
+            reg.count += 1;
             return Ok(());
         }
-        let parent = file.parent().unwrap_or(Path::new("/"));
-        let dir = watch_point(parent)
-            .ok_or_else(|| notify::Error::path_not_found().add_path(parent.to_path_buf()))?;
+        let parent = key.parent().unwrap_or(Path::new("/")).to_path_buf();
+        let dir = watch_point(&parent)
+            .ok_or_else(|| notify::Error::path_not_found().add_path(parent.clone()))?;
         self.hold(&dir)?;
-        self.watched_for.insert(file.to_path_buf(), dir.clone());
+        self.watched_for.insert(key.clone(), dir.clone());
         let mut targets = self.targets.lock().unwrap();
-        targets.files.insert(file.to_path_buf(), 1);
+        targets.files.insert(key.clone(), Registration { as_given: file.to_path_buf(), count: 1 });
         if dir != parent {
-            targets.pending.insert(file.to_path_buf());
+            targets.pending.insert(key, file.to_path_buf());
         }
         Ok(())
     }
@@ -207,14 +253,15 @@ impl MultiFileNotifier {
             let targets = self.targets.lock().unwrap();
             targets
                 .pending
-                .iter()
+                .keys()
                 .filter(|f| f.parent().is_some_and(Path::is_dir))
                 .cloned()
                 .collect()
         };
         for file in ready {
+            // Re-resolved: the parent that just appeared may itself be a symlink.
             let parent = match file.parent() {
-                Some(p) => p.to_path_buf(),
+                Some(p) => resolved(p),
                 None => continue,
             };
             if self.hold(&parent).is_err() {
@@ -253,19 +300,20 @@ impl MultiFileNotifier {
     /// Drop one reference to `file`; the last drop stops delivering it and
     /// releases its directory watch when no sibling needs it.
     pub fn remove(&mut self, file: &Path) {
+        let key = resolved(file);
         {
             let mut targets = self.targets.lock().unwrap();
-            let Some(count) = targets.files.get_mut(file) else {
+            let Some(reg) = targets.files.get_mut(&key) else {
                 return;
             };
-            *count -= 1;
-            if *count > 0 {
+            reg.count -= 1;
+            if reg.count > 0 {
                 return;
             }
-            targets.files.remove(file);
-            targets.pending.remove(file);
+            targets.files.remove(&key);
+            targets.pending.remove(&key);
         }
-        if let Some(dir) = self.watched_for.remove(file) {
+        if let Some(dir) = self.watched_for.remove(&key) {
             self.release(&dir);
         }
     }
@@ -565,6 +613,43 @@ mod tests {
             watch_point(&root.path().join("a/b/c/d/e/f")),
             None,
             "beyond the bound, no watch at all"
+        );
+    }
+
+    /// What macOS made visible: it hands back a watched path with every symlink
+    /// resolved, so a registration keyed on the caller's spelling would never
+    /// match its own events.
+    #[test]
+    fn a_registration_through_a_symlink_still_matches_its_events() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        let link = root.path().join("link");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        // Resolution reaches through a missing tail, which is how a pending
+        // registration (its parent not created yet) is keyed at all.
+        assert_eq!(resolved(&link.join("later/file.txt")), resolved(&real).join("later/file.txt"));
+
+        let via_link = link.join("watched.txt");
+        std::fs::write(&via_link, "v1").unwrap();
+
+        let (fired_tx, fired_rx) = mpsc::channel::<Vec<PathBuf>>();
+        let mut notifier = MultiFileNotifier::new(move |batch| {
+            let _ = fired_tx.send(batch);
+        })
+        .unwrap();
+        notifier.add(&via_link).unwrap();
+
+        std::fs::write(real.join("watched.txt"), "v2").unwrap();
+        let batch = fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(batch, vec![via_link.clone()], "reported as registered, not as resolved");
+
+        notifier.remove(&via_link);
+        std::fs::write(real.join("watched.txt"), "v3").unwrap();
+        assert!(
+            fired_rx.recv_timeout(DEBOUNCE * 3).is_err(),
+            "removal has to find the same registration the spelling created"
         );
     }
 

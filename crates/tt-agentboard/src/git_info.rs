@@ -1020,8 +1020,8 @@ mod tests {
 
     #[test]
     fn worktree_dirs_separates_linked_worktrees_from_the_main_checkout() {
-        let root = tempfile::TempDir::new().unwrap();
-        let main = root.path().join("main");
+        let (_guard, root) = temp_root();
+        let main = root.join("main");
         std::fs::create_dir(&main).unwrap();
         init_repo(&main);
 
@@ -1038,7 +1038,7 @@ mod tests {
                 task.to_str().unwrap(),
             ],
         );
-        let scratch = root.path().join("scratch-ext");
+        let scratch = root.join("scratch-ext");
         git(
             &main,
             &[
@@ -1064,8 +1064,8 @@ mod tests {
 
     #[test]
     fn prune_stale_worktree_clears_a_deleted_but_unpruned_registration() {
-        let root = tempfile::TempDir::new().unwrap();
-        let main = root.path().join("main");
+        let (_guard, root) = temp_root();
+        let main = root.join("main");
         std::fs::create_dir(&main).unwrap();
         init_repo(&main);
 
@@ -1116,6 +1116,16 @@ mod tests {
 
     fn path_s(p: &std::path::Path) -> String {
         p.to_str().unwrap().to_string()
+    }
+
+    /// A tempdir root spelled the way git will report it back. macOS puts
+    /// tempdirs under `/var`, a symlink to `/private/var`, and git resolves
+    /// what it prints — an artifact of the fixture, not of a real checkout,
+    /// but any path comparison here has to be like for like.
+    fn temp_root() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = std::fs::canonicalize(dir.path()).unwrap();
+        (dir, path)
     }
 
     #[test]
@@ -1619,9 +1629,9 @@ mod tests {
     /// either the worktree's branch switches or a commit landing on its base.
     #[test]
     fn control_files_split_across_the_worktree_gitdir_and_the_shared_common_dir() {
-        let root = tempfile::TempDir::new().unwrap();
-        let repo = root.path().join("main");
-        let worktree = root.path().join("task");
+        let (_guard, root) = temp_root();
+        let repo = root.join("main");
+        let worktree = root.join("task");
         std::fs::create_dir_all(&repo).unwrap();
         init_repo(&repo);
         git(&repo, &["update-ref", "refs/remotes/origin/main", "main"]);
@@ -1671,8 +1681,8 @@ mod tests {
     /// rather than on the [`GIT_CACHE_TTL_MS`] backup ceiling.
     #[test]
     fn a_branch_switch_fires_the_control_watch_far_sooner_than_the_backup_poll() {
-        let root = tempfile::TempDir::new().unwrap();
-        let repo = root.path();
+        let (_guard, root) = temp_root();
+        let repo = root.as_path();
         init_repo(repo);
         let dir = repo.to_str().unwrap();
         let before = compute_git_info(dir, None, None, NOW);
