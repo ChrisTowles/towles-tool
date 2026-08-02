@@ -48,6 +48,11 @@ export type ViewerAnchor = {
   line?: number | null;
 };
 
+/** Whether an anchor points anywhere — a request may carry none at all. */
+export function isAnchored(anchor: ViewerAnchor | undefined): boolean {
+  return Boolean(anchor?.startText) || anchor?.line != null;
+}
+
 function applyViewerAnchor(
   monaco: typeof import("monaco-editor"),
   editor: import("monaco-editor").editor.IStandaloneCodeEditor,
@@ -427,6 +432,7 @@ export function CodeViewer({
 
   // The mount effect covers fresh-open, where this runs before the editor.
   useEffect(() => {
+    // Field by field, not `isAnchored`: the deps below are those same fields.
     if (!anchor?.startText && anchor?.line == null) return;
     void (async () => {
       const monaco = await loadMonaco();

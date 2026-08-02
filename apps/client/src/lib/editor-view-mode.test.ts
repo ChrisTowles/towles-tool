@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { modeForPanels, panelsFor, type EditorViewMode } from "./editor-view-mode";
+import { initialViewMode, modeForPanels, panelsFor, type EditorViewMode } from "./editor-view-mode";
 
 const MODES: EditorViewMode[] = ["code", "split", "preview"];
+
+describe("initialViewMode", () => {
+  it("opens the markup kinds rendered", () => {
+    expect(initialViewMode("markdown", false)).toBe("preview");
+    expect(initialViewMode("html", false)).toBe("preview");
+  });
+
+  it("opens everything else as source", () => {
+    expect(initialViewMode(null, false)).toBe("code");
+    expect(initialViewMode("image", false)).toBe("code");
+  });
+
+  it("yields to an anchored open, whose target is a line", () => {
+    expect(initialViewMode("markdown", true)).toBe("code");
+    expect(initialViewMode("html", true)).toBe("code");
+  });
+});
 
 describe("panelsFor", () => {
   it("gives each mode the halves it names", () => {

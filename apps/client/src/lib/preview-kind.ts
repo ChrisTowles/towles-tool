@@ -80,3 +80,8 @@ export function previewKindFor(path: string): PreviewKind | null {
 export function opensInEditor(kind: PreviewKind | null): boolean {
   return kind === null || kind === "markdown" || kind === "html";
 }
+
+/** Whether the file has a rendered form to split the editor against. */
+export function hasRenderedView(kind: PreviewKind | null): kind is "markdown" | "html" {
+  return kind === "markdown" || kind === "html";
+}

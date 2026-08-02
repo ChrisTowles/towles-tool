@@ -8,10 +8,7 @@ const base = defaultSchema;
 
 export const previewSanitizeSchema = {
   ...base,
-  tagNames: [
-    ...(base.tagNames ?? []),
-    "video",
-  ],
+  tagNames: [...(base.tagNames ?? []), "video"],
   attributes: {
     ...base.attributes,
     // Both spellings — parse5 (via rehype-raw) canonicalizes it to `dataAlert`.
