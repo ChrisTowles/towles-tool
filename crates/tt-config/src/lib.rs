@@ -171,6 +171,12 @@ pub struct AgentboardSettings {
     /// a vsync-paced render thread. Mounting `NativePane` is what starts it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_pane: Option<bool>,
+
+    /// The Chrome pane (`tt-browser`): a real headless Chrome on the
+    /// app-owned profile, tiled beside a checkout's terminals. `None` = off
+    /// while experimental.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_pane: Option<bool>,
 }
 
 /// Built-in default for [`AgentboardSettings::compact_recommend_percent`].

@@ -24,6 +24,23 @@ export type BrowserStatus = z.infer<typeof BrowserStatusSchema>;
 export const browserStatus = () =>
   invoke("browser_status", {}, { schema: BrowserStatusSchema, timeoutMs: 5_000 });
 
+/** Open and close are serialized per pane: an unmount's fire-and-forget
+ * close racing a remount's open would otherwise close the fresh target. */
+const paneOps = new Map<string, Promise<unknown>>();
+
+function chained<T>(paneId: string, op: () => Promise<T>): Promise<T> {
+  const prev = paneOps.get(paneId) ?? Promise.resolve();
+  const next = prev.then(op, op);
+  paneOps.set(
+    paneId,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
 export async function browserOpen(
   paneId: string,
   url: string | undefined,
@@ -31,7 +48,9 @@ export async function browserOpen(
 ): Promise<Result<unknown, IpcError>> {
   if (!isTauri()) return Result.err(new NotInTauri({ command: "browser_open" }));
   const channel = await rawChannel(onFrame);
-  return invoke("browser_open", { paneId, url, onFrame: channel }, { timeoutMs: 30_000 });
+  return chained(paneId, () =>
+    invoke("browser_open", { paneId, url, onFrame: channel }, { timeoutMs: 30_000 }),
+  );
 }
 
 export const browserNavigate = (
@@ -43,15 +62,16 @@ export const browserInput = (paneId: string, events: BrowserInputEvent[]) =>
   invoke("browser_input", { paneId, events });
 
 export const browserSetViewport = (paneId: string, width: number, height: number, dpr: number) =>
-  invoke("browser_set_viewport", { paneId, width, height, dpr });
+  chained(paneId, () => invoke("browser_set_viewport", { paneId, width, height, dpr }));
 
 export const browserSetVisible = (paneId: string, visible: boolean) =>
-  invoke("browser_set_visible", { paneId, visible });
+  chained(paneId, () => invoke("browser_set_visible", { paneId, visible }));
 
 export const browserCapture = (paneId: string) =>
   invoke<string>("browser_capture", { paneId }, { timeoutMs: 15_000 });
 
-export const browserClose = (paneId: string) => invoke("browser_close", { paneId });
+export const browserClose = (paneId: string) =>
+  chained(paneId, () => invoke("browser_close", { paneId }));
 
 export const browserPopout = (paneId: string) => invoke("browser_popout", { paneId });
 
@@ -111,16 +131,20 @@ export function cdpModifiers(e: ModifierBits): number {
 
 const CDP_BUTTONS = ["left", "middle", "right"] as const;
 
+/** `scale` maps pane-local CSS px into page CSS px — the two differ whenever
+ * a resize hasn't reached Chrome yet, and a mismatch means missed clicks. */
+export type PaneOrigin = { left: number; top: number; scaleX?: number; scaleY?: number };
+
 export function mouseEvent(
   type: "mousePressed" | "mouseReleased" | "mouseMoved",
   e: ModifierBits & { button: number; clientX: number; clientY: number; detail?: number },
-  origin: { left: number; top: number },
+  origin: PaneOrigin,
 ): BrowserInputEvent {
   return {
     kind: "mouse",
     type,
-    x: e.clientX - origin.left,
-    y: e.clientY - origin.top,
+    x: (e.clientX - origin.left) * (origin.scaleX ?? 1),
+    y: (e.clientY - origin.top) * (origin.scaleY ?? 1),
     button: CDP_BUTTONS[e.button] ?? "left",
     clickCount: type === "mouseMoved" ? undefined : Math.max(1, e.detail ?? 1),
     modifiers: cdpModifiers(e),
@@ -129,13 +153,13 @@ export function mouseEvent(
 
 export function wheelEvent(
   e: ModifierBits & { clientX: number; clientY: number; deltaX: number; deltaY: number },
-  origin: { left: number; top: number },
+  origin: PaneOrigin,
 ): BrowserInputEvent {
   return {
     kind: "mouse",
     type: "mouseWheel",
-    x: e.clientX - origin.left,
-    y: e.clientY - origin.top,
+    x: (e.clientX - origin.left) * (origin.scaleX ?? 1),
+    y: (e.clientY - origin.top) * (origin.scaleY ?? 1),
     // The wheel scrolls content down when deltaY is positive; CDP's sign is
     // the scroll offset delta, i.e. inverted from the DOM's.
     deltaX: -e.deltaX,

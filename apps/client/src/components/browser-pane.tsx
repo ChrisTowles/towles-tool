@@ -155,8 +155,18 @@ export function BrowserPane({
   );
 
   const origin = () => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    return { left: rect?.left ?? 0, top: rect?.top ?? 0 };
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
+    if (!canvas || !rect || rect.width < 1 || rect.height < 1) {
+      return { left: 0, top: 0 };
+    }
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      left: rect.left,
+      top: rect.top,
+      scaleX: canvas.width / dpr / rect.width,
+      scaleY: canvas.height / dpr / rect.height,
+    };
   };
 
   const navigate = (raw: string) => {
@@ -296,7 +306,13 @@ export function BrowserPane({
             )}
             onPointerDown={(e) => {
               e.currentTarget.focus();
-              e.currentTarget.setPointerCapture(e.pointerId);
+              // Throws on an already-released pointer id; losing capture only
+              // costs drag-outside-the-pane tracking, never the click.
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                /* keep the click */
+              }
               send([mouseEvent("mousePressed", e, origin())]);
             }}
             onPointerUp={(e) => send([mouseEvent("mouseReleased", e, origin())])}
