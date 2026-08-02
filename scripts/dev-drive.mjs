@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Launch the app as a PERSISTENT, automatable dev window: `npm run dev` plus the
+// Launch the app as a PERSISTENT, automatable dev window: `bun run dev` plus the
 // `wdio` cargo feature and WebKit automation, so `tauri-plugin-wdio-webdriver`
 // serves W3C WebDriver on `wdPort` for the window's whole lifetime and
 // `scripts/drive.mjs` can drive it while you watch — no WDIO, no spawn/kill (see

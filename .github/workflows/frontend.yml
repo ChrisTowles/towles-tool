@@ -7,7 +7,7 @@ on:
       - "apps/client/**"
       - "scripts/**"
       - "package.json"
-      - "package-lock.json"
+      - "bun.lock"
       - ".github/workflows/frontend.yml"
   pull_request:
     paths: *client-paths
@@ -27,42 +27,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      # Node is still the runtime for the scripts/*.mjs dev tooling below; Bun
+      # is the package manager and script runner.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
-      # npm workspaces: install from the repo root so apps/client resolves.
-      - name: npm ci
-        run: npm ci
+      # Bun workspaces: install from the repo root so apps/client resolves.
+      # `--frozen-lockfile` makes CI fail rather than silently resolve a
+      # dependency the committed bun.lock doesn't already pin.
+      - name: bun install
+        run: bun install --frozen-lockfile
         working-directory: .
 
       # Dev-tooling scripts (per-task port derivation) — run from the repo root.
       # `.mjs` sources, typechecked via JSDoc + checkJs (scripts/tsconfig.json).
       - name: typecheck scripts
-        run: npm run typecheck:scripts
+        run: bun run typecheck:scripts
         working-directory: .
 
       - name: test scripts
-        run: npm run test:scripts
+        run: bun run test:scripts
         working-directory: .
 
       - name: typecheck
-        run: npx tsc -b
+        run: bunx tsc -b
 
       # oxlint over apps/client. The repo documents oxlint *warnings* as
-      # non-blocking, but `npm run lint` (oxlint .) only exits non-zero on
+      # non-blocking, but `bun run lint` (oxlint .) only exits non-zero on
       # errors, and the tree is currently clean — so a non-zero exit here is a
       # real regression worth blocking on.
       - name: lint
-        run: npm run lint
+        run: bun run lint
 
       - name: test
-        run: npx vitest run
+        run: bunx vitest run
 
-      # `npm run build` here is apps/client's own `tsc -b && vite build`, which
-      # runs without the Tauri shell (the root `npm run build` is `tauri build`
+      # `bun run build` here is apps/client's own `tsc -b && vite build`, which
+      # runs without the Tauri shell (the root `bun run build` is `tauri build`
       # and is intentionally not run in CI — it needs the Tauri toolchain and
       # webkit2gtk/GTK system libs).
       - name: build
-        run: npm run build
+        run: bun run build

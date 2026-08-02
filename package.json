@@ -6,8 +6,10 @@
     "apps/client"
   ],
   "engines": {
+    "bun": ">=1.3",
     "node": ">=24"
   },
+  "comment:engines": "Bun is the package manager and script runner. Node stays a prerequisite because the scripts/*.mjs dev tooling and the WebdriverIO e2e suite still run on the Node runtime.",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
     "dev": "node scripts/dev-port.mjs",
@@ -17,15 +19,16 @@
     "clean": "cargo clean && rm -rf apps/client/dist node_modules apps/client/node_modules",
     "build": "tauri build",
     "tauri": "tauri",
-    "client:dev": "npm run dev --workspace @towles-tool/client",
+    "client:dev": "bun run --filter @towles-tool/client dev",
     "e2e": "node scripts/e2e.mjs",
     "e2e:run": "node scripts/e2e.mjs --no-build",
     "release:bump": "node scripts/release-version-bump.mjs",
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
-  "comment:overrides": "@wdio/tauri-service@1.2.0 exact-pins @wdio/native-utils@2.4.0 but imports installMockSyncOverride, only added in 2.5.0 — a broken pin. Force 2.5.0 until upstream fixes it. monaco-languageclient pins @codingame/monaco-vscode-* to ^35.0.1, which npm was satisfying with a second nested install alongside our own ~35.0.3 pins — two copies of the same VS Code services meant two CommandsRegistry instances, both registering editor.action.measureExtHostLatency and crashing with 'Cannot register two commands with the same id'. Force every @codingame/monaco-vscode-* package to one shared version so the whole tree dedupes to a single copy.",
-  "comment:overrides-audit": "The rest hold `npm audit` at 0, forcing advisory fixes past a parent's stale pin; drop each when upstream catches up. dompurify: monaco-vscode-api exact-pins 3.4.11. serialize-javascript: mocha pins ^6.0.2 and 6.x got no backport. @hono/node-server: patched only in 2.x, and the SDK's one getRequestListener import survives the major. minimatch: brace-expansion is patched only in 5.0.8, which only minimatch >=10.2 depends on, so one pin clears ~20 nodes across glob/jake/mocha/wdio. Its cost is `mocha --ignore`, which calls minimatch as a function — CLI-only, and wdio drives mocha programmatically. Unavoidable anyway: mocha 12 takes minimatch 10 but renames the lib/cli/run-helpers.js that @wdio/mocha-framework deep-imports.",
+  "comment:overrides": "@wdio/tauri-service@1.2.0 exact-pins @wdio/native-utils@2.4.0 but imports installMockSyncOverride, only added in 2.5.0 — a broken pin. Force 2.5.0 until upstream fixes it. monaco-languageclient pins @codingame/monaco-vscode-* to ^35.0.1, which an installer will otherwise satisfy with a second nested copy alongside our own ~35.0.3 pins — two copies of the same VS Code services meant two CommandsRegistry instances, both registering editor.action.measureExtHostLatency and crashing with 'Cannot register two commands with the same id'. Force every @codingame/monaco-vscode-* package to one shared version so the whole tree dedupes to a single copy.",
+  "comment:trusted-dependencies": "Deliberately empty. `bun install` blocks edgedriver's postinstall, which downloads an Edge WebDriver binary; the e2e suite drives WebKitGTK via webkit2gtk-driver and never touches it, so the 'Blocked 1 postinstall' line is expected. Don't `bun pm trust` it.",
+  "comment:overrides-audit": "The rest hold `bun audit` at 0, forcing advisory fixes past a parent's stale pin; drop each when upstream catches up. dompurify: monaco-vscode-api exact-pins 3.4.11. serialize-javascript: mocha pins ^6.0.2 and 6.x got no backport. @hono/node-server: patched only in 2.x, and the SDK's one getRequestListener import survives the major. minimatch: brace-expansion is patched only in 5.0.8, which only minimatch >=10.2 depends on, so one pin clears ~20 nodes across glob/jake/mocha/wdio. Its cost is `mocha --ignore`, which calls minimatch as a function — CLI-only, and wdio drives mocha programmatically. Unavoidable anyway: mocha 12 takes minimatch 10 but renames the lib/cli/run-helpers.js that @wdio/mocha-framework deep-imports.",
   "overrides": {
     "@wdio/native-utils": "2.5.0",
     "@codingame/monaco-vscode-api": "35.0.3",

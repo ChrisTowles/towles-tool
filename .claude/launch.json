@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "app (dev:drive)",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "dev:drive"]
     }
   ]

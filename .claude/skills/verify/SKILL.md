@@ -12,7 +12,7 @@ mock-data browser dev server, never just `vitest`/`tsc`.
 ## Get a handle
 
 ```sh
-npm run dev:drive > /tmp/.../dev-drive.log 2>&1 &   # background; builds + launches the real app
+bun run dev:drive > /tmp/.../dev-drive.log 2>&1 &   # background; builds + launches the real app
 disown
 ```
 

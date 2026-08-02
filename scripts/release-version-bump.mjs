@@ -117,9 +117,9 @@ async function main() {
   }
 
   // `cargo check` updates Cargo.lock's `tt-app` entry without a full build;
-  // `--package-lock-only` does the same without touching node_modules.
+  // `--lockfile-only` does the same for bun.lock without touching node_modules.
   run(["cargo", "check", "-p", "tt-app", "--quiet"], repoRoot);
-  run(["npm", "install", "--package-lock-only", "--silent"], repoRoot);
+  run(["bun", "install", "--lockfile-only", "--silent"], repoRoot);
 
   console.log(`\n[release-version-bump] done: ${from} -> ${to}. Review the diff, then:`);
   console.log(`  git add -A && git commit -m "chore(release): bump version to ${to}"`);

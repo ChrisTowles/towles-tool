@@ -84,7 +84,7 @@ invariants a single read won't surface: it is the largest crate in the repo
   polling. A second launch prints "already running" and exits — a
   resource-duplication guard, not the crash fix.
 - **Nested shells get their env scrubbed and re-stamped** (`terminal.rs`, issue
-  #39), so a `tt-app` or `npm run dev` launched *inside* an embedded terminal
+  #39), so a `tt-app` or `bun run dev` launched *inside* an embedded terminal
   doesn't collide with the outer instance's port/session identity.
   `CLAUDE_CODE_SSE_PORT` is re-stamped for deterministic IDE pairing even with
   several tasks open — don't drop this to "simplify" terminal spawning.
@@ -132,7 +132,7 @@ invariants a single read won't surface: it is the largest crate in the repo
   WebKitGTK/NVIDIA rendering bug (tauri-apps/tauri#9304) — set it only when
   NVIDIA is actually driving the screen, and never override a user setting.
 - **Linux app-id / desktop-entry self-registration** (`linux_desktop.rs`): the
-  daily-driver flow (`npm start`) runs `tauri build --no-bundle` and execs the
+  daily-driver flow (`bun start`) runs `tauri build --no-bundle` and execs the
   raw binary, skipping the packaging step that would write a `.desktop` file and
   themed icon. `ensure_installed` (from `.setup()`) self-registers both into
   `~/.local/share/{applications,icons}` on every startup, idempotently, one pair

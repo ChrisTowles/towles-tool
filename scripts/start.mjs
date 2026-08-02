@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Builds tt-app in release mode and runs the binary directly — no installer
-// bundling. Debug builds (`npm run dev`) are fine for iterating, but their
+// bundling. Debug builds (`bun run dev`) are fine for iterating, but their
 // unoptimized terminal rendering + IPC path is visibly laggy under everyday use
 // once several worktree tasks + agent sessions are running at once. The "just
-// run it fast" counterpart to `npm run dev`.
+// run it fast" counterpart to `bun run dev`.
 import { spawn, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";

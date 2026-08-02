@@ -20,11 +20,11 @@ cargo fmt --check                   # rustfmt, 100-col
 cargo clippy --all -- -D warnings   # warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
 cargo xtask comment-budget          # comment volume — what CI gates on
-npm run dev / npm start             # tauri dev (laggy) / release build + run
-npm run dev:drive                   # dev, with the window automatable
-npm run drive -- <verb>             # drive it (status|invoke|shot|winshot|click|…)
-npm run e2e                         # regression suite vs the real shell
-cd apps/client && npm run lint      # oxlint  (`npm run format` for oxfmt)
+bun run dev / bun start             # tauri dev (laggy) / release build + run
+bun run dev:drive                   # dev, with the window automatable
+bun run drive -- <verb>             # drive it (status|invoke|shot|winshot|click|…)
+bun run e2e                         # regression suite vs the real shell
+cd apps/client && bun run lint      # oxlint  (`bun run format` for oxfmt)
 ```
 
 `clippy --all`/`test --all` need zig, webkit2gtk/GTK and a Bevy fork; without
@@ -45,11 +45,11 @@ it**. Don't narrow a change to dodge one, don't reach for `allow(…)` to keep a
 diff small, don't defer it, and never lower a budget to make a run pass.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
-mock dev server: `npm run dev:drive` plus a `drive` verb (`shot` is blind to the
-native pane — use `winshot`), or `npm run e2e` for pass/fail. A screenshot that
+mock dev server: `bun run dev:drive` plus a `drive` verb (`shot` is blind to the
+native pane — use `winshot`), or `bun run e2e` for pass/fail. A screenshot that
 looks right is not proof the render was clean: every verb prints a console-error
 summary, and React reports bad markup only at runtime. **After a task that
-touches the app, leave `npm start` running for Chris.**
+touches the app, leave `bun start` running for Chris.**
 
 ## Worktree tasks — you are probably working in one
 

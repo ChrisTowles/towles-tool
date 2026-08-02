@@ -2,7 +2,7 @@ name: Security
 
 # Fast, build-free guardrails that run on every PR and push to main:
 #   - invariant greps (bare subprocess spawns; bundled-roots TLS crates)
-#   - dependency advisory scans (cargo audit / npm audit), non-blocking
+#   - dependency advisory scans (cargo audit / bun audit), non-blocking
 # These are intentionally not path-gated: the invariants guard repo-wide rules
 # and the scans are cheap (seconds), so they run regardless of what changed.
 on:
@@ -42,10 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: npm
+          bun-version: 1.3.9
 
       # cargo audit reads Cargo.lock only — no build, so this stays fast.
       - name: Install cargo-audit
@@ -59,9 +58,10 @@ jobs:
       - name: cargo audit
         run: cargo audit
 
-      # Non-blocking for the same reason: the one high-severity npm advisory is
-      # in the E2E devDependency chain (serialize-javascript via
-      # mocha / @wdio/mocha-framework), not shipped code.
-      - name: npm audit
+      # Non-blocking for the same reason: any high-severity JS advisory that
+      # slips through lands in the E2E devDependency chain (serialize-javascript
+      # via mocha / @wdio/mocha-framework), not shipped code. Reads bun.lock —
+      # no install needed.
+      - name: bun audit
         continue-on-error: true
-        run: npm audit --audit-level=high
+        run: bun audit --audit-level=high

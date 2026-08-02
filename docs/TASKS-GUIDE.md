@@ -31,7 +31,7 @@ flowchart TB
         direction TB
         WT["branch-named worktree at<br/>.claude/worktrees/&lt;branch&gt;"]
         ENV["render .env from .env.example —<br/>each #36;#123;tt:port A–B#125; claim gets a port<br/><b>no other task holds</b>"]
-        DEP["TT_TASK_SETUP runs<br/>(npm install, migrations, …)"]
+        DEP["TT_TASK_SETUP runs<br/>(bun install, migrations, …)"]
         WT --> ENV --> DEP
     end
 

@@ -4,10 +4,10 @@ Two ways to drive the **actual Tauri shell** — the WebKitGTK WebView, not a ba
 browser — both exercising real Rust IPC (`app_task`, `settings_get`,
 `ab_discover_repos`, …):
 
-- **Live drive** (`npm run dev:drive` + `scripts/drive.mjs`) — one window you keep
+- **Live drive** (`bun run dev:drive` + `scripts/drive.mjs`) — one window you keep
   open that Claude drives *live* while you watch: screenshots, clicks, real IPC.
   Interactive development/debugging. See **[Live drive](#live-drive)** below.
-- **Regression suite** (`npm run e2e`) — WebdriverIO specs that spawn a fresh
+- **Regression suite** (`bun run e2e`) — WebdriverIO specs that spawn a fresh
   window, run, and exit. CI-style pass/fail. See **[Regression suite](#regression-suite-webdriverio)** below.
 
 Both are the automated counterpart to the manual runbook in
@@ -18,7 +18,7 @@ Both are the automated counterpart to the manual runbook in
 Open a persistent, automatable window and leave it up:
 
 ```sh
-npm run dev:drive     # like `npm run dev` (HMR) but the window is automatable
+bun run dev:drive     # like `bun run dev` (HMR) but the window is automatable
 ```
 
 Then drive that same window from another shell — this is how Claude debugs a UI
@@ -63,7 +63,7 @@ Notes:
   when you're done to give the monitor back. COSMIC-only: it shells out to
   `cosmic-screenshot` + ImageMagick `convert`, because cosmic-comp doesn't
   implement wlr-screencopy and so `grim -g` (the portable path) doesn't work.
-- **Ports come from the rendered `.env`/`.env.local`** (same as `npm run dev`):
+- **Ports come from the rendered `.env`/`.env.local`** (same as `bun run dev`):
   `wdPort` is the task's `TT_E2E_WEBDRIVER_PORT` claim, falling back to
   `TT_DEV_PORT + 3000`. Per-task claims, so `drive.mjs` finds the server
   without arguments and different tasks don't collide.
@@ -86,7 +86,7 @@ Notes:
   re-check state via `eval` between each — that isolates whether the specific
   case really is session-lifecycle-sensitive before assuming it's the same
   root cause as #35.
-- `dev:drive` and `npm run e2e` **share a task's ports**, so don't run both in the
+- `dev:drive` and `bun run e2e` **share a task's ports**, so don't run both in the
   same task at once.
 - Automation mode: launched with `TAURI_WEBVIEW_AUTOMATION=true`, WebKitGTK may
   show a small "controlled by automation" banner and use ephemeral web storage.
@@ -131,17 +131,17 @@ sudo apt-get install -y webkit2gtk-driver     # Debian/Ubuntu/Pop!_OS
 # Arch:       sudo pacman -S webkit2gtk-4.1
 ```
 
-The JS dev-deps (`@wdio/*`, `tsx`) install with `npm install` at the repo root.
+The JS dev-deps (`@wdio/*`, `tsx`) install with `bun install` at the repo root.
 
 ## Running
 
 ```sh
-npm run e2e        # build the app (--features wdio) + serve + run the suite
-npm run e2e:run    # run against an already-built binary (skips the build)
+bun run e2e        # build the app (--features wdio) + serve + run the suite
+bun run e2e:run    # run against an already-built binary (skips the build)
 ```
 
 `scripts/e2e.mjs` orchestrates everything. **Ports come from the rendered
-`.env`/`.env.local`** (the same `TT_DEV_PORT` mechanism as `npm run dev`): the
+`.env`/`.env.local`** (the same `TT_DEV_PORT` mechanism as `bun run dev`): the
 Vite dev server uses `TT_DEV_PORT`, and the embedded WebDriver server uses the
 `TT_E2E_WEBDRIVER_PORT` claim (falling back to `TT_DEV_PORT + 3000`). Nothing
 is hardcoded, so tasks don't collide. `e2e:run` assumes the binary was already built for this task's port —

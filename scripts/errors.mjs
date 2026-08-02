@@ -106,7 +106,7 @@ export class RequestFailed extends RequestFailedBase {
       cause: args.cause,
       message:
         `can't reach the automation server at ${args.base} (${code}).\n` +
-        "Is `npm run dev:drive` running in this task?",
+        "Is `bun run dev:drive` running in this task?",
     });
   }
 }

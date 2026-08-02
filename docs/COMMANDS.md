@@ -53,18 +53,18 @@ or it silently gets no Rust CI at all.**
 Desktop app / frontend:
 
 ```sh
-npm install                         # installs apps/client (npm workspaces)
-npm run dev                         # tauri dev — app + Vite frontend (debug build; noticeably laggy)
-npm start                           # reinstall `tt`, release build (`tauri build --no-bundle`), run — for daily driving
-npm run dev:drive                   # like dev, but the window is automatable (live-drive)
-npm run drive -- <verb>             # drive the dev:drive window (status|invoke|shot|click|…)
-npm run e2e                         # regression suite vs the real shell (see below)
-cd apps/client && npm run lint      # oxlint (types/react/unicorn/oxc rules; warnings are non-blocking)
-cd apps/client && npm run format    # oxfmt, in place (100-col, matches rustfmt's width)
-cd apps/client && npx shadcn@latest add <name>   # vendor a shadcn/ui component
+bun install                         # installs apps/client (bun workspaces)
+bun run dev                         # tauri dev — app + Vite frontend (debug build; noticeably laggy)
+bun start                           # reinstall `tt`, release build (`tauri build --no-bundle`), run — for daily driving
+bun run dev:drive                   # like dev, but the window is automatable (live-drive)
+bun run drive -- <verb>             # drive the dev:drive window (status|invoke|shot|click|…)
+bun run e2e                         # regression suite vs the real shell (see below)
+cd apps/client && bun run lint      # oxlint (types/react/unicorn/oxc rules; warnings are non-blocking)
+cd apps/client && bun run format    # oxfmt, in place (100-col, matches rustfmt's width)
+cd apps/client && bunx shadcn@latest add <name>   # vendor a shadcn/ui component
 ```
 
-**`npm start` reinstalls `tt` first**, from the checkout it is about to run:
+**`bun start` reinstalls `tt` first**, from the checkout it is about to run:
 there is one `tt` on PATH for every checkout, so it otherwise drifts to whichever
 worktree installed it last and the plugin's hooks fail on a flag that build
 predates. Warm it costs about a second, it builds into its own `target/tt-cli`
@@ -75,7 +75,7 @@ warns rather than holding back the app.
 *actual* Tauri shell (WebKitGTK WebView + real Rust IPC), never a bare browser or
 the mock dev server:
 
-- **Live drive** — `npm run dev:drive` opens one automatable window (HMR, you use
+- **Live drive** — `bun run dev:drive` opens one automatable window (HMR, you use
   it normally); `node scripts/drive.mjs <verb>` drives *that same* window:
   `status`, `invoke <cmd> [json]` (real IPC), `eval "<js>"`, `shot <name>` (→
   `e2e/screenshots/<name>.png`, which you can `Read`), `click "<css>"`,
@@ -92,9 +92,9 @@ the mock dev server:
   no component tests), so every verb prints a `⚠ N console error(s)` summary
   and `console` dumps the detail. It's a plain-`fetch` client talking to the
   app's in-process WebDriver server — no WebdriverIO.
-- **Regression suite** — `npm run e2e` runs WebdriverIO specs that spawn a fresh
+- **Regression suite** — `bun run e2e` runs WebdriverIO specs that spawn a fresh
   window, run, and exit (CI pass/fail). Specs in `e2e/specs/*.e2e.ts` are
-  **read-only** (never write your real settings file); `npm run e2e:run` skips
+  **read-only** (never write your real settings file); `bun run e2e:run` skips
   the rebuild.
 
 Both are gated behind the `wdio` cargo feature + `VITE_WDIO` flag, so nothing
@@ -103,7 +103,7 @@ webdriver = the `TT_E2E_WEBDRIVER_PORT` claim, falling back to `+3000`); `dev:dr
 both at once in one task. Full docs + Linux gotchas: [e2e/README.md](../e2e/README.md).
 
 **After finishing a task that touches the app, leave it running for Chris to
-check.** Once the change builds/lints/tests clean, launch `npm start`
+check.** Once the change builds/lints/tests clean, launch `bun start`
 (release build, the daily-driving binary) as a background task — Bash with
 `run_in_background: true`, not a foregrounded blocking call — as the last
 step before ending the turn. This is a courtesy handoff so the real running

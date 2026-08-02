@@ -36,7 +36,7 @@ printf '%s\n' "$cmd" | grep -qE '(^|[[:space:]])SYNTHETIC_INPUT_OK=1([[:space:]]
 
 # Only when driving the real app -- a synthetic event inside a vitest file is
 # a unit test and reads as one.
-printf '%s\n' "$cmd" | grep -qE 'drive\.mjs|npm run (e2e|dev:drive)' || exit 0
+printf '%s\n' "$cmd" | grep -qE 'drive\.mjs|bun run (e2e|dev:drive)' || exit 0
 
 # The platform-input family: events whose real-world delivery depends on the
 # OS/compositor/WebKit, so a fabricated one proves nothing about the feature.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live-drive the window opened by `npm run dev:drive` — plain fetch against the
+// Live-drive the window opened by `bun run dev:drive` — plain fetch against the
 // in-app W3C WebDriver server, NO @wdio/* import at runtime. Reads and IPC go
 // through the session-less `POST /wdio/eval`; shot/click/type/url each open a
 // short-lived session, or reuse one passed as `--session` (see `session-open`).
@@ -341,7 +341,7 @@ async function captureWindow(name) {
 function usage(exitCode) {
   console.log(
     [
-      "Live-drive the window opened by `npm run dev:drive`.",
+      "Live-drive the window opened by `bun run dev:drive`.",
       "",
       "  status                     is the automation server up?",
       '  eval "<js expression>"     run JS in the live window, print the result',
@@ -543,7 +543,7 @@ switch (verb) {
     const entries = read.value;
     if (entries === null) {
       fail(
-        "no console collector in the page — is this a VITE_WDIO build (`npm run dev:drive`)?",
+        "no console collector in the page — is this a VITE_WDIO build (`bun run dev:drive`)?",
       );
     }
     if (entries.length === 0) {

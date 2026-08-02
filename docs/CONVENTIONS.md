@@ -5,7 +5,7 @@ hardest are repeated in [CLAUDE.md](../CLAUDE.md); this is the whole list.
 
 - **Frontend styling:** Tailwind + shadcn/ui only — no CSS modules, no
   hand-rolled stylesheets, no CSS-in-JS. Add components with
-  `npx shadcn@latest add <name>`, don't hand-write Radix wrappers. The one
+  `bunx shadcn@latest add <name>`, don't hand-write Radix wrappers. The one
   carve-out is **animation**, where there are two idioms and the choice is not
   a preference: `tw-animate-css` classes (`data-open:animate-in …`, as the
   vendored `components/ui/*` use) for anything that animates while mounted,

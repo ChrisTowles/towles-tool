@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Give the *dev* app a real macOS bundle identity: `tauri dev` never bundles, so
 // the Dock shows the generic Unix-executable icon, and it can't use the `app`
-// target `npm start` builds without losing watch/HMR. So wrap the launch —
+// target `bun start` builds without losing watch/HMR. So wrap the launch —
 // `CARGO_TARGET_<HOST_TRIPLE>_RUNNER` (set only on the `tauri dev` child) points
 // cargo at a script that hardlinks the binary into a throwaway `.app`, same PID.
 import { chmodSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -91,7 +91,7 @@ function infoPlist({ executable, productName, identifier, version }) {
 }
 
 /**
- * Read rather than restated so the dev bundle can't drift from `npm start`'s;
+ * Read rather than restated so the dev bundle can't drift from `bun start`'s;
  * throws rather than returning a Result, since there is no recovery from it.
  * @param {string} repoRoot
  */

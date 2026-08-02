@@ -10,7 +10,7 @@ on:
       - "scripts/**"
       - "**/*.md"
       - "package.json"
-      - "package-lock.json"
+      - "bun.lock"
       - ".github/workflows/frontend.yml"
       - ".github/workflows/release.yml"
   pull_request:

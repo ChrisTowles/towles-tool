@@ -98,7 +98,7 @@ jobs:
 
   # WebdriverIO regression suite against the real WebKitGTK shell. Needs the
   # webkit2gtk-driver binary plus a virtual display (xvfb) on top of the app's
-  # build prerequisites; `npm run e2e` builds the app with `--features wdio`
+  # build prerequisites; `bun run e2e` builds the app with `--features wdio`
   # (which pulls tt-vt, hence zig + ghostty). See e2e/README.md.
   e2e:
     name: E2E (WebKitGTK under xvfb)
@@ -131,13 +131,17 @@ jobs:
             webkit2gtk-driver \
             xvfb
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      # Node is still the runtime for scripts/e2e.mjs and the WebdriverIO suite.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
-      - name: npm ci
-        run: npm ci
+      - name: bun install
+        run: bun install --frozen-lockfile
 
       - name: Provision pinned Rust toolchain
         run: |
@@ -170,13 +174,13 @@ jobs:
         with:
           key: nightly-e2e
 
-      # `npm run e2e` builds the wdio-featured app and runs the WebdriverIO
+      # `bun run e2e` builds the wdio-featured app and runs the WebdriverIO
       # specs; xvfb-run supplies the headless X display WebKitGTK needs. Ports
       # come from the task-rendered .env (nothing hardcoded).
-      - name: e2e (npm run e2e under xvfb)
+      - name: e2e (bun run e2e under xvfb)
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: xvfb-run --auto-servernum npm run e2e
+        run: xvfb-run --auto-servernum bun run e2e
 
   # Same advisory scans as the security.yml PR job, re-run nightly so newly
   # published advisories against the pinned lockfiles surface even when no PR
@@ -187,10 +191,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: npm
+          bun-version: 1.3.9
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2
@@ -200,6 +203,6 @@ jobs:
       - name: cargo audit
         run: cargo audit
 
-      - name: npm audit
+      - name: bun audit
         continue-on-error: true
-        run: npm audit --audit-level=high
+        run: bun audit --audit-level=high

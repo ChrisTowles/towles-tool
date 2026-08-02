@@ -82,8 +82,8 @@ Needs Node.js 24+, a stable Rust toolchain, [zig](https://ziglang.org/) 0.15.x o
 dependencies](https://v2.tauri.app/start/prerequisites/).
 
 ```sh
-npm install
-npm run dev                        # tauri dev — the app with the Vite frontend
+bun install
+bun run dev                        # tauri dev — the app with the Vite frontend
 cargo run -p tt-cli -- task ls     # the CLI
 ```
 
