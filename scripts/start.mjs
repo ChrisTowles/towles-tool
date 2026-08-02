@@ -24,6 +24,29 @@ const isMac = process.platform === "darwin";
 // inside it keeps stdio inherited. Other platforms skip bundling entirely.
 const bundleArgs = isMac ? ["--bundles", "app"] : ["--no-bundle"];
 
+// One `tt` on PATH serves every checkout, so it drifts to whichever worktree
+// installed it last and the plugin's hooks break on a flag that build predates.
+// Warm this is a ~1s fingerprint check; `--force` because the version rarely
+// moves, and its own target dir because sharing the app's thrashes both.
+const install = spawnSync(
+  "cargo",
+  [
+    "install",
+    "--path",
+    "crates-cli/tt-cli",
+    "--locked",
+    "--force",
+    "--target-dir",
+    path.join("target", "tt-cli"),
+  ],
+  { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" },
+);
+// A `tt` that won't build is no reason to withhold the app — but say so, since
+// the hooks that need it fail far from here.
+if (install.error || install.status !== 0) {
+  console.error("[start] could not install tt — the `tt` on PATH may be stale");
+}
+
 const build = spawnSync(
   "tauri",
   ["build", ...bundleArgs],
