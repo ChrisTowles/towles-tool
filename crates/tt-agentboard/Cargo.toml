@@ -45,6 +45,9 @@ tt-git = { workspace = true }
 tt-tasks = { workspace = true }
 
 [dev-dependencies]
+# filetime: the sub-agent usage memo keys on (mtime, len), and proving it skips
+# an unchanged file means holding mtime still across a rewrite.
+filetime = "0.2.29"
 tempfile = "3.14.0"
 
 [lints]

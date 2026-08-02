@@ -1,15 +1,25 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Hint } from "@/components/hint";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Dot, fmtMins, IconBtn } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import {
+  CONTEXT_BAND_ADVICE,
+  contextBand,
+  ctxPct,
+  fmtContext,
   fmtElapsed,
+  fmtTokens,
   fmtWaitingAge,
+  hasSubagentSpend,
   isAgent,
   isCacheExpiring,
   isCold,
   modelContextLabel,
+  sessionTotalTokens,
+  subagentLabel,
+  type ContextBand,
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
@@ -47,6 +57,89 @@ function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) 
           : `${d.cacheTtlMs === 3_600_000 ? "⧗" : "◔"} ${fmtMins(d.cacheExpiresAt - now)} left`}
       </span>
     </Hint>
+  );
+}
+
+/** Sky is this app's cost hue (the ❄ compact nudge); amber and red are spoken
+ * for by needs-you and error, so escalation here is weight, not a new color. */
+const BAND_TEXT: Record<ContextBand, string> = {
+  calm: "text-muted-foreground/60",
+  noted: "text-muted-foreground/80",
+  half: "text-foreground/80",
+  heavy: "text-sky-500",
+  critical: "font-medium text-sky-500",
+};
+
+const BAND_FILL: Record<ContextBand, string> = {
+  calm: "bg-muted-foreground/40",
+  noted: "bg-muted-foreground/60",
+  half: "bg-foreground/60",
+  heavy: "bg-sky-500/70",
+  critical: "bg-sky-500",
+};
+
+/** How full the window is, escalating from a resting fact to a nudge. Nothing
+ * unless Claude is running here — `agentState` is pruned when the pid dies. */
+function PaneContextMeter({ session }: { session: SessionData }) {
+  const d = session.agentState?.details;
+  if (!session.live || !isAgent(session) || !d?.contextUsed || !d.contextMax) return null;
+  const pct = ctxPct(d);
+  const band = contextBand(pct);
+  return (
+    <Hint label={`${modelContextLabel(d)} — ${CONTEXT_BAND_ADVICE[band]}`}>
+      <span
+        className={cn("flex shrink-0 items-center gap-1 font-mono text-[10.5px]", BAND_TEXT[band])}
+      >
+        <span className="inline-block w-[4ch] text-right">{pct}%</span>
+        <span className="h-1 w-8 overflow-hidden rounded-full bg-muted-foreground/20">
+          <span
+            className={cn("block h-full rounded-full", BAND_FILL[band])}
+            style={{ width: `${Math.min(100, pct)}%` }}
+          />
+        </span>
+      </span>
+    </Hint>
+  );
+}
+
+/** Everything the session is spending, sub-agent threads included — each runs
+ * its own requests, so the context meter above cannot see them. */
+function PaneSubagentTotal({ session }: { session: SessionData }) {
+  const d = session.agentState?.details;
+  if (!session.live || !isAgent(session) || !hasSubagentSpend(d)) return null;
+  const active = d!.subagents ?? [];
+  const count = d!.subagentCount ?? 0;
+  const finished = Math.max(0, count - active.length);
+  return (
+    <HoverCard openDelay={200}>
+      <HoverCardTrigger asChild>
+        <span className="shrink-0 cursor-default font-mono text-[10.5px] text-violet-500">
+          Σ {fmtTokens(sessionTotalTokens(d))} (+{count})
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent side="bottom" align="end" className="w-64">
+        <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
+          This session and every sub-agent it spawned. Each sub-agent runs its own requests.
+        </p>
+        <ul className="flex flex-col gap-0.5 font-mono text-[10.5px]">
+          <li className="flex justify-between gap-3">
+            <span className="text-foreground">main</span>
+            <span className="text-muted-foreground">{fmtContext(d)}</span>
+          </li>
+          {active.map((s, i) => (
+            <li key={`${subagentLabel(s, i)}-${i}`} className="flex justify-between gap-3">
+              <span className="truncate text-violet-500">{subagentLabel(s, i)}</span>
+              <span className="text-muted-foreground">{fmtTokens(s.contextUsed ?? 0)}</span>
+            </li>
+          ))}
+          {finished > 0 && (
+            <li className="text-muted-foreground/70">
+              +{finished} finished sub-agent{finished === 1 ? "" : "s"} in the total
+            </li>
+          )}
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -156,6 +249,8 @@ export function PaneHeader({
               </span>
             </Hint>
           )}
+          <PaneContextMeter session={session} />
+          <PaneSubagentTotal session={session} />
           <PaneCacheInfo session={session} now={now} />
           {agent && (
             <IconBtn

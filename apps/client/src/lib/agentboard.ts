@@ -26,6 +26,12 @@ export const abSetSessionPurpose = (id: string, text: string | null) =>
 
 export type AgentStatus = "idle" | "busy" | "complete" | "error" | "waiting" | "interrupted";
 
+export type SubagentInfo = {
+  agentType?: string | null;
+  description?: string | null;
+  contextUsed?: number | null;
+};
+
 /** Live details from the transcript tail; only the fields the UI renders. */
 export type AgentEventDetails = {
   model?: string | null;
@@ -34,6 +40,9 @@ export type AgentEventDetails = {
   cacheExpiresAt?: number | null;
   cacheTtlMs?: number | null;
   lastActivityAt?: number | null;
+  subagents?: SubagentInfo[] | null;
+  subagentContextUsed?: number | null;
+  subagentCount?: number | null;
 };
 
 export type AgentEvent = {
@@ -1083,6 +1092,43 @@ export function cacheWarnMs(ttlMs: number | null | undefined): number {
 export function isCacheExpiring(d: AgentEventDetails | null | undefined, now: number): boolean {
   if (!d?.cacheExpiresAt || isCold(d, now)) return false;
   return d.cacheExpiresAt - now <= cacheWarnMs(d.cacheTtlMs);
+}
+
+/** Named, not numeric, so a pane and its tooltip can't disagree about a percent. */
+export type ContextBand = "calm" | "noted" | "half" | "heavy" | "critical";
+
+const CONTEXT_BANDS: [number, ContextBand][] = [
+  [80, "critical"],
+  [60, "heavy"],
+  [40, "half"],
+  [20, "noted"],
+];
+
+export function contextBand(pct: number): ContextBand {
+  return CONTEXT_BANDS.find(([floor]) => pct >= floor)?.[1] ?? "calm";
+}
+
+export const CONTEXT_BAND_ADVICE: Record<ContextBand, string> = {
+  calm: "plenty of room",
+  noted: "a fifth of the window is in play",
+  half: "the window is filling — cheap to split the work now",
+  heavy: "long sessions cost more every turn, cached or not",
+  critical: "/compact mid-task, or /clear when switching to new work",
+};
+
+/** Its own context plus every sub-agent's — they run their own requests, which
+ * the session's `contextUsed` never sees. */
+export function sessionTotalTokens(d: AgentEventDetails | null | undefined): number {
+  return (d?.contextUsed ?? 0) + (d?.subagentContextUsed ?? 0);
+}
+
+export function hasSubagentSpend(d: AgentEventDetails | null | undefined): boolean {
+  return (d?.subagentCount ?? 0) > 0 && (d?.subagentContextUsed ?? 0) > 0;
+}
+
+/** Sub-agent meta is optional, hence the positional fallback. */
+export function subagentLabel(s: SubagentInfo, index: number): string {
+  return s.agentType?.trim() || s.description?.trim() || `sub ${index + 1}`;
 }
 
 /** Cold AND over threshold: warm-and-huge is fine, the cost bites on resume. */

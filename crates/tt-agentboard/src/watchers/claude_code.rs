@@ -14,15 +14,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
-use serde::Deserialize;
 use tt_claude_code::{TranscriptEntry, parse_transcript};
 
 use crate::claude_cli::CliAgent;
-use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo, SubagentInfo};
+use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
 use crate::watcher::{AgentWatcher, JSONL_SUFFIX, WatcherContext};
 use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
+use crate::watchers::subagents::{self, SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
 /// The shared CLI snapshot TTL (watcher 2s tick, pane scan 3s, engine
@@ -246,67 +245,6 @@ fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
     None
 }
 
-/// Order-independent change signature for a set of sub-agents.
-fn subagent_signature(subagents: &[SubagentInfo]) -> String {
-    let mut sigs: Vec<String> = subagents
-        .iter()
-        .map(|s| {
-            format!(
-                "{} {}",
-                s.agent_type.as_deref().unwrap_or(""),
-                s.description.as_deref().unwrap_or("")
-            )
-        })
-        .collect();
-    sigs.sort();
-    sigs.join("")
-}
-
-#[derive(Deserialize)]
-struct SubagentMeta {
-    #[serde(rename = "agentType", default)]
-    agent_type: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-/// Active sub-agents in `<session>/subagents/` — those modified within the 2-min
-/// window, most-recent first.
-fn read_active_subagents(subagents_dir: &Path, now_ms: i64) -> Vec<SubagentInfo> {
-    let Ok(entries) = std::fs::read_dir(subagents_dir) else {
-        return Vec::new();
-    };
-    let mut active: Vec<(SubagentInfo, i64)> = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("agent-") || !name.ends_with(JSONL_SUFFIX) {
-            continue;
-        }
-        let path = entry.path();
-        let Some(mtime) = mtime_ms(&path) else {
-            continue;
-        };
-        if now_ms - mtime > crate::types::JOURNAL_IDLE_TIMEOUT_MS {
-            continue;
-        }
-        // Sibling `agent-<id>.meta.json`; missing/unreadable meta still counts (as `{}`).
-        let info = meta_path(&path)
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|t| serde_json::from_str::<SubagentMeta>(&t).ok())
-            .map(|m| SubagentInfo { agent_type: m.agent_type, description: m.description })
-            .unwrap_or_default();
-        active.push((info, mtime));
-    }
-    active.sort_by_key(|(_, m)| std::cmp::Reverse(*m));
-    active.into_iter().map(|(info, _)| info).collect()
-}
-
-fn meta_path(jsonl_path: &Path) -> Option<PathBuf> {
-    let s = jsonl_path.to_str()?;
-    let base = s.strip_suffix(JSONL_SUFFIX)?;
-    Some(PathBuf::from(format!("{base}.meta.json")))
-}
-
 /// Byte length up to and including the last newline (0 if none) — the offset the
 /// next read resumes from, so a partial trailing line is never consumed.
 fn consumed_len(bytes: &[u8]) -> usize {
@@ -314,14 +252,6 @@ fn consumed_len(bytes: &[u8]) -> usize {
         Some(i) => i + 1,
         None => 0,
     }
-}
-
-fn mtime_ms(path: &Path) -> Option<i64> {
-    let meta = std::fs::metadata(path).ok()?;
-    meta.modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
 }
 
 /// Claude Code labels its own generated entries (an interrupt notice, say) with
@@ -345,6 +275,8 @@ fn summary_to_details(s: &ClaudeUsageSummary) -> AgentEventDetails {
         last_activity_at: Some(s.last_activity_at),
         last_tool: None,
         subagents: None,
+        subagent_context_used: None,
+        subagent_count: None,
         r#loop: None,
     }
 }
@@ -352,10 +284,10 @@ fn summary_to_details(s: &ClaudeUsageSummary) -> AgentEventDetails {
 fn build_details(
     usage: Option<&ClaudeUsageSummary>,
     last_tool: Option<&str>,
-    subagents: &[SubagentInfo],
+    subagents: &SubagentRollup,
     loop_state: Option<&LoopInfo>,
 ) -> Option<AgentEventDetails> {
-    let has_subagents = !subagents.is_empty();
+    let has_subagents = subagents.count > 0;
     if usage.is_none() && last_tool.is_none() && !has_subagents && loop_state.is_none() {
         return None;
     }
@@ -364,7 +296,11 @@ fn build_details(
         base.last_tool = Some(t.to_string());
     }
     if has_subagents {
-        base.subagents = Some(subagents.to_vec());
+        base.subagent_count = Some(subagents.count);
+        base.subagent_context_used = Some(subagents.total_context);
+        if !subagents.active.is_empty() {
+            base.subagents = Some(subagents.active.clone());
+        }
     }
     if let Some(l) = loop_state {
         base.r#loop = Some(l.clone());
@@ -449,8 +385,10 @@ struct SessionState {
     model: Option<String>,
     context_max: Option<i64>,
     last_tool: Option<String>,
-    subagents: Vec<SubagentInfo>,
+    subagents: SubagentRollup,
     subagent_sig: String,
+    /// Per-transcript context memo backing the rollup (see [`SubagentUsage`]).
+    subagent_usage: SubagentUsage,
     loop_state: Option<LoopInfo>,
     /// Signature of the last emitted details (usage/subagents/loop) — part of
     /// the emit gate, so usage deltas broadcast without a status change.
@@ -475,8 +413,9 @@ impl Default for SessionState {
             model: None,
             context_max: None,
             last_tool: None,
-            subagents: Vec::new(),
+            subagents: SubagentRollup::default(),
             subagent_sig: String::new(),
+            subagent_usage: SubagentUsage::default(),
             loop_state: None,
             last_emit_sig: None,
             session: None,
@@ -585,12 +524,18 @@ impl ClaudeCodeAgentWatcher {
         let Some(path) = path else { return };
 
         // Sub-agents live in a sibling dir; the parent journal can stay
-        // static for minutes — compute every scan.
+        // static for minutes while they burn tokens — compute every scan.
         if let Some(base) = path.to_str().and_then(|s| s.strip_suffix(JSONL_SUFFIX)) {
-            let subagents =
-                read_active_subagents(&PathBuf::from(format!("{base}/subagents")), now_ms);
-            state.subagent_sig = subagent_signature(&subagents);
-            state.subagents = subagents;
+            let dir = PathBuf::from(format!("{base}/subagents"));
+            let rollup =
+                state.subagent_usage.scan(&dir, now_ms, crate::types::JOURNAL_IDLE_TIMEOUT_MS);
+            state.subagent_sig = format!(
+                "{}|{}|{}",
+                subagents::signature(&rollup.active),
+                rollup.total_context,
+                rollup.count
+            );
+            state.subagents = rollup;
         }
 
         let Ok(meta) = std::fs::metadata(&path) else {

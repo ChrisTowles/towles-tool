@@ -2,3 +2,4 @@
 
 pub mod claude_code;
 pub mod claude_usage;
+pub mod subagents;
