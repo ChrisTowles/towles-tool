@@ -47,59 +47,26 @@ fi
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
 
-# Only nudge when this session is actually towles-tool-relevant, via either
-# signal:
-#   1. An env value the app itself stamps into every terminal it spawns
-#      (TT_SESSION_ID/TT_APP_INSTANCE -- crates-tauri/tt-app/src/terminal.rs).
-#   2. `cwd` is inside a towles-tool checkout (primary or a worktree
-#      task), recognised the same way tt_config::task_scope_from_dir does:
-#      a `crates/tt-config` directory at some ancestor.
-# Without this, a hook enabled globally would still fire for `gh` commands
-# run against completely unrelated projects in a plain tmux pane, making
-# every running towles-tool-app instance burn a `gh` sweep on it (the nudge
-# dir is machine-global, addressed per note -- tt_config::nudge_dir_path).
-# Guard-fail is intentionally not logged anywhere: it's the expected,
-# high-volume case for a globally-enabled hook running against unrelated
-# projects, and logging it would just be noise. The one audit trail this
-# hook contributes is the `hook.nudge` telemetry event emitted by `tt task
-# nudge` itself below, which only happens once both the matcher and this
-# guard have already passed.
-in_app_terminal=0
-[ -n "${TT_SESSION_ID:-}" ] && in_app_terminal=1
-[ -n "${TT_APP_INSTANCE:-}" ] && in_app_terminal=1
-
-in_checkout=0
-dir="$cwd"
-while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-  if [ -d "$dir/crates/tt-config" ]; then
-    in_checkout=1
-    break
-  fi
-  parent=$(dirname "$dir")
-  # A malformed/relative `cwd` can make `dirname` stop shortening (e.g. "."
-  # maps to itself) -- bail immediately rather than spin until the hook's
-  # own timeout kills it.
-  [ "$parent" = "$dir" ] && break
-  dir="$parent"
-done
-
-if [ "$in_app_terminal" -ne 1 ] && [ "$in_checkout" -ne 1 ]; then
-  exit 0
-fi
-
+# Whether any app instance would act on this is `--only-if-tracked`'s job, not
+# this script's: the answer is "the terminal is one the app spawned, or `cwd` is
+# under a repo on the rail", and only `tt` can read that tracked set. Don't
+# reimplement it here as an ancestor walk -- the one that used to live here
+# tested for `crates/tt-config` and so recognised *this* repo alone, dropping
+# `gh pr create` in every other checkout in silence. A skip lands in the event
+# log as `outcome=not_tracked` rather than vanishing.
 command -v tt >/dev/null 2>&1 || exit 0
 
 # stderr is captured (stdout stays discarded) because the one failure mode
 # telemetry can never record is a `tt` too old to parse its own invocation.
 failed="" detail=""
 if [ "$is_pr_command" -eq 1 ]; then
-  out=$(cd "$cwd" && tt task nudge prs --trigger "pr:$pr_verb" 2>&1 >/dev/null) || {
+  out=$(cd "$cwd" && tt task nudge prs --only-if-tracked --trigger "pr:$pr_verb" 2>&1 >/dev/null) || {
     failed="prs"
     detail="$out"
   }
 fi
 if [ "$is_issue_command" -eq 1 ]; then
-  out=$(cd "$cwd" && tt task nudge issues --trigger "issue:$issue_verb" 2>&1 >/dev/null) || {
+  out=$(cd "$cwd" && tt task nudge issues --only-if-tracked --trigger "issue:$issue_verb" 2>&1 >/dev/null) || {
     failed="${failed:+$failed,}issues"
     detail="${detail:-$out}"
   }

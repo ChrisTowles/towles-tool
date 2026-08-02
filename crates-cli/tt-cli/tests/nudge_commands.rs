@@ -81,6 +81,88 @@ fn a_nudge_from_outside_an_app_terminal_names_nobody() {
     assert_eq!(tt_collect::nudge::session_in(&note), None);
 }
 
+/// Put `dirs` on the rail, and hand back a checkout that is deliberately *not*
+/// this repo — no `crates/tt-config` anywhere, the shape the old shell-side
+/// guard could not recognise.
+fn track_repos(home: &Path, dirs: &[&Path]) {
+    let agentboard = home.join(".config").join(tt_config::TOOL_NAME).join("agentboard");
+    std::fs::create_dir_all(&agentboard).unwrap();
+    let config = serde_json::json!({
+        "repoPaths": dirs.iter().map(|d| d.to_string_lossy()).collect::<Vec<_>>(),
+        "scanRoots": [],
+    });
+    std::fs::write(agentboard.join("repos.json"), config.to_string()).unwrap();
+}
+
+/// The bug this flag exists for: every repo on the rail *except* this one was
+/// dropped in silence, because the guard used to be a shell walk looking for a
+/// `crates/tt-config` ancestor. A `gh pr create` in any of them, run outside an
+/// app terminal, never reached the app.
+#[test]
+fn only_if_tracked_nudges_from_a_tracked_repo_that_is_not_this_one() {
+    let home = TempDir::new().unwrap();
+    let repo = home.path().join("dotfiles");
+    std::fs::create_dir_all(&repo).unwrap();
+    track_repos(home.path(), &[&repo]);
+
+    let mut cmd = nudge(home.path(), "prs", None);
+    cmd.arg("--only-if-tracked").current_dir(&repo);
+    cmd.assert().success();
+
+    assert!(nudge_dir(home.path()).join("prs").exists());
+}
+
+/// A worktree task resolves to its owner by the rail's own longest-prefix rule,
+/// so it is tracked without ever being a `repos.json` entry of its own.
+#[test]
+fn only_if_tracked_nudges_from_a_worktree_under_a_tracked_repo() {
+    let home = TempDir::new().unwrap();
+    let repo = home.path().join("dotfiles");
+    let task = repo.join(".claude").join("worktrees").join("feat-thing");
+    std::fs::create_dir_all(&task).unwrap();
+    track_repos(home.path(), &[&repo]);
+
+    let mut cmd = nudge(home.path(), "prs", None);
+    cmd.arg("--only-if-tracked").current_dir(&task);
+    cmd.assert().success();
+
+    assert!(nudge_dir(home.path()).join("prs").exists());
+}
+
+/// The reason the flag isn't just "always nudge": the hook is enabled globally,
+/// and the nudge dir is machine-global, so an unrelated project would make every
+/// open window burn a `gh` sweep. A skip is a success — the hook reads a failure
+/// as broken wiring and escalates it to the session.
+#[test]
+fn only_if_tracked_skips_an_untracked_project_without_failing() {
+    let home = TempDir::new().unwrap();
+    let elsewhere = home.path().join("some-other-project");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    track_repos(home.path(), &[&home.path().join("dotfiles")]);
+
+    let mut cmd = nudge(home.path(), "prs", None);
+    cmd.arg("--only-if-tracked").current_dir(&elsewhere);
+    cmd.assert().success();
+
+    assert!(!nudge_dir(home.path()).join("prs").exists());
+}
+
+/// A terminal the app spawned is relevant by construction, whatever its cwd —
+/// that repo may simply not be on the rail yet.
+#[test]
+fn only_if_tracked_still_nudges_from_an_app_terminal() {
+    let home = TempDir::new().unwrap();
+    let elsewhere = home.path().join("some-other-project");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    track_repos(home.path(), &[]);
+
+    let mut cmd = nudge(home.path(), "prs", Some("sess-1"));
+    cmd.arg("--only-if-tracked").current_dir(&elsewhere);
+    cmd.assert().success();
+
+    assert!(nudge_dir(home.path()).join("prs").exists());
+}
+
 #[test]
 fn nudge_without_a_target_fails() {
     let dir = TempDir::new().unwrap();

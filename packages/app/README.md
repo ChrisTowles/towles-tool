@@ -102,10 +102,14 @@ guard.
 
 The hook is a no-op unless the session looks towles-tool-relevant — either it's
 running inside a terminal the app itself spawned (`TT_SESSION_ID`/
-`TT_APP_INSTANCE` set), or its working directory is inside a towles-tool
-checkout (a `crates/tt-config` ancestor). This plugin is meant to be enabled
-globally, so without that guard the hook would still fire — harmlessly, but
-uselessly — for `gh` commands run in unrelated projects. It also does nothing
+`TT_APP_INSTANCE` set), or its working directory is inside a checkout on the
+Agentboard rail (a tracked repo, or any worktree under one). That test is
+`tt task nudge --only-if-tracked`'s, not the script's: only `tt` can read the
+tracked set, and a shell approximation of it recognised *this* repo alone, so
+`gh pr create` in every other checkout was dropped in silence. This plugin is
+meant to be enabled globally, so without the test the hook would fire — and
+make every open window sweep `gh` — for unrelated projects. A skip lands in the
+event log as `hook.nudge` `outcome=not_tracked`. It also does nothing
 if no towles-tool app is running; the nudge is picked up on the app's next
 start otherwise. When the session *is* relevant and `tt` exists but the nudge
 command itself fails (say, an installed `tt` older than this plugin), the hook

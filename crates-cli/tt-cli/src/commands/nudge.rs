@@ -25,6 +25,17 @@ pub fn run(args: NudgeArgs) -> i32 {
     let session = std::env::var(tt_agentboard::procenv::TT_SESSION_ENV).ok();
     let trigger = args.trigger.as_deref();
 
+    if args.only_if_tracked && !admits(session.as_deref()) {
+        tracing::info!(
+            nudge_target = target.key(),
+            session = "-",
+            trigger,
+            outcome = "not_tracked",
+            "hook.nudge"
+        );
+        return 0;
+    }
+
     let dir = match tt_config::nudge_dir_path() {
         Ok(dir) => dir,
         Err(e) => return fail(target, session.as_deref(), trigger, "resolve_dir_failed", &e),
@@ -42,6 +53,23 @@ pub fn run(args: NudgeArgs) -> i32 {
         }
         Err(e) => fail(target, session.as_deref(), trigger, "write_failed", &e),
     }
+}
+
+/// Whether any app instance would act on a nudge from here: the terminal was
+/// spawned by one, or the cwd sits under a repo on the rail (longest-prefix, so
+/// a worktree resolves to its owner). The hook calling this is enabled globally
+/// and the nudge dir is machine-global, so without it one `gh pr create` in an
+/// unrelated project makes every open window sweep `gh`.
+fn admits(session: Option<&str>) -> bool {
+    if session.is_some() {
+        return true;
+    }
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let repos = tt_agentboard::repos::load_repos(&tt_agentboard::repos::default_repos_path());
+    let entries = tt_agentboard::repos::repo_entries(&repos);
+    tt_agentboard::repos::resolve_repo_dir(&cwd.to_string_lossy(), &entries).is_some()
 }
 
 /// Record a failed nudge and report it, returning the exit code.
