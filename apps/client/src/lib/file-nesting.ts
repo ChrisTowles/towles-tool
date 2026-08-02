@@ -1,20 +1,6 @@
-/**
- * VS Code file-nesting patterns and the matcher behind them: a parent glob
- * mapped to the comma-separated child globs that fold into its row —
- * `*.ts` → `$(capture).*.ts`, so `diff.test.ts` nests under `diff.ts`.
- *
- * Two surfaces consume this one table. The Files pane hosts the real VS Code
- * Explorer, so it takes the patterns as `explorer.fileNesting.patterns`
- * configuration (`lib/monaco.ts`) and VS Code does the matching; the diff
- * pane's rail is our own tree, so `nestFiles` below reimplements the match.
- * Keeping the table in one place is what stops the two file lists from
- * disagreeing about which rows exist.
- *
- * The set is VS Code's community-maintained default (what the "file nesting
- * updater" extension writes into settings.json), copied verbatim rather than
- * curated — a repo in any of these ecosystems then reads the way its author
- * expects, and refreshing it is a re-copy rather than a merge.
- */
+/** VS Code's default file-nesting patterns, copied verbatim so a refresh is a
+ * re-copy rather than a merge. The Files pane hands the table to VS Code as
+ * configuration; `nestFiles` below reimplements the match for the diff rail. */
 export const FILE_NESTING_PATTERNS: Readonly<Record<string, string>> = {
   ".agent":
     ".agent, .claude, .cline, .codebuddy, .codex, .commandcode, .continue, .crush, .cursor, .factory, .gemini, .goose, .junie, .kilocode, .kiro, .kode, .mcpjam, .mux, .neovate, .opencode, .openhands, .pi, .pochi, .qoder, .qwen, .roo, .trae, .windsurf, .zencoder",
@@ -157,14 +143,12 @@ export const FILE_NESTING_PATTERNS: Readonly<Record<string, string>> = {
     "*.env, .babelrc*, .codecov, .cssnanorc*, .env.*, .envrc, .htmlnanorc*, .lighthouserc.*, .mocha*, .postcssrc*, .terserrc*, api-extractor.json, ava.config.*, babel.config.*, capacitor.config.*, content.config.*, contentlayer.config.*, cssnano.config.*, cypress.*, env.d.ts, formkit.config.*, formulate.config.*, histoire.config.*, htmlnanorc.*, i18n.config.*, ionic.config.*, jasmine.*, jest.config.*, jsconfig.*, karma*, lighthouserc.*, panda.config.*, playwright.config.*, postcss.config.*, puppeteer.config.*, react-router.config.*, rspack.config.*, sst.config.*, svgo.config.*, tailwind.config.*, tsconfig.*, tsdoc.*, uno.config.*, unocss.config.*, vitest.config.*, vuetify.config.*, webpack.config.*, windi.config.*",
 };
 
-/** Escape a literal for embedding in a RegExp source. */
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Compile a glob over a *file name* (never a path, so `*` can't cross `/`)
- * into an anchored RegExp. `capture` marks the one `*` whose match a child
- * pattern can refer to as `$(capture)`. */
+/** Globs are over a *file name*, never a path, so `*` can't cross `/`.
+ * `capture` marks the one `*` a child pattern refers to as `$(capture)`. */
 function globToRe(glob: string, capture: boolean): RegExp {
   const src = glob
     .split("*")
@@ -173,30 +157,18 @@ function globToRe(glob: string, capture: boolean): RegExp {
   return new RegExp(`^${src}$`);
 }
 
-/** What a parent pattern matched: the file, and the text its `*` captured
- * (empty when the pattern is a literal name like `package.json`). */
+/** `capture` is empty when the parent pattern is a literal name. */
 type ParentMatch = { name: string; capture: string };
 
-/** How good a claim on a child is — a literal parent pattern beats a wildcard
- * one, and a child glob that resolved to an exact name beats one still holding
- * a `*`. Ties break on the longer (more specific) parent name. */
+/** A literal parent pattern beats a wildcard one, and a child glob that
+ * resolved to an exact name beats one still holding a `*`. */
 function claimScore(parentIsLiteral: boolean, childIsLiteral: boolean): number {
   return (parentIsLiteral ? 2 : 0) + (childIsLiteral ? 1 : 0);
 }
 
-/**
- * Fold a directory's file names into parent → children, VS Code's file-nesting
- * rules over `FILE_NESTING_PATTERNS`. Names are one flat directory's worth —
- * nesting never crosses a folder boundary.
- *
- * Two rules keep the result a forest rather than a graph, both matching what
- * VS Code shows: **a child has exactly one parent** (the strongest claim wins,
- * see `claimScore`), and **nesting is one level deep** — a file that adopted
- * children is never itself nested, so `a.ts` holding `a.test.ts` can't
- * simultaneously disappear under `a.tsx`. Without the second rule the default
- * pattern set has genuine cycles (`*.md` → `$(capture).*` alone is enough) and
- * a rail would render an infinite tree.
- */
+/** Fold one flat directory's names into parent → children. A child has exactly
+ * one parent (strongest claim wins) and nesting is one level deep — without the
+ * latter the default patterns cycle (`*.md` → `$(capture).*`) forever. */
 export function nestFiles(names: readonly string[]): Map<string, string[]> {
   const present = new Set(names);
   // child → its best claim so far

@@ -31,14 +31,9 @@ pub struct Staleness {
     pub stale: bool,
 }
 
-/// Assess staleness from the branch's newest own-commit time.
-///
-/// `last_commit_unix` is the commit time (epoch seconds) of the newest commit
-/// unique to this branch, or `None` when it has none. `now_unix` is injected —
-/// no clock is read here, matching the store's passed-in-time discipline, so
-/// the computation is a pure function of its inputs and unit-testable with
-/// fixture timestamps. `landed` is whether the branch's content already reached
-/// the base; a landed branch is never stale regardless of age.
+/// Assess staleness from the branch's newest own-commit time (epoch seconds), or `None`
+/// when it has none. `now_unix` is injected — no clock is read here, matching the store's
+/// passed-in-time discipline. A `landed` branch is never stale regardless of age.
 pub fn assess(
     last_commit_unix: Option<i64>,
     now_unix: i64,

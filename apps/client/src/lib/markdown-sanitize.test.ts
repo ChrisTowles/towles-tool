@@ -1,13 +1,7 @@
-/**
- * These run the *real* plugin pipeline — parse → gfm → alerts → raw →
- * sanitize — rather than testing the schema object's shape.
- *
- * The bug that prompted them is invisible any other way: the schema matches
- * property keys literally, so allowing `dataAlert` instead of `data-alert`
- * strips the attribute and every callout silently degrades to an ordinary
- * blockquote. Nothing throws, nothing logs, and a passing schema-shape test
- * would have agreed it was fine.
- */
+/** These run the *real* plugin pipeline rather than testing the schema object's
+ * shape: the schema matches property keys literally, so allowing `dataAlert`
+ * instead of `data-alert` strips the attribute and every callout silently
+ * degrades to an ordinary blockquote — nothing throws, nothing logs. */
 
 import { describe, expect, it } from "vitest";
 import rehypeRaw from "rehype-raw";

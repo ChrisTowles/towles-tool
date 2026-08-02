@@ -3,15 +3,13 @@
 //! four times — and the rate limit counts against the token, not the window: ~1,920
 //! points an hour out of 5,000. Whoever asks first writes the answer down; anyone
 //! starting while it is still recent reads that instead. Hence a cache, not a lock:
-//! we share the answers, not the job, and an answer is good until it is older than
-//! the caller's own refresh interval.
+//! we share the answers, not the job.
 //!
 //! **The unit is `(collector, repo)`, not one sweep**, because that's the unit the
 //! answer is true of. Keying by the sweep needs two rules this doesn't: a sweep
 //! where one repo failed can't be published (a reader replaces whole tables from
 //! it, so a missing repo reads back as "nothing"), and a reader would have to prove
-//! the sweep covered exactly the repos it tracks. Per repo, reuse is also partial,
-//! and concurrent publishers write different files. Writes are temp-then-rename.
+//! the sweep covered exactly the repos it tracks. Writes are temp-then-rename.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,32 +19,22 @@ use serde::{Deserialize, Serialize};
 
 /// One repo's answer to one collector's question, and when it was fetched.
 ///
-/// Rows only — a repo folder that's missing, or a `gh` call that failed, is
-/// something that happened to *this* window, and belongs in this window's own
-/// run message rather than being replayed at everyone else. There is nowhere in
-/// here to say a repo failed, and nothing needs one: a repo that failed simply
-/// has no file.
+/// Rows only: a missing folder or a failed `gh` call happened to *this* window
+/// and belongs in its own run message, not replayed at everyone else.
 ///
-/// Generic over the row container so the reader and the writer are one type:
-/// [`read_fresh`] deserializes the owned form, [`write`] serializes a borrowed
-/// slice and so publishes without cloning every row first. A separate borrowed
-/// twin would let the two halves' field names drift, and a rename on one side
-/// reads back as "nothing cached" — a silent return to asking GitHub, never an
-/// error anyone would see.
+/// Generic over the row container so reader and writer are one type — a
+/// borrowed twin could drift on a field name and read back as "nothing cached".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CachedRepo<R> {
-    /// Epoch ms, handed in by the caller. Nothing in here reads the clock, so
-    /// the age check is easy to test.
+    /// Epoch ms, handed in by the caller — nothing here reads the clock.
     pub fetched_at_ms: i64,
-    /// The rows, exactly as the collector produced them.
     pub rows: R,
 }
 
 /// Is an answer fetched at `fetched_at_ms` still usable at `now_ms`?
 ///
-/// A timestamp from the future counts as too old, not forever young. Clocks do
-/// move backwards — an NTP correction, a resumed VM — and if we trusted one,
-/// collection would quietly stop until the clock caught up.
+/// A timestamp from the future counts as too old, not forever young: clocks do
+/// move backwards, and trusting one would stop collection until it caught up.
 pub(crate) fn is_fresh(fetched_at_ms: i64, now_ms: i64, ttl_ms: i64) -> bool {
     let age = now_ms.saturating_sub(fetched_at_ms);
     (0..ttl_ms).contains(&age)
@@ -55,10 +43,8 @@ pub(crate) fn is_fresh(fetched_at_ms: i64, now_ms: i64, ttl_ms: i64) -> bool {
 /// `<dir>/<kind>/<owner>/<repo>.json` — where `repo`'s answer to `kind`'s
 /// question lives.
 ///
-/// `owner` and `repo` are each one path segment: GitHub allows only
-/// alphanumerics, `-`, `_` and `.` in them, so neither can hold a separator or
-/// climb out of `dir`. A name that isn't exactly `owner/repo` gets no path at
-/// all rather than a guessed one — it can't be shared, so it gets fetched.
+/// A name that isn't exactly `owner/repo` gets no path at all rather than a
+/// guessed one; it can't be shared, so it gets fetched.
 fn repo_path(dir: &Path, kind: &str, repo: &str) -> Option<PathBuf> {
     let (owner, name) = repo.split_once('/')?;
     let plain = |s: &str| !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\']);
@@ -67,13 +53,10 @@ fn repo_path(dir: &Path, kind: &str, repo: &str) -> Option<PathBuf> {
 
 /// Read what another window left about `repo`, if it's there and recent enough.
 ///
-/// Missing, unreadable, garbled, too old — all of it comes back as `None`,
-/// which the caller reads as "go ask GitHub about this one yourself". A broken
-/// file should cost one extra `gh` call, never an error the collectors have to
-/// report.
-///
-/// Hands back the whole entry rather than just the rows so the caller can log
-/// how old the answers it reused were.
+/// Missing, unreadable, garbled, too old — all `None`, which the caller reads as
+/// "go ask GitHub yourself". A broken file costs one extra `gh` call, never an
+/// error the collectors have to report. Hands back the whole entry so the caller
+/// can log how old the answers it reused were.
 pub(crate) fn read_fresh<T: DeserializeOwned>(
     dir: &Path,
     kind: &str,
@@ -87,10 +70,8 @@ pub(crate) fn read_fresh<T: DeserializeOwned>(
 }
 
 /// Leave `rows` as the answer about `repo`, stamped `now_ms`, for the other
-/// windows.
-///
-/// If the write fails, the next window just asks GitHub itself — what it did
-/// before any of this existed. Nothing worth reporting.
+/// windows. If the write fails the next window just asks GitHub itself, so
+/// there is nothing worth reporting.
 pub(crate) fn write<T: Serialize>(dir: &Path, kind: &str, repo: &str, now_ms: i64, rows: &[T]) {
     let Some(path) = repo_path(dir, kind, repo) else {
         return;
@@ -101,15 +82,12 @@ pub(crate) fn write<T: Serialize>(dir: &Path, kind: &str, repo: &str, now_ms: i6
     if fs::create_dir_all(parent).is_err() {
         return;
     }
-    // A borrowed row slice, so publishing doesn't clone every row first.
     let cached = CachedRepo { fetched_at_ms: now_ms, rows };
     let Ok(json) = serde_json::to_string(&cached) else {
         return;
     };
-    // Write a temp file beside the real one and rename it over the top, so
-    // anyone reading mid-write gets the old answer or the new one, never half of
-    // one. A temp file left behind by a killed process is harmless — readers
-    // only ever open `<repo>.json`.
+    // Temp-then-rename, so a reader mid-write gets the old answer or the new
+    // one, never half of one.
     let tmp = path.with_extension(format!("tmp{}", std::process::id()));
     if fs::write(&tmp, json).is_ok() && fs::rename(&tmp, &path).is_err() {
         let _ = fs::remove_file(&tmp);
@@ -130,8 +108,6 @@ mod tests {
 
     #[test]
     fn a_future_stamp_is_stale_not_immortal() {
-        // Clocks move backwards. Trusting a future timestamp would stop
-        // collection until the clock caught up to it.
         assert!(!is_fresh(5_000, 1_000, 500));
     }
 
@@ -175,9 +151,6 @@ mod tests {
 
     #[test]
     fn one_repo_going_stale_leaves_the_others_reusable() {
-        // The point of keying by repo rather than by sweep: a window reuses the
-        // repos that are still fresh and asks about only the one that isn't,
-        // instead of the whole set expiring together.
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "prs", "o/fresh", 1_000, &[1_i64]);
         write(dir.path(), "prs", "o/stale", 100, &[2_i64]);
@@ -213,7 +186,6 @@ mod tests {
 
     #[test]
     fn a_file_from_a_different_build_just_means_asking_github() {
-        // A later build changing the row shape must not jam an older one.
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "prs", "o/a", 1_000, &["text"]);
         let got = read_fresh::<i64>(dir.path(), "prs", "o/a", 1_100, 500);
@@ -222,8 +194,7 @@ mod tests {
 
     #[test]
     fn an_empty_result_is_kept_rather_than_asked_again() {
-        // "This repo has no open PRs" is a real answer worth sharing. Asking
-        // again every tick is exactly the cost this file exists to remove.
+        // "No open PRs" is a real answer worth sharing.
         let dir = tempfile::tempdir().unwrap();
         let empty: [i64; 0] = [];
         write(dir.path(), "prs", "o/a", 1_000, &empty);
@@ -233,8 +204,7 @@ mod tests {
 
     #[test]
     fn a_name_that_is_not_owner_slash_repo_is_never_a_path() {
-        // Nothing here builds a path it can't vouch for. An unusable name just
-        // means that repo gets fetched instead of shared.
+        // An unusable name means that repo gets fetched instead of shared.
         let dir = Path::new("/cache");
         for bad in [
             "",

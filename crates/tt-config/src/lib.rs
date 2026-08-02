@@ -17,15 +17,11 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-/// Tool name used for the config directory and file name.
 pub const TOOL_NAME: &str = "towles-tool";
 
-/// Wall-clock epoch milliseconds — **the** clock read for this workspace.
-///
-/// Logic crates take instants as injected `now_ms` parameters so they stay deterministic
-/// under test; this is the boundary those callers read the real clock at. One place means
-/// `now_ms` greps to exactly the sites touching wall time, and the `unwrap_or(0)`
-/// pre-epoch fallback is decided once.
+/// Wall-clock epoch milliseconds — **the** clock read for this workspace. Logic
+/// crates take instants as injected `now_ms` parameters so they stay
+/// deterministic under test; this is the boundary they read the real clock at.
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -50,26 +46,22 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Journal path templates and base folders.
-///
-/// Path template tokens follow Luxon formatting, e.g. `{yyyy}`, `{MM}`, `{dd}`.
+/// Journal path templates and base folders. Template tokens follow Luxon
+/// formatting, e.g. `{yyyy}`, `{MM}`, `{dd}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct JournalSettings {
-    /// Base folder where all journal files are stored.
     pub base_folder: String,
 
-    /// Template for daily-note file paths (relative to `base_folder`).
+    /// Relative to `base_folder`, like the two below it.
     pub daily_path_template: String,
 
-    /// Template for meeting-note file paths (relative to `base_folder`).
     pub meeting_path_template: String,
 
-    /// Template for note file paths (relative to `base_folder`).
     pub note_path_template: String,
 
-    /// Directory holding external templates (falls back to built-ins when absent).
+    /// External templates; falls back to the built-ins when absent.
     pub template_dir: String,
 }
 
@@ -90,16 +82,14 @@ impl Default for JournalSettings {
 
 /// AgentBoard UI preferences the *Rust* side reads or writes. Every field is
 /// `None` until the user changes it, so the file stays clean for the TS CLI.
-/// Deliberately **not** a model of the whole `agentboard` block: the file is co-owned
-/// with the TypeScript CLI and [`save_merge_to`] deep-merges over what is on disk, so
-/// absent keys survive a Rust write. Modeling a key nothing here reads makes the struct
-/// read as if the feature exists — how six tmux-era fields outlived their agentboard.
+/// Deliberately **not** a model of the whole `agentboard` block: modeling a key
+/// nothing here reads makes the struct read as if the feature exists — how six
+/// tmux-era fields outlived their agentboard.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentboardSettings {
-    /// Context-% at/above which a cold (cache-expired) Claude session gets the
-    /// "compact" nudge. `None` = 30.
+    /// Context-% at/above which a cold Claude session gets the "compact" nudge.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_recommend_percent: Option<u8>,
 
@@ -107,9 +97,8 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notify: Option<bool>,
 
-    /// A kind notifies when its own level is at or above this. `None` =
-    /// [`DEFAULT_NOTIFY_THRESHOLD`]. An unrecognized value (a newer build's
-    /// level, a hand-edit) reads as `None` rather than failing the whole file.
+    /// A kind notifies when its own level is at or above this. An unrecognized
+    /// value reads as `None` rather than failing the whole file.
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "lenient",
@@ -118,7 +107,6 @@ pub struct AgentboardSettings {
     pub notify_threshold: Option<NotifyLevel>,
 
     /// Copy the terminal selection to the clipboard when the gesture ends.
-    /// `None` = on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copy_on_select: Option<bool>,
 
@@ -130,24 +118,22 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub editor_font_size: Option<u8>,
 
-    /// Let board-wide action shortcuts fire even while a terminal has focus,
-    /// instead of being swallowed as shell input. `None` = on.
+    /// Let board-wide shortcuts fire while a terminal has focus, instead of
+    /// being swallowed as shell input.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcuts_work_in_terminal: Option<bool>,
 
-    /// Show the "there's a shortcut for that" reminder when a click does a
-    /// binding's job. `None` = on. Gates only the *reminder* — the
+    /// Gates only the "there's a shortcut for that" *reminder* — the
     /// keyboard-vs-mouse tracking is event log, and has no switch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcut_coach: Option<bool>,
 
-    /// Group the Board kanban into per-repo swimlanes. `None` = on.
+    /// Group the Board kanban into per-repo swimlanes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board_group_by_repo: Option<bool>,
 
-    /// Which checkouts the rail shows — see [`RailFilter`]. `None` = all.
-    /// Opaque storage: Rust never interprets it, and an unrecognized value
-    /// reads as `None` like [`notify_threshold`](Self::notify_threshold).
+    /// Which checkouts the rail shows. Opaque storage: Rust never interprets
+    /// it, and an unrecognized value reads as `None`.
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "lenient",
@@ -156,44 +142,36 @@ pub struct AgentboardSettings {
     pub rail_filter: Option<RailFilter>,
 
     /// How many hours back [`RailFilter::Recent`] counts as "worked in".
-    /// Frontend-only, like [`rail_filter`](Self::rail_filter).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_recent_hours: Option<u32>,
 
-    /// Show discovered worktrees no board task is bound to. `None` = off.
-    /// Unlike [`rail_filter`](Self::rail_filter) this one *is* read in Rust, by
-    /// the engine's discovery.
+    /// Show discovered worktrees no board task is bound to. Unlike
+    /// [`rail_filter`](Self::rail_filter) this one *is* read in Rust.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
     /// The native Bevy surface (`tt-jarvis`): the rail strip and the `jarvis`
-    /// pane. `None` = off — a proof-of-concept holding a Wayland subsurface and
-    /// a vsync-paced render thread. Mounting `NativePane` is what starts it.
+    /// pane. Off by default — it holds a Wayland subsurface and a vsync-paced
+    /// render thread, started by mounting `NativePane`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_pane: Option<bool>,
 
-    /// The Chrome pane (`tt-browser`): a real headless Chrome on the
-    /// app-owned profile, tiled beside a checkout's terminals. `None` = off
-    /// while experimental.
+    /// The Chrome pane (`tt-browser`). Off by default while experimental.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_pane: Option<bool>,
 }
 
-/// Built-in default for [`AgentboardSettings::compact_recommend_percent`].
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 
-/// Built-in default for [`AgentboardSettings::show_unmanaged_worktrees`]: off,
-/// so only the main checkout and board-bound worktrees reach the rail.
+/// Off, so only the main checkout and board-bound worktrees reach the rail.
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
 
-/// Which checkouts reach the rail. Not a scale: [`Active`](Self::Active) asks
-/// about *now* (running, dirty, unpushed), [`Recent`](Self::Recent) about the
-/// last N hours, and a checkout you walked away from answers them differently.
+/// Not a scale: [`Active`](Self::Active) asks about *now* (running, dirty,
+/// unpushed), [`Recent`](Self::Recent) about the last N hours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum RailFilter {
-    /// Every tracked checkout.
     All,
     /// Only checkouts with something going on right now.
     Active,
@@ -201,7 +179,6 @@ pub enum RailFilter {
     Recent,
 }
 
-/// Built-in default for [`AgentboardSettings::notify`]: notifications on.
 pub const DEFAULT_NOTIFY: bool = true;
 
 /// Least urgent, so an untouched install still gets every notification.
@@ -222,7 +199,7 @@ pub enum NotifyLevel {
 }
 
 impl NotifyLevel {
-    /// Every level, least → most urgent — the order a threshold picker lists.
+    /// Least → most urgent — the order a threshold picker lists.
     pub const ALL: [NotifyLevel; 3] = [
         NotifyLevel::Routine,
         NotifyLevel::Important,
@@ -236,11 +213,9 @@ impl NotifyLevel {
 pub enum NotifyKind {
     /// An agent session flipped to needs-you (waiting/errored/finished-unseen).
     NeedsYou,
-    /// The next meeting's countdown reached zero.
     MeetingStart,
     /// One of your authored PRs had its CI flip into failing.
     ChecksFailed,
-    /// A PR newly entered the review-requested set.
     ReviewRequested,
     /// A collector stopped succeeding (expired `gh` auth, revoked Slack token).
     StaleCollector,
@@ -267,9 +242,8 @@ impl AgentboardSettings {
     }
 }
 
-/// Read an optional enum field, mapping anything unrecognized to `None` (the
-/// default) instead of failing the whole settings file — this file is shared
-/// with the TS CLI and hand-edited.
+/// Maps anything unrecognized to `None` instead of failing the whole settings
+/// file, which is shared with the TS CLI and hand-edited.
 fn lenient<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -281,38 +255,30 @@ where
         .and_then(|v| serde_json::from_value(v).ok()))
 }
 
-/// A **prompt improver**: one button in the Agentboard new-task form that rewrites
-/// the goal you typed before the task starts (Direct / Clarify / Brainstorm /
-/// Interview by default). Clicking one runs `claude -p` through [`tt_tasks::suggest`]
-/// with this improver's [`prompt`](Self::prompt) as the *instruction* and the task
-/// text passed separately — an instruction *about* the goal, never a template
-/// containing it. The result fills the form's fields: what you see is what launches.
+/// A **prompt improver**: one button in the Agentboard new-task form that
+/// rewrites the goal you typed. Runs `claude -p` through [`tt_tasks::suggest`]
+/// with this improver's [`prompt`](Self::prompt) as the *instruction* and the
+/// task text passed separately — never a template containing it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct PromptImprover {
-    /// Stable identifier referenced by the new-task form. Assigned once at
-    /// creation and shown read-only.
+    /// Assigned once at creation and shown read-only.
     pub id: String,
-    /// Human label — this is the button's text in the new-task form.
+    /// The button's text in the new-task form.
     pub label: String,
-    /// Whether this improver is offered at all.
     pub enabled: bool,
-    /// Whether it gets its own top-level button in the new-task form. Enabled
-    /// improvers that aren't preferred stay available under the "More" menu, so
-    /// the button row shows the few you actually reach for rather than all of
-    /// them.
+    /// Gets its own top-level button; enabled-but-not-preferred improvers stay
+    /// under the "More" menu.
     pub preferred: bool,
     /// The instruction handed to `claude -p` for how to rewrite the goal.
     pub prompt: String,
 }
 
 impl PromptImprover {
-    /// The built-in improvers, all enabled; only Direct is preferred, so the
-    /// form shows one button with the rest under "More". They run along one
-    /// axis — how sure you are of the task — from Direct (I know what needs
-    /// doing, go) through Clarify and Brainstorm to Interview (I can't state
-    /// it yet; question me first).
+    /// The built-ins run along one axis — how sure you are of the task — from
+    /// Direct (I know what needs doing, go) to Interview (I can't state it yet;
+    /// question me first). Only Direct is preferred.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -347,30 +313,25 @@ impl PromptImprover {
     }
 }
 
-/// Default "Direct" improver: tidy the task into one clear sentence. Matches
-/// [`tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`] — the behavior the single
-/// "Suggest name + goal" button used to have.
+/// Matches [`tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`].
 pub const DEFAULT_IMPROVER_DIRECT: &str = "Restate the task clearly and concisely in one sentence.";
 
-/// Default "Clarify" improver: Direct with room to say what a one-liner leaves
-/// implied — which is what the extra sentences are *for*.
 pub const DEFAULT_IMPROVER_CLARIFY: &str = "Restate the task in 2 to 3 sentences, making \
 explicit what a one-line version leaves implied.";
 
-/// Default "Brainstorm" improver: the plan decisions-first, so what comes back
-/// is the handful of choices worth overruling, not a wall of mechanical steps.
+/// Decisions-first, so what comes back is the handful of choices worth
+/// overruling, not a wall of mechanical steps.
 pub const DEFAULT_IMPROVER_BRAINSTORM: &str = "Rewrite the task as a request for an \
 implementation plan in HTML that leads with the decisions I'm most likely to tweak — data model, \
 type interfaces, anything user-facing — and buries the mechanical work at the bottom.";
 
-/// Default "Interview" improver: for a task you can't state yet — the session
-/// reads the code first, so its questions are the ones the code can't answer.
+/// The session reads the code first, so its questions are the ones the code
+/// can't answer.
 pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to research the \
 codebase first and then interview me one question at a time about what is still ambiguous, \
 prioritizing questions where my answer would change the architecture.";
 
-/// Data-hub collectors (Rust-only; the TS CLI ignores this block). Each is
-/// configured independently — enable flag, cadence, and its own prompt.
+/// Data-hub collectors (Rust-only; the TS CLI ignores this block).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -382,17 +343,14 @@ pub struct CollectorsSettings {
 }
 
 /// Shells out to `claude -p` per source, so it costs tokens — off by default.
-/// Its only purpose is **focus protection**, not calendar management. Each
-/// [`CalendarSource`] is pulled and stored independently, so a personal and a
-/// work calendar merge into one timeline without clobbering each other.
+/// Its only purpose is **focus protection**, not calendar management.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarCollector {
     pub enabled: bool,
     pub refresh_minutes: u64,
-    /// Narrows *when* an already-`enabled` collector may run; disable it to
-    /// restore 24/7.
+    /// Narrows *when* an already-`enabled` collector may run.
     pub quiet_hours: CalendarQuietHours,
     /// Each enabled source is run separately and written under its own `id`,
     /// so a second calendar never displaces the first.
@@ -410,10 +368,8 @@ impl Default for CalendarCollector {
     }
 }
 
-/// One calendar the collector pulls. The prompt is user-editable because the
-/// built-in defaults need a Google/Outlook MCP that may not be configured; the
-/// answer's *shape* is not its job, since `tt_collect` asks with
-/// `--json-schema`.
+/// The prompt is user-editable because the built-in defaults need a
+/// Google/Outlook MCP that may not be configured. Shape is not its job.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -421,7 +377,6 @@ pub struct CalendarSource {
     /// Also the store's `events.source` column, so a re-pull replaces only
     /// this calendar's rows — changing it orphans them.
     pub id: String,
-    /// Human label for the settings UI and event provenance.
     pub label: String,
     pub enabled: bool,
     /// The `claude -p` prompt used to list today's events for this calendar.
@@ -429,11 +384,9 @@ pub struct CalendarSource {
 }
 
 impl CalendarSource {
-    /// Personal Google (on) and work Outlook (off).
-    ///
-    /// **Defaults, not a migration.** A file carrying the retired
-    /// `"provider": "outlook"` and no `sources` gets this list and starts
-    /// pulling the *other* calendar — one line to fix in Settings.
+    /// Personal Google (on) and work Outlook (off). **Defaults, not a
+    /// migration**: a file carrying the retired `"provider": "outlook"` and no
+    /// `sources` gets this list and starts pulling the *other* calendar.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -453,10 +406,8 @@ impl CalendarSource {
 }
 
 /// Asks *which events* and nothing about JSON — the schema is the contract for
-/// shape. Keep in sync with [`DEFAULT_CALENDAR_PROMPT_OUTLOOK`].
-///
-/// **Times stay as the calendar reported them.** A 13-digit epoch is arithmetic
-/// a model cannot check, and a wrong one reads exactly like a right one.
+/// shape. **Times stay as the calendar reported them**: a 13-digit epoch is
+/// arithmetic a model cannot check, and a wrong one reads like a right one.
 pub const DEFAULT_CALENDAR_PROMPT_GOOGLE: &str = "\
 Using the Google Calendar MCP, list the events on my primary calendar for today \
 only, in my local timezone. Report each time exactly as the calendar gives it, \
@@ -464,7 +415,6 @@ keeping its UTC offset — do not convert to UTC and do not compute epoch \
 numbers. Skip all-day events and events I have declined. Omit any field whose \
 value is null or unknown.";
 
-/// Default prompt for the work Outlook / Microsoft 365 calendar.
 pub const DEFAULT_CALENDAR_PROMPT_OUTLOOK: &str = "\
 Using the Outlook (Microsoft 365) MCP, list the events on my default calendar \
 for today only, in my local timezone. Report each time exactly as the calendar \
@@ -472,26 +422,23 @@ gives it, keeping its UTC offset — do not convert to UTC and do not compute \
 epoch numbers. Skip all-day events and events I have declined. Omit any field \
 whose value is null or unknown.";
 
-/// Local-time window `[startHour:00, endHour:00)` on a listed weekday, outside
-/// which the token-costing run is skipped. `weekdays` are **0 = Monday … 6 =
-/// Sunday** (chrono's `num_days_from_monday`).
+/// Local-time window `[startHour:00, endHour:00)` outside which the
+/// token-costing run is skipped. `weekdays` are **0 = Monday … 6 = Sunday**.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarQuietHours {
     /// False runs the collector 24/7 on its refresh cadence.
     pub enabled: bool,
-    /// First local hour (0–23) the collector may run, inclusive of `:00`.
+    /// Inclusive of `:00`.
     pub start_hour: u8,
     /// Exclusive: with the default `18`, the last runnable minute is `17:59`.
     pub end_hour: u8,
-    /// Weekdays the collector may run, as `0 = Monday … 6 = Sunday`. Default Mon–Fri.
     pub weekdays: Vec<u8>,
 }
 
 impl Default for CalendarQuietHours {
     fn default() -> Self {
-        // 8:00–18:00 local, Monday–Friday.
         Self { enabled: true, start_hour: 8, end_hour: 18, weekdays: vec![0, 1, 2, 3, 4] }
     }
 }
@@ -505,8 +452,8 @@ pub struct PrCollector {
     /// The authored + review-requested sweep — what Board/Cockpit render, so
     /// this is the fast cadence.
     pub refresh_seconds: u64,
-    /// The merged-PRs sweep. Looser on purpose: it only catches a just-merged
-    /// branch before its worktree is removed.
+    /// Looser on purpose: it only catches a just-merged branch before its
+    /// worktree is removed.
     pub merged_refresh_minutes: u64,
 }
 
@@ -516,9 +463,8 @@ impl Default for PrCollector {
     }
 }
 
-/// Slack DM watcher: polls one DM conversation (e.g. spouse) via the Slack Web
-/// API and surfaces unanswered messages in the app's attention banner. Needs a
-/// user OAuth token (`xoxp-…`) with `im:history` — disabled until one is set.
+/// Polls one DM conversation and surfaces unanswered messages in the attention
+/// banner. Needs a user OAuth token with `im:history` — off until one is set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -532,7 +478,7 @@ pub struct SlackDmCollector {
     pub app_token: String,
     /// Slack member ID of the person to watch (e.g. `U0123ABCD`).
     pub watch_user_id: String,
-    /// Display name shown in the banner (avoids an extra `users.info` call).
+    /// Shown in the banner, so no extra `users.info` call.
     pub watch_name: String,
     pub refresh_seconds: u64,
 }
@@ -566,25 +512,19 @@ impl Default for IssueCollector {
 }
 
 /// `tt-mcp`'s HTTP transport — Rust-only, and the legacy TS CLI reverts it to
-/// default on any run (it strips keys its zod schema lacks).
-///
-/// Loopback HTTP from the desktop app, not a per-session stdio subprocess.
-/// **No bearer token**: one only ever defended against browser-originated
-/// requests, and refusing any `Origin` plus requiring `Content-Type:
-/// application/json` does that instead.
+/// default on any run. Loopback HTTP from the desktop app, not a per-session
+/// stdio subprocess. **No bearer token**: refusing any `Origin` plus requiring
+/// `Content-Type: application/json` defends the same thing.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct McpSettings {
-    /// Loopback TCP port the app serves MCP on.
-    ///
     /// Only the *fallback*, for an app outside any checkout: an instance in one
     /// serves its `.env`'s `${tt:port 8787-8986}` claim instead. The plugin's
     /// `.mcp.json` expands `${TT_MCP_PORT:-8787}`, hence this value.
     pub port: u16,
 }
 
-/// Default loopback port for the app's MCP server. See [`McpSettings::port`].
 pub const DEFAULT_MCP_PORT: u16 = 8787;
 
 impl Default for McpSettings {
@@ -598,14 +538,13 @@ impl Default for McpSettings {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct UserSettings {
-    /// Preferred editor command (e.g. `code`).
+    /// Editor command, e.g. `code`.
     pub preferred_editor: String,
 
     pub journal_settings: JournalSettings,
 
     pub agentboard: AgentboardSettings,
 
-    /// The new-task form's improver buttons — see [`PromptImprover`].
     pub prompt_improvers: Vec<PromptImprover>,
 
     pub collectors: CollectorsSettings,
@@ -617,9 +556,8 @@ pub struct UserSettings {
     pub mcp: McpSettings,
 }
 
-/// Degrade any shape but the documented object to the default. Non-objects are
-/// rejected before serde sees them: a struct deserializes from a JSON *array*
-/// positionally, so `"mcp": [9999]` would otherwise set the port.
+/// Non-objects are rejected before serde sees them: a struct deserializes from
+/// a JSON *array* positionally, so `"mcp": [9999]` would otherwise set the port.
 fn lenient_mcp<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<McpSettings, D::Error> {
@@ -647,8 +585,7 @@ fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or(Error::NoHomeDir)
 }
 
-/// Home directory as a string, falling back to `.` if it can't be resolved.
-/// Used only for defaults, which must be infallible.
+/// Falls back to `.`, since the defaults using it must be infallible.
 fn home_dir_string() -> String {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).to_string_lossy().to_string()
 }
@@ -663,39 +600,30 @@ fn default_template_dir() -> String {
         .to_string()
 }
 
-/// Environment variable that overrides task-scope detection.
-///
-/// - set to a non-empty value: force that scope name (still sanitized).
-/// - set to empty (`TT_STATE_SCOPE=`): force *unscoped* — the shared defaults.
-/// - unset: auto-detect from the current working directory (see [`state_scope`]).
+/// Overrides task-scope detection: non-empty forces that scope name (still
+/// sanitized), empty forces *unscoped*, unset auto-detects from the cwd.
 pub const STATE_SCOPE_ENV: &str = "TT_STATE_SCOPE";
 
-/// How the active scope was determined. The distinction matters because
-/// shared stores (settings, tracked repos) ignore an *auto-detected* scope —
-/// they describe the user/machine, not one checkout — but a *forced* scope
-/// isolates everything, so tests and quarantined tasks never touch the real
-/// shared files.
+/// Shared stores ignore an *auto-detected* scope — they describe the
+/// user/machine, not one checkout — but a *forced* scope isolates everything,
+/// so tests and quarantined tasks never touch the real shared files.
 enum Scope {
-    /// No scope — the shared daily-driver defaults.
+    /// The shared daily-driver defaults.
     None,
-    /// Auto-detected from the cwd (a checkout of this repo): instance state
-    /// is scoped, shared stores stay shared.
+    /// From the cwd: instance state is scoped, shared stores stay shared.
     Auto(String),
-    /// Forced via [`STATE_SCOPE_ENV`]: full isolation, shared stores included.
+    /// Via [`STATE_SCOPE_ENV`]: full isolation, shared stores included.
     Forced(String),
 }
 
-/// The directory every per-scope state dir nests under: `<base>/tasks/<scope>`.
 const SCOPE_DIR: &str = "tasks";
 
 /// What [`SCOPE_DIR`] was called before the worktree-"slot"→"task" rename.
 const LEGACY_SCOPE_DIR: &str = "slots";
 
-/// The two unscoped bases every state path is built from — `<data_dir>/
-/// towles-tool` and `~/.config/towles-tool`. The single place either is
-/// derived, so the layout migration and [`instance_state_bases`] can never
-/// disagree about where state lives. Deliberately does *not* call
-/// [`detect_scope`]: the migration runs from inside it.
+/// The single place either unscoped base is derived, so the layout migration
+/// and [`instance_state_bases`] can never disagree about where state lives.
+/// Deliberately does *not* call [`detect_scope`]: the migration runs inside it.
 fn state_base_dirs() -> (Result<PathBuf>, Result<PathBuf>) {
     (
         dirs::data_dir().ok_or(Error::NoDataDir).map(|d| d.join(TOOL_NAME)),
@@ -703,13 +631,10 @@ fn state_base_dirs() -> (Result<PathBuf>, Result<PathBuf>) {
     )
 }
 
-/// One-time best-effort rename of the pre-2026-07-20 `slots/` state parent to
-/// `tasks/` under both the data and config bases — the worktree-"slot"→"task"
-/// vocabulary rename. Renames only when the old dir exists and the new one does
-/// not, so it's idempotent and never clobbers a fresh `tasks/` tree. Best-effort:
-/// a failed rename leaves the old dir and the caller simply creates `tasks/`
-/// fresh (the lost state is one checkout's ephemeral instance data, never the
-/// shared settings, which live un-nested at the base).
+/// One-time rename of the `slots/` state parent to `tasks/` under both bases,
+/// only when the old dir exists and the new one does not. A failed rename just
+/// means the caller creates `tasks/` fresh, losing one checkout's ephemeral
+/// instance data — never the shared settings, un-nested at the base.
 fn ensure_state_layout_migrated() {
     static MIGRATED: std::sync::Once = std::sync::Once::new();
     MIGRATED.call_once(|| {
@@ -736,12 +661,9 @@ fn detect_scope() -> Scope {
     }
 }
 
-/// The active task scope for the running process, or `None` for the shared
-/// (unscoped) defaults. [`STATE_SCOPE_ENV`] wins when set (empty forces unscoped,
-/// non-empty forces that name); otherwise walk up from the cwd to a checkout of
-/// *this* repo — recognised by a `crates/tt-config` directory at its root — and use
-/// its dir name, repo-qualified for task checkouts. An installed `tt` run from an
-/// arbitrary project therefore stays unscoped and shares the daily-driver config.
+/// [`STATE_SCOPE_ENV`] wins when set; otherwise walk up from the cwd to a
+/// checkout of *this* repo and use its dir name. An installed `tt` run from an
+/// arbitrary project stays unscoped, sharing the daily-driver config.
 pub fn state_scope() -> Option<String> {
     match detect_scope() {
         Scope::None => None,
@@ -749,20 +671,15 @@ pub fn state_scope() -> Option<String> {
     }
 }
 
-/// The checkout of *this* repo that `dir` sits in: its nearest ancestor holding
-/// a `crates/tt-config` directory, or `None` when `dir` is outside one.
-///
-/// **The one definition of "a checkout of this repo"** — the scope fns name that directory,
-/// this one hands it back so a caller can read a file out of it (the app resolving its own
-/// `.env` for its port claim). A packaged app is outside any checkout and gets `None`,
-/// which is the signal to fall back to settings, not a bug.
+/// **The one definition of "a checkout of this repo"**: the nearest ancestor of
+/// `dir` holding a `crates/tt-config` directory. A packaged app is outside any
+/// checkout and gets `None`, which is the signal to fall back to settings.
 pub fn checkout_root_from_dir(dir: &Path) -> Option<PathBuf> {
     dir.ancestors().find(|a| a.join("crates").join("tt-config").is_dir()).map(Path::to_path_buf)
 }
 
 /// The main checkout owning `root`, when `root` is a
-/// `<repo>/.claude/worktrees/<name>` task checkout — the shared shape behind
-/// both scope rules below.
+/// `<repo>/.claude/worktrees/<name>` task checkout.
 fn main_checkout_of(root: &Path) -> Option<&Path> {
     root.parent()
         .filter(|p| p.file_name().is_some_and(|n| n == "worktrees"))
@@ -771,12 +688,9 @@ fn main_checkout_of(root: &Path) -> Option<&Path> {
         .and_then(Path::parent)
 }
 
-/// Derive a task scope from `dir`: the nearest ancestor that is a checkout of this
-/// repo (contains a `crates/tt-config` directory), or `None`. Split out from
-/// [`state_scope`] so it can be unit-tested against temp dirs without touching the
-/// real cwd/env. Branch-named tasks nest at `<repo>/.claude/worktrees/<name>`, so a
-/// bare dir name is not unique across repos — those scopes are qualified as
-/// `<repo>-<name>`, while the main checkout scopes by its own dir name.
+/// Split out from [`state_scope`] so it can be unit-tested against temp dirs
+/// without touching the real cwd/env. A task's bare dir name is not unique
+/// across repos, so those scopes are qualified as `<repo>-<name>`.
 pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
     let root = checkout_root_from_dir(dir)?;
     let name = root.file_name().and_then(|n| n.to_str())?;
@@ -788,11 +702,9 @@ pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
     }))
 }
 
-/// Like [`detect_scope`], but only a forced [`STATE_SCOPE_ENV`] scopes —
-/// the ambient cwd never does. Used by [`nudge_dir_path`]: the writer runs
-/// wherever the `gh` mutation happened (often a tracked repo that is not a
-/// checkout of this repo at all), so any cwd-derived nesting splits writers
-/// and watchers into dirs that never meet.
+/// Like [`detect_scope`], but the ambient cwd never scopes. Used by
+/// [`nudge_dir_path`]: the writer runs wherever the `gh` mutation happened, so
+/// cwd-derived nesting would split writers and watchers into dirs never meeting.
 fn detect_forced_scope() -> Scope {
     ensure_state_layout_migrated();
     match std::env::var(STATE_SCOPE_ENV) {
@@ -801,9 +713,8 @@ fn detect_forced_scope() -> Scope {
     }
 }
 
-/// Reduce a scope name to a single safe path segment: anything outside
-/// `[A-Za-z0-9._-]` becomes `-`. Task dir names already qualify; this only
-/// guards a hand-set `TT_STATE_SCOPE`.
+/// Reduce a scope name to a single safe path segment. Task dir names already
+/// qualify; this only guards a hand-set `TT_STATE_SCOPE`.
 fn sanitize_scope(raw: &str) -> String {
     raw.trim()
         .chars()
@@ -822,52 +733,42 @@ fn nest(base: PathBuf, scope: &Scope, instance: bool) -> PathBuf {
     }
 }
 
-/// Nest `base` under `tasks/<scope>` for *instance* state (sessions, windows,
-/// tt.db — anything one running checkout owns): any scope applies.
+/// For *instance* state (sessions, windows, tt.db — anything one running
+/// checkout owns): any scope applies.
 fn instance_under(base: PathBuf) -> PathBuf {
     nest(base, &detect_scope(), true)
 }
 
-/// Nest `base` under `tasks/<scope>` for *shared* stores (settings, tracked
-/// repos — they describe the user/machine, so every checkout reads one copy):
-/// only a forced [`STATE_SCOPE_ENV`] scopes them.
+/// For *shared* stores (settings, tracked repos — they describe the
+/// user/machine, so every checkout reads one copy): only a forced
+/// [`STATE_SCOPE_ENV`] scopes them.
 fn shared_under(base: PathBuf) -> PathBuf {
     nest(base, &detect_scope(), false)
 }
 
-/// Config directory for shared stores (the settings file). Shared across
-/// checkouts: `~/.config/towles-tool` (matches the TS CLI on every platform);
-/// a forced `TT_STATE_SCOPE` nests it under `tasks/<scope>`.
+/// `~/.config/towles-tool`, matching the TS CLI on every platform.
 fn config_dir() -> Result<PathBuf> {
     Ok(shared_under(home_dir()?.join(".config").join(TOOL_NAME)))
 }
 
-/// Full path to the settings file:
-/// `<config_dir>/towles-tool.settings.json`.
 pub fn config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join(format!("{TOOL_NAME}.settings.json")))
 }
 
-/// Data directory, instance-scoped (holds tt.db). Unscoped:
-/// `<data_dir>/towles-tool` (e.g. `~/.local/share/towles-tool`). In a task
-/// checkout: `…/towles-tool/tasks/<scope>` — a branch's schema experiments
-/// must not touch the daily driver's database.
+/// Holds tt.db, and instance-scoped: a branch's schema experiments must not
+/// touch the daily driver's database.
 fn data_dir() -> Result<PathBuf> {
     Ok(instance_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME)))
 }
 
-/// Full path to the data-hub SQLite store: `<data_dir>/tt.db`.
 pub fn store_db_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tt.db"))
 }
 
-/// The tt.db owned by a *named* scope, ignoring the ambient one.
-///
-/// The ambient scope answers "whose database am I?", but a removal path needs "whose
-/// database holds the row for the checkout I just deleted?" — different whenever the
-/// command runs from outside the checkout that owns the board. `tt task rm` from inside a
-/// worktree would otherwise open that worktree's empty tt.db and leave the real row
-/// orphaned. `None` means unscoped; a forced [`STATE_SCOPE_ENV`] still wins.
+/// The tt.db owned by a *named* scope. The ambient scope answers "whose
+/// database am I?", but removal needs "whose database holds the row for the
+/// checkout I just deleted?" — `tt task rm` inside a worktree would otherwise
+/// open that worktree's empty tt.db and orphan the real row.
 pub fn store_db_path_for_scope(scope: Option<&str>) -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
     let base = match detect_scope() {
@@ -880,96 +781,75 @@ pub fn store_db_path_for_scope(scope: Option<&str>) -> Result<PathBuf> {
     Ok(base.join("tt.db"))
 }
 
-/// Directory watched by the app's scheduler for an eager collector nudge: touching its
-/// `prs`/`issues` file collects that target immediately instead of on the next poll.
-/// Machine-global, because the writer (`tt task nudge`) runs wherever the `gh` mutation
-/// happened — usually a *tracked* repo, not a checkout of this one — and a note only
-/// lands if writer and every watcher resolve one dir; addressing is the note's own
-/// `TT_SESSION_ID` line (`tt_collect::nudge`). Only a forced [`STATE_SCOPE_ENV`] nests
-/// it (e2e isolation), and it sits outside `data_dir()` to dodge tt.db's WAL/SHM churn.
+/// Watched by the app's scheduler for an eager collector nudge. Machine-global,
+/// because the writer runs wherever the `gh` mutation happened and a note only
+/// lands if writer and every watcher resolve one dir; addressing is the note's
+/// own `TT_SESSION_ID` line. Outside `data_dir()` to dodge tt.db's WAL churn.
 pub fn nudge_dir_path() -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
     Ok(nest(base, &detect_forced_scope(), true).join("nudge"))
 }
 
-/// Directory the telemetry event log streams to: `<data_dir>/telemetry`.
-/// Instance-scoped like `data_dir()`, which is the point — each worktree
-/// writes its own event log, so "which task spawned these commands?" is
-/// answerable from the path alone rather than from a field every writer has to
-/// remember to stamp. Its own subdirectory so log rotation never walks tt.db.
+/// Instance-scoped, which is the point — each worktree writes its own event
+/// log, so "which task spawned these commands?" is answerable from the path
+/// alone. Its own subdirectory so log rotation never walks tt.db.
 pub fn telemetry_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("telemetry"))
 }
 
-/// Staging directory for images pasted into the app. The bytes must become a file
-/// before a path can go into a Claude prompt, and deliberately *not* one in the repo —
-/// Claude Code reads an absolute path outside its workspace without prompting, so user
-/// content in a checkout only costs a `.gitignore`. The OS temp dir, not `data_dir()`:
-/// a pasted screenshot is throwaway staging, not state worth keeping across a reboot,
-/// and the OS reclaims `/tmp` anyway; the caller's prune is a backstop.
+/// Staging for images pasted into the app: the bytes must become a file before
+/// a path can go into a Claude prompt, and deliberately not one in the repo.
+/// The OS temp dir, since a screenshot is not state worth keeping.
 pub fn pasted_images_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("pasted-images")
 }
 
-/// Directory for single-instance PID lock files. Deliberately the OS temp dir, not
-/// `config_dir()`: a lock file means anything only while its creator runs, so it carries no
-/// durable state and doesn't belong beside settings a user might sync. Unscoped, since some
-/// holders (`"slack-socket"`) are shared across every worktree; per-checkout holders vary
-/// the lock *name* instead.
+/// Single-instance PID lock files. The OS temp dir, not `config_dir()`: a lock
+/// means anything only while its creator runs, so it doesn't belong beside
+/// settings a user might sync. Unscoped, since some holders are shared across
+/// every worktree; per-checkout holders vary the lock *name* instead.
 pub fn locks_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("locks")
 }
 
-/// Agentboard *instance* persistence directory (sessions.json, windows.json,
-/// collapse.json, … — one running app's state): scoped in a task checkout.
+/// One running app's state (sessions.json, windows.json, …).
 pub fn agentboard_dir() -> Result<PathBuf> {
     Ok(instance_under(home_dir()?.join(".config").join(TOOL_NAME)).join("agentboard"))
 }
 
-/// Agentboard *shared* persistence directory (repos.json — which repos exist
-/// on this machine is the same fact from every checkout).
+/// repos.json — which repos exist is the same fact from every checkout.
 pub fn agentboard_shared_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("agentboard"))
 }
 
 /// Where the collectors leave their GitHub results for other checkouts to read.
-/// Shared rather than per-checkout, like `repos.json`: what GitHub says about a PR
-/// depends on the machine's token, not which folder asked — per-checkout `tt.db` had
-/// four windows re-asking the same questions for ~1,920 of 5,000 points an hour. One
-/// file per collector per repo (`tt_collect`'s `sweep_cache` has the reasoning); not
-/// a single-instance lock, since each window reads rows back out of its own `tt.db`.
+/// Shared rather than per-checkout, like `repos.json`: what GitHub says about a
+/// PR depends on the machine's token, not which folder asked. One file per
+/// collector per repo (`tt_collect`'s `sweep_cache` has the reasoning).
 pub fn gh_cache_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("gh-cache"))
 }
 
-/// Directory for `tt-tasks`' per-checkout port registries (the claimed-port
-/// ledgers, one checkout-keyed file each). A *shared* store: every worktree
-/// of a repo must read the same ledger, so it lives beside the settings
-/// rather than nesting per instance. Deliberately not [`locks_dir`] (the OS
-/// temp dir — a ledger must survive reboots) and not inside the repo (state
-/// a collaborator's clone should never see). A forced [`STATE_SCOPE_ENV`]
-/// isolates it like every shared store.
-/// The browser pane's Chrome profile (its user-data-dir). A *shared* store
-/// like `repos.json` — a sign-in is a machine fact — and it starts empty:
-/// login persistence, never an import of the personal Chrome profile. Under
-/// the data base rather than config because it's a binary tree Chrome owns,
-/// not settings; Chrome's own singleton lock allows one process per profile
-/// dir, so tt-app serializes cross-instance access with an `InstanceLock`.
+/// The browser pane's Chrome profile. A *shared* store — a sign-in is a machine
+/// fact — that starts empty: login persistence, never an import of the personal
+/// Chrome profile. Chrome's singleton lock allows one process per profile dir,
+/// so tt-app serializes cross-instance access with an `InstanceLock`.
 pub fn browser_profile_dir() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
         .join("chrome-profile"))
 }
 
+/// `tt-tasks`' claimed-port ledgers, one checkout-keyed file each. A *shared*
+/// store: every worktree of a repo must read the same ledger, and a ledger must
+/// survive reboots (so not [`locks_dir`]) and stay out of a collaborator's clone.
 pub fn task_ports_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("task-ports"))
 }
 
-/// The base directories under which per-checkout *instance* state nests as
-/// `tasks/<scope>/…`: the data base (tt.db) and the instance-config base. Cleanup tools use
-/// this to reach scopes *other than* the running process's, since
-/// [`data_dir`]/[`agentboard_dir`] only resolve the current one. Deliberately ignores an
-/// auto-detected scope, but a *forced* [`STATE_SCOPE_ENV`] nests both bases like every
-/// other path, so tests never touch the real state tree.
+/// Cleanup tools use this to reach scopes *other than* the running process's,
+/// since [`data_dir`]/[`agentboard_dir`] only resolve the current one.
+/// Deliberately ignores an auto-detected scope, but a *forced*
+/// [`STATE_SCOPE_ENV`] nests both bases so tests never touch the real tree.
 pub struct InstanceStateBases {
     /// e.g. `~/.local/share/towles-tool` — holds `tt.db` and `tasks/<scope>/tt.db`.
     pub data: PathBuf,
@@ -984,8 +864,7 @@ impl InstanceStateBases {
         [self.data.join(SCOPE_DIR), self.config.join(SCOPE_DIR)]
     }
 
-    /// The agentboard instance dir for `scope` (`None` = the unscoped store
-    /// the installed daily driver writes).
+    /// `None` = the unscoped store the installed daily driver writes.
     pub fn agentboard_dir(&self, scope: Option<&str>) -> PathBuf {
         match scope {
             None => self.config.join("agentboard"),
@@ -994,8 +873,6 @@ impl InstanceStateBases {
     }
 }
 
-/// Resolve [`InstanceStateBases`] for this machine (or, under a forced
-/// [`STATE_SCOPE_ENV`], for that sandboxed scope).
 pub fn instance_state_bases() -> Result<InstanceStateBases> {
     let (data, config) = state_base_dirs();
     let (data, config) = (data?, config?);
@@ -1008,9 +885,8 @@ pub fn instance_state_bases() -> Result<InstanceStateBases> {
     }
 }
 
-/// Infallible [`agentboard_dir`], falling back to `./agentboard` when the home
-/// directory can't be resolved. For callers that build default paths without a
-/// `Result` (they historically fell back to `.`).
+/// Infallible [`agentboard_dir`], for callers that build default paths without
+/// a `Result`.
 pub fn agentboard_dir_lossy() -> PathBuf {
     agentboard_dir().unwrap_or_else(|_| PathBuf::from(".").join("agentboard"))
 }
@@ -1020,13 +896,10 @@ pub fn agentboard_shared_dir_lossy() -> PathBuf {
     agentboard_shared_dir().unwrap_or_else(|_| PathBuf::from(".").join("agentboard"))
 }
 
-/// The instance-state directories owned by `scope` — the config-side
-/// `…/towles-tool/tasks/<scope>` (agentboard sessions/windows/collapse) and
-/// the data-side one (tt.db) — so `tt task rm` can delete a removed task's
-/// leftover state. This targets *another* checkout's scope, so the ambient
-/// auto-detected scope is deliberately ignored (running the command from
-/// inside a task must not nest the target under the runner's own scope);
-/// a forced [`STATE_SCOPE_ENV`] still nests, keeping tests fully isolated.
+/// The instance-state directories owned by `scope`, so `tt task rm` can delete
+/// a removed task's leftover state. Targets *another* checkout's scope, so the
+/// ambient one is ignored — running from inside a task must not nest the target
+/// under the runner's own scope. A forced [`STATE_SCOPE_ENV`] still nests.
 pub fn instance_state_dirs_for_scope(scope: &str) -> Vec<PathBuf> {
     let scope = sanitize_scope(scope);
     if scope.is_empty() {
@@ -1045,8 +918,6 @@ pub fn load() -> Result<UserSettings> {
     load_from(&config_path()?)
 }
 
-/// Load settings from an explicit path, creating defaults if the file is missing.
-///
 /// Accepting a path keeps this testable without touching the real home directory.
 pub fn load_from(path: &Path) -> Result<UserSettings> {
     if !path.exists() {
@@ -1059,11 +930,9 @@ pub fn load_from(path: &Path) -> Result<UserSettings> {
     Ok(settings)
 }
 
-/// Save settings to an explicit path, creating parent directories as needed.
-///
-/// Writes only the modeled fields, so any unmodeled keys already on disk (e.g.
-/// keys the shared TypeScript CLI owns) are dropped. For the shared settings
-/// file use [`save_merge_to`] instead.
+/// Writes only the modeled fields, so any unmodeled keys already on disk (the
+/// TypeScript CLI's) are dropped. For the shared settings file use
+/// [`save_merge_to`] instead.
 fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -1073,12 +942,10 @@ fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
     Ok(())
 }
 
-/// Write `contents` to `path` and restrict it to the owner (0600 on unix). The
-/// settings file holds live credentials (the Slack tokens), so it must not inherit
-/// the umask — a plain `fs::write` under the common 002/022 leaves it group- and
-/// world-readable, which is how it shipped. The chmod comes after the write rather
-/// than via `OpenOptions::mode` because this path also rewrites an *existing* file,
-/// whose mode `open` wouldn't touch. Same pattern as `tt_ide::lockfile::write`.
+/// Restricts `path` to the owner (0600 on unix): the settings file holds live
+/// credentials, so it must not inherit the umask. The chmod comes after the
+/// write, not via `OpenOptions::mode`, because this also rewrites existing
+/// files, whose mode `open` wouldn't touch.
 fn write_private(path: &Path, contents: &str) -> Result<()> {
     std::fs::write(path, contents)?;
     #[cfg(unix)]
@@ -1094,11 +961,9 @@ pub fn save_merge(settings: &UserSettings) -> Result<()> {
     save_merge_to(&config_path()?, settings)
 }
 
-/// Save `settings` to `path`, **preserving any keys already in the file that this
-/// model doesn't capture** (keys the shared TypeScript CLI may own). Known fields
-/// win; unknown fields on disk survive. Use this for writes to the shared settings
-/// file — unlike [`save_to`], which serializes only the modeled fields and would
-/// silently drop anything the other tool wrote.
+/// **Preserves any keys already in the file that this model doesn't capture**
+/// (the shared TypeScript CLI's). Known fields win. Use this for every write to
+/// the shared settings file — [`save_to`] would drop what the other tool wrote.
 fn save_merge_to(path: &Path, settings: &UserSettings) -> Result<()> {
     let mut base = if path.exists() {
         serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(path)?)
@@ -1114,8 +979,7 @@ fn save_merge_to(path: &Path, settings: &UserSettings) -> Result<()> {
     Ok(())
 }
 
-/// Deep-merge `incoming` into `base`: objects merge key-by-key (recursively);
-/// every other value (scalars, arrays) is replaced wholesale by `incoming`.
+/// Objects merge key-by-key; every other value is replaced wholesale.
 fn merge_json(base: &mut serde_json::Value, incoming: &serde_json::Value) {
     match (base, incoming) {
         (serde_json::Value::Object(b), serde_json::Value::Object(i)) => {
@@ -1132,9 +996,8 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// JSON Schema derived from the settings structs (test-only: the schema is
-    /// no shipped API, but it's the drift guard that catches a struct whose
-    /// field names diverge from the shared file's `camelCase` convention).
+    /// Test-only: no shipped API, but the drift guard that catches a struct
+    /// whose field names diverge from the shared file's `camelCase` convention.
     fn json_schema() -> serde_json::Value {
         let schema = schemars::schema_for!(UserSettings);
         serde_json::to_value(schema).expect("settings JSON schema should serialize")
@@ -1159,9 +1022,8 @@ mod tests {
         assert_eq!(loaded, settings);
     }
 
-    /// The settings file holds the Slack `xoxp-`/`xapp-` tokens, so neither
-    /// write path may leave it readable by anyone but the owner — including the
-    /// rewrite of a file that already exists with looser permissions.
+    /// The settings file holds the Slack tokens, so neither write path may leave
+    /// it readable by anyone but the owner.
     #[cfg(unix)]
     #[test]
     fn saves_are_owner_only() {
@@ -1174,8 +1036,8 @@ mod tests {
             dir.path().join("fresh.json"),
             dir.path().join("merged.json"),
         ] {
-            // Pre-create world-readable, so this asserts the mode is tightened
-            // on an existing file rather than merely inherited at creation.
+            // Pre-create world-readable: the mode must be tightened on an
+            // existing file, not merely inherited at creation.
             std::fs::write(&path, "{}").unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
@@ -1205,7 +1067,6 @@ mod tests {
     fn tolerates_unknown_fields_and_fills_defaults() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("towles-tool.settings.json");
-        // Unknown top-level key + a partial journalSettings object.
         std::fs::write(
             &path,
             r#"{"preferredEditor":"vim","futureFlag":true,"journalSettings":{"baseFolder":"/tmp/j"}}"#,
@@ -1215,18 +1076,13 @@ mod tests {
         let loaded = load_from(&path).unwrap();
         assert_eq!(loaded.preferred_editor, "vim");
         assert_eq!(loaded.journal_settings.base_folder, "/tmp/j");
-        // Missing journal fields fall back to defaults.
         assert!(loaded.journal_settings.daily_path_template.contains("daily-notes"));
     }
 
     #[test]
     fn tolerates_unknown_fields_at_every_nesting_level() {
         // The settings file is shared with the legacy TypeScript CLI, so serde
-        // types must never reject a key they don't model — at the root or inside
-        // any nested block (mcp/collectors/agentboard/journalSettings). This
-        // locks that contract: a file peppered with unknown keys at every level
-        // must load successfully, keep the *known* fields it does carry, and fill
-        // the rest from defaults.
+        // types must never reject a key they don't model, at any nesting level.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("towles-tool.settings.json");
         std::fs::write(
@@ -1253,7 +1109,6 @@ mod tests {
         .unwrap();
 
         let loaded = load_from(&path).unwrap();
-        // Known fields survive at every level.
         assert_eq!(loaded.preferred_editor, "hx");
         assert_eq!(loaded.journal_settings.base_folder, "/j");
         assert_eq!(loaded.mcp.port, 9191);
@@ -1261,12 +1116,9 @@ mod tests {
         assert!(loaded.collectors.calendar.enabled);
         assert_eq!(loaded.collectors.calendar.sources.len(), 1);
         assert_eq!(loaded.collectors.calendar.sources[0].id, "google");
-        // Fields the file omitted still come from defaults.
         assert!(loaded.journal_settings.daily_path_template.contains("daily-notes"));
         assert_eq!(loaded.collectors.issues.refresh_minutes, 15);
 
-        // And saving back through the merge path keeps every unknown key on disk
-        // while the known edits win.
         let mut edited = loaded;
         edited.preferred_editor = "code".to_string();
         save_merge_to(&path, &edited).unwrap();
@@ -1284,9 +1136,8 @@ mod tests {
 
     #[test]
     fn malformed_mcp_block_falls_back_to_default_without_failing_the_file() {
-        // The docs invite hand-editing the `mcp` block, so a slip there must
-        // not brick every settings consumer — it degrades to the default port
-        // while the rest of the file loads.
+        // The docs invite hand-editing the `mcp` block, so a slip there must not
+        // brick every settings consumer.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("towles-tool.settings.json");
         for bad_block in [
@@ -1301,7 +1152,6 @@ mod tests {
             assert_eq!(loaded.mcp.port, DEFAULT_MCP_PORT, "falls back for {bad_block}");
         }
 
-        // A well-formed block still parses, of course.
         std::fs::write(&path, r#"{"mcp":{"port":9123}}"#).unwrap();
         assert_eq!(load_from(&path).unwrap().mcp.port, 9123);
     }
@@ -1310,7 +1160,6 @@ mod tests {
     fn save_merge_preserves_unknown_keys() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("towles-tool.settings.json");
-        // A file with keys this model doesn't capture — top-level and nested.
         std::fs::write(
             &path,
             r#"{"preferredEditor":"vim","futureFlag":true,"journalSettings":{"baseFolder":"/old","tsOnly":42}}"#,
@@ -1324,10 +1173,8 @@ mod tests {
 
         let raw: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        // Known edits win.
         assert_eq!(raw["preferredEditor"], "code");
         assert_eq!(raw["journalSettings"]["baseFolder"], "/new");
-        // Unknown keys survive, at both levels.
         assert_eq!(raw["futureFlag"], true);
         assert_eq!(raw["journalSettings"]["tsOnly"], 42);
     }
@@ -1348,16 +1195,12 @@ mod tests {
         // Off by default: the calendar collector burns tokens (`claude -p`).
         assert!(!c.calendar.enabled);
         assert_eq!(c.calendar.refresh_minutes, 15);
-        // Two built-in sources; only the personal one is on, matching the
-        // single-provider default this replaced.
         let ids: Vec<&str> = c.calendar.sources.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["google", "outlook"]);
         assert!(c.calendar.sources[0].enabled, "google on by default");
         assert!(!c.calendar.sources[1].enabled, "outlook opt-in");
-        // Each source carries its own editable prompt, seeded from the built-ins.
         assert_eq!(c.calendar.sources[0].prompt, DEFAULT_CALENDAR_PROMPT_GOOGLE);
         assert_eq!(c.calendar.sources[1].prompt, DEFAULT_CALENDAR_PROMPT_OUTLOOK);
-        // Quiet hours default to 8:00–18:00 local, Mon–Fri, and are on.
         assert!(c.calendar.quiet_hours.enabled);
         assert_eq!(c.calendar.quiet_hours.start_hour, 8);
         assert_eq!(c.calendar.quiet_hours.end_hour, 18);
@@ -1370,7 +1213,6 @@ mod tests {
         // Off by default: the Slack watcher needs a user token first.
         assert!(!c.slack.enabled);
         assert!(c.slack.token.is_empty());
-        // Socket Mode is opt-in on top of the poll; no app token by default.
         assert!(c.slack.app_token.is_empty());
         assert_eq!(c.slack.refresh_seconds, 60);
     }
@@ -1380,18 +1222,14 @@ mod tests {
         let s = UserSettings::default();
         let ids: Vec<&str> = s.prompt_improvers.iter().map(|g| g.id.as_str()).collect();
         assert_eq!(ids, vec!["direct", "clarify", "brainstorm", "interview"]);
-        // All built-ins are offered, but only Direct gets its own button — the
-        // rest live under the "More" menu until marked preferred in Settings.
         assert!(s.prompt_improvers.iter().all(|g| g.enabled));
         let preferred: Vec<&str> =
             s.prompt_improvers.iter().filter(|g| g.preferred).map(|g| g.id.as_str()).collect();
         assert_eq!(preferred, vec!["direct"]);
-        // Every improver carries a non-empty instruction for `claude -p`. These
-        // are instructions *about* the task, never templates containing it —
-        // the task text is passed to the model separately.
+        // Instructions *about* the task, never templates containing it — the
+        // task text is passed to the model separately.
         assert!(s.prompt_improvers.iter().all(|g| !g.prompt.trim().is_empty()));
         assert!(!s.prompt_improvers.iter().any(|g| g.prompt.contains("{goal}")));
-        // Serializes camelCase under the top-level `promptImprovers` key.
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"promptImprovers\""));
     }
@@ -1399,12 +1237,11 @@ mod tests {
     #[test]
     fn notify_defaults_unset_and_everything_on() {
         let s = UserSettings::default();
-        // Unset until the user changes it, so the shared file stays clean…
+        // Unset until the user changes it, so the shared file stays clean.
         assert!(s.agentboard.notify.is_none());
         assert!(s.agentboard.notify_threshold.is_none());
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("notify"));
-        // …and unset means every kind fires.
         assert!(
             [
                 NotifyKind::NeedsYou,
@@ -1453,8 +1290,8 @@ mod tests {
         assert_eq!(s.agentboard.notify_threshold, Some(NotifyLevel::Important));
         assert!(serde_json::to_string(&s).unwrap().contains("\"notifyThreshold\":\"important\""));
 
-        // A newer build's level (or a hand-edit typo) falls back to the default
-        // rather than failing the whole shared settings file.
+        // A newer build's level falls back to the default rather than failing
+        // the whole shared settings file.
         let odd = r#"{"agentboard":{"notifyThreshold":"apocalyptic"}}"#;
         let s: UserSettings = serde_json::from_str(odd).unwrap();
         assert!(s.agentboard.notify_threshold.is_none());
@@ -1464,44 +1301,36 @@ mod tests {
     #[test]
     fn copy_on_select_defaults_unset_and_on() {
         let s = UserSettings::default();
-        // Unset until the user changes it, so the shared file stays clean…
         assert!(s.agentboard.copy_on_select.is_none());
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("copyOnSelect"));
-        // …and unset means ON (the frontend applies the default).
         assert!(s.agentboard.copy_on_select.unwrap_or(true));
     }
 
     #[test]
     fn shortcuts_work_in_terminal_defaults_unset_and_on() {
         let s = UserSettings::default();
-        // Unset until the user changes it, so the shared file stays clean…
         assert!(s.agentboard.shortcuts_work_in_terminal.is_none());
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("shortcutsWorkInTerminal"));
-        // …and unset means ON (the frontend applies the default).
         assert!(s.agentboard.shortcuts_work_in_terminal.unwrap_or(true));
     }
 
     #[test]
     fn shortcut_coach_defaults_unset_and_on() {
         let s = UserSettings::default();
-        // Unset until the user changes it, so the shared file stays clean…
         assert!(s.agentboard.shortcut_coach.is_none());
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("shortcutCoach"));
-        // …and unset means ON (the frontend applies the default).
         assert!(s.agentboard.shortcut_coach.unwrap_or(true));
     }
 
     #[test]
     fn terminal_font_size_defaults_unset_and_thirteen() {
         let s = UserSettings::default();
-        // Unset until the user changes it, so the shared file stays clean…
         assert!(s.agentboard.terminal_font_size.is_none());
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("terminalFontSize"));
-        // …and unset means the 13px default (the frontend applies it).
         assert_eq!(s.agentboard.terminal_font_size.unwrap_or(13), 13);
     }
 
@@ -1526,8 +1355,6 @@ mod tests {
 
     #[test]
     fn terminal_font_size_tolerates_unknown_and_roundtrips() {
-        // An unknown sibling key (written by the TS CLI or a newer app) must
-        // not break deserialization, and a set value round-trips as camelCase.
         let json = r#"{"agentboard":{"terminalFontSize":17,"someFutureKey":true}}"#;
         let s: UserSettings = serde_json::from_str(json).unwrap();
         assert_eq!(s.agentboard.terminal_font_size, Some(17));
@@ -1544,12 +1371,8 @@ mod tests {
         assert!(props.get("agentboard").is_some());
     }
 
-    /// Drift guard: because the schema is derived from the serde structs, a
-    /// struct whose field names diverge from the shared file's `camelCase`
-    /// convention (e.g. a new struct missing `#[serde(rename_all = "camelCase")]`,
-    /// which would serialize `snake_case`) shows up as a `snake_case` property
-    /// name here. The TS CLI reads/writes this same file expecting `camelCase`,
-    /// so any underscore in a property name is a break waiting to happen.
+    /// The TS CLI reads/writes this same file expecting `camelCase`, so an
+    /// underscore in a derived property name is a break waiting to happen.
     #[test]
     fn json_schema_property_names_are_camel_case() {
         fn walk(node: &serde_json::Value, offenders: &mut Vec<String>) {
@@ -1584,9 +1407,8 @@ mod tests {
         );
     }
 
-    /// Drift guard: the schema must reach the nested collector tree, not just the
-    /// top level — a real read/write surface the TS CLI shares. Spot-check the
-    /// generated definitions and their `camelCase` fields.
+    /// The schema must reach the nested collector tree, not just the top level
+    /// — a real read/write surface the TS CLI shares.
     #[test]
     fn json_schema_covers_nested_collectors() {
         let schema = json_schema();
@@ -1595,8 +1417,8 @@ mod tests {
         let cal = &defs["CalendarCollector"]["properties"];
         assert!(cal.get("refreshMinutes").is_some());
         assert!(cal.get("sources").is_some());
-        // The per-source prompt is the user-facing escape hatch — it has to
-        // reach the schema, or the settings UI can't offer it.
+        // The per-source prompt is the user-facing escape hatch; without it in
+        // the schema the settings UI can't offer it.
         let src = &defs["CalendarSource"]["properties"];
         assert!(src.get("prompt").is_some());
         assert!(src.get("enabled").is_some());
@@ -1605,11 +1427,8 @@ mod tests {
         assert!(prs.get("mergedRefreshMinutes").is_some());
     }
 
-    /// Pins the shared-file write contract honestly: [`save_to`] serializes only
-    /// modeled fields and therefore **drops** unmodeled TS-owned keys, whereas
-    /// [`save_merge_to`] preserves them (see `save_merge_preserves_unknown_keys`).
-    /// If a future refactor makes `save_to` merge, this test forces the change to
-    /// be deliberate.
+    /// [`save_to`] **drops** unmodeled TS-owned keys where [`save_merge_to`]
+    /// preserves them; if a refactor makes them agree, that must be deliberate.
     #[test]
     fn save_to_drops_unknown_keys() {
         let dir = TempDir::new().unwrap();
@@ -1625,21 +1444,17 @@ mod tests {
 
         let raw: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        // Modeled fields survive.
         assert_eq!(raw["preferredEditor"], "vim");
         assert_eq!(raw["journalSettings"]["baseFolder"], "/old");
-        // Unmodeled TS-owned keys are dropped — the reason the shared file must
-        // be written with `save_merge_to`.
         assert!(raw.get("futureFlag").is_none());
         assert!(raw["journalSettings"].get("tsOnly").is_none());
     }
 
-    /// Serializes the process-global `TT_STATE_SCOPE` mutations so env-touching
-    /// tests don't race each other (cargo runs tests on parallel threads).
+    /// Serializes `TT_STATE_SCOPE` mutations; cargo runs tests in parallel.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// A temp dir laid out like a task checkout: `<root>/crates/tt-config`
-    /// (plus a nested crate dir to test detection from a subdirectory).
+    /// A temp dir laid out like a task checkout, plus a nested crate dir so
+    /// detection from a subdirectory is testable.
     fn task_checkout(root_name: &str) -> TempDir {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join(root_name);
@@ -1652,7 +1467,6 @@ mod tests {
     fn task_checkout_dir_derives_scope() {
         let dir = task_checkout("towles-tool");
         let root = dir.path().join("towles-tool");
-        // From the root and from a nested subdir, the scope is the root's name.
         assert_eq!(task_scope_from_dir(&root), Some("towles-tool".to_string()));
         assert_eq!(
             task_scope_from_dir(&root.join("crates").join("tt-store").join("src")),
@@ -1662,9 +1476,8 @@ mod tests {
 
     #[test]
     fn nested_worktree_checkout_is_repo_qualified() {
-        // <repo>/.claude/worktrees/<name>/crates/tt-config: the task's scope
-        // carries the main checkout's name so same-named tasks of different
-        // repos never share state.
+        // The task's scope carries the main checkout's name so same-named
+        // tasks of different repos never share state.
         let dir = TempDir::new().unwrap();
         let task = dir.path().join("towles-tool").join(".claude").join("worktrees").join("migrate");
         std::fs::create_dir_all(task.join("crates").join("tt-config")).unwrap();
@@ -1673,9 +1486,7 @@ mod tests {
 
     #[test]
     fn worktrees_dir_outside_claude_is_not_qualified() {
-        // Only the exact `.claude/worktrees` shape qualifies — a checkout that
-        // happens to sit under some other `worktrees/` dir scopes by its own
-        // name like any main checkout.
+        // Only the exact `.claude/worktrees` shape qualifies.
         let dir = TempDir::new().unwrap();
         let checkout = dir.path().join("worktrees").join("thing");
         std::fs::create_dir_all(checkout.join("crates").join("tt-config")).unwrap();
@@ -1690,8 +1501,7 @@ mod tests {
 
     #[test]
     fn arbitrary_git_repo_is_unscoped() {
-        // A checkout that isn't THIS repo: it has a .git and Cargo.toml but no
-        // `crates/tt-config` marker, so it must not be scoped.
+        // A .git and Cargo.toml but no `crates/tt-config` marker.
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("some-other-project");
         std::fs::create_dir_all(root.join(".git")).unwrap();
@@ -1711,15 +1521,14 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         let base = PathBuf::from("/home/x/.config/towles-tool");
 
-        // Non-empty → that scope — and a FORCED scope nests shared stores
-        // too, so tests and quarantined tasks never touch real shared files.
-        // SAFETY: guarded by ENV_LOCK; no other threads read env concurrently here.
+        // A FORCED scope nests shared stores too, so tests and quarantined
+        // tasks never touch real shared files.
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "my-scope") };
         assert_eq!(state_scope(), Some("my-scope".to_string()));
         assert_eq!(instance_under(base.clone()), base.join("tasks").join("my-scope"));
         assert_eq!(shared_under(base.clone()), base.join("tasks").join("my-scope"));
 
-        // Empty → forced unscoped, regardless of cwd.
         // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "") };
         assert_eq!(state_scope(), None);
@@ -1730,10 +1539,8 @@ mod tests {
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
-    /// An auto-detected checkout scope splits: instance state nests, shared
-    /// stores (settings, repos.json) stay at the machine-wide default. Uses
-    /// the pure resolvers with a hand-built Scope since auto-detection reads
-    /// the real cwd.
+    /// Uses the pure resolvers with a hand-built Scope, since auto-detection
+    /// reads the real cwd.
     #[test]
     fn auto_scope_nests_instance_but_not_shared() {
         let base = PathBuf::from("/home/x/.config/towles-tool");
@@ -1756,9 +1563,8 @@ mod tests {
         unsafe { std::env::remove_var(STATE_SCOPE_ENV) };
     }
 
-    /// The cleanup bases point at the machine-wide state tree even when the
-    /// process itself runs auto-scoped from a task checkout — that tree is
-    /// what cleanup sweeps — but a forced scope sandboxes them entirely.
+    /// The cleanup bases point at the machine-wide tree even when the process
+    /// runs auto-scoped, but a forced scope sandboxes them entirely.
     #[test]
     fn instance_state_bases_ignore_auto_but_honor_forced_scope() {
         let _guard = ENV_LOCK.lock().unwrap();
@@ -1800,8 +1606,8 @@ mod tests {
         }
         assert!(instance_state_dirs_for_scope("  ").is_empty());
 
-        // A FORCED scope nests the targets too — a test world's task state
-        // lives under the forced nest, never at the real machine paths.
+        // A FORCED scope nests the targets too, so a test world's task state
+        // never lands at the real machine paths.
         // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::set_var(STATE_SCOPE_ENV, "test-world") };
         for dir in instance_state_dirs_for_scope("towles-tool-thing") {

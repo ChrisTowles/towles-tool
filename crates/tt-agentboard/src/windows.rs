@@ -120,17 +120,13 @@ impl WindowsStore {
         true
     }
 
-    /// Persist `touched` folder dirs — the ones whose windows/active-window
-    /// actually changed since the last save (the caller, `agentboard.tsx`'s
-    /// `updateWins`, tracks this because a window's frontend blob doesn't
-    /// distinguish "never touched" from "explicitly emptied"). Rereads the
-    /// file fresh, replaces only those folders' entries, and leaves every
-    /// other folder exactly as found on disk: this file is shared by every
-    /// Agentboard window (`tt task` runs one per checkout), so a
-    /// blind whole-payload overwrite from this instance's hydrate-once,
-    /// possibly-stale copy would erase another window's edits to folders we
-    /// never touched. Same-folder concurrent edits are still last-write-wins;
-    /// there's no cross-process locking here.
+    /// Persist `touched` folder dirs — those whose windows/active-window changed
+    /// since the last save. The caller (`agentboard.tsx`'s `updateWins`) tracks
+    /// that list because a window's frontend blob doesn't distinguish "never
+    /// touched" from "explicitly emptied". Rereads the file fresh and replaces
+    /// only those folders' entries: every Agentboard window shares this file, so
+    /// a whole-payload write from a stale copy would erase another window's
+    /// edits. Same-folder races are last-write-wins.
     pub fn save(&mut self, touched: &[String]) -> std::io::Result<()> {
         let Some(path) = self.path.clone() else {
             return Ok(());
@@ -170,19 +166,12 @@ fn diff_pane_dir(pane_id: &str) -> Option<&str> {
 }
 
 /// Headless port of the client's `pruneWins` + active-window normalization
-/// (`apps/client/src/lib/agentboard.ts` — keep the two in lockstep): reconcile
-/// a persisted layout against what still exists. The blob on disk outlives its
-/// referents — a task removed while no app was running leaves windows whose
-/// `folderDir` is gone and panes whose session records vanished with it.
-///
-/// Drops windows whose folder fails `folder_valid`, then panes that are
-/// neither a known session id nor a valid folder's diff pane. A window is a
-/// tiling of at least one pane (the client makes the empty state
-/// unrepresentable): one emptied by the prune — or a paneless one persisted
-/// before that rule — vanishes; the client mints a fresh "primary" lazily
-/// when the folder next opens a pane. Returns the pruned payload plus the
-/// folder dirs whose slice changed (the `touched` list
-/// [`WindowsStore::save`] needs), or `None` when nothing changed.
+/// (`apps/client/src/lib/agentboard.ts` — keep the two in lockstep): the blob
+/// outlives its referents when a task is removed with no app running. Drops
+/// windows failing `folder_valid`, then panes that are neither a known session
+/// id nor a valid folder's diff pane; a window emptied by the prune vanishes,
+/// and the client mints a fresh "primary" lazily. Returns the pruned payload
+/// plus the changed folder dirs ([`WindowsStore::save`]'s `touched`).
 pub fn prune_dead(
     payload: &WindowsPayload,
     valid_sessions: &BTreeSet<String>,

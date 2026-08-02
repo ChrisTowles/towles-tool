@@ -67,9 +67,9 @@ pub struct EngineOptions {
 }
 
 /// UI theme pushed into the emulator so color queries answer the app's real
-/// colors instead of libghostty's stock defaults: OSC 10/11 (how programs
-/// like Claude Code detect a light vs dark background), the color-scheme DSR
-/// (`CSI ? 996 n`), and indexed-color resolution all read from this.
+/// colors instead of libghostty's stock defaults. OSC 10/11 (how programs
+/// detect a light vs dark background), the color-scheme DSR and indexed-color
+/// resolution all read from this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
     /// Default foreground, packed 0xRRGGBB.
@@ -91,8 +91,7 @@ pub enum PasteOutcome {
     /// The text was encoded and queued for the PTY.
     Pasted,
     /// Nothing was written: bracketed paste is off and the text contains a
-    /// newline, so pasting would execute in the shell. The caller confirms
-    /// with the user and retries with `force`.
+    /// newline. The caller confirms with the user and retries with `force`.
     NeedsConfirm,
 }
 
@@ -125,10 +124,9 @@ pub enum KeyAction {
     Release,
 }
 
-/// A pointer event from the UI, forwarded to the program when it enabled
-/// mouse tracking. The engine encodes it in whatever protocol the program
-/// negotiated (X10, SGR, …); events the current tracking mode doesn't want
-/// (e.g. motion under click-only mode 1000) produce no bytes.
+/// A pointer event from the UI, forwarded to the program when it enabled mouse
+/// tracking, in whatever protocol it negotiated (X10, SGR, …). Events the
+/// current tracking mode doesn't want produce no bytes.
 #[derive(Debug, Clone, Copy)]
 pub struct MouseInput {
     pub action: MouseAction,
@@ -159,9 +157,8 @@ pub enum MouseButton {
     Right,
 }
 
-/// Cap on mouse-wheel reports emitted for one wheel gesture. Bounds the
-/// bytes a single high-delta event (a wheel fling, a coalesced touchpad
-/// swipe) can inject into the application's input stream.
+/// Cap on mouse-wheel reports per gesture — bounds what a single high-delta
+/// event (a fling, a coalesced touchpad swipe) can inject into the program.
 const MAX_WHEEL_REPORTS: u32 = 5;
 
 pub struct Engine {
@@ -180,15 +177,14 @@ pub struct Engine {
     /// Whether the pushed theme is dark (see [`Theme::dark`]); read by the
     /// color-scheme query callback registered in [`Engine::new`].
     dark: Rc<StdCell<bool>>,
-    /// Watches the byte feed for OSC 52 set-clipboard sequences (libghostty-vt
-    /// exposes no clipboard callback); decoded copies are drained by
-    /// [`Engine::take_clipboard`].
+    /// Watches the byte feed for OSC 52 set-clipboard sequences; libghostty-vt
+    /// exposes no clipboard callback.
     osc52: Osc52Scanner,
     /// Watches the byte feed for OSC 10/11 color queries, which libghostty-vt
     /// does not answer; [`Engine::feed`] synthesizes the replies.
     osc_color: OscColorScanner,
-    /// Watches the byte feed for OSC 9/777 desktop notifications (no payload
-    /// or callback in libghostty-vt); drained by [`Engine::take_notifications`].
+    /// Watches the byte feed for OSC 9/777 desktop notifications, which
+    /// libghostty-vt carries no payload or callback for.
     osc_notify: OscNotifyScanner,
     /// Cell pixel dimensions from the last resize — answers XTWINOPS size
     /// queries (CSI 14/16 t).
@@ -202,10 +198,8 @@ pub struct Engine {
     /// Force the next render to be a full frame (selection changed).
     force_full: bool,
     /// Cursor state as of the last emitted frame. libghostty-vt's dirty
-    /// tracking only covers cell/row content, not the cursor — a pure
-    /// cursor move (arrow keys with no cell writes) leaves `dirty()` clean,
-    /// so without this a frame would never go out and the cursor would
-    /// appear stuck until the next keystroke actually touched a cell.
+    /// tracking covers cell content only, so a pure cursor move leaves
+    /// `dirty()` clean and the cursor would appear stuck without this.
     last_cursor: Option<Cursor>,
 }
 
@@ -284,12 +278,10 @@ impl Engine {
     }
 
     /// Encode a keystroke against live terminal state and queue the bytes for
-    /// the PTY. The encoder speaks whatever the program negotiated — kitty
-    /// keyboard protocol (Claude Code's Shift+Enter), legacy xterm for
-    /// readline, DECCKM application cursor keys, keypad application mode,
-    /// modifyOtherKeys — because its options are re-read from the terminal on
-    /// every event. A keystroke the current mode set doesn't encode (e.g. a
-    /// bare modifier without kitty REPORT_ALL) simply produces no bytes.
+    /// the PTY. The encoder speaks whatever the program negotiated (kitty
+    /// keyboard, legacy xterm, DECCKM, keypad, modifyOtherKeys) because its
+    /// options are re-read from the terminal on every event. A keystroke the
+    /// current mode set doesn't encode simply produces no bytes.
     pub fn key(&mut self, event: &KeyEvent) -> Result<()> {
         self.key_encoder.set_options_from_terminal(&self.term);
 
@@ -322,12 +314,10 @@ impl Engine {
         }
         ev.set_mods(mods);
 
-        // A single-codepoint DOM `key` is the text the OS produced for this
-        // keystroke ("a", "A", "é", " "); named keys ("Enter", "ArrowUp")
-        // are multi-char and carry no text. Ctrl/Super chords produce no
-        // text event on a real terminal, so they get no utf8 either — the
-        // encoder derives control bytes from the key identity. Shift (and
-        // caps lock) that shaped the text is reported consumed, kitty-style.
+        // A single-codepoint DOM `key` is the text the OS produced; named keys
+        // are multi-char and carry no text. Ctrl/Super chords get no utf8
+        // either — the encoder derives control bytes from the key identity.
+        // Shift that shaped the text is reported consumed, kitty-style.
         let mut chars = event.key.chars();
         if let (Some(c), None) = (chars.next(), chars.next()) {
             if !event.ctrl && !event.meta {
@@ -372,17 +362,12 @@ impl Engine {
         Ok(())
     }
 
-    /// Encode pasted text for the shell and queue it on the PTY-bound output.
-    /// libghostty's encoder strips unsafe control bytes — most importantly an
-    /// embedded bracketed-paste terminator (`ESC [ 201 ~`), which would
-    /// otherwise let crafted clipboard content escape the paste bracket and
-    /// inject commands — and wraps the text in `ESC[200~`/`ESC[201~` when the
-    /// application negotiated bracketed paste (mode 2004); newlines become
-    /// CRs otherwise.
-    ///
-    /// With bracketed paste off and a newline in the text, pasting would run
-    /// commands in the shell immediately — unless `force`, nothing is written
-    /// and [`PasteOutcome::NeedsConfirm`] tells the caller to ask the user.
+    /// Encode pasted text and queue it on the PTY-bound output. libghostty's
+    /// encoder strips an embedded bracketed-paste terminator, which would
+    /// otherwise let crafted clipboard content escape the bracket and inject
+    /// commands. With bracketed paste off and a newline in the text, pasting
+    /// would run commands immediately — unless `force`, nothing is written and
+    /// [`PasteOutcome::NeedsConfirm`] tells the caller to ask the user.
     pub fn paste(&mut self, text: &str, force: bool) -> Result<PasteOutcome> {
         let bracketed = self.term.mode(Mode::BRACKETED_PASTE)?;
         if !bracketed && !force && !libghostty_vt::paste::is_safe(text) {
@@ -412,11 +397,9 @@ impl Engine {
         self.osc52.feed(bytes);
         self.osc_color.feed(bytes);
         self.osc_notify.feed(bytes);
-        // Answer OSC 10/11 color queries libghostty leaves unanswered, from
-        // the *effective* colors — a program's own OSC set-override wins over
-        // the pushed theme, matching xterm. An unreadable color (FFI error or
-        // genuinely unset) skips the reply; the program times out like it
-        // would on a dumb terminal.
+        // Answer OSC 10/11 color queries libghostty leaves unanswered, from the
+        // *effective* colors — a program's own OSC set-override wins over the
+        // pushed theme, matching xterm. An unreadable color skips the reply.
         for (query, term) in self.osc_color.take() {
             let color = match query {
                 ColorQuery::Foreground => self.term.fg_color(),
@@ -559,16 +542,12 @@ impl Engine {
         Ok(())
     }
 
-    /// A mouse-wheel gesture at viewport cell (`x`, `y`), `lines` rows (up is
-    /// negative). The engine owns the whole policy:
-    ///
-    /// 1. Scrolled back into history: the wheel pages our scrollback.
-    /// 2. Mouse tracking negotiated: wheel reports (buttons 4/5) in the
-    ///    program's protocol, one per line, capped at [`MAX_WHEEL_REPORTS`].
-    /// 3. Alternate screen with alternate-scroll (mode 1007): arrow keys via
-    ///    the key encoder (so DECCKM is honored), same cap.
-    /// 4. Otherwise: scroll our viewport (no-op on the alt screen, which has
-    ///    no scrollback).
+    /// A mouse-wheel gesture at viewport cell (`x`, `y`). The engine owns the
+    /// whole policy, in order: scrolled back into history pages our scrollback;
+    /// negotiated mouse tracking sends wheel reports (buttons 4/5), one per
+    /// line, capped at [`MAX_WHEEL_REPORTS`]; alternate screen with mode 1007
+    /// sends arrow keys through the key encoder so DECCKM is honored, same cap;
+    /// otherwise scroll our viewport.
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32) -> Result<()> {
         if lines == 0 {
             return Ok(());

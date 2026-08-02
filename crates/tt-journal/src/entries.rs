@@ -154,15 +154,10 @@ fn weekday_vars(monday_date: NaiveDate) -> HashMap<&'static str, String> {
     vars
 }
 
-/// Append a timestamped line (`- HH:MM text`) into the daily note for `date`.
-///
-/// Resolves the daily-note path exactly like the CLI daily-notes flow
-/// ([`generate_journal_file_info`] with [`JournalType::DailyNotes`]): ensures the
-/// external templates exist, creates parent dirs, and creates the file from the daily
-/// template if it does not yet exist. The line is inserted at the end of today's
-/// `## <date>` day section (before the next `## ` header or EOF); if that section does
-/// not exist, a fresh `## <date> <weekday>` header plus the line is appended at EOF.
-/// Returns the path written to.
+/// Append a timestamped line (`- HH:MM text`) into the daily note for `date`, resolving
+/// the path exactly like the CLI daily-notes flow ([`generate_journal_file_info`] with
+/// [`JournalType::DailyNotes`]). The line lands at the end of today's `## <date>` section,
+/// or under a fresh `## <date> <weekday>` header at EOF if there is none.
 pub fn append_to_daily(
     journal_settings: &JournalSettings,
     date: NaiveDate,

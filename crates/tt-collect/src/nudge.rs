@@ -53,12 +53,9 @@ impl NudgeTarget {
 /// Write `target`'s nudge note: the timestamp, then the caller's app PTY
 /// session (`TT_SESSION_ID`) when it has one.
 ///
-/// The session is what lets several app instances share one nudge dir without
-/// all of them sweeping `gh` for a mutation that happened in exactly one of
-/// their terminals — see [`session_in`] for how the reader uses it.
-///
-/// # Errors
-/// Propagates any failure creating `dir` or writing the file.
+/// The session lets several app instances share one nudge dir without all of
+/// them sweeping `gh` for a mutation that happened in exactly one of their
+/// terminals — see [`session_in`] for how the reader uses it.
 pub fn write(
     dir: &Path,
     target: NudgeTarget,

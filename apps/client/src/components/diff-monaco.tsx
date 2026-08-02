@@ -30,7 +30,6 @@ import {
   type MentionRange,
 } from "@/lib/ide-selection";
 
-/** One changed file from `ab_get_diff_files` (tt_agentboard::DiffFile). */
 export type ChangedFile = {
   path: string;
   oldPath: string | null;
@@ -42,7 +41,6 @@ export type ChangedFile = {
   untrackedFiles: number;
 };
 
-/** `ab_get_diff_files`'s payload (tt_agentboard::DiffFiles). */
 export type ChangedFiles = {
   files: ChangedFile[];
   untrackedCap: { dir: string; files: number; total: boolean } | null;
@@ -56,11 +54,9 @@ type DocItem =
   import("@codingame/monaco-vscode-api/vscode/vs/editor/browser/widget/multiDiffEditor/multiDiffEditorViewModel").DocumentDiffItemViewModel;
 type TextModel = import("monaco-editor").editor.ITextModel;
 
-/** VS Code's multi-diff editor over the change set. Base sides are read-only
- * history; working-tree sides take typing once `editable` is on and autosave
- * after a pause, through CodeViewer's atomic mtime-guarded write. A conflicted
- * file never autosaves — the banner is the only way out. Refresh is a disk
- * watch (policy: `lib/viewer-refresh.ts`), `refreshKey` behind it. */
+/** Base sides are read-only history; working-tree sides take typing once
+ * `editable` is on and autosave after a pause — unless conflicted, where the
+ * banner is the only way out. */
 export function MonacoMultiDiff({
   dir,
   files,
@@ -81,13 +77,11 @@ export function MonacoMultiDiff({
   mode: string;
   baseBranch: string | null;
   refreshKey: string;
-  /** Moves only when the *baseline* can have, so a keystroke-driven stats
-   * bump doesn't refetch every read-only base side. */
+  /** Moves only when the *baseline* can have, so a keystroke-driven stats bump
+   * doesn't refetch every read-only base side. */
   baseKey: string;
-  /** Off by default, so reading a diff can't edit the files by accident. */
   editable: boolean;
   connected?: boolean;
-  /** Jump-to-file, handed back once the widget is up; null on teardown. */
   registerReveal?: (reveal: ((path: string) => void) | null) => void;
   reviewed: ReadonlySet<string>;
   onToggleReviewed?: (path: string) => void;
@@ -97,31 +91,25 @@ export function MonacoMultiDiff({
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  /** Disk moved under unsaved edits. `conflictsRef` mirrors it: state alone
-   * can't answer "already marked?" mid-callback. */
+  /** Mirrored in `conflictsRef`: state can't answer "already marked?" mid-callback. */
   const [conflicts, setConflictsState] = useState<ReadonlySet<string>>(() => new Set());
   const conflictsRef = useRef<Set<string>>(new Set());
-  /** A disk reload is landing — not typing. The saved-version token only
-   * catches up after the edit, so listeners need the flag. */
+  /** A disk reload, not typing — the saved-version token lags the edit. */
   const applyingDiskRef = useRef(false);
   const autosaveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const saveChainsRef = useRef<Map<string, Promise<void>>>(new Map());
-  /** Held across a rebuild: agent-triggered disposal must not stand in for
-   * the user's choice. */
+  /** Held across a rebuild: agent-triggered disposal isn't the user's choice. */
   const conflictCarryRef = useRef<Map<string, string>>(new Map());
-  /** The baseKey already in the models, stamped as of the fetch's *start* so
-   * a baseline that moves mid-fetch re-fires rather than being skipped. */
+  /** Stamped as of the fetch's *start*, so a baseline that moves mid-fetch re-fires. */
   const appliedBaseKeyRef = useRef<string | null>(null);
   const [selection, setSelection] = useState<{ path: string; range: MentionRange } | null>(null);
   const mentionRef = useRef<() => void>(() => {});
   const widgetRef = useRef<Widget | null>(null);
   const viewModelRef = useRef<ViewModel | null>(null);
-  // Keyed by `ChangedFile.path`, so reviewed-sync collapses one file in place.
   const itemsByPathRef = useRef<Map<string, DocItem> | null>(null);
   const checkboxesByPathRef = useRef<Map<string, HTMLInputElement>>(new Map());
   const modelsRef = useRef<Map<string, { original?: TextModel; modified?: TextModel }>>(new Map());
-  // As of the last successful save: together they answer "unsaved edits?" and
-  // supply the next save's `expectedMtimeMs`.
+  // As of the last save: "unsaved edits?" and the next `expectedMtimeMs`.
   const mtimesRef = useRef<Map<string, number | null>>(new Map());
   const savedVersionsRef = useRef<Map<string, number>>(new Map());
   // What the IDE bridge was told is dirty, so teardown clears exactly that.
@@ -136,8 +124,7 @@ export function MonacoMultiDiff({
   // `setUri` fires on row reuse, after the construction closure went stale.
   const reviewedRef = useRef(reviewed);
   reviewedRef.current = reviewed;
-  // Read through each item's getter, so toggling read-only re-renders the
-  // open editors instead of rebuilding and losing the scroll position.
+  // Read via each item's getter: a rebuild would lose the scroll position.
   const editableRef = useRef(editable);
   editableRef.current = editable;
   const [fontSize] = useEditorFontSize();
@@ -145,7 +132,6 @@ export function MonacoMultiDiff({
   fontSizeRef.current = fontSize;
   const optionsChangedRef = useRef<{ fire(): void } | null>(null);
 
-  // Collapse each reviewed file's diff and sync its header checkbox.
   const applyReviewedState = (
     currentFiles: ChangedFile[],
     currentReviewed: ReadonlySet<string>,
@@ -165,8 +151,7 @@ export function MonacoMultiDiff({
     }
   };
 
-  // Only on a real flip, so Claude's getOpenEditors sees this pane's edits as
-  // it sees the Files tab's. Also post-save, which can race typing.
+  // Only on a real flip, so Claude's getOpenEditors sees this pane like Files.
   const reportDirty = (path: string, model: TextModel) => {
     const isDirty = model.getAlternativeVersionId() !== savedVersionsRef.current.get(path);
     const wasDirty = dirtyReportedRef.current.has(path);
@@ -185,15 +170,13 @@ export function MonacoMultiDiff({
     }
   };
 
-  /** The one save path — ⌘S, autosave, "keep mine", the rebuild flush. The
-   * buffer is snapshotted now, but the write queues behind any in-flight save
-   * of the same path: overlapping writes race their mtime tokens. */
+  /** The one save path. The buffer is snapshotted now, but the write queues
+   * behind any in-flight save of the same path: they race their mtime tokens. */
   const saveFile = (path: string, model: TextModel): Promise<void> => {
     if (model.isDisposed()) return Promise.resolve();
     cancelAutosave(path);
     const snapshot = snapshotModel(model);
     const chain = (saveChainsRef.current.get(path) ?? Promise.resolve()).then(async () => {
-      // Read after the previous save refreshed it.
       const result = await saveBufferSnapshot(
         dir,
         path,
@@ -201,20 +184,18 @@ export function MonacoMultiDiff({
         mtimesRef.current.get(path) ?? null,
       );
       if (!result) return;
-      // A disposed model means the maps belong to the next generation, which
-      // read its own token. The write landed; stamping it now would lie.
+      // A disposed model means these maps belong to the next generation, which
+      // read their own token — the write landed, but stamping it here would lie.
       if (model.isDisposed()) return;
       mtimesRef.current.set(path, result.mtimeMs);
       savedVersionsRef.current.set(path, result.versionAtSave);
-      // The model's *current* version: typing during the write leaves it dirty.
       reportDirty(path, model);
     });
     saveChainsRef.current.set(path, chain);
     return chain;
   };
 
-  /** Every keystroke pushes the deadline out, so re-check at fire time: a
-   * clean buffer has nothing to save and a conflicted one must not. */
+  /** Re-checked at fire time: a clean buffer has nothing to save, a conflicted one must not. */
   const scheduleAutosave = (path: string, model: TextModel) => {
     cancelAutosave(path);
     autosaveTimersRef.current.set(
@@ -241,8 +222,7 @@ export function MonacoMultiDiff({
     onConflictChangeRef.current?.(path, inConflict);
   };
 
-  /** "Load theirs", in place. `pushEditOperations` rather than `setValue`, so
-   * undo history survives and an agent's edit stays undoable. */
+  /** `pushEditOperations`, not `setValue`, so an agent's edit stays undoable. */
   const applyDisk = (path: string, model: TextModel, content: string, mtimeMs: number | null) => {
     if (model.getValue() !== content) {
       applyingDiskRef.current = true;
@@ -283,7 +263,6 @@ export function MonacoMultiDiff({
   // Every conflicted file at once — too rare to deserve a second UI. "Mine"
   // re-arms the mtime token first, or the save hits its own conflict guard.
   const resolveConflicts = async (choice: "theirs" | "mine") => {
-    // Snapshot: `setConflict` below mutates the live set mid-loop.
     const conflicted = Array.from(conflictsRef.current);
     for (const path of conflicted) {
       const model = modelsRef.current.get(path)?.modified;
@@ -299,8 +278,6 @@ export function MonacoMultiDiff({
         }
         applyDisk(path, model, read.value.content, read.value.mtimeMs);
       } else {
-        // A stat is enough — only the mtime is used to re-arm the token
-        // before the buffer overwrites the disk.
         const stat = await ideStat(dir, path);
         mtimesRef.current.set(path, stat.isOk() ? stat.value.mtimeMs : null);
         setConflict(path, false);
@@ -309,8 +286,7 @@ export function MonacoMultiDiff({
     }
   };
 
-  // The widget rebuilds only when the file *set* changes, not on every
-  // content refresh — filesKey is stable across refetches of the same set.
+  // Stable across refetches of the same set, so content alone never rebuilds.
   const filesKey = files.map((f) => `${f.status}:${f.path}`).join("\n");
 
   useEffect(() => {
@@ -333,7 +309,6 @@ export function MonacoMultiDiff({
         const contents = await Promise.all(files.map((f) => fetchSides(dir, f, mode, baseBranch)));
         if (disposed || !containerRef.current) return;
 
-        // One emitter per generation: one fire re-applies the mode everywhere.
         const optionsChanged = new eventMod.Emitter<void>();
         disposables.push(optionsChanged);
         optionsChangedRef.current = optionsChanged;
@@ -358,8 +333,7 @@ export function MonacoMultiDiff({
             savedVersionsRef.current.set(f.path, entry.modified.getAlternativeVersionId());
             disposables.push(
               entry.modified.onDidChangeContent(() => {
-                // A programmatic disk reload is not typing: it must neither
-                // flap the dirty report nor arm an autosave.
+                // A disk reload must neither flap dirty nor arm an autosave.
                 if (applyingDiskRef.current) return;
                 reportDirty(f.path, entry.modified!);
                 scheduleAutosave(f.path, entry.modified!);
@@ -371,9 +345,8 @@ export function MonacoMultiDiff({
             original: entry.original,
             modified: entry.modified,
             // A getter, so `onOptionsDidChange` flips read-only without a
-            // rebuild. The console error about resolving the tt-diff-work:
-            // URI must stay: a content provider to quiet it hands out a
-            // counted handle whose disposal races ours and blanks the pane.
+            // rebuild. Leave the tt-diff-work: URI console error alone — a
+            // provider to quiet it blanks the pane on a disposal race.
             get options() {
               return {
                 readOnly: !editableRef.current,
@@ -388,8 +361,7 @@ export function MonacoMultiDiff({
         modelsRef.current = models;
         appliedBaseKeyRef.current = baseKey;
 
-        // Restore what the previous generation carried and re-raise the
-        // banner; a carry whose disk caught up just drops.
+        // Re-raise the previous generation's banner; a caught-up carry drops.
         for (const [path, carried] of conflictCarryRef.current) {
           const restored = models.get(path)?.modified;
           if (!restored || restored.isDisposed() || restored.getValue() === carried) continue;
@@ -405,9 +377,8 @@ export function MonacoMultiDiff({
         }
         conflictCarryRef.current = new Map();
 
-        // After the models exist, so no event races a half-built map. The
-        // sweep catches a write between the reads and the watch going live,
-        // which the line-count safety net can't see.
+        // After the models exist, so no event races a half-built map; the sweep
+        // catches a write between the reads and the watch going live.
         const watchedPaths = files.filter((f) => models.get(f.path)?.modified).map((f) => f.path);
         void ideWatchFiles(dir, watchedPaths).then((started) => {
           if (started.isErr() || disposed) return;
@@ -427,8 +398,7 @@ export function MonacoMultiDiff({
           {
             headerClickToCollapse: true,
             createResourceLabel: (element: HTMLElement) => {
-              // Twice per file on a rename; only the primary (VS Code's
-              // "modified" class) gets a checkbox, or it would show two.
+              // Twice per file on a rename; only the "modified" one gets a box.
               if (!element.classList.contains("modified")) {
                 return {
                   setUri(uri: { path: string } | undefined) {
@@ -441,7 +411,6 @@ export function MonacoMultiDiff({
               checkbox.type = "checkbox";
               checkbox.className = "mr-1.5 size-3 shrink-0 cursor-pointer accent-emerald-500";
               checkbox.title = "mark reviewed (collapses this file's diff)";
-              // The header toggles collapse on click; not this click.
               checkbox.addEventListener("click", (e) => e.stopPropagation());
               const text = document.createElement("span");
               element.replaceChildren(checkbox, text);
@@ -483,7 +452,6 @@ export function MonacoMultiDiff({
         widget.setViewModel(viewModel);
         viewModelRef.current = viewModel;
 
-        // Diff computation is async, and the rest of setup must not wait.
         void viewModel.waitForDiffOr1s().then(() => {
           if (disposed) return;
           const itemsByPath = new Map<string, DocItem>();
@@ -495,7 +463,6 @@ export function MonacoMultiDiff({
           applyReviewedState(files, reviewedRef.current);
         });
 
-        // The widget needs explicit layout; track the pane's size.
         const layout = () => {
           const el = containerRef.current;
           if (el && el.clientWidth > 0 && el.clientHeight > 0) {
@@ -507,7 +474,6 @@ export function MonacoMultiDiff({
         observer.observe(containerRef.current);
         disposables.push({ dispose: () => observer.disconnect() });
 
-        // Selection → Claude: the active file's modified-side selection.
         const wired = new WeakSet<object>();
         const wire = () => {
           const control = widget.getActiveControl();
@@ -517,8 +483,7 @@ export function MonacoMultiDiff({
           let debounce: ReturnType<typeof setTimeout> | undefined;
           disposables.push({ dispose: () => clearTimeout(debounce) });
 
-          // Reads the selection live, so the keystroke can't fire against a
-          // stale range.
+          // Read live, so the keystroke can't fire against a stale range.
           const mention = async () => {
             const path = diffWorkPath(dir, modified.getModel()?.uri);
             if (!path) return;
@@ -526,7 +491,6 @@ export function MonacoMultiDiff({
           };
           const sendFromThisEditor = () => void mention();
 
-          // Save-now: the same path autosave takes, minus the pause.
           const save = async () => {
             const model = modified.getModel();
             const path = diffWorkPath(dir, model?.uri);
@@ -554,11 +518,9 @@ export function MonacoMultiDiff({
           disposables.push(
             modified.onDidChangeCursorSelection(
               (e: import("monaco-editor").editor.ICursorSelectionChangedEvent) => {
-                // Outside the debounce, so the chip tracks immediately.
                 const path = diffWorkPath(dir, modified.getModel()?.uri);
                 if (!path) {
-                  // Nothing mentionable: drop the chip rather than leave it
-                  // `@ send`-ing whichever file was selected before.
+                  // Or the chip keeps `@ send`-ing the previous file.
                   setSelection(null);
                   return;
                 }
@@ -569,8 +531,7 @@ export function MonacoMultiDiff({
                   if (prev?.path === path && sameMentionRange(prev.range, next)) return prev;
                   return { path, range: next };
                 });
-                // Read now: the modified side is editable, so the backend
-                // can't recover this from disk if the model goes away.
+                // Read now: the backend can't recover an editable side from disk.
                 const sel = e.selection;
                 const text = sel.isEmpty() ? "" : (modified.getModel()?.getValueInRange(sel) ?? "");
                 clearTimeout(debounce);
@@ -615,9 +576,8 @@ export function MonacoMultiDiff({
 
     return () => {
       disposed = true;
-      // Flush before the models die: with autosave nobody thinks about
-      // saving. Off the dirty set, not the timers — a refused save has no
-      // timer and needs this most. A conflicted buffer is stashed instead.
+      // Flush before the models die, off the dirty set rather than the timers —
+      // a refused save has no timer and needs this most. Conflicts are stashed.
       for (const timer of autosaveTimersRef.current.values()) clearTimeout(timer);
       autosaveTimersRef.current = new Map();
       for (const path of dirtyReportedRef.current) {
@@ -639,13 +599,11 @@ export function MonacoMultiDiff({
       modelsRef.current = new Map();
       mtimesRef.current = new Map();
       savedVersionsRef.current = new Map();
-      // Nothing here is an editable buffer any more, so nothing reads dirty.
       for (const path of dirtyReportedRef.current) {
         void ideSetDiffDirty(dir, path, false);
         onDirtyChangeRef.current?.(path, false);
       }
       dirtyReportedRef.current = new Set();
-      // Same for conflict marks — the buffers they described are gone.
       for (const path of conflictsRef.current) onConflictChangeRef.current?.(path, false);
       conflictsRef.current = new Set();
       setConflictsState(new Set());
@@ -656,13 +614,11 @@ export function MonacoMultiDiff({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- filesKey stands in for files; refreshKey/reviewed apply in place below; registerReveal is an unmemoized prop excluded on purpose
   }, [dir, filesKey, mode, baseBranch]);
 
-  // Reviewing doesn't change a path or status letter, so the widget stands.
   useEffect(() => {
     applyReviewedState(files, reviewed);
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- files is read fresh via closure; only reviewed's change should re-run this
   }, [reviewed]);
 
-  // Re-read every bound editor's options; the getter answers with the new mode.
   useEffect(() => {
     optionsChangedRef.current?.fire();
   }, [editable, fontSize]);
@@ -684,8 +640,7 @@ export function MonacoMultiDiff({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- dir/mode/baseBranch/files are read from the closure at call time; only baseKey should refetch
   }, [baseKey]);
 
-  // The net behind the watch, for what it missed (inotify limits, a failed
-  // start). Same stat-first path, so one policy decides reload-vs-conflict.
+  // The net behind the watch, for inotify limits and a failed start.
   useEffect(() => {
     if (!widgetRef.current) return;
     for (const f of files) void onDiskChange(f.path);

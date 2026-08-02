@@ -29,11 +29,9 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
-/// `tt` with every state path pointed inside `home` under `scope`: tt-config
-/// resolves `~/.config` and the data dir through those, and a *forced* scope
-/// nests the shared stores too — so nothing reaches the real machine files.
-/// The one sandboxing shape in this file; tests that need to inspect the
-/// sandbox pass their own `home`, the rest go through [`tt`].
+/// `tt` with every state path pointed inside `home` under `scope` — a *forced* scope
+/// nests the shared stores too, so nothing reaches the real machine files. Tests that
+/// inspect the sandbox pass their own `home`; the rest go through [`tt`].
 fn tt_scoped(home: &Path, scope: &str) -> Tt {
     let mut cmd = Tt::cargo_bin("tt").expect("binary `tt` should build");
     cmd.env("HOME", home);
@@ -42,19 +40,16 @@ fn tt_scoped(home: &Path, scope: &str) -> Tt {
     cmd
 }
 
-/// One throwaway `$HOME` for the whole suite, alive for the process. `tt task
-/// new` writes a #339 board row through `Store::open_default()`, so without
-/// this the tests would persist rows into the developer's real data dir on
-/// every `cargo test` run.
+/// One throwaway `$HOME` for the whole suite. `tt task new` writes a board row through
+/// `Store::open_default()`, which would otherwise land in the developer's real data dir.
 fn tt() -> Tt {
     static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     let home = HOME.get_or_init(|| tempfile::tempdir().expect("sandbox home"));
     tt_scoped(home.path(), "tt-cli-black-box-tests")
 }
 
-/// `tt task new` for `branch` in `root`, titled after the branch. The branch is
-/// passed explicitly rather than left to the title slug so the task folder is
-/// the branch slug the assertions look for.
+/// `tt task new` for `branch` in `root`, titled after it. The branch is explicit rather
+/// than slugged from the title so the task folder is what the assertions look for.
 fn new_task(root: &str, branch: &str) -> Tt {
     let mut cmd = tt();
     cmd.args(["task", "new", branch, "--repo", root, "-b", branch]);
@@ -69,18 +64,14 @@ fn task_dir(checkout: &Path, name: &str) -> PathBuf {
 /// Width of one test's private port pool (see [`next_pool`]).
 const POOL_WIDTH: u16 = 20;
 
-/// First port of the whole range these tests carve their pools out of. Must
-/// sit BELOW the ephemeral range (Linux: 32768-60999): the bind probe can't
-/// tell a claimed dev server from a borrowed outbound source port, so an
-/// in-range pool makes the removal guard fire at random on a busy runner
-/// (bit for real with the old 42410 pool).
+/// First port of the range these tests carve pools out of. Must sit BELOW the ephemeral
+/// range (Linux: 32768-60999): the bind probe can't tell a claimed dev server from a
+/// borrowed outbound source port, so an in-range pool fires the guard at random.
 const POOL_FLOOR: u16 = 24410;
 
-/// A port pool no other test in this binary will touch, as a `${tt:port
-/// LO-HI}` token. A shared pool made concurrent tests' bind probes collide
-/// with *each other* (`AddrInUse` reads as a running dev server ⇒ spurious
-/// `ForeignPortListener` refusals, ~1 in 10 full-suite runs). Disjoint
-/// per-test windows remove the interference outright.
+/// A port pool no other test in this binary will touch. A shared pool made concurrent
+/// bind probes collide with each other — `AddrInUse` reads as a running dev server, so
+/// ~1 in 10 full-suite runs saw a spurious `ForeignPortListener` refusal.
 fn next_pool() -> String {
     static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(POOL_FLOOR);
     let lo = NEXT.fetch_add(POOL_WIDTH, std::sync::atomic::Ordering::Relaxed);
@@ -91,9 +82,8 @@ fn next_pool() -> String {
     format!("{lo}-{}", lo + POOL_WIDTH - 1)
 }
 
-/// The port window `checkout` was built with, read back from its committed
-/// `.env.example` — so a test can assert "the claim came from my pool"
-/// without knowing which window [`next_pool`] handed it.
+/// The port window `checkout` was built with, so a test can assert "the claim came from
+/// my pool" without knowing which window [`next_pool`] handed it.
 fn pool_of(checkout: &Path) -> std::ops::RangeInclusive<u64> {
     let template = std::fs::read_to_string(checkout.join(".env.example")).unwrap();
     let spec = template
@@ -105,12 +95,9 @@ fn pool_of(checkout: &Path) -> std::ops::RangeInclusive<u64> {
     lo.trim().parse().unwrap()..=hi.trim().parse().unwrap()
 }
 
-/// Build `<tmp>/demo` (a normal clone on main) whose committed
-/// `.env.example` carries `${tt:...}` tokens and a declared `TT_TASK_SETUP`
-/// that drops a marker so tests can prove setup ran in-task.
-///
-/// Returns the checkout; call [`pool_of`] for the port window it was built
-/// with when a test needs to assert on the rendered port.
+/// Build `<tmp>/demo` (a normal clone on main) whose committed `.env.example` carries
+/// `${tt:...}` tokens and a `TT_TASK_SETUP` that drops a marker, proving setup ran
+/// in-task. Call [`pool_of`] for the port window it was built with.
 fn make_checkout(tmp: &Path) -> PathBuf {
     let seed = tmp.join("seed");
     std::fs::create_dir_all(&seed).unwrap();
@@ -137,8 +124,6 @@ fn lifecycle_new_env_ls_rm() {
     let checkout = make_checkout(tmp.path());
     let root_s = checkout.to_string_lossy().to_string();
 
-    // new -b feat/thing → .claude/worktrees/thing on that branch, rendered
-    // .env + marker
     let out = new_task(&root_s, "feat/thing").arg("--json").output().unwrap();
     assert!(out.status.success(), "new failed: {}", String::from_utf8_lossy(&out.stderr));
     let created: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
@@ -169,8 +154,7 @@ fn lifecycle_new_env_ls_rm() {
         .output()
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "feat/thing");
-    // marker must not dirty the task's tree, and the nested worktrees dir
-    // must not dirty the main checkout's (info/exclude covers both)
+    // info/exclude must keep both the marker and the nested worktrees dir invisible.
     for dir in [&task, &checkout] {
         let porcelain = Command::new("git")
             .args(["-C", dir.to_str().unwrap(), "status", "--porcelain"])
@@ -184,7 +168,7 @@ fn lifecycle_new_env_ls_rm() {
         );
     }
 
-    // secrets inheritance: fill this task's SECRET, then create another
+    // Secrets inheritance: fill this task's SECRET, then create another.
     let filled = env.replace("SECRET=", "SECRET=hunter2");
     std::fs::write(task.join(".env"), filled).unwrap();
     new_task(&root_s, "fix/other").assert().success();
@@ -192,31 +176,28 @@ fn lifecycle_new_env_ls_rm() {
     assert!(env2.contains("SECRET=hunter2"), "new task inherits sibling secrets: {env2}");
     assert!(!env2.contains(&format!("UI_PORT={ui_port}")), "new task claims a different port");
 
-    // a second task for the same branch name is refused
     new_task(&root_s, "feat/thing").assert().failure().stderr(contains("already exists"));
 
-    // env re-render is idempotent: same port, secrets kept
+    // Re-render is idempotent: same port, secrets kept.
     tt().args(["task", "env", "feat-thing", "--root", &root_s]).assert().success();
     let env_again = std::fs::read_to_string(task.join(".env")).unwrap();
     assert!(env_again.contains(&format!("UI_PORT={ui_port}")), "re-render keeps the claim");
     assert!(env_again.contains("SECRET=hunter2"), "re-render keeps merged secrets");
 
-    // the main checkout renders its own .env too (it is a checkout like any
-    // other) — `primary` still names it
+    // The main checkout is a checkout like any other; `primary` names it.
     tt().args(["task", "env", "primary", "--root", &root_s]).assert().success();
     let env_primary = std::fs::read_to_string(checkout.join(".env")).unwrap();
     assert!(env_primary.contains("NAME=demo"), "env: {env_primary}");
     assert!(!checkout.join(".tt-task").exists(), "the main checkout gets no marker");
 
-    // running from inside a task anchors at the main checkout — no
-    // worktrees-inside-worktrees
+    // Running from inside a task anchors at the main checkout — no nested worktrees.
     let task_s = task.to_string_lossy().to_string();
     new_task(&task_s, "feat/from-inside").assert().success();
     assert!(task_dir(&checkout, "feat-from-inside").is_dir());
     assert!(!task_dir(&task, "feat-from-inside").exists());
     tt().args(["task", "rm", "feat-from-inside", "--root", &root_s]).assert().success();
 
-    // ls --json: the main checkout first, then tasks by name
+    // ls --json: the main checkout first, then tasks by name.
     let out = tt().args(["task", "ls", "--json", "--root", &root_s]).output().unwrap();
     let listed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let names: Vec<&str> =
@@ -225,7 +206,6 @@ fn lifecycle_new_env_ls_rm() {
     assert_eq!(listed[0]["primary"], true);
     assert_eq!(listed[0]["branch"], "main");
 
-    // rm a clean task succeeds and releases the dir; the branch survives
     tt().args(["task", "rm", "fix-other", "--root", &root_s]).assert().success();
     assert!(!task_dir(&checkout, "fix-other").exists());
     let branches = Command::new("git")
@@ -243,7 +223,6 @@ fn lifecycle_new_env_ls_rm() {
         "removing a task never deletes its branch"
     );
 
-    // the main checkout itself is not removable
     tt().args(["task", "rm", "primary", "--root", &root_s])
         .assert()
         .failure()
@@ -254,11 +233,9 @@ fn lifecycle_new_env_ls_rm() {
         .stderr(contains("refusing to remove the primary"));
 }
 
-/// The declared `TT_TASK_TEARDOWN` command must run against the task's own
-/// worktree while it still exists, right before `rm` deletes it — proven with
-/// a marker written *outside* the task dir (an absolute path baked in before
-/// the task even exists), since anything the command drops inside the task
-/// dir disappears along with it.
+/// `TT_TASK_TEARDOWN` must run against the task's own worktree while it still exists.
+/// The marker is written *outside* the task dir, since anything dropped inside it
+/// disappears along with it.
 #[test]
 fn rm_runs_the_declared_teardown_before_removing_the_worktree() {
     let tmp = tempfile::tempdir().unwrap();
@@ -278,16 +255,14 @@ fn rm_runs_the_declared_teardown_before_removing_the_worktree() {
     assert!(marker.is_file(), "TT_TASK_TEARDOWN must run before the worktree is removed");
 }
 
-/// The claim lock's own regression test: renders racing for *fresh* claims
-/// must come away with disjoint ports. Without the lock, all three scan
-/// siblings before any of them writes, and they pick the same port.
+/// The claim lock's regression test: without it, all three renders scan siblings
+/// before any writes, and pick the same port.
 #[test]
 fn concurrent_renders_claim_disjoint_ports() {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = make_checkout(tmp.path());
     let root_s = checkout.to_string_lossy().to_string();
-    // Own sandbox HOME (not the suite's shared one) so wiping the registry
-    // below can't disturb a concurrently running test's claims.
+    // Own sandbox HOME so wiping the registry below can't disturb a concurrent test.
     let home = tempfile::tempdir().unwrap();
     let scope = "race-test";
 
@@ -308,8 +283,7 @@ fn concurrent_renders_claim_disjoint_ports() {
         assert!(out.status.success(), "new failed: {}", String::from_utf8_lossy(&out.stderr));
     }
 
-    // Erase every trace of the claims — each `.env` and the registry — so
-    // the renders below genuinely race for fresh picks from the pool.
+    // Erase every trace of the claims so the renders below race for fresh picks.
     for name in names {
         std::fs::remove_file(task_dir(&checkout, &format!("feat-{name}")).join(".env")).unwrap();
     }
@@ -363,8 +337,7 @@ fn concurrent_renders_claim_disjoint_ports() {
     assert_eq!(distinct.len(), names.len(), "racing renders claimed colliding ports: {ports:?}");
 }
 
-/// `tt task ports --json` reports every claim with its owner/var/source, and
-/// flags a claim only the registry still knows (its `.env` deleted) as
+/// A claim only the registry still knows (its `.env` deleted) must report as
 /// `source: "registry"` — the drift row a doctor check keys off.
 #[test]
 fn ports_reports_claims_and_flags_env_registry_drift() {
@@ -397,7 +370,6 @@ fn ports_reports_claims_and_flags_env_registry_drift() {
     assert_eq!(row["source"], "env+registry");
     assert!(row["claimed_at_ms"].as_i64().unwrap() > 0, "registry stamped the claim time");
 
-    // Delete the task's .env: the claim survives as a registry-only row.
     std::fs::remove_file(task_dir(&checkout, "feat-ports").join(".env")).unwrap();
     let out = tt().args(["task", "ports", "--json", "--root", &root_s]).output().unwrap();
     let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -409,7 +381,6 @@ fn ports_reports_claims_and_flags_env_registry_drift() {
         .expect("registry keeps the claim visible");
     assert_eq!(row["source"], "registry");
 
-    // --probe on a port we hold open must read occupied.
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let held = listener.local_addr().unwrap().port();
     let out =
@@ -418,10 +389,8 @@ fn ports_reports_claims_and_flags_env_registry_drift() {
     assert_eq!(probe["occupied"], true);
 }
 
-/// The port registry's reason to exist: a sibling task whose `.env` is gone
-/// (deleted by hand, corrupted) must keep its claimed ports off the table —
-/// the live sibling-`.env` scan alone would hand them straight to the next
-/// task.
+/// The port registry's reason to exist: a sibling whose `.env` is gone must keep its
+/// claimed ports off the table, which the live sibling scan alone cannot do.
 #[test]
 fn new_task_avoids_ports_registered_to_a_sibling_whose_env_file_is_gone() {
     let tmp = tempfile::tempdir().unwrap();
@@ -446,12 +415,8 @@ fn new_task_avoids_ports_registered_to_a_sibling_whose_env_file_is_gone() {
     );
 }
 
-/// Creating a task narrates each step as it starts, in the order they run.
-///
-/// Order is the claim, not presence: the point of narrating is to say which
-/// step is running *now*. The app's rail shares this callback and these
-/// labels, so asserting here covers both. (Narration is text-mode only —
-/// every `--json` case above parses stdout and would fail if it leaked.)
+/// Order is the claim, not presence: narrating exists to say which step runs *now*.
+/// The app's rail shares this callback and these labels, so asserting here covers both.
 #[test]
 fn new_task_narrates_each_step_in_order() {
     let tmp = tempfile::tempdir().unwrap();
@@ -478,10 +443,9 @@ fn new_task_narrates_each_step_in_order() {
     }
 }
 
-/// `--repo` may point anywhere inside the checkout — including one of its own
-/// worktrees. The worktree always anchors at the main checkout, and the board
-/// row's `repo` must anchor there too: recorded as the nested path it would key
-/// the Board card to a swimlane matching no repo on the rail.
+/// `--repo` may point anywhere inside the checkout, including one of its own worktrees.
+/// The board row's `repo` must still anchor at the main checkout: a nested path keys the
+/// Board card to a swimlane matching no repo on the rail.
 #[test]
 fn new_records_the_main_checkout_as_the_repo_even_when_repo_points_inside_a_task() {
     let tmp = tempfile::tempdir().unwrap();
@@ -504,11 +468,8 @@ fn new_records_the_main_checkout_as_the_repo_even_when_repo_points_inside_a_task
     assert_eq!(created["dir"], task_dir(&checkout, "feat-second").to_string_lossy().as_ref());
 }
 
-/// A task created with `--base <non-default>` records *that* ref, not the
-/// main checkout's currently-checked-out branch, in both the rendered
-/// `.env`'s `${tt:base}` token and the `.tt-task` marker — and re-rendering
-/// later (`tt task env`) must not let that drift even if the checkout's
-/// branch has since changed.
+/// `--base <non-default>` records *that* ref in both `${tt:base}` and the `.tt-task`
+/// marker, not the checkout's current branch — and a later re-render must not drift.
 #[test]
 fn new_with_base_records_the_actual_base_not_the_primary_branch() {
     let tmp = tempfile::tempdir().unwrap();
@@ -538,10 +499,7 @@ fn new_with_base_records_the_actual_base_not_the_primary_branch() {
     let marker = std::fs::read_to_string(task.join(".tt-task")).unwrap();
     assert!(marker.contains("base=develop"), "marker: {marker}");
 
-    // The main checkout switches branches after the task was created (its
-    // "current branch" is no longer `develop`, or even `main`) —
-    // re-rendering the task's env must still report the base it was
-    // actually created from.
+    // The checkout's current branch is now neither `develop` nor `main`.
     git(&checkout, &["checkout", "-b", "unrelated"]);
     tt().args(["task", "env", "feat-off-develop", "--root", &root_s]).assert().success();
     let env_again = std::fs::read_to_string(task.join(".env")).unwrap();
@@ -550,10 +508,8 @@ fn new_with_base_records_the_actual_base_not_the_primary_branch() {
     assert!(marker_again.contains("base=develop"), "re-render marker: {marker_again}");
 }
 
-/// If the checkout's base branch has fallen behind `origin/<base>` (the user
-/// hasn't pulled `main` in a while), `new` fast-forwards it before branching
-/// — so the new task starts from current history instead of needing a
-/// rebase the moment it next syncs with base.
+/// A base behind `origin/<base>` is fast-forwarded before branching, so the task starts
+/// from current history instead of owing a rebase the moment it syncs.
 #[test]
 fn new_fast_forwards_a_base_behind_origin() {
     let tmp = tempfile::tempdir().unwrap();
@@ -561,8 +517,7 @@ fn new_fast_forwards_a_base_behind_origin() {
     let root_s = checkout.to_string_lossy().to_string();
     let seed = tmp.path().join("seed");
 
-    // origin (seed) moves on after the checkout cloned it — a real-world
-    // "someone merged to main since I last pulled" scenario.
+    // "Someone merged to main since I last pulled."
     std::fs::write(seed.join("upstream.txt"), "new on origin\n").unwrap();
     git(&seed, &["add", "upstream.txt"]);
     git(&seed, &["commit", "-m", "upstream moves on"]);
@@ -574,7 +529,6 @@ fn new_fast_forwards_a_base_behind_origin() {
 
     new_task(&root_s, "feat/thing").assert().success();
 
-    // the checkout's local `main` was fast-forwarded to match origin...
     let local_head = Command::new("git")
         .args(["-C", checkout.to_str().unwrap(), "rev-parse", "main"])
         .output()
@@ -586,15 +540,12 @@ fn new_fast_forwards_a_base_behind_origin() {
         "the checkout's main should be fast-forwarded to origin/main"
     );
 
-    // ...so the new task branches from that current history, not the stale
-    // commit the checkout had when the task command started
+    // The task branches from that history, not the stale commit the checkout had.
     assert!(task_dir(&checkout, "feat-thing").join("upstream.txt").is_file());
 }
 
-/// When the checkout's base branch has diverged from `origin/<base>` (both
-/// moved independently), a plain fast-forward is impossible — `new` must
-/// warn rather than fail, and still create the task off the local history as
-/// it always did before this check existed.
+/// A base diverged from `origin/<base>` can't be fast-forwarded: `new` must warn rather
+/// than fail, and still create the task off local history.
 #[test]
 fn new_warns_but_still_creates_when_base_diverged_from_origin() {
     let tmp = tempfile::tempdir().unwrap();
@@ -602,13 +553,11 @@ fn new_warns_but_still_creates_when_base_diverged_from_origin() {
     let root_s = checkout.to_string_lossy().to_string();
     let seed = tmp.path().join("seed");
 
-    // origin moves on...
     std::fs::write(seed.join("upstream.txt"), "origin work\n").unwrap();
     git(&seed, &["add", "upstream.txt"]);
     git(&seed, &["commit", "-m", "upstream moves on"]);
 
-    // ...and so does the local main, independently — a genuine divergence a
-    // fast-forward can't resolve.
+    // Local main moves independently — a genuine divergence.
     std::fs::write(checkout.join("local.txt"), "local work\n").unwrap();
     git(&checkout, &["add", "local.txt"]);
     git(&checkout, &["commit", "-m", "local work"]);
@@ -619,18 +568,14 @@ fn new_warns_but_still_creates_when_base_diverged_from_origin() {
         .stdout(contains("diverged from origin/main"))
         .stdout(contains("could not be fast-forwarded"));
 
-    // creation still succeeds, branching off the checkout's own (unmoved)
-    // local main rather than blocking on the divergence
+    // Branched off the checkout's own local main rather than blocking.
     let task = task_dir(&checkout, "feat-thing");
     assert!(task.join("local.txt").is_file());
     assert!(!task.join("upstream.txt").is_file());
 }
 
-/// A repo with neither a tokenized `.env.example` nor the
-/// `.claude/task-env.template` sidecar — any plain checkout never onboarded
-/// onto tasks — must still get a task: the render falls back to an empty
-/// template (empty `.env`, no port claims) instead of failing with the old
-/// "no template" error (hit for real creating toolbox tasks from the app).
+/// A plain checkout never onboarded onto tasks must still get one: the render falls
+/// back to an empty template instead of the old "no template" error.
 #[test]
 fn new_works_in_a_repo_with_no_template() {
     let tmp = tempfile::tempdir().unwrap();
@@ -651,22 +596,19 @@ fn new_works_in_a_repo_with_no_template() {
     let env = std::fs::read_to_string(task.join(".env")).unwrap();
     assert!(env.trim().is_empty(), "nothing to template → an empty .env, got: {env}");
 
-    // re-rendering the templateless task stays a no-op, not an error
+    // Re-rendering a templateless task stays a no-op, not an error.
     tt().args(["task", "env", "feat-thing", "--root", &root_s]).assert().success();
 }
 
-/// A `new` that fails after `git worktree add` (e.g. a template render
-/// error) must roll the worktree back — leaving one behind blocks every
-/// retry with a bogus "already exists" and hides the failed attempt from
-/// `task ls`.
+/// A `new` that fails after `git worktree add` must roll the worktree back — one left
+/// behind blocks every retry with a bogus "already exists".
 #[test]
 fn new_rolls_back_the_worktree_when_env_render_fails() {
     let tmp = tempfile::tempdir().unwrap();
     let seed = tmp.path().join("seed");
     std::fs::create_dir_all(&seed).unwrap();
     git(tmp.path(), &["init", "seed"]);
-    // a committed .env.example with a malformed ${tt:...} token — the render
-    // is a hard error, and it happens after the worktree already exists
+    // A malformed token: a hard render error, hit after the worktree exists.
     std::fs::write(seed.join(".env.example"), "X=${tt:prot 3000-3010}\n").unwrap();
     git(&seed, &["add", "."]);
     git(&seed, &["commit", "-m", "seed"]);
@@ -674,8 +616,7 @@ fn new_rolls_back_the_worktree_when_env_render_fails() {
     let checkout = tmp.path().join("demo");
     let root_s = checkout.to_string_lossy().to_string();
 
-    // the error names the template file and the offending line, so the fix
-    // is actionable straight from the message
+    // The error names the template and the offending line, so the fix is actionable.
     new_task(&root_s, "feat/thing")
         .assert()
         .failure()
@@ -693,10 +634,7 @@ fn new_rolls_back_the_worktree_when_env_render_fails() {
         "git must not still track the rolled-back worktree"
     );
 
-    // fixing the template lets the SAME branch be retried — the rollback
-    // deleted the branch it had just created along with the worktree, so
-    // nothing from the failed attempt blocks the redo (hit for real
-    // migrating the blog repo: fix template, retry, "already exists")
+    // The rollback deleted the branch too, so the SAME branch can be retried.
     std::fs::write(checkout.join(".env.example"), "NAME=${tt:task-name}\n").unwrap();
     git(&checkout, &["add", ".env.example"]);
     git(&checkout, &["commit", "-m", "fix template"]);
@@ -712,9 +650,8 @@ fn rm_guards_dirty_and_orphan_commits() {
     new_task(&root_s, "feat/work").assert().success();
     let task = task_dir(&checkout, "feat-work");
 
-    // dirty tree refuses — and says what to do about it, not just what's
-    // wrong: a refusal with no next step is the dead end this output exists
-    // to avoid (the app's blocked-delete dialog renders the same two halves).
+    // A refusal must say what to do next, not only what is wrong — the app's
+    // blocked-delete dialog renders the same two halves.
     std::fs::write(task.join("junk.txt"), "wip").unwrap();
     tt().args(["task", "rm", "feat-work", "--root", &root_s])
         .assert()
@@ -725,8 +662,7 @@ fn rm_guards_dirty_and_orphan_commits() {
         .stderr(contains("discards the work above"));
     std::fs::remove_file(task.join("junk.txt")).unwrap();
 
-    // a commit on a detached HEAD would be orphaned by removal → refused
-    // (tasks are created on branches, but a checkout can end up detached)
+    // A commit on a detached HEAD would be orphaned by removal → refused.
     git(&task, &["checkout", "--detach"]);
     std::fs::write(task.join("work.txt"), "real work").unwrap();
     git(&task, &["add", "work.txt"]);
@@ -736,13 +672,11 @@ fn rm_guards_dirty_and_orphan_commits() {
         .failure()
         .stderr(contains("orphan"));
 
-    // parking the commit on a branch makes removal safe (branches live in the
-    // main checkout's .git)
+    // Parking the commit on a branch makes removal safe.
     git(&task, &["branch", "parked/detached-work"]);
     tt().args(["task", "rm", "feat-work", "--root", &root_s]).assert().success();
     assert!(!task.exists());
 
-    // --force path: recreate, dirty it, force through
     new_task(&root_s, "feat/redo").assert().success();
     std::fs::write(task_dir(&checkout, "feat-redo").join("junk.txt"), "wip").unwrap();
     tt().args(["task", "rm", "feat-redo", "--force", "--root", &root_s])
@@ -752,9 +686,8 @@ fn rm_guards_dirty_and_orphan_commits() {
     assert!(!task_dir(&checkout, "feat-redo").exists());
 }
 
-/// Committed-but-unlanded work does not block removal — the branch keeps it —
-/// but the two must never be confused with each other, so removal says which
-/// one it is instead of reporting a bare success.
+/// Committed-but-unlanded work does not block removal — the branch keeps it — but
+/// removal must say so rather than report a bare success.
 #[test]
 fn rm_reports_unlanded_commits_it_does_not_block_on() {
     let tmp = tempfile::tempdir().unwrap();
@@ -797,16 +730,14 @@ fn rm_reports_a_merged_branch_as_having_nothing_outstanding() {
 
     new_task(&root_s, "feat/landed").assert().success();
     let task = task_dir(&checkout, "feat-landed");
-    // Two commits: squashing a single commit yields a patch-identical one,
-    // which is genuinely indistinguishable from a rebase (and reports as
-    // such). Collapsing several is what only the tree probe can recognise.
+    // Two commits: squashing one yields a patch-identical commit, indistinguishable
+    // from a rebase. Collapsing several is what only the tree probe recognises.
     std::fs::write(task.join("a.txt"), "a").unwrap();
     git(&task, &["add", "a.txt"]);
     git(&task, &["commit", "-m", "a"]);
     std::fs::write(task.join("b.txt"), "b").unwrap();
     git(&task, &["add", "b.txt"]);
     git(&task, &["commit", "-m", "b"]);
-    // Squash it onto main the way a merged PR would, under a fresh SHA.
     git(&checkout, &["merge", "--squash", "feat/landed"]);
     git(&checkout, &["commit", "-m", "squashed feat/landed (#1)"]);
 
@@ -821,23 +752,20 @@ fn rm_untracks_the_task_and_removes_its_instance_state() {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = make_checkout(tmp.path());
     let root_s = checkout.to_string_lossy().to_string();
-    // This test asserts on the sandbox's contents, so it needs its own
-    // inspectable `$HOME` rather than the suite's throwaway one.
+    // Asserts on the sandbox's contents, so it needs its own inspectable `$HOME`.
     let home = tmp.path().join("home");
 
     new_task(&root_s, "feat/tracked").assert().success();
     let task = task_dir(&checkout, "feat-tracked");
 
-    // Give the task checkout this repo's scope marker (committed, so the tree
-    // stays clean for the removal guards): its state scope becomes
-    // `demo-feat-tracked` (main checkout dir name + task name).
+    // The scope marker, committed so the tree stays clean for the removal guards; the
+    // task's state scope becomes `demo-feat-tracked`.
     std::fs::create_dir_all(task.join("crates").join("tt-config")).unwrap();
     std::fs::write(task.join("crates").join("tt-config").join(".gitkeep"), "").unwrap();
     git(&task, &["add", "."]);
     git(&task, &["commit", "-m", "scope marker"]);
 
-    // The app tracks tasks it creates: simulate that in the sandboxed
-    // repos.json, alongside a repo that must survive the removal.
+    // The app tracks tasks it creates; the other repo must survive the removal.
     let shared = home.join(".config").join("towles-tool").join("tasks").join("rm-test");
     let repos_json = shared.join("agentboard").join("repos.json");
     std::fs::create_dir_all(repos_json.parent().unwrap()).unwrap();
@@ -874,12 +802,10 @@ fn rm_untracks_the_task_and_removes_its_instance_state() {
     );
 }
 
-/// A row lives wherever the creating instance was scoped — here the ambient
-/// cwd's worktree, which `tt task rm` must find via the same ambient scope.
-/// The fixture deliberately does NOT put the row at the removed task's own
-/// scope (`state_cleanup` wipes that wholesale, so the test would pass even
-/// against the bug), and runs with no forced `TT_STATE_SCOPE` so scope
-/// resolution is the real auto-detection.
+/// A row lives wherever the creating instance was scoped — here the ambient cwd's
+/// worktree, which `tt task rm` must find the same way. The fixture deliberately does
+/// NOT put the row at the removed task's own scope: `state_cleanup` wipes that
+/// wholesale, so the test would pass even against the bug.
 #[test]
 fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     let tmp = tempfile::tempdir().unwrap();
@@ -888,18 +814,14 @@ fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     let home = tmp.path().join("home");
     let data_home = home.join(".local").join("share");
 
-    // The primary checkout gets its own scope marker too — mirrors this
-    // repo's own self-hosting quirk (`task_scope_from_dir` scopes the main
-    // checkout by its own dir name, not only its worktrees).
+    // `task_scope_from_dir` scopes the main checkout by its own dir name too.
     std::fs::create_dir_all(checkout.join("crates").join("tt-config")).unwrap();
     std::fs::write(checkout.join("crates").join("tt-config").join(".gitkeep"), "").unwrap();
     git(&checkout, &["add", "."]);
     git(&checkout, &["commit", "-m", "primary scope marker"]);
 
-    // No `TT_STATE_SCOPE` — real scope auto-detection, the condition this bug
-    // needs to reproduce (a forced scope, as every other test in this file
-    // uses for sandboxing, would make every store resolve to the same path
-    // and hide the bug).
+    // No `TT_STATE_SCOPE`: a forced scope resolves every store to one path and hides
+    // the bug, so this needs real auto-detection.
     let cmd = || {
         let mut c = Tt::cargo_bin("tt").expect("binary `tt` should build");
         c.env("HOME", &home);
@@ -907,10 +829,8 @@ fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
         c
     };
 
-    // The "container" task: stands in for the worktree a real dev-loop app
-    // instance is running from. Created (and left alone) through the normal
-    // ambient-cwd path — its own worktree inherits the primary's `tt-config`
-    // marker, so it gets its own real scope, `demo-feat-container`.
+    // The "container" task stands in for the worktree a real app instance runs from; it
+    // inherits the primary's marker, so it gets its own scope, `demo-feat-container`.
     cmd()
         .args([
             "task",

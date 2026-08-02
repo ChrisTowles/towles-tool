@@ -62,10 +62,8 @@ function base(): UserSettings {
 }
 
 /**
- * Stand-in for the settings file. `load` hands back a *copy*, so a writer that
- * holds a stale snapshot is caught rather than silently reading its own cached
- * value, and `save` is deliberately slow — a write that isn't instantaneous is
- * what exposes two flushes overlapping.
+ * `load` hands back a *copy* so a stale snapshot is caught, and `save` is
+ * deliberately slow — that is what exposes two flushes overlapping.
  */
 function fakeDisk() {
   let stored = base();

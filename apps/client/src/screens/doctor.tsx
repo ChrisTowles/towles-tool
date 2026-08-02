@@ -18,12 +18,9 @@ import { uiAction } from "@/lib/ui-action";
 import { useAsyncRefresh } from "@/lib/use-async-refresh";
 import { Empty, Panel } from "@/components/store-bits";
 
-/**
- * Doctor — the same environment checks as `tt doctor` (shared `tt-doctor`
- * crate): tool versions, gh auth, required Claude plugins, and the
- * agentboard/data-hub state. The probes spawn ~10 subprocesses, so runs are
- * on-demand (mount + Refresh), never on a timer.
- */
+/** Doctor — the same environment checks as `tt doctor` (shared `tt-doctor`
+ * crate). The probes spawn ~10 subprocesses, so runs are on-demand
+ * (mount + Refresh), never on a timer. */
 
 type CheckResult = { name: string; version: string | null; ok: boolean; warning?: string };
 type NameOk = { name: string; ok: boolean };

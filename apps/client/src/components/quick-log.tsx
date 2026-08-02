@@ -14,12 +14,9 @@ function reportCaptureError(error: IpcError) {
   else toast.error(error.message);
 }
 
-/**
- * ⌘J quick log: one line straight into today's journal note, or — with a leading
- * `/todo ` / `/t ` prefix — a new Board todo. Opens on the `quicklog:open` window
- * event (dispatched from the App-level shortcut) so the dialog can live anywhere
- * without threading state through the workspace.
- */
+/** ⌘J quick log: one line into today's journal note, or a Board todo with a
+ * leading `/todo ` / `/t `. Opens on the `quicklog:open` window event so the
+ * dialog can live anywhere without threading state through the workspace. */
 export function QuickLog() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");

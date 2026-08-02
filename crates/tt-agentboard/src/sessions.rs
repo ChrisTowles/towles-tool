@@ -106,14 +106,12 @@ impl SessionStore {
         false
     }
 
-    /// Append a new session to a folder. `name` defaults to `shell <n>`, where
-    /// `<n>` comes from a per-folder counter that only ever increases — a
-    /// removed session's number is never reused, so numbers can't collide or
-    /// silently repeat across add/remove cycles. The counter bumps on every
-    /// add (named or not) and salts the id, so an add/remove/add cycle within
-    /// one millisecond still yields distinct ids — an id reuse would let a
-    /// stale agent-event/PTY-exit race attribute to the wrong (newly created)
-    /// session. Returns the created record. Caller persists.
+    /// Append a new session to a folder. `name` defaults to `shell <n>` from a
+    /// per-folder counter that only ever increases, so a removed session's
+    /// number is never reused. The counter also salts the id, so an
+    /// add/remove/add cycle inside one millisecond still yields distinct ids —
+    /// a reused id would let a stale agent-event/PTY-exit race attribute to the
+    /// wrong session. Returns the created record. Caller persists.
     pub fn add(&mut self, dir: &str, name: Option<&str>, now_ms: i64) -> SessionRecord {
         let counter = self.next_seq.entry(dir.to_string()).or_insert(0);
         *counter += 1;
@@ -208,14 +206,10 @@ impl SessionStore {
         pruned
     }
 
-    /// Persist the folders touched since the last save. Rereads the file
-    /// fresh first and only overwrites *those* folders' entries, leaving any
-    /// other folder exactly as found on disk — a concurrent Agentboard window
-    /// may have added/renamed/removed sessions for a different folder in the
-    /// meantime, and a blind whole-file overwrite from this instance's
-    /// possibly-stale in-memory copy would silently erase that. Same-folder
-    /// concurrent edits are still last-write-wins; there's no cross-process
-    /// locking here.
+    /// Persist the folders touched since the last save, rereading the file fresh
+    /// and overwriting only *those* folders: a concurrent Agentboard window may
+    /// have edited a different folder's sessions, which a whole-file write from
+    /// this stale copy would erase. Same-folder races are last-write-wins.
     pub fn save(&mut self) -> std::io::Result<()> {
         let Some(path) = self.path.clone() else {
             return Ok(());

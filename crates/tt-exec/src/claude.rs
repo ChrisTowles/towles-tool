@@ -10,8 +10,7 @@
 //! The envelope also carries `is_error`: a credit balance, expired MCP auth or rate
 //! limit are *claude-side* failures with a message the user can act on, and must not
 //! read like a wrong-shaped answer. [`Error`] keeps the three apart — never ran, ran
-//! and errored, ran and unparseable — and [`Error::brief`] renders any as one line.
-//! Only [`Ask::run`] spawns: [`claude_args`]/[`parse_response`] are pure.
+//! and errored, ran and unparseable. Only [`Ask::run`] spawns.
 
 use std::path::Path;
 use std::time::Duration;
@@ -20,17 +19,15 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-/// What went wrong with a structured `claude -p` call.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// `claude` never ran to completion: missing binary, spawn failure, timeout.
+    /// Never ran to completion: missing binary, spawn failure, timeout.
     #[error("claude: {0}")]
     Exec(String),
-    /// `claude` ran and reported a failure — a non-zero exit, or an envelope
-    /// with `is_error: true`. The payload is the CLI's own message.
+    /// Ran and reported a failure — a non-zero exit, or `is_error: true`. The
+    /// payload is the CLI's own message.
     #[error("claude -p failed:\n{0}")]
     Failed(String),
-    /// `claude` answered, but not in the shape the schema promised.
     #[error("claude answered, but not in the expected shape: {0}")]
     Unparseable(String),
 }
@@ -38,30 +35,24 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
-    /// The error as one short line, for a UI note or a collector summary.
-    ///
-    /// [`Error::Failed`] carries raw multi-line stderr — enough to blow out a
-    /// form field or a run message — so only its first non-empty line survives;
-    /// the full text is still in the event log. The other variants are already
-    /// one line and pass through.
+    /// One short line, for a UI note or a collector summary. [`Error::Failed`]
+    /// carries raw multi-line stderr, so only its first non-empty line
+    /// survives; the full text is still in the event log.
     pub fn brief(&self) -> String {
         let Error::Failed(text) = self else {
             return self.to_string();
         };
         match text.lines().map(str::trim).find(|line| !line.is_empty()) {
             Some(first) => format!("claude -p failed: {first}"),
-            // A non-zero exit with silent stderr — `Display` would render a
-            // bare "claude -p failed:" with nothing after the colon.
+            // `Display` would render a bare "claude -p failed:" here.
             None => "claude -p exited non-zero with no output".to_string(),
         }
     }
 }
 
-/// One structured question for `claude -p`.
-///
-/// `schema` is a JSON Schema *object* (structured output is an object at the
-/// root, so an answer that is naturally a list is asked for as an object with
-/// one array field).
+/// One structured question for `claude -p`. `schema` is a JSON Schema *object*
+/// — structured output is an object at the root, so a naturally-list answer is
+/// asked for as an object with one array field.
 pub struct Ask<'a> {
     prompt: &'a str,
     schema: &'a str,
@@ -71,31 +62,26 @@ pub struct Ask<'a> {
 }
 
 impl<'a> Ask<'a> {
-    /// A call with no model pin (the user's `claude` default) and no cwd.
-    ///
     /// The `timeout` is required rather than defaulted: a wedged `claude`
-    /// (stuck on auth, a dead MCP server) blocks its caller forever, and how
-    /// long *this* caller can afford to wait is the caller's own knowledge.
+    /// blocks its caller forever, and how long *this* caller can afford to wait
+    /// is the caller's own knowledge.
     pub fn new(prompt: &'a str, schema: &'a str, timeout: Duration) -> Self {
         Self { prompt, schema, model: None, cwd: None, timeout }
     }
 
-    /// Pin the model instead of riding the user's `claude` default. Worth doing
-    /// for cheap one-shot calls the user isn't directing.
+    /// Worth pinning for cheap one-shot calls the user isn't directing.
     pub fn model(mut self, model: &'a str) -> Self {
         self.model = Some(model);
         self
     }
 
-    /// Run with this working directory, so the session picks up that
-    /// checkout's `CLAUDE.md` and conventions.
+    /// So the session picks up that checkout's `CLAUDE.md` and conventions.
     pub fn cwd(mut self, cwd: &'a Path) -> Self {
         self.cwd = Some(cwd);
         self
     }
 
-    /// Ask, and deserialize the envelope's validated `structured_output` into
-    /// `T`. Never panics; every failure is an [`Error`].
+    /// Deserializes the envelope's validated `structured_output` into `T`.
     pub fn run<T: DeserializeOwned>(&self) -> Result<T> {
         let args = claude_args(self.prompt, self.schema, self.model);
         let out = match self.cwd {
@@ -115,11 +101,9 @@ impl<'a> Ask<'a> {
     }
 }
 
-/// The argv that makes the answer's shape the CLI's problem.
-///
-/// Split out so a test can assert the flags themselves: asserting against a
-/// caller's schema constant alone would still pass with `--json-schema` dropped
-/// from the command.
+/// The argv that makes the answer's shape the CLI's problem. Split out so a
+/// test can assert the flags themselves — asserting against a caller's schema
+/// constant alone would still pass with `--json-schema` dropped.
 pub fn claude_args<'a>(prompt: &'a str, schema: &'a str, model: Option<&'a str>) -> Vec<&'a str> {
     let mut args = vec![
         "-p",
@@ -135,13 +119,9 @@ pub fn claude_args<'a>(prompt: &'a str, schema: &'a str, model: Option<&'a str>)
     args
 }
 
-/// The `--output-format json` envelope. Only the three fields that decide the
-/// outcome are named; everything else (usage, cost, session id) is ignored.
-///
 /// `structured_output` is held as a [`serde_json::Value`] rather than `T` so an
-/// `is_error` envelope is still readable when whatever it carries doesn't fit
-/// the caller's type — otherwise the real "claude errored, here's why" message
-/// would be lost behind a shape complaint.
+/// `is_error` envelope stays readable when what it carries doesn't fit the
+/// caller's type — otherwise the real reason is lost behind a shape complaint.
 #[derive(Deserialize)]
 struct Envelope {
     #[serde(default)]
@@ -153,11 +133,9 @@ struct Envelope {
     result: Option<String>,
 }
 
-/// Read the envelope, and nothing else. A `claude` too old for these flags
-/// exits non-zero on the unknown argument and never reaches here, so there is
-/// no older-CLI text shape worth carrying — and a schema regression should
-/// surface as an error the user can see, not be silently rescued by a lenient
-/// re-read of the prose in `result`.
+/// Reads the envelope, and nothing else: a schema regression should surface as
+/// an error the user can see, not be rescued by re-reading the prose in
+/// `result`.
 pub fn parse_response<T: DeserializeOwned>(stdout: &str) -> Result<T> {
     let env: Envelope = serde_json::from_str(stdout.trim())
         .map_err(|e| Error::Unparseable(format!("not a claude -p JSON envelope ({e})")))?;
@@ -206,8 +184,6 @@ mod tests {
 
     #[test]
     fn an_error_envelope_reports_the_clis_own_message() {
-        // The whole point of the envelope: a credit-balance failure has to read
-        // as itself, not as "the model answered badly".
         let raw = r#"{"type":"result","is_error":true,"result":"credit balance too low"}"#;
         let e = parse_response::<Answer>(raw).unwrap_err();
         assert!(matches!(e, Error::Failed(_)), "{e:?}");
@@ -216,8 +192,7 @@ mod tests {
 
     #[test]
     fn an_error_envelope_wins_over_an_unusable_payload() {
-        // `structured_output` here can't be an `Answer`. The user still needs
-        // the CLI's reason, not a shape complaint about the wreckage.
+        // The user needs the CLI's reason, not a shape complaint.
         let raw = r#"{"is_error":true,"result":"rate limit reached",
             "structured_output":{"branch":42}}"#;
         let e = parse_response::<Answer>(raw).unwrap_err();
@@ -226,8 +201,6 @@ mod tests {
 
     #[test]
     fn an_envelope_without_structured_output_is_unparseable() {
-        // Deliberately not re-read out of `result`: that hedge would silently
-        // paper over a schema regression.
         let raw = r#"{"type":"result","is_error":false,
             "result":"Sure! {\"branch\":\"fix/b\"}"}"#;
         let e = parse_response::<Answer>(raw).unwrap_err();

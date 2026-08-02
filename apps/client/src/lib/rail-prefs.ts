@@ -73,11 +73,8 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   return [show, persist];
 }
 
-/** Built-in default for `agentboard.jarvisPane` — off, so the proof-of-concept
- * native Bevy pane costs nothing until it's asked for. Unlike
- * {@link DEFAULT_SHOW_UNMANAGED_WORKTREES} this has no Rust counterpart to
- * mirror: nothing in Rust interprets the setting, since mounting `NativePane`
- * is what starts the render thread. This is the only default. */
+/** Off, so the pane costs nothing until it's asked for. No Rust counterpart to
+ * mirror: mounting `NativePane` is what starts the render thread. */
 export const DEFAULT_BROWSER_PANE = false;
 
 /** Whether checkouts offer the Chrome pane. Off means no entry point rather

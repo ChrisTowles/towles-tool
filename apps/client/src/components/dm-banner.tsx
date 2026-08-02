@@ -13,14 +13,9 @@ const WARN_MS = 5 * 60_000;
 /** Unanswered this long → the banner pulses and the OS taskbar flashes. */
 const ALARM_MS = 10 * 60_000;
 
-/**
- * Full-width strip under the app header for a watched Slack DM (the `slack:dm`
- * collector — e.g. a message from your wife). Quiet rose on arrival; the age
- * turns amber after 5 unanswered minutes; after 10 the whole strip pulses and
- * the window requests OS-level attention (taskbar flash). Clears itself when
- * you reply in Slack (the collector sees your message as the newest) or when
- * "Handled" is pressed.
- */
+/** Full-width strip for a watched Slack DM (the `slack:dm` collector). Escalates
+ * quiet rose → amber → pulsing with an OS taskbar flash. Clears itself when you
+ * reply in Slack (the collector sees your message as the newest) or on "Handled". */
 export function DmBanner() {
   const { snapshot } = useStoreSnapshot();
   const { openTab } = useWorkspace();

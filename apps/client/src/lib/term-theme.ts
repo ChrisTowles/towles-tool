@@ -1,17 +1,6 @@
 /**
- * Terminal color theme pushed into the Rust engine (mirrors `tt_vt::Theme` /
- * the `TermTheme` arg of `term_start`/`term_theme`), so OSC 10/11 and
- * color-scheme queries (`CSI ? 996 n`) answer the app's real colors — that's
- * how programs like Claude Code decide dark vs light — and so indexed ANSI
- * colors resolve against a palette that matches the app theme.
- *
- * Default fg/bg come from the host element's *computed* style, so they track
- * whatever dark/light + color-theme combination is active without this file
- * knowing the token system. The ANSI 0–15 palette is Catppuccin Mocha (dark)
- * / Latte (light) — the palettes the app's existing terminal fallback colors
- * already came from — taken from catppuccin's official terminal ports, not
- * hand-derived. Per-color-theme ANSI palettes (Nord, …) can layer on later by
- * keying this table off `data-color-theme`.
+ * Mirrors `tt_vt::Theme`, so OSC 10/11 and `CSI ? 996 n` answer the app's real
+ * colors — that's how programs like Claude Code decide dark vs light.
  */
 
 export interface TermTheme {
@@ -36,17 +25,14 @@ export const ANSI_LIGHT: number[] = [
   0xd20f39, 0x40a02b, 0xdf8e1d, 0x1e66f5, 0xea76cb, 0x179299, 0xbcc0cc,
 ];
 
-/** Fallbacks when a computed color can't be parsed (Mocha text/base, Latte
- * text/base) — the same constants the canvas used before themes flowed
- * through the engine. */
+/** Used when a computed color can't be parsed. */
 const FALLBACK = {
   dark: { fg: 0xcdd6f4, bg: 0x1e1e2e },
   light: { fg: 0x4c4f69, bg: 0xeff1f5 },
 };
 
-/** Parse a resolved CSS color — `#rrggbb`, `rgb(r, g, b)`, or
- * `rgba(r, g, b, a)`, the forms getComputedStyle emits — into packed
- * 0xRRGGBB; null when unparseable (e.g. a `color(srgb …)` form). */
+/** Parse the forms getComputedStyle emits into packed 0xRRGGBB; null when
+ * unparseable (e.g. a `color(srgb …)` form). */
 export function cssColorToPacked(css: string): number | null {
   const s = css.trim();
   const hex = /^#([0-9a-f]{6})$/i.exec(s);
@@ -57,10 +43,8 @@ export function cssColorToPacked(css: string): number | null {
   return (r << 16) | (g << 8) | b;
 }
 
-/** Resolve the terminal theme from the host element's computed colors (which
- * already reflect the active dark/light + color-theme tokens) and the root
- * `dark` class. DOM-reading by necessity; the parsing lives in
- * `cssColorToPacked` so it stays unit-testable. */
+/** Reads *computed* colors, so the theme tracks the active tokens without
+ * this file knowing the token system. */
 export function resolveTermTheme(host: Element): TermTheme {
   const dark = document.documentElement.classList.contains("dark");
   const cs = getComputedStyle(host);

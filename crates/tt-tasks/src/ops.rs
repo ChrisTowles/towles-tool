@@ -16,32 +16,21 @@ use thiserror::Error;
 use crate::{TemplateError, envfile, layout};
 
 pub const TEMPLATE_SIDECAR: &str = "task-env.template";
-/// Declared setup command, read from the task's rendered `.env`
-/// (e.g. `TT_TASK_SETUP=bun install`). Spawned directly — no shell — so a
-/// repo needing more than one command should point this at its own task
-/// runner (`make setup`, `npm run bootstrap`).
+/// Declared setup command from the task's rendered `.env`, spawned directly — no shell,
+/// so a repo needing more than one command points this at its own task runner.
 pub const SETUP_ENV_KEY: &str = "TT_TASK_SETUP";
-/// Declared teardown command, read from the task's rendered `.env`
-/// (e.g. `TT_TASK_TEARDOWN=docker compose down -v`). Spawned directly — no
-/// shell — before the worktree is removed, so it can still see the task's
-/// `.env` and working tree. Unset means nothing to run: unlike setup there is
-/// no lockfile-style fallback to detect, since there is nothing to teardown by
-/// default.
+/// Declared teardown command, spawned before the worktree is removed so it can still see
+/// the task's `.env` and working tree. Unset means nothing to run — unlike setup there is
+/// no lockfile-style fallback, since there is nothing to teardown by default.
 pub const TEARDOWN_ENV_KEY: &str = "TT_TASK_TEARDOWN";
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
-/// The pre-flight `fetch` in [`create_task`] is best-effort freshness, not
-/// required for correctness (a failure just falls back to local refs with a
-/// warning) — so it gets a shorter leash than [`GIT_TIMEOUT`] and fails fast
-/// on a slow/inspected network instead of blocking creation for up to 30s.
+/// [`create_task`]'s pre-flight fetch is best-effort freshness, so it gets a shorter
+/// leash and fails fast on a slow network instead of blocking creation for 30s.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
-/// Below this, a creation step's duration is unremarkable — normal git/
-/// filesystem work on a local repo. Above it, something environmental is
-/// probably adding the time (a slow or TLS-inspecting proxy, antivirus/EDR
-/// intercepting every file write, Spotlight indexing a freshly checked-out
-/// tree — all disproportionately common on a managed corporate laptop), so
-/// [`create_task`] names the step and its duration in a warning instead of
-/// letting it pass silently.
+/// Past this, something environmental is probably adding the time (a TLS-inspecting
+/// proxy, EDR intercepting every write, Spotlight indexing a fresh tree), so
+/// [`create_task`] names the step and its duration rather than letting it pass silently.
 const SLOW_STEP: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
@@ -67,10 +56,8 @@ pub enum OpsError {
     #[error("{0}")]
     Io(String),
 
-    /// The port-registry file couldn't be written/encoded. Structured (not
-    /// folded into [`OpsError::Io`]) because callers degrade differently: a
-    /// failed registry write is a warning on an otherwise-successful render,
-    /// never a failure of the render itself.
+    /// Kept out of [`OpsError::Io`] because callers degrade differently: a failed
+    /// registry write is a warning on an otherwise-successful render.
     #[error("port registry {path}: {detail}")]
     Registry { path: String, detail: String },
 
@@ -103,12 +90,10 @@ pub enum OpsError {
 
 pub type Result<T> = std::result::Result<T, OpsError>;
 
-/// A discovered task root: the repo's main checkout and the repo name (its
-/// directory basename). Tasks nest inside the checkout at
-/// `.claude/worktrees/<name>` — see the [`crate::layout`] docs.
+/// A discovered task root: the repo's main checkout and the repo name (its directory
+/// basename). Tasks nest inside the checkout — see the [`crate::layout`] docs.
 pub struct TaskRoot {
-    /// The main checkout — a normal clone whose `.git` directory owns every
-    /// task's git state.
+    /// A normal clone whose `.git` directory owns every task's git state.
     pub checkout: PathBuf,
     pub repo: String,
 }
@@ -136,8 +121,7 @@ impl TaskRoot {
         tasks
     }
 
-    /// The checkout plus every task — every checkout whose `.env` can hold
-    /// port claims.
+    /// Every checkout whose `.env` can hold port claims: the main one plus every task.
     pub fn checkouts(&self) -> Vec<PathBuf> {
         let mut dirs = vec![self.checkout.clone()];
         dirs.extend(self.tasks().into_iter().map(|(_, dir)| dir));
@@ -157,13 +141,10 @@ fn dir_names(dir: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Resolve the *main* checkout for `dir`, which must contain `.git`: a `.git`
-/// directory means `dir` is the main checkout itself; a `.git` *file* (a
-/// linked worktree) points at `<main>/.git/worktrees/<wt>` — hop to `<main>`,
-/// so task commands anchor at the repo root no matter which worktree they run
-/// from. A `.git` file that is not a worktree pointer (a submodule's
-/// `gitdir: ../.git/modules/<x>`) keeps `dir` itself as the checkout — a
-/// submodule is its own repo and gets its own nested worktrees.
+/// Resolve the *main* checkout for `dir`. A `.git` *file* points at
+/// `<main>/.git/worktrees/<wt>`, so task commands anchor at the repo root whichever
+/// worktree they run from. A submodule's `gitdir: ../.git/modules/<x>` is not a worktree
+/// pointer and keeps `dir` itself: a submodule is its own repo with its own tasks.
 fn main_checkout(dir: &Path) -> PathBuf {
     let dotgit = dir.join(".git");
     if dotgit.is_dir() {
@@ -177,8 +158,7 @@ fn main_checkout(dir: &Path) -> PathBuf {
     };
     let gitdir =
         if Path::new(&gitdir).is_absolute() { PathBuf::from(gitdir) } else { dir.join(gitdir) };
-    // `<main>/.git/worktrees/<wt>` → `<main>`; anything else is not a linked
-    // worktree.
+    // `<main>/.git/worktrees/<wt>` → `<main>`; anything else is not a linked worktree.
     for ancestor in gitdir.ancestors() {
         if ancestor.file_name().is_some_and(|n| n == ".git")
             && gitdir
@@ -194,11 +174,9 @@ fn main_checkout(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-/// Find the task root: walk up from `explicit` (or the current working
-/// directory) to the nearest dir containing `.git`, then hop from a linked
-/// worktree to its main checkout (see [`main_checkout`]) — so running from
-/// inside a task anchors at the repo root, never nesting worktrees inside
-/// worktrees. Any plain git checkout qualifies; there is no layout to set up.
+/// Walk up from `explicit` (or cwd) to the nearest `.git`, then hop from a linked
+/// worktree to its main checkout — so running from inside a task never nests worktrees
+/// inside worktrees. Any plain git checkout qualifies; there is no layout to set up.
 pub fn discover_root(explicit: Option<&Path>) -> Result<TaskRoot> {
     let start = match explicit {
         Some(dir) => dir.to_path_buf(),
@@ -221,13 +199,9 @@ pub fn discover_root(explicit: Option<&Path>) -> Result<TaskRoot> {
     Err(OpsError::NoCheckout(start.display().to_string()))
 }
 
-/// Resolve a task directory to its checkout root and task name, rejecting
-/// anything that isn't a worktree of its own checkout. This is the shared
-/// definition of "this dir names a real task of its repo" — the app's delete
-/// and stop-port commands both go through it so they agree on what "this task"
-/// means before either acts on it. Returns the identity only; a caller that
-/// removes attaches its own `force` when building [`RemoveOpts`], so a
-/// non-removal caller never constructs a removal config with a meaningless flag.
+/// The shared definition of "this dir names a real task of its repo" — the app's delete
+/// and stop-port commands both go through it so they agree before either acts. Returns
+/// the identity only; a caller that removes attaches its own `force` via [`RemoveOpts`].
 pub fn resolve_task_dir(dir: &Path) -> Result<(PathBuf, String)> {
     let sr = discover_root(Some(dir))?;
     let name = dir
@@ -241,15 +215,13 @@ pub fn resolve_task_dir(dir: &Path) -> Result<(PathBuf, String)> {
     Ok((sr.checkout, name))
 }
 
-/// Bounded like [`git_checkout`] — a stalled network op (stuck proxy/VPN, an SSH
-/// prompt with nothing to answer it) must fail after `GIT_TIMEOUT`, not hang
-/// the caller (`create_task`/`remove_task`/`clean_tasks`) forever.
+/// Bounded: a stalled network op (stuck proxy/VPN, an SSH prompt with nothing to answer
+/// it) must fail after `GIT_TIMEOUT` rather than hang its caller forever.
 pub fn git_checkout(checkout: &Path, args: &[&str]) -> Result<tt_exec::Output> {
     git_checkout_timeout(checkout, args, GIT_TIMEOUT)
 }
 
-/// [`git_checkout`] with an explicit timeout — for a step that's best-effort
-/// and should fail fast rather than eat the full [`GIT_TIMEOUT`] (see
+/// [`git_checkout`] with an explicit timeout, for a best-effort step (see
 /// [`FETCH_TIMEOUT`]).
 fn git_checkout_timeout(
     checkout: &Path,
@@ -263,34 +235,26 @@ fn git_checkout_timeout(
         .map_err(|e| OpsError::Git(e.to_string()))
 }
 
-/// Push a warning naming `label` and its duration when a creation step ran
-/// long enough that something outside normal git/filesystem work is likely
-/// the cause — see [`SLOW_STEP`].
+/// Warn when a creation step ran long enough to implicate the environment — [`SLOW_STEP`].
 fn note_if_slow(warnings: &mut Vec<String>, label: &str, elapsed: Duration) {
     if elapsed > SLOW_STEP {
         warnings.push(format!("{label} took {:.1}s — slower than expected", elapsed.as_secs_f64()));
     }
 }
 
-/// The refs a task's work is judged against: the checkout's base branch, and
-/// its remote-tracking twin when one exists.
-///
-/// Both are needed because they answer at different times. A squash merge
-/// lands on `origin/<base>` the moment the PR is merged, while local `<base>`
-/// only catches up when the user pulls — so judging against the local ref
-/// alone makes every merged task look active until the next `git pull`.
+/// The refs a task's work is judged against. Both are needed because they answer at
+/// different times: a squash merge lands on `origin/<base>` the moment the PR is merged,
+/// while local `<base>` only catches up when the user pulls — so the local ref alone
+/// makes every merged task look active until the next `git pull`.
 #[derive(Debug, Clone)]
 pub struct BaseRefs {
-    /// Base branch name, e.g. `main`.
     pub base: String,
-    /// `refs/heads/<base>`.
     pub local: String,
     /// `refs/remotes/origin/<base>`, when it resolves.
     pub remote: Option<String>,
 }
 
-/// Resolve the base refs for a checkout. One set of git calls, reused across
-/// every task by callers that loop.
+/// One set of git calls, reused across every task by callers that loop.
 pub fn base_refs(checkout: &Path) -> BaseRefs {
     let base = base_branch(checkout);
     let local = format!("refs/heads/{base}");
@@ -299,20 +263,13 @@ pub fn base_refs(checkout: &Path) -> BaseRefs {
     BaseRefs { base, local, remote }
 }
 
-/// What a task still holds — uncommitted work and commits that never reached
-/// the base — as one answer shared by `ls`, `rm`, `clean` and the Agentboard
-/// rail. See [`crate::landed`] for why several git signals are combined.
+/// What a task still holds, as one answer shared by `ls`, `rm`, `clean` and the rail.
+/// See [`crate::landed`] for why several git signals are combined. `branch` is a full
+/// ref; git failures degrade to "work is present", never to "safe to delete".
 ///
-/// `branch` is a full ref (`refs/heads/<name>`). Best-effort: git failures
-/// degrade to "work is present", never to "safe to delete".
-///
-/// `uncommitted` and `orphaned` are passed in rather than gathered here. Every
-/// caller either already has them (`remove_task` computes both for
-/// [`crate::guards::check_removal`]) or needs them for a checkout this function
-/// cannot judge (a detached HEAD has no branch to compare). Re-reading them
-/// would also mean two snapshots of one working tree, so the guard could pass
-/// on a clean tree while the message reported uncommitted files.
-/// [`uncommitted_count`] and [`orphaned_count`] produce them.
+/// `uncommitted` and `orphaned` come from the caller ([`uncommitted_count`],
+/// [`orphaned_count`]): re-reading them here would take a second snapshot of one working
+/// tree, letting the guard pass on a clean tree while the message reports dirty files.
 pub fn work_state(
     refs: &BaseRefs,
     dir: &Path,
@@ -322,8 +279,7 @@ pub fn work_state(
 ) -> crate::landed::WorkState {
     use crate::landed::{LandedVia, WorkState, probe_work_state};
 
-    // An unreadable checkout degrades to "holds work", never to "safe to
-    // delete" — the same conservative direction every probe below takes.
+    // An unreadable checkout degrades to "holds work", never to "safe to delete".
     let Ok(repo) = repo_at(dir) else {
         return WorkState { uncommitted, orphaned, ..Default::default() };
     };
@@ -333,14 +289,11 @@ pub fn work_state(
     let probe = |base: &str| probe_work_state(&repo, base, branch, uncommitted, orphaned, gone);
     let proven = |w: &WorkState| w.landed.is_some_and(LandedVia::is_content_proof);
 
-    // Judge against the local base first, then the remote-tracking one. A
-    // squash merge lands on `origin/<base>` and nothing here fast-forwards
-    // local `<base>`, so a checkout that has not pulled since the merge would
-    // otherwise read every merged task as active. The local ref is still asked
-    // first so a repo with no remote, or one merged only locally, keeps
-    // working. The retry runs whenever the local base gave no *content* proof
-    // — a bare `[gone]` upstream included, since that is exactly the shape a
-    // squash merge leaves behind.
+    // Local base first, so a repo with no remote (or one merged only locally) keeps
+    // working; then the remote-tracking ref, because a squash merge lands on
+    // `origin/<base>` and nothing here fast-forwards local `<base>`. The retry runs
+    // whenever local gave no *content* proof — a bare `[gone]` upstream included, that
+    // being exactly the shape a squash merge leaves behind.
     let local = probe(&refs.local);
     if proven(&local) {
         return local;
@@ -356,28 +309,22 @@ pub fn uncommitted_count(dir: &Path) -> usize {
     repo_at(dir).ok().and_then(|repo| repo.status().ok()).map(|status| status.len()).unwrap_or(0)
 }
 
-/// Commits reachable from no branch and no remote — the orphaned axis, the one
-/// removal genuinely destroys. Base-independent, so it is meaningful even for a
-/// detached HEAD that [`work_state`] cannot otherwise judge.
+/// Commits reachable from no branch and no remote — the axis removal genuinely destroys.
+/// Base-independent, so it is meaningful even for a detached HEAD [`work_state`] cannot
+/// otherwise judge.
 pub fn orphaned_count(dir: &Path) -> u64 {
     repo_at(dir).map(|repo| repo.orphaned_count()).unwrap_or_default()
 }
 
-/// This checkout's repository, from the process-wide cache.
-///
-/// Every read below goes through it rather than spawning `git`; see
-/// [`tt_git::repo`] for the cache and for what still shells out.
+/// This checkout's repository, from the process-wide cache in [`tt_git::repo`].
 pub fn repo_at(dir: &Path) -> Result<tt_git::repo::Repo> {
     tt_git::repo::open(dir).map_err(|e| OpsError::Git(e.to_string()))
 }
 
-/// Epoch-seconds commit time of the newest commit unique to this worktree's
-/// branch — commits in `HEAD` but not in `base` — or `None` when the branch has
-/// added no commits of its own. The recency signal behind `tt task ls --stale`
-/// ([`crate::staleness`]): deliberately the branch's *own* newest commit, so a
-/// fresh empty task off a long-untouched base does not read as stale, and a
-/// checkout sitting on the base branch reports `None`. Landedness is a separate
-/// axis judged by [`work_state`], not by this age.
+/// Epoch-seconds time of the newest commit in `HEAD` but not in `base`, or `None` when
+/// the branch added none of its own. The recency signal behind `tt task ls --stale`
+/// ([`crate::staleness`]): deliberately the branch's *own* newest commit, so a fresh
+/// empty task off a long-untouched base does not read as stale.
 pub fn last_own_commit_unix(dir: &Path, base: &str) -> Option<i64> {
     repo_at(dir).ok()?.last_own_commit_unix(base)
 }
@@ -391,18 +338,12 @@ pub fn base_branch(checkout: &Path) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
-/// Fast-forward `base` to `upstream` (its `origin/<base>` counterpart, per
-/// [`effective_origin_base`] — the caller decides applicability) — so a new
-/// task branches from current history instead of stale local history, which
-/// otherwise means its first sync with base is an unnecessary rebase.
-/// `git merge --ff-only` is itself a no-op when already current, so this
-/// attempts it unconditionally rather than counting commits behind first.
-/// Only ever touches the main checkout's own branch — the predicate returns
-/// `None` for a tag, a SHA, a branch checked out in a different worktree, or
-/// one with no `origin/<base>` upstream, since moving a ref out from under
-/// another checkout would fight whatever's using it. A genuine divergence
-/// (or uncommitted local changes ff-only won't overwrite) warns rather than
-/// blocks creation — the task still branches from local history.
+/// Fast-forward `base` to `upstream` so a new task branches from current history rather
+/// than a stale local ref, which otherwise costs it a rebase on its first sync.
+/// `--ff-only` is already a no-op when current, so this is attempted unconditionally.
+/// Applicability is [`effective_origin_base`]'s call, and it only ever says yes for the
+/// checkout's own branch — moving a ref out from under another worktree would fight
+/// whatever is using it. A genuine divergence warns rather than blocks creation.
 fn fast_forward_base_if_behind(
     sr: &TaskRoot,
     base: &str,
@@ -421,14 +362,10 @@ fn fast_forward_base_if_behind(
     }
 }
 
-/// The ref task creation will *effectively* branch from when it applies the
-/// fast-forward above: `Some("origin/<base>")` exactly when `base` is the
-/// checkout's checked-out branch and that remote-tracking ref exists, `None`
-/// otherwise. The single copy of that rule, shared by
-/// [`fast_forward_base_if_behind`] (which acts on it) and
-/// [`checkout_branches`] (which labels the form with it) — two independent
-/// derivations here would let the form's label drift from what creation
-/// actually does, the exact bug the label exists to fix.
+/// The ref creation will *effectively* branch from after the fast-forward above. The
+/// single copy of that rule, shared by [`fast_forward_base_if_behind`] (which acts on it)
+/// and [`checkout_branches`] (which labels the form with it) — a second derivation would
+/// let the label drift from what creation does, the exact bug the label exists to fix.
 fn effective_origin_base(checkout: &Path, base: &str) -> Option<String> {
     if base_branch(checkout) != base {
         return None;
@@ -438,19 +375,17 @@ fn effective_origin_base(checkout: &Path, base: &str) -> Option<String> {
     exists.then_some(upstream)
 }
 
-/// One base-branch choice for the new-task form. `name` is the local branch —
-/// what `create_task` takes as `base` — and `label` is the ref creation will
-/// *effectively* branch from ([`effective_origin_base`]), which the UI should
-/// show instead of `name`: a form showing plain `main` when creation will
-/// branch from `origin/main` would be underselling what actually happens.
+/// One base-branch choice for the new-task form. `name` is what `create_task` takes as
+/// `base`; `label` is what creation will *effectively* branch from
+/// ([`effective_origin_base`]) and is what the UI shows, since a form reading plain
+/// `main` when creation branches from `origin/main` undersells what happens.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BaseBranch {
     pub name: String,
     pub label: String,
 }
 
-/// Every local branch as a [`BaseBranch`], default branch first, the rest
-/// sorted.
+/// Every local branch as a [`BaseBranch`], default first, the rest sorted.
 pub fn checkout_branches(checkout: &Path) -> Result<Vec<BaseBranch>> {
     let default = base_branch(checkout);
     let mut rest: Vec<String> = repo_at(checkout)?
@@ -459,25 +394,21 @@ pub fn checkout_branches(checkout: &Path) -> Result<Vec<BaseBranch>> {
         .filter(|b| !b.is_empty() && *b != default)
         .collect();
     rest.sort();
-    // Only the default entry can earn an `origin/` label — the fast-forward
-    // only ever applies to the checkout's own checked-out branch.
+    // Only the default entry can earn an `origin/` label — the fast-forward only ever
+    // applies to the checkout's own checked-out branch.
     let label = effective_origin_base(checkout, &default).unwrap_or_else(|| default.clone());
     let mut branches = vec![BaseBranch { name: default, label }];
     branches.extend(rest.into_iter().map(|b| BaseBranch { name: b.clone(), label: b }));
     Ok(branches)
 }
 
-/// Validate `branch` as a git branch name.
-///
-/// The rules are git's own (`git check-ref-format --branch` used to answer
-/// this), applied here by `gix-validate` — the same implementation gitoxide
-/// enforces when writing a ref, so a name it accepts is a name git accepts.
+/// Validate `branch` as a git branch name, via `gix-validate` — the implementation
+/// gitoxide enforces when writing a ref, so a name it accepts is one git accepts.
 /// Stateless: legality is a property of the name, not of any repository.
 ///
-/// The name is checked as the full `refs/heads/<branch>` it will become, plus
-/// one rule that belongs to `--branch` specifically rather than to ref format:
-/// a branch may not begin with `-`, which is legal in a ref path but would be
-/// read as an option by every command that takes a branch name.
+/// Checked as the full `refs/heads/<branch>`, plus one rule belonging to `--branch`
+/// rather than ref format: a leading `-` is legal in a ref path but reads as an option
+/// to every command that takes a branch name.
 pub fn validate_branch_name(branch: &str) -> Result<()> {
     let reject =
         |detail: String| OpsError::InvalidBranchName { branch: branch.to_string(), detail };

@@ -1,17 +1,13 @@
-//! Repo files served to the webview as bytes, for the Files pane — both the images and
-//! GIFs *inside* a Markdown preview and an image or video opened in its own right. They
-//! are one request: an image open in the pane is a repo-relative path in a registered
-//! checkout, exactly like one referenced from a document. Nothing else in the app could
-//! do it: [`crate::ide::ide_read_file`] is text-only by design, and the webview's own
+//! Repo files served to the webview as bytes, for the Files pane. Nothing else in the
+//! app can: [`crate::ide::ide_read_file`] is text-only by design, and the webview's own
 //! origin is the bundled frontend, so a relative `src` 404s against `tauri://localhost`.
 //!
 //! **What stops a Markdown file reading `~/.ssh/id_rsa`.** The URL carries the checkout
 //! dir, and the URL is exactly the part a hostile README controls. Two independent
-//! guards: `dir` must have been registered by [`asset_allow_dir`], which only the
-//! preview component calls; and the path is resolved *within* that dir by
-//! [`resolve_within`], which normalizes `.`/`..` away then refuses anything still
-//! escaping. The first is a policy about *which trees*, the second a fact about *one
-//! path*, so a bug in either is invisible from the other's tests.
+//! guards: `dir` must have been registered by [`asset_allow_dir`]; and the path is
+//! resolved *within* that dir by [`resolve_within`]. The first is a policy about *which
+//! trees*, the second a fact about *one path*, so a bug in either is invisible from the
+//! other's tests.
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -20,25 +16,19 @@ use std::sync::Mutex;
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{Manager, State};
 
-/// The scheme this protocol registers under. The frontend builds matching
-/// URLs with `@tauri-apps/api`'s `convertFileSrc(…, ASSET_SCHEME)`, which is
-/// what keeps the platform difference (`ttasset://localhost/…` on Linux and
-/// macOS, `http://ttasset.localhost/…` on Windows) out of our code.
+/// The scheme this protocol registers under. The frontend builds matching URLs
+/// with `convertFileSrc(…, ASSET_SCHEME)`, which keeps the platform difference
+/// (`ttasset://localhost/…` vs. Windows' `http://ttasset.localhost/…`) out of our code.
 pub const SCHEME: &str = "ttasset";
 
-/// Big enough for any screen recording that belongs in a README, small enough
-/// that a stray `.iso` in a repo can't be paged into the webview. Deliberately
-/// far above `ide_read_file`'s 2 MB text cap — that one bounds an editor
-/// buffer, this one bounds a decode.
+/// Big enough for a README screen recording, small enough that a stray `.iso`
+/// can't be paged into the webview. Far above `ide_read_file`'s 2 MB text cap —
+/// that one bounds an editor buffer, this one bounds a decode.
 const MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Checkout dirs the preview has been opened on, and therefore the only trees
-/// this protocol will read from (see the module doc's guard 1).
-///
-/// Insert-only: an entry costs a `PathBuf`, the set is bounded by the number
-/// of checkouts a session opens files in, and dropping entries on unmount
-/// would only introduce a race against the image requests of a preview that is
-/// still on screen.
+/// this protocol will read from (module doc, guard 1). Insert-only: dropping
+/// entries on unmount would race the image requests of a preview still on screen.
 #[derive(Default)]
 pub struct AssetScopes(Mutex<HashSet<PathBuf>>);
 
@@ -54,17 +44,10 @@ impl AssetScopes {
     }
 }
 
-/// Register a checkout as readable by the asset protocol. Called by the
-/// Markdown preview on mount, before it renders any `<img>`.
-///
-/// Canonicalized on the way in so the set is keyed the same way a request's
-/// `dir` will be — otherwise `/home/me/repo` and a symlinked
-/// `/home/me/code/repo` are two different scopes and one of them silently
-/// fails to load images.
-///
-/// Not instrumented: opening a file in the pane already emits its own
-/// gesture, and this fires on every preview mount, including the ones the user
-/// caused by toggling back and forth.
+/// Register a checkout as readable by the asset protocol. Canonicalized on the
+/// way in so the set is keyed the same way a request's `dir` will be — otherwise
+/// `/home/me/repo` and a symlinked `/home/me/code/repo` are two scopes and one
+/// silently fails to load images. Not instrumented: it fires on every remount.
 #[tauri::command]
 pub fn asset_allow_dir(scopes: State<AssetScopes>, dir: String) -> Result<(), String> {
     let canonical =
@@ -76,20 +59,15 @@ pub fn asset_allow_dir(scopes: State<AssetScopes>, dir: String) -> Result<(), St
     Ok(())
 }
 
-/// The `dir` + `path` pair a request carries.
 #[derive(Debug, PartialEq, Eq)]
 pub struct AssetRequest {
     pub dir: String,
     pub path: String,
 }
 
-/// Pull the checkout dir and repo-relative path out of a request URI.
-///
-/// Both travel as query parameters rather than in the URI's path, because a
-/// path would have to encode an absolute dir *inside* another path and every
-/// layer between here and WebKit would get a vote on how to normalize the
-/// result. A query pair is percent-decoded once, by us, and means exactly what
-/// it says.
+/// Both halves travel as query parameters rather than in the URI's path: a path
+/// would have to encode an absolute dir *inside* another path, and every layer
+/// between here and WebKit would get a vote on how to normalize the result.
 pub fn parse_request(uri: &str) -> Option<AssetRequest> {
     let url = tauri::Url::parse(uri).ok()?;
     let mut dir = None;
@@ -108,15 +86,9 @@ pub fn parse_request(uri: &str) -> Option<AssetRequest> {
     Some(AssetRequest { dir, path })
 }
 
-/// Resolve a repo-relative path inside `dir`, collapsing `.`/`..` first and
-/// then refusing anything that escaped (see the module doc's guard 2).
-///
-/// An absolute `rel` is rejected outright rather than treated as rooted at
-/// `dir`: `Path::join` would silently discard the base and hand back the
-/// argument whole, which is the same trap [`crate::ide::confined`] documents.
-/// The frontend normalizes too, so a well-formed request never reaches the
-/// interesting branches here — that is the point of a second implementation,
-/// not an argument against one.
+/// Collapse `.`/`..` first, then refuse anything that escaped (module doc,
+/// guard 2). An absolute `rel` is rejected rather than rooted at `dir`, since
+/// `Path::join` would silently discard the base — the [`crate::ide::confined`] trap.
 pub fn resolve_within(dir: &Path, rel: &str) -> Result<PathBuf, String> {
     let rel = Path::new(rel);
     if rel.is_absolute() {
@@ -127,9 +99,7 @@ pub fn resolve_within(dir: &Path, rel: &str) -> Result<PathBuf, String> {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                // Popping past empty means the path climbed out of the
-                // checkout — refuse rather than clamp, so a wrong link reads
-                // as broken instead of quietly resolving to something else.
+                // Refuse rather than clamp, so a wrong link reads as broken.
                 if !out.pop() {
                     return Err(format!("asset path escapes the folder: {}", rel.display()));
                 }
@@ -146,13 +116,9 @@ pub fn resolve_within(dir: &Path, rel: &str) -> Result<PathBuf, String> {
     Ok(dir.join(out))
 }
 
-/// Content type for an asset, by extension.
-///
-/// An unknown extension is served as `application/octet-stream` rather than
-/// refused: the tag that requested it decides what it can use, and a README
-/// referencing a format this list hasn't heard of should degrade to a broken
-/// image, not to a 500. SVG is here because an `<img>` renders it inertly —
-/// it may not become a top-level navigation, which the preview never makes it.
+/// An unknown extension degrades to `application/octet-stream` rather than a
+/// 500 — the requesting tag decides what it can use. SVG is here because an
+/// `<img>` renders it inertly; it may never become a top-level navigation.
 pub fn mime_for(path: &Path) -> &'static str {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_ascii_lowercase();
     match ext.as_str() {
@@ -172,8 +138,8 @@ pub fn mime_for(path: &Path) -> &'static str {
 }
 
 fn error_response(status: StatusCode, message: String) -> Response<Vec<u8>> {
-    // Body kept as text so the reason is visible in the webview's network
-    // panel; nothing renders it, since a failed `<img>` shows its alt text.
+    // Text body so the reason shows in the webview's network panel; a failed
+    // `<img>` renders its alt text, not this.
     Response::builder()
         .status(status)
         .header("Content-Type", "text/plain; charset=utf-8")
@@ -181,8 +147,7 @@ fn error_response(status: StatusCode, message: String) -> Response<Vec<u8>> {
         .unwrap_or_else(|_| Response::new(Vec::new()))
 }
 
-/// Serve one asset request, start to finish. Blocking — the caller runs it off
-/// the UI thread.
+/// Blocking — the caller runs it off the UI thread.
 fn serve(scopes: &AssetScopes, uri: &str) -> Response<Vec<u8>> {
     let Some(request) = parse_request(uri) else {
         return error_response(StatusCode::BAD_REQUEST, "expected ?dir=&path=".to_string());
@@ -219,10 +184,8 @@ fn serve(scopes: &AssetScopes, uri: &str) -> Response<Vec<u8>> {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", mime_for(&abs))
-            // The preview re-requests every image on each remount; a repo file
-            // changing under a *rendered* preview is rare enough to be worth a
-            // stale frame, and revalidating would put a disk stat on every
-            // toggle of the split view.
+            // The preview re-requests every image on remount; revalidating would
+            // put a disk stat on every toggle of the split view.
             .header("Cache-Control", "max-age=3600")
             .body(bytes)
             .unwrap_or_else(|_| Response::new(Vec::new())),
@@ -230,21 +193,16 @@ fn serve(scopes: &AssetScopes, uri: &str) -> Response<Vec<u8>> {
     }
 }
 
-/// Wire the protocol onto a Tauri builder.
-///
-/// Asynchronous rather than the plain `register_uri_scheme_protocol`: the
-/// synchronous form runs the handler on the UI thread, and on Linux that is
-/// the same GTK main thread every sync Tauri command dispatches inline on — a
-/// 20 MB read there stalls the whole app, which is precisely the file this
-/// exists to serve.
+/// Asynchronous rather than the plain `register_uri_scheme_protocol`: the sync
+/// form runs the handler on Linux's GTK main thread, where a 20 MB read stalls
+/// the whole app — precisely the file this exists to serve.
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.register_asynchronous_uri_scheme_protocol(
         SCHEME,
         |ctx, request: Request<Vec<u8>>, responder| {
             let uri = request.uri().to_string();
             let scopes = ctx.app_handle().state::<AssetScopes>();
-            // `State` can't cross to the blocking pool, but the set behind it can:
-            // it lives in managed state for the process's lifetime.
+            // `State` can't cross to the blocking pool, but the set behind it can.
             let snapshot = scopes.0.lock().map(|set| set.clone()).unwrap_or_default();
             tauri::async_runtime::spawn_blocking(move || {
                 responder.respond(serve(&AssetScopes(Mutex::new(snapshot)), &uri));
@@ -289,9 +247,8 @@ mod tests {
 
     #[test]
     fn collapses_dot_and_parent_segments_that_stay_inside() {
-        // `docs/FOO.md` referring to `../images/a.png` — legal, and the whole
-        // reason this doesn't just reject every `..` the way `ide::confined`
-        // does.
+        // `docs/FOO.md` → `../images/a.png` is legal, which is why this doesn't
+        // reject every `..` the way `ide::confined` does.
         assert_eq!(
             resolve_within(Path::new("/repo"), "docs/../images/a.png"),
             Ok(PathBuf::from("/repo/images/a.png"))
@@ -367,8 +324,7 @@ mod tests {
         assert_eq!(serve(&scopes, &uri).status(), StatusCode::NOT_FOUND);
     }
 
-    /// Percent-encode a path for a test URL. Only the characters a tempdir
-    /// path can contain need covering.
+    /// Only the characters a tempdir path can contain need covering.
     fn urlencode(raw: &str) -> String {
         raw.chars()
             .map(|c| match c {

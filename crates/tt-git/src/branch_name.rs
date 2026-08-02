@@ -6,15 +6,10 @@ pub fn create_branch_name_from_issue(number: u64, title: &str) -> String {
     format!("feature/{number}-{}", slug(title))
 }
 
-/// The slug rules on their own, without a prefix: lowercase, trim, spaces to
-/// `-`, anything outside `[0-9a-zA-Z_-]` to `-`, collapse runs of `-`, strip
-/// trailing `-` (leading dashes are preserved, matching the TS). The character
-/// class is ASCII-only, so non-ASCII letters (e.g. `ü`) become `-` — matching
-/// the TS byte-for-byte.
-///
-/// Shared rather than re-derived: `tt-tasks`' suggestion fallback and the
-/// new-task dialog's own branch field both want exactly this, and a slug rule
-/// maintained in parallel copies drifts.
+/// Lowercase, trim, anything outside `[0-9a-zA-Z_-]` to `-`, collapse runs,
+/// strip trailing `-`. The character class is ASCII-only, matching the TS
+/// byte-for-byte. Shared rather than re-derived: `tt-tasks`' suggestion
+/// fallback and the new-task dialog's branch field both want exactly this.
 pub fn slug(text: &str) -> String {
     let lowered = text.to_lowercase();
     let mut out = String::with_capacity(lowered.len());

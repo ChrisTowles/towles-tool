@@ -25,17 +25,10 @@ pub enum TaskBlocked {
 }
 
 /// Structural half of [`normalize_remote_url`], keeping the URL's own casing:
-/// scheme/credentials stripped, trailing `.git` and `/` dropped, scp-like
-/// `git@host:path` folded to `host/path`.
-///
-/// Case matters here because two different jobs read this. *Comparing* two
-/// remotes wants case folded away (`normalize_remote_url`); recording a repo's
-/// **identity** wants GitHub's own casing preserved, because that identity is
-/// stored alongside slugs that came from `gh` (issues, PRs, task bindings) and
-/// a folded copy would silently become a second, separate repo.
-///
-/// The prefix/suffix probes run against an `to_ascii_lowercase` copy — ASCII
-/// folding is length-preserving, so its byte offsets index the original safely.
+/// *comparing* two remotes wants case folded away, but recording a repo's
+/// **identity** wants GitHub's own casing, since a folded copy silently becomes
+/// a second, separate repo. The probes run against an `to_ascii_lowercase` copy
+/// — ASCII folding is length-preserving, so its offsets index the original.
 fn normalize_remote_url_preserving_case(url: &str) -> String {
     let mut s = url.trim().to_string();
     let lower = s.to_ascii_lowercase();
@@ -59,17 +52,15 @@ fn normalize_remote_url_preserving_case(url: &str) -> String {
     }
 }
 
-/// Normalize a git remote URL for equality: `git@github.com:User/Repo.git`,
-/// `https://github.com/user/repo/`, and `ssh://git@github.com/User/repo` all
-/// name the same repo. Lowercased, scheme/credentials stripped, trailing
-/// `.git` and `/` dropped.
+/// Normalize for equality: `git@github.com:User/Repo.git`,
+/// `https://github.com/user/repo/` and `ssh://git@github.com/User/repo` all
+/// name the same repo.
 fn normalize_remote_url(url: &str) -> String {
     normalize_remote_url_preserving_case(url).to_lowercase()
 }
 
-/// The trailing `owner/name` pair of an already-normalized remote
-/// (`github.com/owner/name` → `owner/name`). `None` when fewer than two path
-/// segments remain, e.g. a bare host or a local path.
+/// `None` when fewer than two path segments remain (a bare host, a local
+/// path).
 fn slug_from_normalized(normalized: &str) -> Option<String> {
     let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
     if parts.len() < 2 {
@@ -78,36 +69,23 @@ fn slug_from_normalized(normalized: &str) -> Option<String> {
     Some(format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1]))
 }
 
-/// Extract the GitHub `owner/name` slug from a git remote URL. Reuses
-/// [`normalize_remote_url`] to fold the ssh/https/scp forms, then keeps the last
-/// two path segments (`github.com/owner/name` → `owner/name`), lowercased.
-/// `None` when the URL lacks two path segments (e.g. a bare host or a local
-/// path), so the caller can treat it as "not a GitHub checkout". Public: also
-/// used by the Agentboard poll loop to reconcile `tt-store`'s tracked-repo
-/// identity cache from each repo's git origin.
+/// The lowercased `owner/name` slug of a git remote. `None` when the URL lacks
+/// two path segments, which the caller reads as "not a GitHub checkout".
 pub fn repo_slug_from_remote(url: &str) -> Option<String> {
     slug_from_normalized(&normalize_remote_url(url))
 }
 
-/// Extract the GitHub `owner/name` slug from a git remote URL, **keeping the
-/// remote's own casing** — `ChrisTowles/towles-tool`, not
-/// `christowles/towles-tool`.
-///
-/// This is the variant to use when recording a repo's *identity* (the
-/// tracked-repo cache the app's `task_create` validates against). Every other
-/// identity in the store — issue rows, PR rows, a task's repo binding — carries
-/// the casing `gh` reports, and the Board groups its swimlanes by that string.
-/// Folding case here therefore doesn't just look wrong: it mints a second repo
-/// identity that splits one repo's cards across two identical-looking lanes.
-/// Use [`repo_slug_from_remote`] instead when *comparing* two remotes, where
-/// case must not matter.
+/// The slug **keeping the remote's own casing** — the variant for recording a
+/// repo's *identity*. Every other identity in the store carries the casing `gh`
+/// reports and the Board groups swimlanes by that string, so folding here mints
+/// a second repo identity and splits one repo across two identical lanes. Use
+/// [`repo_slug_from_remote`] when *comparing* two remotes.
 pub fn repo_slug_from_remote_preserving_case(url: &str) -> Option<String> {
     slug_from_normalized(&normalize_remote_url_preserving_case(url))
 }
 
-/// The in-progress-work half of the guard, shared by both entry points: reject
-/// a dirty working tree first, then a non-empty stash. Order matters — the
-/// failures surface most-to-least obvious.
+/// Reject a dirty working tree first, then a non-empty stash: the failures
+/// surface most-to-least obvious.
 fn check_clean(dirty_entries: usize, stashes: usize) -> Result<(), TaskBlocked> {
     if dirty_entries > 0 {
         return Err(TaskBlocked::DirtyTree { entries: dirty_entries });
@@ -118,11 +96,9 @@ fn check_clean(dirty_entries: usize, stashes: usize) -> Result<(), TaskBlocked> 
     Ok(())
 }
 
-/// The assignment guard, keyed by a GitHub `owner/name` slug: the desktop
-/// app's "expected" repo comes from an issue's `repo` field (`owner/name`),
-/// not a current-directory checkout. Failure order: wrong repo first (the
-/// assignment makes no sense at all), then in-progress work (uncommitted
-/// changes, then stashes).
+/// Keyed by a GitHub `owner/name` slug, since the app's "expected" repo comes
+/// from an issue's `repo` field, not a checkout. Wrong repo fails first (the
+/// assignment makes no sense at all), then in-progress work.
 pub fn validate_task_for_repo(
     expected_repo: &str,
     task_remote: &str,
@@ -172,10 +148,8 @@ mod tests {
         );
     }
 
-    /// The identity variant must hand back GitHub's own casing. Folding it is
-    /// what minted a second `christowles/...` repo identity alongside the
-    /// `gh`-reported `ChrisTowles/...` one and split the Board into two
-    /// identically-labelled swimlanes.
+    /// Folding the identity variant is what minted a second `christowles/...`
+    /// repo alongside the `gh`-reported one and split the Board in two.
     #[test]
     fn preserving_case_slug_keeps_the_remotes_own_casing() {
         let forms = [
@@ -256,8 +230,7 @@ mod tests {
 
     #[test]
     fn validate_for_repo_rejects_wrong_repo_before_dirty_checks() {
-        // Repo mismatch wins over a dirty tree — the assignment is
-        // nonsensical, not merely unsafe.
+        // Repo mismatch wins: nonsensical, not merely unsafe.
         let err = validate_task_for_repo("u/repo", "git@github.com:other/elsewhere.git", 1, 0)
             .unwrap_err();
         assert!(matches!(err, TaskBlocked::RemoteMismatch { .. }));

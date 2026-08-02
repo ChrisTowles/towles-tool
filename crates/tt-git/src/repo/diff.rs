@@ -115,15 +115,10 @@ enum Untracked {
 }
 
 impl Repo {
-    /// Every file that differs between `base` and the working tree, with line
-    /// counts — the in-process `git diff --numstat -M <base>` plus untracked
-    /// files, which `git diff` never shows but which the rail counts as
-    /// changed.
-    ///
-    /// Untracked *directories* are expanded to their files only up to a cap
-    /// ([`Changes::untracked_cap`]); past it the directory stays one row with
-    /// a count, because a repository with an unignored `node_modules` would
-    /// otherwise stat and list half a million paths on every rail poll.
+    /// `git diff --numstat -M <base>` plus untracked files, which `git diff`
+    /// never shows but the rail counts as changed. Untracked *directories*
+    /// expand only up to a cap ([`Changes::untracked_cap`]) — an unignored
+    /// `node_modules` would otherwise list half a million paths per poll.
     pub fn changes_vs(&self, base: &str) -> Result<Changes> {
         let base_id = self.resolve(base).ok_or_else(|| GitError::NoSuchRev(base.to_string()))?;
         let base_tree = self.tree_of(base_id)?;
@@ -248,18 +243,11 @@ impl Repo {
         Ok(Changes { files: out, untracked_cap: cap })
     }
 
-    /// What `base..HEAD` **committed** — the tree-to-tree half of
-    /// [`Repo::changes_vs`] with the working tree left out entirely, i.e.
-    /// `git diff --numstat <base> HEAD`.
-    ///
-    /// This exists so the rail can report committed and uncommitted work as
-    /// two separate quantities. Blending them (which `changes_vs` does, by
-    /// design, for the diff pane) produces a ± that belongs to neither the
-    /// commit count beside it nor the dirty working tree — and only the
-    /// uncommitted half is destroyed by deleting the checkout, so the two
-    /// carry different consequences and must not share a number.
-    ///
-    /// Zero totals when `HEAD` is unborn or `base` is `HEAD` itself.
+    /// `git diff --numstat <base> HEAD` — the working tree left out entirely,
+    /// so the rail can report committed and uncommitted work as two
+    /// quantities. Only the uncommitted half is destroyed by deleting the
+    /// checkout, so the two carry different consequences and must not share a
+    /// number. Zero when `HEAD` is unborn or `base` is `HEAD`.
     pub fn committed_totals_vs(&self, base: &str) -> Result<DiffTotals> {
         let base_id = self.resolve(base).ok_or_else(|| GitError::NoSuchRev(base.to_string()))?;
         let Some(head) = self.head_id() else {
@@ -360,16 +348,10 @@ impl Repo {
         (before, after)
     }
 
-    /// Expand an untracked status entry into the files it covers: itself for a
-    /// file, or every file beneath it for a collapsed directory. A collapsed
-    /// directory is only ever reported when *nothing* in it is tracked or
-    /// ignored, so everything under it is untracked by construction — no
-    /// second ignore check is needed here.
-    ///
-    /// `budget` is what remains of the diff's whole untracked allowance; the
-    /// walk stops at the smaller of it and [`UNTRACKED_PER_DIR_CAP`] and the
-    /// caller keeps the directory as one row. Stopping also ends the one walk
-    /// here that a symlink cycle could otherwise run forever.
+    /// A collapsed directory is only reported when *nothing* in it is tracked
+    /// or ignored, so everything under it is untracked by construction. The
+    /// walk stops at the smaller of `budget` and [`UNTRACKED_PER_DIR_CAP`],
+    /// which also ends the one walk a symlink cycle could run forever.
     fn untracked_files_under(&self, entry: &super::StatusEntry, budget: usize) -> Untracked {
         if !entry.is_dir {
             return Untracked::Files(vec![entry.path.clone()]);

@@ -46,48 +46,27 @@ import {
   type McpToolDoc,
 } from "@/lib/schemas/mcp";
 
-/**
- * MCP server — a four-area console for the towles-tool MCP server, mirroring
- * the Claude Sessions layout (header · stat strip · vertical tabs): **Overview**
- * (is it being used, by whom, how often it fails), **Calls** (the live incoming
- * JSON-RPC log, searchable, with a per-call drill-down dialog), **Tools** (the
- * exposed contract, grouped by family), and **Setup** (how a client points at
- * it). Read-only; the whole point is *seeing* who is calling the server and how
- * it answered. The dispatcher retains the newest few hundred calls and the
- * snapshot carries the newest 100.
- */
+/** Read-only console over the MCP server: who is calling it and how it
+ * answered. The dispatcher retains the newest few hundred calls, the snapshot
+ * carries the newest 100. */
 
-/**
- * Bottom of the `${tt:port 8787-8986}` range each checkout claims its MCP port
- * from, and what a session outside an app terminal falls back to
- * (`${TT_MCP_PORT:-8787}` in the plugin's `.mcp.json`). Only a placeholder here
- * — for browser dev, and for the moment before {@link useMcpStatus} reports the
- * port this instance actually bound.
- */
+/** Bottom of the `${tt:port 8787-8986}` range; a placeholder for browser dev
+ * and for the moment before {@link useMcpStatus} reports the real port. */
 const DEFAULT_MCP_PORT = 8787;
 
 const endpointFor = (port: number) => `http://127.0.0.1:${port}/mcp`;
 
-/**
- * The real bind outcome, not an inference from call recency.
- *
- * These differ exactly where it matters: a healthy server nobody has called yet
- * reads as idle from the call log alone, and an instance whose port was already
- * taken is serving nothing at all while still showing its own past calls. Only
- * the backend knows which.
- */
+/** The real bind outcome, not an inference from call recency: an instance
+ * whose port was already taken serves nothing while still showing its own
+ * past calls, and only the backend knows which. */
 function useMcpStatus() {
   const [status, setStatus] = useState<McpStatus | null>(null);
   useEffect(() => {
     void invoke<McpStatus>("mcp_status", {}, { schema: McpStatusSchema }).then((r) =>
       r.match({
         ok: setStatus,
-        // `NotInTauri` is browser dev, not a failure — fall back to the
-        // call-recency wording silently. Anything else is the backend actually
-        // failing to answer, and this screen exists to report the bind outcome:
-        // swallowing it would leave the header saying "Active" for a server that
-        // may be serving nothing, which is precisely the inference this hook was
-        // added to replace.
+        // Browser dev falls back silently; a real failure must be reported,
+        // or the header says "Active" for a server that may serve nothing.
         err: (e) => {
           setStatus(null);
           if (!NotInTauri.is(e)) toast.error(`Could not read MCP status: ${errorMessage(e)}`);
@@ -98,15 +77,10 @@ function useMcpStatus() {
   return status;
 }
 
-/** A call is "recent" — and the server therefore visibly in use — within this
- * window. Only drives the Overview/stat wording, never a data decision. */
+/** Drives the Overview/stat wording only, never a data decision. */
 const ACTIVE_WINDOW_MS = 5 * 60_000;
 
-/**
- * What to call the server's state. Prefers {@link useMcpStatus}'s real bind
- * outcome for the reason spelled out there, and only falls back to call-recency
- * when there is no backend to ask (browser dev).
- */
+/** Falls back to call-recency only when there is no backend to ask. */
 function serverLabel(status: McpStatus | null, active: boolean): string {
   if (status) return status.serving ? "Serving" : "Not serving";
   return active ? "Active" : "Idle";
@@ -168,8 +142,7 @@ export function McpScreen() {
         <StatTile
           label="Server"
           value={serverLabel(status, active)}
-          // Each checkout claims its own port, so not-serving is a real
-          // collision worth naming as one rather than a routine state.
+          // Each checkout claims its own port, so not-serving is a collision.
           detail={
             status && !status.serving
               ? `port ${port} taken — this app serves no MCP`
@@ -250,13 +223,8 @@ export function McpScreen() {
   );
 }
 
-/**
- * Fetches the MCP tool list from the same contract the server answers
- * `tools/list` with (`tt_mcp::tool_definitions`, via the `mcp_tool_docs`
- * command) — this is what keeps the Tools tab from ever drifting out of sync
- * with what the server actually exposes. `null` while loading or outside the
- * app; `reload` re-fetches after the tool surface changes.
- */
+/** Reads the same contract the server answers `tools/list` with, so the Tools
+ * tab can't drift from what is actually exposed. */
 function useMcpToolDocs(): { tools: McpToolDoc[] | null; reload: () => void } {
   const [tools, setTools] = useState<McpToolDoc[] | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -270,10 +238,8 @@ function useMcpToolDocs(): { tools: McpToolDoc[] | null; reload: () => void } {
   return { tools, reload: () => setNonce((n) => n + 1) };
 }
 
-/**
- * One settled telemetry event per search, never one per keystroke — continuous
- * input is explicitly excluded from the event log (see the root CLAUDE.md).
- */
+/** One settled event per search, never one per keystroke — continuous input
+ * is excluded from the event log. */
 function useSearchTelemetry(query: string, action: string) {
   useEffect(() => {
     if (!query.trim()) return;
@@ -289,8 +255,7 @@ function clientNames(calls: McpCall[]): string[] {
 
 // ── Overview ────────────────────────────────────────────────────────────────
 
-/** Per-tool call counts, busiest first — the "what is actually being used"
- * answer the tool list alone can't give. */
+/** Per-tool call counts, busiest first. */
 function toolUsage(calls: McpCall[]): { name: string; total: number; failed: number }[] {
   const by = new Map<string, { name: string; total: number; failed: number }>();
   for (const c of calls) {
@@ -403,9 +368,8 @@ function OverviewTab({
 
 type CallFilter = "all" | "errors";
 
-/** Everything about a call the search box looks at, lowercased once. Built per
- * call when the log changes, not per keystroke and not per clock tick — the
- * screen re-renders every second, and this is the only per-row string work. */
+/** Lowercased once per call when the log changes, not per keystroke or clock
+ * tick — the screen re-renders every second. */
 function searchHaystack(call: McpCall): string {
   return [call.method, call.tool, call.args, call.client, call.error]
     .filter(Boolean)
@@ -509,17 +473,9 @@ function CallsTab({
   );
 }
 
-/**
- * One call-log row: a green/red status dot, the method (and tool for a
- * `tools/call`), the compacted args, then a right-aligned meta cluster of
- * duration and relative age. An error row surfaces its message beneath and gets
- * a red left edge so a failure reads at a glance. The whole row opens the
- * drill-down — it holds no interactive children, so a real `<button>` is safe
- * here and gives the largest possible target.
- *
- * `memo`'d, and taking `age` pre-rendered rather than `now`, because the screen
- * re-renders on a one-second clock and the log holds a hundred of these.
- */
+/** `memo`'d, and taking `age` pre-rendered rather than `now`, because the
+ * screen re-renders on a one-second clock and the log holds a hundred of
+ * these. No interactive children, so a real `<button>` is safe here. */
 const CallRow = memo(function CallRow({
   call,
   age,
@@ -565,8 +521,6 @@ const CallRow = memo(function CallRow({
   );
 });
 
-/** Full detail for one logged call — the args and error message in full, which
- * the row can only truncate. */
 function CallDialog({
   call,
   now,
@@ -634,9 +588,8 @@ function CallDialog({
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
-/** Tools are named `<family>_<verb>` (`task_list`, `calendar_next`), so the
- * prefix groups them without hardcoding any tool name — a family added on the
- * Rust side shows up here on its own. */
+/** Tools are named `<family>_<verb>`, so the prefix groups them without
+ * hardcoding any tool name — a new family shows up here on its own. */
 function toolFamily(name: string): string {
   const i = name.indexOf("_");
   return i === -1 ? name : name.slice(0, i);
@@ -653,10 +606,7 @@ function groupTools(tools: McpToolDoc[]): { family: string; tools: McpToolDoc[] 
   return groups;
 }
 
-/**
- * Auto-generated tool documentation, straight from the MCP contract — never
- * hand-maintained, so it can't fall out of sync as tools are added or changed.
- */
+/** Straight from the MCP contract, never hand-maintained. */
 function ToolsTab({ tools, endpoint }: { tools: McpToolDoc[] | null; endpoint: string }) {
   const [query, setQuery] = useState("");
   const [testing, setTesting] = useState<McpToolDoc | null>(null);
@@ -730,38 +680,16 @@ function ToolsTab({ tools, endpoint }: { tools: McpToolDoc[] | null; endpoint: s
   );
 }
 
-/**
- * Whether a tool writes — read off the MCP contract, never off its wording.
- *
- * The server emits the spec's own `annotations.readOnlyHint: false` on the
- * tools that mutate and ships no `annotations` block at all otherwise, so this
- * is a declaration by the tool's author rather than a guess at what the
- * description's prose implies. That distinction is load-bearing now: with the
- * capability gate gone, the warning this drives is the only signal a human gets
- * before a write, and a description reworded on the Rust side must not be able
- * to silently turn it off.
- *
- * Strictly `=== false` — an absent hint means "no claim made", which is not the
- * same as "declared read-only", and neither is a reason to warn.
- */
+/** Read off `annotations.readOnlyHint`, never off the description's wording:
+ * the warning this drives is the only signal before a write. Strictly
+ * `=== false` — an absent hint is "no claim made", not "read-only". */
 function isMutating(tool: McpToolDoc): boolean {
   return tool.annotations?.readOnlyHint === false;
 }
 
-/**
- * Fire a real request at the MCP endpoint and show exactly what came back.
- *
- * The request is issued **from Rust**, not by `fetch` here, and that is not an
- * implementation convenience: the webview is a browser context, so its `fetch`
- * would carry an `Origin` header and the server would refuse it — correctly.
- * The app cannot call its own endpoint from the frontend, which is the defense
- * working. `mcp_test_call` sends the request the way a real MCP client does.
- *
- * The "as a browser would" toggle deliberately re-sends *with* an `Origin`
- * header so the refusal is something you can watch happen rather than take on
- * faith. With no capability gate left, that check is the whole guard on writes,
- * so making it visible is worth a button.
- */
+/** Issued **from Rust**, not by `fetch` here: the webview would carry an
+ * `Origin` header and the server would correctly refuse it. The "as a browser
+ * would" toggle re-sends *with* one so you can watch the refusal happen. */
 function ToolTesterDialog({
   tool,
   endpoint,
@@ -776,8 +704,6 @@ function ToolTesterDialog({
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<McpTestResult | null>(null);
 
-  // Reset per tool, and seed the editor with a skeleton of its required args so
-  // the common case is "fill in the values", not "recall the schema".
   // `running` resets too: without it, switching tools mid-call leaves the new
   // tool's Run button permanently disabled reading "Running…".
   useEffect(() => {
@@ -800,13 +726,11 @@ function ToolTesterDialog({
       return;
     }
     // A slow call whose tool has since been switched away must not paint its
-    // result into the new tool's pane — the panes are identical, so a
-    // `calendar_set` status would read as `task_list`'s.
+    // result into the new tool's identical-looking pane.
     const issuedFor = tool.name;
     setRunning(true);
-    // Both facts, always: which tool ran, and whether it was the browser
-    // simulation. Encoding one *or* the other lost the tool name for exactly
-    // the runs where the security boundary was being exercised.
+    // Both facts, always: encoding one *or* the other lost the tool name for
+    // exactly the runs where the security boundary was being exercised.
     uiAction("mcp.tool.test_run", "mcp", asBrowser ? `${tool.name} as-browser` : tool.name);
     const body = requestBody(tool.name, parsed);
     const res = await invoke<McpTestResult>(
@@ -834,10 +758,8 @@ function ToolTesterDialog({
       return;
     }
     uiAction("mcp.tool.copy_curl", "mcp", tool.name);
-    // Safe to hand out precisely because `curl` sends no Origin header: the
-    // transport refuses any request that carries one (the DNS-rebinding guard),
-    // so a terminal curl was always a valid way to reach this endpoint — this
-    // just spares the user typing it.
+    // Safe to hand out precisely because `curl` sends no Origin header, which
+    // the transport's DNS-rebinding guard is what refuses.
     const command = curlCommand(endpoint, requestBody(tool.name, parsed));
     try {
       await navigator.clipboard.writeText(command);
@@ -937,8 +859,7 @@ function ToolTesterDialog({
   );
 }
 
-/** The `tools/call` JSON-RPC request body — the one shape both the live test
- * call and the copied curl command send, so they can never drift apart. */
+/** The one body both the live test call and the copied curl command send. */
 function requestBody(name: string, args: unknown): string {
   return JSON.stringify({
     jsonrpc: "2.0",
@@ -948,17 +869,14 @@ function requestBody(name: string, args: unknown): string {
   });
 }
 
-/** Wrap a string for a POSIX shell in single quotes, escaping any embedded
- * single quote as `'\''` — the standard idiom, and the only sequence that needs
- * handling inside single quotes. */
+/** `'\''` is the standard idiom, and the only sequence that needs handling
+ * inside single quotes. */
 function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** An equivalent `curl` invocation for the request the tester would send:
- * POST to the endpoint with the required `Content-Type: application/json`
- * (an admission requirement, not a nicety) and the JSON body, both shell-quoted
- * so it pastes into a terminal verbatim. */
+/** `Content-Type: application/json` is an admission requirement, not a
+ * nicety; both parts are shell-quoted so this pastes in verbatim. */
 function curlCommand(endpoint: string, body: string): string {
   return [
     "curl -X POST",
@@ -968,9 +886,8 @@ function curlCommand(endpoint: string, body: string): string {
   ].join(" ");
 }
 
-/** A starting `arguments` object: every required property, with a typed
- * placeholder. Optional properties are left out — they're discoverable in the
- * row above, and a pre-filled optional is a value you didn't mean to send. */
+/** Required properties only: a pre-filled optional is a value you didn't mean
+ * to send. */
 function skeletonArgs(tool: McpToolDoc): string {
   const required = tool.inputSchema.required ?? [];
   if (required.length === 0) return "{}";
@@ -982,8 +899,7 @@ function skeletonArgs(tool: McpToolDoc): string {
   return JSON.stringify(seed, null, 2);
 }
 
-/** Pretty-print a JSON body, falling back to the raw text for the plain-text
- * refusal bodies the transport returns. */
+/** Falls back to raw text for the transport's plain-text refusal bodies. */
 function prettyJson(body: string): string {
   try {
     return JSON.stringify(JSON.parse(body), null, 2);
@@ -992,15 +908,9 @@ function prettyJson(body: string): string {
   }
 }
 
-/**
- * One tool's docs: name, description, and its parameters (required ones
- * unmarked, optional ones suffixed `?`) derived straight from its JSON Schema.
- *
- * The `actions` task is a sibling of the identity cluster, not a child of it,
- * so a per-tool control (e.g. a "test this tool" button) drops in without
- * nesting interactive elements — see apps/client/CLAUDE.md's clickable-rows
- * rule.
- */
+/** `actions` is a sibling of the identity cluster, not a child, so a per-tool
+ * control drops in without nesting interactive elements — see
+ * apps/client/CLAUDE.md's clickable-rows rule. */
 function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNode }) {
   const params = Object.entries(tool.inputSchema.properties);
   return (
@@ -1040,12 +950,9 @@ const pluginMcpJson = (endpoint: string) => `{
   }
 }`;
 
-/**
- * How a client reaches the server. It listens on loopback HTTP and the
- * towles-tool-app plugin ships the `.mcp.json` that points at it, so the
- * common case is "enable the plugin" — the manual commands are the fallback.
- * No token: the listener is bound to 127.0.0.1.
- */
+/** The plugin ships the `.mcp.json` that points at the server, so the common
+ * case is "enable the plugin" and the manual commands are the fallback. No
+ * token: the listener is bound to 127.0.0.1. */
 function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
   return (
     <div className="flex flex-col gap-4">
@@ -1087,7 +994,6 @@ function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
   );
 }
 
-/** One setup option: name + one-line context, then the copyable command. */
 function SetupStep({
   title,
   detail,
@@ -1110,7 +1016,6 @@ function SetupStep({
   );
 }
 
-/** A copyable command/URL. */
 function CopyBlock({ value, block = false }: { value: string; block?: boolean }) {
   async function copy() {
     uiAction("mcp.setup.copy", "mcp");

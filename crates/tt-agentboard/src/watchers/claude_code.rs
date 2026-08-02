@@ -34,16 +34,10 @@ const NAME: &str = "claude-code";
 /// once a minute.
 pub const CLI_CACHE_TTL_MS: u64 = 60_000;
 
-// The transcript line schema ([`TranscriptEntry`], content accessors) now lives
-// in the shared `tt-claude-code` crate. This watcher keeps only the claude-code
-// *agent semantics* (status/thread/tool/loop derivation), built on those types.
-
 /// Parse an ISO-8601 / RFC3339 timestamp to epoch ms (JS `Date.parse` equivalent).
 pub fn parse_timestamp_ms(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())
 }
-
-// Pure journal derivation, kept for enrichment.
 
 /// Derive a status from one entry, or `None` (ignored). With CLI-driven
 /// liveness this only informs the `idle` refinement and the exit-time
@@ -57,13 +51,9 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
             let tool_uses: Vec<_> =
                 msg.content.as_ref().map(|c| c.tool_uses().collect()).unwrap_or_default();
             if tool_uses.is_empty() {
-                // Text with nothing else in the response is a finished turn —
-                // but only `stop_reason` can tell that from mid-turn narration,
-                // because Claude Code writes each content block of one response
-                // as its own entry, so the text preceding a tool call lands here
-                // looking identical. See `Message::stop_reason`; treating every
-                // text entry as `Complete` made a working agent flash "needs
-                // you" on every narration block (67 per real turn end, measured).
+                // Only `stop_reason` separates a finished turn from mid-turn
+                // narration: each content block of one response is its own
+                // entry, so text before a tool call looks identical here.
                 return Some(turn_end_status(msg.stop_reason.as_deref()));
             }
             let all_asking = tool_uses.iter().all(|t| t.name() == Some("AskUserQuestion"));
@@ -75,17 +65,11 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
 }
 
 /// Whether a text-only assistant entry ends the turn, from its `stop_reason`.
-///
-/// `end_turn` (and the other genuinely-final reasons) hands control back to the
-/// user, so the session is `Complete` — the status that, while `unseen`, is what
-/// puts a row in needs-you. `tool_use` means the same response also asked for a
-/// tool, so the agent is still `Busy` and this text is narration on the way
-/// there.
-///
-/// A missing `stop_reason` keeps the old reading (`Complete`): transcripts that
-/// predate the field, and partial streaming re-logs, still have to resolve to
-/// something, and a finished turn is the safer guess for a signal whose whole
-/// job is to stop you missing an agent that wants you.
+/// `tool_use` means the same response also asked for a tool, so this text is
+/// narration and the agent is still `Busy`. A missing `stop_reason` reads as
+/// `Complete`: pre-field transcripts and partial streaming re-logs must resolve
+/// to something, and a finished turn is the safer guess for a signal whose job
+/// is to stop you missing an agent that wants you.
 fn turn_end_status(stop_reason: Option<&str>) -> AgentStatus {
     match stop_reason {
         Some("tool_use") => AgentStatus::Busy,
@@ -107,19 +91,13 @@ fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
     Some(text.chars().take(80).collect())
 }
 
-/// Claude Code's `<projects>` subdirectory name for a session rooted at
-/// `cwd`: `/`, `.`, and `_` all collapse to `-` (confirmed against real
-/// `~/.claude/projects` entries — e.g. `/home/u/my.app` → `-home-u-my-app`,
-/// `/a/b/test_atinotes` → `-a-b-test-atinotes`). This is a one-way encode,
-/// not a decoder: several distinct cwds can produce the same dir name (a
-/// literal `-`, a `.`, and a `_` at the same position are indistinguishable
-/// once encoded), which is exactly why [`find_journal`] still falls back to
-/// probing every project dir rather than trusting this guess blindly.
+/// Claude Code's `<projects>` subdirectory name for a session rooted at `cwd`:
+/// `/`, `.` and `_` all collapse to `-`. A one-way encode, not a decoder —
+/// distinct cwds can produce the same name, which is why [`find_journal`] still
+/// probes every project dir rather than trusting the guess.
 ///
-/// `pub` because it is the workspace's one home for this rule and `tt-app` calls
-/// it: the chat pane's resume picker maps a folder to its `<projects>` entry. Don't
-/// narrow it back to `pub(crate)` on a dead-code sweep, and don't re-derive the
-/// substitution ad hoc at a call site.
+/// `pub` because it is the workspace's one home for this rule and `tt-app`'s
+/// resume picker calls it — don't narrow it on a dead-code sweep.
 pub fn encode_project_dir_name(cwd: &str) -> String {
     cwd.chars().map(|c| if matches!(c, '/' | '.' | '_') { '-' } else { c }).collect()
 }
@@ -346,24 +324,19 @@ fn mtime_ms(path: &Path) -> Option<i64> {
         .map(|d| d.as_millis() as i64)
 }
 
-// Details assembly.
-
-/// Claude Code labels entries it generated itself — an interrupt notice, for
-/// one — with a bracketed placeholder model id (`<synthetic>`) and a fully
-/// zeroed `usage` block. They are structurally ordinary assistant entries, so
-/// [`extract_usage_summary`] happily returns one when it is the newest; taking
-/// its identity would relabel a 1M Sonnet session as `<synthetic>` on the
-/// default 200K window. Real model ids are never bracketed, so this rejects
-/// the placeholders without also rejecting a model too new for the table.
+/// Claude Code labels its own generated entries (an interrupt notice, say) with
+/// a bracketed model id and a zeroed `usage`. They are structurally ordinary
+/// assistant entries, so taking the newest one's identity would relabel a 1M
+/// Sonnet session onto the default 200K window. Real model ids are never
+/// bracketed, so this rejects placeholders without rejecting a model too new
+/// for the table.
 fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
 }
 
 fn summary_to_details(s: &ClaudeUsageSummary) -> AgentEventDetails {
     AgentEventDetails {
-        // An entry with no `model` field parses to an empty string; report that
-        // as "unknown" rather than an empty model name, so the session's known
-        // model (carried on `SessionState`) can fill it in instead.
+        // Empty means "unknown", so `SessionState`'s known model can fill in.
         model: Some(s.model.clone()).filter(|m| !m.is_empty()),
         context_used: Some(s.context_used),
         context_max: Some(s.context_max),
@@ -410,23 +383,16 @@ fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
     }
 }
 
-/// How long a CLI-reported `busy`/`waiting` is trusted after the journal
-/// itself already recorded the turn's end, before it's treated as stale
-/// bookkeeping rather than genuine activity. Generous enough that normal
-/// lag between "assistant finished" and "CLI's own status file catches up"
-/// never flips the dot, but short enough that a session stuck this way for
-/// tens of minutes (the reported bug) self-heals promptly.
+/// How long a CLI-reported `busy`/`waiting` is trusted after the journal already
+/// recorded the turn's end. Long enough that ordinary CLI lag never flips the
+/// dot, short enough that a stuck session self-heals promptly.
 const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
 
-/// Cross-check a CLI-reported `busy`/`waiting` against the journal before
-/// trusting it verbatim — the `busy`-side counterpart to `refine_idle`. The
-/// CLI (`claude agents --all --json`) is normally authoritative for
-/// liveness/status, but nothing re-derives its status once the process is
-/// still listed: if its own bookkeeping fails to flip back after a turn
-/// genuinely ends, the board would otherwise show that agent as "working"
-/// forever. A session whose journal still shows an in-flight tool call or an
-/// open question is untouched here — only a journal that already recorded a
-/// plain, no-tool-call final response, with nothing appended since, counts.
+/// Cross-check a CLI-reported `busy`/`waiting` against the journal — the
+/// `busy`-side counterpart to `refine_idle`. Nothing re-derives the CLI's status
+/// while the process stays listed, so bookkeeping that fails to flip back would
+/// show the agent "working" forever. Only a journal that recorded a plain
+/// no-tool-call final response, with nothing appended since, counts.
 fn refine_busy(
     cli_status: AgentStatus,
     journal_status: AgentStatus,
@@ -475,16 +441,11 @@ struct SessionState {
     journal_path: Option<PathBuf>,
     thread_name: Option<String>,
     usage: Option<ClaudeUsageSummary>,
-    /// Which model this session runs, and how big its context window is —
-    /// session-level facts, unlike everything else derived from the transcript
-    /// tail. Both are only ever *stated* inside an assistant `usage` entry, so
-    /// the rotation reset below (which drops `usage` wholesale, since its
-    /// counters were read off bytes that no longer exist) would otherwise blank
-    /// the UI's model/context readout until the session's next reply — which,
-    /// on an idle session, may be never. Neither actually changes when the
-    /// journal is replaced, so they are kept rather than re-derived.
-    ///
-    /// Carried the same way `thread_name` is, and for the same reason.
+    /// Session-level facts, unlike everything else derived from the transcript
+    /// tail, and only ever *stated* inside an assistant `usage` entry. The
+    /// rotation reset below drops `usage` wholesale, which would blank the UI's
+    /// readout until the next reply — never, on an idle session. Carried across
+    /// like `thread_name`, since neither changes when the journal is replaced.
     model: Option<String>,
     context_max: Option<i64>,
     last_tool: Option<String>,

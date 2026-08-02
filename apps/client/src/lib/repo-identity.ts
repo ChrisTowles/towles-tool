@@ -1,17 +1,6 @@
-/**
- * Per-repo chosen icon + color ("repo identity").
- *
- * A repo may carry an optional `meta` blob (see `RepoData` in
- * `lib/agentboard.ts`) picked by the user in Settings → Agentboard and
- * persisted by Rust. Everything here treats that blob as **untrusted**: an
- * unknown icon name or a malformed color must degrade to the default repo
- * look (`FolderGit2`, `text-muted-foreground`), never crash a render and
- * never invent a fallback color.
- *
- * Colors are free-form hex, so they cannot be Tailwind classes. The one
- * blessed seam for turning a hex into pixels is `repoAccentStyles` — call
- * sites apply the returned inline styles and never hand-roll color math.
- */
+/** Per-repo chosen icon + color. The persisted `meta` blob is **untrusted**: an
+ * unknown icon or malformed color degrades to the default look and never invents
+ * a fallback. `repoAccentStyles` is the one seam turning a hex into pixels. */
 import {
   Anchor,
   BookOpen,
@@ -49,24 +38,17 @@ import {
 } from "lucide-react";
 import type { CSSProperties } from "react";
 
-/** How a repo's color is expressed on a surface: a thin accent edge + tinted
- * glyph (`accent`, the default) or that plus a soft background wash
- * (`tint`). Absent ⇒ `"accent"`. */
+/** `accent` (the default) is edge + tinted glyph; `tint` adds a background wash. */
 export type RepoIdentityStyle = "accent" | "tint";
 
-/** The optional per-repo identity blob, exactly as Rust stores/returns it.
- * Every field is optional and every value is untrusted — validate on read. */
 export type RepoMeta = {
   icon?: string;
   color?: string;
   style?: RepoIdentityStyle;
 };
 
-/** The curated icon allowlist — keys are lucide component names, which is what
- * gets persisted. Chosen to stay readable at 14px and to say something useful
- * about a repo (what it *is*, not how it feels). Adding a name here is the
- * only way to make it selectable; the store is never trusted to name an icon
- * outside this map. */
+/** Keys are lucide component names, which is what gets persisted. Adding one
+ * here is the only way to make it selectable. */
 export const REPO_ICONS: Record<string, LucideIcon> = {
   FolderGit2,
   Rocket,
@@ -102,18 +84,11 @@ export const REPO_ICONS: Record<string, LucideIcon> = {
   Puzzle,
 };
 
-/** The icon a repo with no chosen identity renders — also the fallback for an
- * unknown name. */
 export const DEFAULT_REPO_ICON: LucideIcon = FolderGit2;
 
-/** Default swatches offered in the color picker. Mid-chroma so they stay
- * legible on both the light and the dark app surface (nothing near-white or
- * near-black), and deliberately clear of the rail's reserved status hues —
- * amber (needs-you), violet (agent/focus), and sky-500, which marks the
- * primary checkout's branch label — so a repo's decoration can never be
- * mistaken for a signal. Free-form hex can still pick any of them; this is
- * only the fast path. Free-form hex is still allowed; this is
- * just the fast path. */
+/** Mid-chroma so they stay legible on either surface, and clear of the rail's
+ * reserved status hues — amber (needs-you), violet (agent/focus), sky-500
+ * (primary checkout) — so decoration can't be mistaken for a signal. */
 export const REPO_PALETTE: readonly string[] = [
   "#e11d48",
   "#ec4899",
@@ -126,8 +101,6 @@ export const REPO_PALETTE: readonly string[] = [
   "#78716c",
 ];
 
-/** Resolve a repo's icon from the allowlist. An absent or unrecognized name
- * falls back to `FolderGit2` — the store is untrusted input. */
 export function repoIcon(meta: RepoMeta | null | undefined): LucideIcon {
   const name = meta?.icon;
   if (!name) return DEFAULT_REPO_ICON;
@@ -136,14 +109,12 @@ export function repoIcon(meta: RepoMeta | null | undefined): LucideIcon {
 
 const HEX_RE = /^#?(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-/** Mirrors the Rust color parser: `#rgb` or `#rrggbb`, the `#` optional,
- * case-insensitive. */
+/** Mirrors the Rust color parser: `#rgb` or `#rrggbb`, the `#` optional. */
 export function isHexColor(s: string): boolean {
   return HEX_RE.test(s.trim());
 }
 
-/** Canonicalize a user-typed color to lowercase `#rrggbb`, or `null` when it
- * isn't a color at all. Shorthand `#abc` expands to `#aabbcc`. */
+/** Canonicalize to lowercase `#rrggbb`, or `null` when it isn't a color. */
 export function normalizeHex(s: string): string | null {
   const raw = s.trim();
   if (!isHexColor(raw)) return null;
@@ -154,21 +125,10 @@ export function normalizeHex(s: string): string | null {
   return `#${body}`;
 }
 
-/** The inline styles a repo's identity contributes to one surface.
- *
- * Every field is `undefined` when the repo has no (valid) color, so a call
- * site can spread/pass them unconditionally and get today's rendering for an
- * unthemed repo.
- *
- * - `iconStyle` — tints the glyph. Apply *instead of* `text-muted-foreground`.
- * - `edgeStyle` — colors a `border-l-2` edge. Callers must only apply it when
- *   no status accent (amber needs-you, violet active) owns the edge; identity
- *   never outranks attention.
- * - `surfaceStyle` — the soft background wash, present only for `style: "tint"`.
- *
- * `color-mix(in srgb, …, transparent)` is used rather than a fixed rgba so the
- * wash and edge stay proportionate against both the light and dark surface.
- */
+/** Every field is `undefined` for an unthemed repo, so a call site can spread
+ * them unconditionally. `iconStyle` replaces `text-muted-foreground`;
+ * `edgeStyle` applies only when no status accent owns the edge, since identity
+ * never outranks attention. */
 export type RepoAccentStyles = {
   iconStyle: CSSProperties | undefined;
   edgeStyle: CSSProperties | undefined;
@@ -183,11 +143,8 @@ const EMPTY_ACCENT: RepoAccentStyles = {
 
 export function repoAccentStyles(
   meta: RepoMeta | null | undefined,
-  /** What the tint wash mixes into. Defaults to `transparent`, which lets
-   * whatever is behind the element show through. A **sticky** surface (the
-   * rail's repo header, which rows scroll underneath) must stay fully
-   * opaque, so it passes its own background token instead — e.g.
-   * `"var(--card)"`. */
+  /** What the tint wash mixes into. A **sticky** surface (rows scroll under
+   * the rail's repo header) must stay opaque and pass `"var(--card)"`. */
   base = "transparent",
 ): RepoAccentStyles {
   const hex = meta?.color ? normalizeHex(meta.color) : null;
@@ -201,8 +158,7 @@ export function repoAccentStyles(
   };
 }
 
-/** True when the repo has a usable identity color — the cheap test a call
- * site uses to decide whether to drop `text-muted-foreground`. */
+/** The cheap test for whether to drop `text-muted-foreground`. */
 export function hasRepoColor(meta: RepoMeta | null | undefined): boolean {
   return meta?.color ? normalizeHex(meta.color) !== null : false;
 }

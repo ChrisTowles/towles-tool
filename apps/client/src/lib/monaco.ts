@@ -1,33 +1,13 @@
-/**
- * Lazy Monaco loader, backed by @codingame/monaco-vscode-api: `monaco-editor`
- * is aliased to `@codingame/monaco-vscode-editor-api` (same API, real VS Code
- * services underneath), with the TextMate + theme service overrides so files
- * highlight with VS Code's actual grammars and Dark Modern theme. Everything
- * is bundled locally by Vite (`?worker` imports become self-contained worker
- * chunks) — no CDN, works offline inside the Tauri shell. The editor chunk is
- * only fetched when a code viewer actually mounts.
- *
- * The editor renders one theme (Default Dark Modern) regardless of the app's
- * light/dark mode.
- *
- * Two guards keep the workbench half of this stack from taking the window
- * down: `PRUNED_COMMANDS` is shadowed with no-ops below (the commands that
- * would open a native dialog or write through the read-only file provider),
- * and `lib/monaco-dialogs` replaces the standalone dialog service, whose
- * `confirm` is a literal blocking `window.confirm()`. See `lib/monaco-prune.ts`.
- */
+/** Lazy Monaco loader over @codingame/monaco-vscode-api, with real VS Code services
+ * underneath, bundled locally by Vite — no CDN, works offline in the Tauri shell.
+ * The editor renders Default Dark Modern whatever the app's mode. */
 
 import { FILE_NESTING_PATTERNS } from "@/lib/file-nesting";
 import { PRUNED_COMMANDS, staleCommands } from "@/lib/monaco-prune";
 
 let loading: Promise<typeof import("monaco-editor")> | null = null;
 
-/**
- * The editor API only if some other consumer has already booted it — for
- * callers that want to decorate with Monaco but must not pay for its
- * multi-megabyte bootstrap on their own account (the Markdown preview's
- * syntax highlighting). Null until then, and never triggers a load.
- */
+/** The editor API only if another consumer booted it; never triggers a load. */
 export function loadedMonaco(): Promise<typeof import("monaco-editor")> | null {
   return loading;
 }
@@ -63,9 +43,7 @@ async function start(): Promise<typeof import("monaco-editor")> {
   ] = await Promise.all([
     import("monaco-editor"),
     import("@codingame/monaco-vscode-api"),
-    // Local extension host — the LSP bridge's monaco-languageclient runs
-    // as a local extension against the vscode API (must load before
-    // initialize).
+    // Must precede initialize: the LSP bridge runs as a local extension.
     import("vscode/localExtensionHost"),
     import("@codingame/monaco-vscode-configuration-service-override"),
     import("@codingame/monaco-vscode-languages-service-override"),
@@ -80,14 +58,10 @@ async function start(): Promise<typeof import("monaco-editor")> {
     import("@/lib/monaco-dialogs"),
     import("monaco-editor/esm/vs/editor/editor.worker?worker"),
     import("@codingame/monaco-vscode-textmate-service-override/worker?worker"),
-    // Importing a default-extension package registers its TextMate grammars
-    // (or themes) as a built-in VS Code extension — side-effect imports.
-    // (themeDefaults is awaited below: setTheme races its registration.)
+    // Side-effect imports: each registers grammars/themes as a built-in extension.
   ]);
   const [themeDefaults, setiIcons] = await Promise.all([
     import("@codingame/monaco-vscode-theme-defaults-default-extension"),
-    // VS Code's own file-icon theme — the Explorer's per-filetype icons come
-    // from here rather than a hand-rolled extension→glyph map.
     import("@codingame/monaco-vscode-theme-seti-default-extension"),
     import("@codingame/monaco-vscode-rust-default-extension"),
     import("@codingame/monaco-vscode-typescript-basics-default-extension"),
@@ -101,12 +75,8 @@ async function start(): Promise<typeof import("monaco-editor")> {
     import("@codingame/monaco-vscode-python-default-extension"),
     import("@codingame/monaco-vscode-log-default-extension"),
     import("@codingame/monaco-vscode-diff-default-extension"),
-    // The rest of VS Code's built-in grammars. A diff of an unclaimed file
-    // type renders as plaintext rather than not at all, so the cost of a
-    // missing grammar is only lost color — but a repo browser that can't
-    // color C, Go, SQL or a Dockerfile is a browser for one repo.
-    // `lib/language-fallback.ts` covers what upstream ships no grammar for
-    // (TOML) and the names their association lists miss.
+    // The rest of VS Code's built-in grammars. `lib/language-fallback.ts` covers
+    // what upstream ships none for (TOML) and the names its lists miss.
     import("@codingame/monaco-vscode-ini-default-extension"),
     import("@codingame/monaco-vscode-git-base-default-extension"),
     import("@codingame/monaco-vscode-docker-default-extension"),
@@ -127,17 +97,11 @@ async function start(): Promise<typeof import("monaco-editor")> {
     import("@codingame/monaco-vscode-bat-default-extension"),
     import("@codingame/monaco-vscode-scss-default-extension"),
     import("@codingame/monaco-vscode-less-default-extension"),
-    // No standalone language features: this pane is a file *browser*, and
-    // their TS worker has no tsconfig, no node_modules resolution and no
-    // project graph, so every real source file lit up with bogus "cannot
-    // find module" errors. They were also the only formatting providers in
-    // the app, which is what made Format Document work for a handful of
-    // languages and prompt-then-hang for the rest.
+    // No standalone language features: their TS worker has no tsconfig and no
+    // module resolution, so every real source file lit up with bogus errors.
   ]);
   self.MonacoEnvironment = {
     getWorker(_workerId: string, label: string): Worker {
-      // Highlighting runs in the TextMate worker; everything else (diff
-      // computation, model ops) is the plain editor worker.
       return label === "TextMateWorker" ? new textmateWorker.default() : new editorWorker.default();
     },
   };
@@ -150,20 +114,14 @@ async function start(): Promise<typeof import("monaco-editor")> {
       "editor.stickyScroll.enabled": true,
       "editor.bracketPairColorization.enabled": true,
       "editor.guides.bracketPairs": "active",
-      // Quick-open walks the workspace through the Tauri fs bridge — keep
-      // it out of the build/dependency trees.
       "search.exclude": {
         "**/node_modules": true,
         "**/target": true,
         "**/dist": true,
         "**/.git": true,
       },
-      // Tests, lockfiles and configs fold into the row of the file they
-      // belong to. The diff pane's own rail runs the same table through its
-      // own matcher (`lib/file-nesting.ts`) — the Explorer is the only one of
-      // the two that can be driven by configuration. Collapsed by default:
-      // nesting is for keeping a long list readable, and auto-expanding every
-      // parent puts the rows straight back.
+      // The diff pane's rail runs the same table through its own matcher; only
+      // the Explorer can be driven by configuration.
       "explorer.fileNesting.enabled": true,
       "explorer.fileNesting.expand": false,
       "explorer.fileNesting.patterns": FILE_NESTING_PATTERNS,
@@ -177,18 +135,13 @@ async function start(): Promise<typeof import("monaco-editor")> {
     ...languages.default(),
     ...textmate.default(),
     ...theme.default(),
-    // Resolves file: URIs into models through the file service (the Tauri
-    // fs bridge) — quick-open's Enter path needs this.
     ...model.default(),
     ...quickaccess.default({
-      // The app has no VS Code keybindings UI; always use the real picker.
       isKeybindingConfigurationVisible: () => false,
       shouldUseGlobalPicker: () => true,
     }),
-    // Workbench views (the Files pane hosts the real Explorer via
-    // attachExplorer). Spread after quickaccess so the workbench's own
-    // quick-input wiring wins where they overlap. No editor part is ever
-    // attached — the fallback routes Explorer opens to the app's viewer.
+    // After quickaccess, so the workbench's own quick-input wiring wins where
+    // they overlap. No editor part is attached; the fallback routes to our viewer.
     ...views.default(async (modelRef) => {
       const uri = modelRef.object.textEditorModel.uri;
       modelRef.dispose();
@@ -197,13 +150,12 @@ async function start(): Promise<typeof import("monaco-editor")> {
     }),
     ...explorer.default(),
     ...search.default(),
-    // Last: nothing above may reinstate the standalone dialog service,
-    // whose confirm() is a blocking native window.confirm().
+    // Last: nothing above may reinstate the standalone blocking-confirm service.
     ...dialogs.default(),
   });
   tauriFs.registerTauriFileSystem();
-  // Checked before shadowing — afterwards every id exists by construction,
-  // so a rename would look healthy while the real handler stayed live.
+  // Checked before shadowing — afterwards every id exists by construction, so a
+  // rename would look healthy while the real handler stayed live.
   const { CommandsRegistry } =
     await import("@codingame/monaco-vscode-api/vscode/vs/platform/commands/common/commands");
   const stale = staleCommands(CommandsRegistry.getCommands().keys());
@@ -212,15 +164,11 @@ async function start(): Promise<typeof import("monaco-editor")> {
       `[monaco] shadowed commands are gone upstream (renamed?), so they are live again: ${stale.join(", ")}`,
     );
   }
-  // After initialize, so these land on top of the workbench contributions
-  // they shadow (CommandsRegistry keeps the newest handler for an id).
+  // After initialize: CommandsRegistry keeps the newest handler for an id.
   for (const id of PRUNED_COMMANDS) monaco.editor.registerCommand(id, () => {});
-  // Both themes register asynchronously and the configured ids above race
-  // that registration — await them or the editor falls back to the default
-  // theme and the Explorer to no icons.
+  // The configured theme/icon ids above race these async registrations — await
+  // them, or the editor falls back to the default theme and the Explorer to none.
   await Promise.all([themeDefaults.whenReady(), setiIcons.whenReady()]);
-  // Quick-open (and anything else workbench-y) resolves picked files
-  // through the editor opener — route them to the app's own viewer.
   monaco.editor.registerEditorOpener({
     openCodeEditor(_source, resource) {
       if (resource.scheme !== "file" || openHandler == null) return false;
@@ -233,11 +181,7 @@ async function start(): Promise<typeof import("monaco-editor")> {
 
 let workspaceDir: string | null = null;
 
-/**
- * Point the VS Code workspace at one folder (quick-open's search root). The
- * Files pane calls this as it mounts/changes — one workspace at a time, last
- * pane wins.
- */
+/** Point the VS Code workspace at one folder — one at a time, last pane wins. */
 export async function setMonacoWorkspace(dir: string): Promise<void> {
   const monaco = await loadMonaco();
   if (workspaceDir === dir) return;
@@ -245,19 +189,14 @@ export async function setMonacoWorkspace(dir: string): Promise<void> {
   const { reinitializeWorkspace } =
     await import("@codingame/monaco-vscode-configuration-service-override");
   await reinitializeWorkspace({ id: dir, uri: monaco.Uri.file(dir) });
-  // The LSP bridge follows the workspace (rust-analyzer per Rust checkout).
   const { syncLspWorkspace } = await import("@/lib/lsp");
   syncLspWorkspace(dir);
 }
 
 let detachSidebar: (() => void) | null = null;
 
-/**
- * Host the VS Code Explorer (the workbench sidebar part) inside `container`.
- * The sidebar is a singleton — the pane that attached last owns it, and a
- * newer attach silently steals it (same last-wins semantics as the
- * workspace). Returns a detach that no-ops if someone else took over.
- */
+/** Host the workbench sidebar part inside `container`. It is a singleton — a newer
+ * attach steals it, and the returned detach no-ops once someone else has. */
 export async function attachExplorer(container: HTMLElement): Promise<() => void> {
   await loadMonaco();
   const [views, layout] = await Promise.all([
@@ -274,13 +213,8 @@ export async function attachExplorer(container: HTMLElement): Promise<() => void
   return mine;
 }
 
-/**
- * Which view the singleton sidebar shows. VS Code calls these "view
- * containers"; the workbench registers the file tree and the search form as
- * two of them in the same sidebar part, so hosting the part (`attachExplorer`)
- * hosts whichever one is active — including the one a right-click's "Find in
- * Folder" switches to behind the app's back.
- */
+/** The file tree and the search form are two view containers in the same part, so
+ * `attachExplorer` hosts whichever the workbench has made active. */
 export type SidebarView = "explorer" | "search";
 
 const SIDEBAR_VIEW_IDS: Record<SidebarView, string> = {
@@ -305,7 +239,6 @@ async function paneComposites() {
   return { service, sidebar: views.ViewContainerLocation.Sidebar };
 }
 
-/** Show one of the sidebar's views in the attached part, focusing it. */
 export async function openSidebarView(view: SidebarView): Promise<void> {
   try {
     const { service, sidebar } = await paneComposites();
@@ -315,13 +248,8 @@ export async function openSidebarView(view: SidebarView): Promise<void> {
   }
 }
 
-/**
- * Report the sidebar's current view, now and on every change. The workbench
- * switches views on its own (the Explorer's "Find in Folder" opens search), so
- * a mode control has to follow the part rather than assume it drives it.
- * Returns an unsubscribe; a null report means the sidebar shows something this
- * app doesn't name.
- */
+/** The workbench switches views on its own ("Find in Folder" opens search), so a
+ * mode control must follow the part rather than assume it drives it. */
 export function watchSidebarView(listener: (view: SidebarView | null) => void): () => void {
   let disposed = false;
   let dispose: (() => void) | null = null;
@@ -345,8 +273,6 @@ export function watchSidebarView(listener: (view: SidebarView | null) => void): 
   };
 }
 
-/** Run a VS Code command by id (e.g. the Explorer's refresh action). Command
- * failures are the command's problem, not the caller's — log and move on. */
 export async function runMonacoCommand(id: string): Promise<void> {
   try {
     await loadMonaco();
@@ -361,8 +287,6 @@ export async function runMonacoCommand(id: string): Promise<void> {
 type OpenFileHandler = (absolutePath: string) => void;
 let openHandler: OpenFileHandler | null = null;
 
-/** Where "open this file" requests from the VS Code layer (quick-open picks)
- * land — the active Files pane registers itself; null to unregister. */
 export function setMonacoOpenHandler(handler: OpenFileHandler | null): void {
   openHandler = handler;
 }

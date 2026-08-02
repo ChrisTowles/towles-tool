@@ -70,8 +70,7 @@ import {
 } from "@/components/ui/context-menu";
 import { IconBtn } from "@/components/agentboard-bits";
 
-/** Search highlight fills — alpha washes so they read on light and dark
- * terminal themes; the current match gets the stronger orange + outline. */
+/** Alpha washes, so they read on light and dark terminal themes. */
 const MATCH_FILL = "rgba(250, 204, 21, 0.3)";
 const CURRENT_MATCH_FILL = "rgba(249, 115, 22, 0.5)";
 const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
@@ -80,9 +79,8 @@ const FONT_FAMILY =
   "'FiraCode Nerd Font Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
 const LINE_HEIGHT = 1.25;
 
-/** Canvas terminal pane over the tt-vt engine. Rust owns the PTY and the
- * state, keyed by `termId`; this paints `terminal://frame` diffs and sends
- * input back. Many mount at once, so each filters the shared events by id. */
+/** Rust owns the PTY and the state, keyed by `termId`; this paints
+ * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
 export function TerminalView({
   termId,
   cwd,
@@ -94,15 +92,12 @@ export function TerminalView({
   termId: string;
   cwd?: string;
   onExit: (exit: TermExit) => void;
-  /** Fires when the PTY sets its window title (OSC 0/2) — e.g. Claude Code
-   * emits `✳ <session title>`, which the rail uses as the live session label. */
+  /** OSC 0/2. Claude Code emits `✳ <title>`, which the rail uses as its label. */
   onTitle?: (termId: string, title: string) => void;
-  /** Routes a clicked file link into the app (the folder's files pane) instead
-   * of an external editor. When absent, links open via `term_open_path`. */
+  /** Absent, links open via `term_open_path` in the preferred editor. */
   onOpenPath?: (path: string, line: number | null) => void;
-  /** Bump (any changed value) to focus this pane's hidden input — for the
-   * paths that jump into a terminal without a click on its canvas, like
-   * `ab-focus-terminal`. Absent/unchanged does nothing. */
+  /** Bump to focus this pane's hidden input, for the paths that jump into a
+   * terminal without a click on its canvas. Absent/unchanged does nothing. */
   focusRequest?: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -114,15 +109,14 @@ export function TerminalView({
   onTitleRef.current = onTitle;
   const onOpenPathRef = useRef(onOpenPath);
   onOpenPathRef.current = onOpenPath;
-  // `termId` goes along so the backend resolves a relative path against where
-  // this shell has since `cd`'d, not just its spawn `cwd`.
+  // `termId` goes along so a relative path resolves against where this shell
+  // has since `cd`'d, not its spawn `cwd`.
   const openPathInEditor = (link: Extract<TermLink, { kind: "path" }>) =>
     void invoke("term_open_path", { path: link.path, cwd, line: link.line, termId });
   const openPathInEditorRef = useRef(openPathInEditor);
   openPathInEditorRef.current = openPathInEditor;
 
-  // Scrollback search: the canvas paints from `searchRef`; `bridgeRef` hands
-  // the overlay the render effect's IPC.
+  // The canvas paints from `searchRef`; `bridgeRef` hands the overlay its IPC.
   const searchRef = useRef<{ matches: SearchMatch[]; current: number }>({
     matches: [],
     current: -1,
@@ -149,11 +143,10 @@ export function TerminalView({
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentMatch, setCurrentMatch] = useState(-1);
-  // Sampled when the context menu opens: selection state and the clicked link.
   const [copyEnabled, setCopyEnabled] = useState(false);
   const [menuLink, setMenuLink] = useState<TermLink | null>(null);
-  // A multi-line paste the engine held back because the shell lacks bracketed
-  // paste (every line would execute); the dialog re-sends it with force.
+  // Held back because the shell lacks bracketed paste (every line would
+  // execute); the dialog re-sends it with force.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const confirmPaste = () => {
     const text = pendingPaste;
@@ -161,13 +154,11 @@ export function TerminalView({
     if (!text) return;
     void invoke("term_paste", { termId, text, force: true });
   };
-  // Copy-on-select preference, read live by the render effect's mouse handlers.
   const copyOnSelectRef = useCopyOnSelect();
-  // Whether board-wide action shortcuts should yield instead of going to the
-  // shell, read live by the keydown handler below.
+  // Whether board-wide shortcuts yield instead of going to the shell.
   const shortcutsWorkInTerminalRef = useShortcutsWorkInTerminal();
-  // Font size is ref'd so the effect's key handler reads it live without
-  // re-subscribing — re-running that effect would restart the shell.
+  // Ref'd so the key handler reads it live: re-running that effect would
+  // restart the shell.
   const [fontSize, setTerminalFontSize] = useTerminalFontSize();
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
@@ -288,8 +279,8 @@ export function TerminalView({
         ctx.globalAlpha = flags & FAINT ? 0.6 : 1;
         setFont(flags);
         if (isWideRun(run)) {
-          // One fillText per grapheme cluster, so combining marks and emoji
-          // selectors compose onto the base glyph instead of shifting the grid.
+          // One fillText per grapheme cluster: combining marks and emoji
+          // selectors compose instead of shifting the grid.
           let cx = px;
           for (const cluster of graphemeClusters(run.text)) {
             ctx.fillText(cluster, cx, y * cellH + baseline);
@@ -308,8 +299,8 @@ export function TerminalView({
             ctx.stroke();
           };
           if (flags & UNDERLINE) {
-            // SGR 58 underline color falls back to the glyph color; the SGR 4:x
-            // style variants match what nvim/helix diagnostics emit.
+            // SGR 58 falls back to the glyph color; the 4:x variants are what
+            // nvim/helix diagnostics emit.
             ctx.strokeStyle = run.ulc !== undefined ? rgb(run.ulc) : fg;
             const uy = y * cellH + baseline + 2;
             switch (run.ul) {
@@ -318,7 +309,6 @@ export function TerminalView({
                 line(uy + 1);
                 break;
               case 3: {
-                // curly: a 4px-period zigzag across the run
                 ctx.beginPath();
                 for (let i = 0; i <= w; i += 2) {
                   const zy = uy + (i % 4 === 0 ? -1 : 1);
@@ -347,7 +337,6 @@ export function TerminalView({
           if (flags & OVERLINE) line(y * cellH + 1);
         }
       }
-      // Hovered link: underline its cells on this row so it reads clickable.
       for (const seg of grid.hoveredLink?.segments ?? []) {
         if (seg.y !== y) continue;
         ctx.strokeStyle = theme.fg;
@@ -364,7 +353,6 @@ export function TerminalView({
         ctx.fillRect(sel[0] * cellW, y * cellH, (sel[1] - sel[0] + 1) * cellW, cellH);
         ctx.globalAlpha = 1;
       }
-      // Search-match highlights over the drawn text; current match outlined.
       const sr = searchRef.current;
       if (sr.matches.length) {
         for (const m of viewportMatches(sr.matches, grid.viewportTop, grid.rows)) {
@@ -454,8 +442,8 @@ export function TerminalView({
         grid.rows = frame.rows;
         grid.lines = Array.from({ length: frame.rows }, () => ({ runs: [] }));
       } else if (resized) {
-        // Resize race: adjust the row count but KEEP the rows — wiping them
-        // blanks rows the engine thinks are clean and never resends (#47).
+        // Resize race: adjust the row count but KEEP the rows — wiping blanks
+        // rows the engine thinks are clean and never resends (#47).
         grid.cols = frame.cols;
         grid.rows = frame.rows;
         while (grid.lines.length < frame.rows) grid.lines.push({ runs: [] });
@@ -463,8 +451,8 @@ export function TerminalView({
       }
       for (const row of frame.changed)
         grid.lines[row.y] = { runs: row.runs, wrapped: row.wrapped, sel: row.sel };
-      // Changed text under a hovered link: drop the highlight rather than
-      // underline stale cells (the next mousemove re-detects).
+      // Changed text under a hovered link: drop it rather than underline stale
+      // cells; the next mousemove re-detects.
       if (
         grid.hoveredLink &&
         (frame.full ||
@@ -478,8 +466,7 @@ export function TerminalView({
       grid.cursor = frame.cursor;
       grid.modes = frame.modes;
       grid.viewportTop = frame.viewportTop;
-      // Tracking the engine's colors keeps OSC 10/11 answers agreeing with
-      // what the canvas shows.
+      // Tracking the engine's colors keeps OSC 10/11 answers honest.
       theme.fg = rgb(frame.colors.fg);
       theme.bg = rgb(frame.colors.bg);
       // The frame is the truth here, not the wheel handler's optimistic flag.
@@ -491,7 +478,6 @@ export function TerminalView({
         return;
       }
       for (const row of frame.changed) paintRow(row.y);
-      // Repaint rows the cursor left/entered even when their content is clean.
       if (prevCursorY !== undefined && !frame.changed.some((r) => r.y === prevCursorY)) {
         paintRow(prevCursorY);
       }
@@ -512,9 +498,8 @@ export function TerminalView({
     };
     fitCanvas();
 
-    // React 19 StrictMode double-mounts effects in dev; `disposed` keeps the
-    // stale mount's async continuation from starting a second shell, and
-    // `started` ensures only the mount that spawned the shell kills it.
+    // StrictMode double-mounts in dev: `disposed` stops the stale mount from
+    // starting a second shell, `started` stops it killing one it didn't spawn.
     let disposed = false;
     let started = false;
     const unlisteners: (() => void)[] = [];
@@ -533,8 +518,7 @@ export function TerminalView({
 
       const write = (data: string) => void invoke("term_write", { termId, data });
       const scroll = (delta: number | null) => void invoke("term_scroll", { termId, delta });
-      // The clipboard write happens in Rust: the webview's navigator.clipboard
-      // is unreliable under WebKitGTK and silently broke copy-on-select.
+      // Written in Rust: navigator.clipboard is unreliable under WebKitGTK.
       const copySelection = () => void invoke("term_copy", { termId });
 
       const onFrame = await listen<{ termId: string; frame: Frame }>("terminal://frame", (e) => {
@@ -566,8 +550,7 @@ export function TerminalView({
       started = true;
       if (disposed) return void invoke("term_kill", { termId });
 
-      // Re-push the theme when the app's dark/light class or color theme
-      // changes; the engine answers with a full frame in the new colors.
+      // Re-push on a theme change; the engine answers with a full frame.
       const themeObserver = new MutationObserver(() => {
         void invoke("term_theme", { termId, theme: resolveTermTheme(host) });
       });
@@ -583,19 +566,18 @@ export function TerminalView({
           scroll(null);
         }
       };
-      // The engine encodes keystrokes against live terminal state (kitty
-      // protocol, DECCKM, keypad mode) — the view never builds escapes.
+      // The engine encodes against live terminal state (kitty, DECCKM, keypad
+      // mode) — the view never builds escapes.
       const sendKey = (event: KeyEventWire) => void invoke("term_key", { termId, event });
-      // The engine strips paste-bracket escapes (no ESC[201~ injection) and
-      // answers needsConfirm for a multi-line paste on a bare shell.
+      // The engine strips paste-bracket escapes and answers needsConfirm for a
+      // multi-line paste on a bare shell.
       const paste = (text: string) => {
         backToLive();
         void invoke<{ needsConfirm: boolean }>("term_paste", { termId, text }).then((reply) => {
           if (reply.unwrapOr(null)?.needsConfirm) setPendingPaste(text);
         });
       };
-      // Read in Rust like term_copy writes there: readText() rejects with
-      // NotAllowedError under WebKitGTK, which silently broke Paste.
+      // Read in Rust: readText() rejects with NotAllowedError under WebKitGTK.
       const pasteClipboard = () => {
         backToLive();
         void invoke<{ needsConfirm: boolean; text: string }>("term_paste_clipboard", {
@@ -608,9 +590,8 @@ export function TerminalView({
 
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.isComposing) return;
-        // Board-wide actions bubble to the window listener instead of becoming
-        // a control byte (encodeKey ignores shift on Ctrl combos, so
-        // Ctrl+Shift+N would send Ctrl+N). Gated by `shortcutsWorkInTerminal`.
+        // Board-wide actions bubble instead of becoming a control byte —
+        // encodeKey ignores shift on Ctrl combos, so Ctrl+Shift+N sends Ctrl+N.
         if (shortcutsWorkInTerminalRef.current && matchesEditableOverride(e)) return;
         // The search chord is ours (plain Ctrl+F stays with the shell).
         if (matchesShortcut("term-search", e)) {
@@ -628,8 +609,7 @@ export function TerminalView({
           pasteClipboard();
           return;
         }
-        // Font zoom (Ctrl/⌘ +/-, 0 to reset) — ours, not the shell's. Numpad
-        // emits `+`/`-`, hence both spellings.
+        // Font zoom is ours, not the shell's. Numpad emits `+`/`-`, hence both.
         if ((e.ctrlKey || e.metaKey) && !e.altKey) {
           if (e.key === "=" || e.key === "+") {
             e.preventDefault();
@@ -647,8 +627,8 @@ export function TerminalView({
             return;
           }
         }
-        // Shift+PageUp/Down/Home/End drive the scrollback. On the alternate
-        // screen a TUI owns these keys, so forward the unshifted key instead.
+        // These drive the scrollback, except on the alternate screen where a
+        // TUI owns them and the unshifted key is forwarded instead.
         const scrollback = scrollbackKey(e);
         if (scrollback) {
           e.preventDefault();
@@ -690,8 +670,7 @@ export function TerminalView({
         const wire = keyEventWire(e);
         if (wire) {
           e.preventDefault();
-          // A bare modifier press (kitty REPORT_ALL wants it) must not yank a
-          // scrolled-back viewport to the bottom.
+          // A bare modifier press must not yank a scrolled-back viewport down.
           if (!MODIFIER_KEYS.has(e.key)) backToLive();
           sendKey(wire);
         }
@@ -704,9 +683,8 @@ export function TerminalView({
       };
       const onPaste = (e: ClipboardEvent) => {
         e.preventDefault();
-        // An image has no getData("text"), so the paste would vanish. \x16
-        // (SYN) tells a TUI like Claude Code to read the image off the
-        // clipboard itself — macOS's Cmd+V only reaches this native event.
+        // An image has no getData("text"), so the paste would vanish. \x16 tells
+        // a TUI to read it off the clipboard itself.
         const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
         if (items.some((it) => it.type.startsWith("image/"))) {
           backToLive();
@@ -721,8 +699,7 @@ export function TerminalView({
         if (e.data) write(e.data);
         input.value = "";
       };
-      // The engine owns the whole wheel policy (tt-vt's Engine::wheel); the
-      // view just reports the gesture and its cell.
+      // The engine owns the whole wheel policy; the view reports the gesture.
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
         const lines =
@@ -737,7 +714,6 @@ export function TerminalView({
       };
       const focusInput = () => input.focus({ preventScroll: true });
 
-      // Hand the overlay its IPC + paint hooks now that the shell is up.
       bridgeRef.current = {
         search: (q) =>
           invoke<SearchMatch[]>("term_search", { termId, query: q }).then((r) => r.unwrapOr([])),
@@ -749,8 +725,7 @@ export function TerminalView({
         selectAll: () => void select("all"),
         hasSelection: () => rowsHaveSelection(grid.lines),
         clearScrollback: () => void invoke(TERM_CLEAR_COMMAND, { termId }),
-        // Open a clicked file path via `onOpenPath` (the files pane) when the
-        // parent wired one, else the preferred external editor.
+        // `onOpenPath` when the parent wired one, else the external editor.
         openPath: (link) => {
           const handler = onOpenPathRef.current;
           if (handler) handler(link.path, link.line);
@@ -761,8 +736,8 @@ export function TerminalView({
           const y = Math.max(0, Math.min(grid.rows - 1, Math.floor(offsetY / cellH)));
           return linkAt(grid.lines, grid.cols, x, y);
         },
-        // Re-measure at a new font size in place — no shell restart — and
-        // resize the PTY if cols/rows changed for the same pixel box.
+        // Re-measure in place — no shell restart — and resize the PTY if
+        // cols/rows changed for the same pixel box.
         setFontSize: (px) => {
           if (px === fontPx) return;
           fontPx = px;
@@ -787,8 +762,8 @@ export function TerminalView({
       // Reconcile if the persisted size loaded after this effect measured.
       if (fontPx !== fontSizeRef.current) bridgeRef.current.setFontSize(fontSizeRef.current);
 
-      // `lastSelect` is the pending select IPC, so copy-on-select can await it
-      // before `term_copy` reads — those calls are otherwise unordered.
+      // The pending select IPC, so copy-on-select can await it before
+      // `term_copy` reads — those calls are otherwise unordered.
       let lastSelect: Promise<unknown> = Promise.resolve();
       const select = (
         kind: "drag" | "word" | "line" | "all" | "clear",
@@ -805,9 +780,8 @@ export function TerminalView({
         });
         return lastSelect;
       };
-      // What the last copy-on-select took, so repeating the same gesture
-      // doesn't re-take the system clipboard. Reset on clear and on blur —
-      // both mean "new intent".
+      // What the last copy-on-select took, so repeating the gesture doesn't
+      // re-take the clipboard. Reset on clear and blur: both are new intent.
       let lastCopiedGesture: string | null = null;
       const maybeCopyOnSelect = (kind: "drag" | "word" | "line", gesture: string | null) => {
         if (!shouldCopyOnSelect(copyOnSelectRef.current, kind, gesture, lastCopiedGesture)) return;
@@ -820,10 +794,9 @@ export function TerminalView({
       });
       let anchor: { x: number; y: number } | null = null;
       let dragged = false;
-      // A tracking program (Claude Code sets ?1003h all session) gets wheel,
-      // motion, middle and plain left clicks — never left drags or word/line
-      // gestures, which stay local selection. A left press therefore waits
-      // for mouseup: press+release if clean, a selection if it dragged.
+      // A tracking program gets wheel, motion, middle and plain left clicks —
+      // never left drags or word/line gestures, which stay local selection. So
+      // a left press waits for mouseup to know which it was.
       const mouseToProgram = (e: MouseEvent) =>
         grid.modes.mouseTracking && !grid.scrolledBack && !e.shiftKey;
       // A held-back left press owed to the program if no drag develops.
@@ -862,8 +835,7 @@ export function TerminalView({
         }
         e.preventDefault(); // keep focus on the hidden input
         const cell = cellOf(e);
-        // Ctrl/Cmd+click opens a link (VS Code terminal convention); plain
-        // click keeps its select/focus meaning.
+        // Ctrl/Cmd+click opens a link; plain click keeps select/focus.
         if (e.ctrlKey || e.metaKey) {
           const link = linkAt(grid.lines, grid.cols, cell.x, cell.y);
           if (link) {
@@ -875,8 +847,7 @@ export function TerminalView({
         const kind = selectionKindForDetail(e.detail);
         if (kind === "word" || kind === "line") {
           void select(kind, cell);
-          // Key on the absolute scrollback row, so re-clicking the same text
-          // is not a new gesture but clicking after a scroll is.
+          // Keyed on the absolute scrollback row, so a scroll makes it new.
           maybeCopyOnSelect(kind, selectionGestureKey(kind, cell.x, grid.viewportTop + cell.y));
         } else {
           anchor = cell;
@@ -886,8 +857,8 @@ export function TerminalView({
       };
       const onMouseMove = (e: MouseEvent) => {
         const cell = cellOf(e);
-        // Motion for the program: during a forwarded gesture, or hover motion
-        // while tracking is on (mode 1003). Deduped to cell granularity.
+        // Motion during a forwarded gesture, or hover under mode 1003. Deduped
+        // to cell granularity.
         if (mouseGestureToProgram || (!anchor && mouseToProgram(e))) {
           if (lastMotionCell?.x !== cell.x || lastMotionCell?.y !== cell.y) {
             lastMotionCell = cell;
@@ -919,9 +890,8 @@ export function TerminalView({
             sendMouse(e, "release", anchor);
           }
         } else if (anchor && dragged) {
-          // Both flags, and reset below: this fires for every window mouseup
-          // in every pooled pane, and a stale `dragged` re-copied this pane's
-          // old selection on every later click anywhere in the app.
+          // This fires for every window mouseup in every pooled pane, and a
+          // stale `dragged` re-copied this pane's old selection on each one.
           maybeCopyOnSelect("drag", null);
         }
         anchor = null;
@@ -929,8 +899,7 @@ export function TerminalView({
         clickToProgram = false;
       };
       const onMouseLeave = () => setHoveredLink(null);
-      // The backend gates OSC 52 clipboard writes to the focused terminal —
-      // a background pane must not hijack the clipboard.
+      // OSC 52 writes are gated to the focused terminal in the backend.
       const setFocus = (focused: boolean) => void invoke("term_focus", { termId, focused });
       const onFocus = () => setFocus(true);
       const onBlur = () => {
@@ -971,8 +940,7 @@ export function TerminalView({
     const observer = new ResizeObserver(() => {
       if (host.clientWidth === 0 || host.clientHeight === 0) {
         // Never resize a hidden pane's PTY to a degenerate 2×1 grid — it
-        // reflows the shell offscreen and panes come back stale (#47). The
-        // visibility signal also drops the engine's interactive frame cap.
+        // reflows the shell offscreen and panes come back stale (#47).
         wasHidden = true;
         void invoke("term_visibility", { termId, visible: false });
         return;
@@ -993,8 +961,7 @@ export function TerminalView({
         });
       }
       if (wasHidden) {
-        // Re-shown: resume the interactive frame rate and ask for one full
-        // frame — the engine never resends rows it considers clean.
+        // Ask for one full frame — the engine never resends clean rows.
         wasHidden = false;
         void invoke("term_visibility", { termId, visible: true });
         void invoke("term_request_full", { termId });
@@ -1027,7 +994,6 @@ export function TerminalView({
           <canvas
             ref={canvasRef}
             className="block"
-            // "Open link" shows only when the right-click landed on a link.
             onContextMenu={(e) =>
               setMenuLink(
                 bridgeRef.current?.linkAtPoint(e.nativeEvent.offsetX, e.nativeEvent.offsetY) ??

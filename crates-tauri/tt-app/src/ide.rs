@@ -27,15 +27,13 @@ use tt_agentboard::fs_notify::MultiFileNotifier;
 
 use crate::terminal::TermState;
 
-/// Emitted whenever a Claude Code CLI connects to / disconnects from a
-/// terminal's IDE server, so the diff pane can show a live "claude" badge.
+/// A CLI connected/disconnected, so the diff pane can show a live badge.
 pub const STATUS_EVENT: &str = "ide://status";
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 
 /// The name Claude Code shows for this IDE (`/ide`, status line, lockfile).
 pub const IDE_NAME: &str = "Towles Tool";
 
-/// One `ide://status` edge, plus enough to seed initial state via [`ide_status`].
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdeStatus {
@@ -45,8 +43,7 @@ pub struct IdeStatus {
     pub connected: bool,
 }
 
-/// State shared between the server task and command handlers. Mutexes here
-/// guard tiny in-memory reads/writes only — nothing IO-bound.
+/// The mutexes here guard tiny in-memory reads/writes only — nothing IO-bound.
 struct Shared {
     term_id: String,
     cwd: PathBuf,
@@ -54,21 +51,14 @@ struct Shared {
     auth_token: String,
     /// Latest diff-pane selection; serves `getCurrentSelection`/`getLatestSelection`.
     selection: Mutex<Option<tt_ide::Selection>>,
-    /// The file open in the app's code viewer (path + dirty), if any — the
-    /// Files tab has at most one at a time, so a set replaces the whole
-    /// value (`set_open_file`).
+    /// The Files tab has at most one open at a time, so a set replaces it whole.
     open_file: Mutex<Option<tt_ide::OpenFile>>,
-    /// Paths the diff pane currently has unsaved edits in — unlike the Files
-    /// tab, several of these can be dirty at once, so this is an upsert/
-    /// remove set (`set_diff_file_dirty`), not a single replaced value.
-    /// [`Shared::context`] merges both into `ServerContext::open_files` for
-    /// `getOpenEditors` / `checkDocumentDirty`.
+    /// Several diff-pane files can be dirty at once, so this is an upsert/remove
+    /// set. [`Shared::context`] merges both into `ServerContext::open_files`.
     diff_dirty_files: Mutex<HashSet<String>>,
-    /// Compiler-diagnostics hub, queried per message for this folder's
-    /// current `getDiagnostics` payload.
+    /// Queried per message for this folder's `getDiagnostics` payload.
     diagnostics: Arc<crate::diagnostics::DiagHub>,
-    /// Outbound frame senders, one per connected CLI process (Claude Code is
-    /// multi-process: the TUI and its session daemon may both connect).
+    /// One per connected CLI process — Claude Code is multi-process.
     out: Mutex<Vec<UnboundedSender<Message>>>,
 }
 
@@ -92,9 +82,8 @@ impl Shared {
         }
     }
 
-    /// Queue a notification frame for every connected CLI. Returns false when
-    /// none is connected (the frame is dropped — selection state is still
-    /// cached, so a later connection can pull it via `getLatestSelection`).
+    /// False when none is connected: the frame is dropped, but selection state
+    /// is still cached for a later connection's `getLatestSelection`.
     fn push(&self, frame: String) -> bool {
         let mut guard = self.out.lock().unwrap();
         guard.retain(|tx| tx.send(Message::text(frame.clone())).is_ok());
@@ -106,8 +95,7 @@ impl Shared {
     }
 }
 
-/// A running IDE server for one terminal. Owned by the terminal's `Session`;
-/// drop tears everything down.
+/// Owned by the terminal's `Session`; drop tears everything down.
 pub struct IdeServer {
     port: u16,
     shared: Arc<Shared>,
@@ -116,8 +104,7 @@ pub struct IdeServer {
 }
 
 impl IdeServer {
-    /// Bind `127.0.0.1:0` (OS-assigned port — never hardcoded, tasks run
-    /// concurrently), write the lockfile, and start the accept loop.
+    /// OS-assigned port — never hardcoded, since tasks run concurrently.
     pub fn start(
         app: AppHandle,
         term_id: String,
@@ -179,21 +166,18 @@ impl IdeServer {
         }
     }
 
-    /// Cache `selection` and push a `selection_changed` to the connected CLI.
     pub fn set_selection(&self, selection: tt_ide::Selection) {
         let frame = tt_ide::selection_changed_frame(&selection);
         *self.shared.selection.lock().unwrap() = Some(selection);
         self.shared.push(frame);
     }
 
-    /// Push an `at_mentioned` (explicit "send to Claude"). Returns whether a
-    /// CLI was connected to receive it.
+    /// Returns whether a CLI was connected to receive it.
     pub fn at_mention(&self, file_path: &str, lines: Option<(u32, u32)>) -> bool {
         self.shared.push(tt_ide::at_mentioned_frame(file_path, lines))
     }
 
-    /// Tell connected CLIs these files' diagnostics went stale (they re-pull
-    /// via `getDiagnostics`).
+    /// Tell CLIs these diagnostics went stale; they re-pull via `getDiagnostics`.
     pub fn notify_diagnostics(&self, uris: &[String]) {
         self.shared.push(tt_ide::diagnostics::diagnostics_changed_frame(uris));
     }
@@ -203,11 +187,9 @@ impl IdeServer {
         *self.shared.open_file.lock().unwrap() = open;
     }
 
-    /// Record (or clear) one diff-pane file's unsaved-edit state. Unlike
-    /// [`Self::set_open_file`], this upserts a single path into a set rather
-    /// than replacing the whole value — the diff pane can have several files
-    /// dirty at once. A clean file (`dirty: false`) is simply removed: only
-    /// dirty files need to be visible to `getOpenEditors`/`checkDocumentDirty`.
+    /// Unlike [`Self::set_open_file`], this upserts one path into a set — the
+    /// diff pane can have several files dirty at once, and only dirty ones need
+    /// to be visible to `getOpenEditors`/`checkDocumentDirty`.
     pub fn set_diff_file_dirty(&self, path: String, dirty: bool) {
         let mut files = self.shared.diff_dirty_files.lock().unwrap();
         if dirty {
@@ -232,8 +214,7 @@ fn new_auth_token() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Accept connections forever (until the task is aborted), serving one client
-/// at a time. Errors on an individual connection just recycle the loop.
+/// Errors on an individual connection just recycle the loop.
 async fn accept_loop(app: AppHandle, listener: StdTcpListener, shared: Arc<Shared>) {
     let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
         eprintln!("warning: IDE server for terminal {} failed to start", shared.term_id);
@@ -243,10 +224,8 @@ async fn accept_loop(app: AppHandle, listener: StdTcpListener, shared: Arc<Share
         let Ok((stream, _addr)) = listener.accept().await else {
             return;
         };
-        // Concurrent connections: Claude Code >= 2.1.x is multi-process (the
-        // interactive TUI plus a session daemon), and each process may hold
-        // its own IDE connection. Every authenticated client gets the same
-        // dispatcher state and every notification frame.
+        // Claude Code >= 2.1.x is multi-process (TUI plus session daemon) and
+        // each may hold its own connection; all get the same dispatcher state.
         let app = app.clone();
         let shared = shared.clone();
         tauri::async_runtime::spawn(async move {
@@ -255,11 +234,9 @@ async fn accept_loop(app: AppHandle, listener: StdTcpListener, shared: Arc<Share
     }
 }
 
-/// One CLI connection: authenticated WebSocket handshake, then a frame loop
-/// bridging incoming JSON-RPC to `tt_ide::handle_message` and outgoing
-/// notifications from the diff pane.
-// The handshake callback's Result<Response, ErrorResponse> shape is imposed
-// by tungstenite's Callback trait — the Err size is not ours to shrink.
+/// Authenticated handshake, then a frame loop bridging JSON-RPC in and
+/// diff-pane notifications out.
+// The Err size is tungstenite's Callback trait, not ours to shrink.
 #[allow(clippy::result_large_err)]
 async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared: &Arc<Shared>) {
     let auth = shared.auth_token.clone();
@@ -274,8 +251,7 @@ async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared
             *denied.status_mut() = StatusCode::UNAUTHORIZED;
             return Err(denied);
         }
-        // Echo the `mcp` subprotocol when the client requested it (the CLI
-        // always does; some WS stacks drop the connection without the echo).
+        // Some WS stacks drop the connection without this echo; the CLI always asks.
         let requested_mcp = req
             .headers()
             .get("sec-websocket-protocol")
@@ -302,13 +278,11 @@ async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared
             incoming = source.next() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        // Tools with app-side effects (openFile, openDiff and
-                        // friends) are answered here so the webview can act;
-                        // everything else goes through the pure dispatcher.
+                        // Tools with app-side effects are answered here so the
+                        // webview can act; the rest go to the pure dispatcher.
                         let reply = match intercept_app_tool(app, shared, &tx, text.as_str()) {
                             Intercept::Reply(reply) => Some(reply),
-                            // Response rides the outbound channel once the
-                            // user accepts/rejects in the review UI.
+                            // Answered on the outbound channel once the user decides.
                             Intercept::Deferred => None,
                             Intercept::NotOurs => {
                                 tt_ide::handle_message(text.as_str(), &shared.context())
@@ -346,22 +320,17 @@ async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared
     emit_status(app, shared);
 }
 
-/// Emitted when a CLI calls `openFile` *and asks for the foreground*: the
-/// frontend focuses the folder's Files tab on that file (optionally selecting
-/// `startText`..`endText`). A `makeFrontmost: false` call — Claude Code's
-/// pre-edit bookkeeping, see the intercept — emits nothing, because creating a
-/// pane there is a UI change no user asked for.
+/// `openFile` *asking for the foreground*. A `makeFrontmost: false` call —
+/// Claude Code's pre-edit bookkeeping, see the intercept — emits nothing,
+/// because creating a pane there is a UI change no user asked for.
 pub const OPEN_FILE_EVENT: &str = "ide://open-file";
-/// Emitted when a CLI calls `openDiff`: the frontend shows an accept/reject
-/// review (Monaco DiffEditor) and resolves it via `ide_diff_resolve`.
+/// The frontend shows an accept/reject review, resolved via `ide_diff_resolve`.
 pub const OPEN_DIFF_EVENT: &str = "ide://open-diff";
-/// Emitted when the CLI closes diff tabs (`close_tab`/`closeAllDiffTabs`) so
-/// the frontend can drop the matching review overlays.
+/// The CLI closed diff tabs, so the frontend drops the matching overlays.
 pub const CLOSE_DIFF_EVENT: &str = "ide://close-diff";
 
-/// One blocking `openDiff` waiting for the user's accept/reject. The wire
-/// response is deferred: a task per request waits on `respond` and sends the
-/// tool result down the *requesting* connection when the user decides.
+/// The wire response is deferred: a task per request waits on `respond` and
+/// sends the tool result down the *requesting* connection when the user decides.
 struct PendingDiff {
     request_id: u64,
     dir: PathBuf,
@@ -370,8 +339,7 @@ struct PendingDiff {
     respond: tokio::sync::oneshot::Sender<serde_json::Value>,
 }
 
-/// App-wide registry of unresolved `openDiff` requests (managed state — the
-/// resolving Tauri command only knows the request id).
+/// Managed state — the resolving Tauri command only knows the request id.
 #[derive(Default)]
 pub struct DiffRequests {
     pending: Mutex<Vec<PendingDiff>>,
@@ -379,9 +347,8 @@ pub struct DiffRequests {
 }
 
 impl DiffRequests {
-    /// Resolve one request: on accept, write `final_contents` to the target
-    /// (the reviewer may have tweaked the proposed side). Returns the wire
-    /// result to send, or an error when the id is unknown/already resolved.
+    /// On accept, writes `final_contents` — the reviewer may have tweaked the
+    /// proposed side. Errors when the id is unknown or already resolved.
     fn resolve(
         &self,
         request_id: u64,
@@ -410,8 +377,7 @@ impl DiffRequests {
         Ok(())
     }
 
-    /// Reject every pending review matching `dir` (and `tab_name`, when
-    /// given). Returns how many were closed.
+    /// Returns how many were closed.
     fn reject_matching(&self, dir: &Path, tab_name: Option<&str>) -> usize {
         let drained: Vec<PendingDiff> = {
             let mut pending = self.pending.lock().unwrap();
@@ -436,12 +402,9 @@ fn rejected_result(tab_name: &str) -> serde_json::Value {
     ]})
 }
 
-/// Atomic write (tmp + rename), shared by the save command and diff accept.
-/// Returns the written file's mtime, taken from the tmp file *before* the
-/// rename (which preserves it): a stat of the destination path after the
-/// rename could adopt a concurrent writer's mtime as our save token, which
-/// would make the frontend treat that foreign write as its own echo and
-/// silently overwrite it on the next save.
+/// Returns the mtime taken from the tmp file *before* the rename (which
+/// preserves it): stat-ing the destination afterwards could adopt a concurrent
+/// writer's mtime as our save token, and the next save would clobber it.
 fn atomic_write(abs: &Path, content: &str) -> Result<i64, String> {
     let parent = abs.parent().ok_or_else(|| format!("no parent dir for {}", abs.display()))?;
     let tmp = parent.join(format!(
@@ -459,26 +422,22 @@ fn atomic_write(abs: &Path, content: &str) -> Result<i64, String> {
     Ok(written_mtime)
 }
 
-/// Outcome of the app-side tool interception.
 enum Intercept {
     /// Not an app-side tool — run the pure dispatcher.
     NotOurs,
     /// Immediate response.
     Reply(String),
-    /// Response deferred to the review UI (a task holds this connection's
-    /// outbound sender and answers on resolve).
+    /// Deferred to the review UI, which answers on the outbound sender.
     Deferred,
 }
 
-/// A raw JSON-RPC result response (the payload is already the full MCP
-/// result, e.g. openDiff's two-block content).
+/// The payload is already the full MCP result, e.g. openDiff's two blocks.
 fn raw_result_response(id: &serde_json::Value, result: &serde_json::Value) -> String {
     serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
 }
 
-/// Handle `tools/call`s that need the webview to act: `openFile` (focus a
-/// file), `openDiff` (blocking accept/reject review), `close_tab` /
-/// `closeAllDiffTabs` (reject + dismiss reviews).
+/// `tools/call`s that need the webview to act: `openFile`, `openDiff` (blocking
+/// review), `close_tab`/`closeAllDiffTabs`.
 fn intercept_app_tool(
     app: &AppHandle,
     shared: &Arc<Shared>,
@@ -501,14 +460,10 @@ fn intercept_app_tool(
     match name {
         "openFile" => {
             let file_path = arg_str("filePath").to_string();
-            // `makeFrontmost: false` is Claude Code's *background* open, and
-            // it is the only shape its CLI ever sends: the diagnostics tracker
-            // calls `openFile` before every file it edits, purely to make the
-            // IDE hold the document so `getDiagnostics` has something to
-            // report on. Acting on it put a files pane on screen — creating
-            // one and switching the active folder to it — on every agent edit,
-            // with no user gesture anywhere in the chain. Honour the flag: a
-            // pane opens only when something asked to be brought forward.
+            // `makeFrontmost: false` is Claude Code's *background* open — its
+            // diagnostics tracker calls `openFile` before every edit, only so
+            // the IDE holds the document. Acting on it put a files pane on
+            // screen on every agent edit, with no user gesture in the chain.
             if wants_frontmost(&args) {
                 let payload = serde_json::json!({
                     "dir": shared.cwd.to_string_lossy(),
@@ -553,9 +508,8 @@ fn intercept_app_tool(
                 "tabName": tab_name.clone(),
             });
             let _ = app.emit_to(MAIN_WINDOW_LABEL, OPEN_DIFF_EVENT, payload);
-            // Answer on this connection when the user decides; a dropped
-            // sender (teardown) degrades to a rejection so the CLI never
-            // hangs forever.
+            // A dropped sender (teardown) degrades to a rejection, so the CLI
+            // never hangs forever.
             let out = out.clone();
             tauri::async_runtime::spawn(async move {
                 let result = respond_rx.await.unwrap_or_else(|_| rejected_result(&tab_name));
@@ -591,15 +545,12 @@ fn intercept_app_tool(
     }
 }
 
-/// Whether an `openFile` call wants the file *on screen*. Absent means yes —
-/// VS Code's tool schema defaults `makeFrontmost` to true, and a caller that
-/// omits it is asking for the plain "open this" behaviour.
+/// Absent means yes — VS Code's tool schema defaults `makeFrontmost` to true.
 fn wants_frontmost(args: &serde_json::Value) -> bool {
     args.get("makeFrontmost").and_then(serde_json::Value::as_bool).unwrap_or(true)
 }
 
-/// The review UI decided: accept (write `finalContents`, possibly tweaked in
-/// the editor) or reject. Errors when the request is unknown/already gone.
+/// Errors when the request is unknown or already gone.
 #[tauri::command]
 pub fn ide_diff_resolve(
     requests: State<DiffRequests>,
@@ -621,10 +572,9 @@ fn emit_status(app: &AppHandle, shared: &Arc<Shared>) {
     let _ = app.emit_to(MAIN_WINDOW_LABEL, STATUS_EVENT, status);
 }
 
-/// Remove lockfiles left behind by towles-tool processes that died without
-/// cleanup (crash, SIGKILL). Other IDEs' lockfiles are never touched. Liveness
-/// is only checkable via /proc on Linux; elsewhere we skip the sweep — the
-/// CLI's own pid check ignores stale files anyway.
+/// Remove lockfiles left by towles-tool processes that died without cleanup;
+/// other IDEs' are never touched. Liveness is only checkable via /proc, so
+/// elsewhere the sweep is skipped — the CLI's own pid check covers it.
 pub fn sweep_stale_lockfiles() {
     #[cfg(target_os = "linux")]
     if let Some(home) = dirs::home_dir() {
@@ -634,12 +584,8 @@ pub fn sweep_stale_lockfiles() {
     }
 }
 
-// Commands (invoked from the diff pane)
-
-/// A highlight as Monaco reports it: 1-based inclusive lines, 0-based
-/// character columns. Mirrors `StreamRange` in
-/// `apps/client/src/lib/ide-selection.ts`, which is the only thing that
-/// produces it.
+/// As Monaco reports it: 1-based inclusive lines, 0-based character columns.
+/// Mirrors `StreamRange` in `apps/client/src/lib/ide-selection.ts`.
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamRange {
@@ -649,18 +595,12 @@ pub struct StreamRange {
     pub end_char: u32,
 }
 
-/// Build the wire selection (0-based) for `abs` out of what the editor
-/// reported.
-///
 /// **`text` is the editor's buffer, never the file on disk** (issue #309). The
 /// Files viewer is editable, so with unsaved edits the bytes at those line
-/// numbers on disk can be entirely different text than the user highlighted —
-/// after an insertion above the selection, wildly so. Both callers of
-/// `ide_set_selection` own a Monaco model, so the buffer is always available
-/// and there is no disk path left to fall back to.
+/// numbers on disk can be entirely different text than the user highlighted.
+/// Both callers own a Monaco model, so there is no disk path to fall back to.
 fn build_selection(abs: &Path, range: StreamRange, text: String) -> tt_ide::Selection {
-    // Clamped to 1 at both ends: lines are 1-based here, and a 0 from a
-    // miscounting caller would underflow the conversion below.
+    // Clamped to 1: a 0 from a miscounting caller would underflow below.
     let start = range.start_line.min(range.end_line).max(1);
     let end = range.start_line.max(range.end_line).max(start);
     let mut selection = tt_ide::Selection::range(abs, start - 1, end - 1, range.end_char, text);
@@ -668,10 +608,8 @@ fn build_selection(abs: &Path, range: StreamRange, text: String) -> tt_ide::Sele
     selection
 }
 
-/// A highlight was made in a Monaco editor for `dir`: cache + push it to every
-/// terminal IDE server rooted there. `text` is the selected text as the *buffer*
-/// has it — see [`build_selection`]. Returns whether any connected CLI got it
-/// live (false = cached only, or no terminal in that folder).
+/// Cache the highlight and push it to every terminal IDE server rooted at `dir`.
+/// Returns whether any connected CLI got it live.
 #[tauri::command]
 pub fn ide_set_selection(
     state: State<TermState>,
@@ -692,8 +630,8 @@ pub fn ide_set_selection(
     Ok(delivered)
 }
 
-/// The highlight was dismissed — push an empty selection (what VS Code sends
-/// when the cursor collapses) so stale context doesn't ride the next prompt.
+/// An empty selection, as VS Code sends on a collapsed cursor, so stale context
+/// doesn't ride the next prompt.
 #[tauri::command]
 pub fn ide_clear_selection(
     state: State<TermState>,
@@ -706,9 +644,8 @@ pub fn ide_clear_selection(
     Ok(())
 }
 
-/// Explicit "send to Claude": emits `at_mentioned`, which becomes an
-/// `@file#Lx-y` reference in the session's prompt. Errors when no CLI is
-/// connected in that folder — the frontend surfaces that as a toast.
+/// Emits `at_mentioned`, which becomes an `@file#Lx-y` reference in the
+/// session's prompt. Errors when no CLI is connected in that folder.
 #[tauri::command]
 pub fn ide_at_mention(
     state: State<TermState>,
@@ -719,8 +656,7 @@ pub fn ide_at_mention(
 ) -> Result<(), String> {
     let dir = PathBuf::from(dir);
     let abs = dir.join(&file_path);
-    // Lines omitted = a whole-file mention (the Files tab); the wire drops
-    // lineStart/lineEnd together in that case.
+    // Lines omitted = a whole-file mention; the wire drops both together.
     let lines = match (start_line, end_line) {
         (Some(s), Some(e)) => Some((s.min(e).max(1) - 1, s.max(e).max(1) - 1)),
         _ => None,
@@ -737,16 +673,13 @@ pub fn ide_at_mention(
     }
 }
 
-/// Snapshot of every terminal's IDE server, for the frontend's initial state
-/// (live updates ride the `ide://status` event).
+/// Initial state only; live updates ride the `ide://status` event.
 #[tauri::command]
 pub fn ide_status(app: AppHandle) -> Vec<IdeStatus> {
     app.state::<TermState>().ide_statuses()
 }
 
-/// The code viewer opened (Some) or closed (None) a file in `dir`, or its
-/// dirty state flipped — reflected to CLIs via `getOpenEditors` /
-/// `checkDocumentDirty`.
+/// Reflected to CLIs via `getOpenEditors`/`checkDocumentDirty`. `None` = closed.
 #[tauri::command]
 pub fn ide_set_open_file(
     state: State<TermState>,
@@ -762,11 +695,8 @@ pub fn ide_set_open_file(
     state.for_ide_servers(&dir, |server| server.set_open_file(open.clone()));
 }
 
-/// One diff-pane file's unsaved-edit state flipped — reflected to CLIs via
-/// `getOpenEditors`/`checkDocumentDirty` alongside whatever the Files tab has
-/// open. Unlike `ide_set_open_file`, `dir`+`file_path` together are just one
-/// entry in a set the diff pane maintains itself (several files can be dirty
-/// there at once); `dirty: false` removes it rather than replacing the set.
+/// Unlike `ide_set_open_file`, this is one entry in a set the diff pane
+/// maintains itself; `dirty: false` removes it rather than replacing the set.
 #[tauri::command]
 pub fn ide_set_diff_dirty(state: State<TermState>, dir: String, file_path: String, dirty: bool) {
     let path = PathBuf::from(&dir).join(file_path).to_string_lossy().into_owned();
@@ -774,8 +704,7 @@ pub fn ide_set_diff_dirty(state: State<TermState>, dir: String, file_path: Strin
         .for_ide_servers(Path::new(&dir), |server| server.set_diff_file_dirty(path.clone(), dirty));
 }
 
-/// A viewer file read: the content plus the mtime the save path uses as its
-/// conflict token.
+/// `mtime_ms` is the conflict token the save path checks against.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileRead {
@@ -792,27 +721,20 @@ fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
 }
 
 /// Substrings the editor bridge matches on to pick a
-/// `FileSystemProviderErrorCode` (see `errorCodeFor` in `lib/monaco-fs.ts`).
-/// VS Code behaves differently per code — `FileExists` offers an overwrite
-/// prompt — so rewording these changes the UI. Pinned by a test below.
+/// `FileSystemProviderErrorCode` (`errorCodeFor` in `lib/monaco-fs.ts`). VS Code
+/// behaves differently per code, so rewording these changes the UI.
 pub const ERR_ESCAPES_FOLDER: &str = "path escapes the folder";
 pub const ERR_ALREADY_EXISTS: &str = "already exists";
 
-/// The "that name is taken" error, spelled once so `ide_rename` and
-/// `ide_create_dir` can't drift apart — the frontend matches on the substring
-/// to pick `FileExists`, and only one of them drifting would be invisible.
+/// Spelled once so `ide_rename` and `ide_create_dir` can't drift apart — only
+/// one of them drifting would be invisible.
 fn already_exists(file_path: &str) -> String {
     format!("{file_path} {ERR_ALREADY_EXISTS}")
 }
 
-/// Viewer paths must stay inside the folder, and two ways out have to be closed:
-/// `..` walks up, and an *absolute* path is worse — `Path::join` discards the base
-/// and returns the argument whole, so `confined("/w/repo", "/etc/passwd")` would
-/// hand back `/etc/passwd`. Survivable while these only read; `ide_delete` and
-/// `ide_rename` mutate.
-///
-/// Lexical is the right depth: a rename's `to`/`from` may not exist yet, so
-/// canonicalizing isn't an option.
+/// Two ways out have to be closed: `..` walks up, and an *absolute* path is
+/// worse — `Path::join` discards the base and returns the argument whole. Only
+/// lexical, since a rename's `to`/`from` may not exist to canonicalize.
 fn confined(dir: &Path, file_path: &str) -> Result<PathBuf, String> {
     let rel = Path::new(file_path);
     let escapes =
@@ -823,8 +745,7 @@ fn confined(dir: &Path, file_path: &str) -> Result<PathBuf, String> {
     Ok(dir.join(file_path))
 }
 
-/// Read a repo file for the code viewer. Size-capped and text-only — the
-/// viewer is for code, not assets.
+/// Size-capped and text-only — the viewer is for code, not assets.
 #[tauri::command]
 pub async fn ide_read_file(dir: String, file_path: String) -> Result<FileRead, String> {
     const MAX_BYTES: u64 = 2 * 1024 * 1024;
@@ -847,10 +768,8 @@ pub async fn ide_read_file(dir: String, file_path: String) -> Result<FileRead, S
     .map_err(|e| format!("read task failed: {e}"))?
 }
 
-/// Save the viewer's buffer: atomic (tmp + rename into place) with an mtime
-/// conflict token — if the file changed on disk since it was read (an agent
-/// edited it), the save is refused rather than silently clobbering. Returns
-/// the new mtime token.
+/// Atomic, with an mtime conflict token: if the file changed on disk since it
+/// was read, the save is refused rather than silently clobbering.
 #[tauri::command]
 pub async fn ide_write_file(
     dir: String,
@@ -869,9 +788,8 @@ pub async fn ide_write_file(
             ));
         }
         let written_mtime = atomic_write(&abs, &content)?;
-        // Recorded because saves are no longer always a user gesture — the
-        // editors auto-save after a typing pause — and "when did the app
-        // write this file?" must stay answerable from the event log alone.
+        // Saves are no longer always a user gesture (the editors auto-save), so
+        // "when did the app write this file?" must stay answerable from the log.
         tracing::debug!(dir = %dir, file = %file_path, bytes = content.len(), "viewer file saved");
         Ok(written_mtime)
     })
@@ -879,18 +797,13 @@ pub async fn ide_write_file(
     .map_err(|e| format!("write task failed: {e}"))?
 }
 
-/// Emitted when files open in the code viewer / diff pane change on disk
-/// underneath it — an agent edit in the same checkout, a `git checkout`, any
-/// external writer. One event per debounce batch, carrying every touched
-/// path; the viewer re-checks each and either reloads in place (clean
-/// buffer) or raises its conflict banner (unsaved edits).
+/// One event per debounce batch, carrying every touched path; the viewer
+/// re-checks each and either reloads in place or raises its conflict banner.
 pub const FILE_CHANGED_EVENT: &str = "ide://file-changed";
 
-/// Live disk watchers behind the code viewer's and diff pane's open files:
-/// **one** [`MultiFileNotifier`] per checkout dir (inotify instances are a
-/// scarce per-user resource — see the notifier's own doc), with per-file
-/// refcounts inside it, so a 50-file diff pane and a viewer on the same file
-/// all share one OS watcher. The last `ide_unwatch_files` for a dir drops it.
+/// **One** [`MultiFileNotifier`] per checkout dir (inotify instances are a
+/// scarce per-user resource), with per-file refcounts inside it, so a 50-file
+/// diff pane and a viewer on the same file share one OS watcher.
 #[derive(Default)]
 pub struct ViewerWatches(Mutex<HashMap<String, MultiFileNotifier>>);
 
@@ -901,13 +814,8 @@ struct FilesChangedPayload {
     file_paths: Vec<String>,
 }
 
-/// Start watching open viewer/diff files for on-disk changes; changes arrive
-/// as [`FILE_CHANGED_EVENT`]s (debounced + batched in [`MultiFileNotifier`]).
-/// Takes the whole list in one call — a 50-file diff pane must not pay 50
-/// sync-command round-trips on the GTK main thread. Pair with a matching
-/// `ide_unwatch_files` when the files close. Per-path registration failures
-/// are logged and skipped, not propagated — those files just degrade to the
-/// callers' poll-driven refresh.
+/// Takes the whole list in one call — a 50-file diff pane must not pay 50 sync
+/// round-trips on the GTK main thread. Pair with `ide_unwatch_files` on close.
 #[tauri::command]
 pub fn ide_watch_files(
     app: AppHandle,
@@ -939,10 +847,8 @@ pub fn ide_watch_files(
             v.insert(notifier)
         }
     };
-    // Per-path failures (a parent directory the agent just deleted, a bad
-    // path) must not doom the rest of the batch — an unwatched file only
-    // degrades to the poll-driven safety net, and the caller tears down
-    // with the same full list either way (unmatched removes are no-ops).
+    // A per-path failure must not doom the batch — an unwatched file degrades
+    // to the poll-driven safety net, and teardown passes the same full list.
     for file_path in &file_paths {
         match confined(Path::new(&dir), file_path).map(|abs| notifier.add(&abs)) {
             Ok(Ok(())) => {}
@@ -957,9 +863,7 @@ pub fn ide_watch_files(
     Ok(())
 }
 
-/// Drop one reference each to a batch of viewer file watches (see
-/// [`ide_watch_files`]). Unmatched calls (a watch never started — browser
-/// dev, an error path) are a no-op.
+/// Unmatched calls — a watch that never started — are a no-op.
 #[tauri::command]
 pub fn ide_unwatch_files(watches: State<ViewerWatches>, dir: String, file_paths: Vec<String>) {
     let mut map = watches.0.lock().unwrap();
@@ -1030,13 +934,10 @@ pub async fn ide_read_dir(dir: String, file_path: String) -> Result<Vec<FsDirEnt
     .map_err(|e| format!("readdir task failed: {e}"))?
 }
 
-/// Create a directory (and any missing parents) for "New Folder".
-///
-/// Refuses a name that is already taken rather than letting `create_dir_all`
-/// report success for a directory it didn't create — the frontend turns
-/// [`ERR_ALREADY_EXISTS`] into `FileExists`, and VS Code's `mkdirp` swallows
-/// exactly that code when it races another creator, so being strict here is
-/// free. `symlink_metadata` so a dangling symlink still counts as taken.
+/// Refuses a taken name rather than letting `create_dir_all` report success for
+/// a directory it didn't create — VS Code's `mkdirp` swallows the resulting
+/// `FileExists` when it races another creator, so being strict here is free.
+/// `symlink_metadata` so a dangling symlink still counts as taken.
 #[tauri::command]
 pub async fn ide_create_dir(dir: String, file_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {

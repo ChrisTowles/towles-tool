@@ -1,16 +1,7 @@
-/**
- * Pending confirmations raised by the VS Code layer, and the promises they
- * answer.
- *
- * Deliberately free of any `@codingame/*` import. `<MonacoDialogHost>` is
- * mounted at the app root, so anything this module pulls in lands in the entry
- * chunk — importing the service (`monaco-dialogs.ts`) from here would drag the
- * whole monaco-vscode-api graph into app startup, which the lazy `loadMonaco`
- * exists to avoid.
- *
- * Same `get`/`subscribe` shape as `lib/focus-target.ts`, consumed via
- * `useSyncExternalStore`.
- */
+/** Pending confirmations raised by the VS Code layer, and the promises they
+ * answer. Deliberately free of any `@codingame/*` import: `<MonacoDialogHost>`
+ * mounts at the app root, so importing `monaco-dialogs.ts` here would drag the
+ * whole monaco-vscode-api graph into app startup. */
 
 export type DialogRequest = {
   id: number;

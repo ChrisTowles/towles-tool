@@ -53,13 +53,10 @@ fn main() {
     })
     .add_plugins(BenchScenePlugin);
 
-    // Driving `app.update()` by hand rather than `app.run()`: with `WinitPlugin`
-    // disabled there is no event loop to hand control to, and the Wayland queue
-    // still has to be pumped between frames or the compositor's pings go
-    // unanswered and the parent gets killed as unresponsive. That also means
-    // nothing runs the plugins' `finish` phase for us — see the docs on
-    // `finalize_embedded_app`, without which every `Res<RenderDevice>` system
-    // panics on frame one.
+    // `update()` by hand, not `run()`: with `WinitPlugin` disabled there is no event loop,
+    // and the Wayland queue must still be pumped between frames or the compositor kills the
+    // parent over unanswered pings. Nothing runs the plugins' `finish` phase either — see
+    // `finalize_embedded_app`.
     tt_jarvis::finalize_embedded_app(&mut app, || host.pump());
 
     loop {

@@ -25,11 +25,8 @@ pub struct InitReport {
 /// checkout's `.env` so it claims its ports.
 ///
 /// Nothing here touches `.claude/settings.json`. Tasks are created
-/// deliberately — `tt task new` or the app's `+` — and never by a Claude Code
-/// worktree hook; `claude --worktree` makes its own worktree, which this
-/// machinery neither renders nor removes.
-/// `now_ms` (epoch ms) stamps the port registry's `claimed_at_ms` for the
-/// primary render — read at the CLI boundary, never here.
+/// deliberately — `tt task new` or the app's `+` — never by a Claude Code
+/// worktree hook, whose worktrees this machinery neither renders nor removes.
 pub fn init_repo(sr: &TaskRoot, now_ms: i64) -> Result<InitReport> {
     // Template: the committed tokenized .env.example wins; otherwise make
     // sure the sidecar exists (empty-but-explained when freshly created).

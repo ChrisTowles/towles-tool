@@ -44,21 +44,17 @@ pub struct TranscriptEntry {
     /// Claude Code's auto-generated title (from an `ai-title` line). Fallback.
     #[serde(rename = "aiTitle", default)]
     pub ai_title: Option<String>,
-    /// The real absolute working directory Claude Code was launched from.
-    /// Constant for the life of a session (not affected by `cd`s a subprocess
-    /// runs) — the precise filesystem path a "resume this session elsewhere"
-    /// action needs, unlike the lossy, hyphen-encoded project directory name.
+    /// The real absolute directory Claude Code was launched from, constant for
+    /// the session — unlike the lossy hyphen-encoded project directory name.
     #[serde(default)]
     pub cwd: Option<String>,
 }
 
 impl TranscriptEntry {
     /// Dedup key `message.id:requestId`, present only when **both** ids exist.
-    ///
-    /// Claude Code re-logs the same assistant message's `usage` more than once
-    /// (streaming re-logs, compaction, sidechain copies); counting each line
-    /// inflates totals. Entries missing either id return `None` and are always
-    /// counted (never collapsed with other id-less entries).
+    /// Claude Code re-logs the same assistant message's `usage` (streaming
+    /// re-logs, compaction, sidechain copies), so counting each line inflates
+    /// totals. `None` entries are always counted, never collapsed together.
     pub fn dedup_key(&self) -> Option<String> {
         let message_id = self.message.as_ref()?.id.as_deref()?;
         let request_id = self.request_id.as_deref()?;
@@ -80,24 +76,17 @@ pub struct Message {
     pub usage: Option<Usage>,
     #[serde(default)]
     pub content: Option<Content>,
-    /// Why the model stopped generating this response: `end_turn` (it is done
-    /// and handing back to the user), `tool_use` (it wants a tool run and will
-    /// continue), `max_tokens`, `stop_sequence`, `refusal`.
-    ///
-    /// Load-bearing for "did the turn end?", because **one response is written
-    /// as several transcript entries — one per content block — all carrying
-    /// that response's `stop_reason`.** So an assistant entry holding only text
-    /// is *not* evidence the turn ended: a mid-turn narration block sits in the
-    /// same response as the tool call that follows it, and both entries say
-    /// `tool_use`. Measured on one real session: 67 text-only entries with
-    /// `stop_reason: "tool_use"` against a single `end_turn`.
+    /// Why the model stopped: `end_turn`, `tool_use`, `max_tokens`,
+    /// `stop_sequence`, `refusal`. Load-bearing for "did the turn end?", because
+    /// **one response is written as several transcript entries — one per content
+    /// block — all carrying that response's `stop_reason`.** A text-only entry is
+    /// therefore no evidence the turn ended.
     #[serde(default)]
     pub stop_reason: Option<String>,
 }
 
-/// Token-usage accounting attached to an assistant message. A superset of what
-/// each consumer needs: input/output + cache-read/creation totals, plus the
-/// nested per-TTL cache-creation split the live engine uses for cache countdown.
+/// Token-usage accounting attached to an assistant message: input/output plus
+/// cache totals, and the per-TTL split the live engine uses for cache countdown.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Usage {
     #[serde(default)]
@@ -123,9 +112,8 @@ pub struct CacheCreation {
     pub ephemeral_1h_input_tokens: Option<i64>,
 }
 
-/// Message content: either a bare string or an array of content blocks. Blocks
-/// are kept untyped ([`serde_json::Value`]) to tolerate the evolving schema;
-/// use the typed accessors below rather than re-parsing blocks in each consumer.
+/// Message content: a bare string or an array of blocks. Blocks stay untyped to
+/// tolerate the evolving schema; use the accessors below, don't re-parse them.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Content {
@@ -160,8 +148,7 @@ impl Content {
         }
     }
 
-    /// Iterator over the text of each non-empty `text` block (empty for a bare
-    /// string).
+    /// The text of each non-empty `text` block (empty for a bare string).
     pub fn text_blocks(&self) -> impl Iterator<Item = &str> {
         self.blocks().unwrap_or(&[]).iter().filter_map(|b| {
             if b.get("type").and_then(Value::as_str) == Some("text") {
@@ -182,9 +169,8 @@ impl Content {
     }
 }
 
-/// A borrowed view over a `tool_use` content block. Fields are read lazily from
-/// the underlying [`serde_json::Value`] so the volatile block/input shape stays
-/// tolerant — callers `.get()` whatever input keys they need.
+/// A borrowed view over a `tool_use` content block, read lazily from the
+/// underlying [`serde_json::Value`] so the volatile input shape stays tolerant.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolUse<'a> {
     block: &'a Value,
@@ -201,8 +187,7 @@ impl<'a> ToolUse<'a> {
         self.block.get("id").and_then(Value::as_str)
     }
 
-    /// The raw `input` object, if present. Callers read the keys they need
-    /// (e.g. `file_path`, `delaySeconds`, `reason`) tolerantly.
+    /// The raw `input` object; callers read the keys they need, tolerantly.
     pub fn input(&self) -> Option<&'a Value> {
         self.block.get("input").filter(|v| !v.is_null())
     }

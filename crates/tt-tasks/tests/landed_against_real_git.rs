@@ -104,18 +104,9 @@ fn squash_merged_branch_reads_as_landed_with_nothing_outstanding() {
     assert_eq!(state.headline(), "squash-merged");
 }
 
-/// The probe must not depend on the machine having a git identity.
-///
-/// This once regressed for a sharp reason: detecting a squash meant writing a
-/// synthetic commit with `commit-tree`, which refuses to run without an
-/// identity — and git's `user@hostname` fallback is unavailable on CI runners
-/// and in minimal containers. Every squash-merged branch there read as "not
-/// landed". The probe now computes patch ids in memory and writes no commit at
-/// all, so there is nothing left to be missing.
-///
-/// The test stays because that is a claim about behavior, not about the
-/// implementation that happens to satisfy it: an identity-less environment
-/// must keep detecting squashes, however the probe is built.
+/// The probe must not depend on the machine having a git identity — an
+/// identity-less environment (CI runners, minimal containers) must keep
+/// detecting squashes, however the probe is built.
 #[test]
 fn squash_is_detected_even_when_git_has_no_ambient_identity() {
     let tmp = repo();
@@ -134,11 +125,8 @@ fn squash_is_detected_even_when_git_has_no_ambient_identity() {
     run(dir, &["config", "--unset", "user.email"]);
     run(dir, &["config", "user.useConfigOnly", "true"]);
 
-    // Repo config alone is not enough to reproduce a CI runner: the developer
-    // running this almost certainly has a global `user.email` that would be
-    // found instead. Pointing the global and system config at /dev/null and
-    // clearing the identity env vars for the duration leaves nothing to find,
-    // which is the actual environment this regressed in.
+    // Repo config alone can't reproduce a CI runner: the developer running this
+    // almost certainly has a global `user.email` that would be found instead.
     let state = without_identity(|| probe(dir, "main", "feat/no-identity", 0, false));
 
     assert_eq!(
@@ -183,11 +171,9 @@ fn rebase_merged_branch_reads_as_landed_under_a_different_sha() {
     commit(dir, "a.txt", "a");
     run(dir, &["checkout", "-q", "main"]);
     run(dir, &["cherry-pick", "feat/rebase"]);
-    // A plain cherry-pick here replays a byte-identical commit (same tree,
-    // parent, message and timestamp produce the same SHA), which would make
-    // this a reachability test rather than a patch-identity one. Amending the
-    // message forces a new SHA while keeping the patch, which is what a real
-    // rebase-merge looks like: same change, different commit.
+    // A plain cherry-pick replays a byte-identical commit, making this a
+    // reachability test rather than a patch-identity one. Amending forces a new
+    // SHA while keeping the patch — what a real rebase-merge looks like.
     run(dir, &["commit", "--amend", "-qm", "add a.txt (rebased onto main)"]);
     commit(dir, "later.txt", "later");
 
@@ -227,9 +213,8 @@ fn branch_absorbed_by_a_merge_commit_is_not_mistaken_for_a_fresh_task() {
 
     let state = probe(dir, "main", "feat/merged", 0, false);
 
-    // Both a merged branch and a fresh task have nothing since their
-    // merge-base; only the landing evidence tells them apart, so assert on
-    // that pair directly rather than a helper that hides the distinction.
+    // Assert on this pair directly rather than a helper that hides which of the
+    // two signals distinguishes them.
     assert_eq!(state.total_commits, 0, "a merged branch has nothing since its merge-base");
     assert_eq!(state.landed, Some(LandedVia::Ancestor), "…and that is what distinguishes it");
     assert!(!state.holds_work());
@@ -295,21 +280,17 @@ fn a_gone_upstream_alone_does_not_outrank_real_unlanded_content() {
         Some(LandedVia::UpstreamGone),
         "gone upstream is still the documented fallback answer"
     );
-    // But the commit is real, and nothing may pretend otherwise: a branch
-    // deleted on the remote looks identical whether it merged or not, so the
-    // work stays counted and `clean` must not force-delete the branch.
+    // But a branch deleted on the remote looks identical whether it merged or
+    // not, so the work stays counted and `clean` must not delete the branch.
     assert_eq!(state.total_commits, 1);
     assert_eq!(state.unlanded, 1, "a gone upstream is not proof the commit landed");
     assert!(state.holds_work());
     assert_eq!(state.headline(), "1 unlanded, upstream gone");
 }
 
-/// A directory git cannot answer for must never read as merged.
-///
-/// Asserted through `ops::work_state` rather than the probe itself: opening the
-/// repository is what fails now, and that happens one layer up, so this is
-/// where the degradation lives. The probe below it is only ever handed a
-/// repository that opened.
+/// A directory git cannot answer for must never read as merged. Asserted
+/// through `ops::work_state`: opening the repository is what fails, one layer
+/// above the probe, which is only ever handed a repository that opened.
 #[test]
 fn a_failing_git_degrades_to_assuming_work_is_present() {
     let tmp = tempfile::tempdir().unwrap(); // not a repo at all
@@ -320,11 +301,9 @@ fn a_failing_git_degrades_to_assuming_work_is_present() {
     };
     let state = tt_tasks::ops::work_state(&refs, tmp.path(), "refs/heads/feat/x", 0, 0);
     assert_eq!(state.landed, None, "an unanswerable probe must never read as merged");
-    // `landed: None` is the load-bearing half: `clean` only removes a task —
-    // and force-deletes its branch — when it sees content proof, so a repo git
-    // could not answer for is kept rather than collected. Assert the counts it
-    // reports alongside, so a future change that invents a landing from a
-    // failed probe fails here instead of silently deleting a branch.
+    // `landed: None` is the load-bearing half — `clean` force-deletes a branch
+    // only on content proof. The counts are asserted alongside so a change that
+    // invents a landing from a failed probe fails here, not in production.
     assert_eq!(state.total_commits, 0);
     assert_eq!(state.unlanded, 0);
     assert_eq!(state.headline(), "no commits", "and it claims no merge in the UI either");

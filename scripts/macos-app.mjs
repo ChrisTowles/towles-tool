@@ -1,33 +1,15 @@
 #!/usr/bin/env node
-// Give the *dev* app a real macOS bundle identity.
-//
-// macOS reads an app's name and Dock icon from the Info.plist of the `.app`
-// its executable sits in. `tauri dev` builds a bare `target/debug/tt-app` and
-// never bundles, so the Dock shows the generic Unix-executable icon (the one
-// with "exec" written on it) and the menu bar says "tt-app". `npm start` fixes
-// this by building the real `app` bundle target (see scripts/start.mjs), but
-// dev can't: it needs the watch/HMR loop, which only exists in `tauri dev`.
-//
-// So we wrap the launch instead of the build. `tauri dev` runs the binary via
-// `cargo run`, and cargo will hand the launch to a *runner* program when
-// `CARGO_TARGET_<HOST_TRIPLE>_RUNNER` is set. We point that at a generated
-// script that hardlinks whatever binary cargo just built into a throwaway
-// `.app` skeleton and execs it from there — same PID (so `tauri dev`'s
-// stop/restart still works), same binary (a hardlink, not a copy, so a
-// several-hundred-MB debug build costs nothing per rebuild), but now with an
-// Info.plist above it. The env var is set only on the `tauri dev` child, so
-// it never leaks into `cargo test` or the user's own cargo commands.
-//
-// A broken checkout (no tauri.conf.json, no rustc) throws here rather than
-// returning an error value: `tauri dev` cannot run under either condition, so
-// there is no recoverable path for a caller to take.
+// Give the *dev* app a real macOS bundle identity: `tauri dev` never bundles, so
+// the Dock shows the generic Unix-executable icon, and it can't use the `app`
+// target `npm start` builds without losing watch/HMR. So wrap the launch —
+// `CARGO_TARGET_<HOST_TRIPLE>_RUNNER` (set only on the `tauri dev` child) points
+// cargo at a script that hardlinks the binary into a throwaway `.app`, same PID.
 import { chmodSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 /**
- * Cargo-runner env for a `tauri dev` spawn — empty off macOS, where the
- * unbundled binary is exactly what every other platform wants.
+ * Cargo-runner env for a `tauri dev` spawn — empty off macOS.
  * @param {string} repoRoot
  * @returns {Record<string, string>}
  */
@@ -46,15 +28,8 @@ export function macosDevAppEnv(repoRoot) {
 }
 
 /**
- * Write the `.app` skeleton and the runner script that launches through it.
- * Everything here is plain filesystem work — no macOS APIs — so it is
- * exercised by the unit test on any platform.
- * @param {object} spec
- * @param {string} spec.dir directory to hold the bundle and runner
- * @param {string} spec.productName
- * @param {string} spec.identifier
- * @param {string} spec.version
- * @param {string} spec.icns source `.icns` to copy into Resources
+ * Plain filesystem work — no macOS APIs — so the unit test exercises it anywhere.
+ * @param {{ dir: string; productName: string; identifier: string; version: string; icns: string }} spec
  * @returns {string} path to the runner script
  */
 export function writeDevApp({ dir, productName, identifier, version, icns }) {
@@ -64,9 +39,8 @@ export function writeDevApp({ dir, productName, identifier, version, icns }) {
   mkdirSync(macos, { recursive: true });
   mkdirSync(resources, { recursive: true });
 
-  // The executable is named after the product for the same reason the bundler
-  // does it: an unbundled-looking name is what shows up in "Force Quit" and
-  // Activity Monitor.
+  // Named after the product because that is what "Force Quit" and Activity
+  // Monitor show.
   writeFileSync(
     path.join(app, "Contents", "Info.plist"),
     infoPlist({ executable: productName, productName, identifier, version }),
@@ -94,14 +68,7 @@ exec "$exe" "$@"
   return runner;
 }
 
-/**
- * @param {object} spec
- * @param {string} spec.executable
- * @param {string} spec.productName
- * @param {string} spec.identifier
- * @param {string} spec.version
- * @returns {string}
- */
+/** @param {{ executable: string; productName: string; identifier: string; version: string }} spec */
 function infoPlist({ executable, productName, identifier, version }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -124,10 +91,9 @@ function infoPlist({ executable, productName, identifier, version }) {
 }
 
 /**
- * Name, id and version come from tauri.conf.json rather than being restated
- * here, so the dev bundle and the one `npm start` builds can't drift apart.
+ * Read rather than restated so the dev bundle can't drift from `npm start`'s;
+ * throws rather than returning a Result, since there is no recovery from it.
  * @param {string} repoRoot
- * @returns {{productName: string, identifier: string, version: string}}
  */
 function readTauriConf(repoRoot) {
   const file = path.join(repoRoot, "crates-tauri", "tt-app", "tauri.conf.json");

@@ -6,10 +6,10 @@
 //! - [`init`] installs the global subscriber, once, early, from a binary; its `fmt`
 //!   layer keeps stderr `-v`/`RUST_LOG`-driven and [`layer::EventLogLayer`] writes to
 //!   `<data_dir>/telemetry/events-<date>.jsonl`, instance-scoped per worktree.
-//! - **The unscoped path is a trap.** From a checkout, `tt_config::state_scope()`
-//!   always resolves `<data_dir>` to a *scoped* directory, never the bare
-//!   `~/.local/share/towles-tool/telemetry/` — which exists but stays empty, so
-//!   checking it by eye reads as "telemetry is broken". Use `telemetry_dir()`.
+//! - **The unscoped path is a trap.** From a checkout `<data_dir>` always resolves to a
+//!   *scoped* directory; the bare `~/.local/share/towles-tool/telemetry/` exists but
+//!   stays empty, so checking it by eye reads as "telemetry is broken". Use
+//!   `telemetry_dir()`.
 //! - [`list_days`]/[`read_day`] read them back uncached; [`summarize`] and
 //!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
 
@@ -22,18 +22,10 @@ mod schema;
 mod types;
 
 /// Serializes every test in this crate that installs a subscriber to capture
-/// records — `layer::tests::capture`, `disk_filter_tests::records_written`,
-/// and `reader`'s span test.
-///
-/// `with_default` is thread-local, but `tracing`'s **callsite-interest cache is
-/// global**: the first thread to reach a callsite decides for every thread. Two of
-/// these tests concurrently can have one evaluate a callsite while the other sits
-/// between `with_default` calls with no subscriber, caching "never interested" and
-/// dropping the first's span — measured in `tt-exec` at ~1 failure per 60 runs, zero
-/// under `--test-threads=1`.
-///
-/// One lock per test *binary* is what's needed, so it lives at the crate root.
-/// Poison-tolerant: one panicking test must fail alone, not cascade.
+/// records. `with_default` is thread-local, but `tracing`'s **callsite-interest
+/// cache is global**: run two concurrently and one caches "never interested"
+/// while the other has no subscriber installed, dropping the first's span. One
+/// lock per test *binary* is needed, hence the crate root; poison-tolerant.
 #[cfg(test)]
 pub(crate) fn serialize_subscriber_tests() -> std::sync::MutexGuard<'static, ()> {
     static SUBSCRIBER: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -66,17 +58,9 @@ const RETAIN_DAYS: usize = 14;
 const DISABLE_ENV: &str = "TT_TELEMETRY";
 
 /// Filter for the disk sink: our own crates at `debug`, everything else at
-/// `warn`.
-///
-/// The scoping is load-bearing, not tidiness. `tracing-subscriber` is built
-/// with the `tracing-log` feature, so an unscoped `debug` sink would bridge in
-/// every `log::debug!` from the dependency tree (hyper, tao, wry, rusqlite,
-/// tokio-tungstenite) and write *and flush* each one. That is unbounded volume
-/// uncorrelated with anything this log exists to answer, and it would falsify
-/// the assumption [`EventLog`] relies on to justify flushing every record.
-///
-/// Third-party `warn`/`error` still lands, because a dependency complaining is
-/// exactly the kind of thing worth having already captured.
+/// `warn`. The scoping is load-bearing — with the `tracing-log` feature on, an
+/// unscoped `debug` sink bridges in every dependency's `log::debug!` and
+/// flushes each one, falsifying the assumption [`EventLog`] relies on.
 const DISK_FILTER: &str = "warn,tt=debug,tt_agentboard=debug,tt_app=debug,tt_cli=debug,\
                            tt_collect=debug,tt_config=debug,tt_exec=debug,tt_git=debug,\
                            tt_ide=debug,tt_journal=debug,tt_mcp=debug,tt_telemetry=debug,\
@@ -102,12 +86,9 @@ fn disk_sink_disabled() -> bool {
 }
 
 /// Resource attributes stamped on every record, in OpenTelemetry naming.
-///
-/// `tt.task` is the load-bearing one: several checkouts of this repo run
-/// concurrently, so a record is only interpretable if it says which one
-/// produced it. `tt.build_sha` (from `build.rs`) is what makes a record
-/// attributable to a commit — the same fix can be absent from one running
-/// binary and present in another.
+/// `tt.task` and `tt.build_sha` are the load-bearing pair: several checkouts
+/// run concurrently at different commits, so a record is only interpretable if
+/// it names which binary produced it.
 fn resource(service: &str) -> Map<String, Value> {
     let mut attrs = Map::new();
     let [service_name, service_version, process_pid] = schema::RESOURCE_KEYS else {
@@ -129,14 +110,10 @@ fn resource(service: &str) -> Map<String, Value> {
 
 /// Install the global subscriber for `service` (`"tt"`, `"tt-app"`, …).
 ///
-/// `default_level` is the stderr filter used when `RUST_LOG` is unset — the
-/// `-v` count maps onto it. The disk sink is deliberately *not* filtered by
-/// `RUST_LOG`: it always records our own crates at `DEBUG` (see
-/// [`DISK_FILTER`]), because the whole value of an event log is having the
-/// detail already captured when a question comes up. A quiet terminal should
-/// not mean a useless log.
-///
-/// Returns [`Error::AlreadyInitialized`] rather than panicking if called twice.
+/// `default_level` is the stderr filter used when `RUST_LOG` is unset. The disk
+/// sink is deliberately *not* filtered by `RUST_LOG` (see [`DISK_FILTER`]): a
+/// quiet terminal should not mean a useless log. Returns
+/// [`Error::AlreadyInitialized`] rather than panicking if called twice.
 pub fn init(service: &str, default_level: &str) -> Result<()> {
     let stderr_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
@@ -218,11 +195,8 @@ mod disk_filter_tests {
 
     #[test]
     fn ui_action_events_reach_disk() {
-        // The frontend action seam (`tt-app`'s `ui_action` command) emits at
-        // info under tt-app's own target, which `tt_app=debug` covers by
-        // prefix. Pinned because the sink's default is `warn`: an action seam
-        // that moved to a non-`tt_*` target would be silently swallowed, and a
-        // silent event log is worse than no event log.
+        // Pinned because the sink's default is `warn`: an action seam that moved
+        // to a non-`tt_*` target would be silently swallowed.
         let n = records_written(|| {
             tracing::info!(target: "tt_app_lib", action = "repo.icon_set", screen = "settings", "ui.action");
         });

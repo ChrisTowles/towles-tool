@@ -7,11 +7,9 @@
 //! "stopped" so a second launch is never offered while something holds the port.
 //!
 //! The file is owned by Claude Desktop — we read it, never write it — so parsing
-//! is deliberately tolerant: every field defaults, unknown fields are ignored,
-//! and an unlaunchable config is kept by the parser and filtered by callers via
-//! [`LaunchConfig::launchable`]. Tolerant of the *dialect* too: like VS Code's
-//! `launch.json` it may carry comments and trailing commas, which `serde_json`
-//! rejects, so [`read_launch_file`] goes through `jsonc-parser`.
+//! is tolerant: every field defaults, unknown fields are ignored, and an
+//! unlaunchable config is filtered by callers via [`LaunchConfig::launchable`].
+//! It may carry comments and trailing commas, so parsing goes via `jsonc-parser`.
 
 use std::path::{Path, PathBuf};
 
@@ -21,10 +19,9 @@ pub fn launch_file_path(dir: &Path) -> PathBuf {
     dir.join(".claude").join("launch.json")
 }
 
-/// Whether `dir` has a `launch.json` at all — the cheap existence probe
-/// [`crate::git_info::compute_git_info`] stamps onto
-/// [`crate::types::FolderData`] so the client can gate its dev-servers
-/// affordance without reading the file every poll.
+/// Whether `dir` has a `launch.json` at all — the cheap probe stamped onto
+/// [`crate::types::FolderData`], so the client gates its dev-servers affordance
+/// without reading the file every poll.
 pub fn has_launch_file(dir: &Path) -> bool {
     launch_file_path(dir).is_file()
 }
@@ -42,16 +39,14 @@ pub struct LaunchConfig {
     /// Arguments for the command, e.g. `["--filter", "@x/blog", "dev"]`.
     #[serde(default)]
     pub runtime_args: Vec<String>,
-    /// Port the server listens on once up. Two configs may share one (the
-    /// blog's `"all"` config covers the same server as `"blog"`), and a
-    /// config without a port simply can't be probed.
+    /// Port the server listens on once up. Two configs may share one, and one
+    /// without a port simply can't be probed.
     #[serde(default)]
     pub port: Option<u16>,
 }
 
 impl LaunchConfig {
-    /// A config the app can actually start — parsing keeps every entry, this
-    /// is the caller-side filter.
+    /// A config the app can actually start — parsing keeps every entry.
     pub fn launchable(&self) -> bool {
         !self.runtime_executable.trim().is_empty()
     }
@@ -67,10 +62,9 @@ pub struct LaunchFile {
     pub configurations: Vec<LaunchConfig>,
 }
 
-/// Read `<dir>/.claude/launch.json`. `Ok(None)` when the file doesn't exist
-/// (the common case — most checkouts have none); `Err` only for a file that
-/// exists but can't be read or parsed, so the UI can say "malformed" instead
-/// of silently showing nothing.
+/// Read `<dir>/.claude/launch.json`. `Ok(None)` when absent (most checkouts);
+/// `Err` only for a file that exists but can't be read or parsed, so the UI can
+/// say "malformed" instead of silently showing nothing.
 pub fn read_launch_file(dir: &Path) -> crate::Result<Option<LaunchFile>> {
     let path = launch_file_path(dir);
     let text = match std::fs::read_to_string(&path) {
@@ -81,11 +75,9 @@ pub fn read_launch_file(dir: &Path) -> crate::Result<Option<LaunchFile>> {
     Ok(Some(parse_launch_json(&text)?))
 }
 
-/// Parse `launch.json`'s text (JSON, or JSONC as an editor would leave it).
-/// A file that parses to nothing — empty, or only comments — has no configs
-/// rather than being an error. Failures come back as [`crate::Error::Json`]:
-/// the dialect is an implementation detail, and the message already carries
-/// the line and column.
+/// Parse `launch.json`'s text (JSON, or JSONC as an editor would leave it). A
+/// file that parses to nothing has no configs rather than being an error;
+/// failures come back as [`crate::Error::Json`], already carrying line/column.
 fn parse_launch_json(text: &str) -> crate::Result<LaunchFile> {
     // `Option<_>` because whitespace/comments-only input deserializes as null.
     jsonc_parser::parse_to_serde_value::<Option<LaunchFile>>(text, &JSONC_OPTIONS)
@@ -94,15 +86,11 @@ fn parse_launch_json(text: &str) -> crate::Result<LaunchFile> {
 }
 
 /// Exactly the dialect an editor writes: JSON plus comments and trailing
-/// commas. `jsonc-parser`'s own defaults are far looser — single-quoted
-/// strings, unquoted keys, hex and `+`-prefixed numbers — and accepting those
-/// would quietly launch from a file Claude Desktop itself calls malformed,
-/// which is the opposite of the compatibility this module exists for.
-///
-/// `allow_missing_commas` only governs object keys; a missing comma between
-/// *array* elements is accepted by the parser either way. That one is
-/// lossless (both configs still parse), so it is left alone rather than
-/// hand-checked here.
+/// commas. `jsonc-parser`'s own defaults are far looser, and accepting those
+/// would quietly launch from a file Claude Desktop itself calls malformed —
+/// the opposite of the compatibility this module exists for.
+/// (`allow_missing_commas` governs only object keys; between *array* elements
+/// the parser is lossless either way, so that one is left alone.)
 const JSONC_OPTIONS: jsonc_parser::ParseOptions = jsonc_parser::ParseOptions {
     allow_comments: true,
     allow_trailing_commas: true,
@@ -114,10 +102,9 @@ const JSONC_OPTIONS: jsonc_parser::ParseOptions = jsonc_parser::ParseOptions {
 };
 
 /// Whether something is accepting TCP connections on localhost:`port` — the
-/// "already running" probe. A connect (not a bind test) so a listener that's
-/// genuinely serving counts and nothing else does; both loopback stacks are
-/// tried since dev servers bind either. On loopback a closed port refuses
-/// immediately, so the timeout only bounds pathological cases.
+/// "already running" probe. A connect, not a bind test, so only a listener
+/// genuinely serving counts; both loopback stacks are tried since dev servers
+/// bind either.
 pub fn port_listening(port: u16) -> bool {
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
     let timeout = std::time::Duration::from_millis(250);
@@ -127,11 +114,10 @@ pub fn port_listening(port: u16) -> bool {
     ]
     .iter()
     .any(|addr| match TcpStream::connect_timeout(addr, timeout) {
-        // A connect into the kernel's ephemeral range can "succeed" with no
-        // listener at all: TCP simultaneous open lets the socket connect to
-        // itself when the kernel picks source port == dest port on loopback.
-        // Such a stream has local == peer, which a real listener's accepted
-        // connection never does — treat it as not listening.
+        // A connect into the ephemeral range can "succeed" with no listener:
+        // TCP simultaneous open lets the socket connect to itself when the
+        // kernel picks source port == dest port. Such a stream has local ==
+        // peer, which a real accepted connection never does.
         Ok(stream) => match (stream.local_addr(), stream.peer_addr()) {
             (Ok(local), Ok(peer)) => local != peer,
             _ => true, // connected but unreadable addrs: trust the connect
@@ -144,8 +130,7 @@ pub fn port_listening(port: u16) -> bool {
 mod tests {
     use super::*;
 
-    /// The real file Claude Desktop wrote for the blog repo — the reference
-    /// fixture this feature exists to be compatible with.
+    /// The real file Claude Desktop wrote for the blog repo.
     const BLOG_FIXTURE: &str = r#"{
       "version": "0.0.1",
       "configurations": [
@@ -274,8 +259,7 @@ mod tests {
         );
     }
 
-    /// Only comments and trailing commas are allowed — the rest of
-    /// `jsonc-parser`'s permissive defaults would accept files Claude Desktop
+    /// `jsonc-parser`'s remaining defaults would accept files Claude Desktop
     /// itself rejects, so a config that runs here would not run there.
     #[test]
     fn other_loose_json_dialects_are_still_errors() {
@@ -309,9 +293,8 @@ mod tests {
         assert!(!has_launch_file(root.path()));
     }
 
-    /// Start of the kernel's ephemeral (auto-assigned) port range. Anything
-    /// below it is only ever bound by an explicit request, never handed out
-    /// by `bind(port 0)`.
+    /// Start of the kernel's auto-assigned port range; below it a port is only
+    /// ever bound by explicit request, never handed out by `bind(0)`.
     fn ephemeral_range_start() -> u16 {
         std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
             .ok()
@@ -319,13 +302,10 @@ mod tests {
             .unwrap_or(32768)
     }
 
-    /// Bind a listener *below* the ephemeral range, returning it with its port.
-    ///
-    /// Keeps the kernel from handing this port to an unrelated `bind(0)`
-    /// elsewhere in the test binary while the test is mid-flight.
+    /// Bind a listener *below* the ephemeral range, so the kernel can't hand
+    /// this port to an unrelated `bind(0)` while the test is mid-flight.
     fn bind_below_ephemeral_range() -> Option<(std::net::TcpListener, u16)> {
         let start = ephemeral_range_start();
-        // Walk down from just under the range; skip anything already taken.
         (1024..start)
             .rev()
             .take(500)
@@ -339,21 +319,16 @@ mod tests {
     #[test]
     fn port_listening_tracks_a_real_listener() {
         let Some((listener, port)) = bind_below_ephemeral_range() else {
-            // No free non-ephemeral port to borrow: skip rather than assert on
-            // a port the kernel may reassign underneath us.
+            // No free non-ephemeral port to borrow — skip rather than race.
             return;
         };
         assert!(port_listening(port), "a bound listener must read as listening");
         drop(listener);
 
-        // `drop` closes *our* descriptor, which does not necessarily close the
-        // socket: any subprocess forked while the listener was open inherits a
-        // duplicate and holds it in LISTEN until it execs or exits. This suite
-        // shells out to `git` from other tests constantly, so under a full
-        // parallel run that raced about half the time — and `port_listening`
-        // was right each time, because something really was still listening.
-        // The honest assertion is that the port frees up promptly once the
-        // last holder is gone, not that it is free the instant we let go.
+        // `drop` closes *our* descriptor, not necessarily the socket: a
+        // subprocess forked while the listener was open inherits a duplicate
+        // and holds it in LISTEN. So the honest assertion is that the port
+        // frees up promptly, not that it is free the instant we let go.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while port_listening(port) {
             assert!(

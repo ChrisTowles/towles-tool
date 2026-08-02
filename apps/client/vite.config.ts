@@ -6,12 +6,9 @@ import { defineConfig, type Plugin } from "vite";
 import { resolveDevPort } from "../../scripts/task-port.mjs";
 import pkg from "./package.json" with { type: "json" };
 
-// @vscode/diff reads its .wasm off disk from a Node-only branch of `initWasm()`
-// that a WebView never takes; left alone, every chunk pulling it in warns that
-// `node:fs/promises` was externalized. Point that one dep at a shim that throws
-// instead — deliberately scoped to it rather than aliased globally, so the next
-// dep to reach for a Node builtin still says so at build time instead of
-// silently resolving to a stub that only fails once something calls it.
+// @vscode/diff imports `node:fs/promises` from a Node-only branch a WebView
+// never takes, and every chunk pulling it in warns. Scoped to that one dep
+// rather than aliased globally, so the next Node builtin still says so.
 function vscodeDiffNodeShim(): Plugin {
   const shim = path.resolve(__dirname, "./src/shims/node-fs-promises.ts");
   return {
@@ -24,20 +21,10 @@ function vscodeDiffNodeShim(): Plugin {
   };
 }
 
-// Dev-only Babel plugin: put the owning React component's name into the DOM,
-// where the element inspector can show it — component names otherwise never
-// leave React. Two stamps per host element (lowercase tags only — a
-// capitalized <Component/> would receive them as unexpected props):
-//
-// - the component name prepended as the element's *first class*, because the
-//   inspector's hover tooltip shows only `tag.classList` — so it reads
-//   `span.SessionRow.min-w-0.flex-1…` right in the overlay;
-// - `data-component="<Name>"` on the component's *root* element, for
-//   structural queries (`document.querySelectorAll('[data-component]')`).
-//
-// The name is the nearest enclosing capitalized function (walking out of
-// inline `.map(…)` callbacks). Gated to `vite serve`, so built/release DOM
-// stays clean.
+// Dev-only: stamps the owning component's name into the DOM for the element
+// inspector — as the *first class* (the hover tooltip shows only `classList`)
+// plus `data-component` on the component root, for structural queries.
+// Lowercase host tags only; a capitalized <Component/> would take them as props.
 function componentNamePlugin({ types: t }: { types: typeof import("@babel/types") }) {
   const directName = (fnPath: any): string | null => {
     const node = fnPath.node;
@@ -110,26 +97,18 @@ function componentNamePlugin({ types: t }: { types: typeof import("@babel/types"
 }
 
 // Every @codingame/monaco-vscode-* package must be pre-bundled together (and
-// deduped) so they share one module instance — otherwise, in dev, the
-// default-extension packages register grammars/themes into a different copy
-// of the api than the one `initialize` starts, and nothing highlights.
+// deduped) so they share one module instance — otherwise the default-extension
+// packages register grammars/themes into a different api copy and nothing
+// highlights.
 const monacoVscodeDeps = Object.keys(pkg.dependencies).filter((d) =>
   d.startsWith("@codingame/monaco-vscode-"),
 );
 
-// `dev-port.mjs` normally pins TT_DEV_PORT before launching us. Run directly
-// (bare-vite mock dev), resolve the same per-checkout claim from the repo
-// root's rendered `.env`/`.env.local`.
-//
-// There is deliberately no fallback port. Any value picked outside the claim
-// system is drawn from the same 1420-1619 pool the claims come from, so it
-// collides with whichever sibling checkout claimed it — 1420 in particular is
-// the pool's first port, and therefore almost always already held. Failing
-// here with the fix is better than binding a port that isn't ours.
-//
-// Resolved only when the dev *server* is actually going to bind it: a
-// `vite build` never listens on anything, and failing it (as a top-level
-// resolve did) broke every checkout without a rendered `.env` — CI first.
+// `dev-port.mjs` normally pins TT_DEV_PORT; run bare, resolve the same
+// per-checkout claim from the repo root's rendered `.env`. No fallback: any
+// port picked outside the claim system comes from the same 1420-1619 pool a
+// sibling checkout may already hold. Resolved only when the server will bind
+// it — `vite build` never listens, and CI has no rendered `.env`.
 const repoRoot = path.resolve(__dirname, "../..");
 
 function requireDevPort(): number {
@@ -143,7 +122,6 @@ function requireDevPort(): number {
   return port;
 }
 
-// https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
   plugins: [
     react(command === "serve" ? { babel: { plugins: [componentNamePlugin] } } : undefined),
@@ -177,22 +155,15 @@ export default defineConfig(({ command }) => ({
     },
   },
   // The textmate tokenization worker code-splits, which rollup only supports
-  // with ES-module workers (module workers are fine in WebKitGTK/WebView2).
-  // Worker builds are their own rollup pass and do NOT inherit `plugins`, so
-  // the @vscode/diff shim has to be registered a second time here — the worker
-  // graph pulls that dep in too, and without this it warns three more times.
+  // with ES-module workers. Worker builds are their own rollup pass and do NOT
+  // inherit `plugins`, so the @vscode/diff shim is registered a second time.
   worker: {
     format: "es",
     plugins: () => [vscodeDiffNodeShim()],
   },
-  // The main chunk is ~2.4 MB minified and that is accepted, not an
-  // oversight: the monaco-vscode stack must stay one module graph (see the
-  // dedupe note above — splitting it breaks grammar/theme registration),
-  // screens are static imports by design (apps/client/CLAUDE.md's motion
-  // note), and a Tauri webview loads assets from local disk, so the 500 kB
-  // default — a network-delivery heuristic — doesn't apply. The limit is
-  // raised with headroom rather than removed: growth past ~3 MB should
-  // resurface the warning and prompt a fresh look.
+  // The ~2.4 MB main chunk is accepted: the monaco-vscode stack must stay one
+  // module graph, and a Tauri webview loads from disk, so the 500 kB default (a
+  // network heuristic) doesn't apply. Raised, not removed — ~3 MB should warn.
   build: {
     chunkSizeWarningLimit: 3000,
   },

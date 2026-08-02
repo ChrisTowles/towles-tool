@@ -2,10 +2,9 @@ import type { ReactNode } from "react";
 import { AppWindow, Box, Files as FilesIcon, GitCompare, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** One header row for every pane kind. **The lens leads, the subject
- * follows, the folder never appears** — a window is scoped to one checkout,
- * so that name belongs in the working-context band. Type is carried by shape
- * and words, never hue: violet and amber already mean focused and needs-you. */
+/** One header row for every pane kind. **The lens leads, the subject follows, the
+ * folder never appears** — a window is scoped to one checkout. Type is carried by
+ * shape and words, never hue: violet and amber mean focused and needs-you. */
 export function PaneChrome({
   lens,
   subject,
@@ -35,11 +34,9 @@ export function PaneChrome({
       {subject != null && (
         <>
           <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
-          {/* `flex-1` so the subject claims the row's leftover width instead
-           * of only its content width. Without it a `min-w-0 truncate` span
-           * sitting beside `shrink-0` controls is the first thing a narrow
-           * pane collapses — which is exactly how the old diff header ended
-           * up rendering its folder name at zero width. */}
+          {/* `flex-1` so the subject claims the row's leftover width. Without it
+           * a `min-w-0 truncate` span beside `shrink-0` controls is the first
+           * thing a narrow pane collapses, down to zero width. */}
           <span
             className="min-w-0 flex-1 truncate font-mono text-xs text-foreground"
             title={subjectTitle}

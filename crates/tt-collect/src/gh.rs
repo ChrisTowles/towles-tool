@@ -14,30 +14,16 @@ use std::time::{Duration, Instant};
 /// collector cadence.
 const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// `gh list` page cap. `gh` defaults to 30 and silently truncates beyond it, so
-/// this has to be generous — but not free: GitHub prices a GraphQL connection on
-/// the page size *requested*, not the rows returned.
-///
-/// Measured against `gh pr list --json …statusCheckRollup…` (#322 follow-up): the
-/// cost steps at 60→80, and 200 sat on the wrong side of it.
-///
-/// | `--limit`   | GraphQL points |
-/// |-------------|----------------|
-/// | 20 – 60     | 1              |
-/// | 80 – 200    | 2              |
-///
-/// 60 is the top of the cheap band. Raising it doubles the bill for every tracked
-/// repo on every tick — re-measure before moving it.
+/// `gh list` page cap. `gh` defaults to 30 and silently truncates beyond it, but
+/// a bigger page isn't free: GitHub prices a GraphQL connection on the size
+/// *requested*, and the cost steps at 60→80 (measured, #322 follow-up). 60 is the
+/// top of the cheap band — re-measure before raising it.
 pub(crate) const LIST_LIMIT: &str = "60";
 
 /// How long to pause every `gh` call once one reports a GitHub rate limit
-/// (primary or secondary/abuse-detection). The limit is per-token, not per
-/// repo or per collector (#322), so one hit means every other in-flight and
-/// upcoming call is likely to be limited too. Short-circuiting locally for a
-/// few minutes stops the collectors from continuing to hammer a token that's
-/// already over budget; a resolved limit just means the first call after the
-/// window succeeds normally, so erring generous here costs nothing but a
-/// slightly stale dashboard.
+/// (primary or secondary/abuse-detection). The limit is per-token, not per repo
+/// or per collector (#322), so one hit means every other call is likely limited
+/// too; erring generous costs nothing but a slightly stale dashboard.
 const RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
 static RATE_LIMITED_UNTIL: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();

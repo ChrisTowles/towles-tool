@@ -30,11 +30,9 @@ import {
   type Update,
 } from "./common";
 
-/**
- * A plain textarea, not a provider picker: the built-in prompts drive a
- * Google/Outlook MCP that may not be configured here. Ids are read-only
- * because each names the store lane a pull replaces.
- */
+// A plain textarea, not a provider picker: the built-in prompts drive a
+// Google/Outlook MCP that may not be configured here. Ids are read-only
+// because each names the store lane a pull replaces.
 function CalendarSourcesEditor({
   sources,
   onChange,
@@ -110,11 +108,8 @@ function PreferredToggle({
   );
 }
 
-/**
- * The new-task form's improver buttons (Direct / Clarify / Brainstorm /
- * Interview). Each prompt is the *instruction* handed to `claude -p`; the
- * "Preferred" toggle decides its own button vs. the form's "More" menu.
- */
+// Each prompt is the *instruction* handed to `claude -p`; the "Preferred"
+// toggle decides its own button vs. the form's "More" menu.
 export function PromptImproversEditor({
   improvers,
   onChange,

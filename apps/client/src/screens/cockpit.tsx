@@ -64,16 +64,12 @@ import { uiAction } from "@/lib/ui-action";
 import { Empty, IssueRow, Panel, PrRow } from "@/components/store-bits";
 import { prNeedsYou, prRank } from "@/lib/pr-tone";
 
-/** A checkout the app already tracks (agentboard folder) that a Cockpit issue
- * can be dispatched into — its repo `origin` matches the issue's repo. */
+/** A tracked checkout a Cockpit issue can be dispatched into. */
 type TaskTarget = { dir: string; branch: string; name: string };
 
-/**
- * Does an agentboard repo's `origin` URL name the same GitHub repo as an issue's
- * `owner/name`? Folds the ssh/https/scp forms enough to compare the trailing
- * `owner/name` — the Rust guard (`validate_task_for_repo`) re-checks
- * authoritatively before any dispatch, so this only needs to filter the menu.
- */
+/** Folds the ssh/https/scp forms enough to compare the trailing `owner/name`.
+ * Only filters the menu — the Rust guard (`validate_task_for_repo`) re-checks
+ * authoritatively before any dispatch. */
 function repoMatches(originUrl: string | null | undefined, repo: string): boolean {
   if (!originUrl) return false;
   const norm = originUrl
@@ -83,11 +79,8 @@ function repoMatches(originUrl: string | null | undefined, repo: string): boolea
   return norm.endsWith(`/${repo.toLowerCase()}`);
 }
 
-/**
- * Cockpit — the day home. One dense screen: how long until the next meeting, the
- * PRs that need you, and the issue queue across repos. Read-only over the store
- * snapshot; the countdown is driven by the shared app clock.
- */
+/** Cockpit — the day home: time until the next meeting, the PRs that need you,
+ * the issue queue. Read-only over the store snapshot. */
 export function CockpitScreen() {
   const { snapshot, live } = useStoreSnapshot();
   const agentState = useAgentboardState();
@@ -96,10 +89,8 @@ export function CockpitScreen() {
   // Deep-link focus: a "needs you" popover row scrolls its PR into view here.
   const focusRef = useFocusTarget<HTMLDivElement>("cockpit");
 
-  // How stale the PR/issue panels are, and a way to force a refresh. The button
-  // disables while a run is in flight; it clears once a newer refresh-collector
-  // run lands (the store re-emits its snapshot) or after a safety timeout, so it
-  // never sticks disabled.
+  // The refresh button re-enables on a newer collector run or a safety timeout,
+  // so it never sticks disabled.
   const refreshedAt = dataRefreshedAt(snapshot.runs, now);
   const [refreshing, setRefreshing] = useState(false);
   const refreshBaseline = useRef<number | undefined>(undefined);
@@ -121,14 +112,11 @@ export function CockpitScreen() {
     setRefreshing(true);
     const started = await storeCollectNow();
     if (started.isErr() && !NotInTauri.is(started.error)) toast.error(started.error.message);
-    // `false` = overlap (a run was already in flight), a failure, or browser dev
-    // — nothing new to wait on, so drop straight back to idle.
+    // `false` = overlap, failure, or browser dev — nothing new to wait on.
     if (!started.unwrapOr(false)) setRefreshing(false);
   }
 
-  // Candidate task checkouts for an issue: the folders of every tracked repo
-  // whose origin matches the issue's repo. Empty when none are tracked, which
-  // disables the assign/branch actions with an explanatory item.
+  // Empty when no matching repo is tracked, which disables assign/branch.
   const tasksFor = (repo: string): TaskTarget[] =>
     agentState.repos
       .filter((r) => repoMatches(r.originUrl, repo))
@@ -138,32 +126,22 @@ export function CockpitScreen() {
   const meetingLive = nextEvent ? eventIsLive(nextEvent, now) : false;
   const msUntilStart = nextEvent && !meetingLive ? nextEvent.startTs - now : Infinity;
   const soon = nextEvent ? !meetingLive && nextEvent.startTs - now < 15 * 60_000 : false;
-  // In the final approach the countdown shows m:ss — sharpen the shared clock to
-  // 1s so it actually ticks second-by-second, then drop back once we pass it.
+  // In the final approach the countdown shows m:ss, so the shared clock has to
+  // tick at 1s to match; back off once we pass it.
   useNowInterval(msUntilStart > 0 && msUntilStart < COUNTDOWN_SECONDS_THRESHOLD ? 1000 : undefined);
-  // Highlight amber while a meeting is live or imminent.
   const highlight = meetingLive || soon;
   const later = snapshot.events
     .filter((e) => e.startTs > now && e.id !== nextEvent?.id)
     .toSorted((a, b) => a.startTs - b.startTs);
-  // Show a few of the day's remaining meetings inline; the rest hide behind a
-  // "+N more" toggle so a busy day never floods the strip (still not a calendar
-  // — just the later-today list).
+  // The rest hide behind "+N more" so a busy day never floods the strip.
   const [laterExpanded, setLaterExpanded] = useState(false);
   const LATER_INLINE = 4;
   const shownLater = laterExpanded ? later : later.slice(0, LATER_INLINE);
   const hiddenLaterCount = later.length - shownLater.length;
 
-  // Repo filter chips: narrow both panels to one repo when zoning in. The strip
-  // gauges stay whole-snapshot totals (the overview); the chips + panels + their
-  // note counts move together. A selection that no longer exists (its repo got
-  // collected away) falls back to "all" without a stale-state effect.
-  //
-  // The selection survives a relaunch: zoning in on one repo is a stance you
-  // hold for days, not a per-session gesture, so restoring it beats re-picking
-  // the chip on every launch. Persisted in localStorage like the tab state
-  // (frontend-owned UI state), written through on click rather than from an
-  // effect so a rendered fallback never overwrites a real choice.
+  // Chips narrow both panels, never the strip gauges. The selection survives a
+  // relaunch, written through on click rather than from an effect so a rendered
+  // fallback (a repo collected away) never overwrites a real choice.
   const [repoFilter, setRepoFilter] = useState<string | null>(() =>
     loadRepoFilter(localStorage.getItem(COCKPIT_REPO_FILTER_KEY)),
   );
@@ -173,9 +151,8 @@ export function CockpitScreen() {
     if (repo === null) localStorage.removeItem(COCKPIT_REPO_FILTER_KEY);
     else localStorage.setItem(COCKPIT_REPO_FILTER_KEY, repo);
   }
-  // Merged PRs live in the snapshot too (briefly, so a folder's rail chip can
-  // turn purple), but Cockpit's PR queue is open work — exclude them. A
-  // dismissed item stays hidden until it changes again.
+  // Merged PRs live in the snapshot briefly (for the rail chip), but Cockpit's
+  // queue is open work — exclude them.
   const openPrs = useMemo(
     () => snapshot.prs.filter((p) => p.state === "open" && !isItemDismissed(p)),
     [snapshot.prs],
@@ -433,8 +410,7 @@ export function CockpitScreen() {
   );
 }
 
-/** Run an issue-dispatch command, reporting either side to the user — the Rust
- * command re-runs its own guards, so its message is the authoritative result. */
+/** Run an issue-dispatch command; the Rust side's message is authoritative. */
 async function runIssueCommand(cmd: string, args: Record<string, unknown>) {
   (await invoke<string>(cmd, args)).match({
     ok: (msg) => toast.success(msg),
@@ -452,21 +428,15 @@ async function copyToClipboard(text: string, what: string) {
   }
 }
 
-/** Dismiss one issue/PR: it drops out of every panel until it changes again.
- * The snapshot re-emits from Rust on success, so no optimistic update here. */
+/** Dismiss one issue/PR. The snapshot re-emits from Rust, so nothing optimistic. */
 async function dismissItem(kind: "issue" | "pr", repo: string, number: number, updatedTs: number) {
   uiAction("cockpit.item_dismiss", "cockpit", kind);
   const result = await storeItemDismiss(kind, repo, number, updatedTs);
   if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
 }
 
-/**
- * Per-issue action menu for the Cockpit issue queue: open the issue in the
- * browser, or dispatch it into a tracked task checkout (assign via
- * `gh issue develop`, or just create a local branch from the issue title). The
- * task submenus list the checkouts whose repo matches the issue; the Rust
- * command re-runs the clean-tree guard and reports success/failure via toast.
- */
+/** Per-issue action menu: open in the browser, or dispatch into a tracked task
+ * checkout. The Rust command re-runs the clean-tree guard and toasts. */
 function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] }) {
   return (
     <DropdownMenu>
@@ -523,12 +493,8 @@ function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] 
   );
 }
 
-/**
- * Per-PR action menu for the Cockpit pull-requests panel. Navigation and
- * clipboard only — open the PR (or its checks tab) in the browser, copy the
- * branch name or PR URL. No merge/review/approve actions: PR state is reported
- * here, never re-rendered or acted on (that happens on GitHub).
- */
+/** Per-PR action menu. Navigation and clipboard only — no merge/review/approve:
+ * PR state is reported here, never acted on (that happens on GitHub). */
 function PrActions({ pr }: { pr: PrItem }) {
   return (
     <DropdownMenu>
@@ -570,8 +536,7 @@ function PrActions({ pr }: { pr: PrItem }) {
   );
 }
 
-/** A submenu that lists candidate task checkouts, or a disabled hint when the
- * issue's repo isn't tracked as an agentboard repo. */
+/** Candidate task checkouts, or a disabled hint when the repo isn't tracked. */
 function TaskSubmenu({
   icon,
   label,
@@ -609,10 +574,8 @@ function TaskSubmenu({
   );
 }
 
-/** Empty-panel body with a route into Settings' Collectors tab. An empty PR or
- * issue panel is often just an unconfigured collector, so give the panel a way
- * to act on it instead of a dead-end sentence. `filter` seeds the Collectors
- * search so the relevant section is already in view. */
+/** Empty-panel body routing into Settings' Collectors tab — an empty panel is
+ * usually an unconfigured collector, not a dead end. `filter` seeds its search. */
 function SetupEmpty({
   message,
   filter,
@@ -642,8 +605,8 @@ function SetupEmpty({
   );
 }
 
-/** A repo filter chip under the strip. Violet marks the active selection (the
- * "currently focused" accent); the rest are neutral until hovered. */
+/** A repo filter chip. Violet marks the active selection (the "currently
+ * focused" accent); the rest are neutral until hovered. */
 function RepoChip({
   label,
   active,

@@ -33,19 +33,11 @@ fn main() {
     // is load-bearing.
     let surface = unsafe { host.foreign_surface() };
 
-    // Vsync by default: a demo, not a throughput test, and it keeps the
-    // unthrottled-commit flood (which the compositor hangs up on) off the table.
-    // `--no-vsync` exists because a vsync'd surface is paced by frame callbacks and
-    // an occluded window receives none, so the loop stalls on another workspace —
-    // right for a real pane, useless for `--capture`.
-    //
-    // Present modes, measured on COSMIC/Wayland. Committing faster than the
-    // compositor accepts gets the Wayland connection hung up — **flooding**:
-    // `AutoVsync` (FIFO) blocks on vblank and survives; `AutoNoVsync` (Immediate)
-    // commits at the render rate, 1300+ fps, and dies in seconds; `Mailbox` never
-    // blocks the renderer but still presents once per rendered frame, so it floods
-    // the same way. Presentation is therefore paced by the display, and a renderer
-    // with headroom spends it per frame — more samples and rays, which Solari scales.
+    // Vsync by default. Measured on COSMIC/Wayland: committing faster than the compositor
+    // accepts hangs up the connection, and only `AutoVsync` (FIFO, blocks on vblank)
+    // survives — `AutoNoVsync` and `Mailbox` both flood and die in seconds. `--no-vsync`
+    // exists anyway because a vsync'd surface is paced by frame callbacks that an occluded
+    // window never receives, so the loop stalls on another workspace — useless for capture.
     let present = if has_flag("--no-vsync") {
         PresentMode::AutoNoVsync
     } else if has_flag("--mailbox") {

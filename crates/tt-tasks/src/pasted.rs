@@ -4,14 +4,11 @@
 //! grows a reference to its path; Claude's Read tool handles images, so the path is the
 //! attachment.
 //!
-//! **These files live outside the repo**, under a `tt_config`-resolved staging dir in
-//! the OS temp dir. Inside the new task was tried first, assuming Claude Code would
-//! prompt for an out-of-workspace read — it doesn't (verified: a `claude -p` run read an
-//! image under `/tmp` in default permission mode), so that bought nothing and cost a
-//! `.gitignore` to keep `git status` clean.
-//!
-//! Staging is keyed by repo+branch rather than unique names, so retrying a failed create
-//! overwrites its own directory, and [`prune`] ages out anything past [`MAX_AGE_MS`].
+//! **These files live outside the repo**, under a `tt_config`-resolved staging dir in the
+//! OS temp dir. Claude Code does not prompt for an out-of-workspace read (verified under
+//! `/tmp` in default permission mode), so staging inside the task bought nothing and cost
+//! a `.gitignore`. Staging is keyed by repo+branch, so retrying a failed create overwrites
+//! its own directory, and [`prune`] ages out anything past [`MAX_AGE_MS`].
 
 use std::path::{Path, PathBuf};
 
@@ -22,25 +19,18 @@ use thiserror::Error;
 
 use crate::layout::task_name_from_branch;
 
-/// Cap per image. Claude Code itself rejects images well below this, so a
-/// paste over the cap is a mis-paste (a copied *file* rather than a bitmap,
-/// say) and is worth an error rather than several seconds of base64 crossing
-/// the IPC boundary before Claude refuses it anyway.
+/// Cap per image. Claude Code rejects images well below this, so a paste over the cap is
+/// a mis-paste worth an error rather than seconds of base64 crossing the IPC boundary.
 pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
-/// How long a staged paste survives. Long enough that a task created today
-/// can still resolve its image after a restart; short enough that this
-/// directory can't grow without bound. Pruning is opportunistic (on write),
-/// so nothing has to run on a timer.
+/// Long enough that a task created today resolves its image after a restart, short enough
+/// that the directory can't grow without bound. Pruning is opportunistic, on write.
 pub const MAX_AGE_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 
-/// One image on its way to a task's prompt: the MIME type plus standard
-/// base64 (Tauri's JSON IPC has no bytes type — a `Vec<u8>` here would cross
-/// as a megabyte-long array of JSON numbers).
-///
-/// Crosses in both directions: inbound from the webview for a paste the
-/// browser *did* decode, and outbound from `read_clipboard_image` for the
-/// Linux case where it didn't.
+/// One image on its way to a task's prompt. Base64 because Tauri's JSON IPC has no bytes
+/// type — a `Vec<u8>` would cross as a megabyte-long array of JSON numbers. Travels both
+/// ways: inbound for a paste the webview decoded, outbound from `read_clipboard_image`
+/// for the Linux case where it didn't.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PastedImage {
@@ -68,10 +58,8 @@ pub enum PastedError {
 
 pub type Result<T> = std::result::Result<T, PastedError>;
 
-/// File extension for a clipboard MIME type. Deliberately a closed set: the
-/// extension is what tells Claude's Read tool how to decode the file, so
-/// guessing (or defaulting to `.png` for an unknown type) would write a file
-/// that silently fails to load later, far from this call.
+/// Deliberately a closed set: the extension is what tells Claude's Read tool how to
+/// decode the file, so a guess writes a file that fails to load far from this call.
 fn extension_for(mime: &str) -> Result<&'static str> {
     // Browsers sometimes append parameters, e.g. `image/png;charset=utf-8`.
     let base = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
@@ -86,16 +74,10 @@ fn extension_for(mime: &str) -> Result<&'static str> {
 
 /// Encode raw RGBA pixels as a PNG.
 ///
-/// The system clipboard hands back undecoded RGBA (that's what
-/// `arboard`/`tauri-plugin-clipboard-manager` return), but a file only counts
-/// as an attachment if Claude's Read tool can decode it, and the webview
-/// needs something it can show in an `<img>` for the thumbnail. Both want a
-/// real image format, so the bytes get encoded once, here, on the way out of
-/// the clipboard.
-///
-/// This exists because a Ctrl+V image paste on Linux never reaches the
-/// webview's `paste` event, so the clipboard has to be read natively — see
-/// `read_clipboard_image` in the app's `tasks.rs`.
+/// The system clipboard hands back undecoded RGBA, but Claude's Read tool and the
+/// thumbnail's `<img>` both want a real image format, so the bytes are encoded once here
+/// on the way out. Needed at all because a Ctrl+V image paste on Linux never reaches the
+/// webview's `paste` event — see `read_clipboard_image` in the app's `tasks.rs`.
 pub fn rgba_to_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
     let expected = (width as usize)
         .checked_mul(height as usize)
@@ -120,28 +102,23 @@ pub fn rgba_to_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// One staging directory per pending task: `<repo>-<branch-slug>`. Reuses
-/// the branch→task-name slug so the directory reads like the task it belongs
-/// to, and includes the repo so the same branch name in two repos doesn't
-/// collide.
+/// One staging directory per pending task: `<repo>-<branch-slug>`. Reuses the
+/// branch→task-name slug so the directory reads like its task, and includes the repo so
+/// the same branch name in two repos doesn't collide.
 pub fn scope_name(repo: &str, branch: &str) -> String {
-    // Both slug to `None` only for input that is entirely punctuation. The
-    // branch is already validated before a task is created, so this is a
-    // belt-and-braces fallback rather than a reachable path — but it must
-    // still be a legal single directory name, never an empty one that would
-    // write straight into the staging root.
+    // Both slug to `None` only for all-punctuation input, which validation already rules
+    // out — but the result must still be a legal single directory name, never an empty
+    // one that would write straight into the staging root.
     let parts: Vec<String> =
         [repo, branch].iter().filter_map(|s| task_name_from_branch(s)).collect();
     if parts.is_empty() { "unnamed".to_string() } else { parts.join("-") }
 }
 
-/// Decode `images` and write them into `<base>/<scope>/`, returning their
-/// absolute paths in the order given (which is the order the prompt will
-/// reference them in, so it's the order the user pasted).
+/// Decode `images` into `<base>/<scope>/`, returning absolute paths in the order given —
+/// which is the order the prompt references them, so the order the user pasted.
 ///
-/// All-or-nothing by intent: the first failure returns `Err` and the caller
-/// surfaces it instead of launching Claude on a prompt that references an
-/// image that isn't there.
+/// All-or-nothing: the first failure returns `Err` rather than launching Claude on a
+/// prompt referencing an image that isn't there.
 pub fn write_images(
     base: &Path,
     scope: &str,
@@ -155,9 +132,8 @@ pub fn write_images(
     let _ = prune(base, now_ms);
 
     let dir = base.join(scope);
-    // A retry of the same task reuses this directory — clear it so a paste
-    // that dropped an image can't leave the previous attempt's file behind to
-    // be picked up by the next prompt.
+    // A retry reuses this directory — clear it, or a paste that dropped an image leaves
+    // the previous attempt's file to be picked up by the next prompt.
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)
         .map_err(|source| PastedError::Write { path: dir.display().to_string(), source })?;
@@ -171,8 +147,7 @@ pub fn write_images(
         if bytes.len() > MAX_IMAGE_BYTES {
             return Err(PastedError::TooLarge { got: bytes.len() });
         }
-        // 1-based: the prompt references these by path, and the directory was
-        // just cleared, so there's no collision to scan for.
+        // 1-based; the directory was just cleared, so there's no collision to scan for.
         let path = dir.join(format!("paste-{}.{ext}", i + 1));
         std::fs::write(&path, &bytes)
             .map_err(|source| PastedError::Write { path: path.display().to_string(), source })?;
@@ -182,10 +157,8 @@ pub fn write_images(
     Ok(written)
 }
 
-/// Pasted screenshots are user content and can hold anything that was on
-/// screen, so they're owner-only — the same choice Claude Code makes for its
-/// own image cache. Best-effort: a filesystem without unix modes just keeps
-/// the default.
+/// Screenshots can hold anything that was on screen, so they're owner-only — the same
+/// choice Claude Code makes for its own image cache. Best-effort.
 #[cfg(unix)]
 fn restrict_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -195,9 +168,8 @@ fn restrict_permissions(path: &Path) {
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
 
-/// Drop staging directories last modified more than [`MAX_AGE_MS`] ago.
-/// Returns how many were removed. Errors are swallowed per-entry: pruning is
-/// housekeeping, and a single undeletable directory shouldn't fail a paste.
+/// Drop staging directories last modified more than [`MAX_AGE_MS`] ago. Errors are
+/// swallowed per-entry: one undeletable directory shouldn't fail a paste.
 pub fn prune(base: &Path, now_ms: u64) -> std::io::Result<usize> {
     let mut removed = 0;
     let entries = match std::fs::read_dir(base) {
@@ -217,8 +189,7 @@ pub fn prune(base: &Path, now_ms: u64) -> std::io::Result<usize> {
         let Ok(since_epoch) = modified.duration_since(std::time::UNIX_EPOCH) else {
             continue;
         };
-        // Age against the caller's clock, not `elapsed()`, so the cutoff is
-        // injectable from tests rather than depending on wall time.
+        // The caller's clock, not `elapsed()`, so tests can inject the cutoff.
         let age_ms = now_ms.saturating_sub(since_epoch.as_millis() as u64);
         if age_ms > MAX_AGE_MS && std::fs::remove_dir_all(entry.path()).is_ok() {
             removed += 1;
@@ -250,10 +221,8 @@ mod tests {
 
     #[test]
     fn nothing_is_written_inside_any_repo() {
-        // The whole point of the staging dir: a paste must not touch the
-        // checkout it's for. Guarded by construction — `write_images` only
-        // ever joins under `base` — but worth pinning so a future "just put
-        // it next to the code" change has to delete this test on purpose.
+        // Guarded by construction, but pinned so a future "just put it next to the
+        // code" change has to delete this test on purpose.
         let tmp = tempfile::tempdir().unwrap();
         let paths = write_images(tmp.path(), "scope", &[png(b"x")], 0).unwrap();
         assert!(paths.iter().all(|p| p.starts_with(tmp.path())));
@@ -263,8 +232,7 @@ mod tests {
     fn retrying_the_same_task_replaces_the_previous_attempt() {
         let tmp = tempfile::tempdir().unwrap();
         write_images(tmp.path(), "scope", &[png(b"a"), png(b"b")], 0).unwrap();
-        // Second attempt pasted only one image — the stale paste-2 from the
-        // first attempt must not survive to be referenced by the new prompt.
+        // The first attempt's stale paste-2 must not survive into the new prompt.
         let paths = write_images(tmp.path(), "scope", &[png(b"only")], 0).unwrap();
         assert_eq!(paths.len(), 1);
         assert!(!tmp.path().join("scope/paste-2.png").exists());
@@ -299,8 +267,7 @@ mod tests {
 
     #[test]
     fn scope_name_is_always_a_single_usable_directory_name() {
-        // Never empty (that would write into the staging root itself) and
-        // never nested (a `/` would escape the scope dir).
+        // Never empty (writes into the staging root) and never nested (escapes it).
         for (repo, branch) in [("", ""), ("///", "..."), ("a/b", "c/d")] {
             let scope = scope_name(repo, branch);
             assert!(!scope.is_empty(), "empty scope for {repo:?}/{branch:?}");
@@ -326,8 +293,7 @@ mod tests {
     fn stale_dirs_are_pruned() {
         let tmp = tempfile::tempdir().unwrap();
         write_images(tmp.path(), "scope", &[png(b"x")], now_ms()).unwrap();
-        // Jump the clock past the cutoff rather than backdating the file —
-        // this is exactly why `now_ms` is a parameter.
+        // Jump the clock rather than backdate the file — why `now_ms` is a parameter.
         let later = now_ms() + MAX_AGE_MS + 1;
         assert_eq!(prune(tmp.path(), later).unwrap(), 1);
         assert!(!tmp.path().join("scope").exists());
@@ -366,8 +332,8 @@ mod tests {
 
     #[test]
     fn rgba_length_must_match_the_dimensions() {
-        // A truncated clipboard buffer would otherwise encode as a corrupt
-        // PNG that only fails later, when Claude tries to read it.
+        // A truncated buffer would otherwise encode as a PNG that fails only when
+        // Claude tries to read it.
         let err = rgba_to_png(2, 2, &[0; 8]).unwrap_err();
         assert!(matches!(err, PastedError::BadImage(_)), "got {err:?}");
     }
@@ -397,8 +363,7 @@ mod tests {
 
     #[test]
     fn unsupported_mime_is_an_error_not_a_guessed_extension() {
-        // A wrong extension would write a file that fails to decode later,
-        // far from here — better to refuse the paste at the boundary.
+        // A wrong extension fails to decode far from here; refuse at the boundary.
         assert!(matches!(extension_for("image/svg+xml"), Err(PastedError::UnsupportedMime(_))));
         assert!(matches!(extension_for("text/plain"), Err(PastedError::UnsupportedMime(_))));
     }

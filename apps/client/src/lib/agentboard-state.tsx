@@ -12,15 +12,8 @@ const EMPTY: StatePayload = {
   ts: 0,
 };
 
-/**
- * A single app-wide subscription to the live agentboard state. Screens stay
- * mounted (App.tsx toggles `hidden`), so before this provider each of ~5
- * consumers ran its own `ab_get_state` fetch + `agentboard://state` listener.
- * The provider subscribes once and shares the payload through context, the
- * same pattern as {@link StoreSnapshotProvider} / {@link NowProvider}.
- *
- * Returns the latest payload (empty until the first snapshot arrives).
- */
+/** One app-wide subscription to the live agentboard state — screens stay
+ * mounted, so per-consumer listeners meant ~5 fetches for one payload. */
 const AgentboardStateContext = createContext<StatePayload | null>(null);
 
 export function AgentboardStateProvider({ children }: { children: ReactNode }) {
@@ -32,8 +25,7 @@ export function AgentboardStateProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       // Outside Tauri (bare-browser dev), `listen` throws on the missing IPC
-      // internals — stay on the empty state instead of leaking unhandled
-      // rejections.
+      // internals — stay empty rather than leak an unhandled rejection.
       if (!("__TAURI_INTERNALS__" in window)) {
         setState(EMPTY);
         return;
@@ -41,12 +33,8 @@ export function AgentboardStateProvider({ children }: { children: ReactNode }) {
 
       const { listen } = await import("@tauri-apps/api/event");
 
-      // Every payload is stamped with its compute time (`ts`) — never let an
-      // older snapshot replace a newer one. The initial `ab_get_state` fetch
-      // below resolves *after* the subscription is live, so a debounced
-      // `agentboard://state` event (e.g. the one `ab_add_repo` triggers during
-      // task creation) can land first; without the guard the slower fetch
-      // would roll the rail back to a snapshot that predates it.
+      // The initial fetch resolves *after* the subscription is live, so a
+      // newer event can land first — `ts` keeps it from being rolled back.
       const accept = (payload: StatePayload) =>
         setState((cur) => (payload.ts < cur.ts ? cur : payload));
 
@@ -74,11 +62,7 @@ export function AgentboardStateProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * The live agentboard state, shared across the app from a single subscription.
- * Empty until the first snapshot arrives. Must be used under an
- * {@link AgentboardStateProvider}.
- */
+/** The live agentboard state, empty until the first snapshot arrives. */
 export function useAgentboardState(): StatePayload {
   const ctx = useContext(AgentboardStateContext);
   if (ctx === null) {

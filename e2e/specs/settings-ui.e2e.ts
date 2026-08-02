@@ -1,13 +1,7 @@
 /**
- * End-to-end spec driving the real Tauri shell via @wdio/tauri-service.
- * Covers the Settings screen UI: palette-navigate to it, then exercise the
- * sub-tab panel (switch tabs, assert the selected pane renders).
- *
- * READ-ONLY by construction — it only navigates and switches tabs. It never
- * touches an input, never clicks Save, and so never writes the real settings
- * file (a hard rule from CLAUDE.md; the settings file is shared with the
- * TypeScript CLI). settings.e2e.ts is the IPC-level settings smoke test; this
- * is its UI counterpart.
+ * Settings screen UI against the real Tauri shell; settings.e2e.ts is the
+ * IPC-level counterpart. Must stay read-only — no input, no Save — because the
+ * real settings file is shared with the TypeScript CLI.
  */
 
 /// <reference types="@wdio/globals/types" />

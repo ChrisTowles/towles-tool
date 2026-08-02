@@ -27,38 +27,25 @@ pub struct RemoveOpts {
 }
 
 /// A step of [`remove_task`] worth showing the user live, in the order they
-/// run. Reported through the `on_phase` callback so a host that owns a UI
-/// (the app's Agentboard rail) can dim the row and show what's actually
-/// happening, rather than the row just hanging on "deleting…" for however
-/// long a teardown command or `git worktree remove` takes.
-///
-/// Deliberately coarse — one variant per subprocess-bearing step, not every
-/// internal git call — so the callback fires only where there's something
-/// worth narrating.
+/// run. Deliberately coarse — one variant per subprocess-bearing step — so a
+/// host with a UI can narrate a teardown or `git worktree remove` that takes
+/// its time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemovePhase {
-    /// Checking the tree is clean and nothing is unreachable — the fast
-    /// checks before anything destructive.
     CheckingGuards,
-    /// The guards passed (or were forced); live sessions in the folder are
-    /// being stopped before anything on disk changes.
+    /// Guards passed (or were forced); live sessions stop before anything on
+    /// disk changes.
     StoppingSessions,
-    /// Running the task's declared `TT_TASK_TEARDOWN` command, if any.
     RunningTeardown,
-    /// `docker compose down` plus the anchored container/volume sweep.
     CleaningDocker,
-    /// `git worktree remove` (or, for a broken worktree, `rm -rf`).
     RemovingWorktree,
-    /// The worktree is off disk (or was already gone): untracking it from
-    /// `repos.json` and closing its bound board row. Reported by
-    /// `tt_agentboard::task_removal`, the one step of the sequence that lives
-    /// outside `remove_task` itself.
+    /// Off disk: untracking from `repos.json` and closing the bound board row.
+    /// Reported by `tt_agentboard::task_removal`, the one step outside
+    /// `remove_task` itself.
     Untracking,
 }
 
 impl RemovePhase {
-    /// Present-participle label for a status line — "removing the task:
-    /// {label}".
     pub fn label(self) -> &'static str {
         match self {
             Self::CheckingGuards => "checking for uncommitted work",
@@ -77,13 +64,10 @@ pub struct RemovedTask {
     /// to untrack the task from stores keyed by dir (the agentboard rail).
     pub dir: PathBuf,
     /// The main checkout the task belonged to. Carried because it survives the
-    /// removal and `dir` does not: it is what identifies the *instance state*
-    /// holding this task's board row, which a caller cannot re-derive from a
-    /// directory that no longer exists.
+    /// removal and `dir` does not: it identifies the *instance state* holding
+    /// this task's board row.
     pub checkout: PathBuf,
-    /// Progress notes for the user: docker resources removed, guards skipped
-    /// under force, fallback paths taken. Callers surface these — nothing
-    /// here prints.
+    /// Progress notes for the user. Callers surface these — nothing here prints.
     pub messages: Vec<String>,
 }
 
@@ -91,43 +75,28 @@ pub struct RemovedTask {
 ///
 /// A guard refusal is an `Ok` variant, not an [`OpsError`]: it is an expected
 /// answer with a next step attached (stash it, stop the dev server, re-run
-/// with force), not a failure. Modeling it as an error made every consumer
-/// destructure it straight back out — the app to build a dialog from it, the
-/// CLI to attach remedies, `clean_tasks` to list it as a keep-reason — so
-/// three call sites each re-derived "this error isn't an error", and the one
-/// thing an error buys you (a `Display` for the boundary) went unused. Errors
-/// here stay for what the user genuinely cannot proceed past: a bad path, a
-/// broken worktree, git falling over.
+/// with force), not a failure. Errors stay for what the user genuinely cannot
+/// proceed past: a bad path, a broken worktree, git falling over.
 pub enum RemoveOutcome {
     Removed(RemovedTask),
     Blocked {
         name: String,
         blocked: Vec<RmBlocked>,
-        /// Caveats gathered before the verdict — carried here for the same
-        /// reason `Removed` carries them. A refusal computed against stale
-        /// refs (the `fetch --prune` failed, so `origin/*` is whatever was
-        /// last seen) is exactly the case a user must be told about: the
-        /// blockers are reported as fact, and "unreachable from any
-        /// branch/remote" can be an artifact of the staleness rather than a
-        /// property of the branch. Dropping these left the offline verdict
-        /// indistinguishable from an online one.
+        /// Caveats gathered before the verdict. A refusal computed against
+        /// stale refs (the `fetch --prune` failed) is exactly the case a user
+        /// must be told about: "unreachable from any branch/remote" can be an
+        /// artifact of the staleness rather than a property of the branch.
         messages: Vec<String>,
     },
 }
 
 /// Remove a task: guarded (clean tree, no commits unreachable from a branch
-/// or remote, nothing foreign on its claimed ports), then the declared
-/// `TT_TASK_TEARDOWN` command (see [`super::run_teardown`]), docker compose
-/// down -v, anchored container/volume sweep, `git worktree remove`. Shared by
-/// `tt task rm` and the app's `task_delete` command.
+/// or remote, nothing foreign on its claimed ports), then teardown, docker,
+/// `git worktree remove`.
 ///
-/// `on_phase` fires at each [`RemovePhase`] in order, so a host with a UI can show
-/// what's happening instead of one static label for however long a teardown takes.
-/// [`RemovePhase::StoppingSessions`] is more than a label: it fires once the guards
-/// have passed (or been forced) — after the last return that leaves the task untouched,
-/// before the first destructive step — which is where the app hangs its kill-the-PTYs
-/// step, so a *refused* removal never costs a live session. Deliberately not part of
-/// `RemoveOpts`: a phase marker in this function's control flow, not a setting.
+/// [`RemovePhase::StoppingSessions`] fires after the last return that leaves the
+/// task untouched and before the first destructive step — the app hangs its
+/// kill-the-PTYs step there, so a *refused* removal never costs a live session.
 pub fn remove_task(
     opts: &RemoveOpts,
     on_phase: &mut dyn FnMut(RemovePhase),
@@ -159,12 +128,8 @@ pub fn remove_task(
     on_phase(RemovePhase::CheckingGuards);
 
     // Refresh remote-tracking refs before the unreachable-commit guard below:
-    // without this, a branch merged and deleted upstream since the last
-    // fetch still looks "unreachable from any branch/remote" against a stale
-    // `origin/*`, which is the right call but for the wrong (stale) reason,
-    // and a branch merged just now can look falsely safe to remove before
-    // its remote ref disappears. `--prune` mirrors `clean_tasks` so a
-    // deleted remote branch is reflected too.
+    // against a stale `origin/*` a branch merged upstream still looks
+    // unreachable, and one merged just now can look falsely safe.
     match git_checkout(&sr.checkout, &["fetch", "--prune", "--quiet", "origin"]) {
         Ok(out) if out.ok() => {}
         _ => messages
@@ -209,13 +174,9 @@ pub fn remove_task(
 
     let dirty = status.len();
     let unreachable = orphaned_count(&dir);
-    // Identify the holder of each foreign port, not just its number: the
-    // blocker is only actionable if the user can tell which process to stop
-    // (see `ports::holder`). Only for ports that actually block — naming the
-    // holder costs two subprocesses, and the common case is no foreign
-    // listener at all. On --force the guards are being skipped anyway, so
-    // the name would only decorate a "skipping guard" log line — not worth
-    // the spawns.
+    // Name the holder of each foreign port — a blocker is only actionable if
+    // the user can tell which process to stop. Skipped under --force, where it
+    // would only decorate a log line at the cost of two subprocesses.
     let foreign: Vec<ForeignPort> = claimed_ports(&dir)
         .into_iter()
         .filter(|&p| port_occupied(p) && !docker_owns_port(&name, p))
@@ -235,12 +196,9 @@ pub fn remove_task(
         }
     }
 
-    // Commits that never reached the base are NOT a removal guard — removing a
-    // worktree leaves the branch (and its commits) in the shared `.git`, so
-    // nothing is lost. But staying silent about them is what made the old
-    // output ambiguous: "removed" read as "that work is dealt with". Say
-    // plainly what survives and where, so the difference from the uncommitted
-    // work the guard above *does* block on is visible.
+    // Commits that never reached the base are NOT a removal guard — the branch
+    // survives in the shared `.git`. Say so anyway, or "removed" reads as "that
+    // work is dealt with".
     let branch = crate::ops::repo_at(&dir)
         .ok()
         .and_then(|repo| repo.head_branch())
@@ -313,18 +271,12 @@ fn claimed_ports(dir: &Path) -> BTreeSet<u16> {
 }
 
 /// Stop whatever is listening on `port` in the task named `name` under `root`
-/// — the remedy for [`RmBlocked::ForeignPortListener`], so a stale dev server
-/// can be cleared from the app instead of sending the user to a terminal.
+/// — the remedy for [`RmBlocked::ForeignPortListener`].
 ///
-/// Takes the task's identity rather than [`RemoveOpts`]: this removes nothing, and
-/// threading a `force` flag through a function that ignores it invites a later caller
-/// to believe forcing means something here.
-///
-/// The claim check is the whole safety story and is not optional: `port` must appear in
-/// *this task's* rendered `.env`. Ports are claimed per-checkout, so a claimed port
-/// that's occupied is this task's own orphan by construction, while an unclaimed one is
-/// somebody else's — quite possibly a sibling's working dev server, whose entire
-/// process group this would kill.
+/// The claim check is the whole safety story: `port` must appear in *this
+/// task's* rendered `.env`. An unclaimed one is somebody else's — quite
+/// possibly a sibling's working dev server, whose whole process group this
+/// would kill.
 pub fn stop_task_port(root: Option<&Path>, name: &str, port: u16) -> Result<crate::ports::Stopped> {
     let sr = discover_root(root)?;
     let dir = sr.task_dir(name);
@@ -340,10 +292,8 @@ pub fn stop_task_port(root: Option<&Path>, name: &str, port: u16) -> Result<crat
     Ok(crate::ports::stop_listeners(port)?)
 }
 
-/// Delete the removed task's instance-state directories (agentboard
-/// sessions/windows, tt.db — see `tt_config::instance_state_dirs_for_scope`).
-/// Only checkouts of this repo have a scope; other repos' tasks have no
-/// scoped state and skip cleanly.
+/// Delete the removed task's instance-state directories. Only checkouts of
+/// this repo have a scope; other repos' tasks skip cleanly.
 fn state_cleanup(scope: Option<&str>, messages: &mut Vec<String>) {
     let Some(scope) = scope else {
         return;
@@ -367,9 +317,7 @@ pub struct CleanOpts {
     pub root: Option<PathBuf>,
     /// Report what would happen without removing or sweeping anything.
     pub dry_run: bool,
-    /// Parents of per-scope instance-state dirs to sweep (the
-    /// `…/towles-tool/tasks/` dirs; the caller resolves them via
-    /// `tt_config::instance_state_bases`). Empty = skip the sweep.
+    /// Parents of per-scope instance-state dirs to sweep. Empty = skip it.
     pub scope_parents: Vec<PathBuf>,
 }
 
@@ -377,15 +325,11 @@ pub struct CleanOpts {
 pub struct FinishedTask {
     pub name: String,
     pub branch: String,
-    /// How the branch landed, e.g. `"squash-merged into main"`
-    /// ([`crate::landed::LandedVia`], rendered against the base).
+    /// How the branch landed, e.g. `"squash-merged into main"`.
     pub reason: String,
-    /// Removal progress notes (docker resources, branch deletion). Empty on
-    /// dry-run.
+    /// Empty on dry-run.
     pub messages: Vec<String>,
-    /// The removed checkout's directory (now gone from disk, except on
-    /// dry-run) — callers use it to untrack the task from stores keyed by dir
-    /// (the agentboard rail), the same way `tt task rm` does.
+    /// See [`RemovedTask::dir`].
     pub dir: PathBuf,
     /// The main checkout this task belonged to — see [`RemovedTask::checkout`].
     pub checkout: PathBuf,
@@ -405,9 +349,9 @@ pub struct CleanReport {
     pub kept: Vec<KeptTask>,
     /// Orphaned per-scope state dirs swept (dry-run: would sweep).
     pub swept_state_dirs: Vec<PathBuf>,
-    /// Port-registry files swept (dry-run: would sweep) because their
-    /// checkout no longer exists — the one leak the load-time prune can't
-    /// reach, since nothing ever renders a gone repo again.
+    /// Port-registry files swept because their checkout no longer exists — the
+    /// one leak the load-time prune can't reach, since nothing ever renders a
+    /// gone repo again.
     pub swept_port_registries: Vec<PathBuf>,
     /// State scopes of the checkouts that remain (checkout + kept tasks) —
     /// callers prune *these* agentboard stores plus the unscoped one.
@@ -418,16 +362,9 @@ pub struct CleanReport {
 /// Remove every *finished* task — its branch is a strict ancestor of the
 /// checkout's branch (classic merge) or its upstream is gone after
 /// `fetch --prune` (squash/rebase merge) — via the same guarded
-/// [`remove_task`], never forced: a finished task with uncommitted changes,
-/// orphanable commits, or a live dev server is reported and kept. A removed
-/// task's branch is deleted from the hub (its work is reachable from the
-/// base/remote — that's what made it finished). Then sweep `scope_parents`
-/// for per-scope state dirs whose checkout no longer exists.
-///
-/// `scope_of` maps a checkout dir to its instance-state scope
-/// (`tt_config::task_scope_from_dir`); it is injected so the scope rule has
-/// exactly one owner. When it can't scope the checkout (a repo that never
-/// produces scoped state), the sweep is skipped entirely.
+/// [`remove_task`], never forced, deleting the branch from the hub. Then sweep
+/// `scope_parents` for state dirs whose checkout no longer exists; `scope_of`
+/// is injected so the scope rule has exactly one owner.
 pub fn clean_tasks(
     opts: &CleanOpts,
     scope_of: impl Fn(&Path) -> Option<String>,
@@ -461,8 +398,6 @@ pub fn clean_tasks(
             live_scopes.extend(scope.clone());
         };
 
-        // A repo that won't open is the "broken worktree" case the old
-        // `git branch --show-current` non-zero exit stood for.
         let branch = match super::repo_at(&dir) {
             Ok(repo) => repo.head_branch().unwrap_or_default(),
             Err(_) => {
@@ -495,10 +430,9 @@ pub fn clean_tasks(
             keep(name, branch, vec![format!("active: {}", work.headline())]);
             continue;
         };
-        // `clean` deletes the branch after removing the worktree, so unlanded
-        // commits are unrecoverable here in a way they never are for
-        // `tt task rm` (which leaves the branch behind). Only content-based
-        // evidence clears that bar — see `LandedVia::is_content_proof`.
+        // `clean` deletes the branch, so unlanded commits are unrecoverable
+        // here in a way they never are for `tt task rm`. Only content-based
+        // evidence clears that bar.
         if work.unlanded > 0 || !via.is_content_proof() {
             keep(
                 name,
@@ -553,8 +487,7 @@ pub fn clean_tasks(
     }
 
     // Sweep per-scope instance state whose checkout no longer exists — the
-    // dirs `tt task rm` never touches (see tt_config::state_scope). Only in
-    // repos that actually produce scopes: if the checkout itself has none,
+    // dirs `tt task rm` never touches. If the checkout itself has no scope,
     // nothing under these parents can be ours.
     let mut swept_state_dirs = Vec::new();
     if checkout_scoped {
@@ -578,11 +511,9 @@ pub fn clean_tasks(
     }
 
     // Sweep registry files whose checkout is gone entirely. Each file is
-    // self-identifying (`PortRegistry::checkout`), so this never re-derives
-    // the filename hash; a file that reads as empty with no checkout
-    // recorded is unparseable/pre-metadata and holds no claims either way.
-    // Machine-wide by design — a deleted repo can't sweep itself, so any
-    // repo's `clean` tidies the whole ledger dir.
+    // self-identifying (`PortRegistry::checkout`), so this never re-derives the
+    // filename hash. Machine-wide by design — a deleted repo can't sweep
+    // itself, so any repo's `clean` tidies the whole ledger dir.
     let mut swept_port_registries = Vec::new();
     if let Ok(ports_dir) = tt_config::task_ports_dir()
         && let Ok(entries) = fs::read_dir(&ports_dir)

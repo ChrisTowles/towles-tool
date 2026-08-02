@@ -1,17 +1,15 @@
-//! Closes the last Step 0 risk: does the **parent's** commit cadence clamp the
-//! embedded pane's framerate? A `wl_subsurface` is **synchronized by default** (the
-//! child's commits wait on the *parent's*), which would cap Bevy at GTK/WebKit's
-//! repaint rate. Run both arms (`--features linux-harness --release`, with and
-//! without `--sync`); the parent is a real GTK 3 window pinned slow.
+//! Closes the last Step 0 risk: does the **parent's** commit cadence clamp the embedded
+//! pane's framerate? A `wl_subsurface` is **synchronized by default** (the child's commits
+//! wait on the *parent's*), which would cap Bevy at GTK/WebKit's repaint rate. Run both
+//! arms (`--features linux-harness --release`, with and without `--sync`).
 //!
 //! | arm              | parent observed | child            | outcome                  |
 //! |------------------|-----------------|------------------|--------------------------|
 //! | `--sync`         | 5 Hz            | —                | blocked, 0 frames in 90s |
 //! | desync (default) | 7.3 Hz          | 60.06 fps median | 270 frames in 5.0s       |
 //!
-//! (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60.) **Closed: `set_desync()` fully
-//! decouples the pane.** In sync mode it doesn't slow, it **blocks outright**, so a
-//! missing `set_desync()` presents as a hang, not as a slow pane.
+//! (2026-07-25, RTX 3060 / COSMIC, 1920x1080@60.) **Closed: `set_desync()` fully decouples
+//! the pane.** In sync mode it blocks outright, so a missing call presents as a hang.
 
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
@@ -34,10 +32,8 @@ use tt_jarvis::stats::FrameLog;
 use tt_jarvis::surface::{ForeignSurface, PaneRect};
 use tt_jarvis::PresentMode;
 
-// GDK's Wayland accessors. Declared by hand rather than pulling in a
-// `gdk-wayland` binding crate: these are the only two symbols needed, both live
-// in libgdk-3, which the `gtk` crate already links. Opaque pointers are passed
-// as `c_void` so no `gdk-sys` types are required either.
+// Declared by hand rather than pulling in a `gdk-wayland` crate: these are the only two
+// symbols needed, and libgdk-3 is already linked by `gtk`.
 extern "C" {
     fn gdk_wayland_display_get_wl_display(display: *mut c_void) -> *mut c_void;
     fn gdk_wayland_window_get_wl_surface(window: *mut c_void) -> *mut c_void;
@@ -59,9 +55,7 @@ fn main() {
         (args.height + args.inset * 2) as i32,
     );
 
-    // A parent that actually paints, so "the parent commits slowly" is a real
-    // property of the surface rather than an assumption. The counter is drawn so
-    // the parent's own rate is visible on screen alongside the pane.
+    // A parent that actually paints, so "the parent commits slowly" is measured, not assumed.
     let repaints = Arc::new(Mutex::new(0u64));
     let area = gtk::DrawingArea::new();
     {
@@ -81,12 +75,9 @@ fn main() {
     window.add(&area);
     window.show_all();
 
-    // Put the test window on a secondary output so it never covers the monitor
-    // being worked on. Wayland clients cannot position their own toplevels, so
-    // fullscreening on a chosen output is the only reliable way to target one.
-    //
-    // Note this changes the vsync ceiling: the secondary here is 60 Hz where the
-    // primary is 100 Hz, so a vsync arm measured on each is not comparable.
+    // Keep the test window off the monitor being worked on. Wayland clients cannot position
+    // their own toplevels, so fullscreening on a chosen output is the only way to target one.
+    // It moves the vsync ceiling with it, so vsync arms on different outputs don't compare.
     if let Some(monitor) = pick_monitor(&window, args.monitor) {
         if let Some(screen) = WidgetExt::screen(&window) {
             window.fullscreen_on_monitor(&screen, monitor);
@@ -107,9 +98,8 @@ fn main() {
     pump_gtk();
     let gdk_window = window.window().expect("window has no GdkWindow after show_all");
 
-    // SAFETY: both pointers are GDK-owned and live as long as the window, which
-    // outlives everything below. `gdk_wayland_*` return the toplevel's real
-    // objects — no ownership transfer, nothing to free.
+    // SAFETY: both pointers are GDK-owned and live as long as the window, which outlives
+    // everything below. No ownership transfer, nothing to free.
     let (wl_display_ptr, parent_surface_ptr) = unsafe {
         let display_ptr: *mut c_void = gdk_window.display().as_ptr() as *mut c_void;
         let window_ptr: *mut c_void = gdk_window.as_ptr() as *mut c_void;
@@ -121,13 +111,10 @@ fn main() {
     assert!(!wl_display_ptr.is_null(), "not a Wayland GDK backend (GDK_BACKEND=x11?)");
     assert!(!parent_surface_ptr.is_null(), "GdkWindow has no wl_surface");
 
-    // Adopt GDK's existing Wayland connection rather than opening our own. This
-    // is the part that makes the harness faithful: a second connection could not
-    // make a subsurface of GTK's surface at all, because subsurface parentage is
-    // per-client.
+    // Adopt GDK's existing Wayland connection rather than opening our own: subsurface
+    // parentage is per-client, so a second connection could not parent to GTK's surface.
     //
-    // SAFETY: the display pointer belongs to GDK and outlives this backend; we
-    // never close it.
+    // SAFETY: the display pointer belongs to GDK, outlives this backend, and is never closed.
     let backend = unsafe { Backend::from_foreign_display(wl_display_ptr as *mut _) };
     let connection = Connection::from_backend(backend);
     let mut queue = connection.new_event_queue::<Globals>();
@@ -139,11 +126,9 @@ fn main() {
     let compositor = globals.compositor.clone().expect("no wl_compositor");
     let subcompositor = globals.subcompositor.clone().expect("no wl_subcompositor");
 
-    // Wrap GTK's surface as a proxy so it can be named as the subsurface parent.
     // Borrowed, not owned — we must never destroy it.
     //
-    // SAFETY: the pointer is a live `wl_surface` proxy from the same connection
-    // this backend wraps.
+    // SAFETY: a live `wl_surface` proxy from the same connection this backend wraps.
     let parent_surface = unsafe {
         let id = ObjectId::from_ptr(WlSurface::interface(), parent_surface_ptr as *mut _)
             .expect("wl_surface pointer is not a valid proxy");
@@ -162,16 +147,13 @@ fn main() {
     subsurface.set_position(rect.x, rect.y);
 
     if args.sync {
-        // The control arm. Synchronized is the DEFAULT, so this is simply not
-        // calling set_desync — spelled out rather than omitted so the contrast
-        // with the other arm is visible in the source.
+        // The control arm. Synchronized is the DEFAULT; spelled out so the contrast shows.
         subsurface.set_sync();
     } else {
         subsurface.set_desync();
     }
 
-    // Placement is parent state: it lands on the parent's next commit, which
-    // GTK will do on its own schedule.
+    // Placement is parent state: it lands on the parent's next commit, on GTK's schedule.
     parent_surface.commit();
     connection.flush().expect("flush failed");
 
@@ -211,9 +193,8 @@ fn main() {
     let started = Instant::now();
     let repaints_at_start = *repaints.lock().unwrap();
 
-    // A sync-mode run can legitimately advance only a handful of frames per
-    // second, so the loop needs a wall-clock escape hatch or the control arm
-    // would appear to hang rather than to demonstrate the clamp.
+    // A sync-mode run advances a handful of frames per second, so without a wall-clock
+    // escape hatch the control arm looks like a hang instead of a demonstrated clamp.
     let deadline = Duration::from_secs(args.max_secs);
 
     while log.len() < args.frames && started.elapsed() < deadline {
@@ -223,9 +204,8 @@ fn main() {
 
         let now = Instant::now();
         if let Some(previous) = last.replace(now) {
-            // Clamp to `u32::MAX`, not `u128::MAX` — the latter is a no-op and
-            // lets the cast wrap. The sync arm really does produce frames over a
-            // second long, so saturating here is not theoretical.
+            // Clamp to `u32::MAX`, not `u128::MAX` — the latter is a no-op and lets the cast
+            // wrap. The sync arm really does produce frames over a second long.
             let micros = now.duration_since(previous).as_micros().min(u128::from(u32::MAX));
             log.record_us(micros as u32);
         }
@@ -255,12 +235,9 @@ fn main() {
     );
 }
 
-/// Choose which monitor to fullscreen on.
-///
-/// `requested` picks an explicit GDK monitor index; otherwise the default is the
-/// left-most-*after*-the-origin output — i.e. a secondary monitor if one exists,
-/// falling back to whatever is there on a single-monitor machine. Chosen by
-/// geometry rather than by connector name so it doesn't hardcode this desk.
+/// Choose which monitor to fullscreen on. `requested` is an explicit GDK index; otherwise
+/// the left-most-*after*-the-origin output, i.e. a secondary monitor if one exists. Picked
+/// by geometry rather than connector name so it doesn't hardcode this desk.
 fn pick_monitor(window: &gtk::Window, requested: Option<i32>) -> Option<i32> {
     let display = WidgetExt::display(window);
     let count = display.n_monitors();
@@ -275,11 +252,8 @@ fn pick_monitor(window: &gtk::Window, requested: Option<i32>) -> Option<i32> {
         .min_by_key(|&i| display.monitor(i).map(|m| m.geometry().x()).unwrap_or(i32::MAX))
 }
 
-/// Run GTK's pending work without blocking.
-///
-/// The real app inverts this — Tauri owns the GTK main loop and Bevy would be
-/// driven from a tick callback — but for measuring who clamps whom, which side
-/// hosts the loop does not matter.
+/// Run GTK's pending work without blocking. The real app inverts this (Tauri owns the GTK
+/// loop), but for measuring who clamps whom, which side hosts the loop does not matter.
 fn pump_gtk() {
     while gtk::events_pending() {
         gtk::main_iteration_do(false);
@@ -350,8 +324,7 @@ impl Args {
             width: num("--width", 640) as u32,
             height: num("--height", 480) as u32,
             inset: num("--inset", 40) as u32,
-            // 5 Hz: slow enough that a clamped child is unmistakable, fast
-            // enough that the sync arm still finishes in reasonable time.
+            // Slow enough that a clamped child is unmistakable, fast enough to finish.
             parent_hz: num("--parent-hz", 5) as u32,
             frames: num("--frames", 400) as usize,
             warmup: num("--warmup", 30) as usize,

@@ -1,22 +1,9 @@
 #!/usr/bin/env node
-// Bumps the app's release version across every file that carries it, then
-// syncs the two lockfiles so `npm ci`/`cargo build` see a consistent tree.
-// The one version that matters here is the *app's* — `tauri.conf.json` and
-// `crates-tauri/tt-app/Cargo.toml` (see release.yml's header comment: bump
-// before tagging, the workflow doesn't do it for you) — plus the two
-// `package.json`s, which track the same number for convenience. It
-// deliberately does NOT touch the independent `0.1.0` versions on the
-// library crates under `crates/` — those are internal, unpublished, and
-// unrelated to what gets tagged and released.
-//
-// Usage:
-//   node scripts/release-version-bump.mjs <major|minor|patch|x.y.z>
-//
-// Rewrites files + regenerates both lockfiles, then leaves everything
-// unstaged for review — this script never runs git add/commit/tag/push.
-// Follow up by hand once the diff looks right:
-//   git add -A && git commit -m "chore(release): bump version to vX.Y.Z"
-//   git tag vX.Y.Z && git push origin vX.Y.Z
+// Bumps the app's release version across every file that carries it, then syncs
+// both lockfiles. The version that matters is the *app's* — bump it before
+// tagging, release.yml won't do it for you. The independent `0.1.0`s on the
+// library crates under `crates/` are internal and deliberately left alone.
+// Nothing is staged, committed or tagged here; review the diff, then do that.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -26,11 +13,7 @@ import { BadVersion, VersionLineMissing } from "./errors.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/**
- * A file that carries the app's release version, and how its version line is
- * shaped.
- * @typedef {{ path: string; format: "json" | "toml" }} VersionFile
- */
+/** @typedef {{ path: string; format: "json" | "toml" }} VersionFile */
 
 /** @type {VersionFile[]} */
 export const VERSION_FILES = [
@@ -41,8 +24,6 @@ export const VERSION_FILES = [
 ];
 
 /**
- * Parses a `major.minor.patch` string into its numeric parts.
- *
  * @param {string} version
  * @returns {Result<[number, number, number], BadVersion>}
  */
@@ -55,13 +36,10 @@ export function parseVersion(version) {
 }
 
 /**
- * Resolves the CLI argument (`major`/`minor`/`patch`, or an explicit
- * `x.y.z`) against the current version.
- *
+ * Resolves `major`/`minor`/`patch`, or an explicit `x.y.z`, against `current`.
  * @param {string} current
  * @param {string} arg
- * @returns {Result<string, BadVersion>}
- */
+ * @returns {Result<string, BadVersion>} */
 export function resolveNewVersion(current, arg) {
   const parsed = parseVersion(current);
   if (parsed.isErr()) return parsed;
@@ -79,8 +57,6 @@ export function resolveNewVersion(current, arg) {
 }
 
 /**
- * The exact-text needle for a file's version line, by format.
- *
  * @param {VersionFile["format"]} format
  * @param {string} version
  * @returns {string}
@@ -89,17 +65,11 @@ function needle(format, version) {
   return format === "toml" ? `version = "${version}"` : `"version": "${version}"`;
 }
 
-/**
- * Rewrites a single file's version line, preserving all other formatting.
- * Only the first occurrence is replaced — every file in {@link VERSION_FILES}
- * has exactly one top-level `version` field.
- *
- * @param {string} contents
+/** @param {string} contents
  * @param {VersionFile["format"]} format
  * @param {string} from
  * @param {string} to
- * @returns {Result<string, VersionLineMissing>}
- */
+ * @returns {Result<string, VersionLineMissing>} */
 export function withBumpedVersion(contents, format, from, to) {
   const from_ = needle(format, from);
   const index = contents.indexOf(from_);
@@ -146,10 +116,8 @@ async function main() {
     console.log(`[release-version-bump] ${file.path}: ${from} -> ${to}`);
   }
 
-  // Sync both lockfiles so the bump commit is self-consistent. `cargo check`
-  // is enough to update Cargo.lock's `tt-app` entry without a full build;
-  // `npm install --package-lock-only` does the equivalent for package-lock.json
-  // without touching node_modules.
+  // `cargo check` updates Cargo.lock's `tt-app` entry without a full build;
+  // `--package-lock-only` does the same without touching node_modules.
   run(["cargo", "check", "-p", "tt-app", "--quiet"], repoRoot);
   run(["npm", "install", "--package-lock-only", "--silent"], repoRoot);
 
@@ -158,8 +126,7 @@ async function main() {
   console.log(`  git tag v${to} && git push origin v${to}`);
 }
 
-// Only run when invoked directly (`node scripts/release-version-bump.mjs`),
-// not when imported by the test file.
+// Only when invoked directly, not when imported by the test file.
 if (path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] ?? "")) {
   main();
 }

@@ -50,11 +50,8 @@ function resolveTarget(target: SettingsTarget | null): {
   return { tab: known ? target.tab : "general", filter: target.filter ?? "" };
 }
 
-/**
- * Footer readout for the autosave. With no Save button there's nothing for the
- * user to retry, so a failure has to stay on screen and say plainly that the
- * change didn't land — the idle/saved states can be quiet, this one can't.
- */
+/** Footer readout for the autosave. With no Save button there's nothing to
+ * retry, so a failure has to stay on screen; idle/saved can be quiet. */
 function SaveStatus({ state }: { state: SaveState }) {
   if (state === "error") {
     return (

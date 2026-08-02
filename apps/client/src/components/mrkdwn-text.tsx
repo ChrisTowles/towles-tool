@@ -2,14 +2,9 @@ import { Fragment, type ReactNode } from "react";
 import { mentionLabel, parseMrkdwn, type MrkdwnNode } from "@/lib/mrkdwn";
 import { openExternalUrl } from "@/lib/open-url";
 
-/**
- * Render Slack mrkdwn message text (see {@link parseMrkdwn}) as React. Links go
- * to the OS browser via {@link openExternalUrl} — never navigating the webview —
- * and `<@U…>` mentions resolve to names through {@link mentionLabel} using the
- * watched user's id/name. Returns a fragment so the caller's bubble keeps
- * control of layout (and its `whitespace-pre-wrap`, which preserves newlines in
- * text nodes).
- */
+/** Render Slack mrkdwn as React. Links go to the OS browser, never navigating the
+ * webview. Returns a fragment so the caller's bubble keeps control of layout and
+ * its `whitespace-pre-wrap`, which is what preserves newlines in text nodes. */
 export function MrkdwnText({
   text,
   watchUserId,

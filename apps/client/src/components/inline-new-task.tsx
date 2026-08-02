@@ -1,7 +1,6 @@
-// Inline new-task flow: a goal and a base branch become a branch-named worktree
-// (`task_create` → tt-tasks ops, shared with `tt task new`). It never blocks the
-// rail — submit hands off to the caller and closes, binding the worktree dir so
-// the row is on screen before the git work runs.
+// A goal and a base branch become a branch-named worktree (`task_create` → tt-tasks
+// ops). Submit hands off and closes without awaiting it, binding the worktree dir so
+// the rail row is on screen before the git work runs.
 import { Check, ChevronDown, CircleDot, ImagePlus, Sparkles, Undo2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -44,9 +43,7 @@ import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { slugify } from "@/lib/slug";
 
-/** The unset state of the model/effort selects: no `--model`/`--effort` is
- * passed at all, so the user's own Claude config decides. Its own option
- * (rather than an empty value) because Radix `Select` can't represent "". */
+/** Passes no `--model`/`--effort`, so the user's own Claude config decides. */
 const USE_DEFAULT = "default";
 
 type ModelChoice = ClaudeModel | typeof USE_DEFAULT;
@@ -72,13 +69,11 @@ export type NewTaskRepo = {
   name: string;
   dir: string;
   key: string;
-  /** The repo's git origin URL when known — parsed to `owner/name` so the
-   * created task's task binding can auto-attach PRs by branch. */
+  /** Parsed to `owner/name`, so the new task's binding can auto-attach PRs. */
   originUrl?: string | null;
 };
 
-/** Fallback when settings can't be read or none are enabled. The empty `prompt`
- * makes the backend use `tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`. */
+/** Empty `prompt` makes the backend use `tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`. */
 const FALLBACK_IMPROVER: PromptImprover = {
   id: "direct",
   label: "Suggest name + goal",
@@ -87,22 +82,18 @@ const FALLBACK_IMPROVER: PromptImprover = {
   prompt: "",
 };
 
-/** What the new-task form hands its parent on submit. */
 export type NewTaskSubmit = {
   goal: string;
-  /** A peer of `branch`, not derived from it: the goal is Claude's launch
-   * instructions, the title is only what the rail shows. */
+  /** A peer of `branch`, not derived from it: only the rail shows this. */
   title: string;
   branch: string;
   base: string;
   options: ClaudeLaunchOptions;
-  /** Absolute paths of the already-staged images, not the bytes — they were
-   * written to disk when pasted. */
+  /** Paths of images already staged to disk at paste time, not the bytes. */
   imagePaths: string[];
-  /** GitHub issues to attach to the created task (multi-select). */
   issues: IssueItem[];
-  /** Bound onto the task row at submit so the rail row exists before `git
-   * worktree add` runs. `null` until the preflight answers. */
+  /** Bound at submit so the rail row exists before `git worktree add` runs.
+   * `null` until the preflight answers. */
   dir: string | null;
   /** False for "Task only": create the board task but no worktree/agent. */
   worktree: boolean;
@@ -134,20 +125,14 @@ export type TaskSuggestion = {
   branch: string;
   title: string;
   goal: string;
-  /** Set when claude couldn't answer and a local slug filled the fields — a
-   * note, not an error, so it renders muted. */
+  /** Set when a local slug filled the fields — a note, not an error. */
   fallback: string | null;
 };
 
-/** How much of the goal `goalToBranch` slugs into the branch name — long
- * enough to stay recognizable, short enough that the branch name doesn't
- * become a second copy of the whole goal. */
 export const BRANCH_SLUG_SOURCE_CHARS = 50;
 
-/** Issue-picker scope, per `repo.key` rather than one global toggle — a repo
- * you triage and a repo where only your own issues matter want different
- * defaults. "all" when unset: a task starts as often from someone else's
- * issue as from your own. */
+/** Per `repo.key`: a repo you triage wants a different default from one where
+ * only your own issues matter. */
 function issueScopeKey(repoKey: string): string {
   return `tt-new-task-issue-mine:${repoKey}`;
 }
@@ -160,21 +145,16 @@ function saveIssueScopeMine(repoKey: string, mine: boolean): void {
   localStorage.setItem(issueScopeKey(repoKey), String(mine));
 }
 
-/** Goal → branch name: the first `BRANCH_SLUG_SOURCE_CHARS` of the goal,
- * slugged, under a `feat/` prefix. The branch field stays editable — this is
- * just the default. */
+/** A default only; the branch field stays editable. */
 export function goalToBranch(goal: string): string {
   const slug = slugify(goal.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${slug}` : "";
 }
 
-/** Mirrors `tt_tasks::suggest`'s `TITLE_MAX_CHARS`, so the no-Claude default
- * matches what the suggest flow's local fallback produces. */
+/** Mirrors `tt_tasks::suggest`'s `TITLE_MAX_CHARS`. */
 export const TITLE_MAX_CHARS = 60;
 
-/** Goal → title default: the goal itself, cut at a word boundary — plain
- * words, never slugged (a title is prose, not a git ref). The title field
- * stays editable — this is just the default. */
+/** Cut at a word boundary and never slugged: a title is prose, not a git ref. */
 export function goalToTitle(goal: string): string {
   const trimmed = goal.trim();
   if (trimmed.length <= TITLE_MAX_CHARS) return trimmed;
@@ -183,17 +163,13 @@ export function goalToTitle(goal: string): string {
   return lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
 }
 
-/** `feat/<number>-<slug>` — this form's prefix, not tt-git's `feature/`
- * (Cockpit's convention, for an existing checkout), so a picked issue and a
- * typed goal produce the same shape. */
+/** `feat/`, not tt-git's `feature/` (Cockpit's convention), so a picked issue
+ * and a typed goal produce the same shape. */
 export function branchFromIssue(number: number, title: string): string {
   const slug = slugify(title.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${number}-${slug}` : `feat/${number}`;
 }
 
-/** Embedded in the rail under the header whose "+" opened it. Submit hands the
- * input to `onSubmit` and closes without awaiting `task_create`, so the parent
- * can run it against the row the submit already created. */
 export function InlineNewTask({
   repo,
   onCancel,
@@ -203,8 +179,7 @@ export function InlineNewTask({
   repo: NewTaskRepo;
   onCancel: () => void;
   onSubmit: (input: NewTaskSubmit) => void;
-  /** Pre-fills the goal field — set when this form was opened to reopen a
-   * closed task (its text seeds the goal) rather than to start a new one. */
+  /** Set when the form was opened to reopen a closed task, not start a new one. */
   initialGoal?: string;
 }) {
   const [goal, setGoal] = useState(initialGoal ?? "");
@@ -212,65 +187,53 @@ export function InlineNewTask({
   // Staged on paste, not at submit: an improver needs real paths to hand
   // `claude -p`, and staging once keeps create and suggest on the same files.
   const [imagePaths, setImagePaths] = useState<string[]>([]);
-  // Which attachment the full-size viewer is showing, by id — see
-  // `ImageLightbox` for why it isn't an index.
+  // By id, not index — see `ImageLightbox` for why.
   const [zoomedImageId, setZoomedImageId] = useState<string | null>(null);
   const [staging, setStaging] = useState(false);
-  // Stable per-form staging directory. The branch can't key it — it's still
-  // being edited while images are pasted.
+  // The branch can't key the staging dir — it's still being edited on paste.
   const [draftScope] = useState(nextDraftScopeId);
   const [branchEdit, setBranchEdit] = useState<string | null>(null);
   const [titleEdit, setTitleEdit] = useState<string | null>(null);
   const [base, setBase] = useState("");
-  // Both start unset — the launched `claude` gets no --model/--effort unless
-  // the user explicitly picks one, so their own defaults apply.
   const [model, setModel] = useState<ModelChoice>(USE_DEFAULT);
   const [effort, setEffort] = useState<EffortChoice>(USE_DEFAULT);
-  // Prompt improvers, loaded from settings and filtered to the enabled ones.
   const [improvers, setImprovers] = useState<PromptImprover[]>([FALLBACK_IMPROVER]);
   const [moreOpen, setMoreOpen] = useState(false);
-  // Launching Claude on the goal is the whole point of the flow, so it's on
-  // by default; unchecking it is the "I just want the worktree" escape hatch.
+  // On by default; unchecking is the "I just want the worktree" escape hatch.
   const [launchClaude, setLaunchClaude] = useState(true);
   const [branches, setBranches] = useState<BaseBranch[]>([]);
   const [baseOpen, setBaseOpen] = useState(false);
-  // One slot for an error or a note: mutually exclusive on screen, and two
-  // would mean every `showError` had to remember to clear the other.
+  // One slot, so no `showError` has to remember to clear the other.
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "note" } | null>(null);
   const showError = (text: string) => setNotice({ text, kind: "error" });
   const [branchCheck, setBranchCheck] = useState<BranchCheck | null>(null);
-  // Only the clicked improver shows a running state; the rest just disable.
+  // Which improver is running, so only its own button says so.
   const [suggesting, setSuggesting] = useState<string | null>(null);
-  // What the fields held before the last overwrite, so "Undo" is exact.
   const [preOverwrite, setPreOverwrite] = useState<{
     goal: string;
     branchEdit: string | null;
     titleEdit: string | null;
   } | null>(null);
   const [issuePickerOpen, setIssuePickerOpen] = useState(false);
-  // Set by either issue path — the Pick-issue popover or the goal field's `#`
-  // autocomplete — so `gh` is shelled once, on first need, either way.
+  // Set by either issue path (popover or the goal field's `#`), so `gh` is
+  // shelled once, on first need, either way.
   const [issuesWanted, setIssuesWanted] = useState(false);
-  // Lazy once from the stored preference — the form remounts per open.
   const [issueAssignedToMe, setIssueAssignedToMeState] = useState(() =>
     loadIssueScopeMine(repo.key),
   );
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuesError, setIssuesError] = useState<string | null>(null);
-  // Multi-select; the first pick also seeds the goal/branch fields.
   const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>([]);
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
-  // What the closed combobox shows: the selected branch's honest label (e.g.
-  // `origin/main` when that's what creation will branch from), falling back
-  // to the raw value before the branch list has loaded.
+  // The selected branch's honest label (`origin/main` when that's what creation
+  // will branch from), falling back to the raw value until the list loads.
   const baseLabel = branches.find((b) => b.name === base)?.label ?? (base || "main");
 
   const branch = branchEdit ?? goalToBranch(goal);
   const title = titleEdit ?? goalToTitle(goal);
 
   useEffect(() => {
-    // Guards a fast close-then-reopen against a stale fetch's `.then`.
     let cancelled = false;
     void invoke<BaseBranch[]>(
       "task_base_branches",
@@ -289,12 +252,9 @@ export function InlineNewTask({
     return () => {
       cancelled = true;
     };
-    // Re-fetch only on a changed repo; a mount is an open.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on a changed repo; showError is stable and the setters are React-stable
   }, [repo.dir]);
 
-  // Once per open, from the same file Settings writes — an improver edited
-  // there shows up on the next open. Never an empty row: see the fallback.
   useEffect(() => {
     let cancelled = false;
     void loadUserSettings().then((s) => {
@@ -307,8 +267,8 @@ export function InlineNewTask({
     };
   }, []);
 
-  // Debounced preflight: legal ref, and no colliding task name. Read-only,
-  // so it can fire on every settled keystroke.
+  // Debounced preflight: legal ref, no colliding task name. Read-only, so it
+  // can fire on every settled keystroke.
   useEffect(() => {
     if (!branch) {
       setBranchCheck(null);
@@ -335,20 +295,16 @@ export function InlineNewTask({
     (branchCheck?.taken ? `a task named "${branchCheck.name}" already exists` : null) ??
     (branchCheck?.branchExists ? `a branch named "${branch.trim()}" already exists` : null);
 
-  // Preferred get their own button, the rest sit under "More" — unless none
-  // are preferred, where an empty row would be strictly worse.
+  // Preferred get their own button, the rest sit under "More" — unless none are
+  // preferred, where an empty row would be strictly worse.
   const anyPreferred = improvers.some((i) => i.preferred);
   const preferredImprovers = anyPreferred ? improvers.filter((i) => i.preferred) : improvers;
   const otherImprovers = anyPreferred ? improvers.filter((i) => !i.preferred) : [];
-  // Same gate the single Suggest button had: nothing to rewrite, mid-stage, or
-  // another improver already running.
   const improverDisabled =
     suggesting !== null || staging || (!goal.trim() && imagePaths.length === 0);
 
-  // Manual only — never a timer or a keystroke. Asks `claude -p` (cwd = the
-  // repo, for real context) to rewrite the goal per `improver.prompt` and fills
-  // the editable fields directly: staying editable, with Undo, *is* the
-  // confirmation step, and the launch path needs no improver knowledge.
+  // Manual only, never a timer. Fills the editable fields directly: staying
+  // editable, with Undo, *is* the confirmation step.
   async function runImprover(improver: PromptImprover) {
     // A screenshot is a complete brief on its own, so images alone can ask.
     if (suggesting || (!goal.trim() && !imagePaths.length)) return;
@@ -391,8 +347,7 @@ export function InlineNewTask({
     saveIssueScopeMine(repo.key, mine);
   }
 
-  // Loads only once the picker opens — a task is created far more often by
-  // typing a goal, and this shells `gh`.
+  // Only once the picker opens — this shells `gh`.
   useEffect(() => {
     if (!issuesWanted) return;
     let cancelled = false;
@@ -407,7 +362,7 @@ export function InlineNewTask({
     };
   }, [issuesWanted, issueAssignedToMe, repo.dir]);
 
-  /** Attach without touching the fields — the `#` autocomplete already wrote
+  /** Attaches without touching the fields — the `#` autocomplete already wrote
    * what the user typed. Idempotent: `#12` twice attaches once. */
   function attachIssue(issue: IssueItem) {
     setSelectedIssues((prev) =>
@@ -417,10 +372,8 @@ export function InlineNewTask({
     );
   }
 
-  // The *first* pick also seeds goal + branch — same overwrite-with-Undo shape
-  // as `suggest()`; later picks only attach, so an edited goal survives. Title
-  // and number are all there is to seed with (the list carries no body), and
-  // the number lets Claude `gh issue view` the rest.
+  // The *first* pick also seeds goal + branch, with the same Undo as an
+  // improver; later picks only attach, so an edited goal survives.
   function toggleIssue(issue: IssueItem) {
     const already = selectedIssues.some((i) => i.repo === issue.repo && i.number === issue.number);
     if (already) {
@@ -438,10 +391,8 @@ export function InlineNewTask({
     setSelectedIssues((prev) => [...prev, issue]);
   }
 
-  // The goal field takes an image paste directly; bytes are staged outside the
-  // repo (`tt_tasks::pasted`) and their paths go into Claude's opening prompt.
-  // Two paths can attach the same image (the DOM event and the host-clipboard
-  // read below), so adding is idempotent on the bytes.
+  // Bytes are staged outside the repo (`tt_tasks::pasted`). Two paths can
+  // attach the same image, so adding is idempotent on the bytes.
   async function addImages(incoming: PastedImage[]) {
     if (!incoming.length) return;
     const seen = new Set(images.map((i) => i.dataBase64));
@@ -453,8 +404,8 @@ export function InlineNewTask({
     await stageImages(next);
   }
 
-  /** Failing here is surfaced immediately: the image looks attached, so a
-   * missing file would only show up as a prompt pointing at nothing. */
+  /** Fails loudly: the image looks attached, so a missing file would otherwise
+   * surface only as a prompt pointing at nothing. */
   async function stageImages(list: PastedImage[]) {
     if (!list.length) {
       setImagePaths([]);
@@ -490,7 +441,6 @@ export function InlineNewTask({
 
   // The *primary* path, not a fallback: WebKitGTK delivers an image paste with
   // empty `clipboardData`, and Ctrl+V there may fire no `paste` event at all.
-  // `keydown` always fires, and the host clipboard is what was copied to.
   async function pasteFromHostClipboard(): Promise<boolean> {
     const image = await clipboardImageFromHost();
     if (!image) return false;
@@ -502,15 +452,13 @@ export function InlineNewTask({
     const next = images.filter((img) => img.id !== id);
     setImages(next);
     if (zoomedImageId === id) setZoomedImageId(null);
-    // Restage so the staged set matches what's shown — otherwise a removed
-    // image would still be on disk and still land in the prompt.
+    // Restage, or the removed image stays on disk and still lands in the prompt.
     void stageImages(next);
   }
 
-  /** Fold any `#N` typed in the goal into the attach list, so naming an issue
-   * doesn't also need a Pick-issue step. Deterministic matching against the
-   * already-loaded list — no `gh` round-trip at submit, no guessing at looser
-   * references, and a no-op if nothing has loaded yet. */
+  /** Folds any `#N` typed in the goal into the attach list, so naming an issue
+   * needs no Pick-issue step. Matched against the already-loaded list only: no
+   * `gh` round-trip at submit, and a no-op before anything has loaded. */
   function reconcileGoalIssueRefs(): IssueItem[] {
     if (!issues) return selectedIssues;
     const already = new Set(selectedIssues.map((i) => `${i.repo}#${i.number}`));
@@ -528,8 +476,7 @@ export function InlineNewTask({
         return;
       }
       if (branchProblem) {
-        // Already shown inline under the branch field — no need to repeat it
-        // in the bottom-of-form notice too.
+        // Already shown inline under the branch field.
         return;
       }
     } else if (!goal.trim() && issuesToAttach.length === 0) {
@@ -580,8 +527,8 @@ export function InlineNewTask({
           );
           if (pastedImages.length) {
             e.preventDefault();
-            // The preventDefault above already swallowed the paste, so an
-            // unwritable type (SVG) must say why rather than vanish.
+            // preventDefault already swallowed it, so an unwritable type (SVG)
+            // must say why rather than vanish.
             if (!pastedImages.some((it) => isPasteableImage(it.type))) {
               showError(`Can't attach ${pastedImages[0].type} — paste a PNG, JPEG, GIF, or WebP.`);
               return;
@@ -589,11 +536,9 @@ export function InlineNewTask({
             void pasteImages(e.clipboardData);
             return;
           }
-          // Text: leave it to the textarea. `getData`, not `items` — that is
-          // what WebKitGTK populates.
+          // `getData`, not `items` — that is what WebKitGTK populates.
           if (e.clipboardData?.getData("text")) return;
-          // Empty is what a WebKitGTK image paste looks like, so ask the OS
-          // clipboard before concluding there's nothing to attach.
+          // Empty is what a WebKitGTK image paste looks like, so ask the OS.
           e.preventDefault();
           void pasteFromHostClipboard();
         }}
@@ -609,8 +554,7 @@ export function InlineNewTask({
             submit();
           }
           if (e.key === "Escape") cancel();
-          // No preventDefault: a text paste must still land natively, and an
-          // image-only clipboard has no text to insert.
+          // No preventDefault: a text paste must still land natively.
           if (e.key.toLowerCase() === "v" && (e.metaKey || e.ctrlKey)) {
             void pasteFromHostClipboard();
           }
@@ -763,10 +707,8 @@ export function InlineNewTask({
             Undo
           </Button>
         )}
-        {/* Prompt improvers: one button per preferred improver, the rest behind
-            a chevron segment attached to the last one (a split button). Each
-            rewrites the goal + branch fields in place via `claude -p` — Undo
-            restores. */}
+        {/* A split button: one per preferred improver, the rest behind the
+            chevron segment attached to the last. */}
         {preferredImprovers.map((improver, i) => (
           <Button
             key={improver.id}

@@ -92,3 +92,33 @@ session") must **not** call it, because it wasn't a keystroke the user
 passed up. Same aggregate-in-Rust rule as Attention, plus a cache: the
 score spans a fortnight and the status bar polls it, so finished days are
 memoized in `telemetry.rs` and only today's file is re-read.
+
+## Backend half: every user-gesture command emits its own event
+
+**Every `#[tauri::command]` triggered by an explicit user gesture must emit its
+own `tracing` event** — a mutation, a confirm, a delete, or an action that
+signals a process. Without it the command is invisible in the on-disk log, and
+"feature unused" can't be told from "feature uninstrumented" (the gap #363 fixed
+across ~all `ab_*`/`store_*`/task/slack/settings/cockpit/ide commands).
+
+- **Name the event for *what changed*, `noun.verb`** (`task.created`,
+  `repo.identity_set`, `session.closed`) — never reuse `ui.action`. The frontend
+  click already emitted one, and a backend event with the same name double-counts
+  the gesture. The two are complementary: `ui.action` records the intent, the
+  command event records the outcome, and catches invocations that never came from
+  a click.
+- **Record the outcome, not just that it ran** — a `changed`/`count` field, a
+  `from`/`to` pair, or a `started`/`already_running`/`blocked` discriminant where
+  the command can no-op or be refused (`store_collect_now`, `task_delete`). Log
+  after the mutation succeeds; a longer-running command that can end three ways
+  uses a span with an `outcome` field.
+- **Never log content or continuous input** — no note/message/prompt text, no
+  per-keystroke/mouse/scroll/resize/PTY-write events. Hence `slack_dm_send` logs
+  `slack.dm_sent` with *no* text, and the `term_*` input commands emit nothing
+  (the PTY *spawn* is recorded in `term_start` via
+  `tt_exec::record_detached_spawn`, the *kill* in `term_kill`).
+- **Don't instrument pure reads or pollers** (`*_get`/`*_snapshot`/`ab_get_*`/
+  `app_resource_usage`) — over-logging buries the signal. A command that shells
+  out through `tt_exec` (every `gh`/`git`) is already covered by that
+  `process.spawn` span, but still add a semantic event when the *user gesture*
+  itself is what you want to query for.

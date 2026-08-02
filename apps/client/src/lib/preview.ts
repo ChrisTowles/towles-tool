@@ -2,9 +2,7 @@ import { invoke } from "@/lib/tauri";
 import { claudeCommand, type FolderData, isAgent, promptWithImages } from "@/lib/agentboard";
 import { devServerUrl, type LaunchConfigStatus } from "@/lib/launch";
 
-/** A dev server detected from some tracked checkout's `.claude/launch.json`
- * (the same file Claude Desktop's preview pane reads) — the view model the
- * Preview screen renders and navigates to. */
+/** A dev server detected from a tracked checkout's `.claude/launch.json`. */
 export type DevServer = {
   key: string;
   label: string;
@@ -13,9 +11,7 @@ export type DevServer = {
   folderDir: string;
 };
 
-/** Map a folder's launch.json configs to preview-able dev servers, dropping
- * the port-less ones (they can't be probed or previewed). Pure so the
- * screen's discovery loop stays a thin `Promise.all` over IPC. */
+/** Port-less configs are dropped — they can't be probed or previewed. */
 export function devServersOf(
   repoName: string,
   folderDir: string,
@@ -32,9 +28,8 @@ export function devServersOf(
     }));
 }
 
-/** The preview surface's viewport rect in CSS pixels, plus the DPR that maps
- * it into the snapshot's device-pixel space — mirrors `CaptureRect` in
- * `crates-tauri/tt-app/src/preview.rs`. */
+/** Viewport rect in CSS pixels plus the DPR mapping it into device pixels —
+ * mirrors `CaptureRect` in `crates-tauri/tt-app/src/preview.rs`. */
 export type CaptureRect = {
   x: number;
   y: number;
@@ -43,15 +38,12 @@ export type CaptureRect = {
   devicePixelRatio: number;
 };
 
-/** Rasterize the app webview and crop to `rect`, returning a base64 PNG.
- * Backend capture exists because the DOM can't screenshot a cross-origin
- * iframe — see the module docs in `preview.rs`. */
+/** Base64 PNG. Capture lives in the backend because the DOM can't screenshot
+ * a cross-origin iframe — see the module docs in `preview.rs`. */
 export const previewCapture = (rect: CaptureRect) =>
   invoke<string>("preview_capture", { rect }, { timeoutMs: 15_000 });
 
-/** The wire shape the `preview_write_feedback` command decodes (Rust
- * `PastedImage`) — the persisted subset of agentboard's `PastedImage`, without
- * its UI-only preview fields. */
+/** The persisted subset of agentboard's `PastedImage`, minus UI-only fields. */
 export type FeedbackImage = { mime: string; dataBase64: string };
 
 /** Stage the annotated capture as files under the pasted-images dir (outside
@@ -65,11 +57,8 @@ export type Point = { x: number; y: number };
 
 export type AnnotationTool = "pen" | "line" | "rect" | "ellipse" | "text";
 
-/** One drawn mark, in CSS-pixel coordinates of the preview surface. `pen`
- * holds the full pointer trail; `line`/`rect`/`ellipse` hold `[from, to]`;
- * `text` holds `[anchor]` plus `text`. One shape instead of a tagged union
- * per tool: every consumer (draw, hit nothing, serialize nothing) treats
- * them uniformly, so the union would only add casts. */
+/** One drawn mark, in the preview surface's CSS pixels. `pen` holds the full
+ * trail, `line`/`rect`/`ellipse` `[from, to]`, `text` `[anchor]` plus `text`. */
 export type Annotation = {
   tool: AnnotationTool;
   color: string;
@@ -77,9 +66,8 @@ export type Annotation = {
   text?: string;
 };
 
-/** Annotation ink. Raw hex (not Tailwind classes) because these are canvas
- * strokes and must survive into the captured PNG identically in both themes;
- * red first so the default matches the "point at the broken thing" use. */
+/** Raw hex, not Tailwind: these are canvas strokes and must reach the PNG
+ * identically in both themes. Red first — the default is "this is broken". */
 export const ANNOTATION_COLORS = ["#ef4444", "#22c55e", "#3b82f6", "#eab308"] as const;
 
 export const ANNOTATION_STROKE_WIDTH = 3;
@@ -150,11 +138,8 @@ export function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, sca
 
 // Feedback composition + delivery
 
-/** The prompt for an annotated-screenshot send: the user's comment (or a
- * stock ask), where the preview was pointed, and the image paths via
- * `promptWithImages`' read-this-first phrasing. Newline-free like every
- * PTY-typed prompt — a literal newline inside the quoted argv drops zsh to a
- * PS2 continuation prompt. */
+/** Newline-free like every PTY-typed prompt: a literal newline inside the
+ * quoted argv drops zsh to a PS2 continuation prompt. */
 export function feedbackPrompt(comment: string, url: string, paths: string[]): string {
   const flat = comment.replaceAll(/\s*\n\s*/g, " ").trim();
   const goal = `${
@@ -163,28 +148,22 @@ export function feedbackPrompt(comment: string, url: string, paths: string[]): s
   return promptWithImages(goal, paths);
 }
 
-/** What to type into the target session's PTY. Claude already running → the
- * bare prompt into its TUI input; plain shell → a `claude '<prompt>'` launch,
- * exactly like the new-task flow. Both end in `\r` to submit. */
+/** Claude already running → the bare prompt into its TUI input; plain shell →
+ * a `claude '<prompt>'` launch. Both end in `\r` to submit. */
 export function feedbackPtyData(prompt: string, agentRunning: boolean): string {
   return agentRunning ? `${prompt}\r` : claudeCommand(prompt);
 }
 
-/** A PTY-live session the feedback can be typed into. Only `live` sessions
- * qualify: `term_write` reaches a PTY directly (no pane mount needed), but a
- * session that was never started has no PTY to reach — see "A pane has no PTY
- * until it is rendered" in apps/client/CLAUDE.md. */
+/** Only `live` sessions qualify — a session never started has no PTY to reach
+ * ("A pane has no PTY until it is rendered", apps/client/CLAUDE.md). */
 export type SendTarget = {
   sessionId: string;
   label: string;
   agentRunning: boolean;
 };
 
-/** The live sessions in one folder — the preview pane belongs to a task
- * (folder), so its feedback goes to that task's own session, not a global
- * pick. Claude sessions first (feedback is usually for the agent already
- * working on that checkout); a folder with one live session needs no picker
- * at all. */
+/** Scoped to one folder: the preview belongs to a task, so its feedback goes
+ * to that task's session. Claude sessions first — usually the intended one. */
 export function folderSendTargets(folder: Pick<FolderData, "sessions"> | undefined): SendTarget[] {
   if (!folder) return [];
   return folder.sessions

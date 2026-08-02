@@ -37,9 +37,7 @@ import { useWorkspace } from "@/lib/workspace";
 /** api.slack.com app directory — where the app is created and tokens are issued. */
 const SLACK_APPS_URL = "https://api.slack.com/apps";
 
-/** The app manifest to paste into "Create app → From a manifest": display name,
- * the user scopes the watcher/chat/images need, and Socket Mode + message.im
- * events for live delivery. */
+/** The app manifest to paste into "Create app → From a manifest". */
 const APP_MANIFEST = `{
   "display_information": { "name": "Towles Tool DM Watch" },
   "oauth_config": {
@@ -57,16 +55,9 @@ const APP_MANIFEST = `{
   }
 }`;
 
-/**
- * Messages — the in-app chat panel for the one watched Slack DM (the person the
- * `slack:dm` collector follows). Reads history via `slack_dm_history` and sends
- * replies via `slack_dm_send`; both hit the same collector settings the
- * background watcher uses but ignore its `enabled` flag, so the thread works
- * even with the watcher off. Unconfigured (no token/member id) is a friendly
- * setup hint, not an error. A send that fails on a missing `chat:write` scope
- * gets a specific "re-authorize your token" message rather than a raw code —
- * granting that scope is the user's job (a token re-auth in Slack).
- */
+/** Messages — the in-app chat panel for the one watched Slack DM. Uses the
+ * `slack:dm` collector's settings but ignores its `enabled` flag, so the
+ * thread works with the watcher off. */
 export function SlackScreen() {
   const { view, loading, error, refresh } = useSlackDm();
   const [draft, setDraft] = useState("");
@@ -82,11 +73,9 @@ export function SlackScreen() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [lastTs, view?.configured]);
 
-  // The composer's textarea auto-grows with the draft (`field-sizing: content`),
-  // which shrinks the messages viewport without touching `lastTs` — re-pin
-  // whenever that height changes too, or the last message ends up short of the
-  // actual bottom (or, on shrink back down, the scroll position jumps back up
-  // as the browser clamps it to the new, larger scrollable range).
+  // The composer's textarea auto-grows (`field-sizing: content`), shrinking the
+  // messages viewport without touching `lastTs` — re-pin on that height change
+  // too, or the last message ends up short of the actual bottom.
   useEffect(() => {
     const composer = composerRef.current;
     if (!composer) return;
@@ -276,13 +265,9 @@ function openFile(file: DmFile) {
   void openExternalUrl(file.permalink || file.urlPrivate);
 }
 
-/**
- * An inline image thumbnail. The private Slack URL can't be loaded straight
- * into `<img>` (it needs the bearer token), so in the Tauri shell we fetch the
- * bytes via `slack_dm_file` and render a `data:` URI; in browser dev the mock
- * URL is used directly. A missing `files:read` scope degrades to a subtle
- * placeholder rather than failing.
- */
+/** An inline image thumbnail. The private Slack URL needs the bearer token, so
+ * the Tauri shell fetches the bytes via `slack_dm_file` and renders a `data:`
+ * URI; browser dev uses the mock URL directly. */
 function ImageAttachment({ file }: { file: DmFile }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

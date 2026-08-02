@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
     pub name: String,
-    /// Version string, or `null` when the tool wasn't found (serialized as JSON null).
+    /// `null` when the tool wasn't found.
     pub version: Option<String>,
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -50,8 +50,7 @@ pub struct PluginCheck {
     pub install_hint: Option<String>,
 }
 
-/// One agentboard/data-hub state check for the app's Doctor screen. Flattens
-/// to [`NameOk`] in the [`DoctorRunResult`] record.
+/// Flattens to [`NameOk`] in the [`DoctorRunResult`] record.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentBoardCheck {
@@ -64,11 +63,8 @@ pub struct AgentBoardCheck {
     pub hint: Option<String>,
 }
 
-/// Tools to probe: (binary, version arg, optional).
-///
-/// `zig` isn't in this list: it needs more than a presence probe (the `tt-vt`
-/// terminal engine requires a specific 0.15.x), so it has its own
-/// [`check_zig`], which is appended to the same `tools` row set.
+/// (binary, version arg, optional). `zig` isn't here: it needs more than a
+/// presence probe, so it has its own [`check_zig`] appended to the same rows.
 const TOOLS: &[(&str, &str, bool)] = &[
     ("git", "--version", false),
     ("gh", "--version", false),
@@ -78,32 +74,24 @@ const TOOLS: &[(&str, &str, bool)] = &[
     ("cargo", "--version", false),
 ];
 
-/// The major.minor of zig required to build the `tt-vt` terminal engine.
-/// A machine on a different minor (0.14.x, 0.16.x) can't build it, so the check
-/// treats a mismatch as a hard failure, not just "zig missing".
+/// A machine on a different minor can't build `tt-vt`, so the check treats a
+/// mismatch as a hard failure, not just "zig missing".
 const ZIG_REQUIRED_MAJOR: u32 = 0;
 const ZIG_REQUIRED_MINOR: u32 = 15;
 
-/// One worktree task whose work has already landed on the base branch and is
-/// safe to reclaim with `tt task clean` / `tt task rm`. The "landed" judgement
+/// A worktree task safe to reclaim with `tt task clean`. The "landed" judgement
 /// is [`tt_tasks::ops::work_state`]'s — never a hand-rolled git-merged check —
-/// so the squash/rebase/gone-upstream shapes it already untangles stay in one
-/// place.
+/// so the squash/rebase/gone-upstream shapes stay untangled in one place.
 #[derive(Debug, Clone, Serialize)]
 pub struct StaleTaskCheck {
-    /// Task (worktree folder) name.
     pub name: String,
-    /// The task's branch.
     pub branch: String,
     /// How it landed, e.g. `"squash-merged into main"`.
     pub reason: String,
 }
 
-/// One port-claim finding from the running checkout's port picture
-/// ([`tt_tasks::ops::port_report`]): a claim that survives only in the
-/// persistent registry because the owner's `.env` no longer carries it
-/// (deleted or hand-edited) — exactly the drift the registry exists to
-/// catch, and a one-command fix.
+/// A claim that survives only in the persistent registry because the owner's
+/// `.env` no longer carries it — exactly the drift the registry exists to catch.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortHealthCheck {
@@ -116,9 +104,8 @@ pub struct PortHealthCheck {
     pub hint: String,
 }
 
-/// Everything one doctor run produced: the camelCase [`DoctorRunResult`]
-/// record plus the rich plugin/agentboard rows display surfaces render
-/// (hints, values). One struct so nothing runs its subprocesses twice.
+/// The camelCase [`DoctorRunResult`] record plus the rich rows display surfaces
+/// render. One struct so nothing runs its subprocesses twice.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DoctorReport {
@@ -152,8 +139,6 @@ pub fn run_report() -> DoctorReport {
     DoctorReport { result, plugins, agentboard, stale_tasks, port_health }
 }
 
-/// Port claims in the running checkout that only the registry still knows —
-/// their owner's `.env` was deleted or hand-edited out from under them.
 /// Read-only like every doctor probe ([`tt_tasks::ops::port_report`] neither
 /// locks nor self-heals); a non-task-capable cwd reports nothing.
 fn check_port_health() -> Vec<PortHealthCheck> {
@@ -178,12 +163,9 @@ fn check_port_health() -> Vec<PortHealthCheck> {
         .collect()
 }
 
-/// Worktree tasks in the running checkout whose work has already landed on the
-/// base branch and can be reclaimed with `tt task clean`. Read-only: it reuses
-/// [`tt_tasks::ops::work_state`] exactly the way the Agentboard rail does (never
-/// its own git-merged check) but, unlike `tt task clean`, removes nothing and
-/// does no `fetch` — a diagnostic must not mutate. A checkout that isn't
-/// task-capable (no `.git` above the cwd) reports nothing.
+/// Reuses [`tt_tasks::ops::work_state`] the way the Agentboard rail does, but
+/// unlike `tt task clean` removes nothing and does no `fetch` — a diagnostic
+/// must not mutate. A checkout that isn't task-capable reports nothing.
 fn check_stale_tasks() -> Vec<StaleTaskCheck> {
     use tt_tasks::ops;
 
@@ -215,12 +197,9 @@ fn check_stale_tasks() -> Vec<StaleTaskCheck> {
         .collect()
 }
 
-/// Whether a task's [`WorkState`] means it is safe to `tt task clean`, and the
-/// finding to surface if so. Mirrors `clean`'s own keep/remove gate: only
-/// *content* proof counts (a bare gone-upstream is indistinguishable from a
-/// branch deleted unmerged — see [`tt_tasks::LandedVia::is_content_proof`]),
-/// and any work removal would lose — uncommitted, unlanded, or orphaned commits
-/// ([`WorkState::holds_work`]) — keeps the task off the list.
+/// Mirrors `clean`'s own keep/remove gate: only *content* proof counts (a bare
+/// gone-upstream is indistinguishable from a branch deleted unmerged), and any
+/// work a removal would lose keeps the task off the list.
 fn classify_stale_task(
     name: &str,
     branch: &str,
@@ -259,15 +238,9 @@ fn check_tool(name: &str, version_arg: &str, optional: bool) -> CheckResult {
     }
 }
 
-/// Classify the terminal parser's compile-time optimize mode (the caller —
-/// the app, which is what links `tt-vt` — passes
-/// `tt_vt::parser_optimize_mode()`; the `tt` CLI has no VT engine and never
-/// runs this). A Debug-mode Zig parser is ~3 orders of magnitude slower and
-/// saturates a core at ~130 KB/s of PTY output, so a busy terminal pegs its
-/// engine thread and the whole app reads as laggy. The
-/// `[profile.dev.package.libghostty-vt-sys]` override in the workspace
-/// Cargo.toml makes dev builds use ReleaseFast; this check exists so losing
-/// that override (or a libghostty crate bump changing its build script)
+/// A Debug-mode Zig parser is ~3 orders of magnitude slower and saturates a
+/// core at ~130 KB/s of PTY output, so the whole app reads as laggy. This check
+/// exists so losing the `[profile.dev.package.libghostty-vt-sys]` override
 /// surfaces here instead of as months of unexplained dev-build lag.
 pub fn check_vt_parser(optimize_mode: &str) -> CheckResult {
     let ok = optimize_mode != "Debug";
@@ -283,7 +256,7 @@ pub fn check_vt_parser(optimize_mode: &str) -> CheckResult {
     }
 }
 
-/// Pull the first version-like token (`1.2.3`) out of arbitrary `--version` output.
+/// The first version-like token in arbitrary `--version` output.
 fn extract_version(text: &str) -> Option<String> {
     let start = text.find(|c: char| c.is_ascii_digit())?;
     let version: String =
@@ -291,12 +264,8 @@ fn extract_version(text: &str) -> Option<String> {
     if version.is_empty() { None } else { Some(version) }
 }
 
-/// Probe zig's presence *and* that its version is the required 0.15.x.
-///
-/// Reported as a normal tool row (so it shows alongside the others on the
-/// app's Doctor screen), but with real version gating: unlike [`check_tool`], a
-/// wrong minor is a failure, not a pass. `zig version` prints just the version
-/// (e.g. `0.15.2`), no `--` and no `zig ` prefix, unlike the other tools.
+/// A normal tool row, but with real version gating: unlike [`check_tool`], a
+/// wrong minor is a failure. `zig version` prints just the version, no prefix.
 fn check_zig() -> CheckResult {
     match tt_exec::run("zig", &["version"]) {
         Ok(output) if output.ok() => {
@@ -307,18 +276,14 @@ fn check_zig() -> CheckResult {
     }
 }
 
-/// Build the zig row from an already-extracted version. A missing version or one
-/// off the required minor is a hard failure (`ok: false`, no warning) so it
-/// renders red in both the CLI and the app — a warning would show amber and, in
-/// the CLI, still count as passing.
+/// A missing version or one off the required minor is a hard failure (`ok:
+/// false`, no warning) so it renders red rather than amber-and-passing.
 fn zig_result(version: Option<String>) -> CheckResult {
     let ok = version.as_deref().map(zig_version_satisfies).unwrap_or(false);
     CheckResult { name: "zig".to_string(), version, ok, warning: None }
 }
 
-/// Whether a dotted version string is on the required zig major.minor. Extra
-/// patch/pre-release components (`0.15.0-dev.123`, already trimmed by
-/// [`extract_version`] to `0.15.0`) don't matter — only major and minor gate.
+/// Only major and minor gate; patch/pre-release components don't matter.
 fn zig_version_satisfies(version: &str) -> bool {
     let mut parts = version.split('.').map(|p| p.parse::<u32>().ok());
     matches!(
@@ -327,23 +292,14 @@ fn zig_version_satisfies(version: &str) -> bool {
     )
 }
 
-/// Whether `claude mcp list` output lists the `towles-tool` MCP server. The list is
-/// plain text, one server per line: `<name>: <url-or-command> - <status>`. Matching
-/// the *name* (never the command or URL) is the point, and the name is everything
-/// left of the last colon preceding the ` - `, because both halves carry colons:
-///
-/// ```text
-/// towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
-/// plugin:towles-tool-app:towles-tool: tt mcp serve - ✔ Connected
-/// ```
-///
-/// The second form is what this repo's plugin registers, so splitting on the *first*
-/// colon yields `plugin` and the check could never pass for the very registration
-/// its fix hint tells the user to install.
+/// Whether `claude mcp list` lists the `towles-tool` MCP server. Matching the
+/// *name*, never the command or URL — and the name is everything left of the
+/// last colon before the ` - `, since a plugin-registered server prints as
+/// `plugin:towles-tool-app:towles-tool: <url> - ✔ Connected`. Splitting on the
+/// first colon yields `plugin` and could never match this repo's own plugin.
 fn tt_mcp_registered(list_output: &str) -> bool {
     list_output.lines().any(|line| {
-        // `": "` (with the space), not a bare colon: the name prefix and the
-        // URL both contain bare colons, and only this separates name from value.
+        // `": "` with the space: both halves carry bare colons.
         let Some((name, _value)) = line.split_once(": ") else {
             return false;
         };
@@ -356,29 +312,21 @@ fn check_gh_auth() -> bool {
     matches!(tt_exec::run("gh", &["auth", "status"]), Ok(out) if out.ok())
 }
 
-/// One Claude plugin the doctor checks for, with a fix hint tailored to how
-/// it's actually installed.
 struct RequiredPlugin {
-    /// Fully-qualified plugin id, e.g. `towles-tool-app@towles-tool`.
+    /// Fully-qualified, e.g. `towles-tool-app@towles-tool`.
     id: &'static str,
-    /// Short display name shown in the report.
     name: &'static str,
     /// Shown when missing.
     install_hint: &'static str,
 }
 
-/// The one way to install this repo's `towles-tool-app` plugin (which also
-/// registers the `tt` MCP server), shared by every hint that suggests it so
-/// the marketplace slug and plugin id can't drift between hints. Raw `claude
-/// plugin` commands: the `tt install` command that used to wrap them was
-/// removed in the 2026-07-19 CLI trim.
+/// Shared by every hint that suggests installing this repo's plugin, so the
+/// marketplace slug and plugin id can't drift between them.
 const APP_PLUGIN_INSTALL_CMD: &str = "claude plugin marketplace add ChrisTowles/towles-tool \
                                       && claude plugin enable towles-tool-app@towles-tool";
 
-/// Claude plugins the workflows expect: `code-simplifier` (an official
-/// plugin some skills shell out to) and this repo's own `towles-tool-app`
-/// (registers the `tt` MCP server plus the `gh pr`/`gh issue` mutation nudge
-/// hook — see `packages/app`).
+/// `code-simplifier` (an official plugin some skills shell out to) and this
+/// repo's own `towles-tool-app` (the `tt` MCP server plus the nudge hook).
 const REQUIRED_PLUGINS: &[RequiredPlugin] = &[
     RequiredPlugin {
         id: "code-simplifier@claude-plugins-official",
@@ -392,8 +340,7 @@ const REQUIRED_PLUGINS: &[RequiredPlugin] = &[
     },
 ];
 
-/// Claude plugins the workflows expect — see [`REQUIRED_PLUGINS`]. One shared
-/// `claude plugin list --json` call, checked against every required id.
+/// One shared `claude plugin list --json` call, checked against every id.
 fn check_claude_plugins() -> Vec<PluginCheck> {
     #[derive(Deserialize)]
     struct Entry {
@@ -420,15 +367,13 @@ fn check_claude_plugins() -> Vec<PluginCheck> {
         .collect()
 }
 
-/// Agentboard/data-hub state, post-pivot: repos on the rail (the watch list
-/// every collector and the rail read), and the data-hub db the day screens
-/// read. The old tmux-agentboard db/config checks were retired with that
-/// system.
+/// Repos on the rail (the watch list every collector reads) and the data-hub db
+/// the day screens read.
 fn check_agentboard() -> Vec<AgentBoardCheck> {
     let mut results = Vec::new();
 
-    // Which state scope this instance resolved to — makes it obvious when a task
-    // checkout is reading its own scoped config/db instead of the shared default.
+    // Makes it obvious when a task checkout is reading its own scoped config/db
+    // instead of the shared default.
     results.push(AgentBoardCheck {
         name: "state scope".to_string(),
         value: match tt_config::state_scope() {
@@ -476,10 +421,8 @@ fn check_agentboard() -> Vec<AgentBoardCheck> {
     results
 }
 
-/// Whether the shared settings file parses. A corrupt settings JSON otherwise
-/// only surfaces when a command that loads it dies mid-run; this makes it a
-/// visible doctor row. A missing file is fine — it's created with defaults on
-/// first use — so only an existing-but-unparseable file fails.
+/// A corrupt settings JSON otherwise only surfaces when a command that loads it
+/// dies mid-run. A missing file is fine — created with defaults on first use.
 fn check_settings_parse() -> AgentBoardCheck {
     let path = match tt_config::config_path() {
         Ok(path) => path,
@@ -522,9 +465,8 @@ fn check_settings_parse() -> AgentBoardCheck {
     }
 }
 
-/// Whether the `towles-tool` MCP server is registered with Claude Code (`claude mcp
-/// list`). The `towles-tool-app` plugin registers it; a missing registration
-/// is a warning with the fix, not a hard failure.
+/// The `towles-tool-app` plugin registers it; a missing registration is a
+/// warning with the fix, not a hard failure.
 fn check_tt_mcp_registered() -> AgentBoardCheck {
     let registered = match tt_exec::run("claude", &["mcp", "list"]) {
         Ok(out) if out.ok() => tt_mcp_registered(&out.stdout),
@@ -570,7 +512,6 @@ mod tests {
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["ghAuth"], serde_json::json!(true));
         assert_eq!(json["tools"][0]["version"], serde_json::json!("2.39.0"));
-        // A not-found tool serializes version as null (field always present).
         assert!(json["tools"][0].get("version").is_some());
     }
 
@@ -602,7 +543,6 @@ mod tests {
 
     #[test]
     fn zig_has_its_own_versioned_check_not_a_tools_entry() {
-        // zig needs version gating, so it's not a plain presence probe in TOOLS.
         let names: Vec<&str> = TOOLS.iter().map(|(n, _, _)| *n).collect();
         assert!(!names.contains(&"zig"), "zig is checked by check_zig, not TOOLS");
     }
@@ -612,7 +552,6 @@ mod tests {
         assert!(zig_version_satisfies("0.15.0"));
         assert!(zig_version_satisfies("0.15.2"));
         assert!(zig_version_satisfies("0.15"));
-        // extract_version trims a dev suffix to the dotted head before we parse.
         assert!(zig_version_satisfies(extract_version("0.15.0-dev.123+abc").as_deref().unwrap()));
 
         assert!(!zig_version_satisfies("0.14.0"), "older minor can't build tt-vt");
@@ -624,7 +563,6 @@ mod tests {
 
     #[test]
     fn zig_result_is_a_hard_failure_when_missing_or_wrong_version() {
-        // Missing binary → a clear failure (red), not a soft warning.
         let missing = zig_result(None);
         assert!(!missing.ok);
         assert!(missing.warning.is_none(), "failure renders red, not amber");
@@ -665,8 +603,6 @@ mod tests {
 
     #[test]
     fn tt_mcp_registered_matches_the_name_field_only() {
-        // The HTTP registration's URL is full of colons, so the name match has
-        // to split once rather than assume one colon per line.
         let listed = "\
 chrome-devtools: npx chrome-devtools-mcp@latest - ✔ Connected
 towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
@@ -674,11 +610,9 @@ towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
         assert!(tt_mcp_registered(listed));
     }
 
-    /// The form `claude mcp list` actually prints for a plugin-registered
-    /// server — and the only form this repo's own plugin produces, since the
-    /// `towles-tool-app` plugin is how the server gets registered at all.
-    /// Matching the first colon-delimited field would see `plugin` here and
-    /// report "not registered" while the server sits there connected.
+    /// The only form this repo's own plugin produces. Matching the first
+    /// colon-delimited field would see `plugin` here and report "not
+    /// registered" while the server sits there connected.
     #[test]
     fn tt_mcp_registered_matches_a_plugin_registered_server() {
         let listed = "\

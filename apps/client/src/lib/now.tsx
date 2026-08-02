@@ -9,18 +9,9 @@ import {
   type ReactNode,
 } from "react";
 
-/**
- * A single app-wide wall clock. One `setInterval` feeds every countdown,
- * age readout, and escalation timer (header status, header clock, DM banner,
- * Cockpit, PRs, config) instead of each mounting its own ticker.
- *
- * Default 15s granularity: fine enough for the DM banner's 5/10-minute
- * escalation thresholds, calm enough for minute-resolution countdowns
- * elsewhere. A consumer that needs finer resolution — e.g. the Cockpit's
- * `m:ss` countdown in the final two minutes before a meeting — asks for it
- * via {@link useNowInterval}; the provider then ticks at the fastest interval
- * any live consumer requests, so there is still only one clock.
- */
+/** A single app-wide wall clock: one `setInterval` feeds every countdown and
+ * escalation timer. A consumer needing finer resolution than 15s asks via
+ * {@link useNowInterval}; the provider ticks at the fastest live request. */
 const DEFAULT_TICK_MS = 15_000;
 
 type NowValue = {
@@ -64,17 +55,15 @@ function useNowContext(): NowValue {
   return ctx;
 }
 
-/** Current wall-clock time (epoch ms), shared across the app. Refreshed at the
- * shared tick — 15s by default, faster while a consumer holds a
- * {@link useNowInterval} request. Must be used under a {@link NowProvider}. */
+/** Current wall-clock time (epoch ms), shared across the app. Must be used
+ * under a {@link NowProvider}. */
 export function useNow(): number {
   return useNowContext().now;
 }
 
-/** Ask the shared clock to tick at least this fast while this component is
- * mounted (pass `undefined` to request nothing). Lets a screen sharpen the
- * clock — e.g. 1s for a `m:ss` countdown — without spinning up its own ticker.
- * The provider drops back to the default once the last requester unmounts. */
+/** Ask the shared clock to tick at least this fast while mounted (`undefined`
+ * requests nothing). Drops back to the default when the last requester
+ * unmounts. */
 export function useNowInterval(intervalMs: number | undefined): void {
   const { requestInterval } = useNowContext();
   useEffect(() => {

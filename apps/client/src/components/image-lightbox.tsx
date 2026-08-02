@@ -32,12 +32,9 @@ export function lightboxStep(
   return images[(index + delta + images.length) % images.length].id;
 }
 
-/** Full-size viewer for attached images — a thumbnail grid is unreadable for
- * the screenshots that describe most task goals, so clicking one opens it
- * here at up to the window's size.
- *
- * Controlled by id rather than index so removing an image while the viewer is
- * open closes it instead of silently zooming a different one. */
+/** Full-size viewer for attached images. Controlled by id rather than index, so
+ * removing an image while the viewer is open closes it instead of silently
+ * zooming a different one. */
 export function ImageLightbox({
   images,
   openId,

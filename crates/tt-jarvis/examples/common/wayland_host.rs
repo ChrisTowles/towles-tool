@@ -136,13 +136,9 @@ impl WaylandHost {
         })
     }
 
-    /// Service the Wayland queue without blocking the render loop.
-    ///
-    /// Errors are fatal, not ignorable. A run that keeps rendering after the
-    /// compositor has hung up still produces perfectly plausible output — a
-    /// *better*-looking benchmark number, since nothing is being composited any
-    /// more — and it is worthless. Swallowing these errors once already produced
-    /// a "pass" from a dead connection.
+    /// Service the Wayland queue without blocking the render loop. Errors are fatal, not
+    /// ignorable: rendering on after the compositor hung up yields a *better*-looking
+    /// number from a dead connection, which once already read as a pass.
     pub fn pump(&self) {
         let mut queue = self.queue.lock().unwrap();
         let mut guard = self.state.lock().unwrap();
@@ -175,10 +171,8 @@ impl WaylandHost {
 
     /// # Safety
     ///
-    /// The returned handles borrow surfaces owned by `self`. `self` must outlive
-    /// the returned value and any Bevy app built from it — the renderer keeps
-    /// frames in flight, so tearing the surface down first is a use-after-free,
-    /// not a blank pane.
+    /// The returned handles borrow surfaces owned by `self`, which must outlive them and any
+    /// Bevy app built from them — the renderer keeps frames in flight.
     pub unsafe fn foreign_surface(&self) -> ForeignSurface {
         let window = RawWindowHandle::Wayland(WaylandWindowHandle::new(
             std::ptr::NonNull::new(self.child.id().as_ptr() as *mut std::ffi::c_void)

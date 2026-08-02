@@ -1,11 +1,8 @@
 import { invoke } from "@/lib/tauri";
 
 /**
- * Client-side bridge to the Task Explorer screen (`crates-tauri/tt-app/src/
- * task_explorer.rs`): CPU/RAM for the app's own process plus each live
- * terminal's shell and everything it has spawned. Passive readout, polled
- * by the screen on an interval, and also polled (summed) by the status bar
- * (`components/status-bar.tsx`) for its always-visible total.
+ * Bridge to `crates-tauri/tt-app/src/task_explorer.rs`: CPU/RAM for the app
+ * plus each terminal's shell and its descendants.
  */
 
 export type ProcessRow = {

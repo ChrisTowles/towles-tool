@@ -15,11 +15,8 @@ import { openExternalUrl } from "@/lib/open-url";
 import { checksTone, PR_TONE, type ChecksTone } from "@/lib/pr-tone";
 import { cn } from "@/lib/utils";
 
-/**
- * Shared atoms for screens rendering store-snapshot data (Cockpit, Pull
- * requests, Config). One home so the PR/issue row anatomy and the collector
- * freshness line can't drift between screens.
- */
+/** Shared atoms for screens rendering store-snapshot data (Cockpit, Pull
+ * requests, Config) — one home so the row anatomy can't drift between them. */
 
 export function Panel({
   title,
@@ -46,12 +43,8 @@ export function Panel({
   );
 }
 
-/**
- * "Nothing here" copy. The default fills a {@link Panel} body — centered, with
- * enough padding to read as an empty region rather than a stray sentence.
- * `inline` drops that framing for callers that are already inside a
- * {@link Card}, which supplies its own padding.
- */
+/** "Nothing here" copy. `inline` drops the centered padding for callers already
+ * inside a {@link Card}, which supplies its own. */
 export function Empty({
   children,
   inline = false,
@@ -66,14 +59,8 @@ export function Empty({
   );
 }
 
-/**
- * Section shell: a bordered card with a title and an optional right-aligned
- * note (usually a count or an age). Shared by the MCP and Claude Sessions
- * consoles so their panels can't drift apart.
- *
- * `action` is a sibling of the title, for a header-level control (a search box,
- * a button) that `note` can't express as text.
- */
+/** Section shell: bordered card, title, optional right-aligned `note`. `action`
+ * is a sibling of the title, for a control `note` can't express as text. */
 export function Card({
   title,
   note,
@@ -118,12 +105,8 @@ export function StatTile({
   );
 }
 
-/**
- * A horizontal magnitude bar: a truncated label, a proportional fill against
- * `max`, and the raw count right-aligned. Shared by any screen breaking a
- * count down by category (MCP's tool usage, Telemetry's level/target/name
- * breakdowns) so the bar-row markup lives in one place.
- */
+/** A horizontal magnitude bar: a truncated label, a proportional fill against
+ * `max`, and the raw count right-aligned. */
 export function BarRow({
   label,
   count,
@@ -133,7 +116,6 @@ export function BarRow({
   label: string;
   count: number;
   max: number;
-  /** Text color for the label; defaults to the standard foreground. */
   tone?: string;
 }) {
   return (
@@ -163,9 +145,8 @@ export function maxCount(rows: { count: number }[]): number {
   return Math.max(1, ...rows.map((r) => r.count));
 }
 
-/** Icon + label per checks tone — the color itself comes from the shared PR
- * tone map (`lib/pr-tone.ts`), so cyan means running everywhere, never
- * red/amber, which are reserved for genuine failure/needs-you. */
+/** Icon + label per checks tone — the color comes from `lib/pr-tone.ts`, where
+ * red/amber are reserved for genuine failure/needs-you. */
 const CHECKS_FACE: Record<ChecksTone, { icon: LucideIcon; label: string }> = {
   passing: { icon: CircleCheck, label: "passing" },
   failed: { icon: CircleX, label: "failing" },
@@ -173,12 +154,8 @@ const CHECKS_FACE: Record<ChecksTone, { icon: LucideIcon; label: string }> = {
   running: { icon: Clock, label: "pending" },
 };
 
-/**
- * CI check-rollup badge for a PR row. One variant per collector state
- * (`passing | failing | pending | none`); `checksTone` renders unknown strings
- * as pending so a new collector value degrades visibly instead of vanishing.
- * Deliberately ignores PR state — a merged PR's checks still read "passing".
- */
+/** CI check-rollup badge. `checksTone` renders unknown strings as pending, so a
+ * new collector value degrades visibly. Ignores PR state: a merged PR passes. */
 export function ChecksBadge({ checks }: { checks: string }) {
   const tone = checksTone(checks);
   const { icon: Icon, label } = CHECKS_FACE[tone];
@@ -189,12 +166,7 @@ export function ChecksBadge({ checks }: { checks: string }) {
   );
 }
 
-/**
- * Small ghost icon-button for dismissing a PR/issue row inline — for screens
- * that don't already have a per-row dropdown menu to hang a "Dismiss" item off
- * of. Hidden until the row is hovered, same as the default hover-revealed
- * external-link glyph it replaces.
- */
+/** Inline row dismissal, for screens with no per-row dropdown to hang it off. */
 export function DismissButton({ onDismiss, label }: { onDismiss: () => void; label: string }) {
   return (
     <Tooltip>
@@ -214,13 +186,8 @@ export function DismissButton({ onDismiss, label }: { onDismiss: () => void; lab
   );
 }
 
-/**
- * One pull-request row. The title/meta area is the click target (opens the PR in
- * the browser); `actions`, when supplied, renders a trailing control (e.g.
- * Cockpit's per-PR dropdown menu) that lives *outside* the anchor so nested
- * interactive elements stay valid. Without it, a hover-revealed external-link
- * glyph stands in.
- */
+/** One pull-request row. `actions` renders a trailing control *outside* the
+ * anchor, so nested interactive elements stay valid; without it, a glyph. */
 export function PrRow({
   pr,
   now,
@@ -265,13 +232,7 @@ export function PrRow({
   );
 }
 
-/**
- * One issue-queue row. The title/meta area is the click target (opens the issue
- * in the browser); `actions`, when supplied, renders a trailing control (e.g.
- * Cockpit's per-issue dropdown menu) that lives *outside* the anchor so nested
- * interactive elements stay valid. Without it, a hover-revealed external-link
- * glyph stands in.
- */
+/** One issue-queue row; `actions` works as in {@link PrRow}. */
 export function IssueRow({
   issue,
   now,
@@ -315,11 +276,7 @@ export function IssueRow({
   );
 }
 
-/**
- * One collector's freshness, from the store's run bookkeeping. Green age when
- * the last run succeeded, red with the error when it failed, muted "never"
- * before the first run.
- */
+/** One collector's freshness: green age, red with the error, muted "never". */
 export function CollectorFreshness({ run, now }: { run: CollectRun | undefined; now: number }) {
   if (!run) {
     return <span className="font-mono text-[11px] text-muted-foreground/60">never ran</span>;

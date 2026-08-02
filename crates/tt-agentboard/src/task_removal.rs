@@ -1,5 +1,5 @@
 //! Removing a worktree task and everything bound to it — the sequence, in one
-//! place. A task is three things (#339): a board row, a git worktree, and whatever
+//! place. A task is three things (#339): a board row, a git worktree, and what
 //! the host attached to that directory, so the *order* is policy, not detail:
 //!
 //! 1. guards run with everything still alive, so a refusal costs nothing;
@@ -9,9 +9,7 @@
 //!    collectors retry `gh`/`git` against a dead path forever;
 //! 5. the board row is **closed last**, recording a [`tt_store::TaskOutcome`].
 //!
-//! It lives here because it wants the guarded removal ([`tt_tasks::ops`]), the
-//! tracked-repo list and the board store at once: `tt-tasks` can't host it (cycle)
-//! and `tt-app` can't (the CLI has no Tauri, and its copy drifted).
+//! It needs all three at once, so neither `tt-tasks` (cycle) nor `tt-app` can host it.
 
 use std::path::Path;
 
@@ -19,51 +17,37 @@ use tt_store::{Store, TaskOutcome};
 use tt_tasks::RmBlocked;
 use tt_tasks::ops::{self, RemoveOpts, RemoveOutcome, RemovePhase};
 
-/// What the host does at the points in the sequence only it can act on.
-///
-/// All default to nothing, so a shell with no panes and no in-memory rail
-/// (the CLI) implements none of them.
+/// What the host does at the points in the sequence only it can act on. All
+/// default to nothing, so the CLI implements none of them.
 pub trait RemovalHooks {
-    /// A step of the sequence is starting, so a host with a UI can show what is
-    /// actually happening rather than one static label.
+    /// A step is starting, so a UI can show it rather than one static label.
     ///
-    /// [`RemovePhase::StoppingSessions`] is more than a label to the app: it fires
-    /// once the guards have passed (or been forced) — after the last point that
-    /// leaves the task untouched, before the first destructive step — which is
-    /// where it kills the folder's PTYs, so a *refused* removal never costs a live
-    /// Claude session.
+    /// [`RemovePhase::StoppingSessions`] fires once the guards have passed (or
+    /// been forced), which is where the app kills the folder's PTYs — so a
+    /// *refused* removal never costs a live Claude session.
     fn on_phase(&mut self, _phase: RemovePhase) {}
 
-    /// The worktree is gone from disk. The app drops the folder's session,
-    /// window and pane records here — not earlier, or a blocked removal would
-    /// leave the rail looking clean while the checkout stayed put.
+    /// The worktree is gone from disk; the app drops the folder's session,
+    /// window and pane records here.
     ///
-    /// **Two directories' cached git state go stale here, not one**: `dir`'s
-    /// own, and the *owner* checkout's — `git worktree remove`/`prune` already
-    /// ran there, but a cached worktree listing for that parent still names
-    /// `dir`. Invalidate both, or the host spends the cache's whole TTL
-    /// reasoning from a list pointing at nothing (what once put a deleted
-    /// task's row back on the rail).
-    ///
+    /// **Two directories' cached git state go stale, not one**: `dir`'s own and
+    /// the *owner* checkout's, whose cached worktree listing still names `dir`.
+    /// Invalidating only one once put a deleted task's row back on the rail.
     /// Returns progress notes, ordered as this step ran.
     fn after_removal(&mut self, _dir: &Path) -> Vec<String> {
         Vec::new()
     }
 }
 
-/// What to do when the worktree directory is already gone.
-///
-/// The two callers mean genuinely different things by it, and collapsing them
-/// makes one of them lie:
+/// What an already-gone worktree directory means. The two callers mean
+/// genuinely different things by it, and collapsing them makes one of them lie:
 pub enum MissingDir {
-    /// **Fail.** The caller named a task — `tt task rm feat-tpyo` — and a name that
-    /// resolves to nothing is a mistake to report, not a no-op to celebrate. Keeps
-    /// every guard in [`ops::remove_task`].
+    /// **Fail.** The caller named a task — `tt task rm feat-tpyo` — and a name
+    /// resolving to nothing is a mistake to report, not a no-op to celebrate.
     Fail,
-    /// **Tear the bindings down anyway.** The caller holds a *record* pointing at
-    /// the directory (a board row with a `worktree_dir`), which is precisely what
-    /// needs cleaning up after someone removed the worktree outside the app. Only
-    /// reachable with a dir read out of the caller's own store.
+    /// **Tear the bindings down anyway.** The caller holds a *record* pointing
+    /// at the directory, which is exactly what needs cleaning up after someone
+    /// removed the worktree outside the app.
     TearDownBindings,
 }
 
@@ -71,16 +55,13 @@ pub enum MissingDir {
 pub struct NoHooks;
 impl RemovalHooks for NoHooks {}
 
-/// How the sequence reaches the board row bound to a worktree.
-///
-/// A trait rather than a plain `&Store` because the two hosts hold their store
-/// differently: the CLI opens one per command, while the app's lives behind a mutex
-/// that also serves UI snapshots — and holding that across a minute-long
-/// `git worktree remove` would freeze the board it exists to publish.
+/// How the sequence reaches the board row bound to a worktree. A trait, not a
+/// `&Store`: the app's store sits behind the mutex serving UI snapshots, and
+/// holding that across a minute-long `git worktree remove` would freeze the
+/// board it exists to publish.
 pub trait BoardRows {
-    /// Close the task bound to `dir`, recording `outcome`. Returns a note when a row
-    /// was closed, `None` when the worktree had no task — a real answer, since a
-    /// worktree can be discovered on disk without the board knowing about it.
+    /// Close the task bound to `dir`, recording `outcome`. `None` when the
+    /// worktree had no task — the rail discovers ones the board never knew.
     fn close_task_for_worktree(
         &self,
         dir: &str,
@@ -89,7 +70,6 @@ pub trait BoardRows {
     ) -> Option<String>;
 }
 
-/// The straightforward implementation, for a host holding an open [`Store`].
 impl BoardRows for Store {
     fn close_task_for_worktree(
         &self,
@@ -114,25 +94,23 @@ impl BoardRows for Store {
 pub struct TaskRemoval<'a> {
     /// Which worktree, and whether to skip the guards.
     pub opts: &'a RemoveOpts,
-    /// The worktree directory. Passed rather than re-derived because it is also the
-    /// key every binding is stored under, and must outlive the directory.
+    /// Passed rather than re-derived: it is the key every binding is stored
+    /// under, and must outlive the directory.
     pub dir: &'a Path,
     /// The tracked-repo list to untrack `dir` from.
     pub repos_path: &'a Path,
-    /// The board rows bound to `dir`. `None` skips step 5 — for a caller that can't
-    /// resolve which store owns the row, a real state (stores are per-checkout).
+    /// `None` skips step 5 — a real state for a caller that can't resolve which
+    /// per-checkout store owns the row.
     pub rows: Option<&'a dyn BoardRows>,
-    /// How the task ended — recorded on the board row at step 5. Headless callers
-    /// infer it (merged PR / landed work ⇒ done, else abandoned).
+    /// Recorded on the board row at step 5. Headless callers infer it (merged
+    /// PR / landed work ⇒ done, else abandoned).
     pub outcome: TaskOutcome,
-    /// When "now" is, for the close stamp.
     pub now_ms: i64,
     /// What an already-gone directory means to this caller — see [`MissingDir`].
     pub on_missing: MissingDir,
 }
 
-/// How a removal ended. Mirrors [`ops::RemoveOutcome`], with the bindings
-/// teardown folded into the `Removed` arm's notes.
+/// [`ops::RemoveOutcome`] with the bindings teardown folded into `Removed`.
 pub enum Outcome {
     Removed {
         name: String,
@@ -147,14 +125,9 @@ pub enum Outcome {
     },
 }
 
-/// Steps 4 and 5 alone, for a caller whose worktree is already off disk.
-///
-/// Bindings outlive the directory they are keyed by, so this is a real
-/// standalone operation, not a shortcut: a worktree removed outside the app
-/// (`git worktree remove`, a wiped disk, a restored backup) leaves exactly
-/// these behind, and `tt task clean` — which removes in bulk through
-/// [`ops::clean_tasks`] and cannot route each task through
-/// [`remove_task_and_bindings`] — needs the identical teardown.
+/// Steps 4 and 5 alone, for a caller whose worktree is already off disk — a
+/// real operation, not a shortcut: bindings outlive the directory they are
+/// keyed by, and `tt task clean` needs the identical teardown in bulk.
 pub fn remove_bindings(
     repos_path: &Path,
     rows: Option<&dyn BoardRows>,
@@ -165,15 +138,13 @@ pub fn remove_bindings(
     let dir_s = dir.to_string_lossy().to_string();
     let mut messages = Vec::new();
 
-    // A task worktree is never a `repos.json` entry (see `RowRecord`'s doc);
-    // this untrack only ever fires on a legacy file written before that rule,
-    // and is a cheap no-op otherwise.
+    // A task worktree is never a `repos.json` entry (see `RowRecord`'s doc), so
+    // this only fires on a legacy file written before that rule.
     if let Ok((_, true)) = crate::repos::remove_repo_persisted(repos_path, &dir_s) {
         messages.push("untracked from the agentboard rail".to_string());
     }
 
-    // Last: the worktree is gone, so closing the row can no longer strand
-    // anything on disk.
+    // Last: the worktree is gone, so this can no longer strand anything on disk.
     if let Some(note) = rows.and_then(|rows| rows.close_task_for_worktree(&dir_s, outcome, now_ms))
     {
         messages.push(note);
@@ -181,19 +152,12 @@ pub fn remove_bindings(
     messages
 }
 
-/// Run the whole sequence at the top of this module.
-///
-/// A directory that is already gone is handled per [`MissingDir`], and *only*
-/// [`MissingDir::TearDownBindings`] skips step 3. That skip is deliberately
-/// gated rather than universal: `ops::remove_task` is also what refuses to
-/// remove the main checkout and what reports an unknown task name, so an
-/// unconditional `is_dir()` pre-flight would turn `tt task rm <typo>` into a
-/// cheerful "removed" and could let a bad name reach the removal path at all.
-///
-/// Skipping it — rather than calling `ops::remove_task` and catching
-/// `NoSuchTask` — is what keeps a caller with a stale recorded dir from having
-/// its root re-discovered from the *process's* cwd, which resolves a different
-/// checkout entirely and can match a same-named worktree there.
+/// Run the whole sequence at the top of this module. A missing directory is
+/// handled per [`MissingDir`], and *only* [`MissingDir::TearDownBindings`]
+/// skips step 3 — an unconditional `is_dir()` pre-flight would turn `tt task rm
+/// <typo>` into a cheerful "removed". Skipping the call outright, rather than
+/// catching `NoSuchTask`, also stops a stale recorded dir from having its root
+/// re-discovered from the *process's* cwd — a different checkout entirely.
 pub fn remove_task_and_bindings(
     task: TaskRemoval<'_>,
     hooks: &mut dyn RemovalHooks,
@@ -240,7 +204,6 @@ mod tests {
 
     const NOW: i64 = 1_700_000_000_000;
 
-    /// A store holding one task bound to `dir`.
     fn store_with_task_at(dir: &str) -> Store {
         let store = Store::open_in_memory().unwrap();
         let task = store.add_task("wire up the thing", "doing", None, None, NOW).unwrap();
@@ -257,9 +220,7 @@ mod tests {
         path
     }
 
-    /// The whole point of step 4 + 5 being one function: a removed worktree
-    /// leaves both a tracked path and a board row, and handling only one of
-    /// them is what used to strand the other.
+    /// Why steps 4 + 5 are one function: doing one stranded the other.
     #[test]
     fn remove_bindings_untracks_the_dir_and_closes_the_bound_row() {
         let tmp = tempfile::tempdir().unwrap();
@@ -288,8 +249,7 @@ mod tests {
         assert_eq!(left, vec!["/repos/other".to_string()], "only this task's path was untracked");
     }
 
-    /// A worktree the board never knew about is the rail's normal case, not an
-    /// error — it still has to be untracked.
+    /// The rail's normal case, not an error — it still has to be untracked.
     #[test]
     fn remove_bindings_untracks_a_worktree_with_no_board_row() {
         let tmp = tempfile::tempdir().unwrap();
@@ -304,8 +264,7 @@ mod tests {
         assert!(crate::repos::load_repos(&path).is_empty());
     }
 
-    /// A caller that cannot resolve which store owns the row (instance stores
-    /// are per-checkout) still gets the untrack — the half it *can* do.
+    /// A caller with no store still gets the untrack — the half it *can* do.
     #[test]
     fn remove_bindings_without_a_store_still_untracks() {
         let tmp = tempfile::tempdir().unwrap();
@@ -317,8 +276,7 @@ mod tests {
         assert_eq!(notes, vec!["untracked from the agentboard rail".to_string()]);
     }
 
-    /// Nothing tracked and nothing bound: silent, not an error. `tt task clean`
-    /// runs this for every task it sweeps, most of which were never tracked.
+    /// Silent, not an error: `tt task clean` runs this for every task it sweeps.
     #[test]
     fn remove_bindings_is_quiet_when_there_is_nothing_to_clean() {
         let tmp = tempfile::tempdir().unwrap();
@@ -337,14 +295,11 @@ mod tests {
         assert_eq!(crate::repos::load_repos(&path), vec!["/repos/other".to_string()]);
     }
 
-    /// The stale-record path must never reach `ops::remove_task`.
-    ///
-    /// `opts.root` here is `None` with a name that resolves to nothing — the
-    /// shape the app produces when a board row outlived its checkout. If the
-    /// removal step ran, it would re-discover a root by walking up from the
-    /// *test process's* cwd (this repo), resolve a completely different
-    /// checkout, and act on `<that checkout>/.claude/worktrees/<name>`. Succeeding
-    /// here is the proof that step is skipped; the bindings still get cleaned.
+    /// The stale-record path must never reach `ops::remove_task`. `opts.root`
+    /// is `None` with a name resolving to nothing — the shape the app produces
+    /// when a board row outlived its checkout. Were the removal step to run, it
+    /// would walk up from the *test process's* cwd and act on a different
+    /// checkout's `.claude/worktrees/<name>`.
     #[test]
     fn tear_down_bindings_never_runs_the_removal_step() {
         let tmp = tempfile::tempdir().unwrap();
@@ -376,8 +331,7 @@ mod tests {
         assert!(crate::repos::load_repos(&path).is_empty());
     }
 
-    /// The same missing dir, named on a command line instead: a typo must be
-    /// reported, not celebrated as a removal.
+    /// The same missing dir named on a command line: a typo must be reported.
     #[test]
     fn fail_on_missing_reports_the_unknown_task() {
         let tmp = tempfile::tempdir().unwrap();
@@ -405,8 +359,8 @@ mod tests {
         assert!(matches!(error, ops::OpsError::NoSuchTask { .. }), "{error}");
     }
 
-    /// The row is found by the dir it is bound to, so a different worktree's
-    /// removal can never take it.
+    /// Rows are found by the dir they are bound to, so a different worktree's
+    /// removal can never take one.
     #[test]
     fn remove_bindings_leaves_another_worktrees_row_alone() {
         let tmp = tempfile::tempdir().unwrap();

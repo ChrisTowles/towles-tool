@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-/** Runtime validators for the new-task flow (`components/inline-new-task.tsx`):
- * `task_create`'s result and `task_base_branches`' list — both feed straight
- * into a branch name and a `tt task` invocation, so a malformed payload is
- * worth catching before it's acted on (#38). */
-
 export const TaskCreatedSchema = z.object({
   name: z.string(),
   dir: z.string(),
@@ -13,14 +8,9 @@ export const TaskCreatedSchema = z.object({
   warnings: z.array(z.string()),
 });
 
-/** One base choice from `task_base_branches`: `name` is the local branch the
- * form submits as the base; `label` is the ref creation will effectively
- * branch from (`origin/main` for a default branch with a remote counterpart —
- * `task_create` fetches and fast-forwards it first), shown instead of `name`
- * so the form doesn't undersell what actually happens. Deliberately the
- * opposite of `comparedBaseLabel` (lib/agentboard.ts), which *strips*
- * `origin/` — there the local/origin distinction is noise, here it's the
- * message. Don't "unify" them. */
+/** `name` is submitted, `label` is the ref creation really branches from
+ * (`origin/main`). The inverse of `comparedBaseLabel` (lib/agentboard.ts),
+ * which strips `origin/` on purpose — don't unify them. */
 export const BaseBranchesSchema = z.array(
   z.object({
     name: z.string(),
@@ -30,23 +20,10 @@ export const BaseBranchesSchema = z.array(
 
 export type BaseBranch = z.infer<typeof BaseBranchesSchema>[number];
 
-/** `task_write_pasted_images`' result: the absolute path of each staged
- * image, in paste order. These go straight into Claude's opening prompt, so a
- * malformed payload is worth catching here rather than as a path that
- * silently fails to read inside the session. */
 export const PastedImagePathsSchema = z.array(z.string());
 
-/** One reason `task_delete` refused. The strongest case in this file for
- * validating: `port` is handed straight to `task_stop_port`, which SIGTERMs
- * (then SIGKILLs) a process group — a payload that isn't the shape we think
- * it is should fail as a typed `SchemaMismatch` before anything gets
- * signaled, not after.
- *
- * `kind` stays an open `string`, not an enum: it crosses an IPC boundary
- * where an older frontend can meet a backend that grew a new guard, and the
- * UI is built to render an unknown kind generically (see `BlockerIcon`).
- * Rejecting the whole payload over one unrecognized discriminant would turn
- * a handled case into a hard failure. */
+/** `kind` stays an open `string`, not an enum: an older frontend can meet a
+ * backend that grew a new guard, and `BlockerIcon` renders unknown kinds. */
 export const TaskBlockerSchema = z.object({
   kind: z.string(),
   message: z.string(),
@@ -55,14 +32,8 @@ export const TaskBlockerSchema = z.object({
   port: z.number().int().positive().max(65535).nullish(),
 });
 
-/** `task_delete`'s result — deleted, or refused with reasons. A tagged union
- * on `status`, mirroring `TaskDeleteOutcome` in
- * `crates-tauri/tt-app/src/task.rs`.
- *
- * "Deleted" covers all three things a task is made of — its panes, its
- * worktree, and its board row. "Blocked" means **none** of them went: the
- * guards refuse before the first destructive step, so a refusal always leaves
- * the task exactly as it was and the user can act on the blocker and retry. */
+/** "Blocked" means **nothing** went: the guards refuse before the first
+ * destructive step, so a refusal always leaves the task exactly as it was. */
 export const TaskDeleteOutcomeSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("deleted"),
@@ -73,14 +44,10 @@ export const TaskDeleteOutcomeSchema = z.discriminatedUnion("status", [
     status: z.literal("blocked"),
     name: z.string(),
     blockers: z.array(TaskBlockerSchema),
-    /** Caveats gathered before the verdict — in practice a failed
-     * `fetch --prune`, meaning the guards judged against stale `origin/*`.
-     * Rendered above the blockers so an offline refusal doesn't read as an
-     * authoritative one. */
+    /** Caveats gathered before the verdict — usually a failed `fetch --prune`,
+     * meaning the guards judged against stale `origin/*`. */
     messages: z.array(z.string()),
   }),
 ]);
 
-/** `task_delete`'s result. Inferred from the schema that actually parses the
- * IPC payload, so the validated shape and the type can't drift apart. */
 export type TaskDeleteOutcome = z.infer<typeof TaskDeleteOutcomeSchema>;

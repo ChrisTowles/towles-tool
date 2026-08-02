@@ -2,10 +2,9 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 export type Theme = "dark" | "light" | "system";
 
-/** Dark-mode color palettes, applied via `data-color-theme` under `.dark`.
- * Ported from vetted shadcn/ui community themes (not hand-derived) — see
- * index.css for sources. Only palettes with a real ported source are listed;
- * no from-scratch color guessing. */
+/** Dark-mode palettes, applied via `data-color-theme` under `.dark`. Only ones
+ * ported from a vetted shadcn/ui community theme belong here (sources in
+ * index.css) — no from-scratch color guessing. */
 export type ColorTheme = "default" | "nord" | "catppuccin";
 
 export const COLOR_THEMES: { id: ColorTheme; label: string; swatch: string }[] = [

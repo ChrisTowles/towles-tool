@@ -1,9 +1,6 @@
 /**
- * End-to-end spec driving the real Tauri shell via @wdio/tauri-service.
- * Covers the Telemetry screen: palette-navigate to it, assert the day-picker
- * and tab UI render, switch to the Log tab to reveal its search filter, and
- * prove the read commands (telemetry_days / telemetry_events) answer without
- * error. Read-only — asserts structure, never log contents, never writes state.
+ * Telemetry screen against the real Tauri shell. Read-only — asserts structure,
+ * never log contents, never writes state.
  */
 
 /// <reference types="@wdio/globals/types" />
@@ -17,7 +14,6 @@ describe("Telemetry screen", () => {
 
   it("navigates to Telemetry and renders the day picker", async () => {
     await gotoScreen("Telemetry");
-    // The day picker lives in the always-visible header (a shadcn Select).
     const dayPicker = await browser.$('[data-slot="select-trigger"]');
     await dayPicker.waitForDisplayed({ timeout: 10000 });
   });
@@ -40,15 +36,11 @@ describe("Telemetry screen", () => {
       await browser.tauri.execute(({ core }) => core.invoke("telemetry_days")),
       "telemetry_days",
     );
-    // Structure only — the set of days depends on the developer's real log.
     expect(Array.isArray(days)).toBe(true);
   });
 
   it("queries a day's events over telemetry_events without error", async () => {
-    // Resolve the day and fetch its events entirely inside the WebView so no
-    // argument has to cross the execute boundary. If the log is empty, a
-    // well-formed date the backend simply answers with `[]` keeps this a pure
-    // structural check.
+    // Both calls inside the WebView so no argument crosses the execute boundary.
     const events = expectArray(
       await browser.tauri.execute(async ({ core }) => {
         const days = await core.invoke("telemetry_days");

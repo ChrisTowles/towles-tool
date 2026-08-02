@@ -47,11 +47,9 @@ export function AppSidebar() {
                   variant="ghost"
                   size="sm"
                   aria-current={active || undefined}
-                  // The row's name is the screen, not the screen plus a
-                  // keycap: the digit is decoration beside it, and letting it
-                  // into the accessible name renames the control to
-                  // "Board Ctrl+2" for anyone not looking at it.
-                  // `aria-keyshortcuts` is where the binding actually belongs.
+                  // The digit is decoration: in the accessible name it renames
+                  // the control to "Board Ctrl+2". The binding belongs in
+                  // `aria-keyshortcuts`.
                   aria-label={screen.title}
                   aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                   className={cn(
@@ -96,11 +94,8 @@ export function AppSidebar() {
   );
 }
 
-/** The outer nav collapsed to a narrow icon strip (issue #70's sibling ask):
- * one icon per screen, sections separated by hairlines, active screen gets
- * the violet left border. The one count the expanded nav shows today — the
- * Agentboard running-agent rollup — rides along as a corner badge, so
- * collapsing the sidebar never hides "something needs you". */
+/** The Agentboard rollup rides along as a corner badge, so collapsing the
+ * sidebar never hides "something needs you". */
 export function AppSidebarIcons() {
   const { activeTab, openTab, openTabs } = useWorkspace();
   const state = useAgentboardState();

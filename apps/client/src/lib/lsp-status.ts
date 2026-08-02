@@ -1,30 +1,16 @@
-/**
- * What the LSP bridge (`lib/lsp.ts`) is doing, as a store any component can
- * read. Split out from the bridge itself so that reading the status costs
- * nothing: `lsp.ts` statically imports `@/lib/monaco`, so any static importer
- * of it drags the whole (otherwise lazy) monaco graph into the entry chunk —
- * and the Files pane only wants a badge. With the store separate, the bridge
- * has one importer left, `setMonacoWorkspace`'s dynamic one, and stays a lazy
- * chunk.
- *
- * Same store-beside-the-service split as `lib/monaco-dialog-store.ts`.
- */
+/** What the LSP bridge (`lib/lsp.ts`) is doing, as a store any component can
+ * read. Split out because `lsp.ts` statically imports `@/lib/monaco`, so any
+ * static importer of it drags the whole (otherwise lazy) monaco graph into the
+ * entry chunk — and the Files pane only wants a badge. */
 
 import { useSyncExternalStore } from "react";
 
-/**
- * - `off` — not a Rust checkout (or not running under Tauri): nothing to do.
- * - `starting` — rust-analyzer is spawning / the client is handshaking.
- * - `ready` — the language client started; hovers and completions are live.
- * - `failed` — spawn or handshake failed (usually no rust-analyzer on PATH).
- */
+/** `off` is also "not under Tauri"; `failed` is usually no rust-analyzer on PATH. */
 type LspState = "off" | "starting" | "ready" | "failed";
 export type LspStatus = { state: LspState; dir: string | null; detail?: string };
 
 /** One shared object for every folder the server isn't following, so the hook
- * returns a stable reference without a per-dir cache to grow unbounded. `dir`
- * is null because it carries no information in this state — the folder that
- * asked already knows which one it is. */
+ * returns a stable reference without a per-dir cache to grow unbounded. */
 const OFF: LspStatus = { state: "off", dir: null };
 
 let status: LspStatus = OFF;

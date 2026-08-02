@@ -1,18 +1,6 @@
 /**
- * Wire types and IPC for the native Bevy pane (`crates-tauri/tt-pane`).
- *
- * The pane is a real compositor surface over a rectangle of the window, which
- * gives it two properties every call site inherits:
- *
- * 1. **CSS does not reach it.** It sits above the webview, so anything the DOM
- *    draws inside its rect is invisible — hide the pane to show something
- *    there. Hiding parks the surface off screen rather than unmapping it, for
- *    reasons worth knowing before you touch it (`crates-tauri/tt-pane`).
- * 2. **Its position is pushed, not declared.** Measure the placeholder, send
- *    the rect; the two stay aligned only for as long as something keeps
- *    pushing.
- *
- * Pure module — no React, no DOM rendering.
+ * IPC for the native Bevy pane (`crates-tauri/tt-pane`): a compositor surface
+ * above the webview, so CSS can't draw in its rect and its rect must be pushed.
  */
 
 import { invoke } from "@/lib/tauri";
@@ -37,12 +25,8 @@ export interface PaneInfo {
 }
 
 /**
- * Scale is sent alongside every rect rather than being read in Rust.
- *
- * The webview's `devicePixelRatio` is the number that actually governs how the
- * DOM laid the placeholder out, so it is the only value guaranteed to keep the
- * surface aligned with it. Asking the compositor separately invites a
- * disagreement of one scale step on fractional scaling, which shows as a seam.
+ * Sent with every rect, not read in Rust: `devicePixelRatio` is what laid the
+ * placeholder out, and a compositor asked separately can disagree by a step.
  */
 const scale = () => (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
 
@@ -63,12 +47,8 @@ export const sameRect = (a: CssRect | null, b: CssRect): boolean =>
   a !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 /**
- * Measure an element in window-client coordinates.
- *
- * `getBoundingClientRect` is already relative to the viewport, which is what
- * the compositor wants — no scroll offset correction, and deliberately not
- * `offsetLeft`/`offsetParent`, which would be relative to whatever ancestor
- * happens to be positioned.
+ * Measure in window-client coordinates — viewport-relative is what the
+ * compositor wants, so not `offsetLeft`, which tracks a positioned ancestor.
  */
 export const measure = (el: HTMLElement): CssRect => {
   const r = el.getBoundingClientRect();

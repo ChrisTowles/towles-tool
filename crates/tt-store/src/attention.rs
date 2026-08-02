@@ -1,8 +1,7 @@
 //! Edge detection for day-model attention notifications: four watchers turn successive
 //! store reads into *edges* — the moment something newly deserves attention — so the
-//! host notifies once per event, not every tick. Pure state diffing, Tauri-free, with
-//! the fire/suppress policy left to the host (`run_notify_check`, a 15s tick — which is
-//! why these are edge- rather than level-triggered).
+//! host notifies once per event, not every tick. Pure state diffing, with the
+//! fire/suppress policy left to the host (`run_notify_check`, a 15s tick).
 //!
 //! - [`MeetingStartWatch`] — the countdown reaching zero, only for a meeting it saw
 //!   *before* it started, so one underway at launch never fires "starting now".
@@ -17,41 +16,30 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{CalEvent, CollectRun, PrItem};
 
-/// The `review_state` value the PRs collector writes when your review has been
-/// requested (see `tt_collect::prs`).
+/// The `review_state` the PRs collector writes for your requested review.
 const REVIEW_REQUESTED: &str = "review_requested";
 
-/// The `checks` value the PRs collector writes when at least one CI check has a
-/// failing conclusion (see `tt_collect::prs::checks_status`).
+/// The `checks` value written when at least one CI check has a failing conclusion.
 const CHECKS_FAILING: &str = "failing";
 
 /// The next meeting just started — its countdown reached zero.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MeetingStartEdge {
-    /// Provider event id (stable across collector refreshes).
     pub external_id: String,
-    /// Meeting title, for the notification body.
     pub title: String,
-    /// The start instant that just arrived (epoch ms).
     pub start_ts: i64,
 }
 
 /// Watches the single current-or-next meeting and yields a [`MeetingStartEdge`]
 /// the first tick its start time has arrived — but only for a meeting first
-/// observed while still in the future. A meeting seen already-started (app
-/// launched mid-meeting, or the collector delivered one already underway) is
-/// never fired: its countdown never "reached zero" on our watch.
+/// observed while still in the future, so one already underway at launch never
+/// fires: its countdown never "reached zero" on our watch.
 #[derive(Debug, Default)]
 pub struct MeetingStartWatch {
-    /// The meeting currently being tracked, as `(source, external_id)`.
-    ///
-    /// Both halves, because `external_id` alone stopped identifying a meeting
-    /// in schema v9: uniqueness is now `UNIQUE(source, external_id)`, and two
-    /// calendars legitimately carry the same id for the same invite (a work
-    /// meeting mirrored to a personal calendar keeps its iCalUID). Keyed on the
-    /// id alone, a swap from one calendar's row to another's looks like the
-    /// same meeting, so the tracking state is never reset and the second
-    /// meeting's start notification is silently swallowed.
+    /// The meeting being tracked, as `(source, external_id)`. Both halves: two
+    /// calendars legitimately carry the same id for one invite (a mirrored
+    /// meeting keeps its iCalUID), so keyed on the id alone a swap between them
+    /// looks like the same meeting and the second start is swallowed.
     watching: Option<(String, String)>,
     /// Whether `watching` was seen while still in the future (start_ts > now).
     seen_before_start: bool,
@@ -64,15 +52,12 @@ impl MeetingStartWatch {
         Self::default()
     }
 
-    /// Observe the current-or-next meeting (as resolved by
-    /// [`crate::Store::current_or_next_event`]) at `now_ms`. Returns the start
-    /// edge on the tick the meeting crosses into "started", at most once per
-    /// meeting.
+    /// Observe the current-or-next meeting at `now_ms`, returning the start edge
+    /// on the tick it crosses into "started", at most once per meeting.
     pub fn observe(&mut self, now_ms: i64, next: Option<&CalEvent>) -> Option<MeetingStartEdge> {
         let ev = next?;
 
-        // A different meeting than last tick (the previous one ended, or the
-        // collector swapped in a new soonest): start tracking it fresh.
+        // A different meeting than last tick: start tracking it fresh.
         let key = (ev.source.clone(), ev.external_id.clone());
         if self.watching.as_ref() != Some(&key) {
             self.watching = Some(key);
@@ -104,8 +89,7 @@ pub struct ReviewRequestedEdge {
 
 /// Tracks which PRs sit in the review-requested set across snapshots and yields
 /// the ones that just entered it. A PR that stays requested never repeats; one
-/// that leaves and re-enters fires again. The first observation only primes the
-/// baseline, so PRs already awaiting your review at launch don't spam.
+/// that leaves and re-enters fires again.
 #[derive(Debug, Default)]
 pub struct ReviewRequestedWatch {
     /// `repo#number` keys that were review-requested in the previous snapshot.
@@ -119,8 +103,7 @@ impl ReviewRequestedWatch {
         Self::default()
     }
 
-    /// Diff `prs` against the previous snapshot and return the PRs that newly
-    /// need your review. Updates the baseline as a side effect.
+    /// The PRs that newly need your review. Updates the baseline as a side effect.
     pub fn observe(&mut self, prs: &[PrItem]) -> Vec<ReviewRequestedEdge> {
         let mut edges = Vec::new();
         let mut current = HashSet::with_capacity(self.prev.len());
@@ -159,10 +142,8 @@ pub struct ChecksFailedEdge {
 
 /// Tracks which of *your* authored PRs are in the failing-checks state across
 /// snapshots and yields the ones that just flipped into it. A PR that stays red
-/// never repeats; one that recovers (checks leave failing) and breaks again
-/// fires a second time. The first observation only primes the baseline, so a PR
-/// already red at launch doesn't spam. Review-requested PRs are excluded: those
-/// are someone else's work you're reviewing, covered by [`ReviewRequestedWatch`].
+/// never repeats; one that recovers and breaks again fires a second time.
+/// Review-requested PRs belong to [`ReviewRequestedWatch`] instead.
 #[derive(Debug, Default)]
 pub struct ChecksFailedWatch {
     /// `repo#number` keys that had failing checks in the previous snapshot.
@@ -176,15 +157,13 @@ impl ChecksFailedWatch {
         Self::default()
     }
 
-    /// Diff `prs` against the previous snapshot and return your PRs whose checks
-    /// newly went failing. Updates the baseline as a side effect.
+    /// Your PRs whose checks newly went failing. Updates the baseline as a side effect.
     pub fn observe(&mut self, prs: &[PrItem]) -> Vec<ChecksFailedEdge> {
         let mut edges = Vec::new();
         let mut current = HashSet::with_capacity(self.prev.len());
 
         for pr in prs {
-            // Only your authored PRs: a review-requested row is someone else's
-            // PR awaiting your review, not CI you're responsible for.
+            // Only your authored PRs: a review-requested row isn't your CI to fix.
             if pr.review_state == REVIEW_REQUESTED || pr.checks != CHECKS_FAILING {
                 continue;
             }
@@ -212,58 +191,47 @@ impl ChecksFailedWatch {
 /// a persistently broken collector (expired auth, revoked token) will.
 pub const FAIL_STREAK: u32 = 3;
 
-/// A collector whose freshness the host wants watched, and how long its last
-/// healthy run may age before it counts as stale. The host builds one per
-/// *enabled* collector (disabled ones are simply omitted, so they never fire)
-/// and derives `stale_after_ms` from that collector's refresh cadence.
+/// A collector whose freshness the host wants watched. The host builds one per
+/// *enabled* collector (disabled ones are omitted, so they never fire) and
+/// derives `stale_after_ms` from that collector's refresh cadence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatchedCollector {
     /// The `record_run` key (`prs`, `issues`, `claude:calendar`, `slack:dm`).
     pub key: String,
-    /// Age of the last successful run beyond which the collector is stale (ms).
     pub stale_after_ms: i64,
 }
 
 /// One collector that just crossed from healthy to stale.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaleCollectorEdge {
-    /// The collector key that went stale.
     pub key: String,
-    /// How long since its last healthy run (ms). For a collector that has only
-    /// ever failed on our watch, this is the age of its latest run.
+    /// Time since its last healthy run (ms) — or, for a collector that only ever
+    /// failed on our watch, the age of its latest run.
     pub stale_for_ms: i64,
-    /// The failing run's message, when the stale state is a failure streak
-    /// rather than pure staleness (e.g. the `gh`/Slack error).
+    /// The failing run's message, when the stale state is a failure streak.
     pub last_message: Option<String>,
 }
 
 /// Per-collector edge state carried across observations.
 #[derive(Debug, Default)]
 struct CollectorState {
-    /// `ran_at` of the last run row we folded in, to detect a *new* run (rows
-    /// are upserted, so `ran_at` changing is the only new-run signal).
+    /// Rows are upserted, so a changed `ran_at` is the only new-run signal.
     last_seen_ran_at: Option<i64>,
-    /// `ran_at` of the most recent `ok == true` run we observed — the freshness
-    /// baseline the age threshold is measured against.
+    /// The freshness baseline the age threshold is measured against.
     last_ok_at: Option<i64>,
     /// Consecutive failing runs observed (reset by any healthy run).
     fail_streak: u32,
-    /// Whether the collector was stale as of the previous observation, for edge
-    /// detection.
     prev_stale: bool,
-    /// False until the first observation has primed the baseline, so a collector
-    /// already stale at launch doesn't fire until it recovers and breaks again.
+    /// False until primed, so a collector already stale at launch stays quiet
+    /// until it recovers and breaks again.
     primed: bool,
 }
 
-/// Tracks each watched collector's run history across snapshots and yields an
-/// edge the tick a collector crosses healthy → stale. Stale means either its
-/// last successful run has aged past `stale_after_ms`, or it has failed for
-/// [`FAIL_STREAK`] consecutive runs. Edge-triggered per collector: a collector
-/// that stays stale never repeats, and recovery (a fresh healthy run) clears the
-/// state so a later break fires again. Collectors absent from the watched list
-/// (disabled in settings) are dropped, so they never fire and re-enabling
-/// re-primes from a clean baseline.
+/// Tracks each watched collector's run history and yields an edge the tick one
+/// crosses healthy → stale — its last success aged past `stale_after_ms`, or
+/// [`FAIL_STREAK`] consecutive failures. Recovery clears the state so a later
+/// break fires again. Collectors absent from the watched list (disabled in
+/// settings) are dropped, so re-enabling re-primes from a clean baseline.
 #[derive(Debug, Default)]
 pub struct StaleCollectorWatch {
     by_key: HashMap<String, CollectorState>,
@@ -275,9 +243,7 @@ impl StaleCollectorWatch {
     }
 
     /// Fold in the current run rows and return collectors that newly went stale.
-    /// `watched` names the collectors to consider (one per enabled collector)
-    /// and their per-collector thresholds; `runs` is the full `collect_runs`
-    /// table. Updates the baseline as a side effect.
+    /// `runs` is the full `collect_runs` table. Updates the baseline as a side effect.
     pub fn observe(
         &mut self,
         now_ms: i64,
@@ -291,15 +257,13 @@ impl StaleCollectorWatch {
 
         let mut edges = Vec::new();
         for w in watched {
-            // No run row yet: nothing has executed, so there's nothing to call
-            // stale (and no baseline to age against). Leave it unprimed.
+            // No run row yet: nothing to call stale, no baseline to age against.
             let Some(run) = runs.iter().find(|r| r.collector == w.key) else {
                 continue;
             };
             let state = self.by_key.entry(w.key.clone()).or_default();
 
-            // Fold a *new* run (upserts mean a changed `ran_at` is the signal)
-            // into the freshness baseline and failure streak.
+            // Upserts mean a changed `ran_at` is the only new-run signal.
             if state.last_seen_ran_at != Some(run.ran_at) {
                 state.last_seen_ran_at = Some(run.ran_at);
                 if run.ok {
@@ -311,8 +275,8 @@ impl StaleCollectorWatch {
             }
 
             let by_failure = state.fail_streak >= FAIL_STREAK;
-            // Age the last healthy run; with no observed success, only the
-            // failure path can fire (we have no freshness baseline).
+            // With no observed success there is no baseline, so only the
+            // failure path can fire.
             let by_age = state.last_ok_at.is_some_and(|ok_at| now_ms - ok_at > w.stale_after_ms);
             let stale = by_failure || by_age;
 

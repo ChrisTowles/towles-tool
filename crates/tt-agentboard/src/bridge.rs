@@ -45,17 +45,12 @@ pub struct StatePayload {
 }
 
 /// Assemble the [`StatePayload`] from the current inputs. Pure. Maps each repo entry to
-/// a [`FolderData`] (git stats, persisted sessions, attributed agents, `needs`), then
-/// groups [`RepoData`] rows by [`GitInfo::common_dir`] in one pass over `entries` — see
-/// the module docs for the grouping rule.
+/// a [`FolderData`], then groups [`RepoData`] rows by [`GitInfo::common_dir`] — see the
+/// module docs for the grouping rule.
 ///
-/// `attribute` maps an agent event to the PTY session id it was detected in
-/// (via `TT_SESSION_ID`); an id that matches none of the folder's records drops
-/// the event (it lives in another instance's session). Return `None` — no
-/// attribution machinery for this event — to fall back to the folder's default
-/// session. `session_agents` (keyed by session id) supplements the tracker with
-/// app-spawned agents the CLI snapshot missed — used only for sessions that end
-/// up with no tracker-attributed state.
+/// `attribute` maps an agent event to the PTY session id it was detected in; an id
+/// matching none of the folder's records drops the event, and `None` falls back to the
+/// folder's default session. `session_agents` supplements the tracker where it is empty.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_state(
     entries: &[RepoEntry],
@@ -91,14 +86,11 @@ pub fn assemble_state(
         let needs = folder.needs;
 
         let group_key = (!git.common_dir.is_empty()).then(|| git.common_dir.clone());
-        // `common_dir` is the structural git fact every linked worktree of a
-        // repo reports identically — but git can only report it for a directory
-        // that is *there*, and a task's row exists before its worktree does.
-        // Falling back to the row's `repo_root` is what keeps a creating (or
-        // detached) task under its own repo instead of stranding it as its own
-        // top-level row, flicking into place a poll later when the directory
-        // appears. Safe as a lookup because `rail_rows` emits each checkout
-        // ahead of the rows bound to it, so the parent is always already placed.
+        // `common_dir` is the structural git fact every linked worktree reports
+        // identically — but git needs the directory to *be* there, and a task's
+        // row exists before its worktree does. Falling back to `repo_root` keeps
+        // a creating task under its own repo instead of stranding it top-level.
+        // Safe because `rail_rows` emits each checkout ahead of its bound rows.
         let existing = group_key
             .as_ref()
             .and_then(|k| group_index.get(k).copied())
@@ -118,17 +110,12 @@ pub fn assemble_state(
                 if !leads {
                     repos[i].folders.push(folder);
                 } else {
-                    // The primary checkout leads its group regardless of
-                    // when it's seen (name-sort order doesn't guarantee it
-                    // arrives first) — and re-anchors the row's identity
-                    // (`key`, and `name`/`origin_url` when no worktree
-                    // already supplied them) to itself. Without this, a
-                    // worktree that merely sorted alphabetically ahead
-                    // of the primary (a branch-slug folder name can fall
-                    // anywhere in the alphabet) would leave the row keyed to
-                    // a folder that a later poll can rename or remove out
-                    // from under it — destabilizing rail position and
-                    // collapse-state persistence (both keyed on `repo.key`).
+                    // The primary checkout leads its group whenever it is
+                    // seen, re-anchoring the row's identity to itself.
+                    // Otherwise a worktree that merely sorted first would
+                    // key the row to a folder a later poll can rename or
+                    // remove, destabilizing rail position and collapse-state
+                    // persistence (both keyed on `repo.key`).
                     repos[i].key = format!("path:{}", entry.dir);
                     repos[i].dir = entry.dir.clone();
                     if repos[i].origin_url.is_none() {
@@ -183,14 +170,11 @@ fn build_folder(
     let folder_agents = tracker.get_agents(&entry.name);
     let default_id = records.first().map(|r| r.id.clone());
 
-    // Bucket each agent onto the session it ran in. A positively attributed
-    // agent renders only on that exact record: an id that isn't one of this
-    // folder's records means the agent runs in some *other* app instance's
-    // session (sessions.json is shared across windows/tasks), and dropping it
-    // beats pinning someone else's agent — name, cache chip and all — onto an
-    // unrelated pane. Only agents with no attribution machinery at all (kinds
-    // without a pid→TT_SESSION_ID path, non-Linux hosts) fall back to the
-    // folder's default (first) session.
+    // Bucket each agent onto the session it ran in. An id that isn't one of
+    // this folder's records means the agent runs in another app instance's
+    // session (sessions.json is shared), and dropping it beats pinning
+    // someone else's agent onto an unrelated pane. Only agents with no
+    // attribution machinery at all fall back to the default session.
     let mut by_session: HashMap<String, Vec<AgentEvent>> = HashMap::new();
     for agent in folder_agents {
         let sid = match attribute(&agent) {
@@ -281,16 +265,13 @@ fn build_folder(
     }
 }
 
-/// Whether a session "needs you". A session only counts if a shell actually
-/// exists for it (`live`) — otherwise a stale agent status would make the
-/// header cry wolf about a shell that's gone. Given a real shell, it needs
-/// you when its agent is blocked (`Waiting`) or broke (`Error`), or when its
-/// turn just ended (`Complete` / `Interrupted`) and the user hasn't looked
-/// yet (`unseen`, cleared by `ab_mark_seen` when the row is selected).
+/// Whether a session "needs you". Only a session with a shell (`live`) counts,
+/// or a stale agent status would cry wolf about a shell that's gone. Given one,
+/// it needs you when its agent is blocked or broke, or when its turn just ended
+/// and the user hasn't looked yet (`unseen`, cleared by `ab_mark_seen`).
 ///
-/// Note: `live` is stamped app-side (see `recompute_needs`), so at engine
-/// assemble time (always false) this is always `false` — assemble-time
-/// `needs` is a placeholder the app overwrites.
+/// `live` is stamped app-side, so at engine assemble time this is always
+/// `false` — assemble-time `needs` is a placeholder the app overwrites.
 pub fn session_needs(s: &SessionData) -> bool {
     needs_reason(s).is_some()
 }
@@ -312,14 +293,11 @@ pub fn needs_reason(s: &SessionData) -> Option<NeedsYouReason> {
     }
 }
 
-/// Remembers when each session FIRST entered "needs you", so a re-stamp of the
-/// payload doesn't reset the clock on a block that's been waiting a while — the
-/// attention feed needs a stable age to order oldest-first. Preserved across
-/// recomputes while a session keeps needing you, dropped the moment it stops
-/// (so a later re-entry re-stamps a fresh time) or vanishes.
-///
-/// Held app-side and threaded into [`recompute_needs`]; the epoch-ms clock is
-/// passed in (never read here) so the library stays Tauri-free and testable.
+/// Remembers when each session FIRST entered "needs you", so re-stamping the
+/// payload doesn't reset the clock on a long-waiting block — the attention feed
+/// orders oldest-first. Dropped the moment a session stops needing you, so a
+/// later re-entry stamps fresh. Held app-side and threaded into
+/// [`recompute_needs`]; the epoch-ms clock is passed in, never read here.
 #[derive(Debug, Default)]
 pub struct NeedsSince {
     stamps: HashMap<String, i64>,
@@ -336,17 +314,12 @@ impl NeedsSince {
     }
 }
 
-/// Recompute every folder's and repo's `needs` from its sessions with
-/// [`session_needs`], and stamp each session's `needs_since_ms`. The engine
-/// assembles `needs` before the app has stamped `live` (so every count is a 0
-/// placeholder); the app calls this after stamping so every payload it emits
-/// carries truthful counts.
+/// Recompute every folder's and repo's `needs` with [`session_needs`], and
+/// stamp each session's `needs_since_ms`. The engine assembles `needs` before
+/// `live` is stamped, so the app calls this afterwards for truthful counts.
 ///
-/// `since` carries the first-entered timestamp forward: a session that already
-/// needed you keeps its original `needs_since_ms` (so its waiting-age only
-/// grows), a newly-needing session is stamped `now_ms`, and one that stopped
-/// needing (or vanished) is forgotten — a later re-entry re-stamps fresh.
-/// `now_ms` is injected (no clock read here).
+/// `since` carries the first-entered timestamp forward, so a waiting-age only
+/// grows; a session that stops needing you is forgotten and re-stamps fresh.
 pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_ms: i64) {
     let mut next: HashMap<String, i64> = HashMap::new();
     for repo in &mut payload.repos {
@@ -781,14 +754,11 @@ mod tests {
 
     #[test]
     fn worktree_siblings_row_key_and_name_anchor_to_primary_not_alpha_sort() {
-        // Regression test: a repo with several worktrees (branch-slug
-        // folder names can fall anywhere in the alphabet) must not have its
-        // row's `key`/`name` decided by whichever task happens to sort first
-        // — that made the row's rail position and its collapse-state
-        // persistence (both keyed on `repo.key`) shuffle every time a task
-        // with an earlier-sorting name was created or removed. No origin URL
-        // here, so `name` also has to come from the primary's own entry, not
-        // whichever task seeded the row.
+        // Regression: a row's `key`/`name` must not be decided by whichever
+        // task sorts first, which shuffled rail position and collapse-state
+        // persistence (both keyed on `repo.key`) whenever an earlier-sorting
+        // task appeared. No origin URL here, so `name` must also come from
+        // the primary's own entry rather than whichever task seeded the row.
         let tracker = AgentTracker::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/towles-tool", 1);

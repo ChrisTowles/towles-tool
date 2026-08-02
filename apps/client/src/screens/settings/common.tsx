@@ -17,19 +17,14 @@ import { slackListUsers, type SlackUser } from "@/lib/slack";
 import type { UserSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
-/** `defer` debounces the write — see `useUserSettings`. Set it for anything the
- * user types into; leave it off for toggles, selects, and one-click choices. */
+/** Set `defer` for anything the user types into, not for one-click choices. */
 export type Update = (fn: (prev: UserSettings) => UserSettings, opts?: { defer?: boolean }) => void;
 
-/** Commits a pending deferred write immediately — wired to the blur of every
- * input that defers, so tabbing out of a field saves it. */
+/** Wired to the blur of every deferring input, so tabbing out of a field saves. */
 export type Flush = () => Promise<void>;
 
-/**
- * One filterable row: `label` + `keywords` feed the filter predicate; `node` is
- * the rendered control. Keywords carry synonyms and the section name so a row
- * like "Enabled" is still discoverable by typing "slack".
- */
+// Keywords carry synonyms and the section name, so a row labeled "Enabled" is
+// still discoverable by typing "slack".
 export type FilterRow = {
   label: string;
   keywords?: string[];
@@ -43,9 +38,7 @@ export type FilterSection = {
   rows: FilterRow[];
 };
 
-/** Toggle/select row: label + description on the left, control on the right.
- * `extra` renders between the description and `children` (e.g. a freshness
- * badge ahead of a collector's enable switch). */
+/** `extra` renders between the description and `children`. */
 export function SettingRow({
   label,
   description,
@@ -71,8 +64,6 @@ export function SettingRow({
   );
 }
 
-/** Tab heading: title + note on the left, an optional action (e.g. a
- * "Refresh now" button) top-right. */
 export function TabHeading({
   title,
   note,
@@ -259,12 +250,8 @@ export function WeekdayChips({
   );
 }
 
-/**
- * Pick the watched user from the workspace directory (users.list) so a name is
- * chosen instead of pasting a member id. Loads members lazily; when the token is
- * empty/invalid, the fetch fails, or outside the Tauri shell, it degrades to a
- * plain member-id text input.
- */
+// Picks the watched user from the workspace directory so a name is chosen
+// instead of a pasted member id. Degrades to a plain member-id input.
 export function SlackUserPicker({
   userId,
   userName,
@@ -276,7 +263,6 @@ export function SlackUserPicker({
   userName: string;
   onPick: (user: SlackUser) => void;
   onIdChange: (id: string) => void;
-  /** Commits the debounced write behind the typed-member-id fallback below. */
   onIdCommit?: () => void;
 }) {
   const [users, setUsers] = useState<SlackUser[] | null>(null);
@@ -294,8 +280,7 @@ export function SlackUserPicker({
     };
   }, []);
 
-  // No usable directory (browser dev, empty/invalid token, load error, or an
-  // empty workspace): fall back to a plain member-id input.
+  // No usable directory (browser dev, bad token, load error, empty workspace).
   if (failed || (users !== null && users.length === 0)) {
     return (
       <Input
@@ -379,12 +364,8 @@ export function NoMatches({ query }: { query: string }) {
   );
 }
 
-/**
- * Render a tab's sections, filtered by `query`. Rows that don't match are
- * dropped; a section with no remaining rows drops its heading too; if nothing
- * survives, the empty state renders instead. An empty query shows everything
- * (plus the optional `prelude`, which is a filtering-irrelevant note).
- */
+// A section with no surviving rows drops its heading too, and nothing left
+// renders the empty state. `prelude` is a note the filter never applies to.
 export function FilteredContent({
   query,
   sections,

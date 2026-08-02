@@ -38,16 +38,8 @@ function UnresolvedImage({ alt, src }: { alt?: string; src?: string }) {
   );
 }
 
-/**
- * An image in the preview, from either Markdown syntax or raw HTML — both
- * arrive here, which is what keeps `<p align="center"><img>` resolving the
- * same way `![](…)` does.
- *
- * Repo-relative sources become `ttasset` URLs (see `lib/markdown-assets.ts`);
- * remote ones are used as written. Lazy and async-decoded because a README's
- * images are mostly below the fold and some of them are multi-megabyte
- * recordings.
- */
+/** An image from Markdown syntax or raw HTML — both land here, which is what
+ * keeps `<p align="center"><img>` resolving the same way `![](…)` does. */
 function MarkdownImage({
   dir,
   mdPath,
@@ -71,7 +63,6 @@ function MarkdownImage({
         ? assetUrl(dir, target.path)
         : null;
   if (url === null) return <UnresolvedImage alt={alt} src={src} />;
-  // The lightbox caption: what the author called it, else where it came from.
   const name = alt?.trim() || (target.kind === "repo" ? target.path : url);
   return (
     <img
@@ -82,10 +73,7 @@ function MarkdownImage({
       decoding="async"
       className="max-w-full cursor-zoom-in rounded border border-border"
       onClick={(e) => {
-        // A linked image (the badge-linking-to-CI shape) belongs to its link,
-        // the way it does on GitHub — let the click bubble to the anchor
-        // instead of zooming. `closest` answers this at click time, which is
-        // the only point where the surrounding markup is known.
+        // A linked image belongs to its link, as on GitHub — let it bubble.
         if (e.currentTarget.closest("a")) return;
         onZoom({ id: url, name, previewUrl: url });
         uiAction("preview.zoom_image", "agentboard");
@@ -94,11 +82,8 @@ function MarkdownImage({
   );
 }
 
-/**
- * A link in the preview. Every kind needs handling — see
- * `lib/markdown-links.ts` for why the browser's own behavior is wrong for all
- * three (an external href navigates the entire app away from itself).
- */
+/** A link in the preview. Every kind needs handling — `lib/markdown-links.ts`
+ * says why the browser's own behavior is wrong for all three. */
 function MarkdownAnchor({
   mdPath,
   href,
@@ -128,9 +113,7 @@ function MarkdownAnchor({
           onOpenPath?.(link.path);
           uiAction("preview.open_link", "agentboard", "repo");
         } else if (link.kind === "anchor") {
-          // Scoped to this preview's own container: heading ids are not
-          // unique across the app, and `document.getElementById` would happily
-          // scroll some other pane.
+          // Scoped to this preview's container: heading ids aren't app-unique.
           containerRef.current
             ?.querySelector(`#${CSS.escape(link.hash)}`)
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -154,15 +137,8 @@ function hastText(node: Element | undefined): string {
   return out;
 }
 
-/**
- * Headings, carrying the anchor id their own document's links expect.
- *
- * Ids are not deduplicated: GitHub appends `-1` to a repeat, and matching that
- * would mean threading a counter through a per-heading component. Two
- * identical headings in one file means the second is unreachable by link,
- * which is a rare and visible-on-use limitation rather than a silent wrong
- * answer.
- */
+/** Headings, carrying the anchor id their document's links expect. Ids are not
+ * deduplicated, so a repeated heading's second copy is unreachable by link. */
 function headingComponent(level: 1 | 2 | 3 | 4 | 5 | 6) {
   const Tag = `h${level}` as const;
   return function Heading({ node, children }: { node?: Element; children?: React.ReactNode }) {
@@ -199,17 +175,10 @@ const ALERT_STYLES: Record<AlertKind, { label: string; accent: string; Icon: Luc
   },
 };
 
-/**
- * A blockquote, or — when `remarkAlerts` marked it — a GitHub-style callout
- * with the kind's icon and label above the body.
- *
- * The attribute is read rather than a separate node type so an ordinary
- * blockquote keeps taking exactly the same path it always did.
- */
+/** A blockquote, or — when `remarkAlerts` marked it — a GitHub-style callout.
+ * Read as an attribute, so an ordinary blockquote takes the path it always did. */
 const MarkdownBlockquote: Components["blockquote"] = ({ children, ...props }) => {
-  // `data-alert` is ours, set on the hast node by `remarkAlerts` and passed
-  // through by rehype — react-markdown's element props are typed from the DOM,
-  // which knows nothing about it.
+  // `data-alert` is ours; react-markdown's props are typed from the DOM.
   const kind = (props as Record<string, unknown>)[ALERT_ATTRIBUTE];
   const style = typeof kind === "string" ? ALERT_STYLES[kind as AlertKind] : undefined;
   if (!style) return <blockquote>{children}</blockquote>;
@@ -224,15 +193,8 @@ const MarkdownBlockquote: Components["blockquote"] = ({ children, ...props }) =>
   );
 };
 
-/**
- * A file the pane renders directly instead of opening in the editor — an
- * image, a video, or a format it can only name.
- *
- * The bytes come from the same `ttasset` protocol the Markdown preview's
- * inline images use, so this needed no new transport: an image file *is* a
- * repo-relative path in a registered checkout, which is exactly what the
- * protocol serves.
- */
+/** A file the pane renders directly instead of opening in the editor. The bytes
+ * come from the same `ttasset` protocol the Markdown preview's images use. */
 function MediaFile({
   dir,
   path,
@@ -273,9 +235,7 @@ function MediaFile({
       <img
         src={url}
         alt={name}
-        // A checkerboard, so a transparent PNG reads as transparent rather
-        // than as whatever the theme's background happens to be — the
-        // difference matters when the file is an icon or a UI asset.
+        // A checkerboard, so a transparent PNG reads as transparent.
         style={{
           backgroundImage:
             "repeating-conic-gradient(oklch(0.5 0 0 / 0.18) 0% 25%, transparent 0% 50%)",
@@ -291,26 +251,8 @@ function MediaFile({
   );
 }
 
-/**
- * Plugins, fixed for the lifetime of the module — rebuilding these arrays per
- * render makes react-markdown reprocess the whole document on every state
- * change, including opening the lightbox.
- *
- * `rehypeRaw` must precede `rehypeSanitize`, and neither is optional: raw
- * parses the HTML a README embeds, sanitize decides what survives it (see
- * `lib/markdown-sanitize.ts` — `csp: null` means unsanitized raw HTML would
- * run script in the app's origin).
- */
-/**
- * The element overrides for one document.
- *
- * A module-level factory rather than an object literal built inside
- * `FilePreview`: half of these close over which file the relative paths in it
- * are relative to, so they can't be plain constants — but defining components
- * during a render is what makes React remount their whole subtree on every
- * state change, and the call site memoizes this on exactly the values it
- * closes over.
- */
+/** A module-level factory, not an object literal built inside `FilePreview`:
+ * defining components during a render remounts their whole subtree. */
 function markdownComponents({
   dir,
   path,
@@ -342,8 +284,7 @@ function markdownComponents({
         {children}
       </MarkdownAnchor>
     ),
-    // A wide table otherwise widens the whole pane and pushes the prose off
-    // screen; scrolling belongs to the table, not the document.
+    // Scrolling belongs to the table, not the document.
     table: ({ children }) => (
       <div className="max-w-full overflow-x-auto">
         <table>{children}</table>
@@ -358,25 +299,16 @@ function markdownComponents({
   };
 }
 
+// Fixed for the module's lifetime — a fresh array reprocesses the document per
+// render. `rehypeRaw` must precede `rehypeSanitize`, which decides what runs.
 const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm, remarkAlerts];
 const REHYPE_PLUGINS: Options["rehypePlugins"] = [
   rehypeRaw,
   [rehypeSanitize, previewSanitizeSchema],
 ];
 
-/**
- * Read-only render of a Markdown or HTML file's current-on-disk content —
- * the split pane's right side. HTML renders in a script-less sandboxed
- * iframe so a previewed file can never run script in the app's origin.
- *
- * Markdown gets the fuller treatment: images and GIFs resolve against the
- * checkout, links do what their kind implies rather than navigating the app
- * away, GitHub alerts render as callouts, and headings carry the anchor ids
- * their document's own links expect. `onOpenPath` is how a relative link to
- * another file gets there — without it such links render as plain text, since
- * a link that silently does nothing is worse than one that doesn't look like
- * a link.
- */
+/** Read-only render of a Markdown or HTML file. HTML gets a script-less
+ * sandboxed iframe; without `onOpenPath`, repo links render as plain text. */
 export function FilePreview({
   dir,
   path,
@@ -391,17 +323,12 @@ export function FilePreview({
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState<LightboxImage | null>(null);
-  // Whether this checkout is registered with the asset protocol yet. Only
-  // media uses it; see the effect below for why it gates the first render.
+  // Whether the checkout is registered with the asset protocol. Media only.
   const [mediaReady, setMediaReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // One effect: initial read, plus re-reads when the file changes on disk
-  // (an agent edit). The preview registers its own watch — refcounted in
-  // Rust, so sharing a file with the sibling CodeViewer costs nothing, and
-  // the preview keeps refreshing even without one. On a refresh the old
-  // content stays up until the new read lands, so it never flashes
-  // "Loading…"; only the initial read surfaces an error state.
+  // Initial read plus re-reads on disk change. A refresh keeps the old content
+  // up until the new read lands, so it never flashes "Loading…".
   useEffect(() => {
     let disposed = false;
     setContent(null);
@@ -419,14 +346,8 @@ export function FilePreview({
         });
       });
     };
-    // A media file has no text to read and `ide_read_file` would refuse it
-    // anyway — it renders straight from the asset protocol, so registering the
-    // checkout is the whole of its setup.
-    //
-    // Rendering has to *wait* on that, though, exactly as the Markdown branch
-    // does: the protocol serves nothing from an unregistered folder, and an
-    // `<img>` that fires first takes a 403 it will never retry — a broken
-    // image for as long as the file is open.
+    // Media renders straight from the asset protocol, but must *wait* on the
+    // registration: an `<img>` that fires first takes a 403 it never retries.
     if (!opensInEditor(kind)) {
       void allowAssetDir(dir).then(() => {
         if (!disposed) setMediaReady(true);
@@ -436,11 +357,8 @@ export function FilePreview({
       };
     }
     if (kind === "markdown") {
-      // Ordered, not raced: the asset protocol refuses a folder it hasn't been
-      // told about, and the `<img>` tags this document renders start fetching
-      // the moment the content lands. Its failure needs no handling — in
-      // browser dev the read below fails the same way, and in the shell a
-      // refused folder shows up as unresolved images.
+      // Ordered, not raced: the protocol refuses an unregistered folder, and the
+      // `<img>` tags start fetching the moment the content lands.
       void allowAssetDir(dir).then(() => {
         if (!disposed) read(true);
       });
@@ -456,16 +374,13 @@ export function FilePreview({
     };
   }, [dir, path, kind]);
 
-  // Memoized on exactly what the overrides close over — a fresh object here
-  // remounts the whole rendered document on every state change, the lightbox
-  // opening included.
+  // A fresh object here remounts the whole document on every state change.
   const components = useMemo(
     () => markdownComponents({ dir, path, containerRef, onOpenPath, onZoom: setZoomed }),
     [dir, path, onOpenPath],
   );
 
-  // Before the loading/error gates below, which are about text this file
-  // doesn't have.
+  // Before the loading/error gates, which are about text this file lacks.
   if (kind === "image" || kind === "video" || kind === "binary") {
     if (!mediaReady) return <p className="p-3 text-sm text-muted-foreground">Loading…</p>;
     return (

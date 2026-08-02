@@ -1,10 +1,6 @@
-/**
- * Frontend half of the Claude Code IDE bridge (see docs/CLAUDE-CODE-IDE.md):
- * every embedded terminal hosts an IDE server in Rust; selecting lines in a
- * folder's file viewer or diff pane routes to the `claude` running in that
- * folder's terminal as selection context. This module wraps the `ide_*`
- * commands and the `ide://status` connect/disconnect event.
- */
+/** Frontend half of the Claude Code IDE bridge (docs/CLAUDE-CODE-IDE.md): every
+ * embedded terminal hosts an IDE server in Rust, and a selection in a folder's
+ * viewer routes to the `claude` running in that folder's terminal. */
 
 import { useEffect, useMemo, useState } from "react";
 import type { Result } from "better-result";
@@ -13,7 +9,6 @@ import { invoke, isTauri } from "@/lib/tauri";
 import { errorMessage, type IpcError } from "@/lib/errors";
 import { formatMentionRef, type MentionRange, type StreamRange } from "@/lib/ide-selection";
 
-/** One terminal's IDE pairing state (mirrors `IdeStatus` in ide.rs). */
 export type IdeStatus = {
   termId: string;
   dir: string;
@@ -23,10 +18,6 @@ export type IdeStatus = {
 
 const STATUS_EVENT = "ide://status";
 
-/**
- * Whether any Claude Code CLI is currently connected to a terminal rooted at
- * `dir`. Seeds from `ide_status`, then tracks `ide://status` edges.
- */
 export function useIdeConnected(dir: string | undefined): boolean {
   const [statuses, setStatuses] = useState<Record<string, IdeStatus>>({});
 
@@ -57,31 +48,20 @@ export function useIdeConnected(dir: string | undefined): boolean {
   );
 }
 
-/**
- * Push a highlight (1-based inclusive lines, 0-based character columns) as the
- * ambient selection of every Claude session rooted at `dir`. Safe to ignore the
- * result — this is ambient context, not an action the user is waiting on.
- *
- * `text` must come from the **model** (`getValueInRange`), not the file: these
- * buffers are editable, and the backend has no other way to know what the user
- * actually highlighted while a save is still pending (issue #309). Read it
- * synchronously with the selection, not inside the debounce — by then the model
- * may be disposed.
- */
+/** Lines are 1-based inclusive, columns 0-based. `text` must come from the
+ * **model** (`getValueInRange`), not the file — these buffers are editable and a
+ * save may still be pending (#309) — and must be read synchronously with the
+ * selection rather than inside the debounce, by when the model may be disposed. */
 export function ideSetSelection(
   dir: string,
   filePath: string,
   range: StreamRange,
   text: string,
 ): Promise<Result<void, IpcError>> {
-  // `range` crosses as one object (`StreamRange` in ide.rs mirrors it) rather
-  // than four flat args — the command's other three are already its budget.
   return invoke<void>("ide_set_selection", { dir, filePath, range, text });
 }
 
-/** Tell the folder's sessions which file the code viewer has open
- * (null = closed) and whether it has unsaved edits — surfaces in Claude's
- * getOpenEditors / checkDocumentDirty. */
+/** Surfaces in Claude's getOpenEditors / checkDocumentDirty; null = closed. */
 export function ideSetOpenFile(
   dir: string,
   filePath: string | null,
@@ -90,11 +70,8 @@ export function ideSetOpenFile(
   return invoke<void>("ide_set_open_file", { dir, filePath, dirty });
 }
 
-/** Flip one diff-pane file's unsaved-edit state — same
- * getOpenEditors/checkDocumentDirty surface as `ideSetOpenFile`, but additive
- * rather than replacing: unlike the Files tab's single viewer, several diff
- * pane files can be dirty at once, so this upserts (or, on `dirty: false`,
- * clears) just this one path instead of replacing the whole open-file. */
+/** Additive rather than replacing, unlike `ideSetOpenFile`: several diff-pane
+ * files can be dirty at once, so this upserts just this one path. */
 export function ideSetDiffDirty(
   dir: string,
   filePath: string,
@@ -103,27 +80,20 @@ export function ideSetDiffDirty(
   return invoke<void>("ide_set_diff_dirty", { dir, filePath, dirty });
 }
 
-/** A viewer file read: content + the mtime token the save path checks. */
 export type FileRead = { content: string; mtimeMs: number };
 
-/** Minimal stat (mirrors `FsStat` in ide.rs). An `Err` means the path does
- * not exist (or is unreadable) — which is exactly what the viewer's
- * deleted-on-disk detection needs to tell apart from a transient read
- * failure on a file that is still there. */
+/** An `Err` means the path does not exist — what deleted-on-disk detection needs. */
 export type FsStat = { isDir: boolean; size: number; mtimeMs: number };
 
 export function ideStat(dir: string, filePath: string): Promise<Result<FsStat, IpcError>> {
   return invoke<FsStat>("ide_stat", { dir, filePath });
 }
 
-/** Read a repo file for the code viewer (size-capped, text-only). Fails with a
- * readable message on binary/huge files, and with `NotInTauri` in browser dev. */
 export function ideReadFile(dir: string, filePath: string): Promise<Result<FileRead, IpcError>> {
   return invoke<FileRead>("ide_read_file", { dir, filePath });
 }
 
-/** Save the viewer's buffer (atomic; refuses when the file changed on disk
- * since `expectedMtimeMs`). Resolves the new mtime token. */
+/** Atomic; refuses when the file changed on disk since `expectedMtimeMs`. */
 export function ideWriteFile(
   dir: string,
   filePath: string,
@@ -135,31 +105,19 @@ export function ideWriteFile(
 
 const FILE_CHANGED_EVENT = "ide://file-changed";
 
-/** Payload of `ide://file-changed` — watched viewer files changed on disk
- * (an agent edit, a `git checkout`, any external writer). One event per
- * debounce batch, carrying every touched dir-relative path. */
 export type FilesChangedEvent = { dir: string; filePaths: string[] };
 
-/** Start watching open viewer files for on-disk changes; changes arrive as
- * `ide://file-changed` events (subscribe with `onFilesChangedOnDisk`). One
- * call for the whole list — a 50-file diff pane must not pay 50 IPC
- * round-trips. Pair with `ideUnwatchFiles` over the same list when the files
- * close. Failure just means no auto-refresh (browser dev, inotify limits) —
- * safe to fire-and-forget. */
+/** One call for the whole list — a 50-file diff pane must not pay 50 IPC
+ * round-trips. Pair with `ideUnwatchFiles` over the same list on close. */
 export function ideWatchFiles(dir: string, filePaths: string[]): Promise<Result<void, IpcError>> {
   return invoke<void>("ide_watch_files", { dir, filePaths });
 }
 
-/** Drop one reference each to a batch of viewer file watches. Unmatched
- * entries are a no-op. */
 export function ideUnwatchFiles(dir: string, filePaths: string[]): Promise<Result<void, IpcError>> {
   return invoke<void>("ide_unwatch_files", { dir, filePaths });
 }
 
-/** Subscribe to on-disk-change events for every watched file in `dir` — the
- * diff pane's shape, where one listener covers the whole change set. The
- * callback receives one changed dir-relative path per call (event batches
- * fan out here). Returns an unsubscribe; a no-op outside Tauri. */
+/** Returns an unsubscribe; a no-op outside Tauri. */
 export function onFilesChangedOnDisk(dir: string, cb: (filePath: string) => void): () => void {
   if (!isTauri()) return () => {};
   let disposed = false;
@@ -179,44 +137,26 @@ export function onFilesChangedOnDisk(dir: string, cb: (filePath: string) => void
   };
 }
 
-/** Subscribe to on-disk-change events for one watched file. Returns an
- * unsubscribe; a no-op outside Tauri. */
 export function onFileChangedOnDisk(dir: string, filePath: string, cb: () => void): () => void {
   return onFilesChangedOnDisk(dir, (changed) => {
     if (changed === filePath) cb();
   });
 }
 
-/** A Monaco model's minimal save-relevant surface — structural, not
- * `monaco-editor`'s `ITextModel`, so this lib module (IPC + IDE-bridge
- * concerns) doesn't need an editor dependency. */
+/** Structural, not `ITextModel`, so this module needs no editor dependency. */
 type SavableModel = { getValue(): string; getAlternativeVersionId(): number };
 
-/** A buffer's save-relevant surface, captured synchronously (see
- * `snapshotModel`) so a serialized save chain can write it later — after
- * earlier in-flight writes finished and the mtime token is fresh, possibly
- * after the model itself was disposed. */
+/** Captured synchronously so a serialized save chain can write it later, once
+ * earlier writes finished — possibly after the model itself was disposed. */
 export type BufferSnapshot = { value: string; versionAtSave: number };
 
 export function snapshotModel(model: SavableModel): BufferSnapshot {
   return { value: model.getValue(), versionAtSave: model.getAlternativeVersionId() };
 }
 
-/**
- * The save sequence every editable Monaco buffer in this app uses —
- * `CodeViewer` (one file) and the diff pane's editable modified side (N
- * files) both need the identical write/error/version-capture steps, just
- * different storage shape for the per-path mtime/version bookkeeping, so
- * that bookkeeping stays with the caller. Callers serialize saves per file
- * (snapshot at request time, write when the previous save finished) —
- * overlapping writes of the same file would race each other's mtime tokens
- * and get one of them refused. On success, returns the new mtime token plus
- * the snapshot's version — comparing that to the model's *current* version
- * afterward tells the caller whether more was typed since and the buffer is
- * therefore still dirty. On failure, toasts and returns `null`: a refused
- * save leaves the buffer dirty and the file untouched, the one failure here
- * the user must never have to infer.
- */
+/** Callers must serialize saves per file — overlapping writes of one file race
+ * each other's mtime tokens and one gets refused. The returned version, compared
+ * against the model's current one, is how a caller learns it is still dirty. */
 export async function saveBufferSnapshot(
   dir: string,
   filePath: string,
@@ -231,7 +171,6 @@ export async function saveBufferSnapshot(
   return { mtimeMs: written.value, versionAtSave: snapshot.versionAtSave };
 }
 
-/** Payload of the `ide://open-file` event (Claude called the openFile tool). */
 export type OpenFileRequest = {
   dir: string;
   filePath: string;
@@ -240,14 +179,11 @@ export type OpenFileRequest = {
   selectToEndOfLine?: boolean | null;
 };
 
-/** The highlight was dismissed — clear the sessions' selection context. */
 export function ideClearSelection(dir: string, filePath: string): Promise<Result<void, IpcError>> {
   return invoke<void>("ide_clear_selection", { dir, filePath });
 }
 
-/** Explicit "send to Claude" (@-mention). Omit the lines for a whole-file
- * mention (the Files tab). Fails when no Claude session is connected in that
- * folder. */
+/** Omit the lines for a whole-file mention. Fails when no session is connected. */
 export function ideAtMention(
   dir: string,
   filePath: string,
@@ -262,11 +198,7 @@ export function ideAtMention(
   });
 }
 
-/**
- * `ideAtMention` plus its toasts, so every gesture that mentions a file reports
- * itself the same way — this is the whole user-facing contract in one place. A
- * null range means the whole file.
- */
+/** `ideAtMention` plus its toasts, so every mention gesture reports the same way. */
 export async function ideMention(
   dir: string,
   filePath: string,

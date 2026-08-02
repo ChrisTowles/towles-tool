@@ -81,11 +81,8 @@ describe("taskRepoKey", () => {
 });
 
 describe("repo slug casing", () => {
-  // Regression: `gh` reports `ChrisTowles/towles-tool` on issue/PR rows,
-  // while the origin-derived tracked-repo cache stored a folded copy that
-  // `task_create` stamped onto new tasks. Grouping on the raw string produced
-  // two lanes that `repoGroupLabel` rendered identically — one repo showing up
-  // twice on the Board.
+  // Regression: `gh` and the origin-derived tracked-repo cache disagree on slug
+  // casing, so grouping on the raw string showed one repo as two Board lanes.
   it("groups casing variants of one slug into a single lane", () => {
     const groups = groupTasksByRepo([
       task({

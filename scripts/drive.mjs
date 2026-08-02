@@ -1,38 +1,9 @@
 #!/usr/bin/env node
-// Live-drive the persistent app window opened by `npm run dev:drive`.
-//
-// Talks directly to the in-app W3C WebDriver server that tauri-plugin-wdio-webdriver
-// runs inside the app on wdPort — plain fetch, NO @wdio/* import at runtime. Reads
-// and IPC go through the session-less `POST /wdio/eval`; screenshots/clicks/nav use
-// a short-lived W3C session that is deleted immediately so nothing leaks.
-//
-// Usage:
-//   node scripts/drive.mjs status
-//   node scripts/drive.mjs eval "document.title"
-//   node scripts/drive.mjs invoke settings_get
-//   node scripts/drive.mjs invoke journal_log '{"text":"hi"}'
-//   node scripts/drive.mjs shot cockpit
-//   node scripts/drive.mjs click "[data-screen=board]"
-//   node scripts/drive.mjs clicktext "Board"
-//   node scripts/drive.mjs type "input[name=q]" "hello"
-//   node scripts/drive.mjs url /
-//
-// `click` dispatches a full pointerdown/mousedown/focus/pointerup/mouseup/
-// click sequence (see `dispatchClick`) rather than the native W3C
-// `element/click` endpoint — the native endpoint doesn't reliably open Radix
-// `DropdownMenu`/`Popover` triggers (#35); the full event sequence does, in
-// the same one-shot per-command session used everywhere else.
-//
-// shot/click/type/url each open-and-close their own short-lived WebDriver
-// session by default; pass `--session <id>` (from `session-open`) to hold
-// one open across several related actions instead:
-//   node scripts/drive.mjs session-open              # prints a session id
-//   node scripts/drive.mjs click "button" --session <id>
-//   node scripts/drive.mjs click "[role=menuitem]" --session <id>
-//   node scripts/drive.mjs session-close <id>
-//
-// Ports come from the rendered `.env`/`.env.local` (same as dev:drive):
-// wdPort = the .env claim TT_E2E_WEBDRIVER_PORT, else TT_DEV_PORT + 3000.
+// Live-drive the window opened by `npm run dev:drive` — plain fetch against the
+// in-app W3C WebDriver server, NO @wdio/* import at runtime. Reads and IPC go
+// through the session-less `POST /wdio/eval`; shot/click/type/url each open a
+// short-lived session, or reuse one passed as `--session` (see `session-open`).
+// Run with no verb for the verb list. Ports come from the rendered `.env`.
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -50,27 +21,13 @@ const devPort = requireDevPort(repoRoot, { tag: "drive" });
 const wdPort = resolveWebdriverPort(devPort);
 const base = `http://127.0.0.1:${wdPort}`;
 
-/**
- * Every way a verb can fail: talking to the automation server — unreachable
- * (transport) or answered-with-a-refusal (protocol) — plus, for the verbs that
- * reach outside the app (`winshot` shells out to the compositor's screenshot
- * tool), a child process that wouldn't run.
- * @typedef {RequestFailed | RemoteRejected | SpawnFailed} DriveError
- */
+/** @typedef {RequestFailed | RemoteRejected | SpawnFailed} DriveError */
 
-/**
- * One HTTP round-trip's outcome. `json` is the parsed body, or `{ raw }` when
- * the server sent something that isn't JSON.
- * @typedef {{ status: number; ok: boolean; json: Record<string, unknown> }} HttpResponse
- */
+/** `json` is the parsed body, or `{ raw }` when the server sent non-JSON.
+ * @typedef {{ status: number; ok: boolean; json: Record<string, unknown> }} HttpResponse */
 
-/**
- * Report a failure and exit non-zero. This is the CLI's terminal boundary —
- * every internal seam returns a Result and the verb decides here.
- *
- * @param {string} msg
- * @returns {never}
- */
+/** The CLI's terminal boundary — every internal seam returns a Result instead.
+ * @param {string} msg @returns {never} */
 function fail(msg) {
   console.error(`[drive] ${msg}`);
   process.exit(1);
@@ -81,31 +38,18 @@ function failWith(error) {
   return fail(error.message);
 }
 
-/**
- * Read `key` off a value of unknown shape. The WebDriver payloads differ per
- * endpoint, so responses are narrowed field by field rather than trusted
- * wholesale.
- *
- * @param {unknown} value
- * @param {string} key
- * @returns {unknown}
- */
+/** WebDriver payloads differ per endpoint, so responses are narrowed field by
+ * field rather than trusted wholesale.
+ * @param {unknown} value @param {string} key @returns {unknown} */
 function prop(value, key) {
   if (typeof value !== "object" || value === null) return undefined;
   return /** @type {Record<string, unknown>} */ (value)[key];
 }
 
-/**
- * A single request to the automation server. Never throws: an unreachable
- * server is a {@link RequestFailed}, and a non-2xx response is still an `Ok`
- * carrying `ok: false` — endpoints differ on which statuses matter, so the
- * caller judges the status, not this.
- *
- * @param {string} method
- * @param {string} pathname
- * @param {unknown} [body]
- * @returns {Promise<Result<HttpResponse, RequestFailed>>}
- */
+/** Never throws. A non-2xx response is still an `Ok` carrying `ok: false` —
+ * endpoints differ on which statuses matter, so the caller judges, not this.
+ * @param {string} method @param {string} pathname @param {unknown} [body]
+ * @returns {Promise<Result<HttpResponse, RequestFailed>>} */
 async function http(method, pathname, body) {
   const url = base + pathname;
   const sent = await Result.tryPromise({
@@ -131,17 +75,11 @@ async function http(method, pathname, body) {
   return Result.ok({ status: res.status, ok: res.ok, json });
 }
 
-/**
- * `http` plus the check almost every caller wants: a non-2xx status or a
- * WebDriver `error` field becomes a {@link RemoteRejected} describing what
- * `action` was being attempted.
- *
- * @param {string} action
- * @param {string} method
- * @param {string} pathname
- * @param {unknown} [body]
- * @returns {Promise<Result<Record<string, unknown>, DriveError>>}
- */
+/** `http` plus the check almost every caller wants: a non-2xx status or a
+ * WebDriver `error` field becomes a {@link RemoteRejected} naming `action`.
+ * @param {string} action @param {string} method
+ * @param {string} pathname @param {unknown} [body]
+ * @returns {Promise<Result<Record<string, unknown>, DriveError>>} */
 async function request(action, method, pathname, body) {
   const sent = await http(method, pathname, body);
   if (sent.isErr()) return Result.err(sent.error);
@@ -153,10 +91,9 @@ async function request(action, method, pathname, body) {
   return Result.ok(json);
 }
 
-// session-less eval (reads + IPC)
-// The Linux executor runs `(function(){ <script> }).apply(null, [...args, __done])`,
-// so the script uses the last argument as the W3C async done-callback and reports
-// back the {ok, value, undef} shape the /wdio/eval handler expects.
+// session-less eval (reads + IPC). The executor appends the W3C async done
+// callback as the last argument, so the script reports through it in the
+// {ok, value, undef} shape /wdio/eval expects.
 /** @param {string} expr @returns {string} */
 function wrapExpr(expr) {
   return `var __cb = arguments[arguments.length - 1];
@@ -170,14 +107,9 @@ function wrapExpr(expr) {
 })();`;
 }
 
-/**
- * Evaluate `expr` in the live window and return whatever it produced. The
- * value is `unknown` by construction — it crossed a process boundary as JSON —
- * so callers narrow it rather than assuming a shape.
- *
- * @param {string} expr
- * @returns {Promise<Result<unknown, DriveError>>}
- */
+/** The value is `unknown` by construction — it crossed a process boundary as
+ * JSON — so callers narrow it rather than assuming a shape.
+ * @param {string} expr @returns {Promise<Result<unknown, DriveError>>} */
 async function evalExpr(expr) {
   const sent = await request("eval failed", "POST", "/wdio/eval", { script: wrapExpr(expr) });
   if (sent.isErr()) return Result.err(sent.error);
@@ -188,10 +120,8 @@ async function evalExpr(expr) {
   return Result.ok(json.undef === true ? undefined : json.value);
 }
 
-// W3C session (screenshots, clicks, nav)
-// By default each call opens a fresh session and tears it down immediately
-// (`create`); pass `session: <id>` (from `session-open`) to run against an
-// already-open, caller-managed session instead — see the `--session` flag.
+// W3C session (screenshots, clicks, nav). Each call opens and tears down its
+// own unless `--session <id>` passes in a caller-managed one.
 /** @returns {Promise<Result<string, DriveError>>} */
 async function createSession() {
   const action = "could not create a WebDriver session";
@@ -204,12 +134,10 @@ async function createSession() {
   return Result.ok(sessionId);
 }
 
-/**
- * @template T
+/** @template T
  * @param {(sessionId: string) => Promise<Result<T, DriveError>>} fn
  * @param {string | null} [existingSessionId]
- * @returns {Promise<Result<T, DriveError>>}
- */
+ * @returns {Promise<Result<T, DriveError>>} */
 async function withSession(fn, existingSessionId) {
   if (existingSessionId) return fn(existingSessionId);
   const created = await createSession();
@@ -218,18 +146,14 @@ async function withSession(fn, existingSessionId) {
   try {
     return await fn(sessionId);
   } finally {
-    // Best-effort teardown: the session dying with the window is fine, and a
-    // failure here must not mask the caller's own outcome.
+    // Best-effort: a failure here must not mask the caller's own outcome.
     await http("DELETE", `/session/${sessionId}`);
   }
 }
 
-/** Pull a trailing `--session <id>` flag out of a verb's args, wherever it
- * appears, so `--session` can be appended to any of `shot`/`click`/`type`/
- * `url` without disturbing their existing positional arguments.
- *
- * @param {string[]} args
- * @returns {{ session: string | null; rest: string[] }} */
+/** Pulls `--session <id>` from anywhere in a verb's args, so it can be appended
+ * to shot/click/type/url without disturbing their positionals.
+ * @param {string[]} args @returns {{ session: string | null; rest: string[] }} */
 function extractSessionFlag(args) {
   const idx = args.indexOf("--session");
   if (idx === -1) return { session: null, rest: args };
@@ -238,19 +162,10 @@ function extractSessionFlag(args) {
   return { session, rest: [...args.slice(0, idx), ...args.slice(idx + 2)] };
 }
 
-/** Dispatch a full pointerdown → mousedown → focus → pointerup → mouseup →
- * click sequence at `elId` inside the browsing context, via
- * `POST /session/{id}/execute/sync` rather than the native W3C
- * `POST /session/{id}/element/{id}/click` endpoint. The native click endpoint
- * does not reliably open Radix `DropdownMenu`/`Popover` triggers here — it
- * fires *something* the trigger doesn't react to, so `DismissableLayer`
- * never flips `data-state` to `open` (#35). The full event sequence does,
- * confirmed live: same one-shot session lifecycle either way, so this isn't
- * about session reuse across commands — just which endpoint synthesizes the
- * click.
- *
- * @param {string} sessionId
- * @param {string} elId
+/** A full event sequence rather than the native W3C click endpoint: that one
+ * fires something Radix `DropdownMenu`/`Popover` triggers don't react to, so
+ * `DismissableLayer` never flips `data-state` to `open` (#35).
+ * @param {string} sessionId @param {string} elId
  * @returns {Promise<Result<void, DriveError>>} */
 async function dispatchClick(sessionId, elId) {
   const script = `
@@ -272,11 +187,8 @@ async function dispatchClick(sessionId, elId) {
   return sent.map(() => undefined);
 }
 
-/**
- * @param {string} sessionId
- * @param {string} selector
- * @returns {Promise<Result<string, DriveError>>}
- */
+/** @param {string} sessionId @param {string} selector
+ * @returns {Promise<Result<string, DriveError>>} */
 async function findElement(sessionId, selector) {
   const action = `no element matched \`${selector}\``;
   const sent = await request(action, "POST", `/session/${sessionId}/element`, {
@@ -298,26 +210,16 @@ function fmt(v) {
   return JSON.stringify(v, null, 2);
 }
 
-// console errors
-// The app buffers console.error/warn + uncaught exceptions on `window` under
-// VITE_WDIO (apps/client/src/lib/wdio-console.ts — keep this key in sync; it's
-// a cross-process contract and a rename just makes the check go quiet).
-// Without this, React's runtime complaints only reach the `dev:drive`
-// terminal's stdout, a different process from this script.
+// Where the app buffers console.error/warn + uncaught exceptions under VITE_WDIO
+// (apps/client/src/lib/wdio-console.ts). A cross-process contract: rename either
+// side and this check just goes quiet. Without it React's runtime complaints
+// only reach the `dev:drive` terminal, a different process from this script.
 const CONSOLE_KEY = "__ttConsoleErrors";
 
-/**
- * One buffered console record, as `lib/wdio-console.ts` writes it.
- * @typedef {{ kind: string; text: string; at: number }} ConsoleEntry
- */
+/** @typedef {{ kind: string; text: string; at: number }} ConsoleEntry */
 
-/**
- * Narrow a buffer entry that arrived as JSON. Fields the page didn't supply
- * get inert defaults so a malformed record can't crash the reporter.
- *
- * @param {unknown} raw
- * @returns {ConsoleEntry}
- */
+/** Inert defaults, so a malformed record can't crash the reporter.
+ * @param {unknown} raw @returns {ConsoleEntry} */
 function toConsoleEntry(raw) {
   const kind = prop(raw, "kind");
   const text = prop(raw, "text");
@@ -329,11 +231,9 @@ function toConsoleEntry(raw) {
   };
 }
 
-/** Read the whole buffer. `null` = no collector in the page (not a VITE_WDIO build).
- *
+/** `null` = no collector in the page (not a VITE_WDIO build).
  * @param {{ clear?: boolean }} [opts]
- * @returns {Promise<Result<ConsoleEntry[] | null, DriveError>>}
- */
+ * @returns {Promise<Result<ConsoleEntry[] | null, DriveError>>} */
 async function readConsole({ clear = false } = {}) {
   const read = await evalExpr(`(() => {
     const b = window[${JSON.stringify(CONSOLE_KEY)}];
@@ -345,11 +245,8 @@ async function readConsole({ clear = false } = {}) {
   return read.map((raw) => (Array.isArray(raw) ? raw.map(toConsoleEntry) : null));
 }
 
-/** Just a count + the last few errors — the buffer holds up to 200 × 2KB
- * entries, too much to ship for a warning.
- *
- * @returns {Promise<Result<{ count: number; last: ConsoleEntry[] } | null, DriveError>>}
- */
+/** Count + last few only: the buffer holds up to 200 × 2KB entries.
+ * @returns {Promise<Result<{ count: number; last: ConsoleEntry[] } | null, DriveError>>} */
 async function readConsoleSummary() {
   const read = await evalExpr(`(() => {
     const b = window[${JSON.stringify(CONSOLE_KEY)}];
@@ -365,12 +262,11 @@ async function readConsoleSummary() {
   });
 }
 
-/** Warn if the page has logged errors. Runs after every verb, so a broken
- * render is impossible to miss even when the verb itself succeeded. */
+/** Runs after every verb, so a broken render is impossible to miss even when
+ * the verb itself succeeded. */
 async function surfaceConsoleErrors() {
   const read = await readConsoleSummary();
-  // Never let the check itself break a working command, and stay quiet when
-  // the collector is absent (`null` — not a VITE_WDIO build).
+  // Never let the check itself break a working command.
   if (read.isErr()) return;
   const found = read.value;
   if (!found || found.count === 0) return;
@@ -384,13 +280,10 @@ async function surfaceConsoleErrors() {
 
 const execFileAsync = promisify(execFile);
 
-/**
- * Run a binary, as a value. A non-zero exit and a missing binary are the same
- * kind of answer here — neither should be a thrown `unknown` mid-verb.
- * @param {string} cmd
- * @param {string[]} args
- * @returns {Promise<import("better-result").Result<string, SpawnFailed>>}
- */
+/** A non-zero exit and a missing binary are the same kind of answer here —
+ * neither should be a thrown `unknown` mid-verb.
+ * @param {string} cmd @param {string[]} args
+ * @returns {Promise<import("better-result").Result<string, SpawnFailed>>} */
 async function run(cmd, args) {
   try {
     const { stdout } = await execFileAsync(cmd, args);
@@ -400,27 +293,11 @@ async function run(cmd, args) {
   }
 }
 
-/**
- * Screenshot the whole window at the compositor level, native panes included.
- *
- * `shot` captures the *webview*, which cannot see a `tt-pane` surface: that's a
- * Wayland subsurface composited above the webview, so it's absent from a
- * WebDriver capture no matter how healthy it is. Only the compositor sees both
- * layers — and a compositor screenshot is the whole desktop, on which several
- * task checkouts' near-identical windows are all visible at once.
- *
- * So: fullscreen this window on the test monitor first (`wdio_place_on_test_
- * monitor`), which makes the monitor's geometry the window's rect, and crop the
- * desktop PNG to it. The window being fullscreen is doing double duty — it
- * identifies the window *and* forces it unoccluded, without which a vsync-paced
- * native pane gets no frame callbacks and would photograph as a stale frame.
- *
- * COSMIC-only for now: `grim -g` would be the portable path, but cosmic-comp
- * doesn't implement wlr-screencopy, so capture goes through `cosmic-screenshot`
- * (whole desktop, no geometry flag) and the crop through ImageMagick.
- * @param {string} name
- * @returns {Promise<import("better-result").Result<{file: string; rect: Record<string, unknown>}, DriveError | SpawnFailed>>}
- */
+/** Whole-window compositor shot: `shot` captures the webview, which cannot see a
+ * `tt-pane` (a Wayland subsurface above it). Fullscreening on the test monitor
+ * first picks this window out of a whole-desktop capture *and* forces it
+ * unoccluded — a vsync-paced pane photographs stale otherwise.
+ * @param {string} name @returns {Promise<import("better-result").Result<{file: string; rect: Record<string, unknown>}, DriveError | SpawnFailed>>} */
 async function captureWindow(name) {
   const placed = await evalExpr(
     `window.__TAURI_INTERNALS__.invoke("wdio_place_on_test_monitor", { fullscreen: true })`,
@@ -433,9 +310,8 @@ async function captureWindow(name) {
       new RemoteRejected({ action: "place window", detail: JSON.stringify(rect) }),
     );
   }
-  // The fullscreen transition is a compositor round-trip, and a native pane
-  // needs a few frame callbacks after it to have drawn anything. Capturing too
-  // early is the failure mode that looks like "the pane renders nothing".
+  // A native pane needs a few frame callbacks after the fullscreen round-trip;
+  // capturing early is the failure that looks like "the pane renders nothing".
   await new Promise((r) => setTimeout(r, 1200));
 
   const tmp = path.join(os.tmpdir(), `tt-winshot-${process.pid}`);
@@ -571,10 +447,7 @@ switch (verb) {
   case "clicktext": {
     const text = rest.join(" ").trim();
     if (!text) fail(`usage: drive.mjs clicktext "<visible text>"`);
-    // Runs in the live window via the session-less eval path (no CSS selector
-    // needed): find every clickable element, match trimmed innerText/value,
-    // and dispatch a real click. Returns a structured result so ambiguous or
-    // missing text can report the candidate texts we actually found.
+    // Structured result, so ambiguous/missing text can report the candidates.
     const clicked = await evalExpr(`(() => {
       const target = ${JSON.stringify(text)};
       const sel = 'button, a, [role=button], [role=link], [role=menuitem],' +
@@ -692,8 +565,5 @@ switch (verb) {
     usage(1);
 }
 
-// Ran a verb successfully — say so if the page is nonetheless broken. The two
-// verbs that shouldn't double-report (`console` prints the buffer itself,
-// `status` answers about the server rather than the page) never reach here:
-// both exit from inside their own case.
+// `console` and `status` exit from inside their own case, so neither double-reports.
 await surfaceConsoleErrors();

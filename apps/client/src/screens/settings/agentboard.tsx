@@ -683,11 +683,9 @@ function RepoIdentityRow({
   const dir = repo.dir;
   const Icon = repoIcon(meta);
   const accent = repoAccentStyles(meta);
-  // The latest edit, readable synchronously. `meta` state lags an in-flight
-  // commit by a full await, and `ab_set_repo_meta` replaces the identity
-  // *wholesale* — so building the next edit off the render closure would let a
-  // second click (pick an icon, then flick Tint before the first IPC lands)
-  // send a payload missing the first field and silently erase it.
+  // `meta` lags an in-flight commit by a full await and `ab_set_repo_meta`
+  // replaces the identity *wholesale*, so a second click built off the render
+  // closure would send a payload missing the first field and erase it.
   const latest = useRef<RepoMeta | undefined>(repo.meta);
 
   const commit = async (next: RepoMeta | null, action: string, detail?: string) => {
@@ -728,10 +726,8 @@ function RepoIdentityRow({
     void commit({ ...latest.current, color: canonical }, "repo.color_set", detail);
   };
 
-  // Autosave the typed hex, like every other control on this screen. A partial
-  // value is *silently* ignored rather than reported: this runs while you're
-  // still typing, and "#3b" is half-finished, not wrong. The error surfaces on
-  // blur (below) and on Enter, where the input really is final.
+  // A partial value is silently ignored while you type — "#3b" is
+  // half-finished, not wrong. The error surfaces on blur and on Enter.
   const hexTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editHex = (raw: string) => {
     setHex(raw);

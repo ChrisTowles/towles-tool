@@ -1,24 +1,7 @@
-/**
- * Filesystem bridge for the VS Code service layer: a `file://` overlay
- * provider that answers stat/readdir/readFile over Tauri IPC (`ide_stat`,
- * `ide_read_dir`, `ide_read_file`), so workbench features (quick-open file
- * search, editor model resolution) see the real disk, plus the mutations
- * behind the Explorer's New File / New Folder / Rename / Delete.
- *
- * The code viewer does NOT save through here. It keeps its own
- * `ide_write_file` call with an mtime conflict token, which refuses to
- * clobber a file an agent edited while it was open — routing it through the
- * provider would quietly drop that guard.
- *
- * `@codingame/monaco-vscode-files-service-override` is imported here but is
- * deliberately NOT a direct dependency in package.json, and it looks like an
- * oversight every time someone reads it. Declaring it adds it to
- * `monacoVscodeDeps`, which feeds `optimizeDeps.include` in vite.config.ts —
- * and pre-bundling it as its own entry yields a *second* copy of the files
- * service. The overlay below then registers on one instance while the search
- * service walks the other, and quick-open silently reports "No matching
- * results" for every query. Leave it transitive so there's exactly one copy.
- */
+/** A `file://` overlay provider answering stat/readdir/readFile and the
+ * Explorer's mutations over Tauri IPC. `monaco-vscode-files-service-override` is
+ * deliberately NOT a direct dependency: declaring it pre-bundles a *second* copy
+ * of the files service, and quick-open then reports "No matching results". */
 
 import {
   FileChangeType,
@@ -48,17 +31,8 @@ function notFound(): FileSystemProviderError {
   return FileSystemProviderError.create("file not found", FileSystemProviderErrorCode.FileNotFound);
 }
 
-/**
- * Bytes → the string `ide_write_file` takes, refusing anything that isn't
- * valid UTF-8.
- *
- * A non-fatal decode maps every undecodable byte to U+FFFD, so writing a PNG
- * back through here would replace it with mojibake and report success. Since
- * the command's parameter is a Rust `String` there is no lossless path, and
- * `ide_read_file` already refuses to read a file containing NUL — failing
- * loudly on the write keeps the pair symmetric instead of corrupting a file
- * the bridge should never have touched.
- */
+/** Fatal decoding on purpose: `ide_write_file` takes a Rust `String`, so a
+ * lossy decode would write mojibake over a binary file and report success. */
 function decodeText(content: Uint8Array, filePath: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(content);
@@ -74,28 +48,19 @@ class TauriFileSystemProvider
   extends Disposable
   implements IFileSystemProviderWithFileReadWriteCapability
 {
-  // No `Readonly` bit — it is not decorative here. `OverlayFileSystemProvider`
-  // skips any delegate carrying it in `writeToDelegates`, so every mutation
-  // below (writeFile / mkdir / delete / rename) would be passed over and the
-  // overlay would throw "Not allowed"; its `stat` also stamps
-  // `FilePermission.Readonly` onto every file it returns.
+  // No `Readonly` bit, deliberately: `OverlayFileSystemProvider` skips any
+  // delegate carrying it in `writeToDelegates`, so every mutation below dies.
   capabilities =
     FileSystemProviderCapabilities.FileReadWrite | FileSystemProviderCapabilities.PathCaseSensitive;
   onDidChangeCapabilities = Event.None;
   private readonly _onDidChangeFile = this._register(new Emitter<readonly IFileChange[]>());
   onDidChangeFile = this._onDidChangeFile.event;
 
-  /** Nothing watches the disk, so the Explorer only learns about changes this
-   * provider made itself — enough to keep the tree honest after its own
-   * New File / Rename / Delete, which is what it renders. Variadic so a
-   * rename reports its two halves in one pass. */
+  /** Nothing watches the disk, so the Explorer only learns of its own changes. */
   private changed(...changes: IFileChange[]): void {
     this._onDidChangeFile.fire(changes);
   }
 
-  /** Stat without turning a miss into a throw — `writeFile` has to tell
-   * "missing" from "present" to honor its options, and an exception is the
-   * wrong shape for a question. */
   private async statOrNull(filePath: string): Promise<FsStat | null> {
     const stat = await ideStat("/", filePath);
     return stat.unwrapOr(null);
@@ -121,23 +86,9 @@ class TauriFileSystemProvider
     return entries.value.map((e) => [e.name, e.isDir ? FileType.Directory : FileType.File]);
   }
 
-  /**
-   * A file's bytes, as text — except for the files the pane renders itself.
-   *
-   * Opening anything from the Explorer resolves a *text model* first
-   * (`lib/monaco.ts`'s views fallback), and only once that resolves does the
-   * fallback hand the path to the pane. `ide_read_file` refuses a file
-   * containing a NUL, so for an image the resolution rejected, the fallback
-   * never ran, and clicking a PNG in the Explorer did nothing at all — no
-   * error, no change, the previously-open file still on screen.
-   *
-   * Those files therefore resolve as an empty model. It exists only to carry
-   * a URI to the fallback: it is disposed on the next line there, no editor is
-   * ever mounted on it (`FilesPane` branches on the same `opensInEditor`), and
-   * the pane renders the real bytes over the asset protocol. Reading the file
-   * to build it would mean decoding megabytes of PNG as lossy UTF-8 to service
-   * a click.
-   */
+  /** Files the pane renders itself resolve as an empty model, which exists only
+   * to carry a URI to `lib/monaco.ts`'s views fallback. `ide_read_file` refuses
+   * a NUL-containing file, so without this a PNG click did nothing at all. */
   async readFile(resource: URI): Promise<Uint8Array> {
     const filePath = resource.path.slice(1);
     if (!opensInEditor(previewKindFor(filePath))) return new Uint8Array();
@@ -149,29 +100,17 @@ class TauriFileSystemProvider
     return new TextEncoder().encode(read.value.content);
   }
 
-  /**
-   * The workbench's own save path (an Explorer "New File", say). The code
-   * viewer does NOT come through here — it saves via `ide_write_file`, whose
-   * mtime token refuses to clobber a file an agent edited underneath it.
-   *
-   * `create`/`overwrite` are enforced here rather than trusted to the caller:
-   * `IFileService.create` happens to validate first today, but the provider
-   * contract is what the next caller will rely on, and getting it wrong means
-   * silently truncating a file nobody asked to replace.
-   */
+  /** The workbench's own save path; the code viewer instead calls
+   * `ide_write_file` directly, keeping the mtime token that refuses to clobber
+   * an agent's edit. `create`/`overwrite` are enforced here rather than trusted
+   * to the caller, since the provider contract is what the next one relies on. */
   async writeFile(resource: URI, content: Uint8Array, opts: IFileWriteOptions): Promise<void> {
     const filePath = resource.path.slice(1);
     const text = decodeText(content, filePath);
-    // The counterpart to `readFile`'s empty model: a file the pane renders
-    // itself is zero bytes *here*, so a save reaching this provider would
-    // truncate the real image. Nothing should get that far — the model is
-    // disposed as soon as the open fallback has its URI, and no editor is
-    // mounted on it — but the failure mode is destroying a file, so it is
-    // refused rather than reasoned about.
-    //
-    // Scoped to a file that already exists: the danger is truncation, not
-    // creation, and an Explorer "New File" named `icon.png` is a legitimate
-    // empty touch that has nothing to overwrite.
+    // Counterpart to `readFile`'s empty model: a pane-rendered file is zero
+    // bytes here, so a save reaching this provider would truncate the real
+    // image. Scoped to files that exist — the danger is truncation, not
+    // creation, and an Explorer "New File" named `icon.png` is legitimate.
     const writingBinary = !opensInEditor(previewKindFor(filePath));
     if (writingBinary || !opts.create || !opts.overwrite) {
       const existing = await this.statOrNull(filePath);
@@ -213,21 +152,10 @@ class TauriFileSystemProvider
     this.changed({ type: FileChangeType.ADDED, resource });
   }
 
-  /**
-   * Always trashes, ignoring `opts.useTrash` — that flag is never true here.
-   * `OverlayFileSystemProvider` hardcodes its own capabilities and drops the
-   * `Trash` bit, so the file service asks for a permanent delete every time.
-   *
-   * Registering directly with `registerCustomProvider` DOES surface the
-   * capability (verified: `hasCapability(uri, Trash)` becomes true, and
-   * shift-delete then differs from Delete) — but it also breaks quick-open,
-   * which silently returns "No matching results" for every query. The overlay
-   * additionally advertises `FileReadStream | FileAppend`, which this provider
-   * doesn't implement and so can't claim, and the workspace search provider
-   * needs them. Ctrl+P is worth more than shift-delete, so: keep the overlay,
-   * always trash (a checkout is full of untracked files git can't bring back),
-   * and correct the confirmation copy in `deleteCopyForTrash`.
-   */
+  /** Always trashes, ignoring `opts.useTrash`: `OverlayFileSystemProvider` drops
+   * the `Trash` bit, so the file service always asks for a permanent delete.
+   * Registering directly with `registerCustomProvider` would surface it but
+   * breaks quick-open, and a checkout is full of files git can't bring back. */
   async delete(resource: URI, opts: IFileDeleteOptions): Promise<void> {
     await this.run("ide_delete", {
       dir: "/",
@@ -251,9 +179,6 @@ class TauriFileSystemProvider
     );
   }
 
-  /** Surface the Rust error text — these are user-initiated actions, so
-   * "already exists" or a permission problem has to reach the user rather
-   * than collapsing into a generic failure. */
   private async run(cmd: string, args: Record<string, unknown>): Promise<void> {
     const ran = await invoke(cmd, args);
     if (ran.isErr()) {
@@ -263,13 +188,8 @@ class TauriFileSystemProvider
   }
 }
 
-/**
- * The code matters, not just the text: VS Code offers an overwrite prompt on
- * `FileExists` and gives up on `Unknown`. These substrings are the contract
- * with `ide.rs` — they're pinned there by `ERR_ALREADY_EXISTS` /
- * `ERR_ESCAPES_FOLDER` and a Rust test, so a reworded message fails loudly
- * instead of silently downgrading to `Unknown`.
- */
+/** VS Code offers an overwrite prompt on `FileExists` and gives up on `Unknown`,
+ * so these substrings are a contract, pinned in `ide.rs` by a test. */
 const ERROR_CODES: readonly (readonly [string, FileSystemProviderErrorCode])[] = [
   ["already exists", FileSystemProviderErrorCode.FileExists],
   ["escapes the folder", FileSystemProviderErrorCode.NoPermissions],
@@ -282,9 +202,7 @@ function errorCodeFor(message: string): FileSystemProviderErrorCode {
   );
 }
 
-/** Overlay the Tauri-backed provider onto `file://`. Call once, after the
- * services initialize. See `delete` above for why this is an overlay rather
- * than a direct `registerCustomProvider`. */
+/** Call once, after the services initialize. See `delete` for why an overlay. */
 export function registerTauriFileSystem(): void {
   registerFileSystemOverlay(1, new TauriFileSystemProvider());
 }

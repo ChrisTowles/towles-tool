@@ -5,21 +5,14 @@ import { SHORTCUTS, scopeTitle, shortcutKeys, type ShortcutScope } from "@/lib/s
 import type { UserSettings } from "@/lib/settings";
 import { NoMatches, ToggleRow, type Update } from "./common";
 
-/** Scope label for this tab: blank for `global` (an unscoped binding needs no
- * qualifier here), otherwise the shared {@link scopeTitle}. */
+// Blank for `global`: an unscoped binding needs no qualifier here.
 function scopeLabel(scope: ShortcutScope): string {
   return scope === "global" ? "" : scopeTitle(scope);
 }
 
-/**
- * The one setting on this tab: whether a click that had a shortcut earns a
- * one-line reminder of the keys. Off still tracks — the keyboard-vs-mouse
- * record lives in the event log and feeds the Telemetry screen's Keyboard tab
- * either way; this only decides whether the app says anything about it.
- *
- * Rendered outside `ShortcutsList` (and filtered by the same predicate) so a
- * query that matches no binding can still surface the switch.
- */
+// Off still tracks — the record feeds Telemetry → Keyboard either way. Lives
+// outside `ShortcutsList`, filtered by the same predicate, so a query matching
+// no binding can still surface the switch.
 export function ShortcutCoachRow({
   settings,
   update,

@@ -1,15 +1,7 @@
-/**
- * Fence language → Monaco language id, for highlighting code blocks in the
- * Markdown preview.
- *
- * Markdown fences use short aliases (```ts) that are not VS Code language ids
- * (`typescript`), and Monaco silently renders an unknown id as plaintext — so
- * a wrong mapping looks like "highlighting is broken" with no error anywhere.
- * The aliases below were checked against the grammars this app actually loads
- * (`lib/monaco.ts`): ids not listed here pass through unchanged because they
- * are already correct (json, css, html, yaml, diff, log, rust, python,
- * typescript, javascript, shellscript).
- */
+/** Fence language → Monaco language id for the Markdown preview. Fences use
+ * short aliases that are not VS Code language ids, and Monaco silently renders
+ * an unknown id as plaintext — a wrong mapping looks like broken highlighting
+ * with no error anywhere. Ids not listed here are already correct. */
 
 const ALIASES: Readonly<Record<string, string>> = {
   ts: "typescript",
@@ -33,11 +25,8 @@ const ALIASES: Readonly<Record<string, string>> = {
   md: "markdown",
 };
 
-/**
- * The Monaco language id for a fence, or null when there is nothing to
- * highlight with. `className` is what react-markdown puts on `<code>`
- * (`language-ts`); a fence with no language has none.
- */
+/** `className` is what react-markdown puts on `<code>` (`language-ts`); a fence
+ * with no language has none, hence null. */
 export function monacoLanguageFor(className: string | undefined): string | null {
   const match = /(?:^|\s)language-([\w+-]+)/.exec(className ?? "");
   if (!match) return null;

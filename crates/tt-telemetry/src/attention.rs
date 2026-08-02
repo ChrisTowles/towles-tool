@@ -222,14 +222,11 @@ pub fn summarize(date: &str, records: &[TelemetryRecord]) -> AttentionSummary {
     }
 }
 
-/// Pair `window.focus_changed` events into focused stretches.
-///
-/// A plain state machine over the whole day rather than one per process: the
-/// app restarts several times in a working day (`npm start` after a build),
-/// and each restart's first event is a `focused: true` that the previous
-/// process never blurred. Treating a repeat `true` as a no-op and closing any
-/// still-open stretch at the day's last record keeps a restart from either
-/// double-counting or swallowing a session.
+/// Pair `window.focus_changed` events into focused stretches — one state
+/// machine over the whole day, not one per process. The app restarts several
+/// times a day, and each restart's first event is a `focused: true` the
+/// previous process never blurred; treating a repeat `true` as a no-op and
+/// closing at the day's last record avoids double-counting either way.
 fn summarize_focus(
     records: &[TelemetryRecord],
     last_ts: Option<&str>,

@@ -44,12 +44,10 @@ fn load_config(path: &Path) -> ReposConfig {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
-/// Load the repo-path list, distinguishing a torn/corrupt read from a
-/// legitimately absent file: `Some(vec![])` when the file doesn't exist (no
-/// repos configured yet), but `None` when it exists and can't be read or
-/// parsed — most likely a read that raced another instance's write (#75).
-/// Callers should keep their previous in-memory list on `None` rather than
-/// degrading to empty.
+/// Load the repo-path list, distinguishing a torn read from an absent file:
+/// `Some(vec![])` when the file doesn't exist, `None` when it exists but won't
+/// parse — most likely a read racing another instance's write (#75). Callers
+/// keep their previous in-memory list on `None` rather than degrading to empty.
 pub fn try_load_repos(path: &Path) -> Option<Vec<String>> {
     if !path.exists() {
         return Some(Vec::new());
@@ -77,10 +75,8 @@ fn save_config(path: &Path, config: &ReposConfig) -> std::io::Result<()> {
     crate::persist::write_atomic(path, &format!("{json}\n"))
 }
 
-/// Persist the repo-path list as `{"repoPaths":[...]}`. Any existing `scanRoots`
-/// on disk is preserved. Test-only file-seeding fixture — production writes go
-/// through the `*_persisted` helpers (the CLI shell that called this was
-/// removed in the 2026-07-19 trim).
+/// Test-only file-seeding fixture; production writes go through the
+/// `*_persisted` helpers. Preserves any existing `scanRoots` on disk.
 #[cfg(test)]
 fn save_repos(path: &Path, repo_paths: &[String]) -> std::io::Result<()> {
     let mut config = load_config(path);
@@ -95,13 +91,11 @@ pub fn save_scan_roots(path: &Path, scan_roots: &[String]) -> std::io::Result<()
     save_config(path, &config)
 }
 
-/// Add `path` straight against the on-disk file: reread fresh immediately
-/// before writing, rather than trusting a caller's in-memory repo list that
-/// may have gone stale. Multiple Agentboard windows (one per `tt task`
-/// checkout) share this one `repos.json`; without a fresh reread here, one
-/// window adding repo A while another adds repo B — both starting from the
-/// same stale snapshot — would have the second save silently drop the first's
-/// addition. Returns the merged repo list plus whether `path` was newly added.
+/// Add `path` straight against the on-disk file, rereading fresh immediately
+/// before writing rather than trusting a caller's possibly-stale in-memory list:
+/// every Agentboard window shares this one `repos.json`, so without the reread
+/// one window's add would silently drop another's. Returns the merged repo list
+/// plus whether `path` was newly added.
 pub fn add_repo_persisted(path: &Path, new_path: &str) -> std::io::Result<(Vec<String>, bool)> {
     let mut config = load_config(path);
     let added = add_repo(&mut config.repo_paths, new_path);
@@ -144,11 +138,10 @@ pub fn untrack_missing_persisted(path: &Path) -> std::io::Result<(Vec<String>, V
 }
 
 /// Tracked paths nested inside another tracked path's `.claude/worktrees/` —
-/// task worktrees double-tracked as repos. `RowRecord`'s rule is that a task
-/// worktree is never a `repos.json` entry (its record is what puts it on the
-/// rail); entries like this shadow that record with a bare "Root" checkout row
-/// and strand a ghost when a removal skips the untrack. Task creation used to
-/// write them; this is how existing files heal. Pure for tests.
+/// task worktrees double-tracked as repos. A task worktree is never a
+/// `repos.json` entry (its `RowRecord` is what puts it on the rail); such an
+/// entry shadows that record with a bare "Root" row and strands a ghost when a
+/// removal skips the untrack. Pure for tests.
 fn nested_task_paths(repo_paths: &[String]) -> Vec<String> {
     repo_paths
         .iter()
@@ -233,12 +226,10 @@ fn add_repo(repo_paths: &mut Vec<String>, path: &str) -> bool {
 /// Reorder `current` to match `desired` — the rail's user-chosen repo order
 /// (`repoPaths` *is* the order; nothing else expresses it).
 ///
-/// Deliberately tolerant of a stale `desired` (the dragging client may hold a
-/// snapshot another window has since changed): dirs in `desired` are taken in
-/// that order, anything unmentioned keeps its relative order and lands after,
-/// anything untracked is ignored — so a concurrent add is never dropped by a
-/// drag that predates it. An untracked-then-retracked repo lands at the end,
-/// unlike `repo_meta`, which survives the round trip (`RepoMetaStore::forget`).
+/// Tolerant of a stale `desired`, since the dragging client may hold a snapshot
+/// another window has changed: anything unmentioned keeps its relative order and
+/// lands after, anything untracked is ignored, so a concurrent add is never
+/// dropped by a drag that predates it.
 fn reorder_repos(current: &[String], desired: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(current.len());
     for dir in desired {
@@ -269,12 +260,9 @@ pub fn reorder_repos_persisted(path: &Path, desired: &[String]) -> std::io::Resu
 
 /// Remove the repo at `dir` exactly. Returns whether removed.
 ///
-/// Dir, not the resolved session `name`, is the only safe key to remove by:
-/// `repo_entries`' collision disambiguation (`parent/base` vs bare `base`) is
-/// recomputed fresh on every call, so a caller removing several repos in one
-/// batch by name would see earlier removals change later names out from
-/// under it (e.g. removing `a/web` first un-collides `b/web` down to a bare
-/// `web`, so a subsequent by-name removal of `b/web` silently misses).
+/// Dir, not the resolved session `name`, is the only safe key: `repo_entries`'
+/// collision disambiguation is recomputed on every call, so a batch removal by
+/// name would see earlier removals rename later entries out from under it.
 fn remove_repo_by_dir(repo_paths: &mut Vec<String>, dir: &str) -> bool {
     let before = repo_paths.len();
     repo_paths.retain(|p| p != dir);
@@ -359,11 +347,8 @@ pub fn resolve_repo_dir(dir: &str, entries: &[RepoEntry]) -> Option<String> {
 }
 
 /// Walk up from `start` looking for a git repo root: a dir containing `.git`
-/// (a normal clone's dir, or the file a worktree uses — same test
-/// [`discover_git_repos`] applies). Returns `start` unchanged if no ancestor
-/// has one, so the caller always gets a usable path back rather than an
-/// `Option` to unwrap — registering that path as a folder is still better
-/// than failing outright, just less clean than the true repo root.
+/// (same test [`discover_git_repos`] applies). Returns `start` unchanged if no
+/// ancestor has one — registering that path as a folder beats failing outright.
 pub fn find_repo_root(start: &Path) -> PathBuf {
     for ancestor in start.ancestors() {
         if ancestor.join(".git").exists() {
@@ -415,10 +400,6 @@ mod tests {
 
     #[test]
     fn remove_repo_by_dir_survives_collision_disambiguation_shifting() {
-        // Removing colliding-basename checkouts one at a time, by dir, must
-        // not be thrown off by `repo_entries` recomputing names (a/web,
-        // b/web) fresh on every call — the bug a by-name removal loop hits
-        // once the first removal un-collides the second down to a bare name.
         let mut p = paths(&["/work/a/web", "/work/b/web"]);
         assert!(remove_repo_by_dir(&mut p, "/work/a/web"));
         assert!(remove_repo_by_dir(&mut p, "/work/b/web"));

@@ -1,11 +1,7 @@
-/**
- * One-shot deep-link primitive for the Settings screen: "land on Settings and
- * jump to `tab`, optionally pre-filled with `filter`." Mirrors
- * {@link "./focus-target".FocusTargetStore} (a DOM-free singleton so it's
- * testable and dodges an import cycle between `workspace.tsx` and the
- * Settings screen), but shaped for a tab id + filter string instead of a
- * screen + row id.
- */
+/** One-shot deep-link primitive for the Settings screen: land on Settings and
+ * jump to `tab`, optionally pre-filled with `filter`. A DOM-free singleton like
+ * {@link "./focus-target".FocusTargetStore}, so it's testable and dodges the
+ * `workspace.tsx` ↔ Settings screen import cycle. */
 
 export type SettingsTarget = { tab: string; filter?: string };
 

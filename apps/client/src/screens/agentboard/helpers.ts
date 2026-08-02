@@ -48,13 +48,9 @@ export const paneStyle = (r: PaneRect) => ({
   height: `${r.height}%`,
 });
 
-/**
- * Create the board task for a new-task submit (#339): the task row exists
- * from the moment of submit — before any worktree work — with the picked
- * issues attached. Best-effort: a store failure must not block the worktree
- * (the task is still useful without a card), so this resolves to `undefined`
- * on error after surfacing a toast.
- */
+// The task row exists from the moment of submit, before any worktree work.
+// Best-effort: a store failure must not block the worktree, so this resolves
+// to `undefined` after a toast.
 export async function createTaskForSubmit(input: NewTaskSubmit): Promise<number | undefined> {
   const title = input.title || input.goal || input.issues[0]?.title || input.branch;
   if (!title) return undefined;

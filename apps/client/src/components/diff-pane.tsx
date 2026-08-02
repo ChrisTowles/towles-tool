@@ -43,7 +43,6 @@ import { toast } from "sonner";
 /** Which baseline the pane diffs against (mirrors `DiffMode` in tt-agentboard). */
 type DiffMode = "main" | "uncommitted";
 
-/** Git name-status letter → rail-style color in the tree rail. */
 const STATUS_COLORS: Record<string, string> = {
   A: "text-emerald-500",
   "?": "text-emerald-500",
@@ -53,9 +52,8 @@ const STATUS_COLORS: Record<string, string> = {
   M: "text-amber-500",
 };
 
-/** Navigation tree beside the multi-diff; clicking a file scrolls its diff into
- * view. The checkbox is GitHub-review "viewed", not git staging — it collapses
- * that file's diff (a folder's covers everything beneath it). Memoized. */
+/** Navigation tree beside the multi-diff. The checkbox is GitHub-review "viewed",
+ * not git staging — it collapses that file's diff. */
 const DiffTreeRail = memo(function DiffTreeRail({
   dir,
   files,
@@ -79,7 +77,6 @@ const DiffTreeRail = memo(function DiffTreeRail({
   /** Paths changed on disk under unsaved edits; the Monaco pane owns resolution. */
   conflict: ReadonlySet<string>;
   onJump: (path: string) => void;
-  /** Toggle one file's reviewed flag. */
   onToggleReviewed: (path: string) => void;
   /** Set (or clear) every path in the list at once — a folder's checkbox. */
   onToggleReviewedMany: (paths: string[], value: boolean) => void;
@@ -181,8 +178,7 @@ const DiffTreeRail = memo(function DiffTreeRail({
         );
       }
       const file = byPath.get(node.path);
-      // A deleted file has nothing to open; the row still right-clicks so the
-      // menu doesn't flicker along the tree.
+      // A deleted file has nothing to open, but still right-clicks.
       const deleted = file?.status === "D";
       // A *sibling* button, not a chevron inside the jump button — can't nest.
       const nested = node.children.length > 0;
@@ -303,8 +299,7 @@ const DiffTreeRail = memo(function DiffTreeRail({
 });
 
 /** Says the file list is a floor and names the directory responsible — a short
- * count must never read as a total, and the cause is nearly always one missing
- * `.gitignore` line. */
+ * count must never read as a total. The cause is nearly always a `.gitignore` gap. */
 function UntrackedCapBanner({ cap }: { cap: NonNullable<ChangedFiles["untrackedCap"]> }) {
   return (
     <div className="mx-2 mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
@@ -336,9 +331,8 @@ const UNCOMMITTED_MODE = {
   hint: "Only what isn't committed yet — staged + unstaged changes vs HEAD",
 };
 
-/** A folder's diff as a *pane* in the Agentboard tiling, beside the live
- * terminals instead of covering them. Everything refetches off the backend's
- * git snapshot (the `statsKey`/`baseKey` effect), never a timer. */
+/** A folder's diff as a *pane* in the Agentboard tiling. Everything refetches off
+ * the backend's git snapshot (the `statsKey`/`baseKey` effect), never a timer. */
 export function DiffPane({
   folder,
   focused,
@@ -348,7 +342,6 @@ export function DiffPane({
   folder: FolderData | undefined;
   /** The pane the user last clicked into (`focusedPaneId`'s focus ring). */
   focused: boolean;
-  /** Removes the pane from its window. */
   onClose: () => void;
 }) {
   const dir = folder?.dir;
@@ -488,9 +481,8 @@ export function DiffPane({
     setRefreshing(false);
   }, [dir, mode, baseBranch]);
 
-  // While this pane is up, its checkout's git stats refresh on a 10s ceiling
-  // instead of the fleet-wide 60s — an unstaged edit moves no `.git` file the
-  // backend watches, so a working-tree change is only ever noticed by a poll.
+  // 10s stats ceiling while up, not the fleet-wide 60s: an unstaged edit moves no
+  // `.git` file the backend watches, so only a poll ever notices it.
   useEffect(() => {
     if (!dir) return;
     void invoke("ab_set_diff_focus", { dir, focused: true });

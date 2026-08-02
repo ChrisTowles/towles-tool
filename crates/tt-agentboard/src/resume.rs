@@ -28,12 +28,9 @@ pub const DEFAULT_RESUME_WINDOW_MS: i64 = 12 * 60 * 60 * 1000;
 pub const HEARTBEAT_INTERVAL_MS: i64 = 30_000;
 
 /// Slack above the estimated end time before a transcript counts as "touched
-/// after the run ended".
-///
-/// For a crash, the estimate *is* the last heartbeat, so it lags the real end
-/// by up to one interval — and the session you were mid-thought in is the one
-/// still being written in that gap. Comparing against the bare estimate would
-/// reject exactly the candidate this exists to offer.
+/// after the run ended". For a crash the estimate *is* the last heartbeat, so it
+/// lags the real end by up to one interval — and the session you were
+/// mid-thought in is the one still being written in that gap.
 pub const PRIOR_RUN_TIME_SLACK_MS: i64 = HEARTBEAT_INTERVAL_MS * 2;
 
 /// Written at startup and refreshed by a heartbeat; also touched once more on
@@ -63,12 +60,9 @@ pub fn default_runtime_path() -> PathBuf {
     tt_config::agentboard_dir_lossy().join("runtime.json")
 }
 
-/// Classify the previous run.
-///
-/// A marker whose pid is *still alive* isn't a previous run at all — it's a
-/// second instance running concurrently, and treating it as one would offer
-/// to resume sessions that instance is actively using. Anything else —
-/// crash, kill, or an ordinary quit — is offered the same way.
+/// Classify the previous run. A marker whose pid is *still alive* isn't a
+/// previous run at all but a concurrent instance, and offering it would resume
+/// sessions that instance is actively using.
 pub fn classify_prior(prior: Option<&RunMarker>, pid_alive: bool) -> PriorRun {
     match prior {
         Some(m) if !pid_alive => PriorRun::Ended { at_ms: m.heartbeat_ms },
@@ -123,10 +117,9 @@ pub struct ResumeCandidate {
 
 /// Build the candidate list from persisted pane records, newest first.
 ///
-/// Deliberately two-phase: `locate` only stats the file, and `title` — which
-/// parses it — runs *only* for records that survive the recency filter.
-/// Transcripts reach tens of megabytes, so parsing before filtering would read
-/// and deserialize a whole thread just to discard it.
+/// Two-phase on purpose: `locate` only stats, while `title` parses and so runs
+/// only for records that survive the recency filter. Transcripts reach tens of
+/// megabytes.
 pub fn select_candidates<'a, L, T>(
     records: impl Iterator<Item = (&'a str, &'a SessionRecord)>,
     ended_at_ms: i64,
@@ -258,8 +251,6 @@ mod tests {
 
     #[test]
     fn a_marker_with_dead_pid_is_offered_at_its_last_heartbeat() {
-        // Whether the previous run crashed or quit cleanly, its last known
-        // timestamp is offered the same way.
         let marker = RunMarker { pid: 1, started_at_ms: 0, heartbeat_ms: 900 };
         assert_eq!(classify_prior(Some(&marker), false), PriorRun::Ended { at_ms: 900 });
     }

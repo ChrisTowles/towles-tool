@@ -15,28 +15,22 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use tt_store::{Snapshot, Store};
 
-/// Tauri event carrying the full store snapshot (initial mount + after every write).
 pub const SNAPSHOT_EVENT: &str = "store://snapshot";
 
-/// Hard cap per `gh` issue mutation (create/close/reopen). These run through
-/// `tt_exec` rather than a bare `Command` for two reasons: an unbounded spawn
-/// could wedge the caller forever on a stalled network, and `tt_exec` is the
-/// single seam where every subprocess is recorded to the telemetry event log —
-/// a `gh` call made outside it is invisible there.
+/// These run through `tt_exec`, not a bare `Command`: an unbounded spawn could
+/// wedge the caller on a stalled network, and `tt_exec` is the single seam where
+/// every subprocess reaches the telemetry event log.
 const GH_MUTATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Managed Tauri state: the SQLite store, `None` when it could not be opened.
-/// `Clone` so the git-info poll loop (`lib.rs`) can hold its own handle to
-/// reconcile the tracked-repo identity cache without going through
-/// `AppHandle::state`.
+/// The SQLite store, `None` when it could not be opened. `Clone` so `lib.rs`'s
+/// git-info poll loop can hold its own handle without `AppHandle::state`.
 #[derive(Clone)]
 pub struct StoreState {
     store: Arc<Mutex<Option<Store>>>,
 }
 
 impl StoreState {
-    /// Open the default store, logging a warning (and leaving the state empty) on
-    /// failure so the app still starts. Store commands then return an error.
+    /// Leaves the state empty on failure so the app still starts.
     pub fn open() -> StoreState {
         let store = match Store::open_default() {
             Ok(s) => Some(s),
@@ -53,19 +47,16 @@ impl StoreState {
         StoreState { store: Arc::new(Mutex::new(store)) }
     }
 
-    /// The Agentboard rail's row list (`tt_store::Store::rail_worktrees`).
-    /// `None` is "the store could not answer", not "no rows" — the caller
-    /// keeps the previous list rather than emptying the rail on one bad read.
+    /// `None` is "the store could not answer", not "no rows" — the caller keeps
+    /// the previous list rather than emptying the rail on one bad read.
     pub fn rail_worktrees(&self) -> Option<Vec<tt_store::RailWorktree>> {
         let guard = self.store.lock().unwrap();
         guard.as_ref()?.rail_worktrees().ok()
     }
 
-    /// Record unclaimed git worktrees the scan found and forget detected rows
-    /// whose directories are gone — the rail's reconcile step. Both halves are
-    /// diff-driven by the engine, so the steady state passes two empty lists
-    /// and touches the database not at all — this runs on the 2s scan tick
-    /// against a file three other processes have open.
+    /// Both halves are diff-driven by the engine, so the steady state passes two
+    /// empty lists and touches the database not at all — this runs on the 2s
+    /// scan tick against a file three other processes have open.
     pub fn reconcile_detected_worktrees(
         &self,
         found: &[tt_agentboard::UnrecordedWorktree],
@@ -93,9 +84,7 @@ impl StoreState {
         }
     }
 
-    /// Reconcile the tracked-repo identity cache to exactly `repos` — see
-    /// `tt_store::Store::reconcile_repos`. Best-effort: a no-op if the store
-    /// never opened.
+    /// Best-effort: a no-op if the store never opened.
     pub fn reconcile_repos(&self, repos: &[(String, String)], now_ms: i64) {
         if let Some(store) = self.store.lock().unwrap().as_ref()
             && let Err(e) = store.reconcile_repos(repos, now_ms)
@@ -104,12 +93,8 @@ impl StoreState {
         }
     }
 
-    /// Sync every worktree-backed task's board column to whether its folder
-    /// currently has a live, running agent — see
-    /// `tt_agentboard::task_status::sync_worktree_task_statuses`. This is the
-    /// only path that moves a card between `backlog`/`doing` now that manual
-    /// drag-and-drop is gone. Returns how many rows changed (0 if the store
-    /// never opened). Best-effort: a write failure just logs and leaves that
+    /// The only path that moves a card between `backlog`/`doing` now that manual
+    /// drag-and-drop is gone. Best-effort: a write failure logs and leaves that
     /// row for the next tick to retry.
     pub fn sync_worktree_task_statuses(
         &self,
@@ -130,26 +115,21 @@ impl StoreState {
     }
 }
 
-/// Managed flag guarding against overlapping manual "refresh now" runs. A
-/// manual refresh shells `gh`/Slack, which can take seconds; without this a
-/// jittery double-click (or a second window) could stack redundant sweeps.
+/// Guards against overlapping manual "refresh now" runs, which shell `gh`/Slack
+/// for seconds — a jittery double-click could otherwise stack redundant sweeps.
 #[derive(Default)]
 pub struct CollectNowState {
     running: Arc<AtomicBool>,
 }
 
-/// Managed state guarding against overlapping per-repo manual syncs — the
-/// Agentboard rail's "Sync now" action. Keyed by repo dir (unlike
-/// [`CollectNowState`]'s single global flag) so syncing two different repos
-/// concurrently is fine; only a double-click on the same repo's action is
-/// deduped.
+/// The rail's "Sync now" guard. Keyed by repo dir, unlike [`CollectNowState`]'s
+/// single global flag, so two repos syncing at once is fine.
 #[derive(Default)]
 pub struct RepoSyncState {
     running: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
-/// Releases one dir from a [`RepoSyncState`]'s in-flight set when dropped, so
-/// the guard clears on every exit path — including a panic.
+/// Clears one dir from [`RepoSyncState`] on every exit path, panic included.
 struct ReleaseDirOnDrop(Arc<Mutex<std::collections::HashSet<String>>>, String);
 
 impl Drop for ReleaseDirOnDrop {
@@ -158,8 +138,7 @@ impl Drop for ReleaseDirOnDrop {
     }
 }
 
-/// Sets the running flag back to `false` when dropped, so the guard releases on
-/// every exit path of the blocking worker — including a panic.
+/// Releases the flag on every exit path of the blocking worker, panic included.
 struct ReleaseOnDrop(Arc<AtomicBool>);
 
 impl Drop for ReleaseOnDrop {
@@ -168,8 +147,7 @@ impl Drop for ReleaseOnDrop {
     }
 }
 
-/// Run `f` against the store, mapping an unavailable store to the stable
-/// error string the frontend (and tests) key on.
+/// Maps an unavailable store to the stable error string the frontend keys on.
 fn with_store<T>(
     state: &StoreState,
     f: impl FnOnce(&Store) -> Result<T, String>,
@@ -179,42 +157,36 @@ fn with_store<T>(
     f(store)
 }
 
-/// Epoch milliseconds (write-boundary clock).
 pub use tt_config::now_ms;
 
-/// Compute a snapshot, or an error string when the store is unavailable.
 fn snapshot_of(state: &StoreState) -> Result<Snapshot, String> {
     with_store(state, |store| store.snapshot().map_err(|e| format!("store snapshot failed: {e}")))
 }
 
-/// Recompute and emit the snapshot. Best-effort: a missing store or emit failure is
-/// swallowed (the next write, or app restart, recovers).
+/// Best-effort: a missing store or emit failure is swallowed, since the next
+/// write (or an app restart) recovers.
 pub fn emit_snapshot(app: &AppHandle, state: &StoreState) {
     if let Ok(snapshot) = snapshot_of(state) {
         let _ = app.emit(SNAPSHOT_EVENT, snapshot);
     }
 }
 
-/// Recompute and emit the snapshot given only an [`AppHandle`]. The MCP HTTP
-/// transport needs this: its dispatcher writes through a *separate* SQLite
-/// connection, so a mutating tool call would otherwise leave the UI stale
-/// until its next poll. Best-effort like [`emit_snapshot`].
+/// The MCP HTTP transport needs this: its dispatcher writes through a *separate*
+/// SQLite connection, so a mutating tool call would otherwise leave the UI stale
+/// until its next poll.
 pub fn emit_snapshot_from_app(app: &AppHandle) {
     let state = app.state::<StoreState>();
     emit_snapshot(app, &state);
 }
 
-/// One board task by id, for callers holding only an [`AppHandle`].
 /// `Ok(None)` is "no such task" — a real answer, not a failure.
 pub fn task_by_id(app: &AppHandle, id: i64) -> Result<Option<tt_store::TaskItem>, String> {
     let state = app.state::<StoreState>();
     with_store(&state, |store| store.get_task(id).map_err(|e| format!("get_task failed: {e}")))
 }
 
-/// The board task bound to a worktree dir, if any. `Ok(None)` is "no task
-/// bound" — a real answer. Store errors propagate, matching [`task_by_id`]:
-/// an unreadable store reported as "no task" would remove the checkout and
-/// silently leave its row behind — the half-delete the unified path stops.
+/// Store errors propagate: an unreadable store reported as "no task" would
+/// remove the checkout and leave its row behind — the half-delete this stops.
 pub fn task_id_for_worktree_dir(app: &AppHandle, dir: &str) -> Result<Option<i64>, String> {
     let state = app.state::<StoreState>();
     with_store(&state, |store| {
@@ -223,12 +195,9 @@ pub fn task_id_for_worktree_dir(app: &AppHandle, dir: &str) -> Result<Option<i64
     .map(|task| task.map(|task| task.id))
 }
 
-/// Delete one board row permanently and re-emit the snapshot.
-///
-/// Deliberately not a Tauri command: a row-only delete is exactly the
-/// half-delete that used to strand worktrees on disk, so the only way to reach
-/// it is through [`crate::task::delete_task_blocking`], which has already
-/// verified no worktree is bound (`purge`) by the time it calls this.
+/// Deliberately not a Tauri command: a row-only delete is the half-delete that
+/// used to strand worktrees on disk, so the only way in is
+/// [`crate::task::delete_task_blocking`], which has verified nothing is bound.
 pub fn delete_task_row(app: &AppHandle, id: i64) -> Result<(), String> {
     let state = app.state::<StoreState>();
     with_store(&state, |store| {
@@ -239,12 +208,9 @@ pub fn delete_task_row(app: &AppHandle, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// Close one board row — record how it ended, detach its worktree dir — and
-/// re-emit the snapshot. What replaced [`delete_task_row`] as the normal end
-/// of a task (2026-07-22).
-///
-/// Not a Tauri command for the same reason as its sibling: the frontend
-/// reaches it only through `task_delete`, which owns the worktree half.
+/// Record how a task ended and detach its worktree dir — what replaced
+/// [`delete_task_row`] as the normal end of a task. Not a Tauri command for the
+/// same reason: the frontend reaches it only through `task_delete`.
 pub fn close_task_row(
     app: &AppHandle,
     id: i64,
@@ -252,10 +218,8 @@ pub fn close_task_row(
 ) -> Result<(), String> {
     let state = app.state::<StoreState>();
     let now = now_ms();
-    // A `detected` row is the rail's own bookkeeping for a worktree nobody
-    // claimed — there is no work to record an outcome for, so removing that
-    // worktree removes the row rather than leaving a closed card behind. Only
-    // the user's own tasks survive as a record of how they ended.
+    // A `detected` row is bookkeeping for a worktree nobody claimed — no work to
+    // record an outcome for, so removing the worktree removes the row.
     let detected = with_store(&state, |store| {
         Ok(store
             .get_task(id)
@@ -280,15 +244,9 @@ pub fn close_task_row(
     Ok(())
 }
 
-// Tauri commands
-
-/// Adopt a detected worktree — the "no task" rail row's action. Promotes that
-/// row's `tasks` entry from `detected` to `task`, so it becomes the user's own
-/// work and starts appearing on the Board.
-///
-/// A kind change on the existing row, never a new one: the id, the links and
-/// the `created_at` that fixes the row's place in the rail all survive, so
-/// adopting doesn't move anything on screen.
+/// Promote a detected rail row to the user's own work. A kind change on the
+/// existing row, never a new one: the id, the links and the `created_at` that
+/// fixes its place in the rail all survive, so adopting moves nothing on screen.
 #[tauri::command]
 pub fn task_adopt_worktree(app: AppHandle, id: i64) -> Result<(), String> {
     let state = app.state::<StoreState>();
@@ -299,21 +257,18 @@ pub fn task_adopt_worktree(app: AppHandle, id: i64) -> Result<(), String> {
     })?;
     tracing::info!(task_id = id, "task.adopted");
     emit_snapshot(&app, &state);
-    // The rail row's own kind changed, so nudge the agentboard emitter too —
-    // the store snapshot alone wouldn't repaint it.
+    // The store snapshot alone wouldn't repaint the rail row's changed kind.
     app.state::<crate::agentboard::Ab>().emit.notify_one();
     Ok(())
 }
 
-/// Pull the current snapshot (initial mount).
 #[tauri::command]
 pub fn store_snapshot(state: State<StoreState>) -> Result<Snapshot, String> {
     snapshot_of(&state)
 }
 
-/// Add a manually-entered task, then re-emit the snapshot. `status` picks the
-/// column it lands in (quick-add uses `backlog`; the new-task flow creates
-/// worktree-backed tasks straight into `doing`).
+/// `status` picks the landing column: quick-add uses `backlog`, the new-task
+/// flow puts worktree-backed tasks straight into `doing`.
 #[tauri::command]
 pub fn store_add_task(
     app: AppHandle,
@@ -333,7 +288,6 @@ pub fn store_add_task(
     Ok(task.id)
 }
 
-/// Attach a GitHub issue to a task, then re-emit the snapshot.
 #[tauri::command]
 pub fn store_attach_task_issue(
     app: AppHandle,
@@ -353,7 +307,6 @@ pub fn store_attach_task_issue(
     Ok(())
 }
 
-/// Detach a GitHub issue from a task, then re-emit the snapshot.
 #[tauri::command]
 pub fn store_detach_task_issue(
     app: AppHandle,
@@ -372,9 +325,8 @@ pub fn store_detach_task_issue(
     Ok(())
 }
 
-/// Attach a GitHub PR to a task, then re-emit the snapshot. (PRs from the
-/// task's own task branch attach automatically on collect; this is the manual
-/// path for cross-repo or extra PRs.)
+/// PRs from the task's own branch attach automatically on collect; this is the
+/// manual path for cross-repo or extra PRs.
 #[tauri::command]
 pub fn store_attach_task_pr(
     app: AppHandle,
@@ -394,7 +346,6 @@ pub fn store_attach_task_pr(
     Ok(())
 }
 
-/// Detach a GitHub PR from a task, then re-emit the snapshot.
 #[tauri::command]
 pub fn store_detach_task_pr(
     app: AppHandle,
@@ -411,12 +362,9 @@ pub fn store_detach_task_pr(
     Ok(())
 }
 
-/// Bind a task to its repo, and to the worktree its work happens in
-/// once one exists, then re-emit the snapshot. The Agentboard's new-task flow
-/// calls this at submit with the repo alone (`branch`/`dir` `None`) so the
-/// task has a Board swimlane immediately, then again once `task_create`
-/// resolves. `repo` is the GitHub `owner/name` when known — it enables PR
-/// auto-attach.
+/// The new-task flow calls this at submit with the repo alone (`branch`/`dir`
+/// `None`) so the task has a Board swimlane immediately, then again once
+/// `task_create` resolves. `repo` as `owner/name` enables PR auto-attach.
 #[tauri::command]
 pub fn store_task_set_worktree(
     app: AppHandle,
@@ -434,15 +382,13 @@ pub fn store_task_set_worktree(
     })?;
     tracing::info!(task_id = id, branch = branch.as_deref().unwrap_or(""), "task.worktree_bound");
     emit_snapshot(&app, &state);
-    // The binding is what puts the row on the rail, and the engine only learns
-    // of it by re-reading `rail_worktrees` in the scan loop — wake it so the
-    // row is on screen now, not a poll tick later.
+    // The engine only learns of the binding by re-reading `rail_worktrees` in
+    // the scan loop — wake it so the row lands now, not a poll tick later.
     app.state::<crate::agentboard::Ab>().scan.notify_one();
     Ok(())
 }
 
-/// Move a todo to a kanban column (backlog/doing/done), then
-/// re-emit, and sync GitHub if this crosses the `done` boundary (see
+/// Syncs GitHub when this crosses the `done` boundary (see
 /// [`spawn_gh_status_sync`]). Used by the "Move to" menu.
 #[tauri::command]
 pub fn store_set_task_status(
@@ -471,14 +417,10 @@ pub fn store_set_task_status(
     Ok(())
 }
 
-/// Best-effort close/reopen the GitHub issues linked to a task whose status just crossed
-/// the `done` boundary, fire-and-forget on a background thread. A failed gh call
-/// self-heals on the next collector poll via [`tt_collect::rollup_task_statuses`].
-///
-/// The single call site for this decision — every status-changing command routes through
-/// here so the behavior can't drift (#246). Only board-originated commands sync; the
-/// collectors' rollup writes through `tt_store` directly, so a GitHub-driven change
-/// never echoes back out as a gh mutation.
+/// Fire-and-forget close/reopen of a task's linked issues; a failed gh call
+/// self-heals on the next collector poll. The single call site for this decision
+/// so the behavior can't drift (#246). Only board-originated commands sync — the
+/// collectors' rollup writes through `tt_store`, so GitHub never echoes back.
 fn spawn_gh_status_sync(old_status: &str, new_status: &str, issues: &[tt_store::TaskIssueLink]) {
     let targets = tt_store::gh_close_reopen_targets(old_status, new_status, issues);
     if targets.is_empty() {
@@ -518,8 +460,7 @@ fn run_gh_issue_state_change(repo: &str, number: i64, verb: &str) -> Result<(), 
     Ok(())
 }
 
-/// Edit a todo's text and notes (a full replace of both fields — `null`
-/// clears notes), then re-emit the snapshot.
+/// A full replace of both fields — `null` clears notes.
 #[tauri::command]
 pub fn store_update_task(
     app: AppHandle,
@@ -539,13 +480,9 @@ pub fn store_update_task(
     Ok(())
 }
 
-/// Archive every currently-closed todo off the active board right now, then
-/// re-emit the snapshot — the "Archive done" button. Rows are hidden, never
-/// deleted. This is a deliberate manual action, so it archives immediately
-/// rather than respecting [`tt_store::ARCHIVE_AFTER_MS`] — that grace period
-/// is only for the unattended collector-side sweep in `tt-collect`, which
-/// keeps recently-closed work visible until a human hasn't acted on it for a
-/// while. Returns the number of todos archived.
+/// The "Archive done" button — rows are hidden, never deleted. A deliberate
+/// manual action, so it ignores [`tt_store::ARCHIVE_AFTER_MS`]: that grace
+/// period exists only for the unattended collector-side sweep.
 #[tauri::command]
 pub fn store_archive_done(app: AppHandle, state: State<StoreState>) -> Result<usize, String> {
     let now = now_ms();
@@ -559,8 +496,7 @@ pub fn store_archive_done(app: AppHandle, state: State<StoreState>) -> Result<us
     Ok(archived)
 }
 
-/// Bring one archived task back onto the board, then re-emit the snapshot —
-/// the card's "Restore" action.
+/// The card's "Restore" action.
 #[tauri::command]
 pub fn store_unarchive_task(
     app: AppHandle,
@@ -591,9 +527,8 @@ pub fn store_dm_dismiss(
     Ok(())
 }
 
-/// Dismiss one GitHub item (`kind` is `"issue"` or `"pr"`) at `(repo, number)` —
-/// it drops out of the attention feed until the collector observes a newer
-/// `updatedTs` than the one passed in (see `tt_store::IssueItem::dismissed_ts`).
+/// `kind` is `"issue"` or `"pr"`. The item drops out of the attention feed until
+/// the collector observes an `updatedTs` newer than the one passed in.
 #[tauri::command]
 pub fn store_item_dismiss(
     app: AppHandle,
@@ -625,12 +560,8 @@ pub fn store_dismissals_clear(app: AppHandle, state: State<StoreState>) -> Resul
 }
 
 /// Promote a local todo into a real GitHub issue in `repo` (owner/name), then
-/// link the resulting issue back to the todo and re-emit the snapshot.
-///
-/// Shells `gh issue create --repo <repo>` with the todo's text as the title.
-/// `gh` prints the new issue URL on stdout; the trailing path segment is its
-/// number. Async: the network round-trip runs on a blocking worker so a slow
-/// GitHub call can't stall the main thread (sync commands run there).
+/// link that issue back to the todo. Async: the network round-trip runs on a
+/// blocking worker so a slow GitHub call can't stall the main thread.
 #[tauri::command]
 pub async fn store_promote_task_to_issue(
     app: AppHandle,
@@ -662,9 +593,8 @@ pub async fn store_promote_task_to_issue(
     Ok(())
 }
 
-/// Open issues in the repo checked out at `dir`, for the new-task flow's
-/// issue picker: `assigned_to_me` toggles `--assignee @me`. Read-only — no
-/// store write.
+/// The new-task flow's issue picker; `assigned_to_me` toggles `--assignee @me`.
+/// Read-only — no store write.
 #[tauri::command]
 pub async fn store_gh_issues_list(
     dir: String,
@@ -677,11 +607,9 @@ pub async fn store_gh_issues_list(
     .map_err(|e| format!("gh issues list task failed: {e}"))?
 }
 
-/// Search issues in the repo checked out at `dir` for the attach-to-task
-/// flow's picker: `gh issue list --search <query>` across every state, so a
-/// task can be linked to any existing issue — not just the open, assigned
-/// ones [`store_gh_issues_list`] returns. Read-only — no store write. A blank
-/// query returns an empty list without shelling out.
+/// Searches every state, so a task can be linked to any existing issue — not
+/// just the open, assigned ones [`store_gh_issues_list`] returns. A blank query
+/// returns an empty list without shelling out.
 #[tauri::command]
 pub async fn store_search_issues(
     dir: String,
@@ -694,7 +622,6 @@ pub async fn store_search_issues(
     .map_err(|e| format!("gh issues search task failed: {e}"))?
 }
 
-/// Run `gh issue create` and return the new issue's `(number, url)`.
 fn create_gh_issue(repo: &str, title: &str, body: &str) -> Result<(i64, String), String> {
     let output = tt_exec::run_with_timeout(
         "gh",
@@ -707,9 +634,7 @@ fn create_gh_issue(repo: &str, title: &str, body: &str) -> Result<(i64, String),
     parse_gh_issue_create_output(&output)
 }
 
-/// Render the GitHub issue body for a todo promoted from the tt board: the
-/// todo's `notes` verbatim (dropped when blank) and a footer marking the
-/// origin. Pure and unit-testable.
+/// The todo's `notes` verbatim (dropped when blank), plus an origin footer.
 fn render_promoted_issue_body(notes: Option<&str>) -> String {
     let mut body = String::new();
     if let Some(notes) = notes.map(str::trim).filter(|n| !n.is_empty()) {
@@ -720,8 +645,7 @@ fn render_promoted_issue_body(notes: Option<&str>) -> String {
     body
 }
 
-/// Parse a `gh issue create` invocation's output into `(number, url)`. `gh`
-/// prints the new issue URL on stdout; the trailing path segment is its number.
+/// `gh` prints the new issue's URL on stdout; the trailing segment is its number.
 fn parse_gh_issue_create_output(output: &tt_exec::Output) -> Result<(i64, String), String> {
     if !output.ok() {
         return Err(format!("gh issue create failed: {}", output.stderr.trim()));
@@ -735,11 +659,9 @@ fn parse_gh_issue_create_output(output: &tt_exec::Output) -> Result<(i64, String
     Ok((number, url))
 }
 
-/// Append a pre-formatted timeline bullet to today's daily note. Independent of the store
-/// (writes a markdown file), so it works even when the store is unavailable. The frontend
-/// owns the line format (`- HH:MM [context] text`, from `formatLogLine`), so it is written
-/// verbatim; only the local date (for section placement) is resolved here. Journal
-/// settings come from `tt_config`.
+/// Independent of the store (it writes a markdown file), so it works even when
+/// the store is unavailable. The frontend owns the line format, so the bullet is
+/// written verbatim; only the local date, for section placement, resolves here.
 #[tauri::command]
 pub fn journal_log(app: AppHandle, state: State<StoreState>, text: String) -> Result<(), String> {
     let line = text.trim();
@@ -751,29 +673,23 @@ pub fn journal_log(app: AppHandle, state: State<StoreState>, text: String) -> Re
     tt_journal::entries::append_bullet_to_daily(&settings.journal_settings, date, line)
         .map_err(|e| format!("journal append failed: {e}"))?;
     tracing::info!("journal.logged");
-    // Journal writes don't change the store, but re-emit to match the write-command
-    // contract (harmless no-op when the store is unavailable).
+    // Journal writes don't change the store; re-emitted only to match the
+    // write-command contract.
     emit_snapshot(&app, &state);
     Ok(())
 }
 
-/// What a `store_collect_now` call did: `started` is `false` when a manual
-/// refresh was already in flight and this call was a no-op (the frontend keeps
-/// its spinner off in that case), `true` when this call ran the sweep.
+/// `started` is `false` when a manual refresh was already in flight and this
+/// call was a no-op, so the frontend keeps its spinner off.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectNowResult {
     pub started: bool,
 }
 
-/// Manually run the issues, PRs, and (when configured) Slack collectors right
-/// now, then re-emit the snapshot — the "Refresh now" affordance in Config.
-/// Calendar is intentionally left out (it spends `claude` tokens), matching
-/// [`tt_collect::collect_manual`]. Overlap-guarded: if a manual refresh is
-/// already running this returns `started: false` without starting another.
-///
-/// Runs on a blocking worker with its own store connection (mirroring the
-/// scheduler) so the `gh`/Slack round-trips never hold the UI's store mutex.
+/// Config's "Refresh now". Calendar is intentionally left out (it spends
+/// `claude` tokens). Runs on a blocking worker with its own store connection so
+/// the `gh`/Slack round-trips never hold the UI's store mutex.
 #[tauri::command]
 pub async fn store_collect_now(
     app: AppHandle,
@@ -795,9 +711,8 @@ pub async fn store_collect_now(
     Ok(CollectNowResult { started: true })
 }
 
-/// Open a fresh store, run the manual collector batch, and emit the resulting
-/// snapshot. Failures per collector are logged (never surfaced as a command
-/// error) so one dead collector doesn't sink the whole refresh.
+/// Per-collector failures are logged, never surfaced as a command error, so one
+/// dead collector doesn't sink the whole refresh.
 fn run_collect_now_blocking(app: &AppHandle) {
     let store = match Store::open_default() {
         Ok(store) => store,
@@ -823,12 +738,9 @@ fn run_collect_now_blocking(app: &AppHandle) {
     }
 }
 
-/// What a `store_sync_repo` call did. `started` is `false` when a sync for
-/// this dir was already in flight and this call was a deduped no-op — the
-/// frontend should treat that quietly, not as a result to report. Otherwise
-/// `ok`/`count`/`message` mirror the combined issues+PRs collector outcome:
-/// `ok` is `true` only when both succeeded, `count` is the combined row
-/// count written, and `message` carries the first failure's detail.
+/// `started: false` means a sync for this dir was already in flight and the call
+/// was a deduped no-op — treat it quietly. Otherwise `ok`/`count`/`message`
+/// mirror the combined issues+PRs outcome, `ok` only when both succeeded.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoSyncResult {
@@ -838,12 +750,9 @@ pub struct RepoSyncResult {
     pub message: Option<String>,
 }
 
-/// Manually sync one repo's issues + PRs right now, bypassing the poll
-/// cadence — the rail's "Sync now" action. Overlap-guarded per dir (a running
-/// sync returns `started: false`); re-emits the snapshot on completion.
-/// Runs on a blocking worker with its own store connection (mirroring
-/// [`store_collect_now`]) so the `gh` round-trip never holds the UI's store
-/// mutex.
+/// The rail's "Sync now" action, bypassing the poll cadence. Overlap-guarded per
+/// dir; blocking worker with its own store connection, like
+/// [`store_collect_now`], so the `gh` round-trip never holds the UI's mutex.
 #[tauri::command]
 pub async fn store_sync_repo(
     app: AppHandle,
@@ -867,8 +776,7 @@ pub async fn store_sync_repo(
     .map_err(|e| format!("repo sync worker failed: {e}"))
 }
 
-/// Open a fresh store, sync one repo's issues + PRs, emit the resulting
-/// snapshot, and summarize the outcome for the caller.
+/// Opens its own store connection; summarizes the outcome for the caller.
 fn run_sync_repo_blocking(app: &AppHandle, dir: &str) -> RepoSyncResult {
     let store = match Store::open_default() {
         Ok(store) => store,
@@ -891,9 +799,8 @@ fn run_sync_repo_blocking(app: &AppHandle, dir: &str) -> RepoSyncResult {
     RepoSyncResult { started: true, ok, count, message }
 }
 
-/// The Slack config to feed a manual refresh, or `None` when the collector is
-/// disabled or has no token — the same gate the scheduler applies, so a manual
-/// refresh never records a Slack failure the scheduled cadence would skip.
+/// `None` when the collector is disabled or tokenless — the same gate the
+/// scheduler applies, so a manual refresh never records a failure it would skip.
 fn manual_slack_config(
     collectors: &tt_config::CollectorsSettings,
 ) -> Option<tt_collect::SlackDmConfig> {

@@ -14,19 +14,17 @@ use tt_tasks::ops::{self, CreateOpts, RemoveOpts, RemovePhase};
 use tt_tasks::pasted::{self, PastedImage};
 use tt_tasks::suggest::Suggested;
 
-/// Worktree operations running right now, keyed by directory — only this
-/// process can tell a task mid-`worktree add` from a crashed create. Not
-/// persisted: a crash ends the entry, the row honestly reads detached.
+/// Worktree operations running right now, keyed by directory — only this process
+/// can tell a task mid-`worktree add` from a crashed create. Not persisted: a
+/// crash ends the entry, the row honestly reads detached.
 #[derive(Default)]
 pub struct TaskPhases(std::sync::Mutex<std::collections::HashMap<String, RowPhase>>);
 
 impl TaskPhases {
-    /// Mark `dir` as being created, with the step now running.
     pub fn creating(&self, dir: &str, label: &str) {
         self.set(dir, RowPhase::Creating { label: label.to_string() });
     }
 
-    /// Mark `dir` as being removed, with the step now running.
     pub fn removing(&self, dir: &str, label: &str) {
         self.set(dir, RowPhase::Removing { label: label.to_string() });
     }
@@ -35,28 +33,25 @@ impl TaskPhases {
         self.0.lock().unwrap().insert(dir.to_string(), phase);
     }
 
-    /// Must run on every exit path, failures included — a row stuck on
-    /// `creating` forever is worse than one that admits it's detached.
+    /// Must run on every exit path — a row stuck on `creating` is worse.
     pub fn clear(&self, dir: &str) {
         self.0.lock().unwrap().remove(dir);
     }
 
-    /// The phase for `dir`, if an operation is running on it.
     pub fn get(&self, dir: &str) -> Option<RowPhase> {
         self.0.lock().unwrap().get(dir).cloned()
     }
 }
 
-/// Record a phase change and push a fresh snapshot — so every step is on
-/// screen when it starts, not a poll later.
+/// Push a fresh snapshot with the phase, so every step is on screen when it
+/// starts rather than a poll later.
 fn set_phase(app: &tauri::AppHandle, write: impl FnOnce(&TaskPhases)) {
     write(&app.state::<TaskPhases>());
     app.state::<crate::agentboard::Ab>().emit.notify_one();
 }
 
-/// Fire-and-forget `git fetch` across every tracked repo, then nudge the
-/// rail. Task lifecycle is a natural moment to check whether main moved
-/// fleet-wide; off the response path so a slow fetch never delays it.
+/// Task lifecycle is a natural moment to check whether main moved fleet-wide;
+/// off the response path so a slow fetch never delays it.
 fn refresh_all_git_info_in_background(app: &tauri::AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -81,8 +76,7 @@ pub struct TaskCreated {
     pub warnings: Vec<String>,
 }
 
-/// Branches available as a base ref for `root`'s task root, default branch
-/// first ([`ops::BaseBranch`] for the name-vs-label split).
+/// Default branch first; [`ops::BaseBranch`] has the name-vs-label split.
 #[tauri::command]
 pub fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> {
     let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
@@ -93,16 +87,13 @@ pub fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> 
 #[serde(rename_all = "camelCase")]
 pub struct BranchCheck {
     pub name: Option<String>,
-    /// The worktree's future path — see [`ops::BranchCheck::dir`]. The form
-    /// binds it onto the task row at submit so the rail row exists before any
-    /// git work starts.
+    /// Bound onto the task row at submit, so the rail row exists before git runs.
     pub dir: Option<String>,
     pub taken: bool,
     pub branch_exists: bool,
     pub error: Option<String>,
 }
 
-/// Preflight the branch field: legal ref, already-exists, name collision.
 /// Read-only — safe on every (debounced) keystroke.
 #[tauri::command]
 pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, String> {
@@ -118,9 +109,8 @@ pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, St
 }
 
 /// A **prompt improver** button: ask `claude -p` (cwd = `dir` for real repo
-/// context) to rewrite the typed goal and propose a branch; `instruction` is
-/// the improver's user-editable prompt from settings. Nothing runs
-/// automatically. Off the main thread. Returns flat Suggested fields.
+/// context) to rewrite the typed goal and propose a branch; `instruction` is the
+/// improver's user-editable prompt from settings. Nothing runs automatically.
 #[tauri::command]
 pub async fn task_suggest(
     dir: String,
@@ -136,8 +126,7 @@ pub async fn task_suggest(
     .await
     .map_err(|e| format!("worktree task failed: {e}"))?
     .map_err(|e| e.to_string());
-    // A hard failure stays at `warn` — merging the two log sites must not cost
-    // the severity an operator filters on.
+    // A hard failure stays at `warn` — one log site must not cost the severity.
     match &result {
         Ok(s) => {
             let outcome = if s.fallback.is_some() { "fallback" } else { "ok" };
@@ -153,11 +142,9 @@ pub async fn task_suggest(
     result
 }
 
-/// Create the task for `branch` off `base`: fetch, worktree add, render
-/// `.env`, inherit secrets. Deliberately **not** the install step — that can
-/// run for minutes and this gates the terminal pane; the caller fires
-/// `task_run_setup` after the pane opens. `dir` is already bound onto the
-/// task row, so this only adds the live phase label. Off the main thread.
+/// Fetch, worktree add, render `.env`, inherit secrets. Deliberately **not** the
+/// install step — that can run for minutes and this gates the terminal pane; the
+/// caller fires `task_run_setup` once the pane opens.
 #[tauri::command]
 pub async fn task_create(
     app: tauri::AppHandle,
@@ -183,8 +170,7 @@ pub async fn task_create(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    // Claimed before the first step runs, so there is no window where the row
-    // is on the rail with nothing to say for itself.
+    // Claimed before the first step, so the row is never on the rail mute.
     set_phase(&app, |p| p.creating(&dir, "starting"));
     let progress_app = app.clone();
     let event_dir = dir.clone();
@@ -192,7 +178,7 @@ pub async fn task_create(
         let mut phase_start = std::time::Instant::now();
         ops::create_task(&opts, now_ms, &mut |phase| {
             set_phase(&progress_app, |p| p.creating(&event_dir, phase.label()));
-            // `prev_ms` times the *previous* step; the last step differences
+            // `prev_ms` times the *previous* step; the last one differences
             // against the `task.created` event below.
             tracing::info!(
                 phase = ?phase,
@@ -204,8 +190,7 @@ pub async fn task_create(
         })
     })
     .await;
-    // Released on every path, failures included — else the row never falls
-    // back to detached, where retry/delete live.
+    // Released on every path — else the row never falls back to detached.
     set_phase(&app, |p| p.clear(&dir));
     let created =
         created.map_err(|e| format!("worktree task failed: {e}"))?.map_err(|e| e.to_string())?;
@@ -226,15 +211,13 @@ pub async fn task_create(
     })
 }
 
-/// The clipboard's image as a base64 PNG; `Ok(None)` = no image. The DOM
-/// can't see an image paste on Linux, so the form reads the clipboard
+/// The DOM can't see an image paste on Linux, so the form reads the clipboard
 /// natively off `keydown`. Off the main thread (GTK deadlock risk).
 #[tauri::command]
 pub async fn read_clipboard_image(app: tauri::AppHandle) -> Result<Option<PastedImage>, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     tauri::async_runtime::spawn_blocking(move || {
-        // An empty/non-image clipboard errors in the plugin — the common
-        // case, so it maps to `None`, not a user-visible failure.
+        // An empty/non-image clipboard errors in the plugin — the common case.
         let Ok(image) = app.clipboard().read_image() else {
             return Ok(None);
         };
@@ -257,9 +240,8 @@ pub async fn read_clipboard_image(app: tauri::AppHandle) -> Result<Option<Pasted
     .map_err(|e| format!("clipboard task failed: {e}"))?
 }
 
-/// Stage the form's pasted images as files for Claude's opening prompt —
-/// in `tt_config::pasted_images_dir()`, not the repo (`tt_tasks::pasted`
-/// explains). Runs before `task_create`; off the main thread.
+/// Staged in `tt_config::pasted_images_dir()`, not the repo (`tt_tasks::pasted`
+/// explains). Runs before `task_create`.
 #[tauri::command]
 pub async fn task_write_pasted_images(
     repo: String,
@@ -281,9 +263,8 @@ pub async fn task_write_pasted_images(
     .map_err(|e| e.to_string())
 }
 
-/// Run a checkout's setup step (`TT_TASK_SETUP` or lockfile detection);
-/// `Ok(Some)` carries the retry-able warning. `task_create` doesn't run it.
-/// Off the main thread; a span logs the install duration.
+/// `TT_TASK_SETUP` or lockfile detection; `Ok(Some)` carries the retry-able
+/// warning. `task_create` deliberately doesn't run it.
 #[tauri::command]
 pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
     use tracing::Instrument as _;
@@ -299,8 +280,7 @@ pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
                 .await
                 .map_err(|e| format!("worktree task failed: {e}"))?
                 .map_err(|e| e.to_string());
-        // Three endings, not two: a failed setup still leaves a usable task
-        // (hence `Ok`), and logging that as success hides the retry case.
+        // Three endings: a failed setup still leaves a usable task (hence `Ok`).
         let outcome = match &result {
             Ok(None) => "ok",
             Ok(Some(_)) => "warned",
@@ -313,9 +293,8 @@ pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
     .await
 }
 
-/// The wire form of [`ops::RemoveOutcome`] — see its doc for why a guard
-/// refusal is an `Ok` variant rather than an error. Serialized as a tagged
-/// union so the frontend gets real narrowing on `status`.
+/// The wire form of [`ops::RemoveOutcome`] — see its doc for why a guard refusal
+/// is an `Ok` variant. Tagged so the frontend narrows on `status`.
 #[derive(Serialize, Clone)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum TaskDeleteOutcome {
@@ -326,27 +305,18 @@ pub enum TaskDeleteOutcome {
     Blocked {
         name: String,
         blockers: Vec<Blocker>,
-        /// Caveats gathered before the verdict — a refusal computed against
-        /// stale refs (failed pre-flight fetch) must not look identical to
-        /// one computed online: "unreachable commits" can be an artifact of
-        /// the staleness.
+        /// A refusal computed against stale refs must not look like one online.
         messages: Vec<String>,
     },
 }
 
-/// One reason a removal was refused, with everything the UI needs to render
-/// it as an actionable row.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Blocker {
-    /// Stable discriminant (`dirtyTree` / `unreachableCommits` /
-    /// `foreignPort`) — the UI branches on this, never on message text.
+    /// Stable discriminant — the UI branches on this, never on message text.
     pub kind: String,
-    /// What's wrong. Already names the port's holder where there is one, so
-    /// there's no separate holder field — the UI renders these two strings
-    /// and nothing else.
+    /// Already names the port's holder, so there is no separate holder field.
     pub message: String,
-    /// What to do about it.
     pub remedy: String,
     /// Whether forcing past this destroys work that exists nowhere else.
     pub loses_work: bool,
@@ -366,29 +336,22 @@ impl From<&RmBlocked> for Blocker {
     }
 }
 
-/// What to delete. Both forms resolve to the same board-row + worktree pair
-/// before anything is touched — one operation through two handles, not two
-/// behaviors that can drift. Either half may be absent.
+/// Both forms resolve to the same board-row + worktree pair before anything is
+/// touched — one operation through two handles, not two that can drift.
 #[derive(Debug, Clone)]
 pub enum DeleteTarget {
-    /// A board task id — the Board screen and the `task_delete` MCP tool.
     Board(i64),
-    /// A worktree directory — the Agentboard rail, which lists worktrees found
-    /// on disk whether or not the board knows about them.
+    /// The rail, which lists worktrees on disk whether or not the board knows.
     Worktree(String),
 }
 
-/// What a [`DeleteTarget`] actually names, resolved once before anything
-/// destructive runs so a target that doesn't exist fails while it's still free
-/// to fail.
+/// Resolved once before anything destructive runs, so a target that doesn't
+/// exist fails while it's still free to fail.
 struct Resolved {
-    /// The board row, when the target named one. `None` for a rail-initiated
-    /// delete, where the row is found by its bound dir (`BoardRows`).
+    /// `None` for a rail-initiated delete, where the row is found by bound dir.
     board_id: Option<i64>,
-    /// The worktree bound to it, if any. Present even when the directory has
-    /// since vanished — the bindings still need tearing down.
+    /// Present even when the directory vanished — bindings still need tearing down.
     dir: Option<String>,
-    /// What to call this in messages and toasts.
     label: String,
 }
 
@@ -412,11 +375,9 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
 }
 
 /// Delete a task's *presence* — panes and worktree — while its board row
-/// survives closed; refuses if the worktree holds work that exists nowhere
-/// else (`purge` is the only true row delete). The single delete path. The
-/// row closes last, only if the worktree really went; a guarded refusal
-/// returns `Blocked` with everything untouched, and PTYs die only past the
-/// guards — dropping records up front made a blocked removal look clean.
+/// survives closed (`purge` is the only true row delete). The row closes last,
+/// only if the worktree really went, and PTYs die only past the guards —
+/// dropping records up front made a blocked removal look clean.
 pub fn delete_task_blocking(
     app: &tauri::AppHandle,
     target: DeleteTarget,
@@ -426,8 +387,7 @@ pub fn delete_task_blocking(
 ) -> Result<TaskDeleteOutcome, String> {
     let Resolved { board_id, dir, label } = resolve_delete_target(app, target)?;
 
-    // Purge: the only hard delete, row-only — a bound row refuses, since
-    // deleting it would orphan the checkout on disk.
+    // The only hard delete, row-only: a bound row would orphan its checkout.
     if purge {
         let Some(id) = board_id else {
             return Err("purge names a board task by id".to_string());
@@ -444,9 +404,7 @@ pub fn delete_task_blocking(
         });
     }
 
-    // No worktree: nothing to guard and nothing to tear down, so the row is
-    // the whole task — close it in place. Everything else runs the shared
-    // sequence.
+    // No worktree: the row is the whole task, so close it in place.
     let Some(dir) = dir.as_deref() else {
         let mut messages = Vec::new();
         if let Some(id) = board_id {
@@ -457,14 +415,12 @@ pub fn delete_task_blocking(
         return Ok(TaskDeleteOutcome::Deleted { name: label, messages });
     };
 
-    // Decide the outcome before anything is destroyed: the row's evidence is
-    // read now, recorded at step 5 (after the worktree is gone).
+    // Decided before anything is destroyed; recorded after the worktree is gone.
     let outcome = outcome.unwrap_or_else(|| inferred_outcome_for(app, board_id, Some(dir)));
 
     // A gone directory can't resolve, so `root` stays `None` — safe **only**
     // because `TearDownBindings` skips the removal step for a missing dir;
-    // `remove_task` with `root: None` would re-discover a root from this
-    // process's cwd and could hit a same-named worktree elsewhere.
+    // otherwise `remove_task` would re-discover a root from this process's cwd.
     let (root, name) = match ops::resolve_task_dir(std::path::Path::new(dir)) {
         Ok((checkout, name)) => (Some(checkout), name),
         Err(_) if !std::path::Path::new(dir).is_dir() => {
@@ -482,31 +438,25 @@ pub fn delete_task_blocking(
         rows: Some(&rows),
         outcome,
         now_ms: crate::store::now_ms(),
-        // The dir came out of the app's own store or the rail, never a typed
-        // name, so a missing one means the record outlived the checkout — the
-        // record is exactly what still needs clearing.
+        // The dir came from the store or the rail, never a typed name, so a
+        // missing one means the record outlived the checkout.
         on_missing: tt_agentboard::task_removal::MissingDir::TearDownBindings,
     };
 
     let outcome = tt_agentboard::task_removal::remove_task_and_bindings(removal, &mut hooks);
-    // Released however the removal ended. A *refusal* is the case that matters:
-    // the row is still there with its worktree intact, so it must go back to
-    // reading as an ordinary row rather than staying stuck on `removing`.
+    // Released however the removal ended — a refused row must go back to reading
+    // as ordinary rather than staying stuck on `removing`.
     set_phase(app, |p| p.clear(dir));
     let outcome = outcome.map_err(|e| e.to_string())?;
 
     match outcome {
         tt_agentboard::task_removal::Outcome::Removed { messages, .. } => {
-            // Re-emit either way: a fleet-discovered (never-tracked) task also
-            // drops off the rail on the next recompute, so don't make the user
-            // wait a poll.
+            // A never-tracked task also drops off the rail — don't wait a poll.
             app.state::<crate::agentboard::Ab>().emit.notify_one();
             refresh_all_git_info_in_background(app);
             Ok(TaskDeleteOutcome::Deleted { name: label, messages })
         }
-        // A refusal ends here: nothing was removed — not the worktree, not the
-        // panes, not the row — so the user can act on the blocker and retry
-        // from exactly where they were.
+        // Nothing was removed, so the user can act on the blocker and retry.
         tt_agentboard::task_removal::Outcome::Blocked { name, blocked, messages } => {
             Ok(TaskDeleteOutcome::Blocked {
                 name,
@@ -517,8 +467,7 @@ pub fn delete_task_blocking(
     }
 }
 
-/// The outcome when the caller didn't pass one: the row's own evidence
-/// (`inferred_outcome`, merged PR ⇒ done), else done. Covers MCP callers;
+/// The row's own evidence (merged PR ⇒ done), else done. Covers MCP callers;
 /// the interactive path always passes one explicitly.
 fn inferred_outcome_for(
     app: &tauri::AppHandle,
@@ -533,8 +482,7 @@ fn inferred_outcome_for(
         .unwrap_or(tt_store::TaskOutcome::Done)
 }
 
-/// The app's half of the removal sequence: the two steps that need the live
-/// process, which is exactly why they are hooks rather than shared code.
+/// The two removal steps that need the live process — why they are hooks.
 struct AppRemovalHooks<'a> {
     app: &'a tauri::AppHandle,
     dir: &'a str,
@@ -542,13 +490,11 @@ struct AppRemovalHooks<'a> {
 
 impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
     fn on_phase(&mut self, phase: RemovePhase) {
-        // The record (and so the row) survives until the close at the very
-        // end, reporting each step as it runs.
+        // The record survives until the close at the very end.
         set_phase(self.app, |p| p.removing(self.dir, phase.label()));
 
-        // `StoppingSessions` doubles as the removal's go/no-go moment (see
-        // `RemovalHooks::on_phase`), so the PTY kill anchors to it. Locks
-        // scoped tight: never hold the engine lock across a subprocess.
+        // `StoppingSessions` doubles as the removal's go/no-go moment, so the
+        // PTY kill anchors to it. Never hold the engine lock across a subprocess.
         if phase == RemovePhase::StoppingSessions {
             let ids = {
                 let ab = self.app.state::<crate::agentboard::Ab>();
@@ -568,9 +514,8 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         let mut notes = Vec::new();
         let ab = self.app.state::<crate::agentboard::Ab>();
         let mut engine = ab.engine.lock().unwrap();
-        // Resolved while the owner's cached worktree list still names this
-        // dir — the staleness that makes the lookup work is what the
-        // invalidate below fixes.
+        // Resolved while the owner's cached worktree list still names this dir —
+        // that same staleness is what the invalidate below fixes.
         let owner = engine.find_worktree_owner(self.dir);
         let closed_ids = engine.close_folder(self.dir);
         if !closed_ids.is_empty() {
@@ -580,14 +525,11 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
                 if closed_ids.len() == 1 { "" } else { "s" }
             ));
         }
-        // The row itself is the task record's business and outlives the
-        // directory by design — all that has to go here is the cached git info
-        // for a path that no longer answers. See `Engine::drop_git_cache`.
+        // Only the cached git info for a path that no longer answers goes here;
+        // the row outlives the directory by design.
         engine.drop_git_cache(self.dir);
-        // …and the *owner's* entry, whose cached `linked_worktree_dirs`
-        // still names the gone directory until the TTL lets a recompute
-        // through. Invalidating closes that window on the next tick instead
-        // of a minute later.
+        // …and the *owner's* entry, whose cached `linked_worktree_dirs` names the
+        // gone directory until the TTL would otherwise let a recompute through.
         if let Some(owner) = owner {
             engine.invalidate_git(&owner, tt_agentboard::GitInvalidation::WorktreeRemoved);
         }
@@ -595,14 +537,12 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
     }
 }
 
-/// Reaches the board row through the app's shared store — locking only for the
-/// delete itself, never across the worktree removal (see
+/// Locks only for the delete itself, never across the worktree removal (see
 /// [`tt_agentboard::task_removal::BoardRows`]).
 struct AppBoardRows<'a> {
     app: &'a tauri::AppHandle,
-    /// The row the caller already resolved. Preferred over a dir lookup,
-    /// which can quietly miss (trailing slash, symlink) and leave the very
-    /// row the user asked to delete in place.
+    /// Preferred over a dir lookup, which can quietly miss (trailing slash,
+    /// symlink) and strand the very row the user asked to delete.
     board_id: Option<i64>,
 }
 
@@ -613,8 +553,7 @@ impl tt_agentboard::task_removal::BoardRows for AppBoardRows<'_> {
         outcome: tt_store::TaskOutcome,
         _now_ms: i64,
     ) -> Option<String> {
-        // Store errors become a note, never silence — "nothing was bound"
-        // must not stand in for "the store wouldn't answer".
+        // "Nothing was bound" must not stand in for "the store wouldn't answer".
         let id = match self.board_id {
             Some(id) => id,
             None => match crate::store::task_id_for_worktree_dir(self.app, dir) {
@@ -630,10 +569,8 @@ impl tt_agentboard::task_removal::BoardRows for AppBoardRows<'_> {
     }
 }
 
-/// The Tauri command over [`delete_task_blocking`] — see its doc. Exactly
-/// one of `id`/`dir` identifies the task; `outcome` omitted lets the row's
-/// own evidence decide; `purge` is the explicit permanent delete. Off the
-/// main thread.
+/// Exactly one of `id`/`dir` identifies the task; `outcome` omitted lets the
+/// row's own evidence decide; `purge` is the explicit permanent delete.
 #[tauri::command]
 pub async fn task_delete(
     app: tauri::AppHandle,
@@ -659,9 +596,8 @@ pub async fn task_delete(
     };
     let purge = purge.unwrap_or(false);
 
-    // A span for the command boundary's own duration. `outcome` covers all
-    // three endings (a refusal looks like success in an `is_ok` log); `force`
-    // rides along — the one entry that can have destroyed uncommitted work.
+    // `outcome` covers all three endings (a refusal looks like success in an
+    // `is_ok` log); `force` is the one entry that can have destroyed work.
     let span = tracing::info_span!(
         "task_delete",
         task_id = id,
@@ -694,17 +630,15 @@ pub async fn task_delete(
     .await
 }
 
-/// Stop whatever is listening on `port` — the `foreignPort` blocker's remedy.
-/// `ops::stop_task_port` refuses any port the task doesn't claim in its own
-/// `.env`, which keeps this from being a UI-reachable "kill any port"
-/// primitive. SIGTERM, then SIGKILL if still held.
+/// The `foreignPort` blocker's remedy. `ops::stop_task_port` refuses any port the
+/// task doesn't claim in its own `.env`, which keeps this from being a
+/// UI-reachable "kill any port" primitive. SIGTERM, then SIGKILL if still held.
 #[tauri::command]
 pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
     use tracing::Instrument as _;
 
-    // Signals processes, so it gets its own record. `.instrument`, not a
-    // held `enter()` guard — an entered span across an `.await` attributes
-    // whatever else runs on this thread to it.
+    // `.instrument`, not a held `enter()` guard — an entered span across an
+    // `.await` attributes whatever else runs on this thread to it.
     let span = tracing::info_span!(
         "task_stop_port",
         dir = %dir,
@@ -726,8 +660,7 @@ pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
             Ok(stopped) => {
                 let count = stopped.pgids.len();
                 let s = if count == 1 { "" } else { "s" };
-                // One decision for both log field and toast. Nothing
-                // signaled = the port was already free.
+                // One decision for both log field and toast.
                 let (outcome, message) = if count == 0 {
                     ("already_free", format!("Port {port} was already free"))
                 } else if stopped.graceful {

@@ -1,12 +1,5 @@
-/**
- * The three status readouts that live in the app header's title bar: the top
- * task on the left, and what needs you plus collector freshness on the right.
- *
- * They had a strip of their own under the header until they moved up here —
- * three short readouts do not earn a row of screen height, and the header's
- * left and right edges were already the quiet space for exactly this. Reported,
- * never actionable: a row navigates, nothing here approves or replies.
- */
+// The header title bar's three status readouts. Reported, never actionable: a
+// row navigates, nothing here approves or replies.
 import { useState } from "react";
 import {
   CircleAlert,
@@ -52,11 +45,8 @@ export function TopTaskChip() {
   );
 }
 
-/**
- * "all clear", or the count of things waiting on you with the feed behind it.
- * The feed is the single source for both the number and the rows, so the badge
- * can never disagree with the list it opens.
- */
+/** One feed backs both the count and the rows, so the badge can never disagree
+ * with the list it opens. */
 export function NeedsYouChip() {
   const { openTabWithFocus } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
@@ -101,11 +91,8 @@ export function NeedsYouChip() {
   );
 }
 
-/**
- * Collector freshness in one dot. Coloured from the worst *always-on* collector
- * (prs/issues) — calendar is off by default and would otherwise pin it amber
- * on every install that never turned it on.
- */
+/** Coloured from the worst *always-on* collector — calendar is off by default
+ * and would otherwise pin the dot amber on every install that never enabled it. */
 export function CollectorDot() {
   const { snapshot } = useStoreSnapshot();
   const now = useNow();
@@ -142,8 +129,6 @@ const KIND_META: Record<AttentionKind, { icon: LucideIcon; tone: string }> = {
   agent: { icon: CircleAlert, tone: "text-amber-500 dark:text-amber-400" },
 };
 
-/** One feed row: navigates on click (external Slack link, or an in-app deep
- * link that scrolls+flashes the row on its screen). */
 function AttentionRow({
   item,
   now,

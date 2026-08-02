@@ -13,22 +13,9 @@ import {
 import { SHORTCUTS, shortcutKeys } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-/**
- * Keyboard — the habit tab. Where Attention answers "where did the day go?",
- * this one answers "am I actually learning the shortcuts?", from the same
- * event log: every binding that fired (`shortcut.<id>`) against every click
- * that took a bound action's place (`mouse.<id>`).
- *
- * Deliberately *not* day-scoped like the tabs beside it — a habit is only
- * legible across days, so this reads the fixed 14-day window `tt-telemetry`'s
- * `keyboard_score` returns and ignores the screen's day picker. All the
- * arithmetic (share, goal, streak) happens in Rust; this file only paints it.
- *
- * The tone is a deliberate constraint. A streak, a ladder and a practice list
- * are enough to make the habit visible; badges, scores and losing-streak
- * warnings would turn a tool for getting into the zone into one more thing
- * demanding attention, which is the opposite of the point.
- */
+/** Keyboard — the habit tab: bindings that fired (`shortcut.<id>`) against clicks that
+ * took a bound action's place (`mouse.<id>`), over `keyboard_score`'s fixed 14-day window
+ * rather than the screen's day picker — a habit is only legible across days. */
 export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; loading: boolean }) {
   if (!score) {
     return (
@@ -128,10 +115,9 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
   );
 }
 
-/** Registry bindings with no keyboard use in the window, in registry order.
- * The overlay-hidden duplicates (mod+2…9, the bracket aliases) are left out —
- * they're the same action under another key, and listing them would read as
- * nine separate things left unlearned. */
+/** Registry bindings with no keyboard use in the window, in registry order. The
+ * overlay-hidden duplicates (mod+2…9, the bracket aliases) are left out — same action
+ * under another key, and nine of them would read as nine things left unlearned. */
 function unusedShortcuts(score: KeyboardScore): string[] {
   const used = new Set(score.byShortcut.filter((s) => s.shortcut > 0).map((s) => s.id));
   return Object.values(SHORTCUTS)
@@ -139,9 +125,8 @@ function unusedShortcuts(score: KeyboardScore): string[] {
     .map((s) => s.id);
 }
 
-/** One day per square, oldest left: won, lost, or too quiet to count. The
- * strip is the streak — a number alone can't show that last Tuesday was the
- * one that broke it. */
+/** One day per square, oldest left: won, lost, or too quiet to count. The strip is
+ * the streak — a number alone can't show which day broke it. */
 function StreakStrip({ days }: { days: KeyboardDay[] }) {
   return (
     <div className="flex items-end gap-1">
@@ -186,8 +171,7 @@ function SplitRow({ split }: { split: ShortcutSplit }) {
         {shortcut ? (
           shortcutKeys(split.id).map((cap) => <Kbd key={cap}>{cap}</Kbd>)
         ) : (
-          // A binding that has since been renamed or removed still has records
-          // in the log; show the raw id rather than dropping the history.
+          // A renamed or removed binding still has records; show the raw id.
           <span className="font-mono text-muted-foreground">{split.id}</span>
         )}
       </KbdGroup>

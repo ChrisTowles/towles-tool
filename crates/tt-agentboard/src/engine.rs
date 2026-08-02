@@ -26,11 +26,9 @@ use crate::types::{AgentEvent, AgentStatus, RowRecord, RowTask};
 use crate::watcher::{AgentWatcher, WatcherContext};
 use crate::watchers::claude_code::ClaudeCodeAgentWatcher;
 
-/// One row of the rail, before sessions and git stats are hung off it: a
-/// directory, the checkout it belongs to, and the record that put it there.
-///
-/// See [`Engine::rail_rows`] for the rule this type exists to enforce — the
-/// `dir` is where the checkout *should* be, not a claim that anything is there.
+/// One row of the rail, before sessions and git stats are hung off it. Its
+/// `dir` is where the checkout *should* be, not a claim that anything is there
+/// — see [`Engine::rail_rows`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct RailRow {
     pub dir: String,
@@ -47,21 +45,18 @@ pub struct UnrecordedWorktree {
     pub branch: Option<String>,
 }
 
-/// Why a git-cache entry was dropped, for [`Engine::invalidate_git`]'s
-/// `git.invalidated` record.
+/// Why a git-cache entry was dropped, for the `git.invalidated` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitInvalidation {
     /// A watched control file fired — commit, fetch, branch switch or `git add`.
     ControlFile,
-    /// An agent's turn ended, so the working tree moved with no watched file
-    /// moving with it (see [`crate::turn_end`]).
+    /// A turn ended, so the tree moved with no watched file (`crate::turn_end`).
     TurnEnd,
     /// A diff pane opened on this checkout.
     DiffFocus,
     /// Its base-branch override changed, so the stats have the wrong baseline.
     BaseBranch,
-    /// A linked worktree was removed, so cached `linked_worktree_dirs` names a
-    /// directory that is gone.
+    /// Cached `linked_worktree_dirs` now names a directory that is gone.
     WorktreeRemoved,
 }
 
@@ -83,15 +78,12 @@ const STALE_MS: i64 = 12 * 60 * 60 * 1000;
 const IDLE_MS: i64 = 30 * 1000;
 
 /// How long a [`Engine::git_pending`] claim blocks a second
-/// `stale_git_targets` caller before it self-expires. Comfortably longer than
-/// any real `compute_git_info`, so it only exists so a caller that never
-/// stores its result (panic, dropped `spawn_blocking`) can't strand a dir out
-/// of rotation forever.
+/// `stale_git_targets` caller before it self-expires — comfortably longer than
+/// any real `compute_git_info`, so only a caller that dropped its result hits it.
 const GIT_PENDING_GUARD_MS: i64 = 30_000;
 
-/// Best-effort persistence: a store write that fails is not worth aborting the
-/// caller over, but it is worth a record — a rename that silently didn't reach
-/// disk otherwise leaves the user nothing to look at. `what` names the store.
+/// Best-effort persistence: a failed store write isn't worth aborting the caller
+/// over, but a silent one leaves the user nothing to look at.
 fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &str) {
     if let Err(e) = result {
         log::warn!("failed to persist {what}: {e}");
@@ -101,8 +93,8 @@ fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &st
 /// Wall-clock epoch milliseconds (the hosts' `now`).
 pub use tt_config::now_ms;
 
-/// Collects watcher emits during a scan, resolving project dirs (and, in
-/// tmux mode, agent pids) to session names through injected resolvers.
+/// Collects watcher emits during a scan, resolving project dirs to session
+/// names through an injected resolver.
 struct CollectCtx<'a> {
     resolve: &'a dyn Fn(&str) -> Option<String>,
     events: Vec<AgentEvent>,
@@ -122,10 +114,8 @@ pub struct Engine {
     projects_dir: PathBuf,
     repos_path: PathBuf,
     repo_paths: Vec<String>,
-    /// [`crate::persist::FileVersion`] of `repos.json` at the last successful
-    /// parse — four `reload_repos` call sites fire per scan tick, so without
-    /// this the file was read and parsed 4×/2s to answer a question that only
-    /// changes when the user edits the repo list.
+    /// `repos.json`'s version at the last successful parse — four `reload_repos`
+    /// call sites fire per scan tick, and the answer only changes on an edit.
     repos_stat: Option<crate::persist::FileVersion>,
     tracker: AgentTracker,
     folder_meta: crate::folder_meta::FolderMetaStore,
@@ -135,78 +125,60 @@ pub struct Engine {
     sessions: SessionStore,
     git_cache: GitInfoCache,
     /// Dirs handed out by [`Self::stale_git_targets`], stamped with when — an
-    /// in-flight claim, not a cache field. The 2s scan loop and the 10s
-    /// git-stat poll both call `stale_git_targets` against the same TTL;
-    /// without the claim both can see the same dir stale in the same window
-    /// and race duplicate recomputes (measured live). Released by
-    /// [`Self::store_git_info`], and self-expiring
-    /// ([`GIT_PENDING_GUARD_MS`]) so a panicking caller can't strand a dir.
+    /// in-flight claim, not a cache field. The 2s scan loop and the 10s git-stat
+    /// poll share a TTL, so without it both race duplicate recomputes on the
+    /// same dir. Released by [`Self::store_git_info`], self-expiring after
+    /// [`GIT_PENDING_GUARD_MS`].
     git_pending: HashMap<String, i64>,
     watchers: Vec<Box<dyn AgentWatcher + Send>>,
     compact_recommend_percent: u8,
-    /// Show rows for worktrees no task claimed
-    /// (`agentboard.showUnmanagedWorktrees`, off by default — a worktree the
-    /// user never asked for shouldn't populate the rail unprompted). A
-    /// display filter over [`RowRecord::Detected`] rows; the host also gates
-    /// the detected-record reconciler on it.
+    /// `agentboard.showUnmanagedWorktrees`, off by default — a worktree the user
+    /// never asked for shouldn't populate the rail unprompted. A display filter
+    /// over [`RowRecord::Detected`]; the host gates its reconciler on it too.
     show_unmanaged_worktrees: bool,
-    /// The rail's worktree rows, refreshed from the store by the host each scan
-    /// tick (`Store::rail_worktrees` → [`Self::set_task_worktrees`]). The engine
-    /// is store-free, so these are pushed in rather than queried.
-    ///
-    /// **These are records, not directories.** An entry here puts a row on the
-    /// rail whether or not anything exists at its `dir` — that is the whole
-    /// point, and the reason nothing in this file filters rows on `is_dir`.
+    /// The rail's worktree rows, pushed in by the host each scan tick since the
+    /// engine is store-free. **These are records, not directories**: an entry
+    /// puts a row on the rail whether or not anything exists at its `dir`, which
+    /// is why nothing in this file filters rows on `is_dir`.
     task_worktrees: Vec<tt_store::RailWorktree>,
     seeded_once: bool,
-    /// Sticky agent→PTY attribution: thread id (CLI sessionId) → the
-    /// `TT_SESSION_ID` read from that agent's process env. Refreshed from live
-    /// processes each compute and kept while the tracker still holds the
-    /// thread, so an agent that exits stays on the pane it ran in instead of
-    /// drifting to its folder's default session.
+    /// Sticky agent→PTY attribution: thread id → the `TT_SESSION_ID` of that
+    /// agent's process. Kept while the tracker holds the thread, so an agent
+    /// that exits stays on the pane it ran in rather than drifting to default.
     thread_sessions: HashMap<String, String>,
-    /// Which app instances' agents this host reports (see
-    /// [`crate::procenv::InstanceScope`]).
+    /// Which app instances' agents this host reports.
     scope: InstanceScope,
 }
 
-/// Everything [`Engine::compute_payload_with`] needs that is derived from the
-/// system rather than engine state: the claude CLI's live-agent snapshot, the
-/// `TT_SESSION_ID` read from each agent's process env, and the app-spawned
-/// agents found by scanning `/proc`. Collect it with [`collect_agent_snapshot`]
-/// — outside the engine lock, since it spawns a process and reads transcripts.
+/// What [`Engine::compute_payload_with`] needs from the system rather than
+/// engine state. Collect it with [`collect_agent_snapshot`], outside the engine
+/// lock, since it spawns a process and reads transcripts.
 pub struct AgentSnapshot {
     live_threads: HashSet<String>,
     tt_session_by_thread: HashMap<String, String>,
     session_agents: HashMap<String, AgentEvent>,
 }
 
-/// Gather the live-agent inputs for a payload rebuild. Runs the (cached)
-/// `claude agents` fetch and the `/proc` scans; call it WITHOUT holding the
-/// engine lock so a slow claude CLI can't stall `ab_*` commands. `scope` must
-/// match the engine's (see [`Engine::new`]) so snapshot attribution and the
-/// watcher's admission agree on which agents are ours.
+/// Gather the live-agent inputs for a payload rebuild. Call it WITHOUT holding
+/// the engine lock so a slow claude CLI can't stall `ab_*` commands. `scope`
+/// must match the engine's, so attribution and admission agree on what is ours.
 pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot {
-    // CLI-derived liveness drives the pruning pins; the claude watcher emits
-    // CLI-authoritative statuses directly.
+    // CLI-derived liveness drives the pruning pins.
     let cli_agents = crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
         crate::watchers::claude_code::CLI_CACHE_TTL_MS,
     ));
     let live_threads: HashSet<String> = cli_agents.iter().map(|a| a.session_id.clone()).collect();
-    // Link each live agent to its PTY session: TT_SESSION_ID from /proc,
-    // keyed by thread id. No injected id → unmapped, falls back to the
-    // folder's default session; out of `scope` → dropped entirely.
+    // Link each live agent to its PTY session. Unmapped falls back to the
+    // folder's default session; out of `scope` is dropped entirely.
     let tt_session_by_thread: HashMap<String, String> = cli_agents
         .iter()
         .filter_map(|a| {
             crate::procenv::session_id_in_scope(a.pid, scope).map(|sid| (a.session_id.clone(), sid))
         })
         .collect();
-    // Supplement CLI detection: app-spawned sessions the CLI snapshot never
-    // enumerated, found by scanning /proc for our TT_SESSION_ID. Consumed
-    // only where `pick_state` came back empty — enriching an already-
-    // accounted session cost two 128 KiB reads + JSON parses per agent per
-    // rebuild for a value thrown away on the next line.
+    // Supplement CLI detection with app-spawned sessions it never enumerated.
+    // Only where `pick_state` came back empty: enriching an already-accounted
+    // session cost two 128 KiB reads per agent per rebuild, then threw it away.
     let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
     let mut session_agents: HashMap<String, AgentEvent> = HashMap::new();
     for proc in crate::procenv::scan_session_agents(scope) {
@@ -235,11 +207,9 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
 }
 
 impl Engine {
-    /// Build from the real config locations (`~/.claude`, `~/.config/towles-tool`).
-    /// `scope` picks which app instances' agents this host reports: the app
-    /// passes [`InstanceScope::this_app`] (its own PTYs only — sessions.json is
-    /// shared, so another instance's PTY can carry the same session id); the
-    /// MCP server passes [`InstanceScope::Any`].
+    /// Build from the real config locations. `scope` picks which app instances'
+    /// agents this host reports: the app passes [`InstanceScope::this_app`]
+    /// (sessions.json is shared), the MCP server [`InstanceScope::Any`].
     pub fn new(scope: InstanceScope) -> Self {
         let projects_dir =
             dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude").join("projects");
@@ -258,9 +228,8 @@ impl Engine {
         Self {
             projects_dir: projects_dir.clone(),
             repo_paths: load_repos(&repos_path),
-            // Left unset so the first `reload_repos` always reads: the
-            // `load_repos` above swallows a corrupt file as empty, and this
-            // field may only be stamped from a *good* parse.
+            // Unset so the first `reload_repos` always reads: `load_repos`
+            // swallows a corrupt file as empty, and only a good parse stamps this.
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
@@ -295,31 +264,27 @@ impl Engine {
         self.projects_dir.clone()
     }
 
-    /// Re-read `repos.json` so changes made by the `tt agentboard` CLI (which
-    /// writes the same file) are picked up without restarting the host. A
-    /// torn/corrupt read (the file exists but won't parse — most likely racing
-    /// another instance's write) keeps the last known-good list rather
-    /// than degrading to empty, which would prune every folder's sessions.
+    /// Re-read `repos.json` so another writer's changes land without a restart.
+    /// A torn read (most likely racing another instance's write) keeps the last
+    /// known-good list rather than degrading to empty, which would prune every
+    /// folder's sessions.
     fn reload_repos(&mut self) {
-        // Skip the read+parse entirely when the file is byte-for-byte the one
-        // we last parsed (see `repos_stat`). A missing file has no version and
-        // falls through to `try_load_repos`, which treats absent as an empty
-        // list — cheap, and keeps "the file was deleted" working.
+        // Skip the read+parse when the file is the one we last parsed. A missing
+        // file has no version and falls through, which `try_load_repos` treats
+        // as an empty list — so "the file was deleted" keeps working.
         let stat = crate::persist::file_version(&self.repos_path);
         if stat.is_some() && stat == self.repos_stat {
             return;
         }
         if let Some(paths) = crate::repos::try_load_repos(&self.repos_path) {
             self.repo_paths = paths;
-            // Only stamp on a good parse: a torn read keeps the last known-good
-            // list, and must stay re-readable next tick rather than caching the
-            // corrupt file's stat.
+            // Only on a good parse: caching a corrupt file's stat would stop
+            // the next tick re-reading it.
             self.repos_stat = stat;
         }
     }
 
-    /// One scan of every watcher with the repos.json-derived resolver
-    /// (desktop mode).
+    /// One scan of every watcher with the repos.json-derived resolver.
     pub fn scan_once(&mut self, now: i64) {
         self.reload_repos();
         let all_paths = self.rail_dirs();
@@ -327,15 +292,12 @@ impl Engine {
         self.scan_once_with_resolver(&|dir| resolve_session_name(dir, &entries), now);
     }
 
-    /// Every row the rail should show, in rail order. **Rows come from
-    /// records, never from detection**: each `repos.json` path is a
-    /// [`RowRecord::Checkout`] followed by its task rows — whether or not the
-    /// directories exist — so a task has its row from the moment it is
-    /// written down and keeps it through a removal. Discovered-but-unrecorded
-    /// worktrees are absent here; the host mints `detected` records and they
-    /// arrive back as ordinary rows. Order is `repos.json` order, then
-    /// `created_at` per checkout — never name-sort; callers must not re-sort.
-    /// Cache-only: runs under the engine lock every `ab_*` command shares.
+    /// Every row the rail should show, in rail order. **Rows come from records,
+    /// never from detection**: each `repos.json` path is a
+    /// [`RowRecord::Checkout`] followed by its task rows, existing or not, so a
+    /// task keeps its row through a removal. Order is `repos.json` order then
+    /// `created_at` — never name-sort, and callers must not re-sort. Cache-only,
+    /// since it runs under the lock every `ab_*` command shares.
     fn rail_rows(&mut self) -> Vec<RailRow> {
         let show_unmanaged = self.show_unmanaged_worktrees;
         let mut rows: Vec<RailRow> = Vec::with_capacity(self.repo_paths.len());
@@ -349,9 +311,8 @@ impl Engine {
                 repo_root: root.clone(),
                 record: RowRecord::Checkout,
             });
-            // Already `created_at`-ordered by `Store::rail_worktrees`; the scan
-            // is linear per checkout because the list is a handful of rows and
-            // an index would have to be rebuilt on every push anyway.
+            // Already `created_at`-ordered by `Store::rail_worktrees`; linear
+            // because an index would be rebuilt on every push anyway.
             for wt in self.task_worktrees.iter().filter(|w| &w.repo_root == root) {
                 if wt.kind == tt_store::TaskKind::Detected && !show_unmanaged {
                     continue;
@@ -377,24 +338,19 @@ impl Engine {
         rows
     }
 
-    /// The rail's rows as bare dirs, for the callers that only poll paths
-    /// (git-staleness, fs watches). Same order and same rule as
-    /// [`Self::rail_rows`].
+    /// The rail's rows as bare dirs, for callers that only poll paths. Same
+    /// order and rule as [`Self::rail_rows`].
     fn rail_dirs(&mut self) -> Vec<String> {
         self.rail_rows().into_iter().map(|r| r.dir).collect()
     }
 
-    /// Linked worktrees git knows about that no task row claims — the host
-    /// mints a `detected` record for each, after which they reach the rail as
-    /// ordinary rows. Steady state returns empty, so reconciliation writes
-    /// nothing. Cache-only, safe under the lock.
+    /// Linked worktrees git knows about that no task row claims — the host mints
+    /// a `detected` record for each. Steady state is empty. Cache-only.
     ///
-    /// **A directory that isn't there is never offered** — load-bearing, not
-    /// defensive: git keeps reporting a removed worktree until its
-    /// registration is pruned, and the memoized cache keeps it longer, so
-    /// offering it would mint a record [`Self::vanished_detected_records`]
-    /// forgets next tick — a row flapping in and out until the cache
-    /// refreshes. Both reconcilers must agree on the same predicate.
+    /// **A directory that isn't there is never offered**, load-bearing rather
+    /// than defensive: git keeps reporting a removed worktree until its
+    /// registration is pruned, so offering it would mint a record
+    /// [`Self::vanished_detected_records`] forgets next tick, flapping the row.
     pub fn unrecorded_worktrees(&mut self) -> Vec<UnrecordedWorktree> {
         self.reload_repos();
         let recorded: HashSet<&str> = self.task_worktrees.iter().map(|w| w.dir.as_str()).collect();
@@ -402,15 +358,12 @@ impl Engine {
         for root in &self.repo_paths {
             let info = self.git_cache.get(root);
             for dir in info.linked_worktree_dirs {
-                // A worktree the user tracks explicitly is a `Checkout` row and
-                // needs no task; recording one would give the same directory two
-                // records.
+                // A worktree the user tracks explicitly is a `Checkout` row;
+                // recording one would give the directory two records.
                 if self.repo_paths.contains(&dir) || recorded.contains(dir.as_str()) {
                     continue;
                 }
-                // See this method's doc: a registration git still reports for a
-                // directory that is gone would mint a record the next tick
-                // forgets, and the rail would flap.
+                // See this method's doc — offering a gone directory flaps the row.
                 if !Path::new(&dir).is_dir() {
                     continue;
                 }
@@ -424,14 +377,10 @@ impl Engine {
         out
     }
 
-    /// `detected` rows whose directory is gone — the host forgets them
-    /// (`Store::forget_detected_worktree`).
-    ///
-    /// Only ever `detected`: a **task** whose directory vanished is precisely
-    /// the row that must survive (rendered detached) until the user says what
-    /// happened to it. This is the one place the engine looks at the
-    /// filesystem to decide a record's fate, and it is bounded to records that
-    /// only ever existed because a directory did.
+    /// `detected` rows whose directory is gone — the host forgets them. Only
+    /// ever `detected`: a **task** whose directory vanished is precisely the row
+    /// that must survive, rendered detached, until the user says what happened.
+    /// The one place the engine lets the filesystem decide a record's fate.
     pub fn vanished_detected_records(&self) -> Vec<String> {
         self.task_worktrees
             .iter()
@@ -441,23 +390,17 @@ impl Engine {
             .collect()
     }
 
-    /// Tracked repos plus their discovered worktrees, as absolute checkout
-    /// dirs — [`Self::rail_rows`]'s output under a name a host
-    /// outside the engine can call. Meant for scoping the eager-rescan fs
-    /// watch ([`crate::fs_notify::ScopedDirNotifier`]) to the repos actually
-    /// being polled instead of every Claude Code session on the machine;
-    /// reads only the already-cached worktree lists (see
-    /// `rail_rows`'s doc for why that matters under the lock).
+    /// [`Self::rail_rows`]'s dirs, under a name a host outside the engine can
+    /// call — for scoping the eager-rescan fs watch to the repos actually being
+    /// polled instead of every Claude Code session on the machine.
     pub fn watch_targets(&mut self) -> Vec<String> {
         self.reload_repos();
         self.rail_dirs()
     }
 
-    /// `.git` internal files worth watching, mapped to the checkout dir each
-    /// belongs to, so a commit/fetch/switch/`git add` invalidates that dir
-    /// immediately instead of waiting out the TTL — see
-    /// [`crate::git_info::control_files_for`] for which files and why.
-    /// Cache-only, safe under the lock, cheap enough for every poll tick.
+    /// `.git` internal files worth watching, mapped to the checkout each belongs
+    /// to, so a commit/fetch/switch invalidates that dir instead of waiting out
+    /// the TTL. Which files and why: [`crate::git_info::control_files_for`].
     pub fn control_watch_files(&mut self) -> std::collections::HashMap<std::path::PathBuf, String> {
         self.reload_repos();
         let dirs = self.rail_dirs();
@@ -471,25 +414,19 @@ impl Engine {
         out
     }
 
-    /// Mark `dir`'s cache entry stale immediately — the event-driven
-    /// counterpart to the TTL, picked up by the next `stale_git_targets` call
-    /// regardless of how recently it was computed.
-    ///
-    /// `reason` lands on the `git.invalidated` record: which of these paths
-    /// fires, and how often, is otherwise unanswerable without a live repro.
+    /// Mark `dir`'s cache entry stale immediately — the event-driven counterpart
+    /// to the TTL. `reason` lands on the `git.invalidated` record, since which
+    /// path fires and how often is otherwise unanswerable without a live repro.
     pub fn invalidate_git(&mut self, dir: &str, reason: GitInvalidation) {
         self.git_cache.invalidate(Some(dir));
         tracing::debug!(%dir, reason = reason.as_str(), "git.invalidated");
     }
 
     /// Aim the short git-freshness ceiling at the checkout whose diff pane just
-    /// mounted, or release it on unmount. Returns whether the focus moved.
-    ///
-    /// A release names its own dir and is ignored unless it still holds the
-    /// focus: panes are conditionally rendered, so switching folders mounts the
-    /// new one before the old one's cleanup runs. Acquiring also invalidates —
-    /// focus means somebody is reading this row now, and the counts beside the
-    /// pane would otherwise sit at whatever the last poll left them.
+    /// mounted, or release it on unmount. A release is ignored unless it still
+    /// holds the focus, since switching folders mounts the new pane before the
+    /// old one's cleanup runs. Acquiring also invalidates: somebody is reading
+    /// this row now, and the counts would sit at whatever the last poll left.
     pub fn set_diff_focus(&mut self, dir: &str, focused: bool) -> bool {
         let next = match focused {
             true => Some(dir),
@@ -503,12 +440,9 @@ impl Engine {
         moved
     }
 
-    /// Rail dirs whose git-cache entry is missing or past the TTL, each with
-    /// its base-branch override and previously cached value — computed by the
-    /// host *outside* the engine lock, handed back via
-    /// [`Self::warm_git_cache`]. Claims each returned dir in
-    /// [`Self::git_pending`] so the other poll loop can't hand it out again
-    /// before the claim releases — see that field's doc.
+    /// Rail dirs whose git-cache entry is missing or past the TTL, computed by
+    /// the host *outside* the lock and handed back via [`Self::warm_git_cache`].
+    /// Claims each in [`Self::git_pending`] so the other poll loop can't retake it.
     pub fn stale_git_targets(
         &mut self,
         now: i64,
@@ -531,11 +465,9 @@ impl Engine {
         out
     }
 
-    /// Pair each dir with the two things a recompute needs alongside it: that
-    /// folder's base-branch override, and its previously cached value (so an
-    /// unmoved repo revalidates cheaply instead of re-running the landing
-    /// probe). Shared by [`Self::git_targets`] and [`Self::stale_git_targets`],
-    /// which differ only in which dirs they feed it.
+    /// Pair each dir with what a recompute needs alongside it: the base-branch
+    /// override, and the previously cached value so an unmoved repo revalidates
+    /// cheaply instead of re-running the landing probe.
     fn targets_for(
         &self,
         dirs: Vec<String>,
@@ -549,9 +481,8 @@ impl Engine {
             .collect()
     }
 
-    /// Store freshly computed git info for dirs the host warmed outside the
-    /// lock (see [`Self::stale_git_targets`]). Returns whether any entry's
-    /// value actually changed, so the host can skip a no-op re-emit.
+    /// Store git info for dirs the host warmed outside the lock. Returns whether
+    /// any value changed, so the host can skip a no-op re-emit.
     pub fn warm_git_cache(
         &mut self,
         results: Vec<(String, crate::git_info::GitInfo)>,
@@ -564,8 +495,8 @@ impl Engine {
         changed
     }
 
-    /// One scan of every watcher: collect emits through the resolvers and feed
-    /// them to the tracker (first scan's emits are seeded → marked unseen).
+    /// Collect every watcher's emits and feed them to the tracker (the first
+    /// scan's are seeded, so marked unseen).
     fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
         let mut ctx = CollectCtx { resolve, events: Vec::new() };
         for watcher in &mut self.watchers {
@@ -578,13 +509,10 @@ impl Engine {
         self.seeded_once = true;
     }
 
-    /// The tracked checkout that owns `dir` as a discovered `git worktree`,
-    /// if any — the repo whose cached `linked_worktree_dirs` (from its last
-    /// `compute_git_info`) lists `dir`. A rail row for such a `dir` is never
-    /// itself a `repos.json` entry (see [`Self::rail_rows`]'s doc), so
-    /// untracking it means pruning the worktree registration at the returned
-    /// owner dir (`crate::git_info::prune_stale_worktree`), not touching
-    /// `repos.json`. Cache-only, safe under the lock — never shells to git.
+    /// The tracked checkout whose cached `linked_worktree_dirs` lists `dir`.
+    /// Such a dir is never itself a `repos.json` entry, so untracking it means
+    /// pruning the registration at the returned owner, not touching
+    /// `repos.json`. Cache-only — never shells to git.
     pub fn find_worktree_owner(&mut self, dir: &str) -> Option<String> {
         self.reload_repos();
         repo_entries(&self.repo_paths)
@@ -593,24 +521,18 @@ impl Engine {
             .map(|e| e.dir)
     }
 
-    /// All watched repos' dirs with their base-branch overrides and cached
-    /// values, for an unlocked recompute handed back via
-    /// [`Engine::store_git_info`] — same shape as [`Self::stale_git_targets`]
-    /// without the staleness filter.
+    /// [`Self::stale_git_targets`] without the staleness filter, for an unlocked
+    /// recompute handed back via [`Engine::store_git_info`].
     pub fn git_targets(&mut self) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
         self.reload_repos();
         let dirs = repo_entries(&self.repo_paths).into_iter().map(|e| e.dir).collect();
         self.targets_for(dirs)
     }
 
-    /// Store one repo's freshly computed git info. Returns whether it differs
-    /// from the cached value, so the host can skip re-emitting an unchanged
-    /// snapshot.
-    ///
-    /// A compute that couldn't read the repository at all keeps the folder's
+    /// Store one repo's git info, returning whether it differs from the cached
+    /// value. A compute that couldn't read the repository keeps the folder's
     /// structural identity rather than blanking it — see
-    /// [`crate::git_info::preserve_identity_on_failed_read`] for why that
-    /// matters to the rail's row grouping.
+    /// [`crate::git_info::preserve_identity_on_failed_read`].
     pub fn store_git_info(
         &mut self,
         dir: &str,
@@ -625,10 +547,9 @@ impl Engine {
         changed
     }
 
-    /// Every tracked repo's dir with its cached origin URL (`None` until
-    /// computed / no remote). Cache-only, safe under the lock. Feeds
-    /// `tt_store::Store::reconcile_repos`, keeping `repos.json` the sole
-    /// source of truth for which repos are tracked.
+    /// Every tracked repo's dir with its cached origin URL. Feeds
+    /// `tt_store::Store::reconcile_repos`, keeping `repos.json` the sole source
+    /// of truth for which repos are tracked.
     pub fn tracked_repo_origins(&mut self) -> Vec<(String, Option<String>)> {
         self.reload_repos();
         repo_entries(&self.repo_paths)
@@ -640,12 +561,9 @@ impl Engine {
             .collect()
     }
 
-    /// Full recompute from repos.json (desktop mode). Base order is by name
-    /// (createdAt is meaningless for configured repos).
-    ///
-    /// Collects the agent snapshot itself. Hot loops call
-    /// [`collect_agent_snapshot`] unlocked and pass it to
-    /// [`Engine::compute_payload_with`]; this is for one-off internal reads.
+    /// Full recompute that collects the agent snapshot itself — for one-off
+    /// internal reads. Hot loops call [`collect_agent_snapshot`] unlocked and
+    /// pass it to [`Engine::compute_payload_with`].
     fn compute_payload(&mut self, now: i64) -> StatePayload {
         let snapshot = collect_agent_snapshot(now, &self.scope);
         self.compute_payload_with(&snapshot, now)
@@ -655,16 +573,13 @@ impl Engine {
     pub fn compute_payload_with(&mut self, snapshot: &AgentSnapshot, now: i64) -> StatePayload {
         self.reload_repos();
         let rows = self.rail_rows();
-        // NOT name-sorted: `rail_rows` already returns repos in `repoPaths`
-        // order (each followed by its task rows, oldest first), and that order
-        // is the user's — what a drag in Settings → Agentboard → Repos
-        // persists. Sorting by name here silently discarded that choice.
+        // NOT name-sorted: `rail_rows` order is the user's, what a drag in
+        // Settings → Agentboard → Repos persists. Sorting discarded that.
         let all_paths: Vec<String> = rows.iter().map(|r| r.dir.clone()).collect();
         let entries = repo_entries(&all_paths);
         let rows_by_dir: HashMap<String, RailRow> =
             rows.into_iter().map(|r| (r.dir.clone(), r)).collect();
-        // New folders get a default `shell 1` seeded once; a folder whose
-        // sessions were all closed stays empty (rendered as "no sessions").
+        // A folder whose sessions were all closed stays empty, not re-seeded.
         let mut seeded = false;
         for entry in &entries {
             if self.sessions.ensure_default(&entry.dir, now) {
@@ -675,18 +590,13 @@ impl Engine {
             persisted(self.sessions.save(), "sessions");
         }
         let payload = self.compute_payload_for_entries(&entries, &rows_by_dir, snapshot, now);
-        // Drop session records for repos no longer configured.
-        // Skipped when the resolved entry set is empty: every configured repo
-        // vanishing in one poll is far more likely a transient glitch (torn
-        // repos.json read, worktree-list hiccup) than a real config wipe, and
-        // pruning on it deletes every folder's session records. Stale
-        // records left by a genuine remove-all are pruned on the next
-        // non-empty poll.
+        // Drop session records for repos no longer configured — but never on an
+        // empty entry set, which is far more likely a transient glitch than a
+        // real config wipe. A genuine remove-all prunes on the next poll.
         if !entries.is_empty() {
             // Keyed on *records*, not rendered rows: a detected worktree hidden
-            // by the show-unmanaged toggle is absent from `entries` but still a
-            // real record, and pruning by display state would silently delete
-            // its session history from the shared sessions.json every poll.
+            // by the show-unmanaged toggle is still a real record, and pruning
+            // by display state would delete its session history every poll.
             let mut dirs: HashSet<String> = entries.iter().map(|e| e.dir.clone()).collect();
             dirs.extend(self.task_worktrees.iter().map(|w| w.dir.clone()));
             if self.sessions.prune(&dirs) {
@@ -695,9 +605,8 @@ impl Engine {
             if self.folder_meta.prune(&dirs) {
                 persisted(self.folder_meta.save(), "folder meta");
             }
-            // Repo identity is deliberately NOT pruned here: a hand-picked
-            // icon/color is user-authored with no undo, and this `dirs` set
-            // churns spuriously. Reaped on explicit removal only.
+            // Repo identity is NOT pruned here: a hand-picked icon/color is
+            // user-authored with no undo. Reaped on explicit removal only.
             let gone = self.windows.prune(&dirs);
             if !gone.is_empty() {
                 persisted(self.windows.save(&gone), "windows");
@@ -706,8 +615,7 @@ impl Engine {
         payload
     }
 
-    /// Replace a repo's icon/color identity; an all-empty `meta` resets it to
-    /// the default. Persists on change.
+    /// Replace a repo's icon/color identity; an all-empty `meta` resets it.
     pub fn set_repo_meta(&mut self, dir: &str, meta: crate::repo_meta::RepoMeta) -> bool {
         let changed = self.repo_meta.set_meta(dir, meta);
         if changed {
@@ -721,9 +629,8 @@ impl Engine {
         let changed = self.folder_meta.set_base_branch(dir, base_branch);
         if changed {
             persisted(self.folder_meta.save(), "folder metadata");
-            // The cached stats were computed against the old baseline —
-            // invalidate so the next watcher-scan tick (2s, not the 10s stat
-            // poll) recomputes them against the new override right away.
+            // Cached stats used the old baseline; invalidate so the 2s scan
+            // tick recomputes rather than the 10s stat poll.
             self.invalidate_git(dir, GitInvalidation::BaseBranch);
         }
         changed
@@ -738,20 +645,16 @@ impl Engine {
         changed
     }
 
-    /// Record that a pane was opened or closed on `dir` — the half of "I worked
-    /// here recently" that leaves no git trace. Persists on change.
+    /// The half of "I worked here recently" that leaves no git trace.
     fn touch_folder(&mut self, dir: &str, now_ms: i64) {
         if self.folder_meta.touch(dir, now_ms) {
             persisted(self.folder_meta.save(), "folder metadata");
         }
     }
 
-    /// Replace the persisted window layout (frontend-owned blob). Persists on
-    /// change; returns whether it changed.
-    /// `touched` is the set of folder dirs whose windows/active-window the
-    /// frontend actually mutated since its last save (see
-    /// [`crate::windows::WindowsStore::save`]) — required so a whole-blob save
-    /// from one Agentboard window can't clobber another window's folders.
+    /// Replace the persisted window layout (frontend-owned blob). `touched` is
+    /// the folder dirs the frontend actually mutated since its last save —
+    /// required so one window's whole-blob save can't clobber another's folders.
     pub fn set_windows(
         &mut self,
         payload: crate::windows::WindowsPayload,
@@ -773,9 +676,8 @@ impl Engine {
         changed
     }
 
-    /// Set the compact-nudge threshold and persist it to the shared settings
-    /// file (`agentboard.compactRecommendPercent`). Clamped to 1..=100.
-    /// Persists via `save_merge` so keys the TypeScript CLI owns survive.
+    /// Set the compact-nudge threshold (`agentboard.compactRecommendPercent`),
+    /// clamped to 1..=100. `save_merge`, so keys other writers own survive.
     pub fn set_compact_recommend_percent(&mut self, percent: u8) -> bool {
         let percent = percent.clamp(1, 100);
         if percent == self.compact_recommend_percent {
@@ -789,11 +691,9 @@ impl Engine {
         true
     }
 
-    /// Show (or hide again) auto-discovered non-task worktrees, persisting to
-    /// the shared settings file (`agentboard.showUnmanagedWorktrees`) via
-    /// `save_merge` so keys the TypeScript CLI owns survive. Returns whether
-    /// anything changed; the caller re-emits so the rail repopulates on the
-    /// next poll (no git recompute — see [`Self::rail_rows`]).
+    /// Show (or hide) auto-discovered non-task worktrees
+    /// (`agentboard.showUnmanagedWorktrees`). The caller re-emits and the rail
+    /// repopulates next poll — no git recompute, see [`Self::rail_rows`].
     pub fn set_show_unmanaged_worktrees(&mut self, show: bool) -> bool {
         if show == self.show_unmanaged_worktrees {
             return false;
@@ -806,22 +706,17 @@ impl Engine {
         true
     }
 
-    /// Whether unmanaged (detected) worktree rows are shown. The host's
-    /// detected-record reconciler is gated on this too: minting records the
-    /// rail filters out anyway would write rows nobody can see to a database
-    /// three other processes share, on every scan tick.
+    /// Whether detected worktree rows are shown. The host's reconciler is gated
+    /// on this too: minting rows nobody can see would write to a shared
+    /// database on every scan tick.
     pub fn show_unmanaged_worktrees(&self) -> bool {
         self.show_unmanaged_worktrees
     }
 
-    /// Replace the rail's worktree rows — the host reads them from the store
-    /// each scan tick (`Store::rail_worktrees` → [`Self::task_worktrees`]).
-    /// Returns whether anything changed, so the host can re-emit the moment a
-    /// task is created or closed rather than at the next poll boundary.
-    ///
-    /// This is the seam that makes the rail record-driven: a task submitted a
-    /// millisecond ago arrives here with a `dir` that does not exist yet, and
-    /// gets its row anyway.
+    /// Replace the rail's worktree rows, returning whether anything changed so
+    /// the host can re-emit at task creation rather than the next poll boundary.
+    /// The seam that makes the rail record-driven: a task submitted a
+    /// millisecond ago arrives with a `dir` that does not exist, and gets a row.
     pub fn set_task_worktrees(&mut self, worktrees: Vec<tt_store::RailWorktree>) -> bool {
         if worktrees == self.task_worktrees {
             return false;
@@ -830,8 +725,7 @@ impl Engine {
         true
     }
 
-    /// Full recompute for the given entries: pid-liveness pin → prune
-    /// schedule → assemble snapshot.
+    /// pid-liveness pin → prune schedule → assemble snapshot.
     fn compute_payload_for_entries(
         &mut self,
         entries: &[RepoEntry],
@@ -839,10 +733,8 @@ impl Engine {
         snapshot: &AgentSnapshot,
         now: i64,
     ) -> StatePayload {
-        // Link each live agent to its PTY session (TT_SESSION_ID via /proc,
-        // keyed by thread id). Sticky: an exited agent stays on the pane it
-        // ran in rather than drifting to the default session; unmapped ones
-        // fall back in `assemble_state`. Also persisted, so a crash doesn't
+        // Sticky: an exited agent stays on the pane it ran in rather than
+        // drifting to the default session. Persisted too, so a crash doesn't
         // take the pane→agent pairing with it (see [`crate::resume`]).
         let mut link_changed = false;
         for (tid, sid) in &snapshot.tt_session_by_thread {
@@ -869,9 +761,7 @@ impl Engine {
             }
         }
         self.tracker.set_pinned_instances_multi(&pinned);
-        // Drop cached attributions for threads that are neither alive nor
-        // still shown by the tracker — the cache stays bounded by the set of
-        // agents actually on the board.
+        // Bound the cache to agents actually on the board.
         self.thread_sessions
             .retain(|tid, _| snapshot.live_threads.contains(tid) || tracked_threads.contains(tid));
 
@@ -886,11 +776,9 @@ impl Engine {
             git_infos.insert(entry.dir.clone(), self.git_cache.get(&entry.dir));
         }
 
-        // Attribute each agent event to the PTY session it ran in, joining the
-        // event's thread id (== the CLI sessionId) to the `TT_SESSION_ID` read
-        // from that agent's process (sticky across process exit, see above).
-        // No mapping → folder's default session; a mapping onto a session that
-        // isn't one of the folder's records → dropped (see `assemble_state`).
+        // Attribute each event to the PTY session it ran in by joining its
+        // thread id to `thread_sessions`. No mapping falls back to the folder's
+        // default; a mapping onto a foreign session is dropped downstream.
         let attribute = |event: &AgentEvent| {
             event.thread_id.as_ref().and_then(|tid| self.thread_sessions.get(tid).cloned())
         };
@@ -907,9 +795,8 @@ impl Engine {
             now,
         );
 
-        // Repo identity is a pure lookup on the row's anchor dir, so it
-        // decorates the assembled payload rather than adding another store to
-        // that already-wide signature.
+        // A pure lookup on the row's anchor dir, so it decorates the assembled
+        // payload rather than widening that signature with another store.
         for repo in &mut payload.repos {
             repo.meta = self.repo_meta.meta_for(&repo.dir).cloned();
         }
@@ -919,9 +806,8 @@ impl Engine {
         payload
     }
 
-    /// Mark a folder's agents seen. Returns a fresh payload only if something
-    /// changed. `unseen` now lives on individual sessions (derived from their
-    /// agent state), so we recompute rather than patch the cached snapshot.
+    /// Mark a folder's agents seen, returning a payload only if that changed
+    /// anything. `unseen` is derived per session, so this recomputes.
     pub fn mark_seen_patch(&mut self, name: &str) -> Option<StatePayload> {
         if !self.tracker.mark_seen(name) {
             return None;
@@ -929,15 +815,13 @@ impl Engine {
         Some(self.compute_payload(now_ms()))
     }
 
-    /// Absolute dirs currently on the rail (freshly reloaded), so the add-repo
-    /// picker can exclude repos that are already added.
+    /// Absolute dirs on the rail, so the add-repo picker can exclude them.
     pub fn repo_dirs(&mut self) -> Vec<String> {
         self.reload_repos();
         self.repo_paths.clone()
     }
 
-    /// Configured scan roots for the add-repo picker (`scanRoots` in repos.json).
-    /// Empty when unset — the caller substitutes its own default (`~/code`).
+    /// `scanRoots` from repos.json; empty when unset, and the caller defaults.
     pub fn scan_roots(&self) -> Vec<String> {
         load_scan_roots(&self.repos_path)
     }
@@ -947,10 +831,8 @@ impl Engine {
         persisted(save_scan_roots(&self.repos_path, &roots), "scan roots");
     }
 
-    /// Adds straight against `repos.json` (reread-fresh-then-write; see
-    /// [`add_repo_persisted`]) rather than trusting `self.repo_paths`, which
-    /// may be stale — another Agentboard window may have added/removed a
-    /// different repo since our last reload.
+    /// Adds against `repos.json` itself rather than the possibly-stale
+    /// `self.repo_paths` — another window may have written since our reload.
     pub fn add_repo(&mut self, path: &str) -> bool {
         match add_repo_persisted(&self.repos_path, path) {
             Ok((merged, added)) => {
@@ -965,8 +847,7 @@ impl Engine {
         match remove_repo_persisted(&self.repos_path, dir) {
             Ok((merged, removed)) => {
                 self.repo_paths = merged;
-                // Explicit removal is the one place identity is reaped — see
-                // `RepoMetaStore::forget`.
+                // The one place identity is reaped — see `RepoMetaStore::forget`.
                 if removed && self.repo_meta.forget(dir) {
                     persisted(self.repo_meta.save(), "repo identity");
                 }
@@ -976,16 +857,15 @@ impl Engine {
         }
     }
 
-    /// Set the rail's repo order (the user's drag). Persists on change; see
-    /// [`reorder_repos`] for why a stale `desired` can't drop a repo.
+    /// Set the rail's repo order (the user's drag) — see [`reorder_repos`] for
+    /// why a stale `desired` can't drop a repo.
     pub fn set_repo_order(&mut self, desired: &[String]) -> std::io::Result<()> {
         let merged = crate::repos::reorder_repos_persisted(&self.repos_path, desired)?;
         self.repo_paths = merged;
         Ok(())
     }
 
-    /// Untrack every repo whose directory is gone from disk (the rail's
-    /// "missing" ghosts). Returns the dropped dirs; empty on IO failure.
+    /// Untrack every repo whose directory is gone — the rail's "missing" ghosts.
     pub fn untrack_missing(&mut self) -> Vec<String> {
         match untrack_missing_persisted(&self.repos_path) {
             Ok((merged, removed)) => {
@@ -1004,9 +884,8 @@ impl Engine {
         record
     }
 
-    /// The folder's first session, seeding the default one if it has none —
-    /// for a caller that wants "the session to type into" without risking a
-    /// second row (a surprise split pane) when a default already exists.
+    /// The folder's first session, seeding a default if it has none — "the
+    /// session to type into", without risking a surprise second pane.
     pub fn ensure_session(&mut self, dir: &str, now: i64) -> Option<SessionRecord> {
         if self.sessions.ensure_default(dir, now) {
             persisted(self.sessions.save(), "sessions");
@@ -1033,8 +912,7 @@ impl Engine {
         changed
     }
 
-    /// Remove a PTY session by id. Returns whether it was removed. (A folder left
-    /// empty is re-seeded with a default shell on the next `compute_payload`.)
+    /// Remove a PTY session by id, reporting whether it was there.
     pub fn close_session(&mut self, id: &str, now: i64) -> bool {
         // Resolved before the removal, since afterwards the record is gone.
         let dir = self.folder_dir_of_session(id);
@@ -1048,8 +926,7 @@ impl Engine {
         removed
     }
 
-    /// The folder dir a session record belongs to, or `None` when nothing knows
-    /// that id.
+    /// The folder dir a session record belongs to.
     fn folder_dir_of_session(&self, id: &str) -> Option<String> {
         self.sessions
             .iter()
@@ -1057,20 +934,16 @@ impl Engine {
             .map(|(dir, _)| dir.to_string())
     }
 
-    /// Session ids scoped to `dir`, without removing anything — a task
-    /// removal must kill live PTYs *before* attempting the (fallible)
-    /// worktree removal, but must not drop the records until removal has
-    /// actually succeeded (see [`Self::close_folder`]).
+    /// Session ids scoped to `dir`, removing nothing: a task removal kills live
+    /// PTYs *before* the fallible worktree removal, but must not drop the
+    /// records until that succeeds (see [`Self::close_folder`]).
     pub fn session_ids_for(&self, dir: &str) -> Vec<String> {
         self.sessions.sessions_for(dir).iter().map(|r| r.id.clone()).collect()
     }
 
-    /// Every persisted session record with its folder dir, cloned.
-    ///
-    /// Exists so a caller can take this snapshot under the engine lock and then
-    /// do slow work (the resume picker's transcript scan) with the lock
-    /// released — holding it across disk I/O would block every `ab_*` command
-    /// and the state poll behind it.
+    /// Every persisted session record with its folder dir, cloned — so a caller
+    /// can snapshot under the lock and then do slow work (the resume picker's
+    /// transcript scan) without blocking every `ab_*` command behind it.
     pub fn session_records(&self) -> Vec<(String, SessionRecord)> {
         self.sessions
             .iter()
@@ -1078,15 +951,10 @@ impl Engine {
             .collect()
     }
 
-    /// Tear a folder's live rail state down immediately, ahead of its
-    /// checkout disappearing (a task removal): drop every session record and
-    /// every window/pane scoped to it, persisting both right away instead of
-    /// waiting for the next poll's repo-keyed prune in
-    /// [`Self::compute_payload_with`]. Returns the removed session ids so the
-    /// caller can kill their live PTYs (a session id doubles as its `term_id`)
-    /// — killing them first is what actually ends any Claude Code process
-    /// running inside, since closing the PTY's controlling terminal signals
-    /// its foreground job.
+    /// Tear a folder's live rail state down ahead of its checkout disappearing,
+    /// rather than waiting for the next poll's prune. Returns the removed
+    /// session ids (a session id doubles as its `term_id`) so the caller can
+    /// kill their PTYs — which is what ends any Claude Code process inside.
     pub fn close_folder(&mut self, dir: &str) -> Vec<String> {
         let ids: Vec<String> =
             self.sessions.sessions_for(dir).iter().map(|r| r.id.clone()).collect();
@@ -1102,11 +970,10 @@ impl Engine {
         ids
     }
 
-    /// Drop a checkout's cached git info and any in-flight compute claim —
-    /// called from the removal sequence once the worktree is off disk. Only
-    /// the cache: the row is the task record's business and outlives the
-    /// directory by design. A stale claim would hold the path out of the poll
-    /// rotation, and a new task at the same path must not inherit dead stats.
+    /// Drop a checkout's cached git info and any in-flight claim, once the
+    /// worktree is off disk. Only the cache — the row outlives the directory by
+    /// design. A stale claim would hold the path out of the poll rotation, and
+    /// a new task at the same path must not inherit dead stats.
     pub fn drop_git_cache(&mut self, dir: &str) -> bool {
         self.git_pending.remove(dir);
         self.git_cache.forget(dir)
@@ -1115,12 +982,9 @@ impl Engine {
 
 #[cfg(test)]
 impl Engine {
-    /// A fully isolated engine for tests: every persisted store is in-memory
-    /// (`None` path, so its `save()` is a no-op) **except** `repos.json`, which
-    /// points at `repos_path` (a tempdir file) so repo add/remove/reorder
-    /// persistence can be asserted without ever touching the real config dir.
-    /// No watchers, so a scan is inert. `InstanceScope::Any` so nothing depends
-    /// on this process's instance id.
+    /// Every persisted store in-memory **except** `repos.json`, which points at
+    /// a tempdir file so repo persistence can be asserted without touching the
+    /// real config dir. No watchers, so a scan is inert.
     fn new_for_test(repos_path: PathBuf) -> Self {
         Self {
             projects_dir: PathBuf::from("/nonexistent/projects"),
@@ -1167,12 +1031,10 @@ mod engine_tests {
         let (_tmp, mut e) = engine();
         let a = e.add_session("/repo/x", Some("one"), 1000);
         let b = e.add_session("/repo/x", Some("two"), 1001);
-        // Both land under the same folder; a different folder stays empty.
         let ids = e.session_ids_for("/repo/x");
         assert!(ids.contains(&a.id) && ids.contains(&b.id));
         assert!(e.session_ids_for("/repo/other").is_empty());
 
-        // Closing one leaves the other; closing an unknown id is a no-op.
         assert!(e.close_session(&a.id, 1002));
         assert!(!e.close_session("nope", 1003));
         assert_eq!(e.session_ids_for("/repo/x"), vec![b.id]);
@@ -1194,7 +1056,6 @@ mod engine_tests {
         assert_eq!(closed, expected);
         assert!(e.session_ids_for("/repo/x").is_empty());
 
-        // A folder with no sessions closes to an empty list, not an error.
         assert!(e.close_folder("/repo/never").is_empty());
     }
 
@@ -1203,7 +1064,6 @@ mod engine_tests {
         let (_tmp, mut e) = engine();
         let rec = e.add_session("/repo/x", Some("orig"), 1000);
         assert!(e.rename_session(&rec.id, "renamed"));
-        // Renaming to the same name is not a change.
         assert!(!e.rename_session(&rec.id, "renamed"));
         assert!(!e.rename_session("unknown-id", "x"));
 
@@ -1218,14 +1078,12 @@ mod engine_tests {
     fn add_repo_is_idempotent_and_remove_reports_removal() {
         let (_tmp, mut e) = engine();
         assert!(e.add_repo("/repo/a"));
-        // Re-adding the same repo is not a new add.
         assert!(!e.add_repo("/repo/a"));
         assert!(e.add_repo("/repo/b"));
         assert!(e.repo_dirs().contains(&"/repo/a".to_string()));
         assert!(e.repo_dirs().contains(&"/repo/b".to_string()));
 
         assert!(e.remove_repo("/repo/a"));
-        // Removing something not tracked reports no removal.
         assert!(!e.remove_repo("/repo/a"));
         assert!(!e.repo_dirs().contains(&"/repo/a".to_string()));
         assert!(e.repo_dirs().contains(&"/repo/b".to_string()));
@@ -1239,8 +1097,7 @@ mod engine_tests {
             let mut e = Engine::new_for_test(repos_path.clone());
             assert!(e.add_repo("/repo/persisted"));
         }
-        // A fresh engine over the same repos.json sees the tracked repo — proof
-        // the add wrote through, not just mutated memory.
+        // A fresh engine sees it — proof the add wrote through.
         let e2 = Engine::new_for_test(repos_path);
         assert!(e2.repo_paths.contains(&"/repo/persisted".to_string()));
     }
@@ -1258,31 +1115,25 @@ mod engine_tests {
             1000,
         );
 
-        // A dir that's a discovered worktree of a tracked repo resolves to
-        // that repo — this is never itself a `repos.json` entry (see
-        // [`Engine::rail_rows`]'s doc), which is exactly why plain
-        // `remove_repo` can't untrack it.
+        // A discovered worktree is never itself a `repos.json` entry, which is
+        // exactly why plain `remove_repo` can't untrack it.
         assert_eq!(
             e.find_worktree_owner("/repo/main/.claude/worktrees/thing"),
             Some("/repo/main".to_string())
         );
         assert!(!e.remove_repo("/repo/main/.claude/worktrees/thing"));
 
-        // An unrelated dir has no owner.
         assert_eq!(e.find_worktree_owner("/repo/elsewhere"), None);
     }
 
-    /// Why removal invalidates the *owner* too: the registration is gone on
-    /// disk but the owner's cached `linked_worktree_dirs` still names the
-    /// deleted path until the TTL lets a recompute through — invalidating
-    /// drops the dead entry in seconds rather than a minute.
+    /// Why removal invalidates the *owner* too: its cached
+    /// `linked_worktree_dirs` still names the deleted path until the TTL lets a
+    /// recompute through.
     #[test]
     fn invalidating_the_owner_requeues_its_stale_worktree_list() {
         let (_tmp, mut e) = engine();
-        // Real epoch-ms timestamps, not the small fixture numbers used
-        // elsewhere: `invalidate` marks an entry stale by stamping it `0`, so
-        // freshness only reads as expired when `now` is genuinely far from the
-        // epoch. A `now` of 1_002 would call a zero-stamped entry fresh.
+        // Real epoch-ms, not the small fixture numbers: `invalidate` stamps an
+        // entry `0`, which only reads stale when `now` is far from the epoch.
         let now = 1_700_000_000_000;
         let wt = "/repo/main/.claude/worktrees/feat-deleted";
         assert!(e.add_repo("/repo/main"));
@@ -1295,15 +1146,13 @@ mod engine_tests {
             now,
         );
 
-        // Freshly computed, so without the invalidate the owner is not due for
-        // a recompute and that stale list stands for the whole TTL.
+        // Freshly computed, so the stale list would stand for the whole TTL…
         assert!(e.stale_git_targets(now + 1).is_empty());
 
-        // The removal step resolves the owner from precisely that staleness —
-        // the directory is gone, so only the cache can still answer…
+        // …the directory is gone, so only the cache can still answer…
         assert_eq!(e.find_worktree_owner(wt), Some("/repo/main".to_string()));
 
-        // …and invalidating it requeues the recompute that drops the entry.
+        // …and invalidating requeues the recompute that drops the entry.
         e.invalidate_git("/repo/main", GitInvalidation::ControlFile);
         assert!(
             e.stale_git_targets(now + 2).iter().any(|(dir, _, _)| dir == "/repo/main"),
@@ -1332,15 +1181,13 @@ mod engine_tests {
         let wt = "/repo/main/.claude/worktrees/feat-thing";
         assert!(e.add_repo("/repo/main"));
 
-        // Git has never heard of this directory and it isn't on disk — the row
-        // is there anyway. This is a task mid-`worktree add`.
+        // A task mid-`worktree add`: nothing on disk, row there anyway.
         assert!(e.set_task_worktrees(vec![record("/repo/main", wt, tt_store::TaskKind::Task)]));
         assert!(e.watch_targets().contains(&wt.to_string()));
         assert!(!e.set_task_worktrees(vec![record("/repo/main", wt, tt_store::TaskKind::Task)]));
 
-        // And when the record goes — the task closed at the end of removal —
-        // the row goes with it, even though the parent still lists the worktree
-        // (removing one moves no ref, so nothing invalidates that entry).
+        // And when the record goes the row goes with it, even though the parent
+        // still lists the worktree (removing one moves no ref).
         e.store_git_info(
             "/repo/main",
             crate::git_info::GitInfo {
@@ -1353,17 +1200,15 @@ mod engine_tests {
         assert!(!e.watch_targets().contains(&wt.to_string()));
     }
 
-    /// The other direction, and the reason removal no longer needs to out-race
-    /// discovery: a worktree deleted from under the app keeps its row, because
-    /// the record outlives the directory. The rail renders it `Detached`.
+    /// Why removal no longer needs to out-race discovery: a worktree deleted
+    /// from under the app keeps its row, rendered `Detached`.
     #[test]
     fn a_task_row_survives_its_directory_vanishing() {
         let (_tmp, mut e) = engine();
         let wt = "/repo/main/.claude/worktrees/feat-gone";
         assert!(e.add_repo("/repo/main"));
         e.set_task_worktrees(vec![record("/repo/main", wt, tt_store::TaskKind::Task)]);
-        // Nothing exists at that path — `engine()` works under a tempdir — and
-        // git reports the checkout missing.
+        // Nothing exists at that path, and git reports the checkout missing.
         e.store_git_info(
             wt,
             crate::git_info::GitInfo { dir_missing: true, ..Default::default() },
@@ -1377,8 +1222,8 @@ mod engine_tests {
         );
     }
 
-    /// Detected rows are records too, so the setting is a display filter over an
-    /// already-ordered set rather than a switch that starts a discovery.
+    /// Detected rows are records too, so the setting filters an ordered set
+    /// rather than starting a discovery.
     #[test]
     fn detected_rows_are_hidden_by_the_setting_not_by_discovery() {
         let (_tmp, mut e) = engine();
@@ -1392,8 +1237,7 @@ mod engine_tests {
 
         assert_eq!(e.watch_targets(), vec!["/repo/main".to_string(), task.to_string()]);
 
-        // Set directly rather than through the setter, which writes the real
-        // settings file.
+        // Direct, since the setter writes the real settings file.
         e.show_unmanaged_worktrees = true;
         assert_eq!(
             e.watch_targets(),
@@ -1405,14 +1249,12 @@ mod engine_tests {
         );
     }
 
-    /// What the host reconciles into `detected` records: linked worktrees git
-    /// reports that nothing has written down yet. Empty once recorded, so the
-    /// steady state costs no store writes.
+    /// What the host reconciles into `detected` records. Empty once recorded,
+    /// so the steady state costs no store writes.
     #[test]
     fn unrecorded_worktrees_are_offered_once_and_then_stay_quiet() {
         let (tmp, mut e) = engine();
-        // A real directory: `unrecorded_worktrees` only offers worktrees that
-        // are actually on disk (see `a_vanished_worktree_is_never_offered`).
+        // A real directory — only on-disk worktrees are ever offered.
         let wt_path = tmp.path().join("agent-8f21");
         std::fs::create_dir(&wt_path).unwrap();
         let wt = wt_path.to_string_lossy().to_string();
@@ -1437,13 +1279,9 @@ mod engine_tests {
         assert!(e.unrecorded_worktrees().is_empty(), "already recorded — nothing to write");
     }
 
-    /// The deleted-task flap: git keeps reporting a linked worktree until its
-    /// registration is pruned, so right after a removal the cached list still
-    /// names a directory that is gone. Offering it would mint a `detected`
-    /// record, `vanished_detected_records` would forget it next tick, and the
-    /// tick after would mint it again — the row blinking in and out on the
-    /// rail. The two reconcilers have to agree, so this one never offers what
-    /// the other would immediately retire.
+    /// The deleted-task flap: offering a gone directory would mint a record,
+    /// `vanished_detected_records` would forget it next tick, and the tick
+    /// after would mint it again. The two reconcilers have to agree.
     #[test]
     fn a_vanished_worktree_is_never_offered_as_unrecorded() {
         let (tmp, mut e) = engine();
@@ -1465,9 +1303,7 @@ mod engine_tests {
         let found = e.unrecorded_worktrees();
         assert_eq!(found.iter().map(|w| w.dir.as_str()).collect::<Vec<_>>(), vec![live_s.as_str()]);
 
-        // …and the cycle is closed: had it been offered, recording it would put
-        // it straight onto the forget list, and forgetting it would offer it
-        // again on the next tick.
+        // …and recording the gone one would put it straight on the forget list.
         e.set_task_worktrees(vec![record("/repo/main", gone, tt_store::TaskKind::Detected)]);
         assert_eq!(e.vanished_detected_records(), vec![gone.to_string()]);
         e.set_task_worktrees(vec![]);
@@ -1477,8 +1313,8 @@ mod engine_tests {
         );
     }
 
-    /// A worktree the user tracks explicitly is a `Checkout` row and needs no
-    /// task; recording one would give the same directory two records.
+    /// A tracked worktree is a `Checkout` row; recording one too would give the
+    /// same directory two records.
     #[test]
     fn a_tracked_worktree_is_never_offered_as_unrecorded() {
         let (_tmp, mut e) = engine();
@@ -1494,13 +1330,11 @@ mod engine_tests {
             1000,
         );
         assert!(e.unrecorded_worktrees().is_empty());
-        // …and it appears exactly once in the rail, not twice.
         assert_eq!(e.watch_targets(), vec!["/repo/main".to_string(), wt.to_string()]);
     }
 
-    /// A detected record whose directory is gone is the host's cue to forget it
-    /// — the one case where the filesystem retires a record, and only ever for
-    /// rows that existed because of the filesystem in the first place.
+    /// The one case where the filesystem retires a record, and only for rows
+    /// that existed because of the filesystem in the first place.
     #[test]
     fn vanished_detected_records_are_reported_for_cleanup() {
         let (tmp, mut e) = engine();
@@ -1522,21 +1356,16 @@ mod engine_tests {
     #[test]
     fn store_git_info_reports_change_only_on_a_real_difference() {
         let (_tmp, mut e) = engine();
-        // First store of a non-default value is a change (cache miss → default).
         assert!(e.store_git_info("/repo/x", git_info("main"), 1000));
-        // Storing an identical value again is not a change.
         assert!(!e.store_git_info("/repo/x", git_info("main"), 1100));
-        // A different value is a change.
         assert!(e.store_git_info("/repo/x", git_info("feat"), 1200));
     }
 
     #[test]
     fn warm_git_cache_is_true_iff_any_entry_changed() {
         let (_tmp, mut e) = engine();
-        // Seed one dir.
         e.store_git_info("/repo/x", git_info("main"), 1000);
 
-        // A batch where one entry is unchanged and one is new → changed.
         let changed = e.warm_git_cache(
             vec![
                 ("/repo/x".to_string(), git_info("main")), // unchanged
@@ -1549,10 +1378,9 @@ mod engine_tests {
 
     // stale_git_targets in-flight dedup
 
-    /// The scan loop and the git-stat poll both call `stale_git_targets`
-    /// against the same repo set. Without the in-flight claim, both would
-    /// hand back the same stale dir before either stored a fresh value,
-    /// doubling every `git` chain — this is the dedup that stops that.
+    /// Both poll loops call `stale_git_targets` against the same repo set;
+    /// without the in-flight claim they hand back the same dir, doubling every
+    /// `git` chain.
     #[test]
     fn stale_git_targets_does_not_hand_out_a_dir_twice_before_it_is_stored() {
         let (_tmp, mut e) = engine();
@@ -1561,20 +1389,16 @@ mod engine_tests {
         let first = e.stale_git_targets(1000);
         assert_eq!(first.len(), 1, "the only tracked dir is stale on first check");
 
-        // A second caller in the same window (e.g. the other poll loop) must
-        // not be handed the dir again — it's already claimed.
         let second = e.stale_git_targets(1010);
         assert!(second.is_empty(), "a claimed dir is withheld from a concurrent caller");
 
-        // Once the first caller stores its result, the dir is fresh (within
-        // the TTL) and still correctly withheld — but for the ordinary reason.
+        // Once stored, the dir is withheld again — but for the ordinary reason.
         e.store_git_info("/repo/x", git_info("main"), 1010);
         assert!(e.stale_git_targets(1020).is_empty());
     }
 
-    /// A claim must not survive forever if the caller that took it never
-    /// calls `store_git_info` back (a panicked `spawn_blocking`, a dropped
-    /// future) — otherwise that dir silently drops out of the poll rotation.
+    /// A caller that never calls `store_git_info` back must not drop its dir
+    /// out of the poll rotation forever.
     #[test]
     fn a_claim_no_one_released_self_expires_past_the_guard_window() {
         let (_tmp, mut e) = engine();
@@ -1582,8 +1406,7 @@ mod engine_tests {
 
         let first = e.stale_git_targets(1000);
         assert_eq!(first.len(), 1);
-        // Never call store_git_info — simulate a caller that dropped the result.
-
+        // Deliberately no store_git_info: the caller dropped its result.
         assert!(
             e.stale_git_targets(1000 + GIT_PENDING_GUARD_MS - 1).is_empty(),
             "still within the guard window"
@@ -1592,9 +1415,8 @@ mod engine_tests {
         assert_eq!(recovered.len(), 1, "the claim expired, so the dir is eligible again");
     }
 
-    /// Panes are conditionally rendered, so switching folders mounts the new
-    /// diff pane *before* the old one's cleanup runs. The late release must not
-    /// take the ceiling the new pane already claimed.
+    /// Switching folders mounts the new diff pane *before* the old one's
+    /// cleanup runs; that late release must not take the new pane's ceiling.
     #[test]
     fn releasing_diff_focus_late_does_not_steal_the_new_panes_ceiling() {
         let (_tmp, mut e) = engine();
@@ -1611,8 +1433,8 @@ mod engine_tests {
         assert_eq!(e.git_cache.focused_dir(), None);
     }
 
-    /// Opening a pane is somebody reading the row — the counts beside it should
-    /// not sit at whatever the last poll left them.
+    /// Opening a pane is somebody reading the row, so the counts beside it must
+    /// not sit at whatever the last poll left.
     #[test]
     fn claiming_diff_focus_invalidates_so_the_next_tick_recomputes() {
         let (_tmp, mut e) = engine();
@@ -1629,22 +1451,17 @@ mod engine_tests {
     #[test]
     fn set_folder_base_branch_change_detects_and_invalidates_git_cache() {
         let (_tmp, mut e) = engine();
-        // Prime a cached git value for the folder. `is_fresh` is TTL-relative,
-        // and `invalidate` stamps the entry to ts=0, so use a `now` past the
-        // TTL — then a freshly cached entry reads fresh but an invalidated
-        // (ts=0) one reads stale.
+        // A `now` past the TTL, since `invalidate` stamps the entry ts=0 and
+        // only then does an invalidated entry read stale where a fresh one doesn't.
         let now = 10_000_000;
         e.store_git_info("/repo/x", git_info("main"), now);
         assert!(e.git_cache.is_fresh("/repo/x", now));
 
-        // Setting a new base branch is a change and marks the cache entry stale
-        // (its stats were computed against the old baseline).
+        // A new base branch changes, and marks the old baseline's stats stale.
         assert!(e.set_folder_base_branch("/repo/x", Some("develop")));
         assert!(!e.git_cache.is_fresh("/repo/x", now));
 
-        // Setting the same base branch again is not a change.
         assert!(!e.set_folder_base_branch("/repo/x", Some("develop")));
-        // Clearing it is a change.
         assert!(e.set_folder_base_branch("/repo/x", None));
     }
 

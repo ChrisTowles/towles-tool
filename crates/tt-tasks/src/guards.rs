@@ -12,46 +12,38 @@
 
 use thiserror::Error;
 
-/// The process holding a port: enough to recognize it ("that's my dev
-/// server") without opening a terminal.
+/// The process holding a port: enough to recognize it ("that's my dev server") without
+/// opening a terminal.
 ///
-/// Lives here, with the decision, rather than in [`crate::ports`] that
-/// discovers it — this module is the pure half of the crate, and a
-/// dependency arrow pointing from a decision to a module that spawns
-/// subprocesses and sends signals is exactly the direction that erodes it.
-/// `ports` gathers these; `guards` only judges them.
+/// Lives with the decision rather than in [`crate::ports`] that discovers it: this module
+/// is the pure half of the crate, and a decision depending on a module that spawns
+/// subprocesses is the arrow that erodes that.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortHolder {
     pub pid: i32,
-    /// The executable name, e.g. `node`, `cargo`, `npm` — see
-    /// `ports::process_command` for why it comes from `argv[0]`, not `comm`.
+    /// Executable name — see `ports::command_name` for why it is `argv[0]`, not `comm`.
     pub command: String,
 }
 
 impl PortHolder {
-    /// `node (pid 12345)` — the phrase both the guard message and the app's
-    /// blocker row read as "who this is".
+    /// `node (pid 12345)` — how both the guard message and the app's row say who.
     pub fn describe(&self) -> String {
         format!("{} (pid {})", self.command, self.pid)
     }
 }
 
-/// A claimed port that something outside the task's own containers is
-/// listening on, with whatever we could learn about the holder.
+/// A claimed port something outside the task's own containers is listening on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeignPort {
     pub port: u16,
-    /// `None` when `lsof`/`ps` couldn't name the process — the bind probe
-    /// still proved *something* is there.
+    /// `None` when `lsof`/`ps` couldn't name the process — the bind probe still proved
+    /// *something* is there.
     pub holder: Option<PortHolder>,
 }
 
-/// Why a task may NOT be removed.
-///
-/// Kept as a typed value all the way to both shells rather than flattened to
-/// a message at the guard: the CLI wants one line per reason, and the app
-/// wants to render each reason as its own row with its own remedy (and, for
-/// a port, its own "stop it" button). A joined string can do neither.
+/// Why a task may NOT be removed. Typed all the way to both shells rather than flattened
+/// at the guard: the app renders each reason as its own row with its own remedy and, for
+/// a port, its own "stop it" button. A joined string can do neither.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RmBlocked {
     #[error("task working tree is not clean ({entries} changed/untracked path(s))")]
@@ -76,8 +68,7 @@ pub enum RmBlocked {
 }
 
 impl RmBlocked {
-    /// Stable identifier for this guard, so a UI can branch on the kind
-    /// without pattern-matching the message text.
+    /// Stable identifier, so a UI branches on the kind and not the message text.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::DirtyTree { .. } => "dirtyTree",
@@ -86,12 +77,9 @@ impl RmBlocked {
         }
     }
 
-    /// What the user can do about it — the half of the message that turns a
-    /// refusal into a next step. Phrased as an instruction, not a diagnosis.
-    ///
-    /// Plain prose, no markup: both shells render this verbatim, and the
-    /// app's dialog is not a terminal — backticks around a command showed up
-    /// as literal backticks on screen.
+    /// What turns the refusal into a next step — an instruction, not a diagnosis. Plain
+    /// prose, no markup: the app's dialog is not a terminal, and backticks around a
+    /// command showed up as literal backticks on screen.
     pub fn remedy(&self) -> String {
         match self {
             Self::DirtyTree { .. } => "Commit or stash the changes to keep them.".to_string(),
@@ -108,10 +96,9 @@ impl RmBlocked {
         }
     }
 
-    /// Whether forcing past this guard destroys work that exists nowhere
-    /// else. A stray listener costs nothing to force past (the process keeps
-    /// running, just orphaned); uncommitted changes and unreachable commits
-    /// are gone for good, so the app has to say so before offering the force.
+    /// Whether forcing past this guard destroys work that exists nowhere else. A stray
+    /// listener costs nothing; the git guards are unrecoverable, and the app says so
+    /// before offering the force.
     pub fn loses_work(&self) -> bool {
         match self {
             Self::DirtyTree { .. } | Self::UnreachableCommits { .. } => true,
@@ -119,10 +106,8 @@ impl RmBlocked {
         }
     }
 
-    /// The claimed port this guard is about, for a shell that can offer to
-    /// clear it — `Some` only for `foreignPort`. An accessor like
-    /// [`Self::kind`]/[`Self::remedy`]/[`Self::loses_work`], so shells never
-    /// have to reach into the enum's variant shapes.
+    /// The claimed port this guard is about, for a shell that can offer to clear it —
+    /// an accessor, so shells never reach into the enum's variant shapes.
     pub fn port(&self) -> Option<u16> {
         match self {
             Self::ForeignPortListener { port, .. } => Some(*port),
@@ -132,11 +117,8 @@ impl RmBlocked {
 }
 
 /// Every reason removal is blocked, given the gathered state. Empty = safe.
-/// `foreign_ports` are claimed ports in use by something *other than* the
-/// task's own docker containers (the containers are about to be removed
-/// anyway; a foreign listener means a dev server is still running), each
-/// carrying whatever [`crate::ports::holder`] could learn about the process —
-/// so the blocker can name what to stop, not just which port is taken.
+/// `foreign_ports` excludes the task's own docker containers, which are about to be
+/// removed anyway; what is left means a dev server is still running.
 pub fn check_removal(
     dirty_entries: usize,
     unreachable_commits: u64,
@@ -213,9 +195,6 @@ mod tests {
 
     #[test]
     fn only_the_git_guards_lose_work() {
-        // What the app's force affordance keys off: forcing past a stray
-        // listener orphans a process, forcing past either git guard is
-        // unrecoverable.
         assert!(RmBlocked::DirtyTree { entries: 1 }.loses_work());
         assert!(RmBlocked::UnreachableCommits { count: 1 }.loses_work());
         assert!(!RmBlocked::ForeignPortListener { port: 3000, holder: None }.loses_work());

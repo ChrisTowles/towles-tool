@@ -1,17 +1,15 @@
 //! Embeds `tt-jarvis`'s Bevy renderer in a native surface inside the Tauri window,
 //! glued to a rectangle the frontend measures. **Bevy runs on its own thread, never the
-//! GTK main thread.** Under vsync,
-//! `App::update()` blocks until the compositor's next frame callback (~16ms), so driving
-//! it from a GTK tick would starve the webview. That splits ownership, load-bearingly:
-//! the **main thread** owns the Wayland proxies — creation, position, visibility,
-//! teardown — while the **render thread** owns the Bevy `App` and swapchain, taking
-//! [`PaneRect`](tt_jarvis::surface::PaneRect) over a channel and only ever *resizing*.
+//! GTK main thread**: under vsync `App::update()` blocks until the compositor's next
+//! frame callback, so driving it from a GTK tick would starve the webview. That splits
+//! ownership, load-bearingly: the **main thread** owns the Wayland proxies — creation,
+//! position, visibility, teardown — while the **render thread** owns the Bevy `App` and
+//! swapchain, taking [`PaneRect`](tt_jarvis::surface::PaneRect) over a channel.
 //!
 //! Teardown happens once, at exit: dropping a `Pane` stops the render thread and *joins
 //! it* before releasing the subsurface (frames-in-flight). Nothing drops one while the
 //! app runs — dropping a Bevy app takes the process with it — so panes are retired
-//! ([`PaneHost::detach`]) and hiding *moves* the pane instead of unmapping it (see
-//! `wayland::Subsurface::set_visible`). Linux-only; elsewhere [`PaneHost`] is a stub.
+//! ([`PaneHost::detach`]). Linux-only; elsewhere [`PaneHost`] is a stub.
 
 use std::sync::Arc;
 
@@ -49,10 +47,9 @@ impl From<PaneError> for String {
     }
 }
 
-/// A rect as the frontend measures it: CSS pixels, relative to the window's
-/// client area. Converted to physical pixels here, not in the frontend, so the
-/// rounding decision lives on one side of the wire. See
-/// [`PaneRect::from_css`](tt_jarvis::surface::PaneRect::from_css).
+/// A rect as the frontend measures it: CSS pixels, relative to the window's client
+/// area. Converted to physical pixels here so the rounding decision lives on one side
+/// of the wire — [`PaneRect::from_css`](tt_jarvis::surface::PaneRect::from_css).
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct CssRect {
     pub x: f64,
@@ -73,13 +70,9 @@ pub struct PaneInfo {
 #[cfg(target_os = "linux")]
 enum RenderMsg {
     Resize(PaneRect),
-    /// Stop presenting and park until [`RenderMsg::Resume`]. Sent when a pane is
-    /// hidden: every further frame is waste, and under vsync each one still
-    /// blocks a thread until the compositor says so.
-    ///
-    /// Deliberately unacknowledged — waiting would trade a guaranteed
-    /// main-thread stall (forever, if the surface is occluded and gets no frame
-    /// callbacks) for nothing.
+    /// Stop presenting and park until [`RenderMsg::Resume`]. Deliberately
+    /// unacknowledged: waiting risks a permanent main-thread stall if the surface is
+    /// occluded and gets no frame callbacks.
     Pause,
     Resume,
     Stop,
@@ -96,17 +89,14 @@ pub struct Pane {
 
 #[cfg(target_os = "linux")]
 impl Pane {
-    /// Take the pane off screen and stop its renderer — the single home of the
-    /// hide sequence, so the ordering rule is stated once: park the renderer
-    /// first, then move the surface. The other order lets a mid-flight frame
-    /// land in the position being vacated.
+    /// The single home of the hide sequence: park the renderer first, then move the
+    /// surface, or a mid-flight frame lands in the position being vacated.
     fn park(&mut self) -> Result<(), PaneError> {
         let _ = self.tx.send(RenderMsg::Pause);
         self.surface.set_visible(false)
     }
 
-    /// Put the pane back at `rect` and start it rendering again — the inverse
-    /// of [`Pane::park`], and what makes a retired pane revivable.
+    /// The inverse of [`Pane::park`], and what makes a retired pane revivable.
     fn unpark(&mut self, rect: PaneRect) -> Result<(), PaneError> {
         self.surface.set_rect(rect)?;
         self.surface.set_visible(true)?;
@@ -123,8 +113,7 @@ impl Pane {
 impl Drop for Pane {
     fn drop(&mut self) {
         // The one real teardown path, and it runs only at shutdown — see
-        // `PaneHost::detach` for why. A parked renderer is blocked on `recv`,
-        // so `Stop` reaches it either way.
+        // `PaneHost::detach` for why.
         let _ = self.tx.send(RenderMsg::Stop);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -132,10 +121,8 @@ impl Drop for Pane {
     }
 }
 
-/// Process-wide pane registry, keyed by the frontend's pane id.
-///
-/// Fieldless off Linux: there is nothing to register when [`PaneHost::attach`]
-/// can only fail.
+/// Process-wide pane registry, keyed by the frontend's pane id. Fieldless off Linux,
+/// where [`PaneHost::attach`] can only fail.
 #[derive(Default)]
 pub struct PaneHost {
     #[cfg(target_os = "linux")]
@@ -154,11 +141,9 @@ impl PaneHost {
 
 #[cfg(not(target_os = "linux"))]
 mod unsupported {
-    //! macOS/Windows are not wired yet. The macOS design is written down (an
-    //! `NSView` with a `CAMetalLayer` above the `WKWebView`, Y-flipped rect,
-    //! `contentsScale` tracking `backingScaleFactor`) but none of it has run on
-    //! a Mac, and shipping something that silently draws nothing would be worse
-    //! than reporting it missing.
+    //! macOS/Windows are not wired yet. The macOS design (an `NSView` with a
+    //! `CAMetalLayer` above the `WKWebView`) has never run on a Mac, and drawing
+    //! nothing silently would be worse than reporting it missing.
     use super::*;
 
     impl PaneHost {
@@ -188,12 +173,9 @@ mod unsupported {
 
 #[cfg(target_os = "linux")]
 impl PaneHost {
-    /// Create the pane's surface and start its renderer.
-    ///
-    /// Idempotent per id: re-attaching repositions and revives, so a strict-mode
-    /// double-mount cannot spawn two renderers against one rectangle, and
-    /// reopening a closed pane reuses the renderer it still has (see
-    /// [`PaneHost::detach`]).
+    /// Create the pane's surface and start its renderer. Idempotent per id: a
+    /// strict-mode double-mount cannot spawn two renderers against one rectangle, and
+    /// reopening a closed pane reuses the renderer it still has ([`PaneHost::detach`]).
     pub fn attach(
         &self,
         window: &tauri::WebviewWindow,
@@ -204,8 +186,7 @@ impl PaneHost {
         let rect = PaneRect::from_css(rect.x, rect.y, rect.width, rect.height, scale);
 
         let mut panes = self.panes.lock().unwrap();
-        // Also the revival path for a retired pane (see `detach`), which is why
-        // it unparks rather than only repositioning.
+        // Also the revival path for a retired pane, hence unpark, not reposition.
         if let Some((_, pane)) = panes.iter_mut().find(|(k, _)| k == id) {
             pane.unpark(rect)?;
             return Ok(PaneInfo {
@@ -220,8 +201,8 @@ impl PaneHost {
             window.gtk_window().map_err(|e| PaneError::Host(format!("no gtk window: {e}")))?;
         let surface = wayland::Subsurface::new(&gtk_window, rect)?;
 
-        // SAFETY: `surface` is owned by the `Pane` we are about to build, and
-        // `Pane`'s drop/detach joins the render thread before releasing it.
+        // SAFETY: `surface` is owned by the `Pane` about to be built, whose drop joins
+        // the render thread before releasing it.
         let foreign = unsafe { surface.foreign_surface() };
 
         let (tx, rx) = mpsc::channel();
@@ -262,11 +243,8 @@ impl PaneHost {
         Ok(())
     }
 
-    /// Show or hide the pane — [`Pane::park`]/[`Pane::unpark`], which own the
-    /// ordering rule.
-    ///
-    /// See [`wayland::Subsurface::set_visible`] for why hiding is a move rather
-    /// than an unmap.
+    /// Show or hide the pane — [`Pane::park`]/[`Pane::unpark`] own the ordering rule,
+    /// and [`wayland::Subsurface::set_visible`] why hiding is a move, not an unmap.
     pub fn set_visible(&self, id: &str, visible: bool) -> Result<(), PaneError> {
         let mut panes = self.panes.lock().unwrap();
         let (_, pane) = panes
@@ -282,12 +260,9 @@ impl PaneHost {
 
     /// Retire a pane: take it off screen and stop its renderer, but **keep it**.
     ///
-    /// It reads like a leak and is the opposite — the destructor is what's
-    /// dangerous. Dropping the Bevy app tears down a wgpu device built on GDK's
-    /// own Wayland display, which mid-session ended the *process*. No teardown
-    /// *order* fixes that: the resource is shared with the host toolkit. So a
-    /// live pane outlives its UI, re-attaching the same id revives it
-    /// ([`PaneHost::attach`]), and real teardown happens once, at process exit.
+    /// It reads like a leak and is the opposite — the destructor is what's dangerous.
+    /// Dropping the Bevy app tears down a wgpu device built on GDK's own Wayland display,
+    /// which mid-session ended the *process*. Real teardown happens once, at exit.
     pub fn detach(&self, id: &str) -> Result<(), PaneError> {
         let mut panes = self.panes.lock().unwrap();
         let Some((_, pane)) = panes.iter_mut().find(|(k, _)| k == id) else {
@@ -299,12 +274,9 @@ impl PaneHost {
     }
 }
 
-/// The Tauri command surface.
-///
-/// In their own module because `#[tauri::command]` generates helper macros
-/// named after each function, and in a library's *root* module those collide
-/// with the function items themselves (`__cmd__pane_attach is defined multiple
-/// times`). Register them from `tt-app` as `tt_pane::commands::pane_attach`.
+/// The Tauri command surface. In its own module because `#[tauri::command]`'s generated
+/// helper macros collide with the function items themselves in a library's *root*
+/// module. Register from `tt-app` as `tt_pane::commands::pane_attach`.
 pub mod commands {
     use super::{CssRect, PaneError, PaneHost, PaneInfo};
     use std::sync::Arc;
@@ -312,13 +284,9 @@ pub mod commands {
 
     type Host<'a> = tauri::State<'a, Arc<PaneHost>>;
 
-    /// Run `f` on the GTK main thread and wait for its result.
-    ///
-    /// **Every entry point below must go through this.** Tauri commands run on
-    /// a worker pool, and `PaneHost`'s methods touch main-thread-only GTK and
-    /// Wayland proxies. The compiler flags this as a missing `Send`; an
-    /// `unsafe impl Send` without this marshalling silences the symptom and
-    /// keeps the data race.
+    /// Run `f` on the GTK main thread and wait for its result. **Every entry point
+    /// below must go through this**: Tauri commands run on a worker pool, and
+    /// `PaneHost`'s methods touch main-thread-only GTK and Wayland proxies.
     fn on_main<T, F>(window: &tauri::WebviewWindow, f: F) -> Result<T, PaneError>
     where
         T: Send + 'static,

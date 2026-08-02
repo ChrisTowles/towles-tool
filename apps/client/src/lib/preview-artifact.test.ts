@@ -8,9 +8,8 @@ import {
   typedPreviewRequest,
 } from "@/lib/preview-artifact";
 
-/** A rail repo row with only the fields the routing reads. Each folder gets one
- * session id derived from its own dir, standing in for the `TT_SESSION_ID` the
- * app stamped on that pane's shell. */
+/** A rail repo row with only the fields the routing reads; each folder gets one
+ * session id derived from its own dir. */
 function repo(dir: string, folders: string[]): RepoData {
   return {
     key: `path:${dir}`,
@@ -25,7 +24,6 @@ function repo(dir: string, folders: string[]): RepoData {
   } as unknown as RepoData;
 }
 
-/** The fake session id living in folder `dir`. */
 function sessionIn(dir: string) {
   return `s-${dir.split("/").pop()}`;
 }
@@ -44,8 +42,7 @@ describe("folderForPath", () => {
     expect(folderForPath(REPOS, "/code/p/dawn/plan.html")?.dir).toBe("/code/p/dawn");
   });
 
-  /** A worktree task nests inside its checkout, so both match — and the task is
-   * the one whose terminal the agent is sitting in. */
+  /** A worktree task nests inside its checkout, so both match. */
   it("prefers the deepest match, so a task beats its parent checkout", () => {
     expect(folderForPath(REPOS, "/code/p/tt-rs/.claude/worktrees/feat-x/out.html")?.dir).toBe(
       "/code/p/tt-rs/.claude/worktrees/feat-x",
@@ -56,13 +53,11 @@ describe("folderForPath", () => {
     expect(folderForPath(REPOS, "/tmp/scratch/report.html")).toBeUndefined();
   });
 
-  /** A sibling whose path merely starts with the same characters is not inside
-   * it — the separator is what makes it a child. */
+  /** The separator is what makes a path a child, not a shared prefix. */
   it("doesn't match a folder that is only a string prefix", () => {
     expect(folderForPath(REPOS, "/code/p/dawncaster/plan.html")).toBeUndefined();
   });
 
-  /** The folder dir itself is not a file in it. */
   it("doesn't match the folder directory itself", () => {
     expect(folderForPath(REPOS, "/code/p/dawn")).toBeUndefined();
   });
@@ -73,7 +68,6 @@ describe("folderForSession", () => {
     expect(folderForSession(REPOS, "s-feat-x")?.dir).toBe("/code/p/tt-rs/.claude/worktrees/feat-x");
   });
 
-  /** The whole point of routing by caller: where the file lives is irrelevant. */
   it("ignores the file's location entirely", () => {
     expect(folderForSession(REPOS, sessionIn("/code/p/dawn"))?.dir).toBe("/code/p/dawn");
   });
@@ -82,7 +76,6 @@ describe("folderForSession", () => {
     expect(folderForSession(REPOS, "s-closed-pane")).toBeUndefined();
   });
 
-  /** A caller outside an app terminal sends nothing; the path decides instead. */
   it("has no folder when the caller named no session", () => {
     expect(folderForSession(REPOS, null)).toBeUndefined();
     expect(folderForSession(REPOS, undefined)).toBeUndefined();
@@ -108,8 +101,7 @@ describe("showFileNav", () => {
   });
 
   /** The regression this routing exists for: a scratch file under no tracked
-   * folder used to land in whichever folder was on screen. The caller's session
-   * puts it in the caller's own task. */
+   * folder used to land in whichever folder was on screen. */
   it("sends a /tmp artifact to the calling agent's own task", () => {
     const nav = showFileNav(
       { path: "/tmp/scratch/hello.html", title: "Hello", session: "s-feat-x" },
@@ -118,8 +110,7 @@ describe("showFileNav", () => {
     expect(nav.folderDir).toBe("/code/p/tt-rs/.claude/worktrees/feat-x");
   });
 
-  /** The file living in one task says nothing about which agent wrote it — an
-   * agent may write into a sibling checkout it is inspecting. The session wins. */
+  /** An agent may write into a sibling checkout it is inspecting. */
   it("prefers the caller's session over the path when they disagree", () => {
     const nav = showFileNav(
       {
@@ -132,8 +123,7 @@ describe("showFileNav", () => {
     expect(nav.folderDir).toBe("/code/p/tt-rs/.claude/worktrees/feat-x");
   });
 
-  /** A session the rail no longer knows (its app instance restarted, its pane
-   * closed) is no worse off than a caller that sent none. */
+  /** A session the rail no longer knows is no worse off than one never sent. */
   it("falls back to the path for an unknown session", () => {
     const nav = showFileNav(
       { path: "/code/p/dawn/plan.html", title: "P", session: "s-gone" },
@@ -142,15 +132,13 @@ describe("showFileNav", () => {
     expect(nav.folderDir).toBe("/code/p/dawn");
   });
 
-  /** Re-showing the same file must re-read it, so every request is distinct. */
   it("stamps a fresh nonce per request", () => {
     const args = { path: "/code/p/dawn/a.html", title: "A", session: null };
     expect(showFileNav(args, REPOS)?.nonce).not.toBe(showFileNav(args, REPOS)?.nonce);
   });
 
-  /** One app instance serves every Claude session on the machine, so a caller
-   * with neither a known session nor a tracked path is normal — it just has no
-   * preferred folder, and the screen falls back to whatever is on screen. */
+  /** A caller with neither a known session nor a tracked path is normal — it
+   * just has no preferred folder, and the screen resolves that. */
   it("leaves the folder null for an artifact no folder owns, rather than dropping it", () => {
     expect(showFileNav({ path: "/tmp/a.html", title: "A", session: null }, REPOS)).toMatchObject({
       kind: "show-file",
@@ -165,9 +153,8 @@ describe("fileUrl", () => {
     expect(fileUrl("/tmp/my plan.html")).toBe("file:///tmp/my%20plan.html");
   });
 
-  /** `encodeURI` leaves both of these alone, and either one silently truncates
-   * the path — `#` into a fragment, `?` into a query — so the browser opens a
-   * shorter path that doesn't exist, or nothing at all. */
+  /** `encodeURI` leaves both alone, and either silently truncates the path —
+   * `#` into a fragment, `?` into a query. */
   it("escapes # and ?, which encodeURI does not", () => {
     expect(fileUrl("/tmp/plan #2.html")).toBe("file:///tmp/plan%20%232.html");
     expect(fileUrl("/tmp/what?.html")).toBe("file:///tmp/what%3F.html");
@@ -177,9 +164,7 @@ describe("fileUrl", () => {
     expect(fileUrl("/code/p/dawn/report.html")).toBe("file:///code/p/dawn/report.html");
   });
 
-  /** Percent signs already in the name must survive as data, not be read as an
-   * existing escape — `encodeURI` handles this and the two replaces must not
-   * undo it. */
+  /** A `%` already in the name is data, not an existing escape. */
   it("keeps a literal % in the file name", () => {
     expect(fileUrl("/tmp/100%25.html")).toBe("file:///tmp/100%2525.html");
   });
@@ -195,16 +180,15 @@ describe("typedPreviewRequest", () => {
     expect(typedPreviewRequest("  /tmp/a.md \n")?.path).toBe("/tmp/a.md");
   });
 
-  /** The app has no working directory to resolve against — the same reason the
-   * MCP tool refuses one — so a relative path is rejected here rather than read
-   * against whatever the process happens to be in. */
+  /** The app has no working directory to resolve a relative path against — the
+   * same reason the MCP tool refuses one. */
   it("refuses anything but an absolute path", () => {
     expect(typedPreviewRequest("docs/plan.md")).toBeNull();
     expect(typedPreviewRequest("")).toBeNull();
   });
 
   /** Two opens of the same path must differ, or re-opening a rewritten file
-   * would be a no-op — the same reason the agent's push carries a nonce. */
+   * would be a no-op. */
   it("mints a fresh nonce per call", () => {
     const a = typedPreviewRequest("/tmp/a.md");
     const b = typedPreviewRequest("/tmp/a.md");

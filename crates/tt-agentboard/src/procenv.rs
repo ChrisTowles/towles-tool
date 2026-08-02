@@ -4,29 +4,23 @@
 //! that shell inherits both.
 //!
 //! The instance stamp exists because `sessions.json` is shared across app
-//! instances: two running apps materialize the same session records and stamp the
-//! same `TT_SESSION_ID` on their own PTYs. Without the instance check, an agent
-//! waiting in one app's PTY would flag "needs you" in every other app, on a pane
-//! visibly doing something else. [`InstanceScope`] picks the policy: an app
-//! window scopes to its own instance, the MCP server (no PTYs) to any.
-//!
-//! Linux reads `/proc/<pid>/environ`. Other platforms return `None` for now; the
-//! platform-specific surface is confined to [`session_id_in_scope`].
+//! instances: two running apps materialize the same session records and stamp
+//! the same `TT_SESSION_ID` on their own PTYs. Without it, an agent waiting in
+//! one app's PTY would flag "needs you" in every other app. [`InstanceScope`]
+//! picks the policy: an app window scopes to its own instance, the MCP server
+//! (no PTYs) to any. Linux reads `/proc/<pid>/environ`; other platforms return
+//! `None` for now.
 
 use std::path::PathBuf;
 
-/// The env var injected into every agentboard PTY at spawn, read back here to
-/// attribute a detected agent to its session.
+/// Injected into every agentboard PTY at spawn, read back here to attribute a
+/// detected agent to its session.
 pub const TT_SESSION_ENV: &str = "TT_SESSION_ID";
 
-/// The env var identifying which app instance spawned the PTY (the app's pid).
-/// Distinguishes PTYs of two concurrently running app instances that host the
-/// same shared session record.
+/// Which app instance spawned the PTY (that app's pid).
 pub const TT_INSTANCE_ENV: &str = "TT_APP_INSTANCE";
 
-/// The instance id this process stamps on its PTYs: its pid. Unique among
-/// concurrently live processes, which is the only window where two instances
-/// can host the same session id at once.
+/// The instance id this process stamps on its PTYs: its pid.
 pub fn instance_id() -> String {
     std::process::id().to_string()
 }
@@ -34,8 +28,7 @@ pub fn instance_id() -> String {
 /// Which app-spawned agents an engine host reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstanceScope {
-    /// Only agents in PTYs stamped with this `TT_APP_INSTANCE` — an app window
-    /// reports just the agents living in its own PTYs.
+    /// Only agents in PTYs stamped with this `TT_APP_INSTANCE`.
     Instance(String),
     /// Agents in any app instance's PTYs — the MCP server's cross-cutting view.
     Any,
@@ -48,11 +41,10 @@ impl InstanceScope {
     }
 }
 
-/// A live `claude` process discovered by scanning `/proc`, tagged with the
-/// `TT_SESSION_ID` of the PTY it runs in and the transcript it has open. Lets
-/// the engine surface an app-spawned agent even when `claude agents --all
-/// --json` fails to enumerate it (e.g. a `--chrome` interactive session) — the
-/// robust realization of the env-var linkage.
+/// A live `claude` process found by scanning `/proc`, tagged with its PTY's
+/// `TT_SESSION_ID` and the transcript it has open. Surfaces an app-spawned
+/// agent even when `claude agents --all --json` fails to enumerate it (e.g. a
+/// `--chrome` interactive session).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionAgentProc {
     pub session_id: String,
@@ -61,9 +53,8 @@ pub struct SessionAgentProc {
 }
 
 /// Scan `/proc` for live `claude` processes carrying `TT_SESSION_ID` and
-/// matching `scope`, one entry per matching process (the shell + MCP children
-/// carry the vars too but are filtered out by process name). Linux-only; empty
-/// elsewhere.
+/// matching `scope` (the shell + MCP children inherit the vars too, and are
+/// filtered out by process name). Linux-only; empty elsewhere.
 #[cfg(target_os = "linux")]
 pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
     let mut out = Vec::new();
@@ -74,23 +65,17 @@ pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
         let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
             continue;
         };
-        // Only the Claude process itself, not the shell or the MCP children it
-        // spawned (they all inherit the env var). `comm` is the truncated name.
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
         if comm.trim() != "claude" {
             continue;
         }
         // The shared `claude daemon` also reports `comm == "claude"` and can
-        // inherit a PTY's TT_SESSION_ID when first spawned from an app shell;
-        // without this it would be surfaced as an agent occupying that session.
+        // inherit a PTY's TT_SESSION_ID, showing up as an agent in that session.
         if is_claude_daemon(pid) {
             continue;
         }
-        // Deliberately *not* `session_id_in_scope`: that re-verifies liveness
-        // (another `comm` read plus another `cmdline` read) for callers who
-        // take a pid from the stale CLI snapshot. This loop just established
-        // both facts from `/proc` itself, so re-reading them is pure waste on
-        // a path that runs on every payload rebuild.
+        // Deliberately *not* `session_id_in_scope`: this loop just established
+        // liveness from `/proc`, so its re-check is pure waste here.
         if let Some(sid) = scoped_session_id_of(pid, scope) {
             out.push(SessionAgentProc { session_id: sid, pid, transcript: open_transcript(pid) });
         }
@@ -98,28 +83,20 @@ pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
     out
 }
 
-/// Read `pid`'s environ and resolve its scoped `TT_SESSION_ID`, with **no**
-/// liveness re-check. Only safe when the caller has just proven `pid` is a
-/// live, non-daemon `claude` process; [`session_id_in_scope`] is the checked
-/// entry point for everyone else.
+/// Resolve `pid`'s scoped `TT_SESSION_ID` with **no** liveness re-check. Only
+/// safe once the caller has proven `pid` is a live, non-daemon `claude`
+/// process; [`session_id_in_scope`] is the checked entry point.
 #[cfg(target_os = "linux")]
 fn scoped_session_id_of(pid: i32, scope: &InstanceScope) -> Option<String> {
     let bytes = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
     scoped_session_id(&bytes, scope)
 }
 
-/// Whether `pid` is still a live, interactive `claude` process — i.e. reading
-/// its environ is safe to trust as "this pid's PTY". Guards every
-/// `/proc/<pid>/environ` read: `claude agents --all --json` is cached for up
-/// to a minute ([`crate::watchers::claude_code::CLI_CACHE_TTL_MS`]), so a pid
-/// it reported can exit and be recycled by the kernel for an unrelated
-/// process — often another of this app's own shells, freshly spawned in a
-/// *different* pane — well within that window. Reading environ from a
-/// recycled pid without this check silently attributes the original agent to
-/// whatever `TT_SESSION_ID` the new occupant carries: a wrong-pane
-/// misattribution, not a crash, so it went unnoticed. Cheap (`comm` + one
-/// `cmdline` read on the daemon-name match only) relative to the environ read
-/// it guards.
+/// Whether `pid` is still a live, interactive `claude` process. Guards every
+/// environ read: `claude agents --all --json` is cached for up to a minute
+/// ([`crate::watchers::claude_code::CLI_CACHE_TTL_MS`]), so a pid it reported
+/// can be recycled onto another of our shells inside that window — attributing
+/// the agent to the wrong pane, silently.
 #[cfg(target_os = "linux")]
 fn is_live_claude_process(pid: i32) -> bool {
     let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
@@ -131,9 +108,8 @@ pub fn scan_session_agents(_scope: &InstanceScope) -> Vec<SessionAgentProc> {
     Vec::new()
 }
 
-/// The Claude session transcript (`…/<uuid>.jsonl`) the process has open via
-/// `/proc/<pid>/fd`, skipping subagent transcripts. Used to derive the task
-/// name + status for an agent the CLI snapshot didn't report.
+/// The session transcript (`…/<uuid>.jsonl`) open on `/proc/<pid>/fd`, skipping
+/// subagent ones. Derives name + status for an agent the CLI didn't report.
 #[cfg(target_os = "linux")]
 fn open_transcript(pid: i32) -> Option<PathBuf> {
     let fd_dir = std::fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
@@ -146,27 +122,21 @@ fn open_transcript(pid: i32) -> Option<PathBuf> {
     })
 }
 
-/// Whether `pid` is the shared `claude daemon` process rather than an
-/// interactive/background session. Reads `/proc/<pid>/cmdline`; the pure test
-/// lives on [`is_daemon_argv`].
+/// Whether `pid` is the shared `claude daemon` rather than a session.
 #[cfg(target_os = "linux")]
 fn is_claude_daemon(pid: i32) -> bool {
     std::fs::read(format!("/proc/{pid}/cmdline")).map(|b| is_daemon_argv(&b)).unwrap_or(false)
 }
 
-/// Whether NUL-separated `argv` bytes describe `claude daemon …` (i.e. the
-/// first argument after the program is `daemon`).
+/// Whether NUL-separated `argv` bytes describe `claude daemon …`.
 #[cfg(target_os = "linux")]
 fn is_daemon_argv(cmdline: &[u8]) -> bool {
     cmdline.split(|&b| b == 0).nth(1) == Some(b"daemon".as_slice())
 }
 
 /// The `TT_SESSION_ID` of the PTY `pid` runs in, if that PTY was spawned by an
-/// app instance `scope` admits. Verifies `pid` is still a live `claude`
-/// process first ([`is_live_claude_process`]) — callers such as
-/// [`crate::engine::collect_agent_snapshot`] take `pid` from a CLI snapshot
-/// that can be up to a minute stale, so without this check a recycled pid
-/// would have its *new* occupant's environ misread as the original agent's.
+/// app instance `scope` admits. Re-checks liveness first
+/// ([`is_live_claude_process`]) because callers pass pids from a stale snapshot.
 #[cfg(target_os = "linux")]
 pub fn session_id_in_scope(pid: i32, scope: &InstanceScope) -> Option<String> {
     if !is_live_claude_process(pid) {
@@ -181,14 +151,9 @@ pub fn session_id_in_scope(_pid: i32, _scope: &InstanceScope) -> Option<String> 
     None
 }
 
-/// Whether the process `pid` was launched by an app instance `scope` admits.
-/// Used to keep foreign Claude sessions off the board: externally-started ones
-/// (no `TT_SESSION_ID` at all), and — for [`InstanceScope::Instance`] — ones
-/// living in another app instance's PTYs.
-///
-/// Linux reads `/proc`. On platforms without env introspection we cannot tell
-/// yet, so this returns `true` (assume ours) rather than hide every agent —
-/// see [`session_id_in_scope`]'s follow-up note. Verified on Linux.
+/// Whether the process `pid` was launched by an app instance `scope` admits —
+/// what keeps foreign Claude sessions off the board. Without `/proc` we cannot
+/// tell, so non-Linux returns `true` rather than hide every agent.
 #[cfg(target_os = "linux")]
 pub fn in_scope(pid: i32, scope: &InstanceScope) -> bool {
     session_id_in_scope(pid, scope).is_some()
@@ -200,17 +165,11 @@ pub fn in_scope(_pid: i32, _scope: &InstanceScope) -> bool {
 }
 
 /// The session id from environ bytes, if the stamped instance passes `scope`.
-/// Pure and unit-tested (the platform-specific part is only the file read).
 ///
 /// Under [`InstanceScope::Instance`] a shell is ours unless it carries a
-/// *different* app's instance stamp. A **missing** stamp is admitted, not dropped:
-/// a concurrent app always stamps its own pid, so an unstamped `TT_SESSION_ID` is
-/// a shell we spawned before stamping existed — and dropping those blanked the
-/// whole board on upgrade until every shell was respawned. Excluding only a
-/// present-and-foreign stamp keeps the collision guard.
-///
-/// Reached only through the Linux `session_id_in_scope` (and tests); gated to
-/// match so a macOS build doesn't see it as dead code.
+/// *different* app's stamp. A **missing** stamp is admitted: a concurrent app
+/// always stamps its own pid, so an unstamped shell is one we spawned before
+/// stamping existed — dropping those blanked the board on upgrade.
 #[cfg(any(target_os = "linux", test))]
 fn scoped_session_id(bytes: &[u8], scope: &InstanceScope) -> Option<String> {
     let sid = read_var_from_environ(bytes, TT_SESSION_ENV).filter(|s| !s.is_empty())?;
@@ -224,8 +183,6 @@ fn scoped_session_id(bytes: &[u8], scope: &InstanceScope) -> Option<String> {
 }
 
 /// Extract a variable's value from NUL-separated `KEY=VALUE` environ bytes.
-///
-/// Same gating as [`scoped_session_id`], its only non-test caller.
 #[cfg(any(target_os = "linux", test))]
 fn read_var_from_environ(bytes: &[u8], key: &str) -> Option<String> {
     let prefix = format!("{key}=");
@@ -248,7 +205,6 @@ mod tests {
 
     #[test]
     fn missing_var_is_none_and_no_prefix_false_match() {
-        // A var whose name merely contains the key must not match.
         let environ = b"NOT_TT_SESSION_ID=x\0OTHER=1\0";
         assert_eq!(read_var_from_environ(environ, TT_SESSION_ENV), None);
     }
@@ -257,8 +213,6 @@ mod tests {
     fn any_scope_admits_every_stamped_session() {
         let environ = b"TT_SESSION_ID=s00abc\0TT_APP_INSTANCE=1234\0";
         assert_eq!(scoped_session_id(environ, &InstanceScope::Any).as_deref(), Some("s00abc"));
-        // Even one with no instance stamp (older spawn) — Any only requires the
-        // session id.
         let unstamped = b"TT_SESSION_ID=s00abc\0";
         assert_eq!(scoped_session_id(unstamped, &InstanceScope::Any).as_deref(), Some("s00abc"));
     }
@@ -268,14 +222,10 @@ mod tests {
         let environ = b"TT_SESSION_ID=s00abc\0TT_APP_INSTANCE=1234\0";
         let ours = InstanceScope::Instance("1234".into());
         let theirs = InstanceScope::Instance("5678".into());
-        // Matching stamp → ours; a *different* app's stamp → not ours (the
-        // shared-sessions.json collision the stamp guards against).
         assert_eq!(scoped_session_id(environ, &ours).as_deref(), Some("s00abc"));
         assert_eq!(scoped_session_id(environ, &theirs), None);
-        // No stamp at all → still ours. A concurrent app always stamps its own
-        // pid, so an unstamped shell can only be one we spawned before instance
-        // stamping existed; dropping it (the old exact-match rule) blanked the
-        // agent on every pre-existing shell after an app upgrade.
+        // No stamp at all → still ours; dropping those blanked every
+        // pre-existing shell's agent after an app upgrade.
         let unstamped = b"TT_SESSION_ID=s00abc\0";
         assert_eq!(scoped_session_id(unstamped, &ours).as_deref(), Some("s00abc"));
     }
@@ -283,11 +233,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn session_id_in_scope_refuses_a_pid_that_isnt_claude() {
-        // The test binary's own pid is a real, live process, but its `comm`
-        // is the test binary's name, never "claude" — exactly the shape of a
-        // recycled pid from a stale CLI snapshot. `session_id_in_scope` must
-        // refuse it rather than trust whatever it finds in that process's
-        // real environ.
+        // Live pid, wrong `comm` — the shape of a recycled pid from a stale
+        // CLI snapshot, which must be refused rather than read.
         let pid = std::process::id() as i32;
         assert!(!is_live_claude_process(pid));
         assert_eq!(session_id_in_scope(pid, &InstanceScope::Any), None);
@@ -296,11 +243,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn daemon_argv_detected_but_interactive_is_not() {
-        // `claude daemon run --origin transient` — argv[1] == "daemon".
         assert!(is_daemon_argv(b"/home/u/.local/bin/claude\0daemon\0run\0--origin\0transient\0"));
-        // A plain interactive session — argv[1] is a flag, not "daemon".
         assert!(!is_daemon_argv(b"claude\0--permission-mode\0auto\0--chrome\0"));
-        // Bare `claude` (no args) — nothing after the program.
         assert!(!is_daemon_argv(b"claude\0"));
     }
 

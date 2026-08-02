@@ -4,14 +4,13 @@
 //! backstop (surviving a deleted `.env`), then the OS bind probe ([`port_occupied`]).
 //!
 //! Self-healing rather than authoritative: every load prunes entries whose owning task
-//! directory is gone. Load-bearing, not tidiness — `remove_task` requires the directory
-//! to still be there, so a task wiped by a stray `rm -rf` would leak its ports forever.
-//! A vanished *checkout* pruning can't reach; `clean_tasks`' sweep handles that.
+//! directory is gone. Load-bearing, not tidiness — a task wiped by a stray `rm -rf` would
+//! otherwise leak its ports forever. A vanished *checkout* pruning can't reach;
+//! `clean_tasks`' sweep handles that.
 //!
-//! Keyed by the checkout but stored under `tt_config::task_ports_dir()`, not
-//! `locks_dir()`: the ledger must survive reboots, and it is this machine's state. Every
-//! writer serializes on the checkout's [`ClaimLock`], and the path is threaded through
-//! rather than re-resolved so tests never touch the real config dir.
+//! Stored under `tt_config::task_ports_dir()`, not `locks_dir()`: the ledger must survive
+//! reboots. Every writer serializes on the checkout's [`ClaimLock`], and the path is
+//! threaded through rather than re-resolved so tests never touch the real config dir.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -28,18 +27,13 @@ use crate::layout::TaskName;
 const LOCK_FILE: &str = "tt-tasks.lock";
 pub(crate) const PORT_REGISTRY_FILE: &str = "task-ports.json";
 
-/// A port counts as occupied if EITHER loopback stack refuses the bind with
-/// `AddrInUse`: a sibling task's server may hold it on IPv6 (`::1`) while
-/// IPv4 (`127.0.0.1`) still looks free (or vice versa), so checking only one
-/// stack lets a fresh claim collide with an already-running listener.
-/// `PermissionDenied` counts too — a privileged port (<1024) in a pool is
-/// one the dev server can't bind either, so handing it out claims a port
-/// nothing can use. Any other failure (e.g. IPv6 simply unavailable on this
-/// machine) must not make every port look taken.
+/// Occupied if EITHER loopback stack refuses the bind: a sibling's server may
+/// hold IPv6 while IPv4 still looks free. `PermissionDenied` counts too — a
+/// privileged port is one the dev server can't bind either. Any other failure
+/// (IPv6 unavailable on this machine) must not make every port look taken.
 ///
 /// The ONE implementation of "is this port usable" — `scripts/task-port.mjs`
-/// delegates here via `tt task ports --probe` rather than mirroring the
-/// logic, so the two can't drift.
+/// delegates here via `tt task ports --probe`.
 pub fn port_occupied(port: u16) -> bool {
     use std::io::ErrorKind::{AddrInUse, PermissionDenied};
     let unusable = |host: &str| {
@@ -51,16 +45,13 @@ pub fn port_occupied(port: u16) -> bool {
     unusable("127.0.0.1") || unusable("::1")
 }
 
-// claim lock — serializes port claims across concurrent creations (parallel
-// agents create tasks together; without this, both scan siblings before
-// either writes, and claim the same ports)
+// claim lock — serializes port claims across concurrent creations (without it,
+// two parallel agents both scan siblings before either writes, and claim the
+// same ports)
 
-/// One filename per checkout path: `<basename>-<hash>-<file>`, shared by the
-/// claim lock and the port registry. The hash only has to be
-/// per-checkout-unique, not cryptographic (a collision would conflate two
-/// unrelated repos' files — slower or over-conservative, never incorrect),
-/// so the stdlib hasher is enough; the checkout's basename is kept as a
-/// readable prefix so the file names the repo it belongs to.
+/// One filename per checkout path, shared by the claim lock and the registry.
+/// The hash need not be cryptographic — a collision conflates two repos'
+/// files, which is over-conservative, never incorrect.
 pub(crate) fn checkout_keyed_filename(checkout: &Path, file: &str) -> String {
     let mut h = DefaultHasher::new();
     checkout.hash(&mut h);
@@ -69,21 +60,16 @@ pub(crate) fn checkout_keyed_filename(checkout: &Path, file: &str) -> String {
 }
 
 /// Path of the claim lock for `checkout`, in `tt_config::locks_dir()`.
-/// Deliberately *not* inside the repo's `.git/` — that directory is git's
-/// own, and a third-party tool dropping state next to git's index/ref locks
-/// is not ours to do.
+/// Deliberately *not* inside the repo's `.git/` — dropping state next to git's
+/// own index/ref locks is not ours to do.
 pub(crate) fn claim_lock_path(checkout: &Path) -> PathBuf {
     tt_config::locks_dir().join(checkout_keyed_filename(checkout, LOCK_FILE))
 }
 
-/// An OS advisory lock (`flock`-style, via `std::fs::File::try_lock`) on the
-/// checkout's lock file. The kernel releases it when the holding process
-/// exits — a crashed holder can't wedge the fleet, which is what retired the
-/// old create-a-file scheme and its stale-age heuristic. The lock file
-/// itself stays on disk on purpose: unlinking it on drop would reopen the
-/// classic race where one process locks an inode another has already
-/// unlinked while a third recreates the path, leaving two "holders" that
-/// both think they won.
+/// An OS advisory lock on the checkout's lock file. The kernel releases it
+/// when the holding process exits, so a crashed holder can't wedge the fleet.
+/// The file stays on disk on purpose: unlinking it on drop reopens the classic
+/// race that leaves two "holders" locking different inodes at one path.
 pub(crate) struct ClaimLock {
     _file: fs::File,
 }
@@ -118,30 +104,24 @@ impl ClaimLock {
 
 // port registry
 
-/// One recorded claim: which task holds the port, through which template
-/// variable, and since when. The metadata beyond `owner` exists for the
-/// consumers *around* the claim cycle — `tt task ports`/doctor naming why a
-/// port is held, `clean` sweeping dead checkouts — none of it feeds back
+/// One recorded claim. Everything beyond `owner` serves the consumers *around*
+/// the claim cycle (`tt task ports`, doctor, `clean`); none of it feeds back
 /// into the pick itself.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PortClaim {
     /// Task directory name (or the primary checkout's own dir name).
     pub owner: String,
-    /// The `.env` variable the claim renders into (e.g. `UI_PORT`).
     #[serde(default)]
     pub var: String,
-    /// Epoch ms when this claim was last recorded — passed in by the caller
-    /// (`now_ms` discipline), never read from the clock here.
+    /// Epoch ms, passed in by the caller, never read from the clock here.
     #[serde(default)]
     pub claimed_at_ms: i64,
 }
 
-/// The on-disk ledger. `checkout` is the absolute path of the checkout this
-/// file describes — self-identifying, so `clean_tasks` can sweep files whose
-/// checkout no longer exists without re-deriving the filename hash. A file
-/// that fails to parse (including the pre-metadata flat format — hard
-/// cutover, no migration) reads as empty: a fresh or damaged registry blocks
-/// nothing, and its claims re-record on the next render.
+/// The on-disk ledger, self-identifying via `checkout` so `clean_tasks` can
+/// sweep files whose checkout is gone without re-deriving the filename hash. A
+/// file that fails to parse reads as empty: a damaged registry blocks nothing,
+/// and its claims re-record on the next render.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct PortRegistry {
     #[serde(default)]
@@ -176,13 +156,10 @@ fn save_port_registry(path: &Path, registry: &PortRegistry) -> Result<()> {
     write_atomic(path, &text).map_err(|e| registry_err(format!("cannot write: {e}")))
 }
 
-/// The registry, pruned of any entry whose owner no longer has a directory
-/// on disk — the primary checkout's own name always counts as alive (it's
-/// where this call is running from). An owner that isn't even a valid
-/// [`TaskName`] (a hand-edited `"../x"`) is dropped before any path is built
-/// from it. Persists the pruned result when anything was actually dropped,
-/// so a leaked entry doesn't linger in the file just because nothing else
-/// happens to touch this repo's registry.
+/// The registry, pruned of any entry whose owner no longer has a directory on
+/// disk; the primary checkout always counts as alive. An owner that isn't a
+/// valid [`TaskName`] (a hand-edited `"../x"`) is dropped before any path is
+/// built from it, and the pruned result is persisted.
 fn load_live_registry(sr: &TaskRoot, path: &Path) -> PortRegistry {
     let mut registry = load_port_registry(path);
     let primary = sr.checkout.file_name().and_then(|n| n.to_str());
@@ -197,10 +174,8 @@ fn load_live_registry(sr: &TaskRoot, path: &Path) -> PortRegistry {
     registry
 }
 
-/// Record `task`'s current port claims — `(var, port)` pairs straight from
-/// the render outcome — replacing any previous entries for `task`, so the
-/// registry always matches what `.env` says right now for a still-existing
-/// task. `now_ms` stamps each claim's `claimed_at_ms`.
+/// Record `task`'s current port claims, replacing any previous entries for it,
+/// so the registry always matches what `.env` says right now.
 pub(crate) fn record_task_ports(
     sr: &TaskRoot,
     path: &Path,
@@ -208,8 +183,7 @@ pub(crate) fn record_task_ports(
     claims: &[(String, u16)],
     now_ms: i64,
 ) -> Result<()> {
-    // A task with no claims doesn't materialize a registry file — a repo
-    // with no port template would otherwise grow one empty ledger per
+    // A repo with no port template would otherwise grow one empty ledger per
     // checkout it ever rendered.
     if claims.is_empty() && !path.exists() {
         return Ok(());
@@ -234,8 +208,7 @@ pub(crate) fn record_task_ports(
 }
 
 /// Ports the registry says some *other* task holds — merged into
-/// `sibling_claims` before picking, so a claim survives even against a
-/// sibling whose `.env` this render can't currently read.
+/// `sibling_claims` so a claim survives a sibling whose `.env` is unreadable.
 pub(crate) fn registry_claims(sr: &TaskRoot, path: &Path, task: &str) -> BTreeSet<u16> {
     load_live_registry(sr, path)
         .ports
@@ -245,32 +218,25 @@ pub(crate) fn registry_claims(sr: &TaskRoot, path: &Path, task: &str) -> BTreeSe
         .collect()
 }
 
-/// One row of [`port_report`]: a port some checkout of this repo holds —
-/// the live `.env` scan merged with the registry — plus whether anything is
-/// actually listening on it right now.
+/// One row of [`port_report`].
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PortStatus {
     pub port: u16,
     /// Task dir name (or the primary checkout's dir name).
     pub owner: String,
-    /// The `.env` variable carrying the claim (empty on a registry-only row
-    /// whose recorded var was blank).
     pub var: String,
-    /// Where the row came from: `"env"`, `"registry"`, or `"env+registry"`.
-    /// `"registry"` alone means the owner's `.env` no longer carries the
-    /// claim (deleted or hand-edited) — exactly the drift the registry
-    /// exists to survive, and what a doctor check flags.
+    /// `"env"`, `"registry"`, or `"env+registry"`. `"registry"` alone means the
+    /// owner's `.env` no longer carries the claim — exactly the drift the
+    /// registry exists to survive, and what a doctor check flags.
     pub source: &'static str,
     /// Epoch ms the registry last recorded the claim (0 on an env-only row).
     pub claimed_at_ms: i64,
     pub occupied: bool,
 }
 
-/// The repo's full port picture, sorted by port: every claim in any
-/// checkout's live `.env`, merged with the registry, each probed for an
-/// actual listener. Read-only — unlike the render path it neither locks nor
-/// self-heals, so it's safe to call from status surfaces (`tt task ports`,
-/// doctor) without perturbing the ledger it's reporting on.
+/// The repo's full port picture: every claim in any checkout's live `.env`,
+/// merged with the registry, each probed for a listener. Read-only — it neither
+/// locks nor self-heals, so status surfaces can't perturb the ledger.
 pub fn port_report(sr: &TaskRoot) -> Vec<PortStatus> {
     let mut rows: BTreeMap<u16, PortStatus> = BTreeMap::new();
 
@@ -334,13 +300,10 @@ pub fn port_report(sr: &TaskRoot) -> Vec<PortStatus> {
     report
 }
 
-/// Release every port the registry recorded for `task` — call once removal
-/// is certain, so a removed task's ports become claimable again immediately
-/// rather than waiting on the next prune. Serializes on the claim lock so it
-/// can't interleave with a concurrent render's read-modify-write and drop
-/// that render's freshly recorded ports; best-effort — on a lock timeout the
-/// release is skipped rather than failing the removal, and the prune in
-/// [`load_live_registry`] reclaims the entry later anyway.
+/// Release every port recorded for `task` — call once removal is certain.
+/// Serializes on the claim lock so it can't interleave with a concurrent
+/// render's read-modify-write. Best-effort: a lock timeout skips the release
+/// rather than failing the removal, and the prune reclaims it later.
 pub(crate) fn release_task_ports(checkout: &Path, path: &Path, task: &str) {
     let Ok(_lock) = ClaimLock::acquire(checkout) else {
         return;

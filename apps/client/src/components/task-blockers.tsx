@@ -20,27 +20,16 @@ import {
 } from "@/lib/agentboard";
 import { cn } from "@/lib/utils";
 
-/** The dialog a refused `task_delete` opens, shared by the two screens that can
- * trigger one — the Agentboard rail's "Delete worktree…" and the Board's card
- * delete. Presentation only; each screen owns its own delete flow state. */
-
-/** Glyph per blocker kind. Exhaustive over `TaskBlockerKind`, so a guard added
- * in Rust fails the build here rather than silently picking up whichever icon a
- * ternary happened to end on. */
+/** Exhaustive over `TaskBlockerKind`, so a guard added in Rust fails the build
+ * here rather than silently picking up whatever icon a ternary ended on. */
 const BLOCKER_ICONS: Record<TaskBlockerKind, typeof CircleAlert> = {
   dirtyTree: FileDiff,
   unreachableCommits: GitCommitHorizontal,
   foreignPort: Network,
 };
 
-/** Tinted by consequence rather than by kind: the one thing worth seeing at a
- * glance is which rows are work that disappears if forced (destructive) and
- * which are merely in the way (muted) — the row's own text says what it is.
- *
- * An unrecognized kind (an older frontend meeting a newer backend across the
- * IPC boundary) gets a neutral alert glyph. The row still reads fine — its
- * message and remedy come from Rust — and admitting we don't know beats
- * asserting the wrong thing. */
+/** Tinted by consequence, not kind: destructive means forcing loses that work.
+ * An unrecognized kind falls back to neutral rather than asserting a wrong one. */
 function BlockerIcon({ kind, losesWork }: { kind: string; losesWork: boolean }) {
   const Icon = BLOCKER_ICONS[kind as TaskBlockerKind] ?? CircleAlert;
   return (
@@ -57,32 +46,21 @@ function BlockerIcon({ kind, losesWork }: { kind: string; losesWork: boolean }) 
 export function BlockedDeleteDialog({
   open,
   onOpenChange,
-  /** What's being deleted, for the title. */
   name,
-  /** One sentence on what's in the way and what the two answers do. */
   description,
-  /** The keep-it button's label — the screens name different nouns. */
   cancelLabel,
   blockers,
-  /** Caveats about how the verdict itself was reached — chiefly a failed
-   * `fetch --prune`, meaning the blockers were judged against stale `origin/*`.
-   * Rendered above the list because it qualifies every row below it: an offline
-   * refusal must not read as an authoritative one. */
+  /** Rendered above the list because it qualifies every row below it — chiefly
+   * a failed `fetch --prune`, judging blockers against a stale `origin/*`. */
   messages,
-  /** Locks the destructive actions: a delete or a stop+retry is in flight. */
   forceHint,
   busy = false,
-  /** Locks *cancel* specifically. Deliberately separate from `busy`: during a
-   * port stop, backing out is still real (the retry checks the flow and stands
-   * down), but once the delete itself is running "keep it" can no longer be
-   * honored, so the dialog must stay up until the delete resolves and closes it
-   * honestly. Collapsing the two would either lie or over-lock. */
+  /** Separate from `busy`: backing out of a port stop is still real, but once
+   * the delete runs "keep it" can no longer be honored. */
   cancelDisabled = false,
-  /** The port whose stop is in flight, so its own button can say so. */
   stoppingPort,
-  /** Clear the port a blocker names and retry. Omitted on screens that don't
-   * implement the retry loop — the row then still renders its remedy as text,
-   * it just gets no button. */
+  /** Omitted on screens without the retry loop; the row then renders its remedy
+   * as text with no button. */
   onStopPort,
   onForce,
 }: {
@@ -97,24 +75,12 @@ export function BlockedDeleteDialog({
   cancelDisabled?: boolean;
   stoppingPort?: number | null;
   onStopPort?: (port: number) => void;
-  /** Keycaps for the shortcut that fires `onForce`, when the owning screen has
-   * one — the Agentboard's delete flow does, the Board's card delete doesn't,
-   * so it's optional rather than a hint that names a chord doing nothing. */
   forceHint?: string;
   onForce: () => void;
 }) {
   return (
-    // Every reason gets its own row with its own way out, because the reasons
-    // are independent and only some are actionable from here: a stale dev
-    // server is one button, a dirty tree is work only the user can decide
-    // about. The force sits in the footer under a label that names what it
-    // discards — this dialog is where consent to lose work is actually given,
-    // since the confirm before it promised the delete was guarded.
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* Wider than the default alert, which is sized for a sentence and two
-          buttons: this one carries a list of blocker cards. The `!` beats the
-          primitive's own `data-[size=default]:` width, which outranks a plain
-          utility class. */}
+      {/* `!` beats the primitive's own `data-[size=default]:` width. */}
       <AlertDialogContent className="max-w-[calc(100%-2rem)]! sm:max-w-xl!">
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-anywhere">Can’t delete {name} yet</AlertDialogTitle>
@@ -129,9 +95,8 @@ export function BlockedDeleteDialog({
             ))}
           </ul>
         )}
-        {/* Scrolls rather than growing past the viewport — a task can be
-            blocked by a dirty tree, unlanded commits and several ports at
-            once, and the footer must stay reachable. */}
+        {/* Scrolls rather than growing past the viewport: the footer must stay
+            reachable however many blockers there are. */}
         <ul className="flex max-h-[45vh] flex-col gap-2 overflow-y-auto">
           {blockers.map((blocker, i) => {
             const port = stoppablePort(blocker);
@@ -149,10 +114,8 @@ export function BlockedDeleteDialog({
                 </div>
                 {port !== null &&
                   onStopPort && (
-                    // Every action is disabled while any stop+retry runs, not
-                    // just this row's: they all end in a delete of the same
-                    // worktree, and two of those overlapping means concurrent
-                    // `docker compose down` / `git worktree remove`.
+                    // Every row disables while any stop+retry runs: they all end
+                    // in a delete of the same worktree.
                     <Button
                       size="sm"
                       variant="secondary"
@@ -167,8 +130,6 @@ export function BlockedDeleteDialog({
             );
           })}
         </ul>
-        {/* Opposite ends for opposite answers — the discard label runs long
-            enough that crowding it against keep reads as one two-part button. */}
         <AlertDialogFooter className="sm:justify-between">
           <AlertDialogCancel disabled={cancelDisabled}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction

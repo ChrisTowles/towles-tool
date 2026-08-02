@@ -41,11 +41,9 @@ const FILTER_META: Record<RailFilter, { icon: typeof Eye; title: string }> = {
   recent: { icon: History, title: "Showing only checkouts you worked in recently" },
 };
 
-/** The rail's filter. The middle two answers aren't degrees of one thing:
- * "going on" is about *now* (running, dirty, unpushed, waiting on you), while
- * "worked recently" is the last N hours — a checkout committed to an hour ago
- * is hidden by the first, kept by the second. A menu, not a cycling icon, so
- * the hour span sits with the mode it measures. */
+// The middle two answers aren't degrees of one thing: "going on" is about
+// *now*, "worked recently" is the last N hours. A menu, not a cycling icon, so
+// the hour span sits with the mode it measures.
 function RailFilterMenu(props: {
   filter: RailFilter;
   recentHours: number;
@@ -118,11 +116,8 @@ function RailFilterMenu(props: {
   );
 }
 
-/**
- * The rail's fixed top: the "Repos" title row with its filter/cleanup
- * affordances, and the attention strip beneath it (failing/review PRs + the
- * next imminent meeting). Everything below this scrolls.
- */
+// The rail's fixed top: title row, filter/cleanup affordances, and the
+// attention strip. Everything below this scrolls.
 export function RailHeader(props: {
   attention: AttentionItem[];
   missingRepoCount: number;

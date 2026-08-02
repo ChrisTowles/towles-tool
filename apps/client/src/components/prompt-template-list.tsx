@@ -1,13 +1,6 @@
-// A reusable editor for a list of user-editable prompt templates, each a card
-// with an enable switch, a label, a read-only id badge, a big prompt textarea,
-// and a Remove button — plus a heading, help text, and an Add button. Extracted
-// from the calendar-sources editor so the same shape drives both the calendar
-// collector's per-source prompts and the new-task form's prompt improvers.
-//
-// Controlled: the parent owns the list and its persistence (this repo's
-// autosave `useUserSettings`). This component renders and reports edits; the
-// parent assigns ids and emits the `uiAction` telemetry on add/remove, since
-// only it knows the store lane / settings key the ids belong to.
+// Controlled editor for a list of user-editable prompt templates: the parent owns
+// the list and its persistence, assigns ids, and emits the `uiAction` telemetry
+// on add/remove, since only it knows the settings key the ids belong to.
 import type { ComponentType, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";

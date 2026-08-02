@@ -81,9 +81,8 @@ import { cn } from "@/lib/utils";
 /** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
  * working-context band, so each surface composes the same pieces. */
 
-/** A square icon action. `title` is a Radix tooltip, not a native one, which a
- * WebKitGTK webview renders unreliably; it doubles as the `aria-label`.
- * `ghost` drops the resting border and is what every rail row uses. */
+/** `title` is a Radix tooltip, not a native one, which a WebKitGTK webview
+ * renders unreliably; it doubles as the `aria-label`. */
 export function IconBtn({
   title,
   shortcut,
@@ -94,11 +93,8 @@ export function IconBtn({
   ...props
 }: {
   title: string;
-  /** Registry id of the binding this button duplicates. The tooltip grows a
-   * keycap badge and the click scores itself as a passed-up keystroke, so a
-   * caller passing this must not also call `mouseAction`. Keycaps stay out of
-   * `aria-label` — a screen reader gets the plain title plus
-   * `aria-keyshortcuts`. */
+  /** Registry id of the binding this duplicates. The click scores itself as a
+   * passed-up keystroke, so a caller passing this must not also `mouseAction`. */
   shortcut?: string;
   onClick: () => void;
   className?: string;
@@ -115,8 +111,7 @@ export function IconBtn({
           aria-keyshortcuts={shortcut ? shortcutAria(shortcut) : undefined}
           onClick={(e) => {
             e.stopPropagation();
-            // Every `IconBtn` is an agentboard atom, so that is the screen its clicks
-            // score against — see the file header.
+            // Every `IconBtn` is an agentboard atom, so that is the scoring screen.
             if (shortcut) mouseAction(shortcut, "agentboard");
             onClick();
           }}
@@ -148,8 +143,7 @@ export function Glyph({ agent }: { agent: boolean }) {
   );
 }
 
-/** Status dot mirroring `statusColor`; pulses while busy. Open ring =
- * paused/pending on you, filled = something happened — a shape cue, so
+/** Open ring = pending on you, filled = something happened. A shape cue, so
  * `waiting` and `complete` don't rely on hue alone to tell each other apart. */
 export function Dot({ session }: { session: SessionData }) {
   if (!session.live) {
@@ -180,8 +174,7 @@ export function Dot({ session }: { session: SessionData }) {
   );
 }
 
-/** Micro-dot + count for agent rollups. Shape and color derive from `Dot` and
- * `statusColor`, so the buckets can't drift from them. */
+/** Shape and color derive from `Dot`, so the buckets can't drift from it. */
 export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
   return (
     <span className="flex items-center gap-1 text-muted-foreground">
@@ -198,8 +191,7 @@ export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
   );
 }
 
-/** On a collapsed header: running sessions are hidden inside, so it doesn't
- * look asleep. Nothing when nothing is live. */
+/** So a collapsed header with running sessions inside doesn't look asleep. */
 export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
   const color = collapsedLiveColor(sessions);
   if (!color) return null;
@@ -250,8 +242,7 @@ export function ClaudeBadge({
   );
 }
 
-/** rust-analyzer bridge state — its only observable surface. A non-Rust
- * checkout renders nothing. */
+/** The rust-analyzer bridge's only observable surface. */
 export function LspBadge({
   state,
   detail,
@@ -320,8 +311,8 @@ export function BranchLabel({
   onClick?: () => void;
 }) {
   return (
-    // Always the full branch: every surface truncates this element first, so
-    // without the tooltip a long branch is unreadable.
+    // Every surface truncates this element first, so the tooltip is the only
+    // place a long branch is readable.
     <Hint
       label={
         isWorktree
@@ -343,8 +334,7 @@ export function BranchLabel({
 }
 
 /** Why a mid-delete row went inert. Red, not `GhostBadge`'s gray: this is an
- * active, irreversible deletion. `label` is the backend's live phase text, and
- * falls back to a static "deleting…" before the first one lands. */
+ * active, irreversible deletion. `label` is the backend's live phase text. */
 export function DeletingBadge({ label }: { label?: string }) {
   return (
     <Hint
@@ -372,9 +362,8 @@ export function CreatingBadge({ label }: { label?: string }) {
   );
 }
 
-/** An open task whose worktree isn't on disk: a failed create, an outside
- * delete, a restart mid-removal. The row stays and says so rather than
- * vanishing with the directory and stranding a card on the Board. */
+/** An open task whose worktree isn't on disk. The row stays and says so rather
+ * than vanishing with the directory and stranding a card on the Board. */
 export function DetachedBadge() {
   return (
     <span
@@ -459,8 +448,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
 }
 
 /** Setup (`TT_TASK_SETUP`) runs after `task_create` returns, so the pending row
- * is already gone; this says the task isn't finished being built. The row
- * stays interactive throughout. */
+ * is already gone; this says the task isn't finished being built. */
 export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   return (
     <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
@@ -471,9 +459,8 @@ export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   );
 }
 
-/** A live pane's ports have drifted from what `.env` now claims — a sibling
- * task's re-render rotated a port this pane already bound to. Amber: worth
- * acting on (restart the pane), not a dead state. */
+/** A sibling task's re-render rotated a port this pane already bound to. Amber:
+ * worth acting on (restart the pane), not a dead state. */
 export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   if (drift.length === 0) return null;
   return (
@@ -501,8 +488,7 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   );
 }
 
-/** Which branch every git stat here was measured against, so the ± numbers
- * beside it are never ambiguous. */
+/** Which branch every git stat here was measured against. */
 export function ComparedBaseBadge({
   folder,
 }: {
@@ -527,9 +513,8 @@ export function ComparedBaseBadge({
   );
 }
 
-/** How far `comparedBase` has moved ahead — a fact about someone else's work
- * with one response, so it's its own chip. The only *filled* git chip: weight,
- * not a hue, since amber is spoken for and this shows on nearly every row. */
+/** How far `comparedBase` has moved ahead — someone else's work, so its own
+ * chip. The only *filled* git chip: weight, since amber is spoken for. */
 export function BaseMovedChip({
   stats,
 }: {
@@ -550,7 +535,6 @@ export function BaseMovedChip({
   );
 }
 
-/** One row of the per-commit breakdown: SHA, subject, that commit's ±. */
 function CommitStatRow({ commit }: { commit: CommitStat }) {
   return (
     <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
@@ -562,9 +546,8 @@ function CommitStatRow({ commit }: { commit: CommitStat }) {
   );
 }
 
-/** `CommittedChip`'s hover card. The two totals are never added together —
- * this is where that distinction is spelled out, since the chips have room
- * only for numbers. Commits are fetched lazily and cached by the parent. */
+/** `CommittedChip`'s hover card, where the two totals are spelled out as the
+ * separate things they are. Commits are fetched lazily and cached by the parent. */
 function CommitBreakdownPreview({
   commits,
   stats,
@@ -627,7 +610,6 @@ function CommitBreakdownPreview({
   );
 }
 
-/** Fields both diff chips read, plus what they need to open the pane. */
 type DiffChipStats = Pick<
   FolderData,
   | "dir"
@@ -649,14 +631,13 @@ type DiffChipStats = Pick<
 type DiffChipProps = {
   stats: DiffChipStats;
   onOpen: () => void;
-  /** On for the pane header, off for the rail — a width budget, not a
-   * preference: two extra words push the rail row's numbers off the end. */
+  /** A width budget, not a preference: two extra words push the rail row's
+   * numbers off the end, so it's on for the pane header and off for the rail. */
   labeled?: boolean;
 };
 
-/** Shared chrome for the git-stat chips. No resting border: a box means a
- * control or an alert, plain type means a fact, and diff stats are facts. The
- * box returns on hover, when "is this clickable?" is the question. */
+/** No resting border: a box means a control or an alert, plain type means a
+ * fact, and diff stats are facts. The box returns on hover. */
 const CHIP_CLASS =
   "flex h-5 shrink-0 items-center gap-1 rounded-md px-1 font-mono text-[10.5px] transition-colors";
 
@@ -666,9 +647,8 @@ function ChipLabel({ text, labeled }: { text: string; labeled: boolean }) {
   return <span className="opacity-60">{text}</span>;
 }
 
-/** Ticking "checked 4s ago" on its own interval: a caller-passed `now` would
- * freeze exactly when nothing is changing, which is when the user is asking
- * whether anything is alive. Mounted only inside an open hover card. */
+/** Ticks on its own interval: a caller-passed `now` would freeze exactly when
+ * nothing is changing, which is when the user is asking whether anything is alive. */
 function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -678,15 +658,12 @@ function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
   return <>{gitCheckedLabel(computedAtMs, now) ?? "not checked yet"}</>;
 }
 
-/** What the working tree holds that `HEAD` doesn't — first of the two chips
- * because its contents die with the checkout. Always rendered, `clean` at
- * zero: an absent chip and one you didn't notice look identical. Neutral
- * chrome, since uncommitted work is the normal state of an active task. */
+/** First of the two chips because its contents die with the checkout. Always
+ * rendered, `clean` at zero: an absent chip and one you missed look identical. */
 export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
   const { uncommittedFiles, uncommittedAdded, uncommittedRemoved, uncommittedCapped } = stats;
   const clean = uncommittedFiles === 0;
-  // A `+` because the count is a floor: an untracked directory was too large
-  // to list, so the real number is higher. The diff pane's banner names it.
+  // A `+` because the count is a floor: an untracked directory was too large to list.
   const filesLabel = `${uncommittedFiles}${uncommittedCapped ? "+" : ""}f`;
   return (
     <Tooltip>
@@ -745,10 +722,8 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
   );
 }
 
-/** What this branch's commits hold that `comparedBase` doesn't. Shows
- * `commitsUnlanded`, not `commitsAhead`, whenever they disagree: the latter is
- * SHA reachability, so a squash merge leaves it pinned at 15 forever while the
- * content-based count correctly drops to 0. */
+/** Shows `commitsUnlanded`, not `commitsAhead`, whenever they disagree: the
+ * latter is SHA reachability, which a squash merge pins at 15 forever. */
 export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
   const { dir, committedAdded, committedRemoved, commitsAhead, commitsUnlanded, baseBranch } =
     stats;
@@ -840,9 +815,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
   );
 }
 
-/** The shell behind the `files`/`preview`/`jarvis` chips. `mouseAction` is
- * opt-in per chip: it must fire only for an exact shortcut twin, or the
- * keyboard-habit score counts a keystroke the user never passed up. */
+/** `mouseAction` is opt-in per chip: it must fire only for an exact shortcut
+ * twin, or the habit score counts a keystroke the user never passed up. */
 function PaneOpenButton({
   glyph,
   label,
@@ -858,8 +832,7 @@ function PaneOpenButton({
   shortcutTwin?: string;
 }) {
   return (
-    // A chip scoring a click as a passed-up keystroke has to name it, so the
-    // hint rides on `shortcutTwin` rather than the caller's `title`.
+    // A chip scoring a click as a passed-up keystroke has to name it.
     <Hint label={title} shortcut={shortcutTwin}>
       <button
         type="button"
@@ -878,8 +851,7 @@ function PaneOpenButton({
   );
 }
 
-/** `labeled` is the same width budget as [`DiffChipProps.labeled`]: these four
- * sit at the tail of the rail's git line, where their words cost ~170px. */
+/** `labeled` is the same width budget as [`DiffChipProps.labeled`]. */
 type PaneOpenButtonProps = { onOpen: () => void; labeled?: boolean };
 
 /** Opens the folder's file tree as a pane. `FolderTree`, not lucide's `Files`:
@@ -897,8 +869,7 @@ export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** Opens the rectangle Bevy draws into (`components/jarvis-pane.tsx`). Mounted
- * only when `agentboard.jarvisPane` is on. */
+/** Mounted only when `agentboard.jarvisPane` is on. */
 export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -911,9 +882,8 @@ export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** The task's own dev server embedded beside its terminals, with draw-on-page
- * feedback to that task's session. `Eye`, not `AppWindow`: a window outline is
- * one more generic rectangle next to the file glyph. */
+/** `Eye`, not `AppWindow`: a window outline is one more generic rectangle next
+ * to the file glyph. */
 export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -926,9 +896,8 @@ export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** A real Chrome on the app-owned profile, tiled beside the terminals —
- * sign-ins made there persist across restarts. Mounted only when
- * `agentboard.browserPane` is on. */
+/** A real Chrome on the app-owned profile, so sign-ins persist across restarts.
+ * Mounted only when `agentboard.browserPane` is on. */
 export function BrowserButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
@@ -941,9 +910,8 @@ export function BrowserButton({ onOpen, labeled }: PaneOpenButtonProps) {
   );
 }
 
-/** Why a landed branch's checkout still isn't safe to delete, each condition
- * named with its own consequence — they are not equally serious: uncommitted
- * changes die with the directory, unlanded commits stay on the branch. */
+/** Each condition named with its own consequence: they are not equally serious.
+ * Uncommitted changes die with the directory; unlanded commits stay on the branch. */
 function unsafeToDeleteReason(
   stats: Pick<FolderData, "dirty" | "commitsUnlanded">,
   base: string,
@@ -959,9 +927,8 @@ function unsafeToDeleteReason(
   return reasons.join("; and ");
 }
 
-/** The folder's PR, tinted by `lib/pr-tone.ts`. Merged means the *PR's*
- * content is safe and says nothing about this checkout, so local uncommitted
- * or unlanded work overrides the merged purple with needs-you amber. */
+/** Merged says the *PR's* content is safe and nothing about this checkout, so
+ * local uncommitted or unlanded work overrides the purple with amber. */
 export function PrChip({
   pr,
   stats,
@@ -1003,9 +970,8 @@ export function PrChip({
   );
 }
 
-/** An issue *manually linked* to this folder's bound task. Unlike a PR, an
- * issue has no branch, so it never auto-attaches — this only appears for one
- * put there by "Attach issue…", and detaching is a first-class action. */
+/** An issue has no branch, so unlike a PR it never auto-attaches — this only
+ * appears for one put there by "Attach issue…". */
 export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueLink }) {
   const closed = issue.state === "closed";
   const tone = closed
@@ -1055,8 +1021,7 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
   );
 }
 
-/** The dialog behind `RepoMenu`'s "Attach issue…". The manual counterpart to
- * PR auto-attach: an issue has no branch to match a folder on. */
+/** The dialog behind `RepoMenu`'s "Attach issue…". */
 function AttachIssueDialog({
   open,
   onOpenChange,
@@ -1072,8 +1037,7 @@ function AttachIssueDialog({
   const [results, setResults] = useState<IssueItem[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Debounced so typing doesn't fire a `gh` call per keystroke; the cleanup
-  // cancels a pending timer so only the latest keystroke queries.
+  // Debounced so typing doesn't fire a `gh` call per keystroke.
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -1153,10 +1117,8 @@ function AttachIssueDialog({
   );
 }
 
-/** How this branch's work reached the base, straight from git. A squash merge
- * — how this repo's PRs land — is invisible to naive git checks, and a task
- * that never had a PR has no other evidence at all. Purple, matching
- * `PrChip`'s merged tint, since it reports the same status by other means. */
+/** How this branch's work reached the base, straight from git — a squash merge
+ * is invisible to naive checks, and a PR-less task has no other evidence. */
 export function LandedBadge({ landed, base }: { landed: LandedVia; base: string }) {
   return (
     <Tooltip>
@@ -1173,8 +1135,7 @@ export function LandedBadge({ landed, base }: { landed: LandedVia; base: string 
   );
 }
 
-/** {@link LandedBadge}, gated on a merged `PrChip` not already saying the same
- * thing — one signal per fact. */
+/** {@link LandedBadge}, gated on a merged `PrChip` not already saying it. */
 export function FolderLandedBadge({
   folder,
   pr,
@@ -1186,10 +1147,9 @@ export function FolderLandedBadge({
   return <LandedBadge landed={folder.landed} base={comparedBaseLabel(folder)} />;
 }
 
-/** The positive counterpart to `PrChip`'s amber warning (`folderSafeToDelete`).
- * A PR-less task never gets here by design: git can prove content landed but
- * not that it was *accepted*. Clicking reaches the same guarded confirmation
- * as the "···" menu — a louder path to it, not a shortcut around it. */
+/** A PR-less task never gets here by design: git can prove content landed but
+ * not that it was *accepted*. Clicking reaches the same guarded confirmation as
+ * the "···" menu — a louder path to it, not a shortcut around it. */
 export function SafeToDeleteBadge({
   base,
   landed,
@@ -1222,16 +1182,14 @@ export function SafeToDeleteBadge({
   );
 }
 
-/** Weight per model family: Haiku/Sonnet neutral, Opus violet, Fable/Mythos
- * the cluster's only filled chip. Never amber (needs-you), never animated. */
+/** Weight per model family. Never amber (needs-you), never animated. */
 const MODEL_TONE: Record<string, string> = {
   O: "border-violet-500/50 bg-violet-500/10 text-violet-600 dark:text-violet-400",
   F: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
   M: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
 };
 
-/** The live session's model as a boxed letter (`modelLetter`), weighted by
- * tier ({@link MODEL_TONE}). Nothing when the family is unrecognized. */
+/** Nothing when the family is unrecognized. */
 export function ModelBadge({ session }: { session: SessionData }) {
   const d = session.agentState?.details;
   const letter = modelLetter(d?.model);
@@ -1250,8 +1208,7 @@ export function ModelBadge({ session }: { session: SessionData }) {
   );
 }
 
-/** Context/cache health for a live agent session, in the row's meta cluster.
- * Quiet mono text: `41% ◔4m` while warm (⧗ for a 1h cache), `41% ❄` when cold,
+/** Quiet mono text: `41% ◔4m` while warm (⧗ for a 1h cache), `41% ❄` when cold,
  * and an ice-washed `❄ 63% compact` pill when cold at/over the threshold. */
 export function CacheBadge({
   session,
@@ -1340,10 +1297,8 @@ export function fmtMins(ms: number): string {
   return `${Math.max(1, Math.round(ms / 60_000))}m`;
 }
 
-/** The one place every secondary action for a checkout lives, shared verbatim
- * by the rail's headers and the working-context band so the two can't diverge.
- * "Mark quiet" forces the folder into the filter's stub row whatever its
- * actual activity (`isFolderFiltered`). */
+/** The one place every secondary action for a checkout lives, shared verbatim by
+ * the rail's headers and the working-context band so the two can't diverge. */
 export function RepoMenu({
   path,
   onRemove,
@@ -1360,16 +1315,14 @@ export function RepoMenu({
   path?: string;
   onRemove: () => void;
   dir: string;
-  /** Worktree checkouts have no "Remove from rail": auto-discovered from the
-   * primary, they would reappear next poll. */
+  /** No "Remove from rail": auto-discovered, they reappear next poll. */
   isWorktree?: boolean;
   quiet: boolean;
   /** Set only on a task-convention repo. */
   onNewTask?: () => void;
   /** Set only on worktree checkouts. */
   onDeleteWorktree?: () => void;
-  /** A detached row's directory is already gone, so "Delete worktree…" would
-   * name something that isn't there. */
+  /** A detached row's directory is gone, so "Delete worktree…" would lie. */
   deleteLabel?: string;
   /** Enables "Attach issue…" — an issue can only be linked to a task. */
   taskId?: number;
@@ -1500,9 +1453,8 @@ export function RepoMenu({
   );
 }
 
-/** What a pane tile shows with no content: a gone folder, or a crashed shell
- * (which passes `detail` and `tone="alert"`). Removal is the only affordance
- * on purpose — restarting is the rail's job. */
+/** A gone folder, or a crashed shell (`detail` + `tone="alert"`). Removal is the
+ * only affordance on purpose — restarting is the rail's job. */
 export function PanePlaceholder({
   label,
   detail,
