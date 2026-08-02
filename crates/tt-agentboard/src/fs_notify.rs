@@ -517,6 +517,9 @@ mod tests {
         .unwrap();
         notifier.add(&one).unwrap();
         notifier.add(&two).unwrap();
+        // Same settle as the scoped-watch test: macOS can still deliver these
+        // files' own creation after the watch is installed.
+        while fired_rx.recv_timeout(DEBOUNCE * 2).is_ok() {}
 
         std::fs::write(root.path().join("a/noise.txt"), "noise").unwrap();
         assert!(

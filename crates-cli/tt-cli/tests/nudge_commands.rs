@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::cli_cmd;
+use common::{canonical_temp, cli_cmd, data_home};
 use predicates::prelude::*;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -14,7 +14,7 @@ use tempfile::TempDir;
 fn nudge(home: &Path, target: &str, session: Option<&str>) -> assert_cmd::Command {
     let mut cmd = cli_cmd(&home.join(".config").join("towles-tool"));
     cmd.env("HOME", home)
-        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_DATA_HOME", home.join(".local").join("share"))
         .env("XDG_CONFIG_HOME", home.join(".config"));
     match session {
         Some(id) => cmd.env("TT_SESSION_ID", id),
@@ -22,17 +22,6 @@ fn nudge(home: &Path, target: &str, session: Option<&str>) -> assert_cmd::Comman
     };
     cmd.args(["task", "nudge", target]);
     cmd
-}
-
-/// Where the child actually writes state. `tt-config` resolves it through
-/// `dirs::data_dir`, which follows Apple's layout on macOS and XDG everywhere
-/// else — so the sandbox has to expect the same shape it hands the child.
-fn data_home(home: &Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home.join("Library").join("Application Support")
-    } else {
-        home.join("data")
-    }
 }
 
 fn nudge_dir(home: &Path) -> PathBuf {
@@ -111,33 +100,33 @@ fn track_repos(home: &Path, dirs: &[&Path]) {
 /// app terminal, never reached the app.
 #[test]
 fn only_if_tracked_nudges_from_a_tracked_repo_that_is_not_this_one() {
-    let home = TempDir::new().unwrap();
-    let repo = home.path().join("dotfiles");
+    let (_guard, home) = canonical_temp();
+    let repo = home.join("dotfiles");
     std::fs::create_dir_all(&repo).unwrap();
-    track_repos(home.path(), &[&repo]);
+    track_repos(&home, &[&repo]);
 
-    let mut cmd = nudge(home.path(), "prs", None);
+    let mut cmd = nudge(&home, "prs", None);
     cmd.arg("--only-if-tracked").current_dir(&repo);
     cmd.assert().success();
 
-    assert!(nudge_dir(home.path()).join("prs").exists());
+    assert!(nudge_dir(&home).join("prs").exists());
 }
 
 /// A worktree task resolves to its owner by the rail's own longest-prefix rule,
 /// so it is tracked without ever being a `repos.json` entry of its own.
 #[test]
 fn only_if_tracked_nudges_from_a_worktree_under_a_tracked_repo() {
-    let home = TempDir::new().unwrap();
-    let repo = home.path().join("dotfiles");
+    let (_guard, home) = canonical_temp();
+    let repo = home.join("dotfiles");
     let task = repo.join(".claude").join("worktrees").join("feat-thing");
     std::fs::create_dir_all(&task).unwrap();
-    track_repos(home.path(), &[&repo]);
+    track_repos(&home, &[&repo]);
 
-    let mut cmd = nudge(home.path(), "prs", None);
+    let mut cmd = nudge(&home, "prs", None);
     cmd.arg("--only-if-tracked").current_dir(&task);
     cmd.assert().success();
 
-    assert!(nudge_dir(home.path()).join("prs").exists());
+    assert!(nudge_dir(&home).join("prs").exists());
 }
 
 /// The reason the flag isn't just "always nudge": the hook is enabled globally,
