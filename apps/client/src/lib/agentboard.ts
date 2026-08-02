@@ -435,13 +435,9 @@ export type PaneCloseTarget =
   | { kind: "session"; sessionId: string }
   | { kind: "pane"; paneId: string };
 
-/**
- * The pane `ab-close-pane` acts on, given the ring and the panes on screen.
- *
- * Null when the ring sits on a pane the visible window doesn't hold: `focusedPaneId` survives
- * clicking away to another folder, and a chord that closes something off-screen is a chord that
- * loses work. A tombstone closes as a pane, not a session — its shell is already gone.
- */
+/** The pane `ab-close-pane` acts on. Null when the ring sits on a pane the visible window
+ * doesn't hold — `focusedPaneId` survives clicking away to another folder, and a chord that
+ * closes something off-screen loses work. A tombstone closes as a pane: its shell is gone. */
 export function paneCloseTarget(
   focusedPaneId: string | null,
   panes: readonly string[],

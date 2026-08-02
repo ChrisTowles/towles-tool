@@ -52,9 +52,8 @@ import { cn } from "@/lib/utils";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 
 /** The files pane: VS Code's real Explorer beside a Monaco viewer, the checkout as workspace. It
- * opens read-only and arming editing is deliberate — an agent works this same tree. A path that
- * `lib/preview-kind.ts` calls an image, a video or unopenable *replaces* the editor instead of
- * splitting against it: Monaco cannot open one, so the split half would never fill. */
+ * opens read-only and arming editing is deliberate — an agent works this same tree. An image or
+ * video *replaces* the editor rather than splitting against it: Monaco cannot open one. */
 
 /** Claude called openFile — focus this file (new nonce per request). */
 export type FilesOpenRequest = { path: string; anchor: ViewerAnchor; nonce: number };
@@ -199,10 +198,9 @@ export function FilesPane({
     navigate(direction);
   };
 
-  // Escape leaves fullscreen, mirroring zen mode in `App.tsx`. Bubble phase plus the
-  // `defaultPrevented` check keep this from stealing the key from Monaco, which prevents the
-  // default whenever it consumes one (find widget, suggest popup) — so only the ignored ones
-  // reach here. An open Radix dialog, Monaco's own host included, closes first for that reason.
+  // Bubble phase plus the `defaultPrevented` check keep Escape from being stolen from Monaco,
+  // which prevents the default whenever it consumes one (find widget, suggest popup). An open
+  // Radix dialog, Monaco's own host included, closes first for the same reason.
   useEffect(() => {
     if (!fullscreen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -264,10 +262,9 @@ export function FilesPane({
     setViewMode(modeForPanels(!editor.isCollapsed(), !preview.isCollapsed()));
   };
 
-  // This pane is the VS Code workspace: the Explorer renders into its container, quick-open
-  // searches this folder, picked files open here. Keyed on `open` too — panes stay mounted
-  // forever, so mount order says nothing about where the user is; the pane they last opened a
-  // file in wins, workspace and sidebar and open-handler stealing together.
+  // This pane is the VS Code workspace. Keyed on `open` too — panes stay mounted forever, so
+  // mount order says nothing about where the user is; the pane they last opened a file in wins,
+  // workspace and sidebar and open-handler stealing together.
   useEffect(() => {
     let disposed = false;
     let detach: (() => void) | null = null;
@@ -589,9 +586,7 @@ export function FolderFilesPane({
 
   // The Explorer's provider has no disk watch (`lib/monaco-fs.ts`), so a file an agent creates
   // never appears on its own; the folder's git stats notice exactly that. Keyed on the *full*
-  // stats — a count-only key misses membership changes that keep the count, like M→D or a
-  // rename — and throttled trailing, since line counts also move on every auto-saved edit.
-  // Skipped on mount, where the Explorer has just enumerated the disk.
+  // stats — a count-only key misses M→D and renames — and throttled, since every save moves it.
   const statsKey = folder ? folderStatsKey(folder) : "";
   const statsSeen = useRef(false);
   const lastRefreshAtRef = useRef(0);

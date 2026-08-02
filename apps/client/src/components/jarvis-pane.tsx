@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils";
 
 /** A folder's native pane: a window rect handed to `tt-jarvis`'s Bevy renderer, the one pane
  * whose *body* is not DOM (docs/NATIVE-PANE.md). The surface composites above the webview, so
- * getting out of its way means `visible={false}`, never z-index; closing merely parks the
- * renderer, which is what makes a pane this expensive safe to render conditionally. */
+ * getting out of its way means `visible={false}`, never z-index. */
 export function JarvisPane({
   folder,
   focused,

@@ -120,8 +120,9 @@ export function PaneGrid(props: {
     return i < 0 ? undefined : rects[i];
   };
 
-  /** Every non-terminal pane kind shares this shell: absolutely positioned into
-   * its rect, claiming focus on click. */
+  /** Every non-terminal pane kind shares this shell, and claims focus on the way *down*:
+   * Chrome's canvas captures the pointer for CDP and Monaco eats mousedown, so a bubbling
+   * handler leaves those panes unfocusable by the very act of using them. */
   const paneBox = (id: string, children: React.ReactNode) => {
     const r = rectFor(id);
     return (
@@ -129,7 +130,7 @@ export function PaneGrid(props: {
         key={id}
         style={r ? paneStyle(r) : undefined}
         className="absolute p-1.5"
-        onClick={() => onFocusPane(id)}
+        onPointerDownCapture={() => onFocusPane(id)}
       >
         {children}
       </div>
