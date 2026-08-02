@@ -55,7 +55,7 @@ Desktop app / frontend:
 ```sh
 npm install                         # installs apps/client (npm workspaces)
 npm run dev                         # tauri dev — app + Vite frontend (debug build; noticeably laggy)
-npm start                           # release build (`tauri build --no-bundle`) + run the binary — for daily driving
+npm start                           # reinstall `tt`, release build (`tauri build --no-bundle`), run — for daily driving
 npm run dev:drive                   # like dev, but the window is automatable (live-drive)
 npm run drive -- <verb>             # drive the dev:drive window (status|invoke|shot|click|…)
 npm run e2e                         # regression suite vs the real shell (see below)
@@ -63,6 +63,13 @@ cd apps/client && npm run lint      # oxlint (types/react/unicorn/oxc rules; war
 cd apps/client && npm run format    # oxfmt, in place (100-col, matches rustfmt's width)
 cd apps/client && npx shadcn@latest add <name>   # vendor a shadcn/ui component
 ```
+
+**`npm start` reinstalls `tt` first**, from the checkout it is about to run:
+there is one `tt` on PATH for every checkout, so it otherwise drifts to whichever
+worktree installed it last and the plugin's hooks fail on a flag that build
+predates. Warm it costs about a second, it builds into its own `target/tt-cli`
+(sharing the app's dir has each build invalidating the other's), and a failure
+warns rather than holding back the app.
 
 **Verifying UI/IPC changes — drive the real app.** Two ways, both hitting the
 *actual* Tauri shell (WebKitGTK WebView + real Rust IPC), never a bare browser or
