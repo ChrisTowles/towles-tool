@@ -47,6 +47,36 @@ pub struct UnrecordedWorktree {
     pub branch: Option<String>,
 }
 
+/// Why a git-cache entry was dropped, for [`Engine::invalidate_git`]'s
+/// `git.invalidated` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitInvalidation {
+    /// A watched control file fired — commit, fetch, branch switch or `git add`.
+    ControlFile,
+    /// An agent's turn ended, so the working tree moved with no watched file
+    /// moving with it (see [`crate::turn_end`]).
+    TurnEnd,
+    /// A diff pane opened on this checkout.
+    DiffFocus,
+    /// Its base-branch override changed, so the stats have the wrong baseline.
+    BaseBranch,
+    /// A linked worktree was removed, so cached `linked_worktree_dirs` names a
+    /// directory that is gone.
+    WorktreeRemoved,
+}
+
+impl GitInvalidation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ControlFile => "control_file",
+            Self::TurnEnd => "turn_end",
+            Self::DiffFocus => "diff_focus",
+            Self::BaseBranch => "base_branch",
+            Self::WorktreeRemoved => "worktree_removed",
+        }
+    }
+}
+
 // Prune schedule constants.
 const STUCK_MS: i64 = 3 * 60 * 1000;
 const STALE_MS: i64 = 12 * 60 * 60 * 1000;
@@ -442,12 +472,35 @@ impl Engine {
     }
 
     /// Mark `dir`'s cache entry stale immediately — the event-driven
-    /// counterpart to the TTL, called from the host's control-file watcher
-    /// when one of [`Self::control_watch_files`]'s targets fires. The next
-    /// `stale_git_targets` call (right away, since the watcher also signals
-    /// an eager scan) picks it up regardless of how recently it was computed.
-    pub fn invalidate_git(&mut self, dir: &str) {
+    /// counterpart to the TTL, picked up by the next `stale_git_targets` call
+    /// regardless of how recently it was computed.
+    ///
+    /// `reason` lands on the `git.invalidated` record: which of these paths
+    /// fires, and how often, is otherwise unanswerable without a live repro.
+    pub fn invalidate_git(&mut self, dir: &str, reason: GitInvalidation) {
         self.git_cache.invalidate(Some(dir));
+        tracing::debug!(%dir, reason = reason.as_str(), "git.invalidated");
+    }
+
+    /// Aim the short git-freshness ceiling at the checkout whose diff pane just
+    /// mounted, or release it on unmount. Returns whether the focus moved.
+    ///
+    /// A release names its own dir and is ignored unless it still holds the
+    /// focus: panes are conditionally rendered, so switching folders mounts the
+    /// new one before the old one's cleanup runs. Acquiring also invalidates —
+    /// focus means somebody is reading this row now, and the counts beside the
+    /// pane would otherwise sit at whatever the last poll left them.
+    pub fn set_diff_focus(&mut self, dir: &str, focused: bool) -> bool {
+        let next = match focused {
+            true => Some(dir),
+            false if self.git_cache.focused_dir() == Some(dir) => None,
+            false => return false,
+        };
+        let moved = self.git_cache.set_focused(next);
+        if focused {
+            self.invalidate_git(dir, GitInvalidation::DiffFocus);
+        }
+        moved
     }
 
     /// Rail dirs whose git-cache entry is missing or past the TTL, each with
@@ -671,7 +724,7 @@ impl Engine {
             // The cached stats were computed against the old baseline —
             // invalidate so the next watcher-scan tick (2s, not the 10s stat
             // poll) recomputes them against the new override right away.
-            self.git_cache.invalidate(Some(dir));
+            self.invalidate_git(dir, GitInvalidation::BaseBranch);
         }
         changed
     }
@@ -1251,7 +1304,7 @@ mod engine_tests {
         assert_eq!(e.find_worktree_owner(wt), Some("/repo/main".to_string()));
 
         // …and invalidating it requeues the recompute that drops the entry.
-        e.invalidate_git("/repo/main");
+        e.invalidate_git("/repo/main", GitInvalidation::ControlFile);
         assert!(
             e.stale_git_targets(now + 2).iter().any(|(dir, _, _)| dir == "/repo/main"),
             "the owner must be due for a recompute immediately, not in 60s"
@@ -1537,6 +1590,38 @@ mod engine_tests {
         );
         let recovered = e.stale_git_targets(1000 + GIT_PENDING_GUARD_MS);
         assert_eq!(recovered.len(), 1, "the claim expired, so the dir is eligible again");
+    }
+
+    /// Panes are conditionally rendered, so switching folders mounts the new
+    /// diff pane *before* the old one's cleanup runs. The late release must not
+    /// take the ceiling the new pane already claimed.
+    #[test]
+    fn releasing_diff_focus_late_does_not_steal_the_new_panes_ceiling() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000;
+        e.store_git_info("/repo/a", git_info("main"), now);
+        e.store_git_info("/repo/b", git_info("main"), now);
+
+        assert!(e.set_diff_focus("/repo/a", true));
+        assert!(e.set_diff_focus("/repo/b", true), "the replacement claims it");
+        assert!(!e.set_diff_focus("/repo/a", false), "the departing pane's late cleanup");
+        assert_eq!(e.git_cache.focused_dir(), Some("/repo/b"));
+
+        assert!(e.set_diff_focus("/repo/b", false));
+        assert_eq!(e.git_cache.focused_dir(), None);
+    }
+
+    /// Opening a pane is somebody reading the row — the counts beside it should
+    /// not sit at whatever the last poll left them.
+    #[test]
+    fn claiming_diff_focus_invalidates_so_the_next_tick_recomputes() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000;
+        e.store_git_info("/repo/x", git_info("main"), now);
+        assert!(e.git_cache.is_fresh("/repo/x", now));
+
+        e.set_diff_focus("/repo/x", true);
+        assert!(!e.git_cache.is_fresh("/repo/x", now));
     }
 
     // folder-meta setters

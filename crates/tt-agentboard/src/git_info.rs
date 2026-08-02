@@ -197,12 +197,22 @@ pub struct GitInfo {
 /// event-driven, not because staleness beyond it is fine.
 const GIT_CACHE_TTL_MS: i64 = 60_000;
 
+/// The ceiling for the one checkout whose diff pane is open ([`GitInfoCache::
+/// set_focused`]). lazygit re-walks its single repo's working tree every 10s
+/// with no change detection at all, which is what makes an unstaged edit show
+/// up there promptly; the fleet can't afford that N checkouts over, but the row
+/// actually being read can. Everything else keeps [`GIT_CACHE_TTL_MS`].
+const FOCUSED_GIT_CACHE_TTL_MS: i64 = 10_000;
+
 /// Cache of git info per directory, with a TTL-as-backup-ceiling and
 /// stale-serve. The poll loop that recomputes entries lives in the Tauri
 /// layer, not here.
 #[derive(Debug, Default)]
 pub struct GitInfoCache {
     entries: HashMap<String, (GitInfo, i64)>,
+    /// The checkout being read right now, if any — see
+    /// [`FOCUSED_GIT_CACHE_TTL_MS`].
+    focused: Option<String>,
 }
 
 impl GitInfoCache {
@@ -215,9 +225,27 @@ impl GitInfoCache {
         self.entries.insert(dir.to_string(), (info, now_ms));
     }
 
-    /// Whether the entry for `dir` exists and is within the TTL.
+    /// Whether the entry for `dir` exists and is within its TTL.
     pub fn is_fresh(&self, dir: &str, now_ms: i64) -> bool {
-        self.entries.get(dir).is_some_and(|(_, ts)| now_ms - ts < GIT_CACHE_TTL_MS)
+        let ttl = if self.focused.as_deref() == Some(dir) {
+            FOCUSED_GIT_CACHE_TTL_MS
+        } else {
+            GIT_CACHE_TTL_MS
+        };
+        self.entries.get(dir).is_some_and(|(_, ts)| now_ms - ts < ttl)
+    }
+
+    /// Aim the short ceiling at one checkout, or `None` for none. Returns
+    /// whether the focus moved.
+    pub fn set_focused(&mut self, dir: Option<&str>) -> bool {
+        let next = dir.map(str::to_string);
+        let moved = self.focused != next;
+        self.focused = next;
+        moved
+    }
+
+    pub fn focused_dir(&self) -> Option<&str> {
+        self.focused.as_deref()
     }
 
     /// Synchronous cache-only read: returns the cached info (fresh or stale), or
@@ -1137,6 +1165,28 @@ mod tests {
         cache.invalidate(Some("/repo"));
         assert!(!cache.is_fresh("/repo", t0));
         assert_eq!(cache.get("/repo"), info); // still served
+    }
+
+    /// The focused checkout goes stale at the short ceiling while its
+    /// neighbours — same cache, same stamp — keep the fleet-wide one.
+    #[test]
+    fn only_the_focused_dir_gets_the_short_ceiling() {
+        let mut cache = GitInfoCache::new();
+        let t0 = 1_700_000_000_000;
+        let at = t0 + FOCUSED_GIT_CACHE_TTL_MS;
+        cache.insert("/repo/looked-at", GitInfo::default(), t0);
+        cache.insert("/repo/other", GitInfo::default(), t0);
+        assert!(cache.is_fresh("/repo/looked-at", at), "nothing focused yet");
+
+        assert!(cache.set_focused(Some("/repo/looked-at")));
+        assert!(!cache.set_focused(Some("/repo/looked-at")), "same dir, no move");
+        assert!(!cache.is_fresh("/repo/looked-at", at));
+        assert!(cache.is_fresh("/repo/looked-at", at - 1));
+        assert!(cache.is_fresh("/repo/other", at), "the fleet keeps the long ceiling");
+
+        // Releasing restores it — a closed pane must not leave one row polling.
+        assert!(cache.set_focused(None));
+        assert!(cache.is_fresh("/repo/looked-at", at));
     }
 
     #[test]

@@ -488,6 +488,15 @@ export function DiffPane({
     setRefreshing(false);
   }, [dir, mode, baseBranch]);
 
+  // While this pane is up, its checkout's git stats refresh on a 10s ceiling
+  // instead of the fleet-wide 60s — an unstaged edit moves no `.git` file the
+  // backend watches, so a working-tree change is only ever noticed by a poll.
+  useEffect(() => {
+    if (!dir) return;
+    void invoke("ab_set_diff_focus", { dir, focused: true });
+    return () => void invoke("ab_set_diff_focus", { dir, focused: false });
+  }, [dir]);
+
   // Switching folders starts a fresh review — old marks don't carry over.
   useEffect(() => {
     setReviewed(new Set());

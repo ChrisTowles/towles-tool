@@ -22,6 +22,10 @@ notify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# tracing: git reads are in-process (gitoxide), so nothing spawns and
+# `process.spawn` no longer covers them — `git_meter` is what keeps that work
+# visible in the event log.
+tracing = { workspace = true }
 # tt-claude-code: the shared Claude Code transcript schema + parse/accessors the
 # claude-code watcher enriches from (status/thread/tool/loop/usage derivation).
 tt-claude-code = { workspace = true }
