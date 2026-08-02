@@ -78,10 +78,9 @@ impl DirNotifier {
 pub struct ScopedDirNotifier {
     watcher: RecommendedWatcher,
     watched: HashSet<PathBuf>,
-    /// The same set [`resolved`], shared with the callback. The scope has to
-    /// be re-checked there because macOS FSEvents delivers a watched directory's
-    /// *siblings* too — trusting the watch registration alone puts every
-    /// session on the machine back through the eager rescan.
+    /// The same set [`resolved`], shared with the callback so scoping is
+    /// checked against the event's own path rather than trusted to whatever
+    /// the platform backend chose to deliver.
     scope: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
@@ -479,6 +478,11 @@ mod tests {
         })
         .unwrap();
         n.set_targets(&projects, &["/home/u/repo-a".into()]);
+        // macOS starts an FSEvents stream from an event id, not a hard "from
+        // now", so the tracked directory's own creation a moment ago can still
+        // arrive. Settle first — what this test is about is the *sibling*
+        // write below, which stays refuted either way.
+        while rx.recv_timeout(DEBOUNCE * 2).is_ok() {}
 
         std::fs::write(untracked.join("sid.jsonl"), "noise").unwrap();
         assert!(
