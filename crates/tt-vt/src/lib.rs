@@ -306,7 +306,7 @@ mod tests {
         let live_top = e.viewport_top().expect("viewport_top");
         assert!(live_top > 0, "output built scrollback");
 
-        e.wheel(0, 0, -2).expect("wheel");
+        e.wheel(0, 0, -2, false).expect("wheel");
         assert!(e.take_pty_output().is_empty(), "no bytes reach the program");
         assert_eq!(e.viewport_top().expect("viewport_top"), live_top - 2, "viewport scrolled");
     }
@@ -320,14 +320,14 @@ mod tests {
         // Alternate-scroll (mode 1007) is on by default in libghostty: the
         // wheel types arrow keys into the fullscreen TUI (how `less` and
         // `git log` scroll), one per line.
-        e.wheel(0, 0, -1).expect("wheel");
+        e.wheel(0, 0, -1, false).expect("wheel");
         assert_eq!(e.take_pty_output().as_slice(), b"\x1b[A");
-        e.wheel(0, 0, 2).expect("wheel");
+        e.wheel(0, 0, 2, false).expect("wheel");
         assert_eq!(e.take_pty_output().as_slice(), b"\x1b[B\x1b[B");
 
         // A program that turns 1007 off gets silence, not stray arrows.
         e.feed(b"\x1b[?1007l");
-        e.wheel(0, 0, -1).expect("wheel");
+        e.wheel(0, 0, -1, false).expect("wheel");
         assert!(e.take_pty_output().is_empty());
     }
 
@@ -335,7 +335,7 @@ mod tests {
     fn wheel_reports_to_a_mouse_tracking_program() {
         let mut e = engine(10, 3);
         e.feed(b"\x1b[?1000h\x1b[?1006h");
-        e.wheel(2, 1, -1).expect("wheel");
+        e.wheel(2, 1, -1, false).expect("wheel");
         // SGR wheel-up is button 64, 1-based coords.
         assert_eq!(e.take_pty_output().as_slice(), b"\x1b[<64;3;2M");
     }
@@ -622,27 +622,27 @@ mod tests {
 
         // No mouse tracking: a wheel gesture writes nothing to the PTY — in
         // particular it is never translated into arrow keys.
-        e.wheel(3, 1, -2).expect("wheel");
+        e.wheel(3, 1, -2, false).expect("wheel");
         assert!(e.take_pty_output().is_empty(), "untracked wheel must not reach the app");
 
         // Normal tracking (1000) + SGR encoding (1006), vim/htop style:
         // wheel up is a button-64 press at the 1-based cell position.
         e.feed(b"\x1b[?1000h\x1b[?1006h");
-        e.wheel(3, 1, -1).expect("wheel");
+        e.wheel(3, 1, -1, false).expect("wheel");
         assert_eq!(e.take_pty_output(), b"\x1b[<64;4;2M");
 
         // Down is button 65; one report per line.
-        e.wheel(3, 1, 2).expect("wheel");
+        e.wheel(3, 1, 2, false).expect("wheel");
         assert_eq!(e.take_pty_output(), b"\x1b[<65;4;2M\x1b[<65;4;2M");
 
         // A fling's report count is capped.
-        e.wheel(0, 0, -100).expect("wheel");
+        e.wheel(0, 0, -100, false).expect("wheel");
         assert_eq!(e.take_pty_output(), b"\x1b[<64;1;1M".repeat(5));
 
         // Legacy tracking without SGR gets the negotiated X10 encoding
         // (button and coords as offset bytes), not SGR.
         e.feed(b"\x1b[?1006l");
-        e.wheel(3, 1, -1).expect("wheel");
+        e.wheel(3, 1, -1, false).expect("wheel");
         assert_eq!(e.take_pty_output(), b"\x1b[M\x60\x24\x22");
     }
 
@@ -712,6 +712,85 @@ mod tests {
         let frame = e.render().expect("render").expect("clear forces a frame");
         assert!(frame.changed.iter().all(|r| r.sel.is_none()));
         assert_eq!(e.copy_selection().expect("copy"), None);
+    }
+
+    /// A 3-row viewport over 20 written lines: the live viewport shows
+    /// line18/line19, and line0..line17 sit in scrollback. Absolute row `n`
+    /// is `line{n}`.
+    fn scrolled_engine() -> Engine {
+        let mut e = engine(10, 3);
+        for i in 0..20 {
+            e.feed(format!("line{i}\r\n").as_bytes());
+        }
+        e.render().expect("render").expect("frame");
+        e
+    }
+
+    #[test]
+    fn selection_rows_are_absolute_not_viewport_relative() {
+        let mut e = scrolled_engine();
+        // Row 4 is deep in scrollback, nowhere near the visible viewport.
+        e.select(engine::Select::Line { x: 0, y: 4 }).expect("select line");
+        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line4"));
+
+        // Still true after the viewport moves — the row was named in screen
+        // space, so scrolling doesn't re-point it at whatever is now on top.
+        e.scroll(Some(-6));
+        assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line4"));
+    }
+
+    #[test]
+    fn a_drag_extends_across_a_scroll_without_moving_its_anchor() {
+        let mut e = scrolled_engine();
+        let top = e.viewport_top().expect("viewport_top");
+
+        // Press on the last column of the viewport's top row ("line18"), then
+        // page up mid-gesture — the view re-sends that same absolute anchor
+        // with the head on the newly revealed top row.
+        let anchor = top;
+        e.select(engine::Select::Range { ax: 5, ay: anchor, bx: 5, by: anchor }).expect("select");
+        e.scroll(Some(-3));
+        let head = e.viewport_top().expect("viewport_top");
+        e.select(engine::Select::Range { ax: 5, ay: anchor, bx: 0, by: head }).expect("select");
+
+        let text = e.copy_selection().expect("copy").expect("selection text");
+        assert_eq!(
+            text, "line15\nline16\nline17\nline18",
+            "drag reaches back through scrollback from its original anchor"
+        );
+    }
+
+    #[test]
+    fn a_selection_scrolled_out_of_view_still_reports_itself() {
+        let mut e = scrolled_engine();
+        e.select(engine::Select::Line { x: 0, y: 4 }).expect("select line");
+        let frame = e.render().expect("render").expect("frame");
+        assert!(frame.selection, "selection is live");
+        assert!(
+            frame.changed.iter().all(|r| r.sel.is_none()),
+            "precondition: it highlights no visible row"
+        );
+
+        e.select(engine::Select::Clear).expect("clear");
+        let frame = e.render().expect("render").expect("frame");
+        assert!(!frame.selection, "cleared");
+    }
+
+    #[test]
+    fn shift_wheel_reaches_scrollback_past_a_tracking_program() {
+        let mut e = scrolled_engine();
+        e.feed(b"\x1b[?1003h\x1b[?1006h"); // what Claude Code holds all session
+        let live_top = e.viewport_top().expect("viewport_top");
+
+        // Without shift the program owns the wheel and the viewport stays put.
+        e.wheel(0, 0, -2, false).expect("wheel");
+        assert!(!e.take_pty_output().is_empty(), "reported to the program");
+        assert_eq!(e.viewport_top().expect("viewport_top"), live_top, "viewport unmoved");
+
+        // Shift is the override: local scroll, nothing sent to the program.
+        e.wheel(0, 0, -2, true).expect("wheel");
+        assert!(e.take_pty_output().is_empty(), "shift+wheel is not the program's");
+        assert_eq!(e.viewport_top().expect("viewport_top"), live_top - 2, "paged scrollback");
     }
 
     #[test]

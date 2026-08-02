@@ -152,8 +152,14 @@ pub struct Frame {
     pub scrollback_rows: usize,
     /// Absolute row index of the viewport's top (0 = oldest scrollback row);
     /// equals `scrollback_rows` at the live bottom. Maps absolute search
-    /// match rows onto viewport rows.
+    /// match rows onto viewport rows, and anchors drag selections (see
+    /// [`crate::Select`]).
     pub viewport_top: usize,
+    /// Whether a selection is installed anywhere on the screen. Not derivable
+    /// from `changed[].sel`, which only covers the rows currently on screen:
+    /// scroll a selection out of the viewport and every row's `sel` is
+    /// `None` while the selection is still live and still copyable.
+    pub selection: bool,
 }
 
 #[cfg(test)]
@@ -361,6 +367,7 @@ mod tests {
             pwd: None,
             scrollback_rows: 100,
             viewport_top: 42,
+            selection: true,
         };
         assert_eq!(
             to_value(&frame).unwrap(),
@@ -383,6 +390,7 @@ mod tests {
                 "title": "bash",
                 "scrollbackRows": 100,
                 "viewportTop": 42,
+                "selection": true,
             }),
         );
     }
@@ -401,6 +409,7 @@ mod tests {
             pwd: None,
             scrollback_rows: 0,
             viewport_top: 0,
+            selection: false,
         };
         let value = to_value(&frame).unwrap();
         assert!(value.get("title").is_none(), "title omitted when None");

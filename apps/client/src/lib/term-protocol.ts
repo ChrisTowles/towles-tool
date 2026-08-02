@@ -58,8 +58,12 @@ export interface Frame {
   modes: Modes;
   title?: string;
   scrollbackRows: number;
-  /** Absolute index of the viewport's top row (0 = oldest scrollback row). */
+  /** Absolute index of the viewport's top row (0 = oldest scrollback row).
+   * Also the origin `term_select`'s coordinates are sent in. */
   viewportTop: number;
+  /** A selection exists — not the same as "a visible row carries `sel`",
+   * which goes false the moment it scrolls out of view. */
+  selection: boolean;
 }
 
 /** A signal death leaves `code` at portable-pty's placeholder — prefer `signal`. */

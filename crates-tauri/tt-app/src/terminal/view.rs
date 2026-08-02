@@ -55,7 +55,8 @@ pub fn term_scroll(
 }
 
 /// Always forwarded; the engine decides whether it means scrollback paging, a
-/// wheel report, alternate-scroll arrows, or plain scroll.
+/// wheel report, alternate-scroll arrows, or plain scroll. `shift` is the
+/// user's "this one is mine, not the program's" override.
 #[tauri::command]
 pub fn term_wheel(
     state: State<TermState>,
@@ -63,8 +64,9 @@ pub fn term_wheel(
     x: u16,
     y: u16,
     lines: i32,
+    shift: bool,
 ) -> Result<(), String> {
-    state.send(&term_id, VtInput::Wheel { x, y, lines })
+    state.send(&term_id, VtInput::Wheel { x, y, lines, shift })
 }
 
 /// `row` is absolute (0 = oldest scrollback row).
@@ -99,16 +101,18 @@ pub fn term_clear(state: State<TermState>, term_id: String) -> Result<(), String
     state.send(&term_id, VtInput::ClearScrollback)
 }
 
-/// Viewport cell coordinates. `kind`: drag, word, line, all, clear.
+/// Absolute screen coordinates — `ay`/`by` count from the oldest scrollback
+/// row, not the viewport top, so the anchor keeps naming the same text while
+/// the viewport moves under a drag. `kind`: drag, word, line, all, clear.
 #[tauri::command]
 pub fn term_select(
     state: State<TermState>,
     term_id: String,
     kind: String,
     ax: Option<u16>,
-    ay: Option<u16>,
+    ay: Option<usize>,
     bx: Option<u16>,
-    by: Option<u16>,
+    by: Option<usize>,
 ) -> Result<(), String> {
     let op = match kind.as_str() {
         "drag" => VtSelect::Range {
