@@ -53,7 +53,7 @@ import {
   type NotifyLevel,
   type UserSettings,
 } from "@/lib/settings";
-import { DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
+import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { DEFAULT_EDITOR_FONT_SIZE, clampEditorFontSize } from "@/lib/editor-prefs";
 import { cn } from "@/lib/utils";
@@ -231,6 +231,23 @@ export function agentboardSections(
               update((s) => ({
                 ...s,
                 agentboard: { ...s.agentboard, jarvisPane: v },
+              }))
+            }
+          />
+        ),
+      },
+      {
+        label: "Chrome pane",
+        keywords: ["chrome", "browser", "web", "pane", "login", "sign in", "cdp", "headless"],
+        node: (
+          <ToggleRow
+            label="Chrome pane"
+            description="Add a “chrome” button to each checkout that opens a real Chrome beside its terminals. It keeps its own browser profile, separate from your personal Chrome and empty to start — sign into a site once there and it stays signed in. Needs Chrome or Chromium installed."
+            checked={settings.agentboard?.browserPane ?? DEFAULT_BROWSER_PANE}
+            onCheckedChange={(v) =>
+              update((s) => ({
+                ...s,
+                agentboard: { ...s.agentboard, browserPane: v },
               }))
             }
           />

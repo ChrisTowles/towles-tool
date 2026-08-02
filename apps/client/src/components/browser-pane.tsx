@@ -39,6 +39,11 @@ import { cn } from "@/lib/utils";
  * the last URL is a follow-up (FolderMeta). */
 const lastUrlByDir = new Map<string, string>();
 
+/** The pane's whole onboarding: one line saying where these logins live.
+ * localStorage, like the workspace's own tab state — a dismissed hint is UI
+ * memory, not a setting worth a round trip. */
+const HINT_KEY = "tt:browser-pane-hint-dismissed";
+
 const CHIP = {
   live: "border-emerald-500/50 bg-emerald-500/10 text-emerald-500",
   starting: "border-muted-foreground/40 bg-muted text-muted-foreground",
@@ -61,6 +66,7 @@ export function BrowserPane({
   const [input, setInput] = useState(() => lastUrlByDir.get(dir) ?? "");
   const [editingUrl, setEditingUrl] = useState(false);
   const [openNonce, setOpenNonce] = useState(0);
+  const [showHint, setShowHint] = useState(() => localStorage.getItem(HINT_KEY) === null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const bitmapRef = useRef<ImageBitmap | null>(null);
@@ -171,6 +177,11 @@ export function BrowserPane({
     };
   };
 
+  const dismissHint = () => {
+    localStorage.setItem(HINT_KEY, "1");
+    setShowHint(false);
+  };
+
   const navigate = (raw: string) => {
     const url = normalizeUrl(raw);
     uiAction("browser.navigate", "agentboard");
@@ -268,6 +279,17 @@ export function BrowserPane({
           </>
         }
       />
+      {showHint && (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
+          <span className="min-w-0 flex-1">
+            Sign-ins made here stick — this pane keeps its own browser profile, separate from your
+            personal Chrome.
+          </span>
+          <Button size="xs" variant="ghost" onClick={dismissHint}>
+            Got it
+          </Button>
+        </div>
+      )}
       <AnnotateSurface
         folder={folder}
         capture={() => browserCapture(paneId)}
