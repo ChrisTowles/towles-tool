@@ -8,12 +8,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppWindow, ArrowLeft, ArrowRight, ExternalLink, Loader2, RotateCw, X } from "lucide-react";
 import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { browserPaneId, type FolderData } from "@/lib/agentboard";
 import {
   type BrowserState,
+  browserCapture,
   browserClose,
   browserInput,
   browserNavigate,
@@ -266,76 +268,85 @@ export function BrowserPane({
           </>
         }
       />
-      <div ref={surfaceRef} className="relative min-h-0 flex-1 bg-background">
-        {unavailable ? (
-          <Empty icon>
-            {unavailable} <span className="font-mono">TT_BROWSER_BIN</span> or Settings → Agentboard
-            can point at one.
-          </Empty>
-        ) : phase === "crashed" ? (
-          <Empty icon>
-            Chrome stopped{state?.detail ? ` — ${state.detail}` : ""}.
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              onClick={() => setOpenNonce((n) => n + 1)}
-            >
-              Relaunch
-            </Button>
-          </Empty>
-        ) : phase === "poppedOut" ? (
-          <Empty icon>
-            This page is open in its own Chrome window.
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              onClick={() => setOpenNonce((n) => n + 1)}
-            >
-              Reattach here
-            </Button>
-          </Empty>
-        ) : (
-          <canvas
-            ref={canvasRef}
-            tabIndex={0}
-            className={cn(
-              "absolute inset-0 h-full w-full outline-none",
-              phase !== "live" && "opacity-40",
-            )}
-            onPointerDown={(e) => {
-              e.currentTarget.focus();
-              // Throws on an already-released pointer id; losing capture only
-              // costs drag-outside-the-pane tracking, never the click.
-              try {
-                e.currentTarget.setPointerCapture(e.pointerId);
-              } catch {
-                /* keep the click */
-              }
-              send([mouseEvent("mousePressed", e, origin())]);
-            }}
-            onPointerUp={(e) => send([mouseEvent("mouseReleased", e, origin())])}
-            onPointerMove={(e) => {
-              pendingMoves.current.push(mouseEvent("mouseMoved", e, origin()));
-              if (!moveRaf.current) {
-                moveRaf.current = requestAnimationFrame(() => {
-                  moveRaf.current = 0;
-                  const last = pendingMoves.current.at(-1);
-                  pendingMoves.current = [];
-                  if (last) send([last]);
-                });
-              }
-            }}
-            onWheel={(e) => send([wheelEvent(e, origin())])}
-            onKeyDown={(e) => {
-              if (e.key === "Tab" && !e.ctrlKey && !e.metaKey) e.preventDefault();
-              send(keyEvents("down", e));
-            }}
-            onKeyUp={(e) => send(keyEvents("up", e))}
-          />
-        )}
-      </div>
+      <AnnotateSurface
+        folder={folder}
+        capture={() => browserCapture(paneId)}
+        compositeInk
+        sourceLabel={state?.url || "chrome pane"}
+        enabled={phase === "live"}
+        telemetryPrefix="browser"
+      >
+        <div ref={surfaceRef} className="absolute inset-0">
+          {unavailable ? (
+            <Empty icon>
+              {unavailable} <span className="font-mono">TT_BROWSER_BIN</span> or Settings →
+              Agentboard can point at one.
+            </Empty>
+          ) : phase === "crashed" ? (
+            <Empty icon>
+              Chrome stopped{state?.detail ? ` — ${state.detail}` : ""}.
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => setOpenNonce((n) => n + 1)}
+              >
+                Relaunch
+              </Button>
+            </Empty>
+          ) : phase === "poppedOut" ? (
+            <Empty icon>
+              This page is open in its own Chrome window.
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => setOpenNonce((n) => n + 1)}
+              >
+                Reattach here
+              </Button>
+            </Empty>
+          ) : (
+            <canvas
+              ref={canvasRef}
+              tabIndex={0}
+              className={cn(
+                "absolute inset-0 h-full w-full outline-none",
+                phase !== "live" && "opacity-40",
+              )}
+              onPointerDown={(e) => {
+                e.currentTarget.focus();
+                // Throws on an already-released pointer id; losing capture only
+                // costs drag-outside-the-pane tracking, never the click.
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {
+                  /* keep the click */
+                }
+                send([mouseEvent("mousePressed", e, origin())]);
+              }}
+              onPointerUp={(e) => send([mouseEvent("mouseReleased", e, origin())])}
+              onPointerMove={(e) => {
+                pendingMoves.current.push(mouseEvent("mouseMoved", e, origin()));
+                if (!moveRaf.current) {
+                  moveRaf.current = requestAnimationFrame(() => {
+                    moveRaf.current = 0;
+                    const last = pendingMoves.current.at(-1);
+                    pendingMoves.current = [];
+                    if (last) send([last]);
+                  });
+                }
+              }}
+              onWheel={(e) => send([wheelEvent(e, origin())])}
+              onKeyDown={(e) => {
+                if (e.key === "Tab" && !e.ctrlKey && !e.metaKey) e.preventDefault();
+                send(keyEvents("down", e));
+              }}
+              onKeyUp={(e) => send(keyEvents("up", e))}
+            />
+          )}
+        </div>
+      </AnnotateSurface>
     </div>
   );
 }
