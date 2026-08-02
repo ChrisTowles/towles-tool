@@ -1,10 +1,6 @@
-/**
- * The rail's own chrome — the two things that frame the repo tree rather than
- * live in it: the collapsed icon strip, and the board-wide agent tally pinned
- * above it. The tree itself is `agentboard-repo-group` → `-folder-header` →
- * `-session-row` / `-pane-rows`, and the pieces every one of them shares are
- * in `agentboard-bits`.
- */
+/** The rail's own chrome — what frames the repo tree rather than lives in it:
+ * the collapsed icon strip and the board-wide agent tally. The tree is
+ * `agentboard-repo-group` → `-folder-header` → `-session-row`/`-pane-rows`. */
 import { useState } from "react";
 import { Folder, PanelLeftOpen } from "lucide-react";
 import { Hint } from "@/components/hint";
@@ -25,11 +21,8 @@ import {
 } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
 
-/** The whole rail collapsed to a narrow icon strip: an expand toggle, a live
- * session tally, then one icon per checkout (FolderGit2 for a solo repo,
- * Folder per checkout of a multi-checkout repo, repos separated by hairlines).
- * Each icon keeps the signals a collapsed folder header shows — the ambient
- * live-status dot and the amber needs-you count — so collapsing the rail
+/** The rail collapsed to an icon strip, one icon per checkout — each keeps its
+ * folder's live-status dot and amber needs-you count, so collapsing the rail
  * never hides work waiting on you. Clicking an icon focuses that folder. */
 export function RailIconStrip({
   repos,
@@ -41,8 +34,7 @@ export function RailIconStrip({
 }: {
   repos: RepoData[];
   activeFolderDir: string | null;
-  /** Items in the rail's attention strip (failing PRs, imminent meeting) —
-   * hidden while collapsed, so the strip surfaces the count instead. */
+  /** The attention strip hides while collapsed; this count stands in for it. */
   attentionCount: number;
   onSelectFolder: (dir: string) => void;
   onExpand: () => void;
@@ -58,11 +50,9 @@ export function RailIconStrip({
     const needs = solo ? repo.needs : folder.needs;
     const live = collapsedLiveColor(folder.sessions);
     const label = solo ? repo.name : `${repo.name} / ${folder.name}`;
-    // Repo identity: the collapsed strip is where a chosen icon+color earns
-    // its keep — it's the only thing distinguishing one 36px square from the
-    // next. Status still outranks it: the violet active edge and the amber
-    // needs-you edge/badge keep the border, and a needs-you square never
-    // takes the calmer identity wash.
+    // The collapsed strip is where a chosen icon+color earns its keep — the
+    // only thing distinguishing one 36px square from the next. Status still
+    // outranks it; a needs-you square never takes the calmer identity wash.
     const RepoIcon = repoIcon(repo.meta);
     const accent = repoAccentStyles(repo.meta);
     // Attention (amber) still outranks identity. Being the active folder is a
