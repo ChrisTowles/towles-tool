@@ -171,8 +171,11 @@ jobs:
       - name: clippy
         run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
 
+      # `--no-fail-fast` because this is the platform's only run: cargo stops at
+      # the first failing target otherwise, and a mac-only break would surface
+      # one test binary per push.
       - name: test
-        run: cargo test --profile ci --workspace
+        run: cargo test --profile ci --workspace --no-fail-fast
 
   rust-vt:
     name: Rust tt-vt (zig + ghostty)

@@ -24,8 +24,19 @@ fn nudge(home: &Path, target: &str, session: Option<&str>) -> assert_cmd::Comman
     cmd
 }
 
+/// Where the child actually writes state. `tt-config` resolves it through
+/// `dirs::data_dir`, which follows Apple's layout on macOS and XDG everywhere
+/// else — so the sandbox has to expect the same shape it hands the child.
+fn data_home(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support")
+    } else {
+        home.join("data")
+    }
+}
+
 fn nudge_dir(home: &Path) -> PathBuf {
-    home.join("data").join(tt_config::TOOL_NAME).join("nudge")
+    data_home(home).join(tt_config::TOOL_NAME).join("nudge")
 }
 
 #[test]
@@ -185,13 +196,8 @@ fn a_nudge_from_inside_a_checkout_still_lands_in_the_machine_global_dir() {
     cmd.assert().success();
 
     assert!(nudge_dir(home.path()).join("prs").exists());
-    let scoped = home
-        .path()
-        .join("data")
-        .join(tt_config::TOOL_NAME)
-        .join("tasks")
-        .join("repo")
-        .join("nudge");
+    let scoped =
+        data_home(home.path()).join(tt_config::TOOL_NAME).join("tasks").join("repo").join("nudge");
     assert!(!scoped.exists(), "a cwd-derived scope would split writer from watchers");
 }
 
@@ -203,9 +209,7 @@ fn a_forced_scope_still_isolates_the_nudge_dir() {
     cmd.env(tt_config::STATE_SCOPE_ENV, "e2e-sandbox");
     cmd.assert().success();
 
-    let forced = home
-        .path()
-        .join("data")
+    let forced = data_home(home.path())
         .join(tt_config::TOOL_NAME)
         .join("tasks")
         .join("e2e-sandbox")
