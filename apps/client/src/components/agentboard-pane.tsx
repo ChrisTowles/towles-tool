@@ -126,7 +126,7 @@ export function PaneHeader({
   label: string;
   now: number;
   actions: SessionActions;
-  /** Whether this is the tile the `ab-close-session` binding would act on. Only
+  /** Whether this is the tile the `ab-close-pane` binding would act on. Only
    * then does the ✕ name the chord — on any other pane the two aren't twins,
    * and both the tooltip and the habit score would be lying. */
   focused: boolean;
@@ -174,7 +174,7 @@ export function PaneHeader({
           )}
           <IconBtn
             title="close session (kills the PTY, drops the record)"
-            shortcut={focused ? "ab-close-session" : undefined}
+            shortcut={focused ? "ab-close-pane" : undefined}
             onClick={() => actions.close(session.id)}
             className="hover:text-red-500"
           >

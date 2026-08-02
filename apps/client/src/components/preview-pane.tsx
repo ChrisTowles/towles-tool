@@ -296,6 +296,7 @@ export function PreviewPane({
             </IconBtn>
             <IconBtn
               title="close pane (preview stays a click away on the folder)"
+              shortcut={focused ? "ab-close-pane" : undefined}
               className="hover:text-sky-500"
               onClick={onClose}
             >

@@ -1529,10 +1529,14 @@ export function PanePlaceholder({
       {detail && <span className="font-mono text-xs text-amber-500">{detail}</span>}
       <button
         type="button"
-        onClick={onRemove}
+        onClick={() => {
+          // Only the focused tile is the chord's twin — see `PaneHeader`'s `focused`.
+          if (focused) mouseAction("ab-close-pane", "agentboard");
+          onRemove();
+        }}
         className="flex items-center gap-1 font-mono text-xs hover:text-sky-500"
       >
-        <X className="size-3" /> close pane
+        <X className="size-3" /> close pane {focused && shortcutHint("ab-close-pane")}
       </button>
     </div>
   );

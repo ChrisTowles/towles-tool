@@ -152,11 +152,14 @@ export const SHORTCUTS = defineShortcuts([
     hideInHelp: true,
   },
   {
-    id: "ab-close-session",
+    // Whichever pane holds the cursor takes it — a session pane loses its shell, a view pane
+    // just leaves the window. One chord for "kill this tile", so the answer never depends on
+    // what kind of thing you happen to be looking at.
+    id: "ab-close-pane",
     scope: "agentboard",
     keys: "mod+shift+w",
-    description: "Close the selected session (kills its shell)",
-    when: "a session is selected",
+    description: "Close the focused pane (a session pane kills its shell)",
+    when: "a pane is focused",
     allowInEditable: true,
   },
   {

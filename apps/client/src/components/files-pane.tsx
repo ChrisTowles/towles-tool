@@ -51,34 +51,10 @@ import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { folderStatsKey, type FolderData } from "@/lib/agentboard";
 
-/**
- * The files pane: VS Code's real Explorer view on the left (the workbench
- * sidebar part, hosted via `attachExplorer` — the checkout is the workspace
- * folder), a Monaco viewer on the right. Clicking a file in the Explorer
- * routes through the views override's open fallback into the viewer;
- * selecting text streams to the folder's Claude session, and two gestures
- * mention explicitly: the header @ button sends the whole file, while the
- * viewer's selection chip (or ⌘⇧A) sends just the highlighted lines. The
- * sidebar column's header switches that part between its two views — the file
- * tree and search — because the workbench also switches it on its own (a tree
- * row's "Find in Folder"), and without the toggle a right-click was a one-way
- * trip out of the tree. The
- * viewer opens read-only and the toolbar's toggle arms editing (edits then
- * auto-save) — the pane is mostly read while an agent works in the same tree,
- * so typing into it has to be deliberate. Long
- * lines wrap by default (toggle in the
- * viewer toolbar); Markdown/HTML files pick between code, a resizable split,
- * and the rendered page alone, and any file can lift the whole pane out of
- * the Agentboard tiling to fill the viewport (Escape returns it).
- *
- * Not everything is text. `lib/preview-kind.ts` sorts a path into three
- * shapes, and the difference drives this component's layout: a file with a
- * code side splits against the editor, while an image, a video, or a format
- * that can only be named replaces the editor entirely — no split, and none of
- * the toolbar controls that only mean something for text. Mounting an editor
- * beside an image would leave a permanently empty half, since Monaco cannot
- * open one at all.
- */
+/** The files pane: VS Code's real Explorer beside a Monaco viewer, the checkout as workspace. It
+ * opens read-only and arming editing is deliberate — an agent works this same tree. A path that
+ * `lib/preview-kind.ts` calls an image, a video or unopenable *replaces* the editor instead of
+ * splitting against it: Monaco cannot open one, so the split half would never fill. */
 
 /** Claude called openFile — focus this file (new nonce per request). */
 export type FilesOpenRequest = { path: string; anchor: ViewerAnchor; nonce: number };
@@ -223,12 +199,10 @@ export function FilesPane({
     navigate(direction);
   };
 
-  // Escape leaves fullscreen, mirroring zen mode in `App.tsx`. Bubble phase and
-  // the `defaultPrevented` check are what keep this from stealing the key from
-  // Monaco: the editor consumes Escape (closing its find widget, dismissing a
-  // suggest popup) by preventing the default, so we only see the ones it
-  // ignored. An open Radix dialog — including Monaco's own dialog host — closes
-  // itself first for the same reason.
+  // Escape leaves fullscreen, mirroring zen mode in `App.tsx`. Bubble phase plus the
+  // `defaultPrevented` check keep this from stealing the key from Monaco, which prevents the
+  // default whenever it consumes one (find widget, suggest popup) — so only the ignored ones
+  // reach here. An open Radix dialog, Monaco's own host included, closes first for that reason.
   useEffect(() => {
     if (!fullscreen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -290,12 +264,10 @@ export function FilesPane({
     setViewMode(modeForPanels(!editor.isCollapsed(), !preview.isCollapsed()));
   };
 
-  // This pane is the VS Code workspace: the Explorer sidebar renders into
-  // this pane's container, quick-open (Ctrl+P in the editor) searches this
-  // folder, and picked/clicked files open here. Keyed on `open` too — panes
-  // stay mounted forever, so mount order says nothing about which pane the
-  // user is in; the one they last opened a file in wins (workspace, sidebar,
-  // and open-handler all steal together).
+  // This pane is the VS Code workspace: the Explorer renders into its container, quick-open
+  // searches this folder, picked files open here. Keyed on `open` too — panes stay mounted
+  // forever, so mount order says nothing about where the user is; the pane they last opened a
+  // file in wins, workspace and sidebar and open-handler stealing together.
   useEffect(() => {
     let disposed = false;
     let detach: (() => void) | null = null;
@@ -592,12 +564,9 @@ export function FilesPane({
   );
 }
 
-/**
- * A folder's file tree as a *pane* in the Agentboard tiling — the sibling of
- * `DiffPane`, sitting beside the live terminals. Claude's openFile requests
- * are routed here by the screen (which opens the pane when none exists yet)
- * via `openRequest`.
- */
+/** A folder's file tree as a *pane* in the Agentboard tiling — `DiffPane`'s sibling beside the
+ * live terminals. Claude's openFile requests arrive as `openRequest`, the screen having opened
+ * the pane first if none existed. */
 export function FolderFilesPane({
   folder,
   focused,
@@ -618,17 +587,11 @@ export function FolderFilesPane({
   const [openFile, setOpenFile] = useState<{ path: string; dirty: boolean } | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView | null>(null);
 
-  // The Explorer's provider has no disk watch (see `lib/monaco-fs.ts`), so a
-  // file an agent creates or deletes never appears on its own. The folder's
-  // git stats (1.5s poll, bumped only on real change) notice exactly that —
-  // refresh the tree when they move. Keyed on the *full* stats: a
-  // count-only key misses membership changes that keep the count, like an
-  // already-modified file being deleted (M→D) or renamed. Line counts also
-  // move on every auto-saved edit, though, so the refresh is throttled — at
-  // most one tree re-enumeration per window, trailing so the last change
-  // always lands. Skipped on mount: the Explorer just enumerated the disk.
-  // This pane only renders for the active folder, so the workspace the
-  // refresh command hits is (at worst briefly) this one.
+  // The Explorer's provider has no disk watch (`lib/monaco-fs.ts`), so a file an agent creates
+  // never appears on its own; the folder's git stats notice exactly that. Keyed on the *full*
+  // stats — a count-only key misses membership changes that keep the count, like M→D or a
+  // rename — and throttled trailing, since line counts also move on every auto-saved edit.
+  // Skipped on mount, where the Explorer has just enumerated the disk.
   const statsKey = folder ? folderStatsKey(folder) : "";
   const statsSeen = useRef(false);
   const lastRefreshAtRef = useRef(0);
@@ -675,6 +638,7 @@ export function FolderFilesPane({
         actions={
           <IconBtn
             title="close pane (files stay a click away on the folder)"
+            shortcut={focused ? "ab-close-pane" : undefined}
             onClick={onClose}
             className="hover:text-sky-500"
           >
