@@ -21,14 +21,39 @@ import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
 /** Literal classes so the Tailwind JIT sees them; hashing the task name keeps a
- * given checkout on the same accent across windows. */
+ * given checkout on the same accent across windows. `wash` tints the whole
+ * header bar so which window this is reads from across the room. */
 const TASK_COLORS = [
-  "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
+  {
+    badge: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    text: "text-blue-700 dark:text-blue-300",
+    wash: "bg-blue-500/10 border-b-blue-500/40",
+  },
+  {
+    badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    text: "text-emerald-700 dark:text-emerald-300",
+    wash: "bg-emerald-500/10 border-b-emerald-500/40",
+  },
+  {
+    badge: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    text: "text-amber-700 dark:text-amber-300",
+    wash: "bg-amber-500/10 border-b-amber-500/40",
+  },
+  {
+    badge: "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    text: "text-violet-700 dark:text-violet-300",
+    wash: "bg-violet-500/10 border-b-violet-500/40",
+  },
+  {
+    badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    text: "text-rose-700 dark:text-rose-300",
+    wash: "bg-rose-500/10 border-b-rose-500/40",
+  },
+  {
+    badge: "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
+    text: "text-cyan-700 dark:text-cyan-300",
+    wash: "bg-cyan-500/10 border-b-cyan-500/40",
+  },
 ];
 
 function taskColor(task: string) {
@@ -63,12 +88,38 @@ function TaskBadge() {
   return (
     <Badge
       variant="outline"
-      className={taskColor(task.label)}
+      className={taskColor(task.label).badge}
       title={`Task worktree — ${task.label}`}
     >
       <GitBranch />
       {taskShortName(task.label)}
     </Badge>
+  );
+}
+
+/** Dead-center kind readout: MAIN CHECKOUT in sky vs TASK WORKTREE in the
+ * checkout's accent — the words themselves, not just a hue to decode. */
+function CheckoutKindChip() {
+  const task = useAppTask();
+  if (!task) return null;
+  if (!task.isWorktree) {
+    return (
+      <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-sky-500">
+        <FolderGit2 className="size-3.5" />
+        MAIN CHECKOUT
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1.5 font-mono text-xs font-semibold",
+        taskColor(task.label).text,
+      )}
+    >
+      <GitBranch className="size-3.5" />
+      TASK WORKTREE
+    </span>
   );
 }
 
@@ -87,6 +138,8 @@ function ClockCluster() {
 
   return (
     <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+      <CheckoutKindChip />
+      <span className="text-muted-foreground/40">·</span>
       <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
         {fmtClock(now)}
       </span>
@@ -115,12 +168,18 @@ function ClockCluster() {
 export function AppHeader() {
   const { sidebarCollapsed, toggleSidebar, setPaletteOpen, openSettingsTab, toggleZen, activeTab } =
     useWorkspace();
+  const task = useAppTask();
   // Every control in this header has a shortcut twin, so each click is a
   // measured (and occasionally coached) miss — see `lib/shortcut-coach.ts`.
   const clicked = (id: string) => mouseAction(id, activeTab);
 
   return (
-    <header className="relative flex h-11 shrink-0 items-center gap-2 border-b px-2">
+    <header
+      className={cn(
+        "relative flex h-11 shrink-0 items-center gap-2 border-b px-2",
+        task?.isWorktree && taskColor(task.label).wash,
+      )}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
