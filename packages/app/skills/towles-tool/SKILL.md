@@ -56,7 +56,10 @@ tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on 
 `nudge` is for hooks and scripts, not for you to run by hand — the app polls
 these collectors on its own cadence anyway. It routes by `TT_SESSION_ID`, so
 it reaches the app instance that opened the terminal it runs in; from a
-session started outside the app it reaches every open instance.
+session started outside the app it reaches every open instance. Add
+`--only-if-tracked` and it skips — successfully — unless the terminal is one
+the app spawned or the cwd sits under a repo on the rail, which is what keeps
+a globally enabled hook from sweeping `gh` for unrelated projects.
 
 `rm`/`clean` run a task's declared `TT_TASK_TEARDOWN` command (from its
 rendered `.env`) against the worktree right before removing it — for

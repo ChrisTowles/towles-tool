@@ -36,19 +36,19 @@ the app's `+`.
 The Agentboard rail shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
 header opens the same creation flow as a modal: goal → branch → base, then
-Claude starts on the goal in the new task's terminal. Discovery covers the
-main checkout plus the worktrees **a board task is bound to** — the row
-`tt task new` and the app's `+` write — and anything else (a Claude Code
-agent's worktree, a hand-added one) reaches the rail only when the rail
-header's worktree toggle (`agentboard.showUnmanagedWorktrees`) is on.
-**Don't reintroduce a filesystem check here.** That's what it used to be, and
-it failed whenever a worktree was created through the retired worktree hooks:
-those worktrees carried `.tt-task` markers, so `is_managed_task` was true and
-the toggle hid nothing (six `agent-<hex>` folders, nothing to be done about
-them). The board row records intent; the filesystem can't. The engine is
-store-free, so the host pushes the bound set in each scan tick
-(`Engine::set_bound_worktree_dirs`) and discovery applies it
-(`Engine::expand_with_worktrees`) without touching the git cache.
+Claude starts on the goal in the new task's terminal. **A row exists because a
+record says so, never because the filesystem does**: the main checkout plus one
+row per board task, pushed in each scan tick (`Engine::set_task_worktrees`).
+Anything else — a Claude Code agent's worktree, a hand-added one — is minted a
+`detected` record and reaches the rail only when the rail header's toggle
+(`agentboard.showUnmanagedWorktrees`) is on. **Don't decide *managed-ness* from
+the filesystem.** That's what it used to be, and worktrees made by the retired
+worktree hooks carried `.tt-task` markers, so `is_managed_task` was true and the
+toggle hid nothing. Finding *candidates* is the other question, and there the
+filesystem is required: `Engine::unrecorded_worktrees` unions git's
+linked-worktree list with a listing of `.claude/worktrees/`, since git forgets a
+pruned registration and the leftover checkout would otherwise be invisible to
+the rail for good.
 
 Rules when working in a task:
 

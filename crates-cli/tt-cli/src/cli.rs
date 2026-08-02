@@ -210,6 +210,11 @@ pub struct NudgeArgs {
     /// Label for the telemetry event only (e.g. `pr:create`) — never parsed nor written to the file
     #[arg(long)]
     pub trigger: Option<String>,
+
+    /// Skip, successfully, unless some app instance would act on this nudge. For the
+    /// `gh` hook, which runs in every project on the machine — see `nudge::admits`
+    #[arg(long)]
+    pub only_if_tracked: bool,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]

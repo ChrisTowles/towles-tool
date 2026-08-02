@@ -36,13 +36,27 @@ pub struct RailRow {
     pub record: RowRecord,
 }
 
-/// A linked worktree git reported that no task row claims — see
+/// A checkout under a tracked repo that no task row claims — see
 /// [`Engine::unrecorded_worktrees`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnrecordedWorktree {
     pub repo_root: String,
     pub dir: String,
     pub branch: Option<String>,
+}
+
+/// Every directory sitting in `<checkout>/.claude/worktrees/`, whatever git
+/// makes of it. A *filesystem* answer on purpose: this is the one candidate
+/// source that still works after git has forgotten the registration.
+fn task_dirs_on_disk(checkout: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(tt_tasks::worktrees_dir(Path::new(checkout))) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.path().to_string_lossy().into_owned())
+        .collect()
 }
 
 /// Why a git-cache entry was dropped, for the `git.invalidated` record.
@@ -344,20 +358,21 @@ impl Engine {
         self.rail_rows().into_iter().map(|r| r.dir).collect()
     }
 
-    /// Linked worktrees git knows about that no task row claims — the host mints
-    /// a `detected` record for each. Steady state is empty. Cache-only.
+    /// Checkouts under a tracked repo that no task row claims — from git's
+    /// linked-worktree list and [`task_dirs_on_disk`], deduped. The host mints
+    /// a `detected` record for each; steady state is empty.
     ///
-    /// **A directory that isn't there is never offered**, load-bearing rather
-    /// than defensive: git keeps reporting a removed worktree until its
-    /// registration is pruned, so offering it would mint a record
-    /// [`Self::vanished_detected_records`] forgets next tick, flapping the row.
+    /// **A directory that isn't there is never offered**: git reports a removed
+    /// worktree until its registration is pruned, so offering it would mint a
+    /// record [`Self::vanished_detected_records`] forgets next tick — a flap.
     pub fn unrecorded_worktrees(&mut self) -> Vec<UnrecordedWorktree> {
         self.reload_repos();
         let recorded: HashSet<&str> = self.task_worktrees.iter().map(|w| w.dir.as_str()).collect();
         let mut out = Vec::new();
+        let mut offered: HashSet<String> = HashSet::new();
         for root in &self.repo_paths {
             let info = self.git_cache.get(root);
-            for dir in info.linked_worktree_dirs {
+            for dir in info.linked_worktree_dirs.into_iter().chain(task_dirs_on_disk(root)) {
                 // A worktree the user tracks explicitly is a `Checkout` row;
                 // recording one would give the directory two records.
                 if self.repo_paths.contains(&dir) || recorded.contains(dir.as_str()) {
@@ -365,6 +380,9 @@ impl Engine {
                 }
                 // See this method's doc — offering a gone directory flaps the row.
                 if !Path::new(&dir).is_dir() {
+                    continue;
+                }
+                if !offered.insert(dir.clone()) {
                     continue;
                 }
                 let branch = {
@@ -1277,6 +1295,51 @@ mod engine_tests {
 
         e.set_task_worktrees(vec![record("/repo/main", &wt, tt_store::TaskKind::Detected)]);
         assert!(e.unrecorded_worktrees().is_empty(), "already recorded — nothing to write");
+    }
+
+    /// The gap this second candidate source closes: git prunes a registration
+    /// (or a removal dies half-way), the directory stays, and a git-only list
+    /// can never offer that checkout again — invisible to the rail for good.
+    #[test]
+    fn a_checkout_git_has_forgotten_is_still_offered() {
+        let (tmp, mut e) = engine();
+        let root = tmp.path().join("repo");
+        let wt = tt_tasks::worktrees_dir(&root).join("feat-orphan");
+        std::fs::create_dir_all(&wt).unwrap();
+        let root_s = root.to_string_lossy().to_string();
+        assert!(e.add_repo(&root_s));
+
+        // No git info for either path — what an unregistered worktree looks like.
+        let found = e.unrecorded_worktrees();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].dir, wt.to_string_lossy());
+        assert_eq!(found[0].repo_root, root_s);
+        assert_eq!(found[0].branch, None, "nothing can name a branch git forgot");
+    }
+
+    /// Both sources report every *healthy* worktree, so the dedup is the common
+    /// path, not an edge case — and the git side is what still names the branch.
+    #[test]
+    fn a_worktree_both_sources_report_is_offered_once() {
+        let (tmp, mut e) = engine();
+        let root = tmp.path().join("repo");
+        let wt = tt_tasks::worktrees_dir(&root).join("feat-thing");
+        std::fs::create_dir_all(&wt).unwrap();
+        let (root_s, wt_s) = (root.to_string_lossy().to_string(), wt.to_string_lossy().to_string());
+        assert!(e.add_repo(&root_s));
+        e.store_git_info(
+            &root_s,
+            crate::git_info::GitInfo {
+                linked_worktree_dirs: vec![wt_s.clone()],
+                ..Default::default()
+            },
+            1000,
+        );
+        e.store_git_info(&wt_s, git_info("feat/thing"), 1000);
+
+        let found = e.unrecorded_worktrees();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].branch.as_deref(), Some("feat/thing"));
     }
 
     /// The deleted-task flap: offering a gone directory would mint a record,
