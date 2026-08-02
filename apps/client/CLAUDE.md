@@ -65,6 +65,12 @@ likewise two-sided, working only if the owning component *also* checks
 `agentboard.shortcutsWorkInTerminal` via `useShortcutsWorkInTerminal`, refreshed
 on window focus and on `tt:settings-saved`, so a save propagates immediately.
 
+**On mac, `mod` is ⌘ but a shift-bearing chord also answers to Ctrl+Shift**, so
+one spelling drives both platforms and no external remapper is needed — the same
+alias in `lib/term-protocol.ts` covers Ctrl+Shift+C/V. It stops at shift on
+purpose: bare Ctrl is the shell's (⌃C is SIGINT, ⌃D is EOF), which is also why a
+mac Ctrl chord no binding claims never matches on its main key alone.
+
 ## A pane has no PTY until it is rendered
 
 Terminal rendering is a custom protocol, not xterm.js: `lib/term-protocol.ts`

@@ -185,15 +185,19 @@ export type KeyWireEventLike = KeyEventLike &
 /** Wired to the engine, but never "the user typed something" — no jump to bottom. */
 export const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock"]);
 
-/** Shared with `keyEventWire` below, which must yield the same keystroke. */
+/** Shared with `keyEventWire` below, which must yield the same keystroke. Mac
+ * takes Ctrl+Shift as well as ⌘⇧, matching the shortcut registry's alias —
+ * bare Ctrl stays the shell's, so ⌃C is still SIGINT. */
 export function isCopyChord(e: KeyEventLike): boolean {
-  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-  return mod && e.shiftKey && (e.key === "C" || e.key === "c");
+  return chordMod(e) && e.shiftKey && (e.key === "C" || e.key === "c");
 }
 
 export function isPasteChord(e: KeyEventLike): boolean {
-  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-  return mod && e.shiftKey && (e.key === "V" || e.key === "v");
+  return chordMod(e) && e.shiftKey && (e.key === "V" || e.key === "v");
+}
+
+function chordMod(e: KeyEventLike): boolean {
+  return IS_MAC ? e.metaKey || e.ctrlKey : e.ctrlKey;
 }
 
 /** null when the keystroke isn't the shell's to consume — Meta stays with the OS,

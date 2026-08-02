@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   matchesEditableOverride,
   matchesShortcut,
@@ -95,6 +95,15 @@ describe("editable-target override", () => {
     expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "p" }))).toBe(true);
   });
 
+  it("jump-idle is its own chord beside them, and just as terminal-proof", () => {
+    expect(matchesShortcut("ab-jump-idle", key({ ctrlKey: true, shiftKey: true, key: "a" }))).toBe(
+      true,
+    );
+    expect(matchesShortcut("ab-jump-idle", key({ ctrlKey: true, key: "a" }))).toBe(false);
+    expect(SHORTCUTS["ab-jump-idle"].allowInEditable).toBe(true);
+    expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "a" }))).toBe(true);
+  });
+
   it("task lifecycle chords work with a terminal focused — they act on board state", () => {
     expect(SHORTCUTS["ab-new-task"].allowInEditable).toBe(true);
     expect(SHORTCUTS["ab-remove-task"].allowInEditable).toBe(true);
@@ -183,5 +192,60 @@ describe("withHint", () => {
     expect(() => withHint("Do a thing", "no-such-binding")).toThrow(
       'Unknown shortcut id "no-such-binding"',
     );
+  });
+});
+
+// `IS_MAC` is read once at module eval, so the mac half of every binding is only
+// reachable through a fresh import under a stubbed `navigator`.
+async function macModule() {
+  vi.stubGlobal("navigator", { platform: "MacIntel" });
+  vi.resetModules();
+  return import("./shortcuts");
+}
+
+describe("on macOS", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("takes ⌘ for the jump chords", async () => {
+    const mac = await macModule();
+    const cmd = key({ metaKey: true, shiftKey: true, key: "a" });
+    expect(mac.matchesShortcut("ab-jump-idle", cmd)).toBe(true);
+    expect(mac.matchesEditableOverride(cmd)).toBe(true);
+    expect(
+      mac.matchesShortcut("ab-jump-next", key({ metaKey: true, shiftKey: true, key: "n" })),
+    ).toBe(true);
+  });
+
+  it("takes the Linux Ctrl+Shift spelling too, terminal override and all", async () => {
+    const mac = await macModule();
+    const ctrl = key({ ctrlKey: true, shiftKey: true, key: "a" });
+    expect(mac.matchesShortcut("ab-jump-idle", ctrl)).toBe(true);
+    expect(mac.matchesEditableOverride(ctrl)).toBe(true);
+    expect(
+      mac.matchesShortcut("ab-toggle-diff", key({ ctrlKey: true, shiftKey: true, key: "g" })),
+    ).toBe(true);
+  });
+
+  // The whole reason the alias is shift-only: ⌃C/⌃D are the shell's, and a
+  // stray Ctrl must not fall through to a binding on its main key alone.
+  it("never aliases a bare Ctrl chord away from the shell", async () => {
+    const mac = await macModule();
+    expect(mac.matchesShortcut("ab-new-session", key({ ctrlKey: true, key: "d" }))).toBe(false);
+    expect(mac.matchesShortcut("palette", key({ ctrlKey: true, key: "k" }))).toBe(false);
+    expect(mac.matchesShortcut("close-tab", key({ ctrlKey: true, key: "w" }))).toBe(false);
+    expect(mac.matchesShortcut("ab-focus-terminal", key({ ctrlKey: true, key: "enter" }))).toBe(
+      false,
+    );
+    expect(mac.matchesEditableOverride(key({ ctrlKey: true, key: "d" }))).toBe(false);
+  });
+
+  it("labels it ⌘⇧A wherever the keycaps show", async () => {
+    const mac = await macModule();
+    expect(mac.shortcutKeys("ab-jump-idle")).toEqual(["⌘", "⇧", "A"]);
+    expect(mac.shortcutHint("ab-jump-idle")).toBe("⌘⇧A");
+    expect(mac.shortcutAria("ab-jump-idle")).toBe("Meta+Shift+A");
   });
 });

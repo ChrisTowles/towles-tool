@@ -1,7 +1,10 @@
 //! Black-box tests for `tt task` against a real checkout built in a tempdir
 //! (`<tmp>/demo` + nested `<tmp>/demo/.claude/worktrees/<name>` worktrees).
 
+mod common;
+
 use assert_cmd::Command as Tt;
+use common::{canonical_temp, data_home};
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::path::{Path, PathBuf};
@@ -448,8 +451,8 @@ fn new_task_narrates_each_step_in_order() {
 /// Board card to a swimlane matching no repo on the rail.
 #[test]
 fn new_records_the_main_checkout_as_the_repo_even_when_repo_points_inside_a_task() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
     let root_s = checkout.to_string_lossy().to_string();
 
     new_task(&root_s, "feat/first").assert().success();
@@ -808,11 +811,11 @@ fn rm_untracks_the_task_and_removes_its_instance_state() {
 /// wholesale, so the test would pass even against the bug.
 #[test]
 fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
-    let tmp = tempfile::tempdir().unwrap();
-    let checkout = make_checkout(tmp.path());
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
     let root_s = checkout.to_string_lossy().to_string();
-    let home = tmp.path().join("home");
-    let data_home = home.join(".local").join("share");
+    let home = tmp.join("home");
+    let data_home = data_home(&home);
 
     // `task_scope_from_dir` scopes the main checkout by its own dir name too.
     std::fs::create_dir_all(checkout.join("crates").join("tt-config")).unwrap();

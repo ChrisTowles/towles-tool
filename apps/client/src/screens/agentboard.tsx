@@ -37,6 +37,7 @@ import {
   consumePendingAgentboardNav,
   consumePendingOpenSessions,
   cycleNeedsYou,
+  cycleNotBusy,
   cycleSession,
   diffPaneId,
   exitPaneId,
@@ -506,17 +507,27 @@ export function AgentboardScreen() {
     if (name) void invoke("ab_mark_seen", { name });
   }
 
-  // ab-jump-next/prev: board-wide, wrapping, through `selectSession` so a jump
-  // behaves exactly like clicking the session.
-  function jumpToNeedsYou(direction: "next" | "prev") {
-    const target = cycleNeedsYou(repos, selected?.sessionId ?? null, direction);
+  // ab-jump-*: board-wide, wrapping, through `selectSession` so a jump behaves
+  // exactly like clicking the session.
+  function jumpTo(target: SessionData | null, nothing: string) {
     if (!target) {
-      toast("Nothing needs you right now.");
+      toast(nothing);
       return;
     }
     const folderDir = folderOf.get(target.id)?.dir;
     if (!folderDir) return;
     selectSession(folderDir, target.id);
+  }
+
+  function jumpToNeedsYou(direction: "next" | "prev") {
+    jumpTo(
+      cycleNeedsYou(repos, selected?.sessionId ?? null, direction),
+      "Nothing needs you right now.",
+    );
+  }
+
+  function jumpToNotBusy() {
+    jumpTo(cycleNotBusy(repos, selected?.sessionId ?? null, "next"), "Nothing idle right now.");
   }
 
   // ab-focus-up/down: the whole list in rail order — unlike jumpToNeedsYou, no
@@ -946,6 +957,7 @@ export function AgentboardScreen() {
         "ab-toggle-rail": toggleRail,
         "ab-jump-next": () => jumpToNeedsYou("next"),
         "ab-jump-prev": () => jumpToNeedsYou("prev"),
+        "ab-jump-idle": jumpToNotBusy,
         "ab-focus-up": () => focusByArrow("up"),
         "ab-focus-down": () => focusByArrow("down"),
         "ab-focus-up-bracket": () => focusByArrow("up"),

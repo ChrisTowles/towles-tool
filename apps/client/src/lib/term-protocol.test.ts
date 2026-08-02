@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exitIsCrash,
   exitLabel,
@@ -88,9 +88,8 @@ describe("scrollbackKey", () => {
 });
 
 // The test environment is node (no `navigator`), so IS_MAC is always false
-// here — these exercise the Ctrl+Shift branch; the Meta+Shift (mac) branch is
-// structurally identical and covered by keyEventWire's unconditional
-// metaKey → null below, which is platform-independent.
+// here — these exercise the Ctrl+Shift branch; the mac branch, which takes ⌘⇧
+// *and* Ctrl+Shift, needs a stubbed navigator and lives at the end of the file.
 describe("isCopyChord / isPasteChord", () => {
   it("matches Ctrl+Shift+C / Ctrl+Shift+V, either case", () => {
     expect(isCopyChord(key("c", { ctrlKey: true, shiftKey: true }))).toBe(true);
@@ -203,5 +202,43 @@ describe("isWideRun", () => {
   it("still flags a run whose column width exceeds its cluster count", () => {
     // Two CJK glyphs occupy four columns: genuinely wide.
     expect(isWideRun(run("\u{6F22}\u{5B57}", 4))).toBe(true);
+  });
+});
+
+// `IS_MAC` is read once at module eval, so the mac branch needs a fresh import
+// under a stubbed `navigator` — node has none.
+async function macModule() {
+  vi.stubGlobal("navigator", { platform: "MacIntel" });
+  vi.resetModules();
+  return import("./term-protocol");
+}
+
+describe("copy/paste chords on macOS", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("takes ⌘⇧C/V and the Linux Ctrl+Shift spelling alike", async () => {
+    const mac = await macModule();
+    expect(mac.isCopyChord(key("c", { metaKey: true, shiftKey: true }))).toBe(true);
+    expect(mac.isCopyChord(key("c", { ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(mac.isPasteChord(key("v", { metaKey: true, shiftKey: true }))).toBe(true);
+    expect(mac.isPasteChord(key("v", { ctrlKey: true, shiftKey: true }))).toBe(true);
+  });
+
+  it("leaves bare ⌃C to the shell — it is still SIGINT, not copy", async () => {
+    const mac = await macModule();
+    expect(mac.isCopyChord(key("c", { ctrlKey: true }))).toBe(false);
+    expect(mac.keyEventWire(wireKey("c", "KeyC", { ctrlKey: true }))).toMatchObject({
+      key: "c",
+      ctrl: true,
+    });
+  });
+
+  it("yields both copy spellings rather than sending them to the shell", async () => {
+    const mac = await macModule();
+    expect(mac.keyEventWire(wireKey("c", "KeyC", { metaKey: true, shiftKey: true }))).toBeNull();
+    expect(mac.keyEventWire(wireKey("c", "KeyC", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });

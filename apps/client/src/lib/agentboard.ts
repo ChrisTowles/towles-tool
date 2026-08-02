@@ -614,15 +614,39 @@ export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): 
   return `waiting ${Math.floor(hrs / 24)}d`;
 }
 
+/** Free to pick up: an agent that isn't working, or a flagged session. A plain
+ * shell stays out — it was never an agent to be idle. */
+export function sessionNotBusy(s: SessionData): boolean {
+  if (s.agentState?.status === "busy") return false;
+  return isAgent(s) || sessionCatchesEye(s);
+}
+
 export function cycleNeedsYou(
   repos: RepoData[],
   fromSessionId: string | null,
   direction: "next" | "prev",
 ): SessionData | null {
+  return cycleWhere(repos, fromSessionId, direction, sessionCatchesEye);
+}
+
+export function cycleNotBusy(
+  repos: RepoData[],
+  fromSessionId: string | null,
+  direction: "next" | "prev",
+): SessionData | null {
+  return cycleWhere(repos, fromSessionId, direction, sessionNotBusy);
+}
+
+function cycleWhere(
+  repos: RepoData[],
+  fromSessionId: string | null,
+  direction: "next" | "prev",
+  match: (s: SessionData) => boolean,
+): SessionData | null {
   const all: SessionData[] = [];
   for (const r of repos) for (const f of r.folders) for (const s of f.sessions) all.push(s);
 
-  const targetIndexes = all.map((s, i) => (sessionCatchesEye(s) ? i : -1)).filter((i) => i !== -1);
+  const targetIndexes = all.map((s, i) => (match(s) ? i : -1)).filter((i) => i !== -1);
   if (targetIndexes.length === 0) return null;
 
   const fromIndex = fromSessionId ? all.findIndex((s) => s.id === fromSessionId) : -1;

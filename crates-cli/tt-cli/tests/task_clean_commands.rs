@@ -4,7 +4,10 @@
 //! prunes the real agentboard store, so an unfaked run would mutate the
 //! developer's actual state.
 
+mod common;
+
 use assert_cmd::Command as Tt;
+use common::{canonical_temp, data_home};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -101,10 +104,10 @@ fn clean_json(home: &Path, root: &str, extra: &[&str]) -> serde_json::Value {
 
 #[test]
 fn clean_removes_merged_task_and_sweeps_state_keeps_the_rest() {
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
+    let (_guard, tmp) = canonical_temp();
+    let home = tmp.join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let checkout = make_checkout(tmp.path());
+    let checkout = make_checkout(&tmp);
     let root_s = checkout.to_string_lossy().to_string();
 
     // done: committed and classically merged into main → finished.
@@ -127,7 +130,7 @@ fn clean_removes_merged_task_and_sweeps_state_keeps_the_rest() {
 
     // Instance-state dirs: the removed task's scope, an old orphan, a live
     // task's scope, and a foreign repo's scope.
-    let data_tasks = home.join(".local/share/towles-tool/tasks");
+    let data_tasks = data_home(&home).join("towles-tool").join("tasks");
     let cfg_tasks = home.join(".config/towles-tool/tasks");
     for dir in [
         data_tasks.join("demo-feat-done"),
@@ -303,16 +306,16 @@ fn clean_keeps_a_task_whose_remote_branch_vanished_without_merging() {
 
 #[test]
 fn clean_dry_run_touches_nothing() {
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
+    let (_guard, tmp) = canonical_temp();
+    let home = tmp.join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let checkout = make_checkout(tmp.path());
+    let checkout = make_checkout(&tmp);
     let root_s = checkout.to_string_lossy().to_string();
 
     new_task(&home, &root_s, "feat/done");
     commit_file(&task_dir(&checkout, "feat-done"), "done.txt");
     git(&checkout, &["merge", "--no-ff", "feat/done", "-m", "merge done"]);
-    let stale = home.join(".local/share/towles-tool/tasks/demo-gone");
+    let stale = data_home(&home).join("towles-tool").join("tasks").join("demo-gone");
     std::fs::create_dir_all(&stale).unwrap();
 
     let report = clean_json(&home, &root_s, &["--dry-run"]);
