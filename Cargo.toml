@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   # Shared crates (no Tauri dependency)
   "crates/tt-agentboard",
+  "crates/tt-browser",
   "crates/tt-claude-code",
   "crates/tt-collect",
   "crates/tt-config",
@@ -90,6 +91,7 @@ wait-timeout = "0.2.1"
 
 # Internal crates - shared
 tt-agentboard = { path = "crates/tt-agentboard" }
+tt-browser = { path = "crates/tt-browser" }
 tt-jarvis = { path = "crates/tt-jarvis" }
 tt-pane = { path = "crates-tauri/tt-pane" }
 tt-claude-code = { path = "crates/tt-claude-code" }
