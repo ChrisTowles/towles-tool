@@ -6,35 +6,13 @@ import { uiAction } from "@/lib/ui-action";
 import { SCREENS, type ScreenId } from "@/lib/screens";
 import { useLiveSettingRef } from "./settings";
 
-/**
- * Data-driven keyboard shortcuts (modeled on plannotator's validated registry,
- * `packages/ui/shortcuts/core.ts`): every binding is declared once with a
- * scope, a parsed-and-validated key spec, and a description — the same data
- * drives matching, the on-screen hints (`shortcutKeys`), and the `?` help
- * overlay. Adding a shortcut = adding a `defineShortcuts` entry; nothing is
- * matched from ad-hoc `e.key === "d"` checks anymore.
- *
- * Guards: shortcuts never fire from editable targets — inputs, textareas,
- * contenteditable, or anything inside a `[data-term-host]` terminal (Ctrl+D at
- * a shell prompt is EOF, not "new session"). A binding opts out of the guard
- * with `allowInEditable` — used for agentboard actions that operate on board
- * state rather than the focused element (e.g. "jump to next session needing
- * you"), so they work even while a terminal has focus. `matchesEditableOverride`
- * lets the terminal itself recognize these and yield the keystroke instead of
- * sending it to the shell. The whole opt-out is gated behind the
- * `agentboard.shortcutsWorkInTerminal` setting (default on; see
- * `useShortcutsWorkInTerminal`) so a user can restore the old
- * terminal-owns-everything behavior.
- */
+// Data-driven shortcut registry: one definition per binding drives matching, the on-screen
+// hints, and the `?` help overlay. Bindings never fire from editable targets (inputs,
+// `[data-term-host]` terminals) unless they set `allowInEditable` — the terminal yields
+// those chords via `matchesEditableOverride`, gated by agentboard.shortcutsWorkInTerminal.
 
-/**
- * A shortcut's scope: app-wide, or confined to one screen. The non-global arm
- * is a {@link ScreenId} rather than a hand-listed union, so a scoped shortcut
- * on a new screen needs no edit here (and a scope naming a screen that does not
- * exist is a type error). A scope with no registered shortcuts is already a
- * no-op in the grouping below, so callers can pass the active screen
- * unconditionally.
- */
+/** A shortcut's scope: app-wide or one screen. Typed over {@link ScreenId} so a scoped
+ * shortcut on a new screen needs no edit here. */
 export type ShortcutScope = "global" | ScreenId;
 
 /** A parsed key spec: modifiers + one main key. `mod` = ⌘ on mac, Ctrl elsewhere. */
@@ -53,20 +31,17 @@ export type Shortcut = {
   keys: string;
   /** What it does — shown in the help overlay. */
   description: string;
-  /** Shown muted in the overlay when the action needs context (e.g. "when a
-   * session is selected"). */
+  /** Shown muted in the overlay when the action needs context. */
   when?: string;
   allowInEditable?: boolean;
-  /** Registered + matched like any other, but omitted from the `?` overlay —
-   * used to collapse a run of near-identical bindings (mod+1…mod+9) to one line. */
+  /** Matched like any other but omitted from the `?` overlay (collapses near-identical runs). */
   hideInHelp?: boolean;
   spec: KeySpec;
 };
 
 const MODIFIER_TOKENS = new Set(["mod", "shift", "alt"]);
 
-/** Parse + validate a key spec. Throws at module-eval time on a bad spec, so a
- * typo'd binding fails the build/tests instead of silently never matching. */
+/** Parse + validate at module-eval time — a typo'd binding fails the build, not matching. */
 function parseKeys(keys: string): KeySpec {
   const tokens = keys.toLowerCase().split("+");
   const spec: KeySpec = { mod: false, shift: false, alt: false, key: "" };
@@ -92,9 +67,8 @@ function defineShortcuts(defs: Omit<Shortcut, "spec">[]): Record<string, Shortcu
   return out;
 }
 
-/** The one registry. Scopes: `global` is always active; `agentboard` only
- * while the Agentboard tab is shown (its screen stays mounted when hidden —
- * without the scope gate its bindings would fire from every other tab). */
+/** The one registry. `global` is always active; a screen scope only while that tab is
+ * shown (screens stay mounted when hidden — without the gate they'd fire everywhere). */
 export const SHORTCUTS = defineShortcuts([
   { id: "palette", scope: "global", keys: "mod+k", description: "Command palette" },
   { id: "settings", scope: "global", keys: "mod+,", description: "Settings" },
@@ -113,9 +87,8 @@ export const SHORTCUTS = defineShortcuts([
     description: "Close the current tab",
     when: "more than one tab is open",
   },
-  // Jump to the Nth open tab. One binding per digit so each is validated and
-  // matched through the same machinery as every other shortcut; the `?` help
-  // overlay is the only place they're surfaced, so it lists just the first.
+  // Jump to the Nth open tab — one binding per digit, validated like any other; the help
+  // overlay lists only the first.
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `tab-${i + 1}`,
     scope: "global" as const,
@@ -168,12 +141,9 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
-    // One id, both dialogs in the delete flow: the confirm, and — when the
-    // guards refuse — the blocked dialog's force. The registry dispatches the
-    // first matching handler and stops, so a second binding on the same chord
-    // would simply never fire; the agentboard handler picks which dialog is
-    // open instead. Deliberately the same mod+shift the delete itself uses:
-    // one chord held down, Delete then Enter (then Enter again).
+    // One id, both dialogs in the delete flow — the handler picks whichever is open (a
+    // second binding on the same chord would never fire). Deliberately the same mod+shift
+    // as the delete itself: one chord held down, Delete then Enter (then Enter again).
     id: "ab-confirm-close-worktree",
     scope: "agentboard",
     keys: "mod+shift+enter",
@@ -230,24 +200,23 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-up",
     scope: "agentboard",
     keys: "mod+shift+arrowup",
-    description: "Focus the previous session in the task list",
+    description: "Move focus up — climb out of panes/windows, then previous session",
     allowInEditable: true,
   },
   {
     id: "ab-focus-down",
     scope: "agentboard",
     keys: "mod+shift+arrowdown",
-    description: "Focus the next session in the task list",
+    description: "Move focus down — next session, or on through the panes",
     allowInEditable: true,
   },
   {
-    // Same action as ab-focus-up, bracket chord for keyboards/muscle memory
-    // that prefer it over arrows — hidden so the help overlay doesn't list
-    // the same action twice.
+    // Same action as ab-focus-up, for bracket muscle memory — hidden to avoid a duplicate
+    // help-overlay row.
     id: "ab-focus-up-bracket",
     scope: "agentboard",
     keys: "mod+shift+[",
-    description: "Focus the previous session in the task list",
+    description: "Move focus up — climb out of panes/windows, then previous session",
     allowInEditable: true,
     hideInHelp: true,
   },
@@ -255,35 +224,28 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-down-bracket",
     scope: "agentboard",
     keys: "mod+shift+]",
-    description: "Focus the next session in the task list",
+    description: "Move focus down — next session, or on through the panes",
     allowInEditable: true,
     hideInHelp: true,
   },
   {
-    id: "ab-collapse-left",
+    id: "ab-focus-left",
     scope: "agentboard",
     keys: "mod+shift+arrowleft",
-    description: "Collapse the focused repo or worktree",
-    when: "a folder is focused",
+    description: "Focus the previous pane or window — off the edge, back to the rail",
     allowInEditable: true,
   },
   {
-    id: "ab-collapse-right",
+    id: "ab-focus-right",
     scope: "agentboard",
     keys: "mod+shift+arrowright",
-    description: "Expand the focused repo or worktree",
-    when: "a folder is focused",
+    description: "Focus the next pane or window — from the rail, into the panes",
     allowInEditable: true,
   },
   {
-    // Deliberately bare Enter, not a mod chord: this is the "jump into what
-    // I just selected" key, so it needs to work with zero ceremony. Safe to
-    // leave unmodified because the dispatcher only calls it when nothing
-    // editable/interactive already owns the keystroke (see `useShortcuts`) —
-    // the handler itself (`focusActiveTerminal` in screens/agentboard.tsx)
-    // additionally declines whenever a button/link/dialog has DOM focus, by
-    // returning `false` to signal "let the browser's native Enter behavior
-    // run instead" rather than swallowing it.
+    // Bare Enter on purpose — zero ceremony. Safe because the dispatcher only calls it when
+    // nothing editable owns the keystroke, and the handler declines (returns `false`) when
+    // a button/link/dialog has DOM focus so the browser's native Enter runs.
     id: "ab-focus-terminal",
     scope: "agentboard",
     keys: "enter",
@@ -307,9 +269,8 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
-    // Handled by the focused TerminalView itself (via `matchesShortcut`), not
-    // a window-level handler: only the terminal that owns the keystroke may
-    // open its overlay. Ctrl+F stays with the shell; the shifted chord is ours.
+    // Matched by the focused TerminalView itself (`matchesShortcut`), not window-level:
+    // only the terminal owning the keystroke may open its overlay. Ctrl+F stays with the shell.
     id: "term-search",
     scope: "agentboard",
     keys: "mod+shift+f",
@@ -321,10 +282,8 @@ export const SHORTCUTS = defineShortcuts([
 /** True on macOS — chooses ⌘ vs Ctrl for the modifier key across the app. */
 export const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
 
-/** Keycaps for multi-char `KeyboardEvent.key` names that would otherwise render
- * as raw lowercase words in the help overlay. Symbols only where the glyph is
- * reliably in the UI font: ⌦ (U+2326) is not, and rendered as tofu in the
- * shortcut-coach toast, so Delete/Enter spell themselves out. */
+/** Keycaps for multi-char key names. Symbols only where the glyph is reliably in the UI
+ * font — ⌦ renders as tofu in the shortcut-coach toast, so Delete/Enter spell out. */
 const KEYCAP_LABELS: Record<string, string> = {
   backspace: "⌫",
   delete: "Del",
@@ -351,10 +310,8 @@ export function shortcutHint(id: string): string {
   return shortcutKeys(id).join(IS_MAC ? "" : "+");
 }
 
-/** The same binding as an `aria-keyshortcuts` value: "Meta+Shift+W". Distinct
- * from {@link shortcutHint} because that returns *keycaps* — "⌘⇧W" is what a
- * sighted user reads and not something a screen reader can announce; the
- * attribute takes UI Events key names joined by `+`. */
+/** The binding as an `aria-keyshortcuts` value ("Meta+Shift+W") — UI Events key names,
+ * not {@link shortcutHint}'s keycaps, which a screen reader can't announce. */
 export function shortcutAria(id: string): string {
   const s = SHORTCUTS[id];
   if (!s) throw new Error(`Unknown shortcut id "${id}"`);
@@ -366,47 +323,32 @@ export function shortcutAria(id: string): string {
   return parts.join("+");
 }
 
-/**
- * A label with its binding appended — `"Collapse the rail (⌘⇧B)"`.
- *
- * The one way a control that duplicates a shortcut names its keys, so no
- * surface hardcodes a chord (three tooltips claimed `⌘B`/`⌘K`/`⌘,` on every
- * platform, which is simply wrong on the Linux this is developed on). Pairs
- * with `mouseAction` in `lib/shortcut-coach.ts`: a control that scores a click
- * as a passed-up keystroke has to *say* which keystroke, or the score is
- * measuring something the user was never told.
- */
+/** A label with its binding appended — `"Collapse the rail (⌘⇧B)"`. The one way a control
+ * that duplicates a shortcut names its keys (no hardcoded chords); pairs with `mouseAction`
+ * in `lib/shortcut-coach.ts`, which scores the click as a passed-up keystroke. */
 export function withHint(label: string, id: string): string {
   return `${label} (${shortcutHint(id)})`;
 }
 
-/**
- * The `mod+N` binding that jumps to `id`, or null when it has none — the
- * digits map to *open tabs* in order, so a screen that isn't open yet, or sits
- * past the ninth, genuinely has no key to show.
- *
- * Pure over the tab list rather than reading the workspace, so the sidebar's
- * two variants share one answer and it stays unit-testable.
- */
+/** The `mod+N` binding that jumps to `id`, or null: digits map to *open tabs* in order, so
+ * a screen not open (or past the ninth) has no key to show. Pure over the tab list so the
+ * sidebar's two variants share one unit-testable answer. */
 export function tabShortcutId(openTabs: readonly ScreenId[], id: ScreenId): string | null {
   const i = openTabs.indexOf(id);
   return i >= 0 && i < 9 ? `tab-${i + 1}` : null;
 }
 
-/** Whether a keydown matches a registry shortcut — for components that own
- * their keystrokes (the terminal view) and match locally instead of through
- * the window-level `useShortcuts` listener. */
+/** Whether a keydown matches a registry shortcut — for components (the terminal view) that
+ * own their keystrokes and match locally instead of via the window-level listener. */
 export function matchesShortcut(id: string, e: KeyboardEvent): boolean {
   const s = SHORTCUTS[id];
   if (!s) throw new Error(`Unknown shortcut id "${id}"`);
   return matches(s.spec, e);
 }
 
-/** True when a keydown matches a shortcut that opts out of the editable-target
- * guard (`allowInEditable`) — lets a component that owns its own keydown
- * handling (the terminal) recognize a board-wide action and yield the
- * keystroke to the window-level listener instead of consuming it (e.g.
- * sending it to the shell as a control byte). */
+/** True when a keydown matches an `allowInEditable` shortcut — lets the terminal's own
+ * keydown handler recognize a board-wide action and yield it to the window-level listener
+ * instead of sending it to the shell as a control byte. */
 export function matchesEditableOverride(e: KeyboardEvent): boolean {
   for (const s of Object.values(SHORTCUTS)) {
     if (s.allowInEditable && matches(s.spec, e)) return true;
@@ -414,19 +356,12 @@ export function matchesEditableOverride(e: KeyboardEvent): boolean {
   return false;
 }
 
-/** Built-in default for `agentboard.shortcutsWorkInTerminal` — on, matching
- * tt-config. */
+/** Built-in default for `agentboard.shortcutsWorkInTerminal` — on, matching tt-config. */
 export const DEFAULT_SHORTCUTS_WORK_IN_TERMINAL = true;
 
-/**
- * Track the `agentboard.shortcutsWorkInTerminal` preference in a ref so the
- * terminal's keydown handler and the window-level shortcut listener can read
- * it live without re-subscribing. Re-reads on `SETTINGS_SAVED_EVENT` (fired
- * right after a successful save, wherever Settings is edited — see
- * `useUserSettings` in `settings.ts`) and on window focus (covers the JSON
- * file being edited externally then alt-tabbing back) — the shared policy in
- * `useLiveSettingRef`.
- */
+/** The `agentboard.shortcutsWorkInTerminal` preference in a ref, readable live from keydown
+ * handlers without re-subscribing — re-reads on `SETTINGS_SAVED_EVENT` and window focus,
+ * `useLiveSettingRef`'s shared policy. */
 export function useShortcutsWorkInTerminal(): RefObject<boolean> {
   return useLiveSettingRef(
     (s) => s.agentboard?.shortcutsWorkInTerminal,
@@ -442,9 +377,8 @@ function matches(spec: KeySpec, e: KeyboardEvent): boolean {
   return mod === spec.mod && shiftOk && e.altKey === spec.alt && e.key.toLowerCase() === spec.key;
 }
 
-/** True when the event originated somewhere that owns its own keystrokes: an
- * input/textarea/contenteditable, or a terminal (`[data-term-host]`) — where
- * e.g. Ctrl+D is EOF and every printable char belongs to the shell. */
+/** True when the event originated somewhere that owns its own keystrokes: an input,
+ * contenteditable, or a `[data-term-host]` terminal — where Ctrl+D is EOF. */
 function isEditableTarget(e: KeyboardEvent): boolean {
   const el = e.target;
   if (!(el instanceof HTMLElement)) return false;
@@ -454,24 +388,10 @@ function isEditableTarget(e: KeyboardEvent): boolean {
   return el.closest("[data-term-host]") != null;
 }
 
-/**
- * Bind handlers for registry shortcuts. Handlers are keyed by shortcut id; a
- * matched binding runs its handler and eats the event. `enabled` gates the
- * whole set (scope activation — e.g. Agentboard passes `activeTab ===
- * "agentboard"` because its screen stays mounted while hidden). `screen` is
- * the currently active screen, purely for the `shortcut.<id>` `uiAction`
- * record fired on every match — a discrete "this binding fired" event, the
- * same instrumentation every click handler in the app already gets.
- *
- * A handler may return `false` to decline *after* the editable-target check
- * already passed — e.g. a bare-key binding like `ab-focus-terminal` that
- * still shouldn't steal Enter from a focused dialog button, which
- * `isEditableTarget` doesn't cover (it only knows about inputs/terminals).
- * Declining skips both `preventDefault` and the `uiAction` record, so the
- * browser's native key handling (activating that button) runs unmolested.
- * Any other return value (including the common `void`) counts as handled,
- * matching every existing handler's behavior unchanged.
- */
+// Bind handlers by shortcut id: a match runs the handler, eats the event, and records
+// `shortcut.<id>`; `enabled` gates the whole set (scope activation for screens that stay
+// mounted while hidden). A handler may return `false` to decline — that skips both
+// preventDefault and the record, so native key handling (a focused button's Enter) runs.
 export function useShortcuts(
   handlers: Partial<Record<string, () => boolean | void>>,
   screen: ScreenId,
@@ -499,17 +419,13 @@ export function useShortcuts(
   }, [handlers, screen, enabled, workInTerminalRef]);
 }
 
-/** Human title for a scope. A screen scope reuses that screen's own registered
- * title rather than a second hand-maintained copy of it. */
+/** Human title for a scope — a screen scope reuses that screen's registered title. */
 export function scopeTitle(scope: ShortcutScope): string {
   return scope === "global" ? "Everywhere" : SCREENS[scope].title;
 }
 
-/**
- * Per-binding usage over the scored window, for the help overlay's annotation
- * — fetched when the sheet opens rather than polled, and seeded from whatever
- * the status bar's poll last saw so the counts are there on the first paint.
- */
+/** Per-binding usage for the help overlay — fetched when the sheet opens, seeded from the
+ * status bar's last poll so counts are there on first paint. */
 function useShortcutUsage(open: boolean): Map<string, number> {
   const [score, setScore] = useState<KeyboardScore | null>(latestKeyboardScore);
   useEffect(() => {
@@ -525,16 +441,9 @@ function useShortcutUsage(open: boolean): Map<string, number> {
   return useMemo(() => new Map((score?.byShortcut ?? []).map((s) => [s.id, s.shortcut])), [score]);
 }
 
-/**
- * The `?` help overlay: every registered shortcut, grouped by scope, with
- * platform keycaps. Scopes not currently active render muted so the sheet
- * doubles as discovery ("Agentboard has ⌘D" even while you're on Cockpit).
- *
- * Each row also carries how often that binding has actually fired in the last
- * fortnight (`tt-telemetry`'s keyboard score). It's the cheapest possible
- * habit surface: the list you open to look something up is also the list that
- * tells you which ones you've never once used.
- */
+/** The `?` help overlay: every binding grouped by scope (inactive scopes muted, so the
+ * sheet doubles as discovery), each row carrying its 14-day usage count — the list you
+ * open to look something up also shows which bindings you never use. */
 export function ShortcutHelp({
   open,
   onOpenChange,
@@ -558,9 +467,7 @@ export function ShortcutHelp({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Capped + scrollable: the registry is long enough (and the rows now
-          carry a usage column) that an uncapped sheet runs off both ends of a
-          laptop window. */}
+      {/* Capped + scrollable: an uncapped sheet runs off both ends of a laptop window. */}
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
@@ -599,9 +506,8 @@ export function ShortcutHelp({
   );
 }
 
-/** How many times a binding fired in the scored window — muted, right-aligned,
- * and deliberately *not* scolding for the ones at zero: "not used yet" reads
- * as an invitation, a red badge would read as a demerit. */
+/** How many times a binding fired in the scored window — deliberately not scolding at
+ * zero: "not used yet" reads as an invitation, a red badge as a demerit. */
 function UsageTally({ used }: { used: number }) {
   return (
     <span

@@ -20,6 +20,8 @@ const ADD_CLASS =
 export function WindowStrip(props: {
   windows: AgWindow[];
   activeWinId: string | undefined;
+  /** True while the Ctrl+Shift arrow cursor sits on the strip — rings the active tab. */
+  keyboardFocused: boolean;
   hasSelection: boolean;
   updateWins: (folderDirs: string[], fn: (w: WindowsPayload) => WindowsPayload) => void;
   onFocusWindow: (windowId: string) => void;
@@ -30,6 +32,7 @@ export function WindowStrip(props: {
   const {
     windows,
     activeWinId,
+    keyboardFocused,
     hasSelection,
     updateWins,
     onFocusWindow,
@@ -87,6 +90,7 @@ export function WindowStrip(props: {
                 w.id === activeWinId
                   ? "border-b-violet-500 bg-accent text-foreground"
                   : "text-muted-foreground hover:bg-accent/50",
+                keyboardFocused && w.id === activeWinId && "ring-2 ring-violet-500/60",
               )}
             >
               <span className={cn("size-2 rounded-[3px]", windowColor(windows, w.id))} />
