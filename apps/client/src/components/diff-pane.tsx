@@ -630,6 +630,7 @@ export function DiffPane({
             </IconBtn>
             <IconBtn
               title="close pane (diff stays a click away on the folder)"
+              shortcut={focused ? "ab-close-pane" : undefined}
               onClick={onClose}
               className="hover:text-sky-500"
             >

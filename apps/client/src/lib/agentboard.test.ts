@@ -31,6 +31,7 @@ import {
   humanizeFolderName,
   modelContextLabel,
   modelLetter,
+  paneCloseTarget,
   stoppablePort,
   successorPane,
   type TaskBlocker,
@@ -1443,6 +1444,37 @@ describe("isFolderFiltered", () => {
 function repo(key: string, folders: FolderData[]): RepoData {
   return { key, dir: key, name: key, folders, needs: 0 };
 }
+
+describe("paneCloseTarget", () => {
+  const panes = ["s1", diffPaneId("/x"), exitPaneId("s2")];
+
+  it("closes a session pane by ending its shell", () => {
+    expect(paneCloseTarget("s1", panes)).toEqual({ kind: "session", sessionId: "s1" });
+  });
+
+  it("closes a view pane as a layout drop — no shell to end", () => {
+    expect(paneCloseTarget(diffPaneId("/x"), panes)).toEqual({
+      kind: "pane",
+      paneId: diffPaneId("/x"),
+    });
+  });
+
+  it("dismisses a tombstone as a pane, not as the dead session behind it", () => {
+    expect(paneCloseTarget(exitPaneId("s2"), panes)).toEqual({
+      kind: "pane",
+      paneId: exitPaneId("s2"),
+    });
+  });
+
+  it("does nothing for a ring left on a pane this window no longer shows", () => {
+    expect(paneCloseTarget("s9", panes)).toBeNull();
+    expect(paneCloseTarget(diffPaneId("/elsewhere"), panes)).toBeNull();
+  });
+
+  it("does nothing when nothing is focused", () => {
+    expect(paneCloseTarget(null, panes)).toBeNull();
+  });
+});
 
 describe("moveFocus", () => {
   const base = {

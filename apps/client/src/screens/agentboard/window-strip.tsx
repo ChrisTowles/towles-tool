@@ -12,31 +12,32 @@ import { cn } from "@/lib/utils";
 const ADD_CLASS =
   "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
-/** One chip per window of the active folder, plus add-actions and the selected
- * session's Close, split by a hairline. Only the add glyphs keep violet, so the
+/** One chip per window of the active folder, plus add-actions and the focused
+ * pane's Close, split by a hairline. Only the add glyphs keep violet, so the
  * hue still means agent-ness or focus (the `visual-design` skill). */
 export function WindowStrip(props: {
   windows: AgWindow[];
   activeWinId: string | undefined;
   /** True while the Ctrl+Shift arrow cursor sits on the strip — rings the active tab. */
   keyboardFocused: boolean;
-  hasSelection: boolean;
+  /** Whether the ring sits on a pane of the window on screen — what ab-close-pane acts on. */
+  hasFocusedPane: boolean;
   updateWins: (folderDirs: string[], fn: (w: WindowsPayload) => WindowsPayload) => void;
   onFocusWindow: (windowId: string) => void;
   onNewWindow: () => void;
   onNewSession: () => void;
-  onCloseSession: () => void;
+  onClosePane: () => void;
 }) {
   const {
     windows,
     activeWinId,
     keyboardFocused,
-    hasSelection,
+    hasFocusedPane,
     updateWins,
     onFocusWindow,
     onNewWindow,
     onNewSession,
-    onCloseSession,
+    onClosePane,
   } = props;
   const [renamingWin, setRenamingWin] = useState<string | null>(null);
 
@@ -148,21 +149,24 @@ export function WindowStrip(props: {
           <Plus className="size-3 text-violet-500" /> session
         </button>
       </Hint>
-      {hasSelection && (
-        <Hint label="Close the selected session" shortcut="ab-close-session">
+      {hasFocusedPane && (
+        <Hint
+          label="Close the focused pane — a session pane kills its shell"
+          shortcut="ab-close-pane"
+        >
           <button
             type="button"
             onClick={() => {
-              mouseAction("ab-close-session", "agentboard");
-              onCloseSession();
+              mouseAction("ab-close-pane", "agentboard");
+              onClosePane();
             }}
             className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Close the selected session"
+            aria-label="Close the focused pane"
           >
-            {/* "Close session", not "Close": this strip holds two different
-              close actions — a tab's ✕ ends a *window* — and the one word
-              that tells them apart is worth its ~45px. */}
-            Close session {shortcutHint("ab-close-session")}
+            {/* "Close pane", not "Close": this strip holds two different close
+              actions — a tab's ✕ ends a *window* — and the one word that tells
+              them apart is worth its ~40px. */}
+            Close pane {shortcutHint("ab-close-pane")}
           </button>
         </Hint>
       )}

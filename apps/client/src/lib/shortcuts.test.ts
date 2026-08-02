@@ -51,12 +51,22 @@ describe("tab shortcuts", () => {
     expect(matchesShortcut("zen", key({ ctrlKey: true, key: "f" }))).toBe(false);
   });
 
-  it("close-tab is plain mod+w — distinct from the shift+w session-close chord", () => {
+  it("close-tab is plain mod+w — distinct from the shift+w pane-close chord", () => {
     expect(matchesShortcut("close-tab", key({ ctrlKey: true, key: "w" }))).toBe(true);
-    // mod+shift+w belongs to ab-close-session, so it must NOT close the tab.
+    // mod+shift+w belongs to ab-close-pane, so it must NOT close the tab.
     expect(matchesShortcut("close-tab", key({ ctrlKey: true, shiftKey: true, key: "w" }))).toBe(
       false,
     );
+  });
+
+  it("ab-close-pane is the one close chord — no session-only binding beside it", () => {
+    expect(matchesShortcut("ab-close-pane", key({ ctrlKey: true, shiftKey: true, key: "w" }))).toBe(
+      true,
+    );
+    expect("ab-close-session" in SHORTCUTS).toBe(false);
+    // Closing whatever holds the ring has to reach a pane you are typing in.
+    expect(SHORTCUTS["ab-close-pane"].allowInEditable).toBe(true);
+    expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "w" }))).toBe(true);
   });
 
   it("next-tab/prev-tab are mod+] and mod+[", () => {

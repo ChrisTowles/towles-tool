@@ -430,6 +430,25 @@ export function paneSession(paneId: string): string | null {
   return exitPaneSession(paneId) ?? paneId;
 }
 
+/** What closing a pane actually means: end the shell behind it, or just drop the tile. */
+export type PaneCloseTarget =
+  | { kind: "session"; sessionId: string }
+  | { kind: "pane"; paneId: string };
+
+/** The pane `ab-close-pane` acts on. Null when the ring sits on a pane the visible window
+ * doesn't hold — `focusedPaneId` survives clicking away to another folder, and a chord that
+ * closes something off-screen loses work. A tombstone closes as a pane: its shell is gone. */
+export function paneCloseTarget(
+  focusedPaneId: string | null,
+  panes: readonly string[],
+): PaneCloseTarget | null {
+  if (!focusedPaneId || !panes.includes(focusedPaneId)) return null;
+  const sessionId = isExitPane(focusedPaneId) ? null : paneSession(focusedPaneId);
+  return sessionId === null
+    ? { kind: "pane", paneId: focusedPaneId }
+    : { kind: "session", sessionId };
+}
+
 // Pure window-layout reducers (unit-tested; the screen wraps them in
 // `updateWins` for persistence)
 

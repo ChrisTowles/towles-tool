@@ -271,7 +271,12 @@ export function BrowserPane({
             >
               <ExternalLink className="size-3" />
             </IconBtn>
-            <IconBtn title="close pane" className="hover:text-sky-500" onClick={onClose}>
+            <IconBtn
+              title="close pane"
+              shortcut={focused ? "ab-close-pane" : undefined}
+              className="hover:text-sky-500"
+              onClick={onClose}
+            >
               <X className="size-3" />
             </IconBtn>
           </>

@@ -53,6 +53,7 @@ import {
   liveSessions,
   nextOpenFileNonce,
   nextWindowId,
+  paneCloseTarget,
   onAgentboardNavRequest,
   onOpenSessionRequest,
   abSetSessionPurpose,
@@ -888,7 +889,7 @@ export function AgentboardScreen() {
 
   // Closing the focused pane hands focus to its window neighbor instead of leaving nothing
   // focused — `selected` moves with it when the neighbor is a live session, so a repeated
-  // ab-close-session chord keeps eating panes. Closing an unfocused pane moves nothing.
+  // ab-close-pane chord keeps eating panes. Closing an unfocused pane moves nothing.
   function shiftFocusFrom(...closedIds: string[]) {
     const lost = closedIds.some((id) => id === focusedPaneId || id === selected?.sessionId);
     if (!lost) return;
@@ -917,6 +918,15 @@ export function AgentboardScreen() {
   function closePane(paneId: string) {
     shiftFocusFrom(paneId);
     removePane(paneId);
+  }
+
+  /** ab-close-pane (⌘⇧W), and the window strip's Close button: the focused tile goes, whichever
+   * kind it is. `paneCloseTarget` decides; both arms already hand focus to the neighbor. */
+  function closeFocusedPane() {
+    const target = paneCloseTarget(focusedPaneId, activeWin?.panes ?? []);
+    if (!target) return;
+    if (target.kind === "session") void closeSession(target.sessionId);
+    else closePane(target.paneId);
   }
 
   async function commitRename(sessionId: string, name: string) {
@@ -994,9 +1004,7 @@ export function AgentboardScreen() {
           if (!worktreeDelete.confirmDeleteWt) return false;
           worktreeDelete.confirmDeleteWorktree();
         },
-        "ab-close-session": () => {
-          if (selected) void closeSession(selected.sessionId);
-        },
+        "ab-close-pane": closeFocusedPane,
         "ab-toggle-diff": () => {
           if (activeFolderDir) openDiff(activeFolderDir);
         },
@@ -1257,14 +1265,12 @@ export function AgentboardScreen() {
                   windows={windowsForFolder}
                   activeWinId={activeWin?.id}
                   keyboardFocused={focusLevel === "window"}
-                  hasSelection={selected !== null}
+                  hasFocusedPane={paneCloseTarget(focusedPaneId, activeWin?.panes ?? []) !== null}
                   updateWins={updateWins}
                   onFocusWindow={actions.focusWindow}
                   onNewWindow={() => void newWindow(activeFolderDir)}
                   onNewSession={() => void newSession(activeFolderDir)}
-                  onCloseSession={() => {
-                    if (selected) void closeSession(selected.sessionId);
-                  }}
+                  onClosePane={closeFocusedPane}
                 />
               )}
 
