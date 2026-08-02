@@ -450,6 +450,7 @@ export function FolderHeader({
               onDeleteWorktree={!missing || folderDetached(folder) ? onDeleteWorktree : undefined}
               deleteLabel={missing ? "Close task…" : undefined}
               taskId={!missing ? task?.id : undefined}
+              dirMissing={missing}
             />
           )}
         </div>

@@ -69,6 +69,7 @@ import {
   type PrItem,
   type TaskIssueLink,
 } from "@/lib/data";
+import { openInExternalEditor } from "@/lib/external-editor";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { mouseAction } from "@/lib/shortcut-coach";
@@ -1337,6 +1338,7 @@ export function RepoMenu({
   onDeleteWorktree,
   deleteLabel,
   taskId,
+  dirMissing,
   ghost = false,
 }: {
   path?: string;
@@ -1355,6 +1357,8 @@ export function RepoMenu({
   deleteLabel?: string;
   /** Enables "Attach issue…" — an issue can only be linked to a task. */
   taskId?: number;
+  /** A gone directory can't be opened in an editor, so the item hides. */
+  dirMissing?: boolean;
   /** See [`IconBtn`]'s `ghost`. */
   ghost?: boolean;
 }) {
@@ -1404,6 +1408,14 @@ export function RepoMenu({
               <DropdownMenuSeparator />
             </>
           )}
+          {!dirMissing && (
+            <DropdownMenuItem
+              onSelect={() => void openInExternalEditor(dir, { where: "rail.menu" })}
+              className="whitespace-nowrap"
+            >
+              <ExternalLink className="size-3.5" /> Open in editor
+            </DropdownMenuItem>
+          )}
           {onNewTask && (
             <DropdownMenuItem
               onSelect={() => {
@@ -1429,7 +1441,7 @@ export function RepoMenu({
               <DropdownMenuShortcut>{shortcutHint("ab-remove-task")}</DropdownMenuShortcut>
             </DropdownMenuItem>
           )}
-          {(onNewTask || onDeleteWorktree) && <DropdownMenuSeparator />}
+          {(!dirMissing || onNewTask || onDeleteWorktree) && <DropdownMenuSeparator />}
           <DropdownMenuItem onSelect={() => void syncNow()} className="whitespace-nowrap">
             <RefreshCw className="size-3.5" /> Sync now
           </DropdownMenuItem>

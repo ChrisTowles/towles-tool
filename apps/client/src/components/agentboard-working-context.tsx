@@ -148,6 +148,7 @@ export function WorkingContext({
               }
               onRemove={() => onRemoveRepo([folder.dir], folder.name)}
               taskId={!missing ? task?.id : undefined}
+              dirMissing={missing}
             />
           </div>
         </div>
