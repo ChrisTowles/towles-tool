@@ -388,6 +388,7 @@ export function RepoGroup({
             }
             dir={repo.folders[0].dir}
             quiet={repo.folders[0].quiet}
+            dirMissing={repo.folders[0].dirMissing}
             onNewTask={() =>
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })
             }
