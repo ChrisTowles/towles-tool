@@ -14,8 +14,10 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use libghostty_vt::selection::gesture::Autoscroll;
+
 use crate::engine::{
-    Engine, EngineOptions, KeyEvent, MouseInput, PasteOutcome, Select, Theme, VtError,
+    Engine, EngineOptions, KeyEvent, MouseInput, PasteOutcome, Pointer, Select, Theme, VtError,
 };
 use crate::frame::Frame;
 use crate::search::SearchMatch;
@@ -27,6 +29,9 @@ const MIN_FRAME_INTERVAL: Duration = Duration::from_micros(1_000_000 / 90);
 /// unmount, so without this a streaming session renders at the interactive cap
 /// for a canvas nothing paints. [`Input::RequestFull`] catches it up later.
 const HIDDEN_FRAME_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How often a drag held past an edge advances the viewport by one row.
+const AUTOSCROLL_TICK_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Longest a synchronized-output batch (DEC mode 2026) may hold rendering — a
 /// program that crashes mid-batch must not freeze the pane. Matches kitty.
@@ -63,6 +68,8 @@ pub enum Input {
     /// Reported to the program when it asked for focus events (mode 1004).
     Focus(bool),
     Select(Select),
+    /// A pointer event for libghostty's selection-gesture state machine.
+    Pointer(Pointer),
     /// Replies with the active selection's plain text.
     Copy(mpsc::SyncSender<Option<String>>),
     /// Paste through libghostty's encoder (strips dangerous control bytes,
@@ -214,6 +221,9 @@ impl Session {
                 Input::Select(op) => {
                     let _ = engine.select(op);
                 }
+                Input::Pointer(ev) => {
+                    let _ = engine.pointer(ev);
+                }
                 Input::Copy(reply) => {
                     let _ = reply.try_send(engine.copy_selection().ok().flatten());
                 }
@@ -246,7 +256,19 @@ impl Session {
             let mut sync_since: Option<Instant> = None;
             // Buffered wakes arrive before disconnect, so a dropped session
             // still drains its queued input before the loop ends.
-            while wake_rx.recv().is_ok() {
+            loop {
+                // A drag held past an edge produces no further events, so an
+                // active autoscroll drives the loop on its own clock instead
+                // of waiting for a wake that will not come.
+                if engine.autoscroll() == Autoscroll::None {
+                    if wake_rx.recv().is_err() {
+                        break;
+                    }
+                } else if wake_rx.recv_timeout(AUTOSCROLL_TICK_INTERVAL)
+                    == Err(mpsc::RecvTimeoutError::Disconnected)
+                {
+                    break;
+                }
                 let mut applied = false;
                 // Absorb input until the frame interval passes; control drains
                 // before bytes so UI ops never wait behind output.
@@ -286,6 +308,10 @@ impl Session {
                         // have and let the outer recv end the loop.
                         Err(_) => break,
                     }
+                }
+                if engine.autoscroll() != Autoscroll::None {
+                    let _ = engine.autoscroll_tick();
+                    applied = true;
                 }
                 // A lone wake token an earlier pass already drained.
                 if !applied {

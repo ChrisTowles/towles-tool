@@ -6,6 +6,7 @@
 
 use std::cell::{Cell as StdCell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use libghostty_vt::fmt::{Formatter, FormatterOptions};
 use libghostty_vt::focus;
@@ -15,7 +16,10 @@ use libghostty_vt::render::{
     CellIteration, CellIterator, CursorVisualStyle, Dirty, RenderState, RowIterator,
 };
 use libghostty_vt::screen::{CellContentTag, CellWide, Screen};
-use libghostty_vt::selection::{FormatOptions, SelectLineOptions, SelectWordOptions, Selection};
+use libghostty_vt::selection::gesture::{
+    Autoscroll, AutoscrollTickEvent, DragEvent, Geometry, Gesture, PressEvent, ReleaseEvent,
+};
+use libghostty_vt::selection::FormatOptions;
 use libghostty_vt::style::{StyleColor, Underline};
 use libghostty_vt::terminal::{
     ColorScheme, Mode, Options, Point, PointCoordinate, ScrollViewport, Terminal,
@@ -28,38 +32,32 @@ use crate::osc_color::{ColorQuery, OscColorScanner};
 use crate::osc_notify::OscNotifyScanner;
 use crate::search::{self, SearchMatch};
 
-/// A selection operation, in **absolute screen coordinates** — row 0 is the
-/// oldest scrollback row, the same space as [`Engine::viewport_top`] and
-/// [`Engine::search`]'s matches.
-///
-/// Absolute, not viewport-relative, because a drag outlives the viewport it
-/// started in: the pointer can page into scrollback mid-gesture, and output
-/// arriving on the live screen scrolls rows out from under it either way. A
-/// viewport-row anchor re-sent on the next drag event names whatever text
-/// has since moved into that slot, so the selection walks away from the text
-/// the user grabbed.
+/// The selection paths that are not a pointer gesture.
 #[derive(Debug, Clone, Copy)]
 pub enum Select {
-    /// Anchor→head drag selection (both ends inclusive).
-    Range {
-        ax: u16,
-        ay: usize,
-        bx: u16,
-        by: usize,
-    },
-    /// Select the word at a cell (double-click).
-    Word {
-        x: u16,
-        y: usize,
-    },
-    /// Select the line at a cell (triple-click).
-    Line {
-        x: u16,
-        y: usize,
-    },
     All,
     Clear,
 }
+
+/// A raw pointer event, in **surface pixels** from the canvas' top-left —
+/// sub-cell positions decide repeat-click slop and edge overrun. What a
+/// gesture *means* (click count, cell/word/line, the anchor, autoscroll) is
+/// [`Gesture`]'s to decide; the view only reports what the pointer did.
+#[derive(Debug, Clone, Copy)]
+pub enum Pointer {
+    /// `time_ms` is a monotonic stamp (DOM `MouseEvent.timeStamp`); without
+    /// it every press is a single click.
+    Press { x: f64, y: f64, time_ms: f64 },
+    /// Button held. `rectangle` is the block-select modifier (Alt).
+    Drag { x: f64, y: f64, rectangle: bool },
+    /// Button up. Ends the drag but keeps whatever it selected.
+    Release,
+}
+
+/// Multi-click window and slop. libghostty promotes a press to double- or
+/// triple-click only when both are supplied, so they are set on every press.
+const CLICK_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
+const CLICK_REPEAT_DISTANCE_PX: f64 = 10.0;
 
 /// Errors from the underlying libghostty-vt library.
 #[derive(Debug, thiserror::Error)]
@@ -210,13 +208,22 @@ pub struct Engine {
     /// tracking covers cell content only, so a pure cursor move leaves
     /// `dirty()` clean and the cursor would appear stuck without this.
     last_cursor: Option<Cursor>,
-    /// Whether a selection is installed, carried on every frame. The view
-    /// can't infer this from the rows it was sent — a selection scrolled out
-    /// of the viewport highlights nothing, and "no highlighted row" would
-    /// read as "nothing to copy" while the selection is still very much
-    /// there. Owned here because libghostty exposes no getter for the active
-    /// selection short of formatting it, which is not a per-frame cost.
+    /// Whether a selection is installed, carried on every frame: one scrolled
+    /// out of view highlights no row, which would otherwise read as "nothing
+    /// to copy". libghostty has no getter short of formatting it.
     has_selection: bool,
+    /// libghostty's pointer-gesture state machine: click counting, the
+    /// behavior table, the drag anchor and autoscroll are its answers. The
+    /// anchor is a tracked grid ref, so it survives scrolling on its own.
+    gesture: Gesture<'static>,
+    press_ev: PressEvent<'static>,
+    drag_ev: DragEvent<'static>,
+    release_ev: ReleaseEvent<'static>,
+    tick_ev: AutoscrollTickEvent<'static>,
+    /// Surface metrics for placing a pointer and judging edge overrun.
+    geometry: Geometry,
+    /// Replayed on each autoscroll tick: a held pointer emits no events.
+    drag_point: (f64, f64),
 }
 
 impl Engine {
@@ -291,6 +298,19 @@ impl Engine {
             force_full: false,
             last_cursor: None,
             has_selection: false,
+            gesture: Gesture::new()?,
+            press_ev: PressEvent::new()?,
+            drag_ev: DragEvent::new()?,
+            release_ev: ReleaseEvent::new()?,
+            tick_ev: AutoscrollTickEvent::new()?,
+            // 1px cells until the view's first resize; zero is rejected.
+            geometry: Geometry {
+                columns: u32::from(opts.cols),
+                cell_width: 1,
+                padding_left: 0,
+                screen_height: u32::from(opts.rows),
+            },
+            drag_point: (0.0, 0.0),
         })
     }
 
@@ -475,6 +495,12 @@ impl Engine {
     ) -> Result<()> {
         // Remember the cell metrics for XTWINOPS size queries (CSI 14/16 t).
         self.cell_px.set((cell_width_px, cell_height_px));
+        self.geometry = Geometry {
+            columns: u32::from(cols),
+            cell_width: cell_width_px.max(1),
+            padding_left: 0,
+            screen_height: (u32::from(rows) * cell_height_px).max(1),
+        };
         self.term.resize(cols, rows, cell_width_px, cell_height_px)?;
         Ok(())
     }
@@ -559,16 +585,12 @@ impl Engine {
         Ok(())
     }
 
-    /// A mouse-wheel gesture at viewport cell (`x`, `y`). The engine owns the
-    /// whole policy, in order: `shift` held or scrolled back into history pages
-    /// our scrollback; negotiated mouse tracking sends wheel reports (buttons
-    /// 4/5), one per line, capped at [`MAX_WHEEL_REPORTS`]; alternate screen
-    /// with mode 1007 sends arrow keys through the key encoder so DECCKM is
-    /// honored, same cap; otherwise scroll our viewport.
-    ///
-    /// Shift outranking tracking is what makes scrollback reachable at all
-    /// under Claude Code, which holds `?1003h` on the primary screen all
-    /// session.
+    /// A mouse-wheel gesture at viewport cell (`x`, `y`), in policy order:
+    /// `shift` or already-scrolled-back pages our scrollback; mouse tracking
+    /// sends wheel reports (buttons 4/5) capped at [`MAX_WHEEL_REPORTS`]; the
+    /// alternate screen with mode 1007 sends arrows through the key encoder,
+    /// same cap; otherwise scroll. Shift outranks tracking to keep scrollback
+    /// reachable — the alternate screen has none, so there it is a no-op.
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32, shift: bool) -> Result<()> {
         if lines == 0 {
             return Ok(());
@@ -622,27 +644,6 @@ impl Engine {
     /// (including deselection).
     pub fn select(&mut self, op: Select) -> Result<()> {
         match op {
-            Select::Range { ax, ay, bx, by } => {
-                let a = self.grid_ref(ax, ay)?;
-                let b = self.grid_ref(bx, by)?;
-                let sel = Selection::new(a, b, false);
-                self.term.set_selection(Some(&sel))?;
-                self.has_selection = true;
-            }
-            Select::Word { x, y } => {
-                let g = self.grid_ref(x, y)?;
-                if let Some(sel) = self.term.select_word(SelectWordOptions::new(g))? {
-                    self.term.set_selection(Some(&sel))?;
-                    self.has_selection = true;
-                }
-            }
-            Select::Line { x, y } => {
-                let g = self.grid_ref(x, y)?;
-                if let Some(sel) = self.term.select_line(SelectLineOptions::new(g))? {
-                    self.term.set_selection(Some(&sel))?;
-                    self.has_selection = true;
-                }
-            }
             Select::All => {
                 if let Some(sel) = self.term.select_all()? {
                     self.term.set_selection(Some(&sel))?;
@@ -650,12 +651,84 @@ impl Engine {
                 }
             }
             Select::Clear => {
+                self.gesture.reset(&self.term);
                 self.term.set_selection(None)?;
                 self.has_selection = false;
             }
         }
         self.force_full = true;
         Ok(())
+    }
+
+    /// Feed a pointer event to libghostty's gesture state machine and install
+    /// whatever selection it returns. A press that selects nothing clears —
+    /// that is a plain click. A release keeps what the drag took.
+    pub fn pointer(&mut self, ev: Pointer) -> Result<()> {
+        match ev {
+            Pointer::Press { x, y, time_ms } => {
+                self.drag_point = (x, y);
+                let (cell_px, top) = self.pointer_frame()?;
+                let g = grid_ref_at(&self.term, cell_px, top, (x, y))?;
+                self.press_ev
+                    .set_position(x, y)?
+                    .set_time(Duration::from_secs_f64(time_ms.max(0.0) / 1000.0))?
+                    .set_repeat_interval(CLICK_REPEAT_INTERVAL)?
+                    .set_repeat_distance(CLICK_REPEAT_DISTANCE_PX)?;
+                let sel = self.press_ev.apply(&mut self.gesture, &self.term, g)?;
+                self.term.set_selection(sel.as_ref())?;
+                self.has_selection = sel.is_some();
+            }
+            Pointer::Drag { x, y, rectangle } => {
+                self.drag_point = (x, y);
+                let (cell_px, top) = self.pointer_frame()?;
+                let g = grid_ref_at(&self.term, cell_px, top, (x, y))?;
+                let geometry = self.geometry;
+                self.drag_ev.set_position(x, y)?.set_rectangle(rectangle)?;
+                let sel = self.drag_ev.apply(&mut self.gesture, &self.term, g, geometry)?;
+                if let Some(sel) = sel {
+                    self.term.set_selection(Some(&sel))?;
+                    self.has_selection = true;
+                }
+            }
+            Pointer::Release => {
+                self.release_ev.apply(&mut self.gesture, &self.term, None)?;
+            }
+        }
+        self.force_full = true;
+        Ok(())
+    }
+
+    /// Which way an in-flight drag wants the viewport to move, if at all.
+    pub fn autoscroll(&self) -> Autoscroll {
+        self.gesture.autoscroll(&self.term).unwrap_or(Autoscroll::None)
+    }
+
+    /// Scroll one row, then re-point the drag head at the held pointer.
+    pub fn autoscroll_tick(&mut self) -> Result<()> {
+        let delta = match self.autoscroll() {
+            Autoscroll::Up => -1,
+            Autoscroll::Down => 1,
+            _ => return Ok(()),
+        };
+        self.scroll(Some(delta));
+        let (x, y) = self.drag_point;
+        let viewport =
+            PointCoordinate { x: 0, y: u32::try_from(self.viewport_top()?).unwrap_or(u32::MAX) };
+        let geometry = self.geometry;
+        self.tick_ev.set_position(x, y)?;
+        let sel = self.tick_ev.apply(&mut self.gesture, &self.term, viewport, geometry)?;
+        if let Some(sel) = sel {
+            self.term.set_selection(Some(&sel))?;
+            self.has_selection = true;
+        }
+        self.force_full = true;
+        Ok(())
+    }
+
+    /// Cell metrics and viewport origin for [`grid_ref_at`], read before the
+    /// gesture events borrow `term`.
+    fn pointer_frame(&self) -> Result<((u32, u32), usize)> {
+        Ok((self.cell_px.get(), self.viewport_top()?))
     }
 
     /// Force the next render to emit a full frame even when libghostty
@@ -666,35 +739,26 @@ impl Engine {
         self.force_full = true;
     }
 
-    /// Whether the application is holding a synchronized-output batch open
-    /// (DEC private mode 2026): frames rendered between BSU (`CSI ? 2026 h`)
-    /// and ESU (`CSI ? 2026 l`) would show a half-drawn update, so the
-    /// session loop holds rendering while this is set (bounded by its
-    /// max-hold — a program that dies mid-batch must not freeze the pane).
-    /// A failed mode query reads as "not synchronized" so rendering can
-    /// never get stuck on an FFI error.
+    /// Whether a synchronized-output batch (DEC 2026) is open: rendering
+    /// between BSU and ESU would show a half-drawn update, so the session
+    /// loop holds frames while this is set, bounded by its max-hold. A failed
+    /// query reads as "not synchronized" — never stuck on an FFI error.
     pub fn sync_output(&self) -> bool {
         self.term.mode(Mode::SYNC_OUTPUT).unwrap_or(false)
     }
 
-    /// Drop the scrollback history while leaving the visible screen intact
-    /// (right-click "Clear scrollback"). Feeds xterm's "erase saved lines"
-    /// sequence (CSI 3 J), which discards rows scrolled off the top but does
-    /// not touch the active viewport. Clearing scrollback doesn't dirty any
-    /// visible row, so the next render is forced full — that way the frame
-    /// carries the collapsed `scrollback_rows`/`viewport_top` to the UI (it
-    /// derives "scrolled back" and search highlighting from those).
+    /// Drop scrollback, keep the visible screen (xterm's CSI 3 J). Dirties no
+    /// visible row, so the next render is forced full — that is how the frame
+    /// carries the collapsed `scrollback_rows`/`viewport_top` to the UI.
     pub fn clear_scrollback(&mut self) {
         self.feed(b"\x1b[3J");
         self.force_full = true;
     }
 
-    /// Case-insensitively search the full screen (scrollback + active area)
-    /// for `query`, top to bottom, up to `limit` matches. Rows come from a
-    /// one-shot plain-text format pass (fast pre-filter); matching rows are
-    /// then re-read cell by cell so match columns are exact across wide
-    /// characters. Trailing whitespace is trimmed per row, so queries ending
-    /// in spaces may miss end-of-line hits.
+    /// Case-insensitive search over scrollback + active area, top to bottom,
+    /// capped at `limit`. A plain-text pass pre-filters; matching rows are
+    /// re-read cell by cell so columns are exact across wide characters. Rows
+    /// are right-trimmed, so queries ending in spaces miss end-of-line hits.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchMatch>> {
         let mut out = Vec::new();
         let probe = query.to_lowercase();
@@ -763,13 +827,6 @@ impl Engine {
     pub fn copy_selection(&mut self) -> Result<Option<String>> {
         let bytes = self.term.format_selection_alloc(None, FormatOptions::new())?;
         Ok(bytes.map(|b| String::from_utf8_lossy(&b).into_owned()))
-    }
-
-    /// A grid reference for an absolute screen row (0 = oldest scrollback
-    /// row), so a caller's coordinates don't shift when the viewport moves.
-    fn grid_ref(&self, x: u16, y: usize) -> Result<libghostty_vt::screen::GridRef<'_>> {
-        let y = u32::try_from(y).unwrap_or(u32::MAX);
-        Ok(self.term.grid_ref(Point::Screen(PointCoordinate { x, y }))?)
     }
 
     /// Produce a frame of everything that changed since the last call, or
@@ -1001,6 +1058,25 @@ fn read_hyperlink_uri(gref: &libghostty_vt::screen::GridRef<'_>) -> Result<Strin
             Err(e) => return Err(e.into()),
         }
     }
+}
+
+/// The cell **edge** a surface-pixel position resolves to, clamped into the
+/// viewport. An edge because libghostty spans `[min, max)` over a gesture's
+/// two pins: round both and the cell under the pointer joins once the pointer
+/// passes its middle, either drag direction. Free-standing so the reference
+/// borrows only the terminal, leaving the gesture events mutably borrowable.
+fn grid_ref_at<'t>(
+    term: &'t Terminal<'static, 'static>,
+    (cw, ch): (u32, u32),
+    viewport_top: usize,
+    (x_px, y_px): (f64, f64),
+) -> Result<libghostty_vt::screen::GridRef<'t>> {
+    let max_col = f64::from(term.cols()?);
+    let max_row = f64::from(term.rows()?.saturating_sub(1));
+    let col = (x_px / f64::from(cw.max(1))).round().clamp(0.0, max_col) as u16;
+    let row = (y_px / f64::from(ch.max(1))).floor().clamp(0.0, max_row) as usize;
+    let y = u32::try_from(viewport_top + row).unwrap_or(u32::MAX);
+    Ok(term.grid_ref(Point::Screen(PointCoordinate { x: col, y }))?)
 }
 
 fn pack_rgb(c: libghostty_vt::style::RgbColor) -> u32 {

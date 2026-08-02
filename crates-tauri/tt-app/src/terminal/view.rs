@@ -6,7 +6,7 @@
 
 use serde::Deserialize;
 use tauri::{AppHandle, Manager, State};
-use tt_vt::{Input as VtInput, SearchMatch, Select as VtSelect};
+use tt_vt::{Input as VtInput, Pointer as VtPointer, SearchMatch, Select as VtSelect};
 
 use super::session::TermState;
 
@@ -101,33 +101,39 @@ pub fn term_clear(state: State<TermState>, term_id: String) -> Result<(), String
     state.send(&term_id, VtInput::ClearScrollback)
 }
 
-/// Absolute screen coordinates — `ay`/`by` count from the oldest scrollback
-/// row, not the viewport top, so the anchor keeps naming the same text while
-/// the viewport moves under a drag. `kind`: drag, word, line, all, clear.
+/// The whole-screen selection paths — `kind`: all, clear. Pointer gestures go
+/// through [`term_pointer`] instead.
 #[tauri::command]
-pub fn term_select(
-    state: State<TermState>,
-    term_id: String,
-    kind: String,
-    ax: Option<u16>,
-    ay: Option<usize>,
-    bx: Option<u16>,
-    by: Option<usize>,
-) -> Result<(), String> {
+pub fn term_select(state: State<TermState>, term_id: String, kind: String) -> Result<(), String> {
     let op = match kind.as_str() {
-        "drag" => VtSelect::Range {
-            ax: ax.unwrap_or(0),
-            ay: ay.unwrap_or(0),
-            bx: bx.unwrap_or(0),
-            by: by.unwrap_or(0),
-        },
-        "word" => VtSelect::Word { x: ax.unwrap_or(0), y: ay.unwrap_or(0) },
-        "line" => VtSelect::Line { x: ax.unwrap_or(0), y: ay.unwrap_or(0) },
         "all" => VtSelect::All,
         "clear" => VtSelect::Clear,
         other => return Err(format!("unknown selection kind: {other}")),
     };
     state.send(&term_id, VtInput::Select(op))
+}
+
+/// A raw pointer event in surface pixels from the canvas' top-left. The view
+/// reports what the pointer did; libghostty's gesture engine decides what it
+/// means (click count, word/line granularity, the anchor, autoscroll).
+/// `action`: press, drag, release.
+#[tauri::command]
+pub fn term_pointer(
+    state: State<TermState>,
+    term_id: String,
+    action: String,
+    x: f64,
+    y: f64,
+    time_ms: f64,
+    rectangle: bool,
+) -> Result<(), String> {
+    let ev = match action.as_str() {
+        "press" => VtPointer::Press { x, y, time_ms },
+        "drag" => VtPointer::Drag { x, y, rectangle },
+        "release" => VtPointer::Release,
+        other => return Err(format!("unknown pointer action: {other}")),
+    };
+    state.send(&term_id, VtInput::Pointer(ev))
 }
 
 /// User-initiated, so unlike OSC 52 it isn't focus-gated.
