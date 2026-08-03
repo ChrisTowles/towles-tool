@@ -10,7 +10,7 @@ use rusqlite::{Connection, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 18;
+pub(crate) const SCHEMA_VERSION: i64 = 19;
 
 /// Schema v1. Every statement is `IF NOT EXISTS` so `migrate` is idempotent.
 const SCHEMA_V1: &str = "\
@@ -200,6 +200,7 @@ impl Store {
         self.migrate_tasks_goal_v16()?;
         self.migrate_tasks_summary_v17()?;
         self.migrate_tasks_kind_v18()?;
+        self.migrate_tasks_pr_probe_v19()?;
         self.migrate_events_v9()?;
         self.migrate_events_v10_iso()?;
         // After v10, never inside SCHEMA_V1: that batch runs before the
@@ -358,6 +359,27 @@ impl Store {
         if !has_kind {
             self.conn
                 .execute_batch("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task';")?;
+        }
+        Ok(())
+    }
+
+    /// v19: `pr_probe_ts` — when a worktree task last asked GitHub about its own
+    /// branch. The throttle for that probe, so a task that will never have a PR
+    /// costs one `gh` call per interval rather than one per collector pass.
+    fn migrate_tasks_pr_probe_v19(&self) -> Result<()> {
+        let mut has_probe = false;
+        {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(tasks)")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "pr_probe_ts" {
+                    has_probe = true;
+                }
+            }
+        }
+        if !has_probe {
+            self.conn.execute_batch("ALTER TABLE tasks ADD COLUMN pr_probe_ts INTEGER;")?;
         }
         Ok(())
     }

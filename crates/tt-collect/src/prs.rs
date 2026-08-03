@@ -90,6 +90,35 @@ pub(crate) fn fetch_pr_state(dir: &Path, number: i64) -> Result<String, String> 
         .ok_or_else(|| format!("gh pr view {number}: no state in JSON"))
 }
 
+/// The PR for one branch, whatever state it is in — what a task asks about its
+/// own worktree branch when no snapshot ever carried its PR.
+///
+/// `--state all`, since the case this exists for is a PR that merged before any
+/// open sweep saw it; `--limit 1`, since `gh` lists newest first. `repo` is the
+/// task's own `owner/name`, the key the branch join will look under.
+pub(crate) fn fetch_branch_pr(
+    dir: &Path,
+    repo: &str,
+    branch: &str,
+) -> Result<Option<PrInput>, String> {
+    let value = gh::run_json(
+        dir,
+        &[
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--json",
+            PR_LIST_FIELDS,
+        ],
+    )?;
+    Ok(map_pr_list(&value, repo, false).into_iter().next())
+}
+
 fn gh_pr_list(
     dir: &Path,
     state: &str,

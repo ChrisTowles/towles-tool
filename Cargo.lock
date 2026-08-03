@@ -9027,6 +9027,7 @@ dependencies = [
  "tt-agentboard",
  "tt-config",
  "tt-exec",
+ "tt-git",
  "tt-store",
  "ureq",
 ]

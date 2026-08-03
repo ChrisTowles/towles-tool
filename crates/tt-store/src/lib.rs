@@ -805,6 +805,75 @@ mod tests {
         assert_eq!(s.auto_attach_worktree_prs(10).unwrap(), 0);
     }
 
+    /// The gh-merge-in-a-worktree case: the merge lands through the API, `gh`
+    /// dies on its local cleanup, and no sweep ever carried the PR. The probe's
+    /// row is the only evidence, and the ordinary branch join must accept it.
+    #[test]
+    fn a_probed_pr_links_a_task_no_sweep_ever_saw() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("worktree task", "doing", None, None, 1).unwrap();
+        s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/w")).unwrap();
+
+        assert_eq!(
+            s.unlinked_worktrees(1, 8).unwrap(),
+            vec![UnlinkedWorktree {
+                task_id: t.id,
+                repo: "o/x".to_string(),
+                branch: "feat/y".to_string()
+            }]
+        );
+
+        s.upsert_prs(&[PrInput {
+            repo: "o/x".to_string(),
+            number: 83,
+            title: "t".to_string(),
+            branch: "feat/y".to_string(),
+            state: "merged".to_string(),
+            checks: "passing".to_string(),
+            review_state: String::new(),
+            url: "https://github.com/o/x/pull/83".to_string(),
+            updated_ts: 1,
+        }])
+        .unwrap();
+        s.mark_pr_probe(&[t.id], 2).unwrap();
+        assert_eq!(s.auto_attach_worktree_prs(3).unwrap(), 1);
+
+        let got = s.get_task(t.id).unwrap().unwrap();
+        assert_eq!(got.prs[0].number, 83);
+        assert_eq!(got.prs[0].state, "merged");
+        // Linked now, so it never costs another `gh` call.
+        assert!(s.unlinked_worktrees(i64::MAX, 8).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unlinked_worktrees_skips_the_bound_the_archived_and_the_just_probed() {
+        let s = Store::open_in_memory().unwrap();
+        let bare = s.add_task("no worktree", "backlog", None, None, 1).unwrap();
+        let archived = s.add_task("archived", "done", None, None, 2).unwrap();
+        s.set_task_worktree(archived.id, "/r", Some("o/x"), Some("feat/old"), Some("/w1")).unwrap();
+        s.close_task(archived.id, TaskOutcome::Done, 3).unwrap();
+        s.archive_closed_tasks(i64::MAX, 4).unwrap();
+        let live = s.add_task("live", "doing", None, None, 5).unwrap();
+        s.set_task_worktree(live.id, "/r", Some("o/x"), Some("feat/new"), Some("/w2")).unwrap();
+
+        let ids = |probe_before: i64| -> Vec<i64> {
+            s.unlinked_worktrees(probe_before, 8).unwrap().iter().map(|w| w.task_id).collect()
+        };
+        assert_eq!(
+            ids(10),
+            vec![live.id],
+            "{} and {} must not be asked about",
+            bare.id,
+            archived.id
+        );
+
+        // A stamped clock hides the row until the interval has passed, whatever
+        // the answer was — an unpushed branch throttles like a found PR.
+        s.mark_pr_probe(&[live.id], 10).unwrap();
+        assert!(ids(9).is_empty());
+        assert_eq!(ids(10), vec![live.id]);
+    }
+
     #[test]
     fn replace_prs_for_repos_preserves_other_repos_rows() {
         let pr = |repo: &str, number: i64| PrInput {

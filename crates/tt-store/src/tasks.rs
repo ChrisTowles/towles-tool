@@ -369,6 +369,48 @@ impl Store {
         )?)
     }
 
+    /// Worktree tasks with no PR linked at all, oldest probe first, for the
+    /// targeted `gh` lookup in `tt-collect`. `probe_before_ms` skips anything
+    /// probed since; `limit` caps how many one pass may ask about, so a machine
+    /// full of unlinked tasks spreads its calls over several passes instead of
+    /// bursting them.
+    pub fn unlinked_worktrees(
+        &self,
+        probe_before_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<UnlinkedWorktree>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.worktree_repo, t.worktree_branch FROM tasks t
+             WHERE t.worktree_repo IS NOT NULL AND t.worktree_repo != ''
+               AND t.worktree_branch IS NOT NULL AND t.worktree_branch != ''
+               AND t.archived_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM task_prs tp WHERE tp.task_id = t.id)
+               AND COALESCE(t.pr_probe_ts, 0) <= ?1
+             ORDER BY COALESCE(t.pr_probe_ts, 0) ASC, t.id ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![probe_before_ms, limit as i64], |r| {
+            Ok(UnlinkedWorktree { task_id: r.get(0)?, repo: r.get(1)?, branch: r.get(2)? })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Stamp the probe clock, whatever the answer was: "GitHub has no PR for
+    /// this branch" has to throttle exactly like a hit, or an unpushed task
+    /// re-asks on every pass forever.
+    pub fn mark_pr_probe(&self, task_ids: &[i64], now_ms: i64) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut updated = 0;
+        {
+            let mut stmt = tx.prepare("UPDATE tasks SET pr_probe_ts = ?1 WHERE id = ?2")?;
+            for id in task_ids {
+                updated += stmt.execute(params![now_ms, id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(updated)
+    }
+
     /// Every worktree the rail should show, both kinds. A *record* query, not a
     /// filesystem one: a row is here because something wrote it down, so the rail
     /// can show a task before its directory exists and keep showing it while removal

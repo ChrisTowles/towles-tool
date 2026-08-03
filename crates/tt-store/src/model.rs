@@ -125,6 +125,16 @@ pub struct RailWorktree {
     pub created_at: i64,
 }
 
+/// A worktree task with no PR linked yet, and the branch to ask GitHub about.
+/// Its PR may never have been in a collector snapshot at all — merged straight
+/// past the open sweep, or off the end of the bounded recently-merged list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnlinkedWorktree {
+    pub task_id: i64,
+    pub repo: String,
+    pub branch: String,
+}
+
 /// How long a finished task stays visible in the terminal column. One constant so
 /// the manual "Archive done" button and the auto-sweep agree on "old enough".
 pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;

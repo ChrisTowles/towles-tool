@@ -242,6 +242,19 @@ impl Repo {
         self.repo.try_find_reference(upstream.as_ref().as_bstr()).ok().flatten().is_none()
     }
 
+    /// Whether `branch` (a short name) ever reached the remote, from local refs
+    /// alone — the free gate in front of asking GitHub about one branch.
+    ///
+    /// `false` only where local state *proves* it never did: the branch is here,
+    /// with no upstream configured and no remote-tracking ref. A pruned `[gone]`
+    /// upstream and a vanished branch both answer `true` — that is how a merged
+    /// PR's branch ends up looking.
+    pub fn branch_was_pushed(&self, branch: &str) -> bool {
+        self.has_rev(&format!("refs/remotes/origin/{branch}"))
+            || self.upstream_gone(&format!("refs/heads/{branch}"))
+            || !self.has_rev(&format!("refs/heads/{branch}"))
+    }
+
     /// Unordered — `git for-each-ref refs/heads`.
     pub fn local_branches(&self) -> Vec<String> {
         let Ok(platform) = self.repo.references() else {
@@ -591,5 +604,33 @@ mod tests {
         repo.git(&["config", "branch.feature.merge", "refs/heads/feature"]);
         let git = Repo::open(repo.path()).expect("open");
         assert!(git.upstream_gone("refs/heads/feature"));
+    }
+
+    #[test]
+    fn branch_was_pushed_says_no_only_for_a_provably_local_branch() {
+        let repo = TestRepo::new();
+        repo.git(&["checkout", "--quiet", "-b", "feature"]);
+        repo.commit_file("f.txt", "work");
+        let git = Repo::open(repo.path()).expect("open");
+        assert!(!git.branch_was_pushed("feature"), "no upstream, no tracking ref");
+
+        // A branch nobody has heard of could still be a merged PR's, deleted
+        // locally afterwards.
+        assert!(git.branch_was_pushed("never-existed"));
+
+        repo.git(&["update-ref", "refs/remotes/origin/feature", "feature"]);
+        assert!(Repo::open(repo.path()).expect("open").branch_was_pushed("feature"));
+    }
+
+    #[test]
+    fn branch_was_pushed_survives_the_prune_that_follows_a_merge() {
+        let repo = TestRepo::new();
+        repo.git(&["checkout", "--quiet", "-b", "feature"]);
+        repo.commit_file("f.txt", "work");
+        repo.git(&["remote", "add", "origin", "https://example.com/x.git"]);
+        repo.git(&["config", "branch.feature.remote", "origin"]);
+        repo.git(&["config", "branch.feature.merge", "refs/heads/feature"]);
+        let git = Repo::open(repo.path()).expect("open");
+        assert!(git.branch_was_pushed("feature"));
     }
 }

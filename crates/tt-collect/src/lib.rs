@@ -293,6 +293,7 @@ fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
         }
         Err(e) => log::warn!("open_pr_refs_missing_from_cache failed: {e}"),
     }
+    probe_unlinked_worktree_prs(store, &dir_by_repo, now_ms);
     if let Err(e) = store.auto_attach_worktree_prs(now_ms) {
         log::warn!("auto_attach_worktree_prs failed: {e}");
     }
@@ -303,6 +304,82 @@ fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
     // that creates done tasks in the first place.
     if let Err(e) = store.archive_closed_tasks(now_ms - tt_store::ARCHIVE_AFTER_MS, now_ms) {
         log::warn!("archive_closed_tasks failed: {e}");
+    }
+}
+
+/// How long a worktree task waits before asking GitHub about its branch again.
+const PR_PROBE_INTERVAL_MS: i64 = 15 * 60 * 1000;
+
+/// `gh` calls one pass may spend on branch probes. Past this the rest keep their
+/// unstamped clock and lead the next pass's queue.
+const PR_PROBE_MAX_CALLS: usize = 8;
+
+/// Candidates read per pass. Wider than the call cap because the pushed-branch
+/// gate is free — rejecting a never-pushed task must not spend a call slot.
+const PR_PROBE_CANDIDATES: usize = PR_PROBE_MAX_CALLS * 4;
+
+/// Ask GitHub about the branch of each worktree task with no PR linked yet.
+///
+/// The snapshot can't answer this: it holds open PRs plus a bounded merged list,
+/// so a PR that merges between two open sweeps links only if the merged sweep
+/// covers it — and every squash merge from a task worktree lands that way, `gh
+/// pr merge` dying on "'main' is already used by worktree" once the API merge is
+/// done. Miss the window and the task never learns it had a PR at all. Per
+/// *task* rather than per repo, so two brakes on the GraphQL budget (#322): the
+/// free pushed-branch gate, and the call cap with its stamped clock.
+fn probe_unlinked_worktree_prs(
+    store: &Store,
+    dir_by_repo: &std::collections::HashMap<String, PathBuf>,
+    now_ms: i64,
+) {
+    let candidates =
+        match store.unlinked_worktrees(now_ms - PR_PROBE_INTERVAL_MS, PR_PROBE_CANDIDATES) {
+            Ok(candidates) => candidates,
+            Err(e) => {
+                log::warn!("unlinked_worktrees failed: {e}");
+                return;
+            }
+        };
+
+    let mut probed = Vec::new();
+    let mut found = Vec::new();
+    let mut calls = 0;
+    for task in candidates {
+        // No dir means no way to ask, so the clock stays unstamped: the answer
+        // is still owed once the repo is reachable again.
+        let Some(dir) = dir_by_repo.get(&task.repo) else {
+            continue;
+        };
+        // The free half of the answer: a branch git can prove never left this
+        // machine has no PR to find, which is the one unbounded case here.
+        let pushed = tt_git::repo::open(dir).is_ok_and(|repo| repo.branch_was_pushed(&task.branch));
+        if !pushed {
+            probed.push(task.task_id);
+            continue;
+        }
+        if calls >= PR_PROBE_MAX_CALLS {
+            break;
+        }
+        calls += 1;
+        // Stamped on a miss and an error alike: this clock records that the
+        // question was asked, not that it was answered.
+        probed.push(task.task_id);
+        match prs::fetch_branch_pr(dir, &task.repo, &task.branch) {
+            Ok(Some(pr)) => found.push(pr),
+            Ok(None) => {}
+            Err(e) => log::warn!("branch PR probe for {}#{} failed: {e}", task.repo, task.branch),
+        }
+    }
+
+    if !found.is_empty()
+        && let Err(e) = store.upsert_prs(&found)
+    {
+        log::warn!("upsert_prs failed: {e}");
+    }
+    if !probed.is_empty()
+        && let Err(e) = store.mark_pr_probe(&probed, now_ms)
+    {
+        log::warn!("mark_pr_probe failed: {e}");
     }
 }
 
@@ -852,6 +929,40 @@ mod tests {
     /// `(dir, resolved name)` per tracked repo, for comparing against a literal.
     fn tracked(repos: &[TrackedRepo]) -> Vec<(&Path, Option<&str>)> {
         repos.iter().map(|r| (r.dir.as_path(), r.name.as_deref())).collect()
+    }
+
+    /// One worktree task, unlinked, bound to `o/x`.
+    fn store_with_unlinked_task() -> (Store, i64) {
+        let store = Store::open_in_memory().unwrap();
+        let task = store.add_task("t", "doing", None, None, 1).unwrap();
+        store.set_task_worktree(task.id, "/r", Some("o/x"), Some("feat/y"), Some("/w")).unwrap();
+        (store, task.id)
+    }
+
+    /// Well past one probe interval, so a candidate is actually due.
+    const PROBE_NOW: i64 = PR_PROBE_INTERVAL_MS * 10;
+
+    /// A repo the sweep couldn't name is a question still owed, not one asked:
+    /// stamping here would sit on the task for the whole interval for nothing.
+    #[test]
+    fn a_branch_probe_with_no_repo_dir_leaves_the_clock_alone() {
+        let (store, id) = store_with_unlinked_task();
+        probe_unlinked_worktree_prs(&store, &std::collections::HashMap::new(), PROBE_NOW);
+        assert_eq!(store.unlinked_worktrees(0, 8).unwrap().len(), 1, "task {id} still owed");
+    }
+
+    /// A branch the local repo answers for — here by not being a repo at all,
+    /// with `Repo::branch_was_pushed` covering the real shapes — costs no `gh`
+    /// call, and the stamp is what stops it being reconsidered every pass.
+    #[test]
+    fn a_locally_answered_branch_is_stamped_without_asking_github() {
+        let (store, _) = store_with_unlinked_task();
+        let dir = tempfile::tempdir().unwrap();
+        let index =
+            std::collections::HashMap::from([("o/x".to_string(), dir.path().to_path_buf())]);
+        probe_unlinked_worktree_prs(&store, &index, PROBE_NOW);
+        assert!(store.unlinked_worktrees(PROBE_NOW - 1, 8).unwrap().is_empty());
+        assert_eq!(store.unlinked_worktrees(PROBE_NOW, 8).unwrap().len(), 1);
     }
 
     #[test]
