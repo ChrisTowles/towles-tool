@@ -36,4 +36,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The PR's own base, not `main` — a stacked PR is judged against what it
       # actually branched from.
-      - run: cargo xtask comment-budget --whole-files --new-from-merge-base "${{ github.base_ref || 'main' }}"
+      - run: cargo comment-budget --whole-files --new-from-merge-base "${{ github.base_ref || 'main' }}"

@@ -11,20 +11,23 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
-cargo xtask comment-budget          # comment volume on the lines this branch adds — what CI runs
-cargo xtask comment-budget --all    # every file in the repo: the standing backlog
-cargo xtask comment-budget --all --report            # the backlog as surfaces + worst files
-cargo xtask comment-budget --all --surface client-logic   # one surface, for a session spent fixing it
+cargo comment-budget                # comment volume on the lines this branch adds — what CI runs
+cargo comment-budget --all          # every file in the repo: the standing backlog
+cargo comment-budget --all --report                  # the backlog as surfaces + worst files
+cargo comment-budget --all --surface client-logic    # one surface, for a session spent fixing it
 ```
 
 `comment-budget` is the one gate on comment sprawl, and the only one spanning
 Rust and frontend (oxlint implements no comment-volume rule at all). Budgets are
-per *surface* in **`comment-budget.toml`**; the mechanics and why they are what
-they are live in `xtask/src/comment_budget.rs`'s module doc. Three rules shape
-how you write:
+per *surface* in **`comment-budget.toml`**; the mechanics live in
+[`crates/comment-budget`](../crates/comment-budget/README.md), which is a
+published package rather than repo-local tooling — see **Releasing
+comment-budget** below. Three rules shape how you write:
 
-- **`//!` is exempt, `///` and `//` are counted.** Module docs are where the
-  hard-won why lives and are never capped; item docs and narration are the bloat.
+- **`//!` is exempt, `///` and `//` are counted** — but only for a kind's first
+  `exempt_free` lines (12, for Rust). Module docs are where the hard-won why
+  lives; past that they count like anything else, so moving prose into `//!`
+  buys nothing.
 - **No baseline, no per-file exceptions** — a list of files allowed to fail is a
   ledger of debt nobody pays. The only escape is `comment-budget: allow(<reason>)`
   at the top of a file, and the reason is mandatory.
@@ -34,6 +37,22 @@ how you write:
 CI judges only the lines a branch adds. `--all` is the repo-wide backlog, at
 ~500 errors — never wire it to `pull_request`, and never lower a budget to make
 it pass.
+
+## Releasing comment-budget
+
+`crates/comment-budget` is the one thing here that ships to the public: MIT OR
+Apache-2.0, to crates.io as source and to npm as `@towles-tool/comment-budget`
+with a prebuilt binary per platform. To cut one, bump `Cargo.toml` **and**
+`npm/comment-budget/package.json` (version plus all three `optionalDependencies`
+pins) together — `npm_pins` fails if they disagree — then merge and dispatch
+**Release comment-budget**, which defaults to a dry run. Rehearse locally with
+`npm/pack.sh dist --wrapper` and `npm/publish.sh --dry-run dist/*.tgz`.
+
+Both registries refuse to replace a published version, so re-running a
+half-finished release is safe, and both authenticate by trusted publishing — the
+job trades its OIDC id-token for a short-lived credential, so no token is stored
+here. That trust can only be configured against a package that already exists,
+so a **new** npm name is published by hand once.
 
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
 `tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its

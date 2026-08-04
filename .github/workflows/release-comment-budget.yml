@@ -1,0 +1,135 @@
+name: Release comment-budget
+
+# The button that ships `crates/comment-budget` to crates.io and npm. Never
+# automatic: merging to main runs the gate and nothing else, and a release
+# happens only when someone dispatches this.
+#
+# Re-running a half-finished release is safe and expected — both registries
+# refuse to replace a published version, so the registry, not this trigger, is
+# what stops a double publish. Bump `Cargo.toml` and
+# `npm/comment-budget/package.json` together (the `npm_pins` test fails if they
+# disagree) and merge that before dispatching.
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Resolve and report what would publish, without publishing
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # One runner per platform, because a macOS binary needs an SDK that cannot be
+  # vendored onto a Linux box. Each builds only its own platform's package.
+  build:
+    strategy:
+      # One platform failing must not cancel the others: the artifacts are
+      # independent, and knowing which platforms work is the point of a dry-run.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            name: linux-x64
+            # The wrapper is platform-independent, so exactly one runner emits
+            # it — otherwise three identical tarballs race for the same name.
+            wrapper: "--wrapper"
+          - runner: ubuntu-24.04-arm
+            name: linux-arm64
+            wrapper: ""
+          - runner: macos-14
+            name: darwin-arm64
+            wrapper: ""
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: crates/comment-budget/npm/pack.sh dist ${{ matrix.wrapper }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.name }}
+          path: dist/*.tgz
+          if-no-files-found: error
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      # Naming any permission replaces the whole default set, so `contents` has
+      # to be restated or checkout fails with a "repository not found" that
+      # reads like the repo is gone rather than unreadable.
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Node 22 bundles npm 10, which predates OIDC.
+      - run: npm install -g npm@latest
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      # No token: publishing exchanges the job's id-token for a short-lived
+      # registry credential, so there is nothing here to rotate or leak, and the
+      # trust is pinned to this repo, this file, and this environment.
+      #
+      # That trust cannot be configured until a package exists — `npm trust`
+      # 404s otherwise — so the four packages are published once by hand from a
+      # maintainer's own npm session. A dry-run needs no credential at all; it
+      # only reads the registry.
+      - run: |
+          crates/comment-budget/npm/publish.sh \
+            ${{ inputs.dry-run && '--dry-run' || '' }} \
+            $(find "$PWD/packages" -name '*.tgz' | sort)
+
+  # Independent of npm: crates.io distributes the source, npm distributes the
+  # prebuilt binaries, and one registry being down must not strand the other.
+  publish-crate:
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # `cargo publish` errors on a version that is already up, which would make
+      # re-running a half-finished release fail on the half that succeeded. Ask
+      # the registry first, the same way the npm script does.
+      - id: check
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/comment-budget/Cargo.toml | head -1)"
+          if curl -sf -H 'User-Agent: towles-tool release' \
+               "https://crates.io/api/v1/crates/comment-budget/$version" >/dev/null; then
+            echo "skip    comment-budget@$version (already published)"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Trusted publishing, same bargain as npm's: the job's id-token is
+      # exchanged for a short-lived registry token, so no secret is stored here.
+      # Configure it on crates.io against this repo and this workflow file.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        if: ${{ !inputs.dry-run && steps.check.outputs.publish == 'true' }}
+      # `--dry-run` packages and verifies without uploading, which is the half
+      # of a release that can fail for reasons a maintainer can still fix — so
+      # it runs even when the version is already up.
+      - if: ${{ inputs.dry-run || steps.check.outputs.publish == 'true' }}
+        run: |
+          cargo publish --manifest-path crates/comment-budget/Cargo.toml \
+            ${{ inputs.dry-run && '--dry-run' || '' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

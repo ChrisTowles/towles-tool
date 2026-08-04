@@ -10,7 +10,7 @@ on the [Yaak](https://github.com/mountain-loop/yaak) repo structure (see
 cargo fmt --check                   # rustfmt, 100-col
 cargo clippy --all -- -D warnings   # warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
-cargo xtask comment-budget          # comment volume — what CI gates on
+cargo comment-budget                # comment volume — what CI gates on
 bun run dev / bun start             # tauri dev (laggy) / release build + run
 bun run dev:drive                   # dev, with the window automatable
 bun run drive -- <verb>             # drive it (status|invoke|shot|winshot|click|…)
@@ -26,14 +26,14 @@ and Linux gotchas: **[docs/COMMANDS.md](docs/COMMANDS.md)**. The binary is
 **`tt`** — the `ttr` cutover was hard ([docs/CUTOVER.md](docs/CUTOVER.md)).
 
 **`comment-budget` is the one gate on comment sprawl**, per-surface in
-`comment-budget.toml`. `///` and `//` are counted; `//!` only for its first
-`exempt_free` lines, so a module doc is not a place to move prose to. There is no
-baseline and no exception list, only a `comment-budget: allow(<reason>)`
-directive with a mandatory reason; a file no surface claims is an error. **CI
-judges every file a PR touches, whole** (`--whole-files`), so touch a file and
-you own its volume, and **an error is always addressed in the PR that surfaced
-it**. Don't narrow a change to dodge one, don't reach for `allow(…)` to keep a
-diff small, don't defer it, and never lower a budget to make a run pass.
+`comment-budget.toml`. `///` and `//` count, and `//!` past its first
+`exempt_free` lines — not a place to move prose to. No baseline or exception
+list, only `comment-budget: allow(<reason>)`, reason mandatory; an unclaimed file
+is an error. **CI judges every file a PR touches, whole**, and **an error is
+addressed in the PR that surfaced it** — never by narrowing the change,
+`allow(…)`, or a lowered budget. The gate is `crates/comment-budget`, **the one
+crate here that ships to the public**, so its CLI and config schema are someone
+else's build.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
 mock dev server: `bun run dev:drive` plus a `drive` verb (`shot` is blind to the

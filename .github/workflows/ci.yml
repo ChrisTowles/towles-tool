@@ -111,6 +111,11 @@ jobs:
 
       - name: test
         run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
+        env:
+          # comment-budget's npm wrapper tests need node to prove anything, and
+          # skip themselves when it is missing. This turns that silence into a
+          # failure, so a runner without node cannot pass while proving less.
+          COMMENT_BUDGET_REQUIRE_NODE: "1"
 
   rust-macos:
     name: Rust macOS (clippy, test)

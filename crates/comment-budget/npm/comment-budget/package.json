@@ -1,0 +1,30 @@
+{
+  "name": "@towles-tool/comment-budget",
+  "version": "0.2.0",
+  "description": "A budget for comment volume: AI writes comments faster than anyone can review them, so cap how much commentary a reader wades through to reach the code.",
+  "keywords": ["comments", "ai", "ci", "code-quality"],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisTowles/towles-tool.git",
+    "directory": "crates/comment-budget"
+  },
+  "bin": {
+    "comment-budget": "comment-budget"
+  },
+  "files": ["comment-budget", "postinstall.js", "README.md", "LICENSE-MIT", "LICENSE-APACHE"],
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@towles-tool/comment-budget-linux-x64-gnu": "0.2.0",
+    "@towles-tool/comment-budget-linux-arm64-gnu": "0.2.0",
+    "@towles-tool/comment-budget-darwin-arm64": "0.2.0"
+  }
+}

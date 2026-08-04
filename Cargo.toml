@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+  # Published open-source tooling. Not a `tt-` crate and not part of the
+  # product: it ships to crates.io and npm on its own, so it declares its own
+  # dependency versions rather than inheriting the workspace's.
+  "crates/comment-budget",
   # Shared crates (no Tauri dependency)
   "crates/tt-agentboard",
   "crates/tt-browser",
@@ -25,8 +29,6 @@ members = [
   # Tauri-specific crates
   "crates-tauri/tt-app",
   "crates-tauri/tt-pane",
-  # Dev tooling (cargo xtask), not part of the product
-  "xtask",
 ]
 
 
