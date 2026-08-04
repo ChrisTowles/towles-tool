@@ -9,6 +9,8 @@
 //!
 //! A batch can also fire early: [`spawn`]'s nudge-dir watch diffs each target's file mtime
 //! and acts only on notes naming one of this instance's own PTY sessions ([`note_is_mine`]).
+//! That path is a mutation the user just made, not a poll, which is the whole of what
+//! [`Trigger`] distinguishes ([`should_collect`]).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -96,6 +98,22 @@ enum Batch {
 /// windows making four identical sets of calls; a nudge never does.
 fn reuse_window_ms(seconds: u64) -> i64 {
     seconds as i64 * 1_000
+}
+
+/// What fired a batch. Only [`Trigger::Tick`] is a poll; the rest of the scheduler
+/// treats the two the same.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Trigger {
+    Tick,
+    Nudge,
+}
+
+/// Whether a batch runs. Data collected for a minimized window has no audience, so a
+/// poll skips — but a nudge is a mutation the user made seconds ago, and skipping it
+/// *loses* it: `NudgeSeen` has already advanced past the note, so nothing re-reads it
+/// and the eager refresh degrades to the next tick, up to a full cadence away.
+fn should_collect(trigger: Trigger, minimized: bool) -> bool {
+    trigger == Trigger::Nudge || !minimized
 }
 
 /// One in-flight flag per collector: a batch is spawned fire-and-forget so the select!
@@ -253,15 +271,15 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                     _ = reload.notified() => break,
                     _ = pr_tick.tick(), if collectors.prs.enabled => {
                         let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_open);
+                        spawn_batch(&app, batch, Trigger::Tick, calendar_period_ms, &guards.prs_open);
                     }
                     _ = pr_merged_tick.tick(), if collectors.prs.enabled => {
                         let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_merged);
+                        spawn_batch(&app, batch, Trigger::Tick, calendar_period_ms, &guards.prs_merged);
                     }
                     _ = issue_tick.tick(), if collectors.issues.enabled => {
                         let batch = Batch::Issues { reuse_ms: issue_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.issues);
+                        spawn_batch(&app, batch, Trigger::Tick, calendar_period_ms, &guards.issues);
                     }
                     _ = calendar_tick.tick(), if collectors.calendar.enabled => {
                         // Outside working hours, skip the token-costing `claude -p`
@@ -273,6 +291,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                             spawn_batch(
                                 &app,
                                 Batch::Calendar(calendar_sources.clone()),
+                                Trigger::Tick,
                                 calendar_period_ms,
                                 &guards.calendar,
                             );
@@ -282,6 +301,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                         spawn_batch(
                             &app,
                             Batch::SlackDm(slack_config.clone()),
+                            Trigger::Tick,
                             calendar_period_ms,
                             &guards.slack,
                         );
@@ -301,7 +321,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                                     Batch::SlackDm(_) if slack_on => &guards.slack,
                                     _ => continue,
                                 };
-                                spawn_batch(&app, batch, calendar_period_ms, guard);
+                                spawn_batch(&app, batch, Trigger::Nudge, calendar_period_ms, guard);
                             }
                         }
                     }
@@ -325,30 +345,34 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
 
 /// Fire-and-forget a collect batch so the select! loop stays hot. A tick whose
 /// collector is still in flight is skipped.
-fn spawn_batch(app: &AppHandle, batch: Batch, calendar_period_ms: i64, guard: &Arc<AtomicBool>) {
+fn spawn_batch(
+    app: &AppHandle,
+    batch: Batch,
+    trigger: Trigger,
+    calendar_period_ms: i64,
+    guard: &Arc<AtomicBool>,
+) {
     if !claim_in_flight(guard) {
         return;
     }
     let app = app.clone();
     let guard = guard.clone();
     tauri::async_runtime::spawn(async move {
-        run_batch(&app, batch, calendar_period_ms).await;
+        run_batch(&app, batch, trigger, calendar_period_ms).await;
         guard.store(false, Ordering::Release);
     });
 }
 
-async fn run_batch(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
+async fn run_batch(app: &AppHandle, batch: Batch, trigger: Trigger, calendar_period_ms: i64) {
     let app = app.clone();
     let _ = tauri::async_runtime::spawn_blocking(move || {
-        run_batch_blocking(&app, batch, calendar_period_ms)
+        run_batch_blocking(&app, batch, trigger, calendar_period_ms)
     })
     .await;
 }
 
-fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
-    // Data collected while minimized has no audience; the first tick after a restore
-    // refreshes everything.
-    if main_window_minimized(app) {
+fn run_batch_blocking(app: &AppHandle, batch: Batch, trigger: Trigger, calendar_period_ms: i64) {
+    if !should_collect(trigger, main_window_minimized(app)) {
         return;
     }
 
@@ -629,6 +653,17 @@ mod tests {
             changed_nudge_batches(dir.path(), &mut seen, &slack, &mine).is_empty(),
             "a note addressed to another instance must not fire this one"
         );
+    }
+
+    /// A minimized window is a reason to skip a *poll*, never a nudge: the note
+    /// has already been consumed by the time this decides, so a skip is a loss,
+    /// not a deferral.
+    #[test]
+    fn a_minimized_window_skips_a_tick_but_never_a_nudge() {
+        assert!(!should_collect(Trigger::Tick, true));
+        assert!(should_collect(Trigger::Tick, false));
+        assert!(should_collect(Trigger::Nudge, true));
+        assert!(should_collect(Trigger::Nudge, false));
     }
 
     #[test]
