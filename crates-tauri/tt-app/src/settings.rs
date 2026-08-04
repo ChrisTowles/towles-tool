@@ -41,6 +41,14 @@ pub fn settings_get() -> Result<UserSettings, String> {
     tt_config::load().map_err(|e| format!("failed to load settings: {e}"))
 }
 
+/// The built-in prompt improvers, so the Settings screen's "Reset to defaults"
+/// restores what `tt_config` ships instead of a second copy of these prompts.
+#[tauri::command]
+pub fn settings_default_prompt_improvers() -> Vec<tt_config::PromptImprover> {
+    tracing::info!("settings.default_prompt_improvers");
+    tt_config::PromptImprover::defaults()
+}
+
 /// Persist edited settings, preserving any unknown keys already on disk, then
 /// signal the scheduler to re-read collector cadence.
 #[tauri::command]

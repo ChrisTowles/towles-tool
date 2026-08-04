@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { UserSettingsSchema } from "./schemas/settings";
+import { PromptImproverListSchema, UserSettingsSchema } from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
 
@@ -86,6 +86,29 @@ export function nextPromptImproverId(improvers: PromptImprover[], label: string)
     const candidate = `${base}-${n}`;
     if (!taken.has(candidate)) return candidate;
   }
+}
+
+/** Read from `tt_config` — a second copy of prompts this long drifts. */
+export function defaultPromptImprovers() {
+  return invoke<PromptImprover[]>(
+    "settings_default_prompt_improvers",
+    {},
+    { schema: PromptImproverListSchema },
+  );
+}
+
+/** Restores the built-ins **in place** — a missing one is appended, and an
+ * improver the user added of their own is untouched. */
+export function withDefaultPromptImprovers(
+  current: PromptImprover[],
+  defaults: PromptImprover[],
+): PromptImprover[] {
+  const byId = new Map(defaults.map((d) => [d.id, d]));
+  const present = new Set(current.map((t) => t.id));
+  return [
+    ...current.map((t) => byId.get(t.id) ?? t),
+    ...defaults.filter((d) => !present.has(d.id)),
+  ];
 }
 
 export type CalendarCollector = {
