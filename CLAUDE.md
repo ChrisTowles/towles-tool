@@ -4,15 +4,6 @@ Rust rewrite of `towles-tool`: a Tauri 2 desktop app plus the `tt` CLI, modeled
 on the [Yaak](https://github.com/mountain-loop/yaak) repo structure (see
 [ATTRIBUTION.md](ATTRIBUTION.md)).
 
-## The Towles twins
-
-**Chris** (this repo) and **Patrick** ([`slyedoc`](https://github.com/slyedoc) —
-that spelling, not `slydoc`) are identical twin brothers. Patrick builds
-**Solari**, Bevy's real-time raytraced lighting, so `crates/tt-jarvis` pins
-`slyedoc/bevy@solari-rt-pipeline` rather than a released Bevy, running it live in
-this app is a repo goal, and "my brother's work" in a graphics context is that
-fork.
-
 ## Commands
 
 ```sh

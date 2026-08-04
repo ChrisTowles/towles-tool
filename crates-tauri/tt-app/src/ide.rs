@@ -23,7 +23,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tt_agentboard::fs_notify::MultiFileNotifier;
+use tt_agentboard::fs_notify::{DirPathsNotifier, MultiFileNotifier};
 
 use crate::terminal::TermState;
 
@@ -1004,6 +1004,167 @@ pub async fn ide_rename(
     })
     .await
     .map_err(|e| format!("rename task failed: {e}"))?
+}
+
+/// One recursive-tree event batch for the editor's Explorer, distinct from
+/// [`FILE_CHANGED_EVENT`] so the per-file viewer logic never sees tree noise.
+pub const DIR_CHANGED_EVENT: &str = "ide://dir-changed";
+
+/// Subtrees whose churn the Explorer never needs: filtered *before* the
+/// debounce batch, so a build can't flood the event channel.
+const IGNORED_TREE_DIRS: [&str; 6] = [
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    ".venv",
+    "__pycache__",
+];
+
+fn in_ignored_tree(path: &Path) -> bool {
+    path.components().any(
+        |c| matches!(c, std::path::Component::Normal(n) if IGNORED_TREE_DIRS.iter().any(|d| n == *d)),
+    )
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirChange {
+    path: String,
+    /// "added" when the path exists at emit time, "deleted" otherwise — enough
+    /// for VS Code's file service to refresh the right listing.
+    kind: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirChangedPayload {
+    dir: String,
+    changes: Vec<DirChange>,
+}
+
+struct ExplorerWatch {
+    count: u32,
+    _notifier: DirPathsNotifier,
+}
+
+/// Refcounted recursive watchers, one per checkout the Explorer shows.
+#[derive(Default)]
+pub struct ExplorerWatches(Mutex<HashMap<String, ExplorerWatch>>);
+
+#[tauri::command]
+pub fn ide_watch_dir(
+    app: AppHandle,
+    watches: State<ExplorerWatches>,
+    dir: String,
+) -> Result<(), String> {
+    let mut map = watches.0.lock().unwrap();
+    if let Some(watch) = map.get_mut(&dir) {
+        watch.count += 1;
+        return Ok(());
+    }
+    // Events arrive with symlinks resolved (macOS always, Linux sometimes),
+    // so relativizing tries the canonical root before the caller's spelling.
+    let resolved_root = std::fs::canonicalize(&dir).unwrap_or_else(|_| PathBuf::from(&dir));
+    let event_dir = dir.clone();
+    let app = app.clone();
+    let notifier = DirPathsNotifier::watch(
+        Path::new(&dir),
+        |p| !in_ignored_tree(p),
+        move |paths| {
+            let changes: Vec<DirChange> = paths
+                .iter()
+                .filter_map(|abs| {
+                    let rel = abs
+                        .strip_prefix(&resolved_root)
+                        .or_else(|_| abs.strip_prefix(&event_dir))
+                        .ok()?;
+                    Some(DirChange {
+                        path: rel.to_string_lossy().into_owned(),
+                        kind: if abs.exists() { "added" } else { "deleted" },
+                    })
+                })
+                .collect();
+            if changes.is_empty() {
+                return;
+            }
+            tracing::debug!(dir = %event_dir, count = changes.len(), "explorer tree changed on disk");
+            let payload = DirChangedPayload { dir: event_dir.clone(), changes };
+            let _ = app.emit_to(MAIN_WINDOW_LABEL, DIR_CHANGED_EVENT, payload);
+        },
+    )
+    .map_err(|e| format!("cannot watch {dir}: {e}"))?;
+    tracing::debug!(dir = %dir, "explorer tree watch started");
+    map.insert(dir, ExplorerWatch { count: 1, _notifier: notifier });
+    Ok(())
+}
+
+/// Unmatched calls are a no-op, like [`ide_unwatch_files`].
+#[tauri::command]
+pub fn ide_unwatch_dir(watches: State<ExplorerWatches>, dir: String) {
+    let mut map = watches.0.lock().unwrap();
+    let Some(watch) = map.get_mut(&dir) else {
+        return;
+    };
+    watch.count -= 1;
+    if watch.count == 0 {
+        tracing::debug!(dir = %dir, "explorer tree watch stopped");
+        map.remove(&dir);
+    }
+}
+
+/// Serializes read-modify-write on the one editor-sessions file. The frontend
+/// owns the record shape (`lib/editor-session.ts`); this stores opaque JSON
+/// per checkout dir beside the other instance state.
+#[derive(Default)]
+pub struct EditorSessions(Mutex<()>);
+
+const EDITOR_SESSION_CAP: usize = 50;
+
+fn editor_sessions_path() -> Result<PathBuf, String> {
+    tt_config::agentboard_dir().map(|d| d.join("editor-sessions.json")).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ide_session_load(
+    sessions: State<EditorSessions>,
+    dir: String,
+) -> Result<Option<String>, String> {
+    let _guard = sessions.0.lock().unwrap();
+    let path = editor_sessions_path()?;
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text) else {
+        return Ok(None);
+    };
+    Ok(map.get(&dir).map(std::string::ToString::to_string))
+}
+
+#[tauri::command]
+pub fn ide_session_save(
+    sessions: State<EditorSessions>,
+    dir: String,
+    json: String,
+) -> Result<(), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("session is not JSON: {e}"))?;
+    let _guard = sessions.0.lock().unwrap();
+    let path = editor_sessions_path()?;
+    let mut map = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&s).ok())
+        .unwrap_or_default();
+    map.insert(dir, value);
+    // Deleted checkouts age out here rather than on a schedule of their own.
+    if map.len() > EDITOR_SESSION_CAP {
+        map.retain(|d, _| Path::new(d).is_dir());
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    atomic_write(&path, &serde_json::Value::Object(map).to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -26,8 +26,10 @@ import { recallViewState, rememberViewState, viewStateKey } from "@/lib/editor-v
 import { NotInTauri, errorMessage } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { IdeSelectionOverlay } from "@/components/ide-selection-chip";
-import { EditorContextMenu } from "@/components/editor-context-menu";
+import { EditorStatusStrip } from "@/components/editor-status-strip";
 import { ViewerBanner } from "@/components/viewer-banner";
+import { trackEditorFocus } from "@/lib/editor-focus";
+import { openInExternalEditor } from "@/lib/external-editor";
 import {
   mentionRangeFrom,
   sameMentionRange,
@@ -35,9 +37,9 @@ import {
   type MentionRange,
 } from "@/lib/ide-selection";
 
-/** Monaco editor for one repo file. Opens **read-only** (the pane header's
- * toggle arms typing) and auto-saves after a typing pause; a write is refused
- * if the file moved on disk — `lib/viewer-refresh.ts` decides the banner. */
+/** Monaco editor for one repo file. Opens editable (the pane header's toggle
+ * locks it) and auto-saves after a typing pause; a write is refused if the
+ * file moved on disk — `lib/viewer-refresh.ts` decides the banner. */
 
 /** Text anchors from Claude's openFile tool, or a bare line from a `path:line`
  * terminal link; text anchors win when both are set. */
@@ -124,6 +126,9 @@ export function CodeViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** The live editor as *state*, so the status strip renders with it. */
+  const [editorInst, setEditorInst] =
+    useState<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
   const [selection, setSelection] = useState<MentionRange | null>(null);
   /** "conflict" = disk changed under unsaved edits, "deleted" = file gone and
    * the buffer is all that's left (⌘S recreates it). Mutually exclusive. */
@@ -208,11 +213,12 @@ export function CodeViewer({
         scrollBeyondLastLine: false,
         renderLineHighlight: "line",
         occurrencesHighlight: "off",
-        contextmenu: false,
         wordWrap: wordWrapRef.current ? "on" : "off",
         readOnly: !editableRef.current,
       });
       editorRef.current = editor;
+      setEditorInst(editor);
+      trackEditorFocus(editor);
       savedVersionRef.current = model.getAlternativeVersionId();
       setLoading(false);
       const remembered = recallViewState(viewStateKey(dir, path));
@@ -351,10 +357,25 @@ export function CodeViewer({
 
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void save());
 
-      editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
-        () => void mention(),
-      );
+      // Actions, not bare commands: they land in the native context menu too.
+      editor.addAction({
+        id: "tt.sendToClaude",
+        label: "Send to Claude",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA],
+        contextMenuGroupId: "9_towles",
+        contextMenuOrder: 1,
+        run: () => void mention(),
+      });
+      editor.addAction({
+        id: "tt.openExternal",
+        label: "Open in External Editor",
+        contextMenuGroupId: "9_towles",
+        contextMenuOrder: 2,
+        run: (ed) => {
+          const line = ed.getPosition()?.lineNumber ?? null;
+          void openInExternalEditor(path, { cwd: dir, line, where: "files.editor" });
+        },
+      });
 
       const zoomTo = (px: number) => {
         const clamped = clampEditorFontSize(px);
@@ -410,6 +431,7 @@ export function CodeViewer({
       void ideUnwatchFiles(dir, [path]);
       resolveConflictRef.current = null;
       editorRef.current = null;
+      setEditorInst(null);
       editor?.dispose();
       model?.dispose();
       // A closed file's selection must not stay the folder's ambient context.
@@ -451,7 +473,7 @@ export function CodeViewer({
     return <p className="p-3 text-sm text-muted-foreground">{error}</p>;
   }
   return (
-    <div className="relative h-full w-full">
+    <div className="relative flex h-full w-full flex-col">
       {loading && <p className="absolute p-3 text-sm text-muted-foreground">Loading…</p>}
       {banner === "deleted" && (
         <ViewerBanner message="Deleted on disk — this buffer is all that's left · ⌘S recreates the file" />
@@ -463,9 +485,8 @@ export function CodeViewer({
           onMine={() => void resolveConflictRef.current?.("mine")}
         />
       )}
-      <EditorContextMenu where="files.editor">
-        <div ref={containerRef} className="h-full w-full" />
-      </EditorContextMenu>
+      <div ref={containerRef} className="min-h-0 w-full flex-1" />
+      {editorInst && <EditorStatusStrip editor={editorInst} />}
       <IdeSelectionOverlay
         selection={selection}
         connected={connected}

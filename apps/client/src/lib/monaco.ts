@@ -112,6 +112,8 @@ async function start(): Promise<typeof import("monaco-editor")> {
       "workbench.colorTheme": "Default Dark Modern",
       "workbench.iconTheme": "vs-seti",
       "editor.stickyScroll.enabled": true,
+      // The only completion source for the ~34 languages with no LSP.
+      "editor.wordBasedSuggestions": "allDocuments",
       "editor.bracketPairColorization.enabled": true,
       "editor.guides.bracketPairs": "active",
       "search.exclude": {
@@ -176,12 +178,33 @@ async function start(): Promise<typeof import("monaco-editor")> {
       return true;
     },
   });
+  // Right-click in the Explorer tree → the user's own editor. The tree hands
+  // the clicked resource to the command as its first argument.
+  monaco.editor.registerCommand(
+    "tt.openExplorerItemExternally",
+    (_accessor, resource?: { scheme?: string; path?: string }) => {
+      if (resource?.scheme !== "file" || !resource.path) return;
+      const path = resource.path;
+      void import("@/lib/external-editor").then(({ openInExternalEditor }) =>
+        openInExternalEditor(path, { where: "files.explorer" }),
+      );
+    },
+  );
+  const actions =
+    await import("@codingame/monaco-vscode-api/vscode/vs/platform/actions/common/actions");
+  actions.MenuRegistry.appendMenuItem(actions.MenuId.ExplorerContext, {
+    command: { id: "tt.openExplorerItemExternally", title: "Open in External Editor" },
+    group: "navigation",
+    order: 20,
+  });
   return monaco;
 }
 
 let workspaceDir: string | null = null;
+let unwatchWorkspace: (() => void) | null = null;
 
-/** Point the VS Code workspace at one folder — one at a time, last pane wins. */
+/** Point the VS Code workspace at one folder — one at a time, last pane wins.
+ * The disk watch feeding the Explorer follows the workspace, same lifecycle. */
 export async function setMonacoWorkspace(dir: string): Promise<void> {
   const monaco = await loadMonaco();
   if (workspaceDir === dir) return;
@@ -189,8 +212,13 @@ export async function setMonacoWorkspace(dir: string): Promise<void> {
   const { reinitializeWorkspace } =
     await import("@codingame/monaco-vscode-configuration-service-override");
   await reinitializeWorkspace({ id: dir, uri: monaco.Uri.file(dir) });
-  const { syncLspWorkspace } = await import("@/lib/lsp");
+  const [{ syncLspWorkspace }, { watchWorkspaceForExplorer }] = await Promise.all([
+    import("@/lib/lsp"),
+    import("@/lib/monaco-fs"),
+  ]);
   syncLspWorkspace(dir);
+  unwatchWorkspace?.();
+  unwatchWorkspace = watchWorkspaceForExplorer(dir);
 }
 
 let detachSidebar: (() => void) | null = null;

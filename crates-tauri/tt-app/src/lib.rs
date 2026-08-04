@@ -623,6 +623,8 @@ pub fn run() {
         .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
         .manage(ide::ViewerWatches::default())
+        .manage(ide::ExplorerWatches::default())
+        .manage(ide::EditorSessions::default())
         .manage(preview::PreviewWatches::default())
         .manage(asset::AssetScopes::default())
         .manage(task_explorer::ExplorerState::default())
@@ -792,6 +794,10 @@ pub fn run() {
             ide::ide_write_file,
             ide::ide_watch_files,
             ide::ide_unwatch_files,
+            ide::ide_watch_dir,
+            ide::ide_unwatch_dir,
+            ide::ide_session_load,
+            ide::ide_session_save,
             ide::ide_diff_resolve,
         ])
         .run(context)
