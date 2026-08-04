@@ -341,9 +341,8 @@ fn probe_unlinked_worktree_prs(
             }
         };
 
+    let mut ask = Vec::new();
     let mut probed = Vec::new();
-    let mut found = Vec::new();
-    let mut calls = 0;
     for task in candidates {
         // No dir means no way to ask, so the clock stays unstamped: the answer
         // is still owed once the repo is reachable again.
@@ -353,33 +352,39 @@ fn probe_unlinked_worktree_prs(
         // The free half of the answer: a branch git can prove never left this
         // machine has no PR to find, which is the one unbounded case here.
         let pushed = tt_git::repo::open(dir).is_ok_and(|repo| repo.branch_was_pushed(&task.branch));
-        if !pushed {
-            probed.push(task.task_id);
-            continue;
-        }
-        if calls >= PR_PROBE_MAX_CALLS {
-            break;
-        }
-        calls += 1;
-        // Stamped on a miss and an error alike: this clock records that the
-        // question was asked, not that it was answered.
         probed.push(task.task_id);
-        match prs::fetch_branch_pr(dir, &task.repo, &task.branch) {
-            Ok(Some(pr)) => found.push(pr),
-            Ok(None) => {}
-            Err(e) => log::warn!("branch PR probe for {}#{} failed: {e}", task.repo, task.branch),
+        if pushed {
+            ask.push((task, dir.clone()));
+        }
+        if ask.len() >= PR_PROBE_MAX_CALLS {
+            break;
         }
     }
 
-    if !found.is_empty()
-        && let Err(e) = store.upsert_prs(&found)
-    {
-        log::warn!("upsert_prs failed: {e}");
-    }
+    // Claimed before a single call goes out, so the open and merged passes a
+    // nudge fires together can't both spend one on the same task. Stamped on a
+    // miss and an error alike: the clock records that the question was asked.
     if !probed.is_empty()
         && let Err(e) = store.mark_pr_probe(&probed, now_ms)
     {
         log::warn!("mark_pr_probe failed: {e}");
+        return;
+    }
+
+    let found: Vec<_> = ask
+        .into_iter()
+        .filter_map(|(task, dir)| match prs::fetch_branch_pr(&dir, &task.repo, &task.branch) {
+            Ok(pr) => pr,
+            Err(e) => {
+                log::warn!("branch PR probe for {}#{} failed: {e}", task.repo, task.branch);
+                None
+            }
+        })
+        .collect();
+    if !found.is_empty()
+        && let Err(e) = store.upsert_prs(&found)
+    {
+        log::warn!("upsert_prs failed: {e}");
     }
 }
 
@@ -475,11 +480,12 @@ pub fn collect_prs_open(
     summary
 }
 
-/// Collect just the recently-merged authored PRs across `repo_dirs` — the
-/// slow half of [`collect_prs`]. This list exists only to catch a
-/// just-merged branch before its worktree is removed; it isn't the mechanism
-/// that detects a task-linked PR merging (that's [`sync_task_links`], run
-/// from [`collect_prs_open`]'s faster cadence), so this doesn't call it.
+/// Collect just the recently-merged authored PRs across `repo_dirs` — the slow
+/// half of [`collect_prs`]. Runs [`sync_task_links`] on its own rows rather than
+/// leaving them for the open half: a merge nudge fires both, concurrently, and
+/// the open pass linking rows the merged pass has not written yet is a race it
+/// loses about as often as it wins — for a 20-minute wait, on the one event the
+/// nudge exists to make immediate.
 ///
 /// `reuse_ms` works as it does for [`collect_issues`].
 pub fn collect_prs_merged(
@@ -495,7 +501,10 @@ pub fn collect_prs_merged(
         None => store.replace_merged_prs(all),
         Some(repos) => store.replace_merged_prs_for_repos(repos, all),
     };
-    finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms)
+    let summary =
+        finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
+    sync_task_links(store, &dirs_of(&repos), now_ms);
+    summary
 }
 
 /// Collect the watched Slack DM's latest state via the Slack Web API and
@@ -1139,6 +1148,21 @@ mod tests {
         let after = store.get_task(task.id).unwrap().unwrap();
         assert_eq!(after.status, "doing", "frozen where it was closed");
         assert_eq!(after.outcome.as_deref(), Some("abandoned"));
+    }
+
+    /// Both halves must run the link sync, or the pass that writes the merged
+    /// rows and the pass that links them are two racing tasks — and a nudge
+    /// fires them together. Asserted through archiving, the one effect of
+    /// `sync_task_links` that needs no `gh`.
+    #[test]
+    fn the_merged_half_syncs_task_links_too() {
+        let store = Store::open_in_memory().unwrap();
+        let done = store.add_task("done", "doing", None, None, 1).unwrap();
+        store.close_task(done.id, TaskOutcome::Done, 10).unwrap();
+
+        let now = tt_store::ARCHIVE_AFTER_MS + 100;
+        assert!(collect_prs_merged(&store, &[], FETCH_NOW, now).ok);
+        assert!(store.get_task(done.id).unwrap().unwrap().archived_at.is_some());
     }
 
     #[test]
