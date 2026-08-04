@@ -749,6 +749,7 @@ pub fn run() {
             doctor::doctor_run,
             settings::settings_get,
             settings::settings_set,
+            settings::settings_default_prompt_improvers,
             terminal::spawn::term_start,
             terminal::spawn::term_kill,
             terminal::input::term_write,

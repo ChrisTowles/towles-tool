@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSettingsWriter,
   nextCalendarSourceId,
+  withDefaultPromptImprovers,
   type CalendarSource,
+  type PromptImprover,
   type UserSettings,
 } from "./settings";
 
@@ -24,6 +26,37 @@ describe("nextCalendarSourceId", () => {
     // label — the suffix is the only thing keeping the lanes apart.
     const existing = [source("calendar-1")];
     expect(nextCalendarSourceId(existing, "Calendar 1")).toBe("calendar-1-2");
+  });
+});
+
+const improver = (id: string, over: Partial<PromptImprover> = {}): PromptImprover => ({
+  id,
+  label: id,
+  enabled: true,
+  preferred: false,
+  prompt: `prompt for ${id}`,
+  ...over,
+});
+
+describe("withDefaultPromptImprovers", () => {
+  const defaults = [improver("direct", { preferred: true }), improver("clarify")];
+
+  it("overwrites a matching improver in place, edits and all", () => {
+    const edited = [improver("clarify", { label: "Mine", prompt: "edited", enabled: false })];
+    expect(withDefaultPromptImprovers(edited, defaults)).toEqual([defaults[1], defaults[0]]);
+  });
+
+  it("re-adds a default that was removed, and keeps the user's own", () => {
+    const current = [improver("custom"), improver("direct", { prompt: "edited" })];
+    expect(withDefaultPromptImprovers(current, defaults)).toEqual([
+      current[0],
+      defaults[0],
+      defaults[1],
+    ]);
+  });
+
+  it("is a no-op on an untouched list", () => {
+    expect(withDefaultPromptImprovers(defaults, defaults)).toEqual(defaults);
   });
 });
 

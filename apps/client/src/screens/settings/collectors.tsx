@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -9,8 +19,10 @@ import { PromptTemplateList } from "@/components/prompt-template-list";
 import { NotInTauri } from "@/lib/errors";
 import { storeCollectNow, type CollectRun } from "@/lib/data";
 import {
+  defaultPromptImprovers,
   nextCalendarSourceId,
   nextPromptImproverId,
+  withDefaultPromptImprovers,
   type CalendarSource,
   type PromptImprover,
   type UserSettings,
@@ -108,6 +120,59 @@ function PreferredToggle({
   );
 }
 
+/** Confirmed first: settings save on the spot, so an edited prompt this
+ * overwrites has no undo. */
+function ResetImproversButton({
+  improvers,
+  onChange,
+}: {
+  improvers: PromptImprover[];
+  onChange: (improvers: PromptImprover[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const reset = async () => {
+    setBusy(true);
+    const defaults = await defaultPromptImprovers();
+    setBusy(false);
+    if (defaults.isErr()) {
+      if (!NotInTauri.is(defaults.error)) toast.error(defaults.error.message);
+      return;
+    }
+    setOpen(false);
+    onChange(withDefaultPromptImprovers(improvers, defaults.value));
+    uiAction("prompt_improver.reset", "settings");
+    toast.success("Prompt improvers reset to defaults");
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="text-muted-foreground">
+          Reset to defaults
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Reset the built-in prompt improvers?</AlertDialogTitle>
+          <AlertDialogDescription className="text-pretty">
+            Direct, Clarify, Brainstorm and Interview go back to their shipped names and prompts,
+            discarding your edits to them. Improvers you added yourself are left alone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          {/* Not `AlertDialogAction`: that closes on click, before the defaults land. */}
+          <Button disabled={busy} onClick={() => void reset()}>
+            {busy ? "Resetting…" : "Reset"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // Each prompt is the *instruction* handed to `claude -p`; the "Preferred"
 // toggle decides its own button vs. the form's "More" menu.
 export function PromptImproversEditor({
@@ -166,6 +231,7 @@ export function PromptImproversEditor({
           ? "No instruction — this button falls back to the built-in “restate it in one sentence”."
           : null
       }
+      footerActions={<ResetImproversButton improvers={improvers} onChange={onChange} />}
     />
   );
 }

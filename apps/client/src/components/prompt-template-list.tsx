@@ -34,6 +34,7 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
   enableVerb = (item) => `Enable ${item.label || item.id}`,
   rowWarning,
   rowExtra: RowExtra,
+  footerActions,
 }: {
   items: T[];
   /** Report an edited list. `defer` debounces writes behind typed fields. */
@@ -62,6 +63,8 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
    * rendered just before Remove. A component (not a render prop) so it isn't
    * redefined on every render; `patch` applies a partial update to that row. */
   rowExtra?: ComponentType<{ item: T; patch: (next: Partial<T>) => void }>;
+  /** Optional list-wide controls, rendered beside Add. */
+  footerActions?: ReactNode;
 }) {
   const patch = (index: number, next: Partial<T>, opts?: { defer?: boolean }) =>
     onChange(
@@ -134,10 +137,11 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
         );
       })}
 
-      <div>
+      <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onAdd}>
           {addLabel}
         </Button>
+        {footerActions}
       </div>
     </div>
   );

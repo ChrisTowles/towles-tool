@@ -43,6 +43,9 @@ const PromptImproverSchema = z
   })
   .passthrough();
 
+/** `settings_default_prompt_improvers` answers with a bare array. */
+export const PromptImproverListSchema = z.array(PromptImproverSchema);
+
 const CalendarCollectorSchema = z
   .object({
     enabled: z.boolean(),
