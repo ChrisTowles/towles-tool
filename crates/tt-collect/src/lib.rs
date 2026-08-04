@@ -245,16 +245,11 @@ pub fn collect_issues(
     summary
 }
 
-/// The Board↔GitHub read half for tasks (#339), run after every issues/PRs pass:
-/// copy snapshot state onto refreshed link rows; targeted `gh <issue|pr> view`
-/// for still-`open` links *missing* from the snapshot, since absence is
-/// ambiguous and state is never inferred; auto-attach PRs matching a task's
-/// worktree branch; roll statuses up; archive finished tasks. Never fails the
-/// pass — each stage logs and moves on.
+/// The Board↔GitHub read half for tasks (#339): a targeted `gh <issue|pr> view`
+/// for every still-`open` link *missing* from the snapshot, since absence is
+/// ambiguous and state is never inferred, then [`link_task_prs`]. Never fails
+/// the pass — each stage logs and moves on.
 fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
-    if let Err(e) = store.refresh_link_states_from_cache(now_ms) {
-        log::warn!("refresh_link_states_from_cache failed: {e}");
-    }
     let dir_by_repo = repo_dir_index(repo_dirs);
     match store.open_issue_refs_missing_from_cache() {
         Ok(refs) => {
@@ -293,7 +288,23 @@ fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
         }
         Err(e) => log::warn!("open_pr_refs_missing_from_cache failed: {e}"),
     }
-    probe_unlinked_worktree_prs(store, &dir_by_repo, now_ms);
+    link_task_prs(store, &dir_by_repo, now_ms);
+}
+
+/// What a pass owes its *own* rows: copy their state onto link rows, attach the
+/// branch matches, roll up, archive. Split out of [`sync_task_links`] because
+/// both PR halves have to run it — the merged half writes rows the open half
+/// would otherwise be racing to link — while the targeted `gh view` fetches
+/// above stay on the open half alone, one ref costing one call per pass.
+fn link_task_prs(
+    store: &Store,
+    dir_by_repo: &std::collections::HashMap<String, PathBuf>,
+    now_ms: i64,
+) {
+    if let Err(e) = store.refresh_link_states_from_cache(now_ms) {
+        log::warn!("refresh_link_states_from_cache failed: {e}");
+    }
+    probe_unlinked_worktree_prs(store, dir_by_repo, now_ms);
     if let Err(e) = store.auto_attach_worktree_prs(now_ms) {
         log::warn!("auto_attach_worktree_prs failed: {e}");
     }
@@ -481,11 +492,12 @@ pub fn collect_prs_open(
 }
 
 /// Collect just the recently-merged authored PRs across `repo_dirs` — the slow
-/// half of [`collect_prs`]. Runs [`sync_task_links`] on its own rows rather than
-/// leaving them for the open half: a merge nudge fires both, concurrently, and
-/// the open pass linking rows the merged pass has not written yet is a race it
-/// loses about as often as it wins — for a 20-minute wait, on the one event the
-/// nudge exists to make immediate.
+/// half of [`collect_prs`]. Links its own rows rather than leaving them for the
+/// open half: a merge nudge fires both, concurrently, and the open pass linking
+/// rows the merged pass has not written yet is a race it loses about as often
+/// as it wins — for a 20-minute wait, on the one event the nudge exists to make
+/// immediate. [`link_task_prs`], not the full [`sync_task_links`]: the targeted
+/// fetches in there cost a `gh` call per ref and are the open half's job.
 ///
 /// `reuse_ms` works as it does for [`collect_issues`].
 pub fn collect_prs_merged(
@@ -503,7 +515,7 @@ pub fn collect_prs_merged(
     };
     let summary =
         finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
-    sync_task_links(store, &dirs_of(&repos), now_ms);
+    link_task_prs(store, &repo_dir_index(&dirs_of(&repos)), now_ms);
     summary
 }
 
@@ -1150,12 +1162,12 @@ mod tests {
         assert_eq!(after.outcome.as_deref(), Some("abandoned"));
     }
 
-    /// Both halves must run the link sync, or the pass that writes the merged
-    /// rows and the pass that links them are two racing tasks — and a nudge
-    /// fires them together. Asserted through archiving, the one effect of
-    /// `sync_task_links` that needs no `gh`.
+    /// Both halves must link, or the pass that writes the merged rows and the
+    /// pass that links them are two racing tasks — and a nudge fires them
+    /// together. Asserted through archiving, `link_task_prs`' one effect that
+    /// needs no `gh`.
     #[test]
-    fn the_merged_half_syncs_task_links_too() {
+    fn the_merged_half_links_its_own_rows() {
         let store = Store::open_in_memory().unwrap();
         let done = store.add_task("done", "doing", None, None, 1).unwrap();
         store.close_task(done.id, TaskOutcome::Done, 10).unwrap();
