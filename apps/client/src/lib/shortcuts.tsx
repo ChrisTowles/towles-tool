@@ -169,6 +169,22 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    // Matched by the files pane itself (`matchesShortcut`), which consumes the
+    // chord before the window-level `close-tab` (same keys) can see it.
+    id: "files-close-tab",
+    scope: "agentboard",
+    keys: "mod+w",
+    description: "Close the open file tab",
+    when: "typing in a files pane",
+  },
+  {
+    id: "files-reopen-tab",
+    scope: "agentboard",
+    keys: "mod+shift+t",
+    description: "Reopen the last closed file tab",
+    when: "typing in a files pane",
+  },
+  {
     id: "ab-toggle-rail",
     scope: "agentboard",
     keys: "mod+shift+b",

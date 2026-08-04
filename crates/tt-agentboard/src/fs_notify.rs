@@ -133,6 +133,38 @@ impl ScopedDirNotifier {
     }
 }
 
+/// Like [`DirNotifier`], but reports *which* paths changed — what a file tree
+/// needs to refresh precisely — with a caller filter so build churn (`target`,
+/// `node_modules`) never reaches the debounce batch at all.
+pub struct DirPathsNotifier {
+    _watcher: RecommendedWatcher,
+}
+
+impl DirPathsNotifier {
+    /// Watch `dir` recursively; `keep` decides per event path, `on_change`
+    /// receives the deduplicated batch once per debounce window.
+    pub fn watch<K, F>(dir: &Path, keep: K, on_change: F) -> notify::Result<Self>
+    where
+        K: Fn(&Path) -> bool + Send + 'static,
+        F: Fn(Vec<PathBuf>) + Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel::<PathBuf>();
+        std::thread::spawn(move || debounce_loop(&rx, on_change));
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if let Ok(event) = res {
+                    for path in event.paths {
+                        if keep(&path) {
+                            let _ = tx.send(path);
+                        }
+                    }
+                }
+            })?;
+        watcher.watch(dir, RecursiveMode::Recursive)?;
+        Ok(Self { _watcher: watcher })
+    }
+}
+
 /// Watches a *set of files* with **one** OS watcher instance, debounced like
 /// [`DirNotifier`]. One per checkout, not per file: inotify *instances* are
 /// scarce per-user (128 by default), while directory *watches* on one are the
@@ -657,6 +689,40 @@ mod tests {
         assert!(
             fired_rx.recv_timeout(DEBOUNCE * 3).is_err(),
             "removal has to find the same registration the spelling created"
+        );
+    }
+
+    /// The filter runs before the debounce so an ignored subtree's churn can't
+    /// even pad the batch; a kept write still reports its own path.
+    #[test]
+    fn dir_paths_notifier_reports_kept_paths_and_drops_filtered_ones() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("src")).unwrap();
+        std::fs::create_dir(root.path().join("target")).unwrap();
+
+        let (fired_tx, fired_rx) = mpsc::channel::<Vec<PathBuf>>();
+        let _notifier = DirPathsNotifier::watch(
+            root.path(),
+            |p| !p.components().any(|c| c.as_os_str() == "target"),
+            move |batch| {
+                let _ = fired_tx.send(batch);
+            },
+        )
+        .unwrap();
+        while fired_rx.recv_timeout(DEBOUNCE * 2).is_ok() {}
+
+        std::fs::write(root.path().join("target/noise.txt"), "noise").unwrap();
+        assert!(
+            fired_rx.recv_timeout(DEBOUNCE * 3).is_err(),
+            "a filtered subtree's write must not fire"
+        );
+
+        let kept = root.path().join("src/kept.txt");
+        std::fs::write(&kept, "v1").unwrap();
+        let batch = fired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            batch.iter().any(|p| p.ends_with("src/kept.txt")),
+            "a kept write must report its path: {batch:?}"
         );
     }
 

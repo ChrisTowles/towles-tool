@@ -18,11 +18,11 @@ import {
   type IStat,
 } from "@codingame/monaco-vscode-files-service-override";
 import { Emitter, Event } from "@codingame/monaco-vscode-api/vscode/vs/base/common/event";
-import type { URI } from "@codingame/monaco-vscode-api/vscode/vs/base/common/uri";
+import { URI } from "@codingame/monaco-vscode-api/vscode/vs/base/common/uri";
 import { Disposable } from "@codingame/monaco-vscode-api/vscode/vs/base/common/lifecycle";
 import { invoke } from "@/lib/tauri";
 import { errorMessage } from "@/lib/errors";
-import { ideStat, type FsStat } from "@/lib/ide";
+import { ideStat, ideUnwatchDir, ideWatchDir, onDirChangedOnDisk, type FsStat } from "@/lib/ide";
 import { opensInEditor, previewKindFor } from "@/lib/preview-kind";
 
 type FsDirEntry = { name: string; isDir: boolean };
@@ -56,8 +56,13 @@ class TauriFileSystemProvider
   private readonly _onDidChangeFile = this._register(new Emitter<readonly IFileChange[]>());
   onDidChangeFile = this._onDidChangeFile.event;
 
-  /** Nothing watches the disk, so the Explorer only learns of its own changes. */
   private changed(...changes: IFileChange[]): void {
+    this._onDidChangeFile.fire(changes);
+  }
+
+  /** Disk-side changes from the Rust tree watcher (`watchWorkspaceForExplorer`)
+   * — the workbench can't call `watch()` itself with no files service part. */
+  fireExternalChanges(changes: IFileChange[]): void {
     this._onDidChangeFile.fire(changes);
   }
 
@@ -202,7 +207,30 @@ function errorCodeFor(message: string): FileSystemProviderErrorCode {
   );
 }
 
+let provider: TauriFileSystemProvider | null = null;
+
 /** Call once, after the services initialize. See `delete` for why an overlay. */
 export function registerTauriFileSystem(): void {
-  registerFileSystemOverlay(1, new TauriFileSystemProvider());
+  provider = new TauriFileSystemProvider();
+  registerFileSystemOverlay(1, provider);
+}
+
+/** Feed the Rust recursive watcher's batches into the provider's change event,
+ * so the Explorer refreshes for files agents create — `setMonacoWorkspace`
+ * holds one of these for the active workspace. Returns the unwatch. */
+export function watchWorkspaceForExplorer(dir: string): () => void {
+  void ideWatchDir(dir);
+  const off = onDirChangedOnDisk(dir, (changes) => {
+    if (!provider) return;
+    provider.fireExternalChanges(
+      changes.map((c) => ({
+        type: c.kind === "deleted" ? FileChangeType.DELETED : FileChangeType.ADDED,
+        resource: URI.file(`${dir}/${c.path}`),
+      })),
+    );
+  });
+  return () => {
+    off();
+    void ideUnwatchDir(dir);
+  };
 }

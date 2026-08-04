@@ -143,6 +143,41 @@ export function onFileChangedOnDisk(dir: string, filePath: string, cb: () => voi
   });
 }
 
+const DIR_CHANGED_EVENT = "ide://dir-changed";
+
+export type DirChange = { path: string; kind: "added" | "deleted" };
+
+export type DirChangedEvent = { dir: string; changes: DirChange[] };
+
+/** Recursive tree watch for the Explorer — refcounted per checkout in Rust,
+ * batched/debounced, with build churn (.git, target, …) already filtered. */
+export function ideWatchDir(dir: string): Promise<Result<void, IpcError>> {
+  return invoke<void>("ide_watch_dir", { dir });
+}
+
+export function ideUnwatchDir(dir: string): Promise<Result<void, IpcError>> {
+  return invoke<void>("ide_unwatch_dir", { dir });
+}
+
+/** Returns an unsubscribe; a no-op outside Tauri. */
+export function onDirChangedOnDisk(dir: string, cb: (changes: DirChange[]) => void): () => void {
+  if (!isTauri()) return () => {};
+  let disposed = false;
+  let unlisten: (() => void) | undefined;
+  void (async () => {
+    const { listen } = await import("@tauri-apps/api/event");
+    const sub = await listen<DirChangedEvent>(DIR_CHANGED_EVENT, (e) => {
+      if (e.payload.dir === dir) cb(e.payload.changes);
+    });
+    if (disposed) sub();
+    else unlisten = sub;
+  })();
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
 /** Structural, not `ITextModel`, so this module needs no editor dependency. */
 type SavableModel = { getValue(): string; getAlternativeVersionId(): number };
 
