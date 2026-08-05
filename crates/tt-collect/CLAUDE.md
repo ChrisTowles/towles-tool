@@ -79,6 +79,12 @@ not per-directory) from getting hammered:
   every `gh` call short-circuits without spawning a subprocess while that
   backoff is armed. This is intentionally global, not per-repo: the limit is
   per-token, so one hit means the next call anywhere is likely limited too.
+- `probe_unlinked_worktree_prs` is the one call priced **per task**: no snapshot
+  can say whether an unlinked worktree task has a PR, since a squash merge out of
+  a worktree lands between two open sweeps. Neither brake on it is a tuning knob.
+  `Repo::branch_was_pushed` drops the unbounded case for free, and
+  `tasks.pr_probe_ts` is stamped on a hit, a miss and an error alike — skip that
+  on "no PR" and it becomes one call per task per pass.
 
 ## Calendar collector: timeout matters more than it looks
 

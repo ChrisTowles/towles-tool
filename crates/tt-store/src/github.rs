@@ -187,6 +187,35 @@ impl Store {
         self.replace_prs_where(prs, Some("state = 'merged'"))
     }
 
+    /// Insert PR rows outside any sweep, replacing a row already there. For the
+    /// targeted per-branch lookup, whose whole point is a PR the sweeps' bounded
+    /// lists never carried; every other write here deletes before it inserts.
+    pub fn upsert_prs(&self, prs: &[PrInput]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO pr_status
+                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
+            for p in prs {
+                stmt.execute(params![
+                    p.repo,
+                    p.number,
+                    p.title,
+                    p.branch,
+                    p.state,
+                    p.checks,
+                    p.review_state,
+                    p.url,
+                    p.updated_ts,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(prs.len())
+    }
+
     /// Delete-then-insert for the named repos. `state_predicate` narrows the
     /// delete to a subset of each repo's rows; `None` replaces all of them.
     fn replace_prs_for_repos_where(

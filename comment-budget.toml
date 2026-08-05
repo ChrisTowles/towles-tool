@@ -68,10 +68,10 @@ extensions = ["md"]
 name   = "shared-libraries"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Two internal consumers, not a published API. Document the module and the crossing points; not every pub item."
-target = 0.15
+target = 0.08
 [surface.file]
-warn  = { ratio = 0.20, lines = 50 }
-error = { ratio = 0.30, lines = 100 }
+warn  = { ratio = 0.10, lines = 50 }
+error = { ratio = 0.12, lines = 100 }
 [surface.run]
 warn = 8                                # module docs are exempt, so a long //! header is fine
 error = 14

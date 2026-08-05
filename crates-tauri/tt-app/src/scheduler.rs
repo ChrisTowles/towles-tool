@@ -346,12 +346,6 @@ async fn run_batch(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
 }
 
 fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
-    // Data collected while minimized has no audience; the first tick after a restore
-    // refreshes everything.
-    if main_window_minimized(app) {
-        return;
-    }
-
     let store = match tt_store::Store::open_default() {
         Ok(store) => store,
         Err(e) => {
@@ -531,11 +525,6 @@ fn human_duration(ms: i64) -> String {
 /// Unknown states count as not-focused, so a notification still fires.
 fn window_focused(app: &AppHandle) -> bool {
     app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false)
-}
-
-/// Unknown states count as visible, so collection never silently starves.
-fn main_window_minimized(app: &AppHandle) -> bool {
-    app.get_webview_window("main").map(|w| w.is_minimized().unwrap_or(false)).unwrap_or(false)
 }
 
 fn log_failure(summary: tt_collect::CollectSummary) {
