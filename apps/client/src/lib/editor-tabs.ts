@@ -57,12 +57,6 @@ export function reopenTarget(tabs: PaneTabs): string | null {
   return tabs.closed[0] ?? null;
 }
 
-/** Restore from a persisted path list — order kept, MRU seeded to match. */
-export function tabsFromPaths(paths: readonly string[]): PaneTabs {
-  const order = [...new Set(paths)];
-  return { order, mru: order.toReversed(), closed: [] };
-}
-
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 /** Tab captions: basename, with the parent dir appended when two tabs would

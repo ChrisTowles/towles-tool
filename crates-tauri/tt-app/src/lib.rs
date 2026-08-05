@@ -624,7 +624,7 @@ pub fn run() {
         .manage(ide::DiffRequests::default())
         .manage(ide::ViewerWatches::default())
         .manage(ide::ExplorerWatches::default())
-        .manage(ide::EditorSessions::default())
+        .manage(ide::EditorPrefs::default())
         .manage(preview::PreviewWatches::default())
         .manage(asset::AssetScopes::default())
         .manage(task_explorer::ExplorerState::default())
@@ -796,8 +796,8 @@ pub fn run() {
             ide::ide_unwatch_files,
             ide::ide_watch_dir,
             ide::ide_unwatch_dir,
-            ide::ide_session_load,
-            ide::ide_session_save,
+            ide::ide_prefs_load,
+            ide::ide_prefs_save,
             ide::ide_diff_resolve,
         ])
         .run(context)

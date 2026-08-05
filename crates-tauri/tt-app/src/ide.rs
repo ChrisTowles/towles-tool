@@ -1113,25 +1113,22 @@ pub fn ide_unwatch_dir(watches: State<ExplorerWatches>, dir: String) {
     }
 }
 
-/// Serializes read-modify-write on the one editor-sessions file. The frontend
-/// owns the record shape (`lib/editor-session.ts`); this stores opaque JSON
-/// per checkout dir beside the other instance state.
+/// Serializes read-modify-write on the one editor-prefs file. The frontend
+/// owns the record shape (`lib/editor-checkout-prefs.ts`); this stores opaque
+/// JSON per checkout dir beside the other instance state.
 #[derive(Default)]
-pub struct EditorSessions(Mutex<()>);
+pub struct EditorPrefs(Mutex<()>);
 
-const EDITOR_SESSION_CAP: usize = 50;
+const EDITOR_PREFS_CAP: usize = 50;
 
-fn editor_sessions_path() -> Result<PathBuf, String> {
-    tt_config::agentboard_dir().map(|d| d.join("editor-sessions.json")).map_err(|e| e.to_string())
+fn editor_prefs_path() -> Result<PathBuf, String> {
+    tt_config::agentboard_dir().map(|d| d.join("editor-prefs.json")).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn ide_session_load(
-    sessions: State<EditorSessions>,
-    dir: String,
-) -> Result<Option<String>, String> {
-    let _guard = sessions.0.lock().unwrap();
-    let path = editor_sessions_path()?;
+pub fn ide_prefs_load(prefs: State<EditorPrefs>, dir: String) -> Result<Option<String>, String> {
+    let _guard = prefs.0.lock().unwrap();
+    let path = editor_prefs_path()?;
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Ok(None);
     };
@@ -1142,22 +1139,18 @@ pub fn ide_session_load(
 }
 
 #[tauri::command]
-pub fn ide_session_save(
-    sessions: State<EditorSessions>,
-    dir: String,
-    json: String,
-) -> Result<(), String> {
+pub fn ide_prefs_save(prefs: State<EditorPrefs>, dir: String, json: String) -> Result<(), String> {
     let value: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("session is not JSON: {e}"))?;
-    let _guard = sessions.0.lock().unwrap();
-    let path = editor_sessions_path()?;
+        serde_json::from_str(&json).map_err(|e| format!("prefs is not JSON: {e}"))?;
+    let _guard = prefs.0.lock().unwrap();
+    let path = editor_prefs_path()?;
     let mut map = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&s).ok())
         .unwrap_or_default();
     map.insert(dir, value);
     // Deleted checkouts age out here rather than on a schedule of their own.
-    if map.len() > EDITOR_SESSION_CAP {
+    if map.len() > EDITOR_PREFS_CAP {
         map.retain(|d, _| Path::new(d).is_dir());
     }
     if let Some(parent) = path.parent() {

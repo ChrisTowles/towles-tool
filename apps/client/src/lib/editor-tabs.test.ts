@@ -5,7 +5,6 @@ import {
   NO_TABS,
   reopenTarget,
   tabLabels,
-  tabsFromPaths,
   tabsOnClose,
   tabsOnOpen,
   type PaneTabs,
@@ -94,14 +93,6 @@ describe("reopenTarget", () => {
     t = tabsOnClose(t, "b.ts");
     expect(reopenTarget(t)).toBe("b.ts");
     expect(reopenTarget(NO_TABS)).toBeNull();
-  });
-});
-
-describe("tabsFromPaths", () => {
-  it("keeps order, dedupes, and seeds MRU so cycling works immediately", () => {
-    const t = tabsFromPaths(["a.ts", "b.ts", "a.ts"]);
-    expect(t.order).toEqual(["a.ts", "b.ts"]);
-    expect(t.mru).toEqual(["b.ts", "a.ts"]);
   });
 });
 

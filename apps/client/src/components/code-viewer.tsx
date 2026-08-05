@@ -127,8 +127,9 @@ export function CodeViewer({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   /** The live editor as *state*, so the status strip renders with it. */
-  const [editorInst, setEditorInst] =
-    useState<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  const [editorInst, setEditorInst] = useState<
+    import("monaco-editor").editor.IStandaloneCodeEditor | null
+  >(null);
   const [selection, setSelection] = useState<MentionRange | null>(null);
   /** "conflict" = disk changed under unsaved edits, "deleted" = file gone and
    * the buffer is all that's left (⌘S recreates it). Mutually exclusive. */
