@@ -44,6 +44,12 @@ pub enum Error {
     #[error("could not resolve a data directory")]
     NoDataDir,
 
+    #[error(
+        "database is schema v{found}; this build reads v{min} and newer. Delete the file to \
+         start fresh."
+    )]
+    SchemaTooOld { found: i64, min: i64 },
+
     #[error("no task with id {0}")]
     TaskNotFound(i64),
 }
@@ -59,7 +65,7 @@ pub struct Store {
 mod tests {
     use super::*;
     use crate::model::{MCP_CALL_RETAIN, MCP_CALL_SNAPSHOT_LIMIT, utc_key};
-    use crate::schema::SCHEMA_VERSION;
+    use crate::schema::{MIN_SUPPORTED_VERSION, SCHEMA_VERSION};
     use chrono::{DateTime, FixedOffset};
     use rusqlite::params;
 
@@ -213,53 +219,24 @@ mod tests {
         assert_eq!(version, SCHEMA_VERSION.to_string());
     }
 
+    /// A db below the floor is refused at open, not left to fail later on a
+    /// `no such column` from a query.
     #[test]
-    fn migrate_brings_pre_kanban_tasks_table_forward() {
-        // Reproduces a db created before the day-screens pivot: `tasks` has the
-        // old source/source_ref/done columns and no status/position/repo/
-        // issue_number/issue_url, plus the since-removed `emails` table.
+    fn a_db_older_than_the_floor_is_refused_with_its_version() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("tt.db");
         {
             let conn = Connection::open(&path).unwrap();
             conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT NOT NULL,
-                    source_ref TEXT,
-                    text TEXT NOT NULL,
-                    due_ts INTEGER,
-                    done INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER
-                );
-                CREATE TABLE emails (id INTEGER PRIMARY KEY);
-                INSERT INTO tasks (source, text, done, created_at)
-                    VALUES ('manual', 'old todo', 0, 1),
-                           ('manual', 'finished todo', 1, 2);",
+                "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '11');",
             )
             .unwrap();
         }
-
-        let s = Store::open(&path).unwrap();
-        let snapshot = s.snapshot().unwrap();
-        assert_eq!(snapshot.tasks.len(), 2);
-        assert!(snapshot.tasks.iter().any(|t| t.text == "old todo" && t.status == "backlog"));
-        assert!(snapshot.tasks.iter().any(|t| t.text == "finished todo" && t.status == "done"));
-
-        // Writes must work too: the legacy NOT-NULL `source` column has to be
-        // gone, or every INSERT that omits it fails.
-        let added = s.add_task("new todo", "backlog", None, None, 3).unwrap();
-        assert_eq!(added.status, "backlog");
-        assert!(!task_columns(&s).contains(&"source".to_string()));
-
-        let has_emails: bool = s
-            .conn
-            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'emails'")
-            .unwrap()
-            .exists([])
-            .unwrap();
-        assert!(!has_emails, "dead `emails` table should be dropped");
+        let Err(err) = Store::open(&path) else {
+            panic!("a v11 db must not open")
+        };
+        assert!(matches!(err, Error::SchemaTooOld { found: 11, min: MIN_SUPPORTED_VERSION }));
     }
 
     fn task_columns(s: &Store) -> Vec<String> {
@@ -1185,90 +1162,6 @@ mod tests {
     }
 
     #[test]
-    fn migrate_v13_adds_outcome_columns_to_a_v12_tasks_table() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            // A v12-era tasks table: full worktree columns, no outcome/archive.
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    notes TEXT,
-                    worktree_repo_root TEXT,
-                    worktree_repo TEXT,
-                    worktree_branch TEXT,
-                    worktree_dir TEXT
-                );
-                INSERT INTO tasks (text, status, position, created_at)
-                    VALUES ('carried forward', 'doing', 0, 1);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let tasks = s.snapshot().unwrap().tasks;
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].outcome, None, "pre-existing rows stay open");
-        assert_eq!(tasks[0].archived_at, None);
-        s.close_task(tasks[0].id, TaskOutcome::Abandoned, 10).unwrap();
-
-        // Idempotent: reopening doesn't re-alter or lose the close.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.task_by_id(1).unwrap().outcome.as_deref(), Some("abandoned"));
-    }
-
-    #[test]
-    fn migrate_v14_remaps_next_and_review_rows() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    notes TEXT,
-                    worktree_repo_root TEXT,
-                    worktree_repo TEXT,
-                    worktree_branch TEXT,
-                    worktree_dir TEXT,
-                    outcome TEXT,
-                    archived_at INTEGER
-                );
-                INSERT INTO tasks (text, status, position, created_at)
-                    VALUES ('was up next', 'next', 0, 1);
-                INSERT INTO tasks (text, status, position, created_at)
-                    VALUES ('was in review', 'review', 0, 2);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let tasks = s.snapshot().unwrap().tasks;
-        let next = tasks.iter().find(|t| t.text == "was up next").unwrap();
-        let review = tasks.iter().find(|t| t.text == "was in review").unwrap();
-        assert_eq!(next.status, "backlog", "next folds back to not-started");
-        assert_eq!(review.status, "doing", "review folds forward to in-progress");
-
-        // Idempotent: reopening a db that already went through v14 is a no-op.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.task_by_id(next.id).unwrap().status, "backlog");
-        assert_eq!(s.task_by_id(review.id).unwrap().status, "doing");
-    }
-
-    #[test]
     fn add_task_stores_notes_and_lands_in_requested_status() {
         let s = Store::open_in_memory().unwrap();
         let t = s.add_task("port the CLI", "backlog", Some("start with doctor"), None, 1).unwrap();
@@ -1282,40 +1175,6 @@ mod tests {
         assert!(s.add_task("nope", "bogus", None, None, 3).is_err());
         let bare = s.add_task("no context", "backlog", None, None, 4).unwrap();
         assert_eq!(bare.notes, None);
-    }
-
-    #[test]
-    fn migrate_adds_notes_column_to_pre_v4_tasks_table() {
-        // A v2/v3-era db: kanban-shaped tasks table, but no `notes` column.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    due_ts INTEGER,
-                    repo TEXT,
-                    issue_number INTEGER,
-                    issue_url TEXT,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER
-                );
-                INSERT INTO tasks (text, created_at) VALUES ('pre-v4 todo', 1);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        assert!(task_columns(&s).contains(&"notes".to_string()));
-        let existing = s.open_tasks().unwrap();
-        assert_eq!(existing[0].text, "pre-v4 todo");
-        assert_eq!(existing[0].notes, None);
-        let t = s.add_task("with notes", "backlog", Some("context"), None, 2).unwrap();
-        assert_eq!(t.notes.as_deref(), Some("context"));
     }
 
     #[test]
@@ -2077,114 +1936,6 @@ mod tests {
         assert!(s.prs().unwrap().is_empty());
     }
 
-    /// v10 converts epoch-ms event rows to RFC 3339 text **without losing
-    /// them**, unlike v9's deliberate drop. The instant is known exactly here;
-    /// only the authored offset isn't, and `Z` says that honestly. Dropping
-    /// instead would blank the next-meeting countdown until something writes —
-    /// and with the pull collector off by default, that may be a long time.
-    #[test]
-    fn migrate_v10_converts_epoch_rows_to_rfc3339_keeping_them() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        // A v9-shaped db: has `source`, still epoch integers.
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE events (
-                    id INTEGER PRIMARY KEY,
-                    source TEXT NOT NULL,
-                    external_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    start_ts INTEGER NOT NULL,
-                    end_ts INTEGER,
-                    attendees TEXT NOT NULL DEFAULT '[]',
-                    location TEXT,
-                    join_url TEXT,
-                    updated_at INTEGER NOT NULL,
-                    UNIQUE(source, external_id)
-                );
-                INSERT INTO events
-                    (source, external_id, title, start_ts, end_ts, updated_at)
-                    VALUES
-                    ('google', 'kept', 'Standup', 1700000000000, 1700001800000, 1),
-                    ('google', 'no-end', 'Reminder', 1700003600000, NULL, 1);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let events = s.snapshot().unwrap().events;
-        assert_eq!(events.len(), 2, "rows are converted, not dropped");
-
-        let kept = events.iter().find(|e| e.external_id == "kept").unwrap();
-        assert_eq!(kept.start_ms(), 1_700_000_000_000, "the instant survives exactly");
-        assert_eq!(kept.end_ms(), Some(1_700_001_800_000));
-        // Unknown authored zone becomes UTC, stated as such rather than guessed.
-        assert_eq!(kept.start.offset().local_minus_utc(), 0);
-        assert_eq!(kept.start.to_rfc3339(), "2023-11-14T22:13:20+00:00");
-
-        let no_end = events.iter().find(|e| e.external_id == "no-end").unwrap();
-        assert_eq!(no_end.end, None, "a NULL end stays NULL, not epoch 0");
-
-        // The rebuilt table still writes, sorts and enforces its unique key.
-        s.replace_events_for_source("outlook", i64::MIN, i64::MAX, &[event("kept", 1)], 2).unwrap();
-        assert_eq!(s.snapshot().unwrap().events.len(), 3, "same id in another lane is fine");
-
-        // Idempotent: reopening must not rebuild again and lose the rows.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.snapshot().unwrap().events.len(), 3, "no-op on a v10 db");
-    }
-
-    /// v9 rebuilds `events` for the `source` column and the composite unique
-    /// key. Pre-v9 rows are **intentionally dropped** — the old schema recorded
-    /// no source, and a row tagged with a guessed source would never be swept by
-    /// any real pull, lingering in the countdown forever. Pinned as a test so
-    /// the data loss stays a decision rather than a surprise.
-    #[test]
-    fn migrate_v9_rebuilds_events_and_drops_sourceless_rows() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE events (
-                    id INTEGER PRIMARY KEY,
-                    external_id TEXT NOT NULL UNIQUE,
-                    title TEXT NOT NULL,
-                    start_ts INTEGER NOT NULL,
-                    end_ts INTEGER,
-                    attendees TEXT NOT NULL DEFAULT '[]',
-                    location TEXT,
-                    join_url TEXT,
-                    updated_at INTEGER NOT NULL
-                );
-                INSERT INTO events (external_id, title, start_ts, updated_at)
-                    VALUES ('legacy', 'Old meeting', 100, 1);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let cols: Vec<String> = {
-            let mut stmt = s.conn.prepare("PRAGMA table_info(events)").unwrap();
-            let rows = stmt.query_map([], |r| r.get::<_, String>(1)).unwrap();
-            rows.map(|r| r.unwrap()).collect()
-        };
-        assert!(cols.contains(&"source".to_string()), "source column added");
-        assert!(s.snapshot().unwrap().events.is_empty(), "sourceless rows dropped, not guessed");
-
-        // The rebuilt table takes writes and enforces the new composite key.
-        s.replace_events_for_source("google", 0, 1000, &[event("a", 100)], 2).unwrap();
-        s.replace_events_for_source("outlook", 0, 1000, &[event("a", 200)], 2).unwrap();
-        assert_eq!(s.snapshot().unwrap().events.len(), 2);
-
-        // Idempotent: reopening doesn't rebuild again and lose the new rows.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.snapshot().unwrap().events.len(), 2, "migration is a no-op on a v9 db");
-    }
-
     #[test]
     fn update_task_leaves_links_and_worktree_intact() {
         let s = Store::open_in_memory().unwrap();
@@ -2229,157 +1980,5 @@ mod tests {
         s.set_task_status(b.id, "done", 10).unwrap();
         assert_eq!(s.archive_closed_tasks(100, 101).unwrap(), 1);
         assert_eq!(issue_link_rows(&s), vec![(b.id, "o/r".to_string(), 3)]);
-    }
-
-    #[test]
-    fn migrate_v7_ports_single_link_and_drops_link_columns() {
-        // A v5-era db: kanban tasks table with the single-issue link columns
-        // and one linked + one bare todo.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    due_ts INTEGER,
-                    repo TEXT,
-                    issue_number INTEGER,
-                    issue_url TEXT,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    notes TEXT
-                );
-                INSERT INTO tasks (text, status, position, repo, issue_number, issue_url,
-                                   created_at, notes)
-                    VALUES ('linked', 'doing', 1, 'o/r', 7,
-                            'https://github.com/o/r/issues/7', 1, 'ctx'),
-                           ('bare', 'backlog', 0, NULL, NULL, NULL, 2, NULL);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let cols = task_columns(&s);
-        for gone in ["repo", "issue_number", "issue_url"] {
-            assert!(!cols.contains(&gone.to_string()), "column {gone} should be dropped");
-        }
-        for added in [
-            "worktree_repo_root",
-            "worktree_repo",
-            "worktree_branch",
-            "worktree_dir",
-        ] {
-            assert!(cols.contains(&added.to_string()), "column {added} should exist");
-        }
-
-        let tasks = s.all_tasks().unwrap();
-        let linked = tasks.iter().find(|t| t.text == "linked").unwrap();
-        assert_eq!(linked.status, "doing");
-        assert_eq!(linked.notes.as_deref(), Some("ctx"));
-        assert_eq!(linked.issues.len(), 1);
-        assert_eq!(linked.issues[0].repo, "o/r");
-        assert_eq!(linked.issues[0].number, 7);
-        assert_eq!(linked.issues[0].url, "https://github.com/o/r/issues/7");
-        assert_eq!(linked.issues[0].state, "open");
-        let bare = tasks.iter().find(|t| t.text == "bare").unwrap();
-        assert!(bare.issues.is_empty());
-
-        // Idempotent: re-open runs migrate again without duplicating links.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        let linked = s.all_tasks().unwrap().into_iter().find(|t| t.text == "linked").unwrap();
-        assert_eq!(linked.issues.len(), 1);
-    }
-
-    #[test]
-    fn migrate_v8_drops_due_column_keeping_rows() {
-        // A v7-era db: current shape plus the retired due_ts column.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    due_ts INTEGER,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    notes TEXT,
-                    worktree_repo_root TEXT,
-                    worktree_repo TEXT,
-                    worktree_branch TEXT,
-                    worktree_dir TEXT
-                );
-                INSERT INTO tasks (text, status, position, due_ts, created_at, notes)
-                    VALUES ('was due', 'doing', 1, 1752200000000, 1, 'ctx'),
-                           ('never due', 'backlog', 0, NULL, 2, NULL);",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        assert!(!task_columns(&s).contains(&"due_ts".to_string()), "due_ts should be dropped");
-        let tasks = s.all_tasks().unwrap();
-        assert_eq!(tasks.len(), 2);
-        let kept = tasks.iter().find(|t| t.text == "was due").unwrap();
-        assert_eq!(kept.status, "doing");
-        assert_eq!(kept.notes.as_deref(), Some("ctx"));
-
-        // Idempotent: a second open finds no due_ts column and is a no-op.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.all_tasks().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn migrate_v11_renames_slot_columns_to_worktree_keeping_bindings() {
-        // A v7-era db with the pre-rename slot_* columns and a bound task.
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("tt.db");
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'backlog',
-                    position INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
-                    notes TEXT,
-                    slot_repo_root TEXT,
-                    slot_repo TEXT,
-                    slot_branch TEXT,
-                    slot_dir TEXT
-                );
-                INSERT INTO tasks (text, status, position, created_at,
-                                   slot_repo_root, slot_repo, slot_branch, slot_dir)
-                    VALUES ('bound', 'doing', 0, 1,
-                            '/repos/x', 'o/x', 'feat/y', '/repos/x/wt');",
-            )
-            .unwrap();
-        }
-
-        let s = Store::open(&path).unwrap();
-        let cols = task_columns(&s);
-        assert!(cols.contains(&"worktree_repo_root".to_string()), "columns renamed");
-        assert!(!cols.iter().any(|c| c.starts_with("slot_")), "no slot_* columns remain");
-        let task = s.all_tasks().unwrap().into_iter().find(|t| t.text == "bound").unwrap();
-        let wt = task.worktree.expect("binding survives the rename");
-        assert_eq!(wt.repo_root, "/repos/x");
-        assert_eq!(wt.branch.as_deref(), Some("feat/y"));
-        assert_eq!(wt.dir.as_deref(), Some("/repos/x/wt"));
-
-        // Idempotent: a second open finds no slot_* columns and is a no-op.
-        drop(s);
-        let s = Store::open(&path).unwrap();
-        assert_eq!(s.all_tasks().unwrap().len(), 1);
     }
 }

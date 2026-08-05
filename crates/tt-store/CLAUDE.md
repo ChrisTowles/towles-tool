@@ -30,13 +30,19 @@ range queries silently return wrong rows rather than fail.
 
 ## Migrations
 
-One `Store::migrate`, run on every open, idempotent, no version gating — every
-step is `IF NOT EXISTS` or checks the current table shape. **Ordering is
-load-bearing:** additive `ALTER TABLE ADD COLUMN` steps run *after* every
-rebuild-style migration (the `CREATE TABLE tasks_vN` + `INSERT … SELECT
-<fixed column list>` ones), because a rebuild that predates a column silently
-drops it. Add a new column at the end of that block, not next to the migration
-it feels related to.
+One `Store::migrate`, run on every open, idempotent — `SCHEMA_V1`'s
+`IF NOT EXISTS` batch, then a run of additive `ALTER TABLE ADD COLUMN` steps
+that check the current table shape. **A new column goes at the end of that run,
+never folded into `SCHEMA_V1`**: `CREATE TABLE IF NOT EXISTS` is a no-op on an
+existing db, which would then silently lack the column.
+
+**There is a floor, not an unbounded upgrade path.** `MIN_SUPPORTED_VERSION`
+(16) is the oldest db `Store::open` accepts; below it, `check_version_floor`
+returns `Error::SchemaTooOld` telling the user to delete the file. The
+rebuild-style migrations (`CREATE TABLE tasks_vN` + `INSERT … SELECT <fixed
+column list>`) that once carried a v1 db forward are gone. If you ever add one
+back, it must run *before* the additive steps — a rebuild's fixed column list
+silently drops any column added ahead of it.
 
 ## Concurrency
 
