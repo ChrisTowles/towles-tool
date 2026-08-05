@@ -1,6 +1,6 @@
 [package]
 name = "comment-budget"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.88"
 description = "A budget for comment volume: AI writes comments faster than anyone can review them, so cap how much commentary a reader wades through to reach the code."

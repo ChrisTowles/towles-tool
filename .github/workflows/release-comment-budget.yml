@@ -43,15 +43,15 @@ jobs:
             wrapper: ""
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Provision pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: crates/comment-budget/npm/pack.sh dist ${{ matrix.wrapper }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.name }}
           path: dist/*.tgz
@@ -68,14 +68,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
       # Node 22 bundles npm 10, which predates OIDC.
       - run: npm install -g npm@latest
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
           merge-multiple: true
@@ -101,7 +101,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Provision pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2

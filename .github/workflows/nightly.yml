@@ -33,11 +33,11 @@ jobs:
     name: Full workspace test (tt-vt + tt-app)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Tauri v2 Linux prerequisites — same set as ci.yml's rust-app job.
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /var/cache/apt/archives/*.deb
           key: apt-tauri-deps-${{ runner.os }}
@@ -75,7 +75,7 @@ jobs:
 
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
@@ -104,10 +104,10 @@ jobs:
     name: E2E (WebKitGTK under xvfb)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /var/cache/apt/archives/*.deb
           key: apt-e2e-deps-${{ runner.os }}
@@ -136,7 +136,7 @@ jobs:
           bun-version: 1.3.9
 
       # Node is still the runtime for scripts/e2e.mjs and the WebdriverIO suite.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -158,7 +158,7 @@ jobs:
 
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
@@ -189,7 +189,7 @@ jobs:
     name: Dependency advisories
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:

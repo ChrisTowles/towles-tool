@@ -45,7 +45,7 @@ jobs:
             args: "--target aarch64-apple-darwin"
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
@@ -93,7 +93,7 @@ jobs:
       # over a third-party apt-caching action).
       - name: Cache apt packages
         if: matrix.platform == 'ubuntu-latest'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /var/cache/apt/archives/*.deb
           key: apt-tauri-deps-${{ runner.os }}
@@ -124,7 +124,7 @@ jobs:
 
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
@@ -148,7 +148,7 @@ jobs:
 
       # Node is still the runtime: `bun run build` honours the node shebang on
       # vite's bin, which is what makes NODE_OPTIONS below take effect.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
