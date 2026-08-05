@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+// The fallback for installs where postinstall did not replace this file with
+// the binary: anything that skipped scripts — bun's default outside
+// `trustedDependencies` — and any platform with no prebuilt binary, which it
+// reports rather than dying obscurely.
+
+const { spawn } = require("node:child_process");
+const { resolveBinary, missingBinaryMessage } = require("./postinstall.js");
+
+const binary = resolveBinary();
+if (!binary) {
+  console.error(missingBinaryMessage());
+  process.exit(2);
+}
+
+const child = spawn(binary, process.argv.slice(2), { stdio: "inherit" });
+
+child.on("error", (error) => {
+  console.error(`comment-budget: could not run ${binary}: ${error.message}`);
+  process.exit(2);
+});
+
+// Forward what a CI runner sends, then die of the same signal. Exit status is
+// the whole product here, and a cancelled gate must not read as a clean pass.
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+const handlers = SIGNALS.map((signal) => {
+  const handler = () => {
+    try {
+      child.kill(signal);
+    } catch {}
+  };
+  process.on(signal, handler);
+  return [signal, handler];
+});
+
+child.on("exit", (code, signal) => {
+  for (const [name, handler] of handlers) process.removeListener(name, handler);
+  if (signal) process.kill(process.pid, signal);
+  else process.exit(code ?? 2);
+});

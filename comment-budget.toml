@@ -115,12 +115,16 @@ error = 6
 # Not in the original proposal, and without it these are measured by nothing.
 # Every file a kind can read must land on some surface — an unclaimed one is a
 # hard error, so this list is complete by construction rather than by memory.
+#
+# Each glob names its extension rather than ending in `**/*`: a bare wildcard
+# claims the directory's `.md` too, and a surface with only ratio tiers has
+# nothing that can fire on prose — which reads exactly like passing.
 [[surface]]
 name   = "dev-tooling"
 paths  = [
-  "scripts/**/*",
-  "e2e/**/*",
-  "xtask/**/*.rs",
+  "scripts/**/*.mjs",
+  "e2e/**/*.ts",
+  "crates/*/npm/**/*.js",          # the npm wrapper's install-time glue
   "crates/*/tests/**/*.rs",
   "crates/*/examples/**/*.rs",
   "crates/*/benches/**/*.rs",
