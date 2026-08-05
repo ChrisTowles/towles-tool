@@ -9,11 +9,11 @@ const EXE = "comment-budget";
 const SHIM = path.join(__dirname, EXE);
 
 // glibcVersionRuntime is absent on musl. This is detect-libc's own check, and
-// inlining it keeps the wrapper dependency-free.
+// inlining it keeps the wrapper dependency-free. `engines` requires node 18,
+// where process.report is always there — bun implements it too.
 function isMusl() {
   if (process.platform !== "linux") return false;
-  const report = process.report?.getReport?.();
-  return report ? !report.header?.glibcVersionRuntime : false;
+  return !process.report.getReport().header.glibcVersionRuntime;
 }
 
 function platformPackage() {
