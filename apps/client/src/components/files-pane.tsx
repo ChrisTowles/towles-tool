@@ -50,16 +50,15 @@ import {
   nextAfterClose,
   NO_TABS,
   reopenTarget,
-  tabsFromPaths,
   tabsOnClose,
   tabsOnOpen,
   type PaneTabs,
 } from "@/lib/editor-tabs";
 import {
-  flushEditorSessionSave,
-  loadEditorSession,
-  scheduleEditorSessionSave,
-} from "@/lib/editor-session";
+  flushEditorCheckoutPrefsSave,
+  loadEditorCheckoutPrefs,
+  scheduleEditorCheckoutPrefsSave,
+} from "@/lib/editor-checkout-prefs";
 import { mouseAction } from "@/lib/shortcut-coach";
 import {
   initialViewMode,
@@ -188,43 +187,35 @@ export function FilesPane({
     if (openRequest) setHistory((h) => visitPath(h, openRequest.path));
   }, [openRequest]);
 
-  // Restore this checkout's session (tabs, lock, wrap), then persist changes.
-  // An openRequest racing the load keeps focus: the restored `open` applies
-  // only while nothing is open yet, and restored tabs merge under the current
-  // set. Saving is gated on `sessionDir` so a half-restored pane can't write
-  // an emptied session over the real one.
-  const historyRef = useRef(history);
-  historyRef.current = history;
-  const [sessionDir, setSessionDir] = useState<string | null>(null);
+  // The lock and wrap only: a mount happens on every folder switch, so
+  // restoring what was open would put a file on screen with no gesture behind
+  // it. `prefsDir` gates saving, or a pane mid-load writes defaults over it.
+  const [prefsDir, setPrefsDir] = useState<string | null>(null);
   useEffect(() => {
     let stale = false;
-    setSessionDir(null);
-    void loadEditorSession(dir).then((session) => {
+    setPrefsDir(null);
+    void loadEditorCheckoutPrefs(dir).then((prefs) => {
       if (stale) return;
-      if (session) {
-        setTabs((t) => t.order.reduce(tabsOnOpen, tabsFromPaths(session.tabs)));
-        setWordWrap(session.wordWrap);
-        setEditable(session.editable);
-        if (session.open != null && currentPath(historyRef.current) == null) {
-          setHistory((h) => (currentPath(h) == null ? visitPath(h, session.open!) : h));
-        }
+      if (prefs) {
+        setWordWrap(prefs.wordWrap);
+        setEditable(prefs.editable);
       }
-      setSessionDir(dir);
+      setPrefsDir(dir);
     });
     return () => {
       stale = true;
-      flushEditorSessionSave(dir);
+      flushEditorCheckoutPrefsSave(dir);
     };
   }, [dir]);
   useEffect(() => {
-    if (sessionDir !== dir) return;
-    scheduleEditorSessionSave(dir, { v: 1, tabs: [...tabs.order], open, wordWrap, editable });
-  }, [dir, sessionDir, tabs, open, wordWrap, editable]);
+    if (prefsDir !== dir) return;
+    scheduleEditorCheckoutPrefsSave(dir, { v: 1, wordWrap, editable });
+  }, [dir, prefsDir, wordWrap, editable]);
 
   // What a newly opened file starts in is `initialViewMode`'s call. Reset in
   // the render that opens it, not an effect: the panel-driving effect below
   // runs in that same commit and would flash the outgoing file's mode first.
-  const openKey = `${openRequest?.nonce ?? ""} ${open ?? ""}`;
+  const openKey = `${openRequest?.nonce ?? ""}\0${open ?? ""}`;
   const [modeSetFor, setModeSetFor] = useState(openKey);
   if (modeSetFor !== openKey) {
     setModeSetFor(openKey);
