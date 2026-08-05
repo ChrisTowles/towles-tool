@@ -38,8 +38,8 @@ jobs:
     outputs:
       vt_or_app: ${{ steps.filter.outputs.vt_or_app }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -62,7 +62,7 @@ jobs:
     name: Rust (fmt, clippy, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The Rust version + components are pinned by rust-toolchain.toml at the
       # repo root. rustup honors that file for every cargo/rustc invocation, so
@@ -130,7 +130,7 @@ jobs:
       GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
       GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same repo-root rust-toolchain.toml pin, and the same strip of the
       # runner's preinstalled toolchain, as the `rust` job — see its comment for
@@ -152,7 +152,7 @@ jobs:
 
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
@@ -193,7 +193,7 @@ jobs:
     env:
       GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same repo-root rust-toolchain.toml pin as the `rust` job.
       - name: Provision pinned Rust toolchain
@@ -226,7 +226,7 @@ jobs:
       # mirrors what build.rs would do itself when GHOSTTY_SOURCE_DIR is unset.
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
@@ -275,7 +275,7 @@ jobs:
     env:
       GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Tauri v2 Linux prerequisites (see tauri.app/start/prerequisites). These
       # provide the webkit2gtk/GTK/appindicator system libs the Tauri shell links
@@ -286,7 +286,7 @@ jobs:
       # first, but it silently reported success while installing 0 packages
       # after a transient mirror 404, which plain apt-get fails loudly on.
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /var/cache/apt/archives/*.deb
           key: apt-tauri-deps-${{ runner.os }}
@@ -335,7 +335,7 @@ jobs:
       # mirrors what build.rs would do itself when GHOSTTY_SOURCE_DIR is unset.
       - name: Cache ghostty source
         id: ghostty-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ghostty-src
           key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
