@@ -5,12 +5,9 @@
 //! its own store lane; issues and PRs shell out to `gh`. Tauri-free, so both the CLI
 //! and the app's scheduler drive it against the same [`CollectSummary`] contract.
 //!
-//! ## Robustness contract
-//!
-//! The public `collect_*` functions **never panic and never return `Err`**. Every
-//! failure — a missing binary, a non-zero exit, unparseable output — becomes a
-//! [`CollectSummary`] with `ok = false`, recorded via `record_run` under a stable
-//! key: `claude:calendar`, `issues`, or `prs`.
+//! The public `collect_*` functions **never panic and never return `Err`**: every
+//! failure becomes a [`CollectSummary`] with `ok = false`, recorded via `record_run`
+//! under a stable key.
 
 mod gh;
 pub mod issues;
@@ -39,36 +36,25 @@ use std::time::Duration;
 use tt_config::CalendarSource;
 use tt_store::{EventInput, Store};
 
-/// Hard cap on a `claude -p` calendar run. Without it a wedged claude (auth
-/// prompt, dead MCP server) stalls every collector behind it, since the
+/// Hard cap: a wedged `claude` would stall every collector behind it, since the
 /// scheduler awaits batches serially.
 const CLAUDE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// The outcome of a single collector run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CollectSummary {
-    /// Stable collector key (also the `record_run` key).
     pub collector: String,
-    /// Whether the run succeeded end-to-end.
     pub ok: bool,
-    /// Number of items written to the store (0 on failure).
     pub count: usize,
-    /// A human-readable note: the error on failure, or context on success
-    /// (e.g. `"no repos configured"`).
+    /// The error on failure, or context on success (e.g. `"no repos configured"`).
     pub message: Option<String>,
 }
 
-// Public collectors
-
-/// The stable `record_run` key for the calendar collector.
 const CALENDAR_KEY: &str = "claude:calendar";
 
-/// JSON Schema handed to `claude -p --json-schema`. *This* is the contract, not a
-/// sentence in the prompt asking for "ONLY a JSON array" — which is why the
-/// prompt is free to be a question about the user's calendar and nothing else.
-/// Times are `date-time` strings, never epoch numbers: a 13-digit epoch is
-/// arithmetic a model cannot check. Optional fields are *omitted*, not null — a
-/// serde default covers a missing key but not an explicit `null`.
+/// The contract handed to `claude -p --json-schema`, which is why the prompt can be
+/// a question and nothing else. Times are `date-time`, never epochs a model can't
+/// check; optional fields are *omitted* — serde's default won't take a `null`.
 const CALENDAR_SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
@@ -95,24 +81,18 @@ const CALENDAR_SCHEMA: &str = r#"{
   "additionalProperties": false
 }"#;
 
-/// The schema-validated answer: one calendar's events for today.
 #[derive(Debug, serde::Deserialize)]
 struct CalendarAnswer {
     events: Vec<EventInput>,
 }
 
-/// Collect today's calendar events, running one `claude -p` per **enabled**
-/// [`CalendarSource`] and writing each into its own store lane.
-///
-/// One run key covers every source deliberately: the frontend's collector-health
-/// list, the stale-collector watch and the store's run-pruning all match on
-/// `claude:calendar`. Sources stay independent underneath — a failing one
-/// contributes a `<id>: <error>` note without costing the others their rows.
+/// Collect today's events, one `claude -p` per **enabled** [`CalendarSource`], each
+/// into its own store lane. One `claude:calendar` run key covers them all, and a
+/// failing source contributes a note without costing the others their rows.
 pub fn collect_calendar(store: &Store, sources: &[CalendarSource], now_ms: i64) -> CollectSummary {
     let enabled: Vec<&CalendarSource> = sources.iter().filter(|s| s.enabled).collect();
     if enabled.is_empty() {
-        // Retention otherwise only runs as a side effect of a write, so turning
-        // the last calendar off would freeze the table as-is.
+        // Retention otherwise rides a write; without this the table would freeze.
         let _ = store.sweep_old_events(now_ms);
         let msg = "no calendar sources enabled".to_string();
         return finish(store, CALENDAR_KEY, true, 0, Some(msg), now_ms);
@@ -123,8 +103,7 @@ pub fn collect_calendar(store: &Store, sources: &[CalendarSource], now_ms: i64) 
     let mut notes: Vec<String> = Vec::new();
     let mut ok = true;
     let mut wrote = false;
-    // Ids name store lanes, so a repeat isn't harmless: the second pull's scoped
-    // DELETE removes the rows the first just wrote. Refuse it.
+    // Ids name store lanes: a repeat's DELETE would wipe the first pull's rows.
     let mut seen_ids: Vec<&str> = Vec::new();
     for source in enabled {
         let id = source.id.trim();
@@ -146,8 +125,7 @@ pub fn collect_calendar(store: &Store, sources: &[CalendarSource], now_ms: i64) 
         }
     }
 
-    // Retention normally rides along with a successful write; with every source
-    // failed there was none, so yesterday's meetings would linger.
+    // Every source failed, so no write carried retention with it.
     if !wrote {
         let _ = store.sweep_old_events(now_ms);
     }
@@ -156,9 +134,8 @@ pub fn collect_calendar(store: &Store, sources: &[CalendarSource], now_ms: i64) 
     finish(store, CALENDAR_KEY, ok, count, message, now_ms)
 }
 
-/// Pull one calendar source into its own `(source, day)` lane. The caller
-/// aggregates the result into the single `claude:calendar` run record, so this
-/// never records a run of its own.
+/// Pull one source into its own `(source, day)` lane. The caller aggregates into
+/// the single `claude:calendar` run record, so this records no run of its own.
 fn collect_calendar_source(
     store: &Store,
     source: &CalendarSource,
@@ -166,9 +143,8 @@ fn collect_calendar_source(
     day_end_ms: i64,
     now_ms: i64,
 ) -> Result<usize, String> {
-    // The *trimmed* value must reach the store: `calendar_set` trims what it
-    // writes, so a raw padded id would open a second lane the MCP push path can
-    // never target — one calendar, two lanes, every meeting listed twice.
+    // `calendar_set` trims what it writes, so a padded id here would open a second
+    // lane the MCP push path can never target — every meeting listed twice.
     let id = source.id.trim();
     if id.is_empty() {
         return Err("source has no id".to_string());
@@ -180,13 +156,9 @@ fn collect_calendar_source(
     store_calendar_events(store, id, day_start_ms, day_end_ms, &events, now_ms)
 }
 
-/// Apply one source's parsed calendar result to the store, guarding against a
-/// suspicious empty sweep: a `claude -p` run can return a valid empty `[]` when
-/// the model hedges or the MCP is down, blanking the Cockpit countdown. So an
-/// empty result that contradicts events **this source** still holds later today
-/// keeps the existing rows and reports an error; a genuinely empty day clears.
-/// The guard is scoped to `source` on both sides, so a flaky work calendar can't
-/// be masked by a healthy personal one.
+/// Apply one source's result, guarding a suspicious empty sweep: `[]` from a hedging
+/// model or a downed MCP would blank the Cockpit countdown, so an empty result
+/// contradicting rows **this source** still holds keeps them and errors instead.
 fn store_calendar_events(
     store: &Store,
     source: &str,
@@ -205,8 +177,7 @@ fn store_calendar_events(
         .map_err(|e| e.to_string())
 }
 
-/// Whether `source` holds any event still upcoming today (local time). Rows from
-/// other sources are filtered out — the guard is per-lane by design.
+/// Whether `source` holds an event still upcoming today; other lanes filtered out.
 fn has_future_events_today(
     store: &Store,
     source: &str,
@@ -219,13 +190,9 @@ fn has_future_events_today(
         .map_err(|e| e.to_string())
 }
 
-/// Collect open issues assigned to me across `repo_dirs` via `gh`.
-///
-/// Failure containment: rows are only replaced for repos whose `gh` calls
-/// succeeded, so a repo that errors keeps its last-known-good rows and the run
-/// is recorded `ok = false`. Only a clean sweep does a full-table replace.
-/// `reuse_ms` is how old another window's answers may be before this one asks
-/// GitHub itself — or [`FETCH_NOW`] when the user wants fresh data.
+/// Collect open issues assigned to me across `repo_dirs` via `gh`. Only a clean
+/// sweep does a full-table replace, so an erroring repo keeps its last-known-good
+/// rows. `reuse_ms` is how old another window's answer may be before this one asks.
 pub fn collect_issues(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -245,10 +212,9 @@ pub fn collect_issues(
     summary
 }
 
-/// The Board↔GitHub read half for tasks (#339): a targeted `gh <issue|pr> view`
-/// for every still-`open` link *missing* from the snapshot, since absence is
-/// ambiguous and state is never inferred, then [`link_task_prs`]. Never fails
-/// the pass — each stage logs and moves on.
+/// The Board↔GitHub read half for tasks: a targeted `gh <issue|pr> view` for every
+/// still-`open` link *missing* from the snapshot, since absence is ambiguous and
+/// state is never inferred, then [`link_task_prs`]. Each stage logs and moves on.
 fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
     let dir_by_repo = repo_dir_index(repo_dirs);
     match store.open_issue_refs_missing_from_cache() {
@@ -291,11 +257,9 @@ fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
     link_task_prs(store, &dir_by_repo, now_ms);
 }
 
-/// What a pass owes its *own* rows: copy their state onto link rows, attach the
-/// branch matches, roll up, archive. Split out of [`sync_task_links`] because
-/// both PR halves have to run it — the merged half writes rows the open half
-/// would otherwise be racing to link — while the targeted `gh view` fetches
-/// above stay on the open half alone, one ref costing one call per pass.
+/// What a pass owes its *own* rows: state onto link rows, attach branch matches,
+/// roll up, archive. Both PR halves run it — the merged half writes rows the open
+/// half would otherwise race to link — while the per-ref fetches stay on the open.
 fn link_task_prs(
     store: &Store,
     dir_by_repo: &std::collections::HashMap<String, PathBuf>,
@@ -311,8 +275,7 @@ fn link_task_prs(
     if let Err(e) = rollup_task_statuses(store, now_ms) {
         log::warn!("rollup_task_statuses failed: {e}");
     }
-    // Riding this path rather than a timer keeps archiving on the same cadence
-    // that creates done tasks in the first place.
+    // The same cadence that creates done tasks in the first place.
     if let Err(e) = store.archive_closed_tasks(now_ms - tt_store::ARCHIVE_AFTER_MS, now_ms) {
         log::warn!("archive_closed_tasks failed: {e}");
     }
@@ -321,23 +284,17 @@ fn link_task_prs(
 /// How long a worktree task waits before asking GitHub about its branch again.
 const PR_PROBE_INTERVAL_MS: i64 = 15 * 60 * 1000;
 
-/// `gh` calls one pass may spend on branch probes. Past this the rest keep their
-/// unstamped clock and lead the next pass's queue.
+/// `gh` calls one pass may spend on branch probes; the rest lead the next queue.
 const PR_PROBE_MAX_CALLS: usize = 8;
 
-/// Candidates read per pass. Wider than the call cap because the pushed-branch
-/// gate is free — rejecting a never-pushed task must not spend a call slot.
+/// Wider than the call cap: the free pushed-branch gate must not spend a slot.
 const PR_PROBE_CANDIDATES: usize = PR_PROBE_MAX_CALLS * 4;
 
-/// Ask GitHub about the branch of each worktree task with no PR linked yet.
-///
-/// The snapshot can't answer this: it holds open PRs plus a bounded merged list,
-/// so a PR that merges between two open sweeps links only if the merged sweep
-/// covers it — and every squash merge from a task worktree lands that way, `gh
-/// pr merge` dying on "'main' is already used by worktree" once the API merge is
-/// done. Miss the window and the task never learns it had a PR at all. Per
-/// *task* rather than per repo, so two brakes on the GraphQL budget (#322): the
-/// free pushed-branch gate, and the call cap with its stamped clock.
+/// Ask GitHub about the branch of each worktree task with no PR linked yet. The
+/// snapshot can't answer: a PR merging between two open sweeps links only if the
+/// merged sweep covers it, and every squash merge from a worktree lands that way
+/// (`gh pr merge` dies on "'main' is already used by worktree"). Per *task*, so
+/// both GraphQL brakes matter: the free pushed-branch gate and the capped calls.
 fn probe_unlinked_worktree_prs(
     store: &Store,
     dir_by_repo: &std::collections::HashMap<String, PathBuf>,
@@ -355,13 +312,11 @@ fn probe_unlinked_worktree_prs(
     let mut ask = Vec::new();
     let mut probed = Vec::new();
     for task in candidates {
-        // No dir means no way to ask, so the clock stays unstamped: the answer
-        // is still owed once the repo is reachable again.
+        // No dir means no way to ask, so the clock stays unstamped.
         let Some(dir) = dir_by_repo.get(&task.repo) else {
             continue;
         };
-        // The free half of the answer: a branch git can prove never left this
-        // machine has no PR to find, which is the one unbounded case here.
+        // Free half: a branch that never left this machine has no PR to find.
         let pushed = tt_git::repo::open(dir).is_ok_and(|repo| repo.branch_was_pushed(&task.branch));
         probed.push(task.task_id);
         if pushed {
@@ -372,9 +327,8 @@ fn probe_unlinked_worktree_prs(
         }
     }
 
-    // Claimed before a single call goes out, so the open and merged passes a
-    // nudge fires together can't both spend one on the same task. Stamped on a
-    // miss and an error alike: the clock records that the question was asked.
+    // Claimed before any call, so the open and merged passes a nudge fires together
+    // can't both spend one here. Stamped on a miss and an error alike.
     if !probed.is_empty()
         && let Err(e) = store.mark_pr_probe(&probed, now_ms)
     {
@@ -399,9 +353,8 @@ fn probe_unlinked_worktree_prs(
     }
 }
 
-/// Map `owner/name` → repo dir for the swept dirs, so targeted fetches know
-/// where to run `gh`. A dir whose name lookup fails is skipped (its refs keep
-/// their cached state until a later pass).
+/// Map `owner/name` → repo dir so targeted fetches know where to run `gh`. A dir
+/// whose lookup fails is skipped; its refs keep their cached state.
 fn repo_dir_index(repo_dirs: &[PathBuf]) -> std::collections::HashMap<String, PathBuf> {
     let mut index = std::collections::HashMap::new();
     for dir in repo_dirs {
@@ -415,12 +368,9 @@ fn repo_dir_index(repo_dirs: &[PathBuf]) -> std::collections::HashMap<String, Pa
     index
 }
 
-/// Roll linked tasks across the done boundary from their cached link states: a
-/// task rolls to `done` once every linked issue is `closed` and every linked PR
-/// `merged`/`closed`; a `done` task with a reopened ref falls back to `backlog`.
-/// Unlinked tasks never auto-move and matching statuses are untouched, so this
-/// is safe on every poll. Closed and archived tasks are skipped entirely — an
-/// explicit outcome is a user decision this must never overturn.
+/// Roll linked tasks across the done boundary from their cached link states, and back
+/// to `backlog` on a reopened ref. Unlinked tasks never auto-move; closed and archived
+/// ones are skipped, since an explicit outcome is a decision this must never overturn.
 pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usize> {
     let mut changed = 0;
     for task in store.all_tasks()? {
@@ -445,13 +395,9 @@ pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usiz
     Ok(changed)
 }
 
-/// Collect open + review-requested + recently-merged PRs across `repo_dirs` via
-/// `gh`. Failure containment matches [`collect_issues`].
-///
-/// The "full" sweep, for on-demand refreshes where all three `gh` calls are
-/// worth it; the periodic tick uses [`collect_prs_open`] and
-/// [`collect_prs_merged`] instead. Takes no part in cross-window sharing either
-/// way — every caller is a "refresh now", and nothing else asks this question.
+/// Every PR class in one sweep, for on-demand refreshes worth all three `gh` calls;
+/// the periodic tick splits into [`collect_prs_open`] and [`collect_prs_merged`].
+/// Shares nothing cross-window: every caller is a "refresh now".
 pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> CollectSummary {
     let repos = dedupe_repo_dirs(repo_dirs);
     let outcome = sweep_repos(&dirs_of(&repos), prs::collect_repo_prs);
@@ -465,13 +411,9 @@ pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> Collect
     summary
 }
 
-/// Collect just the authored + review-requested open PRs — the fast half of
-/// [`collect_prs`], for the scheduler's frequent tick. Records `prs`, since the
-/// three are cadence splits of one logical collector. Also runs
-/// [`sync_task_links`], keeping PR merge detection on this fast cadence.
-///
-/// `reuse_ms` works as for [`collect_issues`], with its own cache file: this
-/// asks a narrower question, and the store write that follows matches.
+/// The fast half of [`collect_prs`]: authored + review-requested open PRs on the
+/// scheduler's frequent tick, recorded under `prs` like the others. Runs
+/// [`sync_task_links`], keeping merge detection on this cadence.
 pub fn collect_prs_open(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -491,15 +433,11 @@ pub fn collect_prs_open(
     summary
 }
 
-/// Collect just the recently-merged authored PRs across `repo_dirs` — the slow
-/// half of [`collect_prs`]. Links its own rows rather than leaving them for the
-/// open half: a merge nudge fires both, concurrently, and the open pass linking
-/// rows the merged pass has not written yet is a race it loses about as often
-/// as it wins — for a 20-minute wait, on the one event the nudge exists to make
-/// immediate. [`link_task_prs`], not the full [`sync_task_links`]: the targeted
-/// fetches in there cost a `gh` call per ref and are the open half's job.
-///
-/// `reuse_ms` works as it does for [`collect_issues`].
+/// The slow half of [`collect_prs`]. Links its own rows rather than leaving them to
+/// the open half: a merge nudge fires both concurrently, and the open pass linking
+/// rows the merged pass hasn't written yet is a race it loses half the time — for a
+/// 20-minute wait, on the one event the nudge exists to make immediate.
+/// [`link_task_prs`] alone, since the per-ref fetches are the open half's job.
 pub fn collect_prs_merged(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -519,10 +457,8 @@ pub fn collect_prs_merged(
     summary
 }
 
-/// Collect the watched Slack DM's latest state via the Slack Web API and
-/// upsert it into the store. Records `slack:dm`. Missing token/user-id is a
-/// recorded failure (the caller gates on `enabled`, so reaching here without
-/// credentials is a misconfiguration worth surfacing, not a silent no-op).
+/// Upsert the watched Slack DM's latest state. Missing credentials is a recorded
+/// failure, not a silent no-op: the caller already gated on `enabled`.
 pub fn collect_slack_dm(store: &Store, config: &SlackDmConfig, now_ms: i64) -> CollectSummary {
     const KEY: &str = "slack:dm";
     if config.token.trim().is_empty() || config.watch_user_id.trim().is_empty() {
@@ -541,58 +477,44 @@ pub fn collect_slack_dm(store: &Store, config: &SlackDmConfig, now_ms: i64) -> C
 
 /// Per-repo results of one collector sweep.
 struct Sweep<T> {
-    /// `(owner/name, items)` for every repo whose `gh` calls succeeded —
-    /// including repos with zero items, which still need their rows cleared.
+    /// Includes repos with zero items, which still need their rows cleared.
     successes: Vec<(String, Vec<T>)>,
     errors: Vec<String>,
     skipped: Vec<String>,
 }
 
-/// Max repos swept concurrently. Each PR repo costs ~2 `gh` subprocesses, so a
-/// serial sweep of N repos is ~2N sequential network round-trips; fanning the
-/// per-repo work across a small pool cuts wall time without hammering the `gh`
-/// API. Kept modest deliberately — the win is overlapping network latency, not
-/// saturating CPU.
+/// Max repos swept concurrently. Modest on purpose: the win is overlapping network
+/// latency, not saturating CPU.
 const SWEEP_CONCURRENCY: usize = 4;
 
-/// One repo's place in the sweep, tagged so results can be re-sorted into input
-/// order after the parallel workers finish.
+/// One repo's place in the sweep, tagged so results re-sort into input order.
 enum RepoOutcome<T> {
     Skipped(String),
     Ok((String, Vec<T>)),
     Err(String),
 }
 
-/// Pass as a collector's `reuse_ms` to ignore what other windows have already
-/// fetched and ask GitHub directly. What a manual refresh wants, and what the
-/// nudge after a `gh pr merge` wants — the whole point of both is to see the
-/// change now.
+/// A `reuse_ms` that ignores other windows' answers and asks GitHub directly —
+/// what a manual refresh and a post-`gh pr merge` nudge both want.
 pub const FETCH_NOW: i64 = 0;
 
 /// A tracked repo dir and the GitHub repo it turned out to be.
 struct TrackedRepo {
     dir: PathBuf,
-    /// `owner/repo`, when `gh` could name it. `None` keeps the dir in the sweep
-    /// — its error still has to surface — but out of the shared cache, which has
-    /// no key to file its answers under.
+    /// `owner/repo` when `gh` could name it. `None` keeps the dir in the sweep, so
+    /// its error surfaces, but out of the cache, which has no key for it.
     name: Option<String>,
 }
 
-/// The deduped dirs on their own, for the callers that work per *checkout*
-/// rather than per repo. Must stay the deduped list: every worktree of a repo
-/// resolves to one `owner/repo`, so handing the raw tracked list to per-repo
-/// work does it once per worktree.
+/// The deduped dirs alone, for callers working per *checkout*. Must stay deduped:
+/// the raw tracked list would do per-repo work once per worktree.
 fn dirs_of(repos: &[TrackedRepo]) -> Vec<PathBuf> {
     repos.iter().map(|r| r.dir.clone()).collect()
 }
 
-/// Run `collect_repo` over every repo — except the ones another window asked
-/// GitHub about less than `reuse_ms` ago, whose answers this one reuses. See
-/// [`sweep_cache`] for why windows share, and why the unit is one repo.
-///
-/// `kind` names the question, so two collectors don't read each other's answers.
-/// Logged as `gh.sweep` with how many went each way, since an *absence* of `gh`
-/// calls otherwise looks identical to a minimized or disabled window.
+/// Run `collect_repo` over every repo except those another window asked GitHub about
+/// under `reuse_ms` ago; see [`sweep_cache`]. `kind` names the question, so two
+/// collectors can't read each other's answers.
 fn sweep_repos_shared<T>(
     repos: &[TrackedRepo],
     kind: &str,
@@ -604,16 +526,14 @@ where
     T: Send + serde::Serialize + serde::de::DeserializeOwned,
 {
     let cache_dir = tt_config::gh_cache_dir().ok();
-    // [`FETCH_NOW`] can't match anything, so don't look. It still *publishes*
-    // below, for the windows running on a normal cadence.
+    // [`FETCH_NOW`] can't match, so don't look — but it still publishes below.
     let may_reuse = reuse_ms > FETCH_NOW;
     let mut reused: Vec<(String, Vec<T>)> = Vec::new();
     let mut to_fetch: Vec<PathBuf> = Vec::new();
     let mut oldest_reused_ms = 0;
     for repo in repos {
-        // A repo `gh` couldn't name has no key to look up, and a tracked dir
-        // that's gone has to reach `sweep_repos` so the run message reports the
-        // stale path instead of it being papered over with cached rows. Both ask.
+        // No name means no cache key; a gone dir must reach `sweep_repos` so the
+        // run message reports the stale path rather than cached rows papering it.
         let cached = match (&cache_dir, &repo.name) {
             (Some(dir), Some(name)) if may_reuse && repo.dir.is_dir() => {
                 sweep_cache::read_fresh::<T>(dir, kind, name, now_ms, reuse_ms)
@@ -644,26 +564,21 @@ where
         "gh.sweep"
     );
 
-    // Order doesn't matter downstream — `finish_sweep` folds every row into a
-    // map keyed by identity — so reused answers just join the fetched ones.
+    // Order doesn't matter: `finish_sweep` keys every row by identity.
     sweep.successes.extend(reused);
     sweep
 }
 
-/// Run `collect_repo` over every existing repo dir, partitioning outcomes.
-///
-/// The per-repo `gh` calls fan across a bounded pool of scoped threads so their
-/// latency overlaps. Each repo's outcome is independent — one repo's error never
-/// sinks another's rows — and the returned [`Sweep`] preserves input order, so
-/// downstream dedup and full-vs-partial replace behave as they did serially.
+/// Run `collect_repo` over every existing repo dir across a bounded thread pool.
+/// Each repo's outcome is independent — one error never sinks another's rows — and
+/// [`Sweep`] preserves input order, so downstream replace logic is unaffected.
 fn sweep_repos<T: Send>(
     repo_dirs: &[PathBuf],
     collect_repo: impl Fn(&std::path::Path) -> Result<(String, Vec<T>), String> + Sync,
 ) -> Sweep<T> {
     let outcomes = parallel_map(repo_dirs, SWEEP_CONCURRENCY, |dir| {
-        // Tracked repos can go stale (moved/deleted dirs); a missing cwd makes
-        // `Command` fail with a misleading "gh not found" error, so skip them
-        // here and surface the skip in the run message instead.
+        // A missing cwd makes `Command` fail with a misleading "gh not found",
+        // so skip here and surface it in the run message instead.
         if !dir.is_dir() {
             return RepoOutcome::Skipped(format!("skipped missing repo dir {}", dir.display()));
         }
@@ -684,13 +599,9 @@ fn sweep_repos<T: Send>(
     sweep
 }
 
-/// Dedupe tracked repo dirs by their resolved GitHub `owner/repo`, keeping the
-/// first dir seen for each.
-///
-/// Every worktree of a repo is its own tracked directory but shares one GitHub
-/// identity; sweeping all of them fires byte-identical queries straight into the
-/// GraphQL budget, which is per-token, not per-directory (#322). Resolution
-/// reuses a process-lifetime cache, so this costs nothing after the first tick.
+/// Dedupe tracked dirs by resolved `owner/repo`, keeping the first seen. Every
+/// worktree shares one GitHub identity, so sweeping all of them fires identical
+/// queries into a budget that is per-token, not per-directory.
 fn dedupe_repo_dirs(repo_dirs: &[PathBuf]) -> Vec<TrackedRepo> {
     let resolved = parallel_map(repo_dirs, SWEEP_CONCURRENCY, |dir| {
         (dir.clone(), gh::repo_name_with_owner(dir))
@@ -698,12 +609,9 @@ fn dedupe_repo_dirs(repo_dirs: &[PathBuf]) -> Vec<TrackedRepo> {
     dedupe_resolved(resolved)
 }
 
-/// Pure half of [`dedupe_repo_dirs`]: keep the first dir per resolved name, plus
-/// every dir whose resolution *failed* — that can't prove two dirs are the same
-/// repo, and its error must still surface rather than be silently dropped.
-///
-/// The resolved name travels with the dir: it is the key the shared cache files
-/// a repo's answers under, so re-deriving it downstream would duplicate work.
+/// Pure half of [`dedupe_repo_dirs`]: first dir per resolved name, plus every dir
+/// whose resolution *failed* — it can't be proven a duplicate, and its error must
+/// still surface. The name travels with the dir; it is the shared cache's key.
 fn dedupe_resolved(resolved: Vec<(PathBuf, Result<String, String>)>) -> Vec<TrackedRepo> {
     let mut seen = std::collections::HashSet::new();
     resolved
@@ -715,12 +623,9 @@ fn dedupe_resolved(resolved: Vec<(PathBuf, Result<String, String>)>) -> Vec<Trac
         .collect()
 }
 
-/// Apply `f` to every item across up to `max_workers` scoped threads, returning
-/// the results in input order regardless of completion order.
-///
-/// A shared atomic cursor hands each idle worker the next index, so a slow repo
-/// doesn't stall the others; results are re-sorted by index after the join.
-/// Panics in `f` propagate — but the collectors never panic, by contract.
+/// Apply `f` across up to `max_workers` scoped threads, returning results in input
+/// order. A shared cursor hands each idle worker the next index, so a slow repo
+/// doesn't stall the others. Panics in `f` propagate — collectors never panic.
 fn parallel_map<In, Out>(
     items: &[In],
     max_workers: usize,
@@ -767,12 +672,9 @@ where
     collected.into_iter().map(|(_, out)| out).collect()
 }
 
-/// Apply a sweep's results to the store and record the run.
-///
-/// `write(all, None)` performs a full-table replace; `write(all, Some(repos))`
-/// replaces only the named repos' rows. `key_of` yields the `(repo, number)`
-/// identity used to dedup items collected from two checkouts of one repo
-/// (parallel worktrees).
+/// Apply a sweep's results and record the run. `write(all, None)` is a full-table
+/// replace, `Some(repos)` a scoped one; `key_of` yields the identity that dedups
+/// items collected from two checkouts of one repo.
 fn finish_sweep<T>(
     store: &Store,
     key: &str,
@@ -784,8 +686,7 @@ fn finish_sweep<T>(
     let Sweep { successes, errors, skipped } = sweep;
 
     if successes.is_empty() {
-        // Nothing succeeded: never touch existing rows. All-skipped (or an
-        // empty tracked list) is a clean no-op; any error marks the run failed.
+        // Nothing succeeded: never touch existing rows. Any error fails the run.
         let ok = errors.is_empty();
         let mut notes: Vec<String> = errors.into_iter().chain(skipped).collect();
         if notes.is_empty() {
@@ -815,13 +716,9 @@ fn finish_sweep<T>(
     finish(store, key, errors.is_empty(), count, message, now_ms)
 }
 
-/// Run the collectors a manual "refresh now" fires: issues, then PRs, then — only
-/// when a Slack config is supplied — the watched DM. Calendar is excluded, since
-/// every run spends `claude` tokens. `slack` is `Some` only when the caller has
-/// it enabled and configured, so `None` skips cleanly.
-///
-/// Asks GitHub itself rather than reusing another window's answers: the user
-/// pressed a button, and stale data reads as the button doing nothing.
+/// What a manual "refresh now" fires: issues, PRs, and the watched DM when `slack`
+/// is configured. Calendar is excluded — every run spends `claude` tokens. Asks
+/// GitHub itself, since stale data reads as the button doing nothing.
 pub fn collect_manual(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -838,12 +735,9 @@ pub fn collect_manual(
     summaries
 }
 
-/// Sync one repo's issues + PRs immediately — the rail's manual "Sync now".
-/// Never takes [`collect_issues`]/[`collect_prs`]'s full-table-replace path:
-/// even a clean run only touches `dir`'s own rows, so syncing one repo can never
-/// wipe another's. A missing `dir` is a recorded failure, not a sweep's silent
-/// skip. Still records the shared `issues`/`prs` run rows, whose timestamp
-/// tracks engine health rather than per-repo coverage.
+/// The rail's "Sync now" for one repo. Never takes the full-table-replace path:
+/// even a clean run touches only `dir`'s rows, so one repo can't wipe another's. A
+/// missing `dir` is a recorded failure, not a sweep's silent skip.
 pub fn collect_repo_now(store: &Store, dir: &Path, now_ms: i64) -> Vec<CollectSummary> {
     if !dir.is_dir() {
         let msg = format!("repo directory not found: {}", dir.display());
@@ -862,10 +756,8 @@ fn collect_repo_issues_now(store: &Store, dir: &Path, now_ms: i64) -> CollectSum
     write_repo_issues_now(store, issues::collect_repo_issues(dir), now_ms)
 }
 
-/// Apply one repo's freshly-collected issues via the scoped
-/// [`Store::replace_issues_for_repos`] write — factored out from
-/// [`collect_repo_issues_now`] so the scoping behavior is unit-testable
-/// without shelling out to `gh`.
+/// Apply one repo's issues via the scoped write — split out so the scoping is
+/// unit-testable without shelling out to `gh`.
 fn write_repo_issues_now(
     store: &Store,
     result: Result<(String, Vec<tt_store::IssueInput>), String>,
@@ -884,10 +776,8 @@ fn collect_repo_prs_now(store: &Store, dir: &Path, now_ms: i64) -> CollectSummar
     write_repo_prs_now(store, prs::collect_repo_prs(dir), now_ms)
 }
 
-/// Apply one repo's freshly-collected PRs via the scoped
-/// [`Store::replace_prs_for_repos`] write — factored out from
-/// [`collect_repo_prs_now`] so the scoping behavior is unit-testable without
-/// shelling out to `gh`.
+/// Apply one repo's PRs via the scoped write — split out so the scoping is
+/// unit-testable without shelling out to `gh`.
 fn write_repo_prs_now(
     store: &Store,
     result: Result<(String, Vec<tt_store::PrInput>), String>,
@@ -902,19 +792,15 @@ fn write_repo_prs_now(
     }
 }
 
-/// The tracked repo directories from the agentboard repos config, or an empty
-/// vec if the config is missing/empty. Only real checkouts live here — task
-/// worktrees are never `repos.json` entries (they are store records), so no
-/// stale-worktree scrubbing is needed before reading.
+/// Tracked repo dirs from the agentboard repos config. Only real checkouts live
+/// here — task worktrees are store records, never `repos.json` entries.
 pub fn tracked_repo_dirs() -> Vec<PathBuf> {
     let path = tt_agentboard::repos::default_repos_path();
     tt_agentboard::repos::load_repos(&path).into_iter().map(PathBuf::from).collect()
 }
 
-// Internals
-
-/// Record the run and build the matching summary. A failed `record_run` write is
-/// ignored (the collector contract forbids surfacing it as an error/panic).
+/// Record the run and build the summary. A failed `record_run` is ignored — the
+/// contract forbids surfacing it.
 fn finish(
     store: &Store,
     collector: &str,
@@ -927,13 +813,9 @@ fn finish(
     CollectSummary { collector: collector.to_string(), ok, count, message }
 }
 
-/// Ask `claude -p` for one calendar's events, capped at [`CLAUDE_TIMEOUT`].
-///
-/// The error is one line fit for the run message, and says which kind of failure
-/// it was: `claude -p failed: <the CLI's reason>` for a credit, auth or
-/// rate-limit failure, versus a shape complaint when the payload didn't fit
-/// [`EventInput`]. Collapsing the two makes an expired MCP auth read as "no
-/// parseable JSON in claude output".
+/// Ask `claude -p` for one calendar's events, capped at [`CLAUDE_TIMEOUT`]. The error
+/// distinguishes a claude-side failure (credit, auth, rate limit) from a shape
+/// complaint — collapsed, an expired MCP auth reads as unparseable output.
 fn run_claude_calendar(prompt: &str) -> Result<Vec<EventInput>, String> {
     log::debug!("claude -p ({} byte prompt)", prompt.len());
     let answer: CalendarAnswer = tt_exec::claude::Ask::new(prompt, CALENDAR_SCHEMA, CLAUDE_TIMEOUT)
@@ -1050,7 +932,6 @@ mod tests {
         assert!(summary.ok);
         assert_eq!(summary.count, 0);
         assert_eq!(summary.message.as_deref(), Some("no repos configured"));
-        // The run is recorded under the `prs` key.
         let runs = store.runs().unwrap();
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].collector, "prs");
@@ -1066,8 +947,7 @@ mod tests {
         let merged = collect_prs_merged(&store, &[], FETCH_NOW, 2);
         assert!(merged.ok);
         assert_eq!(merged.count, 0);
-        // Both cadences are splits of the same logical collector, so they
-        // record under the same `prs` key rather than two separate ones.
+        // Both cadences are splits of one logical collector, so one `prs` key.
         let runs = store.runs().unwrap();
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].collector, "prs");
@@ -1085,9 +965,7 @@ mod tests {
     #[test]
     fn collect_manual_includes_slack_only_when_configured() {
         let store = Store::open_in_memory().unwrap();
-        // `watch_user_id` left empty so `collect_slack_dm` records its
-        // misconfiguration failure and returns before any network call — enough
-        // to prove the slack summary is appended when a config is supplied.
+        // `watch_user_id` left empty, so this fails before any network call.
         let config = SlackDmConfig {
             token: "xoxp-test".to_string(),
             watch_user_id: String::new(),
@@ -1146,10 +1024,8 @@ mod tests {
 
     #[test]
     fn rollup_never_overturns_an_explicit_outcome() {
-        // A task closed as abandoned whose linked PR later reads merged: the
-        // rollup must not resurrect-and-complete it (set_task_status would
-        // clear the outcome as a side effect), and a reopened ref must not
-        // drag an archived done task back to backlog.
+        // A task closed as abandoned whose linked PR later reads merged must not
+        // be resurrected — `set_task_status` would clear the outcome as it went.
         let store = Store::open_in_memory().unwrap();
         let task = store.add_task("closed", "doing", None, None, 1).unwrap();
         store.attach_task_pr(task.id, "o/r", 10, "u").unwrap();
@@ -1162,10 +1038,9 @@ mod tests {
         assert_eq!(after.outcome.as_deref(), Some("abandoned"));
     }
 
-    /// Both halves must link, or the pass that writes the merged rows and the
-    /// pass that links them are two racing tasks — and a nudge fires them
-    /// together. Asserted through archiving, `link_task_prs`' one effect that
-    /// needs no `gh`.
+    /// Both halves must link, or the pass writing the merged rows and the pass
+    /// linking them race — and a nudge fires them together. Asserted through
+    /// archiving, `link_task_prs`' one effect that needs no `gh`.
     #[test]
     fn the_merged_half_links_its_own_rows() {
         let store = Store::open_in_memory().unwrap();
@@ -1179,8 +1054,7 @@ mod tests {
 
     #[test]
     fn sync_sweep_archives_old_finished_tasks() {
-        // The sweep rides sync_task_links' cadence: anything finished more
-        // than ARCHIVE_AFTER_MS ago leaves the active board.
+        // Anything finished more than ARCHIVE_AFTER_MS ago leaves the board.
         let store = Store::open_in_memory().unwrap();
         let old = store.add_task("old", "doing", None, None, 1).unwrap();
         store.close_task(old.id, TaskOutcome::Done, 10).unwrap();
@@ -1205,21 +1079,18 @@ mod tests {
 
     #[test]
     fn absent_refs_are_never_inferred_closed() {
-        // The regression the old reconcile had: an issue that merely left the
-        // snapshot (reassigned away, collector failure) must not roll its task
-        // to done. State only changes via the snapshot or a targeted fetch.
+        // An issue that merely left the snapshot (reassigned away, collector
+        // failure) must not roll its task to done.
         let store = Store::open_in_memory().unwrap();
         store.replace_issues(&[issue("o/r", 1)]).unwrap();
         let task = store.add_task("linked", "doing", None, None, 1).unwrap();
         store.attach_task_issue(task.id, "o/r", 1, "u").unwrap();
         store.refresh_link_states_from_cache(2).unwrap();
 
-        // The ref vanishes from the snapshot entirely.
         store.replace_issues(&[]).unwrap();
         store.refresh_link_states_from_cache(3).unwrap();
         assert_eq!(rollup_task_statuses(&store, 3).unwrap(), 0);
         assert_eq!(store.get_task(task.id).unwrap().unwrap().status, "doing");
-        // …but it is reported for a targeted fetch.
         assert_eq!(
             store.open_issue_refs_missing_from_cache().unwrap(),
             vec![("o/r".to_string(), 1)]
@@ -1239,22 +1110,19 @@ mod tests {
         }
     }
 
-    /// Local noon on a fixed day, so a `now + 1h` event stays inside the same
-    /// local calendar day on any machine's time zone (avoids midnight flakiness).
+    /// Local noon, so a `now + 1h` event can't cross into the next local day.
     fn local_noon_ms() -> i64 {
         use chrono::{Local, TimeZone};
         Local.with_ymd_and_hms(2026, 7, 12, 12, 0, 0).unwrap().timestamp_millis()
     }
 
-    /// Write `events` into `source`'s lane for the local day containing `now`,
-    /// the same way [`collect_calendar`] does.
+    /// Write `events` into `source`'s lane the way [`collect_calendar`] does.
     fn seed(store: &Store, source: &str, events: &[EventInput], now: i64) {
         let (start, end) = Store::local_day_bounds(now);
         store.replace_events_for_source(source, start, end, events, now).unwrap();
     }
 
-    /// Run the store half of one source's pull for the local day containing
-    /// `now` — what `collect_calendar_source` does after `claude -p` returns.
+    /// The store half of one source's pull, after `claude -p` returns.
     fn apply(
         store: &Store,
         source: &str,
@@ -1270,7 +1138,6 @@ mod tests {
         let now = local_noon_ms();
         let (start, end) = Store::local_day_bounds(now);
         assert!(start <= now && now < end, "now falls inside its own local day");
-        // A day is 23–25h wide depending on DST; noon is always well inside it.
         assert!(end - start >= 23 * 60 * 60 * 1000);
         assert!(end - start <= 25 * 60 * 60 * 1000);
     }
@@ -1307,7 +1174,6 @@ mod tests {
     fn calendar_empty_result_with_no_future_events_clears_ok() {
         let store = Store::open_in_memory().unwrap();
         let now = local_noon_ms();
-        // Only a past event today; nothing still upcoming.
         seed(&store, "google", &[cal_event("past", now - 60 * 60 * 1000)], now);
 
         assert_eq!(apply(&store, "google", &[], now).unwrap(), 0, "a genuinely empty day is fine");
@@ -1329,14 +1195,12 @@ mod tests {
 
     #[test]
     fn one_sources_empty_sweep_neither_consults_nor_clears_another() {
-        // The whole point of per-source scoping: outlook coming back empty must
-        // not be excused by google's rows, and must not delete them either.
+        // Outlook coming back empty must be neither excused by google's rows nor
+        // allowed to delete them.
         let store = Store::open_in_memory().unwrap();
         let now = local_noon_ms();
         seed(&store, "google", &[cal_event("personal", now + 60 * 60 * 1000)], now);
 
-        // Outlook has no rows of its own → its empty result is genuinely empty,
-        // even though google holds a future event.
         assert_eq!(apply(&store, "outlook", &[], now).unwrap(), 0);
 
         let stored = store.events_between(now, now + 24 * 60 * 60 * 1000).unwrap();
@@ -1357,7 +1221,6 @@ mod tests {
         assert!(summary.ok);
         assert_eq!(summary.count, 0);
         assert_eq!(summary.message.as_deref(), Some("no calendar sources enabled"));
-        // Still recorded under the single aggregate key.
         let runs = store.runs().unwrap();
         assert_eq!(runs[0].collector, "claude:calendar");
     }
@@ -1416,10 +1279,8 @@ mod tests {
 
     #[test]
     fn write_repo_issues_now_only_replaces_the_synced_repo() {
-        // The bug this exists to prevent: `collect_issues` with a 1-element
-        // repo_dirs slice would see a "clean" sweep and do a full-table
-        // replace, wiping every other tracked repo's rows. The scoped write
-        // must never do that.
+        // The bug this prevents: a 1-element sweep reads as "clean" and full-table
+        // replaces, wiping every other tracked repo's rows.
         let store = Store::open_in_memory().unwrap();
         store.replace_issues(&[issue("o/a", 1), issue("o/b", 2)]).unwrap();
 
@@ -1510,7 +1371,6 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         store.replace_issues(&[issue("o/a", 1), issue("o/b", 2)]).unwrap();
 
-        // o/a re-collected (fresh row 3); o/b errored.
         let sweep = Sweep {
             successes: vec![("o/a".to_string(), vec![issue("o/a", 3)])],
             errors: vec!["gh failed in /repos/b: boom".to_string()],
@@ -1576,10 +1436,8 @@ mod tests {
 
     #[test]
     fn dedupe_resolved_keeps_every_dir_that_fails_to_resolve() {
-        // A dir whose resolution errors (offline, no gh auth, moved) can't be
-        // proven a duplicate of anything, so it must survive the dedup pass —
-        // its error still needs to surface from the real collect call. Unnamed,
-        // so it takes no part in the shared cache either.
+        // A dir whose resolution errors can't be proven a duplicate, so it survives
+        // the dedup pass to surface its error. Unnamed, so it skips the cache too.
         let deduped = dedupe_resolved(vec![
             (PathBuf::from("/worktrees/a"), Err("gh: not a git repo".to_string())),
             (PathBuf::from("/worktrees/b"), Err("gh: not a git repo".to_string())),
@@ -1600,8 +1458,7 @@ mod tests {
 
     #[test]
     fn parallel_map_preserves_input_order() {
-        // Reversed sleeps so completion order differs from input order; the
-        // result must still come back sorted by input position.
+        // Reversed sleeps, so completion order differs from input order.
         let inputs: Vec<usize> = (0..12).collect();
         let out = parallel_map(&inputs, 4, |&n| {
             std::thread::sleep(std::time::Duration::from_millis(((12 - n) % 5) as u64));
@@ -1612,9 +1469,7 @@ mod tests {
 
     #[test]
     fn parallel_sweep_contains_failures_and_keeps_order() {
-        // Five tracked dirs; the middle one is missing (skipped) and one existing
-        // repo errors. The surviving repos' results must come back in input order
-        // and the failure must not sink them.
+        // One dir missing (skipped) and one repo erroring must not sink the rest.
         let root = tempfile::tempdir().unwrap();
         let make = |name: &str| {
             let p = root.path().join(name);
@@ -1629,8 +1484,7 @@ mod tests {
             make("repo4"),
         ];
 
-        // Stub collector: repo3 fails; every other existing repo yields one issue
-        // whose number encodes its input position, so ordering is checkable.
+        // Each issue's number encodes its input position, so ordering is checkable.
         let collect =
             |dir: &std::path::Path| -> Result<(String, Vec<tt_store::IssueInput>), String> {
                 let name = dir.file_name().unwrap().to_string_lossy().to_string();
@@ -1643,7 +1497,6 @@ mod tests {
 
         let sweep = sweep_repos(&repo_dirs, collect);
 
-        // Order preserved: successes follow input order, minus the skip and error.
         let repos: Vec<&str> = sweep.successes.iter().map(|(r, _)| r.as_str()).collect();
         assert_eq!(repos, ["repo0", "repo1", "repo4"], "successes keep input order");
         let numbers: Vec<i64> = sweep.successes.iter().map(|(_, v)| v[0].number).collect();
@@ -1658,7 +1511,6 @@ mod tests {
     #[test]
     fn sweep_dedups_same_repo_from_two_checkouts() {
         let store = Store::open_in_memory().unwrap();
-        // Two worktrees of one repo both succeed and report the same issue.
         let sweep = Sweep {
             successes: vec![
                 ("o/a".to_string(), vec![issue("o/a", 1)]),
