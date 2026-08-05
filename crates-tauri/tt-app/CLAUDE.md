@@ -107,9 +107,7 @@ invariants a single read won't surface: it is the largest crate in the repo
   `TT_SESSION_ID` that wrote it and `note_is_mine` drops other instances' —
   otherwise one `gh pr create` makes every open window sweep `gh`. A note naming
   nobody still fires everywhere, and `NudgeSeen` advances even for a skipped note
-  so it is rejected once rather than re-read on every wakeup. That last part is
-  why a nudge batch is **exempt from the minimized-window skip** (`should_collect`):
-  the note is already consumed by then, so skipping is losing, not deferring.
+  so it is rejected once rather than re-read on every wakeup.
 
 ## IDE bridge, telemetry, and the rest
 
