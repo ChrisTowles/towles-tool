@@ -11,12 +11,11 @@ use crate::{CONFIG_FILE, Severity};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Rule {
-    /// Too much commentary against the code in one file.
+    /// Too many comment lines past the surface's budget in one file. For prose
+    /// there is no code to earn a budget, so the whole file is the excess.
     CommentBudget,
     /// One unbroken block of comment too long to wade through.
     CommentRun,
-    /// A prose file past its length band.
-    LongDoc,
     /// An opt-out directive that named no reason.
     UnexplainedOptOut,
     /// A readable file no surface claims, so nothing measures it.
@@ -77,9 +76,9 @@ pub fn judge(cfg: &Config, stats: &[FileStats]) -> Vec<Finding> {
             }
             continue;
         }
-        // A prose file on a ratio surface (or a code file on a length one) has no
-        // tier that can fire, so it is claimed, unmeasured, and reads exactly
-        // like passing — the same failure `unclaimed` exists to catch.
+        // A prose file on a run-only surface has no tier that can fire, so it
+        // is claimed, unmeasured, and reads exactly like passing — the same
+        // failure `unclaimed` exists to catch.
         if !enforced(s, surface) {
             out.push(Finding {
                 severity: Severity::Error,
@@ -93,8 +92,6 @@ pub fn judge(cfg: &Config, stats: &[FileStats]) -> Vec<Finding> {
                     surface.name
                 ),
             });
-        } else if s.doc_lines.is_some() {
-            out.extend(long_doc(s, surface));
         } else {
             out.extend(comment_runs(s, surface));
             out.extend(comment_budget(s, surface));
@@ -103,28 +100,10 @@ pub fn judge(cfg: &Config, stats: &[FileStats]) -> Vec<Finding> {
     out
 }
 
-/// Whether the surface carries a tier of the shape this file is measured in.
+/// Whether the surface carries a tier that can fire on this file. Prose has no
+/// runs, so only the excess gate reaches it.
 fn enforced(s: &FileStats, surface: &Surface) -> bool {
-    if s.doc_lines.is_some() {
-        surface.length.is_some()
-    } else {
-        surface.ratio.is_some() || surface.run.is_some()
-    }
-}
-
-fn long_doc(s: &FileStats, surface: &Surface) -> Option<Finding> {
-    let lines = s.doc_lines?;
-    let tiers = surface.length.as_ref()?;
-    let (severity, cap) = tiers.hit(|&n| lines >= n)?;
-    let what = if s.scoped { "lines added" } else { "lines" };
-    Some(Finding {
-        severity,
-        rule: Rule::LongDoc,
-        file: s.file.clone(),
-        span: None,
-        surface: Some(surface.name.clone()),
-        message: format!("{lines} {what} (threshold {cap}, surface {})", surface.name),
-    })
+    surface.excess_tiers().is_some() || (s.doc_lines.is_none() && surface.run.is_some())
 }
 
 fn comment_runs(s: &FileStats, surface: &Surface) -> Vec<Finding> {
@@ -152,26 +131,34 @@ fn comment_runs(s: &FileStats, surface: &Surface) -> Vec<Finding> {
 }
 
 fn comment_budget(s: &FileStats, surface: &Surface) -> Option<Finding> {
-    let t = surface.ratio.as_ref()?;
-    let over = s.overshoot(t.budget);
-    let tiers = t.tiers();
-    let (severity, cap) = tiers.hit(|&n| over >= n)?;
-    let what = if s.scoped { "added comment lines" } else { "comment lines" };
+    let (budget, tiers) = surface.excess_tiers()?;
+    let excess = s.excess(budget);
+    let (severity, cap) = tiers.hit(|&n| excess >= n)?;
+    let message = match s.doc_lines {
+        Some(lines) => {
+            let what = if s.scoped { "lines added" } else { "lines" };
+            format!("{lines} {what} of prose (threshold {cap}+, surface {})", surface.name)
+        }
+        None => {
+            let what = if s.scoped { "added comment lines" } else { "comment lines" };
+            format!(
+                "{excess} {what} over the {:.0}% budget ({} comment against {} code is {:.0}%; \
+                 threshold {cap}+ over, surface {})",
+                100.0 * budget,
+                s.counted,
+                s.code,
+                100.0 * s.ratio(),
+                surface.name
+            )
+        }
+    };
     Some(Finding {
         severity,
         rule: Rule::CommentBudget,
         file: s.file.clone(),
         span: None,
         surface: Some(surface.name.clone()),
-        message: format!(
-            "{over} {what} over the {:.0}% budget ({} comment against {} code is {:.0}%; \
-             threshold {cap}+ over, surface {})",
-            100.0 * t.budget,
-            s.counted,
-            s.code,
-            100.0 * s.ratio(),
-            surface.name
-        ),
+        message,
     })
 }
 

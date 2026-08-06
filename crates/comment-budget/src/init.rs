@@ -221,7 +221,6 @@ fn render(langs: &[&Lang], seen: &BTreeSet<String>, seeds: &BTreeMap<&str, Seed>
         let _ = writeln!(out, "goal  = \"{}\"", lang.goal);
         match seeds.get(lang.kind).unwrap_or(&Seed::default_for(lang)) {
             Seed::Ratio { budget } => {
-                let _ = writeln!(out, "[surface.ratio]");
                 let _ = writeln!(out, "budget = {budget:.2}   # comments may be this share, free");
                 let _ = writeln!(out, "warn   = 20     # warn at 20 comment lines past that");
                 let _ = writeln!(out, "error  = 60");
@@ -230,8 +229,7 @@ fn render(langs: &[&Lang], seen: &BTreeSet<String>, seeds: &BTreeMap<&str, Seed>
                 let _ = writeln!(out, "error = 14");
             }
             Seed::Length { warn, error } => {
-                let _ = writeln!(out, "[surface.length]");
-                let _ = writeln!(out, "warn  = {warn}");
+                let _ = writeln!(out, "warn  = {warn}   # no code, no budget: the whole file");
                 let _ = writeln!(out, "error = {error}");
             }
         }

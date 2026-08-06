@@ -53,6 +53,15 @@ impl FileStats {
         let keep = (ratio / (1.0 - ratio) * self.code as f64).floor() as usize;
         self.counted.saturating_sub(keep)
     }
+
+    /// The lines past budget a reader wades through: overshoot for code, the
+    /// whole file for prose, which has no code to earn any allowance.
+    pub fn excess(&self, budget: f64) -> usize {
+        match self.doc_lines {
+            Some(lines) => lines,
+            None => self.overshoot(budget),
+        }
+    }
 }
 
 /// A config glob that claims no files — it matches nothing, or an earlier

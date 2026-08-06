@@ -83,19 +83,24 @@ impl Grammar {
     }
 }
 
-/// One tier table per signal, every threshold a line count: `ratio` for excess
-/// comment lines past its budget, `run` for an unbroken block, `length` for a
-/// prose file. Unknown keys are rejected so a stale or misspelled one fails
-/// loudly instead of silently enforcing nothing.
+/// One gate, in excess comment lines: `budget` is the share of a file comments
+/// may be for free, and warn/error count the lines past it. Prose has no code
+/// to earn an allowance, so a prose file is all excess and `budget` buys it
+/// nothing — length is the degenerate case of the same signal, not its own.
+/// `run` caps one unbroken comment block beside it. Unknown keys are rejected
+/// so a stale or misspelled one fails loudly instead of silently enforcing
+/// nothing.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
     pub name: String,
     pub paths: Vec<String>,
     pub goal: String,
-    pub ratio: Option<RatioBudget>,
+    /// Absent means 0: every counted comment line is excess.
+    pub budget: Option<f64>,
+    pub warn: Option<usize>,
+    pub error: Option<usize>,
     pub run: Option<Tiers<usize>>,
-    pub length: Option<Tiers<usize>>,
     /// Compiled once rather than per file: `claims` is called for every surface
     /// on every file in the tree, and recompiling there is the whole walk's cost.
     #[serde(skip)]
@@ -109,24 +114,13 @@ impl Surface {
             .iter()
             .any(|g| g.matches_with(rel, GLOB))
     }
-}
 
-/// The ratio signal. `budget` is the comment share a file gets for free;
-/// warn/error are counts of comment lines *past* it (the file's overshoot).
-/// Mass and density gate together by construction — a tiny stub can't be far
-/// over, and a big lightly-commented file never is — and the number is the one
-/// the fix is measured in: lines to delete.
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RatioBudget {
-    pub budget: f64,
-    pub warn: usize,
-    pub error: usize,
-}
-
-impl RatioBudget {
-    pub fn tiers(&self) -> Tiers<usize> {
-        Tiers { warn: self.warn, error: self.error }
+    /// The excess gate, `None` for a run-only surface.
+    pub fn excess_tiers(&self) -> Option<(f64, Tiers<usize>)> {
+        match (self.warn, self.error) {
+            (Some(warn), Some(error)) => Some((self.budget.unwrap_or(0.0), Tiers { warn, error })),
+            _ => None,
+        }
     }
 }
 
@@ -206,10 +200,23 @@ impl Config {
             ))
         };
         for s in &self.surfaces {
-            if s.ratio.is_none() && s.run.is_none() && s.length.is_none() {
+            if s.warn.is_some() != s.error.is_some() {
                 return Err(bad(format!(
-                    "surface `{}` enforces nothing — give it [surface.ratio]/[surface.run] \
-                     for code, or [surface.length] for prose",
+                    "surface `{}` has warn or error alone; they come as a pair",
+                    s.name
+                )));
+            }
+            let excess = s.excess_tiers();
+            if excess.is_none() && s.budget.is_some() {
+                return Err(bad(format!(
+                    "surface `{}` has a budget but no warn/error to enforce it",
+                    s.name
+                )));
+            }
+            if excess.is_none() && s.run.is_none() {
+                return Err(bad(format!(
+                    "surface `{}` enforces nothing — give it warn/error (excess comment \
+                     lines, plus a `budget` share for code), and/or [surface.run]",
                     s.name
                 )));
             }
@@ -221,35 +228,31 @@ impl Config {
                     bad(format!("surface `{}` has an invalid path glob `{p}`: {e}", s.name))
                 })?;
             }
-            if let Some(t) = &s.ratio {
-                // A budget at or past 1.0 can never fire (and `overshoot`
-                // divides by `1 - ratio`), so the surface would pass forever.
-                if !(0.0..1.0).contains(&t.budget) {
-                    return Err(bad(format!(
-                        "surface `{}` has budget {}, which must be at least 0 and below 1",
-                        s.name, t.budget
-                    )));
-                }
-                if t.warn > t.error {
-                    return Err(inverted(&s.name, "ratio"));
-                }
+            // A budget at or past 1.0 can never fire (and `overshoot` divides
+            // by `1 - ratio`), so the surface would pass forever.
+            if let Some(b) = s.budget
+                && !(0.0..1.0).contains(&b)
+            {
+                return Err(bad(format!(
+                    "surface `{}` has budget {b}, which must be at least 0 and below 1",
+                    s.name
+                )));
+            }
+            if let Some((_, t)) = &excess
+                && t.warn > t.error
+            {
+                return Err(inverted(&s.name, "excess"));
             }
             if let Some(t) = &s.run
                 && t.warn > t.error
             {
                 return Err(inverted(&s.name, "run"));
             }
-            if let Some(t) = &s.length
-                && t.warn > t.error
-            {
-                return Err(inverted(&s.name, "length"));
-            }
-            // Overshoot is 0 for a file at its budget, so `warn = 0` fires on
-            // every file the surface claims; the same zero breaks run/length.
+            // Excess is 0 for a file at its budget, so `warn = 0` fires on
+            // every file the surface claims; the same zero breaks `run`.
             let zeroed = [
-                s.ratio.as_ref().map(|t| t.warn),
+                excess.as_ref().map(|(_, t)| t.warn),
                 s.run.as_ref().map(|t| t.warn),
-                s.length.as_ref().map(|t| t.warn),
             ];
             if zeroed.into_iter().flatten().any(|w| w == 0) {
                 return Err(bad(format!(

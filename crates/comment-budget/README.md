@@ -15,11 +15,12 @@ So the budget is a cap on what review can actually absorb. One question:
 comment_lines / (comment_lines + code_lines)      blank lines ignored
 ```
 
-So `0.15` means "1 line in 7 is comment" — not comments-per-code-line. Two other
-signals sit beside the ratio: an over-long unbroken *run* of comment, and an
-over-long `.md`. It never reads what a comment *says*, so it can't tell you one
-is stale or wrong — that is not the check. Volume is, and nothing else measures
-it.
+So `0.15` means "1 line in 7 is comment" — not comments-per-code-line. The gate
+is on the *excess* past that share; an over-long `.md` is the same gate, since
+prose has no code and is all excess. One other signal sits beside it: an
+over-long unbroken *run* of comment. It never reads what a comment *says*, so
+it can't tell you one is stale or wrong — that is not the check. Volume is, and
+nothing else measures it.
 
 ## Install
 
@@ -78,14 +79,13 @@ the root of the tree, found by searching upward from the working directory.
   the failure mode of this design is a tree nobody noticed was exempt, and that
   reads exactly like passing. A glob that claims no files (matching nothing, or
   shadowed by an earlier surface) is a standing **warning** for the same reason.
-- Every threshold is a line count, one `{ warn, error }` pair per signal:
-  `surface.ratio` for comment lines past the file's budget, `surface.run` for an
-  unbroken comment block, `surface.length` for a prose file's total lines. The
-  report measures each surface against its budget.
-- `surface.ratio` gates a file's **overshoot**: its comment lines beyond what
-  `budget` allows for its size. Mass and density gate together by construction —
-  a tiny stub can't be far over budget, a big lightly-commented file never is —
-  and the number is the one the fix is measured in: lines to delete.
+- A surface's `warn`/`error` gate its **excess**: comment lines beyond what
+  `budget` allows for a file's size. Mass and density gate together by
+  construction — a tiny stub can't be far over budget, a big lightly-commented
+  file never is — and the number is the one the fix is measured in: lines to
+  delete. Prose has no code to earn a budget, so a `.md` file is all excess:
+  the same gate caps its length, with no `budget` key at all. `[surface.run]`
+  caps one unbroken comment block beside it.
 
 A file may opt out with a top-of-file `comment-budget: allow(<reason>)`. The
 reason is required — an unexplained opt-out is the failure mode it exists to
@@ -110,7 +110,6 @@ extensions = ["md"]
 name   = "crates"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Document the module and the crossing points; not every pub item."
-[surface.ratio]
 budget = 0.15                     # comments may be 15% of a file, free
 warn   = 20                       # warn at 20 comment lines past that
 error  = 60
@@ -121,10 +120,9 @@ error = 14
 [[surface]]
 name   = "docs"
 paths  = ["**/*.md"]
-goal   = "Prose has no code to sit against, so length is the only signal it offers."
-[surface.length]
-warn  = 150
-error = 250
+goal   = "Prose has no code to sit against, so the whole file is the excess."
+warn   = 150
+error  = 250
 
 [escape]
 directive = "comment-budget: allow(<reason>)"

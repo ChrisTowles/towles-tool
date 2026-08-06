@@ -29,7 +29,6 @@ extensions = ["md"]
 name   = "code"
 paths  = ["src/**/*.rs"]
 goal   = "test surface"
-[surface.ratio]
 budget = 0.20
 warn   = 2
 error  = 4
@@ -41,15 +40,13 @@ error = 5
 name   = "docs"
 paths  = ["**/*.md"]
 goal   = "test prose surface"
-[surface.length]
-warn  = 3
-error = 6
+warn   = 3
+error  = 6
 
 [[surface]]
 name   = "infra"
 paths  = ["infra/**/*.tf"]
 goal   = "test hcl surface"
-[surface.ratio]
 budget = 0.08
 warn   = 2
 error  = 4
@@ -250,12 +247,14 @@ fn a_skipped_directory_is_not_even_unclaimed() {
     assert!(tree.findings().is_empty());
 }
 
+/// Prose has no code to earn a budget, so the whole file is its excess and the
+/// one gate covers it — no separate length rule.
 #[test]
 fn prose_is_measured_by_length() {
     let tree = Tree::new("prose").file("notes.md", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
     let f = tree.findings();
     assert_eq!(f.len(), 1, "{f:?}");
-    assert_eq!(f[0].rule, Rule::LongDoc);
+    assert_eq!(f[0].rule, Rule::CommentBudget);
     assert_eq!(f[0].severity, Severity::Error, "7 lines is past the 6-line error tier");
 }
 
@@ -304,7 +303,7 @@ fn a_ratio_that_can_never_fire_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"impossible\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         [surface.ratio]\nbudget = 1.0\nwarn = 20\nerror = 60\n\n\
+         budget = 1.0\nwarn = 20\nerror = 60\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");
@@ -333,7 +332,25 @@ fn warn_above_error_is_rejected() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// Overshoot is 0 for a file at its budget, so `warn = 0` would fire on every
+#[test]
+fn warn_without_error_is_rejected() {
+    let dir = scratch_root().join("half-pair");
+    fs::create_dir_all(&dir).expect("mkdir");
+    let cfg = dir.join("comment-budget.toml");
+    fs::write(
+        &cfg,
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"half\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
+         budget = 0.2\nwarn = 10\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let err = Config::load(&cfg).expect_err("warn without error is rejected");
+    assert!(err.to_string().contains("come as a pair"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Excess is 0 for a file at its budget, so `warn = 0` would fire on every
 /// file the surface claims.
 #[test]
 fn a_zero_warn_threshold_is_rejected() {
@@ -344,7 +361,7 @@ fn a_zero_warn_threshold_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"zero\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         [surface.ratio]\nbudget = 0.2\nwarn = 0\nerror = 4\n\n\
+         budget = 0.2\nwarn = 0\nerror = 4\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");
@@ -432,7 +449,7 @@ fn init_writes_a_config_the_tool_accepts() {
     assert!(analysis.unclaimed.is_empty(), "every readable file is claimed");
     assert!(analysis.dead_globs.is_empty(), "every generated glob claims something");
     let text = fs::read_to_string(dir.join("comment-budget.toml")).expect("read config");
-    assert!(text.contains("[surface.ratio]"), "{text}");
+    assert!(text.contains("budget = "), "{text}");
 
     let err = comment_budget::init::init(&dir).expect_err("refuses to overwrite");
     assert!(err.to_string().contains("already exists"), "{err}");
