@@ -46,13 +46,21 @@ impl FileStats {
         if total == 0 { 0.0 } else { self.counted as f64 / total as f64 }
     }
 
-    /// How many comment lines this file would have to lose to reach `target` —
+    /// How many comment lines this file would have to lose to reach `ratio` —
     /// the thing that actually orders a cleanup, since a 90%-prose file of 20
     /// lines costs nothing to fix and a 40% one of 800 lines is a week.
-    pub fn overshoot(&self, target: f64) -> usize {
-        let keep = (target / (1.0 - target) * self.code as f64).floor() as usize;
+    pub fn overshoot(&self, ratio: f64) -> usize {
+        let keep = (ratio / (1.0 - ratio) * self.code as f64).floor() as usize;
         self.counted.saturating_sub(keep)
     }
+}
+
+/// A config glob that claims no files — it matches nothing, or an earlier
+/// surface claims everything it matches.
+#[derive(Debug)]
+pub struct DeadGlob {
+    pub surface: usize,
+    pub glob: String,
 }
 
 #[derive(Debug)]
@@ -60,6 +68,7 @@ pub struct Analysis {
     pub stats: Vec<FileStats>,
     /// Files a kind can read that no surface claims.
     pub unclaimed: Vec<String>,
+    pub dead_globs: Vec<DeadGlob>,
 }
 
 pub fn analyze(
@@ -70,6 +79,9 @@ pub fn analyze(
     let mut files = Vec::new();
     collect_files(root, root, cfg, &mut files);
     files.sort();
+    // From the full walk, before diff scoping: a glob is dead against the tree,
+    // not against what this branch happened to touch.
+    let dead_globs = dead_globs(root, cfg, &files);
 
     let mut parser = tree_sitter::Parser::new();
     let mut stats = Vec::new();
@@ -119,7 +131,40 @@ pub fn analyze(
             },
         });
     }
-    Ok(Analysis { stats, unclaimed })
+    Ok(Analysis { stats, unclaimed, dead_globs })
+}
+
+/// Globs that claimed nothing. Checked against the surface that won each file,
+/// so a glob whose every match goes to an earlier surface is dead too — under
+/// first-match-wins that line of config does nothing, and reads like coverage.
+fn dead_globs(root: &Path, cfg: &Config, files: &[(PathBuf, Option<usize>)]) -> Vec<DeadGlob> {
+    let compiled: Vec<Vec<Option<glob::Pattern>>> = cfg
+        .surfaces
+        .iter()
+        .map(|s| s.paths.iter().map(|p| glob::Pattern::new(p).ok()).collect())
+        .collect();
+    let mut used: Vec<Vec<bool>> = compiled.iter().map(|p| vec![false; p.len()]).collect();
+    for (path, surface) in files {
+        let Some(i) = *surface else {
+            continue;
+        };
+        let rel = rel_path(root, path);
+        for (j, pat) in compiled[i].iter().enumerate() {
+            if pat.as_ref().is_some_and(|p| p.matches_with(&rel, crate::config::GLOB)) {
+                used[i][j] = true;
+            }
+        }
+    }
+    used.into_iter()
+        .enumerate()
+        .flat_map(|(i, hits)| {
+            let paths = &cfg.surfaces[i].paths;
+            hits.into_iter()
+                .enumerate()
+                .filter(|(_, hit)| !hit)
+                .map(move |(j, _)| DeadGlob { surface: i, glob: paths[j].clone() })
+        })
+        .collect()
 }
 
 pub fn rel_path(root: &Path, path: &Path) -> String {

@@ -11,10 +11,10 @@
 #   bevy (a published API)    rust 22.4%            <- deliberately NOT our target
 #   here, today               rust 23.1%  ts 36.8%  tsx 14.8%
 #
-# `surface.file` fires only when ratio AND lines both exceed the tier. Both at
-# once on purpose: mass alone flags a big well-commented file, ratio alone flags
-# a tiny stub whose three doc lines are 40% of nothing. Neither is the thing
-# being hunted, which is a file a reader has to wade through.
+# `surface.ratio` gates a file's overshoot: its comment lines beyond what
+# `budget` allows for its size. Mass and density gate together by construction —
+# a tiny stub can't be far over, a big lightly-commented file never is — and the
+# number is the one the fix is measured in: lines to delete.
 
 # Paths never measured, matched against any path component or prefix.
 # `components/ui` is vendored shadcn. Dot-directories are always skipped.
@@ -59,19 +59,19 @@ extensions = ["md"]
 
 # ---------------------------------------------------------------------------
 # Surfaces. First match wins; a file no surface claims is not measured at all.
-# `goal` is prose for humans; `target` is the number the linter aims at, and is
-# reported per surface rather than enforced; warn/error are the enforcement band
-# around it.
+# `goal` is prose for humans; warn/error are the gate, and every threshold is a
+# line count. Three signals: `ratio` (comment lines past `budget`'s share of the
+# file), `run` (one unbroken comment block), `length` (a prose file's total).
 # ---------------------------------------------------------------------------
 
 [[surface]]
 name   = "shared-libraries"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Two internal consumers, not a published API. Document the module and the crossing points; not every pub item."
-target = 0.08
-[surface.file]
-warn  = { ratio = 0.10, lines = 50 }
-error = { ratio = 0.12, lines = 100 }
+[surface.ratio]
+budget = 0.10
+warn   = 15
+error  = 40
 [surface.run]
 warn = 8                                # module docs are exempt, so a long //! header is fine
 error = 14
@@ -80,10 +80,10 @@ error = 14
 name   = "application-rust"
 paths  = ["crates-tauri/**/*.rs", "crates-cli/**/*.rs"]
 goal   = "No external API. Comment the surprise, never the signature."
-target = 0.09
-[surface.file]
-warn  = { ratio = 0.14, lines = 40 }
-error = { ratio = 0.22, lines = 80 }
+[surface.ratio]
+budget = 0.14
+warn   = 12
+error  = 30
 [surface.run]
 warn = 6
 error = 10
@@ -92,10 +92,10 @@ error = 10
 name   = "client-logic"
 paths  = ["apps/client/src/**/*.ts"]
 goal   = "Types are the documentation. Prose only for a race, an ordering constraint, or a WebKit quirk."
-target = 0.08
-[surface.file]
-warn  = { ratio = 0.12, lines = 30 }
-error = { ratio = 0.20, lines = 60 }
+[surface.ratio]
+budget = 0.12
+warn   = 10
+error  = 25
 [surface.run]
 warn = 5
 error = 8
@@ -104,10 +104,10 @@ error = 8
 name   = "client-components"
 paths  = ["apps/client/src/**/*.tsx"]
 goal   = "JSX describes itself. A file-top block only when the component encodes a non-obvious rule."
-target = 0.05
-[surface.file]
-warn  = { ratio = 0.08, lines = 25 }
-error = { ratio = 0.15, lines = 50 }
+[surface.ratio]
+budget = 0.08
+warn   = 10
+error  = 20
 [surface.run]
 warn = 4
 error = 6
@@ -127,15 +127,14 @@ paths  = [
   "crates/*/npm/**/*.js",          # the npm wrapper's install-time glue
   "crates/*/tests/**/*.rs",
   "crates/*/examples/**/*.rs",
-  "crates/*/benches/**/*.rs",
   "crates/*/build.rs",
   "apps/client/*.ts",              # vite.config.ts, vitest.config.ts
 ]
 goal   = "Read when it breaks, by someone who did not write it. Say what the tool is for and what would surprise them; skip the walkthrough."
-target = 0.12
-[surface.file]
-warn  = { ratio = 0.18, lines = 40 }
-error = { ratio = 0.28, lines = 80 }
+[surface.ratio]
+budget = 0.18
+warn   = 15
+error  = 40
 [surface.run]
 warn = 6
 error = 12
@@ -144,9 +143,9 @@ error = 12
 name   = "committed-markdown"
 paths  = ["**/*.md"]
 goal   = "Prose has no code to sit against, so length is the only signal it offers."
-target = { lines = 150 }
-warn   = { lines = 150 }
-error  = { lines = 250 }
+[surface.length]
+warn  = 150
+error = 250
 
 # ---------------------------------------------------------------------------
 [escape]

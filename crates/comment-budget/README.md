@@ -39,6 +39,8 @@ comment-budget --surface web      # one surface, for a session spent fixing it
 
 comment-budget --new-from-merge-base release   # gate against a branch other than main
 comment-budget --new-from-rev HEAD~3           # gate against a revision itself
+
+comment-budget init               # write a starter config, budgets seeded from this tree
 ```
 
 Exit status is `0` when nothing errored, `1` when something did, `2` on a bad
@@ -74,14 +76,21 @@ the root of the tree, found by searching upward from the working directory.
 - **surfaces** claim paths by glob and set the thresholds. First match wins, and
   a readable file no surface claims is a hard **error** — under first-match-wins
   the failure mode of this design is a tree nobody noticed was exempt, and that
-  reads exactly like passing.
-- `surface.file` fires only when ratio **and** line count both exceed a tier.
-  Mass alone flags a big well-commented file; ratio alone flags a tiny stub
-  whose three doc lines are 40% of nothing. Neither is the thing being hunted.
+  reads exactly like passing. A glob that claims no files (matching nothing, or
+  shadowed by an earlier surface) is a standing **warning** for the same reason.
+- Every threshold is a line count, one `{ warn, error }` pair per signal:
+  `surface.ratio` for comment lines past the file's budget, `surface.run` for an
+  unbroken comment block, `surface.length` for a prose file's total lines. The
+  report measures each surface against its budget.
+- `surface.ratio` gates a file's **overshoot**: its comment lines beyond what
+  `budget` allows for its size. Mass and density gate together by construction —
+  a tiny stub can't be far over budget, a big lightly-commented file never is —
+  and the number is the one the fix is measured in: lines to delete.
 
 A file may opt out with a top-of-file `comment-budget: allow(<reason>)`. The
 reason is required — an unexplained opt-out is the failure mode it exists to
-prevent. A minimal config:
+prevent. `comment-budget init` writes a starter config with each budget seeded
+at the tree's own 75th percentile. A minimal config:
 
 ```toml
 skip = ["node_modules", "target", "dist"]
@@ -101,10 +110,10 @@ extensions = ["md"]
 name   = "crates"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Document the module and the crossing points; not every pub item."
-target = 0.15                     # reported per surface, not enforced
-[surface.file]
-warn  = { ratio = 0.20, lines = 50 }
-error = { ratio = 0.30, lines = 100 }
+[surface.ratio]
+budget = 0.15                     # comments may be 15% of a file, free
+warn   = 20                       # warn at 20 comment lines past that
+error  = 60
 [surface.run]
 warn  = 8
 error = 14
@@ -113,9 +122,9 @@ error = 14
 name   = "docs"
 paths  = ["**/*.md"]
 goal   = "Prose has no code to sit against, so length is the only signal it offers."
-target = { lines = 150 }
-warn   = { lines = 150 }
-error  = { lines = 250 }
+[surface.length]
+warn  = 150
+error = 250
 
 [escape]
 directive = "comment-budget: allow(<reason>)"
