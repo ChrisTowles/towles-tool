@@ -83,13 +83,11 @@ impl Grammar {
     }
 }
 
-/// One gate, in excess comment lines: `budget` is the share of a file comments
-/// may be for free, and warn/error count the lines past it. Prose has no code
-/// to earn an allowance, so a prose file is all excess and `budget` buys it
-/// nothing — length is the degenerate case of the same signal, not its own.
-/// `run` caps one unbroken comment block beside it. Unknown keys are rejected
-/// so a stale or misspelled one fails loudly instead of silently enforcing
-/// nothing.
+/// One gate, in excess comment lines: `budget` is the share comments may be
+/// for free, and `over` tiers the lines past it — named so `over = { warn =
+/// 15 }` can't be misread as a percentage. Prose earns no allowance (no code),
+/// so a prose file is all excess: length is the same signal's degenerate case.
+/// Unknown keys are rejected so a stale or misspelled one fails loudly.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
@@ -98,8 +96,7 @@ pub struct Surface {
     pub goal: String,
     /// Absent means 0: every counted comment line is excess.
     pub budget: Option<f64>,
-    pub warn: Option<usize>,
-    pub error: Option<usize>,
+    pub over: Option<Tiers<usize>>,
     pub run: Option<Tiers<usize>>,
     /// Compiled once rather than per file: `claims` is called for every surface
     /// on every file in the tree, and recompiling there is the whole walk's cost.
@@ -116,11 +113,8 @@ impl Surface {
     }
 
     /// The excess gate, `None` for a run-only surface.
-    pub fn excess_tiers(&self) -> Option<(f64, Tiers<usize>)> {
-        match (self.warn, self.error) {
-            (Some(warn), Some(error)) => Some((self.budget.unwrap_or(0.0), Tiers { warn, error })),
-            _ => None,
-        }
+    pub fn excess_tiers(&self) -> Option<(f64, &Tiers<usize>)> {
+        self.over.as_ref().map(|t| (self.budget.unwrap_or(0.0), t))
     }
 }
 
@@ -200,23 +194,17 @@ impl Config {
             ))
         };
         for s in &self.surfaces {
-            if s.warn.is_some() != s.error.is_some() {
-                return Err(bad(format!(
-                    "surface `{}` has warn or error alone; they come as a pair",
-                    s.name
-                )));
-            }
             let excess = s.excess_tiers();
             if excess.is_none() && s.budget.is_some() {
                 return Err(bad(format!(
-                    "surface `{}` has a budget but no warn/error to enforce it",
+                    "surface `{}` has a budget but no `over` tiers to enforce it",
                     s.name
                 )));
             }
             if excess.is_none() && s.run.is_none() {
                 return Err(bad(format!(
-                    "surface `{}` enforces nothing — give it warn/error (excess comment \
-                     lines, plus a `budget` share for code), and/or [surface.run]",
+                    "surface `{}` enforces nothing — give it `over = {{ warn, error }}` \
+                     (excess comment lines past `budget`), and/or `run`",
                     s.name
                 )));
             }
@@ -241,7 +229,7 @@ impl Config {
             if let Some((_, t)) = &excess
                 && t.warn > t.error
             {
-                return Err(inverted(&s.name, "excess"));
+                return Err(inverted(&s.name, "over"));
             }
             if let Some(t) = &s.run
                 && t.warn > t.error

@@ -30,29 +30,22 @@ name   = "code"
 paths  = ["src/**/*.rs"]
 goal   = "test surface"
 budget = 0.20
-warn   = 2
-error  = 4
-[surface.run]
-warn = 3
-error = 5
+over   = { warn = 2, error = 4 }
+run    = { warn = 3, error = 5 }
 
 [[surface]]
 name   = "docs"
 paths  = ["**/*.md"]
 goal   = "test prose surface"
-warn   = 3
-error  = 6
+over   = { warn = 3, error = 6 }
 
 [[surface]]
 name   = "infra"
 paths  = ["infra/**/*.tf"]
 goal   = "test hcl surface"
 budget = 0.08
-warn   = 2
-error  = 4
-[surface.run]
-warn = 3
-error = 5
+over   = { warn = 2, error = 4 }
+run    = { warn = 3, error = 5 }
 
 [escape]
 directive = "comment-budget: allow(<reason>)"
@@ -303,7 +296,7 @@ fn a_ratio_that_can_never_fire_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"impossible\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         budget = 1.0\nwarn = 20\nerror = 60\n\n\
+         budget = 1.0\nover = { warn = 20, error = 60 }\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");
@@ -341,12 +334,12 @@ fn warn_without_error_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"half\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         budget = 0.2\nwarn = 10\n\n\
+         budget = 0.2\nover = { warn = 10 }\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");
     let err = Config::load(&cfg).expect_err("warn without error is rejected");
-    assert!(err.to_string().contains("come as a pair"), "{err}");
+    assert!(err.to_string().contains("missing field `error`"), "{err}");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -361,7 +354,7 @@ fn a_zero_warn_threshold_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"zero\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         budget = 0.2\nwarn = 0\nerror = 4\n\n\
+         budget = 0.2\nover = { warn = 0, error = 4 }\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");

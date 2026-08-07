@@ -222,15 +222,15 @@ fn render(langs: &[&Lang], seen: &BTreeSet<String>, seeds: &BTreeMap<&str, Seed>
         match seeds.get(lang.kind).unwrap_or(&Seed::default_for(lang)) {
             Seed::Ratio { budget } => {
                 let _ = writeln!(out, "budget = {budget:.2}   # comments may be this share, free");
-                let _ = writeln!(out, "warn   = 20     # warn at 20 comment lines past that");
-                let _ = writeln!(out, "error  = 60");
-                let _ = writeln!(out, "[surface.run]");
-                let _ = writeln!(out, "warn  = 8");
-                let _ = writeln!(out, "error = 14");
+                let _ = writeln!(out, "over   = {{ warn = 20, error = 60 }}   # lines past that");
+                let _ =
+                    writeln!(out, "run    = {{ warn = 8,  error = 14 }}   # one unbroken block");
             }
             Seed::Length { warn, error } => {
-                let _ = writeln!(out, "warn  = {warn}   # no code, no budget: the whole file");
-                let _ = writeln!(out, "error = {error}");
+                let _ = writeln!(
+                    out,
+                    "over   = {{ warn = {warn}, error = {error} }}   # no code, no budget: the whole file"
+                );
             }
         }
         let _ = writeln!(out);

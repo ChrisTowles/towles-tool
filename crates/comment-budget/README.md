@@ -79,13 +79,13 @@ the root of the tree, found by searching upward from the working directory.
   the failure mode of this design is a tree nobody noticed was exempt, and that
   reads exactly like passing. A glob that claims no files (matching nothing, or
   shadowed by an earlier surface) is a standing **warning** for the same reason.
-- A surface's `warn`/`error` gate its **excess**: comment lines beyond what
+- A surface's `over` tiers gate its **excess**: comment lines beyond what
   `budget` allows for a file's size. Mass and density gate together by
   construction — a tiny stub can't be far over budget, a big lightly-commented
   file never is — and the number is the one the fix is measured in: lines to
   delete. Prose has no code to earn a budget, so a `.md` file is all excess:
-  the same gate caps its length, with no `budget` key at all. `[surface.run]`
-  caps one unbroken comment block beside it.
+  the same gate caps its length, with no `budget` key at all. `run` caps one
+  unbroken comment block beside it.
 
 A file may opt out with a top-of-file `comment-budget: allow(<reason>)`. The
 reason is required — an unexplained opt-out is the failure mode it exists to
@@ -110,19 +110,15 @@ extensions = ["md"]
 name   = "crates"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Document the module and the crossing points; not every pub item."
-budget = 0.15                     # comments may be 15% of a file, free
-warn   = 20                       # warn at 20 comment lines past that
-error  = 60
-[surface.run]
-warn  = 8
-error = 14
+budget = 0.15                        # comments may be 15% of a file, free
+over   = { warn = 20, error = 60 }   # comment lines past that
+run    = { warn = 8,  error = 14 }   # one unbroken comment block
 
 [[surface]]
 name   = "docs"
 paths  = ["**/*.md"]
 goal   = "Prose has no code to sit against, so the whole file is the excess."
-warn   = 150
-error  = 250
+over   = { warn = 150, error = 250 }
 
 [escape]
 directive = "comment-budget: allow(<reason>)"

@@ -67,7 +67,7 @@ pub fn rules(cfg: &Config, only: Option<&str>, paint: &Paint) -> String {
                     format!("{n}+ lines")
                 }
             };
-            rule(&mut out, paint, "excess", band(t.warn), band(t.error));
+            rule(&mut out, paint, "over", band(t.warn), band(t.error));
         }
         if let Some(t) = &surface.run {
             let band = |n: &usize| format!("{n}+ lines unbroken");
