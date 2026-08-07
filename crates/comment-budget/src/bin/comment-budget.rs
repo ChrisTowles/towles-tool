@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use comment_budget::report::{self, Paint};
 use comment_budget::{
-    CommentBudgetError, Config, DEFAULT_BASE, Diff, Finding, Severity, Since, analyze, judge,
-    unclaimed_findings,
+    CommentBudgetError, Config, DEFAULT_BASE, Diff, Finding, Severity, Since, analyze,
+    dead_glob_findings, judge, unclaimed_findings,
 };
 
 const USAGE: &str = "comment-budget — a budget for comment volume, for a codebase an AI writes most
@@ -19,8 +19,11 @@ says.
 usage: comment-budget [--all] [--report] [--surface <name>] [--format <fmt>]
                       [--new-from-merge-base [<ref>] | --new-from-rev <ref>]
                       [--whole-files] [--root <dir>] [--config <file>]
+       comment-budget init [--root <dir>]
 
   (no flags)                    only the lines this branch adds over `main` — the gate
+  init                          write a starter comment-budget.toml, budgets seeded
+                                from the tree's own p75 (warn) / p90 (error)
   --report                      the thresholds in effect, the surface table and the
                                 worst files, no finding list
   --surface <name>              restrict to one surface, for a session spent fixing it
@@ -56,6 +59,18 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    if args.first().is_some_and(|a| a == "init") {
+        return match run_init(&args[1..]) {
+            Ok(msg) => {
+                println!("{msg}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::from(2)
+            }
+        };
     }
     match Args::parse(&args) {
         Ok(parsed) => match run(parsed) {
@@ -153,6 +168,15 @@ fn check_flags(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_init(rest: &[String]) -> Result<String, String> {
+    let root = match rest {
+        [] => std::env::current_dir().map_err(|e| e.to_string())?,
+        [flag, dir] if flag == "--root" => PathBuf::from(dir),
+        _ => return Err("init takes only --root <dir>".into()),
+    };
+    comment_budget::init::init(&root).map_err(|e| e.to_string())
+}
+
 fn takes_value(flag: &str) -> bool {
     matches!(
         flag,
@@ -192,6 +216,11 @@ fn run(args: Args) -> Result<ExitCode, CommentBudgetError> {
     let stats: Vec<_> = analysis.stats.into_iter().filter(|s| picked(s.surface)).collect();
 
     let mut findings = judge(&cfg, &stats);
+    findings.extend(
+        dead_glob_findings(&cfg, &analysis.dead_globs)
+            .into_iter()
+            .filter(|f| args.only.as_ref().is_none_or(|n| f.surface.as_deref() == Some(n))),
+    );
     if args.only.is_none() {
         findings.extend(unclaimed_findings(&analysis.unclaimed));
     }

@@ -20,14 +20,15 @@
 
 pub mod config;
 pub mod diff;
+pub mod init;
 pub mod judge;
 pub mod measure;
 pub mod report;
 
 pub use config::{CONFIG_FILE, Config};
 pub use diff::{DEFAULT_BASE, Diff, Since};
-pub use judge::{Finding, Rule, judge, unclaimed_findings};
-pub use measure::{Analysis, FileStats, Run, analyze};
+pub use judge::{Finding, Rule, dead_glob_findings, judge, unclaimed_findings};
+pub use measure::{Analysis, DeadGlob, FileStats, Run, analyze};
 
 use std::path::PathBuf;
 
@@ -59,6 +60,12 @@ pub enum CommentBudgetError {
     },
     #[error("could not read the current directory: {0}")]
     CurrentDir(#[source] std::io::Error),
+    #[error("could not write {}: {source}", path.display())]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("{}: {message}", path.display())]
     Config { path: PathBuf, message: String },
     #[error("could not parse {file}: {message}")]

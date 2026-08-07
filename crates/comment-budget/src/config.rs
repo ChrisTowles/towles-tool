@@ -13,7 +13,7 @@ pub const CONFIG_FILE: &str = "comment-budget.toml";
 
 /// Glob semantics: `*` stops at a path separator, `**` crosses it. Without this
 /// `crates/*/src/**` would also claim `crates/a/b/c/src`.
-const GLOB: glob::MatchOptions = glob::MatchOptions {
+pub(crate) const GLOB: glob::MatchOptions = glob::MatchOptions {
     case_sensitive: true,
     require_literal_separator: true,
     require_literal_leading_dot: false,
@@ -83,16 +83,21 @@ impl Grammar {
     }
 }
 
+/// One gate, in excess comment lines: `budget` is the share comments may be
+/// for free, and `over` tiers the lines past it — named so `over = { warn =
+/// 15 }` can't be misread as a percentage. Prose earns no allowance (no code),
+/// so a prose file is all excess: length is the same signal's degenerate case.
+/// Unknown keys are rejected so a stale or misspelled one fails loudly.
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Surface {
     pub name: String,
     pub paths: Vec<String>,
     pub goal: String,
-    pub target: Option<Target>,
-    pub file: Option<Tiers<FileTier>>,
+    /// Absent means 0: every counted comment line is excess.
+    pub budget: Option<f64>,
+    pub over: Option<Tiers<usize>>,
     pub run: Option<Tiers<usize>>,
-    pub warn: Option<LinesTier>,
-    pub error: Option<LinesTier>,
     /// Compiled once rather than per file: `claims` is called for every surface
     /// on every file in the tree, and recompiling there is the whole walk's cost.
     #[serde(skip)]
@@ -107,33 +112,10 @@ impl Surface {
             .any(|g| g.matches_with(rel, GLOB))
     }
 
-    /// The length band a prose surface enforces, `None` for a code one.
-    pub fn doc_tiers(&self) -> Option<Tiers<usize>> {
-        match (&self.warn, &self.error) {
-            (Some(w), Some(e)) => Some(Tiers { warn: w.lines, error: e.lines }),
-            _ => None,
-        }
+    /// The excess gate, `None` for a run-only surface.
+    pub fn excess_tiers(&self) -> Option<(f64, &Tiers<usize>)> {
+        self.over.as_ref().map(|t| (self.budget.unwrap_or(0.0), t))
     }
-}
-
-/// What the surface aims at — a ratio for code, a length for prose. Reported
-/// against what was measured; never enforced, which is what warn/error are for.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(untagged)]
-pub enum Target {
-    Ratio(f64),
-    Lines { lines: usize },
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub struct FileTier {
-    pub ratio: f64,
-    pub lines: usize,
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub struct LinesTier {
-    pub lines: usize,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -150,6 +132,7 @@ impl Escape {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Tiers<T> {
     pub warn: T,
     pub error: T,
@@ -185,7 +168,12 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self, CommentBudgetError> {
         let text = std::fs::read_to_string(path)
             .map_err(|source| CommentBudgetError::Read { path: path.to_path_buf(), source })?;
-        let cfg: Config = toml::from_str(&text).map_err(|e| CommentBudgetError::Config {
+        Self::parse(&text, path)
+    }
+
+    /// `path` names the config in errors only; nothing is read from it.
+    pub fn parse(text: &str, path: &Path) -> Result<Self, CommentBudgetError> {
+        let cfg: Config = toml::from_str(text).map_err(|e| CommentBudgetError::Config {
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;
@@ -198,11 +186,25 @@ impl Config {
     fn validate(&self, path: &Path) -> Result<(), CommentBudgetError> {
         let bad =
             |message: String| CommentBudgetError::Config { path: path.to_path_buf(), message };
+        // Error is checked before warn, so a warn tier above error can never
+        // fire — a misconfiguration that reads exactly like a healthy surface.
+        let inverted = |name: &str, signal: &str| {
+            bad(format!(
+                "surface `{name}` puts warn above error on `{signal}`, so warn can never fire"
+            ))
+        };
         for s in &self.surfaces {
-            if s.file.is_none() && s.run.is_none() && s.doc_tiers().is_none() {
+            let excess = s.excess_tiers();
+            if excess.is_none() && s.budget.is_some() {
                 return Err(bad(format!(
-                    "surface `{}` enforces nothing — give it [surface.file]/[surface.run], \
-                     or warn/error line counts for a prose surface",
+                    "surface `{}` has a budget but no `over` tiers to enforce it",
+                    s.name
+                )));
+            }
+            if excess.is_none() && s.run.is_none() {
+                return Err(bad(format!(
+                    "surface `{}` enforces nothing — give it `over = {{ warn, error }}` \
+                     (excess comment lines past `budget`), and/or `run`",
                     s.name
                 )));
             }
@@ -214,23 +216,35 @@ impl Config {
                     bad(format!("surface `{}` has an invalid path glob `{p}`: {e}", s.name))
                 })?;
             }
-            // A ratio at or past 1.0 can never fire (and `overshoot` divides by
-            // `1 - ratio`), so the surface would read as passing forever.
-            let ratios = [
-                match s.target {
-                    Some(Target::Ratio(r)) => Some(r),
-                    _ => None,
-                },
-                s.file.as_ref().map(|t| t.warn.ratio),
-                s.file.as_ref().map(|t| t.error.ratio),
+            // A budget at or past 1.0 can never fire (and `overshoot` divides
+            // by `1 - ratio`), so the surface would pass forever.
+            if let Some(b) = s.budget
+                && !(0.0..1.0).contains(&b)
+            {
+                return Err(bad(format!(
+                    "surface `{}` has budget {b}, which must be at least 0 and below 1",
+                    s.name
+                )));
+            }
+            if let Some((_, t)) = &excess
+                && t.warn > t.error
+            {
+                return Err(inverted(&s.name, "over"));
+            }
+            if let Some(t) = &s.run
+                && t.warn > t.error
+            {
+                return Err(inverted(&s.name, "run"));
+            }
+            let zeroed = [
+                excess.as_ref().map(|(_, t)| t.warn),
+                s.run.as_ref().map(|t| t.warn),
             ];
-            for r in ratios.into_iter().flatten() {
-                if !(0.0..1.0).contains(&r) {
-                    return Err(bad(format!(
-                        "surface `{}` has ratio {r}, which must be at least 0 and below 1",
-                        s.name
-                    )));
-                }
+            if zeroed.into_iter().flatten().any(|w| w == 0) {
+                return Err(bad(format!(
+                    "surface `{}` has a warn threshold of 0, which fires on everything",
+                    s.name
+                )));
             }
         }
         Ok(())

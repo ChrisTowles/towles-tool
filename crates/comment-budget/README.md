@@ -15,11 +15,12 @@ So the budget is a cap on what review can actually absorb. One question:
 comment_lines / (comment_lines + code_lines)      blank lines ignored
 ```
 
-So `0.15` means "1 line in 7 is comment" — not comments-per-code-line. Two other
-signals sit beside the ratio: an over-long unbroken *run* of comment, and an
-over-long `.md`. It never reads what a comment *says*, so it can't tell you one
-is stale or wrong — that is not the check. Volume is, and nothing else measures
-it.
+So `0.15` means "1 line in 7 is comment" — not comments-per-code-line. The gate
+is on the *excess* past that share; an over-long `.md` is the same gate, since
+prose has no code and is all excess. One other signal sits beside it: an
+over-long unbroken *run* of comment. It never reads what a comment *says*, so
+it can't tell you one is stale or wrong — that is not the check. Volume is, and
+nothing else measures it.
 
 ## Install
 
@@ -39,6 +40,8 @@ comment-budget --surface web      # one surface, for a session spent fixing it
 
 comment-budget --new-from-merge-base release   # gate against a branch other than main
 comment-budget --new-from-rev HEAD~3           # gate against a revision itself
+
+comment-budget init               # write a starter config, budgets seeded from this tree
 ```
 
 Exit status is `0` when nothing errored, `1` when something did, `2` on a bad
@@ -74,14 +77,20 @@ the root of the tree, found by searching upward from the working directory.
 - **surfaces** claim paths by glob and set the thresholds. First match wins, and
   a readable file no surface claims is a hard **error** — under first-match-wins
   the failure mode of this design is a tree nobody noticed was exempt, and that
-  reads exactly like passing.
-- `surface.file` fires only when ratio **and** line count both exceed a tier.
-  Mass alone flags a big well-commented file; ratio alone flags a tiny stub
-  whose three doc lines are 40% of nothing. Neither is the thing being hunted.
+  reads exactly like passing. A glob that claims no files (matching nothing, or
+  shadowed by an earlier surface) is a standing **warning** for the same reason.
+- A surface's `over` tiers gate its **excess**: comment lines beyond what
+  `budget` allows for a file's size. Mass and density gate together by
+  construction — a tiny stub can't be far over budget, a big lightly-commented
+  file never is — and the number is the one the fix is measured in: lines to
+  delete. Prose has no code to earn a budget, so a `.md` file is all excess:
+  the same gate caps its length, with no `budget` key at all. `run` caps one
+  unbroken comment block beside it.
 
 A file may opt out with a top-of-file `comment-budget: allow(<reason>)`. The
 reason is required — an unexplained opt-out is the failure mode it exists to
-prevent. A minimal config:
+prevent. `comment-budget init` writes a starter config with each budget seeded
+at the tree's own 75th percentile. A minimal config:
 
 ```toml
 skip = ["node_modules", "target", "dist"]
@@ -101,21 +110,15 @@ extensions = ["md"]
 name   = "crates"
 paths  = ["crates/*/src/**/*.rs"]
 goal   = "Document the module and the crossing points; not every pub item."
-target = 0.15                     # reported per surface, not enforced
-[surface.file]
-warn  = { ratio = 0.20, lines = 50 }
-error = { ratio = 0.30, lines = 100 }
-[surface.run]
-warn  = 8
-error = 14
+budget = 0.15                        # comments may be 15% of a file, free
+over   = { warn = 20, error = 60 }   # comment lines past that
+run    = { warn = 8,  error = 14 }   # one unbroken comment block
 
 [[surface]]
 name   = "docs"
 paths  = ["**/*.md"]
-goal   = "Prose has no code to sit against, so length is the only signal it offers."
-target = { lines = 150 }
-warn   = { lines = 150 }
-error  = { lines = 250 }
+goal   = "Prose has no code to sit against, so the whole file is the excess."
+over   = { warn = 150, error = 250 }
 
 [escape]
 directive = "comment-budget: allow(<reason>)"

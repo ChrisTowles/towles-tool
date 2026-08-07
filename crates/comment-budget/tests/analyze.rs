@@ -29,33 +29,23 @@ extensions = ["md"]
 name   = "code"
 paths  = ["src/**/*.rs"]
 goal   = "test surface"
-target = 0.15
-[surface.file]
-warn  = { ratio = 0.20, lines = 2 }
-error = { ratio = 0.50, lines = 4 }
-[surface.run]
-warn = 3
-error = 5
+budget = 0.20
+over   = { warn = 2, error = 4 }
+run    = { warn = 3, error = 5 }
 
 [[surface]]
 name   = "docs"
 paths  = ["**/*.md"]
 goal   = "test prose surface"
-target = { lines = 3 }
-warn   = { lines = 3 }
-error  = { lines = 6 }
+over   = { warn = 3, error = 6 }
 
 [[surface]]
 name   = "infra"
 paths  = ["infra/**/*.tf"]
 goal   = "test hcl surface"
-target = 0.06
-[surface.file]
-warn  = { ratio = 0.08, lines = 2 }
-error = { ratio = 0.10, lines = 4 }
-[surface.run]
-warn = 3
-error = 5
+budget = 0.08
+over   = { warn = 2, error = 4 }
+run    = { warn = 3, error = 5 }
 
 [escape]
 directive = "comment-budget: allow(<reason>)"
@@ -159,8 +149,8 @@ fn a_trailing_comment_stays_code() {
 }
 
 #[test]
-fn ratio_and_mass_must_both_be_exceeded() {
-    // 50% prose, but only 1 comment line — under the 2-line warn floor.
+fn overshoot_needs_both_mass_and_density() {
+    // 50% prose, but 1 comment line is only 1 over the 20% budget — under warn.
     let tiny = Tree::new("tiny").file("src/lib.rs", "/// doc\nfn a() {}\n");
     assert!(tiny.findings().is_empty(), "a tiny stub is not the thing being hunted");
 
@@ -250,12 +240,14 @@ fn a_skipped_directory_is_not_even_unclaimed() {
     assert!(tree.findings().is_empty());
 }
 
+/// Prose has no code to earn a budget, so the whole file is its excess and the
+/// one gate covers it — no separate length rule.
 #[test]
 fn prose_is_measured_by_length() {
     let tree = Tree::new("prose").file("notes.md", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n");
     let f = tree.findings();
     assert_eq!(f.len(), 1, "{f:?}");
-    assert_eq!(f[0].rule, Rule::LongDoc);
+    assert_eq!(f[0].rule, Rule::CommentBudget);
     assert_eq!(f[0].severity, Severity::Error, "7 lines is past the 6-line error tier");
 }
 
@@ -274,7 +266,7 @@ fn overshoot_orders_the_work_queue() {
         .file("src/lib.rs", "// a\n// b\n// c\n// d\nfn a() {}\nfn b() {}\n")
         .stats();
     let f = stats.first().expect("one file measured");
-    // At a 50% target, 2 code lines earn 2 comment lines; 4 were written.
+    // At a 50% ratio, 2 code lines earn 2 comment lines; 4 were written.
     assert_eq!(f.overshoot(0.5), 2);
 }
 
@@ -304,14 +296,150 @@ fn a_ratio_that_can_never_fire_is_rejected() {
         &cfg,
         "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
          [[surface]]\nname = \"impossible\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
-         [surface.file]\n\
-         warn  = { ratio = 0.2, lines = 50 }\n\
-         error = { ratio = 1.0, lines = 100 }\n\n\
+         budget = 1.0\nover = { warn = 20, error = 60 }\n\n\
          [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
     )
     .expect("write config");
     let err = Config::load(&cfg).expect_err("a ratio at 1.0 is rejected");
     assert!(err.to_string().contains("must be at least 0 and below 1"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn warn_above_error_is_rejected() {
+    let dir = scratch_root().join("inverted");
+    fs::create_dir_all(&dir).expect("mkdir");
+    let cfg = dir.join("comment-budget.toml");
+    fs::write(
+        &cfg,
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"inverted\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
+         [surface.run]\nwarn = 10\nerror = 5\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let err = Config::load(&cfg).expect_err("warn above error is rejected");
+    assert!(err.to_string().contains("warn can never fire"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn warn_without_error_is_rejected() {
+    let dir = scratch_root().join("half-pair");
+    fs::create_dir_all(&dir).expect("mkdir");
+    let cfg = dir.join("comment-budget.toml");
+    fs::write(
+        &cfg,
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"half\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
+         budget = 0.2\nover = { warn = 10 }\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let err = Config::load(&cfg).expect_err("warn without error is rejected");
+    assert!(err.to_string().contains("missing field `error`"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_zero_warn_threshold_is_rejected() {
+    let dir = scratch_root().join("zero-warn");
+    fs::create_dir_all(&dir).expect("mkdir");
+    let cfg = dir.join("comment-budget.toml");
+    fs::write(
+        &cfg,
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"zero\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\n\
+         budget = 0.2\nover = { warn = 0, error = 4 }\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let err = Config::load(&cfg).expect_err("a zero warn threshold is rejected");
+    assert!(err.to_string().contains("fires on everything"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_unknown_surface_key_is_rejected() {
+    let dir = scratch_root().join("stale-key");
+    fs::create_dir_all(&dir).expect("mkdir");
+    let cfg = dir.join("comment-budget.toml");
+    fs::write(
+        &cfg,
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"stale\"\npaths = [\"**/*.rs\"]\ngoal = \"nothing\"\ntarget = 0.15\n\
+         [surface.run]\nwarn = 5\nerror = 10\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let err = Config::load(&cfg).expect_err("an unknown key is rejected");
+    assert!(err.to_string().contains("target"), "{err}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_glob_that_claims_nothing_is_flagged() {
+    let tree = Tree::new("dead-globs").file("src/lib.rs", "fn a() {}\n");
+    let (cfg, root) = Config::discover(&tree.0).expect("discover config");
+    let analysis = analyze(&root, &cfg, None).expect("analyze");
+    let f = comment_budget::dead_glob_findings(&cfg, &analysis.dead_globs);
+    assert_eq!(f.len(), 2, "the docs and infra globs claim nothing: {f:?}");
+    assert!(f.iter().all(|f| f.rule == Rule::DeadGlob && f.severity == Severity::Warning));
+
+    let full = Tree::new("live-globs")
+        .file("src/lib.rs", "fn a() {}\n")
+        .file("notes.md", "one\n")
+        .file("infra/main.tf", "resource \"a\" \"b\" {}\n");
+    let (cfg, root) = Config::discover(&full.0).expect("discover config");
+    let analysis = analyze(&root, &cfg, None).expect("analyze");
+    assert!(comment_budget::dead_glob_findings(&cfg, &analysis.dead_globs).is_empty());
+}
+
+/// Under first-match-wins a glob can match plenty and still claim nothing.
+#[test]
+fn a_fully_shadowed_glob_is_flagged() {
+    let dir = scratch_root().join("shadowed");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("src")).expect("mkdir");
+    fs::write(dir.join("src/lib.rs"), "fn a() {}\n").expect("write fixture");
+    fs::write(
+        dir.join("comment-budget.toml"),
+        "[kinds.rust]\ngrammar = \"rust\"\nextensions = [\"rs\"]\n\n\
+         [[surface]]\nname = \"first\"\npaths = [\"**/*.rs\"]\ngoal = \"wins\"\n\
+         [surface.run]\nwarn = 5\nerror = 10\n\n\
+         [[surface]]\nname = \"second\"\npaths = [\"src/**/*.rs\"]\ngoal = \"shadowed\"\n\
+         [surface.run]\nwarn = 5\nerror = 10\n\n\
+         [escape]\ndirective = \"comment-budget: allow(<reason>)\"\n",
+    )
+    .expect("write config");
+    let (cfg, root) = Config::discover(&dir).expect("discover config");
+    let analysis = analyze(&root, &cfg, None).expect("analyze");
+    let f = comment_budget::dead_glob_findings(&cfg, &analysis.dead_globs);
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert_eq!(f[0].surface.as_deref(), Some("second"));
+    assert!(f[0].message.contains("src/**/*.rs"), "{}", f[0].message);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn init_writes_a_config_the_tool_accepts() {
+    let dir = scratch_root().join("init");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("src")).expect("mkdir");
+    fs::write(dir.join("src/lib.rs"), "// a\nfn a() {}\nfn b() {}\n").expect("write fixture");
+    fs::write(dir.join("README.md"), "hello\n").expect("write fixture");
+    let msg = comment_budget::init::init(&dir).expect("init succeeds");
+    assert!(msg.contains("2 kind(s)"), "{msg}");
+
+    let (cfg, root) = Config::discover(&dir).expect("the generated config parses and validates");
+    let analysis = analyze(&root, &cfg, None).expect("analyze");
+    assert!(analysis.unclaimed.is_empty(), "every readable file is claimed");
+    assert!(analysis.dead_globs.is_empty(), "every generated glob claims something");
+    let text = fs::read_to_string(dir.join("comment-budget.toml")).expect("read config");
+    assert!(text.contains("budget = "), "{text}");
+
+    let err = comment_budget::init::init(&dir).expect_err("refuses to overwrite");
+    assert!(err.to_string().contains("already exists"), "{err}");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -329,8 +457,8 @@ fn the_report_states_every_threshold_it_enforces() {
     let out = comment_budget::report::rules(&cfg, None, &comment_budget::report::Paint::PLAIN);
     // A threshold the report omits is one nobody knows is running.
     for band in [
-        "warn 20% at 2+ lines",
-        "error 50% at 4+ lines",
+        "warn 2+ lines over 20%",
+        "error 4+ lines over 20%",
         "warn 3+ lines unbroken",
         "error 5+ lines unbroken",
         "warn 3+ lines",
