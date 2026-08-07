@@ -305,8 +305,6 @@ fn a_ratio_that_can_never_fire_is_rejected() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// Error is checked before warn, so an inverted pair leaves warn unreachable —
-/// a config that looks stricter than it is.
 #[test]
 fn warn_above_error_is_rejected() {
     let dir = scratch_root().join("inverted");
@@ -343,8 +341,6 @@ fn warn_without_error_is_rejected() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// Excess is 0 for a file at its budget, so `warn = 0` would fire on every
-/// file the surface claims.
 #[test]
 fn a_zero_warn_threshold_is_rejected() {
     let dir = scratch_root().join("zero-warn");
@@ -363,8 +359,6 @@ fn a_zero_warn_threshold_is_rejected() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// A stale key — like the removed `target` — must fail loudly, not sit in the
-/// config silently enforcing nothing.
 #[test]
 fn an_unknown_surface_key_is_rejected() {
     let dir = scratch_root().join("stale-key");

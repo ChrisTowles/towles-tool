@@ -100,8 +100,6 @@ pub fn judge(cfg: &Config, stats: &[FileStats]) -> Vec<Finding> {
     out
 }
 
-/// Whether the surface carries a tier that can fire on this file. Prose has no
-/// runs, so only the excess gate reaches it.
 fn enforced(s: &FileStats, surface: &Surface) -> bool {
     surface.excess_tiers().is_some() || (s.doc_lines.is_none() && surface.run.is_some())
 }

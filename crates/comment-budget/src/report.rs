@@ -58,8 +58,6 @@ pub fn rules(cfg: &Config, only: Option<&str>, paint: &Paint) -> String {
             paint.off,
         );
         if let Some((budget, t)) = surface.excess_tiers() {
-            // A zero budget is the prose case: nothing is free, so the band is
-            // a plain length.
             let band = |n: usize| {
                 if budget > 0.0 {
                     format!("{n}+ lines over {:.0}%", 100.0 * budget)

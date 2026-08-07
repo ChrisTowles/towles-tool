@@ -143,9 +143,6 @@ pub fn analyze(
     Ok(Analysis { stats, unclaimed, dead_globs })
 }
 
-/// Globs that claimed nothing. Checked against the surface that won each file,
-/// so a glob whose every match goes to an earlier surface is dead too — under
-/// first-match-wins that line of config does nothing, and reads like coverage.
 fn dead_globs(root: &Path, cfg: &Config, files: &[(PathBuf, Option<usize>)]) -> Vec<DeadGlob> {
     let compiled: Vec<Vec<Option<glob::Pattern>>> = cfg
         .surfaces

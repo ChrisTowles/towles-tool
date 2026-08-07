@@ -236,8 +236,6 @@ impl Config {
             {
                 return Err(inverted(&s.name, "run"));
             }
-            // Excess is 0 for a file at its budget, so `warn = 0` fires on
-            // every file the surface claims; the same zero breaks `run`.
             let zeroed = [
                 excess.as_ref().map(|(_, t)| t.warn),
                 s.run.as_ref().map(|t| t.warn),
