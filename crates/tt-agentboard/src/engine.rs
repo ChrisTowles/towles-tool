@@ -72,6 +72,8 @@ pub enum GitInvalidation {
     BaseBranch,
     /// Cached `linked_worktree_dirs` now names a directory that is gone.
     WorktreeRemoved,
+    /// A stage/unstage from the diff pane moved the index under us.
+    Staged,
 }
 
 impl GitInvalidation {
@@ -82,6 +84,7 @@ impl GitInvalidation {
             Self::DiffFocus => "diff_focus",
             Self::BaseBranch => "base_branch",
             Self::WorktreeRemoved => "worktree_removed",
+            Self::Staged => "staged",
         }
     }
 }

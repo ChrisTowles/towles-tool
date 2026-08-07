@@ -4,12 +4,21 @@
 
 export type EditorTarget = { path: string; line: number | null };
 
+const DIFF_SCHEMES = new Set([
+  "tt-diff-base",
+  "tt-diff-work",
+  // The staging views' sides (index/HEAD snapshots) — see diff-monaco.tsx.
+  "tt-diff-index",
+  "tt-diff-head",
+  "tt-diff-staged",
+]);
+
 export function pathFromModelUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
   const colon = uri.indexOf(":");
   if (colon < 0) return null;
   const scheme = uri.slice(0, colon);
-  if (scheme !== "file" && scheme !== "tt-diff-base" && scheme !== "tt-diff-work") return null;
+  if (scheme !== "file" && !DIFF_SCHEMES.has(scheme)) return null;
   // `file:` arrives fully formed; the diff schemes are minted with a bare path.
   const path = uri.slice(colon + 1).replace(/^\/\/[^/]*/, "");
   return path.startsWith("/") ? decodeURIComponent(path) : null;
@@ -20,9 +29,10 @@ export function editorTargetFromNode(node: Element | null): EditorTarget | null 
   const uri = editor?.dataset.uri;
   const path = pathFromModelUri(uri);
   if (!editor || !path) return null;
-  // Base-side numbers are the base revision's, not the working tree's.
-  const baseSide = uri?.startsWith("tt-diff-base:") ?? false;
-  return { path, line: baseSide ? null : lineAtNode(editor, node) };
+  // Only the working-tree side's line numbers are the file's own — every other
+  // side renders a git snapshot whose numbering can differ from disk.
+  const snapshotSide = uri != null && !uri.startsWith("file:") && !uri.startsWith("tt-diff-work:");
+  return { path, line: snapshotSide ? null : lineAtNode(editor, node) };
 }
 
 /** Matched to the margin overlay by the `top` offset both are positioned with. */

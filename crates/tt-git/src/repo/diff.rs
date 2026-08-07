@@ -412,7 +412,7 @@ pub(super) fn blob_at(tree: &gix::Tree<'_>, path: &str) -> Option<Vec<u8>> {
 ///
 /// Binary is decided the way git decides it — a NUL byte in the content — and
 /// yields no counts, matching `--numstat`'s `-` columns.
-fn count_lines(before: Option<&[u8]>, after: Option<&[u8]>) -> (i64, i64, bool) {
+pub(super) fn count_lines(before: Option<&[u8]>, after: Option<&[u8]>) -> (i64, i64, bool) {
     let before = before.unwrap_or(&[]);
     let after = after.unwrap_or(&[]);
     if is_binary(before) || is_binary(after) {

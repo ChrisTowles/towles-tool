@@ -3,7 +3,8 @@
 //! Agentboard poll alone ran ~100k subprocesses a day, each a fork, exec, config
 //! parse and ref-store load thrown away microseconds later. The same answers come
 //! back 10–100× faster from a cached [`Repo`] (`rev-parse HEAD`: 0.75ms vs 0.01ms).
-//! Ref reads, graph walks, status, diffs, ignore checks and patch identity are here.
+//! Ref reads, graph walks, status, diffs, ignore checks, patch identity and the
+//! index writes behind staging (`staging.rs`) are here.
 //!
 //! Three operations still shell out, none an oversight: **worktree
 //! add/remove/prune** (gitoxide's worktree API is read-only), **`merge
@@ -17,11 +18,13 @@ use std::sync::Mutex;
 mod diff;
 mod graph;
 mod patch;
+mod staging;
 mod status;
 
 pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 
 pub use patch::PatchId;
+pub use staging::StageState;
 pub use status::{StatusEntry, StatusSummary};
 
 /// Myers because that is git's default, and these numbers sit next to numbers
@@ -42,6 +45,10 @@ pub enum GitError {
     Open { path: String, detail: String },
     #[error("git read failed: {0}")]
     Read(String),
+    /// An index/object write that didn't land — unlike reads, callers surface
+    /// these to the user instead of degrading to a default.
+    #[error("git write failed: {0}")]
+    Write(String),
     #[error("no such revision: {0}")]
     NoSuchRev(String),
 }

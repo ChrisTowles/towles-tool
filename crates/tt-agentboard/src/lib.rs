@@ -31,6 +31,7 @@ pub mod repo_meta;
 pub mod repos;
 pub mod resume;
 pub mod sessions;
+pub mod staging;
 pub mod task_removal;
 pub mod task_status;
 pub mod text;
@@ -64,7 +65,7 @@ pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{
     CommitStat, DiffFile, DiffFiles, DiffMode, UntrackedCapInfo, base_file_content, commit_stats,
-    compute_git_info, diff_files, prune_stale_worktree,
+    compute_git_info, diff_files, index_file_content, prune_stale_worktree,
 };
 pub use git_meter::{GitWork, GitWorkMeter};
 pub use launch::{LaunchConfig, port_listening, read_launch_file};

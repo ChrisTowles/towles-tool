@@ -22,6 +22,8 @@ import { AUTOSAVE_DELAY_MS, diskChangeAction } from "@/lib/viewer-refresh";
 import { IdeSelectionOverlay } from "@/components/ide-selection-chip";
 import { EditorContextMenu } from "@/components/editor-context-menu";
 import { ViewerBanner } from "@/components/viewer-banner";
+import { ensureDiffGutterActions, registerStageTarget } from "@/components/diff-gutter-actions";
+import { stageCheckState } from "@/lib/diff-staging";
 import {
   diffWorkPath,
   mentionRangeFrom,
@@ -39,6 +41,10 @@ export type ChangedFile = {
   linesRemoved: number;
   /** Files under a collapsed `?` row: it is a directory, not a file. */
   untrackedFiles: number;
+  /** Index ≠ HEAD here — something is staged. Only the staging modes fill it. */
+  staged: boolean;
+  /** Worktree ≠ index here; with `staged`, a partially staged file. */
+  unstaged: boolean;
 };
 
 export type ChangedFiles = {
@@ -69,6 +75,8 @@ export function MonacoMultiDiff({
   registerReveal,
   reviewed,
   onToggleReviewed,
+  onToggleStage,
+  onStagingChanged,
   onDirtyChange,
   onConflictChange,
 }: {
@@ -85,6 +93,10 @@ export function MonacoMultiDiff({
   registerReveal?: (reveal: ((path: string) => void) | null) => void;
   reviewed: ReadonlySet<string>;
   onToggleReviewed?: (path: string) => void;
+  /** Staging modes' header checkbox: stage/unstage this whole file. */
+  onToggleStage?: (path: string) => void;
+  /** The index moved under a gutter action — refetch the file list. */
+  onStagingChanged?: () => void;
   onDirtyChange?: (path: string, dirty: boolean) => void;
   onConflictChange?: (path: string, conflict: boolean) => void;
 }) {
@@ -117,6 +129,13 @@ export function MonacoMultiDiff({
   // "Latest ref": the header checkboxes close over these once, at construction.
   const onToggleReviewedRef = useRef(onToggleReviewed);
   onToggleReviewedRef.current = onToggleReviewed;
+  const onToggleStageRef = useRef(onToggleStage);
+  onToggleStageRef.current = onToggleStage;
+  const onStagingChangedRef = useRef(onStagingChanged);
+  onStagingChangedRef.current = onStagingChanged;
+  // For header-checkbox stage state, which outlives any one files render.
+  const filesRef = useRef(files);
+  filesRef.current = files;
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
   const onConflictChangeRef = useRef(onConflictChange);
@@ -131,6 +150,9 @@ export function MonacoMultiDiff({
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
   const optionsChangedRef = useRef<{ fire(): void } | null>(null);
+
+  // The header checkboxes mean "viewed" in main mode and "staged" elsewhere.
+  const staging = mode !== "main";
 
   const applyReviewedState = (
     currentFiles: ChangedFile[],
@@ -148,6 +170,16 @@ export function MonacoMultiDiff({
       }
       const checkbox = checkboxesByPathRef.current.get(f.path);
       if (checkbox) checkbox.checked = isReviewed;
+    }
+  };
+
+  const applyStageState = (currentFiles: ChangedFile[]) => {
+    for (const f of currentFiles) {
+      const checkbox = checkboxesByPathRef.current.get(f.path);
+      if (!checkbox) continue;
+      const state = stageCheckState(f);
+      checkbox.checked = state === true;
+      checkbox.indeterminate = state === "indeterminate";
     }
   };
 
@@ -207,6 +239,40 @@ export function MonacoMultiDiff({
         void saveFile(path, model);
       }, AUTOSAVE_DELAY_MS),
     );
+  };
+
+  /** After a gutter action moved the index, the side rendering index content is
+   * stale: uncommitted's original, staged's modified. Refresh it in place (a
+   * rebuild would lose scroll), then let the pane refetch its file list. */
+  const refreshAfterStaging = async (
+    f: ChangedFile,
+    entry: { original?: TextModel; modified?: TextModel },
+  ) => {
+    if (mode === "uncommitted") {
+      const content = await fetchBase(dir, f, mode, baseBranch);
+      const original = entry.original;
+      if (
+        original &&
+        !original.isDisposed() &&
+        content != null &&
+        original.getValue() !== content
+      ) {
+        original.setValue(content);
+      }
+    } else {
+      const read = await invoke<string | null>("ab_get_index_file", { dir, path: f.path });
+      const content = read.unwrapOr(null);
+      const modified = entry.modified;
+      if (
+        modified &&
+        !modified.isDisposed() &&
+        content != null &&
+        modified.getValue() !== content
+      ) {
+        modified.setValue(content);
+      }
+    }
+    onStagingChangedRef.current?.();
   };
 
   // Entering a conflict kills the autosave, which the mtime guard would bounce.
@@ -306,6 +372,7 @@ export function MonacoMultiDiff({
           import("@codingame/monaco-vscode-api/vscode/vs/editor/browser/widget/diffEditor/utils"),
           import("@codingame/monaco-vscode-api/vscode/vs/base/browser/dom"),
         ]);
+        void ensureDiffGutterActions();
         const contents = await Promise.all(files.map((f) => fetchSides(dir, f, mode, baseBranch)));
         if (disposed || !containerRef.current) return;
 
@@ -316,9 +383,22 @@ export function MonacoMultiDiff({
         const models = new Map<string, { original?: TextModel; modified?: TextModel }>();
         mtimesRef.current = new Map();
         savedVersionsRef.current = new Map();
+        // Scheme is per mode because the gutter actions' `when` clauses key off
+        // `diffEditorOriginalUri`: Stage only over the index, Unstage only over
+        // HEAD — exactly how vscode's git extension scopes its gutter items.
+        const baseScheme =
+          mode === "staged"
+            ? "tt-diff-head"
+            : mode === "uncommitted"
+              ? "tt-diff-index"
+              : "tt-diff-base";
+        const workScheme = mode === "staged" ? "tt-diff-staged" : "tt-diff-work";
+        // The staged view renders two index/HEAD snapshots — nothing on disk to
+        // save to or watch, so the whole autosave/watch machinery stays off.
+        const mutable = mode !== "staged";
         const items = files.map((f, i) => {
-          const baseUri = monaco.Uri.parse(`tt-diff-base:${dir}/${f.oldPath ?? f.path}`);
-          const workUri = monaco.Uri.parse(`tt-diff-work:${dir}/${f.path}`);
+          const baseUri = monaco.Uri.parse(`${baseScheme}:${dir}/${f.oldPath ?? f.path}`);
+          const workUri = monaco.Uri.parse(`${workScheme}:${dir}/${f.path}`);
           monaco.editor.getModel(baseUri)?.dispose();
           monaco.editor.getModel(workUri)?.dispose();
           const entry: { original?: TextModel; modified?: TextModel } = {};
@@ -329,16 +409,34 @@ export function MonacoMultiDiff({
           if (contents[i].modified != null) {
             entry.modified = monaco.editor.createModel(contents[i].modified!, undefined, workUri);
             applyLanguageFallback(monaco, entry.modified, f.path);
-            mtimesRef.current.set(f.path, contents[i].modifiedMtimeMs);
-            savedVersionsRef.current.set(f.path, entry.modified.getAlternativeVersionId());
-            disposables.push(
-              entry.modified.onDidChangeContent(() => {
-                // A disk reload must neither flap dirty nor arm an autosave.
-                if (applyingDiskRef.current) return;
-                reportDirty(f.path, entry.modified!);
-                scheduleAutosave(f.path, entry.modified!);
+            if (mutable) {
+              mtimesRef.current.set(f.path, contents[i].modifiedMtimeMs);
+              savedVersionsRef.current.set(f.path, entry.modified.getAlternativeVersionId());
+              disposables.push(
+                entry.modified.onDidChangeContent(() => {
+                  // A disk reload must neither flap dirty nor arm an autosave.
+                  if (applyingDiskRef.current) return;
+                  reportDirty(f.path, entry.modified!);
+                  scheduleAutosave(f.path, entry.modified!);
+                }),
+              );
+            }
+          }
+          if (mode !== "main" && entry.modified) {
+            disposables.push({
+              dispose: registerStageTarget(workUri.toString(), {
+                dir,
+                path: f.path,
+                readSides: () => {
+                  const modified = entry.modified;
+                  if (!modified || modified.isDisposed()) return null;
+                  const original =
+                    entry.original && !entry.original.isDisposed() ? entry.original.getValue() : "";
+                  return { original, modified: modified.getValue() };
+                },
+                onStaged: () => void refreshAfterStaging(f, entry),
               }),
-            );
+            });
           }
           models.set(f.path, entry);
           return {
@@ -349,8 +447,9 @@ export function MonacoMultiDiff({
             // provider to quiet it blanks the pane on a disposal race.
             get options() {
               return {
-                readOnly: !editableRef.current,
+                readOnly: !mutable || !editableRef.current,
                 originalEditable: false,
+                renderGutterMenu: true,
                 wordWrap: "on" as const,
                 fontSize: fontSizeRef.current,
               };
@@ -379,18 +478,20 @@ export function MonacoMultiDiff({
 
         // After the models exist, so no event races a half-built map; the sweep
         // catches a write between the reads and the watch going live.
-        const watchedPaths = files.filter((f) => models.get(f.path)?.modified).map((f) => f.path);
-        void ideWatchFiles(dir, watchedPaths).then((started) => {
-          if (started.isErr() || disposed) return;
-          for (const path of watchedPaths) void onDiskChange(path);
-        });
-        const offDiskChanges = onFilesChangedOnDisk(dir, (path) => void onDiskChange(path));
-        disposables.push({
-          dispose: () => {
-            offDiskChanges();
-            void ideUnwatchFiles(dir, watchedPaths);
-          },
-        });
+        if (mutable) {
+          const watchedPaths = files.filter((f) => models.get(f.path)?.modified).map((f) => f.path);
+          void ideWatchFiles(dir, watchedPaths).then((started) => {
+            if (started.isErr() || disposed) return;
+            for (const path of watchedPaths) void onDiskChange(path);
+          });
+          const offDiskChanges = onFilesChangedOnDisk(dir, (path) => void onDiskChange(path));
+          disposables.push({
+            dispose: () => {
+              offDiskChanges();
+              void ideUnwatchFiles(dir, watchedPaths);
+            },
+          });
+        }
 
         const widget = api.createInstanceSync(
           widgetMod.MultiDiffEditorWidget,
@@ -410,14 +511,17 @@ export function MonacoMultiDiff({
               const checkbox = document.createElement("input");
               checkbox.type = "checkbox";
               checkbox.className = "mr-1.5 size-3 shrink-0 cursor-pointer accent-emerald-500";
-              checkbox.title = "mark reviewed (collapses this file's diff)";
+              checkbox.title = staging
+                ? "staged — check to stage this whole file, uncheck to unstage it"
+                : "mark reviewed (collapses this file's diff)";
               checkbox.addEventListener("click", (e) => e.stopPropagation());
               const text = document.createElement("span");
               element.replaceChildren(checkbox, text);
               let path: string | null = null;
               checkbox.addEventListener("change", () => {
                 if (!path) return;
-                onToggleReviewedRef.current?.(path);
+                if (staging) onToggleStageRef.current?.(path);
+                else onToggleReviewedRef.current?.(path);
               });
               return {
                 setUri(uri: { path: string } | undefined) {
@@ -427,7 +531,14 @@ export function MonacoMultiDiff({
                   checkbox.style.visibility = path ? "visible" : "hidden";
                   if (path) {
                     checkboxesByPathRef.current.set(path, checkbox);
-                    checkbox.checked = reviewedRef.current.has(path);
+                    if (staging) {
+                      const f = filesRef.current.find((c) => c.path === path);
+                      const state = f ? stageCheckState(f) : false;
+                      checkbox.checked = state === true;
+                      checkbox.indeterminate = state === "indeterminate";
+                    } else {
+                      checkbox.checked = reviewedRef.current.has(path);
+                    }
                   }
                 },
                 dispose() {
@@ -460,7 +571,8 @@ export function MonacoMultiDiff({
             if (p) itemsByPath.set(p, item);
           }
           itemsByPathRef.current = itemsByPath;
-          applyReviewedState(files, reviewedRef.current);
+          if (staging) applyStageState(filesRef.current);
+          else applyReviewedState(files, reviewedRef.current);
         });
 
         const layout = () => {
@@ -615,34 +727,55 @@ export function MonacoMultiDiff({
   }, [dir, filesKey, mode, baseBranch]);
 
   useEffect(() => {
+    if (staging) return;
     applyReviewedState(files, reviewed);
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- files is read fresh via closure; only reviewed's change should re-run this
   }, [reviewed]);
+
+  // Staging modes: a refetched file list carries fresh staged/unstaged flags.
+  useEffect(() => {
+    if (staging) applyStageState(files);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- applyStageState reads only its argument
+  }, [staging, files]);
 
   useEffect(() => {
     optionsChangedRef.current?.fire();
   }, [editable, fontSize]);
 
-  // Refetch the base sides in place; the build already fetched this baseKey.
+  // Refetch the non-worktree sides in place; the build already fetched this
+  // baseKey. In the staged view the *modified* side is the index, which an
+  // external `git add` moves too — both sides refresh here.
   useEffect(() => {
     if (!widgetRef.current || appliedBaseKeyRef.current === baseKey) return;
     appliedBaseKeyRef.current = baseKey;
     const models = modelsRef.current;
     void Promise.all(
       files.map(async (f) => {
-        const original = models.get(f.path)?.original;
-        if (!original) return;
-        const content = await fetchBase(dir, f, mode, baseBranch);
-        if (models !== modelsRef.current || original.isDisposed()) return;
-        if (content != null && original.getValue() !== content) original.setValue(content);
+        const entry = models.get(f.path);
+        if (entry?.original) {
+          const content = await fetchBase(dir, f, mode, baseBranch);
+          if (models !== modelsRef.current || entry.original.isDisposed()) return;
+          if (content != null && entry.original.getValue() !== content) {
+            entry.original.setValue(content);
+          }
+        }
+        if (mode === "staged" && entry?.modified) {
+          const read = await invoke<string | null>("ab_get_index_file", { dir, path: f.path });
+          const content = read.unwrapOr(null);
+          if (models !== modelsRef.current || entry.modified.isDisposed()) return;
+          if (content != null && entry.modified.getValue() !== content) {
+            entry.modified.setValue(content);
+          }
+        }
       }),
     );
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- dir/mode/baseBranch/files are read from the closure at call time; only baseKey should refetch
   }, [baseKey]);
 
-  // The net behind the watch, for inotify limits and a failed start.
+  // The net behind the watch, for inotify limits and a failed start. The
+  // staged view watches nothing — neither side is a disk file.
   useEffect(() => {
-    if (!widgetRef.current) return;
+    if (!widgetRef.current || mode === "staged") return;
     for (const f of files) void onDiskChange(f.path);
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- files is read from the closure at call time; only refreshKey should re-scan
   }, [refreshKey]);
@@ -698,7 +831,8 @@ async function fetchBase(
 }
 
 /** Both sides, plus the working-tree read's mtime token (the save path's
- * `expectedMtimeMs`). `undefined` means the file has no side there. */
+ * `expectedMtimeMs`). `undefined` means the file has no side there. The staged
+ * view's modified side is the *index* version, not the disk file. */
 async function fetchSides(
   dir: string,
   file: ChangedFile,
@@ -710,13 +844,22 @@ async function fetchSides(
   modifiedMtimeMs: number | null;
 }> {
   const added = file.status === "A" || file.status === "?";
-  const [original, read] = await Promise.all([
+  const [original, read, indexed] = await Promise.all([
     fetchBase(dir, file, mode, baseBranch),
-    file.status === "D" ? null : ideReadFile(dir, file.path),
+    file.status === "D" || mode === "staged" ? null : ideReadFile(dir, file.path),
+    mode === "staged" && file.status !== "D"
+      ? invoke<string | null>("ab_get_index_file", { dir, path: file.path })
+      : null,
   ]);
+  const modified =
+    file.status === "D"
+      ? undefined
+      : mode === "staged"
+        ? (indexed?.unwrapOr(null) ?? "")
+        : (read?.map((f) => f.content).unwrapOr("") ?? "");
   return {
     original: added ? undefined : (original ?? ""),
-    modified: file.status === "D" ? undefined : (read?.map((f) => f.content).unwrapOr("") ?? ""),
+    modified: modified ?? "",
     modifiedMtimeMs: read?.map((f) => f.mtimeMs).unwrapOr(null) ?? null,
   };
 }

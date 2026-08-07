@@ -36,6 +36,15 @@ pub struct GitInfo {
     /// stayed collapsed, so the rail renders the number with a `+`.
     #[serde(default)]
     pub uncommitted_capped: bool,
+    /// HEAD-vs-index totals. `uncommitted_*` counts staged and unstaged together, so
+    /// staging a hunk moves none of those numbers — these three are what lets the diff
+    /// pane's refresh key see a `git add`, in the pane or in a terminal.
+    #[serde(default)]
+    pub staged_files: i64,
+    #[serde(default)]
+    pub staged_added: i64,
+    #[serde(default)]
+    pub staged_removed: i64,
     /// Commits on HEAD that `compared_base` doesn't have.
     pub commits_ahead: i64,
     /// Kept separate from `commits_ahead`, not a signed delta, so "3 ahead, 2 behind"
@@ -602,6 +611,7 @@ pub fn compute_git_info(
 fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: &str) -> GitInfo {
     let uncommitted = repo.changes_vs("HEAD").unwrap_or_default();
     let committed = repo.committed_totals_vs(base).unwrap_or_default();
+    let staged = repo.staged_changes().unwrap_or_default();
     // Reuses the paths the diff just produced rather than a second status walk.
     let worktree_touched =
         repo.newest_mtime_unix(uncommitted.files.iter().map(|c| c.path.as_str())).unwrap_or(0);
@@ -615,6 +625,9 @@ fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: 
         uncommitted_added: uncommitted.files.iter().map(|c| c.lines_added).sum(),
         uncommitted_removed: uncommitted.files.iter().map(|c| c.lines_removed).sum(),
         uncommitted_capped: uncommitted.untracked_cap.is_some(),
+        staged_files: staged.files.len() as i64,
+        staged_added: staged.files.iter().map(|c| c.lines_added).sum(),
+        staged_removed: staged.files.iter().map(|c| c.lines_removed).sum(),
         dirty: !uncommitted.files.is_empty(),
         worktree_touched_ms: worktree_touched * 1000,
         ..Default::default()
@@ -719,8 +732,12 @@ fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&s
 pub enum DiffMode {
     /// Everything on this branch vs where it forked from origin/main (merge-base).
     Main,
-    /// Only what isn't committed yet: staged + unstaged, vs HEAD.
+    /// Only what isn't committed yet, vs the *index* — so a staged hunk drops out
+    /// of this view the moment it is staged, VS Code's "Changes" list.
     Uncommitted,
+    /// What `git commit` would take right now: HEAD vs the index, VS Code's
+    /// "Staged Changes" list. Both sides are history; nothing here is editable.
+    Staged,
 }
 
 /// `status` is git's name-status letter (or `?` for untracked); `old_path` is set on
@@ -736,6 +753,14 @@ pub struct DiffFile {
     /// Nonzero on a `?` row that is a whole untracked directory left collapsed at a
     /// cap, so the pane can say "1000+ files" instead of one unopenable row.
     pub untracked_files: i64,
+    /// The index differs from HEAD at this path — the file-checkbox's checked
+    /// half. Only computed for [`DiffMode::Uncommitted`] and [`DiffMode::Staged`].
+    #[serde(default)]
+    pub staged: bool,
+    /// The working tree differs from the index at this path — with `staged`,
+    /// the tri-state: both true is a partially staged file.
+    #[serde(default)]
+    pub unstaged: bool,
 }
 
 /// The diff pane's file list, and whether producing it was cut short.
@@ -773,7 +798,7 @@ fn resolve_diff_base(
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "HEAD".to_string())
         }
-        DiffMode::Uncommitted => "HEAD".to_string(),
+        DiffMode::Uncommitted | DiffMode::Staged => "HEAD".to_string(),
     }
 }
 
@@ -786,18 +811,43 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
     let Some(repo) = open_repo(dir) else {
         return DiffFiles::default();
     };
-    let base = resolve_diff_base(&repo, dir, mode, base_branch);
-    let changes = repo.changes_vs(&base).unwrap_or_default();
+    let changes = match mode {
+        DiffMode::Staged => repo.staged_changes().unwrap_or_default(),
+        _ => {
+            let base = resolve_diff_base(&repo, dir, mode, base_branch);
+            repo.changes_vs(&base).unwrap_or_default()
+        }
+    };
+    // The tri-state checkboxes only exist where staging does.
+    let states = match mode {
+        DiffMode::Uncommitted => repo
+            .stage_states(changes.files.iter().filter(|c| c.status != '?').map(|c| c.path.as_str()))
+            .unwrap_or_default(),
+        _ => Default::default(),
+    };
     let mut files: Vec<DiffFile> = changes
         .files
         .into_iter()
-        .map(|change| DiffFile {
-            path: change.path,
-            old_path: change.old_path,
-            status: change.status.to_string(),
-            lines_added: change.lines_added,
-            lines_removed: change.lines_removed,
-            untracked_files: change.untracked_files,
+        .map(|change| {
+            let state = match mode {
+                // An untracked row (possibly a whole directory) is unstaged work.
+                DiffMode::Uncommitted if change.status == '?' => {
+                    tt_git::repo::StageState { staged: false, unstaged: true }
+                }
+                DiffMode::Uncommitted => states.get(&change.path).copied().unwrap_or_default(),
+                DiffMode::Staged => tt_git::repo::StageState { staged: true, unstaged: false },
+                DiffMode::Main => tt_git::repo::StageState::default(),
+            };
+            DiffFile {
+                path: change.path,
+                old_path: change.old_path,
+                status: change.status.to_string(),
+                lines_added: change.lines_added,
+                lines_removed: change.lines_removed,
+                untracked_files: change.untracked_files,
+                staged: state.staged,
+                unstaged: state.unstaged,
+            }
         })
         .collect();
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -811,6 +861,11 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
 
 /// The original side of the diff editor. `None` when the file doesn't exist at the
 /// baseline, `dir` isn't a repo, or the content isn't UTF-8.
+///
+/// `Uncommitted` serves the *index* version, so a staged hunk leaves the visible
+/// diff (and staging math is index-relative, like VS Code's); with nothing staged
+/// the index matches HEAD and this is the same answer as before. `Staged` serves
+/// HEAD, the left side of "what would commit".
 pub fn base_file_content(
     dir: &str,
     mode: DiffMode,
@@ -821,9 +876,25 @@ pub fn base_file_content(
         return None;
     }
     let repo = open_repo(dir)?;
-    let base = resolve_diff_base(&repo, dir, mode, base_branch);
-    let content = repo.file_at(&base, path)?;
+    let content = match mode {
+        DiffMode::Uncommitted => repo.file_in_index(path)?,
+        DiffMode::Staged => repo.file_at("HEAD", path)?,
+        DiffMode::Main => {
+            let base = resolve_diff_base(&repo, dir, mode, base_branch);
+            repo.file_at(&base, path)?
+        }
+    };
     String::from_utf8(content).ok()
+}
+
+/// The *modified* side of the staged diff: the index version of `path`. `None`
+/// when it has no stage-0 entry (a staged deletion) or isn't UTF-8.
+pub fn index_file_content(dir: &str, path: &str) -> Option<String> {
+    if dir.is_empty() || path.is_empty() {
+        return None;
+    }
+    let repo = open_repo(dir)?;
+    String::from_utf8(repo.file_in_index(path)?).ok()
 }
 
 /// One commit ahead of `compared_base` with its own line-count diff, not the branch's

@@ -1,5 +1,4 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -8,32 +7,25 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { ChevronRight, Pencil, RefreshCw, X } from "lucide-react";
+import { Pencil, RefreshCw, X } from "lucide-react";
 import { DiffReview, type DiffReviewRequest } from "@/components/diff-review";
 import { MonacoMultiDiff, type ChangedFile, type ChangedFiles } from "@/components/diff-monaco";
+import { DiffTreeRail } from "@/components/diff-tree-rail";
 import { EditableToggle } from "@/components/editable-toggle";
 import { EditorFontButtons } from "@/components/editor-font-buttons";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import { folderBaseKey, folderStatsKey, type FolderData } from "@/lib/agentboard";
-import { openInExternalEditor } from "@/lib/external-editor";
 import {
-  buildDiffTree,
   clampDiffRailWidth,
   DEFAULT_DIFF_RAIL_WIDTH,
   DIFF_RAIL_WIDTH_KEY,
   loadDiffRailWidth,
   MIN_DIFF_RAIL_WIDTH,
   sortToTreeOrder,
-  type DiffTreeNode,
 } from "@/lib/diff";
+import { stageToggleAction } from "@/lib/diff-staging";
+import { errorMessage } from "@/lib/errors";
 import { ideReadFile, useIdeConnected } from "@/lib/ide";
 import { invoke, isTauri } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -41,262 +33,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 /** Which baseline the pane diffs against (mirrors `DiffMode` in tt-agentboard). */
-type DiffMode = "main" | "uncommitted";
-
-const STATUS_COLORS: Record<string, string> = {
-  A: "text-emerald-500",
-  "?": "text-emerald-500",
-  D: "text-red-500",
-  R: "text-sky-500",
-  C: "text-sky-500",
-  M: "text-amber-500",
-};
-
-/** Navigation tree beside the multi-diff. The checkbox is GitHub-review "viewed",
- * not git staging — it collapses that file's diff. */
-const DiffTreeRail = memo(function DiffTreeRail({
-  dir,
-  files,
-  width,
-  reviewed,
-  dirty,
-  conflict,
-  onJump,
-  onToggleReviewed,
-  onToggleReviewedMany,
-}: {
-  /** The checkout the listed paths are relative to. */
-  dir: string;
-  files: ChangedFile[];
-  /** Rail width in px — dragged on the divider, owned by DiffPane. */
-  width: number;
-  /** Paths the reviewer has checked off. */
-  reviewed: ReadonlySet<string>;
-  /** Paths with unsaved edits made in the diff pane — the Files tab's dirty dot. */
-  dirty: ReadonlySet<string>;
-  /** Paths changed on disk under unsaved edits; the Monaco pane owns resolution. */
-  conflict: ReadonlySet<string>;
-  onJump: (path: string) => void;
-  onToggleReviewed: (path: string) => void;
-  /** Set (or clear) every path in the list at once — a folder's checkbox. */
-  onToggleReviewedMany: (paths: string[], value: boolean) => void;
-}) {
-  // What the user explicitly closed. Rows default *open*, unlike the Files
-  // Explorer: a disclosure would drop a file from the reviewer's list.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const tree = useMemo(() => buildDiffTree(files.map((f) => f.path)), [files]);
-  const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
-  // One bottom-up pass per file-set change — per-render subtree walks are O(n²).
-  const leafPathsByFolder = useMemo(() => {
-    const map = new Map<string, string[]>();
-    const walk = (node: DiffTreeNode): string[] => {
-      const leaves = node.children.flatMap(walk);
-      // Nested tests count toward the folder above; a file is not a folder checkbox.
-      if (node.kind === "file") return [node.path, ...leaves];
-      map.set(node.path, leaves);
-      return leaves;
-    };
-    tree.forEach(walk);
-    return map;
-  }, [tree]);
-
-  const renderNodes = (nodes: DiffTreeNode[], depth: number) =>
-    nodes.map((node) => {
-      const paddingLeft = 4 + depth * 12;
-      if (node.kind === "folder") {
-        const isCollapsed = collapsed.has(node.path);
-        const paths = leafPathsByFolder.get(node.path) ?? [];
-        const reviewedCount = paths.filter((p) => reviewed.has(p)).length;
-        let sumAdded = 0;
-        let sumRemoved = 0;
-        for (const p of paths) {
-          const f = byPath.get(p);
-          sumAdded += f?.linesAdded ?? 0;
-          sumRemoved += f?.linesRemoved ?? 0;
-        }
-        const checked: boolean | "indeterminate" =
-          reviewedCount === 0 ? false : reviewedCount === paths.length ? true : "indeterminate";
-        return (
-          <li key={node.path}>
-            <ContextMenu>
-              <ContextMenuTrigger asChild>
-                <div style={{ paddingLeft }} className="flex w-full items-center gap-1 py-0.5">
-                  {/* `<label htmlFor>`, not nested in the button below: Radix's
-                   * Checkbox renders a button and buttons can't nest. */}
-                  <label
-                    htmlFor={`reviewed-${node.path}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex shrink-0 items-center"
-                    title="mark every file in this folder reviewed"
-                  >
-                    <Checkbox
-                      id={`reviewed-${node.path}`}
-                      checked={checked}
-                      onCheckedChange={(c) => onToggleReviewedMany(paths, c === true)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => {
-                        const next = new Set(prev);
-                        if (isCollapsed) next.delete(node.path);
-                        else next.add(node.path);
-                        return next;
-                      })
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-1 text-left font-mono text-[11px] text-muted-foreground hover:text-foreground"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        "size-3 shrink-0 transition-transform",
-                        !isCollapsed && "rotate-90",
-                      )}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{node.name}</span>
-                    {(sumAdded > 0 || sumRemoved > 0) && (
-                      <span className="shrink-0 pr-1 text-[10px]">
-                        <span className="text-emerald-500">+{sumAdded}</span>{" "}
-                        <span className="text-red-500">−{sumRemoved}</span>
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem
-                  onSelect={() =>
-                    void openInExternalEditor(node.path, { cwd: dir, where: "diff.tree.folder" })
-                  }
-                >
-                  Open folder in external editor
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-            {!isCollapsed && <ul>{renderNodes(node.children, depth + 1)}</ul>}
-          </li>
-        );
-      }
-      const file = byPath.get(node.path);
-      // A deleted file has nothing to open, but still right-clicks.
-      const deleted = file?.status === "D";
-      // A *sibling* button, not a chevron inside the jump button — can't nest.
-      const nested = node.children.length > 0;
-      const expanded = !collapsed.has(node.path);
-      return (
-        <li key={node.path}>
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <div
-                style={{ paddingLeft }}
-                className="flex w-full items-center gap-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                <label
-                  htmlFor={`reviewed-${node.path}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex shrink-0 items-center"
-                  title="mark reviewed (collapses this file's diff)"
-                >
-                  <Checkbox
-                    id={`reviewed-${node.path}`}
-                    checked={reviewed.has(node.path)}
-                    onCheckedChange={() => onToggleReviewed(node.path)}
-                  />
-                </label>
-                {nested ? (
-                  <button
-                    type="button"
-                    title={`${expanded ? "hide" : "show"} the ${node.children.length} file(s) nested under this one`}
-                    onClick={() =>
-                      setCollapsed((prev) => {
-                        const next = new Set(prev);
-                        if (expanded) next.add(node.path);
-                        else next.delete(node.path);
-                        return next;
-                      })
-                    }
-                    className="shrink-0"
-                  >
-                    <ChevronRight
-                      className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                    />
-                  </button>
-                ) : (
-                  // Keeps a childless file's name on a folder's name column.
-                  <span className="size-3 shrink-0" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => onJump(node.path)}
-                  title={file?.oldPath ? `${file.oldPath} → ${node.path}` : node.path}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                >
-                  <span className={cn("shrink-0", STATUS_COLORS[file?.status ?? ""] ?? "")}>
-                    {file?.status ?? ""}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{node.name}</span>
-                  {/* Only while user-collapsed — a changed file must never be
-                   * silently absent. Bare count: the ± columns sit beside it. */}
-                  {nested && !expanded && (
-                    <span
-                      title={`${node.children.length} more changed file(s) nested here`}
-                      className="shrink-0 rounded-full border border-border/70 px-1 text-[9px] leading-[1.4] text-muted-foreground"
-                    >
-                      {node.children.length}
-                    </span>
-                  )}
-                  {conflict.has(node.path) ? (
-                    <span
-                      title="Changed on disk while you have unsaved edits — resolve in the banner"
-                      className="size-1.5 shrink-0 rounded-full bg-red-500"
-                    />
-                  ) : (
-                    dirty.has(node.path) && (
-                      <span
-                        title="Unsaved changes — autosaves after a pause; ⌘S saves now"
-                        className="size-1.5 shrink-0 rounded-full bg-amber-500"
-                      />
-                    )
-                  )}
-                  {file && file.untrackedFiles > 0 && (
-                    <span
-                      title="Untracked directory, too large to list file by file — probably missing from .gitignore"
-                      className="shrink-0 rounded-full border border-amber-500/60 px-1 text-[9px] leading-[1.4] text-amber-500"
-                    >
-                      {file.untrackedFiles}+ files
-                    </span>
-                  )}
-                  {file && (file.linesAdded > 0 || file.linesRemoved > 0) && (
-                    <span className="shrink-0 pr-1 text-[10px]">
-                      <span className="text-emerald-500">+{file.linesAdded}</span>{" "}
-                      <span className="text-red-500">−{file.linesRemoved}</span>
-                    </span>
-                  )}
-                </button>
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem
-                disabled={deleted}
-                onSelect={() =>
-                  void openInExternalEditor(node.path, { cwd: dir, where: "diff.tree" })
-                }
-              >
-                Open in external editor
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-          {nested && expanded && <ul>{renderNodes(node.children, depth + 1)}</ul>}
-        </li>
-      );
-    });
-
-  return (
-    <ul style={{ width }} className="shrink-0 overflow-y-auto border-r pr-1">
-      {renderNodes(tree, 0)}
-    </ul>
-  );
-});
+type DiffMode = "main" | "uncommitted" | "staged";
 
 /** Says the file list is a floor and names the directory responsible — a short
  * count must never read as a total. The cause is nearly always a `.gitignore` gap. */
@@ -328,7 +65,13 @@ function flipPathIn(setter: Dispatch<SetStateAction<Set<string>>>) {
 const UNCOMMITTED_MODE = {
   key: "uncommitted" as const,
   label: "uncommitted",
-  hint: "Only what isn't committed yet — staged + unstaged changes vs HEAD",
+  hint: "Everything not committed yet, diffed against the index — a staged hunk leaves this view for `staged`. Checkboxes and the gutter's + stage; VS Code's model.",
+};
+
+const STAGED_MODE = {
+  key: "staged" as const,
+  label: "staged",
+  hint: "What `git commit` would take right now — the index vs HEAD, read-only. Uncheck or use the gutter's − to unstage.",
 };
 
 /** A folder's diff as a *pane* in the Agentboard tiling. Everything refetches off
@@ -418,7 +161,9 @@ export function DiffPane({
         ? `Everything on this branch vs where it forked from "${taskBaseBranch}" (this task's creation base) — committed and uncommitted work alike`
         : "Everything on this branch vs where it forked from origin/main — committed and uncommitted work alike",
   };
-  const modes = [mainMode, UNCOMMITTED_MODE];
+  const modes = [mainMode, UNCOMMITTED_MODE, STAGED_MODE];
+  // Checkboxes mean the git index in both staging modes, "viewed" in main.
+  const staging = mode !== "main";
 
   // GitHub-review-style "viewed" marks: client-side only, no git index.
   const [reviewed, setReviewed] = useState<Set<string>>(() => new Set());
@@ -503,6 +248,12 @@ export function DiffPane({
 
   const statsKey = folder ? folderStatsKey(folder) : "";
   const baseKey = folder ? folderBaseKey(folder) : "";
+  // In the staging modes a non-worktree side renders *index* content, which a
+  // stage/unstage (here or in a terminal) moves while `baseKey` stays put — so
+  // the in-place side refresh keys on the staged totals too.
+  const monacoBaseKey = staging
+    ? `${baseKey}|${folder?.stagedFiles ?? 0}:${folder?.stagedAdded ?? 0}:${folder?.stagedRemoved ?? 0}`
+    : baseKey;
   // Both keys: a rebase/fetch moves the baseline without touching working-tree
   // stats — `statsKey` alone left old-merge-base files beside new-base diffs.
   useEffect(() => {
@@ -521,6 +272,58 @@ export function DiffPane({
     // Silence reads as success while the pane keeps diffing the old base.
     if (stored.isErr()) toast.error(`Couldn't set base branch — ${stored.error.message}`);
   }
+
+  /** One file's checkbox: fully staged unstages, anything else stages; the
+   * staged view only ever unstages. False on a refused write (toasted). */
+  const stageOne = useCallback(
+    async (path: string): Promise<boolean> => {
+      if (!dir) return false;
+      const file = files?.find((c) => c.path === path);
+      const action =
+        mode === "staged" ? "unstage" : file ? stageToggleAction(file) : ("stage" as const);
+      uiAction(action === "stage" ? "diff.stage_file" : "diff.unstage_file", "agentboard", path);
+      const result = await invoke<void>(action === "stage" ? "ab_stage_file" : "ab_unstage_file", {
+        dir,
+        path,
+      });
+      if (result.isErr()) {
+        toast.error(`Couldn't ${action} ${path} — ${errorMessage(result.error)}`);
+        return false;
+      }
+      return true;
+    },
+    [dir, files, mode],
+  );
+
+  const toggleStage = useCallback(
+    (path: string) => {
+      void stageOne(path).then((ok) => {
+        if (ok) void fetchDiff();
+      });
+    },
+    [stageOne, fetchDiff],
+  );
+
+  const toggleStageMany = useCallback(
+    (paths: string[], action: "stage" | "unstage") => {
+      if (!dir) return;
+      void (async () => {
+        uiAction(action === "stage" ? "diff.stage_folder" : "diff.unstage_folder", "agentboard");
+        for (const path of paths) {
+          const result = await invoke<void>(
+            action === "stage" ? "ab_stage_file" : "ab_unstage_file",
+            { dir, path },
+          );
+          if (result.isErr()) {
+            toast.error(`Couldn't ${action} ${path} — ${errorMessage(result.error)}`);
+            break;
+          }
+        }
+        void fetchDiff();
+      })();
+    },
+    [dir, fetchDiff],
+  );
 
   const toggleReviewed = useCallback((path: string) => {
     setReviewed((prev) => {
@@ -610,14 +413,17 @@ export function DiffPane({
           </>
         }
         center={
-          <EditableToggle
-            editable={editable}
-            subject="the files in this diff"
-            onChange={(next) => {
-              setEditable(next);
-              uiAction("diff.editable", "agentboard", next ? "on" : "off");
-            }}
-          />
+          // The staged view renders index/HEAD snapshots — nothing to unlock.
+          mode === "staged" ? undefined : (
+            <EditableToggle
+              editable={editable}
+              subject="the files in this diff"
+              onChange={(next) => {
+                setEditable(next);
+                uiAction("diff.editable", "agentboard", next ? "on" : "off");
+              }}
+            />
+          )
         }
         actions={
           <>
@@ -652,12 +458,15 @@ export function DiffPane({
               dir={dir!}
               files={files}
               width={railWidth}
+              staging={staging}
               reviewed={reviewed}
               dirty={dirty}
               conflict={conflict}
               onJump={jumpTo}
               onToggleReviewed={toggleReviewed}
               onToggleReviewedMany={toggleReviewedMany}
+              onToggleStage={toggleStage}
+              onToggleStageMany={toggleStageMany}
             />
             <div
               role="separator"
@@ -675,12 +484,14 @@ export function DiffPane({
                 mode={mode}
                 baseBranch={baseBranch}
                 refreshKey={statsKey}
-                baseKey={baseKey}
+                baseKey={monacoBaseKey}
                 editable={editable}
                 connected={ideConnected}
                 registerReveal={registerReveal}
                 reviewed={reviewed}
                 onToggleReviewed={toggleReviewed}
+                onToggleStage={toggleStage}
+                onStagingChanged={() => void fetchDiff()}
                 onDirtyChange={handleDirtyChange}
                 onConflictChange={handleConflictChange}
               />
