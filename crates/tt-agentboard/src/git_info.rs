@@ -1,126 +1,89 @@
 //! Branch / worktree / diff-stat computation with a short cache.
 //!
-//! What lives here: the git reads, the porcelain/numstat/ahead-behind parsing,
-//! and the TTL cache with stale-serve + explicit invalidation. Transport and
-//! watcher concerns — the git poll, the `.git/HEAD` watch, the event broadcast
-//! — belong to the Tauri layer.
-//!
-//! Time is injected via `now_ms` instead of a background clock, and cache
-//! misses compute synchronously.
+//! The git reads and the TTL cache with stale-serve + explicit invalidation.
+//! Transport and watcher concerns — the poll, the `.git/HEAD` watch, the event
+//! broadcast — belong to the Tauri layer. Time is injected via `now_ms`.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// Working-tree/commit stats for a session directory, every one measured against the
-/// same `compared_base` (see [`resolve_base_ref`]).
+/// Working-tree/commit stats for a session directory, all measured against the same
+/// `compared_base` (see [`resolve_base_ref`]).
 ///
 /// **The committed and uncommitted diffs are separate quantities and are never
-/// summed.** `uncommitted_*` is what deleting this checkout destroys, `committed_*` is
-/// what survives on the branch.
+/// summed.** `uncommitted_*` counts staged and unstaged together, which is why
+/// `staged_*` (HEAD vs index) exists — that is what lets the diff pane's refresh key
+/// see a `git add`. The `#[serde(skip)]` tail is revalidation state: each `*_key`
+/// fingerprints what one half of [`compute_git_info`] reads.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GitInfo {
     pub branch: String,
     pub is_worktree: bool,
-    /// Files touched by `merge_base(HEAD, compared_base)..HEAD`, working tree excluded.
     pub committed_files: i64,
     pub committed_added: i64,
     pub committed_removed: i64,
-    /// Files touched between `HEAD` and the working tree — staged, unstaged and
-    /// untracked alike. Untracked ones contribute no line counts.
+    /// Untracked files count here, with no line counts.
     pub uncommitted_files: i64,
     pub uncommitted_added: i64,
     pub uncommitted_removed: i64,
-    /// `uncommitted_files` is a floor: an untracked directory was too large to list and
-    /// stayed collapsed, so the rail renders the number with a `+`.
+    /// `uncommitted_files` is a floor — a collapsed untracked directory.
     #[serde(default)]
     pub uncommitted_capped: bool,
-    /// HEAD-vs-index totals. `uncommitted_*` counts staged and unstaged together, so
-    /// staging a hunk moves none of those numbers — these three are what lets the diff
-    /// pane's refresh key see a `git add`, in the pane or in a terminal.
     #[serde(default)]
     pub staged_files: i64,
     #[serde(default)]
     pub staged_added: i64,
     #[serde(default)]
     pub staged_removed: i64,
-    /// Commits on HEAD that `compared_base` doesn't have.
     pub commits_ahead: i64,
-    /// Kept separate from `commits_ahead`, not a signed delta, so "3 ahead, 2 behind"
-    /// doesn't collapse to a meaningless "+1".
+    /// Separate from `commits_ahead`, so "3 ahead, 2 behind" isn't a "+1".
     pub commits_behind: i64,
-    /// Exactly `uncommitted_files > 0`, so the boolean and the number can never
-    /// disagree on screen. Not `status().is_dirty()`, which reports a path whose stat
-    /// cache is stale even after an edit was reverted to identical content.
+    /// Exactly `uncommitted_files > 0`, so the two can't disagree on screen. Not
+    /// `status().is_dirty()`, which reports a reverted edit off a stale stat cache.
     pub dirty: bool,
-    /// Of `commits_ahead`, how many hold changes `compared_base` has never received —
-    /// so unlike `commits_ahead` it drops to 0 after a rebase *or squash* merge.
-    /// [`tt_tasks::landed`] covers all three landing shapes; `git cherry`'s patch-id
-    /// comparison reported every commit of a squash-merged branch as outstanding.
+    /// Of `commits_ahead`, how many hold changes `compared_base` never received, so
+    /// this drops to 0 after a rebase *or* squash merge, via [`tt_tasks::landed`].
     pub commits_unlanded: i64,
     /// How this branch's work reached `compared_base` — `"merged"`, `"rebase-merged"`,
     /// `"squash-merged"`, `"upstream gone"` — or `None` when it has not fully landed.
-    /// Lets the rail say *why* a branch is finished rather than infer it from a GitHub
-    /// PR state, which says nothing about a branch merged locally.
     pub landed: Option<String>,
-    /// Display-only (repo name derivation) — NOT the Folder Rail nesting key; two
-    /// unrelated clones can share an origin. See [`Self::common_dir`] for that.
+    /// Display-only — NOT the rail's nesting key; two clones can share an origin.
     pub origin_url: Option<String>,
-    /// Canonicalized `--git-common-dir`, identical across every linked worktree of one
-    /// repo and nowhere else — what [`crate::bridge::assemble_state`] groups rail rows
-    /// by, so only *actual* worktrees nest together. Empty for a non-repo dir.
+    /// Canonicalized `--git-common-dir` — what [`crate::bridge::assemble_state`] groups
+    /// rail rows by, so only *actual* worktrees nest together.
     pub common_dir: String,
-    /// This repo's OTHER *linked* worktrees (this dir and the main checkout excluded).
-    /// Not on the wire — the detected-record reconciler and removal read it.
     pub linked_worktree_dirs: Vec<String>,
-    /// When these numbers were last *verified*, stamped on every compute including the
-    /// ref-unchanged fast path, which still re-reads the working tree.
-    ///
-    /// Exists because "is this stale or is nothing happening?" is otherwise
-    /// unanswerable from the UI: long stretches of a correct, unchanging number are
-    /// normal and look identical to a wedged poll. 0 when never computed.
+    /// When these numbers were last *verified*: from the UI a correct, unchanging
+    /// number is otherwise indistinguishable from a wedged poll.
     pub computed_at_ms: i64,
-    /// Epoch ms of `HEAD`'s commit time. Deliberately HEAD's own time rather than a
-    /// `base..HEAD` tip: a main checkout sitting on `origin/main` has no commits of its
-    /// own and would read as never-touched, backwards for the worked-recently filter.
+    /// Epoch ms of `HEAD`'s commit time, not a `base..HEAD` tip's: a main checkout on
+    /// `origin/main` has no commits of its own and would read as never-touched.
     pub head_commit_ms: i64,
-    /// Newest mtime among the paths the working tree reports as changed; 0 when clean.
-    /// The half of "somebody is working here" no `.git` file can answer, since an
-    /// unstaged edit moves neither `HEAD` nor `index` (see [`control_files`]).
+    /// Newest mtime among the changed paths; 0 when clean. The half of "somebody is
+    /// working here" no `.git` file can answer — an unstaged edit moves no ref.
     pub worktree_touched_ms: i64,
-    /// True when `dir` doesn't exist on disk, distinguishing a moved/deleted checkout
-    /// from a present-but-non-git one — both otherwise yield an empty [`GitInfo`].
+    /// `dir` is gone — otherwise indistinguishable from a present non-git dir.
     pub dir_missing: bool,
-    /// For a worktree only: the ref it was created from, per its `.tt-task` marker.
-    /// What [`resolve_base_ref`] auto-compares against absent a user override.
     pub task_base_branch: Option<String>,
-    /// [`resolve_base_ref`]'s result — what every stat here was compared against, so
-    /// the rail can label its numbers instead of always implying "vs main". Empty when
-    /// `compute_git_info` never ran.
+    /// [`resolve_base_ref`]'s result, so the rail can label its numbers.
     pub compared_base: String,
-    /// Filesystem-derived here like `dir_missing`, so the client can gate its
-    /// dev-servers affordance without a per-poll file read of its own.
+    /// Derived here so the client gates dev-servers without its own file read.
     pub has_launch_config: bool,
-    /// Revalidation token (see [`probe_fingerprint`]) letting a poll skip the landing
-    /// probe when nothing it reads has moved. Never sent to the client.
+    /// See [`probe_fingerprint`] — lets a poll skip the landing probe.
     #[serde(skip)]
     pub probe_key: String,
-    /// Revalidation token for `is_worktree`/`common_dir`/`worktree_dirs`/`origin_url`
-    /// (see [`structural_fingerprint`]).
     #[serde(skip)]
     pub structural_key: String,
-    /// This checkout's own gitdir, resolved from the filesystem ([`resolve_git_dir_fs`])
-    /// — `.git/worktrees/<name>` for a linked worktree, which is where *this* checkout's
-    /// `HEAD`/`index` live. Not on the wire; `control_watch_files` watches off it.
+    /// This checkout's own gitdir (see [`resolve_git_dir_fs`]) — where *this*
+    /// checkout's `HEAD`/`index` live. `control_watch_files` watches off it.
     #[serde(skip)]
     pub git_dir: String,
-    /// Revalidation token for the ref-derived half (see [`revision_fingerprint`]): while
-    /// it matches, a poll recomputes only the working-tree half.
+    /// See [`revision_fingerprint`] — while it matches, only the worktree is read.
     #[serde(skip)]
     pub revision_key: String,
-    /// The exact ref `diff --numstat` ran against, so the fast path can re-diff without
-    /// resolving the merge-base again. Empty until the first full compute.
+    /// The ref the diff ran against, so the fast path skips the merge-base.
     #[serde(skip)]
     pub diff_base: String,
 }
@@ -132,13 +95,11 @@ pub struct GitInfo {
 const GIT_CACHE_TTL_MS: i64 = 60_000;
 
 /// The ceiling for the one checkout whose diff pane is open. lazygit re-walks its
-/// single repo every 10s with no change detection at all, which is what makes an
-/// unstaged edit show up promptly; the fleet can't afford that N checkouts over, but
-/// the row actually being read can.
+/// single repo every 10s with no change detection at all; the fleet can't afford that
+/// N checkouts over, but the row actually being read can.
 const FOCUSED_GIT_CACHE_TTL_MS: i64 = 10_000;
 
-/// TTL-as-backup-ceiling plus stale-serve. The poll loop that recomputes entries lives
-/// in the Tauri layer, not here.
+/// TTL-as-backup-ceiling plus stale-serve. The recomputing poll loop is Tauri-side.
 #[derive(Debug, Default)]
 pub struct GitInfoCache {
     entries: HashMap<String, (GitInfo, i64)>,
@@ -151,12 +112,10 @@ impl GitInfoCache {
         Self::default()
     }
 
-    /// Insert/replace an entry stamped at `now_ms`.
     pub fn insert(&mut self, dir: &str, info: GitInfo, now_ms: i64) {
         self.entries.insert(dir.to_string(), (info, now_ms));
     }
 
-    /// Whether the entry for `dir` exists and is within its TTL.
     pub fn is_fresh(&self, dir: &str, now_ms: i64) -> bool {
         let ttl = if self.focused.as_deref() == Some(dir) {
             FOCUSED_GIT_CACHE_TTL_MS
@@ -186,8 +145,7 @@ impl GitInfoCache {
         self.entries.get(dir).map(|(info, _)| info.clone()).unwrap_or_default()
     }
 
-    /// Mark entries stale (ts=0) so the next read still serves them but they're no
-    /// longer fresh.
+    /// Stale (ts=0), so the next read still serves them but they aren't fresh.
     pub fn invalidate(&mut self, dir: Option<&str>) {
         match dir {
             Some(dir) => {
@@ -203,25 +161,20 @@ impl GitInfoCache {
         }
     }
 
-    /// For a checkout gone for good. Unlike [`Self::invalidate`] there will be no
-    /// recompute, and a later task at the same path must not inherit the dead one's
-    /// branch and stats. Returns whether an entry went.
+    /// For a checkout gone for good: unlike [`Self::invalidate`] no recompute
+    /// follows, and a later task at the same path must not inherit its stats.
     pub fn forget(&mut self, dir: &str) -> bool {
         self.entries.remove(dir).is_some()
     }
 }
 
-/// From the process-wide cache. `None` for a directory that is not a repo.
 fn open_repo(dir: &str) -> Option<tt_git::repo::Repo> {
     tt_git::repo::open(std::path::Path::new(dir)).ok()
 }
 
 /// Every input the landing probe reads: `HEAD`'s sha, the base's sha, and whether the
-/// upstream is gone. `work_state` is a pure function of those three, so an unchanged
-/// fingerprint means the previous answer is still exact.
-///
-/// Empty when anything is unreadable — a partial fingerprint must never compare equal
-/// to a real one.
+/// upstream is gone — `work_state` is a pure function of those three. Empty when
+/// anything is unreadable; a partial fingerprint must never equal a real one.
 fn probe_fingerprint(repo: &tt_git::repo::Repo, branch: &str, compared_base: &str) -> String {
     let (Some(head), Some(base)) = (repo.head_id(), repo.resolve(compared_base)) else {
         return String::new();
@@ -230,13 +183,9 @@ fn probe_fingerprint(repo: &tt_git::repo::Repo, branch: &str, compared_base: &st
     format!("{head} {base} {gone}")
 }
 
-/// The mtimes of `common_dir`'s `worktrees` subdirectory (any `worktree add`/`remove`)
-/// and its `config` (a `remote set-url`). Those facts are structural, not working-tree
-/// state, so two `fs::metadata` calls are unconditionally cheaper than the directory
-/// walk plus config read they guard.
-///
-/// Empty only when `common_dir` is empty or unreadable. A missing `worktrees` is a
-/// legitimate stable state, so it stamps a sentinel rather than folding into empty.
+/// The mtimes of `common_dir`'s `worktrees` (any `worktree add`/`remove`) and `config`
+/// (a `remote set-url`) — two `fs::metadata` calls against the walk they guard. A
+/// missing `worktrees` stamps a sentinel rather than folding into empty.
 fn structural_fingerprint(common_dir: &str) -> String {
     if common_dir.is_empty() {
         return String::new();
@@ -259,9 +208,8 @@ fn structural_fingerprint(common_dir: &str) -> String {
 }
 
 /// Carry a checkout's structural identity across a compute that couldn't read the
-/// repository at all — a failed [`open_repo`] can be transient, and storing the bare
-/// default blanks `common_dir`, knocking the checkout out of its repo's rail row for a
-/// tick. Stats still go empty; those really are unknown.
+/// repository: a bare default blanks `common_dir`, dropping the row out of its
+/// repo's rail group for a tick.
 pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mut GitInfo) {
     if !info.common_dir.is_empty() || info.dir_missing || previous.common_dir.is_empty() {
         return;
@@ -274,11 +222,9 @@ pub fn preserve_identity_on_failed_read(dir: &str, previous: &GitInfo, info: &mu
     info.linked_worktree_dirs = previous.linked_worktree_dirs.clone();
     info.is_worktree = previous.is_worktree;
     info.git_dir = previous.git_dir.clone();
-    // NOT the revalidation tokens: they stand for answers this compute never produced,
-    // so leaving them empty forces the next poll into a full recompute.
+    // Not the revalidation tokens: empty forces the next poll to recompute.
 }
 
-/// What a checkout *is*, independent of where its HEAD points.
 struct Structural {
     origin_url: Option<String>,
     common_dir: String,
@@ -288,11 +234,8 @@ struct Structural {
     is_worktree: bool,
 }
 
-/// Derive the structural facts, revalidating the previous answer against
-/// [`structural_fingerprint`] first.
-///
-/// `git_dir`/`is_worktree` are never reused: they're resolved from the filesystem
-/// rather than the repository, and `control_watch_files` needs them fresh every call.
+/// The structural facts, revalidated against [`structural_fingerprint`] first.
+/// `git_dir`/`is_worktree` are never reused: `control_watch_files` needs them fresh.
 fn structural_facts(
     dir: &str,
     repo: &tt_git::repo::Repo,
@@ -332,8 +275,7 @@ fn structural_facts(
 }
 
 /// A checkout whose HEAD names no branch: structural facts only. The empty
-/// `revision_key` is load-bearing — it keeps the next poll off the ref-unchanged fast
-/// path, so the moment HEAD lands on a branch the full answer is recomputed.
+/// `revision_key` keeps the next poll off the fast path.
 fn structural_only(
     dir: &str,
     repo: &tt_git::repo::Repo,
@@ -343,8 +285,8 @@ fn structural_only(
     let s = structural_facts(dir, repo, previous);
     GitInfo {
         computed_at_ms: now_ms,
-        // HEAD still points at a commit mid-rebase, and the worked-recently filter
-        // would otherwise drop the checkout being rebased.
+        // Mid-rebase HEAD still points at a commit; without this the
+        // worked-recently filter drops the checkout being rebased.
         head_commit_ms: repo.head_commit_unix().unwrap_or(0) * 1000,
         origin_url: s.origin_url,
         common_dir: s.common_dir,
@@ -359,8 +301,7 @@ fn structural_only(
 }
 
 /// Resolved the way `git` itself does — `.git` is a directory for the main worktree, a
-/// file containing `gitdir: <path>` for a linked one — rather than by spawning
-/// `rev-parse --git-dir` for what is one `fs::metadata` plus a one-line read.
+/// file containing `gitdir: <path>` for a linked one.
 fn resolve_git_dir_fs(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     let dot_git = dir.join(".git");
     let meta = std::fs::symlink_metadata(&dot_git).ok()?;
@@ -374,8 +315,7 @@ fn resolve_git_dir_fs(dir: &std::path::Path) -> Option<std::path::PathBuf> {
 }
 
 /// The `.git` files whose change invalidates ahead/behind/landed and *staged* dirty
-/// only — an unstaged edit touches none, hence the poll backup. Built from the fields
-/// as last computed, so it trails a branch switch by a tick and self-corrects.
+/// only — an unstaged edit touches none, hence the poll backup.
 fn control_files(
     git_dir: &std::path::Path,
     common_dir: &str,
@@ -402,8 +342,6 @@ fn control_files(
     files
 }
 
-/// [`control_files`] from a cached [`GitInfo`]'s own fields. Empty before the first
-/// compute — the backup poll covers that dir until it joins the watched set.
 pub fn control_files_for(info: &GitInfo) -> Vec<std::path::PathBuf> {
     if info.git_dir.is_empty() {
         return Vec::new();
@@ -417,9 +355,8 @@ pub fn control_files_for(info: &GitInfo) -> Vec<std::path::PathBuf> {
 }
 
 /// Every input the *ref-derived* half of [`compute_git_info`] reads: the picked base
-/// ref and the [`control_files`] mtimes minus `index`, excluded because `status`/`diff`
-/// rewrite its stat cache every poll and would defeat the reuse. Only `fs::metadata`.
-/// Empty on any stat error — a partial fingerprint must never equal a real one.
+/// ref and the [`control_files`] mtimes minus `index`, whose stat cache `status`/`diff`
+/// rewrite every poll.
 fn revision_fingerprint(
     dir: &str,
     git_dir: &str,
@@ -441,9 +378,8 @@ fn revision_fingerprint(
             Err(_) => None,
         }
     };
-    // The structural facts are reused wholesale on the fast path too, yet a
-    // `worktree add`/`remote set-url` changes them without touching any ref file — so
-    // their fingerprint is folded in here and busts the fast path.
+    // A `worktree add`/`remote set-url` moves no ref file, so its fingerprint is
+    // folded in here to bust the fast path.
     let structural = structural_fingerprint(common_dir);
     if structural.is_empty() {
         return String::new();
@@ -467,9 +403,8 @@ fn revision_fingerprint(
     build().unwrap_or_default()
 }
 
-/// Compute a folder's git info. `previous` is that folder's last cached value, used to
-/// skip repeat work when nothing it depends on has moved — the ref-derived half, the
-/// landing probe, the structural facts. Pass `None` to force a full computation.
+/// Compute a folder's git info; `previous` is its last cached value, reused where
+/// nothing has moved. `None` forces a full compute.
 pub fn compute_git_info(
     dir: &str,
     base_branch_override: Option<&str>,
@@ -487,9 +422,8 @@ pub fn compute_git_info(
         return GitInfo::default();
     };
 
-    // Fast path: when nothing the ref-derived half reads has moved, reuse it wholesale
-    // and pay only for the working-tree half. That is the sole part no `.git` mtime can
-    // stand in for, so it is all a backup-poll tick over an idle repo should cost.
+    // Reuse the ref-derived half and pay only for the working tree — the sole part
+    // no `.git` mtime can stand in for.
     if let Some(prev) = previous.filter(|p| !p.revision_key.is_empty() && !p.git_dir.is_empty()) {
         let key = revision_fingerprint(
             dir,
@@ -502,8 +436,6 @@ pub fn compute_git_info(
         if !key.is_empty() && key == prev.revision_key {
             let diff_base =
                 if prev.diff_base.is_empty() { "HEAD" } else { prev.diff_base.as_str() };
-            // Everything ref-derived and structural is carried from `prev`; the
-            // fingerprint match proves it is still exact.
             let mut info = diff_stats(&repo, &prev.branch, prev.is_worktree, diff_base);
             info.computed_at_ms = now_ms;
             info.head_commit_ms = prev.head_commit_ms;
@@ -520,24 +452,22 @@ pub fn compute_git_info(
             info.compared_base = prev.compared_base.clone();
             info.diff_base = prev.diff_base.clone();
             info.revision_key = key;
-            // Cheap filesystem facts, not repository reads — kept fresh so a
-            // launch.json appearing shows up without waiting a whole poll.
+            // Kept fresh so a launch.json appearing doesn't wait a whole poll.
             info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
             info.has_launch_config = crate::launch::has_launch_file(std::path::Path::new(dir));
             return info;
         }
     }
 
-    // HEAD is detached or unborn. Everything ref-derived is genuinely unknown, but
-    // which repository this checkout belongs to doesn't depend on where HEAD points —
-    // a bare default here dropped `common_dir`, and a `git rebase` knocked the checkout
-    // out of its repo's rail row until HEAD landed on a branch again.
+    // HEAD is detached or unborn: the ref-derived half is unknown, but which repo
+    // this checkout belongs to doesn't depend on where HEAD points — a bare default
+    // knocked a rebasing checkout out of its rail row.
     let Some(branch) = repo.head_branch().filter(|b| !b.is_empty()) else {
         return structural_only(dir, &repo, previous, now_ms);
     };
     let compared_base = resolve_base_ref(&repo, dir, base_branch_override);
-    // The diff baseline is the merge-base, not the base tip: a branch's stats
-    // must describe what *it* changed, not also what the base gained since.
+    // The merge-base, not the base tip: a branch's stats describe what *it*
+    // changed, not what the base gained since.
     let base = repo
         .merge_base("HEAD", &compared_base)
         .map(|id| id.to_string())
@@ -565,11 +495,8 @@ pub fn compute_git_info(
     info.git_dir = git_dir;
     info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
     info.has_launch_config = crate::launch::has_launch_file(std::path::Path::new(dir));
-    // Nothing ahead trivially means nothing unlanded.
     if info.commits_ahead > 0 {
-        // Through `ops::work_state` rather than the probe directly, so there is one
-        // implementation of "has this landed". Reusing the previous answer when nothing
-        // the probe reads has moved is exact, not a staleness tradeoff.
+        // Through `ops::work_state`: one implementation of "has this landed".
         let fingerprint = probe_fingerprint(&repo, &branch, &compared_base);
         let reusable = previous
             .filter(|prev| !fingerprint.is_empty() && prev.probe_key == fingerprint)
@@ -592,7 +519,6 @@ pub fn compute_git_info(
         info.commits_unlanded = 0;
     }
     info.diff_base = base;
-    // Stamped from the values just computed, so the next poll can take the fast path.
     info.revision_key = revision_fingerprint(
         dir,
         &info.git_dir,
@@ -605,14 +531,11 @@ pub fn compute_git_info(
     info
 }
 
-/// The two diffs of [`GitInfo`], measured separately and never summed. Untracked files
-/// count toward `uncommitted_files` — losing them is exactly what deleting a checkout
-/// does — but contribute no line counts. Every other field is filled by the caller.
+/// The two diffs of [`GitInfo`], never summed; the caller fills the rest.
 fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: &str) -> GitInfo {
     let uncommitted = repo.changes_vs("HEAD").unwrap_or_default();
     let committed = repo.committed_totals_vs(base).unwrap_or_default();
     let staged = repo.staged_changes().unwrap_or_default();
-    // Reuses the paths the diff just produced rather than a second status walk.
     let worktree_touched =
         repo.newest_mtime_unix(uncommitted.files.iter().map(|c| c.path.as_str())).unwrap_or(0);
     GitInfo {
@@ -635,8 +558,7 @@ fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: 
 }
 
 /// Deduped by common git dir, so N worktrees of one repo trigger one network call.
-/// Failures (offline, no origin, auth prompt) are swallowed — this only refreshes the
-/// `origin/main` ref [`compute_git_info`] reads.
+/// Failures are swallowed — this only refreshes the ref [`compute_git_info`] reads.
 pub fn fetch_all(dirs: &[String]) {
     let mut seen = HashSet::new();
     for dir in dirs {
@@ -648,7 +570,6 @@ pub fn fetch_all(dirs: &[String]) {
     }
 }
 
-/// Best-effort refresh of the local `origin/main` remote-tracking ref.
 fn fetch_origin(dir: &str) {
     let full = ["-C", dir, "fetch", "--quiet", "origin"];
     let _ = tt_exec::run_with_timeout("git", &full, std::time::Duration::from_secs(20));
@@ -660,8 +581,7 @@ fn git_common_dir(dir: &str) -> String {
 }
 
 /// This repo's other linked worktrees, `dir` itself and the main checkout excluded.
-/// `dir` is compared canonically: `Repo::worktrees` reports resolved paths, and a
-/// checkout reached through a symlink must still drop out of its own sibling list.
+/// `dir` is compared canonically, so a symlinked checkout drops out of its own list.
 fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
     let self_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| std::path::PathBuf::from(dir));
     repo.worktrees()
@@ -671,9 +591,8 @@ fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
         .collect()
 }
 
-/// One of the two places this module still spawns `git` (gitoxide's worktree API is
-/// read-only). `--force` because the directory is already gone; `prune` runs either
-/// way, since a failed remove can leave a stale entry only `prune` clears.
+/// One of two places this module spawns `git` (gitoxide's worktree API is read-only).
+/// `prune` runs either way: a failed remove leaves a stale entry.
 pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
     let git = |args: &[&str]| {
         let mut full = vec!["-C", owner_dir];
@@ -687,8 +606,7 @@ pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
     };
     let removed = git(&["worktree", "remove", "--force", worktree_dir]).is_ok_and(|out| out.ok());
     let _ = git(&["worktree", "prune"]);
-    // The cached handle would otherwise hold an open object database against a
-    // directory that no longer exists.
+    // The cached handle would hold an object database open against a dead directory.
     tt_git::repo::forget(std::path::Path::new(worktree_dir));
     removed
 }
@@ -704,11 +622,9 @@ fn resolve_origin_main(repo: &tt_git::repo::Repo) -> String {
 
 /// The ref every "vs main" comparison uses — the diff pane's `DiffMode::Main` *and*
 /// [`compute_git_info`]'s stats, so the rail's numbers match the pane. Priority: the
-/// per-folder `base_branch` override, then the `.tt-task` marker's `base=`, then the
-/// origin/main-or-master auto-detect.
-///
-/// Whichever wins resolves to `origin/<name>`, never the local branch: both may have
-/// moved, and the pane wants the pushed baseline. Local only when no remote exists.
+/// per-folder `base_branch` override, the `.tt-task` marker's `base=`, then
+/// origin/main-or-master. The winner resolves to `origin/<name>` — the pane wants the
+/// pushed baseline — and to the local branch only when no remote exists.
 fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
     let candidates = [base_branch.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string)]
         .into_iter()
@@ -727,16 +643,13 @@ fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&s
     resolve_origin_main(repo)
 }
 
-/// What baseline the diff pane compares the working tree against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffMode {
-    /// Everything on this branch vs where it forked from origin/main (merge-base).
+    /// This branch vs where it forked from origin/main (merge-base).
     Main,
-    /// Only what isn't committed yet, vs the *index* — so a staged hunk drops out
-    /// of this view the moment it is staged, VS Code's "Changes" list.
+    /// Worktree vs the *index*, VS Code's "Changes": a staged hunk drops out.
     Uncommitted,
-    /// What `git commit` would take right now: HEAD vs the index, VS Code's
-    /// "Staged Changes" list. Both sides are history; nothing here is editable.
+    /// What `git commit` would take: HEAD vs the index. Nothing here is editable.
     Staged,
 }
 
@@ -750,42 +663,34 @@ pub struct DiffFile {
     pub status: String,
     pub lines_added: i64,
     pub lines_removed: i64,
-    /// Nonzero on a `?` row that is a whole untracked directory left collapsed at a
-    /// cap, so the pane can say "1000+ files" instead of one unopenable row.
+    /// Nonzero on a collapsed untracked directory: the pane says "1000+ files".
     pub untracked_files: i64,
-    /// The index differs from HEAD at this path — the file-checkbox's checked
-    /// half. Only computed for [`DiffMode::Uncommitted`] and [`DiffMode::Staged`].
+    /// Index vs HEAD; only computed for the two staging modes.
     #[serde(default)]
     pub staged: bool,
-    /// The working tree differs from the index at this path — with `staged`,
-    /// the tri-state: both true is a partially staged file.
+    /// Worktree vs index; with `staged`, both true is a partially staged file.
     #[serde(default)]
     pub unstaged: bool,
 }
 
-/// The diff pane's file list, and whether producing it was cut short.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffFiles {
     pub files: Vec<DiffFile>,
-    /// The untracked directory whose expansion stopped at the cap, if any.
     pub untracked_cap: Option<UntrackedCapInfo>,
 }
 
-/// What the pane's banner needs to name the directory almost certainly missing from
-/// `.gitignore`.
+/// What the pane's banner needs to name the directory missing from `.gitignore`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UntrackedCapInfo {
     pub dir: String,
     pub files: i64,
-    /// The whole diff's budget ran out, so other untracked directories are missing
-    /// entirely — not just this one's contents.
+    /// The whole diff's budget ran out, so other directories are missing too.
     pub total: bool,
 }
 
-/// Merge-base with the resolved base ref — the `Main` mode's baseline. The
-/// staging modes never touch it: their baselines are the index and HEAD.
+/// The `Main` mode's baseline; the staging modes use the index and HEAD.
 fn resolve_diff_base(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
     let base_ref = resolve_base_ref(repo, dir, base_branch);
     repo.merge_base("HEAD", &base_ref)
@@ -793,8 +698,7 @@ fn resolve_diff_base(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&
         .unwrap_or_else(|| "HEAD".to_string())
 }
 
-/// Rename-aware, baseline picked by `mode`. Untracked files appear with status `?` and
-/// no line counts. Empty when `dir` isn't a repo or nothing changed.
+/// Rename-aware, baseline picked by `mode`. Untracked files appear as `?`.
 pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffFiles {
     if dir.is_empty() {
         return DiffFiles::default();
@@ -804,15 +708,14 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
     };
     let changes = match mode {
         DiffMode::Staged => repo.staged_changes().unwrap_or_default(),
-        // Index vs worktree, matching the editor's sides — the worktree-vs-HEAD
-        // diff would list a fully staged file this view has nothing to show for.
+        // Index vs worktree, matching the editor's sides: a worktree-vs-HEAD diff
+        // would list a fully staged file this view has nothing to show for.
         DiffMode::Uncommitted => repo.unstaged_changes().unwrap_or_default(),
         DiffMode::Main => {
             let base = resolve_diff_base(&repo, dir, base_branch);
             repo.changes_vs(&base).unwrap_or_default()
         }
     };
-    // The tri-state checkboxes only exist where staging does.
     let states = match mode {
         DiffMode::Uncommitted => repo
             .stage_states(changes.files.iter().filter(|c| c.status != '?').map(|c| c.path.as_str()))
@@ -824,7 +727,6 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
         .into_iter()
         .map(|change| {
             let state = match mode {
-                // An untracked row (possibly a whole directory) is unstaged work.
                 DiffMode::Uncommitted if change.status == '?' => {
                     tt_git::repo::StageState { staged: false, unstaged: true }
                 }
@@ -853,13 +755,9 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
     DiffFiles { files, untracked_cap }
 }
 
-/// The original side of the diff editor. `None` when the file doesn't exist at the
-/// baseline, `dir` isn't a repo, or the content isn't UTF-8.
-///
-/// `Uncommitted` serves the *index* version, so a staged hunk leaves the visible
-/// diff (and staging math is index-relative, like VS Code's); with nothing staged
-/// the index matches HEAD and this is the same answer as before. `Staged` serves
-/// HEAD, the left side of "what would commit".
+/// The original side of the diff editor; `None` when absent at the baseline or not
+/// UTF-8. `Uncommitted` serves the *index* version, so staging math is index-relative
+/// like VS Code's; `Staged` serves HEAD.
 pub fn base_file_content(
     dir: &str,
     mode: DiffMode,
@@ -897,10 +795,7 @@ pub fn index_file_content(dir: &str, path: &str) -> Option<String> {
 }
 
 /// One commit ahead of `compared_base` with its own line-count diff, not the branch's
-/// cumulative total. Powers the `CommittedChip` hover's per-commit breakdown.
-///
-/// `camelCase` is load-bearing: the frontend reads `linesAdded`/`linesRemoved`, and
-/// without the rename every commit row rendered a bare `+`/`−` with no number.
+/// cumulative total. `camelCase` is load-bearing: the frontend reads `linesAdded`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitStat {
@@ -910,8 +805,6 @@ pub struct CommitStat {
     pub lines_removed: i64,
 }
 
-/// Commits on HEAD that `compared_base` doesn't have, oldest first. Empty when `dir`
-/// isn't a repo or nothing is ahead.
 pub fn commit_stats(dir: &str, base_branch: Option<&str>) -> Vec<CommitStat> {
     if dir.is_empty() {
         return Vec::new();
@@ -936,12 +829,8 @@ pub fn commit_stats(dir: &str, base_branch: Option<&str>) -> Vec<CommitStat> {
 mod tests {
     use super::*;
 
-    /// Fixed clock for `compute_git_info`'s `now_ms` — nothing under test reads
-    /// it back except `computed_at_ms`.
     const NOW: i64 = 1_700_000_000_000;
 
-    /// `git -C <dir> <args>`, asserting success. The fixture builder for every
-    /// test here that needs a real repository on disk.
     fn git(dir: impl AsRef<std::path::Path>, args: &[&str]) {
         assert!(
             std::process::Command::new("git")
@@ -954,14 +843,12 @@ mod tests {
         );
     }
 
-    /// [`other_worktrees`]' linked siblings by directory.
     fn worktree_dirs_of(dir: &str) -> Vec<String> {
         open_repo(dir).map(|repo| other_worktrees(&repo, dir)).unwrap_or_default()
     }
 
-    /// A repo on `main` with one commit of `f.txt` holding `contents`. The
-    /// content is a parameter because the diff-counting tests care what the
-    /// baseline commit's last line looks like.
+    /// A repo on `main` with one commit of `f.txt`; the diff-counting tests care
+    /// what the baseline's last line looks like.
     fn init_repo_with(repo: &std::path::Path, contents: &str) {
         git(repo, &["init", "--quiet", "-b", "main"]);
         git(repo, &["config", "user.email", "test@example.com"]);
@@ -971,13 +858,11 @@ mod tests {
         git(repo, &["commit", "--quiet", "-m", "init"]);
     }
 
-    /// The common case: one commit, `f.txt` = `"1"`.
     fn init_repo(repo: &std::path::Path) {
         init_repo_with(repo, "1");
     }
 
-    /// [`init_repo`] plus a local `origin/main` remote-tracking ref, for the
-    /// tests whose stats are measured against the default base.
+    /// [`init_repo`] plus a local `origin/main` ref, for the default-base tests.
     fn init_repo_with_origin(repo: &std::path::Path) {
         init_repo(repo);
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
@@ -1019,23 +904,21 @@ mod tests {
     fn cache_fresh_stale_and_invalidate() {
         let mut cache = GitInfoCache::new();
         let info = GitInfo { branch: "main".into(), ..Default::default() };
-        // Use epoch-scale timestamps: invalidate() zeroes the stamp, which only
-        // reads as stale when `now_ms` is a real epoch (≫ TTL), matching TS.
+        // Epoch-scale: invalidate() zeroes the stamp, which reads as stale
+        // only when `now_ms` is a real epoch (≫ TTL).
         let t0 = 1_700_000_000_000;
         cache.insert("/repo", info.clone(), t0);
         assert!(cache.is_fresh("/repo", t0));
         assert!(cache.is_fresh("/repo", t0 + GIT_CACHE_TTL_MS - 1)); // just under TTL
         assert!(!cache.is_fresh("/repo", t0 + GIT_CACHE_TTL_MS)); // exactly TTL later → stale
-        // Stale entries still serve.
         assert_eq!(cache.get("/repo"), info);
-        // Invalidate forces stale immediately (stamp → 0).
         cache.invalidate(Some("/repo"));
         assert!(!cache.is_fresh("/repo", t0));
         assert_eq!(cache.get("/repo"), info); // still served
     }
 
-    /// The focused checkout goes stale at the short ceiling while its
-    /// neighbours — same cache, same stamp — keep the fleet-wide one.
+    /// The focused checkout goes stale at the short ceiling; its neighbours,
+    /// same cache and stamp, keep the fleet-wide one.
     #[test]
     fn only_the_focused_dir_gets_the_short_ceiling() {
         let mut cache = GitInfoCache::new();
@@ -1051,7 +934,6 @@ mod tests {
         assert!(cache.is_fresh("/repo/looked-at", at - 1));
         assert!(cache.is_fresh("/repo/other", at), "the fleet keeps the long ceiling");
 
-        // Releasing restores it — a closed pane must not leave one row polling.
         assert!(cache.set_focused(None));
         assert!(cache.is_fresh("/repo/looked-at", at));
     }
@@ -1121,13 +1003,11 @@ mod tests {
             ],
         );
 
-        // Both linked siblings are discovered; nothing on disk says which the
-        // user asked for, so the engine decides that from the board.
+        // Nothing on disk says which sibling the user asked for.
         let linked = worktree_dirs_of(main.to_str().unwrap());
         assert_eq!(sorted(linked), sorted(vec![path_s(&task), path_s(&scratch)]));
 
-        // From a task's perspective the primary checkout is never listed —
-        // it's what a repo group nests under, not a discovery candidate.
+        // The primary checkout is what a repo group nests under.
         let linked = worktree_dirs_of(task.to_str().unwrap());
         assert_eq!(linked, vec![path_s(&scratch)]);
     }
@@ -1164,8 +1044,7 @@ mod tests {
         };
         assert!(raw_worktree_dirs(main.to_str().unwrap()).contains(&path_s(&managed)));
 
-        // A bare `rm -rf` leaves git's `.git/worktrees/thing` registration behind, so
-        // `worktree list` keeps reporting it — the fact `prune_stale_worktree` targets.
+        // A bare `rm -rf` leaves the registration `worktree list` reports.
         std::fs::remove_dir_all(&managed).unwrap();
         assert!(
             raw_worktree_dirs(main.to_str().unwrap()).contains(&path_s(&managed)),
@@ -1188,10 +1067,8 @@ mod tests {
         p.to_str().unwrap().to_string()
     }
 
-    /// A tempdir root spelled the way git will report it back. macOS puts
-    /// tempdirs under `/var`, a symlink to `/private/var`, and git resolves
-    /// what it prints — an artifact of the fixture, not of a real checkout,
-    /// but any path comparison here has to be like for like.
+    /// A tempdir root spelled the way git reports it back: macOS resolves its
+    /// `/var` symlink, and any path comparison here must be like for like.
     fn temp_root() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::TempDir::new().unwrap();
         let path = std::fs::canonicalize(dir.path()).unwrap();
@@ -1206,25 +1083,18 @@ mod tests {
         git(repo, &["branch", "develop"]);
 
         let dir = repo.to_str().unwrap();
-        // A local branch with no matching remote ref: the override resolves
-        // directly to the local branch name.
         assert_eq!(
             resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("develop")),
             "develop"
         );
-        // A leading "origin/" on the override is stripped before re-adding it,
-        // so passing either form of the same branch resolves identically.
         assert_eq!(
             resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("origin/develop")),
             "develop"
         );
-        // An override that resolves to nothing (no such branch, no remote)
-        // falls back to the origin/main-or-master auto-detect.
         assert_eq!(
             resolve_base_ref(&open_repo(dir).expect("repo"), dir, Some("no-such-branch")),
             resolve_origin_main(&open_repo(dir).expect("repo"))
         );
-        // No override at all: same auto-detect.
         assert_eq!(
             resolve_base_ref(&open_repo(dir).expect("repo"), dir, None),
             resolve_origin_main(&open_repo(dir).expect("repo"))
@@ -1236,8 +1106,6 @@ mod tests {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
         init_repo(repo);
-        // A local "origin/develop" remote-tracking ref so resolve_base_ref
-        // has something to prefer over the local "develop" branch.
         git(repo, &["branch", "develop"]);
         git(repo, &["update-ref", "refs/remotes/origin/develop", "develop"]);
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
@@ -1249,11 +1117,7 @@ mod tests {
         .unwrap();
 
         let dir = repo.to_str().unwrap();
-        // No explicit override: the task's own marker base wins over the
-        // origin/main auto-detect, and resolves to the origin remote copy.
         assert_eq!(resolve_base_ref(&open_repo(dir).expect("repo"), dir, None), "origin/develop");
-        // An explicit per-folder override still takes priority over the
-        // task's recorded creation base.
         git(repo, &["branch", "release"]);
         git(repo, &["update-ref", "refs/remotes/origin/release", "release"]);
         assert_eq!(
@@ -1280,13 +1144,11 @@ mod tests {
     #[test]
     fn compute_does_not_flag_an_existing_dir() {
         let root = tempfile::TempDir::new().unwrap();
-        // Present but not a git repo: still not "missing".
         let info = compute_git_info(root.path().to_str().unwrap(), None, None, NOW);
         assert!(!info.dir_missing);
     }
 
-    /// A `node_modules` no `.gitignore` covers: the rail must report a floor and say
-    /// so, and the pane must name the directory rather than list a million rows.
+    /// A `node_modules` no `.gitignore` covers: a floor, and a named directory.
     #[test]
     fn an_unignored_dependency_tree_is_capped_and_flagged() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1311,9 +1173,8 @@ mod tests {
         assert_eq!(cap.dir, "node_modules");
     }
 
-    /// The uncommitted list and the editor's sides must describe the same
-    /// diff: index vs worktree. A fully staged file belongs to `Staged` only,
-    /// and a partially staged file's uncommitted base is the *index* version.
+    /// The uncommitted list and the editor's sides must describe the same diff:
+    /// index vs worktree, so a fully staged file belongs to `Staged` only.
     #[test]
     fn uncommitted_list_and_editor_sides_agree() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1354,16 +1215,13 @@ mod tests {
         assert_eq!(clean.uncommitted_files, 0);
         assert_eq!(clean.computed_at_ms, NOW, "every compute stamps its clock");
 
-        // A tracked file edited but not staged: invisible to `.git` mtimes,
-        // which is exactly why the poll still reads the working tree.
+        // Invisible to `.git` mtimes — why the poll still reads the worktree.
         std::fs::write(root.path().join("f.txt"), "1\n2\n").unwrap();
         let edited = compute_git_info(dir, None, None, NOW);
         assert!(edited.dirty);
         assert_eq!(edited.uncommitted_files, 1);
         assert_eq!((edited.uncommitted_added, edited.uncommitted_removed), (2, 1));
 
-        // Untracked files have no diff, but they are still changes the user
-        // can see, so they count toward `uncommitted_files` with no line counts.
         std::fs::write(root.path().join("new.txt"), "fresh\n").unwrap();
         let untracked = compute_git_info(dir, None, None, NOW);
         assert!(untracked.dirty);
@@ -1375,9 +1233,8 @@ mod tests {
         );
     }
 
-    /// The two signals behind the rail's worked-recently filter. `head_commit_ms`
-    /// answers even on the base branch (where `last_own_commit_unix` is `None`),
-    /// and `worktree_touched_ms` covers the unstaged edit no `.git` mtime sees.
+    /// The worked-recently filter's two signals: `head_commit_ms` answers even on
+    /// the base branch, `worktree_touched_ms` covers the unstaged edit.
     #[test]
     fn worked_recently_signals_track_commits_and_unstaged_edits() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1405,21 +1262,18 @@ mod tests {
         assert!(edited.worktree_touched_ms > 0, "an unstaged edit is a touch");
     }
 
-    /// The whole point of the split: two disjoint quantities, so neither number can be
-    /// read as belonging to the other. The old single ± measured the working tree
-    /// against the merge-base, folding an uncommitted edit into the commit count's ±.
+    /// Two disjoint quantities: the old single ± measured the working tree against
+    /// the merge-base, folding an uncommitted edit into the commit count's ±.
     #[test]
     fn committed_and_uncommitted_diffs_are_disjoint() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
         let dir = repo.to_str().unwrap();
 
-        // A trailing newline on the base file, so the numbers below are the
-        // ones `git diff` prints.
+        // A trailing newline, so the numbers below are what `git diff` prints.
         init_repo_with(repo, "1\n");
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
 
-        // One commit ahead of the base: +2 committed.
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("f.txt"), "1\n2\n3\n").unwrap();
         git(repo, &["commit", "--quiet", "-am", "add two lines"]);
@@ -1432,8 +1286,6 @@ mod tests {
         assert_eq!(committed_only.uncommitted_files, 0);
         assert_eq!((committed_only.uncommitted_added, committed_only.uncommitted_removed), (0, 0));
 
-        // Now an uncommitted edit on top. The committed half must not move —
-        // it is a property of the commits, not of the working tree.
         std::fs::write(repo.join("f.txt"), "1\n2\n3\n4\n5\n").unwrap();
         let both = compute_git_info(dir, None, None, NOW);
         assert_eq!(
@@ -1453,12 +1305,9 @@ mod tests {
         let repo = root.path();
         init_repo(repo);
 
-        // A non-task checkout has no marker: no task base surfaced.
         let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert_eq!(info.task_base_branch, None);
 
-        // Writing the `.tt-task` marker surfaces its `base=` field, so the
-        // diff pane can show what a task auto-compares against.
         std::fs::write(
             repo.join(tt_tasks::MARKER_FILE),
             tt_tasks::marker_contents("s", "develop", "main"),
@@ -1468,9 +1317,8 @@ mod tests {
         assert_eq!(info.task_base_branch, Some("develop".to_string()));
     }
 
-    /// The bug this module used to have: stats always measured against origin/main,
-    /// even for a folder whose diff pane compares against something else. Both must
-    /// come from the same `resolve_base_ref` baseline.
+    /// Stats and the diff pane must come from the same `resolve_base_ref`
+    /// baseline; this module used to measure everything against origin/main.
     #[test]
     fn compute_measures_stats_against_the_resolved_base_not_always_main() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1485,27 +1333,22 @@ mod tests {
         std::fs::write(repo.join("f.txt"), "3").unwrap();
         git(repo, &["commit", "--quiet", "-am", "on feature"]);
 
-        // Fake remote-tracking refs (no real remote needed for this test).
         git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
         git(repo, &["update-ref", "refs/remotes/origin/develop", "develop"]);
 
         let dir = repo.to_str().unwrap();
 
-        // vs origin/main (auto-detect, no override): both commits count.
         let vs_main = compute_git_info(dir, None, None, NOW);
         assert_eq!(vs_main.compared_base, "origin/main");
         assert_eq!(vs_main.commits_ahead, 2);
 
-        // vs an explicit "develop" override: only feature's own commit counts.
         let vs_develop = compute_git_info(dir, Some("develop"), None, NOW);
         assert_eq!(vs_develop.compared_base, "origin/develop");
         assert_eq!(vs_develop.commits_ahead, 1);
     }
 
-    /// The scenario this field exists for: a rebase merge replays a branch's commits
-    /// onto main under new SHAs, so `commits_ahead` never reaches 0 for that branch's
-    /// checkout even though its content landed. `commits_unlanded` must reach 0 anyway,
-    /// or "safe to delete" can never fire on this repo's workflow.
+    /// A rebase merge replays commits under new SHAs, so `commits_ahead` never
+    /// reaches 0 though the content landed. `commits_unlanded` must.
     #[test]
     fn commits_unlanded_reaches_zero_after_a_rebase_style_landing_even_though_ahead_does_not() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1524,8 +1367,6 @@ mod tests {
             .stdout;
         let feature_commit = String::from_utf8(feature_commit).unwrap().trim().to_string();
 
-        // What a rebase-merged PR leaves behind: the same change landed on main under
-        // a new SHA, main having moved on with an unrelated commit first.
         git(repo, &["checkout", "--quiet", "main"]);
         std::fs::write(repo.join("other.txt"), "unrelated").unwrap();
         git(repo, &["add", "other.txt"]);
@@ -1536,10 +1377,7 @@ mod tests {
 
         let dir = repo.to_str().unwrap();
         let info = compute_git_info(dir, None, None, NOW);
-        // Still "ahead" by SHA reachability — feature's own commit is a
-        // different object than the one cherry-picked onto main.
         assert_eq!(info.commits_ahead, 1);
-        // But fully landed by content — nothing to unland.
         assert_eq!(info.commits_unlanded, 0);
     }
 
@@ -1560,10 +1398,9 @@ mod tests {
         assert_eq!(info.landed, None, "nothing landed, so the rail must not claim otherwise");
     }
 
-    /// An entry stamped with a `now` captured *before* a slow batch is born already
-    /// past the TTL, so the next poll recomputes immediately — an unbounded loop. The
-    /// arithmetic behind a real incident: ~20 git subprocesses/sec around the clock.
-    /// Stamp with the time the batch *finished*.
+    /// An entry stamped with a `now` from *before* a slow batch is born past the
+    /// TTL, so the next poll recomputes at once — a loop that once cost ~20 git
+    /// subprocesses/sec. Stamp when the batch *finished*.
     #[test]
     fn cache_entry_stamped_before_a_slow_batch_is_born_stale() {
         let mut cache = GitInfoCache::new();
@@ -1583,9 +1420,8 @@ mod tests {
         );
     }
 
-    /// The structural guard against that same storm: an unmoved probe answer is reused,
-    /// so a hot poll costs three cheap reads instead of ~192 subprocesses. The previous
-    /// answer is poisoned — if it survives, the probe genuinely did not run.
+    /// The structural guard against that storm: an unmoved probe answer is reused.
+    /// The previous answer is poisoned — if it survives, the probe did not run.
     #[test]
     fn unchanged_revision_reuses_the_landing_answer_and_a_moved_head_invalidates_it() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1613,8 +1449,6 @@ mod tests {
         assert_eq!(reused.commits_unlanded, 99);
         assert_eq!(reused.probe_key, first.probe_key);
 
-        // Moving HEAD changes the fingerprint, which must force a real probe and
-        // discard the poisoned answer.
         std::fs::write(repo.join("f.txt"), "3").unwrap();
         git(repo, &["commit", "--quiet", "-am", "more unlanded work"]);
 
@@ -1645,8 +1479,7 @@ mod tests {
         git(&repo, &["worktree", "add", "-b", "task", worktree.to_str().unwrap()]);
 
         let resolved = resolve_git_dir_fs(&worktree).expect("real worktree must resolve");
-        // Exactly what `rev-parse --git-dir` answers, reached with zero spawns. The
-        // test spawns it precisely because that is the thing being agreed with.
+        // What `rev-parse --git-dir` answers, reached with zero spawns.
         let spawned = std::process::Command::new("git")
             .arg("-C")
             .arg(&worktree)
@@ -1701,8 +1534,7 @@ mod tests {
         );
     }
 
-    /// `compute_git_info` populates `git_dir` — and so what `control_files_for` watches
-    /// — purely from the filesystem, for a plain checkout and a linked worktree alike.
+    /// `git_dir` — and so the watch set — comes purely from the filesystem.
     #[test]
     fn compute_git_info_resolves_git_dir_from_the_filesystem_for_worktrees_too() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1726,9 +1558,7 @@ mod tests {
     }
 
     /// Why this can't be one path prefix: a linked worktree's `HEAD`/`index` live in
-    /// its own gitdir under `<common>/worktrees/<name>/`, while every ref it compares
-    /// against lives in the shared common dir. Watching one of the two would miss
-    /// either the worktree's branch switches or a commit landing on its base.
+    /// its own gitdir while every ref it compares against lives in the common dir.
     #[test]
     fn control_files_split_across_the_worktree_gitdir_and_the_shared_common_dir() {
         let (_guard, root) = temp_root();
@@ -1778,9 +1608,8 @@ mod tests {
         );
     }
 
-    /// The watch set is *actionable*, not just correct: registered the way the host's
-    /// scan loop does it, a `git checkout -b` must surface within a debounce window
-    /// rather than on the [`GIT_CACHE_TTL_MS`] backup ceiling.
+    /// Registered the way the host's scan loop does it, a `git checkout -b`
+    /// surfaces within a debounce window rather than on the TTL.
     #[test]
     fn a_branch_switch_fires_the_control_watch_far_sooner_than_the_backup_poll() {
         let (_guard, root) = temp_root();
@@ -1795,9 +1624,7 @@ mod tests {
             let _ = fired_tx.send(batch);
         })
         .unwrap();
-        // Same tolerance as the host's registration diff: a control file whose
-        // parent doesn't exist yet (no `refs/remotes/origin` in a repo with no
-        // remote) is skipped, never fatal.
+        // Same tolerance as the host: a parentless control file is skipped.
         for file in control_files_for(&before) {
             let _ = notifier.add(&file);
         }
@@ -1818,10 +1645,8 @@ mod tests {
         assert_eq!(after.branch, "feature", "the recompute the signal triggers sees the switch");
     }
 
-    /// The other half of the same idea, applied to `is_worktree`/`common_dir`/
-    /// `worktree_dirs`/`origin_url` — structural facts, not working-tree state,
-    /// so they're worth revalidating from two `fs::metadata` calls instead of
-    /// re-deriving via four more git spawns on every poll of an unchanged repo.
+    /// The same idea for the structural facts: two `fs::metadata` calls instead of
+    /// four git spawns on every poll of an unchanged repo.
     #[test]
     fn unmoved_worktrees_and_config_reuse_structural_facts_and_a_new_worktree_invalidates_it() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1836,8 +1661,8 @@ mod tests {
             "a resolved repo must carry a fingerprint to reuse"
         );
 
-        // Poisoned with a value `compute_git_info` could never itself produce —
-        // if it survives, the four structural spawns genuinely did not run.
+        // A value `compute_git_info` could never produce: if it survives, the
+        // structural spawns did not run.
         let mut poisoned = first.clone();
         poisoned.origin_url = Some("sentinel".to_string());
 
@@ -1849,8 +1674,6 @@ mod tests {
         );
         assert_eq!(reused.structural_key, first.structural_key);
 
-        // `git worktree add` touches common_dir/worktrees's mtime, which must
-        // invalidate the memo and force a real re-derive.
         let sibling = root.path().join("sibling");
         git(
             repo,
@@ -1868,16 +1691,13 @@ mod tests {
             reprobed.structural_key, first.structural_key,
             "a new worktree must invalidate the structural memo"
         );
-        // Proves a real re-derive ran rather than returning the poisoned value.
         assert_ne!(reprobed.origin_url.as_deref(), Some("sentinel"));
         let sibling_dir = path_s(&std::fs::canonicalize(&sibling).unwrap());
         assert!(reprobed.linked_worktree_dirs.contains(&sibling_dir));
     }
 
-    /// When no ref has moved, the ref-derived half is reused wholesale and only the
-    /// working-tree half is recomputed, so a backup-poll tick over an idle repo pays
-    /// for two of the nine reads. Proven by poisoning ref-derived fields the real repo
-    /// could never produce and watching them survive a working-tree change.
+    /// With no ref moved, an idle tick pays for two of the nine reads. Proven by
+    /// poisoning ref-derived fields and watching them survive a worktree change.
     #[test]
     fn unchanged_refs_reuse_the_ref_derived_half_but_still_refresh_the_working_tree() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1889,21 +1709,18 @@ mod tests {
         assert!(!first.revision_key.is_empty(), "a resolved repo carries a revision fingerprint");
         assert!(!first.dirty, "the tree is clean after the initial commit");
 
-        // Poison ref-derived fields with values a real compute could never
-        // produce here; the fingerprint is keyed off the ref *files*, not these
-        // values, so it still matches and the fast path must carry them over.
+        // The fingerprint is keyed off the ref *files*, so it still matches and
+        // the fast path must carry the poison over.
         let mut poisoned = first.clone();
         poisoned.commits_ahead = 999;
         poisoned.landed = Some("SENTINEL".to_string());
 
-        // Dirty the working tree *after* the first compute.
         std::fs::write(repo.join("untracked.txt"), "x").unwrap();
 
         let reused = compute_git_info(dir, None, Some(&poisoned), NOW);
         assert_eq!(reused.commits_ahead, 999, "ref-derived half reused, not recomputed");
         assert_eq!(reused.landed.as_deref(), Some("SENTINEL"), "landing answer reused");
         assert_eq!(reused.revision_key, first.revision_key, "fingerprint stable while refs idle");
-        // …but the working-tree half was genuinely re-read.
         assert!(reused.dirty, "status/diff still ran, so the new untracked file shows");
     }
 
@@ -1918,8 +1735,6 @@ mod tests {
         let mut poisoned = first.clone();
         poisoned.landed = Some("SENTINEL".to_string());
 
-        // A commit moves HEAD (and refs/heads/main) → the fingerprint must change
-        // and the ref-derived half must be recomputed, clearing the sentinel.
         std::fs::write(repo.join("f.txt"), "2").unwrap();
         git(repo, &["commit", "--quiet", "-am", "second"]);
 
@@ -1945,26 +1760,22 @@ mod tests {
         let mut poisoned = first.clone();
         poisoned.landed = Some("SENTINEL".to_string());
 
-        // Same refs, but a different base override: the fingerprint folds the
-        // override in, so it changes and the base is re-resolved rather than the
-        // stale ref-derived half being served.
+        // The fingerprint folds the base override in, so a different one
+        // re-resolves rather than serving the stale half.
         let reprobed = compute_git_info(dir, Some("develop"), Some(&poisoned), NOW);
         assert_ne!(reprobed.revision_key, first.revision_key, "override change busts the memo");
         assert_ne!(reprobed.landed.as_deref(), Some("SENTINEL"), "a full recompute ran");
     }
 
-    /// The rail's headline false alarm. A squash merge collapses the branch's
-    /// commits into one new commit whose diff matches none of them
-    /// individually, so the `git cherry` patch-id check this used to rely on
-    /// reported *every* commit as outstanding — a merged task looked like it
-    /// still held work, and "safe to delete" could never fire.
+    /// The rail's headline false alarm: a squash merge's one new commit matches
+    /// none of the branch's individually, so the `git cherry` patch-id check this
+    /// relied on reported *every* commit as outstanding.
     #[test]
     fn commits_unlanded_reaches_zero_after_a_squash_merge() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
         init_repo(repo);
 
-        // Two commits, so the squash genuinely collapses several into one.
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         std::fs::write(repo.join("a.txt"), "a").unwrap();
         git(repo, &["add", "a.txt"]);
@@ -1981,23 +1792,20 @@ mod tests {
 
         let dir = repo.to_str().unwrap();
         let info = compute_git_info(dir, None, None, NOW);
-        // Still ahead by SHA reachability — the squash commit is a new object.
         assert_eq!(info.commits_ahead, 2);
         assert_eq!(info.commits_unlanded, 0, "a squash-merged branch holds no outstanding work");
         assert_eq!(info.landed.as_deref(), Some("squash-merged"), "and the rail can say why");
     }
 
-    /// The landing probe synthesises commit objects for their patch-ids. Landing those
-    /// in the repo's own object store would accumulate them indefinitely on every poll,
-    /// so `ops::work_state` redirects them to scratch storage — and nothing else in the
-    /// suite would notice if that stopped working.
+    /// The landing probe synthesises commit objects for their patch-ids; in the
+    /// repo's own object store they would accumulate on every poll, so
+    /// `ops::work_state` redirects them to scratch storage.
     #[test]
     fn computing_git_info_leaves_no_objects_behind_in_the_repo() {
         let root = tempfile::TempDir::new().unwrap();
         let repo = root.path();
         init_repo_with_origin(repo);
-        // An unlanded branch: the path that probes every commit, so the one
-        // that would litter the most.
+        // An unlanded branch probes every commit — the worst litterer.
         git(repo, &["checkout", "--quiet", "-b", "feature"]);
         for n in ["a", "b", "c"] {
             std::fs::write(repo.join(format!("{n}.txt")), n).unwrap();
@@ -2017,8 +1825,7 @@ mod tests {
         );
     }
 
-    /// Recursive file listing, so the object-store count covers the `xx/`
-    /// fan-out directories loose objects live in.
+    /// Recursive, so the count covers the `xx/` fan-out of loose objects.
     fn walkdir(dir: &std::path::Path) -> impl Iterator<Item = std::path::PathBuf> {
         let mut out = Vec::new();
         let mut stack = vec![dir.to_path_buf()];
@@ -2038,8 +1845,8 @@ mod tests {
         out.into_iter()
     }
 
-    /// Committing again after the merge is the case that must NOT read as
-    /// clean — and the count has to be the one new commit, not all three.
+    /// Committing again after the merge must NOT read as clean, and must count
+    /// the one new commit rather than all three.
     #[test]
     fn work_committed_after_a_squash_merge_counts_only_the_new_commit() {
         let root = tempfile::TempDir::new().unwrap();
@@ -2071,11 +1878,9 @@ mod tests {
         assert_eq!(info.landed, None, "a branch with new work has not fully landed");
     }
 
-    /// A detached HEAD (mid-rebase, mid-bisect, a checked-out tag) has no
-    /// branch and no stats — but it is still a checkout *of this repository*.
-    /// `common_dir` is the rail's row-grouping key, so answering with a bare
-    /// default used to knock the folder out of its repo's row until HEAD
-    /// landed on a branch again.
+    /// A detached HEAD has no branch and no stats, but is still a checkout *of
+    /// this repository*. `common_dir` is the rail's row-grouping key, so a bare
+    /// default knocked the folder out of its repo's row.
     #[test]
     fn a_detached_head_keeps_its_repository_identity() {
         let root = tempfile::TempDir::new().unwrap();
@@ -2104,10 +1909,8 @@ mod tests {
         );
     }
 
-    /// A compute that couldn't open the repository at all is not proof the
-    /// checkout stopped being one — a concurrent `git worktree remove`/`prune`
-    /// (which the task-removal sequence runs) can make a read fail mid-flight.
-    /// The identity survives so the row stays grouped; the stats don't.
+    /// A failed open is not proof the checkout stopped being one: a concurrent
+    /// `git worktree remove` can fail a read mid-flight. The identity survives.
     #[test]
     fn a_failed_read_keeps_the_identity_but_not_the_stats() {
         let root = tempfile::TempDir::new().unwrap();
@@ -2124,9 +1927,8 @@ mod tests {
         assert!(failed.structural_key.is_empty(), "no revalidation token for an answer we lack");
     }
 
-    /// The narrow cases: a real answer always wins, a gone directory is a
-    /// definite answer (its ghost row stands alone), and a directory that
-    /// vanished before the store isn't propped up by a stale identity.
+    /// A real answer always wins, a gone directory is a definite answer, and one
+    /// that vanished before the store isn't propped up by a stale identity.
     #[test]
     fn preserving_identity_never_overrides_a_real_answer() {
         let root = tempfile::TempDir::new().unwrap();

@@ -34,20 +34,16 @@ use crate::types::{
 #[serde(rename_all = "camelCase")]
 pub struct StatePayload {
     pub repos: Vec<RepoData>,
-    /// Context-% at/above which a cold session shows the "compact" nudge
-    /// (settings `agentboard.compactRecommendPercent`, default 30).
+    /// Context-% at/above which a cold session shows the "compact" nudge.
     pub compact_recommend_percent: u8,
-    /// Persisted window layout (frontend-owned; attached by the engine).
     pub windows: crate::windows::WindowsPayload,
-    /// Persisted folder-rail collapse/expand state, keyed by row key (attached
-    /// by the engine). Absent key ⇒ expanded.
+    /// Rail collapse state by row key, attached by the engine; absent ⇒ expanded.
     pub collapsed: std::collections::BTreeMap<String, bool>,
     pub ts: i64,
 }
 
-/// Assemble the [`StatePayload`] from the current inputs. Pure. Maps each repo entry to
-/// a [`FolderData`], then groups [`RepoData`] rows by [`GitInfo::common_dir`] — see the
-/// module docs for the grouping rule.
+/// Assemble the [`StatePayload`] from the current inputs. Pure: each repo entry maps to
+/// a [`FolderData`], then [`RepoData`] rows group by [`GitInfo::common_dir`].
 ///
 /// `attribute` maps an agent event to the PTY session id it was detected in; an id
 /// matching none of the folder's records drops the event, and `None` falls back to the
@@ -67,8 +63,7 @@ pub fn assemble_state(
 ) -> StatePayload {
     let mut repos: Vec<RepoData> = Vec::new();
     let mut group_index: HashMap<String, usize> = HashMap::new(); // common_dir -> repos index
-    // Every placed folder's dir -> its repo row, so a row git can't speak for
-    // can still find its group. See the `repo_root` fallback below.
+    // Every placed folder's dir -> its repo row, for the `repo_root` fallback.
     let mut dir_index: HashMap<String, usize> = HashMap::new();
 
     for entry in entries {
@@ -87,21 +82,18 @@ pub fn assemble_state(
         let needs = folder.needs;
 
         let group_key = (!git.common_dir.is_empty()).then(|| git.common_dir.clone());
-        // `common_dir` is the structural git fact every linked worktree reports
-        // identically — but git needs the directory to *be* there, and a task's
-        // row exists before its worktree does. Falling back to `repo_root` keeps
-        // a creating task under its own repo instead of stranding it top-level.
-        // Safe because `rail_rows` emits each checkout ahead of its bound rows.
+        // git needs the directory to *be* there, and a task's row exists before
+        // its worktree does. `repo_root` keeps a creating task under its own repo
+        // instead of stranding it top-level; `rail_rows` emits each checkout
+        // ahead of its bound rows, so the lookup is populated.
         let existing = group_key
             .as_ref()
             .and_then(|k| group_index.get(k).copied())
             .or_else(|| row.and_then(|r| dir_index.get(&r.repo_root).copied()));
-        // Which folder leads its repo row is a question about the *record*, not
-        // about git: a task row whose worktree doesn't exist yet reports
-        // `is_worktree = false` from a default `GitInfo`, and letting that
-        // re-anchor the row would key the whole group to a directory that isn't
-        // there. Only a tracked checkout leads. (Falling back to the git fact
-        // covers callers that pass no rows at all.)
+        // Which folder leads its row is a question about the *record*: a task
+        // whose worktree doesn't exist yet reports `is_worktree = false` from a
+        // default `GitInfo`, and re-anchoring on that would key the group to a
+        // directory that isn't there. Only a tracked checkout leads.
         let leads = match row {
             Some(r) => matches!(r.record, RowRecord::Checkout),
             None => !git.is_worktree,
@@ -111,12 +103,10 @@ pub fn assemble_state(
                 if !leads {
                     repos[i].folders.push(folder);
                 } else {
-                    // The primary checkout leads its group whenever it is
-                    // seen, re-anchoring the row's identity to itself.
-                    // Otherwise a worktree that merely sorted first would
-                    // key the row to a folder a later poll can rename or
-                    // remove, destabilizing rail position and collapse-state
-                    // persistence (both keyed on `repo.key`).
+                    // Otherwise a worktree that merely sorted first would key
+                    // the row to a folder a later poll can rename or remove,
+                    // moving rail position and collapse state (both on
+                    // `repo.key`).
                     repos[i].key = format!("path:{}", entry.dir);
                     repos[i].dir = entry.dir.clone();
                     if repos[i].origin_url.is_none() {
@@ -151,11 +141,10 @@ pub fn assemble_state(
     }
 }
 
-/// Build one folder: git stats + its persisted sessions with agents distributed
-/// by `attribute` (attributed → that exact session or dropped; no attribution →
-/// the remembering pane, else default), plus a placeholder `needs` count (always 0 here — see
-/// [`session_needs`] — the app recomputes it after stamping shell liveness via
-/// [`recompute_needs`]).
+/// Build one folder: git stats + its persisted sessions with agents distributed by
+/// `attribute` (attributed → that exact session or dropped; no attribution → the
+/// remembering pane, else default). `needs` is a placeholder until the app stamps
+/// shell liveness and calls [`recompute_needs`].
 #[allow(clippy::too_many_arguments)]
 fn build_folder(
     entry: &RepoEntry,
@@ -171,21 +160,18 @@ fn build_folder(
     let folder_agents = tracker.get_agents(&entry.name);
     let default_id = records.first().map(|r| r.id.clone());
 
-    // Bucket each agent onto the session it ran in. An id that isn't one of
-    // this folder's records means the agent runs in another app instance's
-    // session (sessions.json is shared), and dropping it beats pinning
-    // someone else's agent onto an unrelated pane.
+    // An id that isn't one of this folder's records means the agent runs in
+    // another app instance's session (sessions.json is shared); dropping it
+    // beats pinning someone else's agent onto an unrelated pane.
     let mut by_session: HashMap<String, Vec<AgentEvent>> = HashMap::new();
     for agent in folder_agents {
         let sid = match attribute(&agent) {
             Some(id) => records.iter().any(|r| r.id == id).then_some(id),
             // A live link is readable only while the process is, so an agent
-            // whose pid went unreadable — it exited, or the cached CLI
-            // snapshot outran it — would otherwise jump to pane 1 and take
-            // its needs-you signal along. `note_agent`'s record outlives the
+            // whose pid went unreadable would otherwise jump to pane 1 and take
+            // its needs-you signal along; `note_agent`'s record outlives the
             // process. A thread another folder's pane remembers isn't ours to
-            // default either: the tracker buckets by folder *name*, so
-            // same-basename checkouts see each other's agents here.
+            // default either — the tracker buckets by folder *name*.
             None => match remembering_record(records, &agent) {
                 Some(id) => Some(id),
                 None if remembered_elsewhere(sessions, records, &agent) => None,
@@ -202,9 +188,9 @@ fn build_folder(
         .map(|r| {
             let agents = by_session.remove(&r.id).unwrap_or_default();
             let agent_state = pick_state(&agents);
-            // Supplement: an app-spawned Claude we found by scanning /proc for
-            // this session's TT_SESSION_ID, when the CLI snapshot never reported
-            // it (so the tracker has nothing). Only fills an otherwise-idle row.
+            // An app-spawned Claude found by scanning /proc for this session's
+            // TT_SESSION_ID, when the CLI snapshot never reported it. Only fills
+            // an otherwise-idle row.
             let agent_state = agent_state.or_else(|| session_agents.get(&r.id).cloned());
             let unseen = agent_state.as_ref().and_then(|e| e.unseen).unwrap_or(false);
             SessionData {
@@ -226,10 +212,9 @@ fn build_folder(
     let needs = session_data.iter().filter(|s| session_needs(s)).count() as i64;
 
     let record = row.map(|r| r.record.clone()).unwrap_or_default();
-    // Identity comes from the record when git can't answer yet — a task row
-    // renders under its own title with its recorded branch from the first
-    // paint, instead of masquerading as "Root" until the cold git cache warms
-    // (or forever, for a detached task whose directory is gone).
+    // Identity comes from the record when git can't answer yet, so a task row
+    // renders under its own title instead of masquerading as "Root" until the
+    // cold git cache warms — or forever, for a task whose directory is gone.
     let is_worktree = git.is_worktree || record.task().is_some();
     let branch = if git.branch.is_empty() {
         record.task().and_then(|t| t.branch.clone()).unwrap_or_default()
@@ -242,7 +227,6 @@ fn build_folder(
         dir: entry.dir.clone(),
         repo_root: row.map(|r| r.repo_root.clone()).unwrap_or_else(|| entry.dir.clone()),
         record,
-        // Filled in by the app's `stamp_pty_state`; the engine can't know.
         phase: None,
         dir_missing: git.dir_missing,
         branch,
@@ -279,13 +263,11 @@ fn build_folder(
     }
 }
 
-/// The folder's session record that last ran this agent's thread, if any.
 fn remembering_record(records: &[SessionRecord], agent: &AgentEvent) -> Option<String> {
     let tid = agent.thread_id.as_deref()?;
     records.iter().find(|r| r.last_claude_session_id.as_deref() == Some(tid)).map(|r| r.id.clone())
 }
 
-/// Whether a pane in some *other* folder recorded running this agent's thread.
 fn remembered_elsewhere(
     sessions: &SessionStore,
     records: &[SessionRecord],
@@ -302,20 +284,15 @@ fn remembered_elsewhere(
     })
 }
 
-/// Whether a session "needs you". Only a session with a shell (`live`) counts,
-/// or a stale agent status would cry wolf about a shell that's gone. Given one,
-/// it needs you when its agent is blocked or broke, or when its turn just ended
-/// and the user hasn't looked yet (`unseen`, cleared by `ab_mark_seen`).
-///
-/// `live` is stamped app-side, so at engine assemble time this is always
-/// `false` — assemble-time `needs` is a placeholder the app overwrites.
+/// Whether a session "needs you": only a session with a shell (`live`) counts, or a
+/// stale agent status would cry wolf about a shell that's gone. `live` is stamped
+/// app-side, so at assemble time this is always `false` — a placeholder.
 pub fn session_needs(s: &SessionData) -> bool {
     needs_reason(s).is_some()
 }
 
-/// Why a session needs you, or `None` if it doesn't. The single source of truth
-/// [`session_needs`] delegates to, so the boolean and the [`NeedsYouReason`]
-/// notifications show can never disagree about which status counts.
+/// Why a session needs you. [`session_needs`] delegates here, so the boolean and
+/// the reason notifications show can never disagree.
 pub fn needs_reason(s: &SessionData) -> Option<NeedsYouReason> {
     if !s.live {
         return None;
@@ -330,11 +307,9 @@ pub fn needs_reason(s: &SessionData) -> Option<NeedsYouReason> {
     }
 }
 
-/// Remembers when each session FIRST entered "needs you", so re-stamping the
-/// payload doesn't reset the clock on a long-waiting block — the attention feed
-/// orders oldest-first. Dropped the moment a session stops needing you, so a
-/// later re-entry stamps fresh. Held app-side and threaded into
-/// [`recompute_needs`]; the epoch-ms clock is passed in, never read here.
+/// When each session FIRST entered "needs you", so re-stamping the payload doesn't
+/// reset the clock on a long-waiting block — the attention feed orders oldest-first.
+/// Dropped when a session stops needing you, so a later re-entry stamps fresh.
 #[derive(Debug, Default)]
 pub struct NeedsSince {
     stamps: HashMap<String, i64>,
@@ -345,18 +320,14 @@ impl NeedsSince {
         Self::default()
     }
 
-    /// When this session first entered needs-you, if it's currently needing.
     pub fn get(&self, session_id: &str) -> Option<i64> {
         self.stamps.get(session_id).copied()
     }
 }
 
-/// Recompute every folder's and repo's `needs` with [`session_needs`], and
-/// stamp each session's `needs_since_ms`. The engine assembles `needs` before
-/// `live` is stamped, so the app calls this afterwards for truthful counts.
-///
-/// `since` carries the first-entered timestamp forward, so a waiting-age only
-/// grows; a session that stops needing you is forgotten and re-stamps fresh.
+/// Recompute every folder's and repo's `needs`, and stamp each session's
+/// `needs_since_ms`. The engine assembles `needs` before `live` is stamped, so the
+/// app calls this afterwards. `since` carries the first-entered timestamp forward.
 pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_ms: i64) {
     let mut next: HashMap<String, i64> = HashMap::new();
     for repo in &mut payload.repos {
@@ -381,8 +352,7 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
     since.stamps = next;
 }
 
-/// Priority ordering for picking a session's headline agent state: attention
-/// (waiting/error) first, then working, then terminal states, then idle;
+/// Headline agent state: attention (waiting/error), working, terminal, idle;
 /// ties broken by recency.
 fn pick_state(agents: &[AgentEvent]) -> Option<AgentEvent> {
     agents.iter().max_by_key(|e| (status_rank(e.status), e.ts)).cloned()
@@ -399,9 +369,8 @@ fn status_rank(s: AgentStatus) -> u8 {
     }
 }
 
-/// Start a new top-level [`RepoData`] row for `entry` holding just `folder` —
-/// the first entry [`assemble_state`] sees for a given `common_dir` group (or
-/// any entry with no `common_dir` at all, which never groups with anything).
+/// Start a new top-level [`RepoData`] row: the first entry seen for a `common_dir`
+/// group, or any entry with no `common_dir`, which never groups with anything.
 fn new_repo_row(entry: &RepoEntry, git: &GitInfo, folder: FolderData) -> RepoData {
     let name = git
         .origin_url
@@ -416,14 +385,11 @@ fn new_repo_row(entry: &RepoEntry, git: &GitInfo, folder: FolderData) -> RepoDat
         origin_url: git.origin_url.clone(),
         folders: vec![folder],
         needs,
-        // Filled in by the engine after assembly — a pure lookup on `key`.
         meta: None,
     }
 }
 
-/// The repo segment of an origin URL: strips a trailing `.git` / `/` and takes
-/// the last path segment. Handles both `https://host/owner/repo.git` and
-/// scp-style `git@host:owner/repo.git`.
+/// The repo segment of an origin URL, `https://` or scp-style alike.
 fn repo_name_from_origin(url: &str) -> Option<String> {
     let trimmed = url.trim().trim_end_matches('/');
     let trimmed = trimmed.strip_suffix(".git").unwrap_or(trimmed);
@@ -460,9 +426,7 @@ mod tests {
         None
     }
 
-    /// Every entry as its own tracked checkout — the shape these tests always
-    /// meant, now that a row carries the record that put it there. Tests about
-    /// task rows build their map explicitly.
+    /// Every entry as its own tracked checkout; task-row tests build their own.
     fn rows_for(entries: &[RepoEntry]) -> HashMap<String, RailRow> {
         entries
             .iter()
@@ -479,9 +443,7 @@ mod tests {
             .collect()
     }
 
-    /// [`assemble_state`] with the arguments no test below varies: an empty
-    /// folder-meta store and the fixed compact/ts tail. Only the stores a test
-    /// actually exercises stay in the call.
+    /// [`assemble_state`] with the arguments no test below varies.
     fn assemble_with(
         entries: &[RepoEntry],
         git: &HashMap<String, GitInfo>,
@@ -504,7 +466,6 @@ mod tests {
         )
     }
 
-    /// [`assemble_with`] with no supplemental per-session agents.
     fn assemble(
         entries: &[RepoEntry],
         git: &HashMap<String, GitInfo>,
@@ -548,28 +509,24 @@ mod tests {
             999,
         );
         assert_eq!(payload.ts, 999);
-        // Neither folder shares a `common_dir` with the other (no git info
-        // on beta) → each is its own top-level row → two repos.
+        // No shared `common_dir` → each folder is its own top-level row.
         assert_eq!(payload.repos.len(), 2);
         let alpha = &payload.repos[0];
         assert_eq!(alpha.name, "alpha"); // derived from origin repo segment
         assert_eq!(alpha.folders[0].branch, "main");
         assert_eq!(alpha.folders[0].committed_files, 3);
         assert_eq!(alpha.folders[0].sessions.len(), 1);
-        // The folder's busy agent lands on its one session.
         assert_eq!(
             alpha.folders[0].sessions[0].agent_state.as_ref().unwrap().status,
             AgentStatus::Busy
         );
-        // beta has no git info → standalone path-keyed repo, name = folder basename.
         assert!(payload.repos[1].key.starts_with("path:"));
         assert_eq!(payload.repos[1].name, "beta");
     }
 
-    /// `worked_at_ms` maxes in a pane open, so it can move without the files
-    /// under review moving. The diff pane's refetch key needs the pure signal,
-    /// which is why `worktree_touched_ms` rides across on its own rather than
-    /// being folded into the max above.
+    /// `worked_at_ms` maxes in a pane open, so it moves without the files under
+    /// review moving. The diff pane's refetch key needs the pure signal, so
+    /// `worktree_touched_ms` rides across on its own.
     #[test]
     fn worktree_touched_ms_reaches_the_folder_separately_from_worked_at_ms() {
         let mut git = HashMap::new();
@@ -605,7 +562,6 @@ mod tests {
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         store.ensure_default("/r/beta", 1);
-        // alpha's checkout is gone; beta's is present.
         let mut git = HashMap::new();
         git.insert("/r/alpha".to_string(), GitInfo { dir_missing: true, ..Default::default() });
         git.insert("/r/beta".to_string(), GitInfo { branch: "main".into(), ..Default::default() });
@@ -616,12 +572,10 @@ mod tests {
         assert!(!beta.unwrap().dir_missing);
     }
 
-    /// A task whose worktree doesn't exist yet — mid-`worktree add`, or
-    /// detached after one was deleted — has no `common_dir`, because git can
-    /// only report that for a directory that is there. It must still nest under
-    /// its own repo, on the `repo_root` its record carries: stranding it as its
-    /// own top-level row and then snapping it into place a poll later is
-    /// exactly the jumping the record model exists to stop.
+    /// A task whose worktree doesn't exist yet has no `common_dir`, but must still
+    /// nest under its own repo on the `repo_root` its record carries: stranding it
+    /// top-level and snapping it into place a poll later is the jump the record
+    /// model exists to stop.
     #[test]
     fn a_task_row_with_no_directory_yet_nests_under_its_repo_root() {
         let tracker = AgentTracker::new();
@@ -632,7 +586,6 @@ mod tests {
             "/r/demo".to_string(),
             GitInfo { common_dir: "/r/demo/.git".into(), is_worktree: false, ..Default::default() },
         );
-        // Deliberately no git entry for `pending` — nothing is on disk to read.
         let entries = vec![
             RepoEntry { name: "demo".into(), dir: "/r/demo".into() },
             RepoEntry { name: "feat-new".into(), dir: pending.into() },
@@ -680,19 +633,14 @@ mod tests {
         let row = &payload.repos[0].folders[1];
         assert_eq!(row.record.task().map(|t| t.id), Some(7));
         assert_eq!(row.repo_root, "/r/demo");
-        // Identity comes from the record while git has nothing: this is a
-        // worktree row on its recorded branch, never a bare "Root".
+        // From the record while git has nothing: a worktree row, not "Root".
         assert!(row.is_worktree);
         assert_eq!(row.branch, "feat/new");
     }
 
-    /// The branch is known from the record before git can answer, so the row
-    /// isn't nameless while it's being created — and a task whose directory is
-    /// gone still has a row rather than vanishing.
-    ///
-    /// "Detached" itself is derived on the client from the three facts asserted
-    /// here (a task record, a missing dir, no operation running), not carried
-    /// as its own state — see `RowPhase`.
+    /// The branch is known from the record before git can answer, and a task whose
+    /// directory is gone still has a row. "Detached" is derived on the client from
+    /// the three facts asserted here, not carried as its own state — see `RowPhase`.
     #[test]
     fn a_task_row_survives_its_directory_going_missing() {
         let tracker = AgentTracker::new();
@@ -728,18 +676,15 @@ mod tests {
             0,
         );
         let folder = &payload.repos[0].folders[0];
-        // The row is still here, and carries what "detached" is read from.
         assert!(folder.dir_missing);
         assert!(folder.record.task().is_some());
         assert_eq!(folder.phase, None, "the engine never claims an operation is running");
         assert_eq!(folder.record.task().and_then(|t| t.branch.as_deref()), Some("feat/gone"));
-        // A gone directory means git reports nothing, forever — the record
-        // keeps the row a named worktree instead of a permanent "Root".
+        // git reports nothing forever; the record keeps the row named.
         assert!(folder.is_worktree);
         assert_eq!(folder.branch, "feat/gone");
 
-        // A tracked checkout that's missing is a ghost, not a detached task —
-        // its remedy is Untrack, which `dir_missing` already drives.
+        // A missing tracked checkout is a ghost, not a detached task.
         let rows = HashMap::from([(
             dir.to_string(),
             RailRow { dir: dir.into(), repo_root: dir.into(), record: RowRecord::Checkout },
@@ -776,9 +721,8 @@ mod tests {
             "/r/demo/.claude/worktrees/apple".to_string(),
             GitInfo { common_dir: "/r/demo/.git".into(), is_worktree: true, ..Default::default() },
         );
-        // Entries arrive name-sorted (as the engine does), which puts the
-        // task ("apple") ahead of the main checkout — nesting must still
-        // lead with the primary checkout regardless of entries order.
+        // Name-sorted entries put the task ahead of the main checkout; nesting
+        // must still lead with the primary.
         let entries = vec![
             RepoEntry { name: "apple".into(), dir: "/r/demo/.claude/worktrees/apple".into() },
             RepoEntry { name: "demo".into(), dir: "/r/demo".into() },
@@ -791,11 +735,9 @@ mod tests {
 
     #[test]
     fn worktree_siblings_row_key_and_name_anchor_to_primary_not_alpha_sort() {
-        // Regression: a row's `key`/`name` must not be decided by whichever
-        // task sorts first, which shuffled rail position and collapse-state
-        // persistence (both keyed on `repo.key`) whenever an earlier-sorting
-        // task appeared. No origin URL here, so `name` must also come from
-        // the primary's own entry rather than whichever task seeded the row.
+        // A row's `key`/`name` must not be decided by whichever task sorts
+        // first, which shuffled rail position and collapse state. No origin URL
+        // here, so `name` must come from the primary's own entry too.
         let tracker = AgentTracker::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/towles-tool", 1);
@@ -817,8 +759,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        // Name-sorted entries (as the engine feeds them) put the task well
-        // ahead of the primary checkout.
+        // Name-sorted entries put the task ahead of the primary checkout.
         let entries = vec![
             RepoEntry {
                 name: "aardvark-task".into(),
@@ -834,10 +775,8 @@ mod tests {
 
     #[test]
     fn explicitly_tracked_worktree_siblings_still_nest_by_common_dir() {
-        // /r/task-0 and /r/task-1 are both explicitly tracked (repos.json),
-        // but they're git-worktree siblings of each other — nesting is a
-        // structural git fact (`common_dir`), not a function of how each
-        // checkout got onto the rail, so they must still merge into one row.
+        // Both are explicitly tracked, but they're git-worktree siblings:
+        // nesting is a structural fact, not a function of how each got here.
         let tracker = AgentTracker::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/task-0", 1);
@@ -870,10 +809,8 @@ mod tests {
 
     #[test]
     fn same_origin_but_different_repo_never_merges() {
-        // Two unrelated clones of the same remote must not merge into one
-        // row — only a real `git worktree` relationship (matching
-        // `common_dir`) does. Regression test for the bug `common_dir`
-        // grouping replaced origin-URL grouping to fix.
+        // Two unrelated clones of the same remote must not merge — only a real
+        // `git worktree` relationship does. Why grouping isn't by origin URL.
         let tracker = AgentTracker::new();
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/clone-a", 1);
@@ -903,8 +840,7 @@ mod tests {
         assert_eq!(payload.repos.len(), 2);
     }
 
-    /// A `SessionData` with just the fields `session_needs` reads set; the rest
-    /// are inert defaults.
+    /// A `SessionData` with just the fields `session_needs` reads set.
     fn session(live: bool, status: Option<AgentStatus>, unseen: bool) -> SessionData {
         SessionData {
             id: "s".into(),
@@ -927,17 +863,13 @@ mod tests {
 
     #[test]
     fn session_needs_requires_a_shell_and_attention_state() {
-        // Live + waiting/error counts.
         assert!(session_needs(&session(true, Some(AgentStatus::Waiting), false)));
         assert!(session_needs(&session(true, Some(AgentStatus::Error), false)));
-        // Not live: a stale status must NOT count.
         assert!(!session_needs(&session(false, Some(AgentStatus::Waiting), false)));
         assert!(!session_needs(&session(false, Some(AgentStatus::Error), false)));
-        // Live, ended turn, unseen → your turn, counts. Seen → doesn't.
         assert!(session_needs(&session(true, Some(AgentStatus::Complete), true)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Complete), false)));
         assert!(session_needs(&session(true, Some(AgentStatus::Interrupted), true)));
-        // Live but busy/idle/no-agent never needs you.
         assert!(!session_needs(&session(true, Some(AgentStatus::Busy), false)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Idle), false)));
         assert!(!session_needs(&session(true, None, false)));
@@ -945,8 +877,7 @@ mod tests {
 
     #[test]
     fn assemble_time_needs_is_zero_before_stamping() {
-        // The engine assembles live=false, so even a waiting agent yields
-        // needs=0 until the app stamps shell liveness and recomputes.
+        // live=false at assemble, so even a waiting agent yields needs=0.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
         let mut store = SessionStore::new(None);
@@ -967,7 +898,6 @@ mod tests {
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
         let mut payload = assemble(&entries, &git, &tracker, &store, &no_attr);
-        // Simulate the app stamping the session's shell as live, then recompute.
         let mut since = NeedsSince::new();
         payload.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut payload, &mut since, 1_000);
@@ -975,7 +905,6 @@ mod tests {
         assert_eq!(payload.repos[0].needs, 1);
         assert_eq!(payload.repos[0].folders[0].sessions[0].needs_since_ms, Some(1_000));
 
-        // Stamp it back to no shell: needs falls to 0 at both levels.
         payload.repos[0].folders[0].sessions[0].live = false;
         recompute_needs(&mut payload, &mut since, 2_000);
         assert_eq!(payload.repos[0].folders[0].needs, 0);
@@ -994,19 +923,16 @@ mod tests {
         let build = |tracker: &AgentTracker| assemble(&entries, &git, tracker, &store, &no_attr);
         let mut since = NeedsSince::new();
 
-        // Enters needs-you at t=100: stamped 100.
         let mut p = build(&tracker);
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 100);
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, Some(100));
 
-        // Still waiting at t=500: the original stamp is preserved (age grows).
         let mut p = build(&tracker);
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 500);
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, Some(100));
 
-        // Back to work at t=800: stamp cleared.
         let mut busy = AgentTracker::new();
         busy.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
         let mut p = build(&busy);
@@ -1014,7 +940,6 @@ mod tests {
         recompute_needs(&mut p, &mut since, 800);
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, None);
 
-        // Blocked again at t=1200: a fresh stamp, not the stale 100.
         let mut p = build(&tracker);
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 1_200);
@@ -1030,7 +955,6 @@ mod tests {
         let s2 = store.add("/r/alpha", Some("two"), 2);
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
-        // Attribute the (only) busy agent to session two.
         let target = s2.id.clone();
         let attribute = move |_: &AgentEvent| Some(target.clone());
         let payload = assemble(&entries, &git, &tracker, &store, &attribute);
@@ -1043,10 +967,9 @@ mod tests {
 
     #[test]
     fn an_unattributed_agent_returns_to_the_pane_that_ran_it() {
-        // Pane two ran thread `ta` and recorded it. The live link is gone (the
-        // pid is unreadable the moment the process exits, while the 60s CLI
-        // snapshot still lists it) — the agent must stay on pane two rather
-        // than jump to pane one with its unseen/needs-you state.
+        // Pane two ran thread `ta` and recorded it. The live link is gone — the
+        // pid dies the moment the process does, while the 60s CLI snapshot still
+        // lists it — so the agent must stay on pane two.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Complete, "ta"), false);
         let mut store = SessionStore::new(None);
@@ -1066,8 +989,8 @@ mod tests {
 
     #[test]
     fn an_unremembered_agent_still_falls_back_to_the_default_pane() {
-        // Nothing ever attributed this thread (no `/proc` on macOS), so the
-        // default is all we have — better than hiding a running agent.
+        // Nothing attributed this thread (no `/proc` on macOS); the default
+        // beats hiding a running agent.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "tz"), false);
         let mut store = SessionStore::new(None);
@@ -1086,7 +1009,7 @@ mod tests {
     #[test]
     fn a_sibling_folders_agent_does_not_default_onto_this_folders_pane() {
         // Two checkouts share the basename `alpha`, so both read the same
-        // tracker bucket. The thread belongs to the other checkout's pane.
+        // tracker bucket; this thread is the other checkout's.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
         let mut store = SessionStore::new(None);
@@ -1104,11 +1027,9 @@ mod tests {
 
     #[test]
     fn foreign_attribution_is_dropped_not_defaulted() {
-        // An agent positively attributed to a session id that matches none of
-        // this folder's records runs in some other app instance's session
-        // (sessions.json is shared) — it must not land on the default session,
-        // even when the folder has only one (the old single-session mirror
-        // leaked folder-level state here).
+        // An agent attributed to a session id matching none of this folder's
+        // records runs in another app instance (sessions.json is shared) — it
+        // must not land on the default session, even when there is only one.
         let mut tracker = AgentTracker::new();
         tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
         let mut store = SessionStore::new(None);
@@ -1124,7 +1045,6 @@ mod tests {
 
     #[test]
     fn session_agents_supplement_idle_sessions_only() {
-        // No tracker agent: the /proc-detected session agent fills the row.
         let tracker = AgentTracker::new();
         let mut store = SessionStore::new(None);
         let rec = store.add("/r/alpha", Some("shell 1"), 1);
@@ -1153,7 +1073,6 @@ mod tests {
             Some("uninstall gitbutler")
         );
 
-        // With a real tracker agent, the CLI/tracker state wins over the supplement.
         let mut tracker2 = AgentTracker::new();
         tracker2.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
         let payload2 = assemble_with(&entries, &git, &tracker2, &store, &no_attr, &supplemental);
