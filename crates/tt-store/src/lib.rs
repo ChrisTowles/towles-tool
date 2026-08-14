@@ -59,6 +59,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// A handle to the SQLite store.
 pub struct Store {
     pub(crate) conn: Connection,
+    /// The shared handled-DM ledger this store reads `dismissed_ts` from;
+    /// `None` only for in-memory stores. See [`Store::dms`].
+    pub(crate) dm_dismissals_path: Option<std::path::PathBuf>,
 }
 
 #[cfg(test)]
@@ -1432,19 +1435,24 @@ mod tests {
         assert_eq!(runs[0].message.as_deref(), Some("boom"));
     }
 
-    #[test]
-    fn upsert_dm_preserves_dismissal_until_a_newer_message() {
-        let s = Store::open_in_memory().unwrap();
-        let msg = |ts: i64, from_me: bool| DmInput {
+    fn dm_msg(ts: i64, from_me: bool) -> DmInput {
+        DmInput {
             channel: "D123".to_string(),
             from_name: "Sarah".to_string(),
             text: format!("msg at {ts}"),
             ts,
             from_me,
             url: Some("slack://channel?team=T1&id=D123".to_string()),
-        };
+        }
+    }
 
-        s.upsert_dm(&msg(100, false), 1).unwrap();
+    #[test]
+    fn upsert_dm_preserves_dismissal_until_a_newer_message() {
+        // File-backed: dismissals live in the ledger next to the db, not in it.
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("tt.db")).unwrap();
+
+        s.upsert_dm(&dm_msg(100, false), 1).unwrap();
         let dm = &s.dms().unwrap()[0];
         assert!(!dm.from_me);
         assert_eq!(dm.dismissed_ts, 0, "fresh message starts undismissed");
@@ -1454,20 +1462,60 @@ mod tests {
         assert_eq!(s.dms().unwrap()[0].dismissed_ts, 100);
 
         // Re-collecting the same message keeps the dismissal.
-        s.upsert_dm(&msg(100, false), 2).unwrap();
+        s.upsert_dm(&dm_msg(100, false), 2).unwrap();
         let dm = s.dms().unwrap()[0].clone();
         assert_eq!(dm.dismissed_ts, 100);
         assert_eq!(dm.fetched_at, 2);
 
         // A newer message outruns the dismissal (dismissed_ts < ts again).
-        s.upsert_dm(&msg(200, false), 3).unwrap();
+        s.upsert_dm(&dm_msg(200, false), 3).unwrap();
         let dm = s.dms().unwrap()[0].clone();
         assert_eq!(dm.ts, 200);
         assert!(dm.dismissed_ts < dm.ts);
 
         // Replying clears it collector-side: latest message is mine.
-        s.upsert_dm(&msg(300, true), 4).unwrap();
+        s.upsert_dm(&dm_msg(300, true), 4).unwrap();
         assert!(s.dms().unwrap()[0].from_me);
+    }
+
+    #[test]
+    fn dm_dismissal_holds_across_store_instances_sharing_the_ledger() {
+        // The regression this fixes: tt.db is per-checkout instance state, so a
+        // dismissal stored in it evaporated whenever the next launch resolved a
+        // different scope. Two dbs in one dir model two instances — `Store::open`
+        // points both at the same `dm-dismissals.json`.
+        let dir = tempfile::tempdir().unwrap();
+        let a = Store::open(&dir.path().join("a.db")).unwrap();
+        let b = Store::open(&dir.path().join("b.db")).unwrap();
+
+        a.upsert_dm(&dm_msg(100, false), 1).unwrap();
+        b.upsert_dm(&dm_msg(100, false), 1).unwrap();
+        a.dismiss_dm("D123", 100).unwrap();
+
+        assert_eq!(b.dms().unwrap()[0].dismissed_ts, 100, "handled in a must hold in b");
+
+        // A newer message still re-raises everywhere.
+        b.upsert_dm(&dm_msg(200, false), 2).unwrap();
+        let dm = b.dms().unwrap()[0].clone();
+        assert!(dm.dismissed_ts < dm.ts);
+    }
+
+    #[test]
+    fn dm_dismissal_ledger_never_lowers_and_survives_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("tt.db")).unwrap();
+        s.upsert_dm(&dm_msg(200, false), 1).unwrap();
+
+        s.dismiss_dm("D123", 200).unwrap();
+        // An out-of-order (older) dismissal must not resurface the newer message.
+        s.dismiss_dm("D123", 100).unwrap();
+        assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
+
+        // A mangled ledger reads as empty and self-heals on the next write.
+        std::fs::write(dir.path().join("dm-dismissals.json"), b"{ not json").unwrap();
+        assert_eq!(s.dms().unwrap()[0].dismissed_ts, 0);
+        s.dismiss_dm("D123", 200).unwrap();
+        assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
     }
 
     #[test]

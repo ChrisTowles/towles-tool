@@ -839,6 +839,16 @@ pub fn browser_profile_dir() -> Result<PathBuf> {
         .join("chrome-profile"))
 }
 
+/// The watched-DM handled ledger (`channel` → highest handled message ts). A
+/// *shared* store: the conversation is a machine fact, while tt.db is
+/// per-instance — kept there, a dismissal evaporated whenever the next launch
+/// resolved a different scope (dock vs terminal vs task worktree) and the
+/// handled message re-raised its banner.
+pub fn dm_dismissals_path() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("dm-dismissals.json"))
+}
+
 /// `tt-tasks`' claimed-port ledgers, one checkout-keyed file each. A *shared*
 /// store: every worktree of a repo must read the same ledger, and a ledger must
 /// survive reboots (so not [`locks_dir`]) and stay out of a collaborator's clone.

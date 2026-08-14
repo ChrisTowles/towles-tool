@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS dm_status (
     from_me INTEGER NOT NULL,
     url TEXT,
     fetched_at INTEGER NOT NULL,
-    dismissed_ts INTEGER NOT NULL DEFAULT 0
+    dismissed_ts INTEGER NOT NULL DEFAULT 0 -- unused; handled state moved to the shared ledger
 );
 ";
 
@@ -144,9 +144,9 @@ CREATE TABLE IF NOT EXISTS repos (
 ";
 
 /// v15: per-item dismissals for `issues`/`pr_status`. Those tables are fully
-/// replaced by every collector run, so a dismissal can't be a column on them the
-/// way `dm_status.dismissed_ts` is — it would vanish on reinsert. `kind` is in the
-/// key because plain numbers collide across issues and PRs within a repo.
+/// replaced by every collector run, so a dismissal can't be a column on them —
+/// it would vanish on reinsert. `kind` is in the key because plain numbers
+/// collide across issues and PRs within a repo.
 const SCHEMA_ITEM_DISMISSALS_V15: &str = "\
 CREATE TABLE IF NOT EXISTS item_dismissals (
     kind TEXT NOT NULL,
@@ -168,7 +168,8 @@ impl Store {
         // lets their writes interleave instead of failing with SQLITE_BUSY.
         conn.busy_timeout(std::time::Duration::from_millis(5000))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        let store = Store { conn };
+        let store =
+            Store { conn, dm_dismissals_path: Some(path.with_file_name("dm-dismissals.json")) };
         store.migrate()?;
         Ok(store)
     }
@@ -177,12 +178,18 @@ impl Store {
     /// nests under `…/tasks/<scope>/` (see [`tt_config`]).
     pub fn open_default() -> Result<Store> {
         let path = tt_config::store_db_path().map_err(|_| Error::NoDataDir)?;
-        Store::open(&path)
+        let mut store = Store::open(&path)?;
+        // tt.db is instance-scoped, but a DM dismissal is user state about one
+        // shared conversation: every instance must read the same ledger, or a
+        // handled message re-raises on the next launch that resolves another scope.
+        store.dm_dismissals_path =
+            Some(tt_config::dm_dismissals_path().map_err(|_| Error::NoDataDir)?);
+        Ok(store)
     }
 
     /// Open an ephemeral in-memory store (for tests).
     pub fn open_in_memory() -> Result<Store> {
-        let store = Store { conn: Connection::open_in_memory()? };
+        let store = Store { conn: Connection::open_in_memory()?, dm_dismissals_path: None };
         store.migrate()?;
         Ok(store)
     }
