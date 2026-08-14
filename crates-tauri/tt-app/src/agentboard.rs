@@ -535,16 +535,17 @@ pub fn ab_save_collapsed(state: State<Ab>, key: String, collapsed: bool) {
 }
 
 fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
-    if mode == "uncommitted" {
-        tt_agentboard::DiffMode::Uncommitted
-    } else {
-        tt_agentboard::DiffMode::Main
+    match mode {
+        "uncommitted" => tt_agentboard::DiffMode::Uncommitted,
+        "staged" => tt_agentboard::DiffMode::Staged,
+        _ => tt_agentboard::DiffMode::Main,
     }
 }
 
-/// `mode` picks the baseline: `"uncommitted"` diffs the working tree vs HEAD,
-/// anything else diffs vs the merge-base with `base_branch` (or origin/main if
-/// unset). Async: a large branch diff is real work, even in-process.
+/// `mode` picks the baseline: `"uncommitted"` diffs the working tree vs the
+/// index, `"staged"` the index vs HEAD, anything else vs the merge-base with
+/// `base_branch` (or origin/main if unset). Async: a large branch diff is real
+/// work, even in-process.
 #[tauri::command]
 pub async fn ab_get_diff_files(
     dir: String,
@@ -574,6 +575,78 @@ pub async fn ab_get_base_file(
     })
     .await
     .unwrap_or_default()
+}
+
+/// The staged-diff editor's right side: the index version of `path`. `None` for
+/// a staged deletion.
+#[tauri::command]
+pub async fn ab_get_index_file(dir: String, path: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || tt_agentboard::index_file_content(&dir, &path))
+        .await
+        .unwrap_or_default()
+}
+
+/// Shared tail of every staging mutation: run the git work off-thread with no
+/// engine lock held, then invalidate the folder's git cache (the lock comes
+/// after, briefly). Callers emit their own `tracing` event — the message must
+/// be a literal for the Telemetry screen to key on.
+async fn run_stage_op(
+    state: &State<'_, Ab>,
+    dir: &str,
+    op: impl FnOnce() -> Result<(), String> + Send + 'static,
+) -> Result<(), String> {
+    let result = tauri::async_runtime::spawn_blocking(op).await.map_err(|e| e.to_string())?;
+    if result.is_ok() {
+        state.engine.lock().unwrap().invalidate_git(dir, tt_agentboard::GitInvalidation::Staged);
+        state.scan.notify_one();
+    }
+    result
+}
+
+/// `git add <path>` — the tree checkbox's check.
+#[tauri::command]
+pub async fn ab_stage_file(state: State<'_, Ab>, dir: String, path: String) -> Result<(), String> {
+    let (d, p) = (dir.clone(), path.clone());
+    let result =
+        run_stage_op(&state, &dir, move || tt_agentboard::staging::stage_file(&d, &p)).await;
+    tracing::info!(%dir, %path, ok = result.is_ok(), "diff.stage_file");
+    result
+}
+
+/// `git reset -- <path>` — the tree checkbox's uncheck.
+#[tauri::command]
+pub async fn ab_unstage_file(
+    state: State<'_, Ab>,
+    dir: String,
+    path: String,
+) -> Result<(), String> {
+    let (d, p) = (dir.clone(), path.clone());
+    let result =
+        run_stage_op(&state, &dir, move || tt_agentboard::staging::unstage_file(&d, &p)).await;
+    tracing::info!(%dir, %path, ok = result.is_ok(), "diff.unstage_file");
+    result
+}
+
+/// Stage `content` as the full index version of `path` — hunk staging's write:
+/// the client synthesizes index-content-plus-hunk (or minus, for unstage) and
+/// hands over the whole file, VS Code's model. `expected_index` is the stage-0
+/// content that synthesis started from; the write refuses if the index moved
+/// since, so a stale pane can't silently revert concurrent staging.
+#[tauri::command]
+pub async fn ab_stage_buffer(
+    state: State<'_, Ab>,
+    dir: String,
+    path: String,
+    content: String,
+    expected_index: Option<String>,
+) -> Result<(), String> {
+    let (d, p) = (dir.clone(), path.clone());
+    let result = run_stage_op(&state, &dir, move || {
+        tt_agentboard::staging::stage_file_buffer(&d, &p, &content, expected_index.as_deref())
+    })
+    .await;
+    tracing::info!(%dir, %path, ok = result.is_ok(), "diff.stage_buffer");
+    result
 }
 
 /// Per-commit line counts for the `DiffButton` hover, oldest commit first. Async

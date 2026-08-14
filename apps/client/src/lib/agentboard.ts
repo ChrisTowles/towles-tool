@@ -153,6 +153,11 @@ export type FolderData = {
   /** `uncommittedFiles` is a floor: an untracked directory was too large to list
    * (almost always a `.gitignore` gap). The chip shows a `+`. */
   uncommittedCapped: boolean;
+  /** HEAD-vs-index totals — the only numbers a bare `git add` moves, so the
+   * diff pane's refresh key needs them. */
+  stagedFiles: number;
+  stagedAdded: number;
+  stagedRemoved: number;
   commitsAhead: number;
   commitsBehind: number;
   dirty: boolean;
@@ -188,6 +193,11 @@ export function folderStatsKey(folder: FolderData): string {
     folder.uncommittedFiles,
     folder.uncommittedAdded,
     folder.uncommittedRemoved,
+    // Staging moves neither the HEAD-vs-worktree numbers nor any mtime — these
+    // three are how the pane hears about a `git add`, its own or a terminal's.
+    folder.stagedFiles,
+    folder.stagedAdded,
+    folder.stagedRemoved,
     folder.commitsAhead,
     folder.worktreeTouchedMs ?? 0,
   ].join(":");

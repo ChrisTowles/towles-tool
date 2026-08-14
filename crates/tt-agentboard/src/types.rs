@@ -220,6 +220,14 @@ pub struct FolderData {
     /// `uncommitted_files` is a floor: an untracked directory was too big to list.
     #[serde(default)]
     pub uncommitted_capped: bool,
+    /// HEAD-vs-index totals — the only numbers that move on a bare `git add`,
+    /// so the diff pane's refresh key must include them.
+    #[serde(default)]
+    pub staged_files: i64,
+    #[serde(default)]
+    pub staged_added: i64,
+    #[serde(default)]
+    pub staged_removed: i64,
     pub commits_ahead: i64,
     pub commits_behind: i64,
     /// Unlike `committed_files`, which stays nonzero for any real branch even
