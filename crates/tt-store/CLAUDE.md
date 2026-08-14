@@ -51,14 +51,23 @@ scheduler, the CLI, MCP). `Store::open` sets WAL plus a 5s busy timeout so
 their writes interleave instead of failing with `SQLITE_BUSY`. Anything doing a
 multi-statement write wraps it in a transaction.
 
-## Dismissal is user state, and that's why it has its own table
+## Dismissal is user state, so it never lives on a collector-owned row
 
 `replace_issues`/`replace_*_prs*` are **full swaps** — the collector deletes the
 rows it owns and reinserts the snapshot. Dismissals therefore cannot live on
 those rows; they live in `item_dismissals` (`kind`, `repo`, `number`) and are
-joined at read time. Same reason `upsert_dm` preserves `dismissed_ts` across
-upserts. Move a dismissal onto a collector-owned row and every sweep un-hides
-what the user hid.
+joined at read time. Move a dismissal onto a collector-owned row and every
+sweep un-hides what the user hid.
+
+DM dismissals go one step further: tt.db itself is *instance* state (one per
+checkout scope), but the watched DM is one shared conversation, so its handled
+state lives in the shared ledger at `tt_config::dm_dismissals_path()`
+(`channel` → highest handled message ts). `dismiss_dm` writes it and `dms()`
+overlays it; the `dm_status.dismissed_ts` column is dead. Kept in tt.db, a
+dismissal evaporated whenever the next launch resolved a different scope (dock
+vs terminal vs task worktree) and the handled message re-raised its banner.
+`Store::open` defaults the ledger next to the db (hermetic for tests);
+`open_default` points it at the shared path.
 
 ## `attention.rs` — read the module doc, don't re-derive it
 

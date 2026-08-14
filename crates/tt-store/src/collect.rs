@@ -1,14 +1,38 @@
 //! Collector bookkeeping and cross-domain reads: Slack DMs, collector-run
 //! freshness, the MCP call log, and the aggregate dashboard snapshot.
 
+use std::collections::HashMap;
+use std::path::Path;
+
 use rusqlite::params;
 
 use crate::model::*;
-use crate::{Result, Store};
+use crate::{Error, Result, Store};
+
+/// The shared handled-DM ledger: `channel` → highest message ts marked handled.
+/// Missing or unreadable reads as empty; the next dismissal rewrites it whole.
+fn read_dm_dismissals(path: &Path) -> HashMap<String, i64> {
+    std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// Merge one dismissal into the ledger (keeping the max, so an out-of-order
+/// write can never lower it) and swap the file in atomically — concurrent
+/// instances each replace the whole file, never interleave bytes.
+fn record_dm_dismissal(path: &Path, channel: &str, ts: i64) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut ledger = read_dm_dismissals(path);
+    let entry = ledger.entry(channel.to_string()).or_insert(0);
+    *entry = (*entry).max(ts);
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(&ledger)?)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
 
 impl Store {
-    /// Upsert the latest state of a watched DM conversation. `dismissed_ts` is
-    /// preserved across upserts — dismissal is user state, not collector state.
+    /// Upsert the latest state of a watched DM conversation.
     pub fn upsert_dm(&self, dm: &DmInput, now_ms: i64) -> Result<()> {
         self.conn.execute(
             "INSERT INTO dm_status (channel, from_name, text, ts, from_me, url, fetched_at)
@@ -30,13 +54,11 @@ impl Store {
     }
 
     /// Mark the message at `ts` in `channel` handled: the UI stops showing it.
-    /// A newer message (larger `ts`) re-raises the banner.
+    /// A newer message (larger `ts`) re-raises the banner. Writes the shared
+    /// ledger, not this instance's db — see [`Store::dms`].
     pub fn dismiss_dm(&self, channel: &str, ts: i64) -> Result<()> {
-        self.conn.execute(
-            "UPDATE dm_status SET dismissed_ts = ?2 WHERE channel = ?1",
-            params![channel, ts],
-        )?;
-        Ok(())
+        let path = self.dm_dismissals_path.as_deref().ok_or(Error::NoDataDir)?;
+        record_dm_dismissal(path, channel, ts)
     }
 
     /// Dismiss one GitHub item (`kind` is `"issue"` or `"pr"`) at `(repo,
@@ -113,9 +135,17 @@ impl Store {
         self.query_runs(&format!("SELECT {RUN_COLS} FROM collect_runs ORDER BY collector ASC"), [])
     }
 
-    /// All watched DM conversations, newest message first.
+    /// All watched DM conversations, newest message first. `dismissed_ts` comes
+    /// from the shared ledger, so a dismissal in one checkout's instance holds
+    /// in every other — and across relaunches that resolve a different scope.
     pub fn dms(&self) -> Result<Vec<DmItem>> {
-        self.query_dms(&format!("SELECT {DM_COLS} FROM dm_status ORDER BY ts DESC"), [])
+        let mut dms =
+            self.query_dms(&format!("SELECT {DM_COLS} FROM dm_status ORDER BY ts DESC"), [])?;
+        let ledger = self.dm_dismissals_path.as_deref().map(read_dm_dismissals).unwrap_or_default();
+        for dm in &mut dms {
+            dm.dismissed_ts = ledger.get(&dm.channel).copied().unwrap_or(0);
+        }
+        Ok(dms)
     }
 
     /// A single full snapshot of the store for the dashboard. The reads share
@@ -148,7 +178,8 @@ impl Store {
                 from_me: r.get(4)?,
                 url: r.get(5)?,
                 fetched_at: r.get(6)?,
-                dismissed_ts: r.get(7)?,
+                // Filled from the shared ledger by `dms`, never from this db.
+                dismissed_ts: 0,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

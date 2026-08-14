@@ -156,8 +156,8 @@ pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.stat
 pub(crate) const PR_COLS: &str = "p.repo, p.number, p.title, p.branch, p.state, p.checks, p.review_state, \
      p.url, p.updated_ts, COALESCE(d.dismissed_ts, 0)";
 pub(crate) const RUN_COLS: &str = "collector, ran_at, ok, message";
-pub(crate) const DM_COLS: &str =
-    "channel, from_name, text, ts, from_me, url, fetched_at, dismissed_ts";
+// No dismissed_ts: DM handled state lives in the shared ledger, not this db.
+pub(crate) const DM_COLS: &str = "channel, from_name, text, ts, from_me, url, fetched_at";
 pub(crate) const MCP_CALL_COLS: &str = "id, ts, method, tool, args, ok, error, duration_ms, client";
 
 /// Kanban ordering used across queries: board column, then manual position, then age.
