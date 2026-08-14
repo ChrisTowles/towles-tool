@@ -94,9 +94,15 @@ export const DiffTreeRail = memo(function DiffTreeRail({
           sumAdded += f?.linesAdded ?? 0;
           sumRemoved += f?.linesRemoved ?? 0;
         }
+        // A collapsed untracked directory can't be staged from here (its own
+        // checkbox is disabled); the folder checkbox must skip it too, or
+        // "stage folder" reports success while staging nothing for it.
+        const stageablePaths = staging
+          ? paths.filter((p) => (byPath.get(p)?.untrackedFiles ?? 0) === 0)
+          : paths;
         let checked: boolean | "indeterminate";
         if (staging) {
-          checked = folderStageState(paths.map((p) => byPath.get(p)!).filter(Boolean));
+          checked = folderStageState(stageablePaths.map((p) => byPath.get(p)!).filter(Boolean));
         } else {
           const reviewedCount = paths.filter((p) => reviewed.has(p)).length;
           checked =
@@ -121,10 +127,14 @@ export const DiffTreeRail = memo(function DiffTreeRail({
                   >
                     <Checkbox
                       id={`reviewed-${node.path}`}
+                      disabled={staging && stageablePaths.length === 0}
                       checked={checked}
                       onCheckedChange={(c) =>
                         staging
-                          ? onToggleStageMany(paths, checked === true ? "unstage" : "stage")
+                          ? onToggleStageMany(
+                              stageablePaths,
+                              checked === true ? "unstage" : "stage",
+                            )
                           : onToggleReviewedMany(paths, c === true)
                       }
                     />

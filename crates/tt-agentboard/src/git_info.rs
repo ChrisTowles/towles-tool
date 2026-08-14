@@ -784,22 +784,13 @@ pub struct UntrackedCapInfo {
     pub total: bool,
 }
 
-/// Merge-base with the resolved base ref for `Main`, HEAD for `Uncommitted`.
-fn resolve_diff_base(
-    repo: &tt_git::repo::Repo,
-    dir: &str,
-    mode: DiffMode,
-    base_branch: Option<&str>,
-) -> String {
-    match mode {
-        DiffMode::Main => {
-            let base_ref = resolve_base_ref(repo, dir, base_branch);
-            repo.merge_base("HEAD", &base_ref)
-                .map(|id| id.to_string())
-                .unwrap_or_else(|| "HEAD".to_string())
-        }
-        DiffMode::Uncommitted | DiffMode::Staged => "HEAD".to_string(),
-    }
+/// Merge-base with the resolved base ref — the `Main` mode's baseline. The
+/// staging modes never touch it: their baselines are the index and HEAD.
+fn resolve_diff_base(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
+    let base_ref = resolve_base_ref(repo, dir, base_branch);
+    repo.merge_base("HEAD", &base_ref)
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "HEAD".to_string())
 }
 
 /// Rename-aware, baseline picked by `mode`. Untracked files appear with status `?` and
@@ -813,8 +804,11 @@ pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffF
     };
     let changes = match mode {
         DiffMode::Staged => repo.staged_changes().unwrap_or_default(),
-        _ => {
-            let base = resolve_diff_base(&repo, dir, mode, base_branch);
+        // Index vs worktree, matching the editor's sides — the worktree-vs-HEAD
+        // diff would list a fully staged file this view has nothing to show for.
+        DiffMode::Uncommitted => repo.unstaged_changes().unwrap_or_default(),
+        DiffMode::Main => {
+            let base = resolve_diff_base(&repo, dir, base_branch);
             repo.changes_vs(&base).unwrap_or_default()
         }
     };
@@ -877,10 +871,15 @@ pub fn base_file_content(
     }
     let repo = open_repo(dir)?;
     let content = match mode {
-        DiffMode::Uncommitted => repo.file_in_index(path)?,
+        DiffMode::Uncommitted => match repo.file_in_index(path) {
+            Some(bytes) => bytes,
+            // A conflicted path has no stage 0; HEAD is its only "before".
+            None if repo.is_unmerged(path) => repo.file_at("HEAD", path)?,
+            None => return None,
+        },
         DiffMode::Staged => repo.file_at("HEAD", path)?,
         DiffMode::Main => {
-            let base = resolve_diff_base(&repo, dir, mode, base_branch);
+            let base = resolve_diff_base(&repo, dir, base_branch);
             repo.file_at(&base, path)?
         }
     };
@@ -1310,6 +1309,38 @@ mod tests {
         assert!(listed.files[0].untracked_files > 0);
         let cap = listed.untracked_cap.expect("the pane can name the directory");
         assert_eq!(cap.dir, "node_modules");
+    }
+
+    /// The uncommitted list and the editor's sides must describe the same
+    /// diff: index vs worktree. A fully staged file belongs to `Staged` only,
+    /// and a partially staged file's uncommitted base is the *index* version.
+    #[test]
+    fn uncommitted_list_and_editor_sides_agree() {
+        let root = tempfile::TempDir::new().unwrap();
+        init_repo(root.path());
+        let dir = root.path().to_str().unwrap();
+
+        std::fs::write(root.path().join("f.txt"), "staged\n").unwrap();
+        git(root.path(), &["add", "f.txt"]);
+        std::fs::write(root.path().join("f.txt"), "staged\nunstaged\n").unwrap();
+        std::fs::write(root.path().join("done.txt"), "all staged\n").unwrap();
+        git(root.path(), &["add", "done.txt"]);
+
+        let uncommitted = diff_files(dir, DiffMode::Uncommitted, None);
+        let paths: Vec<&str> = uncommitted.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, vec!["f.txt"], "a fully staged file has nothing unstaged to show");
+        let f = &uncommitted.files[0];
+        assert_eq!((f.lines_added, f.lines_removed), (1, 0), "counted vs the index, not HEAD");
+        assert!(f.staged && f.unstaged, "partially staged");
+        assert_eq!(
+            base_file_content(dir, DiffMode::Uncommitted, None, "f.txt").as_deref(),
+            Some("staged\n"),
+            "the editor's original side is the same baseline the list counted against"
+        );
+
+        let staged = diff_files(dir, DiffMode::Staged, None);
+        let staged_paths: Vec<&str> = staged.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(staged_paths, vec!["done.txt", "f.txt"]);
     }
 
     #[test]

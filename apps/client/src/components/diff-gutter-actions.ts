@@ -8,7 +8,12 @@
 
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/errors";
-import { revertLineRange, type LineRangeLite } from "@/lib/diff-staging";
+import {
+  revertLineRange,
+  revertRangeMappings,
+  type LineRangeLite,
+  type RangeMappingLite,
+} from "@/lib/diff-staging";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
@@ -16,9 +21,12 @@ export type StageTarget = {
   dir: string;
   /** Repo-relative path of the file this modified-side model renders. */
   path: string;
-  /** Both sides' current text, for the unstage splice. Null once disposed. */
-  readSides: () => { original: string; modified: string } | null;
-  /** After a successful index write: refresh models + the pane's file list. */
+  /** Both sides' current text — the unstage splice and the write's
+   * expected-index token. `original` is null when the file has no side there
+   * (an added/untracked file); the whole read is null once disposed. */
+  readSides: () => { original: string | null; modified: string } | null;
+  /** After the index write, success or refused-as-stale alike: refresh the
+   * models + the pane's file list, so a retry starts from what's really there. */
   onStaged: () => void;
 };
 
@@ -33,59 +41,88 @@ export function registerStageTarget(modifiedUri: string, target: StageTarget): (
   };
 }
 
-/** The context the gutter toolbars pass to `run` (see gutterFeature.ts). */
+/** The context the gutter toolbars pass to `run` (see gutterFeature.ts). The
+ * selection toolbar's `innerChanges` carry only the *selected* changes; the
+ * hunk toolbar's is one mapping spanning the whole hunk. */
 type HunkContext = {
-  mapping: { original: LineRangeLite; modified: LineRangeLite };
+  mapping: {
+    original: LineRangeLite;
+    modified: LineRangeLite;
+    innerChanges?: RangeMappingLite[] | null;
+  };
   originalWithModifiedChanges: string;
   originalUri: { toString(): string };
   modifiedUri: { toString(): string };
 };
 
-async function stageBuffer(target: StageTarget, content: string, action: string): Promise<void> {
+async function stageBuffer(
+  target: StageTarget,
+  content: string,
+  expectedIndex: string | null,
+  action: string,
+): Promise<void> {
   uiAction(action, "agentboard", target.path);
   const result = await invoke<void>("ab_stage_buffer", {
     dir: target.dir,
     path: target.path,
     content,
+    expectedIndex,
   });
   if (result.isErr()) {
     toast.error(
       `Couldn't ${action.includes("unstage") ? "unstage" : "stage"} — ${errorMessage(result.error)}`,
     );
-    return;
   }
+  // Refresh even on a refused write: the usual refusal is the expected-index
+  // guard, and the retry needs the models it was computed from replaced first.
   target.onStaged();
 }
 
-/** Stage: the gutter already synthesized index+hunk for us. */
+/** Stage: the gutter already synthesized index+hunk for us. The original side
+ * (the index) is the base that synthesis started from — the write's guard. */
 function runStage(context: HunkContext | undefined, action: string): void {
   const target = context && targets.get(context.modifiedUri.toString());
   if (!target) return;
-  void stageBuffer(target, context.originalWithModifiedChanges, action);
+  const sides = target.readSides();
+  if (!sides) return;
+  void stageBuffer(target, context.originalWithModifiedChanges, sides.original, action);
 }
 
-/** Unstage: splice the hunk's HEAD lines back over the index lines. */
+/** Unstage: put the mapped HEAD spans back over the index spans. Char-precise
+ * via `innerChanges` — the outer line-range hull would also revert unselected
+ * changes lying between two selected ones. */
 function runUnstage(context: HunkContext | undefined, action: string): void {
   const target = context && targets.get(context.modifiedUri.toString());
   if (!target) return;
   const sides = target.readSides();
   if (!sides) return;
-  const next = revertLineRange(
-    sides.original,
-    sides.modified,
-    context.mapping.original,
-    context.mapping.modified,
-  );
-  void stageBuffer(target, next, action);
+  const inner = context.mapping.innerChanges;
+  const next = inner?.length
+    ? revertRangeMappings(sides.original ?? "", sides.modified, inner)
+    : revertLineRange(
+        sides.original ?? "",
+        sides.modified,
+        context.mapping.original,
+        context.mapping.modified,
+      );
+  void stageBuffer(target, next, sides.modified, action);
 }
 
-let installed = false;
+let installed: Promise<void> | null = null;
 
 /** Register the four actions once. Called from the multi-diff's build (the
- * monaco modules are already loaded there); safe to call repeatedly. */
-export async function ensureDiffGutterActions(): Promise<void> {
-  if (installed) return;
-  installed = true;
+ * monaco modules are already loaded there); safe to call repeatedly. A failed
+ * chunk load resets, so the next pane build retries instead of leaving the
+ * staging buttons off for the rest of the session. */
+export function ensureDiffGutterActions(): Promise<void> {
+  installed ??= installDiffGutterActions().catch((e) => {
+    installed = null;
+    console.error("diff gutter actions failed to install", e);
+  });
+  return installed;
+}
+
+async function installDiffGutterActions(): Promise<void> {
   const [actions, contextkey, codicons] = await Promise.all([
     import("@codingame/monaco-vscode-api/vscode/vs/platform/actions/common/actions"),
     import("@codingame/monaco-vscode-api/vscode/vs/platform/contextkey/common/contextkey"),

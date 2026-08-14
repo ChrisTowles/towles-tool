@@ -542,9 +542,10 @@ fn parse_diff_mode(mode: &str) -> tt_agentboard::DiffMode {
     }
 }
 
-/// `mode` picks the baseline: `"uncommitted"` diffs the working tree vs HEAD,
-/// anything else diffs vs the merge-base with `base_branch` (or origin/main if
-/// unset). Async: a large branch diff is real work, even in-process.
+/// `mode` picks the baseline: `"uncommitted"` diffs the working tree vs the
+/// index, `"staged"` the index vs HEAD, anything else vs the merge-base with
+/// `base_branch` (or origin/main if unset). Async: a large branch diff is real
+/// work, even in-process.
 #[tauri::command]
 pub async fn ab_get_diff_files(
     dir: String,
@@ -628,17 +629,20 @@ pub async fn ab_unstage_file(
 
 /// Stage `content` as the full index version of `path` — hunk staging's write:
 /// the client synthesizes index-content-plus-hunk (or minus, for unstage) and
-/// hands over the whole file, VS Code's model.
+/// hands over the whole file, VS Code's model. `expected_index` is the stage-0
+/// content that synthesis started from; the write refuses if the index moved
+/// since, so a stale pane can't silently revert concurrent staging.
 #[tauri::command]
 pub async fn ab_stage_buffer(
     state: State<'_, Ab>,
     dir: String,
     path: String,
     content: String,
+    expected_index: Option<String>,
 ) -> Result<(), String> {
     let (d, p) = (dir.clone(), path.clone());
     let result = run_stage_op(&state, &dir, move || {
-        tt_agentboard::staging::stage_file_buffer(&d, &p, &content)
+        tt_agentboard::staging::stage_file_buffer(&d, &p, &content, expected_index.as_deref())
     })
     .await;
     tracing::info!(%dir, %path, ok = result.is_ok(), "diff.stage_buffer");

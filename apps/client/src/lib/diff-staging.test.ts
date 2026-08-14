@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   folderStageState,
   revertLineRange,
+  revertRangeMappings,
   stageCheckState,
   stageToggleAction,
+  type RangeLite,
 } from "./diff-staging";
 
 // Ranges mirror Monaco's LineRange: 1-based start, exclusive end.
@@ -52,6 +54,65 @@ describe("revertLineRange", () => {
   it("reverts the whole content of a one-sided file", () => {
     // A staged new file: original (HEAD) is empty, everything is an insertion.
     expect(revertLineRange("", "new\n", range(1, 1), range(1, 2))).toBe("");
+  });
+});
+
+// Monaco's Range: 1-based lines and columns, end-exclusive column.
+const charRange = (sl: number, sc: number, el: number, ec: number): RangeLite => ({
+  startLineNumber: sl,
+  startColumn: sc,
+  endLineNumber: el,
+  endColumn: ec,
+});
+
+describe("revertRangeMappings", () => {
+  it("reverts one whole-line mapping like the line-range revert", () => {
+    // The hunk toolbar's shape: one mapping spanning full lines.
+    const next = revertRangeMappings("a\nb\nc\n", "a\nB\nc\n", [
+      { originalRange: charRange(2, 1, 3, 1), modifiedRange: charRange(2, 1, 3, 1) },
+    ]);
+    expect(next).toBe("a\nb\nc\n");
+  });
+
+  it("reverts only the mapped spans, not the lines between them", () => {
+    // Three changed lines; only the first and third are selected — the
+    // outer hull would also revert "TWO", losing a staged change.
+    const next = revertRangeMappings("one\ntwo\nthree\n", "ONE\nTWO\nTHREE\n", [
+      { originalRange: charRange(1, 1, 1, 4), modifiedRange: charRange(1, 1, 1, 4) },
+      { originalRange: charRange(3, 1, 3, 6), modifiedRange: charRange(3, 1, 3, 6) },
+    ]);
+    expect(next).toBe("one\nTWO\nthree\n");
+  });
+
+  it("re-inserts a deleted span at an empty modified range", () => {
+    const next = revertRangeMappings("a\nb\nc\n", "a\nc\n", [
+      { originalRange: charRange(2, 1, 3, 1), modifiedRange: charRange(2, 1, 2, 1) },
+    ]);
+    expect(next).toBe("a\nb\nc\n");
+  });
+
+  it("removes an inserted span at an empty original range", () => {
+    const next = revertRangeMappings("a\nc\n", "a\nb\nc\n", [
+      { originalRange: charRange(2, 1, 2, 1), modifiedRange: charRange(2, 1, 3, 1) },
+    ]);
+    expect(next).toBe("a\nc\n");
+  });
+
+  it("clamps a range that ends past the last line", () => {
+    // No trailing newline: Monaco spells "to EOF" as one line past the end.
+    const next = revertRangeMappings("a\nx", "a\nX", [
+      { originalRange: charRange(2, 1, 3, 1), modifiedRange: charRange(2, 1, 3, 1) },
+    ]);
+    expect(next).toBe("a\nx");
+  });
+
+  it("applies mappings in document order regardless of input order", () => {
+    const mappings = [
+      { originalRange: charRange(3, 1, 3, 2), modifiedRange: charRange(3, 1, 3, 2) },
+      { originalRange: charRange(1, 1, 1, 2), modifiedRange: charRange(1, 1, 1, 2) },
+    ];
+    expect(revertRangeMappings("a\nb\nc\n", "X\nb\nY\n", mappings)).toBe("a\nb\nc\n");
+    expect(revertRangeMappings("a\nb\nc\n", "X\nb\nY\n", mappings.toReversed())).toBe("a\nb\nc\n");
   });
 });
 

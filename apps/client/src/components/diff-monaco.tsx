@@ -430,8 +430,12 @@ export function MonacoMultiDiff({
                 readSides: () => {
                   const modified = entry.modified;
                   if (!modified || modified.isDisposed()) return null;
+                  // Null, not "": "no side" must stay distinct from "empty" —
+                  // it is the write's expected-index token for a new file.
                   const original =
-                    entry.original && !entry.original.isDisposed() ? entry.original.getValue() : "";
+                    entry.original && !entry.original.isDisposed()
+                      ? entry.original.getValue()
+                      : null;
                   return { original, modified: modified.getValue() };
                 },
                 onStaged: () => void refreshAfterStaging(f, entry),
@@ -520,8 +524,18 @@ export function MonacoMultiDiff({
               let path: string | null = null;
               checkbox.addEventListener("change", () => {
                 if (!path) return;
-                if (staging) onToggleStageRef.current?.(path);
-                else onToggleReviewedRef.current?.(path);
+                if (staging) {
+                  // Undo the native flip: this box mirrors the git index, so it
+                  // moves only when the refetched file list does — a refused
+                  // IPC write must not leave it showing a state that isn't real.
+                  const f = filesRef.current.find((c) => c.path === path);
+                  const state = f ? stageCheckState(f) : false;
+                  checkbox.checked = state === true;
+                  checkbox.indeterminate = state === "indeterminate";
+                  onToggleStageRef.current?.(path);
+                } else {
+                  onToggleReviewedRef.current?.(path);
+                }
               });
               return {
                 setUri(uri: { path: string } | undefined) {
@@ -851,6 +865,8 @@ async function fetchSides(
       ? invoke<string | null>("ab_get_index_file", { dir, path: file.path })
       : null,
   ]);
+  // A deletion keeps `undefined`: giving it an empty modified model would hand
+  // a nonexistent file autosave wiring, a stage target, and a disk watch.
   const modified =
     file.status === "D"
       ? undefined
@@ -859,7 +875,7 @@ async function fetchSides(
         : (read?.map((f) => f.content).unwrapOr("") ?? "");
   return {
     original: added ? undefined : (original ?? ""),
-    modified: modified ?? "",
+    modified,
     modifiedMtimeMs: read?.map((f) => f.mtimeMs).unwrapOr(null) ?? null,
   };
 }

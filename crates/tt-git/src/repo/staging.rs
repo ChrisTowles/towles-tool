@@ -27,22 +27,50 @@ impl Repo {
     /// when the path has no stage-0 entry there.
     pub fn file_in_index(&self, path: &str) -> Option<Vec<u8>> {
         let index = self.inner().index_or_empty().ok()?;
-        let entry = index.entry_by_path(bstr(path))?;
+        let entry =
+            index.entry_by_path_and_stage(bstr(path), gix::index::entry::Stage::Unconflicted)?;
         let object = self.inner().find_object(entry.id).ok()?;
         object.try_into_blob().ok().map(|blob| blob.data.clone())
     }
 
+    /// Whether `path` carries conflict stages — a merge in progress there.
+    pub fn is_unmerged(&self, path: &str) -> bool {
+        self.inner().index_or_empty().is_ok_and(|index| has_conflict_stages(&index, path))
+    }
+
     /// Stage `content` as the index version of `path`, leaving the working tree
-    /// alone — `git hash-object -w` + `git update-index`. The stat fields are
-    /// zeroed so git re-reads content instead of trusting a stat that describes
-    /// the (different) worktree file.
-    pub fn stage_buffer(&self, path: &str, content: &[u8]) -> Result<()> {
+    /// alone — `git hash-object -w` + `git update-index`. Stats are zeroed so
+    /// git re-reads content rather than trusting the worktree file's stat.
+    ///
+    /// `expected_index` is the stage-0 content the caller computed `content`
+    /// from (`None` = no entry): this is a whole-file replace, and applying it
+    /// over an index another writer moved — a racing hunk click, a terminal's
+    /// `git add -p` — would silently revert that writer's staging. The entry
+    /// keeps its existing mode (a chmod is its own change, never a content
+    /// hunk's to move), falling back to HEAD's, then the worktree's.
+    pub fn stage_buffer(
+        &self,
+        path: &str,
+        content: &[u8],
+        expected_index: Option<&[u8]>,
+    ) -> Result<()> {
         let mut index = self.open_index_for_write(path)?;
+        let current_entry = index
+            .entry_by_path_and_stage(bstr(path), gix::index::entry::Stage::Unconflicted)
+            .map(|e| (e.id, e.mode));
+        let current = current_entry.and_then(|(id, _)| self.blob_bytes(id));
+        if current.as_deref() != expected_index {
+            return Err(GitError::Write(format!(
+                "{path}: the index changed under this action; re-run it on the refreshed diff"
+            )));
+        }
         let filtered = self.clean_filter(path, content, &index)?;
         let id = self.write_blob(&filtered)?;
-        let mode = self.worktree_mode(path).unwrap_or_else(|| {
-            index.entry_by_path(bstr(path)).map(|e| e.mode).unwrap_or(gix::index::entry::Mode::FILE)
-        });
+        let mode = current_entry
+            .map(|(_, mode)| mode)
+            .or_else(|| self.head_entry(path).map(|(_, mode)| mode))
+            .or_else(|| self.worktree_mode(path))
+            .unwrap_or(gix::index::entry::Mode::FILE);
         upsert(&mut index, path, id, mode, gix::index::entry::Stat::default());
         write_index(&mut index)
     }
@@ -52,6 +80,14 @@ impl Repo {
     pub fn stage_path(&self, path: &str) -> Result<()> {
         let mut index = self.open_index_for_write(path)?;
         let Some((content, mode, stat)) = self.worktree_content(path)? else {
+            // Vanished is a staged deletion; present-but-unstageable (a
+            // directory, a socket) must fail loudly instead of "succeeding"
+            // by rewriting the index with nothing changed.
+            let present =
+                self.inner().workdir().is_some_and(|dir| dir.join(path).symlink_metadata().is_ok());
+            if present {
+                return Err(GitError::Write(format!("{path} is not a stageable file")));
+            }
             index.remove_entries(|_, entry_path, _| entry_path == bstr(path));
             return write_index(&mut index);
         };
@@ -114,12 +150,20 @@ impl Repo {
                 sides.entry(path).or_default().0 = Some(entry.id);
             }
         }
+        let mut conflicted: Vec<String> = Vec::new();
         for entry in index.entries() {
+            let path = entry.path(&index).to_string();
             if entry.stage() != gix::index::entry::Stage::Unconflicted {
+                conflicted.push(path);
                 continue;
             }
-            let path = entry.path(&index).to_string();
             sides.entry(path).or_default().1 = Some(entry.id);
+        }
+        // An unmerged path has no stage 0, which would read as "staged
+        // deletion" below — but `git commit` refuses it, so it isn't staged
+        // anything. It stays the uncommitted view's problem.
+        for path in conflicted {
+            sides.remove(&path);
         }
 
         let mut files = Vec::new();
@@ -165,11 +209,7 @@ impl Repo {
             ),
             Err(e) => return Err(read_err(e)),
         };
-        use gix::index::entry::Stage;
-        let unmerged = [Stage::Base, Stage::Ours, Stage::Theirs]
-            .iter()
-            .any(|stage| index.entry_by_path_and_stage(bstr(path), *stage).is_some());
-        if unmerged {
+        if has_conflict_stages(&index, path) {
             return Err(GitError::Write(format!("{path} is unmerged; resolve the conflict first")));
         }
         Ok(index)
@@ -299,6 +339,13 @@ fn bstr(path: &str) -> &BStr {
     path.as_bytes().as_bstr()
 }
 
+fn has_conflict_stages(index: &gix::index::State, path: &str) -> bool {
+    use gix::index::entry::Stage;
+    [Stage::Base, Stage::Ours, Stage::Theirs]
+        .iter()
+        .any(|stage| index.entry_by_path_and_stage(bstr(path), *stage).is_some())
+}
+
 fn upsert(
     index: &mut gix::index::File,
     path: &str,
@@ -367,7 +414,7 @@ mod tests {
 
         // The buffer holds only the first of the two edits — a staged hunk.
         let git = Repo::open(repo.path()).expect("open");
-        git.stage_buffer("f.txt", b"ONE\ntwo\nthree\n").expect("stage");
+        git.stage_buffer("f.txt", b"ONE\ntwo\nthree\n", Some(b"one\ntwo\nthree\n")).expect("stage");
 
         assert_eq!(porcelain(&repo), "MM f.txt", "one edit staged, one not");
         assert_eq!(cached_numstat(&repo), "1\t1\tf.txt");
@@ -380,7 +427,7 @@ mod tests {
         let repo = TestRepo::new();
         repo.write("new.txt", "fresh\n");
         let git = Repo::open(repo.path()).expect("open");
-        git.stage_buffer("new.txt", b"fresh\n").expect("stage");
+        git.stage_buffer("new.txt", b"fresh\n", None).expect("stage");
         assert_eq!(porcelain(&repo), "A  new.txt");
     }
 
@@ -400,9 +447,68 @@ mod tests {
         repo.write("sub/dir/f.txt", "new\n");
 
         let git = Repo::open(repo.path()).expect("open");
-        git.stage_buffer("sub/dir/f.txt", b"new\n").expect("stage");
+        git.stage_buffer("sub/dir/f.txt", b"new\n", Some(b"old\n")).expect("stage");
         repo.git(&["commit", "--quiet", "-m", "capture"]);
         assert_eq!(repo.git(&["show", "HEAD:sub/dir/f.txt"]), "new");
+    }
+
+    #[test]
+    fn stage_buffer_refuses_a_moved_index() {
+        let repo = TestRepo::new();
+        repo.commit_file("f.txt", "one\ntwo\n");
+        repo.write("f.txt", "ONE\ntwo\nTHREE\n");
+        let git = Repo::open(repo.path()).expect("open");
+        // First hunk lands; the second click still carries the pre-first-hunk
+        // index as its base — the race that silently reverted hunk one.
+        git.stage_buffer("f.txt", b"ONE\ntwo\n", Some(b"one\ntwo\n")).expect("first hunk");
+        let stale = git.stage_buffer("f.txt", b"one\ntwo\nTHREE\n", Some(b"one\ntwo\n"));
+        assert!(stale.expect_err("stale base must refuse").to_string().contains("changed under"));
+        assert_eq!(repo.git(&["show", ":0:f.txt"]), "ONE\ntwo", "first hunk must survive");
+        // Re-run from the refreshed base: exactly what the retried click sends.
+        git.stage_buffer("f.txt", b"ONE\ntwo\nTHREE\n", Some(b"ONE\ntwo\n")).expect("retry");
+        assert_eq!(repo.git(&["show", ":0:f.txt"]), "ONE\ntwo\nTHREE");
+    }
+
+    #[test]
+    fn stage_buffer_leaves_an_unstaged_chmod_unstaged() {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = TestRepo::new();
+        repo.write("run.sh", "#!/bin/sh\none\n");
+        let path = repo.path().join("run.sh");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        repo.git(&["add", "run.sh"]);
+        repo.git(&["commit", "--quiet", "-m", "executable"]);
+        // The user un-chmods (not staged) and edits content.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        repo.write("run.sh", "#!/bin/sh\nONE\n");
+
+        let git = Repo::open(repo.path()).expect("open");
+        git.stage_buffer("run.sh", b"#!/bin/sh\nONE\n", Some(b"#!/bin/sh\none\n"))
+            .expect("stage content hunk");
+        assert!(
+            repo.git(&["ls-files", "--stage", "run.sh"]).starts_with("100755"),
+            "a content hunk must not stage the chmod"
+        );
+    }
+
+    #[test]
+    fn stage_buffer_keeps_a_staged_chmod_staged() {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = TestRepo::new();
+        repo.commit_file("run.sh", "#!/bin/sh\none\ntwo\n");
+        let path = repo.path().join("run.sh");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        repo.write("run.sh", "#!/bin/sh\nONE\nTWO\n");
+        repo.git(&["add", "run.sh"]);
+
+        // Unstage one content hunk (the staged-view − button): index minus it.
+        let git = Repo::open(repo.path()).expect("open");
+        git.stage_buffer("run.sh", b"#!/bin/sh\none\nTWO\n", Some(b"#!/bin/sh\nONE\nTWO\n"))
+            .expect("unstage hunk");
+        assert!(
+            repo.git(&["ls-files", "--stage", "run.sh"]).starts_with("100755"),
+            "unstaging a content hunk must not discard the staged chmod"
+        );
     }
 
     #[test]
@@ -446,6 +552,15 @@ mod tests {
     }
 
     #[test]
+    fn stage_path_refuses_a_directory() {
+        let repo = TestRepo::new();
+        repo.write("node_modules/pkg/a.js", "x\n");
+        let git = Repo::open(repo.path()).expect("open");
+        let err = git.stage_path("node_modules").expect_err("a directory is not stageable");
+        assert!(err.to_string().contains("not a stageable file"), "{err}");
+    }
+
+    #[test]
     fn unstage_path_matches_git_reset() {
         let repo = TestRepo::new();
         repo.commit_file("f.txt", "a\n");
@@ -480,7 +595,7 @@ mod tests {
         assert!(!merge.status.success(), "fixture needs a conflict");
 
         let git = Repo::open(repo.path()).expect("open");
-        assert!(git.stage_buffer("f.txt", b"resolved\n").is_err());
+        assert!(git.stage_buffer("f.txt", b"resolved\n", None).is_err());
         assert!(git.stage_path("f.txt").is_err());
     }
 
@@ -528,7 +643,7 @@ mod tests {
         repo.commit_file("f.txt", "one\ntwo\n");
         repo.write("f.txt", "ONE\ntwo\nTHREE\n");
         let git = Repo::open(repo.path()).expect("open");
-        git.stage_buffer("f.txt", b"ONE\ntwo\n").expect("stage");
+        git.stage_buffer("f.txt", b"ONE\ntwo\n", Some(b"one\ntwo\n")).expect("stage");
         let states = git.stage_states(["f.txt"]).expect("states");
         assert_eq!(states["f.txt"], StageState { staged: true, unstaged: true });
     }
@@ -555,6 +670,32 @@ mod tests {
         assert_eq!(observed, expected);
         let by_path = |p: &str| changes.files.iter().find(|f| f.path == p).expect(p).status;
         assert_eq!((by_path("mod.txt"), by_path("add.txt"), by_path("del.txt")), ('M', 'A', 'D'));
+    }
+
+    #[test]
+    fn staged_changes_skip_unmerged_paths() {
+        let repo = TestRepo::new();
+        repo.commit_file("f.txt", "base\n");
+        repo.git(&["checkout", "--quiet", "-b", "left"]);
+        repo.commit_file("f.txt", "left\n");
+        repo.git(&["checkout", "--quiet", "main"]);
+        repo.commit_file("f.txt", "right\n");
+        let merge = std::process::Command::new("git")
+            .args(["-C", repo.path().to_str().unwrap(), "merge", "left"])
+            .output()
+            .expect("merge runs");
+        assert!(!merge.status.success(), "fixture needs a conflict");
+
+        // `git diff --cached` calls it unmerged, not a staged deletion.
+        let git = Repo::open(repo.path()).expect("open");
+        let changes = git.staged_changes().expect("staged");
+        assert!(
+            !changes.files.iter().any(|f| f.path == "f.txt"),
+            "an unmerged path is not staged anything: {:?}",
+            changes.files
+        );
+        assert!(git.is_unmerged("f.txt"));
+        assert!(!git.is_unmerged("other.txt"));
     }
 
     #[test]

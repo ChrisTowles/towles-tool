@@ -5,6 +5,17 @@
 /** Monaco's `LineRange`: 1-based start, exclusive end. Empty when equal. */
 export type LineRangeLite = { startLineNumber: number; endLineNumberExclusive: number };
 
+/** Monaco's `Range`: 1-based lines and columns, end-exclusive column. */
+export type RangeLite = {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+};
+
+/** One char-precise original↔modified correspondence (Monaco's `RangeMapping`). */
+export type RangeMappingLite = { originalRange: RangeLite; modifiedRange: RangeLite };
+
 /** Split into lines that keep their own terminators, so joins can't invent or
  * drop a trailing newline — the classic hunk-apply bug (vscode#59670). */
 function lineSpans(text: string): string[] {
@@ -33,6 +44,68 @@ export function revertLineRange(
     ...replacement,
   );
   return modifiedLines.join("");
+}
+
+/** Offsets where each 1-based line begins. */
+function lineStartOffsets(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
+  return starts;
+}
+
+/** (line, column) → char offset, clamped: a range may end one past EOF. */
+function offsetOf(starts: number[], length: number, line: number, column: number): number {
+  if (line - 1 >= starts.length) return length;
+  return Math.min(length, starts[line - 1] + column - 1);
+}
+
+/** `modifiedText` with each mapping's exact character span put back to the
+ * original's — the precise inverse of the gutter's `computeStagedValue`. The
+ * selection toolbar's mappings carry only the *selected* changes, so unstaging
+ * a selection must not touch the span between them (which the outer line-range
+ * hull would). Mappings must not overlap; Monaco's never do. */
+export function revertRangeMappings(
+  originalText: string,
+  modifiedText: string,
+  mappings: RangeMappingLite[],
+): string {
+  const originalStarts = lineStartOffsets(originalText);
+  const modifiedStarts = lineStartOffsets(modifiedText);
+  // Back to front, so each splice leaves every earlier offset intact.
+  const sorted = mappings.toSorted(
+    (a, b) =>
+      b.modifiedRange.startLineNumber - a.modifiedRange.startLineNumber ||
+      b.modifiedRange.startColumn - a.modifiedRange.startColumn,
+  );
+  let out = modifiedText;
+  for (const m of sorted) {
+    const start = offsetOf(
+      modifiedStarts,
+      modifiedText.length,
+      m.modifiedRange.startLineNumber,
+      m.modifiedRange.startColumn,
+    );
+    const end = offsetOf(
+      modifiedStarts,
+      modifiedText.length,
+      m.modifiedRange.endLineNumber,
+      m.modifiedRange.endColumn,
+    );
+    const originalStart = offsetOf(
+      originalStarts,
+      originalText.length,
+      m.originalRange.startLineNumber,
+      m.originalRange.startColumn,
+    );
+    const originalEnd = offsetOf(
+      originalStarts,
+      originalText.length,
+      m.originalRange.endLineNumber,
+      m.originalRange.endColumn,
+    );
+    out = out.slice(0, start) + originalText.slice(originalStart, originalEnd) + out.slice(end);
+  }
+  return out;
 }
 
 /** The tree checkbox's three states in a staging mode. */

@@ -16,8 +16,18 @@ pub fn unstage_file(dir: &str, path: &str) -> Result<(), String> {
 
 /// Stage `content` as the full index version of `path` — how a hunk is staged
 /// or unstaged: the client synthesizes the resulting file and hands it over.
-pub fn stage_file_buffer(dir: &str, path: &str, content: &str) -> Result<(), String> {
-    repo(dir)?.stage_buffer(path, content.as_bytes()).map_err(|e| e.to_string())
+/// `expected_index` is the stage-0 content the synthesis started from (`None` =
+/// no entry); the write refuses if the index moved since (see
+/// [`tt_git::repo::Repo::stage_buffer`]).
+pub fn stage_file_buffer(
+    dir: &str,
+    path: &str,
+    content: &str,
+    expected_index: Option<&str>,
+) -> Result<(), String> {
+    repo(dir)?
+        .stage_buffer(path, content.as_bytes(), expected_index.map(str::as_bytes))
+        .map_err(|e| e.to_string())
 }
 
 fn repo(dir: &str) -> Result<tt_git::repo::Repo, String> {
