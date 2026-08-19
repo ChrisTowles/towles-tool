@@ -68,6 +68,7 @@ export function RepoGroup({
   selectedSessionId,
   activePaneId,
   activeFolderDir,
+  hotkeys,
   collapsed,
   renaming,
   titles,
@@ -107,6 +108,8 @@ export function RepoGroup({
   /** A view pane has no session record, so `selectedSessionId` can't name it. */
   activePaneId: string | null;
   activeFolderDir: string | null;
+  /** Session id → its jump digit, while the chord is held; absent otherwise. */
+  hotkeys?: Map<string, number>;
   collapsed: Record<string, boolean>;
   renaming: string | null;
   titles: Record<string, string>;
@@ -156,6 +159,7 @@ export function RepoGroup({
         compactPct={compactPct}
         title={titles[s.id]}
         active={selectedSessionId === s.id}
+        hotkey={hotkeys?.get(s.id)}
         renaming={renaming === s.id}
         overlay={overlays[s.id]}
         actions={actions}

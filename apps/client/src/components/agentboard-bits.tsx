@@ -143,6 +143,20 @@ export function Glyph({ agent }: { agent: boolean }) {
   );
 }
 
+/** The jump number a row answers to while the chord is held. Takes {@link Glyph}'s
+ * own 16px column rather than adding one, so revealing the numbers across the
+ * rail never reflows a single row. */
+export function HotkeyBadge({ n }: { n: number }) {
+  return (
+    <span
+      aria-label={`jump key ${n}`}
+      className="w-4 shrink-0 rounded-[3px] border border-violet-500/60 bg-violet-500/10 text-center font-mono text-[10px] leading-4 text-violet-500"
+    >
+      {n}
+    </span>
+  );
+}
+
 /** Open ring = pending on you, filled = something happened. A shape cue, so
  * `waiting` and `complete` don't rely on hue alone to tell each other apart. */
 export function Dot({ session }: { session: SessionData }) {

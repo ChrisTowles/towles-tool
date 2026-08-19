@@ -89,7 +89,8 @@ import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
-import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
+import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
+import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
@@ -195,6 +196,23 @@ export function AgentboardScreen() {
       open,
       cwds,
     });
+
+  // Hold-to-reveal jump keys: the badges paint on the rows the numbering is
+  // computed from, so what you press is what you read. The targets are kept
+  // even while nothing is held — the handlers address them without a repaint.
+  const hotkeysHeld = useModifierHeld("ab-jump-session-1");
+  const hotkeyTargets = useMemo(
+    () => railHotkeyTargets({ repos, quietDirs, quietRevealed: revealedQuiet, collapsed, wins }),
+    [repos, quietDirs, revealedQuiet, collapsed, wins],
+  );
+  // The collapsed strip has no session rows to badge, so it offers no numbers.
+  const railHotkeys = useMemo(
+    () =>
+      hotkeysHeld && !railCollapsed
+        ? new Map(hotkeyTargets.map((t, i) => [t.sessionId, i + 1]))
+        : undefined,
+    [hotkeysHeld, railCollapsed, hotkeyTargets],
+  );
 
   // Read live by the terminal://notify listener, which must not re-subscribe.
   const selectedRef = useRef<string | null>(null);
@@ -524,6 +542,15 @@ export function AgentboardScreen() {
       cycleNeedsYou(repos, selected?.sessionId ?? null, direction),
       "Nothing needs you right now.",
     );
+  }
+
+  // Declines when the digit addresses nothing, so an unused number keeps
+  // whatever the platform does with the chord rather than silently eating it.
+  function jumpToHotkey(n: number): boolean {
+    const target = hotkeyTargets[n - 1];
+    if (!target) return false;
+    selectSession(target.folderDir, target.sessionId);
+    return true;
   }
 
   function jumpToNotBusy() {
@@ -958,6 +985,12 @@ export function AgentboardScreen() {
         "ab-jump-next": () => jumpToNeedsYou("next"),
         "ab-jump-prev": () => jumpToNeedsYou("prev"),
         "ab-jump-idle": jumpToNotBusy,
+        ...Object.fromEntries(
+          Array.from({ length: 9 }, (_, i) => [
+            `ab-jump-session-${i + 1}`,
+            () => jumpToHotkey(i + 1),
+          ]),
+        ),
         "ab-focus-up": () => focusByArrow("up"),
         "ab-focus-down": () => focusByArrow("down"),
         "ab-focus-up-bracket": () => focusByArrow("up"),
@@ -973,6 +1006,7 @@ export function AgentboardScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
         activeFolderDir,
+        hotkeyTargets,
         selected,
         focusedPaneId,
         focusLevel,
@@ -1093,6 +1127,7 @@ export function AgentboardScreen() {
                               selectedSessionId={selected?.sessionId ?? null}
                               activePaneId={focusedPaneId}
                               activeFolderDir={activeFolderDir}
+                              hotkeys={railHotkeys}
                               collapsed={collapsed}
                               renaming={renaming}
                               titles={titles}

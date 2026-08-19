@@ -17,6 +17,7 @@ function key(overrides: Partial<KeyboardEvent>): KeyboardEvent {
     shiftKey: false,
     altKey: false,
     key: "",
+    code: "",
     ...overrides,
   } as KeyboardEvent;
 }
@@ -84,6 +85,41 @@ describe("board shortcuts", () => {
 
   it("has no new-task binding — tasks are created on the Agentboard", () => {
     expect("board-new-todo" in SHORTCUTS).toBe(false);
+  });
+});
+
+describe("rail session jumps", () => {
+  it("registers a jump binding for each digit 1–9, collapsed to one help entry", () => {
+    for (let n = 1; n <= 9; n++) {
+      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("agentboard");
+      expect(SHORTCUTS[`ab-jump-session-${n}`].hideInHelp).toBe(n > 1);
+    }
+  });
+
+  it("takes shift, because plain mod+digit is already the tab jump", () => {
+    const shifted = key({ ctrlKey: true, shiftKey: true, key: "!", code: "Digit1" });
+    expect(matchesShortcut("ab-jump-session-1", shifted)).toBe(true);
+    expect(matchesShortcut("tab-1", shifted)).toBe(false);
+    expect(matchesShortcut("ab-jump-session-1", key({ ctrlKey: true, key: "1" }))).toBe(false);
+  });
+
+  it('matches the shifted digit by physical key — Shift+1 arrives as "!"', () => {
+    expect(
+      matchesShortcut("ab-jump-session-3", key({ ctrlKey: true, shiftKey: true, key: "#" })),
+    ).toBe(false);
+    expect(
+      matchesShortcut(
+        "ab-jump-session-3",
+        key({ ctrlKey: true, shiftKey: true, key: "#", code: "Digit3" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("works with a terminal focused, like the other board-wide jumps", () => {
+    expect(SHORTCUTS["ab-jump-session-1"].allowInEditable).toBe(true);
+    expect(
+      matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "!", code: "Digit1" })),
+    ).toBe(true);
   });
 });
 
