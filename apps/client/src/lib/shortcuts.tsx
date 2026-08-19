@@ -213,6 +213,19 @@ export const SHORTCUTS = defineShortcuts([
     description: "Jump to next agent that isn't busy — idle or needing you",
     allowInEditable: true,
   },
+  // One binding per digit, addressing the rail's visible sessions top-down; the
+  // numbers paint on the rows while held. Shift because mod+digit is the tab jump.
+  ...Array.from({ length: 9 }, (_, i) => ({
+    id: `ab-jump-session-${i + 1}`,
+    scope: "agentboard" as const,
+    keys: `mod+shift+${i + 1}`,
+    description:
+      i === 0
+        ? "Jump to a numbered rail session 1–9 — hold to see the numbers"
+        : `Jump to rail session ${i + 1}`,
+    allowInEditable: true,
+    hideInHelp: i > 0,
+  })),
   {
     id: "ab-focus-up",
     scope: "agentboard",
@@ -380,7 +393,55 @@ function matches(spec: KeySpec, e: KeyboardEvent): boolean {
   // `?` arrives as key "?" with shiftKey set — compare shift only for
   // modifier-style specs, where shift is a deliberate chord component.
   const shiftOk = spec.mod ? e.shiftKey === spec.shift : true;
-  return mod === spec.mod && shiftOk && e.altKey === spec.alt && e.key.toLowerCase() === spec.key;
+  return mod === spec.mod && shiftOk && e.altKey === spec.alt && keyMatches(spec.key, e);
+}
+
+/** Shift+1 arrives as "!", so a digit binding also matches the physical key. */
+function keyMatches(key: string, e: KeyboardEvent): boolean {
+  if (e.key.toLowerCase() === key) return true;
+  return key.length === 1 && key >= "0" && key <= "9" && e.code === `Digit${key}`;
+}
+
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
+
+/** True while `id`'s modifiers alone are held, for hold-to-reveal affordances.
+ * Tracks the keys themselves: WebKitGTK reports the modifier mask from *before*
+ * the event, so Ctrl's own keydown reads `false`. Blur clears it. */
+export function useModifierHeld(id: string): boolean {
+  const spec = SHORTCUTS[id]?.spec;
+  if (!spec) throw new Error(`Unknown shortcut id "${id}"`);
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const down = new Set<string>();
+    const sync = (e: KeyboardEvent) => {
+      if (!MODIFIER_KEYS.has(e.key)) return;
+      if (e.type === "keydown") down.add(e.key);
+      else down.delete(e.key);
+      setHeld(modifiersHeld(id, down));
+    };
+    const clear = () => {
+      down.clear();
+      setHeld(false);
+    };
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, [id, spec]);
+  return held;
+}
+
+/** The held-keys twin of {@link matches}, minus the main key. */
+export function modifiersHeld(id: string, down: Set<string>): boolean {
+  const spec = SHORTCUTS[id]?.spec;
+  if (!spec) throw new Error(`Unknown shortcut id "${id}"`);
+  const ctrlAlias = spec.mod && spec.shift && down.has("Control") && !down.has("Meta");
+  const mod = IS_MAC ? down.has("Meta") || ctrlAlias : down.has("Control");
+  return mod === spec.mod && down.has("Shift") === spec.shift && down.has("Alt") === spec.alt;
 }
 
 /** Ctrl+Shift stands in for ⌘⇧ on mac, so one spelling drives both platforms.

@@ -8,6 +8,7 @@ import {
   ModelBadge,
   Dot,
   Glyph,
+  HotkeyBadge,
   IconBtn,
   PortDriftBadge,
 } from "@/components/agentboard-bits";
@@ -39,6 +40,7 @@ export function SessionRow({
   compactPct,
   title,
   active,
+  hotkey,
   renaming,
   overlay,
   actions,
@@ -51,6 +53,8 @@ export function SessionRow({
   compactPct: number;
   title?: string;
   active: boolean;
+  /** 1–9 while the jump chord is held and this row is one of the first nine. */
+  hotkey?: number;
   renaming: boolean;
   overlay?: Overlay;
   actions: SessionActions;
@@ -103,7 +107,7 @@ export function SessionRow({
           needs && hovered && "bg-amber-500/15",
         )}
       >
-        <Glyph agent={agent} />
+        {hotkey === undefined ? <Glyph agent={agent} /> : <HotkeyBadge n={hotkey} />}
         <Dot session={eff} />
         {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
         {renaming ? (

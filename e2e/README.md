@@ -141,10 +141,9 @@ bun run e2e:run    # run against an already-built binary (skips the build)
 ```
 
 `scripts/e2e.mjs` orchestrates everything. **Ports come from the rendered
-`.env`/`.env.local`** (the same `TT_DEV_PORT` mechanism as `bun run dev`): the
-Vite dev server uses `TT_DEV_PORT`, and the embedded WebDriver server uses the
-`TT_E2E_WEBDRIVER_PORT` claim (falling back to `TT_DEV_PORT + 3000`). Nothing
-is hardcoded, so tasks don't collide. `e2e:run` assumes the binary was already built for this task's port —
+`.env`/`.env.local`**, so tasks don't collide: Vite takes `TT_DEV_PORT` and the
+embedded WebDriver server the `TT_E2E_WEBDRIVER_PORT` claim (else
+`TT_DEV_PORT + 3000`). `e2e:run` assumes a binary already built for that port —
 use `e2e` after changing the port or the Rust commands.
 
 ## How it works (the non-obvious bits)
@@ -173,7 +172,8 @@ hook and waits for `#root`.
   `target/debug/tt-app`.
 - `e2e/specs/*.e2e.ts` — Mocha specs. `browser.tauri.execute(({core}) =>
   core.invoke('cmd'))` calls real commands; `browser.tauri.mock('cmd')` stubs
-  them. Specs here are **read-only** — they never write your real settings file.
+  them. Specs never touch your real state — `e2e.mjs` forces `TT_STATE_SCOPE`,
+  so one needing rail rows seeds its own (`rail-hotkeys.e2e.ts`).
 - Rust: `crates-tauri/tt-app/Cargo.toml` `[features] wdio`, registered in
   `src/lib.rs` under `#[cfg(feature = "wdio")]`, with the `wdio` capability
   added at runtime from `wdio-capability.json` (kept out of `capabilities/` so
@@ -186,4 +186,6 @@ hook and waits for `#root`.
 - The `@wdio/native-utils` override in the root `package.json` works around a
   broken version pin in `@wdio/tauri-service@1.2.0`; remove it once upstream
   ships a fix.
-- CI would need `webkit2gtk-driver` plus a virtual display (`xvfb-run`).
+- **`Key.Ctrl` resolves only inside `browser.keys()`** — it is a wdio
+  placeholder, so `performActions` (the way to *hold* a chord across an
+  assertion) sends a key named `WDIO_CONTROL`. Use `\uE009` / `\uE008`.
