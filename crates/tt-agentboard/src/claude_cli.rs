@@ -78,61 +78,155 @@ pub fn parse_agents(json: &str) -> Vec<CliAgent> {
 /// forever; bound it and treat a timeout like any other failure.
 const CLI_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// One scan's result. **An empty `agents` means nothing unless `ok`** — the
+/// two were the same value for a long time, so a `claude` that could not run at
+/// all read exactly like a quiet machine, and 628 consecutive failures over
+/// eighteen days looked from the board like "no agents running".
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AgentScan {
+    pub agents: Vec<CliAgent>,
+    /// False when the CLI could not be asked, or answered with nonsense.
+    pub ok: bool,
+}
+
+impl AgentScan {
+    fn failed() -> Self {
+        Self { agents: Vec::new(), ok: false }
+    }
+}
+
 /// Run the CLI. Failures (claude missing, non-zero exit, timeout, bad JSON)
-/// yield an empty list — the watcher treats that as "no live sessions visible"
-/// — but each failure kind is logged once so a persistently broken scan is
-/// visible instead of silent.
-pub fn fetch_agents() -> Vec<CliAgent> {
-    match tt_exec::run_with_timeout("claude", &["agents", "--all", "--json"], CLI_TIMEOUT) {
+/// come back as a `!ok` scan rather than an empty success, and each kind is
+/// logged so a persistently broken scan is visible instead of silent.
+pub fn fetch_agents() -> AgentScan {
+    scan_from(tt_exec::run_with_timeout("claude", &["agents", "--all", "--json"], CLI_TIMEOUT))
+}
+
+/// The subprocess result read as a scan — split out from [`fetch_agents`] so
+/// every failure branch is reachable from a test without a real `claude`.
+fn scan_from(result: tt_exec::Result<tt_exec::Output>) -> AgentScan {
+    match result {
         Ok(out) if out.ok() => {
             // Distinguish "parsed, no live sessions" from "output wasn't a JSON
             // array at all" — only the latter is a parse failure worth warning on.
             if serde_json::from_str::<Vec<serde_json::Value>>(&out.stdout).is_err() {
                 log::warn!("claude agents scan: could not parse CLI output as JSON");
-                return Vec::new();
+                return AgentScan::failed();
             }
-            parse_agents(&out.stdout)
+            AgentScan { agents: parse_agents(&out.stdout), ok: true }
         }
         Ok(out) => {
             log::warn!("claude agents scan: exited {} ({})", out.exit_code, out.stderr.trim());
-            Vec::new()
+            AgentScan::failed()
         }
         Err(tt_exec::Error::Timeout { timeout, .. }) => {
             log::warn!("claude agents scan: timed out after {timeout:?}");
-            Vec::new()
+            AgentScan::failed()
         }
         Err(tt_exec::Error::Spawn { source, .. }) => {
             log::warn!("claude agents scan: could not spawn `claude`: {source}");
-            Vec::new()
+            AgentScan::failed()
         }
         Err(err) => {
             log::warn!("claude agents scan: {err}");
-            Vec::new()
+            AgentScan::failed()
         }
     }
 }
 
-static CACHE: Mutex<Option<(Instant, Vec<CliAgent>)>> = Mutex::new(None);
+/// Consecutive failures before the retry stops widening. At the 60s base TTL
+/// that tops out around a quarter hour, so a `claude` fixed mid-session is
+/// picked back up without a restart.
+const MAX_FAILURE_BACKOFF_SHIFT: u32 = 4;
+
+/// How long to sit on a cached scan. A success waits `ttl`; each consecutive
+/// failure doubles that, so a `claude` that cannot start is asked once a minute,
+/// then every two, four, eight — never once per 2s tick.
+fn retry_wait(ttl: Duration, failures: u32) -> Duration {
+    ttl * 2u32.pow(failures.min(MAX_FAILURE_BACKOFF_SHIFT))
+}
+
+struct ScanCache {
+    at: Instant,
+    scan: AgentScan,
+    /// Consecutive failed scans, widening the retry. Reset by the first
+    /// success — a broken `claude` must not be re-spawned every 2s tick.
+    failures: u32,
+}
+
+static CACHE: Mutex<Option<ScanCache>> = Mutex::new(None);
 
 /// [`fetch_agents`] behind a process-wide cache: at most one CLI call per
 /// `ttl`. All agentboard consumers share the same snapshot.
-pub fn fetch_agents_cached(ttl: Duration) -> Vec<CliAgent> {
+///
+/// A failed scan is cached too, on a doubling TTL — otherwise a `claude` that
+/// cannot start is respawned on every tick forever, which is exactly what the
+/// telemetry caught.
+pub fn fetch_agents_cached(ttl: Duration) -> AgentScan {
+    let mut failures = 0;
     {
         let cache = CACHE.lock().unwrap();
-        if let Some((at, agents)) = cache.as_ref()
-            && at.elapsed() < ttl
-        {
-            return agents.clone();
+        if let Some(entry) = cache.as_ref() {
+            if entry.at.elapsed() < retry_wait(ttl, entry.failures) {
+                return entry.scan.clone();
+            }
+            failures = entry.failures;
         }
     }
-    let agents = fetch_agents();
-    *CACHE.lock().unwrap() = Some((Instant::now(), agents.clone()));
-    agents
+    let scan = fetch_agents();
+    let failures = if scan.ok { 0 } else { failures.saturating_add(1) };
+    *CACHE.lock().unwrap() = Some(ScanCache { at: Instant::now(), scan: scan.clone(), failures });
+    scan
+}
+
+/// Consecutive failed scans right now — 0 whenever the last one succeeded.
+/// What the board reads to say "agent status unavailable" out loud.
+pub fn consecutive_scan_failures() -> u32 {
+    CACHE.lock().unwrap().as_ref().map_or(0, |entry| entry.failures)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn out(exit_code: i32, stdout: &str) -> tt_exec::Result<tt_exec::Output> {
+        Ok(tt_exec::Output { stdout: stdout.to_string(), stderr: String::new(), exit_code })
+    }
+
+    /// The bug this whole type exists for: for eighteen days the scan exited 1
+    /// on every call, and the board read that as a quiet machine.
+    #[test]
+    fn a_failed_scan_is_not_an_empty_one() {
+        let empty = scan_from(out(0, "[]"));
+        assert!(empty.ok && empty.agents.is_empty(), "genuinely no agents running");
+
+        for failure in [
+            scan_from(out(1, "")),
+            scan_from(out(0, "ENOENT: Bun could not find a file")),
+            scan_from(Err(tt_exec::Error::Timeout {
+                cmd: "claude".into(),
+                timeout: Duration::from_secs(10),
+            })),
+            scan_from(Err(tt_exec::Error::Spawn {
+                cmd: "claude".into(),
+                source: std::io::Error::from(std::io::ErrorKind::NotFound),
+            })),
+        ] {
+            assert!(!failure.ok, "a failure must never read as a successful empty");
+            assert!(failure.agents.is_empty());
+            assert_ne!(failure, empty);
+        }
+    }
+
+    #[test]
+    fn a_broken_claude_is_retried_ever_more_slowly_then_capped() {
+        let ttl = Duration::from_secs(60);
+        assert_eq!(retry_wait(ttl, 0), ttl, "a success waits exactly the ttl");
+        assert_eq!(retry_wait(ttl, 1), Duration::from_secs(120));
+        assert_eq!(retry_wait(ttl, 3), Duration::from_secs(480));
+        let capped = retry_wait(ttl, MAX_FAILURE_BACKOFF_SHIFT);
+        assert_eq!(retry_wait(ttl, 99), capped, "a permanently broken claude still gets asked");
+    }
 
     const FIXTURE: &str = r#"[
         {"pid": 100, "cwd": "/home/u/proj", "kind": "interactive", "startedAt": 1783087499085,

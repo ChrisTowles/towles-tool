@@ -1,16 +1,12 @@
-//! Claude Code agent watcher — hybrid edition.
-//! **Discovery, liveness and status come from `claude agents --all --json`**
-//! ([`crate::claude_cli`]), the supported surface, rather than from scanning
-//! `~/.claude/projects/**/*.jsonl`. **Journals are enrichment only**, supplying
-//! what the CLI doesn't expose (model, last tool, token usage, sub-agents,
-//! `/loop` wakeups, the first-prompt thread name).
+//! Claude Code agent watcher. **Discovery and liveness come from `claude
+//! agents --all --json`** ([`crate::claude_cli`]); **journals are enrichment
+//! only**, supplying what the CLI doesn't expose (model, last tool, usage,
+//! sub-agents, `/loop` wakeups, the first-prompt thread name).
 //!
-//! Per scan: list live agents, resolve each to a session by cwd, then refine status
-//! — `busy`/`waiting` pass through unless the journal already recorded the turn's
-//! real end and nothing new has landed (`refine_busy`), `idle` takes the journal's
-//! view when that is complete/waiting (`refine_idle`). A session that vanished from
-//! the CLI gets one final journal read and a terminal emit. Deliberate limit: one
-//! that exited before the server started never appears at all.
+//! Per scan: list live agents, resolve each to a session by cwd, then refine
+//! status (`refine_busy`/`refine_idle`). A session that vanished gets one final
+//! journal read and a terminal emit. Deliberate limit: one that exited before
+//! the server started never appears at all.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,23 +20,17 @@ use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
 use crate::watchers::subagents::{self, SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
-/// The shared CLI snapshot TTL (watcher 2s tick, pane scan 3s, engine
-/// rebuilds). Each expiry costs a `claude agents` Node process (~170ms); the
-/// consumers all tick every 2-3s regardless, so this TTL alone sets the real
-/// spawn cadence. 60s keeps liveness fresh enough for pinning/attribution
-/// (agent status is inherently coarse — nothing here is an event-driven
-/// refresh) while cutting a continuous ~5s subprocess spawn down to roughly
-/// once a minute.
+/// Shared CLI snapshot TTL. Consumers tick every 2-3s regardless, so this
+/// alone sets the real spawn cadence for a ~170ms Node process; 60s keeps
+/// liveness fresh enough for pinning while cutting that to once a minute.
 pub const CLI_CACHE_TTL_MS: u64 = 60_000;
 
-/// Parse an ISO-8601 / RFC3339 timestamp to epoch ms (JS `Date.parse` equivalent).
 pub fn parse_timestamp_ms(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())
 }
 
-/// Derive a status from one entry, or `None` (ignored). With CLI-driven
-/// liveness this only informs the `idle` refinement and the exit-time
-/// terminal emit.
+/// With CLI-driven liveness this only informs the `idle` refinement and the
+/// exit-time terminal emit.
 fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
     let msg = entry.message.as_ref()?;
     let role = msg.role.as_deref().filter(|r| !r.is_empty())?;
@@ -50,9 +40,8 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
             let tool_uses: Vec<_> =
                 msg.content.as_ref().map(|c| c.tool_uses().collect()).unwrap_or_default();
             if tool_uses.is_empty() {
-                // Only `stop_reason` separates a finished turn from mid-turn
-                // narration: each content block of one response is its own
-                // entry, so text before a tool call looks identical here.
+                // Each content block is its own entry, so only `stop_reason`
+                // separates a finished turn from mid-turn narration.
                 return Some(turn_end_status(msg.stop_reason.as_deref()));
             }
             let all_asking = tool_uses.iter().all(|t| t.name() == Some("AskUserQuestion"));
@@ -63,12 +52,10 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
     }
 }
 
-/// Whether a text-only assistant entry ends the turn, from its `stop_reason`.
-/// `tool_use` means the same response also asked for a tool, so this text is
+/// `tool_use` means the response also asked for a tool, so the text is
 /// narration and the agent is still `Busy`. A missing `stop_reason` reads as
-/// `Complete`: pre-field transcripts and partial streaming re-logs must resolve
-/// to something, and a finished turn is the safer guess for a signal whose job
-/// is to stop you missing an agent that wants you.
+/// `Complete` — the safer guess for a signal whose job is to stop you missing
+/// an agent that wants you.
 fn turn_end_status(stop_reason: Option<&str>) -> AgentStatus {
     match stop_reason {
         Some("tool_use") => AgentStatus::Busy,
@@ -76,8 +63,6 @@ fn turn_end_status(stop_reason: Option<&str>) -> AgentStatus {
     }
 }
 
-/// The thread name from the first qualifying user message (skips system-like
-/// `<…>`/`{…}` first lines).
 fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
     let msg = entry.message.as_ref()?;
     if msg.role.as_deref() != Some("user") {
@@ -90,21 +75,16 @@ fn extract_thread_name(entry: &TranscriptEntry) -> Option<String> {
     Some(text.chars().take(80).collect())
 }
 
-/// Claude Code's `<projects>` subdirectory name for a session rooted at `cwd`:
-/// `/`, `.` and `_` all collapse to `-`. A one-way encode, not a decoder —
-/// distinct cwds can produce the same name, which is why [`find_journal`] still
-/// probes every project dir rather than trusting the guess.
-///
-/// `pub` because it is the workspace's one home for this rule and `tt-app`'s
-/// resume picker calls it — don't narrow it on a dead-code sweep.
+/// Claude Code's `<projects>` subdirectory name for a session rooted at `cwd`.
+/// One-way: distinct cwds can collide, which is why [`find_journal`] still
+/// probes. `pub` because `tt-app`'s resume picker calls it — don't narrow it
+/// on a dead-code sweep.
 pub fn encode_project_dir_name(cwd: &str) -> String {
     cwd.chars().map(|c| if matches!(c, '/' | '.' | '_') { '-' } else { c }).collect()
 }
 
-/// Locate `<projects>/<encoded cwd>/<session id>.jsonl`. [`encode_project_dir_name`]
-/// covers most paths exactly; the rare case it can't (two cwds that
-/// legitimately collide once encoded) falls back to probing every project
-/// dir for the session file.
+/// Locate `<projects>/<encoded cwd>/<session id>.jsonl`, falling back to
+/// probing every project dir when the encode collides.
 pub fn find_journal(projects_dir: &Path, cwd: &str, session_id: &str) -> Option<PathBuf> {
     let file = format!("{session_id}{JSONL_SUFFIX}");
     let guess = projects_dir.join(encode_project_dir_name(cwd)).join(&file);
@@ -121,11 +101,9 @@ pub fn find_journal(projects_dir: &Path, cwd: &str, session_id: &str) -> Option<
     None
 }
 
-/// Derive `(thread_name, status)` for a live agent detected outside the CLI
-/// snapshot (via `procenv::scan_session_agents`) by reading its transcript.
-/// Bounded reads keep large transcripts cheap: the thread name lives near the
-/// top (first user message), the latest status near the bottom (last message).
-/// Falls back to `Idle` when no status line parses.
+/// `(thread_name, status)` for a live agent detected outside the CLI snapshot.
+/// Bounded reads keep large transcripts cheap: the name is near the top, the
+/// status near the bottom.
 pub fn enrich_from_transcript(path: &Path) -> (Option<String>, AgentStatus) {
     const WINDOW: u64 = 128 * 1024;
     let head = read_window(path, 0, WINDOW);
@@ -140,8 +118,6 @@ pub fn enrich_from_transcript(path: &Path) -> (Option<String>, AgentStatus) {
     (thread_name, status)
 }
 
-/// `(dev, ino)` for rotation detection; `None` where the platform doesn't
-/// expose it.
 #[cfg(unix)]
 fn metadata_file_id(meta: &std::fs::Metadata) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
@@ -153,11 +129,8 @@ fn metadata_file_id(_meta: &std::fs::Metadata) -> Option<(u64, u64)> {
     None
 }
 
-/// How many leading bytes identify a journal (see `SessionState::head`).
 const HEAD_PROBE_LEN: usize = 64;
 
-/// The first `len` bytes of `path` (fewer if the file is shorter), or `None`
-/// if it can't be read.
 fn read_head(path: &Path, len: usize) -> Option<Vec<u8>> {
     use std::io::Read;
     let f = std::fs::File::open(path).ok()?;
@@ -166,7 +139,6 @@ fn read_head(path: &Path, len: usize) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// Everything in `path` from byte `offset` on, or `None` if it can't be read.
 fn read_from_offset(path: &Path, offset: u64) -> Option<Vec<u8>> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = std::fs::File::open(path).ok()?;
@@ -178,8 +150,7 @@ fn read_from_offset(path: &Path, offset: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// Read up to `max` bytes of `path` from byte offset `start`, lossily decoded.
-/// Partial JSONL lines at either edge simply fail to parse and are dropped by
+/// Partial JSONL lines at either edge fail to parse and are dropped by
 /// `parse_transcript`, so no newline alignment is needed.
 fn read_window(path: &Path, start: u64, max: u64) -> String {
     use std::io::{Read, Seek, SeekFrom};
@@ -196,7 +167,6 @@ fn read_window(path: &Path, start: u64, max: u64) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-/// The most recent non-AskUserQuestion tool name.
 fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
     for entry in entries.iter().rev() {
         let Some(msg) = &entry.message else { continue };
@@ -217,7 +187,6 @@ fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
     None
 }
 
-/// `/loop` state from the most recent `ScheduleWakeup` tool call.
 fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
     for entry in entries.iter().rev() {
         let Some(msg) = &entry.message else { continue };
@@ -245,8 +214,7 @@ fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
     None
 }
 
-/// Byte length up to and including the last newline (0 if none) — the offset the
-/// next read resumes from, so a partial trailing line is never consumed.
+/// Where the next read resumes, so a partial trailing line is never consumed.
 fn consumed_len(bytes: &[u8]) -> usize {
     match bytes.iter().rposition(|&b| b == b'\n') {
         Some(i) => i + 1,
@@ -254,12 +222,10 @@ fn consumed_len(bytes: &[u8]) -> usize {
     }
 }
 
-/// Claude Code labels its own generated entries (an interrupt notice, say) with
-/// a bracketed model id and a zeroed `usage`. They are structurally ordinary
-/// assistant entries, so taking the newest one's identity would relabel a 1M
-/// Sonnet session onto the default 200K window. Real model ids are never
-/// bracketed, so this rejects placeholders without rejecting a model too new
-/// for the table.
+/// Claude Code labels its own generated entries with a bracketed model id, and
+/// they are structurally ordinary assistant entries — taking the newest one's
+/// identity would relabel a 1M Sonnet session onto the 200K window. Real ids
+/// are never bracketed, so this rejects placeholders but not an unknown model.
 fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
 }
@@ -308,9 +274,8 @@ fn build_details(
     Some(base)
 }
 
-/// Refine a CLI `idle` into the journal's view when that view is one the UI
-/// treats specially: a completed turn stays `complete` (unseen-✓ flow) and
-/// an open question stays `waiting`; anything else is plain `idle`.
+/// A CLI `idle` takes the journal's view where the UI treats it specially:
+/// `complete` (unseen-✓ flow) or `waiting`; anything else is plain `idle`.
 fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
     match journal_status {
         AgentStatus::Complete => AgentStatus::Complete,
@@ -319,16 +284,14 @@ fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
     }
 }
 
-/// How long a CLI-reported `busy`/`waiting` is trusted after the journal already
-/// recorded the turn's end. Long enough that ordinary CLI lag never flips the
-/// dot, short enough that a stuck session self-heals promptly.
+/// How long a CLI `busy`/`waiting` is trusted past the journal's turn-end:
+/// past ordinary CLI lag, short enough that a stuck session self-heals.
 const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
 
-/// Cross-check a CLI-reported `busy`/`waiting` against the journal — the
-/// `busy`-side counterpart to `refine_idle`. Nothing re-derives the CLI's status
-/// while the process stays listed, so bookkeeping that fails to flip back would
-/// show the agent "working" forever. Only a journal that recorded a plain
-/// no-tool-call final response, with nothing appended since, counts.
+/// The `busy`-side counterpart to `refine_idle`. Nothing re-derives the CLI's
+/// status while the process stays listed, so bookkeeping that fails to flip
+/// back would show the agent "working" forever. Only a journal that recorded a
+/// plain no-tool-call final response, with nothing appended since, counts.
 fn refine_busy(
     cli_status: AgentStatus,
     journal_status: AgentStatus,
@@ -341,8 +304,6 @@ fn refine_busy(
     }
 }
 
-/// Terminal status when a session disappears from the CLI list: `complete` if
-/// its journal finished, `interrupted` if it still looked mid-run.
 fn exit_status(journal_status: AgentStatus) -> AgentStatus {
     match journal_status {
         AgentStatus::Complete | AgentStatus::Waiting => AgentStatus::Complete,
@@ -350,50 +311,37 @@ fn exit_status(journal_status: AgentStatus) -> AgentStatus {
     }
 }
 
-// Per-session journal enrichment state.
-
 #[derive(Debug, Clone)]
 struct SessionState {
-    /// Last status emitted for this session (the emit gate).
     emitted_status: Option<AgentStatus>,
-    /// The journal's own status derivation (feeds `refine_idle`/`exit_status`).
     journal_status: AgentStatus,
-    /// `now_ms` of the last scan that actually consumed new journal bytes
-    /// (feeds `refine_busy`'s staleness check). `0` until the journal is
-    /// first read.
+    /// Last scan that consumed new bytes; feeds `refine_busy`'s staleness
+    /// check. `0` until first read.
     journal_updated_at: i64,
-    /// Next read offset = last-newline byte boundary.
     file_offset: u64,
-    /// `(dev, ino)` of the journal the offset belongs to. A same-path
-    /// replacement that GREW the file passes the shrink check but invalidates
-    /// the offset; the inode catches most of those (unix only).
+    /// A same-path replacement that GREW the file passes the shrink check but
+    /// invalidates the offset; the inode catches most of those (unix only).
     file_id: Option<(u64, u64)>,
-    /// First bytes of the journal the offset belongs to (≤ `HEAD_PROBE_LEN`).
-    /// The inode is NOT a reliable identity: ext4 hands a just-freed inode to
-    /// the next file created, so a remove+recreate at the same path can keep
-    /// the same `(dev, ino)`. Journals are append-only, so a changed head is
-    /// the definitive replacement signal.
+    /// The inode is NOT reliable identity: ext4 hands a just-freed inode to
+    /// the next file created, so remove+recreate at one path can keep its
+    /// `(dev, ino)`. Journals are append-only, so a changed head is definitive.
     head: Vec<u8>,
     journal_path: Option<PathBuf>,
     thread_name: Option<String>,
     usage: Option<ClaudeUsageSummary>,
-    /// Session-level facts, unlike everything else derived from the transcript
-    /// tail, and only ever *stated* inside an assistant `usage` entry. The
-    /// rotation reset below drops `usage` wholesale, which would blank the UI's
-    /// readout until the next reply — never, on an idle session. Carried across
-    /// like `thread_name`, since neither changes when the journal is replaced.
+    /// Session-level, and only ever *stated* inside an assistant `usage`
+    /// entry — so the rotation reset would blank the readout until the next
+    /// reply, which on an idle session is never. Carried across like
+    /// `thread_name`: neither changes when the journal is replaced.
     model: Option<String>,
     context_max: Option<i64>,
     last_tool: Option<String>,
     subagents: SubagentRollup,
     subagent_sig: String,
-    /// Per-transcript context memo backing the rollup (see [`SubagentUsage`]).
     subagent_usage: SubagentUsage,
     loop_state: Option<LoopInfo>,
-    /// Signature of the last emitted details (usage/subagents/loop) — part of
-    /// the emit gate, so usage deltas broadcast without a status change.
+    /// Part of the emit gate, so usage deltas broadcast with no status change.
     last_emit_sig: Option<String>,
-    /// CLI fields carried for emits.
     session: Option<String>,
     cli_name: Option<String>,
 }
@@ -432,9 +380,8 @@ impl SessionState {
             &self.subagents,
             self.loop_state.as_ref(),
         );
-        // Knowing the model alone is worth an event: just after a rotation
-        // there is nothing else to report yet, and reporting `None` would blank
-        // a readout we can still answer correctly.
+        // Worth an event alone: after a rotation there is nothing else to
+        // report yet, and `None` would blank a readout we can still answer.
         let mut d = match from_tail {
             Some(d) => d,
             None if self.model.is_some() => AgentEventDetails::default(),
@@ -449,13 +396,10 @@ impl SessionState {
         Some(d)
     }
 
-    /// Record the session-level facts a fresh usage summary states. Silence is
-    /// never an update: a summary that names no usable model leaves the known
-    /// one in place rather than clearing it.
-    ///
-    /// The two are recorded together on purpose — the window is derived from
-    /// the model this same entry named, so accepting them independently could
-    /// pair one entry's model with another's window.
+    /// Silence is never an update: a summary naming no usable model leaves the
+    /// known one alone. The two are recorded together because the window comes
+    /// from the model this same entry named — accepting them independently
+    /// could pair one entry's model with another's window.
     fn remember_identity(&mut self, usage: &ClaudeUsageSummary) {
         if usage.model.is_empty() || is_placeholder_model(&usage.model) {
             return;
@@ -467,23 +411,19 @@ impl SessionState {
 
 // Watcher.
 
-/// The hybrid claude-code watcher: CLI discovery, journal enrichment.
+/// CLI discovery, journal enrichment.
 pub struct ClaudeCodeAgentWatcher {
     projects_dir: PathBuf,
     sessions: HashMap<String, SessionState>,
     agents_source: Box<dyn Fn() -> Vec<CliAgent> + Send>,
-    /// Predicate: was this pid launched by an app instance we report (carries
-    /// `TT_SESSION_ID`, and `TT_APP_INSTANCE` within the host's scope)?
-    /// Injectable so tests aren't at the mercy of real `/proc`. Production uses
-    /// [`crate::procenv::in_scope`]; externally-started terminal sessions and —
-    /// per-instance scope — agents in another app instance's PTYs are dropped.
+    /// Was this pid launched by an app instance we report? Injectable so tests
+    /// aren't at the mercy of real `/proc`. Externally-started sessions, and
+    /// another instance's PTYs under per-instance scope, are dropped.
     app_launched: Box<dyn Fn(i32) -> bool + Send>,
 }
 
 impl ClaudeCodeAgentWatcher {
-    /// Create rooted at `projects_dir` with an injectable CLI source and
-    /// app-launched predicate (tests pass fixtures/`|_| true`; production uses
-    /// the cached real CLI + real `/proc` env read).
+    /// Injectable CLI source and app-launched predicate; tests pass fixtures.
     pub fn new(
         projects_dir: PathBuf,
         agents_source: Box<dyn Fn() -> Vec<CliAgent> + Send>,
@@ -492,8 +432,8 @@ impl ClaudeCodeAgentWatcher {
         Self { projects_dir, sessions: HashMap::new(), agents_source, app_launched }
     }
 
-    /// Create using the real `~/.claude/projects` + the shared cached CLI call,
-    /// admitting only agents in `scope` (see [`crate::procenv::InstanceScope`]).
+    /// Real `~/.claude/projects` + the shared cached CLI call, admitting only
+    /// agents in `scope`.
     pub fn with_defaults(scope: crate::procenv::InstanceScope) -> Self {
         let projects_dir =
             dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude").join("projects");
@@ -503,17 +443,16 @@ impl ClaudeCodeAgentWatcher {
                 crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
                     CLI_CACHE_TTL_MS,
                 ))
+                .agents
             }),
             Box::new(move |pid| crate::procenv::in_scope(pid, &scope)),
         )
     }
 
-    /// Locate this watcher's journal for `cwd`/`session_id`.
     fn find_journal(&self, cwd: &str, session_id: &str) -> Option<PathBuf> {
         find_journal(&self.projects_dir, cwd, session_id)
     }
 
-    /// Incrementally read the session's journal tail into its state.
     fn enrich_from_journal(&mut self, session_id: &str, cwd: &str, now_ms: i64) {
         let path = match self.sessions.get(session_id).and_then(|s| s.journal_path.clone()) {
             Some(p) if p.exists() => Some(p),
@@ -523,8 +462,8 @@ impl ClaudeCodeAgentWatcher {
         state.journal_path = path.clone();
         let Some(path) = path else { return };
 
-        // Sub-agents live in a sibling dir; the parent journal can stay
-        // static for minutes while they burn tokens — compute every scan.
+        // Sub-agents live in a sibling dir and burn tokens while the parent
+        // journal stays static for minutes — so compute every scan.
         if let Some(base) = path.to_str().and_then(|s| s.strip_suffix(JSONL_SUFFIX)) {
             let dir = PathBuf::from(format!("{base}/subagents"));
             let rollup =
@@ -543,12 +482,10 @@ impl ClaudeCodeAgentWatcher {
         };
         let size = meta.len();
         let file_id = metadata_file_id(&meta);
-        // Shrunk file → reset to 0 and re-derive from scratch (all journal-
-        // derived state is stale, not just the offset). A same-path replacement
-        // that grew past the old offset is the same situation with a different
-        // symptom, caught by the inode change — except when the recreated file
-        // reuses the freed inode (ext4 does), which the head comparison catches
-        // (see `SessionState::head`).
+        // Shrunk file → reset and re-derive: all journal-derived state is
+        // stale, not just the offset. A same-path replacement that grew past
+        // the old offset is the same situation, caught by the inode — or, when
+        // ext4 reuses the freed inode, by the head (see `SessionState::head`).
         let head_changed = !state.head.is_empty()
             && state.file_offset > 0
             && read_head(&path, state.head.len()).is_some_and(|h| h != state.head);
@@ -563,18 +500,16 @@ impl ClaudeCodeAgentWatcher {
             state.last_tool = None;
             state.loop_state = None;
             state.head.clear();
-            // `model`/`context_max` deliberately survive: a replaced journal is
-            // still the same session on the same model, and re-deriving them
-            // costs a full assistant turn (see the field docs).
+            // `model`/`context_max` survive: same session, same model, and
+            // re-deriving costs a full assistant turn.
         }
         state.file_id = file_id;
         if size == state.file_offset {
             return;
         }
 
-        // Read only the bytes past the stored offset: journals grow to tens of
-        // MB and are appended several times a second while an agent streams —
-        // re-reading the whole file per scan was a hot loop.
+        // Journals reach tens of MB and append several times a second while
+        // an agent streams; re-reading the whole file per scan was a hot loop.
         let Some(fresh) = read_from_offset(&path, state.file_offset) else {
             return;
         };
@@ -628,8 +563,8 @@ impl ClaudeCodeAgentWatcher {
             status,
             ts: now_ms,
             thread_id: Some(session_id.to_string()),
-            // Journal first-prompt text beats the CLI's interactive slugs
-            // (`proj-44`); background agents get descriptive CLI names.
+            // First-prompt text beats the CLI's interactive slugs (`proj-44`);
+            // background agents get descriptive CLI names.
             thread_name: state.thread_name.clone().or_else(|| state.cli_name.clone()),
             unseen: None,
             details: state.details(),
@@ -642,14 +577,11 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
         let agents = (self.agents_source)();
         let live_ids: HashSet<String> = agents.iter().map(|a| a.session_id.clone()).collect();
 
-        // Live sessions: resolve, enrich, emit on change.
         for agent in &agents {
-            // Only report agents in scope: launched by an app instance we
-            // cover (TT_SESSION_ID + TT_APP_INSTANCE, see procenv). A Claude
-            // started in an external terminal — even one whose cwd is inside a
-            // tracked checkout — or in another app instance's PTY is not ours
-            // to surface, so it never lands on the board. (Env read is
-            // Linux-only today; on other platforms nothing is excluded.)
+            // A Claude started in an external terminal — even one whose cwd is
+            // inside a tracked checkout — or in another instance's PTY is not
+            // ours to surface. (Env read is Linux-only; elsewhere nothing is
+            // excluded.)
             if !(self.app_launched)(agent.pid) {
                 continue;
             }
@@ -671,8 +603,7 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
                 ),
             };
 
-            // Emit gate: status change, or a details change (sub-agent set,
-            // loop wake, usage) captured as a signature.
+            // Gate: a status change, or a details change caught by signature.
             let status_changed = state.emitted_status != Some(status);
             let sig = format!(
                 "{}|{:?}|{:?}|{:?}|{:?}",
@@ -680,9 +611,8 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
                 state.loop_state.as_ref().map(|l| l.next_wake_at),
                 state.usage.as_ref().map(|u| (u.context_used, u.cache_expires_at)),
                 state.thread_name,
-                // Part of the emitted details in its own right (it outlives the
-                // usage summary it came from), so a newly-learned model has to
-                // open the gate on its own.
+                // Outlives the usage summary it came from, so a newly-learned
+                // model has to open the gate on its own.
                 (&state.model, state.context_max),
             );
             let details_changed = state.last_emit_sig.as_deref() != Some(sig.as_str());
@@ -695,7 +625,6 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             }
         }
 
-        // Exited sessions: one final journal read, then a terminal emit.
         let gone: Vec<String> =
             self.sessions.keys().filter(|id| !live_ids.contains(*id)).cloned().collect();
         for session_id in gone {
@@ -769,8 +698,7 @@ mod tests {
         let watcher = ClaudeCodeAgentWatcher::new(
             projects.clone(),
             Box::new(move || source.lock().unwrap().clone()),
-            // Tests can't read real /proc for fake pids — treat all as
-            // app-launched. `drops_external_agents` overrides this per-pid.
+            // No real /proc for fake pids; `drops_external_agents` overrides.
             Box::new(|_| true),
         );
         Fixture { _tmp: tmp, projects, agents, watcher }
@@ -789,20 +717,16 @@ mod tests {
     const USER_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:00.000Z","message":{"role":"user","content":"fix the flaky test"}}"#;
     const RUNNING_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:05.000Z","message":{"role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","name":"Bash"}],"usage":{"input_tokens":10,"output_tokens":5}}}"#;
     const DONE_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:10.000Z","message":{"role":"assistant","content":[{"type":"text","text":"all done"}]}}"#;
-    /// Mid-turn narration: text-only, but the response it belongs to also asked
-    /// for a tool, so `stop_reason` is `tool_use`. Shape copied from a real
-    /// journal — this is the overwhelmingly common assistant entry (67 of them
-    /// against one `end_turn` in the session that motivated this).
+    /// Text-only, but its response also asked for a tool, so `stop_reason` is
+    /// `tool_use`. The overwhelmingly common assistant entry.
     const NARRATION_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:07.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Let me check the tests."}],"stop_reason":"tool_use"}}"#;
     /// A genuinely finished turn: text, handed back to the user.
     const END_TURN_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:12.000Z","message":{"role":"assistant","content":[{"type":"text","text":"all done"}],"stop_reason":"end_turn"}}"#;
 
-    /// The needs-you flicker, at its source. Claude Code writes each content
-    /// block of one response as its own transcript entry, so a working agent
-    /// leaves text-only entries behind every few seconds; reading those as a
-    /// finished turn marked the session `Complete` + unseen, which is what put
-    /// the "⚑ Needs you" callout (and a desktop notification) on screen and
-    /// took it away again on the next tool call.
+    /// The needs-you flicker at its source: each content block is its own
+    /// entry, so a working agent leaves text-only entries every few seconds.
+    /// Reading those as a finished turn flashed "⚑ Needs you" and a
+    /// notification, then took them away on the next tool call.
     #[test]
     fn mid_turn_narration_is_not_a_finished_turn() {
         let narration: TranscriptEntry = serde_json::from_str(NARRATION_LINE).unwrap();
@@ -811,23 +735,21 @@ mod tests {
         let ended: TranscriptEntry = serde_json::from_str(END_TURN_LINE).unwrap();
         assert_eq!(determine_status(&ended), Some(AgentStatus::Complete));
 
-        // No `stop_reason` at all (older transcripts, partial re-logs) keeps the
-        // original reading rather than silently dropping a real turn end.
+        // Older transcripts and partial re-logs keep the original reading
+        // rather than silently dropping a real turn end.
         let bare: TranscriptEntry = serde_json::from_str(DONE_LINE).unwrap();
         assert_eq!(determine_status(&bare), Some(AgentStatus::Complete));
     }
 
-    /// The same thing end-to-end: a session mid-tool-run whose journal grows a
-    /// narration entry must not change status. Before the `stop_reason` check
-    /// this emitted a second event flipping `busy` → `complete`, and every such
-    /// flip is one visible flash of the banner.
+    /// End-to-end: a narration entry mid-tool-run must not change status.
+    /// Before the `stop_reason` check this flipped `busy` → `complete`, and
+    /// every flip is one visible flash of the banner.
     #[test]
     fn a_narration_entry_does_not_flip_a_working_agent_to_complete() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-n", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![CliAgent {
-            // No CLI status — the case that falls through to `refine_idle` and
-            // trusts the journal outright.
+            // Falls through to `refine_idle`, trusting the journal outright.
             status: None,
             ..cli_agent(100, "/home/u/proj", "sid-n", "busy")
         }];
@@ -882,11 +804,9 @@ mod tests {
         assert_eq!(details.last_tool.as_deref(), Some("Bash"));
     }
 
-    /// An interrupt makes Claude Code append a `<synthetic>` assistant entry
-    /// with an all-zero usage block. It is the newest entry with `usage`, so it
-    /// wins `extract_usage_summary` — but it must not be allowed to relabel the
-    /// session, or a 1M Sonnet run reads as `<synthetic>` on a 200K window for
-    /// the rest of its life.
+    /// An interrupt appends a `<synthetic>` entry with all-zero usage, and it
+    /// is the newest entry with `usage` — but relabelling on it leaves a 1M
+    /// Sonnet run reading as `<synthetic>` on a 200K window for good.
     #[test]
     fn a_synthetic_entry_never_restates_the_model() {
         // Shape copied from a real journal (message.model = "<synthetic>").
@@ -899,8 +819,7 @@ mod tests {
         f.watcher.scan(&mut ctx, 1_000);
         let window = ctx.events.last().unwrap().details.as_ref().unwrap().context_max.unwrap();
 
-        // Interrupt lands, then the journal is replaced — the path where the
-        // remembered identity is all that's left to report.
+        // Then the journal is replaced: remembered identity is all that's left.
         write_journal(
             &f.projects,
             "/home/u/proj",
@@ -916,8 +835,7 @@ mod tests {
         assert_eq!(d.context_max, Some(window));
     }
 
-    /// A journal replaced wholesale still describes the same running session on
-    /// the same model — only the counters read off the old bytes are stale.
+    /// Same session, same model; only the position-derived counters are stale.
     #[test]
     fn model_survives_a_journal_rotation() {
         let mut f = fixture();
@@ -990,35 +908,28 @@ mod tests {
 
     #[test]
     fn stuck_busy_from_stale_cli_status_self_heals_to_complete() {
-        // Reproduces the reported bug: the CLI's own `claude agents --all
-        // --json` keeps reporting `busy` long after the transcript recorded
-        // the turn's real end (a final assistant message with no tool
-        // calls) — the board must not pulse "Working…" forever.
+        // The reported bug: the CLI keeps reporting `busy` long after the
+        // transcript recorded the turn's end, and the board pulsed forever.
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/p", "sid-stuck", &[USER_LINE, DONE_LINE]);
         *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-stuck", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
-        // Fresh discovery: the journal is already Complete, but a brief lag
-        // in the CLI's own status catching up must not immediately flip it —
-        // avoids flapping the dot for genuine, short-lived staleness.
+        // A brief CLI lag must not flip it immediately, or the dot flaps.
         f.watcher.scan(&mut ctx, 1_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
 
-        // Nothing new lands in the journal, and the CLI still insists it's
-        // busy well past the staleness window — that combination means the
-        // CLI's bookkeeping is stuck, not that the agent is still working.
+        // Nothing new in the journal plus a CLI still insisting past the
+        // window means stuck bookkeeping, not a working agent.
         f.watcher.scan(&mut ctx, 1_000 + STALE_BUSY_JOURNAL_MS + 1);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
     #[test]
     fn busy_with_in_flight_tool_call_never_goes_stale() {
-        // A session can legitimately run a long tool (e.g. a multi-minute
-        // build) with no new journal writes in between — the journal still
-        // shows Busy (the last entry is a tool_use), so the staleness check
-        // must never kick in regardless of elapsed time.
+        // A multi-minute build writes nothing meanwhile, but the journal still
+        // shows Busy — so staleness must never kick in, however long it runs.
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/p", "sid-running", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-running", "busy")];
@@ -1032,9 +943,8 @@ mod tests {
 
     #[test]
     fn drops_external_agents() {
-        // Two live Claudes in the same tracked checkout: one the app launched
-        // (pid 100), one started in a plain terminal (pid 200). Only the
-        // app-launched one should reach the board.
+        // Two live Claudes in one checkout; only the app-launched pid 100
+        // should reach the board.
         let tmp = TempDir::new().unwrap();
         let projects = tmp.path().join("projects");
         std::fs::create_dir_all(&projects).unwrap();

@@ -110,6 +110,32 @@ struct BatchGuards {
     slack: Arc<AtomicBool>,
 }
 
+/// Consecutive ticks each `gh`-shelling collector has given up while the window
+/// was in the background. Persisted across settings reloads, like the guards.
+#[derive(Default)]
+struct BackgroundSkips {
+    prs_open: u8,
+    prs_merged: u8,
+    issues: u8,
+}
+
+/// Ticks a collector forfeits in the background before one is let through, so a
+/// cadence stretches five-fold while nobody is reading the board. Only the
+/// `gh`-shelling collectors are gated: calendar already has quiet hours, and
+/// Slack's whole job is to notice a DM you haven't seen.
+const UNFOCUSED_TICK_SKIPS: u8 = 4;
+
+/// `true` when this tick should actually run. Focus resets the count, so the
+/// first tick after coming back is never the one that gets skipped.
+fn tick_due(app: &AppHandle, skips: &mut u8) -> bool {
+    if window_focused(app) || *skips >= UNFOCUSED_TICK_SKIPS {
+        *skips = 0;
+        return true;
+    }
+    *skips += 1;
+    false
+}
+
 /// `true` when the slot was free and is now claimed — the caller must release it when
 /// the batch finishes. `false` skips this tick.
 fn claim_in_flight(guard: &AtomicBool) -> bool {
@@ -195,6 +221,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
         // Guards persist across reloads too: a batch spawned under the old cadence must
         // still block a duplicate under the new one.
         let guards = BatchGuards::default();
+        let mut skips = BackgroundSkips::default();
         // Eager-refresh accelerant: the plugin's PostToolUse hook runs `tt task nudge`
         // after a `gh` mutation so that view updates before its next scheduled tick.
         // `.ok()` falls back to the poll cadence.
@@ -252,16 +279,22 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                 tokio::select! {
                     _ = reload.notified() => break,
                     _ = pr_tick.tick(), if collectors.prs.enabled => {
-                        let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_open);
+                        if tick_due(&app, &mut skips.prs_open) {
+                            let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms };
+                            spawn_batch(&app, batch, calendar_period_ms, &guards.prs_open);
+                        }
                     }
                     _ = pr_merged_tick.tick(), if collectors.prs.enabled => {
-                        let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.prs_merged);
+                        if tick_due(&app, &mut skips.prs_merged) {
+                            let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms };
+                            spawn_batch(&app, batch, calendar_period_ms, &guards.prs_merged);
+                        }
                     }
                     _ = issue_tick.tick(), if collectors.issues.enabled => {
-                        let batch = Batch::Issues { reuse_ms: issue_reuse_ms };
-                        spawn_batch(&app, batch, calendar_period_ms, &guards.issues);
+                        if tick_due(&app, &mut skips.issues) {
+                            let batch = Batch::Issues { reuse_ms: issue_reuse_ms };
+                            spawn_batch(&app, batch, calendar_period_ms, &guards.issues);
+                        }
                     }
                     _ = calendar_tick.tick(), if collectors.calendar.enabled => {
                         // Outside working hours, skip the token-costing `claude -p`

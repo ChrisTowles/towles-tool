@@ -9,6 +9,7 @@ const EMPTY: StatePayload = {
   compactRecommendPercent: 30,
   windows: EMPTY_WINDOWS,
   collapsed: {},
+  agentScanOk: true,
   ts: 0,
 };
 

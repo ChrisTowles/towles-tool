@@ -521,8 +521,10 @@ pub fn run() {
                 });
             }
 
-            // `git fetch origin` every 3 minutes per repo: the poll only reads
-            // cached remote refs, so without this "behind main" never moves.
+            // `git fetch origin`: the poll only reads cached remote refs, so
+            // without this "behind main" never moves. The tick is the *fastest*
+            // cadence any repo can earn — `fetch_targets` decides which repos
+            // are actually due, so an idle fork costs an hour, not 3 minutes.
             {
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
@@ -531,13 +533,7 @@ pub fn run() {
                         interval.tick().await;
                         let fetch_engine = engine.clone();
                         let _ = tauri::async_runtime::spawn_blocking(move || {
-                            let targets: Vec<String> = fetch_engine
-                                .lock()
-                                .unwrap()
-                                .git_targets()
-                                .into_iter()
-                                .map(|(dir, _, _)| dir)
-                                .collect();
+                            let targets = fetch_engine.lock().unwrap().fetch_targets(now_ms());
                             tt_agentboard::git_info::fetch_all(&targets);
                         })
                         .await;
@@ -645,6 +641,15 @@ pub fn run() {
             // steal focus, and when?" after the fact.
             WindowEvent::Focused(focused) => {
                 tracing::info!(focused = *focused, window = window.label(), "window.focus_changed");
+                // Backgrounded, the pollers stretch their cadences; coming back
+                // invalidates so the board is current by the time it is read,
+                // rather than serving whatever the wide ceiling still allows.
+                if let Some(ab) = window.app_handle().try_state::<Ab>() {
+                    let moved = ab.engine.lock().unwrap().set_window_focused(*focused);
+                    if moved && *focused {
+                        ab.scan.notify_one();
+                    }
+                }
             }
             _ => {}
         })
