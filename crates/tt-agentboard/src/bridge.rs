@@ -39,6 +39,11 @@ pub struct StatePayload {
     pub windows: crate::windows::WindowsPayload,
     /// Rail collapse state by row key, attached by the engine; absent ⇒ expanded.
     pub collapsed: std::collections::BTreeMap<String, bool>,
+    /// False once `claude agents` has failed enough times running that the
+    /// board's agent rows can't be trusted. Stamped host-side in
+    /// `stamp_pty_state`, since the engine never runs the scan itself — an
+    /// empty board then reads as "couldn't ask", not "nothing running".
+    pub agent_scan_ok: bool,
     pub ts: i64,
 }
 
@@ -137,6 +142,7 @@ pub fn assemble_state(
         compact_recommend_percent,
         windows: crate::windows::WindowsPayload::default(), // engine attaches
         collapsed: std::collections::BTreeMap::new(),       // engine attaches
+        agent_scan_ok: true,                                // host stamps
         ts,
     }
 }

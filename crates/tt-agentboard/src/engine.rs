@@ -61,6 +61,7 @@ pub enum GitInvalidation {
     BaseBranch,
     WorktreeRemoved,
     Staged,
+    WindowFocus,
 }
 
 impl GitInvalidation {
@@ -72,9 +73,23 @@ impl GitInvalidation {
             Self::BaseBranch => "base_branch",
             Self::WorktreeRemoved => "worktree_removed",
             Self::Staged => "staged",
+            Self::WindowFocus => "window_focus",
         }
     }
 }
+
+/// Fetch cadence per activity tier, and the windows that sort a repo into one.
+/// A repo with a task worktree, or touched within [`ACTIVE_WINDOW_MS`], keeps
+/// the cadence every repo used to get; the rest earn theirs back.
+const ACTIVE_FETCH_MS: i64 = 3 * 60 * 1000;
+const RECENT_FETCH_MS: i64 = 15 * 60 * 1000;
+const IDLE_FETCH_MS: i64 = 60 * 60 * 1000;
+const ACTIVE_WINDOW_MS: i64 = 60 * 60 * 1000;
+const RECENT_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Every tier stretches by this much while the window is in the background —
+/// "behind main" has no reader until focus returns.
+const UNFOCUSED_FETCH_MULT: i64 = 5;
 
 const STUCK_MS: i64 = 3 * 60 * 1000;
 const STALE_MS: i64 = 12 * 60 * 60 * 1000;
@@ -124,6 +139,10 @@ pub struct Engine {
     /// cache field. The 2s scan loop and the 10s stat poll share a TTL, so without
     /// it both race duplicate recomputes. Released by [`Self::store_git_info`].
     git_pending: HashMap<String, i64>,
+    /// When each repo was last handed to a `git fetch`, keying the activity
+    /// tier in [`Self::fetch_targets`]. Repo roots only, never worktrees: one
+    /// fetch serves every worktree sharing the `.git`.
+    git_fetched: HashMap<String, i64>,
     watchers: Vec<Box<dyn AgentWatcher + Send>>,
     compact_recommend_percent: u8,
     /// `agentboard.showUnmanagedWorktrees`, off by default — a display filter over
@@ -154,7 +173,8 @@ pub struct AgentSnapshot {
 pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot {
     let cli_agents = crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
         crate::watchers::claude_code::CLI_CACHE_TTL_MS,
-    ));
+    ))
+    .agents;
     let live_threads: HashSet<String> = cli_agents.iter().map(|a| a.session_id.clone()).collect();
     // Unmapped falls back to the folder's default session; out of `scope` is
     // dropped entirely.
@@ -234,6 +254,7 @@ impl Engine {
             )),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            git_fetched: HashMap::new(),
             watchers: vec![Box::new(ClaudeCodeAgentWatcher::with_defaults(
                 scope.clone(),
             ))],
@@ -410,6 +431,19 @@ impl Engine {
         moved
     }
 
+    /// Follow OS window focus, widening the git-freshness ceiling while the app
+    /// sits in the background. Coming back invalidates every row rather than
+    /// serving one up to five minutes old to someone who just looked at it.
+    /// Returns whether focus actually moved.
+    pub fn set_window_focused(&mut self, focused: bool) -> bool {
+        let moved = self.git_cache.set_window_focused(focused);
+        if moved && focused {
+            self.git_cache.invalidate(None);
+            tracing::debug!(reason = GitInvalidation::WindowFocus.as_str(), "git.invalidated");
+        }
+        moved
+    }
+
     /// Rail dirs whose git-cache entry is missing or past the TTL. Claims each so
     /// the other poll loop can't retake it.
     pub fn stale_git_targets(
@@ -487,6 +521,52 @@ impl Engine {
         self.reload_repos();
         let dirs = repo_entries(&self.repo_paths).into_iter().map(|e| e.dir).collect();
         self.targets_for(dirs)
+    }
+
+    /// The repos due a `git fetch` right now, on a cadence tiered by whether
+    /// anyone is actually working in them.
+    ///
+    /// A flat cadence over every tracked repo is what made fetching the single
+    /// most expensive thing the app does: a fork nobody has opened in a month
+    /// costs exactly what the repo with a live task in it costs. The tier reads
+    /// signals already cached — a rail worktree under the repo, and `GitInfo`'s
+    /// two "somebody was here" stamps — so classifying costs no extra probing.
+    /// Marks each returned dir fetched, so the caller must actually fetch it.
+    pub fn fetch_targets(&mut self, now: i64) -> Vec<String> {
+        let unfocused_mult = if self.git_cache.window_focused() { 1 } else { UNFOCUSED_FETCH_MULT };
+        let due: Vec<String> = self
+            .git_targets()
+            .into_iter()
+            .filter(|(dir, _, info)| {
+                let last = self.git_fetched.get(dir).copied().unwrap_or(0);
+                now - last >= self.fetch_cadence_ms(dir, info, now) * unfocused_mult
+            })
+            .map(|(dir, _, _)| dir)
+            .collect();
+        for dir in &due {
+            self.git_fetched.insert(dir.clone(), now);
+        }
+        due
+    }
+
+    /// How often one repo earns a fetch. "Active" is deliberately generous —
+    /// being wrong here costs a stale "behind main" on a repo being worked in.
+    fn fetch_cadence_ms(&self, dir: &str, info: &crate::git_info::GitInfo, now: i64) -> i64 {
+        // A task under it, or its diff pane open: both mean somebody is reading
+        // this repo's "behind main" right now, whatever the mtimes say.
+        if self.git_cache.focused_dir() == Some(dir)
+            || self.task_worktrees.iter().any(|w| w.repo_root == dir)
+        {
+            return ACTIVE_FETCH_MS;
+        }
+        // A stamp of 0 means "clean, never read" — `age` then runs to the
+        // epoch and lands the repo in the idle tier, which is the right guess.
+        let age = now - info.worktree_touched_ms.max(info.head_commit_ms);
+        match age {
+            a if a < ACTIVE_WINDOW_MS => ACTIVE_FETCH_MS,
+            a if a < RECENT_WINDOW_MS => RECENT_FETCH_MS,
+            _ => IDLE_FETCH_MS,
+        }
     }
 
     /// Store one repo's git info, returning whether it differs. A compute that
@@ -916,6 +996,7 @@ impl Engine {
             collapse: crate::collapse::CollapseStore::new(None),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            git_fetched: HashMap::new(),
             watchers: vec![],
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
@@ -1337,6 +1418,102 @@ mod engine_tests {
         );
         let recovered = e.stale_git_targets(1000 + GIT_PENDING_GUARD_MS);
         assert_eq!(recovered.len(), 1, "the claim expired, so the dir is eligible again");
+    }
+
+    /// The fleet's whole fetch bill was one flat cadence over every tracked
+    /// repo. A fork nobody has opened must not cost what a live task costs.
+    #[test]
+    fn fetch_tiers_by_activity_so_an_idle_repo_stops_costing_a_live_one() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000_000;
+        let touched =
+            |ms: i64| crate::git_info::GitInfo { worktree_touched_ms: ms, ..Default::default() };
+        for dir in ["/repo/live", "/repo/warm", "/repo/cold"] {
+            e.add_repo(dir);
+        }
+        e.store_git_info("/repo/live", touched(now - 60_000), now);
+        e.store_git_info("/repo/warm", touched(now - 6 * 60 * 60 * 1000), now);
+        e.store_git_info("/repo/cold", touched(now - 40 * 24 * 60 * 60 * 1000), now);
+
+        assert_eq!(e.fetch_targets(now).len(), 3, "everything is due on the first pass");
+
+        // Three minutes on: only the active repo has earned another fetch.
+        assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS), vec!["/repo/live".to_string()]);
+        // A quarter hour on: the recently-worked one joins it.
+        let due = e.fetch_targets(now + RECENT_FETCH_MS);
+        assert!(due.contains(&"/repo/live".to_string()) && due.contains(&"/repo/warm".to_string()));
+        assert!(!due.contains(&"/repo/cold".to_string()), "40 days idle is not a 15-minute repo");
+        // An hour on, the idle one finally comes round.
+        assert!(e.fetch_targets(now + IDLE_FETCH_MS).contains(&"/repo/cold".to_string()));
+    }
+
+    /// An untouched checkout with a task open in it is the case the mtime
+    /// signal misses — the work is happening in the worktree, not the root.
+    #[test]
+    fn a_repo_with_a_task_worktree_keeps_the_active_cadence() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000_000;
+        e.add_repo("/repo/hosting");
+        e.store_git_info("/repo/hosting", crate::git_info::GitInfo::default(), now);
+        e.set_task_worktrees(vec![tt_store::RailWorktree {
+            task_id: 1,
+            kind: tt_store::TaskKind::Task,
+            status: "running".into(),
+            repo_root: "/repo/hosting".into(),
+            dir: "/repo/hosting/.claude/worktrees/feat-x".into(),
+            branch: Some("feat-x".into()),
+            created_at: now,
+        }]);
+
+        assert_eq!(e.fetch_targets(now).len(), 1);
+        assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS), vec!["/repo/hosting".to_string()]);
+    }
+
+    /// The diff pane is a live reader of exactly this number, so the repo it
+    /// is open on keeps the fast cadence however stale its mtimes look.
+    #[test]
+    fn the_repo_whose_diff_is_open_stays_on_the_active_cadence() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000_000;
+        e.add_repo("/repo/reading");
+        e.store_git_info("/repo/reading", crate::git_info::GitInfo::default(), now);
+        assert_eq!(e.fetch_targets(now).len(), 1);
+        assert!(e.fetch_targets(now + ACTIVE_FETCH_MS).is_empty(), "idle without the pane");
+
+        e.set_diff_focus("/repo/reading", true);
+        assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS), vec!["/repo/reading".to_string()]);
+    }
+
+    /// Nobody is reading "behind main" while the window is in the background.
+    #[test]
+    fn an_unfocused_window_stretches_every_fetch_tier() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000_000;
+        e.add_repo("/repo/live");
+        e.store_git_info(
+            "/repo/live",
+            crate::git_info::GitInfo { worktree_touched_ms: now, ..Default::default() },
+            now,
+        );
+        assert_eq!(e.fetch_targets(now).len(), 1);
+
+        e.set_window_focused(false);
+        assert!(e.fetch_targets(now + ACTIVE_FETCH_MS).is_empty(), "backgrounded, so not yet");
+        assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS * UNFOCUSED_FETCH_MULT).len(), 1);
+    }
+
+    /// Coming back to the window must not serve rows up to five minutes old.
+    #[test]
+    fn refocusing_invalidates_rather_than_serving_a_background_ttl() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000_000;
+        e.store_git_info("/repo/a", git_info("main"), now);
+        assert!(e.set_window_focused(false));
+        assert!(e.git_cache.is_fresh("/repo/a", now + 90_000), "background widens the ceiling");
+
+        assert!(e.set_window_focused(true));
+        assert!(!e.git_cache.is_fresh("/repo/a", now + 90_000), "refocus invalidates");
+        assert!(!e.set_window_focused(true), "no move, no second invalidation");
     }
 
     /// Switching folders mounts the new pane before the old one's cleanup; that

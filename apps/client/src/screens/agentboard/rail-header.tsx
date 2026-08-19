@@ -10,6 +10,7 @@ import {
   GitPullRequest,
   History,
   PanelLeftClose,
+  RadioTower,
 } from "lucide-react";
 import { DismissButton } from "@/components/store-bits";
 import {
@@ -121,6 +122,7 @@ function RailFilterMenu(props: {
 export function RailHeader(props: {
   attention: AttentionItem[];
   missingRepoCount: number;
+  agentScanOk: boolean;
   dismissedPrCount: number;
   clearingDismissals: boolean;
   filter: RailFilter;
@@ -139,6 +141,7 @@ export function RailHeader(props: {
   const {
     attention,
     missingRepoCount,
+    agentScanOk,
     dismissedPrCount,
     clearingDismissals,
     filter,
@@ -170,6 +173,17 @@ export function RailHeader(props: {
               <FolderPlus className="size-3.5" /> Manage repos
             </button>
           </Hint>
+          {!agentScanOk && (
+            <Hint label="Can't reach `claude agents` — agent status on these rows is missing, not empty. Retrying with a widening backoff.">
+              <span
+                role="status"
+                aria-label="Agent status unavailable"
+                className="rounded-md p-1 text-amber-500"
+              >
+                <RadioTower className="size-3.5" />
+              </span>
+            </Hint>
+          )}
           {missingRepoCount > 0 && (
             <Hint
               label={`Untrack ${missingRepoCount} repo${missingRepoCount === 1 ? "" : "s"} whose director${missingRepoCount === 1 ? "y is" : "ies are"} gone from disk`}

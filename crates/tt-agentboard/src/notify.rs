@@ -138,6 +138,7 @@ mod tests {
             compact_recommend_percent: 30,
             windows: crate::windows::WindowsPayload::default(),
             collapsed: Default::default(),
+            agent_scan_ok: true,
             ts: 0,
         }
     }

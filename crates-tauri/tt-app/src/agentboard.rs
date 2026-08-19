@@ -29,6 +29,11 @@ pub struct Ab {
     pub ever_live: Mutex<HashSet<String>>,
 }
 
+/// Consecutive `claude agents` failures before the board says so out loud. Two,
+/// not one: a single miss is covered by the next retry, and a banner that
+/// flickers on every hiccup is one nobody reads.
+const SCAN_FAILURES_BEFORE_DEGRADED: u32 = 2;
+
 /// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from the
 /// app's PTY registry — the engine can't see PTYs, and every payload leaving the
 /// app passes through here first. Status is load-bearing: the engine's verdict
@@ -43,6 +48,10 @@ pub fn stamp_pty_state(
 ) {
     let crate::terminal::PtyEmitState { live, shell_kinds, signals: pty_signals, port_drift } =
         terms.emit_state();
+    // One failure is a hiccup the retry covers; a run of them means the rows
+    // below are missing agents rather than reporting none.
+    payload.agent_scan_ok =
+        tt_agentboard::claude_cli::consecutive_scan_failures() < SCAN_FAILURES_BEFORE_DEGRADED;
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
             // Only this process knows whether a create/removal is running here.

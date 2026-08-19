@@ -99,12 +99,30 @@ const GIT_CACHE_TTL_MS: i64 = 60_000;
 /// N checkouts over, but the row actually being read can.
 const FOCUSED_GIT_CACHE_TTL_MS: i64 = 10_000;
 
+/// The ceiling while the app window itself is in the background. Nobody is
+/// reading any row, so the only job left is to be current again by the time
+/// focus returns — and refocus invalidates eagerly rather than waiting this
+/// out. Both git poll loops gate on [`GitInfoCache::is_fresh`], so widening it
+/// here backs off both at once and keeps them on the one signal they must
+/// share.
+const UNFOCUSED_GIT_CACHE_TTL_MS: i64 = 300_000;
+
 /// TTL-as-backup-ceiling plus stale-serve. The recomputing poll loop is Tauri-side.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GitInfoCache {
     entries: HashMap<String, (GitInfo, i64)>,
     /// The checkout being read right now — see [`FOCUSED_GIT_CACHE_TTL_MS`].
     focused: Option<String>,
+    /// Whether the OS says the app window has focus at all — see
+    /// [`UNFOCUSED_GIT_CACHE_TTL_MS`]. Starts true: the window is focused when
+    /// it opens, and guessing "background" would stall the first paint.
+    window_focused: bool,
+}
+
+impl Default for GitInfoCache {
+    fn default() -> Self {
+        Self { entries: HashMap::new(), focused: None, window_focused: true }
+    }
 }
 
 impl GitInfoCache {
@@ -117,12 +135,23 @@ impl GitInfoCache {
     }
 
     pub fn is_fresh(&self, dir: &str, now_ms: i64) -> bool {
-        let ttl = if self.focused.as_deref() == Some(dir) {
-            FOCUSED_GIT_CACHE_TTL_MS
-        } else {
-            GIT_CACHE_TTL_MS
+        // The focused row keeps its short ceiling even in the background: it is
+        // the one the user lands back on, and it is a single repo.
+        let ttl = match (self.focused.as_deref() == Some(dir), self.window_focused) {
+            (true, _) => FOCUSED_GIT_CACHE_TTL_MS,
+            (false, true) => GIT_CACHE_TTL_MS,
+            (false, false) => UNFOCUSED_GIT_CACHE_TTL_MS,
         };
         self.entries.get(dir).is_some_and(|(_, ts)| now_ms - ts < ttl)
+    }
+
+    /// Track OS window focus. Returns whether it moved, so the caller can
+    /// invalidate on the way back in rather than serving up to
+    /// [`UNFOCUSED_GIT_CACHE_TTL_MS`]-old rows to someone who just looked.
+    pub fn set_window_focused(&mut self, focused: bool) -> bool {
+        let moved = self.window_focused != focused;
+        self.window_focused = focused;
+        moved
     }
 
     /// Aim the short ceiling at one checkout. Returns whether the focus moved.
@@ -135,6 +164,10 @@ impl GitInfoCache {
 
     pub fn focused_dir(&self) -> Option<&str> {
         self.focused.as_deref()
+    }
+
+    pub fn window_focused(&self) -> bool {
+        self.window_focused
     }
 
     /// Cache-only, fresh or stale: recomputing is the poll's job, never a read's.

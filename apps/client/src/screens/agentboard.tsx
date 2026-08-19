@@ -1038,6 +1038,7 @@ export function AgentboardScreen() {
                   <RailHeader
                     attention={attention.items}
                     missingRepoCount={missingRepoCount}
+                    agentScanOk={state.agentScanOk !== false}
                     dismissedPrCount={attention.dismissedPrCount}
                     clearingDismissals={attention.clearingDismissals}
                     filter={filter}

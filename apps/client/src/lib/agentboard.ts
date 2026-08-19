@@ -275,6 +275,9 @@ export type StatePayload = {
   compactRecommendPercent: number;
   windows: WireWindowsPayload;
   collapsed: Record<string, boolean>;
+  /** False when `claude agents` keeps failing: the rows below are missing
+   * agents rather than reporting none. */
+  agentScanOk: boolean;
   ts: number;
 };
 

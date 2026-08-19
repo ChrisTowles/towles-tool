@@ -52,6 +52,7 @@ const NO_AGENTS: StatePayload = {
   compactRecommendPercent: 30,
   windows: { windows: [], activeWindows: {} },
   collapsed: {},
+  agentScanOk: true,
   ts: 0,
 };
 
