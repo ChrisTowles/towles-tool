@@ -1,0 +1,16 @@
+[package]
+name = "tt-codeserver"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+libc = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tt-exec = { workspace = true }
+wait-timeout = { workspace = true }
+
+[lints]
+workspace = true

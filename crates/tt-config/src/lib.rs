@@ -147,6 +147,9 @@ pub struct AgentboardSettings {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_pane: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_server_editor: Option<bool>,
 }
 
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
@@ -779,6 +782,17 @@ pub fn browser_profile_dir() -> Result<PathBuf> {
 pub fn dm_dismissals_path() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
         .join("dm-dismissals.json"))
+}
+
+/// *Instance-scoped*: two checkouts at once contend on one `code-server-ipc.sock`.
+pub fn code_server_user_data_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("code-server"))
+}
+
+/// *Shared*, like the Chrome profile: an installed extension is a machine fact.
+pub fn code_server_extensions_dir() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("code-server-extensions"))
 }
 
 /// Claimed-port ledgers. *Shared*: every worktree reads the same one, and it

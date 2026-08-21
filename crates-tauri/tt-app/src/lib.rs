@@ -8,6 +8,7 @@ mod agentboard;
 mod asset;
 mod browser;
 mod claude_sessions;
+mod codeserver;
 mod diagnostics;
 mod doctor;
 mod gh_actions;
@@ -610,6 +611,7 @@ pub fn run() {
             Ok(())
         })
         .manage(browser::BrowserHost::default())
+        .manage(codeserver::CodeServerHost::default())
         // Shared: a pane outlives the command that created it (see `tt-pane`).
         .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
@@ -691,6 +693,9 @@ pub fn run() {
             agentboard::ab_unstage_file,
             agentboard::ab_stage_buffer,
             agentboard::ab_get_commit_stats,
+            codeserver::code_server_status,
+            codeserver::code_server_open,
+            codeserver::code_server_stop,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,

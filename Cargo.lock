@@ -8959,6 +8959,7 @@ dependencies = [
  "tt-agentboard",
  "tt-browser",
  "tt-claude-sessions",
+ "tt-codeserver",
  "tt-collect",
  "tt-config",
  "tt-doctor",
@@ -9037,6 +9038,18 @@ dependencies = [
  "tt-tasks",
  "tt-telemetry",
  "ureq",
+]
+
+[[package]]
+name = "tt-codeserver"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+ "tt-exec",
+ "wait-timeout",
 ]
 
 [[package]]

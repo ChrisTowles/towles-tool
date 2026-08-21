@@ -22,6 +22,8 @@ import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { FilePreview } from "@/components/file-preview";
 import { Kbd } from "@/components/ui/kbd";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { CodeServerPane } from "@/components/code-server-pane";
+import { useCodeServerEditor } from "@/lib/code-server";
 import { ideMention, useIdeConnected } from "@/lib/ide";
 import { useLspStatus } from "@/lib/lsp-status";
 import {
@@ -664,6 +666,8 @@ export function FolderFilesPane({
   openRequest?: FilesOpenRequest;
 }) {
   const ideConnected = useIdeConnected(folder?.dir);
+  // The spike's swap: same pane, same chrome, a whole other editor inside.
+  const [codeServer] = useCodeServerEditor();
   const [openFile, setOpenFile] = useState<{ path: string; dirty: boolean } | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView | null>(null);
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;
@@ -677,7 +681,9 @@ export function FolderFilesPane({
       <PaneChrome
         lens={<PaneLens kind="files" />}
         subject={
-          openFile ? (
+          codeServer ? (
+            <span className="text-muted-foreground">code-server</span>
+          ) : openFile ? (
             <>
               {openFile.path}
               {openFile.dirty && <span className="text-amber-500"> •</span>}
@@ -700,13 +706,17 @@ export function FolderFilesPane({
         }
       />
       <div className="flex min-h-0 flex-1 flex-col p-2">
-        <FilesPane
-          dir={folder.dir}
-          connected={ideConnected}
-          openRequest={openRequest}
-          onOpenFileChange={setOpenFile}
-          onSidebarViewChange={setSidebarView}
-        />
+        {codeServer ? (
+          <CodeServerPane dir={folder.dir} />
+        ) : (
+          <FilesPane
+            dir={folder.dir}
+            connected={ideConnected}
+            openRequest={openRequest}
+            onOpenFileChange={setOpenFile}
+            onSidebarViewChange={setSidebarView}
+          />
+        )}
       </div>
     </div>
   );
