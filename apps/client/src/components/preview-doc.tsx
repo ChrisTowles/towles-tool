@@ -8,8 +8,7 @@ import { remarkAlerts } from "@/lib/remark-alerts";
 import type { PreviewDoc } from "@/lib/preview-artifact";
 
 /** The rendered body of a file in the Preview pane, by the `kind` Rust derives
- * from the extension. Not `components/file-preview.tsx`, which looks like the same
- * job: every path there is *checkout*-relative, a previewed file routinely isn't. */
+ * from the extension. A previewed file has no checkout to resolve paths against. */
 
 const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm, remarkAlerts];
 /** `previewSanitizeSchema` is what stops a `<script>` in a Markdown file

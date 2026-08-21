@@ -64,9 +64,9 @@ describe("nestFiles", () => {
     expect(nest(["diff.ts", "agentboard.ts", "lib.rs"])).toEqual({});
   });
 
-  it("ships the VS Code pattern table the Explorer is configured with", () => {
+  it("ships VS Code's pattern table", () => {
     // A guard on the copy, not the content: an empty or comment-only table
-    // silently disables nesting in both surfaces.
+    // silently disables nesting.
     expect(Object.keys(FILE_NESTING_PATTERNS).length).toBeGreaterThan(50);
     expect(FILE_NESTING_PATTERNS["//"]).toBeUndefined();
     expect(FILE_NESTING_PATTERNS["*.ts"]).toContain("$(capture).*.ts");

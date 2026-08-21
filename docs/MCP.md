@@ -100,11 +100,12 @@ proposing a shared port again; it cross-wired tool writes between
 checkouts' boards.
 
 **`file_open` is the same shape one step down**: reveal a path that already
-exists in the caller's own Files pane, where `preview_file` renders a page
-the agent *authored*. Same `EditorHost` hand-off, same session-first
-routing, and it lands on the route a terminal file link and Claude Code's
-IDE `openFile` already take (`editor://open-file` →
-`apps/client/src/lib/editor-open.ts` → the screen's `filesOpenRequests`).
+exists in the caller's own Files pane (its VS Code workbench), where
+`preview_file` renders a page the agent *authored*. Same `EditorHost`
+hand-off, same session-first routing, and it lands on the route a terminal
+file link and Claude Code's IDE `openFile` already take (`editor://open-file`
+→ `apps/client/src/lib/editor-open.ts` → the screen's `filesOpenRequests` →
+`code_server_reveal`).
 One asymmetry with `preview_file` is deliberate: **here the path fallback is
 a good guess**, because a file someone asked to read names its checkout,
 which is what lets `tt open` work from a terminal with no `TT_SESSION_ID`.

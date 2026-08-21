@@ -74,7 +74,6 @@ http-body-util = "0.1"
 # in-app WebDriver server the @wdio/tauri-service embedded provider connects to.
 tauri-plugin-wdio = { version = "1", optional = true }
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
-trash = "5.2.6"
 
 # Preview-screen capture (src/preview.rs): webkit2gtk is the same crate/
 # version/feature set wry already links on Linux (additive features, one build

@@ -259,38 +259,6 @@ export function ClaudeBadge({
   );
 }
 
-/** The rust-analyzer bridge's only observable surface. */
-export function LspBadge({
-  state,
-  detail,
-}: {
-  state: "starting" | "ready" | "failed";
-  detail?: string;
-}) {
-  const look = {
-    ready: "border-emerald-500/50 bg-emerald-500/10 text-emerald-500",
-    failed: "border-red-500/50 bg-red-500/10 text-red-500",
-    starting: "border-muted-foreground/40 bg-muted text-muted-foreground",
-  }[state];
-  const title = {
-    ready: "rust-analyzer is connected — hovers and completions are live",
-    failed: `rust-analyzer failed to start: ${detail ?? "unknown error"}`,
-    starting: "rust-analyzer is starting…",
-  }[state];
-  return (
-    <Hint label={title}>
-      <span
-        className={cn(
-          "shrink-0 rounded-md border px-1.5 font-mono text-[10.5px] whitespace-nowrap",
-          look,
-        )}
-      >
-        rust-analyzer {state === "starting" ? "…" : state}
-      </span>
-    </Hint>
-  );
-}
-
 export function NeedsBadge({ n, className }: { n: number; className?: string }) {
   return (
     <span

@@ -3,18 +3,13 @@ import { sessionLabel, sessionNeeds, type RepoData } from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
 import { SCREENS, type ScreenId } from "./screens";
 
-/**
- * Pure builders for the palette's dynamic sections — read-only projections of
- * the agentboard state and store snapshot, unit-testable without a DOM.
- */
+/** Pure builders for the palette's dynamic sections, unit-testable without a DOM. */
 
 /** A checkout (folder) to jump to in Agentboard. */
 export type PaletteRepoEntry = {
   key: string;
   folderDir: string;
-  /** Repo name, e.g. `octo/widgets` (the rail's logical repo). */
   repoName: string;
-  /** Checkout name — distinguishes worktrees/tasks of the same repo. */
   folderName: string;
   branch: string;
   needs: number;
@@ -46,7 +41,6 @@ export type PalettePrEntry = {
 
 export type PaletteQuickAddEntry = {
   key: string;
-  /** Trimmed query — the title the todo is created with. */
   title: string;
 };
 
@@ -138,58 +132,6 @@ export function paletteIssueEntries(issues: IssueItem[]): PaletteIssueEntry[] {
     }));
 }
 
-/** Curated editor commands for the palette's "Editor" group — an allowlist,
- * not VS Code's full F1 set, most of which dead-ends in this headless
- * workbench. `editor` runs on the last-focused file editor, `workbench`
- * through the command service, `search-sidebar` opens that view. */
-export type PaletteEditorCommand = {
-  key: string;
-  label: string;
-  kind: "editor" | "workbench" | "search-sidebar";
-  commandId?: string;
-  keywords: string[];
-};
-
-export const PALETTE_EDITOR_COMMANDS: PaletteEditorCommand[] = [
-  {
-    key: "quick-open",
-    label: "Go to file…",
-    kind: "workbench",
-    commandId: "workbench.action.quickOpen",
-    keywords: ["file", "open", "quick", "jump"],
-  },
-  {
-    key: "find",
-    label: "Find in file",
-    kind: "editor",
-    commandId: "actions.find",
-    keywords: ["search"],
-  },
-  // No "Go to line…": both spellings dead-end here — the workbench one wants
-  // an editor-service editor (no editor part is attached), and the standalone
-  // one opens nothing under the quickaccess override's global picker.
-  {
-    key: "search-folder",
-    label: "Search in folder",
-    kind: "search-sidebar",
-    keywords: ["find", "grep", "replace", "files"],
-  },
-  {
-    key: "fold-all",
-    label: "Fold all regions",
-    kind: "editor",
-    commandId: "editor.foldAll",
-    keywords: ["collapse"],
-  },
-  {
-    key: "unfold-all",
-    label: "Unfold all regions",
-    kind: "editor",
-    commandId: "editor.unfoldAll",
-    keywords: ["expand"],
-  },
-];
-
 /** `null` for an empty query — nothing to name a todo. The trimmed query is
  * the title verbatim; long text and internal whitespace stay intact. */
 export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null {
@@ -198,7 +140,6 @@ export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null
   return { key: "quick-add", title };
 }
 
-/** A shortcut, not a second full screen list. */
 const RECENT_LIMIT = 4;
 
 /**

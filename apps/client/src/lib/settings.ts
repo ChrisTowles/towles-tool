@@ -170,7 +170,6 @@ export type UserSettings = {
     showUnmanagedWorktrees?: boolean;
     jarvisPane?: boolean;
     browserPane?: boolean;
-    codeServerEditor?: boolean;
   } & Record<string, unknown>;
 };
 

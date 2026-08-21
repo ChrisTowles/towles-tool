@@ -1,19 +1,20 @@
-//! code-server host for the editor pane (spike — docs/CODE-SERVER-SPIKE.md).
+//! code-server host for the Files pane (docs/CODE-SERVER.md).
 //!
 //! One process per app instance, started lazily on the first pane and dropped
 //! with the host; every folder is a URL against it, so opening a second
 //! checkout costs an iframe, not a server. Launch blocks on the child's first
-//! log line, so the commands are async and never run on the GTK main thread.
+//! log line and a reveal polls a socket, so both run on blocking threads and
+//! never on the GTK main thread.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::State;
-use tt_codeserver::{CodeServerChild, CodeServerConfig, find_code_server, folder_url};
+use tt_codeserver::{CodeServerChild, CodeServerConfig, find_code_server, workbench_url};
 
 #[derive(Default)]
 pub struct CodeServerHost {
-    child: Mutex<Option<CodeServerChild>>,
+    child: Arc<Mutex<Option<CodeServerChild>>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -21,71 +22,76 @@ pub struct CodeServerHost {
 pub struct CodeServerInfo {
     pub url: String,
     pub port: u16,
-    pub binary: String,
 }
 
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodeServerStatus {
-    pub running: bool,
-    pub port: Option<u16>,
-    /// Absent means the binary is missing — the one failure worth its own UI.
-    pub binary: Option<String>,
+fn config() -> Result<CodeServerConfig, String> {
+    let user_data_dir = tt_config::code_server_user_data_dir().map_err(|e| e.to_string())?;
+    Ok(CodeServerConfig {
+        binary: find_code_server(None)
+            .ok_or_else(|| tt_codeserver::CodeServerError::NoBinary.to_string())?,
+        config_file: user_data_dir.join("config.yaml"),
+        user_data_dir,
+        extensions_dir: tt_config::code_server_extensions_dir().map_err(|e| e.to_string())?,
+        session_socket: tt_config::code_server_session_socket(),
+    })
 }
 
-/// Whether a code-server exists to embed, without starting one.
-#[tauri::command]
-pub fn code_server_status(state: State<CodeServerHost>) -> CodeServerStatus {
-    let mut guard = state.child.lock().expect("code-server host poisoned");
-    let running = guard.as_mut().is_some_and(CodeServerChild::is_running);
-    CodeServerStatus {
-        running,
-        port: running.then(|| guard.as_ref().map(|c| c.port)).flatten(),
-        binary: find_code_server(None).map(|p| p.display().to_string()),
+/// The port of the running server, starting one if there is none. A child that
+/// died since the last call is replaced rather than reported.
+fn running_port(child: &Mutex<Option<CodeServerChild>>) -> Result<u16, String> {
+    let mut guard = child.lock().map_err(|_| "code-server host poisoned".to_string())?;
+    if !guard.as_mut().is_some_and(CodeServerChild::is_running) {
+        *guard = Some(CodeServerChild::launch(&config()?).map_err(|e| e.to_string())?);
     }
+    guard.as_ref().map(|c| c.port).ok_or_else(|| "code-server not running".to_string())
 }
 
 /// The workbench URL for `dir`, starting the server if this is the first pane.
-/// A child that died since the last call is replaced rather than reported.
+/// A checkout-relative `path` rides the URL so the workbench opens it as it
+/// boots — the only way to open a file in a workbench that doesn't exist yet.
 #[tauri::command]
 pub async fn code_server_open(
     state: State<'_, CodeServerHost>,
     dir: String,
+    path: Option<String>,
+    line: Option<u32>,
 ) -> Result<CodeServerInfo, String> {
     let folder = PathBuf::from(&dir);
     if !folder.is_dir() {
         return Err(format!("not a directory: {dir}"));
     }
-    let binary = find_code_server(None)
-        .ok_or_else(|| tt_codeserver::CodeServerError::NoBinary.to_string())?;
-
-    let mut guard = state.child.lock().map_err(|_| "code-server host poisoned".to_string())?;
-    if !guard.as_mut().is_some_and(CodeServerChild::is_running) {
-        let cfg = CodeServerConfig {
-            binary: binary.clone(),
-            user_data_dir: tt_config::code_server_user_data_dir().map_err(|e| e.to_string())?,
-            extensions_dir: tt_config::code_server_extensions_dir().map_err(|e| e.to_string())?,
-            config_file: tt_config::code_server_user_data_dir()
-                .map_err(|e| e.to_string())?
-                .join("config.yaml"),
-        };
-        *guard = Some(CodeServerChild::launch(&cfg).map_err(|e| e.to_string())?);
-    }
-    let child = guard.as_ref().ok_or_else(|| "code-server not running".to_string())?;
-    Ok(CodeServerInfo {
-        url: folder_url(child.port, &folder),
-        port: child.port,
-        binary: binary.display().to_string(),
-    })
+    let child = Arc::clone(&state.child);
+    let port = tauri::async_runtime::spawn_blocking(move || running_port(&child))
+        .await
+        .map_err(|e| format!("code-server launch task failed: {e}"))??;
+    let file = path.map(|p| folder.join(p));
+    let open = file.as_deref().map(|f| (f, line));
+    Ok(CodeServerInfo { url: workbench_url(port, &folder, open), port })
 }
 
-/// Stop the server. Every pane's iframe goes dead, by design — the panes are
-/// views over one process, so this is the "restart the editor" gesture.
+/// Open a checkout-relative `path` in the workbench already running for `dir`.
 #[tauri::command]
-pub async fn code_server_stop(state: State<'_, CodeServerHost>) -> Result<(), String> {
-    let mut guard = state.child.lock().map_err(|_| "code-server host poisoned".to_string())?;
-    if let Some(mut child) = guard.take() {
-        child.shutdown();
-    }
-    Ok(())
+pub async fn code_server_reveal(
+    state: State<'_, CodeServerHost>,
+    dir: String,
+    path: String,
+    line: Option<u32>,
+) -> Result<(), String> {
+    let (port, registry) = {
+        let mut guard = state.child.lock().map_err(|_| "code-server host poisoned".to_string())?;
+        let Some(child) = guard.as_mut() else {
+            return Err("code-server is not running".to_string());
+        };
+        if !child.is_running() {
+            return Err("code-server is not running".to_string());
+        }
+        (child.port, child.session_socket.clone())
+    };
+    let file = PathBuf::from(&dir).join(&path);
+    tracing::debug!(dir = %dir, path = %path, line = line.unwrap_or(0), "code_server.reveal");
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_codeserver::reveal(&registry, port, &file, line).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("code-server reveal task failed: {e}"))?
 }

@@ -45,8 +45,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Journal path templates and base folders. Template tokens follow Luxon
-/// formatting, e.g. `{yyyy}`, `{MM}`, `{dd}`.
+/// Journal path templates (Luxon tokens, e.g. `{yyyy}`, `{MM}`) and base folders.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -147,9 +146,6 @@ pub struct AgentboardSettings {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_pane: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_server_editor: Option<bool>,
 }
 
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
@@ -213,8 +209,7 @@ impl NotifyKind {
 }
 
 impl AgentboardSettings {
-    /// The one place the decision is made — callers gate on this, never on
-    /// the raw fields.
+    /// The one place the decision is made — callers gate on this, never the raw fields.
     pub fn notifies(&self, kind: NotifyKind) -> bool {
         self.notify.unwrap_or(DEFAULT_NOTIFY)
             && kind.level() >= self.notify_threshold.unwrap_or(DEFAULT_NOTIFY_THRESHOLD)
@@ -343,8 +338,7 @@ impl Default for CalendarCollector {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarSource {
-    /// Also the store's `events.source` column, so a re-pull replaces only
-    /// this calendar's rows — changing it orphans them.
+    /// Also the store's `events.source` column; changing it orphans this calendar's rows.
     pub id: String,
     pub label: String,
     pub enabled: bool,
@@ -414,8 +408,7 @@ impl Default for CalendarQuietHours {
 #[serde(rename_all = "camelCase", default)]
 pub struct PrCollector {
     pub enabled: bool,
-    /// The authored + review-requested sweep — what Board/Cockpit render, so
-    /// this is the fast cadence.
+    /// The authored + review-requested sweep Board/Cockpit render — the fast cadence.
     pub refresh_seconds: u64,
     /// Looser on purpose: it only catches a just-merged branch before its
     /// worktree is removed. The `gh` plugin hook nudges this sweep the moment a
@@ -437,8 +430,7 @@ impl Default for PrCollector {
 pub struct SlackDmCollector {
     pub enabled: bool,
     pub token: String,
-    /// App-level token (`xapp-…`) for Socket Mode. Empty = poll-only. Distinct
-    /// from `token`: it authorizes `apps.connections.open`.
+    /// App-level token (`xapp-…`) for Socket Mode; empty = poll-only.
     #[serde(default)]
     pub app_token: String,
     pub watch_user_id: String,
@@ -745,8 +737,7 @@ pub fn pasted_images_dir() -> PathBuf {
 }
 
 /// PID locks. Temp, not `config_dir()`: a lock means nothing once its creator
-/// exits, so it doesn't belong beside synced settings. Unscoped — per-checkout
-/// holders vary the lock *name* instead.
+/// exits. Unscoped — per-checkout holders vary the lock *name* instead.
 pub fn locks_dir() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join("locks")
 }
@@ -760,9 +751,8 @@ pub fn agentboard_shared_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("agentboard"))
 }
 
-/// Collector results, shared like `repos.json`: what GitHub says about a PR
-/// depends on the machine's token, not which folder asked. One file per
-/// collector per repo (see `tt_collect`'s `sweep_cache`).
+/// Collector results, shared like `repos.json`: what GitHub says about a PR depends
+/// on the machine's token, not which folder asked. One file per collector per repo.
 pub fn gh_cache_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("gh-cache"))
 }
@@ -776,17 +766,22 @@ pub fn browser_profile_dir() -> Result<PathBuf> {
         .join("chrome-profile"))
 }
 
-/// Watched-DM handled ledger. *Shared*, because tt.db is per-instance: kept
-/// there, a dismissal evaporated whenever the next launch resolved a different
-/// scope and the handled message re-raised its banner.
+/// Watched-DM handled ledger. *Shared*: kept in per-instance tt.db, a dismissal
+/// evaporated whenever the next launch resolved a different scope.
 pub fn dm_dismissals_path() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
         .join("dm-dismissals.json"))
 }
 
-/// *Instance-scoped*: two checkouts at once contend on one `code-server-ipc.sock`.
+/// *Instance-scoped*, like the rest of a checkout's state.
 pub fn code_server_user_data_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("code-server"))
+}
+
+/// code-server's window-registry socket: temp like [`locks_dir`], pid-named — the
+/// instance dir overflows `sun_path`, and the registry dies with its server.
+pub fn code_server_session_socket() -> PathBuf {
+    std::env::temp_dir().join(TOOL_NAME).join(format!("code-server-{}.sock", std::process::id()))
 }
 
 /// *Shared*, like the Chrome profile: an installed extension is a machine fact.
@@ -875,8 +870,7 @@ pub fn load_from(path: &Path) -> Result<UserSettings> {
     Ok(settings)
 }
 
-/// Drops unmodeled keys already on disk. For the shared settings file use
-/// [`save_merge_to`].
+/// Drops unmodeled keys already on disk; the shared settings file uses [`save_merge_to`].
 fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

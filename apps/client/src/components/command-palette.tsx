@@ -2,7 +2,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   CircleDot,
-  FileCode2,
   FolderGit2,
   GitPullRequest,
   ListPlus,
@@ -25,13 +24,10 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { useTheme } from "@/components/theme-provider";
-import { hasLiveEditor, runEditorAction } from "@/lib/editor-focus";
-import { openSidebarView, runMonacoCommand } from "@/lib/monaco";
 import { requestAgentboardNav, useAgentboardState } from "@/lib/agentboard";
 import { storeAddTask, useStoreSnapshot } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import {
-  PALETTE_EDITOR_COMMANDS,
   paletteRepoEntries,
   paletteSessionEntries,
   palettePrEntries,
@@ -39,7 +35,6 @@ import {
   paletteQuickAddEntry,
   paletteFilter,
   paletteRecentScreens,
-  type PaletteEditorCommand,
 } from "@/lib/palette";
 import { SCREENS } from "@/lib/screens";
 import { shortcutHint } from "@/lib/shortcuts";
@@ -104,16 +99,6 @@ export function CommandPalette() {
     run(() => {
       void storeAddTask(title);
       toast.success("Todo added", { description: title });
-    });
-
-  // Evaluated per render: the palette re-renders on open, so the group tracks
-  // whether a file editor is actually alive to receive these.
-  const editorAlive = hasLiveEditor();
-  const runEditorCommand = (cmd: PaletteEditorCommand) =>
-    run(() => {
-      if (cmd.kind === "search-sidebar") void openSidebarView("search");
-      else if (cmd.kind === "workbench" && cmd.commandId) void runMonacoCommand(cmd.commandId);
-      else if (cmd.commandId) runEditorAction(cmd.commandId);
     });
 
   return (
@@ -250,24 +235,6 @@ export function CommandPalette() {
                       <span className="text-muted-foreground"> #{entry.number}</span>
                     </span>
                     <span className="ml-1 truncate text-muted-foreground">{entry.title}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </>
-          )}
-          {editorAlive && (
-            <>
-              <CommandSeparator />
-              <CommandGroup heading="Editor">
-                {PALETTE_EDITOR_COMMANDS.map((cmd) => (
-                  <CommandItem
-                    key={cmd.key}
-                    value={`editor ${cmd.label}`}
-                    keywords={cmd.keywords}
-                    onSelect={() => runEditorCommand(cmd)}
-                  >
-                    <FileCode2 />
-                    {cmd.label}
                   </CommandItem>
                 ))}
               </CommandGroup>

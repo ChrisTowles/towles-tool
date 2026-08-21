@@ -90,9 +90,8 @@ to degrade, .match({ ok, err }) to branch, .isErr() to test. Fire-and-forget nee
 no .catch, since an ignored Result cannot produce an unhandled rejection.
 
 Ignore any line above where the exception is real: a genuinely throwing foreign
-API (navigator.clipboard, monaco-languageclient's dispose) still needs .catch,
-monaco-fs.ts deliberately keeps a throwing contract at the IFileSystemProvider
-boundary, and String() on a non-error value is fine."
+API (navigator.clipboard, a Monaco dispose) still needs .catch, and String() on
+a non-error value is fine."
 
 jq -n --arg r "$reason" \
   '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$r}}' 2>/dev/null || exit 0

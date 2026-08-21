@@ -16,6 +16,5 @@ paths:
   with `.isErr()`; an ignored `Result` is safe by construction. Call-site
   patterns: [`apps/client/CLAUDE.md`](../../apps/client/CLAUDE.md).
 - **`throw` is for defects and foreign contracts only** — the shortcuts
-  registry's module-eval validation; monaco's `IFileSystemProvider` and
-  vscode-jsonrpc, which require it. Translate `Err` → throw at those edges,
-  nowhere else.
+  registry's module-eval validation, or a foreign interface that requires a
+  rejection. Translate `Err` → throw at that edge, nowhere else.

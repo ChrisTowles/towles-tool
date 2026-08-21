@@ -132,7 +132,7 @@ export default defineConfig(({ command }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-    dedupe: ["monaco-editor", "vscode", ...monacoVscodeDeps],
+    dedupe: ["monaco-editor", ...monacoVscodeDeps],
   },
   // monaco-vscode-api relies on `new URL(..., import.meta.url)` inside deps
   // (broken by Vite's dep pre-bundling without this plugin) and ships some
@@ -143,9 +143,6 @@ export default defineConfig(({ command }) => ({
       "@codingame/monaco-vscode-api/extensions",
       "@codingame/monaco-vscode-api/monaco",
       "monaco-editor",
-      "monaco-languageclient",
-      "vscode-languageclient/browser",
-      "vscode-jsonrpc",
     ],
     // importMetaUrlPlugin can't resolve @vscode/diff's `worker.js?esm` URL —
     // serve it unbundled instead of pre-optimizing it.

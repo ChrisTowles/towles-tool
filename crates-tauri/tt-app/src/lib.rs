@@ -5,7 +5,6 @@
 //! kills on window close, rendered by xterm.js in the agentboard screen.
 
 mod agentboard;
-mod asset;
 mod browser;
 mod claude_sessions;
 mod codeserver;
@@ -17,7 +16,6 @@ mod instance_lock;
 mod launch;
 #[cfg(target_os = "linux")]
 mod linux_desktop;
-mod lsp;
 mod macos_keys;
 mod mcp;
 mod mcp_http;
@@ -161,10 +159,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init());
-
-    // Repo bytes served over their own URI scheme — see `asset`'s module doc
-    // for why not base64 over IPC, and the guards on a hostile README.
-    let builder = asset::register(builder);
 
     // WebdriverIO E2E plugins, only under `--features wdio` (see e2e/): the
     // execute/mock IPC surface plus the in-app WebDriver server wdio dials.
@@ -618,13 +612,9 @@ pub fn run() {
         .manage(terminal::TermState::default())
         .manage(task::TaskPhases::default())
         .manage(launch::LaunchState::default())
-        .manage(lsp::Lsp::default())
         .manage(ide::DiffRequests::default())
         .manage(ide::ViewerWatches::default())
-        .manage(ide::ExplorerWatches::default())
-        .manage(ide::EditorPrefs::default())
         .manage(preview::PreviewWatches::default())
-        .manage(asset::AssetScopes::default())
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
         .on_window_event(|window, event| match event {
@@ -693,9 +683,8 @@ pub fn run() {
             agentboard::ab_unstage_file,
             agentboard::ab_stage_buffer,
             agentboard::ab_get_commit_stats,
-            codeserver::code_server_status,
             codeserver::code_server_open,
-            codeserver::code_server_stop,
+            codeserver::code_server_reveal,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,
@@ -792,26 +781,12 @@ pub fn run() {
             ide::ide_clear_selection,
             ide::ide_at_mention,
             ide::ide_status,
-            ide::ide_set_open_file,
             ide::ide_set_diff_dirty,
             ide::ide_read_file,
-            asset::asset_allow_dir,
             ide::ide_stat,
-            ide::ide_read_dir,
-            ide::ide_create_dir,
-            ide::ide_delete,
-            ide::ide_rename,
-            lsp::lsp_start,
-            lsp::lsp_send,
-            lsp::lsp_stop,
-            lsp::lsp_stop_all,
             ide::ide_write_file,
             ide::ide_watch_files,
             ide::ide_unwatch_files,
-            ide::ide_watch_dir,
-            ide::ide_unwatch_dir,
-            ide::ide_prefs_load,
-            ide::ide_prefs_save,
             ide::ide_diff_resolve,
         ])
         .run(context)

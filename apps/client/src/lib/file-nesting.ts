@@ -1,6 +1,6 @@
 /** VS Code's default file-nesting patterns, copied verbatim so a refresh is a
- * re-copy rather than a merge. The Files pane hands the table to VS Code as
- * configuration; `nestFiles` below reimplements the match for the diff rail. */
+ * re-copy rather than a merge; `nestFiles` below reimplements the match for
+ * the diff rail. */
 export const FILE_NESTING_PATTERNS: Readonly<Record<string, string>> = {
   ".agent":
     ".agent, .claude, .cline, .codebuddy, .codex, .commandcode, .continue, .crush, .cursor, .factory, .gemini, .goose, .junie, .kilocode, .kiro, .kode, .mcpjam, .mux, .neovate, .opencode, .openhands, .pi, .pochi, .qoder, .qwen, .roo, .trae, .windsurf, .zencoder",

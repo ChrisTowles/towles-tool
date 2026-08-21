@@ -85,9 +85,9 @@ that decide where code goes:
   ([docs/MCP.md](docs/MCP.md)); `tt-browser` runs a real Chrome on an app-owned
   profile so **sign-ins in the pane persist**
   ([docs/BROWSER-PANE.md](docs/BROWSER-PANE.md)). `tt-codeserver` puts a **real VS Code in
-  the Files pane** behind a settings flag — one server, one workbench per
-  checkout, the app as a multiplexer over the VS Code windows it replaces
-  ([docs/CODE-SERVER-SPIKE.md](docs/CODE-SERVER-SPIKE.md)).
+  the Files pane** — one server, one workbench per checkout, the app as a
+  multiplexer over the VS Code windows it replaces; Monaco stays only for the
+  diff pane ([docs/CODE-SERVER.md](docs/CODE-SERVER.md)).
 - TLS clients must trust the machine's trust store, not a bundled root list: a
   TLS-inspecting proxy's root CA is in the OS store and `webpki-roots` never sees
   it, so use `native-tls` or an OS-native-roots rustls variant.

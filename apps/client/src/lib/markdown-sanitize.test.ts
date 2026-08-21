@@ -14,7 +14,7 @@ import type { Element, Root } from "hast";
 import { previewSanitizeSchema } from "@/lib/markdown-sanitize";
 import { ALERT_ATTRIBUTE, remarkAlerts } from "@/lib/remark-alerts";
 
-/** The same plugin set `FilePreview` renders with, stopping at hast. */
+/** The same plugin set `PreviewDocView` renders with, stopping at hast. */
 const pipeline = unified()
   .use(remarkParse)
   .use(remarkGfm)

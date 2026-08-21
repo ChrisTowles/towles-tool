@@ -237,23 +237,6 @@ export function agentboardSections(
         ),
       },
       {
-        label: "code-server editor (spike)",
-        keywords: ["code-server", "vscode", "editor", "monaco", "spike", "files"],
-        node: (
-          <ToggleRow
-            label="code-server editor (spike)"
-            description="Render the Files pane as a real VS Code (code-server) instead of the built-in Monaco editor. An experiment: extensions and the full workbench work, but the Claude Code selection bridge, the diff pane's hunk staging and the app's own keybindings do not reach inside it. Needs code-server installed."
-            checked={settings.agentboard?.codeServerEditor ?? false}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, codeServerEditor: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
         label: "Chrome pane",
         keywords: ["chrome", "browser", "web", "pane", "login", "sign in", "cdp", "headless"],
         node: (

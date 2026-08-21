@@ -124,7 +124,6 @@ const AgentboardBlockSchema = z
     showUnmanagedWorktrees: z.boolean().optional(),
     jarvisPane: z.boolean().optional(),
     browserPane: z.boolean().optional(),
-    codeServerEditor: z.boolean().optional(),
   })
   .catchall(z.unknown());
 

@@ -42,10 +42,9 @@ PTY-write path relies on it, and a `.catch` on an `invoke` is dead code. For
 display use **`errorMessage(e)`, not `String(e)`**: Tauri rejects with a bare
 string, which `String()` renders as `"[object Object]"`.
 
-Two boundaries keep a *throwing* contract because a foreign interface demands it:
-`lib/monaco-fs.ts` (monaco's `IFileSystemProvider`) and `lib/lsp.ts`
-(vscode-jsonrpc's rejecting `write`). Translate `Err` → throw there only;
-`.claude/hooks/guard-better-result.sh` flags drift. There is no `mock-data.ts`
+No module keeps a throwing contract today; a foreign interface that demands one
+(monaco's `IFileSystemProvider` did) translates `Err` → throw at that edge only,
+and `.claude/hooks/guard-better-result.sh` flags drift. There is no `mock-data.ts`
 either: each module owns its browser-dev fallback (`mockSnapshot` in
 `lib/data.ts`, `mockView` in `lib/slack.ts`), gated on `!isTauri()`.
 

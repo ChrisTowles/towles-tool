@@ -26,14 +26,6 @@ describe("PRUNED_COMMANDS", () => {
     expect(PRUNED_COMMANDS).toContain("editor.action.formatDocument.none");
   });
 
-  // These are real now: the provider writes through ide_* commands and the
-  // dialog service renders an in-app confirm, so shadowing them would break
-  // the Explorer rather than protect it.
-  it("does not shadow the delete commands", () => {
-    expect(PRUNED_COMMANDS).not.toContain("deleteFile");
-    expect(PRUNED_COMMANDS).not.toContain("moveFileToTrash");
-  });
-
   it("has no duplicate ids (a duplicate would shadow our own no-op)", () => {
     expect(new Set(PRUNED_COMMANDS).size).toBe(PRUNED_COMMANDS.length);
   });

@@ -357,7 +357,7 @@ export function AgentboardScreen() {
       }
       setFilesOpenRequests((prev) => ({
         ...prev,
-        [dir]: { path: rel, anchor: { line: req.line }, nonce: req.nonce },
+        [dir]: { path: rel, line: req.line, nonce: req.nonce },
       }));
     }
     setActiveFolderDir(dir);
@@ -379,15 +379,7 @@ export function AgentboardScreen() {
     const path = p.filePath.startsWith(`${dir}/`) ? p.filePath.slice(dir.length + 1) : p.filePath;
     setFilesOpenRequests((prev) => ({
       ...prev,
-      [dir]: {
-        path,
-        anchor: {
-          startText: p.startText,
-          endText: p.endText,
-          selectToEndOfLine: p.selectToEndOfLine,
-        },
-        nonce: nextOpenFileNonce(),
-      },
+      [dir]: { path, line: null, nonce: nextOpenFileNonce() },
     }));
     openFiles(dir);
   });
@@ -407,7 +399,7 @@ export function AgentboardScreen() {
     }
     setFilesOpenRequests((prev) => ({
       ...prev,
-      [dir]: { path: rel, anchor: { line }, nonce: nextOpenFileNonce() },
+      [dir]: { path: rel, line, nonce: nextOpenFileNonce() },
     }));
     openFiles(dir);
   }
