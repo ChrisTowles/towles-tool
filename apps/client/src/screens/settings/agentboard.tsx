@@ -55,7 +55,6 @@ import {
 } from "@/lib/settings";
 import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
-import { DEFAULT_EDITOR_FONT_SIZE, clampEditorFontSize } from "@/lib/editor-prefs";
 import { cn } from "@/lib/utils";
 import { PromptImproversEditor } from "./collectors";
 import {
@@ -267,28 +266,6 @@ export function agentboardSections(
                 (s) => ({
                   ...s,
                   agentboard: { ...s.agentboard, terminalFontSize: clampTerminalFontSize(n) },
-                }),
-                { defer: true },
-              )
-            }
-            onCommit={() => void flush()}
-          />
-        ),
-      },
-      {
-        label: "Editor font size",
-        keywords: ["editor", "monaco", "files", "diff", "font", "size", "zoom", "text", "code"],
-        node: (
-          <CadenceRow
-            label="Editor font size"
-            description="Font size (px) for the file editor and the diff panes. Zoom in/out live with Ctrl/⌘ +/- while the editor has focus (Ctrl/⌘ 0 resets)."
-            unit="px"
-            value={settings.agentboard?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE}
-            onValue={(n) =>
-              update(
-                (s) => ({
-                  ...s,
-                  agentboard: { ...s.agentboard, editorFontSize: clampEditorFontSize(n) },
                 }),
                 { defer: true },
               )

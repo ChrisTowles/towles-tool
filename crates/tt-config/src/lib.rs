@@ -105,9 +105,6 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_font_size: Option<u8>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub editor_font_size: Option<u8>,
-
     /// Board shortcuts fire in a focused terminal, not swallowed as input.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shortcuts_work_in_terminal: Option<bool>,
@@ -784,6 +781,12 @@ pub fn code_server_session_socket() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join(format!("code-server-{}.sock", std::process::id()))
 }
 
+/// Where each workbench's bridge extension listens, one socket per window.
+/// Temp and pid-named for the same reasons as [`code_server_session_socket`].
+pub fn code_server_bridge_dir() -> PathBuf {
+    std::env::temp_dir().join(TOOL_NAME).join(format!("bridge-{}", std::process::id()))
+}
+
 /// Where the app unpacks the code-server it provisions for itself. *Shared*:
 /// 740 MB is not a per-checkout cost. Version-scoped inside, by the installer.
 pub fn code_server_install_dir() -> Result<PathBuf> {
@@ -1263,25 +1266,6 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("terminalFontSize"));
         assert_eq!(s.agentboard.terminal_font_size.unwrap_or(13), 13);
-    }
-
-    #[test]
-    fn editor_font_size_defaults_unset_and_twelve() {
-        let s = UserSettings::default();
-        assert!(s.agentboard.editor_font_size.is_none());
-        let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("editorFontSize"));
-        assert_eq!(s.agentboard.editor_font_size.unwrap_or(12), 12);
-    }
-
-    #[test]
-    fn editor_font_size_roundtrips_beside_the_terminal_one() {
-        let json = r#"{"agentboard":{"terminalFontSize":13,"editorFontSize":16}}"#;
-        let s: UserSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.agentboard.terminal_font_size, Some(13));
-        assert_eq!(s.agentboard.editor_font_size, Some(16));
-        let out = serde_json::to_string(&s).unwrap();
-        assert!(out.contains("\"editorFontSize\":16"));
     }
 
     #[test]

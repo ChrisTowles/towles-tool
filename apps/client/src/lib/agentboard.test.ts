@@ -12,8 +12,6 @@ import {
   cycleNotBusy,
   cycleSession,
   colCount,
-  diffPaneDir,
-  diffPaneId,
   dragCol,
   ownerRepoFromOrigin,
   dropPane,
@@ -24,8 +22,6 @@ import {
   fmtTokens,
   fmtWaitingAge,
   gitCheckedLabel,
-  folderBaseKey,
-  folderStatsKey,
   folderActionableItems,
   folderLanded,
   folderLandedButHasWork,
@@ -44,7 +40,6 @@ import {
   folderSafeToDelete,
   hydrateWins,
   previewPaneId,
-  isDiffPane,
   isExitPane,
   isFilesPane,
   isJarvisPane,
@@ -738,24 +733,22 @@ describe("sessionNeeds", () => {
 
 describe("folder pane ids", () => {
   it("round-trips the folder dir and never collides with session ids", () => {
-    const id = diffPaneId("/home/me/code/p/proj");
-    expect(isDiffPane(id)).toBe(true);
-    expect(diffPaneDir(id)).toBe("/home/me/code/p/proj");
+    const id = filesPaneId("/home/me/code/p/proj");
+    expect(isFilesPane(id)).toBe(true);
+    expect(filesPaneDir(id)).toBe("/home/me/code/p/proj");
     // Backend session ids are `s<16 hex>` (sessions.rs `gen_id`).
-    expect(isDiffPane("s00deadbeef00cafe")).toBe(false);
-    expect(diffPaneDir("s00deadbeef00cafe")).toBeNull();
+    expect(isFilesPane("s00deadbeef00cafe")).toBe(false);
+    expect(filesPaneDir("s00deadbeef00cafe")).toBeNull();
   });
 
-  it("keeps diff and files panes distinct while folderPaneDir spans both", () => {
-    const diff = diffPaneId("/home/me/code/p/proj");
+  it("keeps files and preview panes distinct while folderPaneDir spans both", () => {
     const files = filesPaneId("/home/me/code/p/proj");
-    expect(diff).not.toBe(files);
+    const preview = previewPaneId("/home/me/code/p/proj");
+    expect(files).not.toBe(preview);
     expect(isFilesPane(files)).toBe(true);
-    expect(isFilesPane(diff)).toBe(false);
-    expect(isDiffPane(files)).toBe(false);
-    expect(filesPaneDir(files)).toBe("/home/me/code/p/proj");
-    expect(folderPaneDir(diff)).toBe("/home/me/code/p/proj");
+    expect(isFilesPane(preview)).toBe(false);
     expect(folderPaneDir(files)).toBe("/home/me/code/p/proj");
+    expect(folderPaneDir(preview)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir("s00deadbeef00cafe")).toBeNull();
   });
 
@@ -767,11 +760,10 @@ describe("folder pane ids", () => {
     // One native surface per folder: each attached pane owns a subsurface and
     // a vsync-paced Bevy render thread, so the id has to cap it at one.
     expect(jarvisPaneId(dir)).toBe(jarvis);
-    for (const other of [diffPaneId(dir), filesPaneId(dir), previewPaneId(dir)]) {
+    for (const other of [filesPaneId(dir), previewPaneId(dir)]) {
       expect(other).not.toBe(jarvis);
       expect(isJarvisPane(other)).toBe(false);
     }
-    expect(isDiffPane(jarvis)).toBe(false);
     expect(isFilesPane(jarvis)).toBe(false);
     // Being in `folderPaneDir` is what makes it survive layout restore.
     expect(folderPaneDir(jarvis)).toBe(dir);
@@ -961,14 +953,14 @@ describe("pruneWins", () => {
     expect(next.activeWindows).toEqual({ "/f": "w2" });
   });
 
-  it("keeps a valid folder's diff/files panes, drops a removed folder's", () => {
+  it("keeps a valid folder's files/preview panes, drops a removed folder's", () => {
     const w: WindowsPayload = {
       windows: [
         win("w1", "/f", [
-          diffPaneId("/f"),
           filesPaneId("/f"),
-          diffPaneId("/gone"),
+          previewPaneId("/f"),
           filesPaneId("/gone"),
+          previewPaneId("/gone"),
           "s1",
         ]),
       ],
@@ -976,8 +968,8 @@ describe("pruneWins", () => {
     };
     const [s, f] = valid(["s1"], ["/f"]);
     expect(pruneWins(w, s, f).windows[0].panes).toEqual([
-      diffPaneId("/f"),
       filesPaneId("/f"),
+      previewPaneId("/f"),
       "s1",
     ]);
   });
@@ -1016,7 +1008,7 @@ describe("exit pane ids", () => {
     expect(isExitPane(id)).toBe(true);
     expect(exitPaneSession(id)).toBe("s00deadbeef00cafe");
     expect(isExitPane("s00deadbeef00cafe")).toBe(false);
-    expect(isExitPane(diffPaneId("/f"))).toBe(false);
+    expect(isExitPane(filesPaneId("/f"))).toBe(false);
     // A tombstone is not a folder pane — folderPaneDir must not claim it.
     expect(folderPaneDir(id)).toBeNull();
     expect(exitPaneSession("s00deadbeef00cafe")).toBeNull();
@@ -1025,8 +1017,8 @@ describe("exit pane ids", () => {
   it("paneSession names the session behind a live pane and a dead one alike", () => {
     expect(paneSession("s1")).toBe("s1");
     expect(paneSession(exitPaneId("s1"))).toBe("s1");
-    expect(paneSession(diffPaneId("/f"))).toBeNull();
     expect(paneSession(filesPaneId("/f"))).toBeNull();
+    expect(paneSession(previewPaneId("/f"))).toBeNull();
   });
 });
 
@@ -1070,43 +1062,43 @@ describe("hydrateWins", () => {
   it("sweeps legacy paneless windows and their active entries", () => {
     const w: WireWindowsPayload = {
       windows: [
-        wireWin("w1", "/f", ["~diff:/f"]),
+        wireWin("w1", "/f", ["~files:/f"]),
         wireWin("w2", "/f", []),
         wireWin("w3", "/g", []),
       ],
       activeWindows: { "/f": "w2", "/g": "w3" },
     };
     const next = hydrateWins(w);
-    expect(next.windows).toEqual([win("w1", "/f", ["~diff:/f"])]);
+    expect(next.windows).toEqual([win("w1", "/f", ["~files:/f"])]);
     expect(next.activeWindows).toEqual({});
   });
 
   it("drops tombstones too — they report a crash from a run that's over", () => {
     const w: WireWindowsPayload = {
       windows: [
-        wireWin("w1", "/f", [exitPaneId("s1"), "~diff:/f"]),
+        wireWin("w1", "/f", [exitPaneId("s1"), "~files:/f"]),
         wireWin("w2", "/g", [exitPaneId("s2")]),
       ],
       activeWindows: { "/f": "w1", "/g": "w2" },
     };
     const next = hydrateWins(w);
-    expect(next.windows).toEqual([win("w1", "/f", ["~diff:/f"])]);
+    expect(next.windows).toEqual([win("w1", "/f", ["~files:/f"])]);
     expect(next.activeWindows).toEqual({ "/f": "w1" });
   });
 
   it("drops session panes — their PTYs died with the last run", () => {
     const w: WireWindowsPayload = {
-      windows: [wireWin("w1", "/f", ["s1", "~diff:/f"]), wireWin("w2", "/g", ["s2"])],
+      windows: [wireWin("w1", "/f", ["s1", "~files:/f"]), wireWin("w2", "/g", ["s2"])],
       activeWindows: { "/f": "w1", "/g": "w2" },
     };
     const next = hydrateWins(w);
-    expect(next.windows).toEqual([win("w1", "/f", ["~diff:/f"])]);
+    expect(next.windows).toEqual([win("w1", "/f", ["~files:/f"])]);
     expect(next.activeWindows).toEqual({ "/f": "w1" });
   });
 
   it("keeps a folder-pane layout intact, cols included", () => {
     const w: WireWindowsPayload = {
-      windows: [{ ...wireWin("w1", "/f", ["~diff:/f", "~files:/f"]), cols: [333, 667] }],
+      windows: [{ ...wireWin("w1", "/f", ["~files:/f", "~preview:/f"]), cols: [333, 667] }],
       activeWindows: { "/f": "w1" },
     };
     expect(hydrateWins(w)).toEqual(w);
@@ -1261,40 +1253,6 @@ function folder(overrides: Partial<FolderData>): FolderData {
     ...overrides,
   };
 }
-
-describe("folderStatsKey / folderBaseKey", () => {
-  it("splits working-tree movement from baseline movement", () => {
-    // A fetch or rebase-merge lands new commits on the base: the merge-base the
-    // diff is measured from moves while every working-tree stat stays put. Only
-    // folderBaseKey sees it — which is why DiffPane refetches its file list on
-    // both, not on folderStatsKey alone.
-    const before = folder({ commitsBehind: 0, comparedBase: "origin/main" });
-    const after = folder({ commitsBehind: 12, comparedBase: "origin/main" });
-    expect(folderStatsKey(after)).toBe(folderStatsKey(before));
-    expect(folderBaseKey(after)).not.toBe(folderBaseKey(before));
-  });
-
-  it("sees a retargeted base ref", () => {
-    const a = folder({ comparedBase: "origin/main" });
-    const b = folder({ comparedBase: "origin/develop" });
-    expect(folderBaseKey(a)).not.toBe(folderBaseKey(b));
-  });
-
-  it("sees an edit the aggregate counts can't tell apart", () => {
-    // A line traded between two files: same file count, same ±, different diff.
-    // Only the changed paths' mtime separates them.
-    const before = folder({ uncommittedFiles: 2, worktreeTouchedMs: 1_000 });
-    const after = folder({ uncommittedFiles: 2, worktreeTouchedMs: 2_000 });
-    expect(folderStatsKey(after)).not.toBe(folderStatsKey(before));
-  });
-
-  it("sees an edit that leaves the baseline alone", () => {
-    const clean = folder({ uncommittedFiles: 0, uncommittedAdded: 0 });
-    const dirty = folder({ uncommittedFiles: 1, uncommittedAdded: 3 });
-    expect(folderStatsKey(dirty)).not.toBe(folderStatsKey(clean));
-    expect(folderBaseKey(dirty)).toBe(folderBaseKey(clean));
-  });
-});
 
 describe("isFolderIdle", () => {
   // Far enough past the ts:1 the `agent()` helper stamps that the grace
@@ -1556,16 +1514,16 @@ function repo(key: string, folders: FolderData[]): RepoData {
 }
 
 describe("paneCloseTarget", () => {
-  const panes = ["s1", diffPaneId("/x"), exitPaneId("s2")];
+  const panes = ["s1", filesPaneId("/x"), exitPaneId("s2")];
 
   it("closes a session pane by ending its shell", () => {
     expect(paneCloseTarget("s1", panes)).toEqual({ kind: "session", sessionId: "s1" });
   });
 
   it("closes a view pane as a layout drop — no shell to end", () => {
-    expect(paneCloseTarget(diffPaneId("/x"), panes)).toEqual({
+    expect(paneCloseTarget(filesPaneId("/x"), panes)).toEqual({
       kind: "pane",
-      paneId: diffPaneId("/x"),
+      paneId: filesPaneId("/x"),
     });
   });
 
@@ -1578,7 +1536,7 @@ describe("paneCloseTarget", () => {
 
   it("does nothing for a ring left on a pane this window no longer shows", () => {
     expect(paneCloseTarget("s9", panes)).toBeNull();
-    expect(paneCloseTarget(diffPaneId("/elsewhere"), panes)).toBeNull();
+    expect(paneCloseTarget(filesPaneId("/elsewhere"), panes)).toBeNull();
   });
 
   it("does nothing when nothing is focused", () => {
@@ -1588,7 +1546,7 @@ describe("paneCloseTarget", () => {
 
 describe("moveFocus", () => {
   const base = {
-    panes: ["s1", "~diff:/x", "s2"],
+    panes: ["s1", "~files:/x", "s2"],
     focusedPaneId: null as string | null,
     windows: ["w1"],
     activeWindowId: "w1",
@@ -1625,19 +1583,19 @@ describe("moveFocus", () => {
   });
 
   it("steps panes with left/right/down, entering at the first", () => {
-    expect(at("pane", "right", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~diff:/x" });
-    expect(at("pane", "down", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~diff:/x" });
+    expect(at("pane", "right", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~files:/x" });
+    expect(at("pane", "down", { focusedPaneId: "s1" })).toEqual({ kind: "pane", id: "~files:/x" });
     expect(at("pane", "right", { focusedPaneId: "s2" })).toBeNull();
     expect(at("pane", "right")).toEqual({ kind: "pane", id: "s1" });
-    expect(at("pane", "left", { focusedPaneId: "s2" })).toEqual({ kind: "pane", id: "~diff:/x" });
+    expect(at("pane", "left", { focusedPaneId: "s2" })).toEqual({ kind: "pane", id: "~files:/x" });
   });
 
   it("climbs out of the panes to the window strip only when there is another window", () => {
-    expect(at("pane", "up", { focusedPaneId: "~diff:/x" })).toEqual({
+    expect(at("pane", "up", { focusedPaneId: "~files:/x" })).toEqual({
       kind: "level",
       level: "rail",
     });
-    expect(at("pane", "up", { focusedPaneId: "~diff:/x", windows: ["w1", "w2"] })).toEqual({
+    expect(at("pane", "up", { focusedPaneId: "~files:/x", windows: ["w1", "w2"] })).toEqual({
       kind: "level",
       level: "window",
     });

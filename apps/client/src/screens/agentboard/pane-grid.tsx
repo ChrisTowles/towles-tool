@@ -2,16 +2,13 @@ import { PanePlaceholder } from "@/components/agentboard-bits";
 import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { BrowserPane } from "@/components/browser-pane";
-import { DiffPane } from "@/components/diff-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
 import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import {
-  diffPaneDir,
   exitPaneSession,
   filesPaneDir,
-  isDiffPane,
   isExitPane,
   isFilesPane,
   isJarvisPane,
@@ -34,7 +31,7 @@ import { paneStyle } from "./helpers";
 import type { ColumnDrag } from "./use-column-drag";
 
 /** The pane area: one flat pool of mounted terminals (never remounted — a remount would respawn
- * the shell) plus the diff/files/preview/jarvis/tombstone panes, all absolutely positioned into
+ * the shell) plus the files/preview/jarvis/browser/tombstone panes, all absolutely positioned into
  * the active window's tiling. */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
@@ -196,19 +193,6 @@ export function PaneGrid(props: {
           </div>
         );
       })}
-      {/* Diff panes: a folder's patch tiled beside its terminals. */}
-      {panes
-        .filter(isDiffPane)
-        .map((id) =>
-          paneBox(
-            id,
-            <DiffPane
-              folder={folderByDir.get(diffPaneDir(id) ?? "")}
-              focused={focusedPaneId === id}
-              onClose={() => onRemovePane(id)}
-            />,
-          ),
-        )}
       {/* Files panes: a folder's full tree tiled beside its terminals. */}
       {panes.filter(isFilesPane).map((id) => {
         const dir = filesPaneDir(id) ?? "";

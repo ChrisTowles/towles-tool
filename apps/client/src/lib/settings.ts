@@ -160,7 +160,6 @@ export type UserSettings = {
     compactRecommendPercent?: number;
     copyOnSelect?: boolean;
     terminalFontSize?: number;
-    editorFontSize?: number;
     shortcutsWorkInTerminal?: boolean;
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;

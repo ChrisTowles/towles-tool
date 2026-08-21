@@ -9,6 +9,7 @@
 //! 127.0.0.1:0` lets the OS assign one and code-server logs it, which is both
 //! race-free and the repo's rule about concurrent worktree tasks.
 
+pub mod bridge;
 pub mod install;
 
 use std::collections::VecDeque;
@@ -23,7 +24,9 @@ const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
 const STDERR_TAIL_LINES: usize = 30;
 /// How long a reveal waits for a workbench to register itself — a pane created
 /// moments ago is still booting one.
-const REVEAL_DEADLINE: Duration = Duration::from_secs(20);
+pub(crate) const REVEAL_DEADLINE: Duration = Duration::from_secs(20);
+/// Between polls while a workbench is still coming up.
+pub(crate) const RETRY_PAUSE: Duration = Duration::from_millis(250);
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Binary override for tests and settings; checked before PATH and the
@@ -105,6 +108,9 @@ pub struct CodeServerConfig {
     /// asks). Short by necessity: `sun_path` is 108 bytes on Linux, and the
     /// default under `user_data_dir` overflows it — silently, in code-server.
     pub session_socket: PathBuf,
+    /// Where each workbench's [`bridge`] extension listens, one socket per
+    /// window. Temp for the same `sun_path` reason as `session_socket`.
+    pub bridge_dir: PathBuf,
 }
 
 /// Auth is off because the socket is loopback-only and the *pane* has no way to
@@ -197,7 +203,7 @@ pub fn reveal(
         if Instant::now() > deadline {
             return Err(CodeServerError::NoWorkbench);
         }
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(RETRY_PAUSE);
     };
     let body = serde_json::json!({
         "type": "open",
@@ -218,12 +224,12 @@ pub fn reveal(
     Ok(())
 }
 
-struct HttpReply {
-    status: u16,
-    body: String,
+pub(crate) struct HttpReply {
+    pub(crate) status: u16,
+    pub(crate) body: String,
 }
 
-fn unix_http(socket: &Path, request: &str) -> Result<HttpReply, CodeServerError> {
+pub(crate) fn unix_http(socket: &Path, request: &str) -> Result<HttpReply, CodeServerError> {
     let mut stream = UnixStream::connect(socket)?;
     stream.set_read_timeout(Some(SOCKET_TIMEOUT))?;
     stream.set_write_timeout(Some(SOCKET_TIMEOUT))?;
@@ -244,6 +250,28 @@ fn parse_http_reply(raw: &str) -> Option<HttpReply> {
 fn registered_window(body: &str) -> Option<PathBuf> {
     let reply: serde_json::Value = serde_json::from_str(body).ok()?;
     reply.get("socketPath")?.as_str().map(PathBuf::from)
+}
+
+/// What a checkout's workbench opens as before anyone touches Settings.
+/// Instance-scoped state, so every new task would otherwise start over: the web
+/// workbench picks its theme off `prefers-color-scheme`, which the Tauri webview
+/// answers for the *host page*, not the pane.
+const DEFAULT_USER_SETTINGS: &str = r#"{
+  "workbench.colorTheme": "Dark 2026",
+  "workbench.secondarySideBar.defaultVisibility": "hidden"
+}
+"#;
+
+/// Seed [`DEFAULT_USER_SETTINGS`] once. Never overwrites: past the first launch
+/// the file is the user's, edited in the workbench's own Settings editor.
+fn seed_user_settings(user_data_dir: &Path) {
+    let file = user_data_dir.join("User").join("settings.json");
+    if file.exists() {
+        return;
+    }
+    if std::fs::create_dir_all(file.parent().expect("User has a parent")).is_ok() {
+        let _ = std::fs::write(&file, DEFAULT_USER_SETTINGS);
+    }
 }
 
 pub struct CodeServerChild {
@@ -267,11 +295,16 @@ impl CodeServerChild {
         if !cfg.config_file.exists() {
             std::fs::write(&cfg.config_file, "auth: none\n")?;
         }
+        seed_user_settings(&cfg.user_data_dir);
         if let Some(parent) = cfg.session_socket.parent() {
             std::fs::create_dir_all(parent)?;
         }
         // A stale socket file from a crashed predecessor with this pid.
         let _ = std::fs::remove_file(&cfg.session_socket);
+        std::fs::create_dir_all(&cfg.bridge_dir)?;
+        if let Err(e) = bridge::install(&cfg.extensions_dir) {
+            tracing::warn!(error = %e, "code-server.bridge.install-failed");
+        }
 
         let args = build_args(cfg);
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -285,6 +318,8 @@ impl CodeServerChild {
                 cmd.env_remove(&key);
             }
         }
+        // After the scrub, not before: `TT_` is one of the prefixes it strips.
+        cmd.env("TT_BRIDGE_DIR", &cfg.bridge_dir);
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -425,6 +460,18 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     #[test]
+    fn user_settings_are_seeded_once_then_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        seed_user_settings(dir.path());
+        let file = dir.path().join("User").join("settings.json");
+        assert!(std::fs::read_to_string(&file).unwrap().contains("Dark 2026"));
+
+        std::fs::write(&file, "{}").unwrap();
+        seed_user_settings(dir.path());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
+    }
+
+    #[test]
     fn parses_the_listening_port() {
         let line =
             "[2026-08-21T02:32:15.859Z] info  HTTP server listening on http://127.0.0.1:52987/";
@@ -482,6 +529,7 @@ mod tests {
             extensions_dir: PathBuf::from("/tmp/ext"),
             config_file: PathBuf::from("/tmp/cfg.yaml"),
             session_socket: PathBuf::from("/tmp/cs.sock"),
+            bridge_dir: PathBuf::from("/tmp/br"),
         };
         let args = build_args(&cfg);
         assert!(args.contains(&"127.0.0.1:0".to_string()));

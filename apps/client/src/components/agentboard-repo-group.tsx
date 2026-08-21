@@ -85,7 +85,6 @@ export function RepoGroup({
   onRecreateWorktree,
   settingUpDirs,
   onRenameCommit,
-  onOpenDiff,
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
@@ -128,7 +127,6 @@ export function RepoGroup({
   /** Checkouts whose setup step is still running → when it started (epoch ms). */
   settingUpDirs?: Map<string, number>;
   onRenameCommit: (sessionId: string, name: string) => void;
-  onOpenDiff: (dir: string) => void;
   onOpenFiles: (dir: string) => void;
   onOpenPreview: (dir: string) => void;
   /** Undefined while `agentboard.jarvisPane` is off: hide the entry point
@@ -178,7 +176,6 @@ export function RepoGroup({
   // A table, not a ternary chain, so `jarvis`'s absence is expressible: its row
   // outlives the setting (the layout persists), and no opener means ✕ only.
   const viewPaneOpener: Record<ViewPaneKind, ((dir: string) => void) | undefined> = {
-    diff: onOpenDiff,
     files: onOpenFiles,
     preview: onOpenPreview,
     browser: onOpenBrowser,
@@ -310,7 +307,6 @@ export function RepoGroup({
               ? () => onRecreateWorktree(folder)
               : undefined
           }
-          onOpenDiff={() => onOpenDiff(folder.dir)}
           onOpenFiles={() => onOpenFiles(folder.dir)}
           onOpenPreview={() => onOpenPreview(folder.dir)}
           onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
@@ -472,8 +468,7 @@ export function RepoGroup({
                       ? () => onRecreateWorktree(folder)
                       : undefined
                   }
-                  onOpenDiff={() => onOpenDiff(folder.dir)}
-                  onOpenFiles={() => onOpenFiles(folder.dir)}
+                          onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
                   onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
                   onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}

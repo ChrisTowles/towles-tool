@@ -113,9 +113,9 @@ invariants a single read won't surface: it is the largest crate in the repo
 
 - **The IDE server serves multiple concurrent connections per terminal**
   (`ide.rs`) — a Claude Code ≥2.1 session is a TUI process *and* a session
-  daemon, both dialing in. **`openDiff` replies are deferred through a channel
-  that auto-rejects on drop**, so a torn-down pane can never hang the CLI waiting
-  on a review decision.
+  daemon, both dialing in. It answers a deliberately small slice of the
+  protocol; the editor half is code-server's
+  ([docs/CLAUDE-CODE-IDE.md](../../docs/CLAUDE-CODE-IDE.md)).
 - **Every `#[tauri::command]` triggered by an explicit user gesture must emit its
   own `tracing` event.** The naming, outcome-recording and never-log-content
   rules are in **[docs/TELEMETRY.md](../../docs/TELEMETRY.md)**; this is not

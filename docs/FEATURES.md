@@ -23,15 +23,14 @@ of what this repo does, Desktop now does as well.
 
   ![The Agentboard + flow: a rough goal plus a pasted screenshot, an optional prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](docs/images/demos/agentboard.gif)
 
-- **A real VS Code per checkout, and a diff pane Claude Code can see into.**
+- **A real VS Code per checkout, wired to the sessions beside it.**
   The Files pane is a code-server workbench — one server, one window per
-  checkout, so N VS Code windows collapse into N panes beside their terminals.
-  `tt open src/main.rs:42`, a `path:line` link printed in a terminal and
-  Claude's own `openFile` all land in that checkout's workbench. `tt-ide` makes
-  the app an IDE-protocol server for the diff pane: highlight lines there and
-  the selection streams live into the session — `@ send` turns it into an
-  `@file#L17-18` reference in the prompt. Desktop only takes context from its
-  own panes; it cannot see a selection in an editor beside it.
+  checkout, so N VS Code windows collapse into N panes beside their terminals,
+  git and diffs included. `tt open src/main.rs:42`, a `path:line` link printed
+  in a terminal and Claude's own `openFile` all land in that checkout's
+  workbench. `tt-ide` makes the app an IDE-protocol server per terminal, so a
+  session knows which checkout it is in and answers for that folder's
+  workspace and diagnostics. Desktop has no editor of its own at all.
 
 - **Cross-repo work board.** Board is a kanban of tasks spanning every watched
   repo. Each task links 0..N issues, 0..N PRs, and usually a worktree,

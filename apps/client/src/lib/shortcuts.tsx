@@ -153,14 +153,6 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
-    id: "ab-toggle-diff",
-    scope: "agentboard",
-    keys: "mod+shift+g",
-    description: "Open the focused folder's diff pane",
-    when: "a folder is focused",
-    allowInEditable: true,
-  },
-  {
     id: "ab-toggle-files",
     scope: "agentboard",
     keys: "mod+shift+e",

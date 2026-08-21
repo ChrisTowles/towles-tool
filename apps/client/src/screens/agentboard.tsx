@@ -39,7 +39,6 @@ import {
   cycleNeedsYou,
   cycleNotBusy,
   cycleSession,
-  diffPaneId,
   exitPaneId,
   filesPaneId,
   filesPanePathFor,
@@ -298,7 +297,6 @@ export function AgentboardScreen() {
     setFocusLevel("pane");
   }
 
-  const openDiff = (dir: string) => placeViewPane(dir, diffPaneId(dir));
   const openFiles = (dir: string) => placeViewPane(dir, filesPaneId(dir));
   const openPreview = (dir: string) => placeViewPane(dir, previewPaneId(dir));
 
@@ -989,9 +987,6 @@ export function AgentboardScreen() {
           worktreeDelete.confirmDeleteWorktree();
         },
         "ab-close-pane": closeFocusedPane,
-        "ab-toggle-diff": () => {
-          if (activeFolderDir) openDiff(activeFolderDir);
-        },
         "ab-toggle-files": () => {
           if (activeFolderDir) openFiles(activeFolderDir);
         },
@@ -1183,7 +1178,6 @@ export function AgentboardScreen() {
                               onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
                               settingUpDirs={taskCreation.settingUpDirs}
                               onRenameCommit={commitRename}
-                              onOpenDiff={openDiff}
                               onOpenFiles={openFiles}
                               onOpenPreview={openPreview}
                               // Undefined while `agentboard.jarvisPane` is off:
@@ -1268,7 +1262,6 @@ export function AgentboardScreen() {
                   task={taskForFolder(snapshot.tasks, activeFolder.dir)}
                   deleting={folderRemoving(activeFolder)}
                   actions={actions}
-                  onOpenDiff={openDiff}
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
                   onOpenBrowser={browserPane ? openBrowser : undefined}

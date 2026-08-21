@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AppWindow, Box, Files as FilesIcon, GitCompare, Globe } from "lucide-react";
+import { AppWindow, Box, Files as FilesIcon, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** One header row for every pane kind. **The lens leads, the subject follows, the
@@ -78,12 +78,11 @@ export function PaneChrome({
 
 /** `agent` and `shell` keep the rail's `✦`/`❯` glyphs, so a session pane and
  * its rail row name themselves the same way. */
-export type LensKind = "agent" | "shell" | "diff" | "files" | "web" | "browser" | "jarvis";
+export type LensKind = "agent" | "shell" | "files" | "web" | "browser" | "jarvis";
 
-const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof GitCompare }> = {
+const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof FilesIcon }> = {
   agent: { label: "claude", glyph: "✦" },
   shell: { label: "shell", glyph: "❯" },
-  diff: { label: "diff", icon: GitCompare },
   files: { label: "files", icon: FilesIcon },
   web: { label: "web", icon: Globe },
   browser: { label: "chrome", icon: AppWindow },

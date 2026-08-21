@@ -5,7 +5,6 @@ import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { DmBanner } from "@/components/dm-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { MonacoDialogHost } from "@/components/monaco-dialog-host";
 import { QuickLog } from "@/components/quick-log";
 import { StatusBar } from "@/components/status-bar";
 import { ResumePicker } from "@/components/resume-picker";
@@ -220,9 +219,6 @@ function Workspace() {
       <CommandPalette />
       <QuickLog />
       <ResumePicker />
-      {/* The VS Code layer can raise a confirmation from any pane (or none),
-          so its host lives at the root. */}
-      <MonacoDialogHost />
       <Toaster />
     </div>
   );

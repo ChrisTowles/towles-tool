@@ -1,0 +1,11 @@
+{
+  "name": "tt-bridge",
+  "displayName": "Towles Tool bridge",
+  "publisher": "towles-tool",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "main": "./extension.js",
+  "extensionKind": ["workspace"],
+  "activationEvents": ["*"],
+  "contributes": {}
+}

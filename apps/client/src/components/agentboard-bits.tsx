@@ -12,7 +12,7 @@ import {
   Eye,
   FolderPlus,
   FolderTree,
-  GitCompare,
+  GitCommitVertical,
   GitMerge,
   GitPullRequest,
   Link,
@@ -77,6 +77,7 @@ import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { useShowQuiet } from "@/lib/rail-prefs";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutAria, shortcutHint, withHint } from "@/lib/shortcuts";
+import { errorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -237,7 +238,7 @@ export function Chevron({ collapsed }: { collapsed: boolean }) {
 /** Violet is "a Claude session is live here" app-wide: pane headers, selection
  * chip and in-editor hint all use it, so it reads as one signal. */
 export function ClaudeBadge({
-  title = "A Claude Code session in this folder is connected — highlighted lines become its selection context",
+  title = "A Claude Code session in this folder is connected — the files it opens land in this pane, and it reads this checkout's diagnostics",
   className,
   children = "✦ claude",
 }: {
@@ -486,27 +487,71 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   );
 }
 
-/** Which branch every git stat here was measured against. */
+/** Which branch every git stat here was measured against, and the one place to
+ * retarget it — the override used to live in the diff pane's header, and every
+ * count in this row is measured from it. Click to edit, blank to auto-detect. */
 export function ComparedBaseBadge({
   folder,
 }: {
-  folder: Pick<FolderData, "comparedBase" | "baseBranch" | "taskBaseBranch">;
+  folder: Pick<FolderData, "dir" | "comparedBase" | "baseBranch" | "taskBaseBranch">;
 }) {
+  const [editing, setEditing] = useState(false);
   const label = comparedBaseLabel(folder);
   const manual = Boolean(folder.baseBranch?.trim());
+
+  async function commit(value: string) {
+    setEditing(false);
+    const trimmed = value.trim();
+    if (trimmed === (folder.baseBranch ?? "")) return;
+    uiAction("folder.base_branch_set", "agentboard");
+    const stored = await invoke<void>("ab_set_folder_base_branch", {
+      dir: folder.dir,
+      branch: trimmed || null,
+    });
+    // Silence reads as success while every count keeps the old baseline.
+    if (stored.isErr()) toast.error(`Couldn't set base branch — ${errorMessage(stored.error)}`);
+  }
+
+  // Either the input or the chip, never nested: the chip is a button.
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        defaultValue={folder.baseBranch ?? ""}
+        placeholder={
+          folder.taskBaseBranch
+            ? `compare against (blank = this task's base, "${folder.taskBaseBranch}")`
+            : "compare against (blank = auto-detect main)"
+        }
+        onBlur={(e) => void commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void commit((e.target as HTMLInputElement).value);
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-56 shrink-0 rounded-sm border border-input bg-background px-1.5 py-0.5 font-mono text-[10px] outline-none"
+      />
+    );
+  }
   return (
     <Hint
       label={
         manual
-          ? `Diffs against "${label}" — your override for this folder`
+          ? `Diffs against "${label}" — your override for this folder. Click to change.`
           : folder.taskBaseBranch
-            ? `Diffs against "${label}" — the ref this task was created from`
-            : `Diffs against "${label}" (origin/main-or-master auto-detect)`
+            ? `Diffs against "${label}" — the ref this task was created from. Click to override.`
+            : `Diffs against "${label}" (origin/main-or-master auto-detect). Click to override.`
       }
     >
-      <span className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/70">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        className="shrink-0 rounded-sm px-0.5 font-mono text-[10px] text-muted-foreground/70 hover:text-foreground"
+      >
         vs {label}
-      </span>
+      </button>
     </Hint>
   );
 }
@@ -670,8 +715,9 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            mouseAction("ab-toggle-diff", "agentboard");
+            mouseAction("ab-toggle-files", "agentboard");
             onOpen();
+            if (!clean) void invoke("code_server_show_changes", { dir: stats.dir });
           }}
           className={`${CHIP_CLASS} hover:bg-accent ${
             clean ? "text-muted-foreground/60" : "font-medium text-foreground"
@@ -702,7 +748,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             {clean
               ? "Nothing uncommitted — every change here is in a commit."
               : uncommittedCapped
-                ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the diff for which one.`
+                ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the files pane for which one.`
                 : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
           </span>
           <span className="opacity-70">
@@ -710,7 +756,12 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
               ? "Deleting this checkout would lose nothing that isn't on the branch."
               : "Deleting this checkout destroys these. Untracked files count here but add no ± (they have no diff yet)."}
           </span>
-          <span className="opacity-70">{withHint("Opens the diff pane", "ab-toggle-diff")}</span>
+          <span className="opacity-70">
+            {withHint(
+              clean ? "Opens the files pane" : "Opens these changes as a diff in the files pane",
+              "ab-toggle-files",
+            )}
+          </span>
           <span className="opacity-70">
             <CheckedAgo computedAtMs={stats.computedAtMs} />
           </span>
@@ -751,17 +802,17 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            mouseAction("ab-toggle-diff", "agentboard");
+            mouseAction("ab-toggle-files", "agentboard");
             onOpen();
           }}
           className={`${CHIP_CLASS} ${tone}`}
         >
-          <GitCompare className="size-3" />
+          <GitCommitVertical className="size-3" />
           <ChipLabel text="committed" labeled={labeled} />
           {commitsAhead === 0 ? (
             /* Unlabeled, the word doubles as the affordance; labeled,
                `committed` already names the chip. */
-            <span>{labeled ? "none" : "diff"}</span>
+            <span>{labeled ? "none" : "files"}</span>
           ) : landedClean ? (
             <span>
               {commitsAhead}c {stats.landed}
@@ -805,7 +856,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
             </>
           )}{" "}
           <CheckedAgo computedAtMs={stats.computedAtMs} />.{" "}
-          {withHint("Opens the diff pane", "ab-toggle-diff")}.
+          {withHint("Opens the files pane", "ab-toggle-files")}.
         </p>
         <CommitBreakdownPreview commits={commits} stats={stats} base={base} />
       </HoverCardContent>

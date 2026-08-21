@@ -2,20 +2,17 @@
 
 The Files pane is a real VS Code: [coder/code-server](https://github.com/coder/code-server)
 running as a child of the app, one workbench per checkout, each in an iframe.
-Monaco (`@codingame/monaco-vscode-api`, [`lib/monaco.ts`](../apps/client/src/lib/monaco.ts))
-stays only for the diff pane, whose hunk-level staging rides VS Code's
-`DiffEditorGutter` through our own menu registration (#613).
+It is the app's **only** editor — the Monaco diff pane and
+`@codingame/monaco-vscode-api` are gone, diffs and hunk staging with them.
 
 ## The baseline that matters
 
-Not "Monaco versus code-server". The thing this app exists to replace is
-**switching between many VS Code windows**, and code-server is the only option
-that keeps being VS Code while collapsing N windows into N panes. One server,
-one Node runtime, one extension install, one settings file — and one browser
-engine, our webview, instead of an Electron shell per window.
-
-That reframes the cost table below: the question is not what a workbench costs,
-it is what the *fourth* one costs.
+Not "Monaco versus code-server". This app exists to replace **switching between
+many VS Code windows**, and code-server is the only option that keeps being VS
+Code while collapsing N windows into N panes: one server, one Node runtime, one
+extension install, one settings file, one browser engine instead of an Electron
+shell per window. So the question below is not what a workbench costs, it is what
+the *fourth* one costs.
 
 ## How it's wired
 
@@ -64,6 +61,17 @@ page can't reach the workbench:
   that socket takes the same `{"type":"open"}` request the `code` CLI sends.
   Both are HTTP/1.0 over Unix sockets, ~60 lines, pinned by a test with fake
   sockets at both ends.
+- **A diff** goes neither way. The CLI's `open` does file-vs-file only and the
+  web payload has no command lever, so VS Code's *git* diff — `git:` URIs,
+  staging gutters, decorations — can only be asked for from inside the workbench.
+  The Agentboard's uncommitted chip invokes `code_server_show_changes`, which
+  reaches the bridge extension to run VS Code's own multi-file diff commands.
+  There is one per SCM group and none spanning them, so both halves of the chip's
+  one number open, `git.viewStagedChanges` pinned because `git.viewChanges` would
+  otherwise replace it in the same preview slot. That chip is usually clicked with
+  no server running at all, so `show` polls through the server starting, the
+  workbench booting and git's first scan — which the extension reports as `503`
+  rather than opening a diff of nothing.
 
 The registry answers with the *most recent* window when none matches — `code
 -r`'s semantics too — so a reveal aimed at a pane still booting its workbench,
@@ -105,18 +113,22 @@ running server rather than over it.
 The pane shows it: `code-server://install` carries phase and bytes, so the
 several minutes are a bar, not a spinner. Scratch is removed however the install
 ends, and two instances racing a version resolve by rename. An existing
-code-server (PATH, Homebrew, the install script's prefix) is used as-is and
-nothing is downloaded; `TT_CODE_SERVER_BIN` still beats everything. Pre-warm
-with `cargo run -p tt-codeserver --example provision`.
+code-server (PATH, Homebrew, the install script's prefix) is used as-is;
+`TT_CODE_SERVER_BIN` beats everything. Pre-warm with `cargo run -p tt-codeserver
+--example provision`.
+
+First launch also seeds `User/settings.json` with a dark theme, once — past that
+the file is the user's, edited in the workbench's own Settings editor.
 
 ## What it gives up
 
 The iframe is a cross-origin document, and that one fact costs:
 
-- **The Claude Code selection bridge, in this pane.** `ide_set_selection` hung
-  off Monaco's cursor callback; there is none to hook, and the parent cannot
-  read a cross-origin selection. The diff pane still streams its selection.
-  **Accepted** — the workbench's own agent surfaces cover the same ground.
+- **The Claude Code selection bridge.** `ide_set_selection` hung off Monaco's
+  cursor callback; there is none to hook, and the parent cannot read a
+  cross-origin selection. `tt-ide` no longer advertises the selection tools or
+  `openDiff` ([CLAUDE-CODE-IDE.md](CLAUDE-CODE-IDE.md)). **Accepted**, and
+  recoverable through the bridge below.
 - **`openFile`'s text anchors.** The tool's `startText`/`endText` selection has
   no receiver; the file opens, the range doesn't select.
 - **The app's keyboard, while the editor has focus.** Keydown in a cross-origin
@@ -127,23 +139,34 @@ The iframe is a cross-origin document, and that one fact costs:
   reports success, the element lookup then throws `SecurityError`, and a
   `Ctrl+P` through the actions API produced nothing).
 
-## The door back in
+## The bridge extension
 
-Everything above is recoverable through **an extension inside the pane**, not
-through the page. The app's MCP HTTP server already admits exactly that caller
-and refuses the other one — verified against a live instance:
+Everything above is recoverable from **inside** the pane rather than from the
+page, and one extension now ships there: `tt-bridge`, written into the shared
+extensions dir at launch by `tt_codeserver::bridge`. It runs in the remote
+extension host, so it sees `file:` URIs and can listen on a unix socket, and the
+Rust side POSTs to it in the same HTTP/1.0 style as the reveal path. The socket
+is named for a hash of the folder, one per *window*: a single code-server serves
+every checkout and all its extension hosts inherit the same env, so the folder is
+the only thing that distinguishes them.
+
+Registering it is the part with a trap. `scanUserExtensions` reads the profile's
+`extensions.json`, never the directory listing, so a folder dropped in is simply
+invisible. `install` rewrites only our own entry and leaves other publishers'
+alone, because that manifest is shared across every checkout.
+
+The same door fits the rest. The app's MCP HTTP server already admits the
+extension host and refuses the page — verified against a live instance:
 
 | Caller | Sends | Result |
 | --- | --- | --- |
 | Extension host (Node) | no `Origin` | **200** |
 | The workbench page itself | browser `Origin` | **403** |
 
-So a small extension we ship into the pane can call back into the app for
-selection relay, or a command bound to one of our chords — the keyboard problem
-included. `anthropic.claude-code` is itself on Open VSX (2.1.238), so the
-official bridge is installable in the pane if it is ever wanted back. Note that
-it would then serve its own lockfile while our terminals stamp
-`CLAUDE_CODE_SSE_PORT` at ours, and ours wins the pairing.
+So selection relay, or a command bound to one of our chords, is this mechanism
+with a different payload. `anthropic.claude-code` is itself on Open VSX (2.1.238)
+if the official bridge is ever wanted back — it would serve its own lockfile
+while our terminals stamp `CLAUDE_CODE_SSE_PORT` at ours, and ours wins.
 
 **Known gap:** `PR_SET_PDEATHSIG` reaps the server when the app is killed on
 Linux; macOS has no equivalent, so a `SIGKILL`ed app there leaks one tree.

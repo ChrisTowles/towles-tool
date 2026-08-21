@@ -1,25 +1,8 @@
-import importMetaUrlPlugin from "@codingame/esbuild-import-meta-url-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import { resolveDevPort } from "../../scripts/task-port.mjs";
-import pkg from "./package.json" with { type: "json" };
-
-// @vscode/diff imports `node:fs/promises` from a Node-only branch a WebView
-// never takes, and every chunk pulling it in warns. Scoped to that one dep
-// rather than aliased globally, so the next Node builtin still says so.
-function vscodeDiffNodeShim(): Plugin {
-  const shim = path.resolve(__dirname, "./src/shims/node-fs-promises.ts");
-  return {
-    name: "tt:vscode-diff-node-shim",
-    enforce: "pre",
-    resolveId(source, importer) {
-      if (source !== "node:fs/promises" || !importer?.includes("@vscode/diff")) return null;
-      return shim;
-    },
-  };
-}
 
 // Dev-only: stamps the owning component's name into the DOM for the element
 // inspector — as the *first class* (the hover tooltip shows only `classList`)
@@ -96,14 +79,6 @@ function componentNamePlugin({ types: t }: { types: typeof import("@babel/types"
   };
 }
 
-// Every @codingame/monaco-vscode-* package must be pre-bundled together (and
-// deduped) so they share one module instance — otherwise the default-extension
-// packages register grammars/themes into a different api copy and nothing
-// highlights.
-const monacoVscodeDeps = Object.keys(pkg.dependencies).filter((d) =>
-  d.startsWith("@codingame/monaco-vscode-"),
-);
-
 // `dev-port.mjs` normally pins TT_DEV_PORT; run bare, resolve the same
 // per-checkout claim from the repo root's rendered `.env`. No fallback: any
 // port picked outside the claim system comes from the same 1420-1619 pool a
@@ -126,43 +101,11 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(command === "serve" ? { babel: { plugins: [componentNamePlugin] } } : undefined),
     tailwindcss(),
-    vscodeDiffNodeShim(),
   ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-    dedupe: ["monaco-editor", ...monacoVscodeDeps],
-  },
-  // monaco-vscode-api relies on `new URL(..., import.meta.url)` inside deps
-  // (broken by Vite's dep pre-bundling without this plugin) and ships some
-  // CommonJS-only transitive deps that must be pre-bundled to load in workers.
-  optimizeDeps: {
-    include: [
-      ...monacoVscodeDeps,
-      "@codingame/monaco-vscode-api/extensions",
-      "@codingame/monaco-vscode-api/monaco",
-      "monaco-editor",
-    ],
-    // importMetaUrlPlugin can't resolve @vscode/diff's `worker.js?esm` URL —
-    // serve it unbundled instead of pre-optimizing it.
-    exclude: ["@vscode/diff"],
-    esbuildOptions: {
-      plugins: [importMetaUrlPlugin],
-    },
-  },
-  // The textmate tokenization worker code-splits, which rollup only supports
-  // with ES-module workers. Worker builds are their own rollup pass and do NOT
-  // inherit `plugins`, so the @vscode/diff shim is registered a second time.
-  worker: {
-    format: "es",
-    plugins: () => [vscodeDiffNodeShim()],
-  },
-  // The ~2.4 MB main chunk is accepted: the monaco-vscode stack must stay one
-  // module graph, and a Tauri webview loads from disk, so the 500 kB default (a
-  // network heuristic) doesn't apply. Raised, not removed — ~3 MB should warn.
-  build: {
-    chunkSizeWarningLimit: 3000,
   },
   // Prevent Vite from obscuring Rust errors
   clearScreen: false,
