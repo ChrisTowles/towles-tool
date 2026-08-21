@@ -8,8 +8,19 @@ server — replace the in-webview Monaco editor
 pane renders a code-server workbench instead of Monaco. Everything else — the
 diff pane, the rail, the terminals — is untouched.
 
-**It works. It is not the replacement.** Measured on Linux/WebKitGTK against
+**It works, and it is the better shape.** Measured on Linux/WebKitGTK against
 code-server 4.133.0 (Code 1.133.0), 2026-08-20.
+
+## The baseline that matters
+
+Not "Monaco versus code-server". The thing this app exists to replace is
+**switching between many VS Code windows**, and code-server is the only option
+here that keeps being VS Code while collapsing N windows into N panes. One
+server, one Node runtime, one extension install, one settings file — and one
+browser engine, our webview, instead of an Electron shell per window.
+
+That reframes the cost table below: the question is not what a workbench costs,
+it is what the *fourth* one costs.
 
 ## How it's wired
 
@@ -36,75 +47,66 @@ preview](BROWSER-PANE.md)), code-server ships no `X-Frame-Options` and its CSP
 has no `frame-ancestors`, so the workbench frames cleanly from `tauri://` and
 its own WebSocket is same-origin to the frame. No headless browser needed.
 
-## What it gets right
+## What it costs, per open checkout
 
-The full workbench renders and is interactive in WebKitGTK: explorer with git
-decorations, SCM view, command palette, extension marketplace (Open VSX),
-integrated terminal, problems, timeline. The extension host activates
-`vscode.git` on boot, so source control is the real one. `anthropic.claude-code`
-**is** on Open VSX (2.1.238), so the official Claude Code extension is
-installable inside the pane.
+One shared server, workspaces added one at a time, whole process tree:
 
-That is the whole argument for it: extensions and the parts of VS Code we have
-not rebuilt, for free, forever, with no `@codingame` prerelease pin to track.
+| Open checkouts | Resident | Processes | Marginal |
+| --- | --- | --- | --- |
+| 0 (server idle) | 148 MB | 2 | — |
+| 1 | 1,073 MB | 7 | +925 MB |
+| 2 | 1,606 MB | 10 | +533 MB |
+| 3 | 1,912 MB | 13 | +306 MB |
+| 4 | 2,268 MB | 16 | +356 MB |
 
-## What it costs
+**The first workbench is the expensive one.** After it, a checkout costs
+~300–530 MB and three processes — an extension host, a file watcher, a shared
+worker — and the size of the repo moves that number more than anything else.
+Four checkouts live in 2.3 GB. Four VS Code desktop windows do not.
 
-| | Monaco (today) | code-server |
+Disk is the one number that is worse and stays worse: **740 MB unpacked**, and
+it cannot ride the Tauri bundle sensibly, so it is a separate install
+(`TT_CODE_SERVER_BIN` overrides the lookup). Cold start is ~5 s to a usable
+workbench; every pane after that is an iframe against a warm server.
+
+## What it gives up
+
+The iframe is a cross-origin document, and that one fact costs:
+
+- **The Claude Code selection bridge.** `ide_set_selection` hangs off Monaco's
+  cursor callback; there is none to hook, and the parent cannot read a
+  cross-origin selection. Highlight-to-prompt stops working in this pane. The
+  diff pane still has it, being untouched by the swap. **Accepted** — the
+  workbench's own agent surfaces cover the same ground.
+- **`openFile` from the MCP tool** — same reason: the event has no receiver.
+- **The app's keyboard, while the editor has focus.** Keydown in a cross-origin
+  frame never reaches the parent, so the palette and pane navigation stop at the
+  frame boundary. This is the live cost of adoption, and the one to design for.
+- **`drive`/`e2e` over the editor.** Selectors fail cross-origin and WebDriver's
+  synthetic input does not reach the subframe (verified: the frame switch reports
+  success, the element lookup then throws `SecurityError`, and a `Ctrl+P` through
+  the actions API produced nothing).
+- **Monaco does not leave.** The diff pane's hunk-level stage/unstage rides VS
+  Code's `DiffEditorGutter` through our own menu registration (#613), so the
+  bundle and its `@codingame` pin stay until that moves too.
+
+## The door back in
+
+Everything above is recoverable through **an extension inside the pane**, not
+through the page. The app's MCP HTTP server already admits exactly that caller
+and refuses the other one — verified against a live instance:
+
+| Caller | Sends | Result |
 | --- | --- | --- |
-| Memory | ~300 MB, in `tt-app` | **+978 MB across 7 node processes** |
-| Disk | ~16 MB of JS in the bundle | **740 MB unpacked, outside it** |
-| Cold start | in-process, lazy | ~5 s to a usable workbench |
-| Ships how | in the Tauri bundle | a separate install, or a 740 MB bundle |
+| Extension host (Node) | no `Origin` | **200** |
+| The workbench page itself | browser `Origin` | **403** |
 
-Measured with one folder open and one pane. A second pane is another iframe, not
-another server — the process cost is per app instance, not per checkout.
-
-## What breaks, and why it is structural
-
-The iframe is a cross-origin document. That single fact takes out most of the
-integration:
-
-- **The Claude Code selection bridge dies.** `ide_set_selection` is called from
-  Monaco's `onDidChangeCursorSelection` in `code-viewer.tsx`; there is no such
-  callback to hook, and the parent cannot read a cross-origin selection. Select
-  code in the pane and nothing reaches the prompt — the one behavior
-  [CLAUDE-CODE-IDE.md](CLAUDE-CODE-IDE.md) exists for. The diff pane still
-  provides it, being untouched by the swap.
-- **`openFile` becomes a no-op.** The interception in `ide.rs` emits an event the
-  Files pane consumes; the iframe has no way to receive it. code-server's own
-  `VSCODE_IPC_HOOK_CLI` socket (`/run/user/<uid>/vscode-ipc-*.sock`) is the only
-  door in, and finding the right one means matching a uuid out of its logs.
-- **Every app shortcut is dead while the editor has focus** — keydown in a
-  cross-origin frame never reaches the parent document. The palette, pane
-  navigation, `Ctrl+Shift+W`: all of it stops at the frame boundary.
-- **`drive`/`e2e` go blind.** Selectors fail cross-origin and WebDriver's
-  synthetic input does not reach the subframe (verified: frame-switch returns
-  success, element lookup then throws `SecurityError`; a `Ctrl+P` through
-  `/actions` produced nothing). Every UI check we have for the editor stops
-  working, in a repo whose rule is that a green test says little and driving the
-  shell is the proof.
-- **The diff pane has no path across.** Hunk-level stage/unstage rides VS Code's
-  `DiffEditorGutter` through our own menu registration (#613). Reproducing that
-  inside code-server means shipping an extension, not calling an API.
-
-Two smaller ones: the extension host is reachable from any local process (auth
-is off), and this Code build bundles Copilot chat — an agent panel we did not
-put there, in an app whose whole point is the agents we did.
-
-## Verdict
-
-Feasible, and not worth the swap. It buys extensions and pays with the
-integration that makes this an agent surface rather than a worse VS Code — and
-[CLAUDE.md](../CLAUDE.md)'s test is whether a feature widens the channel between
-the human and the agents. This narrows it.
-
-Worth keeping the flag for the one thing it answers well: "I need real VS Code
-for ten minutes" without leaving the window. If it ever becomes the editor, the
-selection bridge has to move inside — `anthropic.claude-code` in the pane,
-serving its own lockfile — and then two IDE servers compete for the same
-`CLAUDE_CODE_SSE_PORT` and ours wins, so that is a rewrite of the bridge, not a
-port of it.
+So a small extension we ship into the pane can call back into the app for
+`openFile`, selection relay, or a command bound to one of our chords — the
+keyboard problem included. `anthropic.claude-code` is itself on Open VSX
+(2.1.238), so the official bridge is installable in the pane if it is ever wanted
+back. Note that it would then serve its own lockfile while our terminals stamp
+`CLAUDE_CODE_SSE_PORT` at ours, and ours wins the pairing.
 
 **Known gap:** `PR_SET_PDEATHSIG` reaps the server when the app is killed on
 Linux; macOS has no equivalent, so a `SIGKILL`ed app there leaks one tree.
