@@ -120,6 +120,7 @@ const AgentboardBlockSchema = z
     // unset rather than failing the whole settings parse.
     railFilter: RailFilterSchema.optional().catch(undefined),
     railRecentHours: z.number().optional(),
+    showQuiet: z.boolean().optional(),
     showUnmanagedWorktrees: z.boolean().optional(),
     jarvisPane: z.boolean().optional(),
     browserPane: z.boolean().optional(),

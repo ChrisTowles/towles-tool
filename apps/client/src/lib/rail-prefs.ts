@@ -2,13 +2,11 @@ import { useCallback } from "react";
 import { persistAgentboardSetting, useLiveSetting, type RailFilter } from "./settings";
 import { invoke } from "./tauri";
 
-/** Built-in default for `agentboard.railFilter` — everything, so a fresh
- * install never wonders where a checkout went. Mirrors Rust's
- * `tt_config::DEFAULT_RAIL_FILTER`. */
+/** Everything, so a fresh install never wonders where a checkout went.
+ * Mirrors `tt_config::DEFAULT_RAIL_FILTER`. */
 export const DEFAULT_RAIL_FILTER: RailFilter = "all";
 
-/** Built-in default for `agentboard.railRecentHours` — mirrors Rust's
- * `tt_config::DEFAULT_RAIL_RECENT_HOURS`. */
+/** Mirrors `tt_config::DEFAULT_RAIL_RECENT_HOURS`. */
 export const DEFAULT_RAIL_RECENT_HOURS = 4;
 
 /** The hour spans the rail's filter menu offers for `"recent"`. */
@@ -48,9 +46,25 @@ export function useRailFilter(): {
   return { filter, recentHours, setFilter, setRecentHours };
 }
 
-/** Built-in default for `agentboard.showUnmanagedWorktrees` — off, so only the
- * main checkout and worktrees the user asked for appear as rail folders. Mirrors
- * `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
+/** Off: a hand-marked quiet checkout is hidden until you say otherwise. */
+export const DEFAULT_SHOW_QUIET = false;
+
+/** The one switch that brings quiet checkouts back — hence the rail header,
+ * where it is found without knowing to look. Rust never reads it. */
+export function useShowQuiet(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useLiveSetting((s) => s.agentboard?.showQuiet, DEFAULT_SHOW_QUIET);
+  const persist = useCallback(
+    (next: boolean) => {
+      setOn(next);
+      void persistAgentboardSetting("showQuiet", next);
+    },
+    [setOn],
+  );
+  return [on, persist];
+}
+
+/** Off, so only the main checkout and worktrees you asked for become rail
+ * folders. Mirrors `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
 export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
 
 /** Not a view filter the client can apply: it decides which checkouts the
@@ -73,8 +87,8 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   return [show, persist];
 }
 
-/** Off, so the pane costs nothing until it's asked for. No Rust counterpart to
- * mirror: mounting `NativePane` is what starts the render thread. */
+/** Off, so the pane costs nothing until asked for: mounting `NativePane` is
+ * what starts the render thread. */
 export const DEFAULT_BROWSER_PANE = false;
 
 /** Whether checkouts offer the Chrome pane. Off means no entry point rather

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import {
   isFolderFiltered,
+  partitionQuiet,
+  searchRepos,
   type FolderData,
   type RepoData,
   type SessionData,
@@ -8,71 +10,105 @@ import {
 import type { RailFilter } from "@/lib/settings";
 
 export type RailIndex = {
-  /** Filtered-out checkout dirs per repo key, when the rail filter is not "all". */
+  /** Every repo minus the hand-marked quiet checkouts (`partitionQuiet`) —
+   * what is on the rail before anyone types. The standby board walks this one:
+   * a search is a way to find a row, not a claim about what exists. */
+  railRepos: RepoData[];
+  /** `railRepos` narrowed by the header's filter — the tree, the icon strip,
+   * the jump digits and the cyclers, which are what you steer while typing. */
+  shownRepos: RepoData[];
+  /** Repos the query took out, for the field's own readout. */
+  queryHidden: number;
+  /** Quiet-marked dirs per repo key, hidden or not, so a shown row can badge. */
   quietDirs: Map<string, Set<string>>;
-  /** Repos with quiet folders dropped — for the collapsed icon strip only. */
+  quietCount: number;
+  /** Filtered-out checkout dirs per repo key, when the rail filter is not "all". */
+  idleDirs: Map<string, Set<string>>;
+  /** `railRepos` minus the filtered folders — the collapsed icon strip only. */
   visibleRepos: RepoData[];
   /** Ghost checkouts (dir gone from disk) — drives the one-click cleanup. */
   missingRepoCount: number;
-  /** Session id → its folder. */
   folderOf: Map<string, FolderData>;
   /** Folder dir → the backend's tracker name, for `ab_mark_seen`. */
   folderNameByDir: Map<string, string>;
-  /** Session id → its data. */
   sessionById: Map<string, SessionData>;
   /** Folder dir → its owning repo, so a pane header can lead with "repo / folder". */
   repoOf: Map<string, RepoData>;
-  /** Folder dir → its data, for the diff/files/preview panes (their pane id
-   * carries the dir). */
+  /** Folder dir → its data, for the panes whose id carries a dir. */
   folderByDir: Map<string, FolderData>;
-  /** The active folder resolved to its data + repo — drives the working-context
-   * band ("where am I working, and why"). */
+  /** Drives the working-context band ("where am I working, and why"). */
   activeFolder: FolderData | undefined;
   activeRepo: RepoData | undefined;
 };
 
-// The lookups stay on the **full** `repos` list while only the two render
-// surfaces apply the rail filter — a pane already open for a now-filtered
-// folder must keep working, and the active folder is never filtered out.
+// The lookups stay on the **full** `repos` list while only the render surfaces
+// hide anything — a pane open for a checkout since filtered, or marked quiet,
+// must keep working.
 export function useRailIndex(args: {
   repos: RepoData[];
   filter: RailFilter;
   /** How far back `filter: "recent"` counts as worked in. */
   recentHours: number;
-  /** Repo keys whose "N quiet" stub is peeked open right now. */
-  quietRevealed: Set<string>;
+  /** Repo keys whose "N idle" filter stub is peeked open right now. */
+  idleRevealed: Set<string>;
+  /** `agentboard.showQuiet` — the rail header's toggle. */
+  showQuiet: boolean;
+  /** The header's free-text repo filter; empty matches everything. */
+  query: string;
   activeFolderDir: string | null;
-  /** Ticks every 30s — plenty for the 45-minute quiet grace window. */
+  /** Ticks every 30s — plenty for the 45-minute idle grace window. */
   now: number;
 }): RailIndex {
-  const { repos, filter, recentHours, quietRevealed, activeFolderDir, now } = args;
+  const { repos, filter, recentHours, idleRevealed, showQuiet, query, activeFolderDir, now } = args;
 
-  const quietDirs = useMemo(() => {
+  // The mark comes off first: everything below — filter, stubs, icon strip —
+  // reasons about a rail those checkouts are already gone from.
+  const {
+    shown: railRepos,
+    quietDirs,
+    quietCount,
+  } = useMemo(
+    () => partitionQuiet(repos, { show: showQuiet, activeFolderDir }),
+    [repos, showQuiet, activeFolderDir],
+  );
+
+  const shownRepos = useMemo(() => searchRepos(railRepos, query), [railRepos, query]);
+  const queryHidden = railRepos.length - shownRepos.length;
+
+  // A quiet checkout on screen is one you asked to see — the filter doesn't get
+  // to fold it into a stub on top of that.
+  const idleDirs = useMemo(() => {
     const m = new Map<string, Set<string>>();
     if (filter === "all") return m;
-    for (const r of repos) {
+    for (const r of shownRepos) {
+      const marked = quietDirs.get(r.key);
       const q = new Set(
         r.folders
-          .filter((f) => isFolderFiltered(f, filter, now, recentHours) && f.dir !== activeFolderDir)
+          .filter(
+            (f) =>
+              isFolderFiltered(f, filter, now, recentHours) &&
+              f.dir !== activeFolderDir &&
+              !marked?.has(f.dir),
+          )
           .map((f) => f.dir),
       );
       if (q.size > 0) m.set(r.key, q);
     }
     return m;
-  }, [repos, filter, recentHours, activeFolderDir, now]);
+  }, [shownRepos, quietDirs, filter, recentHours, activeFolderDir, now]);
 
   // The collapsed icon strip has no room for stub rows, so there the filter
-  // still just drops quiet (un-revealed) folders and any repo left empty.
+  // still just drops idle (un-revealed) folders and any repo left empty.
   const visibleRepos = useMemo(() => {
-    if (filter === "all") return repos;
-    return repos
+    if (filter === "all") return shownRepos;
+    return shownRepos
       .map((r) => {
-        const q = quietDirs.get(r.key);
-        if (!q || quietRevealed.has(r.key)) return r;
+        const q = idleDirs.get(r.key);
+        if (!q || idleRevealed.has(r.key)) return r;
         return { ...r, folders: r.folders.filter((f) => !q.has(f.dir)) };
       })
       .filter((r) => r.folders.length > 0);
-  }, [repos, filter, quietDirs, quietRevealed]);
+  }, [shownRepos, filter, idleDirs, idleRevealed]);
 
   const missingRepoCount = useMemo(
     () => repos.flatMap((r) => r.folders).filter((f) => f.dirMissing).length,
@@ -116,7 +152,12 @@ export function useRailIndex(args: {
   const activeRepo = activeFolder ? repoOf.get(activeFolder.dir) : undefined;
 
   return {
+    railRepos,
+    shownRepos,
+    queryHidden,
     quietDirs,
+    quietCount,
+    idleDirs,
     visibleRepos,
     missingRepoCount,
     folderOf,
