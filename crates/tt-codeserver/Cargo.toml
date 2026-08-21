@@ -6,15 +6,19 @@ publish = false
 
 [dependencies]
 libc = { workspace = true }
+native-tls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tt-exec = { workspace = true }
+ureq = { workspace = true }
 wait-timeout = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.14.0"
+tt-config = { workspace = true }
 
 [lints]
 workspace = true

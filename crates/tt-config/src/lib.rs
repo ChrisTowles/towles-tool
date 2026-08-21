@@ -784,6 +784,13 @@ pub fn code_server_session_socket() -> PathBuf {
     std::env::temp_dir().join(TOOL_NAME).join(format!("code-server-{}.sock", std::process::id()))
 }
 
+/// Where the app unpacks the code-server it provisions for itself. *Shared*:
+/// 740 MB is not a per-checkout cost. Version-scoped inside, by the installer.
+pub fn code_server_install_dir() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("code-server-dist"))
+}
+
 /// *Shared*, like the Chrome profile: an installed extension is a machine fact.
 pub fn code_server_extensions_dir() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))

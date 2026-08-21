@@ -20,13 +20,15 @@ it is what the *fourth* one costs.
 ## How it's wired
 
 - `crates/tt-codeserver` — Tauri-free launcher. Finds the binary
-  (`TT_CODE_SERVER_BIN`, PATH, then the install script's and Homebrew's
-  prefixes), spawns it with `--bind-addr 127.0.0.1:0`, and parses the
-  OS-assigned port off its first log line. No port claim in `.env`: the port is never ours to choose, same rule
+  (`TT_CODE_SERVER_BIN`, the app's own install, PATH, then the install script's
+  and Homebrew's prefixes), spawns it with `--bind-addr 127.0.0.1:0`, and parses
+  the OS-assigned port off its first log line. No port claim in `.env`: the port is never ours to choose, same rule
   as `term_start`'s IDE server.
 - `crates-tauri/tt-app/src/codeserver.rs` — one process per app instance,
   started lazily on the first pane. A workbench is just `/?folder=<dir>`, so N
   panes across N checkouts are N iframes against one server.
+- `crates/tt-codeserver/src/install.rs` — the copy the app provisions when the
+  machine has none ([Installing itself](#installing-itself)).
 - `apps/client/src/components/code-server-pane.tsx` — the iframe, keyed on URL.
 - State lives at `tt_config::code_server_user_data_dir()` (instance-scoped) and
   `code_server_extensions_dir()` (shared, like the Chrome profile). The window
@@ -86,10 +88,26 @@ on Linux/WebKitGTK against code-server 4.133.0 (Code 1.133.0), 2026-08-20:
 worker — and the size of the repo moves that number more than anything else.
 Four checkouts live in 2.3 GB. Four VS Code desktop windows do not.
 
-Disk is the one number that is worse and stays worse: **740 MB unpacked**, and
-it cannot ride the Tauri bundle sensibly, so it is a separate install
-(`TT_CODE_SERVER_BIN` overrides the lookup). Cold start is ~5 s to a usable
-workbench; every pane after that is an iframe against a warm server.
+Disk is the one number that is worse and stays worse: **740 MB unpacked**, which
+cannot ride the Tauri bundle sensibly — hence the install below. Cold start is
+~5 s to a usable workbench; every pane after that is an iframe against a warm
+server.
+
+## Installing itself
+
+Nothing to install by hand. The first Files pane on a machine with no
+code-server downloads one, the way VS Code fetches its own remote server: the
+pinned release tarball, checked against a SHA-256 pinned beside the version in
+`install.rs`, unpacked into `tt_config::code_server_install_dir()` — *shared*, so
+740 MB is a machine cost, and version-scoped, so a bumped pin installs beside a
+running server rather than over it.
+
+The pane shows it: `code-server://install` carries phase and bytes, so the
+several minutes are a bar, not a spinner. Scratch is removed however the install
+ends, and two instances racing a version resolve by rename. An existing
+code-server (PATH, Homebrew, the install script's prefix) is used as-is and
+nothing is downloaded; `TT_CODE_SERVER_BIN` still beats everything. Pre-warm
+with `cargo run -p tt-codeserver --example provision`.
 
 ## What it gives up
 

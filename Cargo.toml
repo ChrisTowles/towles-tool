@@ -75,6 +75,8 @@ log = "0.4.29"
 schemars = { version = "0.8.22", features = ["chrono"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+# SHA-256 for the pinned code-server download; already in the tree via tauri.
+sha2 = "0.10.9"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 tauri = "2.11.1"
 tauri-build = "2.6.1"
