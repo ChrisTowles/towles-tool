@@ -22,8 +22,8 @@ const MULTI = repo("/code/tt", { "/code/tt": ["c"], "/code/tt/wt/feat-x": ["d", 
 function targets(args: Partial<Parameters<typeof railHotkeyTargets>[0]> = {}) {
   return railHotkeyTargets({
     repos: [SOLO, MULTI],
-    quietDirs: new Map(),
-    quietRevealed: new Set(),
+    idleDirs: new Map(),
+    idleRevealed: new Set(),
     collapsed: {},
     wins: null,
     ...args,
@@ -38,8 +38,8 @@ describe("railHotkeyTargets", () => {
   it("carries the checkout each session belongs to, so a jump can select it", () => {
     const [first] = railHotkeyTargets({
       repos: [MULTI],
-      quietDirs: new Map(),
-      quietRevealed: new Set(),
+      idleDirs: new Map(),
+      idleRevealed: new Set(),
       collapsed: {},
       wins: null,
     });
@@ -69,14 +69,14 @@ describe("railHotkeyTargets", () => {
     ]);
   });
 
-  it("skips a quiet checkout folded behind its stub", () => {
-    const quietDirs = new Map([[MULTI.key, new Set(["/code/tt/wt/feat-x"])]]);
-    expect(targets({ quietDirs })).toEqual(["a", "b", "c"]);
+  it("skips an idle checkout folded behind its stub", () => {
+    const idleDirs = new Map([[MULTI.key, new Set(["/code/tt/wt/feat-x"])]]);
+    expect(targets({ idleDirs })).toEqual(["a", "b", "c"]);
   });
 
-  it("numbers a quiet checkout that is peeked open", () => {
-    const quietDirs = new Map([[MULTI.key, new Set(["/code/tt/wt/feat-x"])]]);
-    expect(targets({ quietDirs, quietRevealed: new Set([MULTI.key]) })).toEqual([
+  it("numbers an idle checkout that is peeked open", () => {
+    const idleDirs = new Map([[MULTI.key, new Set(["/code/tt/wt/feat-x"])]]);
+    expect(targets({ idleDirs, idleRevealed: new Set([MULTI.key]) })).toEqual([
       "a",
       "b",
       "c",

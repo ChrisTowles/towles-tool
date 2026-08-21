@@ -26,6 +26,7 @@ import {
   JarvisButton,
   NeedsBadge,
   PortDriftBadge,
+  QuietBadge,
   PrChip,
   PreviewButton,
   RepoMenu,
@@ -57,6 +58,7 @@ export function FolderHeader({
   title,
   meta,
   folder,
+  quiet,
   needs,
   pr,
   task,
@@ -85,6 +87,9 @@ export function FolderHeader({
   /** Set only at repo scope; absent renders the default look. */
   meta?: RepoMeta;
   folder: FolderData;
+  /** Marked quiet *and* on screen anyway — peeked, or the active checkout. The
+   * badge is the row admitting it: quiet normally means gone. */
+  quiet?: boolean;
   needs: number;
   pr?: PrItem;
   task?: TaskItem;
@@ -261,6 +266,7 @@ export function FolderHeader({
               </Hint>
             )}
             {missing && <GhostBadge />}
+            {quiet && !missing && <QuietBadge />}
           </div>
           {/* The GitHub links belong to identity — they are what the row is
               *about* (which PR, which issue), where the git block beside them

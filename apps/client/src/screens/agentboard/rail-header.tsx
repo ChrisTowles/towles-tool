@@ -1,7 +1,9 @@
 import {
+  Archive,
   Box,
   CalendarClock,
   CircleSlash,
+  Search,
   Eye,
   EyeOff,
   FolderGit2,
@@ -11,8 +13,10 @@ import {
   History,
   PanelLeftClose,
   RadioTower,
+  X,
 } from "lucide-react";
 import { DismissButton } from "@/components/store-bits";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,6 +121,99 @@ function RailFilterMenu(props: {
   );
 }
 
+// Type-to-narrow over repo, branch and task title. Transient: no persistence,
+// Escape clears, and the count of what it hides sits in the field itself, so a
+// forgotten query can't read as a rail that lost repos.
+function RepoSearch({
+  query,
+  onSet,
+  hidden,
+}: {
+  query: string;
+  onSet: (next: string) => void;
+  hidden: number;
+}) {
+  return (
+    <div className="relative min-w-0 flex-1">
+      <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={query}
+        onChange={(e) => onSet(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          // Stop here: the screen's Escape closes panes and clears selection,
+          // and a search field's Escape means the search.
+          e.stopPropagation();
+          onSet("");
+        }}
+        placeholder="Filter repos…"
+        aria-label="Filter repos"
+        spellCheck={false}
+        className="h-6 py-0 pr-12 pl-6.5 text-xs"
+      />
+      {query !== "" && (
+        <span className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
+          {hidden > 0 && (
+            <span className="font-mono text-[10px] text-muted-foreground/70">−{hidden}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => onSet("")}
+            aria-label="Clear the repo filter"
+            className="rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Marking a checkout quiet takes it off the rail, so the count of what that
+// hid belongs where you look before wondering where a repo went — beside the
+// filter, not at the far end of the tree.
+function QuietToggle({
+  count,
+  on,
+  onSet,
+}: {
+  count: number;
+  on: boolean;
+  onSet: (next: boolean) => void;
+}) {
+  return (
+    <Hint
+      label={
+        on
+          ? `Showing ${count} checkout${count === 1 ? "" : "s"} marked quiet — click to hide them again`
+          : `${count} checkout${count === 1 ? "" : "s"} marked quiet ${count === 1 ? "is" : "are"} hidden — click to show them`
+      }
+    >
+      <button
+        type="button"
+        onClick={() => {
+          uiAction("agentboard.show_quiet", "agentboard", on ? "off" : "on");
+          onSet(!on);
+        }}
+        aria-label={on ? "Hide checkouts marked quiet" : "Show checkouts marked quiet"}
+        aria-pressed={on}
+        className={cn(
+          "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
+          on
+            ? "text-violet-500 hover:text-violet-400"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {/* Not an eye: the filter beside this one already owns that glyph,
+            and two of them a few pixels apart read as one control. */}
+        <Archive className="size-3.5" />
+        <span className="font-mono text-[10px] leading-none">{count}</span>
+      </button>
+    </Hint>
+  );
+}
+
 // The rail's fixed top: title row, filter/cleanup affordances, and the
 // attention strip. Everything below this scrolls.
 export function RailHeader(props: {
@@ -129,6 +226,16 @@ export function RailHeader(props: {
   recentHours: number;
   onSetFilter: (next: RailFilter) => void;
   onSetRecentHours: (next: number) => void;
+  /** Checkouts marked quiet by hand — shown or hidden, this is how many. */
+  quietCount: number;
+  showQuiet: boolean;
+  onSetShowQuiet: (next: boolean) => void;
+  /** Free-text repo filter. Transient by design — nothing persists it, so the
+   * rail never opens already narrowed to yesterday's search. */
+  query: string;
+  onSetQuery: (next: string) => void;
+  /** Repos the query is currently hiding; 0 when nothing is typed. */
+  queryHidden: number;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
   jarvisPane: boolean;
@@ -148,6 +255,12 @@ export function RailHeader(props: {
     recentHours,
     onSetFilter,
     onSetRecentHours,
+    quietCount,
+    showQuiet,
+    onSetShowQuiet,
+    query,
+    onSetQuery,
+    queryHidden,
     showUnmanagedWorktrees,
     onSetShowUnmanagedWorktrees,
     jarvisPane,
@@ -159,11 +272,11 @@ export function RailHeader(props: {
   } = props;
   return (
     <>
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Repos
-        </span>
-        <span className="flex items-center gap-0.5">
+      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+        {/* The filter takes the row the "REPOS" heading used to hold: the rail
+            is self-evidently the repo list, and a heading can't find a repo. */}
+        <RepoSearch query={query} onSet={onSetQuery} hidden={queryHidden} />
+        <span className="flex shrink-0 items-center gap-0.5">
           <Hint label="Manage tracked repos in Settings — track, reorder, icon and color">
             <button
               type="button"
@@ -204,6 +317,12 @@ export function RailHeader(props: {
             onSetFilter={onSetFilter}
             onSetRecentHours={onSetRecentHours}
           />
+          {/* Only with marks to speak for: the count is what makes hiding
+              reversible, so it appears exactly when something is hidden — or
+              would be if you flipped this off. */}
+          {quietCount > 0 && (
+            <QuietToggle count={quietCount} on={showQuiet} onSet={onSetShowQuiet} />
+          )}
           <Hint
             label={
               showUnmanagedWorktrees

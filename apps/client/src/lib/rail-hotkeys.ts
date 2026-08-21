@@ -13,27 +13,28 @@ export type RailHotkeyTarget = { sessionId: string; folderDir: string };
 
 // A badge is a promise about a row you can see, so this mirrors the rail's own
 // visibility and order — not the flat walk `cycleSession` uses. Collapsed and
-// still-folded-quiet rows contribute nothing; a folder's sessions come out
-// window-grouped first, then loose, as `RepoGroup` renders them.
+// still-folded-idle rows contribute nothing; quiet ones are already gone from
+// `repos`. A folder's sessions come out window-grouped first, then loose, as
+// `RepoGroup` renders them.
 export function railHotkeyTargets(args: {
   repos: RepoData[];
   /** Repo key → checkout dirs the rail filter is hiding. */
-  quietDirs: Map<string, Set<string>>;
-  /** Repo keys whose quiet rows are peeked open. */
-  quietRevealed: Set<string>;
+  idleDirs: Map<string, Set<string>>;
+  /** Repo keys whose idle rows are peeked open. */
+  idleRevealed: Set<string>;
   collapsed: Record<string, boolean>;
   wins: WindowsPayload | null;
 }): RailHotkeyTarget[] {
-  const { repos, quietDirs, quietRevealed, collapsed, wins } = args;
+  const { repos, idleDirs, idleRevealed, collapsed, wins } = args;
   const out: RailHotkeyTarget[] = [];
   for (const repo of repos) {
     if (out.length >= RAIL_HOTKEY_MAX) break;
     if (collapsed[repo.key]) continue;
-    const quiet = quietDirs.get(repo.key);
+    const idle = idleDirs.get(repo.key);
     const shown =
-      !quiet || quietRevealed.has(repo.key)
+      !idle || idleRevealed.has(repo.key)
         ? repo.folders
-        : repo.folders.filter((f) => !quiet.has(f.dir));
+        : repo.folders.filter((f) => !idle.has(f.dir));
     for (const folder of shown) {
       // A solo repo has one header for both levels, so only the repo key gates it.
       if (!isSoloRepo(repo) && collapsed[`${repo.key}::${folder.dir}`]) continue;

@@ -1,6 +1,8 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import {
   AppWindow,
+  Archive,
+  ArchiveRestore,
   Box,
   Check,
   CheckCheck,
@@ -8,7 +10,6 @@ import {
   CircleDot,
   ExternalLink,
   Eye,
-  EyeOff,
   FolderPlus,
   FolderTree,
   GitCompare,
@@ -73,9 +74,11 @@ import {
 import { openInExternalEditor } from "@/lib/external-editor";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
+import { useShowQuiet } from "@/lib/rail-prefs";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutAria, shortcutHint, withHint } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
+import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
@@ -298,6 +301,19 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
     >
       {n} ⚑
     </span>
+  );
+}
+
+/** A checkout marked quiet, on a row the rail is showing anyway — peeked from
+ * the footer, or the one you're working in. Grayscale and inert: it explains
+ * why the row is normally absent, it doesn't ask for anything. */
+export function QuietBadge() {
+  return (
+    <Hint label="Marked quiet — normally hidden from the rail. Unmark it from this row's ⋮ menu.">
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-muted-foreground/70">
+        <Archive className="size-2.5" /> quiet
+      </span>
+    </Hint>
   );
 }
 
@@ -1351,6 +1367,7 @@ export function RepoMenu({
   ghost?: boolean;
 }) {
   const [attachOpen, setAttachOpen] = useState(false);
+  const [showQuiet] = useShowQuiet();
 
   async function syncNow() {
     (await abSyncRepo(dir)).match({
@@ -1364,12 +1381,22 @@ export function RepoMenu({
     });
   }
 
+  // Marking takes the row off the rail there and then, so the toast says where
+  // it went — unless the header's toggle is showing quiet checkouts, in which
+  // case it hasn't gone anywhere and saying so would be a lie.
   async function toggleQuiet() {
+    const next = !quiet;
+    uiAction("agentboard.quiet_mark", "agentboard", next ? "mark" : "unmark");
     const result = await invoke<void>("ab_set_folder_quiet", {
       dirs: quietDirs ?? [dir],
-      quiet: !quiet,
+      quiet: next,
     });
-    if (result.isErr()) toast.error(`Couldn't update — ${result.error.message}`);
+    if (result.isErr()) {
+      toast.error(`Couldn't update — ${result.error.message}`);
+      return;
+    }
+    if (!next) toast.success("No longer quiet");
+    else toast.success(showQuiet ? "Marked quiet" : "Marked quiet — hidden from the rail");
   }
 
   return (
@@ -1439,13 +1466,15 @@ export function RepoMenu({
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={() => void toggleQuiet()} className="whitespace-nowrap">
+            {/* Same glyph the rail header's toggle wears, so "where did it
+                go" and "bring it back" read as one feature. */}
             {quiet ? (
               <>
-                <Eye className="size-3.5" /> Unmark quiet
+                <ArchiveRestore className="size-3.5" /> Unmark quiet
               </>
             ) : (
               <>
-                <EyeOff className="size-3.5" /> Mark quiet
+                <Archive className="size-3.5" /> Mark quiet
               </>
             )}
           </DropdownMenuItem>

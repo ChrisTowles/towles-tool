@@ -17,7 +17,6 @@ import {
   isSoloRepo,
   type FolderData,
   type RepoData,
-  type StatePayload,
 } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
 
@@ -155,12 +154,21 @@ export function RailIconStrip({
   );
 }
 
-/** The board-wide agent tally pinned atop the rail: total + non-zero status
- * buckets + a ❄ compact count, with the Agentboard settings (compact
- * threshold) behind the trailing ⚙. Quiet when the board is at rest. */
-export function RollupChip({ state, now }: { state: StatePayload; now: number }) {
-  const threshold = state.compactRecommendPercent;
-  const r = agentRollup(state.repos, now, threshold);
+/** The agent tally pinned atop the rail: total + non-zero status buckets + a ❄
+ * compact count, Agentboard settings behind the trailing ⚙. Counts the
+ * *rail's* repos, not the payload's — a tally including quiet checkouts would
+ * point at rows nobody can click. */
+export function RollupChip({
+  repos,
+  compactPct,
+  now,
+}: {
+  repos: RepoData[];
+  compactPct: number;
+  now: number;
+}) {
+  const threshold = compactPct;
+  const r = agentRollup(repos, now, threshold);
   // Track the slider locally while dragging; commit on release.
   const [draft, setDraft] = useState<number | null>(null);
   const pct = draft ?? threshold;

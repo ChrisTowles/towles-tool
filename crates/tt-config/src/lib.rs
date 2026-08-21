@@ -77,10 +77,9 @@ impl Default for JournalSettings {
     }
 }
 
-/// AgentBoard preferences the *Rust* side reads. `None` until changed, so the
-/// file stays clean for the TS CLI. Deliberately **not** the whole `agentboard`
-/// block: modeling a key nothing here reads makes the struct read as if the
-/// feature exists — how six tmux-era fields outlived their agentboard.
+/// AgentBoard preferences that reach this file. `None` until changed, so it
+/// stays clean for the TS CLI. Not the whole `agentboard` block — but a key the
+/// frontend owns still needs a field here, or [`save_merge`] drops its write.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -131,6 +130,11 @@ pub struct AgentboardSettings {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_recent_hours: Option<u32>,
+
+    /// Whether hand-marked quiet checkouts are on the rail. Opaque, like
+    /// [`rail_filter`](Self::rail_filter).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_quiet: Option<bool>,
 
     /// Unlike [`rail_filter`](Self::rail_filter), this one *is* read in Rust.
     #[serde(skip_serializing_if = "Option::is_none")]

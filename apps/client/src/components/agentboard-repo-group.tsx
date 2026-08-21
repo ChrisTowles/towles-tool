@@ -91,9 +91,10 @@ export function RepoGroup({
   onOpenJarvis,
   onOpenBrowser,
   onClosePane,
+  idleDirs,
+  idleRevealed,
+  onToggleIdle,
   quietDirs,
-  quietRevealed,
-  onToggleQuiet,
   taskFormOpen,
   taskFormInitialGoal,
   onCancelTaskForm,
@@ -135,11 +136,15 @@ export function RepoGroup({
   onOpenJarvis?: (dir: string) => void;
   onOpenBrowser?: (dir: string) => void;
   onClosePane: (paneId: string) => void;
-  /** Quiet folders demote to a stub rather than vanish — nothing silently
-   * disappears from the rail. Empty when the filter is off. */
+  /** Folders the rail *filter* excludes — demoted to a stub rather than gone,
+   * since nobody chose the filter per checkout. Empty when it is off. */
+  idleDirs?: Set<string>;
+  idleRevealed?: boolean;
+  onToggleIdle?: () => void;
+  /** Folders marked quiet by hand, normally already gone from `repo`
+   * (`partitionQuiet`). One arriving here is peeked or active, and gets a
+   * badge saying so. */
   quietDirs?: Set<string>;
-  quietRevealed?: boolean;
-  onToggleQuiet?: () => void;
   taskFormOpen: boolean;
   /** Set when the form was opened to reopen a closed task, not to start one. */
   taskFormInitialGoal?: string;
@@ -147,8 +152,9 @@ export function RepoGroup({
   onSubmitTaskForm: (input: NewTaskSubmit) => void;
 }) {
   const solo = isSoloRepo(repo);
+  const idle = idleDirs ?? new Set<string>();
+  const showIdle = idleRevealed ?? false;
   const quiet = quietDirs ?? new Set<string>();
-  const showQuiet = quietRevealed ?? false;
 
   const sessionRow = (folder: FolderData, s: SessionData) => (
     <motion.div key={s.id} {...railRowMotion}>
@@ -259,8 +265,8 @@ export function RepoGroup({
   if (solo) {
     const folder = repo.folders[0];
     const isCollapsed = collapsed[repo.key];
-    if (quiet.has(folder.dir) && !showQuiet) {
-      return <QuietRepoStub name={repo.name} count={1} onToggle={onToggleQuiet} />;
+    if (idle.has(folder.dir) && !showIdle) {
+      return <IdleRepoStub name={repo.name} count={1} onToggle={onToggleIdle} />;
     }
     // Phase rides on the folder, so a row is never dimmed for a departed one.
     const deleting = folderBusy(folder);
@@ -277,6 +283,7 @@ export function RepoGroup({
           title={repo.name}
           meta={repo.meta}
           folder={folder}
+          quiet={quiet.has(folder.dir)}
           needs={repo.needs}
           pr={prForFolder(prs, repo.originUrl, folder.branch)}
           task={taskForFolder(tasks, folder.dir)}
@@ -318,19 +325,19 @@ export function RepoGroup({
           />
         )}
         {!isCollapsed && <div className="pb-2">{sessionRows(folder)}</div>}
-        {quiet.size > 0 && showQuiet && (
-          <QuietToggleRow count={quiet.size} revealed onToggle={onToggleQuiet} />
+        {idle.size > 0 && showIdle && (
+          <IdleToggleRow count={idle.size} revealed onToggle={onToggleIdle} />
         )}
       </div>
     );
   }
 
   // Multi-checkout repo: repo header, then each folder as a sub-header. A repo
-  // with *only* quiet folders shrinks to a single dim stub line.
+  // the filter has emptied shrinks to a single dim stub line.
   const repoCollapsed = collapsed[repo.key];
-  const shownFolders = showQuiet ? repo.folders : repo.folders.filter((f) => !quiet.has(f.dir));
+  const shownFolders = showIdle ? repo.folders : repo.folders.filter((f) => !idle.has(f.dir));
   if (shownFolders.length === 0) {
-    return <QuietRepoStub name={repo.name} count={quiet.size} onToggle={onToggleQuiet} />;
+    return <IdleRepoStub name={repo.name} count={idle.size} onToggle={onToggleIdle} />;
   }
   // Folder-rail rule: focus never stops at the child level, so a collapsed repo
   // row still shows it holds the folder you're looking at.
@@ -437,6 +444,7 @@ export function RepoGroup({
                   scope="folder"
                   title={folder.name}
                   folder={folder}
+                  quiet={quiet.has(folder.dir)}
                   needs={folder.needs}
                   pr={prForFolder(prs, repo.originUrl, folder.branch)}
                   task={taskForFolder(tasks, folder.dir)}
@@ -476,15 +484,16 @@ export function RepoGroup({
           })}
         </AnimatePresence>
       )}
-      {!repoCollapsed && quiet.size > 0 && (
-        <QuietToggleRow count={quiet.size} revealed={showQuiet} onToggle={onToggleQuiet} />
+      {!repoCollapsed && idle.size > 0 && (
+        <IdleToggleRow count={idle.size} revealed={showIdle} onToggle={onToggleIdle} />
       )}
     </div>
   );
 }
 
-/** An all-quiet repo, demoted to one dim row rather than removed. */
-function QuietRepoStub({
+/** A repo the rail filter has emptied, demoted to one dim row rather than
+ * removed — the filter is a view setting, so nothing it touches vanishes. */
+function IdleRepoStub({
   name,
   count,
   onToggle,
@@ -504,15 +513,15 @@ function QuietRepoStub({
         <FolderGit2 className="size-3.5 shrink-0 opacity-60" />
         <span className="min-w-0 truncate text-sm">{name}</span>
         <span className="ml-auto shrink-0 font-mono text-[10px]">
-          {count === 1 ? "quiet" : `${count} quiet`}
+          {count === 1 ? "idle" : `${count} idle`}
         </span>
       </button>
     </Hint>
   );
 }
 
-/** The stub row under a repo's visible folders: "N quiet" / "hide N quiet". */
-function QuietToggleRow({
+/** The stub row under a repo's visible folders: "N idle" / "hide N idle". */
+function IdleToggleRow({
   count,
   revealed,
   onToggle,
@@ -528,7 +537,7 @@ function QuietToggleRow({
       className="flex w-full items-center gap-1.5 py-1 pr-3 pl-6 text-left font-mono text-[10.5px] text-muted-foreground/50 hover:text-muted-foreground"
     >
       <Chevron collapsed={!revealed} />
-      {revealed ? `hide ${count} quiet` : `${count} quiet`}
+      {revealed ? `hide ${count} idle` : `${count} idle`}
     </button>
   );
 }

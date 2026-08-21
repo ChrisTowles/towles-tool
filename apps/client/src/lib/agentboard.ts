@@ -4,6 +4,7 @@ import type { PrItem, TaskIssueLink, TaskItem, TaskOutcome } from "./data";
 import { ImageTooLarge, type IpcError } from "./errors";
 import type { LaunchConfigStatus } from "./launch";
 import type { RepoMeta } from "./repo-identity";
+import { isEmptyQuery, matchesFilter } from "./settings-filter";
 import { TaskBlockerSchema } from "./schemas/task";
 import type { RailFilter } from "./settings";
 import { invoke } from "./tauri";
@@ -745,15 +746,54 @@ export function isSoloRepo(r: RepoData): boolean {
   return r.folders.length === 1;
 }
 
-/** A repo's **hand-marked** quiet checkouts as one comparable value: the rail keys a peek to
- * it, so marking one more ends the peek and the row folds away rather than the mark reading as
- * ignored. Marks only — a checkout going quiet on its own must not close a peek. */
-export function repoQuietMarkKey(r: RepoData): string {
-  return r.folders
-    .filter((f) => f.quiet)
-    .map((f) => f.dir)
-    .toSorted()
-    .join("\n");
+/** The rail minus its quiet checkouts, plus what was taken out. "Mark quiet"
+ * is a hide, not a demotion, and it ignores the rail filter — under the
+ * default `"all"` a filter-shaped quiet would do nothing at all. The checkout
+ * you are working in is never taken, and `show` (the rail header's toggle)
+ * puts them all back. `quietDirs` reports the marks either way, so a row shown
+ * anyway can still say it is quiet, and the header can count them. */
+export function partitionQuiet(
+  repos: RepoData[],
+  args: { show: boolean; activeFolderDir: string | null },
+): { shown: RepoData[]; quietDirs: Map<string, Set<string>>; quietCount: number } {
+  const quietDirs = new Map<string, Set<string>>();
+  let quietCount = 0;
+  for (const r of repos) {
+    const dirs = new Set(
+      r.folders.filter((f) => f.quiet && f.dir !== args.activeFolderDir).map((f) => f.dir),
+    );
+    if (dirs.size === 0) continue;
+    quietDirs.set(r.key, dirs);
+    quietCount += dirs.size;
+  }
+  if (args.show || quietCount === 0) return { shown: repos, quietDirs, quietCount };
+  const shown = repos
+    .map((r) => {
+      const dirs = quietDirs.get(r.key);
+      return dirs ? { ...r, folders: r.folders.filter((f) => !dirs.has(f.dir)) } : r;
+    })
+    .filter((r) => r.folders.length > 0);
+  return { shown, quietDirs, quietCount };
+}
+
+/** The rail narrowed to what a typed query matches. A repo matched by *name*
+ * keeps every checkout — you asked for the repo, not one branch in it. Branch
+ * and the de-slugged title count, since that is what a worktree row reads as;
+ * paths don't, or every `~/code/p` checkout would answer to "p". */
+export function searchRepos(repos: RepoData[], query: string): RepoData[] {
+  if (isEmptyQuery(query)) return repos;
+  const kept: RepoData[] = [];
+  for (const r of repos) {
+    if (matchesFilter(query, r.name)) {
+      kept.push(r);
+      continue;
+    }
+    const folders = r.folders.filter((f) =>
+      matchesFilter(query, f.name, [f.branch, humanizeFolderName(f.name)]),
+    );
+    if (folders.length > 0) kept.push({ ...r, folders });
+  }
+  return kept;
 }
 
 /** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
@@ -808,7 +848,7 @@ export function moveFocus(args: {
 
 /** Grace after the last sign of agent life, so stopping a session doesn't make
  * a folder vanish from the rail the same instant. */
-export const QUIET_GRACE_MS = 45 * 60_000;
+export const IDLE_GRACE_MS = 45 * 60_000;
 
 export function folderLastActivityAt(f: FolderData): number {
   let last = 0;
@@ -822,15 +862,16 @@ export function folderLastActivityAt(f: FolderData): number {
 }
 
 /** Nothing here needs attention: no live or eye-catching session, nothing
- * unpushed or dirty, and no agent activity inside `QUIET_GRACE_MS`. */
-export function isFolderQuiet(f: FolderData, now: number): boolean {
+ * unpushed or dirty, and no agent activity inside `IDLE_GRACE_MS`. The rail
+ * *filter*'s question — {@link FolderData.quiet}, the hand mark, is not part of
+ * it: that one hides the checkout outright, whatever the filter says. */
+export function isFolderIdle(f: FolderData, now: number): boolean {
   return (
-    f.quiet ||
-    (liveSessions(f).length === 0 &&
-      f.uncommittedFiles === 0 &&
-      f.commitsAhead === 0 &&
-      f.sessions.every((s) => !sessionCatchesEye(s)) &&
-      now - folderLastActivityAt(f) >= QUIET_GRACE_MS)
+    liveSessions(f).length === 0 &&
+    f.uncommittedFiles === 0 &&
+    f.commitsAhead === 0 &&
+    f.sessions.every((s) => !sessionCatchesEye(s)) &&
+    now - folderLastActivityAt(f) >= IDLE_GRACE_MS
   );
 }
 
@@ -841,12 +882,11 @@ export function folderLastWorkedAt(f: FolderData): number {
 
 /** Whether a folder falls outside the "worked in the last `hours` hours" window. */
 export function isFolderStale(f: FolderData, now: number, hours: number): boolean {
-  if (f.quiet) return true;
   if (liveSessions(f).length > 0) return false;
   return now - folderLastWorkedAt(f) >= hours * 3_600_000;
 }
 
-/** Whether `filter` demotes this folder to the per-repo "N quiet" stub row. */
+/** Whether `filter` demotes this folder to the per-repo "N idle" stub row. */
 export function isFolderFiltered(
   f: FolderData,
   filter: RailFilter,
@@ -857,7 +897,7 @@ export function isFolderFiltered(
     case "all":
       return false;
     case "active":
-      return isFolderQuiet(f, now);
+      return isFolderIdle(f, now);
     case "recent":
       return isFolderStale(f, now, recentHours);
   }

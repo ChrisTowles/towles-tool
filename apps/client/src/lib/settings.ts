@@ -166,6 +166,7 @@ export type UserSettings = {
     boardGroupByRepo?: boolean;
     railFilter?: RailFilter;
     railRecentHours?: number;
+    showQuiet?: boolean;
     showUnmanagedWorktrees?: boolean;
     jarvisPane?: boolean;
     browserPane?: boolean;

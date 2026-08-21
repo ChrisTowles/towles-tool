@@ -57,7 +57,7 @@ import {
   isCacheExpiring,
   claudeCommand,
   isFolderFiltered,
-  isFolderQuiet,
+  isFolderIdle,
   isFolderStale,
   folderLastWorkedAt,
   isPasteableImage,
@@ -69,12 +69,13 @@ import {
   pathScope,
   placePane,
   prForFolder,
-  repoQuietMarkKey,
+  partitionQuiet,
+  searchRepos,
   taskForFolder,
   promptWithImages,
   pruneWins,
   replacePane,
-  QUIET_GRACE_MS,
+  IDLE_GRACE_MS,
   sessionCatchesEye,
   sessionNeeds,
   sessionNotBusy,
@@ -1295,47 +1296,47 @@ describe("folderStatsKey / folderBaseKey", () => {
   });
 });
 
-describe("isFolderQuiet", () => {
+describe("isFolderIdle", () => {
   // Far enough past the ts:1 the `agent()` helper stamps that the grace
-  // window (QUIET_GRACE_MS) has long expired for those events.
+  // window (IDLE_GRACE_MS) has long expired for those events.
   const NOW = 100 * 60 * 60_000;
 
   it("is quiet with no sessions and a clean, non-ahead tree", () => {
-    expect(isFolderQuiet(folder({}), NOW)).toBe(true);
+    expect(isFolderIdle(folder({}), NOW)).toBe(true);
   });
 
   it("is quiet for a worktree checkout that was created but never used", () => {
-    expect(isFolderQuiet(folder({ isWorktree: true, sessions: [] }), NOW)).toBe(true);
+    expect(isFolderIdle(folder({ isWorktree: true, sessions: [] }), NOW)).toBe(true);
   });
 
   it("is not quiet with a live session", () => {
-    expect(isFolderQuiet(folder({ sessions: [session({ live: true })] }), NOW)).toBe(false);
+    expect(isFolderIdle(folder({ sessions: [session({ live: true })] }), NOW)).toBe(false);
   });
 
-  it("the quiet override forces quiet even with a live session", () => {
-    expect(isFolderQuiet(folder({ quiet: true, sessions: [session({ live: true })] }), NOW)).toBe(
-      true,
+  it("the hand mark is not its business — that one hides the row, filter or no", () => {
+    expect(isFolderIdle(folder({ quiet: true, sessions: [session({ live: true })] }), NOW)).toBe(
+      false,
     );
   });
 
   it("is not quiet with a dirty working tree", () => {
-    expect(isFolderQuiet(folder({ uncommittedFiles: 3 }), NOW)).toBe(false);
+    expect(isFolderIdle(folder({ uncommittedFiles: 3 }), NOW)).toBe(false);
   });
 
   it("is not quiet with unpushed local commits", () => {
-    expect(isFolderQuiet(folder({ commitsAhead: 2 }), NOW)).toBe(false);
+    expect(isFolderIdle(folder({ commitsAhead: 2 }), NOW)).toBe(false);
   });
 
   it("stays quiet when only behind origin — that's staleness, not work", () => {
-    expect(isFolderQuiet(folder({ commitsBehind: 4 }), NOW)).toBe(true);
+    expect(isFolderIdle(folder({ commitsBehind: 4 }), NOW)).toBe(true);
   });
 
   it("is not quiet with a session that catches the eye (unseen/waiting/errored)", () => {
-    expect(isFolderQuiet(folder({ sessions: [session({ live: true, unseen: true })] }), NOW)).toBe(
+    expect(isFolderIdle(folder({ sessions: [session({ live: true, unseen: true })] }), NOW)).toBe(
       false,
     );
     expect(
-      isFolderQuiet(
+      isFolderIdle(
         folder({ sessions: [session({ live: true, agentState: agent("waiting") })] }),
         NOW,
       ),
@@ -1343,22 +1344,22 @@ describe("isFolderQuiet", () => {
   });
 
   it("stays quiet with a non-live, fully-acknowledged session sitting around", () => {
-    expect(isFolderQuiet(folder({ sessions: [session({ live: false })] }), NOW)).toBe(true);
+    expect(isFolderIdle(folder({ sessions: [session({ live: false })] }), NOW)).toBe(true);
   });
 
   it("stays active through the grace window after an agent stops", () => {
     const stopped = folder({
       sessions: [session({ live: false, agentState: { ...agent("complete"), ts: NOW - 60_000 } })],
     });
-    expect(isFolderQuiet(stopped, NOW)).toBe(false);
-    expect(isFolderQuiet(stopped, NOW - 60_000 + QUIET_GRACE_MS)).toBe(true);
+    expect(isFolderIdle(stopped, NOW)).toBe(false);
+    expect(isFolderIdle(stopped, NOW - 60_000 + IDLE_GRACE_MS)).toBe(true);
   });
 
   it("counts agent history and details.lastActivityAt toward recency", () => {
     const history = folder({
       sessions: [session({ agents: [{ ...agent("complete"), ts: NOW - 60_000 }] })],
     });
-    expect(isFolderQuiet(history, NOW)).toBe(false);
+    expect(isFolderIdle(history, NOW)).toBe(false);
 
     const details = folder({
       sessions: [
@@ -1367,14 +1368,14 @@ describe("isFolderQuiet", () => {
         }),
       ],
     });
-    expect(isFolderQuiet(details, NOW)).toBe(false);
+    expect(isFolderIdle(details, NOW)).toBe(false);
   });
 
   it("goes quiet once all activity is older than the grace window", () => {
     const old = folder({
-      sessions: [session({ agentState: { ...agent("complete"), ts: NOW - QUIET_GRACE_MS } })],
+      sessions: [session({ agentState: { ...agent("complete"), ts: NOW - IDLE_GRACE_MS } })],
     });
-    expect(isFolderQuiet(old, NOW)).toBe(true);
+    expect(isFolderIdle(old, NOW)).toBe(true);
   });
 });
 
@@ -1406,9 +1407,9 @@ describe("isFolderStale", () => {
     expect(isFolderStale(f, NOW, HOURS)).toBe(false);
   });
 
-  it("the quiet override wins over a live pane, same as the quiet filter", () => {
+  it("the hand mark doesn't make a worked-in checkout stale — it hides it instead", () => {
     const f = folder({ quiet: true, workedAtMs: NOW, sessions: [session({ live: true })] });
-    expect(isFolderStale(f, NOW, HOURS)).toBe(true);
+    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
   });
 
   it("widening the window brings a folder back", () => {
@@ -1427,31 +1428,109 @@ describe("isFolderStale", () => {
   });
 });
 
-describe("repoQuietMarkKey", () => {
-  it("changes when a checkout is marked or unmarked, so the peek closes and the row folds", () => {
-    const before = repo("r", [folder({ dir: "/a" }), folder({ dir: "/b" })]);
-    const after = repo("r", [folder({ dir: "/a" }), folder({ dir: "/b", quiet: true })]);
-    expect(repoQuietMarkKey(after)).not.toBe(repoQuietMarkKey(before));
+const dirs = (repos: RepoData[]) => repos.flatMap((r) => r.folders.map((f) => f.dir));
+
+describe("partitionQuiet", () => {
+  const SHOWN = { show: false, activeFolderDir: null };
+
+  it("takes a marked checkout off the rail entirely — not a stub, gone", () => {
+    const repos = [repo("r", [folder({ dir: "/a" }), folder({ dir: "/b", quiet: true })])];
+    const { shown, quietCount } = partitionQuiet(repos, SHOWN);
+    expect(dirs(shown)).toEqual(["/a"]);
+    expect(quietCount).toBe(1);
   });
 
-  it("ignores a checkout the filter quieted on its own — that must not close a peek", () => {
-    const marks = repo("r", [folder({ dir: "/a", quiet: true })]);
-    const alsoIdle = repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b" })]);
-    expect(repoQuietMarkKey(alsoIdle)).toBe(repoQuietMarkKey(marks));
+  it("drops a repo whose every checkout is marked", () => {
+    const repos = [
+      repo("gone", [folder({ dir: "/a", quiet: true })]),
+      repo("kept", [folder({ dir: "/b" })]),
+    ];
+    expect(partitionQuiet(repos, SHOWN).shown.map((r) => r.key)).toEqual(["kept"]);
   });
 
-  it("doesn't depend on folder order", () => {
-    const a = repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b", quiet: true })]);
-    const b = repo("r", [folder({ dir: "/b", quiet: true }), folder({ dir: "/a", quiet: true })]);
-    expect(repoQuietMarkKey(a)).toBe(repoQuietMarkKey(b));
+  it("hides regardless of the rail filter — the mark is a hand gesture, not a view mode", () => {
+    // Live session, dirty tree: nothing the "active" filter would ever fold.
+    const busy = folder({ dir: "/a", quiet: true, uncommittedFiles: 3 });
+    expect(partitionQuiet([repo("r", [busy])], SHOWN).shown).toEqual([]);
+  });
+
+  it("never takes the checkout you are working in", () => {
+    const repos = [repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b" })])];
+    const { shown, quietCount } = partitionQuiet(repos, { show: false, activeFolderDir: "/a" });
+    expect(dirs(shown)).toEqual(["/a", "/b"]);
+    expect(quietCount).toBe(0);
+  });
+
+  it("shows every marked checkout when the header toggle is on, still counting them", () => {
+    const repos = [
+      repo("r", [folder({ dir: "/a", quiet: true })]),
+      repo("s", [folder({ dir: "/b", quiet: true }), folder({ dir: "/c" })]),
+    ];
+    const { shown, quietDirs, quietCount } = partitionQuiet(repos, {
+      show: true,
+      activeFolderDir: null,
+    });
+    expect(dirs(shown)).toEqual(["/a", "/b", "/c"]);
+    expect(quietCount).toBe(2);
+    expect(quietDirs.get("s")).toEqual(new Set(["/b"]));
+  });
+
+  it("returns the input untouched when nothing is marked", () => {
+    const repos = [repo("r", [folder({ dir: "/a" })])];
+    const { shown, quietDirs, quietCount } = partitionQuiet(repos, SHOWN);
+    expect(shown).toBe(repos);
+    expect(quietDirs.size).toBe(0);
+    expect(quietCount).toBe(0);
+  });
+});
+
+describe("searchRepos", () => {
+  const REPOS = [
+    repo("tt", [folder({ dir: "/tt", name: "towles-tool", branch: "main" })]),
+    repo("dots", [
+      folder({ dir: "/dots", name: "dotfiles", branch: "main" }),
+      folder({ dir: "/dots/wt", name: "feat-zsh-prompt", branch: "feat/zsh-prompt" }),
+    ]),
+  ];
+  // The fixture's repo name is its key, so these read as repo-name matches.
+  const shown = (q: string) => searchRepos(REPOS, q).map((r) => [r.key, dirs([r])]);
+
+  it("shows everything for an empty or blank query", () => {
+    expect(searchRepos(REPOS, "")).toBe(REPOS);
+    expect(searchRepos(REPOS, "   ")).toBe(REPOS);
+  });
+
+  it("a repo matched by name keeps every checkout under it", () => {
+    expect(shown("dots")).toEqual([["dots", ["/dots", "/dots/wt"]]]);
+  });
+
+  it("a repo matched only by a checkout keeps just that checkout", () => {
+    expect(shown("zsh")).toEqual([["dots", ["/dots/wt"]]]);
+  });
+
+  it("matches a branch, and the de-slugged title a worktree row reads as", () => {
+    expect(shown("feat/zsh")).toEqual([["dots", ["/dots/wt"]]]);
+    expect(shown("zsh prompt")).toEqual([["dots", ["/dots/wt"]]]);
+  });
+
+  it("ignores case", () => {
+    expect(shown("DOTS")).toEqual([["dots", ["/dots", "/dots/wt"]]]);
+    expect(shown("ZSH")).toEqual([["dots", ["/dots/wt"]]]);
+  });
+
+  it("drops a repo nothing in it matches", () => {
+    expect(searchRepos(REPOS, "nothing-here")).toEqual([]);
   });
 });
 
 describe("isFolderFiltered", () => {
   const NOW = 100 * 60 * 60_000;
 
-  it('"all" hides nothing, not even a folder marked quiet by hand', () => {
+  it('"all" hides nothing — and the hand mark is not the filter\'s to read', () => {
     expect(isFolderFiltered(folder({ quiet: true }), "all", NOW, 4)).toBe(false);
+    const busy = folder({ quiet: true, uncommittedFiles: 3, workedAtMs: NOW });
+    expect(isFolderFiltered(busy, "active", NOW, 4)).toBe(false);
+    expect(isFolderFiltered(busy, "recent", NOW, 4)).toBe(false);
   });
 
   it("the two narrowing modes ask different questions of the same folder", () => {

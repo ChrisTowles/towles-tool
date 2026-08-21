@@ -60,7 +60,6 @@ import {
   abSetSessionPurpose,
   prForFolder,
   previewPaneId,
-  repoQuietMarkKey,
   sessionLabel,
   sleep,
   successorPane,
@@ -98,6 +97,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   useBrowserPane,
   useJarvisPane,
+  useShowQuiet,
   useRailFilter,
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
@@ -144,20 +144,31 @@ export function AgentboardScreen() {
   const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
   const expectedKills = useRef<Set<string>>(new Set());
   const { collapsed, toggleCollapsed, railCollapsed, toggleRail } = useCollapseState(state);
-  // Excluded folders are demoted behind a per-repo "N quiet" stub, never hidden.
+  // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
   const [jarvisPane, setJarvisPane] = useJarvisPane();
   const [browserPane] = useBrowserPane();
   const nativeVisible = activeTab === "agentboard";
-  // Held as the marks the peek was opened against, so marking one more quiet ends it.
-  const [quietRevealed, setQuietRevealed] = useState<Record<string, string>>({});
-  const revealedQuiet = useMemo(
-    () =>
-      new Set(repos.filter((r) => quietRevealed[r.key] === repoQuietMarkKey(r)).map((r) => r.key)),
-    [repos, quietRevealed],
-  );
+  // The idle stub's peek is view state — it belongs to one glance at one repo.
+  // Quiet is a persisted view mode instead: its switch is in the rail header,
+  // so the hiding is never something you can't find your way back out of.
+  const [idleRevealed, setIdleRevealed] = useState<Set<string>>(new Set());
+  const [showQuiet, setShowQuiet] = useShowQuiet();
+  // Never persisted: a rail that opened already narrowed to yesterday's search
+  // is a rail with repos missing and no memory of why.
+  const [query, setQuery] = useState("");
+  // The event is emitted here rather than inside the updater: a state updater
+  // must stay pure, or StrictMode's double invoke double-counts the gesture.
+  const toggleIdleRevealed = (repoKey: string) => {
+    uiAction("agentboard.idle_peek", "agentboard", idleRevealed.has(repoKey) ? "hide" : "show");
+    setIdleRevealed((keys) => {
+      const next = new Set(keys);
+      if (!next.delete(repoKey)) next.add(repoKey);
+      return next;
+    });
+  };
   const [renaming, setRenaming] = useState<string | null>(null);
   // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
   const [titles, setTitles] = useState<Record<string, string>>({});
@@ -171,7 +182,12 @@ export function AgentboardScreen() {
     setOverlays((m) => ({ ...m, [id]: { status, until: Date.now() + 2_500 } }));
 
   const {
+    railRepos,
+    shownRepos,
+    queryHidden,
     quietDirs,
+    quietCount,
+    idleDirs,
     visibleRepos,
     missingRepoCount,
     folderOf,
@@ -184,7 +200,9 @@ export function AgentboardScreen() {
     repos,
     filter,
     recentHours,
-    quietRevealed: revealedQuiet,
+    idleRevealed,
+    showQuiet,
+    query,
     activeFolderDir,
     now,
   });
@@ -202,8 +220,8 @@ export function AgentboardScreen() {
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
   const hotkeyTargets = useMemo(
-    () => railHotkeyTargets({ repos, quietDirs, quietRevealed: revealedQuiet, collapsed, wins }),
-    [repos, quietDirs, revealedQuiet, collapsed, wins],
+    () => railHotkeyTargets({ repos: shownRepos, idleDirs, idleRevealed, collapsed, wins }),
+    [shownRepos, idleDirs, idleRevealed, collapsed, wins],
   );
   // The collapsed strip has no session rows to badge, so it offers no numbers.
   const railHotkeys = useMemo(
@@ -539,7 +557,7 @@ export function AgentboardScreen() {
 
   function jumpToNeedsYou(direction: "next" | "prev") {
     jumpTo(
-      cycleNeedsYou(repos, selected?.sessionId ?? null, direction),
+      cycleNeedsYou(shownRepos, selected?.sessionId ?? null, direction),
       "Nothing needs you right now.",
     );
   }
@@ -554,13 +572,17 @@ export function AgentboardScreen() {
   }
 
   function jumpToNotBusy() {
-    jumpTo(cycleNotBusy(repos, selected?.sessionId ?? null, "next"), "Nothing idle right now.");
+    jumpTo(
+      cycleNotBusy(shownRepos, selected?.sessionId ?? null, "next"),
+      "Nothing idle right now.",
+    );
   }
 
   // ab-focus-up/down: the whole list in rail order — unlike jumpToNeedsYou, no
   // filter to sessions needing attention.
   function focusSession(direction: "next" | "prev") {
-    const target = cycleSession(repos, selected?.sessionId ?? null, direction);
+    // What is on screen: a keystroke must not land on a hidden checkout.
+    const target = cycleSession(shownRepos, selected?.sessionId ?? null, direction);
     if (!target) return;
     const folderDir = folderOf.get(target.id)?.dir;
     if (!folderDir) return;
@@ -1012,7 +1034,7 @@ export function AgentboardScreen() {
         focusLevel,
         windowsForFolder,
         wins,
-        repos,
+        shownRepos,
         folderOf,
         splitCandidates,
         activeRepo,
@@ -1068,7 +1090,11 @@ export function AgentboardScreen() {
                 groupResizeBehavior="preserve-pixel-size"
               >
                 <div className="flex h-full flex-col border-r">
-                  <RollupChip state={state} now={now} />
+                  <RollupChip
+                    repos={railRepos}
+                    compactPct={state.compactRecommendPercent}
+                    now={now}
+                  />
                   <RailHeader
                     attention={attention.items}
                     missingRepoCount={missingRepoCount}
@@ -1079,6 +1105,12 @@ export function AgentboardScreen() {
                     recentHours={recentHours}
                     onSetFilter={setFilter}
                     onSetRecentHours={setRecentHours}
+                    quietCount={quietCount}
+                    showQuiet={showQuiet}
+                    onSetShowQuiet={setShowQuiet}
+                    query={query}
+                    onSetQuery={setQuery}
+                    queryHidden={queryHidden}
                     showUnmanagedWorktrees={showUnmanagedWorktrees}
                     onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
                     jarvisPane={jarvisPane}
@@ -1104,23 +1136,37 @@ export function AgentboardScreen() {
                           </div>
                         </div>
                       )}
+                      {/* An empty tree under a query is the search's answer,
+                          not an empty rail — say which, and offer the way out. */}
+                      {repos.length > 0 && shownRepos.length === 0 && (
+                        <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
+                          <p className="text-sm text-muted-foreground">
+                            No repo or branch matches{" "}
+                            <span className="font-mono text-foreground">{query}</span>.
+                          </p>
+                          <Button size="sm" variant="outline" onClick={() => setQuery("")}>
+                            Clear filter
+                          </Button>
+                          {quietCount > 0 && !showQuiet && (
+                            <p className="text-xs text-muted-foreground/70">
+                              {quietCount} quiet checkout{quietCount === 1 ? " is" : "s are"} hidden
+                              — the ▤ button above searches them too once shown.
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {/* initial={false} so the rail drawing itself on launch
                           isn't mistaken for repos arriving — only genuine
                           track/untrack animates. */}
                       <AnimatePresence initial={false}>
-                        {repos.map((repo) => (
+                        {shownRepos.map((repo) => (
                           <motion.div key={repo.key} {...railRowMotion}>
                             <RepoGroup
                               repo={repo}
+                              idleDirs={idleDirs.get(repo.key)}
+                              idleRevealed={idleRevealed.has(repo.key)}
+                              onToggleIdle={() => toggleIdleRevealed(repo.key)}
                               quietDirs={quietDirs.get(repo.key)}
-                              quietRevealed={revealedQuiet.has(repo.key)}
-                              onToggleQuiet={() =>
-                                setQuietRevealed((m) => {
-                                  const key = repoQuietMarkKey(repo);
-                                  const { [repo.key]: was, ...rest } = m;
-                                  return was === key ? rest : { ...rest, [repo.key]: key };
-                                })
-                              }
                               now={now}
                               compactPct={state.compactRecommendPercent}
                               prs={snapshot.prs}
@@ -1257,7 +1303,8 @@ export function AgentboardScreen() {
 
               <PaneGrid
                 open={open}
-                repos={repos}
+                // The standby board lists checkouts: quiet ones stay off it.
+                repos={railRepos}
                 cwds={cwds}
                 activeWin={activeWin}
                 activeFolderDir={activeFolderDir}
