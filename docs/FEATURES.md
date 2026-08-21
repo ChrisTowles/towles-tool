@@ -23,15 +23,15 @@ of what this repo does, Desktop now does as well.
 
   ![The Agentboard + flow: a rough goal plus a pasted screenshot, an optional prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](docs/images/demos/agentboard.gif)
 
-- **A file editor Claude Code can see into.** `tt-ide` makes the app an IDE-protocol server, so the Monaco editor in the Files pane is wired to the Claude Code session running in that folder's terminal. Highlight lines and the selection streams live into the session — the editor shows `L17-18 live to claude`, the CLI shows `2 lines selected` — and `@ send` turns it into an `@file#L17-18` reference in the prompt. Editing and saving go the same way. Desktop only takes context from its own panes, via spot edits, "Attach as context", and `@`-mention autocomplete; it cannot see a selection in an editor beside it.
-
-  ![Selecting lines in the app's Monaco editor, the selection streaming live into the Claude Code session beside it, sending it as an @file#L17-18 mention, and Claude answering against exactly those lines](docs/images/demos/file-editor.gif)
-
-  The same pane also bridges rust-analyzer over Tauri IPC for hover and
-  completions on Rust source, and a `path:line` link printed in a terminal
-  opens the file at that line. That LSP bridge is still a spike — it reports
-  `starting`/`ready`/`failed` in a chip, which is there to decide whether it
-  earns its keep.
+- **A real VS Code per checkout, and a diff pane Claude Code can see into.**
+  The Files pane is a code-server workbench — one server, one window per
+  checkout, so N VS Code windows collapse into N panes beside their terminals.
+  `tt open src/main.rs:42`, a `path:line` link printed in a terminal and
+  Claude's own `openFile` all land in that checkout's workbench. `tt-ide` makes
+  the app an IDE-protocol server for the diff pane: highlight lines there and
+  the selection streams live into the session — `@ send` turns it into an
+  `@file#L17-18` reference in the prompt. Desktop only takes context from its
+  own panes; it cannot see a selection in an editor beside it.
 
 - **Cross-repo work board.** Board is a kanban of tasks spanning every watched
   repo. Each task links 0..N issues, 0..N PRs, and usually a worktree,

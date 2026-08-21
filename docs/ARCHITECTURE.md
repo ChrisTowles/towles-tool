@@ -83,6 +83,11 @@ the CLI and the app can consume it.
   login persistence, never an import of the user's Chrome profile. Shutdown goes
   through CDP `Browser.close` or the cookie DB never flushes:
   **[BROWSER-PANE.md](BROWSER-PANE.md)**.
+- `tt-codeserver` — code-server as a supervised child, behind the **Files
+  pane**: one server per app instance, one VS Code workbench per checkout, the
+  app as a multiplexer over the windows it replaces. `tt open` and Claude's
+  `openFile` land through code-server's own open-in-window socket:
+  **[CODE-SERVER.md](CODE-SERVER.md)**.
 - `tt-agentboard` — watchers/engine: repo list, session tracking, needs-you
   synthesis. **Agent status is PTY-first** (`pty_status` folds what the terminal
   observes over the cached `claude agents` verdict — the thresholds are

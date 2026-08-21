@@ -6,7 +6,7 @@
 import { toast } from "sonner";
 import { IDialogService } from "@codingame/monaco-vscode-api";
 import { Event } from "@codingame/monaco-vscode-api/vscode/vs/base/common/event";
-import { deleteCopyForTrash, isDangerous, stripMnemonic } from "@/lib/monaco-dialog-copy";
+import { isDangerous, stripMnemonic } from "@/lib/monaco-dialog-copy";
 import { dialogStore } from "@/lib/monaco-dialog-store";
 
 class AppDialogService {
@@ -14,10 +14,8 @@ class AppDialogService {
   readonly onDidShowDialog = Event.None;
 
   async confirm(confirmation: { message?: string; detail?: string; primaryButton?: string }) {
-    const { message, detail } = deleteCopyForTrash(
-      confirmation?.message ?? "Are you sure?",
-      confirmation?.detail,
-    );
+    const message = confirmation?.message ?? "Are you sure?";
+    const detail = confirmation?.detail;
     const primary = stripMnemonic(confirmation?.primaryButton ?? "OK");
     const confirmed = await dialogStore.ask({
       message,
@@ -44,7 +42,7 @@ class AppDialogService {
     return { result: confirmed ? await first?.run?.({ checkboxChecked: false }) : undefined };
   }
 
-  // Toasts: console-only made a failed Explorer rename look like a no-op.
+  // Toasts: console-only made a failed workbench action look like a no-op.
   async info(message: string, detail?: string) {
     this.notify("info", message, detail);
   }

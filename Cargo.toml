@@ -9,6 +9,7 @@ members = [
   "crates/tt-agentboard",
   "crates/tt-browser",
   "crates/tt-claude-code",
+  "crates/tt-codeserver",
   "crates/tt-collect",
   "crates/tt-config",
   "crates/tt-doctor",
@@ -98,6 +99,7 @@ tt-jarvis = { path = "crates/tt-jarvis" }
 tt-pane = { path = "crates-tauri/tt-pane" }
 tt-claude-code = { path = "crates/tt-claude-code" }
 tt-collect = { path = "crates/tt-collect" }
+tt-codeserver = { path = "crates/tt-codeserver" }
 tt-config = { path = "crates/tt-config" }
 tt-doctor = { path = "crates/tt-doctor" }
 tt-exec = { path = "crates/tt-exec" }

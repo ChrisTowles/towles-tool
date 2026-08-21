@@ -438,7 +438,7 @@ export function nextWindowId(): string {
 
 let openFileNonce = 0;
 
-/** Monotonic re-trigger token for the code viewer's "open this file at this anchor" effect. */
+/** Monotonic re-trigger token for a pane's "open this file" request. */
 export function nextOpenFileNonce(): number {
   return ++openFileNonce;
 }

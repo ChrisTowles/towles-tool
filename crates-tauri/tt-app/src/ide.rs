@@ -23,7 +23,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tt_agentboard::fs_notify::{DirPathsNotifier, MultiFileNotifier};
+use tt_agentboard::fs_notify::MultiFileNotifier;
 
 use crate::terminal::TermState;
 
@@ -51,10 +51,8 @@ struct Shared {
     auth_token: String,
     /// Latest diff-pane selection; serves `getCurrentSelection`/`getLatestSelection`.
     selection: Mutex<Option<tt_ide::Selection>>,
-    /// The Files tab has at most one open at a time, so a set replaces it whole.
-    open_file: Mutex<Option<tt_ide::OpenFile>>,
-    /// Several diff-pane files can be dirty at once, so this is an upsert/remove
-    /// set. [`Shared::context`] merges both into `ServerContext::open_files`.
+    /// Dirty diff-pane files, an upsert/remove set — what `getOpenEditors` and
+    /// `checkDocumentDirty` see.
     diff_dirty_files: Mutex<HashSet<String>>,
     /// Queried per message for this folder's `getDiagnostics` payload.
     diagnostics: Arc<crate::diagnostics::DiagHub>,
@@ -64,15 +62,13 @@ struct Shared {
 
 impl Shared {
     fn context(&self) -> tt_ide::ServerContext {
-        let mut open_files: Vec<tt_ide::OpenFile> =
-            self.open_file.lock().unwrap().clone().into_iter().collect();
-        open_files.extend(
-            self.diff_dirty_files
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|path| tt_ide::OpenFile { path: path.clone(), dirty: true }),
-        );
+        let open_files: Vec<tt_ide::OpenFile> = self
+            .diff_dirty_files
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|path| tt_ide::OpenFile { path: path.clone(), dirty: true })
+            .collect();
         tt_ide::ServerContext {
             ide_name: IDE_NAME.to_string(),
             workspace_folder: self.cwd.clone(),
@@ -135,7 +131,6 @@ impl IdeServer {
             port,
             auth_token,
             selection: Mutex::new(None),
-            open_file: Mutex::new(None),
             diff_dirty_files: Mutex::new(HashSet::new()),
             diagnostics,
             out: Mutex::new(Vec::new()),
@@ -182,14 +177,9 @@ impl IdeServer {
         self.shared.push(tt_ide::diagnostics::diagnostics_changed_frame(uris));
     }
 
-    /// Record which file the app's code viewer has open (None = closed).
-    pub fn set_open_file(&self, open: Option<tt_ide::OpenFile>) {
-        *self.shared.open_file.lock().unwrap() = open;
-    }
-
-    /// Unlike [`Self::set_open_file`], this upserts one path into a set — the
-    /// diff pane can have several files dirty at once, and only dirty ones need
-    /// to be visible to `getOpenEditors`/`checkDocumentDirty`.
+    /// Upserts one path into a set — the diff pane can have several files dirty
+    /// at once, and only dirty ones need to be visible to
+    /// `getOpenEditors`/`checkDocumentDirty`.
     pub fn set_diff_file_dirty(&self, path: String, dirty: bool) {
         let mut files = self.shared.diff_dirty_files.lock().unwrap();
         if dirty {
@@ -468,9 +458,6 @@ fn intercept_app_tool(
                 let payload = serde_json::json!({
                     "dir": shared.cwd.to_string_lossy(),
                     "filePath": file_path,
-                    "startText": args.get("startText"),
-                    "endText": args.get("endText"),
-                    "selectToEndOfLine": args.get("selectToEndOfLine"),
                 });
                 let _ = app.emit_to(MAIN_WINDOW_LABEL, OPEN_FILE_EVENT, payload);
                 let result = serde_json::json!({
@@ -679,24 +666,8 @@ pub fn ide_status(app: AppHandle) -> Vec<IdeStatus> {
     app.state::<TermState>().ide_statuses()
 }
 
-/// Reflected to CLIs via `getOpenEditors`/`checkDocumentDirty`. `None` = closed.
-#[tauri::command]
-pub fn ide_set_open_file(
-    state: State<TermState>,
-    dir: String,
-    file_path: Option<String>,
-    dirty: Option<bool>,
-) {
-    let dir = PathBuf::from(dir);
-    let open = file_path.map(|f| tt_ide::OpenFile {
-        path: dir.join(f).to_string_lossy().into_owned(),
-        dirty: dirty.unwrap_or(false),
-    });
-    state.for_ide_servers(&dir, |server| server.set_open_file(open.clone()));
-}
-
-/// Unlike `ide_set_open_file`, this is one entry in a set the diff pane
-/// maintains itself; `dirty: false` removes it rather than replacing the set.
+/// Reflected to CLIs via `getOpenEditors`/`checkDocumentDirty`; `dirty: false`
+/// removes the entry.
 #[tauri::command]
 pub fn ide_set_diff_dirty(state: State<TermState>, dir: String, file_path: String, dirty: bool) {
     let path = PathBuf::from(&dir).join(file_path).to_string_lossy().into_owned();
@@ -720,27 +691,15 @@ fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// Substrings the editor bridge matches on to pick a
-/// `FileSystemProviderErrorCode` (`errorCodeFor` in `lib/monaco-fs.ts`). VS Code
-/// behaves differently per code, so rewording these changes the UI.
-pub const ERR_ESCAPES_FOLDER: &str = "path escapes the folder";
-pub const ERR_ALREADY_EXISTS: &str = "already exists";
-
-/// Spelled once so `ide_rename` and `ide_create_dir` can't drift apart — only
-/// one of them drifting would be invisible.
-fn already_exists(file_path: &str) -> String {
-    format!("{file_path} {ERR_ALREADY_EXISTS}")
-}
-
 /// Two ways out have to be closed: `..` walks up, and an *absolute* path is
-/// worse — `Path::join` discards the base and returns the argument whole. Only
-/// lexical, since a rename's `to`/`from` may not exist to canonicalize.
+/// worse — `Path::join` discards the base and returns the argument whole.
+/// Lexical only: the path may not exist yet to canonicalize.
 fn confined(dir: &Path, file_path: &str) -> Result<PathBuf, String> {
     let rel = Path::new(file_path);
     let escapes =
         rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir));
     if escapes {
-        return Err(format!("{ERR_ESCAPES_FOLDER}: {file_path}"));
+        return Err(format!("path escapes the folder: {file_path}"));
     }
     Ok(dir.join(file_path))
 }
@@ -903,263 +862,6 @@ pub async fn ide_stat(dir: String, file_path: String) -> Result<FsStat, String> 
     .map_err(|e| format!("stat task failed: {e}"))?
 }
 
-/// One directory entry for the VS Code filesystem provider.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FsDirEntry {
-    pub name: String,
-    pub is_dir: bool,
-}
-
-/// List one directory for the VS Code filesystem provider. `.git` is elided —
-/// nothing in the editor stack should ever walk into it.
-#[tauri::command]
-pub async fn ide_read_dir(dir: String, file_path: String) -> Result<Vec<FsDirEntry>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let abs = confined(Path::new(&dir), &file_path)?;
-        let entries =
-            std::fs::read_dir(&abs).map_err(|e| format!("cannot read {file_path}: {e}"))?;
-        let mut out = Vec::new();
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == ".git" {
-                continue;
-            }
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            out.push(FsDirEntry { name, is_dir });
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(|e| format!("readdir task failed: {e}"))?
-}
-
-/// Refuses a taken name rather than letting `create_dir_all` report success for
-/// a directory it didn't create — VS Code's `mkdirp` swallows the resulting
-/// `FileExists` when it races another creator, so being strict here is free.
-/// `symlink_metadata` so a dangling symlink still counts as taken.
-#[tauri::command]
-pub async fn ide_create_dir(dir: String, file_path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let abs = confined(Path::new(&dir), &file_path)?;
-        if std::fs::symlink_metadata(&abs).is_ok() {
-            return Err(already_exists(&file_path));
-        }
-        std::fs::create_dir_all(&abs).map_err(|e| format!("cannot create {file_path}: {e}"))
-    })
-    .await
-    .map_err(|e| format!("mkdir task failed: {e}"))?
-}
-
-/// Delete a path for the Explorer. Defaults to the OS trash: a checkout is
-/// full of untracked files (.env, scratch notes, build output) that git cannot
-/// bring back, so a stray Delete must stay recoverable. `use_trash: false` is
-/// the permanent path (VS Code's shift-delete).
-#[tauri::command]
-pub async fn ide_delete(
-    dir: String,
-    file_path: String,
-    recursive: bool,
-    use_trash: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let abs = confined(Path::new(&dir), &file_path)?;
-        if use_trash {
-            return trash::delete(&abs).map_err(|e| format!("cannot trash {file_path}: {e}"));
-        }
-        let meta =
-            std::fs::symlink_metadata(&abs).map_err(|e| format!("cannot stat {file_path}: {e}"))?;
-        if meta.is_dir() {
-            if recursive { std::fs::remove_dir_all(&abs) } else { std::fs::remove_dir(&abs) }
-        } else {
-            std::fs::remove_file(&abs)
-        }
-        .map_err(|e| format!("cannot delete {file_path}: {e}"))
-    })
-    .await
-    .map_err(|e| format!("delete task failed: {e}"))?
-}
-
-/// Move/rename within the folder. Both ends are confined, so a rename can
-/// never be used to write outside the checkout.
-#[tauri::command]
-pub async fn ide_rename(
-    dir: String,
-    from_path: String,
-    to_path: String,
-    overwrite: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = Path::new(&dir);
-        let from = confined(root, &from_path)?;
-        let to = confined(root, &to_path)?;
-        if to.exists() && !overwrite {
-            return Err(already_exists(&to_path));
-        }
-        if let Some(parent) = to.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {to_path}: {e}"))?;
-        }
-        std::fs::rename(&from, &to)
-            .map_err(|e| format!("cannot rename {from_path} to {to_path}: {e}"))
-    })
-    .await
-    .map_err(|e| format!("rename task failed: {e}"))?
-}
-
-/// One recursive-tree event batch for the editor's Explorer, distinct from
-/// [`FILE_CHANGED_EVENT`] so the per-file viewer logic never sees tree noise.
-pub const DIR_CHANGED_EVENT: &str = "ide://dir-changed";
-
-/// Subtrees whose churn the Explorer never needs: filtered *before* the
-/// debounce batch, so a build can't flood the event channel.
-const IGNORED_TREE_DIRS: [&str; 6] = [
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    ".venv",
-    "__pycache__",
-];
-
-fn in_ignored_tree(path: &Path) -> bool {
-    path.components().any(
-        |c| matches!(c, std::path::Component::Normal(n) if IGNORED_TREE_DIRS.iter().any(|d| n == *d)),
-    )
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DirChange {
-    path: String,
-    /// "added" when the path exists at emit time, "deleted" otherwise — enough
-    /// for VS Code's file service to refresh the right listing.
-    kind: &'static str,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DirChangedPayload {
-    dir: String,
-    changes: Vec<DirChange>,
-}
-
-struct ExplorerWatch {
-    count: u32,
-    _notifier: DirPathsNotifier,
-}
-
-/// Refcounted recursive watchers, one per checkout the Explorer shows.
-#[derive(Default)]
-pub struct ExplorerWatches(Mutex<HashMap<String, ExplorerWatch>>);
-
-#[tauri::command]
-pub fn ide_watch_dir(
-    app: AppHandle,
-    watches: State<ExplorerWatches>,
-    dir: String,
-) -> Result<(), String> {
-    let mut map = watches.0.lock().unwrap();
-    if let Some(watch) = map.get_mut(&dir) {
-        watch.count += 1;
-        return Ok(());
-    }
-    // Events arrive with symlinks resolved (macOS always, Linux sometimes),
-    // so relativizing tries the canonical root before the caller's spelling.
-    let resolved_root = std::fs::canonicalize(&dir).unwrap_or_else(|_| PathBuf::from(&dir));
-    let event_dir = dir.clone();
-    let app = app.clone();
-    let notifier = DirPathsNotifier::watch(
-        Path::new(&dir),
-        |p| !in_ignored_tree(p),
-        move |paths| {
-            let changes: Vec<DirChange> = paths
-                .iter()
-                .filter_map(|abs| {
-                    let rel = abs
-                        .strip_prefix(&resolved_root)
-                        .or_else(|_| abs.strip_prefix(&event_dir))
-                        .ok()?;
-                    Some(DirChange {
-                        path: rel.to_string_lossy().into_owned(),
-                        kind: if abs.exists() { "added" } else { "deleted" },
-                    })
-                })
-                .collect();
-            if changes.is_empty() {
-                return;
-            }
-            tracing::debug!(dir = %event_dir, count = changes.len(), "explorer tree changed on disk");
-            let payload = DirChangedPayload { dir: event_dir.clone(), changes };
-            let _ = app.emit_to(MAIN_WINDOW_LABEL, DIR_CHANGED_EVENT, payload);
-        },
-    )
-    .map_err(|e| format!("cannot watch {dir}: {e}"))?;
-    tracing::debug!(dir = %dir, "explorer tree watch started");
-    map.insert(dir, ExplorerWatch { count: 1, _notifier: notifier });
-    Ok(())
-}
-
-/// Unmatched calls are a no-op, like [`ide_unwatch_files`].
-#[tauri::command]
-pub fn ide_unwatch_dir(watches: State<ExplorerWatches>, dir: String) {
-    let mut map = watches.0.lock().unwrap();
-    let Some(watch) = map.get_mut(&dir) else {
-        return;
-    };
-    watch.count -= 1;
-    if watch.count == 0 {
-        tracing::debug!(dir = %dir, "explorer tree watch stopped");
-        map.remove(&dir);
-    }
-}
-
-/// Serializes read-modify-write on the one editor-prefs file. The frontend
-/// owns the record shape (`lib/editor-checkout-prefs.ts`); this stores opaque
-/// JSON per checkout dir beside the other instance state.
-#[derive(Default)]
-pub struct EditorPrefs(Mutex<()>);
-
-const EDITOR_PREFS_CAP: usize = 50;
-
-fn editor_prefs_path() -> Result<PathBuf, String> {
-    tt_config::agentboard_dir().map(|d| d.join("editor-prefs.json")).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn ide_prefs_load(prefs: State<EditorPrefs>, dir: String) -> Result<Option<String>, String> {
-    let _guard = prefs.0.lock().unwrap();
-    let path = editor_prefs_path()?;
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Ok(None);
-    };
-    let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text) else {
-        return Ok(None);
-    };
-    Ok(map.get(&dir).map(std::string::ToString::to_string))
-}
-
-#[tauri::command]
-pub fn ide_prefs_save(prefs: State<EditorPrefs>, dir: String, json: String) -> Result<(), String> {
-    let value: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("prefs is not JSON: {e}"))?;
-    let _guard = prefs.0.lock().unwrap();
-    let path = editor_prefs_path()?;
-    let mut map = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&s).ok())
-        .unwrap_or_default();
-    map.insert(dir, value);
-    // Deleted checkouts age out here rather than on a schedule of their own.
-    if map.len() > EDITOR_PREFS_CAP {
-        map.retain(|d, _| Path::new(d).is_dir());
-    }
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    atomic_write(&path, &serde_json::Value::Object(map).to_string())?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod selection_tests {
     use super::*;
@@ -1232,7 +934,7 @@ mod fs_command_tests {
     #[test]
     fn confined_rejects_parent_traversal() {
         let err = confined(Path::new("/w"), "../etc/passwd").unwrap_err();
-        assert!(err.contains(ERR_ESCAPES_FOLDER), "{err}");
+        assert!(err.contains("path escapes the folder"), "{err}");
     }
 
     #[test]
@@ -1246,7 +948,7 @@ mod fs_command_tests {
     #[test]
     fn confined_rejects_an_absolute_path() {
         let err = confined(Path::new("/w"), "/etc/passwd").unwrap_err();
-        assert!(err.contains(ERR_ESCAPES_FOLDER), "{err}");
+        assert!(err.contains("path escapes the folder"), "{err}");
         assert_ne!(
             confined(Path::new("/w"), "/etc/passwd").ok(),
             Some(PathBuf::from("/etc/passwd"))
@@ -1256,21 +958,6 @@ mod fs_command_tests {
     #[test]
     fn confined_joins_a_plain_relative_path() {
         assert_eq!(confined(Path::new("/w"), "src/main.rs").unwrap(), Path::new("/w/src/main.rs"));
-    }
-
-    /// The editor bridge picks a `FileSystemProviderErrorCode` by matching
-    /// these substrings (`errorCodeFor` in `apps/client/src/lib/monaco-fs.ts`).
-    /// Rewording them silently downgrades the code to `Unknown`, which changes
-    /// what VS Code offers the user — so assert the produced messages contain
-    /// what the frontend looks for.
-    #[test]
-    fn error_messages_carry_the_substrings_the_frontend_matches() {
-        let escape = confined(Path::new("/w"), "../x").unwrap_err();
-        assert!(escape.contains(ERR_ESCAPES_FOLDER), "{escape}");
-
-        let exists = already_exists("dest.txt");
-        assert!(exists.contains(ERR_ALREADY_EXISTS), "{exists}");
-        assert!(exists.starts_with("dest.txt"), "{exists}");
     }
 
     /// The exact payload Claude Code's diagnostics tracker sends before every

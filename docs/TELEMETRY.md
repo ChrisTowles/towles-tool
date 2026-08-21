@@ -22,7 +22,7 @@ carrying `process.executable.name`, `process.command_args`,
 `process.working_directory`, `duration_ms`, `exit_code`, and `outcome`
 (`ok`/`non_zero_exit`/`timed_out`/`spawn_failed`). Spawns that outlive the
 call and have no exit code to wait for — the PTY behind every terminal,
-`rust-analyzer`, a detached editor — can't use that shape, so they call
+`code-server`, a detached editor — can't use that shape, so they call
 `tt_exec::record_detached_spawn(cmd, args, kind)` instead and emit a single
 event. **A new spawn site must use one or the other**, or it is invisible
 in the log; a bare `Command::new` is the one way to break the "what did

@@ -61,16 +61,7 @@ export function ideSetSelection(
   return invoke<void>("ide_set_selection", { dir, filePath, range, text });
 }
 
-/** Surfaces in Claude's getOpenEditors / checkDocumentDirty; null = closed. */
-export function ideSetOpenFile(
-  dir: string,
-  filePath: string | null,
-  dirty = false,
-): Promise<Result<void, IpcError>> {
-  return invoke<void>("ide_set_open_file", { dir, filePath, dirty });
-}
-
-/** Additive rather than replacing, unlike `ideSetOpenFile`: several diff-pane
+/** Surfaces in Claude's getOpenEditors / checkDocumentDirty. Several diff-pane
  * files can be dirty at once, so this upserts just this one path. */
 export function ideSetDiffDirty(
   dir: string,
@@ -143,41 +134,6 @@ export function onFileChangedOnDisk(dir: string, filePath: string, cb: () => voi
   });
 }
 
-const DIR_CHANGED_EVENT = "ide://dir-changed";
-
-export type DirChange = { path: string; kind: "added" | "deleted" };
-
-export type DirChangedEvent = { dir: string; changes: DirChange[] };
-
-/** Recursive tree watch for the Explorer — refcounted per checkout in Rust,
- * batched/debounced, with build churn (.git, target, …) already filtered. */
-export function ideWatchDir(dir: string): Promise<Result<void, IpcError>> {
-  return invoke<void>("ide_watch_dir", { dir });
-}
-
-export function ideUnwatchDir(dir: string): Promise<Result<void, IpcError>> {
-  return invoke<void>("ide_unwatch_dir", { dir });
-}
-
-/** Returns an unsubscribe; a no-op outside Tauri. */
-export function onDirChangedOnDisk(dir: string, cb: (changes: DirChange[]) => void): () => void {
-  if (!isTauri()) return () => {};
-  let disposed = false;
-  let unlisten: (() => void) | undefined;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<DirChangedEvent>(DIR_CHANGED_EVENT, (e) => {
-      if (e.payload.dir === dir) cb(e.payload.changes);
-    });
-    if (disposed) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    disposed = true;
-    unlisten?.();
-  };
-}
-
 /** Structural, not `ITextModel`, so this module needs no editor dependency. */
 type SavableModel = { getValue(): string; getAlternativeVersionId(): number };
 
@@ -206,13 +162,8 @@ export async function saveBufferSnapshot(
   return { mtimeMs: written.value, versionAtSave: snapshot.versionAtSave };
 }
 
-export type OpenFileRequest = {
-  dir: string;
-  filePath: string;
-  startText?: string | null;
-  endText?: string | null;
-  selectToEndOfLine?: boolean | null;
-};
+/** Claude's `openFile` tool, intercepted in `ide.rs` and sent on as `ide://open-file`. */
+export type OpenFileRequest = { dir: string; filePath: string };
 
 export function ideClearSelection(dir: string, filePath: string): Promise<Result<void, IpcError>> {
   return invoke<void>("ide_clear_selection", { dir, filePath });

@@ -83,10 +83,12 @@ terminal diffs). The full VS Code set:
 
 ## Towles Tool's implementation
 
-Monaco selection in `apps/client` → `ide_set_selection`/`ide_at_mention` (Tauri
-commands, routed by folder dir) → `crates-tauri/tt-app/src/ide.rs`, one
+A diff-pane selection in `apps/client` → `ide_set_selection`/`ide_at_mention`
+(Tauri commands, routed by folder dir) → `crates-tauri/tt-app/src/ide.rs`, one
 `IdeServer` per embedded terminal → `crates/tt-ide`, the Tauri-free protocol
-core (lockfile schema, JSON-RPC dispatcher, notification builders).
+core (lockfile schema, JSON-RPC dispatcher, notification builders). The Files
+pane is a cross-origin code-server workbench and takes no part in this
+([CODE-SERVER.md](CODE-SERVER.md)).
 
 - **One server per terminal.** `term_start` binds `127.0.0.1:0` (OS-assigned
   port — never hardcoded, per the multi-task rule), writes
@@ -99,51 +101,39 @@ core (lockfile schema, JSON-RPC dispatcher, notification builders).
   a replacing `term_start` on the same id, and window teardown all drop the
   `IdeServer` handle, whose `Drop` removes the lockfile. Startup sweeps stale
   ones left by dead towles-tool processes.
-- **Selection flow.** Monaco's `onDidChangeCursorSelection` — in
-  `components/code-viewer.tsx` and `components/diff-monaco.tsx` (the modified
-  side of each diff) — calls `ide_set_selection` (debounced client-side to VS
+- **Selection flow.** Monaco's `onDidChangeCursorSelection` in
+  `components/diff-monaco.tsx` (the modified side of each diff) calls
+  `ide_set_selection` (debounced client-side to VS
   Code's 300 ms) with the folder dir, file path, **1-based** line range and
   **0-based** character columns; the command converts lines to 0-based at the
   boundary, caches the selection per server (serving
   `getCurrentSelection`/`getLatestSelection`), and pushes `selection_changed` to
   every connected session rooted in that folder. Closing a file clears the cache,
   so a stale range can't ride the next prompt. **The text comes from the editor
-  buffer, never from disk** — both surfaces are editable, and re-reading the file
+  buffer, never from disk** — the pane is editable, and re-reading the file
   at those line numbers served whatever an unsaved insertion above the highlight
   had shifted into place (issue #309). That read is synchronous with the
   selection event, not inside the debounce, so a file switch can't dispose the
   model first.
 - **Status surface.** Connect/disconnect emits `ide://status`
   (`{termId, connected}`) behind the panes' "✦ claude" badge.
-- **Explicit @-mention.** Two gestures fire `ide_at_mention`: the selection
-  chip's `@ send` button (or `⌘⇧A`) sends the highlighted range as
-  `@file#L12-40`, the Files pane header's `@` button sends the whole file. The
+- **Explicit @-mention.** The selection chip's `@ send` button (or `⌘⇧A`)
+  fires `ide_at_mention` with the highlighted range as `@file#L12-40`. The
   conversions live in `lib/ide-selection.ts` — notably that an empty selection
   means *whole file*, and a selection ending in column 1 of the next line doesn't
   count that line.
 - **Advertised tools**: every tool in the table above except `executeCode`
-  (notebooks) and `saveDocument` (the viewer surfaces dirty state instead).
+  (notebooks) and `saveDocument` (the diff pane surfaces dirty state instead;
+  `getOpenEditors`/`checkDocumentDirty` see its dirty files and nothing else).
   `getDiagnostics` serves real cargo/tsc results from the app's DiagHub
   (`crates-tauri/tt-app/src/diagnostics.rs`). The ones with app-side effects are
-  intercepted in the app shell before the pure dispatcher: `openFile` focuses
-  the Files tab (with `startText`/`endText` anchor selection) — **but only when
-  `makeFrontmost` isn't `false`**, which is the one shape the CLI actually
+  intercepted in the app shell before the pure dispatcher: `openFile` opens the
+  file in that checkout's Files pane (the `startText`/`endText` anchors have no
+  receiver in a cross-origin workbench) — **but only when `makeFrontmost` isn't
+  `false`**, which is the one shape the CLI actually
   sends, since its diagnostics tracker calls `openFile` before every file it
   edits just so the "IDE" holds the document, and honoring that popped a files
   pane on screen at every agent edit. `openDiff` blocks the CLI's tool call on an
   in-app accept/reject review (Monaco DiffEditor; accept atomically writes the —
   possibly user-tweaked — contents and answers `FILE_SAVED`, reject answers
   `DIFF_REJECTED` + tab name).
-
-### Open ends
-
-- **LSP shipped, and is on probation.** `apps/client/src/lib/lsp.ts` +
-  `crates-tauri/tt-app/src/lsp.rs` bridge rust-analyzer to Monaco over Tauri IPC
-  (`lsp_send` down, `lsp://msg` up), one server following the active workspace,
-  reporting `starting`/`ready`/`failed` through a chip in the Files pane header.
-  Keep or cut it on that evidence, against two costs: `vscode/localExtensionHost`
-  registers an initialize-time participant so it **cannot** be made lazy (every
-  editor mount pays for it, even in a checkout with no `Cargo.toml`), and
-  `monaco-languageclient` is a caret-pinned prerelease. Its markers land in
-  Monaco but never reach `getDiagnostics`; wiring that up is unclaimed, as is
-  `saveDocument`.
