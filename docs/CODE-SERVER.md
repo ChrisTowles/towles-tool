@@ -20,9 +20,9 @@ it is what the *fourth* one costs.
 ## How it's wired
 
 - `crates/tt-codeserver` — Tauri-free launcher. Finds the binary
-  (`TT_CODE_SERVER_BIN`, PATH, then the install script's prefixes), spawns it
-  with `--bind-addr 127.0.0.1:0`, and parses the OS-assigned port off its first
-  log line. No port claim in `.env`: the port is never ours to choose, same rule
+  (`TT_CODE_SERVER_BIN`, PATH, then the install script's and Homebrew's
+  prefixes), spawns it with `--bind-addr 127.0.0.1:0`, and parses the
+  OS-assigned port off its first log line. No port claim in `.env`: the port is never ours to choose, same rule
   as `term_start`'s IDE server.
 - `crates-tauri/tt-app/src/codeserver.rs` — one process per app instance,
   started lazily on the first pane. A workbench is just `/?folder=<dir>`, so N

@@ -59,12 +59,16 @@ pub fn find_code_server(override_path: Option<&Path>) -> Option<PathBuf> {
             }
         }
     }
-    // The install script's own prefixes, which put the launcher outside PATH.
+    // Prefixes the installers use that PATH may not carry: the install script's
+    // own, and Homebrew's — which a Finder-launched `.app` never inherits,
+    // since macOS gives it the bare `/usr/bin:/bin:/usr/sbin:/sbin`.
     let home = dirs_home()?;
     let prefixes = [
         home.join(".local/lib/code-server/bin/code-server"),
         PathBuf::from("/usr/lib/code-server/bin/code-server"),
         PathBuf::from("/opt/code-server/bin/code-server"),
+        PathBuf::from("/opt/homebrew/bin/code-server"),
+        PathBuf::from("/usr/local/bin/code-server"),
     ];
     prefixes.into_iter().find(|p| p.is_file())
 }
