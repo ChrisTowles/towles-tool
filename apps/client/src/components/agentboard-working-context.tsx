@@ -46,7 +46,6 @@ export function WorkingContext({
   task,
   deleting,
   actions,
-  onOpenDiff,
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
@@ -62,7 +61,6 @@ export function WorkingContext({
   task?: TaskItem;
   deleting?: boolean;
   actions: SessionActions;
-  onOpenDiff: (dir: string) => void;
   onOpenFiles: (dir: string) => void;
   onOpenPreview: (dir: string) => void;
   /** Undefined while `agentboard.jarvisPane` is off. */
@@ -188,8 +186,8 @@ export function WorkingContext({
               <FolderLandedBadge folder={folder} pr={pr} />
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <UncommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
-              <CommittedChip stats={folder} onOpen={() => onOpenDiff(folder.dir)} labeled />
+              <UncommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
+              <CommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
             </div>
           </div>
         </div>

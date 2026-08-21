@@ -199,8 +199,6 @@ impl Repo {
     /// "Changes" list, what hunk staging leaves unstaged. A conflicted path
     /// has no stage-0 entry, so it diffs its worktree against HEAD instead.
     pub fn unstaged_changes(&self) -> Result<Changes> {
-        use gix::bstr::ByteSlice;
-        let index = self.inner().index_or_empty().map_err(|e| GitError::Read(e.to_string()))?;
         let status = self.status()?;
         let mut paths: BTreeMap<String, char> = BTreeMap::new();
         let mut collapsed: BTreeMap<String, i64> = BTreeMap::new();
@@ -222,16 +220,7 @@ impl Repo {
                 out.push(FileChange { path, status, untracked_files, ..Default::default() });
                 continue;
             }
-            let staged = index
-                .entry_by_path_and_stage(
-                    path.as_bytes().as_bstr(),
-                    gix::index::entry::Stage::Unconflicted,
-                )
-                .and_then(|entry| {
-                    let object = self.inner().find_object(entry.id).ok()?;
-                    object.try_into_blob().ok().map(|blob| blob.data.clone())
-                });
-            let before = match staged {
+            let before = match self.file_in_index(&path) {
                 Some(bytes) => Some(bytes),
                 None if self.is_unmerged(&path) => self.file_at("HEAD", &path),
                 None => None,
@@ -449,6 +438,86 @@ impl Repo {
         self.inner().workdir().is_some_and(|dir| dir.join(path).is_file())
     }
 
+    /// A path's content in the index (stage 0) — `git show :0:<path>`. `None`
+    /// when the path has no stage-0 entry there.
+    fn file_in_index(&self, path: &str) -> Option<Vec<u8>> {
+        let index = self.inner().index_or_empty().ok()?;
+        let entry =
+            index.entry_by_path_and_stage(bstr(path), gix::index::entry::Stage::Unconflicted)?;
+        self.blob_bytes(entry.id)
+    }
+
+    /// Whether `path` carries conflict stages — a merge in progress there.
+    fn is_unmerged(&self, path: &str) -> bool {
+        use gix::index::entry::Stage;
+        self.inner().index_or_empty().is_ok_and(|index| {
+            [Stage::Base, Stage::Ours, Stage::Theirs]
+                .iter()
+                .any(|stage| index.entry_by_path_and_stage(bstr(path), *stage).is_some())
+        })
+    }
+
+    /// HEAD vs the index — what `git commit` would take. Feeds the rail's staged
+    /// counts; nothing here comes from the working tree.
+    pub fn staged_changes(&self) -> Result<Changes> {
+        let index = self.inner().index_or_empty().map_err(read_err)?;
+        let mut sides: BTreeMap<String, (Option<gix::ObjectId>, Option<gix::ObjectId>)> =
+            BTreeMap::new();
+        if let Some(head) = self.head_id() {
+            let head_tree = self.tree_of(head)?.id().detach();
+            let head_index = self.inner().index_from_tree(&head_tree).map_err(read_err)?;
+            for entry in head_index.entries() {
+                let path = entry.path(&head_index).to_string();
+                sides.entry(path).or_default().0 = Some(entry.id);
+            }
+        }
+        let mut conflicted: Vec<String> = Vec::new();
+        for entry in index.entries() {
+            let path = entry.path(&index).to_string();
+            if entry.stage() != gix::index::entry::Stage::Unconflicted {
+                conflicted.push(path);
+                continue;
+            }
+            sides.entry(path).or_default().1 = Some(entry.id);
+        }
+        // An unmerged path has no stage 0, which would read as "staged
+        // deletion" below — but `git commit` refuses it, so it isn't staged
+        // anything. It stays the uncommitted view's problem.
+        for path in conflicted {
+            sides.remove(&path);
+        }
+
+        let mut files = Vec::new();
+        for (path, (before_id, after_id)) in sides {
+            if before_id == after_id {
+                continue;
+            }
+            let before = before_id.and_then(|id| self.blob_bytes(id));
+            let after = after_id.and_then(|id| self.blob_bytes(id));
+            let (lines_added, lines_removed, binary) =
+                count_lines(before.as_deref(), after.as_deref());
+            let status = match (before_id.is_some(), after_id.is_some()) {
+                (false, _) => 'A',
+                (_, false) => 'D',
+                _ => 'M',
+            };
+            files.push(FileChange {
+                path,
+                status,
+                lines_added,
+                lines_removed,
+                binary,
+                ..Default::default()
+            });
+        }
+        Ok(Changes { files, untracked_cap: None })
+    }
+
+    fn blob_bytes(&self, id: gix::ObjectId) -> Option<Vec<u8>> {
+        let object = self.inner().find_object(id).ok()?;
+        object.try_into_blob().ok().map(|blob| blob.data.clone())
+    }
+
     /// The tree of whatever `id` names — a commit's tree, or the tree itself.
     fn tree_of(&self, id: gix::ObjectId) -> Result<gix::Tree<'_>> {
         self.inner()
@@ -457,6 +526,15 @@ impl Repo {
             .peel_to_tree()
             .map_err(|e| GitError::Read(e.to_string()))
     }
+}
+
+fn bstr(path: &str) -> &gix::bstr::BStr {
+    use gix::bstr::ByteSlice;
+    path.as_bytes().as_bstr()
+}
+
+fn read_err(e: impl std::fmt::Display) -> GitError {
+    GitError::Read(e.to_string())
 }
 
 /// A path's blob content within `tree`, or `None` when absent (or when it

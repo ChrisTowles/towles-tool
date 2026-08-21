@@ -155,21 +155,30 @@ impl WindowsStore {
     }
 }
 
-/// Pane-id prefix marking a *diff* pane, which encodes a folder dir instead
-/// of a session id. Must match `DIFF_PANE_PREFIX` in
+/// Pane-id prefixes marking a *folder* pane, which encodes a folder dir instead
+/// of a session id. Must match the prefixes `folderPaneDir` walks in
 /// `apps/client/src/lib/agentboard.ts`.
-pub const DIFF_PANE_PREFIX: &str = "~diff:";
+const FOLDER_PANE_PREFIXES: [&str; 4] = ["~files:", "~preview:", "~jarvis:", "~browser:"];
 
-/// The folder dir a diff pane id points at (`None` for session panes).
-fn diff_pane_dir(pane_id: &str) -> Option<&str> {
-    pane_id.strip_prefix(DIFF_PANE_PREFIX)
+/// A tombstone pane reporting on a session that has exited; it dies with the
+/// session it names. Must match `EXIT_PANE_PREFIX` in the client.
+const EXIT_PANE_PREFIX: &str = "~exit:";
+
+/// The folder dir a folder-pane id points at (`None` for session panes).
+fn folder_pane_dir(pane_id: &str) -> Option<&str> {
+    FOLDER_PANE_PREFIXES.iter().find_map(|p| pane_id.strip_prefix(p))
+}
+
+/// The session a pane reports on: its own id, or the one a tombstone names.
+fn pane_session(pane_id: &str) -> &str {
+    pane_id.strip_prefix(EXIT_PANE_PREFIX).unwrap_or(pane_id)
 }
 
 /// Headless port of the client's `pruneWins` + active-window normalization
 /// (`apps/client/src/lib/agentboard.ts` — keep the two in lockstep): the blob
 /// outlives its referents when a task is removed with no app running. Drops
 /// windows failing `folder_valid`, then panes that are neither a known session
-/// id nor a valid folder's diff pane; a window emptied by the prune vanishes,
+/// id nor a valid folder's own pane; a window emptied by the prune vanishes,
 /// and the client mints a fresh "primary" lazily. Returns the pruned payload
 /// plus the changed folder dirs ([`WindowsStore::save`]'s `touched`).
 pub fn prune_dead(
@@ -185,9 +194,9 @@ pub fn prune_dead(
         let panes: Vec<String> = win
             .panes
             .iter()
-            .filter(|p| match diff_pane_dir(p) {
+            .filter(|p| match folder_pane_dir(p) {
                 Some(dir) => folder_valid(dir),
-                None => valid_sessions.contains(*p),
+                None => valid_sessions.contains(pane_session(p)),
             })
             .cloned()
             .collect();
@@ -378,17 +387,24 @@ mod tests {
     }
 
     #[test]
-    fn prune_drops_ghost_panes_but_keeps_valid_diff_panes() {
+    fn prune_drops_ghost_panes_but_keeps_valid_folder_panes() {
         let payload = WindowsPayload {
             windows: vec![win(
                 "w1",
                 "/live",
-                &["s1", "s-gone", "~diff:/live", "~diff:/dead"],
+                &[
+                    "s1",
+                    "s-gone",
+                    "~exit:s1",
+                    "~exit:s-gone",
+                    "~files:/live",
+                    "~preview:/dead",
+                ],
             )],
             active_windows: BTreeMap::from([("/live".into(), "w1".into())]),
         };
         let (next, touched) = prune_dead(&payload, &ids(&["s1"]), |d| d == "/live").unwrap();
-        assert_eq!(next.windows, vec![win("w1", "/live", &["s1", "~diff:/live"])]);
+        assert_eq!(next.windows, vec![win("w1", "/live", &["s1", "~exit:s1", "~files:/live"])]);
         assert_eq!(touched, vec!["/live".to_string()]);
     }
 

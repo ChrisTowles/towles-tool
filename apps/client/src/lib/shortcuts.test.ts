@@ -261,7 +261,7 @@ describe("on macOS", () => {
     expect(mac.matchesShortcut("ab-jump-idle", ctrl)).toBe(true);
     expect(mac.matchesEditableOverride(ctrl)).toBe(true);
     expect(
-      mac.matchesShortcut("ab-toggle-diff", key({ ctrlKey: true, shiftKey: true, key: "g" })),
+      mac.matchesShortcut("ab-toggle-files", key({ ctrlKey: true, shiftKey: true, key: "e" })),
     ).toBe(true);
   });
 

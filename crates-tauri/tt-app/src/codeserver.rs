@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, State};
+use tt_codeserver::bridge;
 use tt_codeserver::install::{self, Phase, Progress};
 use tt_codeserver::{CodeServerChild, CodeServerConfig, find_code_server, workbench_url};
 
@@ -83,6 +84,7 @@ fn config(binary: PathBuf) -> Result<CodeServerConfig, String> {
         user_data_dir,
         extensions_dir: tt_config::code_server_extensions_dir().map_err(|e| e.to_string())?,
         session_socket: tt_config::code_server_session_socket(),
+        bridge_dir: tt_config::code_server_bridge_dir(),
     })
 }
 
@@ -146,4 +148,24 @@ pub async fn code_server_reveal(
     })
     .await
     .map_err(|e| format!("code-server reveal task failed: {e}"))?
+}
+
+/// Put a checkout's uncommitted work on screen in its own workbench, as VS
+/// Code's Source Control would open it. Goes through the bridge extension, since
+/// code-server's CLI has no way to run a command (docs/CODE-SERVER.md).
+///
+/// Takes no lock and does not check the host: the caller is usually a click that
+/// opens the pane in the same gesture, so the server is *about* to exist. The
+/// bridge dir is a pure function of this process, and [`bridge::show`] waits for
+/// the workbench on the far end of it.
+#[tauri::command]
+pub async fn code_server_show_changes(dir: String) -> Result<(), String> {
+    let bridge_dir = tt_config::code_server_bridge_dir();
+    let folder = PathBuf::from(&dir);
+    tracing::debug!(dir = %dir, "code_server.show_changes");
+    tauri::async_runtime::spawn_blocking(move || {
+        bridge::show(&bridge_dir, &folder).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("code-server show-changes task failed: {e}"))?
 }

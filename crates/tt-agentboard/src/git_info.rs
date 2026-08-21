@@ -94,7 +94,7 @@ pub struct GitInfo {
 /// event-driven, not because staleness beyond it is fine.
 const GIT_CACHE_TTL_MS: i64 = 60_000;
 
-/// The ceiling for the one checkout whose diff pane is open. lazygit re-walks its
+/// The ceiling for the one checkout whose files pane is open. lazygit re-walks its
 /// single repo every 10s with no change detection at all; the fleet can't afford that
 /// N checkouts over, but the row actually being read can.
 const FOCUSED_GIT_CACHE_TTL_MS: i64 = 10_000;
@@ -653,11 +653,12 @@ fn resolve_origin_main(repo: &tt_git::repo::Repo) -> String {
     }
 }
 
-/// The ref every "vs main" comparison uses — the diff pane's `DiffMode::Main` *and*
-/// [`compute_git_info`]'s stats, so the rail's numbers match the pane. Priority: the
-/// per-folder `base_branch` override, the `.tt-task` marker's `base=`, then
-/// origin/main-or-master. The winner resolves to `origin/<name>` — the pane wants the
-/// pushed baseline — and to the local branch only when no remote exists.
+/// The ref every "vs main" comparison uses: [`compute_git_info`]'s stats and the
+/// committed chip's per-commit list, so every number in a rail row shares one
+/// baseline. Priority: the per-folder `base_branch` override, the `.tt-task`
+/// marker's `base=`, then origin/main-or-master. The winner resolves to
+/// `origin/<name>` — the pushed baseline — and to the local branch only when no
+/// remote exists.
 fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
     let candidates = [base_branch.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string)]
         .into_iter()
@@ -674,157 +675,6 @@ fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&s
         }
     }
     resolve_origin_main(repo)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffMode {
-    /// This branch vs where it forked from origin/main (merge-base).
-    Main,
-    /// Worktree vs the *index*, VS Code's "Changes": a staged hunk drops out.
-    Uncommitted,
-    /// What `git commit` would take: HEAD vs the index. Nothing here is editable.
-    Staged,
-}
-
-/// `status` is git's name-status letter (or `?` for untracked); `old_path` is set on
-/// renames/copies, where the content at the base lives.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffFile {
-    pub path: String,
-    pub old_path: Option<String>,
-    pub status: String,
-    pub lines_added: i64,
-    pub lines_removed: i64,
-    /// Nonzero on a collapsed untracked directory: the pane says "1000+ files".
-    pub untracked_files: i64,
-    /// Index vs HEAD; only computed for the two staging modes.
-    #[serde(default)]
-    pub staged: bool,
-    /// Worktree vs index; with `staged`, both true is a partially staged file.
-    #[serde(default)]
-    pub unstaged: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffFiles {
-    pub files: Vec<DiffFile>,
-    pub untracked_cap: Option<UntrackedCapInfo>,
-}
-
-/// What the pane's banner needs to name the directory missing from `.gitignore`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UntrackedCapInfo {
-    pub dir: String,
-    pub files: i64,
-    /// The whole diff's budget ran out, so other directories are missing too.
-    pub total: bool,
-}
-
-/// The `Main` mode's baseline; the staging modes use the index and HEAD.
-fn resolve_diff_base(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {
-    let base_ref = resolve_base_ref(repo, dir, base_branch);
-    repo.merge_base("HEAD", &base_ref)
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "HEAD".to_string())
-}
-
-/// Rename-aware, baseline picked by `mode`. Untracked files appear as `?`.
-pub fn diff_files(dir: &str, mode: DiffMode, base_branch: Option<&str>) -> DiffFiles {
-    if dir.is_empty() {
-        return DiffFiles::default();
-    }
-    let Some(repo) = open_repo(dir) else {
-        return DiffFiles::default();
-    };
-    let changes = match mode {
-        DiffMode::Staged => repo.staged_changes().unwrap_or_default(),
-        // Index vs worktree, matching the editor's sides: a worktree-vs-HEAD diff
-        // would list a fully staged file this view has nothing to show for.
-        DiffMode::Uncommitted => repo.unstaged_changes().unwrap_or_default(),
-        DiffMode::Main => {
-            let base = resolve_diff_base(&repo, dir, base_branch);
-            repo.changes_vs(&base).unwrap_or_default()
-        }
-    };
-    let states = match mode {
-        DiffMode::Uncommitted => repo
-            .stage_states(changes.files.iter().filter(|c| c.status != '?').map(|c| c.path.as_str()))
-            .unwrap_or_default(),
-        _ => Default::default(),
-    };
-    let mut files: Vec<DiffFile> = changes
-        .files
-        .into_iter()
-        .map(|change| {
-            let state = match mode {
-                DiffMode::Uncommitted if change.status == '?' => {
-                    tt_git::repo::StageState { staged: false, unstaged: true }
-                }
-                DiffMode::Uncommitted => states.get(&change.path).copied().unwrap_or_default(),
-                DiffMode::Staged => tt_git::repo::StageState { staged: true, unstaged: false },
-                DiffMode::Main => tt_git::repo::StageState::default(),
-            };
-            DiffFile {
-                path: change.path,
-                old_path: change.old_path,
-                status: change.status.to_string(),
-                lines_added: change.lines_added,
-                lines_removed: change.lines_removed,
-                untracked_files: change.untracked_files,
-                staged: state.staged,
-                unstaged: state.unstaged,
-            }
-        })
-        .collect();
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-    let untracked_cap = changes.untracked_cap.map(|cap| UntrackedCapInfo {
-        dir: cap.dir,
-        files: cap.files,
-        total: cap.total,
-    });
-    DiffFiles { files, untracked_cap }
-}
-
-/// The original side of the diff editor; `None` when absent at the baseline or not
-/// UTF-8. `Uncommitted` serves the *index* version, so staging math is index-relative
-/// like VS Code's; `Staged` serves HEAD.
-pub fn base_file_content(
-    dir: &str,
-    mode: DiffMode,
-    base_branch: Option<&str>,
-    path: &str,
-) -> Option<String> {
-    if dir.is_empty() || path.is_empty() {
-        return None;
-    }
-    let repo = open_repo(dir)?;
-    let content = match mode {
-        DiffMode::Uncommitted => match repo.file_in_index(path) {
-            Some(bytes) => bytes,
-            // A conflicted path has no stage 0; HEAD is its only "before".
-            None if repo.is_unmerged(path) => repo.file_at("HEAD", path)?,
-            None => return None,
-        },
-        DiffMode::Staged => repo.file_at("HEAD", path)?,
-        DiffMode::Main => {
-            let base = resolve_diff_base(&repo, dir, base_branch);
-            repo.file_at(&base, path)?
-        }
-    };
-    String::from_utf8(content).ok()
-}
-
-/// The *modified* side of the staged diff: the index version of `path`. `None`
-/// when it has no stage-0 entry (a staged deletion) or isn't UTF-8.
-pub fn index_file_content(dir: &str, path: &str) -> Option<String> {
-    if dir.is_empty() || path.is_empty() {
-        return None;
-    }
-    let repo = open_repo(dir)?;
-    String::from_utf8(repo.file_in_index(path)?).ok()
 }
 
 /// One commit ahead of `compared_base` with its own line-count diff, not the branch's
@@ -1185,7 +1035,7 @@ mod tests {
         assert!(!info.dir_missing);
     }
 
-    /// A `node_modules` no `.gitignore` covers: a floor, and a named directory.
+    /// A `node_modules` no `.gitignore` covers: the count is a floor, not a total.
     #[test]
     fn an_unignored_dependency_tree_is_capped_and_flagged() {
         let root = tempfile::TempDir::new().unwrap();
@@ -1201,44 +1051,6 @@ mod tests {
         assert!(info.dirty);
         assert!(info.uncommitted_capped, "a truncated count must not read as a total");
         assert!(info.uncommitted_files > 0);
-
-        let listed = diff_files(dir, DiffMode::Uncommitted, None);
-        assert_eq!(listed.files.len(), 1, "the directory stays one row: {:?}", listed.files);
-        assert_eq!(listed.files[0].status, "?");
-        assert!(listed.files[0].untracked_files > 0);
-        let cap = listed.untracked_cap.expect("the pane can name the directory");
-        assert_eq!(cap.dir, "node_modules");
-    }
-
-    /// The uncommitted list and the editor's sides must describe the same diff:
-    /// index vs worktree, so a fully staged file belongs to `Staged` only.
-    #[test]
-    fn uncommitted_list_and_editor_sides_agree() {
-        let root = tempfile::TempDir::new().unwrap();
-        init_repo(root.path());
-        let dir = root.path().to_str().unwrap();
-
-        std::fs::write(root.path().join("f.txt"), "staged\n").unwrap();
-        git(root.path(), &["add", "f.txt"]);
-        std::fs::write(root.path().join("f.txt"), "staged\nunstaged\n").unwrap();
-        std::fs::write(root.path().join("done.txt"), "all staged\n").unwrap();
-        git(root.path(), &["add", "done.txt"]);
-
-        let uncommitted = diff_files(dir, DiffMode::Uncommitted, None);
-        let paths: Vec<&str> = uncommitted.files.iter().map(|f| f.path.as_str()).collect();
-        assert_eq!(paths, vec!["f.txt"], "a fully staged file has nothing unstaged to show");
-        let f = &uncommitted.files[0];
-        assert_eq!((f.lines_added, f.lines_removed), (1, 0), "counted vs the index, not HEAD");
-        assert!(f.staged && f.unstaged, "partially staged");
-        assert_eq!(
-            base_file_content(dir, DiffMode::Uncommitted, None, "f.txt").as_deref(),
-            Some("staged\n"),
-            "the editor's original side is the same baseline the list counted against"
-        );
-
-        let staged = diff_files(dir, DiffMode::Staged, None);
-        let staged_paths: Vec<&str> = staged.files.iter().map(|f| f.path.as_str()).collect();
-        assert_eq!(staged_paths, vec!["done.txt", "f.txt"]);
     }
 
     #[test]

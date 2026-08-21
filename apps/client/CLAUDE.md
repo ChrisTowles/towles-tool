@@ -10,8 +10,8 @@ overview; this file has the frontend-internal conventions a read won't surface.
 strip (the sidebar is the only nav), but screens stay mounted when you switch
 away and `close-tab`/`next-tab`/`tab-1`…`9` act on this set headlessly; this is
 what "tab" usually means. **Settings' sub-tab panel** is the vendored Radix
-`Tabs` widget, not navigation. **IDE editor/diff tabs** are `tt-ide`'s
-([docs/CLAUDE-CODE-IDE.md](../../docs/CLAUDE-CODE-IDE.md)) — no shared path.
+`Tabs` widget, not navigation. **Editor tabs** are the code-server workbench's,
+inside a cross-origin iframe — nothing here can see or drive them.
 
 ## Adding a screen is a 4-file ritual — there's no single source of truth
 
@@ -43,8 +43,8 @@ display use **`errorMessage(e)`, not `String(e)`**: Tauri rejects with a bare
 string, which `String()` renders as `"[object Object]"`.
 
 No module keeps a throwing contract today; a foreign interface that demands one
-(monaco's `IFileSystemProvider` did) translates `Err` → throw at that edge only,
-and `.claude/hooks/guard-better-result.sh` flags drift. There is no `mock-data.ts`
+translates `Err` → throw at that edge only, and
+`.claude/hooks/guard-better-result.sh` flags drift. There is no `mock-data.ts`
 either: each module owns its browser-dev fallback (`mockSnapshot` in
 `lib/data.ts`, `mockView` in `lib/slack.ts`), gated on `!isTauri()`.
 
@@ -94,7 +94,7 @@ folder but the last with a placed-but-never-started pane.
 Relatedly, **a pane that owns a process is pooled; one that owns a view is not.**
 `PaneGrid` renders only the active folder's active window, so a conditionally
 rendered pane unmounts the moment you click another folder — fine for
-diff/files/preview (refetch on mount, own nothing), unacceptable for a terminal
+files/preview (refetch on mount, own nothing), unacceptable for a terminal
 and its shell, which render from a flat pool of *every* such pane in *any*
 window, merely `hidden` elsewhere, so unmount means "really closed" and the
 unmount effect can kill the process. **A new pane kind that owns a process or

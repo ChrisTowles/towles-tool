@@ -154,8 +154,7 @@ export type FolderData = {
   /** `uncommittedFiles` is a floor: an untracked directory was too large to list
    * (almost always a `.gitignore` gap). The chip shows a `+`. */
   uncommittedCapped: boolean;
-  /** HEAD-vs-index totals — the only numbers a bare `git add` moves, so the
-   * diff pane's refresh key needs them. */
+  /** HEAD-vs-index totals — the only numbers a bare `git add` moves. */
   stagedFiles: number;
   stagedAdded: number;
   stagedRemoved: number;
@@ -182,34 +181,6 @@ export type FolderData = {
   hasLaunchConfig: boolean;
   quiet: boolean;
 };
-
-/** The one definition of "this folder's working tree changed"; the diff and files
- * panes refetch on it. Counts alone miss an equal-length rewrite, which is why
- * `worktreeTouchedMs` is in the key. */
-export function folderStatsKey(folder: FolderData): string {
-  return [
-    folder.committedFiles,
-    folder.committedAdded,
-    folder.committedRemoved,
-    folder.uncommittedFiles,
-    folder.uncommittedAdded,
-    folder.uncommittedRemoved,
-    // Staging moves neither the HEAD-vs-worktree numbers nor any mtime — these
-    // three are how the pane hears about a `git add`, its own or a terminal's.
-    folder.stagedFiles,
-    folder.stagedAdded,
-    folder.stagedRemoved,
-    folder.commitsAhead,
-    folder.worktreeTouchedMs ?? 0,
-  ].join(":");
-}
-
-/** The other half: what the diff is measured *against* moved. A rebase or fetch
- * shifts the merge-base while every working-tree stat stays put, so both keys
- * drive `DiffPane`'s refetch. */
-export function folderBaseKey(folder: FolderData): string {
-  return [folder.commitsAhead, folder.commitsBehind, folder.comparedBase ?? ""].join(":");
-}
 
 export function gitCheckedLabel(computedAtMs: number | undefined, now: number): string | null {
   if (!computedAtMs) return null;
@@ -298,24 +269,11 @@ export function windowColor(wins: AgWindow[], windowId: string): string {
 
 // Folder panes. A window's `panes` otherwise hold session ids (`s<16 hex>`).
 
-const DIFF_PANE_PREFIX = "~diff:";
 const FILES_PANE_PREFIX = "~files:";
 const PREVIEW_PANE_PREFIX = "~preview:";
 const JARVIS_PANE_PREFIX = "~jarvis:";
 const BROWSER_PANE_PREFIX = "~browser:";
 const EXIT_PANE_PREFIX = "~exit:";
-
-export function diffPaneId(folderDir: string): string {
-  return `${DIFF_PANE_PREFIX}${folderDir}`;
-}
-
-export function isDiffPane(paneId: string): boolean {
-  return paneId.startsWith(DIFF_PANE_PREFIX);
-}
-
-export function diffPaneDir(paneId: string): string | null {
-  return isDiffPane(paneId) ? paneId.slice(DIFF_PANE_PREFIX.length) : null;
-}
 
 export function filesPaneId(folderDir: string): string {
   return `${FILES_PANE_PREFIX}${folderDir}`;
@@ -381,7 +339,6 @@ export function browserPaneDir(paneId: string): string | null {
 
 export function folderPaneDir(paneId: string): string | null {
   return (
-    diffPaneDir(paneId) ??
     filesPaneDir(paneId) ??
     previewPaneDir(paneId) ??
     jarvisPaneDir(paneId) ??

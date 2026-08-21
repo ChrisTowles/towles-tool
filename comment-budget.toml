@@ -67,7 +67,9 @@ extensions = ["md"]
 
 [[surface]]
 name   = "shared-libraries"
-paths  = ["crates/*/src/**/*.rs"]
+# The `.js` is `tt-codeserver`'s bridge extension: library source that happens to
+# run in VS Code's extension host, so it earns a library's budget, not a tool's.
+paths  = ["crates/*/src/**/*.rs", "crates/*/src/**/*.js"]
 goal   = "Two internal consumers, not a published API. Document the module and the crossing points; not every pub item."
 budget = 0.10
 over   = { warn = 15, error = 40 }

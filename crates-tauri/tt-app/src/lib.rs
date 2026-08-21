@@ -612,8 +612,6 @@ pub fn run() {
         .manage(terminal::TermState::default())
         .manage(task::TaskPhases::default())
         .manage(launch::LaunchState::default())
-        .manage(ide::DiffRequests::default())
-        .manage(ide::ViewerWatches::default())
         .manage(preview::PreviewWatches::default())
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
@@ -669,22 +667,17 @@ pub fn run() {
             agentboard::ab_set_repo_meta,
             agentboard::ab_set_repo_order,
             agentboard::ab_set_folder_base_branch,
+            agentboard::ab_set_folder_focus,
             agentboard::ab_set_folder_quiet,
             agentboard::ab_set_session_purpose,
             agentboard::ab_set_compact_percent,
             agentboard::ab_set_show_unmanaged_worktrees,
             agentboard::ab_save_windows,
             agentboard::ab_save_collapsed,
-            agentboard::ab_get_diff_files,
-            agentboard::ab_set_diff_focus,
-            agentboard::ab_get_base_file,
-            agentboard::ab_get_index_file,
-            agentboard::ab_stage_file,
-            agentboard::ab_unstage_file,
-            agentboard::ab_stage_buffer,
             agentboard::ab_get_commit_stats,
             codeserver::code_server_open,
             codeserver::code_server_reveal,
+            codeserver::code_server_show_changes,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,
@@ -777,17 +770,7 @@ pub fn run() {
             terminal::view::term_focus,
             terminal::open_path::term_open_path,
             terminal::open_path::term_resolve_path,
-            ide::ide_set_selection,
-            ide::ide_clear_selection,
-            ide::ide_at_mention,
             ide::ide_status,
-            ide::ide_set_diff_dirty,
-            ide::ide_read_file,
-            ide::ide_stat,
-            ide::ide_write_file,
-            ide::ide_watch_files,
-            ide::ide_unwatch_files,
-            ide::ide_diff_resolve,
         ])
         .run(context)
         .expect("error while running Towles Tool application");

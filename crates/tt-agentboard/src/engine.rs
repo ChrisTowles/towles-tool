@@ -57,10 +57,9 @@ fn task_dirs_on_disk(checkout: &str) -> Vec<String> {
 pub enum GitInvalidation {
     ControlFile,
     TurnEnd,
-    DiffFocus,
+    FolderFocus,
     BaseBranch,
     WorktreeRemoved,
-    Staged,
     WindowFocus,
 }
 
@@ -69,10 +68,9 @@ impl GitInvalidation {
         match self {
             Self::ControlFile => "control_file",
             Self::TurnEnd => "turn_end",
-            Self::DiffFocus => "diff_focus",
+            Self::FolderFocus => "folder_focus",
             Self::BaseBranch => "base_branch",
             Self::WorktreeRemoved => "worktree_removed",
-            Self::Staged => "staged",
             Self::WindowFocus => "window_focus",
         }
     }
@@ -415,10 +413,10 @@ impl Engine {
         tracing::debug!(%dir, reason = reason.as_str(), "git.invalidated");
     }
 
-    /// Aim the short git-freshness ceiling at the checkout whose diff pane just
+    /// Aim the short git-freshness ceiling at the checkout whose files pane just
     /// mounted, or release it on unmount. A release is ignored unless it still holds
     /// the focus: switching folders mounts the new pane before the old one's cleanup.
-    pub fn set_diff_focus(&mut self, dir: &str, focused: bool) -> bool {
+    pub fn set_folder_focus(&mut self, dir: &str, focused: bool) -> bool {
         let next = match focused {
             true => Some(dir),
             false if self.git_cache.focused_dir() == Some(dir) => None,
@@ -426,7 +424,7 @@ impl Engine {
         };
         let moved = self.git_cache.set_focused(next);
         if focused {
-            self.invalidate_git(dir, GitInvalidation::DiffFocus);
+            self.invalidate_git(dir, GitInvalidation::FolderFocus);
         }
         moved
     }
@@ -552,7 +550,7 @@ impl Engine {
     /// How often one repo earns a fetch. "Active" is deliberately generous —
     /// being wrong here costs a stale "behind main" on a repo being worked in.
     fn fetch_cadence_ms(&self, dir: &str, info: &crate::git_info::GitInfo, now: i64) -> i64 {
-        // A task under it, or its diff pane open: both mean somebody is reading
+        // A task under it, or its files pane open: both mean somebody is reading
         // this repo's "behind main" right now, whatever the mtimes say.
         if self.git_cache.focused_dir() == Some(dir)
             || self.task_worktrees.iter().any(|w| w.repo_root == dir)
@@ -1469,10 +1467,10 @@ mod engine_tests {
         assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS), vec!["/repo/hosting".to_string()]);
     }
 
-    /// The diff pane is a live reader of exactly this number, so the repo it
+    /// The files pane is a live reader of exactly this number, so the repo it
     /// is open on keeps the fast cadence however stale its mtimes look.
     #[test]
-    fn the_repo_whose_diff_is_open_stays_on_the_active_cadence() {
+    fn the_repo_whose_files_pane_is_open_stays_on_the_active_cadence() {
         let (_tmp, mut e) = engine();
         let now = 10_000_000_000;
         e.add_repo("/repo/reading");
@@ -1480,7 +1478,7 @@ mod engine_tests {
         assert_eq!(e.fetch_targets(now).len(), 1);
         assert!(e.fetch_targets(now + ACTIVE_FETCH_MS).is_empty(), "idle without the pane");
 
-        e.set_diff_focus("/repo/reading", true);
+        e.set_folder_focus("/repo/reading", true);
         assert_eq!(e.fetch_targets(now + ACTIVE_FETCH_MS), vec!["/repo/reading".to_string()]);
     }
 
@@ -1519,30 +1517,30 @@ mod engine_tests {
     /// Switching folders mounts the new pane before the old one's cleanup; that
     /// late release must not take the new pane's ceiling.
     #[test]
-    fn releasing_diff_focus_late_does_not_steal_the_new_panes_ceiling() {
+    fn releasing_folder_focus_late_does_not_steal_the_new_panes_ceiling() {
         let (_tmp, mut e) = engine();
         let now = 10_000_000;
         e.store_git_info("/repo/a", git_info("main"), now);
         e.store_git_info("/repo/b", git_info("main"), now);
 
-        assert!(e.set_diff_focus("/repo/a", true));
-        assert!(e.set_diff_focus("/repo/b", true), "the replacement claims it");
-        assert!(!e.set_diff_focus("/repo/a", false), "the departing pane's late cleanup");
+        assert!(e.set_folder_focus("/repo/a", true));
+        assert!(e.set_folder_focus("/repo/b", true), "the replacement claims it");
+        assert!(!e.set_folder_focus("/repo/a", false), "the departing pane's late cleanup");
         assert_eq!(e.git_cache.focused_dir(), Some("/repo/b"));
 
-        assert!(e.set_diff_focus("/repo/b", false));
+        assert!(e.set_folder_focus("/repo/b", false));
         assert_eq!(e.git_cache.focused_dir(), None);
     }
 
     /// Opening a pane is somebody reading the row: the counts must be fresh.
     #[test]
-    fn claiming_diff_focus_invalidates_so_the_next_tick_recomputes() {
+    fn claiming_folder_focus_invalidates_so_the_next_tick_recomputes() {
         let (_tmp, mut e) = engine();
         let now = 10_000_000;
         e.store_git_info("/repo/x", git_info("main"), now);
         assert!(e.git_cache.is_fresh("/repo/x", now));
 
-        e.set_diff_focus("/repo/x", true);
+        e.set_folder_focus("/repo/x", true);
         assert!(!e.git_cache.is_fresh("/repo/x", now));
     }
 

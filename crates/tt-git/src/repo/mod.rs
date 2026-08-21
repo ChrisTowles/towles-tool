@@ -16,13 +16,11 @@ use std::sync::Mutex;
 mod diff;
 mod graph;
 mod patch;
-mod staging;
 mod status;
 
 pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 
 pub use patch::PatchId;
-pub use staging::StageState;
 pub use status::{StatusEntry, StatusSummary};
 
 /// Myers because that is git's default, and these numbers sit beside the ones the

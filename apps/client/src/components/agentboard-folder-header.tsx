@@ -76,7 +76,6 @@ export function FolderHeader({
   onRemoveRepo,
   onDeleteWorktree,
   onRecreateWorktree,
-  onOpenDiff,
   onOpenFiles,
   onOpenPreview,
   onOpenJarvis,
@@ -118,7 +117,6 @@ export function FolderHeader({
   onDeleteWorktree?: () => void;
   /** Set only on a `no worktree` task row. */
   onRecreateWorktree?: () => void;
-  onOpenDiff: () => void;
   onOpenFiles: () => void;
   onOpenPreview: () => void;
   /** Undefined while `agentboard.jarvisPane` is off. */
@@ -350,8 +348,8 @@ export function FolderHeader({
               />
             )}
             <BaseMovedChip stats={folder} />
-            <UncommittedChip stats={folder} onOpen={onOpenDiff} />
-            <CommittedChip stats={folder} onOpen={onOpenDiff} />
+            <UncommittedChip stats={folder} onOpen={onOpenFiles} />
+            <CommittedChip stats={folder} onOpen={onOpenFiles} />
           </div>
         )}
         {/* What you can do. One `shrink-0` cluster, not loose siblings of the

@@ -11,7 +11,21 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::{Position, SelectionRange};
+/// A 0-based line/character position, exactly as the wire expects.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Position {
+    pub line: u32,
+    pub character: u32,
+}
+
+/// The span a diagnostic underlines; `isEmpty` marks a zero-width one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Range {
+    pub start: Position,
+    pub end: Position,
+    pub is_empty: bool,
+}
 
 /// One diagnostic in Claude Code's wire vocabulary. `severity` is the
 /// stringified VS Code name ("Error" | "Warning" | "Information" | "Hint").
@@ -20,7 +34,7 @@ use crate::{Position, SelectionRange};
 pub struct Diagnostic {
     pub message: String,
     pub severity: String,
-    pub range: SelectionRange,
+    pub range: Range,
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
@@ -29,8 +43,8 @@ pub struct Diagnostic {
 /// Absolute-path → diagnostics map; BTreeMap for stable output order.
 pub type DiagnosticsByFile = BTreeMap<PathBuf, Vec<Diagnostic>>;
 
-fn range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> SelectionRange {
-    SelectionRange {
+fn range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> Range {
+    Range {
         start: Position { line: start_line, character: start_col },
         end: Position { line: end_line, character: end_col },
         is_empty: start_line == end_line && start_col == end_col,

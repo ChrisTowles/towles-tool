@@ -15,7 +15,7 @@ the strip at the bottom of the Agentboard rail, and a **first-class pane
 kind** — `~jarvis:<folderDir>` (`lib/agentboard.ts`,
 `components/jarvis-pane.tsx`) tiled beside a checkout's terminals from the
 `jarvis` button on its folder header, persisted and restored like the
-diff/files/preview panes because it's in `folderPaneDir`. Folder-scoped for
+files/preview panes because it's in `folderPaneDir`. Folder-scoped for
 a resource reason as much as a naming one: every attached pane is its own
 subsurface *and* its own Bevy render thread. It is deliberately **not**
 pooled like terminals — those own a process whose state can't be rebuilt,

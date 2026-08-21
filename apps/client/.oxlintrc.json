@@ -21,18 +21,7 @@
   "ignorePatterns": ["src/components/ui/**"],
   "overrides": [
     {
-      "files": ["src/lib/monaco-fs.ts"],
-      "rules": {
-        "eslint/no-underscore-dangle": "off"
-      }
-    },
-    {
-      "files": [
-        "src/lib/focus-target.ts",
-        "src/lib/settings-target.ts",
-        "src/lib/monaco-dialog-store.ts",
-        "src/lib/lsp-status.ts"
-      ],
+      "files": ["src/lib/focus-target.ts", "src/lib/settings-target.ts"],
       "rules": {
         "unicorn/no-useless-spread": "off"
       }

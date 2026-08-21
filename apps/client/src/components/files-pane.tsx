@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { X } from "lucide-react";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { CodeServerPane } from "@/components/code-server-pane";
 import { useIdeConnected } from "@/lib/ide";
+import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { FolderData } from "@/lib/agentboard";
 
@@ -10,9 +12,9 @@ import type { FolderData } from "@/lib/agentboard";
  * `path` is checkout-relative; a fresh nonce per request so the same file re-fires. */
 export type FilesOpenRequest = { path: string; line: number | null; nonce: number };
 
-/** A folder's checkout as a *pane* in the Agentboard tiling — `DiffPane`'s sibling, a VS Code
- * workbench (code-server) inside. Open requests arrive as `openRequest`, the screen opening the
- * pane first if none existed. */
+/** A folder's checkout as a *pane* in the Agentboard tiling: a VS Code workbench (code-server)
+ * inside. Open requests arrive as `openRequest`, the screen opening the pane first if none
+ * existed. */
 export function FolderFilesPane({
   folder,
   focused,
@@ -26,6 +28,17 @@ export function FolderFilesPane({
   openRequest?: FilesOpenRequest;
 }) {
   const ideConnected = useIdeConnected(folder?.dir);
+
+  // 10s git-stats ceiling on this checkout while the pane is up, not the fleet-wide
+  // 60s: an edit made in the workbench moves no `.git` file the backend watches, so
+  // only a poll ever notices it in the rail's chips.
+  const dir = folder?.dir;
+  useEffect(() => {
+    if (!dir) return;
+    void invoke("ab_set_folder_focus", { dir, focused: true });
+    return () => void invoke("ab_set_folder_focus", { dir, focused: false });
+  }, [dir]);
+
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;
   return (
     <div
