@@ -886,6 +886,10 @@ mod tests {
         git(repo, &["init", "--quiet", "-b", "main"]);
         git(repo, &["config", "user.email", "test@example.com"]);
         git(repo, &["config", "user.name", "Test"]);
+        // A commit hands off to a background `gc --auto`, whose temp files under
+        // `objects/` the object-count test would read mid-flight.
+        git(repo, &["config", "gc.auto", "0"]);
+        git(repo, &["config", "maintenance.auto", "false"]);
         std::fs::write(repo.join("f.txt"), contents).unwrap();
         git(repo, &["add", "f.txt"]);
         git(repo, &["commit", "--quiet", "-m", "init"]);
@@ -1847,7 +1851,7 @@ mod tests {
         }
 
         let count_objects =
-            || walkdir(&repo.join(".git").join("objects")).filter(|p| p.is_file()).count();
+            || walkdir(&repo.join(".git").join("objects")).filter(|p| is_loose_object(p)).count();
         let before = count_objects();
         let info = compute_git_info(repo.to_str().unwrap(), None, None, NOW);
         assert_eq!(info.commits_unlanded, 3, "the probe actually ran");
@@ -1856,6 +1860,17 @@ mod tests {
             before,
             "the landing probe must not leave synthetic commits in the object store"
         );
+    }
+
+    /// `objects/ab/cdef…` alone: a commit-graph or a temp file is not an object
+    /// the probe leaked. Either hash length — the machine's git picks one.
+    fn is_loose_object(path: &std::path::Path) -> bool {
+        let hex = |s: &str, n: usize| s.len() == n && s.bytes().all(|b| b.is_ascii_hexdigit());
+        let name = path.file_name().and_then(|n| n.to_str());
+        let dir = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str());
+        path.is_file()
+            && name.is_some_and(|n| hex(n, 38) || hex(n, 62))
+            && dir.is_some_and(|d| hex(d, 2))
     }
 
     /// Recursive, so the count covers the `xx/` fan-out of loose objects.
