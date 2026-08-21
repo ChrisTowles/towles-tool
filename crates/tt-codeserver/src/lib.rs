@@ -9,6 +9,8 @@
 //! 127.0.0.1:0` lets the OS assign one and code-server logs it, which is both
 //! race-free and the repo's rule about concurrent worktree tasks.
 
+pub mod install;
+
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -30,8 +32,8 @@ pub const BIN_ENV: &str = "TT_CODE_SERVER_BIN";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodeServerError {
-    #[error("no code-server binary found (install it, or set {BIN_ENV})")]
-    NoBinary,
+    #[error("code-server could not be provisioned: {0}")]
+    Install(#[from] install::InstallError),
     #[error("code-server exited during startup: {0}")]
     StartupExit(String),
     #[error("code-server never reported a listening port: {0}")]
@@ -44,11 +46,21 @@ pub enum CodeServerError {
     Io(#[from] std::io::Error),
 }
 
-pub fn find_code_server(override_path: Option<&Path>) -> Option<PathBuf> {
+/// The code-server to run, or `None` when the machine has none yet — which is
+/// [`install::ensure`]'s cue, not an error. `managed_root` is where a previous
+/// install of the pinned version would have landed; it wins over PATH, so a
+/// machine that provisioned one keeps running that one.
+pub fn find_code_server(
+    override_path: Option<&Path>,
+    managed_root: Option<&Path>,
+) -> Option<PathBuf> {
     if let Some(p) = override_path.filter(|p| p.is_file()) {
         return Some(p.to_path_buf());
     }
     if let Some(p) = std::env::var_os(BIN_ENV).map(PathBuf::from).filter(|p| p.is_file()) {
+        return Some(p);
+    }
+    if let Some(p) = managed_root.and_then(install::installed_binary) {
         return Some(p);
     }
     if let Some(path) = std::env::var_os("PATH") {

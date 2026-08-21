@@ -9026,12 +9026,16 @@ name = "tt-codeserver"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "native-tls",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
+ "tt-config",
  "tt-exec",
+ "ureq",
  "wait-timeout",
 ]
 
