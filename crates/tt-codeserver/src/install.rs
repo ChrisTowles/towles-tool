@@ -10,7 +10,6 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -204,19 +203,22 @@ fn download(
 /// C implementation. `--strip-components=1` drops the release's own top folder
 /// so the tree is `<version>/bin/code-server`.
 fn untar(tarball: &Path, into: &Path) -> Result<(), InstallError> {
-    let output = Command::new("tar")
-        .arg("-xzf")
-        .arg(tarball)
-        .arg("--strip-components=1")
-        .arg("-C")
-        .arg(into)
-        .output()
-        .map_err(|e| InstallError::Unpack(format!("tar: {e}")))?;
-    if !output.status.success() {
+    let output = tt_exec::run(
+        "tar",
+        &[
+            "-xzf",
+            &tarball.to_string_lossy(),
+            "--strip-components=1",
+            "-C",
+            &into.to_string_lossy(),
+        ],
+    )
+    .map_err(|e| InstallError::Unpack(format!("tar: {e}")))?;
+    if !output.ok() {
         return Err(InstallError::Unpack(format!(
-            "tar {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
+            "tar exited {}: {}",
+            output.exit_code,
+            output.stderr.trim()
         )));
     }
     Ok(())
@@ -314,7 +316,7 @@ mod tests {
         std::fs::create_dir_all(src.join("bin")).unwrap();
         std::fs::write(src.join("bin").join("code-server"), "#!/bin/sh\n").unwrap();
         let tarball = root.path().join("release.tar.gz");
-        let status = Command::new("tar")
+        let status = std::process::Command::new("tar")
             .arg("-czf")
             .arg(&tarball)
             .arg("-C")
