@@ -48,7 +48,6 @@ export function JarvisPane({
         paneId={jarvisPaneId(folder.dir)}
         visible={visible}
         className="min-h-0 flex-1"
-        fallback="Jarvis needs Linux/Wayland"
       />
     </div>
   );

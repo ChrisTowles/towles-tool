@@ -205,13 +205,28 @@ export async function killPort(port) {
 }
 
 /**
+ * `TT_BEVY=1` compiles the native Bevy pane in (`tt-app`'s `bevy` feature). Merged
+ * into any `--features` already present, since tauri takes the flag once.
+ * @param {string[]} args
+ */
+export function withBevyFeature(args) {
+  const on = process.env.TT_BEVY;
+  if (!on || on === "0" || on === "false") return args;
+  const at = args.indexOf("--features");
+  if (at === -1) return [...args, "--features", "bevy"];
+  const merged = [...args];
+  merged[at + 1] = `${merged[at + 1]},bevy`;
+  return merged;
+}
+
+/**
  * Own process-group leader: signalling the one visible pid leaves vite orphaned.
  * @param {string[]} args
  * @param {NodeJS.ProcessEnv} env
  */
 export function spawnTauriDev(args, env) {
   const posix = process.platform !== "win32";
-  const child = spawn("tauri", args, {
+  const child = spawn("tauri", withBevyFeature(args), {
     stdio: "inherit",
     // macOS only: runs the dev binary from a generated `.app` for the Dock icon.
     env: { ...env, ...macosDevAppEnv(scriptsRepoRoot) },

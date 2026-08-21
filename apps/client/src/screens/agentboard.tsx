@@ -1235,7 +1235,6 @@ export function AgentboardScreen() {
                       paneId="jarvis"
                       visible={nativeVisible}
                       className="shrink-0 basis-1/4 border-t"
-                      fallback="Jarvis needs Linux/Wayland"
                     />
                   )}
                 </div>

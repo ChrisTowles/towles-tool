@@ -111,6 +111,14 @@ block2 = "0.6"
 [features]
 wdio = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
 
+# The native Bevy pane, off by default. Nothing in this crate is conditional on
+# it — the four `tt_pane::commands` stay registered either way — so all it
+# decides is whether the renderer is compiled behind them, which is the whole
+# cost: Bevy builds from a git fork and dominates a cold build. Off, turning
+# `agentboard.jarvisPane` on reports the pane unsupported. Build it in with
+# `cargo build -p tt-app --features bevy`, or `TT_BEVY=1 bun run dev`.
+bevy = ["tt-pane/bevy"]
+
 [dev-dependencies]
 tempfile = "3.14.0"
 

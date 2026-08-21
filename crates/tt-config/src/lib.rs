@@ -137,7 +137,8 @@ pub struct AgentboardSettings {
     pub show_unmanaged_worktrees: Option<bool>,
 
     /// The native Bevy surface (`tt-jarvis`). Off by default — it holds a
-    /// Wayland subsurface and a vsync-paced render thread.
+    /// Wayland subsurface and a vsync-paced render thread, and the renderer is
+    /// only in the binary at all when built with `tt-app`'s `bevy` feature.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jarvis_pane: Option<bool>,
 

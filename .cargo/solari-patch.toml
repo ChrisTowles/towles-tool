@@ -2,7 +2,7 @@
 #
 # Usage:
 #
-#   cargo --config .cargo/solari-patch.toml build -p tt-jarvis --features solari
+#   cargo --config .cargo/solari-patch.toml build -p tt-jarvis --features bevy
 #
 # ## Why this is a separate file rather than the workspace `Cargo.toml`
 #
